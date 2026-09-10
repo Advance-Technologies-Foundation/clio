@@ -14,7 +14,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("Knowledge feedback policy")]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class KnowledgeFeedbackPolicyToolE2ETests : McpContractFixtureBase {
 
 	private protected override void ConfigureMcpServerSettings(McpE2ESettings settings) {

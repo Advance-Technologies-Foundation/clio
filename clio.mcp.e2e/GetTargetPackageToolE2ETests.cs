@@ -23,7 +23,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("get-target-package")]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class GetTargetPackageToolE2ETests : McpContractFixtureBase {
 
 	[Test]

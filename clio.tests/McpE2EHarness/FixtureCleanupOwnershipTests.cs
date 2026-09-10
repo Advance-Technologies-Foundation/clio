@@ -1,9 +1,12 @@
+using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Clio.Mcp.E2E.Support;
 using FluentAssertions;
+using NUnit.Framework;
 
-namespace Clio.Mcp.E2E.Support;
+namespace Clio.Tests.McpE2EHarness;
 
 /// <summary>
 /// Pins the two teardown guarantees the DB-first data-binding fixtures rely on: a cleanup command can never
@@ -11,7 +14,8 @@ namespace Clio.Mcp.E2E.Support;
 /// arrange step already created.
 /// </summary>
 [TestFixture]
-[Category("McpE2E.NoEnvironment")]
+[Property("Module", "McpServer")]
+[Category("Unit")]
 public sealed class FixtureCleanupOwnershipTests {
 	[Test]
 	[Description("A cleanup command that never returns is cancelled by its own bounded token instead of hanging the E2E worker.")]

@@ -14,7 +14,7 @@ namespace Clio.Mcp.E2E;
 [TestFixture]
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class ODataWriteToolsE2ETests : McpContractFixtureBase {
 	[Test]
 	[Description("Exposes odata-create via the get-tool-contract compact index with a non-destructive safety flag on the lazy tool surface.")]

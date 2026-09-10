@@ -23,7 +23,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("delete-theme")]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class DeleteThemeToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(DeleteThemeTool.ToolName)]

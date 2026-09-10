@@ -24,7 +24,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(GuidanceGetTool.ToolName)]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class GuidanceGetDiagnosticsE2ETests : McpContractFixtureBase {
 
 	// sha256("probe")[..24] - how KnowledgeSourceInstallationStore.SourceKey derives a source directory.

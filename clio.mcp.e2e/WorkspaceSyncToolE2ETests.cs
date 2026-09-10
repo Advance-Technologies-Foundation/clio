@@ -21,7 +21,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature("workspace-sync")]
 [NonParallelizable]
-public sealed class WorkspaceSyncToolE2ETests {
+public sealed class WorkspaceSyncToolE2ETests : McpContractFixtureBase {
 	private const string PushToolName = PushWorkspaceTool.PushWorkspaceToolName;
 	private const string RestoreToolName = RestoreWorkspaceTool.RestoreWorkspaceToolName;
 	private const string PackageListToolName = GetPkgListTool.GetPkgListToolName;
@@ -40,8 +40,14 @@ public sealed class WorkspaceSyncToolE2ETests {
 
 	[OneTimeTearDown]
 	public void CleanupSharedRestoreWorkspace() {
-		if (_sharedRootDirectory is not null && Directory.Exists(_sharedRootDirectory)) {
-			Directory.Delete(_sharedRootDirectory, recursive: true);
+		// NUnit runs this before the base class stops the shared server, so the child may still hold a
+		// handle under the workspace; best-effort like McpContractFixtureBase.CleanupFixtureDirectories.
+		try {
+			if (_sharedRootDirectory is not null && Directory.Exists(_sharedRootDirectory)) {
+				Directory.Delete(_sharedRootDirectory, recursive: true);
+			}
+		} catch (IOException) {
+		} catch (UnauthorizedAccessException) {
 		}
 	}
 
@@ -131,7 +137,7 @@ public sealed class WorkspaceSyncToolE2ETests {
 	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Drives restore-workspace (a [RequiresPackage(\"cliogate\")] command) through the real clio MCP server against a sandbox where cliogate IS installed, and verifies the environment-scoped package-requirement gate does NOT false-positive: the tool runs to completion instead of refusing. "
-		+ "Residual gap: the 'package absent' refusal branch is NOT covered here because the sandbox arrange step (ArrangeSandboxWorkspaceAsync -> EnsureCliogateInstalledAsync) guarantees cliogate is present, and the invalid-environment tests fail during command resolution BEFORE the gate runs. Asserting a refusal would require a live environment that lacks cliogate, which the current harness cannot provision. The refusal branch is covered at the unit level in clio.tests/Command/McpServer/BaseToolTests.cs.")]
+		+ "Residual gap: the 'package absent' refusal branch is NOT covered here because the sandbox arrange step (ArrangeSandboxWorkspaceAsync -> EnsureCliogateInstalledAsync) guarantees cliogate is present, Asserting a refusal would require a live environment that lacks cliogate, which the current harness cannot provision. The refusal branch is covered at the unit level in clio.tests/Command/McpServer/BaseToolTests.cs.")]
 	[AllureTag(RestoreToolName)]
 	[AllureName("Restore workspace package-requirement gate does not false-positive when cliogate is installed")]
 	[AllureDescription("Uses the real clio MCP server to restore a previously pushed package into a sandbox where cliogate is installed, proving the environment-scoped [RequiresPackage] gate lets the command through rather than refusing. The 'package absent' refusal branch is documented as a residual harness gap and covered by unit tests.")]
@@ -153,35 +159,7 @@ public sealed class WorkspaceSyncToolE2ETests {
 		AssertGateDidNotRefuse(restoreResult, "cliogate");
 	}
 
-	private static async Task<WorkspaceSyncArrangeContext> ArrangeInvalidEnvironmentAsync(string toolPrefix) {
-		return await AllureApi.Step("Arrange workspace-sync invalid-environment MCP session", async () => {
-			string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-{toolPrefix}-mcp-e2e-{Guid.NewGuid():N}");
-			string workspacePath = Path.Combine(rootDirectory, "workspace");
-			string restoreWorkspacePath = Path.Combine(rootDirectory, "restore-workspace");
-			string environmentName = $"missing-{toolPrefix}-env-{Guid.NewGuid():N}";
-			Directory.CreateDirectory(workspacePath);
-
-			McpE2ESettings settings = TestConfiguration.Load();
-			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-			return new WorkspaceSyncArrangeContext(
-				settings,
-				rootDirectory,
-				workspacePath,
-				WorkspaceName: "workspace",
-				restoreWorkspacePath,
-				RestoreWorkspaceName: "restore-workspace",
-				environmentName,
-				PackageName: string.Empty,
-				PackageMetadata: null,
-				session,
-				cancellationTokenSource,
-				OwnsRootDirectory: true);
-		});
-	}
-
-	private static async Task<WorkspaceSyncArrangeContext> ArrangeSandboxWorkspaceAsync(bool includePackage = true) {
+	private async Task<WorkspaceSyncArrangeContext> ArrangeSandboxWorkspaceAsync(bool includePackage = true) {
 		return await AllureApi.Step("Arrange workspace-sync sandbox lifecycle", async () => {
 			McpE2ESettings settings = TestConfiguration.Load();
 			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -195,8 +173,6 @@ public sealed class WorkspaceSyncToolE2ETests {
 
 			string workspaceName = $"workspace-{Guid.NewGuid():N}";
 			string workspacePath = Path.Combine(rootDirectory, workspaceName);
-			string restoreWorkspaceName = $"restore-{Guid.NewGuid():N}";
-			string restoreWorkspacePath = Path.Combine(rootDirectory, restoreWorkspaceName);
 			string packageName = includePackage ? $"Pkg{Guid.NewGuid():N}".Substring(0, 18) : string.Empty;
 			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
 
@@ -211,14 +187,11 @@ public sealed class WorkspaceSyncToolE2ETests {
 				packageMetadata = ReadPackageMetadata(workspacePath, packageName);
 			}
 
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			McpServerSession session = Session;
 			return new WorkspaceSyncArrangeContext(
-				settings,
 				rootDirectory,
 				workspacePath,
 				workspaceName,
-				restoreWorkspacePath,
-				restoreWorkspaceName,
 				settings.Sandbox.EnvironmentName!,
 				packageName,
 				packageMetadata,
@@ -243,14 +216,11 @@ public sealed class WorkspaceSyncToolE2ETests {
 			string testRootDirectory = Path.Combine(Path.GetTempPath(), $"clio-workspace-restore-e2e-{Guid.NewGuid():N}");
 			string testWorkspacePath = Path.Combine(testRootDirectory, Path.GetFileName(_sharedWorkspacePath!));
 			CopyDirectory(_sharedWorkspacePath!, testWorkspacePath);
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			McpServerSession session = Session;
 			return new WorkspaceSyncArrangeContext(
-				settings,
 				testRootDirectory,
 				testWorkspacePath,
 				Path.GetFileName(testWorkspacePath),
-				RestoreWorkspacePath: string.Empty,
-				RestoreWorkspaceName: string.Empty,
 				_sharedEnvironmentName!,
 				_sharedPackageName!,
 				_sharedPackageMetadata,
@@ -424,28 +394,6 @@ public sealed class WorkspaceSyncToolE2ETests {
 		File.ReadAllText(path).Should().Be(expectedContent, because: because);
 	}
 
-	[AllureStep("Assert invalid environment diagnostics mention the missing environment name")]
-	private static void AssertFailureMentionsMissingEnvironment(
-		WorkspaceCommandActResult actResult,
-		string environmentName,
-		string toolName) {
-		string combinedOutput = string.Join(
-			Environment.NewLine,
-			(actResult.Execution.Output ?? []).Select(message => $"{message.MessageType}: {message.Value}"));
-
-		combinedOutput.Should().NotBeNullOrWhiteSpace(
-			because: "failed workspace-sync execution should explain why the call was rejected");
-		combinedOutput.Should().MatchRegex(
-			$"(?is)({Regex.Escape(environmentName)}.*not found|environment.*not.*found|{Regex.Escape(toolName)}|error occurred invoking)",
-			because: "the failure should either identify the missing environment directly or include the MCP invocation wrapper");
-	}
-
-	[AllureStep("Assert workspace was not mutated")]
-	private static void AssertWorkspaceWasNotMutated(string workspacePath) {
-		Directory.EnumerateFileSystemEntries(workspacePath).Should().BeEmpty(
-			because: "invalid environment requests must not create or modify files in the target workspace directory");
-	}
-
 	[AllureStep("Assert the package-requirement gate did not refuse the call")]
 	private static void AssertGateDidNotRefuse(WorkspaceCommandActResult actResult, string packageName) {
 		string combinedOutput = string.Join(
@@ -561,27 +509,30 @@ public sealed class WorkspaceSyncToolE2ETests {
 	}
 
 	private sealed record WorkspaceSyncArrangeContext(
-		McpE2ESettings Settings,
 		string RootDirectory,
 		string WorkspacePath,
 		string WorkspaceName,
-		string RestoreWorkspacePath,
-		string RestoreWorkspaceName,
 		string EnvironmentName,
 		string PackageName,
 		PackageMetadata? PackageMetadata,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource,
 		bool OwnsRootDirectory) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
+			// The session belongs to the fixture (McpContractFixtureBase) and outlives this per-test context.
 			CancellationTokenSource.Dispose();
 
 			// Restore-test contexts reuse the shared fixture workspace (see EnsureSharedRestoreWorkspaceAsync),
 			// which is deleted once in [OneTimeTearDown]; only the per-test throwaway roots are owned here.
-			if (OwnsRootDirectory && Directory.Exists(RootDirectory)) {
-				Directory.Delete(RootDirectory, recursive: true);
+			// Best-effort, as in McpContractFixtureBase: the shared child server is still alive at this point.
+			try {
+				if (OwnsRootDirectory && Directory.Exists(RootDirectory)) {
+					Directory.Delete(RootDirectory, recursive: true);
+				}
+			} catch (IOException) {
+			} catch (UnauthorizedAccessException) {
 			}
+			return ValueTask.CompletedTask;
 		}
 	}
 

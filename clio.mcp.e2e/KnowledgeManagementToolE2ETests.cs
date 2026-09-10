@@ -17,7 +17,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(KnowledgeManagementTools.AddKnowledgeSourceToolName)]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class KnowledgeManagementToolE2ETests : McpContractFixtureBase {
 	private string _clioHome = null!;
 

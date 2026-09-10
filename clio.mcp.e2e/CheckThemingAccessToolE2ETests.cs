@@ -23,7 +23,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("check-theming-access")]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class CheckThemingAccessToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(CheckThemingAccessTool.ToolName)]

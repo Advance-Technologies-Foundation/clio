@@ -1,7 +1,8 @@
 using Clio.Mcp.E2E.Support.Configuration;
 using FluentAssertions;
+using NUnit.Framework;
 
-namespace Clio.Mcp.E2E;
+namespace Clio.Tests.McpE2EHarness;
 
 /// <summary>
 /// Env-free unit coverage for <see cref="ClioCliCommandRunner.RedactSecrets"/>: the diagnostics blocks
@@ -9,7 +10,8 @@ namespace Clio.Mcp.E2E;
 /// verbatim, so the value following a secret flag must never reach the (TeamCity-retained) CI log.
 /// </summary>
 [TestFixture]
-[Category("McpE2E.NoEnvironment")]
+[Property("Module", "McpServer")]
+[Category("Unit")]
 public sealed class ClioCliCommandRunnerRedactionTests {
 
 	[Test]

@@ -24,7 +24,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("generate-source-code")]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class GenerateSourceCodeToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = GenerateSourceCodeTool.GenerateSourceCodeToolName;

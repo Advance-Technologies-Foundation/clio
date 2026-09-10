@@ -22,7 +22,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("durable-invocation")]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class DurableInvocationToolE2ETests : McpContractFixtureBase {
 
 	[Test]

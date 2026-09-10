@@ -22,7 +22,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(ClioRunTool.ToolName)]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class ClioRunToolE2ETests : McpContractFixtureBase {
 
 	private const string SyntheticMissingName = "synthetic-missing-guide";

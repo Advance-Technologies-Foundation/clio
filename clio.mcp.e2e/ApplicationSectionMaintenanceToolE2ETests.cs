@@ -18,7 +18,7 @@ namespace Clio.Mcp.E2E;
 [TestFixture]
 [AllureNUnit]
 [NonParallelizable]
-public sealed class ApplicationSectionMaintenanceToolE2ETests {
+public sealed class ApplicationSectionMaintenanceToolE2ETests : McpContractFixtureBase {
 	private const string SectionListToolName = ApplicationSectionGetListTool.ApplicationSectionGetListToolName;
 	private const string SectionDeleteToolName = ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName;
 	private const string SectionCreateToolName = ApplicationSectionCreateTool.ApplicationSectionCreateToolName;
@@ -37,7 +37,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 
 		// Act
 		CallToolResult callResult = await session.CallToolAsync(
@@ -72,7 +72,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		ApplicationListItemEnvelope installedApplication = await SeededApplicationResolver.ResolveOrIgnoreAsync(
 			session,
 			cancellationTokenSource.Token,
@@ -121,7 +121,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 
 		// Act
 		CallToolResult callResult = await session.CallToolAsync(
@@ -154,7 +154,6 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 	public async Task ApplicationSectionDelete_Should_Remove_Created_Section_From_Section_List() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (!settings.AllowDestructiveMcpTests) {
 			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive delete-app-section lifecycle test.");
@@ -166,7 +165,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 
 		string caption = $"E2E Del {Guid.NewGuid():N}"[..24];
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		string? createdSectionCode = null;
 		try {
 			// Act 1: create a new section in the seeded application
@@ -277,20 +276,30 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 		return ApplicationResultParser.ExtractSectionList(callResult);
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
+	// One `ping-app` probe (two, with the fallback) per fixture instead of per test; the caching contract
+	// and why the skip reporting stays per-test are documented on ResolveEnvironmentOnceAsync.
+	private Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		ResolveEnvironmentOnceAsync(() => ResolveReachableEnvironmentCoreAsync(settings));
+
+	private static async Task<string> ResolveReachableEnvironmentCoreAsync(McpE2ESettings settings) {
 		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
 		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
 			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
 			return configuredEnvironmentName;
 		}
 
+		// The "d2" fallback serves read-only runs on a developer machine. With the destructive opt-in on,
+		// the arranged environment receives create-app-section writes and the answer is now cached for the
+		// whole fixture, so a transient sandbox blip must skip — never redirect the writes to whatever "d2"
+		// resolves to (clio.mcp.e2e/AGENTS.md: destructive tests target the dedicated sandbox only).
 		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
+		if (!settings.AllowDestructiveMcpTests
+			&& await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
 			return fallbackEnvironmentName;
 		}
 
 		Assert.Ignore(
-			$"application section MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
+			$"application section MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable. The '{fallbackEnvironmentName}' fallback is probed only without the destructive opt-in, so with McpE2E:AllowDestructiveMcpTests on it was deliberately not tried.");
 		return string.Empty;
 	}
 

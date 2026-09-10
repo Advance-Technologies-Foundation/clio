@@ -22,7 +22,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("upload-image")]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class UploadImageToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(UploadImageTool.ToolName)]

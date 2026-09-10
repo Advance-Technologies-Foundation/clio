@@ -3,7 +3,6 @@ using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
-using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -18,7 +17,8 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("remove-package-dependency")]
-public sealed class RemovePackageDependencyToolE2ETests {
+[Parallelizable(ParallelScope.Self)]
+public sealed class RemovePackageDependencyToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = RemovePackageDependencyTool.RemovePackageDependencyToolName;
 
@@ -29,8 +29,7 @@ public sealed class RemovePackageDependencyToolE2ETests {
 	[Description("Verifies that remove-package-dependency is discoverable via the get-tool-contract compact index of the real clio mcp-server process.")]
 	public async Task RemovePackageDependency_Should_Be_Discoverable_On_Lazy_Surface() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		await using RemovePackageDependencyArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using RemovePackageDependencyArrangeContext arrangeContext = await ArrangeAsync();
 
 		// Act
 		IReadOnlyCollection<string> toolNames =
@@ -47,8 +46,7 @@ public sealed class RemovePackageDependencyToolE2ETests {
 	[Description("Reports invalid environment failures for remove-package-dependency through the real MCP server.")]
 	public async Task RemovePackageDependency_Should_Report_Invalid_Environment_Failure() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		await using RemovePackageDependencyArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using RemovePackageDependencyArrangeContext arrangeContext = await ArrangeAsync();
 		string invalidEnvironmentName = $"missing-dependency-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -61,12 +59,11 @@ public sealed class RemovePackageDependencyToolE2ETests {
 		AssertFailureMentionsEnvironment(actResult, invalidEnvironmentName);
 	}
 
-	private static async Task<RemovePackageDependencyArrangeContext> ArrangeAsync(McpE2ESettings settings) {
-		return await AllureApi.Step("Arrange MCP server session", async () => {
-			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-			return new RemovePackageDependencyArrangeContext(session, cancellationTokenSource);
-		});
+	private Task<RemovePackageDependencyArrangeContext> ArrangeAsync() {
+		return AllureApi.Step("Arrange MCP session on the fixture-shared server", () =>
+			Task.FromResult(new RemovePackageDependencyArrangeContext(
+				Session,
+				new CancellationTokenSource(TimeSpan.FromMinutes(2)))));
 	}
 
 	private static async Task<CommandExecutionActResult> ActAsync(
@@ -124,12 +121,13 @@ public sealed class RemovePackageDependencyToolE2ETests {
 			because: "the failure log should identify that the requested environment is not registered");
 	}
 
+	// The session belongs to the fixture (McpContractFixtureBase) and outlives this per-test context.
 	private sealed record RemovePackageDependencyArrangeContext(
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 

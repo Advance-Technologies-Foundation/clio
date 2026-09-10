@@ -27,7 +27,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("theming-version-floor")]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class ThemingVersionFloorContractE2ETests : McpContractFixtureBase {
 
 	/// <summary>

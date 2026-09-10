@@ -22,7 +22,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(PageValidateTool.ToolName)]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = PageValidateTool.ToolName;

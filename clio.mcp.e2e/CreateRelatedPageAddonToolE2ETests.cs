@@ -3,7 +3,6 @@ using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
-using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -18,8 +17,8 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(CreateRelatedPageAddonTool.ToolName)]
-[NonParallelizable]
-public sealed class CreateRelatedPageAddonToolE2ETests {
+[Parallelizable(ParallelScope.Self)]
+public sealed class CreateRelatedPageAddonToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = CreateRelatedPageAddonTool.ToolName;
 
 	[Test]
@@ -29,7 +28,7 @@ public sealed class CreateRelatedPageAddonToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server and verifies create-related-page-addon is discoverable via the get-tool-contract compact index even though long-tail tools are not resident in tools/list.")]
 	public async Task CreateRelatedPageAddon_Should_Be_Discoverable_On_Lazy_Surface() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using ArrangeContext arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		IReadOnlyCollection<string> toolNames = await arrangeContext.Session.ListReachableToolNamesAsync(
@@ -47,7 +46,7 @@ public sealed class CreateRelatedPageAddonToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls create-related-page-addon with a default+add pages payload and an intentionally missing environment, then verifies the nested pages array binds and the structured response reports the unresolved environment instead of an MCP binding error.")]
 	public async Task CreateRelatedPageAddon_Should_Bind_Pages_Payload_And_Report_Invalid_Environment() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using ArrangeContext arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-related-page-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -91,7 +90,7 @@ public sealed class CreateRelatedPageAddonToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls create-related-page-addon with a type-column-uid and an untyped default plus a typed page entry and an intentionally missing environment, then verifies the typed payload binds and the structured response reports the unresolved environment.")]
 	public async Task CreateRelatedPageAddon_Should_Bind_Typed_Pages_Payload_And_Report_Invalid_Environment() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using ArrangeContext arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-typed-related-page-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -137,7 +136,7 @@ public sealed class CreateRelatedPageAddonToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls create-related-page-addon with a base default plus a portal 'All external users' entry (via role-name) and an intentionally missing environment, then verifies the role-name payload binds and the structured response reports the unresolved environment.")]
 	public async Task CreateRelatedPageAddon_Should_Bind_Portal_RoleName_Payload_And_Report_Invalid_Environment() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using ArrangeContext arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-portal-related-page-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -183,7 +182,7 @@ public sealed class CreateRelatedPageAddonToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls create-related-page-addon with an empty pages array (the reset-to-inline / clear-all-bindings operation) and an intentionally missing environment, then verifies the empty payload binds and the structured response reports the unresolved environment instead of rejecting the empty pages set.")]
 	public async Task CreateRelatedPageAddon_Should_Accept_Empty_Pages_AsResetToInline() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using ArrangeContext arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-empty-reset-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -219,7 +218,7 @@ public sealed class CreateRelatedPageAddonToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls create-related-page-addon with schema-type=mobile plus a default pages payload and an intentionally missing environment, then verifies the mobile schema-type binds and the structured response reports the unresolved environment instead of an MCP binding error.")]
 	public async Task CreateRelatedPageAddon_Should_Bind_Mobile_SchemaType_And_Report_Invalid_Environment() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using ArrangeContext arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-create-mobile-related-page-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -260,7 +259,7 @@ public sealed class CreateRelatedPageAddonToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls create-related-page-addon with a pages array whose only entry is null, and verifies the structured response reports the invalid entry without an MCP binding error or a mapping NRE.")]
 	public async Task CreateRelatedPageAddon_Should_Reject_Null_Pages_Entry() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using ArrangeContext arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
@@ -286,20 +285,4 @@ public sealed class CreateRelatedPageAddonToolE2ETests {
 			because: "the structured response should explain that a null pages entry is not allowed");
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync(TimeSpan timeout) {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		CancellationTokenSource cancellationTokenSource = new(timeout);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource);
-	}
-
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
-	}
 }

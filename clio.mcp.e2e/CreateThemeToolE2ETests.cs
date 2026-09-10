@@ -24,7 +24,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("create-theme")]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class CreateThemeToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(CreateThemeTool.ToolName)]

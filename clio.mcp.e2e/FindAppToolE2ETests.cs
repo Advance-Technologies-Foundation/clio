@@ -23,7 +23,7 @@ namespace Clio.Mcp.E2E;
 // its NUnit lifecycle hooks can deadlock async MCP flows. The Allure metadata attributes
 // below are still safe because they do not install lifecycle hooks.
 [NonParallelizable]
-public sealed class FindAppToolE2ETests {
+public sealed class FindAppToolE2ETests : McpContractFixtureBase {
 	private const string FindAppToolName = FindAppTool.FindAppToolName;
 
 	[Category("McpE2E.Sandbox")]
@@ -35,10 +35,9 @@ public sealed class FindAppToolE2ETests {
 	public async Task FindApp_Should_Return_Applications_With_Sections() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 
 		// Act
 		CallToolResult callResult = await CallFindAppAsync(
@@ -68,10 +67,8 @@ public sealed class FindAppToolE2ETests {
 	[AllureDescription("Uses the real clio MCP server to call find-app with a guaranteed-missing environment name and verifies the structured error envelope names the environment and includes a copy-pasteable reg-web-app command.")]
 	public async Task FindApp_Should_Report_Invalid_Environment_With_Actionable_Hint() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		string invalidEnvironmentName = $"missing-find-app-env-{Guid.NewGuid():N}";
 
 		// Act

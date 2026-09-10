@@ -17,7 +17,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(KnowledgeManagementTools.ListKnowledgeExamplesToolName)]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class KnowledgeReferenceExampleToolE2ETests : McpContractFixtureBase {
 	private readonly SyntheticKnowledgeNuGetFixture _fixture;
 	private readonly SyntheticPackageEvidence _package;

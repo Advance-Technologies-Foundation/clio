@@ -17,7 +17,6 @@ namespace Clio.Mcp.E2E;
 /// reachable environment.
 /// </summary>
 [TestFixture]
-[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature(ClearBrowserSessionTool.ToolName)]
 [NonParallelizable]
@@ -25,6 +24,7 @@ public sealed class ClearBrowserSessionToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = ClearBrowserSessionTool.ToolName;
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Starts the real clio MCP server and verifies clear-browser-session is discoverable via the get-tool-contract compact index (hermetic — no Creatio environment required).")]
 	[AllureTag(ToolName)]
@@ -44,6 +44,7 @@ public sealed class ClearBrowserSessionToolE2ETests : McpContractFixtureBase {
 			because: $"the {ToolName} MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes clear-browser-session against the configured sandbox, and verifies a structured success response (idempotent).")]
 	[AllureTag(ToolName)]

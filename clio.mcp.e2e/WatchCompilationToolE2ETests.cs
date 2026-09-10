@@ -20,7 +20,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature("watch-compilation")]
 [NonParallelizable]
-public sealed class WatchCompilationToolE2ETests {
+public sealed class WatchCompilationToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = WatchCompilationTool.WatchCompilationToolName;
 
 	[Test]
@@ -29,11 +29,11 @@ public sealed class WatchCompilationToolE2ETests {
 	[AllureName("watch-compilation is discoverable on the lazy surface of the clio MCP server")]
 	public async Task WatchCompilation_Should_Be_Advertised_By_Mcp_Server() {
 		// Arrange
-		// ArrangeAsync already Assert.Ignores when the watch-compilation feature is disabled, so this
+		// ArrangeGated already Assert.Ignores when the watch-compilation feature is disabled, so this
 		// test only runs against a server that registered the gated tool. On the lazy surface even an
 		// ENABLED gated tool is never resident in tools/list - discoverability is asserted through the
 		// union of tools/list and the get-tool-contract compact index.
-		await using ArrangeContext arrangeContext = await ArrangeAsync();
+		await using ArrangeContext arrangeContext = ArrangeGated();
 
 		// Act
 		IReadOnlyCollection<string> toolNames =
@@ -50,7 +50,7 @@ public sealed class WatchCompilationToolE2ETests {
 	[AllureName("watch-compilation reports invalid environment failures")]
 	public async Task WatchCompilation_Should_Report_Invalid_Environment_Failure() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync();
+		await using ArrangeContext arrangeContext = ArrangeGated();
 		string invalidEnvironmentName = $"missing-watch-compilation-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -87,9 +87,7 @@ public sealed class WatchCompilationToolE2ETests {
 		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
 			Assert.Ignore($"watch-compilation MCP E2E requires a reachable configured sandbox environment. '{environmentName}' was not reachable.");
 		}
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		ArrangeContext arrangeContext = new(session, cancellationTokenSource);
+		await using ArrangeContext arrangeContext = Arrange(TimeSpan.FromMinutes(2));
 
 		// Act
 		// A short give-up-after keeps this bounded even if the sandbox happens to be mid-compile from
@@ -104,13 +102,13 @@ public sealed class WatchCompilationToolE2ETests {
 			because: $"an idle sandbox should settle immediately (0); a busy sandbox should at worst give up after the short deadline (2), never fail or error. Actual execution: {DescribeExecution(execution)}");
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync() {
+	// The feature gate stays per-test (Assert.Ignore in [OneTimeSetUp] would change how NUnit reports the
+	// skip); the server itself is the fixture-shared one from McpContractFixtureBase.
+	private ArrangeContext ArrangeGated() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		WatchCompilationE2EGate.SkipIfFeatureDisabled(settings);
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource);
+		return Arrange(TimeSpan.FromMinutes(3));
 	}
 
 	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
@@ -141,12 +139,4 @@ public sealed class WatchCompilationToolE2ETests {
 		return $"ExitCode={execution.ExitCode}; Messages={messages}";
 	}
 
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
-	}
 }

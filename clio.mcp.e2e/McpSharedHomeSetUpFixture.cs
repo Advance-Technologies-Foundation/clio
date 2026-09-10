@@ -10,10 +10,11 @@ namespace Clio.Mcp.E2E;
 /// that isolated copy exactly once before any parallel fixture starts.
 /// </summary>
 /// <remarks>
-/// Vetted <see cref="McpContractFixtureBase"/> fixtures that do NOT override
-/// <see cref="McpContractFixtureBase.ConfigureMcpServerSettings"/> (PackageHotfix,
-/// AddPackageDependency, CompileCreatio, DeployCreatio, RestoreDb, DownloadConfiguration and the
-/// <c>*ContractToolE2ETests</c> cohort) let the child <c>clio mcp-server</c> inherit the runner's
+/// Every <see cref="McpContractFixtureBase"/> fixture that does NOT override
+/// <see cref="McpContractFixtureBase.ConfigureMcpServerSettings"/> — the <c>*ContractToolE2ETests</c>
+/// cohort, the converted NoEnvironment fixtures and, since the shared-server conversion of the
+/// Sandbox fixtures (ApplicationTool, DataForge, WorkspaceSync, …), most of the suite — lets the child
+/// <c>clio mcp-server</c> inherit the runner's
 /// suite-owned <c>CLIO_HOME</c>. Under <c>NumberOfTestWorkers=2</c> with <c>[Parallelizable]</c>, two such
 /// fixtures' <c>[OneTimeSetUp]</c> would otherwise start two servers concurrently, and each resolves
 /// settings via <c>SettingsBootstrapService.Load()</c> with repairs enabled — which WRITES

@@ -15,7 +15,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(ODataReadTool.ToolName)]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class ODataReadToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[Description("Exposes odata-read via the get-tool-contract compact index with a non-destructive safety flag on the lazy tool surface.")]

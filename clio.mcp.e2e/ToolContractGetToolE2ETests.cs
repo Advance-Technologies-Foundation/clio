@@ -15,7 +15,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(ToolContractGetTool.ToolName)]
-[NonParallelizable]
+[Parallelizable(ParallelScope.Self)]
 public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[Description("Returns the list-packages paging inputs, defaults, and completeness fields through the real MCP contract endpoint.")]

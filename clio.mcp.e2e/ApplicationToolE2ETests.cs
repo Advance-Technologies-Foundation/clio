@@ -22,7 +22,7 @@ namespace Clio.Mcp.E2E;
 [TestFixture]
 [AllureNUnit]
 [NonParallelizable]
-public sealed class ApplicationToolE2ETests {
+public sealed class ApplicationToolE2ETests : McpContractFixtureBase {
 	private const string ListToolName = ApplicationGetListTool.ApplicationGetListToolName;
 	private const string InfoToolName = ApplicationGetInfoTool.ApplicationGetInfoToolName;
 	private const string CreateToolName = ApplicationCreateTool.ApplicationCreateToolName;
@@ -900,28 +900,39 @@ public sealed class ApplicationToolE2ETests {
 				+ $"Actual create-app payload: {DescribeCallResult(actResult.CallResult)}");
 	}
 
-	private static async Task<ApplicationArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
+	private async Task<ApplicationArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
+		// Still resolved per test: the settings instance is per test and is what the reachability probe
+		// and the progress-marker test's private re-login session spawn clio from.
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ApplicationArrangeContext(environmentName, session, cancellationTokenSource);
+		return new ApplicationArrangeContext(environmentName, Session, cancellationTokenSource);
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
+	// One `ping-app` probe (two, with the fallback) per fixture instead of per test; the caching contract
+	// and why the skip reporting stays per-test are documented on ResolveEnvironmentOnceAsync.
+	private Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		ResolveEnvironmentOnceAsync(() => ResolveReachableEnvironmentCoreAsync(settings));
+
+	private static async Task<string> ResolveReachableEnvironmentCoreAsync(McpE2ESettings settings) {
 		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
 		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
 			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
 			return configuredEnvironmentName;
 		}
 
+		// The "d2" fallback serves read-only runs on a developer machine. With the destructive opt-in on,
+		// the arranged environment receives create-app writes and the answer is now cached for the whole
+		// fixture, so a transient sandbox blip must skip — never redirect the writes to whatever "d2"
+		// resolves to (clio.mcp.e2e/AGENTS.md: destructive tests target the dedicated sandbox only).
 		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
+		if (!settings.AllowDestructiveMcpTests
+			&& await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
 			return fallbackEnvironmentName;
 		}
 
 		Assert.Ignore(
-			$"application MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
+			$"application MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable. The '{fallbackEnvironmentName}' fallback is probed only without the destructive opt-in, so with McpE2E:AllowDestructiveMcpTests on it was deliberately not tried.");
 		return string.Empty;
 	}
 
@@ -1388,13 +1399,14 @@ public sealed class ApplicationToolE2ETests {
 	}
 
 
+	// The session belongs to the fixture (McpContractFixtureBase) and outlives this per-test context.
 	private sealed record ApplicationArrangeContext(
 		string EnvironmentName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 

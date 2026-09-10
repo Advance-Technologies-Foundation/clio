@@ -7,6 +7,15 @@ This suite is intentionally different from `clio.tests` MCP unit tests:
 - unit tests validate MCP argument mapping and command-resolution behavior in-process
 - `clio.mcp.e2e` validates the real server process, stdio transport, MCP discovery, and tool execution end to end
 
+**A test that starts no process does not belong here.** No GitHub Actions lane runs this project; it
+reaches a pull request only through the ~47-minute stand-backed TeamCity build, so a test that needs
+neither the MCP server nor a stand is reported 45 minutes late and not at all when the stand is down.
+Tests for the harness itself (the types under `Support/`) live in `clio.tests/McpE2EHarness/` with
+`[Category("Unit")]`; `clio.mcp.e2e.csproj` grants that project `InternalsVisibleTo`, so `Support` types
+stay `internal`. Speed alone is NOT the criterion — `McpWorkerWorkingDirectoryE2ETests` finishes in
+milliseconds and belongs here, because it spawns a real child process. See
+[docs/knowledge/Tests/harness-tests-live-in-clio-tests-not-in-the-e2e-project.md](../docs/knowledge/Tests/harness-tests-live-in-clio-tests-not-in-the-e2e-project.md).
+
 ## Infrastructure tiers (`McpE2E.NoEnvironment` / `McpE2E.Sandbox`)
 
 These two `McpE2E.*` categories are an **infrastructure-tier axis orthogonal to** the
