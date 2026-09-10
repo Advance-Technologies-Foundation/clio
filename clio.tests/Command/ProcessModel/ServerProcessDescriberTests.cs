@@ -1,13 +1,20 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using ATF.Repository.Mock;
 using ATF.Repository.Providers;
 using Clio.Command;
 using Clio.Command.ProcessModel;
 using Clio.Common;
+using Clio.CreatioModel;
 using ErrorOr;
 using FluentAssertions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.ProcessModel;
@@ -24,13 +31,25 @@ public sealed class ServerProcessDescriberTests {
 
 	private const string DescribeUrl = "http://sandbox/0/rest/ProcessDesignService/DescribeProcess";
 
-	private static ServerProcessDescriber CreateDescriber(IApplicationClient client) {
+	private const string RootUId = "332eac25-1443-4e4e-a972-6c0e66cb9243";
+	private const string ChildUId = "b5e5162a-254a-430f-8978-4738c6ebf76b";
+	/// <summary>A second family, so a caption shared by two DISTINCT processes can be expressed.</summary>
+	private const string OtherFamilyUId = "7c1d4f6e-9b02-4a55-8d31-1f0a5e2c7b48";
+
+	private const string PackageUId = "864d1545-a641-46c3-b866-e57bd6d39579";
+
+	/// <summary>
+	/// The version reader defaults to one that establishes nothing, so every pre-existing describe assertion
+	/// keeps running against the shape a failed version read is required not to disturb.
+	/// </summary>
+	private static ServerProcessDescriber CreateDescriber(IApplicationClient client,
+		IProcessVersionLibReader versionLibReader = null, IDataProvider dataProvider = null) {
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.DescribeProcess).Returns(DescribeUrl);
 		return new ServerProcessDescriber(client,
-			Substitute.For<IDataProvider>(), urlBuilder);
+			dataProvider ?? Substitute.For<IDataProvider>(), urlBuilder,
+			versionLibReader ?? ReaderReturning(new ProcessVersionFacts { Warning = "not read in this test" }));
 	}
-
 
 	[Test]
 	[Category("Unit")]
@@ -93,11 +112,180 @@ public sealed class ServerProcessDescriberTests {
 				+ "non-nullable bool, WhenWritingNull could not omit it and the payload fabricated an answer");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("A flow's label round-trips by its WIRE NAME, and this is the only place the JSON member is exercised at all: FlowLabelExpectationTests builds DescribedFlow with an object initialiser, so a renamed or dropped [JsonPropertyName] there changes nothing. The consequence of getting it wrong is not a missing field, it is a WRONG WARNING - the post-write guard reads Label typed, finds null on every flow, and tells the caller their labels did not land and their CrtProcessBuilder is out of date, on a build that worked perfectly. DescribedFlow also carries a [JsonExtensionData] bag, so the value still reaches the caller's output through AdditionalData and the describe result looks entirely correct while the guard is crying wolf.")]
+	public void Describe_ShouldRoundTripAFlowLabel() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[],"
+			+ "\"flows\":[{\"source\":\"task1\",\"target\":\"end1\",\"kind\":\"conditional\","
+			+ "\"condition\":\"[#Amount#] > 100\",\"label\":\"Above the threshold\"}],"
+			+ "\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Flows[0].Label.Should().Be("Above the threshold",
+			because: "the TYPED property is what the post-write guard reads by name; a value that only survives "
+				+ "in the extension-data bag leaves the guard reporting a dropped label on a build that worked");
+		result.Value.Flows[0].Condition.Should().Be("[#Amount#] > 100",
+			because: "both fields come off the same flow, so asserting the label alone would pass on a describe "
+				+ "that dropped everything else");
+		JsonNode output = JsonNode.Parse(reserialized);
+		output["flows"]![0]!["label"]!.GetValue<string>().Should().Be("Above the threshold",
+			because: "the outbound half is separate, and this field is what the shipped guidance tells an agent "
+				+ "to read before overwriting a human's label");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A flow the server reports WITHOUT a label must not gain an explicit null on the way out. The server omits the member for an unlabelled flow - measured on a 1.6.0.8 stand - and clio mirrors that omission rather than fabricating a value. Note what this does NOT buy, because an earlier revision of the property's docblock claimed it did: absence still cannot distinguish 'this flow has no label' from 'this package predates the field', since both produce the same bytes. What it does buy is that clio does not ASSERT the first of those. Nothing tells them apart, the installed version included - clio normally refuses a package older than the one it ships, so a high number is no evidence the member is present - which is why the guidance now says to treat an all-absent read as uninformative rather than to go and check a number.")]
+	public void Describe_ShouldNotInventAFlowLabel_WhenTheServerOmitsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[],"
+			+ "\"flows\":[{\"source\":\"task1\",\"target\":\"end1\",\"kind\":\"sequence\"}],"
+			+ "\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Flows[0].Label.Should().BeNull(
+			because: "the server said nothing about a label, and clio must not turn that into a claim");
+		result.Value.Flows[0].Source.Should().Be("task1",
+			because: "the rest of the flow still round-trips; asserting the absence alone would pass on a "
+				+ "describe that dropped everything");
+		JsonNode output = JsonNode.Parse(reserialized);
+		output["flows"]![0]!.AsObject().ContainsKey("label").Should().BeFalse(
+			because: "an absent label is OMITTED, matching what the server itself does for an unlabelled flow - "
+				+ "emitting null here would only move the ambiguity into clio's own output");
+	}
+
+	/// <summary>
+	/// Caption-resolution candidates, keyed by the view's column names as ATF replays them. The family key
+	/// is per-row and REQUIRED: sharing one across every row makes distinct processes look like one family,
+	/// which is what let the ambiguity test pass while feeding two members of the same family.
+	/// </summary>
+	private static IDataProvider CaptionCandidates(
+		params (string Name, string Caption, bool? IsActive, string Family)[] rows) {
+		DataProviderMock provider = new();
+		provider.MockItems("VwProcessLib").Returns(rows
+			.Select(row => new Dictionary<string, object> {
+				["Id"] = Guid.NewGuid(),
+				["UId"] = Guid.NewGuid(),
+				["Name"] = row.Name,
+				["Caption"] = row.Caption,
+				["IsActiveVersion"] = row.IsActive,
+				["VersionParentUId"] = Guid.Parse(row.Family),
+				["PackageUId"] = Guid.Parse(PackageUId),
+				["Enabled"] = true
+			})
+			.ToList());
+		return provider;
+	}
+
+	/// <summary>
+	/// A reader answering the same facts through EITHER entry point, so a test that does not care which one
+	/// the describer chose cannot break when the caption arm starts reusing the row it already fetched.
+	/// </summary>
+	private static IProcessVersionLibReader ReaderReturning(ProcessVersionFacts facts) {
+		IProcessVersionLibReader reader = Substitute.For<IProcessVersionLibReader>();
+		reader.Read(Arg.Any<string>()).Returns(facts);
+		reader.Read(Arg.Any<VwProcessLib>()).Returns(facts);
+		return reader;
+	}
+
+	/// <summary>One caption candidate whose UId is FIXED, so it can be matched against a described graph.</summary>
+	private static IDataProvider CaptionCandidateWithUId(string uid, string name, string caption, bool? isActive,
+		string family) {
+		DataProviderMock provider = new();
+		provider.MockItems("VwProcessLib").Returns([
+			new Dictionary<string, object> {
+				["Id"] = Guid.Parse(uid),
+				["UId"] = Guid.Parse(uid),
+				["Name"] = name,
+				["Caption"] = caption,
+				["Version"] = 1,
+				["IsActiveVersion"] = isActive,
+				["VersionParentUId"] = Guid.Parse(family),
+				["PackageUId"] = Guid.Parse(PackageUId),
+				["Enabled"] = true
+			}
+		]);
+		return provider;
+	}
+
+	private static ProcessVersionFamilyMember Member(string uid, string name, int version, bool isActive,
+		bool isRoot) =>
+		new() {
+			SchemaUId = uid,
+			Name = name,
+			Caption = "Invoice approval",
+			Version = version,
+			IsActiveVersion = isActive,
+			IsRoot = isRoot,
+			PackageUId = PackageUId,
+			Enabled = true
+		};
+
+	/// <summary>A minimal successful graph, so a version assertion is not buried in element JSON.</summary>
+	private static string GraphResponse(string schemaUId, string extraRootFields = "") =>
+		"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\",\"schemaUId\":\"" + schemaUId
+		+ "\"" + extraRootFields + ",\"elements\":[],\"flows\":[],\"parameters\":[]}}";
 	private static IApplicationClient ClientReturning(string response) {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		client.ExecutePostRequest(DescribeUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(response);
 		return client;
+	}
+
+	[Test]
+	[Description("A best-effort read spends ONE attempt at half the timeout. It is a VERIFICATION of a "
+		+ "write that already committed, and the caller treats a failure as a caveat rather than an error, "
+		+ "so the full budget - three attempts at ten seconds - would stall the common success path for "
+		+ "about half a minute to establish something that then gets reported as unverified anyway. The "
+		+ "population that pays all of it is the one these guards target: an environment whose "
+		+ "DescribeProcess route is failing. Asserted here because every other stub in this fixture passes "
+		+ "Arg.Any<int>() in both positions, so deleting the whole budget leaves the suite green.")]
+	public void Describe_ShouldSpendTheShortBudget_WhenBestEffort() {
+		// Arrange
+		IApplicationClient client = ClientReturning(GraphResponse(RootUId));
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		describer.Describe(new ProcessIdentity("UsrProc", null, null), null,
+			includeVersionFacts: false, bestEffort: true);
+
+		// Assert
+		client.Received(1).ExecutePostRequest(DescribeUrl, Arg.Any<string>(), 5_000, 1, 1);
+		client.DidNotReceive().ExecutePostRequest(DescribeUrl, Arg.Any<string>(), 10_000, 3, 1);
+	}
+
+	[Test]
+	[Description("An ORDINARY read keeps the full retry budget. Here the description is the caller's "
+		+ "answer rather than a caveat on something already done, so a transient failure has to be retried "
+		+ "instead of reported. Asserted separately because a version that always took the short budget "
+		+ "would satisfy the best-effort test above.")]
+	public void Describe_ShouldSpendTheFullBudget_WhenNotBestEffort() {
+		// Arrange
+		IApplicationClient client = ClientReturning(GraphResponse(RootUId));
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		client.Received(1).ExecutePostRequest(DescribeUrl, Arg.Any<string>(), 10_000, 3, 1);
+		client.DidNotReceive().ExecutePostRequest(DescribeUrl, Arg.Any<string>(), 5_000, 1, 1);
 	}
 
 	[Test]
@@ -271,6 +459,263 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes an EDIT-mode Open edit page element: the editing mode and the record it opens. Every other openEditPage fixture pins add mode with a null record, so the half of the contract that opens an EXISTING record - AC7's second mode and the whole of AC9 - executed in no unit test and rested entirely on stand-gated E2E that Assert.Ignores without a sandbox.")]
+	public void Describe_ShouldReadOpenEditPageEditMode_WhenServerReportsARecord() {
+		// Arrange - an edit-mode element whose record comes from a process parameter
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"OpenPage1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"openeditpage\",\"userTaskName\":\"OpenEditPageUserTask\","
+			+ "\"openEditPage\":{\"page\":\"AccountPageV2\",\"object\":\"Account\",\"editMode\":\"edit\","
+			+ "\"defaultValues\":null,"
+			+ "\"recordId\":{\"processParameter\":\"AccountIdParameter\"},"
+			+ "\"completionMode\":\"onSave\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedOpenEditPage block = result.Value.Elements[0].OpenEditPage;
+		block.EditMode.Should().Be("edit",
+			because: "the mode decides which payload the caller must supply on a re-apply, and 'edit' is the mode "
+				+ "no other fixture exercises");
+		block.RecordId.Should().NotBeNull(
+			because: "an edit-mode element without its record is the state the write path refuses, so a read that "
+				+ "dropped it would describe an element that cannot be re-applied");
+		block.RecordId!.Value.GetProperty("processParameter").GetString().Should().Be("AccountIdParameter",
+			because: "the record source is decoded back into the named shape the write path accepts, which is what "
+				+ "makes the described block re-appliable rather than merely readable");
+		block.DefaultValues.Should().BeNull(because: "edit mode carries no pre-filled values of its own");
+	}
+
+	[Test]
+	[Description("Deserializes an element that stores BOTH pre-filled values and a record - the asymmetry the describe contract explicitly promises to report, because the runtime applies stored values in either editing mode. No other fixture produces this shape, so a read that silently dropped one side would have hidden live configuration undetected.")]
+	public void Describe_ShouldReadOpenEditPageValuesAndRecord_WhenTheSchemaCarriesBoth() {
+		// Arrange - the shape the write path refuses but the schema can hold, which the read must surface whole
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"OpenPage1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"openeditpage\",\"userTaskName\":\"OpenEditPageUserTask\","
+			+ "\"openEditPage\":{\"page\":\"AccountPageV2\",\"object\":\"Account\",\"editMode\":\"edit\","
+			+ "\"defaultValues\":[{\"column\":\"Address\",\"value\":\"Kyiv\"}],"
+			+ "\"recordId\":{\"processParameter\":\"AccountIdParameter\"},"
+			+ "\"completionMode\":\"onSave\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		DescribedOpenEditPage block = result.Value.Elements[0].OpenEditPage;
+		block.DefaultValues.Should().ContainSingle(
+			because: "the runtime applies stored values in either mode, so hiding them on an edit-mode element "
+				+ "would hide configuration that actually runs");
+		block.RecordId.Should().NotBeNull(
+			because: "both halves are reported together - that is the documented asymmetry, and dropping either "
+				+ "one is the failure this pins");
+	}
+
+	[Test]
+	[Description("Deserializes an Open edit page element's configuration (page, object, record type, editing mode, pre-filled values, recommendation, hint, completion mode) into the DescribedOpenEditPage DTO, so the block is surfaced typed rather than falling into the element's extension bag unnoticed.")]
+	public void Describe_ShouldReadOpenEditPageConfiguration_WhenServerReportsIt() {
+		// Arrange - the shape a CrtProcessBuilder that supports the element returns for a configured add-mode element
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"OpenPage1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"openeditpage\",\"userTaskName\":\"OpenEditPageUserTask\","
+			+ "\"openEditPage\":{\"page\":\"AccountPageV2\",\"pageSchemaUId\":\"f5edc79d-8d39-4e51-a255-57ccf3f1349e\",\"object\":\"Account\","
+			+ "\"pageTypeUId\":null,\"editMode\":\"add\","
+			+ "\"defaultValues\":[{\"column\":\"Address\",\"value\":\"Kyiv\"}],"
+			+ "\"recordId\":null,\"recommendation\":\"Fill in the account details\",\"hint\":\"Confirm the address\","
+			+ "\"completionMode\":\"onSave\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedOpenEditPage block = result.Value.Elements[0].OpenEditPage;
+		block.Should().NotBeNull(
+			because: "the openEditPage block must be deserialized into its own DTO, not silently absorbed by the "
+				+ "element's [JsonExtensionData] bag where no caller would find it typed");
+		block.Page.Should().Be("AccountPageV2", because: "the page name is what a caller feeds back as 'page'");
+		block.PageSchemaUId.Should().Be("f5edc79d-8d39-4e51-a255-57ccf3f1349e",
+			because: "the UId is the escape hatch when a name does not resolve");
+		block.Object.Should().Be("Account",
+			because: "the object is derived from the page server-side, so the read-back is the only place a caller "
+				+ "sees which object the step edits");
+		block.PageTypeUId.Should().BeNull(
+			because: "an untyped object stores no record type, and null is what distinguishes it from a typed one");
+		block.EditMode.Should().Be("add", because: "the editing mode decides which payload the block carries");
+		block.DefaultValues.Should().ContainSingle(
+			because: "the pre-filled values must survive the read-back to be re-appliable");
+		block.RecordId.Should().BeNull(because: "add mode opens no existing record");
+		block.Recommendation.Should().Be("Fill in the account details",
+			because: "the recommendation shown on the page round-trips");
+		block.Hint.Should().Be("Confirm the address", because: "the hint round-trips");
+		block.CompletionMode.Should().Be("onSave",
+			because: "the completion mode is derived from the stored flag, never from a designer caption");
+	}
+
+	[Test]
+	[Description("Deserializes an Open edit page element's results-by-column block, keeping BOTH the resolved column name and its stored UId - the UId is what tells a caller 'the column no longer resolves here' apart from 'no column is set'.")]
+	public void Describe_ShouldReadOpenEditPageResultsByColumn_WhenServerReportsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"OpenPage1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"openeditpage\","
+			+ "\"openEditPage\":{\"page\":\"AccountPageV2\",\"editMode\":\"add\","
+			+ "\"resultsByColumn\":{\"enabled\":true,\"column\":\"Owner\","
+			+ "\"columnUId\":\"3c8c0b2f-3f0e-4a4a-9b1a-6f0f5a2b1c2d\"}}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		DescribedOpenEditPageResultsByColumn results = result.Value.Elements[0].OpenEditPage.ResultsByColumn;
+		results.Should().NotBeNull(
+			because: "the block must be deserialized into its own DTO rather than absorbed by the openEditPage block's "
+				+ "extension bag, where a caller could not read it typed");
+		results.Enabled.Should().BeTrue(because: "the flag is what makes the step produce results at all");
+		results.Column.Should().Be("Owner",
+			because: "the NAME is what a caller feeds back, so it has to survive the read");
+		results.ColumnUId.Should().Be("3c8c0b2f-3f0e-4a4a-9b1a-6f0f5a2b1c2d",
+			because: "the UId distinguishes an unresolvable column from an unset one - with only the name, both look "
+				+ "identical");
+	}
+
+	[Test]
+	[Description("Deserializes an Open edit page element's Log activity block, including each scheduling interval as a value plus the unit the server decoded from its stored period, so a caller can read what a step schedules without translating the platform's integer enum.")]
+	public void Describe_ShouldReadOpenEditPageLogActivity_WhenServerReportsIt() {
+		// Arrange - one interval per field, each with a different unit, so a mixed-up mapping cannot pass
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"OpenPage1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"openeditpage\","
+			+ "\"openEditPage\":{\"page\":\"AccountPageV2\",\"editMode\":\"add\","
+			+ "\"logActivity\":{\"enabled\":true,"
+			+ "\"startIn\":{\"value\":2,\"unit\":\"hours\",\"period\":1},"
+			+ "\"duration\":{\"value\":20,\"unit\":\"minutes\",\"period\":0},"
+			+ "\"remindIn\":{\"value\":3,\"unit\":\"days\",\"period\":2},"
+			+ "\"showInCalendar\":false}}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		DescribedOpenEditPageLogActivity activity = result.Value.Elements[0].OpenEditPage.LogActivity;
+		activity.Should().NotBeNull(
+			because: "the block must be deserialized into its own DTO, not absorbed by the openEditPage block's "
+				+ "[JsonExtensionData] bag where no caller would find it typed");
+		activity.Enabled.Should().BeTrue(because: "the gate decides whether any of the rest takes effect");
+		activity.StartIn.Value.Should().Be(2);
+		activity.StartIn.Unit.Should().Be("hours",
+			because: "the unit is the half a caller cannot infer - 2 is two hours or two days depending on it");
+		activity.StartIn.Period.Should().Be(1, because: "the raw period travels alongside the decoded token");
+		activity.Duration.Unit.Should().Be("minutes", because: "each interval decodes independently");
+		activity.RemindIn.Unit.Should().Be("days",
+			because: "a mapping that confused the three fields would show up here");
+		activity.ShowInCalendar.Should().BeFalse(because: "the calendar flag round-trips as reported");
+	}
+
+	[Test]
+	[Description("Leaves the Log activity block null when the server omits it, so an element that stores none of those fields is not read back as one that schedules an activity - the designer's panel shows values for all of them from schema defaults, so this distinction is the only reliable one.")]
+	public void Describe_ShouldLeaveOpenEditPageLogActivityNull_WhenServerOmitsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"OpenPage1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"openeditpage\","
+			+ "\"openEditPage\":{\"page\":\"AccountPageV2\",\"editMode\":\"add\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.Value.Elements[0].OpenEditPage.LogActivity.Should().BeNull(
+			because: "an absent block means the element stores none of it, and inventing one would report scheduling "
+				+ "the process does not carry");
+	}
+
+	[Test]
+	[Description("Deserializes an Open edit page element's performer block (kind, contact, role with its display name, and the show-page flag) into its own DTO, so a caller can see who a step is assigned to instead of finding the assignment only in the element's untyped extension bag.")]
+	public void Describe_ShouldReadOpenEditPagePerformer_WhenServerReportsIt() {
+		// Arrange - a role performer, the one kind that carries both a formula and a readable display value
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"OpenPage1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"openeditpage\",\"userTaskName\":\"OpenEditPageUserTask\","
+			+ "\"openEditPage\":{\"page\":\"AccountPageV2\",\"pageSchemaUId\":\"f5edc79d-8d39-4e51-a255-57ccf3f1349e\",\"object\":\"Account\","
+			+ "\"editMode\":\"add\","
+			+ "\"performer\":{\"type\":\"role\",\"contact\":null,"
+			+ "\"role\":\"[#Lookup.a1c9dfe4-0d1e-4f0f-b6b6-b0f0a1d0e0a1.2b0d3ad9-7a27-46a3-9483-ed70c2687211#]\","
+			+ "\"roleDisplay\":\"All employees\",\"showPage\":true},"
+			+ "\"completionMode\":\"onSave\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		DescribedPerformer performer = result.Value.Elements[0].OpenEditPage.Performer;
+		performer.Should().NotBeNull(
+			because: "the performer must be deserialized into its own DTO, not silently absorbed by the openEditPage "
+				+ "block's [JsonExtensionData] bag where no caller would find it typed");
+		performer.Type.Should().Be("role", because: "the kind is what decides which of contact/role carries the value");
+		performer.Role.Should().Contain("2b0d3ad9-7a27-46a3-9483-ed70c2687211",
+			because: "the stored macro round-trips so the block can be re-submitted verbatim");
+		performer.RoleDisplay.Should().Be("All employees",
+			because: "the display name is the only human-readable half of a role assignment");
+		performer.ShowPage.Should().BeTrue(because: "the show-page flag round-trips as reported");
+	}
+
+	[Test]
+	[Description("Leaves the performer null when the server reports an Open edit page element without one, so an unassigned step - the designer's own initial state - is not read back as assigned.")]
+	public void Describe_ShouldLeaveOpenEditPagePerformerNull_WhenServerOmitsIt() {
+		// Arrange - a configured element with no assignment at all
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"OpenPage1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"openeditpage\","
+			+ "\"openEditPage\":{\"page\":\"AccountPageV2\",\"editMode\":\"add\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.Value.Elements[0].OpenEditPage.Performer.Should().BeNull(
+			because: "an absent performer means UNASSIGNED, and inventing one here would report an assignment the "
+				+ "process does not carry");
+	}
+
+	[Test]
+	[Description("Leaves the openEditPage block null when the server does not report it, so an older CrtProcessBuilder - or any other element kind - reads back without inventing a configuration.")]
+	public void Describe_ShouldLeaveOpenEditPageNull_WhenServerOmitsIt() {
+		// Arrange - a plain user task, the shape any element other than an Open edit page one returns
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\"}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.Value.Elements[0].OpenEditPage.Should().BeNull(
+			because: "an absent block must stay null so it serializes away for an older server, and so a caller "
+				+ "cannot read 'configured' out of an element that is not");
+	}
+
+	[Test]
 	[Description("Deserializes a Send email element's email configuration (mode, sender, subject, hasBody, the decoded body, importance, ignoreErrors, recipients, manual-mode performer) from the server response into the DescribedEmail DTO, so describe read-back surfaces the email block instead of dropping it.")]
 	public void Describe_ShouldReadSendEmailConfiguration_WhenServerReportsIt() {
 		// Arrange — the shape a runtime-verified CrtProcessBuilder DescribeProcess returns for a configured element
@@ -359,6 +804,96 @@ public sealed class ServerProcessDescriberTests {
 		// Assert
 		result.Value.Elements[0].Performer.Should().BeNull(
 			because: "no reported block means no assignment; inventing an empty one would read as configured");
+	}
+
+	[Test]
+	[Description("Deserializes ALL TWENTY members of an Approval element's approval block from the server response into the DescribedApproval DTO. This block has no clio-side default and no partial mapping to fall back on: a member the DTO does not declare, or one whose [JsonPropertyName] drifts from the server's [DataMember], is dropped SILENTLY on re-serialize — so every name is asserted individually rather than by spot check.")]
+	public void Describe_ShouldReadEveryApprovalMember_WhenServerReportsThem() {
+		// Arrange — every member the server's ApprovalDescriptor can report, with distinguishable values
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"Approval1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"approval\",\"userTaskName\":\"ApprovalUserTask\","
+			+ "\"approval\":{\"purpose\":\"Approve the order\",\"object\":\"Order\",\"objectUId\":\"1bbf2c48-6bef-4c65-a4f9-e6f27a7dd6cc\","
+			+ "\"recordId\":\"[#Lookup.1bbf2c48-6bef-4c65-a4f9-e6f27a7dd6cc.22222222-3333-4444-5555-666666666666#]\",\"recordIdDisplay\":\"Order #42\","
+			+ "\"approverType\":\"user\",\"approverEmployee\":\"[#Lookup.30da1e63-2ae1-4b62-9d5b-f9e14a0ec3a1.33333333-4444-5555-6666-777777777777#]\",\"approverEmployeeDisplay\":\"Anna Best\","
+			+ "\"approverRole\":\"[#Lookup.1f424900-3d1a-4ffe-badd-a76e62ed952b.44444444-5555-6666-7777-888888888888#]\",\"approverRoleDisplay\":\"All employees\","
+			+ "\"allowDelegation\":true,\"notifyApprover\":true,"
+			+ "\"approverEmailTemplate\":\"[#Lookup.aaaaaaaa-0000-0000-0000-00000000000a.55555555-6666-7777-8888-999999999999#]\",\"approverEmailTemplateDisplay\":\"Approval requested\","
+			+ "\"notifyAuthor\":true,\"authorEmailTemplate\":\"[#Lookup.aaaaaaaa-0000-0000-0000-00000000000a.66666666-7777-8888-9999-aaaaaaaaaaaa#]\",\"authorEmailTemplateDisplay\":\"Approval result\","
+			+ "\"recipient\":\"ops@example.com\",\"ignoreEmailErrors\":false,"
+			+ "\"approvalSchemaUId\":\"9800f45d-7d2e-44c7-85e5-053c06c8c2d4\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedApproval approval = result.Value.Elements[0].Approval;
+		approval.Should().NotBeNull(because: "the approval block must be deserialized, not dropped by the clio DTO");
+		approval.Purpose.Should().Be("Approve the order", because: "purpose maps to the DTO");
+		approval.Object.Should().Be("Order", because: "the resubmittable object NAME maps to the DTO");
+		approval.ObjectUId.Should().Be("1bbf2c48-6bef-4c65-a4f9-e6f27a7dd6cc",
+			because: "objectUId is the stored identity behind that name");
+		approval.RecordId.Should().Contain("22222222-3333-4444-5555-666666666666",
+			because: "the record under approval maps to the DTO as its stored macro");
+		approval.RecordIdDisplay.Should().Be("Order #42",
+			because: "the Display companion is what makes the macro readable, and it drops just as silently");
+		approval.ApproverType.Should().Be("user", because: "the approver type token maps to the DTO");
+		approval.ApproverEmployee.Should().Contain("33333333-4444-5555-6666-777777777777",
+			because: "the employee behind a user/manager approver maps to the DTO");
+		approval.ApproverEmployeeDisplay.Should().Be("Anna Best", because: "its Display companion maps too");
+		approval.ApproverRole.Should().Contain("44444444-5555-6666-7777-888888888888",
+			because: "the role behind a role approver maps to the DTO");
+		approval.ApproverRoleDisplay.Should().Be("All employees", because: "its Display companion maps too");
+		approval.AllowDelegation.Should().BeTrue(because: "the delegation flag maps to the DTO");
+		approval.NotifyApprover.Should().BeTrue(because: "the approver-notification flag maps to the DTO");
+		approval.ApproverEmailTemplate.Should().Contain("55555555-6666-7777-8888-999999999999",
+			because: "that notification's template maps to the DTO");
+		approval.ApproverEmailTemplateDisplay.Should().Be("Approval requested",
+			because: "its Display companion maps too");
+		approval.NotifyAuthor.Should().BeTrue(because: "the author-notification flag maps to the DTO");
+		approval.AuthorEmailTemplate.Should().Contain("66666666-7777-8888-9999-aaaaaaaaaaaa",
+			because: "the author notification's template maps to the DTO");
+		approval.AuthorEmailTemplateDisplay.Should().Be("Approval result",
+			because: "its Display companion maps too");
+		approval.Recipient.Should().Be("ops@example.com",
+			because: "the author notification's recipient is the field 'Author' cannot work out on its own");
+		approval.IgnoreEmailErrors.Should().BeFalse(
+			because: "the flag maps as WRITTEN — false has to survive, or it would read as 'not written'");
+		approval.ApprovalSchemaUId.Should().Be("9800f45d-7d2e-44c7-85e5-053c06c8c2d4",
+			because: "the derived visa schema is reported for traceability and must not be dropped either");
+	}
+
+	[Test]
+	[Description("Leaves every approval member the server omits at null rather than defaulting it, so a partly reported block cannot read as a verified 'off' — the flags in particular, where false and absent mean different things on this element.")]
+	public void Describe_ShouldLeaveOmittedApprovalMembersNull_WhenServerReportsAPartialBlock() {
+		// Arrange — a server that reports the block with only the two fields it has written
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"Approval1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"approval\",\"userTaskName\":\"ApprovalUserTask\","
+			+ "\"approval\":{\"object\":\"Order\",\"approverType\":\"manager\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedApproval approval = result.Value.Elements[0].Approval;
+		approval.Should().NotBeNull(because: "a partial block is still a block");
+		approval.Object.Should().Be("Order", because: "what the server DID report has to arrive");
+		approval.NotifyApprover.Should().BeNull(
+			because: "absent must not become false: on this element 'not written' and 'switched off' are "
+				+ "different states, and only a nullable flag can tell them apart");
+		approval.NotifyAuthor.Should().BeNull(because: "the same holds for the author notification");
+		approval.IgnoreEmailErrors.Should().BeNull(
+			because: "this one is the sharpest case — the schema default is TRUE, so a false here would assert "
+				+ "the opposite of what the element actually does");
+		approval.AllowDelegation.Should().BeNull(because: "the same holds for the delegation flag");
+		approval.Recipient.Should().BeNull(because: "an unreported recipient is unknown, not empty");
 	}
 
 	[Test]
@@ -800,4 +1335,363 @@ public sealed class ServerProcessDescriberTests {
 
 	// The describer wraps the identity under a "request" property (ProcessDesignService BodyStyle=Wrapped).
 	private static JsonNode Wrapped(string body) => JsonNode.Parse(body)["request"];
+	[Test]
+	[Description("Describes an unversioned process as version 0, active, with a one-member root family and no warning.")]
+	public void Describe_ShouldReportVersionZeroAndRootOnlyFamily_WhenProcessHasNoVersions() {
+		// Arrange
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts {
+			Version = 0,
+			IsActiveVersion = true,
+			ActiveVersionSchemaUId = RootUId,
+			ActiveVersionName = "UsrProc",
+			VersionRootSchemaUId = RootUId,
+			Versions = [Member(RootUId, "UsrProc", 0, isActive: true, isRoot: true)],
+			ActiveVersionSource = "process-library-view"
+		});
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(RootUId)), reader);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.Value.Version.Should().Be(0,
+			because: "a process with no versions is version 0 — a fact the caller can act on, not an absence");
+		result.Value.IsActiveVersion.Should().BeTrue(
+			because: "the only member of a family is the version the runtime executes");
+		result.Value.Versions.Should().ContainSingle(v => v.IsRoot,
+			because: "the family of an unversioned process is its root alone");
+		result.Value.VersionReadWarning.Should().BeNull(
+			because: "nothing failed, and the warning is what distinguishes this from an unestablished read");
+		result.Value.VersionsTruncatedAt.Should().BeNull(because: "a one-member family was not cut");
+		result.Value.VersionRootSchemaUId.Should().Be(RootUId,
+			because: "an unversioned process is its own family root, which is the identity a version would hang off");
+		result.Value.ActiveVersionSource.Should().Be("process-library-view",
+			because: "even the trivial answer says which authority produced it, since the runtime consults another");
+	}
+
+	[Test]
+	[Description("Reports the described family root as inactive and names the version the runtime actually runs.")]
+	public void Describe_ShouldNameTheActiveVersion_WhenDescribingTheFamilyRoot() {
+		// Arrange
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts {
+			Version = 0,
+			IsActiveVersion = false,
+			ActiveVersionSchemaUId = ChildUId,
+			ActiveVersionName = "InvoiceVisaProcessInvoice1",
+			VersionRootSchemaUId = RootUId,
+			Versions = [
+				Member(RootUId, "InvoiceVisaProcess", 0, isActive: false, isRoot: true),
+				Member(ChildUId, "InvoiceVisaProcessInvoice1", 1, isActive: true, isRoot: false)
+			],
+			ActiveVersionSource = "process-library-view"
+		});
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(RootUId)), reader);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(
+			new ProcessIdentity("InvoiceVisaProcess", null, null), null);
+
+		// Assert
+		result.Value.IsActiveVersion.Should().BeFalse(
+			because: "resolving a versioned process by name returns the root, which is not what runs");
+		result.Value.ActiveVersionName.Should().Be("InvoiceVisaProcessInvoice1",
+			because: "the caller needs the name of the running version to re-describe it without a second lookup");
+		result.Value.ActiveVersionSchemaUId.Should().Be(ChildUId,
+			because: "the version's UId identifies it unambiguously, unlike the caption the family shares");
+		result.Value.ActiveVersionSource.Should().Be("process-library-view",
+			because: "the output states which authority ranked the family, since the runtime consults another");
+		reader.Received(1).Read(RootUId);
+		reader.DidNotReceive().Read("InvoiceVisaProcess");
+	}
+
+	[Test]
+	[Description("Reports the described version as the active one when a family's active version is addressed by its UId.")]
+	public void Describe_ShouldReportActiveVersion_WhenDescribingItByUId() {
+		// Arrange
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts {
+			Version = 1,
+			IsActiveVersion = true,
+			ActiveVersionSchemaUId = ChildUId,
+			ActiveVersionName = "InvoiceVisaProcessInvoice1",
+			VersionRootSchemaUId = RootUId,
+			Versions = [
+				Member(RootUId, "InvoiceVisaProcess", 0, isActive: false, isRoot: true),
+				Member(ChildUId, "InvoiceVisaProcessInvoice1", 1, isActive: true, isRoot: false)
+			],
+			ActiveVersionSource = "process-library-view"
+		});
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(ChildUId)), reader);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity(null, ChildUId, null), null);
+
+		// Assert
+		result.Value.IsActiveVersion.Should().BeTrue(
+			because: "addressing a version by its own UId reads that version, and this one is the family's active member");
+		result.Value.Version.Should().Be(1,
+			because: "the version read must describe the addressed schema, not the family root it descends from");
+		result.Value.VersionRootSchemaUId.Should().Be(RootUId,
+			because: "a version still reports its family root, which is how a caller reaches the rest of the family");
+		reader.Received(1).Read(ChildUId);
+	}
+
+	[Test]
+	[Description("Returns the graph with the warning alone when the version read failed, establishing no version values.")]
+	public void Describe_ShouldReturnGraphWithWarningOnly_WhenTheVersionReadFailed() {
+		// Arrange
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts {
+			Warning = "reading the process library failed: simulated transport failure, so the version facts were not established"
+		});
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(RootUId)), reader);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(
+			because: "a failed version read must never turn a successful describe into an error");
+		result.Value.Name.Should().Be("UsrProc", because: "the graph the caller asked for is still returned");
+		result.Value.VersionReadWarning.Should().Contain("simulated transport failure",
+			because: "the caller is told why the facts are absent, not merely that they are");
+		result.Value.Version.Should().BeNull(because: "a failed read establishes nothing — least of all version 0");
+		result.Value.IsActiveVersion.Should().BeNull(
+			because: "reporting an unknown flag as false would name the wrong schema as the one that runs");
+		result.Value.Versions.Should().BeNull(
+			because: "an empty list would read as 'checked, no versions', which is a different claim");
+	}
+
+	[Test]
+	[Description("Discards a server-supplied version value when the version read failed: the process library is the authority (ADR choice 5).")]
+	public void Describe_ShouldDiscardServerVersionValues_WhenTheVersionReadFailed() {
+		// Arrange — a newer CrtProcessBuilder already reporting version fields; the wire result binds them to
+		// the same properties the overlay owns, so an unassigned failure path would leave them standing.
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts { Warning = "not established" });
+		ServerProcessDescriber describer = CreateDescriber(
+			ClientReturning(GraphResponse(RootUId, ",\"version\":7,\"isActiveVersion\":true")), reader);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.Value.Version.Should().BeNull(
+			because: "a version the process library did not confirm may not be published beside a warning saying nothing was established");
+		result.Value.IsActiveVersion.Should().BeNull(
+			because: "the same applies to the flag that decides whether the caller trusts this graph");
+	}
+
+	[Test]
+	[Description("Reports where the published family list was cut when the reader truncated a long family.")]
+	public void Describe_ShouldReportWhereTheFamilyWasCut_WhenTheReaderTruncatedIt() {
+		// Arrange
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts {
+			Version = 0,
+			IsActiveVersion = false,
+			VersionRootSchemaUId = RootUId,
+			Versions = Enumerable.Range(0, 50)
+				.Select(i => Member(RootUId, $"UsrProc{i}", i, isActive: false, isRoot: i == 0))
+				.ToList(),
+			FamilyTruncated = true
+		});
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(RootUId)), reader);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.Value.VersionsTruncatedAt.Should().Be(50,
+			because: "a partial list must say so, and it says so with the length it actually published");
+		result.Value.Versions.Should().HaveCount(result.Value.VersionsTruncatedAt.Value,
+			because: "the reported cut point can never disagree with the list it describes");
+	}
+
+	[Test]
+	[Description("Leaves the unparsable-response failure exactly as it was and attempts no version read.")]
+	public void Describe_ShouldFailUnchangedAndSkipTheVersionRead_WhenTheResponseCannotBeParsed() {
+		// Arrange
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts { Version = 3 });
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning("not json at all"), reader);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeTrue(because: "an unparsable response was and remains a describe failure");
+		result.FirstError.Description.Should().StartWith("could not parse server response",
+			because: "the existing error text is a contract callers and tests already match on");
+		reader.DidNotReceive().Read(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Describing by caption resolves a version family to the active version and asks the server for THAT schema name.")]
+	public void Describe_ShouldPostTheActiveVersionName_WhenTheCaptionMatchesAVersionFamily() {
+		// Arrange — one process, three schemas: a caption belongs to the whole family.
+		IApplicationClient client = ClientReturning(GraphResponse(ChildUId));
+		ServerProcessDescriber describer = CreateDescriber(client, dataProvider: CaptionCandidates(
+			("InvoiceVisaProcess", "Invoice approval", false, RootUId),
+			("InvoiceVisaProcessInvoice1", "Invoice approval", true, RootUId),
+			("InvoiceVisaProcessInvoice2", "Invoice approval", false, RootUId)));
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(
+			new ProcessIdentity(null, null, "Invoice approval"), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(
+			because: "a caption matching one family is resolvable — exactly one of its members runs");
+		client.Received(1).ExecutePostRequest(DescribeUrl,
+			Arg.Is<string>(body => Wrapped(body)["name"].GetValue<string>() == "InvoiceVisaProcessInvoice1"),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Describing by a caption two different processes share is refused with the candidate codes instead of answering for one of them.")]
+	public void Describe_ShouldRefuseWithCandidates_WhenTwoProcessesShareTheCaption() {
+		// Arrange
+		IApplicationClient client = ClientReturning(GraphResponse(RootUId));
+		ServerProcessDescriber describer = CreateDescriber(client, dataProvider: CaptionCandidates(
+			("UsrProcess_first", "Business process 1", true, RootUId),
+			("UsrProcess_second", "Business process 1", true, OtherFamilyUId)));
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(
+			new ProcessIdentity(null, null, "Business process 1"), null);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "two processes that each run are genuinely ambiguous, and picking one silently is the defect this replaces");
+		result.FirstError.Description.Should().Contain("UsrProcess_second",
+			because: "the caller resolves the ambiguity by code, so every candidate is named");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
+	}
+
+	[Test]
+	[Description("A caption that matches nothing keeps the not-found message describe has always returned.")]
+	public void Describe_ShouldKeepTheNotFoundMessage_WhenNoProcessHasTheCaption() {
+		// Arrange
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(RootUId)),
+			dataProvider: CaptionCandidates());
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(
+			new ProcessIdentity(null, null, "Nothing has this caption"), null);
+
+		// Assert
+		result.IsError.Should().BeTrue(because: "an unresolvable caption is still a failure");
+		result.FirstError.Description.Should().Be("process not found (caption 'Nothing has this caption')",
+			because: "routing through the shared resolver must not restate an error message callers already match on");
+	}
+
+	[Test]
+	[Description("The caption arm hands the reader the row it already fetched instead of a UId string, so the identity lookup is not paid twice on the identity this feature exists to fix and the one agents are steered toward.")]
+	public void Describe_ShouldReuseTheResolvedRow_WhenTheCaptionResolvedTheDescribedSchema() {
+		// Arrange
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts {
+			Version = 1,
+			IsActiveVersion = true,
+			ActiveVersionSchemaUId = ChildUId,
+			ActiveVersionName = "InvoiceVisaProcessInvoice1",
+			VersionRootSchemaUId = RootUId,
+			ActiveVersionSource = "process-library-view"
+		});
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(ChildUId)), reader,
+			CaptionCandidateWithUId(ChildUId, "InvoiceVisaProcessInvoice1", "Invoice approval", true, RootUId));
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(
+			new ProcessIdentity(null, null, "Invoice approval"), null);
+
+		// Assert
+		result.Value.IsActiveVersion.Should().BeTrue(
+			because: "reusing the row must not change the facts the caller is given");
+		reader.Received(1).Read(Arg.Is<VwProcessLib>(row => row.UId == Guid.Parse(ChildUId)));
+		reader.DidNotReceive().Read(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("The resolved row is reused only for the schema it identifies: describe is asked by NAME, so a server that answered for a different schema than the caption resolved to must not have the old row's version facts reported against it.")]
+	public void Describe_ShouldReReadByUId_WhenTheServerDescribedADifferentSchema() {
+		// Arrange — the caption resolved ChildUId, the server answered about RootUId.
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts { Version = 0 });
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(RootUId)), reader,
+			CaptionCandidateWithUId(ChildUId, "InvoiceVisaProcessInvoice1", "Invoice approval", true, RootUId));
+
+		// Act
+		describer.Describe(new ProcessIdentity(null, null, "Invoice approval"), null);
+
+		// Assert
+		reader.Received(1).Read(RootUId);
+		reader.DidNotReceive().Read(Arg.Any<VwProcessLib>());
+	}
+
+	[Test]
+	[Description("A read-back caller that consumes elements[] alone can opt out of the version overlay, and then no DataService read happens at all — on a write path those two round-trips were paid and the facts discarded.")]
+	public void Describe_ShouldSkipTheVersionRead_WhenTheCallerDidNotAskForTheFacts() {
+		// Arrange
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts { Version = 7 });
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(RootUId)), reader);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null),
+			null, includeVersionFacts: false);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the graph is still the answer the caller asked for");
+		reader.DidNotReceive().Read(Arg.Any<string>());
+		reader.DidNotReceive().Read(Arg.Any<VwProcessLib>());
+		result.Value.Version.Should().BeNull(
+			because: "every version member is still ASSIGNED on this path, so a newer server that already "
+				+ "reports a version key cannot leave one standing that clio never established");
+		result.Value.VersionReadWarning.Should().Contain("not requested",
+			because: "an absent value with no warning is the one combination the contract forbids, and the "
+				+ "reason it is absent here is that nobody asked");
+	}
+
+	[Test]
+	[Description("A caption matching more candidates than can be ranked is refused rather than ranked out of a silently partial set. The family read on this same view is capped for the stated response-size and latency reason, and this read carries the same risk on the same deadline-bounded surface.")]
+	public void Describe_ShouldRefuse_WhenTheCaptionMatchesMoreCandidatesThanCanBeRanked() {
+		// Arrange — one more than the cap, which is what the fetch takes so an overflow is detectable.
+		IApplicationClient client = ClientReturning(GraphResponse(RootUId));
+		(string, string, bool?, string)[] candidates = Enumerable.Range(0, ProcessVersionLibReader.FamilyCap + 1)
+			.Select(i => ($"UsrProcess_{i}", "Crowded caption", (bool?)(i == 0), RootUId))
+			.ToArray();
+		ServerProcessDescriber describer = CreateDescriber(client,
+			dataProvider: CaptionCandidates(candidates));
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(
+			new ProcessIdentity(null, null, "Crowded caption"), null);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "above the cap the resolver cannot prove the candidates are one family, so answering "
+				+ "would be a guess and truncating would be a silent one");
+		result.FirstError.Description.Should().Contain("more candidates than can be ranked",
+			because: "the refusal has to say it ran out of room rather than that the caption is ambiguous");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
+	}
+
+	[Test]
+	[Description("A caption query that throws yields a ResolveId failure carrying the exception message. ResolveCaption replaced a catch (Exception) with the shared narrower ladder, and nothing exercised its failure arm in either direction.")]
+	public void Describe_ShouldFailWithTheMessage_WhenTheCaptionQueryThrows() {
+		// Arrange
+		IApplicationClient client = ClientReturning(GraphResponse(RootUId));
+		IDataProvider provider = Substitute.For<IDataProvider>();
+		provider.GetItems(null).ThrowsForAnyArgs(new WebException("simulated caption transport failure"));
+		ServerProcessDescriber describer = CreateDescriber(client, dataProvider: provider);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(
+			new ProcessIdentity(null, null, "Invoice approval"), null);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "the caption could not be resolved, so there is no schema to describe");
+		result.FirstError.Code.Should().Be("ResolveId",
+			because: "the caption arm keeps its own error vocabulary rather than leaking the reader's");
+		result.FirstError.Description.Should().Contain("simulated caption transport failure",
+			because: "an escaped exception inside the MCP server is what the shared ladder exists to prevent, "
+				+ "and the caller still has to learn why the caption did not resolve");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
+	}
+
 }

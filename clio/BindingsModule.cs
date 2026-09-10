@@ -446,6 +446,10 @@ public class BindingsModule {
 		services.AddTransient<CreateBusinessProcessCommand>();
 		services.AddTransient<IModifyBusinessProcessService, ModifyBusinessProcessService>();
 		services.AddTransient<ModifyBusinessProcessCommand>();
+		services.AddTransient<IModifyProcessAsNewVersionService, ModifyProcessAsNewVersionService>();
+		services.AddTransient<ModifyProcessAsNewVersionCommand>();
+		services.AddTransient<ISetActiveProcessVersionService, SetActiveProcessVersionService>();
+		services.AddTransient<SetActiveProcessVersionCommand>();
 		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
 		services.AddTransient<GetAppSectionsCommand>();
 		services.AddTransient<IdentityProviderListCommand>();
@@ -461,6 +465,7 @@ public class BindingsModule {
 		services.AddTransient<CreateLookupCommand>();
 		services.AddTransient<PageListCommand>();
 		services.AddTransient<PageGetCommand>();
+		services.AddTransient<ProcessPageFactsCommand>();
 		services.AddTransient<GetPageHierarchyCommand>();
 		services.AddTransient<PageUpdateCommand>();
 		// Shared page conflict-baseline + file-output services consumed by both the CLI verbs
@@ -1462,7 +1467,10 @@ public class BindingsModule {
 				string issue = report.Issues.FirstOrDefault()?.Message
 					?? "appsettings.json is unreadable.";
 				ConsoleLogger.Instance.WriteWarning(
-					$"clio settings bootstrap is degraded. {issue} File path: {report.SettingsFilePath}");
+					$"clio settings bootstrap is degraded. {issue} File path: {report.SettingsFilePath}. "
+					+ "Fix or delete it and retry — clio never rewrites a broken settings file on its own, "
+					+ "so a hand fix (or deletion, if the registered environments are not worth recovering) "
+					+ "is the only way forward.");
 				_bootstrapDiagnosticsLogged = true;
 			}
 		}

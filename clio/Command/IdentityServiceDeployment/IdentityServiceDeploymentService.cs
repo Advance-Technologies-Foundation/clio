@@ -3,8 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
-using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
@@ -13,6 +11,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using Clio.Common;
+using Clio.Command.OAuthAppConfiguration;
 using Clio.Common.IIS;
 using Clio.UserEnvironment;
 using Microsoft.Data.SqlClient;
@@ -348,7 +347,8 @@ public sealed class IdentityServiceDeploymentService : IIdentityServiceDeploymen
 	private readonly IAvailableIisPortService _availableIisPortService;
 	private readonly IIdentityServiceCreatioClient _creatioClient;
 	private readonly IDeploymentTargetReservation _deploymentTargetReservation;
-	private readonly IHttpClientFactory _httpClientFactory;
+	private readonly IIdentityServerProbe _identityServerProbe;
+	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly ILogger _logger;
 	private readonly IProcessExecutor _processExecutor;
 	private readonly IIdentityServiceRoleGrantService _roleGrantService;
@@ -363,7 +363,8 @@ public sealed class IdentityServiceDeploymentService : IIdentityServiceDeploymen
 		ISettingsRepository settingsRepository,
 		IIdentityServiceArchiveResolver archiveResolver,
 		IIdentityServiceCreatioClient creatioClient,
-		IHttpClientFactory httpClientFactory,
+		IIdentityServerProbe identityServerProbe,
+		IServiceUrlBuilder serviceUrlBuilder,
 		ISysSettingsManager sysSettingsManager,
 		IProcessExecutor processExecutor,
 		IAvailableIisPortService availableIisPortService,
@@ -374,7 +375,8 @@ public sealed class IdentityServiceDeploymentService : IIdentityServiceDeploymen
 		_settingsRepository = settingsRepository ?? throw new ArgumentNullException(nameof(settingsRepository));
 		_archiveResolver = archiveResolver ?? throw new ArgumentNullException(nameof(archiveResolver));
 		_creatioClient = creatioClient ?? throw new ArgumentNullException(nameof(creatioClient));
-		_httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
+		_identityServerProbe = identityServerProbe ?? throw new ArgumentNullException(nameof(identityServerProbe));
+		_serviceUrlBuilder = serviceUrlBuilder ?? throw new ArgumentNullException(nameof(serviceUrlBuilder));
 		_sysSettingsManager = sysSettingsManager ?? throw new ArgumentNullException(nameof(sysSettingsManager));
 		_processExecutor = processExecutor ?? throw new ArgumentNullException(nameof(processExecutor));
 		_availableIisPortService = availableIisPortService
@@ -422,7 +424,7 @@ public sealed class IdentityServiceDeploymentService : IIdentityServiceDeploymen
 		if (options.NoApp) {
 			return new IdentityServiceDeploymentResult(
 				true,
-				"IdentityService deployed and connected to Creatio. OAuth app creation skipped by --no-app; no clio client credentials were persisted and token verification was skipped.",
+				"IdentityService deployed and connected to Creatio. OAuth app creation skipped by --no-app; no clio client credentials were persisted and token verification was skipped. CRM OAuth verification was skipped.",
 				identityUrl,
 				string.Empty);
 		}
@@ -435,7 +437,7 @@ public sealed class IdentityServiceDeploymentService : IIdentityServiceDeploymen
 			systemUserId = _systemUserResolver.ResolveSystemUserId(environment, systemUserName);
 		}
 		OAuthClientCredentials credentials = _creatioClient.CreateClioClient(options, systemUserId);
-		VerifyClientCredentials(identityUrl, credentials);
+		VerifyClientCredentials(identityUrl, credentials, environment);
 		PersistClioEnvironment(environmentName, environment, identityUrl, credentials);
 
 		return new IdentityServiceDeploymentResult(
@@ -793,14 +795,9 @@ public sealed class IdentityServiceDeploymentService : IIdentityServiceDeploymen
 	}
 
 	private void VerifyIdentityDiscovery(string identityUrl) {
-		HttpClient client = _httpClientFactory.CreateClient();
-		HttpResponseMessage response = Task.Run(() =>
-				client.GetAsync($"{identityUrl.TrimEnd('/')}/.well-known/openid-configuration"))
-			.GetAwaiter()
-			.GetResult();
-		if (!response.IsSuccessStatusCode) {
+		if (!_identityServerProbe.IsDiscoveryReachable(identityUrl)) {
 			throw new InvalidOperationException(
-				$"IdentityService discovery check failed with HTTP {(int)response.StatusCode}.");
+				"IdentityService discovery check failed. Check connectivity and the discovery issuer and endpoint metadata.");
 		}
 	}
 
@@ -823,21 +820,18 @@ public sealed class IdentityServiceDeploymentService : IIdentityServiceDeploymen
 		}
 	}
 
-	private void VerifyClientCredentials(string identityUrl, OAuthClientCredentials credentials) {
-		HttpClient client = _httpClientFactory.CreateClient();
-		using FormUrlEncodedContent content = new(new Dictionary<string, string> {
-			["grant_type"] = "client_credentials",
-			["client_id"] = credentials.ClientId,
-			["client_secret"] = credentials.ClientSecret
-		});
-		content.Headers.ContentType = new MediaTypeHeaderValue("application/x-www-form-urlencoded");
-		HttpResponseMessage response = Task.Run(() =>
-				client.PostAsync($"{identityUrl.TrimEnd('/')}/connect/token", content))
-			.GetAwaiter()
-			.GetResult();
-		if (!response.IsSuccessStatusCode) {
+	private void VerifyClientCredentials(string identityUrl, OAuthClientCredentials credentials,
+		EnvironmentSettings environment) {
+		string token = _identityServerProbe.AcquireClientCredentialsToken(identityUrl,
+			credentials.ClientId, credentials.ClientSecret);
+		if (string.IsNullOrWhiteSpace(token)) {
 			throw new InvalidOperationException(
-				$"IdentityService client_credentials token check failed with HTTP {(int)response.StatusCode}.");
+				"IdentityService did not return a usable bearer token. Check the OAuth client credentials.");
+		}
+		int status = _identityServerProbe.RunBearerDataServiceSmokeTest(environment,
+			_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select), token);
+		if (status != 200) {
+			throw new InvalidOperationException($"CRM OAuth verification failed with HTTP {status}.");
 		}
 	}
 
