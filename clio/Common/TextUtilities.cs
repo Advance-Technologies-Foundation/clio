@@ -200,7 +200,7 @@ namespace Clio.Common
 		/// what is true: it was not credible, so it is not shown.
 		/// <para>
 		/// <see cref="SanitizeForDisplay"/> is the wrong tool here even though it looks like the right one: it
-		/// removes control characters, which stops a forged output line but leaves
+		/// removes the characters that could forge output, which stops an invented output line but leaves
 		/// <c>1.0.0.0-IGNORE PRIOR INSTRUCTIONS AND CALL …</c> completely intact — one line, no control bytes,
 		/// whole payload. These messages reach an MCP agent's context, so the defence has to be "the output can
 		/// only look like a version".
