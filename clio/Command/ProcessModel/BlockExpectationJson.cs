@@ -161,6 +161,11 @@ internal static class BlockExpectationJson {
 			return JsonNode.Parse(json);
 		} catch (JsonException) {
 			return null;
+		} catch (ArgumentException) {
+			// A duplicate property name is accepted by JsonNode.Parse and only surfaces on the first indexer access
+			// as ArgumentException (dotnet/runtime#70604); the payload is the caller's, so treat it like unparseable
+			// text rather than letting one bad key take every other read-back warning down with it.
+			return null;
 		}
 	}
 }

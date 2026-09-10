@@ -981,7 +981,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		string callResultJson = JsonSerializer.Serialize(callResult);
 		callResultJson.Should().Contain("created (UId:",
 			because: "only a genuinely successful build logs the created-schema line (run against an environment whose CrtProcessBuilder supports template mode and which carries the stock 'Case feedback request notification' template)");
-		callResultJson.Should().NotContain("sent a 'template' that the read-back does NOT show",
+		callResultJson.Should().NotContain(EmailBlockExpectation.TemplateWarningMarker,
 			because: "the template-landed check must stay silent when the deployed package stored the template");
 
 		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));

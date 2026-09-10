@@ -40,9 +40,9 @@ internal sealed record BlockExpectationIntent(
 	IReadOnlyList<string> TemplatedEmail) {
 
 	/// <summary>Nothing to verify, so the caller can skip the read-back entirely.</summary>
+	// TemplatedEmail is a subset of ConfiguredEmail (a template lives inside an email block), so it adds no term here.
 	internal bool IsEmpty =>
-		ConfiguredRights.Count == 0 && ConfiguredEmail.Count == 0 && FilterTouched.Count == 0
-		&& TemplatedEmail.Count == 0;
+		ConfiguredRights.Count == 0 && ConfiguredEmail.Count == 0 && FilterTouched.Count == 0;
 
 	/// <summary>
 	/// Elements this payload re-filtered WITHOUT sending a block. They get their own wording wherever the

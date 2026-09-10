@@ -359,6 +359,60 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				because: "both addresses must survive: append semantics, not overwrite");
 	}
 
+	[Test]
+	[Description("Over the real MCP path, setElement switches an existing custom-message sendEmail element to TEMPLATE mode (ENG-95986) and back: after the template lands describe reports messageSource 'template', the template id and display name and no body (the stale custom body and the constant subject are cleared); a body then switches it back to custom and clears the template. Neither modify emits the template-landed warning on a package that supports the mode. Depends on the stock template 'Case closure notification' being present.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process switches a sendEmail element to template mode and back")]
+	public async Task ModifyBusinessProcess_Should_SwitchSendEmailToTemplateModeAndBack() {
+		// Arrange — a custom-message element with a subject and a recipient.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpEmailTplSwitchE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildSendEmailWithRecipientDescriptor(processName)
+		});
+
+		// Act 1 — switch to a template (one without a macro-source object, so no templateEntity is needed).
+		CallToolResult toTemplate = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """
+				[ { "op": "setElement", "elementName": "SendEmail1",
+				    "elementUpdate": { "email": { "template": "Case closure notification" } } } ]
+				"""
+		});
+
+		// Assert 1
+		toTemplate.IsError.Should().NotBeTrue(because: "switching an element to an existing email template is supported");
+		JsonSerializer.Serialize(toTemplate).Should().NotContain(EmailBlockExpectation.TemplateWarningMarker,
+			because: "the template-landed check must stay silent when the deployed package stored the template");
+		DescribedEmail afterTemplate = await ReadEmailAsync(context, processName);
+		afterTemplate.MessageSource.Should().Be("template", because: "BodyTemplateType '0' decodes to the template mode");
+		afterTemplate.Template.Should().NotBeNullOrWhiteSpace(because: "the resolved template id is stored on EmailTemplateId");
+		afterTemplate.TemplateDisplay.Should().Be("Case closure notification",
+			because: "the template NAME is stored as the lookup's display value");
+		afterTemplate.HasBody.Should().BeFalse(because: "a template element reports no body, and the custom body was cleared on the switch");
+		afterTemplate.Subject.Should().BeNull(because: "a constant subject not re-supplied is cleared on the switch so the template's own subject is sent");
+		afterTemplate.To.Should().NotBeNull().And.HaveCount(1, because: "recipients are untouched by the mode switch");
+
+		// Act 2 — a body switches it back to a custom message.
+		CallToolResult toCustom = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """
+				[ { "op": "setElement", "elementName": "SendEmail1",
+				    "elementUpdate": { "email": { "body": "<p>ClioTemplateSwitchProbe</p>" } } } ]
+				"""
+		});
+
+		// Assert 2
+		toCustom.IsError.Should().NotBeTrue(because: "switching back to a custom message with a body is supported");
+		DescribedEmail afterCustom = await ReadEmailAsync(context, processName);
+		afterCustom.MessageSource.Should().Be("custom", because: "a body selects the custom message");
+		afterCustom.Template.Should().BeNull(because: "the template and its macro source are cleared on the switch, as the designer's card does");
+		afterCustom.HasBody.Should().BeTrue(because: "the body sent with the switch is stored");
+	}
+
 	// Reads the process back and returns the sendEmail element's email block, so a recipient assertion can be made
 	// against typed fields instead of substring-matching the escaped MCP envelope.
 	private static async Task<DescribedEmail> ReadEmailAsync(ArrangeContext context, string processName) {

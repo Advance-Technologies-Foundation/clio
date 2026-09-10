@@ -1026,8 +1026,8 @@ public sealed class DescribedEmail {
 
 	/// <summary>
 	/// Captures every other field the server reports inside the email block so the description round-trips
-	/// losslessly: a newer <c>CrtProcessBuilder</c> reporting something this build does not declare — a template
-	/// selection, a body format, an attachment list — reaches the command output verbatim instead of being
+	/// losslessly: a newer <c>CrtProcessBuilder</c> reporting something this build does not declare — a body format, an
+	/// attachment list — reaches the command output verbatim instead of being
 	/// discarded without a trace. This block is where the next email feature lands, so it needs the bag most.
 	/// </summary>
 	[JsonExtensionData]
