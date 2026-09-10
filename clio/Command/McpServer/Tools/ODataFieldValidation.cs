@@ -508,7 +508,7 @@ internal static class ODataFieldValidation {
 			//simply had not been rebuilt yet - the one case that clears itself in a minute.
 			return new ProbeResult(false, null,
 				CreatioResponseError.TryClassifyMarkupError(body, out int? markupStatusCode)
-					? DescribeMarkupProbeResponse(entity, markupStatusCode)
+					? DescribeMarkupProbeResponse(markupStatusCode)
 					: "the probe response was not JSON, which Creatio's OData pipeline never returns by itself - "
 					+ "this points to a proxy, IIS, routing or session problem rather than the request's shape. "
 					+ "The body is not reproduced here");
@@ -525,8 +525,11 @@ internal static class ODataFieldValidation {
 	/// read path does on a 404 - is meaningless for a write. Composing it here is what removed the
 	/// former cross-module coupling, where this method trimmed the punctuation off the read path's
 	/// finished prose to graft it into its own template.
+	/// The entity is not named here: the caller's template already opens with
+	/// "The pre-write field probe for {entity}({id})", so repeating it would say it twice.
 	/// </remarks>
-	private static string DescribeMarkupProbeResponse(string entity, int? statusCode) {
+	/// <param name="statusCode">The status the page's title states, or null when it states none.</param>
+	private static string DescribeMarkupProbeResponse(int? statusCode) {
 		string status = statusCode is { } knownStatus
 			? $"The server answered with an {CreatioResponseError.MarkupStatusPhrase(knownStatus)}"
 			: "The page states no HTTP status";
