@@ -18,7 +18,7 @@ It reports:
 
 - `tokenAcquired` - whether a `client_credentials` access token was acquired
 - `dataServiceStatus` - the HTTP status of the bearer DataService smoke request (`0` when skipped)
-- `ok` - whether the token was acquired **and** `dataServiceStatus` is `200`
+- `ok` - whether the token was acquired and the CRM returned HTTP `200` with a successful DataService JSON response
 - `identityServerUrl` - the IdentityService base URL used for the token request
 
 The access token text is never returned or logged.
