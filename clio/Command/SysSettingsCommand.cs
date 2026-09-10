@@ -9,6 +9,7 @@ using System.Reflection;
 using System.Security.Authentication;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -643,6 +644,14 @@ namespace Clio.Command
 			//report.
 			Exception fault = UnwrapTransportFault(ex);
 			return fault switch {
+				//A transport TIMEOUT, not a cancellation. HttpClient surfaces its own timeout as a
+				//TaskCanceledException, and nothing on the sys-setting paths supplies a cancellation token,
+				//so a task that "cancels" itself did so because the environment stopped answering. Without
+				//this arm the type matched nothing and a timeout was reported as an unknown failure with
+				//"retry the operation" - advice that makes an agent loop against a silent environment.
+				//Carried over from SysSettingCodes.ClassifyReadFailure, which already made this call, so the
+				//two classifiers agree on what a timeout is.
+				TaskCanceledException => Network(operationLabel, correlationId),
 				HttpRequestException httpEx when IsAuthenticationFailure(httpEx)
 					=> Authentication(operationLabel, correlationId),
 				HttpRequestException => Network(operationLabel, correlationId),

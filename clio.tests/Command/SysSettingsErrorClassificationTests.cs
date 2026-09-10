@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http;
 using System.Security.Authentication;
 using System.Text.Json;
+using System.Threading.Tasks;
 using Clio.Command;
 using FluentAssertions;
 using NUnit.Framework;
@@ -217,6 +218,30 @@ public sealed class SysSettingsErrorClassificationTests {
 
 		failure.Error.Should().Contain("non-JSON response updating sys-setting",
 			because: "unwrapping a single-fault aggregate must not lose the non-JSON diagnosis");
+		failure.Category.Should().Be(SysSettingErrorCategories.Network,
+			because: "the wrapper must not change the verdict the inner fault earns");
+	}
+
+	[Test]
+	[Description("An HttpClient timeout - which surfaces as TaskCanceledException, since nothing on these paths supplies a cancellation token - is a network failure, the verdict SysSettingCodes.ClassifyReadFailure already gives it, not an unknown one telling the caller to retry.")]
+	public void CategorizeError_Should_Report_Network_For_A_Transport_Timeout() {
+		TaskCanceledException fault = new("The request was canceled due to the configured HttpClient.Timeout of 100 seconds elapsing.");
+
+		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(fault, Operation, "test-id");
+
+		failure.Category.Should().Be(SysSettingErrorCategories.Network,
+			because: "an environment that stopped answering is a reachability problem, and the two classifiers must agree on that");
+		failure.Error.Should().Be(NetworkError,
+			because: "the timeout must not fall to the uncategorized \"Failed ...\" label");
+	}
+
+	[Test]
+	[Description("The timeout arm survives the transport wrapper: the Creatio client reaches faults through Task.Result, so an aggregate carrying a single TaskCanceledException classifies as the same network failure.")]
+	public void CategorizeError_Should_Report_Network_For_An_Aggregate_Wrapping_A_Transport_Timeout() {
+		AggregateException fault = new(new TaskCanceledException("HttpClient.Timeout elapsed"));
+
+		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(fault, Operation, "test-id");
+
 		failure.Category.Should().Be(SysSettingErrorCategories.Network,
 			because: "the wrapper must not change the verdict the inner fault earns");
 	}
