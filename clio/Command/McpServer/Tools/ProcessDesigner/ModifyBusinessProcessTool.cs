@@ -112,7 +112,7 @@ public class ModifyBusinessProcessTool(
 		 + "[#BooleanValue.True#]. An expression is VALIDATED, by the PLATFORM, at the pre-save gate — so a bad "
 		 + "one aborts the whole edit with 'Process validation failed' and nothing is saved, rather than being "
 		 + "attributed to the one operation that carried it, which is why such a refusal reports NO "
-		 + "failedOperationIndex while one caused by a single operation reports its zero-based index (on CrtProcessBuilder this clio requires 1.6.2.0 — the archive "
+		 + "failedOperationIndex while one caused by a single operation reports its zero-based index (on CrtProcessBuilder this clio requires 1.6.2.1 — the archive "
 		 + "carrying the Send email template message mode (ENG-95986), which subsumes 1.6.0.1's page-change reconciliation of a "
 		 + "Pre-configured page element's data sources; the message contract "
 		 + "described here is NOT where that collapse happened: 1.4.0.41 is where the PACKAGE stopped validating formulas a second "

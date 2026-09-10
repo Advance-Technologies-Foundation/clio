@@ -202,17 +202,17 @@ namespace Clio.Command;
 // anything below the archive clio ships, so a raised floor would add no refusal that is not already
 // there. The conclusion survives its own argument: the floor is for what clio DEPENDS on, a warning is
 // for what it merely offers.
-// From ENG-95986, 1.6.2.0: the Send email TEMPLATE message mode - `email.messageSource`, `email.template`
+// From ENG-95986, 1.6.2.1: the Send email TEMPLATE message mode - `email.messageSource`, `email.template`
 // and `email.templateEntity`. The descriptions above now advertise it, and an older server has no such
 // members: its serializer DISCARDS them and answers success, leaving an element in the WRONG mode - no
 // mode at all (which the platform runs as template mode with no template and fails with "Localizable
 // template not found"), or a custom message with no body when a subject travelled with the template.
 // EmailBlockExpectation's template-landed read-back still warns behind this floor, but a floor is the gate
 // and the read-back is the evidence; the rule stays "moves when clio starts ADVERTISING behaviour the
-// deployed server may not have", which is exactly this raise. 1.6.2.0 is the archive cut from the
-// producing commit that carries the mode (crt-process-builder 06e3ce0); every in-flight branch numbered
+// deployed server may not have", which is exactly this raise. 1.6.2.1 is the archive cut from the
+// producing commit that carries the mode (crt-process-builder fe18ff3); every in-flight branch numbered
 // below it at the time of the cut.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.2.0",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.2.1",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>
