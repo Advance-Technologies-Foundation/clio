@@ -1935,6 +1935,47 @@ public sealed class ToolContractGetToolTests {
 		contract.OutputContract.Fields.Should().Contain(field =>
 				field.Name == "entities" && field.Description.Contains("`virtual`", StringComparison.Ordinal),
 			because: "get-app-info should document virtual status within each entity result");
+		contract.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "entities" &&
+				field.Description.Contains("default-value-config", StringComparison.Ordinal) &&
+				field.Description.Contains("stable record GUID", StringComparison.Ordinal) &&
+				field.Description.Contains("sequence-prefix", StringComparison.Ordinal),
+			because: "the get-app-info contract must document the typed column default so a defaulted column round-trips to sync-schemas (issue #969)");
+		contract.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "entities" &&
+				field.Description.Contains("None", StringComparison.Ordinal),
+			because: "the contract must tell the agent how to remove a default via source: None (issue #969)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Advertises the sync-schemas default-value fields for columns and update-operations, including the lookup record-GUID Const rule and default removal.")]
+	public void ToolContractGet_Should_Advertise_Sync_Schemas_Default_Value_Fields() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			SchemaSyncTool.ToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the sync-schemas contract should be available through get-tool-contract");
+		ToolContractField operationsField = result.Tools!.Single().InputSchema.Properties
+			.Single(field => field.Name == "operations");
+		operationsField.Description.Should().Contain("default-value-config",
+			because: "the structured default-value field is the primary way to declare a column default and must be discoverable in the contract (issue #969)");
+		operationsField.Description.Should().Contain("STABLE RECORD GUID",
+			because: "a lookup Const default is the stable record GUID and the contract must say so");
+		operationsField.Description.Should().Contain("Sequence",
+			because: "Sequence defaults (sequence-prefix + sequence-number-of-chars) are accepted and must be documented");
+		operationsField.Description.Should().Contain("SystemValue",
+			because: "SystemValue defaults (value-source = system value GUID) are accepted and must be documented");
+		operationsField.Description.Should().Contain("None",
+			because: "explicit default removal via source: None must be documented");
+		operationsField.Description.Should().Contain("default-value-source",
+			because: "the legacy Const/None shorthand remains accepted and must stay documented");
 	}
 
 	[Test]
@@ -3320,5 +3361,79 @@ public sealed class ToolContractGetToolTests {
 			because: "the legacy stdio client's ClientInfo must be detected end-to-end so the no-names call returns full tool contracts, not the compact index");
 		result.Index.Should().BeNull(
 			because: "the legacy client's full-shape response must not also carry the compact index");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The curated update-page contract describes the append merge identity as (operation, name) — the shipped agent-facing claim, since update-page is non-resident and the [Description] attribute is never merged in (GitHub #1132)")]
+	public void ToolContractGet_Should_Describe_UpdatePage_Mode_With_Operation_And_Name_Identity() {
+		// Arrange
+		// update-page is NOT in McpCoreToolProfile.CoreToolTypes, so the curated Contracts entry is the
+		// ENTIRE description an agent ever reads. Pinning it here is mandatory: editing the tool's
+		// [Description] attribute alone ships nothing, and without this assertion the curated string can
+		// silently rot back to the pre-#1132 "dedupe by name" claim the code no longer implements.
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the update-page contract must be resolvable through get-tool-contract");
+		ToolContractField modeField = result.Tools!.Single(contract => contract.Name == PageUpdateTool.ToolName)
+			.InputSchema.Properties.Single(field => field.Name == "mode");
+		modeField.Description.Should().Contain("`operation` and `name`",
+			because: "an agent must be told the append merge identity is the operation AND the name, so it can predict which existing entries a fragment replaces");
+		modeField.Description.Should().Contain("does not collide with is preserved",
+			because: "the safety guarantee the issue disputed — an unrelated append never drops an existing operation — must be stated on the surface agents actually read");
+		modeField.Description.Should().Contain("The one exception",
+			because: "the merger DOES drop a further existing entry of a superseded identity; promising unqualified preservation would repeat the #1132 defect of shipping a claim the code does not honour");
+		modeField.Description.Should().NotContain("dedupe by `name`",
+			because: "the pre-#1132 claim describes behaviour the merger no longer has and caused the silent loss of an existing move operation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The curated update-page contract discloses that the differ applies whole operation groups in a fixed order, so an operation preserved beside another for one name can be silently dropped (GitHub #1240)")]
+	public void ToolContractGet_Should_Disclose_ApplyOrder_Inertness_In_UpdatePage_Mode() {
+		// Arrange
+		// Same reason the identity test above is mandatory: update-page is non-resident, so this curated
+		// string is the only description an agent receives. #1132 shipped a merger that PRESERVES both
+		// operations, which reads as "both take effect" — it is not true, and the contract has to say so.
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the update-page contract must be resolvable through get-tool-contract");
+		ToolContractField modeField = result.Tools!.Single(contract => contract.Name == PageUpdateTool.ToolName)
+			.InputSchema.Properties.Single(field => field.Name == "mode");
+		modeField.Description.Should().Contain("whole operation GROUPS in a fixed order",
+			because: "an agent that believes the array is applied in order will keep authoring a transform beside an insert and keep wondering why nothing happened");
+		modeField.Description.Should().Contain("silently dropped",
+			because: "preserved-but-inert is the exact confusion #1240 filed; naming the outcome is what makes the warning actionable");
+		modeField.Description.Should().Contain("not append-specific",
+			because: "the inertness comes from the differ, not the merger, so a hand-authored 'replace' body produces it too — scoping the caveat to append would mislead");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The curated update-page output contract declares the warnings array the envelope carries, so an agent knows to read it")]
+	public void ToolContractGet_Should_Declare_Warnings_In_UpdatePage_Output_Envelope() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the update-page contract must be resolvable through get-tool-contract");
+		ToolContractField warningsField = result.Tools!.Single(contract => contract.Name == PageUpdateTool.ToolName)
+			.OutputContract.Fields.Single(field => field.Name == "warnings");
+		warningsField.Description.Should().Contain("never retry on a warning",
+			because: "these findings are advisory and the save already succeeded; an agent that reads a warning as a failure will re-save and can trip conflict detection");
 	}
 }

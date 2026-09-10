@@ -189,6 +189,19 @@ namespace Clio.Command;
 // Both rules still hold afterwards: this literal moves only when clio depends on or advertises new
 // server behaviour, and the guard fixture still asserts the shipped archive SATISFIES it rather than
 // equals it - so a later documentation-only rebundle moves the bundle and must not move this line.
+//
+// WHY THE LABEL DID NOT MOVE IT. These descriptions advertise `flows[].label`, so the rule above reads as
+// though the literal owes a bump. It does not, and the distinction is the one the sendEmail body macros
+// already established: what earns a floor is a capability whose absence the caller cannot be TOLD about.
+// A label is an optional field on an optional concern, and its absence is detectable after the fact -
+// FlowLabelExpectation reads the flows back and names every label that is not what is drawn.
+//
+// An earlier version of this comment argued the point differently: that raising the floor would refuse
+// every build on an environment one archive behind. That reasoning was wrong and is worth recording as
+// wrong, because it reads plausibly - BundledPackageConvergence already imposes exactly that refusal on
+// anything below the archive clio ships, so a raised floor would add no refusal that is not already
+// there. The conclusion survives its own argument: the floor is for what clio DEPENDS on, a warning is
+// for what it merely offers.
 [RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.0.3",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
@@ -385,9 +398,15 @@ public class CreateBusinessProcessCommand(
 	// A server that predates a block DISCARDS it and still answers success:true, so a build can report a
 	// configured element that is in fact empty. Read the saved process back ONCE and check every block the
 	// payload carried: two guards issuing byte-identical describes would double the latency and the retry
-	// budget of the success path for a payload that configures both. Only runs when the descriptor actually
-	// carried a block, so the ordinary path pays nothing. See EmailBlockExpectation / AccessRightsBlockExpectation
-	// for why this is behavioural rather than version-based.
+	// budget of the success path for a payload that configures both. See EmailBlockExpectation /
+	// AccessRightsBlockExpectation for why this is behavioural rather than version-based.
+	// This used to say "only runs when the descriptor actually carried a block, so the ordinary path pays
+	// nothing", and the flow label made that false: ANY descriptor with one labelled flow now performs the
+	// round trip, and the guidance says LABEL EVERY BRANCH, so it is the COMMON path rather than the
+	// exception. The trade is deliberate - one extra read buys the only signal that a label landed, which
+	// is what lets the package floor stay where it is - but it has a visible cost worth stating: a describe
+	// that fails for reasons of its own now emits "Could not verify ..." on a build where the caller
+	// previously saw a clean success. A descriptor with no blocks AND no labels still short-circuits.
 	private void WarnOnDiscardedConfigurationBlocks(CreateBusinessProcessOptions options, string? schemaName) {
 		BlockExpectationIntent intent = BlockExpectationIntent.FromDescriptor(options.DescriptorJson);
 		// The Approval element has the same silent-drop failure, so master's guard verifies it
@@ -395,25 +414,35 @@ public class CreateBusinessProcessCommand(
 		// part. Email needs no separate expectation here: ReportDescribed covers it from intent.
 		IReadOnlyList<ApprovalBlockExpectation.ApprovalExpectation> expectedApproval =
 			ApprovalBlockExpectation.FromDescriptor(options.DescriptorJson);
-		if (intent.IsEmpty && expectedApproval.Count == 0) {
+		// Flow labels ride the SAME read-back for the same reason: a package that PREDATES the label
+		// declares no `label` member on a flow and discards it, silently, on a build that answers success.
+		IReadOnlyList<FlowLabelExpectation.FlowLabel> expectedLabels =
+			FlowLabelExpectation.FromDescriptor(options.DescriptorJson);
+		if (intent.IsEmpty && expectedApproval.Count == 0 && expectedLabels.Count == 0) {
 			return;
 		}
 
 		if (string.IsNullOrWhiteSpace(schemaName)) {
 			// Nothing to read back against. Silence here would be indistinguishable from a verified success.
-			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent,
-				"the operation returned no process name to read back");
+			const string noName = "the operation returned no process name to read back";
+			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent, noName);
+			BlockExpectationReporter.WarnFlowLabelsUnverified(logger, expectedLabels, noName);
 			return;
 		}
 
+		// Version facts are not read: this read-back consumes elements[] only, and asking for them would buy an
+		// ATF session and two DataService round-trips per create, on a write path, for values it discards.
 		ErrorOr<DescribeProcessResult> described =
-			processDescriber.Describe(new ProcessIdentity(schemaName, null, null), null);
+			processDescriber.Describe(new ProcessIdentity(schemaName, null, null), null,
+				includeVersionFacts: false, bestEffort: true);
 		if (described.IsError) {
 			// An unreadable description is not evidence of a drop, so this never fails the command. It is not
 			// silence either when access rights were requested: that guard is the only automated check that a
 			// grant or revoke actually landed, and reporting "verified" and "could not check" identically would
 			// let an unapplied revoke pass as applied.
 			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent, described.FirstError.Description);
+			BlockExpectationReporter.WarnFlowLabelsUnverified(logger, expectedLabels,
+				described.FirstError.Description);
 			return;
 		}
 
@@ -435,6 +464,8 @@ public class CreateBusinessProcessCommand(
 		if (unresolved is not null) {
 			logger.WriteWarning(unresolved);
 		}
+
+		BlockExpectationReporter.ReportFlowLabels(logger, described.Value, expectedLabels);
 	}
 }
 
