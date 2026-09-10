@@ -2168,7 +2168,7 @@ internal static class ToolContractCatalog {
 				Field(ValueFieldName, ArrayType, "OData value array or single entity response."),
 				Field("next-link", StringType, "OData next-link URL when more records are available; use skip with a stable order-by to request subsequent pages through this tool."),
 				Field("status-code", NumberType, "HTTP status behind a failure, present ONLY when the response was an HTML error page that states its status in its title (404 when the entity has no OData controller, 401/502/503 for an auth/proxy/outage hop). Absent otherwise: Creatio serves the JSON routing 404 with HTTP 200, and that case instead carries the wait-and-retry hint in error. Branch on both, never on status-code alone."),
-				Field(EntityFieldName, StringType, "The OData entity set the failure refers to, echoed back so several concurrent reads can be told apart.")
+				Field(EntityFieldName, StringType, "The OData entity set the failure refers to, echoed back so several concurrent reads can be told apart. Present on every failure raised once the requested entity name is known; an argument-level rejection (a missing or malformed entity, an unsupported argument) is refused before that point and carries no entity.")
 			),
 			CommonErrorContract,
 			[

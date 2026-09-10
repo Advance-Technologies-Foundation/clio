@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml;
@@ -506,13 +507,37 @@ internal static class ODataFieldValidation {
 			//caller was told only "the probe response was not JSON" for an entity whose OData controller
 			//simply had not been rebuilt yet - the one case that clears itself in a minute.
 			return new ProbeResult(false, null,
-				CreatioResponseError.TryDescribeMarkupErrorResponse(body, entity, out string markupMessage, out int? _)
-					//The trailing stop is trimmed because the caller's template appends ". No write was performed".
-					? $"the probe response was not JSON but an HTML error page. {markupMessage.TrimEnd(' ', '.')}"
+				CreatioResponseError.TryClassifyMarkupError(body, out int? markupStatusCode)
+					? DescribeMarkupProbeResponse(entity, markupStatusCode)
 					: "the probe response was not JSON, which Creatio's OData pipeline never returns by itself - "
 					+ "this points to a proxy, IIS, routing or session problem rather than the request's shape. "
 					+ "The body is not reproduced here");
 		}
+	}
+
+	/// <summary>
+	/// The pre-write probe's own wording for an HTML error page, composed from the two facts
+	/// <see cref="CreatioResponseError.TryClassifyMarkupError"/> returns.
+	/// </summary>
+	/// <remarks>
+	/// The probe needs a different sentence from the read path: it must stay a clause the caller's
+	/// template can finish with ". No write was performed", and steering to execute-esq - which the
+	/// read path does on a 404 - is meaningless for a write. Composing it here is what removed the
+	/// former cross-module coupling, where this method trimmed the punctuation off the read path's
+	/// finished prose to graft it into its own template.
+	/// </remarks>
+	private static string DescribeMarkupProbeResponse(string entity, int? statusCode) {
+		string status = statusCode is { } knownStatus
+			? $"The server answered with an HTTP {knownStatus} error page"
+			: "The page states no HTTP status";
+		string hint = statusCode == (int)HttpStatusCode.NotFound
+			//The 404 probe and the 404 read are the same condition, so they share the one hint - the
+			//asynchronous OData rebuild that follows create-entity-schema/create-lookup.
+			? $". {CreatioResponseError.UnregisteredEntityHint}"
+			: string.Empty;
+		//The trailing stop is dropped because the caller's template finishes the sentence with
+		//". No write was performed".
+		return $"the probe response was not JSON but an HTML error page. {status}{hint}".TrimEnd(' ', '.');
 	}
 
 	/// <summary>

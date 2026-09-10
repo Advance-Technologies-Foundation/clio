@@ -43,7 +43,10 @@ internal enum CreatioResponseContext {
 
 }
 
-internal static class CreatioResponseError {
+internal static partial class CreatioResponseError {
+
+	/// <summary>Match timeout for the error-page title pattern, in milliseconds.</summary>
+	private const int RegexTimeoutMilliseconds = 1_000;
 
 	/// <summary>
 	/// The JSON property name carrying the human-readable error text across every envelope shape this
@@ -100,52 +103,32 @@ internal static class CreatioResponseError {
 	}
 
 	/// <summary>
-	/// Attempts to classify the IIS/proxy HTML error page returned when an OData request never
-	/// reaches a Creatio OData controller.
+	/// Classifies a response body as an IIS/proxy-style HTML error page and, when its title states
+	/// one, reads the HTTP status out of it.
 	/// </summary>
-	/// <param name="body">The raw response body returned by the OData request.</param>
-	/// <param name="entityName">The requested OData entity set name.</param>
-	/// <param name="message">The actionable failure message when the body is an HTML error page.</param>
+	/// <param name="body">The raw response body returned by the request.</param>
 	/// <param name="statusCode">
 	/// The HTTP status read out of the page title when the page carries one; otherwise
 	/// <see langword="null"/>.
 	/// </param>
 	/// <returns><see langword="true"/> when the response is an IIS-style HTML error page.</returns>
 	/// <remarks>
-	/// The status is recovered from the page rather than from the transport on purpose:
-	/// <see cref="IApplicationClient"/> exposes only the response body, never the HTTP status, so a
-	/// caller that has to distinguish a transient 404 from a permanent one has nowhere else to read it.
-	/// Only the three digits are lifted out - no other fragment of the page reaches the caller, because
-	/// this text lands in an MCP transcript that a model reads as trusted content.
+	/// Only the classification and the three digits leave this class - never a fragment of the page,
+	/// because the caller's text lands in an MCP transcript that a model reads as trusted content. The
+	/// wording is composed by each caller on purpose: the read path, the pre-write probe and the write
+	/// path have to say different things about the same page, and the entity name such a message needs
+	/// is a caller concern that has no business in <c>Clio.Common</c>. The status is recovered from the
+	/// page rather than from the transport because <see cref="IApplicationClient"/> exposes only the
+	/// response body, never the HTTP status.
 	/// </remarks>
-	internal static bool TryDescribeMarkupErrorResponse(string body, string entityName, out string message,
-			out int? statusCode) {
-		message = string.Empty;
+	internal static bool TryClassifyMarkupError(string body, out int? statusCode) {
 		statusCode = null;
-		if (!LooksLikeHtmlErrorPage(body)) {
+		if (!IsMarkup(body)) {
 			return false;
 		}
 		statusCode = TryGetMarkupErrorStatusCode(body, out int parsedStatusCode) ? parsedStatusCode : null;
-		string entity = string.IsNullOrWhiteSpace(entityName) ? "<unnamed>" : entityName;
-		message = statusCode switch {
-			HttpNotFound =>
-				$"Entity '{entity}' is not exposed over OData on this environment (HTTP {HttpNotFound}). "
-				+ $"{UnregisteredEntityHint} Use execute-esq to read schemas that never get an OData entity set.",
-			{ } knownStatus =>
-				$"The OData request for entity '{entity}' was answered with an HTTP {knownStatus} error page "
-				+ "instead of an OData response. Verify the environment URL, the authentication and any proxy.",
-			//No status in the title means no diagnosis beyond "this was not an OData response". Creatio's
-			//own outage page (<title>Request Error</title>) and an SSO/proxy login page both land here,
-			//and neither says anything about whether the entity has an OData controller - claiming it
-			//"may not be exposed" and steering the caller onto execute-esq would be a guess that costs
-			//them the actual cause (an outage, an expired session).
-			_ => DescribeNonJsonReadResponse()
-		};
 		return true;
 	}
-
-	/// <summary>The HTTP status that identifies an entity set with no reachable OData controller.</summary>
-	private const int HttpNotFound = 404;
 
 	/// <summary>
 	/// Reads the HTTP status out of an IIS-style error page title such as
@@ -159,7 +142,7 @@ internal static class CreatioResponseError {
 		if (string.IsNullOrEmpty(body)) {
 			return false;
 		}
-		Match titleMatch = MarkupErrorTitleStatusPattern.Match(body);
+		Match titleMatch = MarkupErrorTitleStatusPattern().Match(body);
 		return titleMatch.Success
 			&& int.TryParse(titleMatch.Groups["status"].Value, NumberStyles.None, CultureInfo.InvariantCulture,
 				out statusCode);
@@ -176,10 +159,10 @@ internal static class CreatioResponseError {
 	/// status of a failure, and stamping it onto a failed read would make the member untrustworthy.
 	/// The bounded quantifiers keep a crafted body from turning this into a backtracking cost.
 	/// </summary>
-	private static readonly Regex MarkupErrorTitleStatusPattern = new(
+	[GeneratedRegex(
 		@"<title[^>]{0,64}>\s{0,8}(?:HTTP\s{1,4}Error\s{1,4})?(?<status>[45]\d{2})(?:\.\d{1,2})?(?=[\s\-–:<])",
-		RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
-		TimeSpan.FromSeconds(1));
+		RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
+	private static partial Regex MarkupErrorTitleStatusPattern();
 
 	/// <summary>
 	/// The fixed, locally authored diagnostic for a read whose body IS JSON and reports an error.
@@ -226,15 +209,6 @@ internal static class CreatioResponseError {
 		"Creatio did not return a JSON OData response. This points to an IIS, proxy, routing, or session "
 		+ "problem rather than an OData query-shape problem; verify the environment and retry only after the "
 		+ "endpoint is returning JSON.";
-
-	/// <summary>
-	/// True when the body is an HTML error page rather than an OData response. The 404 wording is no
-	/// longer required: the same IIS page shape carries 401, 405 and 503 too, and treating only the
-	/// 404 as markup left every other status falling through to the opaque
-	/// "did not return a JSON OData response" text with no status a caller could key off.
-	/// </summary>
-	private static bool LooksLikeHtmlErrorPage(string body) =>
-		!string.IsNullOrWhiteSpace(body) && IsMarkup(body);
 
 	/// <summary>Truncates a raw response body to a safe preview length for error messages.</summary>
 	internal static string Truncate(string value) {

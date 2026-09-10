@@ -31,6 +31,15 @@ diagnosis — never the "may not be exposed / use execute-esq" steer, which is r
 `ODataFieldValidation`'s pre-write probe runs its non-JSON body through the same classification, so a
 probe against an entity behind an IIS 404 reports the status and the retry hint too.
 
+`Clio.Common` returns the classification only: `CreatioResponseError.TryClassifyMarkupError(body, out
+int? statusCode)` answers "is this an error page" and "which status does its title state", and nothing
+else. Each caller composes its own wording — `ODataReadTool.DescribeMarkupError` names the entity and
+steers a 404 to `execute-esq`, `ODataFieldValidation.DescribeMarkupProbeResponse` produces a clause the
+write path finishes with ". No write was performed" and never mentions `execute-esq`. Do not put a
+finished message back into `Clio.Common`: the earlier shared builder took an `entityName` (a caller
+concern) and returned prose, which forced the probe to trim the punctuation off the read path's sentence
+to graft it into its own template.
+
 **Why it is this way** — `core-rules` documents a legitimate 404 window: after
 `create-entity-schema`/`create-lookup` the entity's OData controller is rebuilt asynchronously
 (~1-2 min). A caller following that rule has to tell that transient 404 from an entity that is

@@ -1125,12 +1125,10 @@ public sealed class ODataReadToolTests {
 	[Description("Treats each array element of select as one column name and never splits it on commas.")]
 	public void Read_Should_Not_Split_An_Array_Element_Of_Select() {
 		// Arrange
-		ODataReadTool tool = BuildToolReturning(
-			"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"value\":[]}",
-			out IApplicationClient _);
+		JsonElement value = Columns("Id,Name");
 
 		// Act
-		bool normalized = ODataReadTool.TryNormalizeColumnList(Columns("Id,Name"), "select",
+		bool normalized = ODataReadTool.TryNormalizeColumnList(value, "select",
 			out string[]? columns, out string? error);
 
 		// Assert
@@ -1142,7 +1140,6 @@ public sealed class ODataReadToolTests {
 			because: "the caller chose the array shape, so a comma inside an element is part of the name they wrote")
 			.Which.Should().Be("Id,Name",
 			because: "rewriting the caller's column name would hide the mistake instead of letting the server name it");
-		tool.Should().NotBeNull(because: "the fixture is only here to keep the arrange consistent with the sibling tests");
 	}
 
 	[Test]
@@ -1234,8 +1231,7 @@ public sealed class ODataReadToolTests {
 		response.Success.Should().BeFalse(
 			because: "an unsupported shape must be rejected, not silently ignored");
 		response.Error.Should().Be(
-			$"{argumentName} must be an array of column names or a comma-separated string, "
-			+ "for example [\"Id\",\"Name\"] or \"Id,Name\".",
+			ODataReadTool.ColumnListContractError(argumentName),
 			because: "the caller needs a statement about this tool\'s contract, not \"could not be converted to System.String[]\"");
 		client.DidNotReceive().ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
@@ -1625,4 +1621,84 @@ public sealed class ODataReadToolTests {
 		response.Error.Should().Contain("not reproduced here",
 			because: "the caller still gets a fixed local classification explaining why there is no detail");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Names the entity and repeats the shared async-gap hint for an HTML 404, so the read path's own wording lives with the read path.")]
+	public void Read_Should_Describe_An_Html_404_As_An_Entity_Not_Exposed_Over_OData() {
+		// Arrange
+		const int notFound = 404;
+
+		// Act
+		string message = ODataReadTool.DescribeMarkupError("UsrThing", notFound);
+
+		// Assert
+		message.Should().Contain("UsrThing",
+			because: "the failure has to name the entity the caller asked for");
+		message.Should().Contain(CreatioResponseError.UnregisteredEntityHint,
+			because: "the HTML 404 and the JSON routing 404 are the same condition and must share one locally authored hint");
+		message.Should().Contain("execute-esq",
+			because: "a schema that never gets an OData entity set is still readable, and only the 404 arm may say so");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("States only what was observed for a non-404 error page and does not claim the request never reached a Creatio OData controller.")]
+	public void Read_Should_Describe_A_Non404_Error_Page_By_Observation_Only() {
+		// Act
+		string message = ODataReadTool.DescribeMarkupError("Contact", 502);
+
+		// Assert
+		message.Should().Contain("HTTP 502 error page",
+			because: "the observed fact is that an error page came back with that status");
+		message.Should().NotContain("never reached",
+			because: "clio saw only the body: a gateway may well have reached Creatio and failed on the way back, "
+				+ "so asserting where the request stopped is a claim the evidence does not support");
+		message.Should().NotContain("execute-esq",
+			because: "the entity-not-exposed steer belongs to the 404 arm alone");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Falls back to the neutral non-JSON read diagnosis when the error page states no status, never the execute-esq steer.")]
+	public void Read_Should_Stay_Neutral_When_The_Error_Page_States_No_Status() {
+		// Act
+		string message = ODataReadTool.DescribeMarkupError("Contact", null);
+
+		// Assert
+		message.Should().Be(CreatioResponseError.DescribeNonJsonReadResponse(),
+			because: "with no status there is nothing to add to the neutral non-JSON diagnosis");
+		message.Should().NotContain("execute-esq",
+			because: "an outage page or a login page says nothing about whether the entity is exposed over OData, "
+				+ "and steering the caller onto another tool costs them the real cause");
+		message.Should().NotContain(CreatioResponseError.UnregisteredEntityHint,
+			because: "waiting out a non-existent OData rebuild would delay diagnosing an outage or an expired session");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Copies no fragment of the error page into the failure, only the status digits, and names the entity on the failure member.")]
+	public void Read_Should_Name_The_Entity_On_An_Html_Error_Page_Failure() {
+		// Arrange
+		ODataReadTool tool = BuildToolReturning(
+			"<!DOCTYPE html><html><head><title>404 - File or directory not found.</title></head><body>iis</body></html>",
+			out IApplicationClient _);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "UsrThing"
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an HTML page is never an OData response and must not be parsed as one");
+		response.StatusCode.Should().Be(404,
+			because: "a caller keying the documented async-gap retry off the status cannot match on prose it does not own");
+		response.Entity.Should().Be("UsrThing",
+			because: "every failure raised once the entity name is known names it, so concurrent reads can be told apart");
+		response.Error.Should().NotContain("File or directory not found",
+			because: "no fragment of a server or proxy page may be copied into an MCP transcript");
+	}
+
 }

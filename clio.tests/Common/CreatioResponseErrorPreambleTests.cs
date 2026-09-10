@@ -155,36 +155,46 @@ public class CreatioResponseErrorPreambleTests
 	}
 
 	[Test]
-	[Description("Classifies an HTML 404 as an entity that is not exposed over OData and repeats the shared async-gap hint")]
-	public void TryDescribeMarkupErrorResponse_ShouldName_TheEntityAndTheAsyncGapHint_ForA404() {
+	[Description("Classifies an IIS error page and reports the status its title states, without composing any wording")]
+	public void TryClassifyMarkupError_ShouldReport_TheStatusOfAnErrorPage() {
 		// Arrange
 		string body = "<!DOCTYPE html><html><head><title>404 - File or directory not found.</title></head><body>iis</body></html>";
 
 		// Act
-		bool detected = CreatioResponseError.TryDescribeMarkupErrorResponse(body, "UsrThing", out string message,
-			out int? statusCode);
+		bool detected = CreatioResponseError.TryClassifyMarkupError(body, out int? statusCode);
 
 		// Assert
 		detected.Should().BeTrue(
 			because: "an HTML page is never an OData response and must be classified before JSON parsing is attempted");
 		statusCode.Should().Be(404,
 			because: "the 404 is what distinguishes the transient rebuild window from a permanently unexposed entity");
-		message.Should().Contain("UsrThing",
-			because: "the failure has to name the entity the caller asked for");
-		message.Should().Contain(CreatioResponseError.UnregisteredEntityHint,
-			because: "the HTML 404 and the JSON routing 404 are the same condition and must share one locally authored hint");
-		message.Should().NotContain("File or directory not found",
-			because: "no fragment of a server or proxy page may be copied into an MCP transcript");
+	}
+
+	[Test]
+	[Description("Classifies an HTML page whose title states no status as markup, with no status invented for it")]
+	public void TryClassifyMarkupError_ShouldReportNoStatus_WhenThePageStatesNone() {
+		// Arrange
+		//Creatio's own outage page. An SSO/proxy login page has the same property.
+		const string body = "<html><head><title>Request Error</title></head><body>outage</body></html>";
+
+		// Act
+		bool detected = CreatioResponseError.TryClassifyMarkupError(body, out int? statusCode);
+
+		// Assert
+		detected.Should().BeTrue(
+			because: "an HTML body is still not an OData response and must not reach the JSON parser");
+		statusCode.Should().BeNull(
+			because: "the page names no status and one must never be invented");
 	}
 
 	[Test]
 	[Description("Does not claim a JSON OData body as an HTML error page")]
-	public void TryDescribeMarkupErrorResponse_ShouldNotClaim_AJsonBody() {
+	public void TryClassifyMarkupError_ShouldNotClaim_AJsonBody() {
 		// Arrange
 		string body = "{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"value\":[]}";
 
 		// Act
-		bool detected = CreatioResponseError.TryDescribeMarkupErrorResponse(body, "Contact", out string _, out int? _);
+		bool detected = CreatioResponseError.TryClassifyMarkupError(body, out int? _);
 
 		// Assert
 		detected.Should().BeFalse(
@@ -224,50 +234,4 @@ public class CreatioResponseErrorPreambleTests
 			because: "the caller still has to learn the body was not JSON");
 	}
 
-	[Test]
-	[Description("An HTML page that states no HTTP status gets the neutral non-JSON read diagnosis, never the execute-esq steer that only applies to a 404")]
-	public void TryDescribeMarkupErrorResponse_ShouldStayNeutral_WhenThePageStatesNoStatus() {
-		// Arrange
-		//Creatio's own outage page. An SSO/proxy login page has the same property: it says nothing
-		//about whether the entity has an OData controller.
-		const string body = "<html><head><title>Request Error</title></head><body>outage</body></html>";
-
-		// Act
-		bool detected = CreatioResponseError.TryDescribeMarkupErrorResponse(body, "Contact", out string message,
-			out int? statusCode);
-
-		// Assert
-		detected.Should().BeTrue(
-			because: "an HTML body is still not an OData response and must not reach the JSON parser");
-		statusCode.Should().BeNull(
-			because: "the page names no status and one must never be invented");
-		message.Should().NotContain("execute-esq",
-			because: "an outage page or a login page says nothing about whether the entity is exposed over OData, "
-				+ "and steering the caller onto another tool costs them the real cause");
-		message.Should().NotContain(CreatioResponseError.UnregisteredEntityHint,
-			because: "waiting out a non-existent OData rebuild would delay diagnosing an outage or an expired session");
-		message.Should().Be(CreatioResponseError.DescribeNonJsonReadResponse(),
-			because: "with no status there is nothing to add to the neutral non-JSON diagnosis");
-	}
-
-	[Test]
-	[Description("A non-404 HTML error page states only what was observed and does not claim the request never reached a Creatio OData controller")]
-	public void TryDescribeMarkupErrorResponse_ShouldStateOnlyWhatWasObserved_ForANon404() {
-		// Arrange
-		const string body = "<html><head><title>502 Bad Gateway</title></head><body>nginx</body></html>";
-
-		// Act
-		CreatioResponseError.TryDescribeMarkupErrorResponse(body, "Contact", out string message, out int? statusCode);
-
-		// Assert
-		statusCode.Should().Be(502,
-			because: "the status is what tells the caller this is an infrastructure hop rather than a query problem");
-		message.Should().Contain("HTTP 502 error page",
-			because: "the observed fact is that an error page came back with that status");
-		message.Should().NotContain("never reached",
-			because: "clio saw only the body: a gateway may well have reached Creatio and failed on the way back, "
-				+ "so asserting where the request stopped is a claim the evidence does not support");
-		message.Should().NotContain("Bad Gateway",
-			because: "no fragment of a proxy page may be copied into an MCP transcript");
-	}
 }
