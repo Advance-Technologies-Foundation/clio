@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 using Clio.Command;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common.DataForge;
 
 namespace Clio.Command.McpServer.Tools;
@@ -148,6 +149,10 @@ public sealed record ApplicationEntityResult(
 /// <item><c>reference-schema-name</c> is the canonical lookup-reference field (mirrors
 /// <c>reference-schema</c>, retained as a legacy alias).</item>
 /// <item><c>required</c> exposes the column required flag accepted by the write surfaces.</item>
+/// <item><c>default-value-config</c> exposes the column default in the write-side structured
+/// vocabulary (source plus value / value-source / sequence fields) so a defaulted column
+/// round-trips as-is; <c>null</c> means the column has no default. A lookup Const default carries
+/// the stable record GUID.</item>
 /// </list>
 /// </remarks>
 public sealed record ApplicationColumnResult(
@@ -155,6 +160,7 @@ public sealed record ApplicationColumnResult(
 	[property: JsonPropertyName("caption")] string Caption,
 	[property: JsonPropertyName("data-value-type")] string DataValueType,
 	[property: JsonPropertyName("reference-schema")] string? ReferenceSchema = null,
+	[property: JsonPropertyName("default-value-config")] EntitySchemaDefaultValueConfig? DefaultValueConfig = null,
 	[property: JsonPropertyName("required")] bool Required = false) {
 
 	/// <summary>
