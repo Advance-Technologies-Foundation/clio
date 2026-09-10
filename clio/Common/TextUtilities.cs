@@ -112,9 +112,31 @@ namespace Clio.Common
 			if (string.IsNullOrEmpty(text)) {
 				return text;
 			}
-			var sb = new StringBuilder(text.Length);
+			// Clamped BEFORE the builder, and it MOVED here from after the loop. It is a regression guard: the
+			// previous implementation answered "..." for a non-positive cap, and the surrogate back-off below
+			// reads sanitized[cut - 1], which throws IndexOutOfRange at cut == 0 - and this helper runs while
+			// BUILDING a message about another failure, so it must never be the thing that throws. It has to be
+			// up here now that the builder is sized from maxLength: int.MinValue + 1 is still negative, and
+			// StringBuilder throws on a negative capacity. Its old remark - that the sanitized string cannot be
+			// empty because the loop is one-for-one - stopped being true with the bounded loop below, which is
+			// the other reason it could not stay where it was. SafeText.Sanitize clamps the same case here too.
+			if (maxLength <= 0) {
+				return "...";
+			}
+			// BOUNDED by the cap, not by the input. This used to size the builder to text.Length and scan the
+			// whole value before capping - so a caller value of any size cost a full scan AND a full-size
+			// allocation to produce at most maxLength characters, which is the opposite of "never throw while
+			// building a message": a large enough value makes the allocation itself the failure. One unit of
+			// slack is deliberate: it is what lets the code below tell "exactly at the cap" from "over it"
+			// without looking at the input again, and appending a surrogate PAIR can overshoot by one more.
+			//
+			// What this does NOT bound is the scan of a value made entirely of DROPPED characters - lone
+			// surrogate halves add nothing to the output, so the loop still walks them. Bounding that would mean
+			// truncating the INPUT, which changes the answer: a megabyte of lone halves followed by real text
+			// must still sanitize to that text. Allocation is bounded; the walk is O(input) in that one shape.
+			var sb = new StringBuilder(System.Math.Min(text.Length, maxLength + 1));
 			int index = 0;
-			while (index < text.Length) {
+			while (index < text.Length && sb.Length <= maxLength) {
 				char character = text[index];
 				// An UNPAIRED surrogate half is dropped, not spaced: it is invalid UTF-16, which a JSON
 				// serializer refuses outright - so a caller value carrying one would make this helper the
@@ -148,17 +170,6 @@ namespace Clio.Common
 				sb.Append(IsUnsafeForDisplay(character) ? ' ' : character);
 			}
 			string sanitized = sb.ToString();
-			// Clamped BEFORE the cut, and this is a REGRESSION GUARD rather than defensiveness: the previous
-			// implementation answered "..." for a non-positive cap, and the surrogate back-off below reads
-			// sanitized[cut - 1], which throws IndexOutOfRange at cut == 0. This helper is called while
-			// BUILDING a message about another failure, so it must never be the thing that throws. The
-			// package's SafeText.Sanitize clamps the same case for the same reason.
-			if (maxLength <= 0) {
-				// Not a ternary on emptiness: sanitized CANNOT be empty here. IsNullOrEmpty returned above, and
-				// the loop replaces each character one-for-one, so its length equals the input length. A guard
-				// implying otherwise is a belief that spreads into real defensive code.
-				return "...";
-			}
 			if (sanitized.Length <= maxLength) {
 				return sanitized;
 			}

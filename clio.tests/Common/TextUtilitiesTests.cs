@@ -60,6 +60,41 @@ public sealed class TextUtilitiesTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("Text whose sanitized form is EXACTLY the cap comes back whole, with no ellipsis. This "
+		+ "is the boundary the scan bound can get wrong: the loop now stops once the output exceeds the "
+		+ "cap, and a condition off by one would stop a character early, return a string that happens to "
+		+ "be cap-length, and report it as complete - dropping the rest with nothing to mark the cut. "
+		+ "Mirrors the package half, CrtProcessBuilder SafeText.")]
+	public void SanitizeForDisplay_ShouldKeepTextExactlyAtTheCap() {
+		// Arrange, Act
+		string sanitized = TextUtilities.SanitizeForDisplay("abcd", 4);
+
+		// Assert
+		sanitized.Should().Be("abcd",
+			because: "nothing exceeded the cap, so nothing is cut and no ellipsis is added");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A long run of DROPPED characters before real text neither fills the cap nor hides the "
+		+ "text behind it. The scan is bounded on the OUTPUT rather than the input, deliberately: "
+		+ "bounding the input would be cheaper and would answer wrongly here, returning nothing because "
+		+ "the first thousand code units are unpaired surrogate halves. Pins a trade-off otherwise "
+		+ "stated only in a comment.")]
+	public void SanitizeForDisplay_ShouldNotSpendTheBudgetOnDroppedCharacters() {
+		// Arrange - a thousand lone high surrogates, then the text that matters
+		string crafted = new string((char)0xD83D, 1000) + "Approved";
+
+		// Act
+		string sanitized = TextUtilities.SanitizeForDisplay(crafted, 16);
+
+		// Assert
+		sanitized.Should().Be("Approved",
+			because: "dropped characters add nothing to the output, so they neither consume the cap nor "
+			+ "conceal the text after them");
+	}
+	[Test]
+	[Category("Unit")]
 	[Description("Caps text longer than the maximum length and appends an ellipsis so a large payload cannot flood the output.")]
 	public void SanitizeForDisplay_ShouldTruncateAndAppendEllipsis_WhenTextExceedsMaxLength() {
 		// Arrange
