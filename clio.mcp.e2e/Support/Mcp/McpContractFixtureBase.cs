@@ -136,36 +136,49 @@ public abstract class McpContractFixtureBase {
 	/// </summary>
 	private protected McpServerSession Session => _session!;
 
-	// Suppressed: NUnit1032 sees Task<T> as IDisposable, but this is a completed (or faulted) cached probe
-	// result that owns no handle — Task.Dispose would be a no-op here, and tearing it down would only
-	// discard the memoized answer the tests are meant to share.
+	// Suppressed: NUnit1032 sees Task<T> as IDisposable, but this is a completed, successfully resolved
+	// probe result that owns no handle — Task.Dispose would be a no-op here, and tearing it down would
+	// only discard the memoized answer the tests are meant to share.
 	[System.Diagnostics.CodeAnalysis.SuppressMessage("Structure", "NUnit1032:An IDisposable field/property should be Disposed in a TearDown method",
 		Justification = "A cached, already-completed probe Task holds no disposable resource.")]
 	private Task<string>? _environmentResolvedOnce;
 
 	/// <summary>
 	/// Runs an environment-resolution probe (typically one or two <c>clio ping-app</c> child processes
-	/// ending in <see cref="Assert.Ignore(string)"/> when nothing is reachable) at most once per fixture
-	/// and hands every later test the same answer.
+	/// ending in <see cref="Assert.Ignore(string)"/> when nothing is reachable) once per fixture and hands
+	/// every later test the same answer, re-probing only if the previous attempt failed.
 	/// </summary>
 	/// <param name="probe">The fixture's own probe; invoked only by the first caller.</param>
-	/// <returns>The cached probe task — the resolved environment name, or the probe's fault.</returns>
+	/// <returns>The resolved environment name: the cached one when a previous test already resolved it.</returns>
 	/// <remarks>
 	/// <para>
-	/// Call it from the test body, not from <c>[OneTimeSetUp]</c>: an <c>Assert.Ignore</c> raised by the
-	/// probe faults the cached task with that <c>IgnoreException</c>, and every later <c>await</c> rethrows
-	/// it, so NUnit still reports each test individually as Ignored — the same per-test skip reporting as
-	/// re-probing, for one probe process instead of one per test. Any other probe fault is cached as well;
-	/// that is deliberate — a clio binary that cannot be started fails the fixture either way.
+	/// Call it from the test body, not from <c>[OneTimeSetUp]</c>: the probe ends in an
+	/// <c>Assert.Ignore</c> when nothing is reachable, and NUnit must report that per test rather than as
+	/// a whole-fixture setup outcome.
 	/// </para>
 	/// <para>
-	/// The <c>??=</c> is not atomic. That is sufficient because every fixture that probes a stand is
-	/// <c>[NonParallelizable]</c> (an invariant <c>clio.tests/McpFixturePolicyTests</c> enforces), so its
-	/// tests run one at a time on the single fixture instance.
+	/// ONLY a successful resolution is cached. A faulted probe is deliberately not remembered: memoizing
+	/// the fault would turn one transient window — an app-pool recycle, the global OData rebuild — into a
+	/// skip for every remaining test of a 16-test fixture, reported with a stale reason and
+	/// indistinguishable from an unconfigured workstation. Re-probing after a failure costs one
+	/// <c>ping-app</c> process; the saving this method exists for is on the success path, which still
+	/// probes exactly once.
+	/// </para>
+	/// <para>
+	/// Assignment is not atomic and needs no lock: NUnit never runs two tests of one fixture concurrently
+	/// under <c>ParallelScope.Self</c> (or <c>[NonParallelizable]</c>), which is every fixture in this
+	/// project — there is no assembly-level <c>[Parallelizable]</c> and no <c>ParallelScope.Children</c>.
 	/// </para>
 	/// </remarks>
-	private protected Task<string> ResolveEnvironmentOnceAsync(Func<Task<string>> probe) =>
-		_environmentResolvedOnce ??= probe();
+	private protected async Task<string> ResolveEnvironmentOnceAsync(Func<Task<string>> probe) {
+		if (_environmentResolvedOnce is not null) {
+			return await _environmentResolvedOnce;
+		}
+		Task<string> attempt = probe();
+		string resolved = await attempt;
+		_environmentResolvedOnce = attempt;
+		return resolved;
+	}
 
 	/// <summary>
 	/// Returns an <see cref="ArrangeContext"/> that references the shared server and

@@ -137,7 +137,7 @@ public sealed class WorkspaceSyncToolE2ETests : McpContractFixtureBase {
 	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Drives restore-workspace (a [RequiresPackage(\"cliogate\")] command) through the real clio MCP server against a sandbox where cliogate IS installed, and verifies the environment-scoped package-requirement gate does NOT false-positive: the tool runs to completion instead of refusing. "
-		+ "Residual gap: the 'package absent' refusal branch is NOT covered here because the sandbox arrange step (ArrangeSandboxWorkspaceAsync -> EnsureCliogateInstalledAsync) guarantees cliogate is present, and the invalid-environment tests fail during command resolution BEFORE the gate runs. Asserting a refusal would require a live environment that lacks cliogate, which the current harness cannot provision. The refusal branch is covered at the unit level in clio.tests/Command/McpServer/BaseToolTests.cs.")]
+		+ "Residual gap: the 'package absent' refusal branch is NOT covered here because the sandbox arrange step (ArrangeSandboxWorkspaceAsync -> EnsureCliogateInstalledAsync) guarantees cliogate is present, Asserting a refusal would require a live environment that lacks cliogate, which the current harness cannot provision. The refusal branch is covered at the unit level in clio.tests/Command/McpServer/BaseToolTests.cs.")]
 	[AllureTag(RestoreToolName)]
 	[AllureName("Restore workspace package-requirement gate does not false-positive when cliogate is installed")]
 	[AllureDescription("Uses the real clio MCP server to restore a previously pushed package into a sandbox where cliogate is installed, proving the environment-scoped [RequiresPackage] gate lets the command through rather than refusing. The 'package absent' refusal branch is documented as a residual harness gap and covered by unit tests.")]
@@ -173,8 +173,6 @@ public sealed class WorkspaceSyncToolE2ETests : McpContractFixtureBase {
 
 			string workspaceName = $"workspace-{Guid.NewGuid():N}";
 			string workspacePath = Path.Combine(rootDirectory, workspaceName);
-			string restoreWorkspaceName = $"restore-{Guid.NewGuid():N}";
-			string restoreWorkspacePath = Path.Combine(rootDirectory, restoreWorkspaceName);
 			string packageName = includePackage ? $"Pkg{Guid.NewGuid():N}".Substring(0, 18) : string.Empty;
 			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
 
@@ -194,8 +192,6 @@ public sealed class WorkspaceSyncToolE2ETests : McpContractFixtureBase {
 				rootDirectory,
 				workspacePath,
 				workspaceName,
-				restoreWorkspacePath,
-				restoreWorkspaceName,
 				settings.Sandbox.EnvironmentName!,
 				packageName,
 				packageMetadata,
@@ -225,8 +221,6 @@ public sealed class WorkspaceSyncToolE2ETests : McpContractFixtureBase {
 				testRootDirectory,
 				testWorkspacePath,
 				Path.GetFileName(testWorkspacePath),
-				RestoreWorkspacePath: string.Empty,
-				RestoreWorkspaceName: string.Empty,
 				_sharedEnvironmentName!,
 				_sharedPackageName!,
 				_sharedPackageMetadata,
@@ -400,28 +394,6 @@ public sealed class WorkspaceSyncToolE2ETests : McpContractFixtureBase {
 		File.ReadAllText(path).Should().Be(expectedContent, because: because);
 	}
 
-	[AllureStep("Assert invalid environment diagnostics mention the missing environment name")]
-	private static void AssertFailureMentionsMissingEnvironment(
-		WorkspaceCommandActResult actResult,
-		string environmentName,
-		string toolName) {
-		string combinedOutput = string.Join(
-			Environment.NewLine,
-			(actResult.Execution.Output ?? []).Select(message => $"{message.MessageType}: {message.Value}"));
-
-		combinedOutput.Should().NotBeNullOrWhiteSpace(
-			because: "failed workspace-sync execution should explain why the call was rejected");
-		combinedOutput.Should().MatchRegex(
-			$"(?is)({Regex.Escape(environmentName)}.*not found|environment.*not.*found|{Regex.Escape(toolName)}|error occurred invoking)",
-			because: "the failure should either identify the missing environment directly or include the MCP invocation wrapper");
-	}
-
-	[AllureStep("Assert workspace was not mutated")]
-	private static void AssertWorkspaceWasNotMutated(string workspacePath) {
-		Directory.EnumerateFileSystemEntries(workspacePath).Should().BeEmpty(
-			because: "invalid environment requests must not create or modify files in the target workspace directory");
-	}
-
 	[AllureStep("Assert the package-requirement gate did not refuse the call")]
 	private static void AssertGateDidNotRefuse(WorkspaceCommandActResult actResult, string packageName) {
 		string combinedOutput = string.Join(
@@ -540,8 +512,6 @@ public sealed class WorkspaceSyncToolE2ETests : McpContractFixtureBase {
 		string RootDirectory,
 		string WorkspacePath,
 		string WorkspaceName,
-		string RestoreWorkspacePath,
-		string RestoreWorkspaceName,
 		string EnvironmentName,
 		string PackageName,
 		PackageMetadata? PackageMetadata,

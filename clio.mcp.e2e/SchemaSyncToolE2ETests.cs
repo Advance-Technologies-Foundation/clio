@@ -49,8 +49,17 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 
 	[OneTimeTearDown]
 	public void CleanupSharedSandboxPackage() {
-		if (_sharedRootDirectory is not null && Directory.Exists(_sharedRootDirectory)) {
+		if (_sharedRootDirectory is null || !Directory.Exists(_sharedRootDirectory)) {
+			return;
+		}
+		// NUnit runs this before the base class stops the shared server, so the child process can still
+		// hold a handle under this tree on Windows. Leaking a temp directory is better than a red teardown.
+		try {
 			Directory.Delete(_sharedRootDirectory, recursive: true);
+		} catch (IOException) {
+			// Best effort.
+		} catch (UnauthorizedAccessException) {
+			// Best effort.
 		}
 	}
 
@@ -1116,8 +1125,14 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			return configuredEnvironmentName;
 		}
 
+		// The "d2" fallback serves read-only runs on a developer machine. The environment-bound path here
+		// pushes a package, installs cliogate and creates schemas, and the answer is cached in
+		// _sharedEnvironmentName for the whole fixture, so with the destructive opt-in on a transient
+		// sandbox blip must skip - never redirect those writes to whatever "d2" resolves to
+		// (clio.mcp.e2e/AGENTS.md: destructive tests target the dedicated sandbox only).
 		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName, cancellationToken)) {
+		if (!settings.AllowDestructiveMcpTests
+			&& await CanReachEnvironmentAsync(settings, fallbackEnvironmentName, cancellationToken)) {
 			return fallbackEnvironmentName;
 		}
 

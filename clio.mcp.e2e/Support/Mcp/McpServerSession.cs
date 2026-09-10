@@ -95,6 +95,14 @@ internal sealed class McpServerSession : IAsyncDisposable {
 		return new McpServerSession(client, transport);
 	}
 
+	// Serializes the read-modify-write below across the fixtures that start a server concurrently. The
+	// path is the SUITE-SHARED CLIO_HOME/appsettings.json (McpSharedHomeSetUpFixture), and the parallel
+	// pool went from 26 to 67 fixtures, so two [OneTimeSetUp]s land here at the same time routinely. The
+	// write itself is normally a no-op - the shared-home fixture seeds the alias before any pooled fixture
+	// starts - but a lock plus the IOException catch below keeps a sharing violation out of [OneTimeSetUp],
+	// where it would red a whole fixture with a message about knowledge bootstrap.
+	private static readonly Lock CuratedKnowledgeSettingsLock = new();
+
 	private static void SuppressCuratedKnowledgeBootstrap(McpE2ESettings settings) {
 		if (!settings.SuppressCuratedKnowledgeBootstrap
 				|| !settings.ProcessEnvironmentVariables.TryGetValue("CLIO_HOME", out string? clioHome)
@@ -105,6 +113,12 @@ internal sealed class McpServerSession : IAsyncDisposable {
 		if (!File.Exists(appSettingsPath)) {
 			return;
 		}
+		lock (CuratedKnowledgeSettingsLock) {
+			SeedDisabledCuratedKnowledgeSource(appSettingsPath);
+		}
+	}
+
+	private static void SeedDisabledCuratedKnowledgeSource(string appSettingsPath) {
 		try {
 			JsonObject root = JsonNode.Parse(File.ReadAllText(appSettingsPath))?.AsObject() ?? new JsonObject();
 			JsonObject knowledge = root["knowledge"] as JsonObject ?? new JsonObject();
@@ -128,6 +142,8 @@ internal sealed class McpServerSession : IAsyncDisposable {
 			File.WriteAllText(appSettingsPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
 		} catch (JsonException) {
 			// Invalid-settings fixtures must reach the real server unchanged and assert its diagnostics.
+		} catch (IOException) {
+			// Another fixture is writing the shared settings; the seed is best-effort, never a setup failure.
 		}
 	}
 

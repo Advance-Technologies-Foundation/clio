@@ -917,7 +917,7 @@ public sealed class ApplicationToolE2ETests : McpContractFixtureBase {
 		}
 
 		Assert.Ignore(
-			$"application MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
+			$"application MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable. The '{fallbackEnvironmentName}' fallback is probed only without the destructive opt-in, so with McpE2E:AllowDestructiveMcpTests on it was deliberately not tried.");
 		return string.Empty;
 	}
 

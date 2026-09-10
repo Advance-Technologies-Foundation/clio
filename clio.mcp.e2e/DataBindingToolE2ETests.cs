@@ -31,7 +31,7 @@ public sealed class DataBindingToolE2ETests : McpContractFixtureBase {
 	[AllureDescription("Uses the real clio MCP server to create a data binding from the built-in SysSettings template with values that omit Id and verifies that the package Data folder contains the expected generated files plus an auto-generated GUID primary key without requiring Creatio access.")]
 	public async Task CreateDataBinding_Should_Create_Files() {
 		// Arrange
-		await using DataBindingArrangeContext arrangeContext = await ArrangeWorkspaceAsync(requireEnvironment: false);
+		await using DataBindingArrangeContext arrangeContext = await ArrangeWorkspaceAsync();
 
 		// Act
 		CommandExecutionActResult createResult = await ActCommandAsync(
@@ -92,7 +92,7 @@ public sealed class DataBindingToolE2ETests : McpContractFixtureBase {
 	[AllureDescription("Uses the real clio MCP server to create a binding from the built-in SysSettings template, add a row, remove the same row, and verify the expected data.json mutations plus user-visible command diagnostics.")]
 	public async Task AddAndRemoveDataBindingRow_Should_Mutate_Files() {
 		// Arrange
-		await using DataBindingArrangeContext arrangeContext = await ArrangeWorkspaceAsync(requireEnvironment: false);
+		await using DataBindingArrangeContext arrangeContext = await ArrangeWorkspaceAsync();
 		string bindingDirectoryPath = Path.Combine(arrangeContext.WorkspacePath, "packages", arrangeContext.PackageName, "Data", "SysSettings");
 		await ActCommandAsync(
 			arrangeContext,
@@ -180,7 +180,7 @@ public sealed class DataBindingToolE2ETests : McpContractFixtureBase {
 	[AllureDescription("Uses the real clio MCP server to invoke create-data-binding for a non-templated schema without environment-name and verifies that command execution fails with a clear runtime-resolution error instead of silently attempting offline generation.")]
 	public async Task CreateDataBinding_Should_Fail_Without_Environment_For_NonTemplated_Schema() {
 		// Arrange
-		await using DataBindingArrangeContext arrangeContext = await ArrangeWorkspaceAsync(requireEnvironment: false);
+		await using DataBindingArrangeContext arrangeContext = await ArrangeWorkspaceAsync();
 
 		// Act
 		CommandExecutionActResult result = await ActCommandAsync(
@@ -201,12 +201,14 @@ public sealed class DataBindingToolE2ETests : McpContractFixtureBase {
 			because: "the failure should explain why offline generation is unavailable for the requested schema");
 	}
 
-	private async Task<DataBindingArrangeContext> ArrangeWorkspaceAsync(bool requireEnvironment = true) {
+	// Env-free by construction: this fixture is McpE2E.NoEnvironment and pooled, so it never resolves a
+	// stand. The former requireEnvironment flag and its ping-app resolver were removed rather than left
+	// defaulted to true - the next test added here must not be able to pull an Assert.Ignore into the
+	// zero-skip NoEnvironment lane by simply omitting an argument.
+	private async Task<DataBindingArrangeContext> ArrangeWorkspaceAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string? environmentName = requireEnvironment
-			? await ResolveReachableEnvironmentAsync(settings)
-			: null;
+		const string? environmentName = null;
 
 		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-data-binding-e2e-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(rootDirectory);
@@ -233,30 +235,6 @@ public sealed class DataBindingToolE2ETests : McpContractFixtureBase {
 			environmentName,
 			session,
 			cancellationTokenSource);
-	}
-
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
-		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
-			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
-			return configuredEnvironmentName;
-		}
-
-		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
-			return fallbackEnvironmentName;
-		}
-
-		Assert.Ignore(
-			$"Data-binding MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
-		return string.Empty;
-	}
-
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-			settings,
-			["ping-app", "-e", environmentName]);
-		return result.ExitCode == 0;
 	}
 
 	private static async Task<CommandExecutionActResult> ActCommandAsync(
@@ -303,8 +281,15 @@ public sealed class DataBindingToolE2ETests : McpContractFixtureBase {
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
 		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
-			if (Directory.Exists(RootDirectory)) {
-				Directory.Delete(RootDirectory, recursive: true);
+			// Best effort: the fixture-shared server outlives this context and can still hold a handle here.
+			try {
+				if (Directory.Exists(RootDirectory)) {
+					Directory.Delete(RootDirectory, recursive: true);
+				}
+			} catch (IOException) {
+				// Best effort.
+			} catch (UnauthorizedAccessException) {
+				// Best effort.
 			}
 			return ValueTask.CompletedTask;
 		}

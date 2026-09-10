@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using Clio.Mcp.E2E;
 using Clio.Tests.Command;
 using Clio.Tests.Command.ProcessModel;
@@ -258,46 +259,87 @@ public sealed class McpFixturePolicyTests {
 		string e2eRoot = Path.Combine(RepositoryRoot, "clio.mcp.e2e");
 		Directory.Exists(e2eRoot).Should().BeTrue(
 			because: $"this guard scans the e2e fixture sources under {e2eRoot}; a moved project must fail here rather than pass on an empty scan");
-		string[] forbiddenInOneTimeSetUp = [
-			"Assert.Ignore",
-			"ResolveReachableEnvironmentAsync",
-			"ResolveEnvironmentOnceAsync",
-			"ClioCliCommandRunner",
-			"EnsureSandboxIsConfigured",
-			"AllowDestructiveMcpTests"
-		];
-		string[] sharedServerFixtureSources = Directory.EnumerateFiles(e2eRoot, "*.cs", SearchOption.TopDirectoryOnly)
-			.Where(path => {
-				string source = ReadSourceWithLfLineEndings(path);
-				return source.Contains(": McpContractFixtureBase", StringComparison.Ordinal)
-					|| source.Contains(": DataBindingDbFixtureBase", StringComparison.Ordinal);
-			})
+		// Every source in the project, subdirectories included: the two [OneTimeSetUp] methods that exist
+		// today live in Support/Mcp (the shared-server base) and in the suite-level shared-home fixture, so
+		// a scan limited to files that name a base type inspects nothing at all.
+		string[] e2eSources = Directory.EnumerateFiles(e2eRoot, "*.cs", SearchOption.AllDirectories)
+			.Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+				&& !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
 			.OrderBy(path => path, StringComparer.Ordinal)
 			.ToArray();
 
 		// Act
 		List<string> violations = [];
-		foreach (string path in sharedServerFixtureSources) {
-			string source = ReadSourceWithLfLineEndings(path);
-			// Match the attribute on its own one-tab line only, never the same token quoted inside a comment.
-			const string oneTimeSetUpAttribute = "\n\t[OneTimeSetUp]\n";
-			for (int setUpIndex = source.IndexOf(oneTimeSetUpAttribute, StringComparison.Ordinal);
-					setUpIndex >= 0;
-					setUpIndex = source.IndexOf(oneTimeSetUpAttribute, setUpIndex + 1, StringComparison.Ordinal)) {
-				// A fixture method ends at the first closing brace indented by exactly one tab.
-				int methodEnd = source.IndexOf("\n\t}\n", setUpIndex, StringComparison.Ordinal);
-				string body = methodEnd < 0 ? source[setUpIndex..] : source[setUpIndex..methodEnd];
-				violations.AddRange(forbiddenInOneTimeSetUp
-					.Where(token => body.Contains(token, StringComparison.Ordinal))
-					.Select(token => $"{Path.GetFileName(path)}: [OneTimeSetUp] references {token}"));
-			}
+		int inspectedSetUpBodies = 0;
+		foreach (string path in e2eSources) {
+			IReadOnlyList<string> found = FindStandAccessInOneTimeSetUp(
+				ReadSourceWithLfLineEndings(path),
+				out int setUpBodies);
+			inspectedSetUpBodies += setUpBodies;
+			violations.AddRange(found.Select(violation => $"{Path.GetFileName(path)}: {violation}"));
 		}
 
 		// Assert
-		sharedServerFixtureSources.Should().HaveCountGreaterThanOrEqualTo(13,
-			because: "at least the thirteen fixtures converted to the shared server plus the earlier contract fixtures inherit the base; a smaller set means the scan missed the sources and this guard pins nothing");
+		inspectedSetUpBodies.Should().BeGreaterThanOrEqualTo(2,
+			because: "the shared-server base and the shared-home fixture each declare one [OneTimeSetUp]; if the scan inspects fewer bodies than that it is matching nothing and the empty violation list below means nothing");
 		violations.Should().BeEmpty(
 			because: "a stand probe or an Assert.Ignore in [OneTimeSetUp] turns one unreachable sandbox into a whole-fixture failure (or a fixture-level skip that hides which test needed the stand), which is the exact regression the shared-server conversion was reviewed against");
+	}
+
+	[Test]
+	[Description("Proves the [OneTimeSetUp] scanner actually reports a violation - directly and through one level of same-file helper indirection - so the empty result of the guard above is evidence rather than a silent no-match.")]
+	public void OneTimeSetUpScanner_ShouldReportStandAccess_WhenItIsDirectOrOneHelperAway() {
+		// Arrange
+		const string cleanSource = """
+			public sealed class Clean {
+				[OneTimeSetUp]
+				public void SetUp() {
+					string home = Path.Combine(Path.GetTempPath(), "x");
+					Directory.CreateDirectory(home);
+				}
+
+				[Test]
+				public void Probe() {
+					Assert.Ignore("the skip belongs here, in the test body");
+				}
+			}
+			""";
+		const string directViolationSource = """
+			public sealed class Direct {
+				[OneTimeSetUp]
+				public void SetUp() {
+					Assert.Ignore("skipping the whole fixture");
+				}
+			}
+			""";
+		const string indirectViolationSource = """
+			public sealed class Indirect {
+				[OneTimeSetUp]
+				public async Task SetUpAsync() {
+					await EnsureStandAsync();
+				}
+
+				private static async Task EnsureStandAsync() {
+					await ClioCliCommandRunner.RunAndAssertSuccessAsync("ping-app");
+				}
+			}
+			""";
+
+		// Act
+		IReadOnlyList<string> onClean = FindStandAccessInOneTimeSetUp(cleanSource, out int cleanBodies);
+		IReadOnlyList<string> onDirect = FindStandAccessInOneTimeSetUp(directViolationSource, out int directBodies);
+		IReadOnlyList<string> onIndirect = FindStandAccessInOneTimeSetUp(indirectViolationSource, out int indirectBodies);
+
+		// Assert
+		cleanBodies.Should().Be(1, because: "the clean sample declares exactly one [OneTimeSetUp] and the scanner must find its body");
+		onClean.Should().BeEmpty(
+			because: "an Assert.Ignore inside a [Test] body is the required shape, so the scanner must not flag it as a setup violation");
+		directBodies.Should().Be(1, because: "the direct sample declares one [OneTimeSetUp]");
+		onDirect.Should().ContainSingle(violation => violation.Contains("Assert.Ignore", StringComparison.Ordinal),
+			because: "an Assert.Ignore written straight into [OneTimeSetUp] is the regression this guard exists to catch");
+		indirectBodies.Should().Be(1, because: "the indirect sample declares one [OneTimeSetUp]");
+		onIndirect.Should().ContainSingle(violation => violation.Contains("ClioCliCommandRunner", StringComparison.Ordinal),
+			because: "moving the stand call into a private helper is the established shape in this suite (Ensure*Async), so hiding it one call away must not defeat the guard");
 	}
 
 	[Test]
@@ -307,14 +349,20 @@ public sealed class McpFixturePolicyTests {
 		string e2eRoot = Path.Combine(RepositoryRoot, "clio.mcp.e2e");
 		Directory.Exists(e2eRoot).Should().BeTrue(
 			because: $"this guard scans the e2e fixture sources under {e2eRoot}; a moved project must fail here rather than pass on an empty scan");
-		// Class-level attribute on its own line, never the same token quoted inside a comment.
-		const string parallelAttribute = "\n[Parallelizable(ParallelScope.Self)]\n";
+		// Any class-level [Parallelizable] on its own line: bare [Parallelizable] means ParallelScope.Self in
+		// NUnit, and ParallelScope.All / .Fixtures join the same worker pool, so anchoring on the explicit
+		// ".Self" spelling alone would let a fixture into the pool completely unscreened.
+		const string parallelAttribute = "\n[Parallelizable";
 		string[] forbiddenInParallelFixtures = [
 			"Environment.SetEnvironmentVariable(",
 			"TemporaryClioSettingsOverride."
 		];
-		string[] parallelFixtureSources = Directory.EnumerateFiles(e2eRoot, "*.cs", SearchOption.TopDirectoryOnly)
-			.Where(path => ReadSourceWithLfLineEndings(path).Contains(parallelAttribute, StringComparison.Ordinal))
+		string[] parallelFixtureSources = Directory.EnumerateFiles(e2eRoot, "*.cs", SearchOption.AllDirectories)
+			.Where(path => {
+				string source = ReadSourceWithLfLineEndings(path);
+				return source.Contains(parallelAttribute, StringComparison.Ordinal)
+					&& !source.Contains("\n[Parallelizable(ParallelScope.None)]\n", StringComparison.Ordinal);
+			})
 			.OrderBy(path => path, StringComparer.Ordinal)
 			.ToArray();
 
@@ -329,8 +377,8 @@ public sealed class McpFixturePolicyTests {
 			.ToArray();
 
 		// Assert
-		parallelFixtureSources.Should().HaveCountGreaterThanOrEqualTo(60,
-			because: "the pool holds the 26 files vetted by ENG-92558 plus the 39 added by PR #1427; a smaller set means the scan missed the sources and this guard pins nothing");
+		parallelFixtureSources.Should().HaveCountGreaterThanOrEqualTo(65,
+			because: "the pool is 67 fixture classes in 65 files - the 26 files vetted by ENG-92558 plus the 39 added by PR #1427; a smaller set means the scan missed the sources and this guard pins nothing");
 		violations.Should().BeEmpty(
 			because: "a pooled fixture that poisons the test-host environment or rewrites the shared appsettings.json turns an unrelated pooled fixture red with a failure that points nowhere near the change - the flake class ENG-94529 and TeamCity 15893259 already paid for once; move such a fixture back to [NonParallelizable] or give it a fixture-owned CLIO_HOME instead");
 	}
@@ -340,9 +388,106 @@ public sealed class McpFixturePolicyTests {
 
 	/// <summary>
 	/// Reads a fixture source with line endings normalized to LF, so the line-anchored patterns above
-	/// ("\n\t[OneTimeSetUp]\n", "\n[Parallelizable(ParallelScope.Self)]\n", "\n\t}\n") match on a Windows
-	/// checkout where core.autocrlf turned every line ending into CRLF.
+	/// ("\n[Parallelizable(ParallelScope.Self)]\n") match on a Windows checkout where core.autocrlf
+	/// turned every line ending into CRLF.
 	/// </summary>
 	private static string ReadSourceWithLfLineEndings(string path) =>
 		File.ReadAllText(path).Replace("\r\n", "\n", StringComparison.Ordinal);
+
+	/// <summary>
+	/// Calls that must never run in an <c>[OneTimeSetUp]</c>: they reach the stand or skip the fixture,
+	/// and both belong in a test body so NUnit reports the outcome per test.
+	/// </summary>
+	private static readonly string[] StandAccessForbiddenInOneTimeSetUp = [
+		"Assert.Ignore",
+		"ResolveReachableEnvironmentAsync",
+		"ResolveEnvironmentOnceAsync",
+		"ClioCliCommandRunner",
+		"EnsureSandboxIsConfigured",
+		"AllowDestructiveMcpTests"
+	];
+
+	/// <summary>Block keywords that a method-declaration scan must not mistake for a method name.</summary>
+	private static readonly HashSet<string> BlockKeywords = new(StringComparer.Ordinal) {
+		"if", "else", "for", "foreach", "while", "switch", "catch", "using", "lock", "fixed", "do", "try",
+		"unsafe", "get", "set", "return", "new"
+	};
+
+	/// <summary>
+	/// Reports every forbidden stand-access call reachable from an <c>[OneTimeSetUp]</c> in one source
+	/// file, following one further level of same-file helper calls, and tells the caller how many setup
+	/// bodies it actually inspected.
+	/// </summary>
+	/// <param name="source">The C# source to scan; CRLF is normalized internally.</param>
+	/// <param name="inspectedSetUpBodies">Number of <c>[OneTimeSetUp]</c> bodies the scan parsed.</param>
+	/// <returns>One entry per forbidden token reachable from a setup body; empty when the file is clean.</returns>
+	/// <remarks>
+	/// Helper indirection is followed because the established shape in this suite is a lazily invoked
+	/// <c>Ensure*Async</c> that holds the stand call, so a direct-text scan of the setup body alone would
+	/// miss exactly the regression this guard exists to catch.
+	/// </remarks>
+	private static IReadOnlyList<string> FindStandAccessInOneTimeSetUp(string source, out int inspectedSetUpBodies) {
+		string text = source.Replace("\r\n", "\n", StringComparison.Ordinal);
+		IReadOnlyDictionary<string, string> methodBodies = CollectMethodBodies(text);
+		List<string> violations = [];
+		inspectedSetUpBodies = 0;
+		foreach (Match attribute in Regex.Matches(text, @"(?m)^[ \t]*\[OneTimeSetUp\][ \t]*$")) {
+			int bodyStart = FindBodyBrace(text, attribute.Index + attribute.Length);
+			if (bodyStart < 0) {
+				continue;
+			}
+			string body = ExtractBracedBlock(text, bodyStart);
+			inspectedSetUpBodies++;
+			string reachable = body + "\n" + string.Join('\n', CollectCalledHelperBodies(body, methodBodies));
+			violations.AddRange(StandAccessForbiddenInOneTimeSetUp
+				.Where(token => reachable.Contains(token, StringComparison.Ordinal))
+				.Select(token => $"[OneTimeSetUp] reaches {token}"));
+		}
+		return violations;
+	}
+
+	/// <summary>
+	/// Returns the index of the brace that opens the member declared after <paramref name="searchFrom"/>,
+	/// or -1 when that member is expression-bodied or abstract (a ';' comes first).
+	/// </summary>
+	private static int FindBodyBrace(string text, int searchFrom) {
+		int brace = text.IndexOf('{', searchFrom);
+		int semicolon = text.IndexOf(';', searchFrom);
+		return brace >= 0 && (semicolon < 0 || brace < semicolon) ? brace : -1;
+	}
+
+	/// <summary>Returns the balanced <c>{ … }</c> block that starts at <paramref name="openBrace"/>.</summary>
+	private static string ExtractBracedBlock(string text, int openBrace) {
+		int depth = 0;
+		for (int index = openBrace; index < text.Length; index++) {
+			depth += text[index] switch { '{' => 1, '}' => -1, _ => 0 };
+			if (depth == 0) {
+				return text[openBrace..(index + 1)];
+			}
+		}
+		return text[openBrace..];
+	}
+
+	/// <summary>Maps every method name declared with a block body in one source file to that body.</summary>
+	private static IReadOnlyDictionary<string, string> CollectMethodBodies(string text) {
+		Dictionary<string, string> bodies = new(StringComparer.Ordinal);
+		foreach (Match declaration in Regex.Matches(text, @"(?m)^[ \t]+(?:[\w<>,\[\]\?\.\s]+\s)?(\w+)\s*\([^;{}]*\)[^;{}\n]*\{")) {
+			string name = declaration.Groups[1].Value;
+			if (BlockKeywords.Contains(name)) {
+				continue;
+			}
+			string body = ExtractBracedBlock(text, declaration.Index + declaration.Length - 1);
+			bodies[name] = bodies.TryGetValue(name, out string? existing) ? existing + "\n" + body : body;
+		}
+		return bodies;
+	}
+
+	/// <summary>Returns the bodies of same-file methods invoked from <paramref name="body"/>, one level deep.</summary>
+	private static IReadOnlyList<string> CollectCalledHelperBodies(string body, IReadOnlyDictionary<string, string> methodBodies) =>
+		Regex.Matches(body, @"\b(\w+)\s*\(")
+			.Select(call => call.Groups[1].Value)
+			.Distinct(StringComparer.Ordinal)
+			.Where(name => methodBodies.ContainsKey(name))
+			.Select(name => methodBodies[name])
+			.ToArray();
 }
