@@ -60,3 +60,24 @@ label was stored under a key that another flow also claims, one row up in the pl
 read-back guard cannot see it either, because it matches flows by endpoint pair and both pairs
 resolve to a flow whose caption is whatever survived. Check for a duplicate generated flow name
 before suspecting anything else.
+
+**The DB-writer layer says the same thing by a different mechanism, and this half was verified by a
+reviewer rather than by me** (anton-chernov, crt-process-builder PR #53, 2026-09-10). It is worth having
+because it changes what you would SEE, not just whether the guard is justified:
+
+- `LocalizableValueCollection` is a plain `Collection<LocalizableValue>` - NOT keyed by name, so two
+  values carrying the same `ResourceItemName` coexist in memory without complaint.
+- `ConfigurationResourceDBWriter.WriteResources` deletes by `GetResourceKeys(...)`, which is
+  `.Distinct()`, and then INSERTS by iterating the full, non-deduplicated collection. Two flows sharing
+  a key therefore produce two INSERTs of the same `Key` for one (schema, package, culture). The writer
+  neither overwrites nor notices.
+- `LocalizableString.Merge` returns `source` outright when it carries a `ResourceManagerName` and an
+  `ResourceItemName`, so wherever a merge does happen the later value replaces the earlier one with no
+  diagnostic.
+
+So the in-memory assembly above resolves a duplicate by last-write-wins, and the DB write can emit two
+rows for one key. **What is NOT settled is whether a unique constraint exists on that key tuple** - no
+SQL schema definitions are in the source tree, so nobody has read it. Both branches justify the guard and
+they fail differently: with a constraint the save fails loudly, without one you get two rows and an
+arbitrary winner on read. Do not write "it overwrites" as if that were the whole story, and do not
+assume a save would fail - the package is the only layer that can refuse this before it happens.

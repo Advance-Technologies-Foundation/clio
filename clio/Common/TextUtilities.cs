@@ -126,15 +126,23 @@ namespace Clio.Common
 			// BOUNDED by the cap, not by the input. This used to size the builder to text.Length and scan the
 			// whole value before capping - so a caller value of any size cost a full scan AND a full-size
 			// allocation to produce at most maxLength characters, which is the opposite of "never throw while
-			// building a message": a large enough value makes the allocation itself the failure. One unit of
-			// slack is deliberate: it is what lets the code below tell "exactly at the cap" from "over it"
-			// without looking at the input again, and appending a surrogate PAIR can overshoot by one more.
+			// building a message": a large enough value makes the allocation itself the failure.
+			// TWO units of slack, and the number matters. The loop below runs while the output is <= the cap, so
+			// it can be entered with exactly maxLength already written; if the next input is a surrogate PAIR it
+			// appends two more, and the output ends at maxLength + 2. An earlier version of this comment said "one
+			// more" and sized the builder to maxLength + 1 - the bound was wrong and the capacity was one short,
+			// so the pair case quietly grew the builder. One unit would still be needed regardless: it is what
+			// lets the code below tell "exactly at the cap" from "over it" without looking at the input again.
+			//
+			// The cap is added in LONG arithmetic because it is a caller argument: maxLength + 2 overflows to a
+			// negative int near int.MaxValue, and a negative capacity makes StringBuilder throw - inside a helper
+			// whose whole purpose is never to be the thing that throws while a message is being built.
 			//
 			// What this does NOT bound is the scan of a value made entirely of DROPPED characters - lone
 			// surrogate halves add nothing to the output, so the loop still walks them. Bounding that would mean
 			// truncating the INPUT, which changes the answer: a megabyte of lone halves followed by real text
 			// must still sanitize to that text. Allocation is bounded; the walk is O(input) in that one shape.
-			var sb = new StringBuilder(System.Math.Min(text.Length, maxLength + 1));
+			var sb = new StringBuilder((int)System.Math.Min((long)text.Length, (long)maxLength + 2));
 			int index = 0;
 			while (index < text.Length && sb.Length <= maxLength) {
 				char character = text[index];
