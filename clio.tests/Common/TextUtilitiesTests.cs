@@ -11,6 +11,37 @@ public sealed class TextUtilitiesTests
 {
 	[Test]
 	[Category("Unit")]
+	[Description("Neutralises characters that are NOT control characters but still forge output. "
+		+ "char.IsControl is FALSE for UnicodeCategory.Format and for the two Unicode separators, so "
+		+ "U+2028 and U+2029 - which a terminal treats as line breaks - and the BiDi overrides "
+		+ "U+202A-U+202E / U+2066-U+2069 passed this filter verbatim. Those overrides reorder RENDERED "
+		+ "text without changing its bytes (Trojan Source, CVE-2021-42574), which is exactly the "
+		+ "forgery this helper exists to stop, and the values reaching it are caller-supplied and land "
+		+ "in an MCP agent's context. One case per character so a partial regression names the one that "
+		+ "got through. Mirrors CrtProcessBuilder SafeText.Sanitize, which carries the same rule.")]
+	[TestCase('\u2028', TestName = "SanitizeForDisplay_ShouldReplaceLineSeparator")]
+	[TestCase('\u2029', TestName = "SanitizeForDisplay_ShouldReplaceParagraphSeparator")]
+	[TestCase('\u202E', TestName = "SanitizeForDisplay_ShouldReplaceRightToLeftOverride")]
+	[TestCase('\u2066', TestName = "SanitizeForDisplay_ShouldReplaceLeftToRightIsolate")]
+	[TestCase('\u200B', TestName = "SanitizeForDisplay_ShouldReplaceZeroWidthSpace")]
+	public void SanitizeForDisplay_ShouldReplaceAFormatOrSeparatorCharacter(char forged) {
+		// Arrange - with a precondition, because a character this filter ALREADY caught would pass
+		// vacuously and prove nothing about the widening
+		string text = "before" + forged + "after";
+		char.IsControl(forged).Should().BeFalse(
+			because: "the point of this test is the set char.IsControl does NOT cover");
+
+		// Act
+		string sanitized = TextUtilities.SanitizeForDisplay(text);
+
+		// Assert
+		sanitized.Should().Be("before after",
+			because: "the character is replaced with a space and the surrounding text stays readable - a "
+			+ "reader has to be able to see what was said as well as be safe from it");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Replaces every control character (newline, carriage return, tab, ANSI escape) with a space so untrusted text cannot forge extra output lines or inject terminal escape sequences.")]
 	public void SanitizeForDisplay_ShouldReplaceControlCharactersWithSpaces_WhenTextContainsThem() {
 		// Arrange

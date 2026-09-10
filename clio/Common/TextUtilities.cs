@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using Clio.Project.NuGet;
@@ -88,6 +89,19 @@ namespace Clio.Common
 		/// the input unchanged when it is <c>null</c> or empty. Always VALID UTF-16: a cap that would fall
 		/// between a surrogate pair drops the whole character rather than emitting a lone surrogate, which
 		/// a JSON serializer refuses. A non-positive cap yields the ellipsis alone rather than throwing.</returns>
+		// A character that must not reach a terminal or a tool result verbatim. See the remark at the
+		// call site for why control characters alone are not the right set.
+		private static bool IsUnsafeForDisplay(char character) {
+			if (char.IsControl(character)) {
+				return true;
+			}
+
+			UnicodeCategory category = CharUnicodeInfo.GetUnicodeCategory(character);
+			return category is UnicodeCategory.Format
+				or UnicodeCategory.LineSeparator
+				or UnicodeCategory.ParagraphSeparator;
+		}
+
 		public static string SanitizeForDisplay(string text, int maxLength = 500) {
 			if (string.IsNullOrEmpty(text)) {
 				return text;
@@ -119,7 +133,13 @@ namespace Clio.Common
 					// not a character at all.
 					continue;
 				}
-				sb.Append(char.IsControl(character) ? ' ' : character);
+				// WIDER than char.IsControl, which is FALSE for UnicodeCategory.Format and for the two Unicode
+				// separators. U+2028/U+2029 are line breaks to a terminal, and the BiDi overrides U+202A-U+202E
+				// and U+2066-U+2069 reorder rendered text without changing its bytes (Trojan Source,
+				// CVE-2021-42574) - so both forged output while passing a control-character filter untouched.
+				// This is the clio half of a mirror: CrtProcessBuilder SafeText.Sanitize carries the same rule,
+				// and the two are hand-kept in step.
+				sb.Append(IsUnsafeForDisplay(character) ? ' ' : character);
 			}
 			string sanitized = sb.ToString();
 			// Clamped BEFORE the cut, and this is a REGRESSION GUARD rather than defensiveness: the previous
