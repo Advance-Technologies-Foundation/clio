@@ -525,6 +525,34 @@ public sealed class RequestMappingRule {
 	[JsonPropertyName("paramMap")]
 	public IReadOnlyDictionary<string, string> ParamMap { get; init; } = new Dictionary<string, string>();
 
+	/// <summary>
+	/// Name of the <c>params</c> key carrying this request's NAVIGATION TARGET — the page or object the
+	/// action opens (e.g. <c>schemaName</c> for <c>crt.OpenPageRequest</c>, <c>entityName</c> for
+	/// <c>crt.CreateRecordRequest</c>). Null/absent means the request navigates nowhere and its target is
+	/// never checked. Paired with <see cref="TargetKind"/>: BOTH must be present for a check to run.
+	/// </summary>
+	/// <remarks>
+	/// This is data rather than code on purpose: a request whose target should be verified (today
+	/// <c>crt.OpenPageRequest</c> / <c>crt.CreateRecordRequest</c> / <c>crt.UpdateRecordRequest</c>, tomorrow
+	/// possibly <c>crt.ImportDataRequest</c> or <c>crt.AddNextStepRequest</c>) can be added by a CDN rules
+	/// push without a clio release — the same discipline <see cref="ParamMap"/> already follows.
+	/// </remarks>
+	[JsonPropertyName("targetParam")]
+	public string TargetParam { get; init; }
+
+	/// <summary>
+	/// What <see cref="TargetParam"/>'s value NAMES, so clio knows how to verify the target exists on mobile:
+	/// <c>web-page</c> (a WEB page schema, which the Creatio Mobile app cannot open at all) or
+	/// <c>entity-default-mobile-page</c> (an object that must have a default mobile edit page). Null/absent
+	/// means no check.
+	/// </summary>
+	/// <remarks>
+	/// An UNRECOGNIZED value is also "no check", never a failed check — a rules file naming a future kind
+	/// must degrade to silence on an older binary rather than reporting every such action as unresolvable.
+	/// </remarks>
+	[JsonPropertyName("targetKind")]
+	public string TargetKind { get; init; }
+
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
 }

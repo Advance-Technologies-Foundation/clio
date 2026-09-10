@@ -35,7 +35,7 @@ public static class EmailBlockExpectation {
 	/// </summary>
 	/// <param name="descriptorJson">The build descriptor JSON exactly as the caller supplied it.</param>
 	public static IReadOnlyList<string> FromDescriptor(string descriptorJson) {
-		JsonObject? descriptor = TryParse(descriptorJson) as JsonObject;
+		JsonObject? descriptor = BlockExpectationJson.Parse(descriptorJson) as JsonObject;
 		if (descriptor?[ElementsKey] is not JsonArray elements) {
 			return Array.Empty<string>();
 		}
@@ -46,7 +46,7 @@ public static class EmailBlockExpectation {
 				continue;
 			}
 
-			string? name = candidate["name"]?.GetValue<string>();
+			string? name = ReadName(candidate["name"]);
 			if (!string.IsNullOrWhiteSpace(name)) {
 				names.Add(name);
 			}
@@ -62,7 +62,7 @@ public static class EmailBlockExpectation {
 	/// </summary>
 	/// <param name="operationsJson">The operations array JSON exactly as the caller supplied it.</param>
 	public static IReadOnlyList<string> FromOperations(string operationsJson) {
-		if (TryParse(operationsJson) is not JsonArray operations) {
+		if (BlockExpectationJson.Parse(operationsJson) is not JsonArray operations) {
 			return Array.Empty<string>();
 		}
 
@@ -74,7 +74,7 @@ public static class EmailBlockExpectation {
 
 			// addElement: the descriptor (and therefore the name) is nested under "element".
 			if (op["element"] is JsonObject added && added[EmailKey] is JsonObject) {
-				string? name = added["name"]?.GetValue<string>();
+				string? name = ReadName(added["name"]);
 				if (!string.IsNullOrWhiteSpace(name)) {
 					names.Add(name);
 				}
@@ -82,7 +82,7 @@ public static class EmailBlockExpectation {
 
 			// setElement: the name is on the operation, the block is under "elementUpdate".
 			if (op["elementUpdate"] is JsonObject update && update[EmailKey] is JsonObject) {
-				string? name = op["elementName"]?.GetValue<string>();
+				string? name = ReadName(op["elementName"]);
 				if (!string.IsNullOrWhiteSpace(name)) {
 					names.Add(name);
 				}
@@ -114,9 +114,7 @@ public static class EmailBlockExpectation {
 			// Matched on NAME OR UID on purpose: setElement identifies an element by either (the server's
 			// ResolveFlowElement canonicalizes both), so a caller who passed a UId would otherwise match nothing
 			// and be told its email configuration had been discarded when the edit in fact applied cleanly.
-			DescribedElement? element = described.Elements.FirstOrDefault(e =>
-				string.Equals(e?.Name, name, StringComparison.OrdinalIgnoreCase)
-				|| string.Equals(e?.Uid, name, StringComparison.OrdinalIgnoreCase));
+			DescribedElement? element = BlockExpectationJson.ResolveElement(described, name);
 
 			// An element that is not in the read-back at all is NOT reported. The read-back is the only evidence
 			// this check has, and "I cannot find the element I asked about" is a reason to stay quiet rather than
@@ -160,7 +158,7 @@ public static class EmailBlockExpectation {
 	/// </summary>
 	/// <param name="descriptorJson">The build descriptor JSON exactly as the caller supplied it.</param>
 	public static IReadOnlyList<string> MacroBodyElements(string descriptorJson) {
-		JsonObject? descriptor = TryParse(descriptorJson) as JsonObject;
+		JsonObject? descriptor = BlockExpectationJson.Parse(descriptorJson) as JsonObject;
 		if (descriptor?[ElementsKey] is not JsonArray elements) {
 			return Array.Empty<string>();
 		}
@@ -173,7 +171,7 @@ public static class EmailBlockExpectation {
 
 			string? body = email["body"] is JsonValue value && value.TryGetValue(out string? text) ? text : null;
 			if (!string.IsNullOrEmpty(body) && ContainsMacro(body)) {
-				string? name = candidate["name"]?.GetValue<string>();
+				string? name = ReadName(candidate["name"]);
 				if (!string.IsNullOrWhiteSpace(name)) {
 					names.Add(name);
 				}
@@ -201,9 +199,7 @@ public static class EmailBlockExpectation {
 
 		List<string> unresolved = [];
 		foreach (string name in macroElements) {
-			DescribedElement? element = described.Elements.FirstOrDefault(e =>
-				string.Equals(e?.Name, name, StringComparison.OrdinalIgnoreCase)
-				|| string.Equals(e?.Uid, name, StringComparison.OrdinalIgnoreCase));
+			DescribedElement? element = BlockExpectationJson.ResolveElement(described, name);
 
 			if (element?.Email is { HasBody: true } email && string.IsNullOrWhiteSpace(email.Body)) {
 				unresolved.Add(name);
@@ -234,7 +230,15 @@ public static class EmailBlockExpectation {
 	}
 
 	// Singular/plural of "element" for a count, kept in one place so the noun is not a duplicated string literal.
-	private static string ElementNoun(int count) => count == 1 ? "element" : "elements";
+	private static string ElementNoun(int count) => BlockExpectationJson.ElementNoun(count);
+
+	/// <summary>
+	/// Reads an element name, tolerating a node that is not a string. Delegates to
+	/// <see cref="BlockExpectationJson.ReadText"/>, which owns the reasoning: this check runs AFTER a
+	/// successful operation, inside the command's try, so a throw on <c>"name": 123</c> would report a build
+	/// the server accepted as a failure - and take the sibling guards in the same block down with it.
+	/// </summary>
+	private static string? ReadName(JsonNode? node) => BlockExpectationJson.ReadText(node);
 
 	private static bool ContainsMacro(string body) =>
 		body.IndexOf("[[param:", StringComparison.OrdinalIgnoreCase) >= 0
@@ -243,15 +247,4 @@ public static class EmailBlockExpectation {
 	// Parsed defensively: an unparseable payload is the command's problem to report through the normal error
 	// path, not this check's. Returning null here just skips the verification rather than masking the real
 	// failure with a second, less useful message.
-	private static JsonNode? TryParse(string json) {
-		if (string.IsNullOrWhiteSpace(json)) {
-			return null;
-		}
-
-		try {
-			return JsonNode.Parse(json);
-		} catch (JsonException) {
-			return null;
-		}
-	}
 }

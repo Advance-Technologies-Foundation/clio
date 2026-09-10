@@ -37,6 +37,7 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		fileDesignModePackages.LoadPackagesToDb().Returns(FileDesignModeLoadResult.Completed);
 		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
 		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
 		EnvironmentSettings settings = new() {
@@ -121,6 +122,7 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		fileDesignModePackages.LoadPackagesToDb().Returns(FileDesignModeLoadResult.Completed);
 		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
 		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
 		EnvironmentSettings settings = new() {
@@ -178,6 +180,75 @@ public class ModifyUserTaskParametersCommandTests : BaseCommandTests<ModifyUserT
 			Arg.Is<IReadOnlyDictionary<string, int>>(directions =>
 				directions.Count == 1 && directions["ExistingText"] == 1));
 		fileDesignModePackages.Received(1).LoadPackagesToDb();
+	}
+
+	[Test]
+	[Description("Fails the command when the direction metadata could not be loaded into the configuration database, instead of building the package from the unchanged database copy.")]
+	[Category("Unit")]
+	public void Execute_Should_Fail_When_Direction_Metadata_Is_Not_Loaded_To_Database() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		fileDesignModePackages.LoadPackagesToDb().Returns(FileDesignModeLoadResult.FileDesignModeDisabled);
+		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
+		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
+		EnvironmentSettings settings = new() {
+			Uri = "https://localhost",
+			IsNetCore = false
+		};
+		Guid itemId = Guid.Parse("16cd93aa-c7ce-445c-9418-c46439708abe");
+		Guid schemaUId = Guid.Parse("2d3946f3-28d5-4560-bb34-f13d14572e96");
+		Guid packageUId = Guid.Parse("1d07fd0e-2ca4-4d20-93b4-eb5a795ea03f");
+		Guid schemaId = Guid.Parse("937d9454-ef79-49e3-b098-4340bca01fd8");
+
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetWorkspaceItems).Returns(GetWorkspaceItemsUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetUserTaskSchema).Returns(GetSchemaUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveUserTaskSchema).Returns(SaveSchemaUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.BuildPackage).Returns(BuildPackageUrl);
+		workspacePathBuilder.RootPath.Returns(WorkspaceRootPath);
+		workspacePathBuilder.WorkspaceSettingsPath.Returns(WorkspaceSettingsPath);
+		workspacePathBuilder.IsWorkspace.Returns(true);
+		fileSystem.ExistsDirectory(WorkspaceRootPath).Returns(true);
+		jsonConverter.DeserializeObjectFromFile<WorkspaceSettings>(WorkspaceSettingsPath).Returns(new WorkspaceSettings {
+			Packages = ["MyPackage"]
+		});
+		applicationClient.ExecutePostRequest(GetWorkspaceItemsUrl, string.Empty, Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(GetWorkspaceItemsResponse(itemId, schemaUId, packageUId));
+		applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(GetSchemaResponse(schemaUId, schemaId, packageUId));
+		applicationClient.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns($$"""{"success":true,"schemaUid":"{{schemaUId}}","validationErrors":[]}""");
+		applicationClient.ExecutePostRequest(BuildPackageUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns("{}");
+
+		ModifyUserTaskParametersCommand command = new(applicationClient, settings, serviceUrlBuilder,
+			workspacePathBuilder, jsonConverter, fileSystem, fileDesignModePackages, metadataDirectionApplier,
+			lookupSchemaResolver);
+		ModifyUserTaskParametersOptions options = new() {
+			UserTaskName = "UsrSendInvoice",
+			SetDirections = ["ExistingText=Out"]
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "direction metadata that never reached the configuration database must not be reported as applied");
+		// Only the build that follows the schema save happens; the second build that would compile the
+		// direction metadata is skipped, because there is nothing new in the configuration database to compile.
+		applicationClient.Received(1).ExecutePostRequest(BuildPackageUrl, Arg.Any<string>(), Arg.Any<int>(),
+			Arg.Any<int>(), Arg.Any<int>());
+		metadataDirectionApplier.Received(1).ApplyDirections("MyPackage", "UsrSendInvoice",
+			Arg.Any<IReadOnlyDictionary<string, int>>());
 	}
 
 	[Test]

@@ -92,6 +92,10 @@ public static class WebToMobileAnalysisService {
 	/// Without it every input the producer types by CLASS rather than by a literal container reads as
 	/// indeterminate, and a nested element slot (<c>crt.List.itemLayout</c>) is walked out as a child-element
 	/// array instead of being carried and coerced (ENG-91859).</param>
+	/// <param name="actionTargetsProbe">Read-only probe of whether each action's NAVIGATION TARGET exists on
+	/// mobile (ENG-94839), surfaced as <c>requestConversions.unresolvedTargetRequests</c>. Null - or a probe
+	/// that could not reach the environment - leaves every target unknown and changes no conversion decision:
+	/// the report is a warning, nothing is dropped on target grounds.</param>
 		public static MobilePageConversionGuide Analyze(
 		PageBundleInfo bundle,
 		IReadOnlySet<string> mobileTypes,
@@ -119,7 +123,8 @@ public static class WebToMobileAnalysisService {
 		bool webTemplateUnavailable = false,
 		JObject webTemplateResources = null,
 		IReadOnlyDictionary<string, JsonElement> mobileTypeDefinitions = null,
-		IReadOnlyDictionary<string, MobileTemplateSlotElement> mobileTemplateSlotElements = null) {
+		IReadOnlyDictionary<string, MobileTemplateSlotElement> mobileTemplateSlotElements = null,
+		MobileActionTargetProbeResult actionTargetsProbe = null) {
 		ArgumentNullException.ThrowIfNull(bundle);
 		ArgumentNullException.ThrowIfNull(mobileTypes);
 		ArgumentNullException.ThrowIfNull(webTypes);
@@ -204,13 +209,25 @@ public static class WebToMobileAnalysisService {
 		// Shape coercions that DISCARDED content (an Object-declared slot fed a multi-element array) are
 		// recorded here rather than dropped silently — the guide reports them as a constraint.
 		var shapeTruncations = new List<string>();
+		// The probe's verdicts reach the binding processor, which is the only place that knows whether a
+		// binding actually made it into the mobile body — so the report is what the conversion DID, never an
+		// after-the-fact guess reconciled against the element map.
+		// NOT gated on ProbeOk. Fail-open is structural here: a target the probe could not settle is ABSENT
+		// from the map, and an absent key reads as Unknown. Gating on the flag instead threw away the verdicts
+		// the probe had ALREADY settled without the environment (a web-page target is dead by construction),
+		// so a page carrying one web-page target plus one object target silently lost the web-page warning
+		// that the same page without the object target reports fine (ENG-94839).
+		IReadOnlyDictionary<string, ActionTargetResolution> actionTargets =
+			actionTargetsProbe?.TargetsByKey
+			?? new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase);
+		List<UnresolvedTargetRequest> unresolvedTargets = [];
 		List<ElementMapEntry> elementMap = BuildElementMap(
 			tree, map, componentMap, mobileTypes, mobileByType, mobileTypeDefinitions, webByType, rules,
 			attrToColumn, resources,
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns,
 			positionalParentByAnchor, positionalAnchorByWebAnchor,
 			mobileTypesByName, mobileTemplateSlotElements, webBaselineNodes, webTemplateResources,
-			shapeTruncations);
+			shapeTruncations, actionTargets, unresolvedTargets);
 
 		// Removes components an excludedComponents rule bans from a host (type-agnostic — which
 		// type/host/property is banned comes entirely from the rules), in the two shapes a banned component
@@ -253,7 +270,7 @@ public static class WebToMobileAnalysisService {
 		AssignConvertedTabIndexes(elementMap);
 		RequestConversionInfo requestConversions = BuildRequestConversionInfo(
 			convertedRequests, droppedRequests, flaggedRequests, emptyRemovedMobileNames,
-			excludedRemovedMobileNames);
+			excludedRemovedMobileNames, actionTargetsProbe, unresolvedTargets);
 
 		// Adaptive (per-breakpoint) layout for multi-column crt.GridContainer: on the phone (small) collapse
 		// to a single column and stack; on tablet/desktop (medium/large) keep the web columns and per-child
@@ -416,7 +433,8 @@ public static class WebToMobileAnalysisService {
 					.Select(e => e.ParentName)
 					.Distinct(StringComparer.OrdinalIgnoreCase)
 					.ToList(),
-				shapeTruncations: shapeTruncations),
+				shapeTruncations: shapeTruncations,
+				unresolvedTargetRequests: requestConversions?.UnresolvedTargetRequests),
 			NextSteps = BuildNextSteps(
 				hasDataSections: modelConfig is not null || viewModelConfig is not null,
 				hasAdaptiveLayout: adaptiveLayout.Count > 0,
@@ -1788,6 +1806,96 @@ public static class WebToMobileAnalysisService {
 		return referenced;
 	}
 
+	/// <summary>
+	/// Adds the ENG-94839 action-target rules to <paramref name="constraints"/>. The tool's contract is that
+	/// the guide is self-describing — its own <c>constraints</c> carry the rules for applying THIS
+	/// conversion — so the findings must arrive with the instruction that acts on them, not only as data a
+	/// separate article explains.
+	/// <para>
+	/// The CONTROL is never removed, whatever the finding says: the developer decides whether to convert the
+	/// target page, repoint the action or leave it, and this tool is advisory — telling the caller to leave the
+	/// button out of the body it builds WOULD be the removal, so no wording here may. Three groups, because
+	/// three different things happened to the ACTION: a definitional absence had its binding removed, a read
+	/// that reported absence did NOT (it cannot prove absence), and an unverified target did not either.
+	/// </para>
+	/// </summary>
+	private static void AddUnresolvedTargetConstraints(
+		List<string> constraints, IReadOnlyList<UnresolvedTargetRequest> unresolvedTargetRequests) {
+		if (unresolvedTargetRequests is not { Count: > 0 }) {
+			return;
+		}
+		// The kind travels with each entry because the two carry different remedies: a web-page reference has
+		// to be repointed or dropped, an object needs its default mobile page created.
+		string Describe(IEnumerable<UnresolvedTargetRequest> items) =>
+			string.Join(", ", items
+				.Select(r => $"{r.ElementName} -> {r.Target} ({r.TargetKind})")
+				.Distinct(StringComparer.Ordinal));
+
+		bool IsState(UnresolvedTargetRequest r, string state) =>
+			string.Equals(r.State, state, StringComparison.Ordinal);
+
+		// The remedy is a property of the KIND, so it is composed from the kinds actually in the group instead
+		// of asserted for all of them. Group membership is decided by StripsBindingOnMissing, which is the one
+		// place a second kind can be admitted — and on that day a hard-coded "a web-page target names a WEB
+		// page" would state a false reason for someone else's removal.
+		string Remedies(IEnumerable<UnresolvedTargetRequest> items) {
+			List<string> parts = [];
+			HashSet<string> kinds = new(
+				items.Select(r => r.TargetKind ?? string.Empty), StringComparer.OrdinalIgnoreCase);
+			if (kinds.Contains(MobileActionTargetProbe.KindWebPage)) {
+				parts.Add(
+					"A \"web-page\" target names a WEB page, and the Creatio Mobile app cannot open one at all — "
+					+ "offer to repoint the control at that page's converted mobile twin.");
+			}
+			if (kinds.Contains(MobileActionTargetProbe.KindEntityDefaultMobilePage)) {
+				parts.Add(
+					"An \"entity-default-mobile-page\" target is an object whose MobileRelatedPage add-on declares "
+					+ "no default mobile page. Say exactly that, NOT \"the page does not exist\": a LEGACY default "
+					+ "mobile page can exist without ever being registered in that add-on, so the action may work "
+					+ "already. If there is genuinely no mobile page for that object, converting its form page and "
+					+ "registering it is what makes every action pointing there work.");
+			}
+			return parts.Count == 0 ? string.Empty : " " + string.Join(" ", parts);
+		}
+
+		List<UnresolvedTargetRequest> removed = [.. unresolvedTargetRequests.Where(r => r.BindingRemoved)];
+		if (removed.Count > 0) {
+			constraints.Add(
+				"requestConversions.unresolvedTargetRequests reports action(s) whose target CANNOT exist on the "
+				+ "Creatio Mobile app: " + Describe(removed)
+				+ ". Their bindings are ALREADY REMOVED from elementMap[].mobileValues and also listed in "
+				+ "droppedRequests. Build each element exactly as its entry says — the control renders and does "
+				+ "nothing — and KEEP the control (a button, a menu item, whatever fired the action): only the dead "
+				+ "action was dropped. Name each control and its lost target at the conversion gate."
+				+ Remedies(removed));
+		}
+		// Explicitly NOT r.BindingRemoved, so the three groups are exclusive by construction rather than by an
+		// invariant enforced elsewhere: one entry told both "ALREADY REMOVED" and "KEPT" is a contradiction an
+		// agent cannot recover from.
+		List<UnresolvedTargetRequest> reportedMissing = [..
+			unresolvedTargetRequests.Where(r => IsState(r, UnresolvedTargetRequest.StateMissing) && !r.BindingRemoved)];
+		if (reportedMissing.Count > 0) {
+			constraints.Add(
+				"requestConversions.unresolvedTargetRequests reports action(s) whose target was READ as absent on "
+				+ "mobile: " + Describe(reportedMissing)
+				+ ". These bindings were KEPT and convert normally, and the request was not modified at all — the "
+				+ "read reports what the target DECLARES, which is not the same as proving the action is dead, so "
+				+ "nothing was removed. Build each element exactly as its elementMap entry says, name the control "
+				+ "and its target at the conversion gate as something to CHECK, and let the user decide."
+				+ Remedies(reportedMissing));
+		}
+		List<UnresolvedTargetRequest> unknown = [..
+			unresolvedTargetRequests.Where(r => IsState(r, UnresolvedTargetRequest.StateUnknown) && !r.BindingRemoved)];
+		if (unknown.Count > 0) {
+			constraints.Add(
+				"requestConversions.unresolvedTargetRequests reports action(s) whose target could NOT be verified: "
+				+ Describe(unknown)
+				+ ". These bindings were KEPT — unverified is not the same as absent, so the action still works if the "
+				+ "target is really there. Build them exactly as their elementMap entries say and ask the user to "
+				+ "confirm each target before relying on it; do not report them as broken.");
+		}
+	}
+
 	private static List<string> BuildConstraints(
 		IReadOnlyList<string> webOnlySections,
 		bool hasModelConfig, bool hasViewModelConfig, bool hasAdaptiveLayout, bool templatePruned = false,
@@ -1798,7 +1906,8 @@ public static class WebToMobileAnalysisService {
 		bool exclusionSearchTruncated = false, int discardedExclusionFilters = 0,
 		int skippedOverrideRules = 0, bool hasExcludedComponents = false,
 		IReadOnlyList<string> retargetParentsOnTemplate = null,
-		IReadOnlyList<string> shapeTruncations = null) {
+		IReadOnlyList<string> shapeTruncations = null,
+		IReadOnlyList<UnresolvedTargetRequest> unresolvedTargetRequests = null) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
@@ -1820,6 +1929,7 @@ public static class WebToMobileAnalysisService {
 				+ "collection here, the registry declaration is wrong (report it) and the remaining entries "
 				+ "must be restored by hand.");
 		}
+		AddUnresolvedTargetConstraints(constraints, unresolvedTargetRequests);
 		if (retargetParentsOnTemplate is { Count: > 0 }) {
 			constraints.Add(
 				"elementMap RETARGETS elements into container(s) the mobile template ALREADY provides: "
@@ -2011,11 +2121,21 @@ public static class WebToMobileAnalysisService {
 	// ── Instance-level element map ────────────────────────────────────────────────────────────
 
 	/// <summary>
-	/// Carries the read-only inputs of the element-map pass so the recursion stays terse. Two members are
-	/// deliberately mutable sinks the caller owns: <c>Out</c>, and <c>ShapeTruncations</c>, which
-	/// <see cref="CoerceToDeclaredShape"/> writes into so a discarded array element can be surfaced as a
-	/// guide constraint instead of vanishing.
+	/// Carries the read-only inputs of the element-map pass so the recursion stays terse. Three members
+	/// are deliberately mutable sinks the caller owns: <c>Out</c>, <c>UnresolvedTargetRequests</c>, and
+	/// <c>ShapeTruncations</c>, which <see cref="CoerceToDeclaredShape"/> writes into so a discarded
+	/// array element can be surfaced as a guide constraint instead of vanishing.
 	/// </summary>
+	/// <param name="ActionTargets">
+	/// Per distinct action target, what the probe found — keyed by
+	/// <see cref="MobileActionTargetProbe.TargetKey"/>. An ABSENT key means "not considered": the rules
+	/// declared no target for that request, the target is the page's own object, or the probe could not reach
+	/// the environment. All three fail open, which is why absence and not a flag is the signal.
+	/// </param>
+	/// <param name="UnresolvedTargetRequests">
+	/// Collector the binding pass appends a finding to at the moment it keeps or removes a binding, so the
+	/// report IS what the conversion did rather than a reconciliation against the finished map.
+	/// </param>
 	private sealed record ElementMapContext(
 		IReadOnlyDictionary<string, string> Map,
 		IReadOnlyDictionary<string, ComponentMappingRule> ComponentMap,
@@ -2042,7 +2162,9 @@ public static class WebToMobileAnalysisService {
 		JObject WebBaselineResources,
 		IReadOnlySet<string> ScopeContainerNames,
 		IReadOnlySet<string> ContentContainerTypes,
-		List<string> ShapeTruncations);
+		List<string> ShapeTruncations,
+		IReadOnlyDictionary<string, ActionTargetResolution> ActionTargets,
+		List<UnresolvedTargetRequest> UnresolvedTargetRequests);
 
 	/// <summary>
 	/// The set of NON-CONVERTING scope container names — declared EXPLICITLY by the rules'
@@ -2092,7 +2214,9 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, MobileTemplateSlotElement> mobileTemplateSlotElements,
 		IReadOnlyDictionary<string, JObject> webBaselineNodes,
 		JObject webBaselineResources,
-		List<string> shapeTruncations) {
+		List<string> shapeTruncations,
+		IReadOnlyDictionary<string, ActionTargetResolution> actionTargets,
+		List<UnresolvedTargetRequest> unresolvedTargetRequests) {
 		var ctx = new ElementMapContext(map,
 			componentMap ?? new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase),
 			mobileTypes, mobileByType ?? new Dictionary<string, ComponentRegistryEntry>(),
@@ -2109,7 +2233,8 @@ public static class WebToMobileAnalysisService {
 			webBaselineResources,
 			CollectScopeContainerNames(rules),
 			ContentContainerTypesOf(rules),
-			shapeTruncations ?? []);
+			shapeTruncations ?? [],
+			actionTargets, unresolvedTargetRequests);
 		WalkElements(ctx, tree, mobileParentName: null);
 		return ctx.Out;
 	}
@@ -2994,7 +3119,13 @@ public static class WebToMobileAnalysisService {
 			// interaction enters a twin merge). An unchanged binding is inherited and left to the template element.
 			if (IsEventBinding(prop.Value)) {
 				if (!JToken.DeepEquals(baseline[prop.Name], prop.Value)) {
-					ProcessOneEventBinding(ctx, mobileName, prop.Name, (JObject)prop.Value, values);
+					// canRemoveBinding: false — `values` here is a DELTA MERGE payload, not the element's whole
+					// mobileValues. Omitting a key from a merge means "keep the mobile template element's own
+					// value" (see MobileValues), so nothing would actually be removed and the mobile control
+					// may well keep firing the template's own request. Report the dead target; do not claim a
+					// removal that the merge cannot perform.
+					ProcessOneEventBinding(ctx, mobileName, prop.Name, (JObject)prop.Value, values,
+						canRemoveBinding: false);
 				}
 				continue;
 			}
@@ -4127,7 +4258,8 @@ public static class WebToMobileAnalysisService {
 	private static void ProcessEventBindings(ElementMapContext ctx, JObject node, JObject values, string elementName) {
 		foreach (JProperty prop in node.Properties()) {
 			if (IsEventBinding(prop.Value)) {
-				ProcessOneEventBinding(ctx, elementName, prop.Name, (JObject)prop.Value, values);
+				ProcessOneEventBinding(ctx, elementName, prop.Name, (JObject)prop.Value, values,
+					canRemoveBinding: true);
 			}
 		}
 	}
@@ -4137,12 +4269,55 @@ public static class WebToMobileAnalysisService {
 	/// requestConversions collectors — the per-binding core shared by the insert builder (which processes every
 	/// binding on the node) and the same-component-twin delta (which processes only a binding the page CHANGED).
 	/// </summary>
-	private static void ProcessOneEventBinding(ElementMapContext ctx, string elementName, string binding, JObject source, JObject values) {
+	/// <param name="ctx">Element-map pass inputs, including the probe's target resolutions.</param>
+	/// <param name="elementName">The CONVERTED element's mobile name, which every record here is keyed on.</param>
+	/// <param name="binding">The event property, e.g. <c>clicked</c>.</param>
+	/// <param name="source">The source binding's <c>{ request, params }</c> object.</param>
+	/// <param name="values">The values object being built.</param>
+	/// <param name="canRemoveBinding">
+	/// Whether omitting <paramref name="binding"/> from <paramref name="values"/> actually REMOVES the action.
+	/// True for the insert builder, whose <paramref name="values"/> becomes the element's entire
+	/// <c>mobileValues</c>. FALSE for the twin delta, whose <paramref name="values"/> is a merge payload where
+	/// an omitted key means "keep the template element's own value" — so a removal is not something that
+	/// writer can perform, and reporting one would tell the caller the control "renders and does nothing" when
+	/// it may still fire the mobile template's own request. The removal decision belongs to the WRITER as much
+	/// as to the target kind, which is why it is a parameter rather than a property of the resolution.
+	/// </param>
+	private static void ProcessOneEventBinding(
+		ElementMapContext ctx, string elementName, string binding, JObject source, JObject values,
+		bool canRemoveBinding) {
 		string webRequest = source["request"].ToString();
 		values.Remove(binding); // own this property regardless of the prune loop
 
 		if (ctx.RequestMap.TryGetValue(webRequest, out RequestMappingRule rule)) {
 			if (!string.IsNullOrWhiteSpace(rule.Mobile)) {
+				// The request type converts. Its DESTINATION is the second question, and it is reported
+				// separately: whether the action is also REMOVED depends on how strong the absence verdict is,
+				// which MobileActionTargetProbe.StripsBindingOnMissing owns. The COMPONENT always stays.
+				ActionTargetResolution target = ResolvedTargetOf(ctx, rule, source);
+				if (target is { State: ActionTargetState.Missing or ActionTargetState.Unknown }) {
+					bool missing = target.State == ActionTargetState.Missing;
+					// Removed only for a DEFINITIONAL absence (a web page cannot open on mobile, and no
+					// environment read was involved). An object's add-on verdict is a report, never a removal:
+					// it cannot prove absence, and stripping on it would cost a working action.
+					bool removed = missing
+						&& canRemoveBinding
+						&& MobileActionTargetProbe.StripsBindingOnMissing(target.Kind);
+					ctx.UnresolvedTargetRequests.Add(new UnresolvedTargetRequest {
+						ElementName = elementName, Binding = binding, WebRequest = webRequest,
+						TargetKind = target.Kind, Target = target.Target,
+						State = missing ? UnresolvedTargetRequest.StateMissing : UnresolvedTargetRequest.StateUnknown,
+						BindingRemoved = removed
+					});
+					if (removed) {
+						ctx.DroppedRequests.Add(new DroppedRequest {
+							ElementName = elementName, Binding = binding, WebRequest = webRequest,
+							Reason = $"Request converts, but its target {target.Kind} '{target.Target}' cannot exist "
+								+ "on mobile; the binding was removed (the component still renders)."
+						});
+						return;
+					}
+				}
 				var clone = (JObject)source.DeepClone();
 				clone["request"] = rule.Mobile;
 				ApplyParamMap(clone, rule.ParamMap);
@@ -4167,6 +4342,28 @@ public static class WebToMobileAnalysisService {
 			ElementName = elementName, Binding = binding, Request = webRequest,
 			Reason = "Request is not in the conversion map (custom or unknown) — verify it exists on mobile before relying on it."
 		});
+	}
+
+	/// <summary>
+	/// What the probe found about THIS binding's navigation target, or <see langword="null"/> when the target
+	/// was never considered — the rules declare no <c>targetParam</c>/<c>targetKind</c> for the request, the
+	/// value is an attribute binding rather than a literal, the target is the page's own object, or the probe
+	/// could not reach the environment. Null is the fail-open answer: the binding converts untouched.
+	/// </summary>
+	private static ActionTargetResolution ResolvedTargetOf(
+		ElementMapContext ctx, RequestMappingRule rule, JObject source) {
+		if (ctx.ActionTargets.Count == 0 || string.IsNullOrWhiteSpace(rule.TargetParam)
+			|| string.IsNullOrWhiteSpace(rule.TargetKind)) {
+			return null;
+		}
+		string target = source["params"] is JObject parameters ? parameters[rule.TargetParam]?.ToString()?.Trim() : null;
+		if (string.IsNullOrEmpty(target)) {
+			return null;
+		}
+		return ctx.ActionTargets.TryGetValue(
+			MobileActionTargetProbe.TargetKey(rule.TargetKind, target), out ActionTargetResolution resolution)
+			? resolution
+			: null;
 	}
 
 	/// <summary>Renames keys in the binding's <c>params</c> object per the rule's web→mobile param map (no-op when empty).</summary>
@@ -4207,21 +4404,48 @@ public static class WebToMobileAnalysisService {
 	/// </summary>
 	private static RequestConversionInfo BuildRequestConversionInfo(
 		List<ConvertedRequest> converted, List<DroppedRequest> dropped, List<FlaggedRequest> flagged,
-		HashSet<string> emptyRemovedMobileNames, HashSet<string> excludedRemovedMobileNames) {
+		HashSet<string> emptyRemovedMobileNames, HashSet<string> excludedRemovedMobileNames,
+		MobileActionTargetProbeResult actionTargetsProbe, List<UnresolvedTargetRequest> unresolvedTargets) {
 		ReclassifyRemovedBindings(converted, flagged, dropped, emptyRemovedMobileNames,
 			"its container was removed as an empty container — the binding was discarded with it");
 		if (excludedRemovedMobileNames is { Count: > 0 }) {
 			ReclassifyRemovedBindings(converted, flagged, dropped, excludedRemovedMobileNames,
 				"its element was removed by an excludedComponents rule — the binding was discarded with it");
 		}
-		if (converted.Count == 0 && dropped.Count == 0 && flagged.Count == 0) {
+		ReclassifyRemovedTargetFindings(unresolvedTargets, emptyRemovedMobileNames);
+		ReclassifyRemovedTargetFindings(unresolvedTargets, excludedRemovedMobileNames);
+		bool targetsProbed = actionTargetsProbe?.ProbeOk == true;
+		if (converted.Count == 0 && dropped.Count == 0 && flagged.Count == 0 && unresolvedTargets.Count == 0) {
 			return null;
 		}
 		return new RequestConversionInfo {
 			ConvertedRequests = converted,
 			DroppedRequests = dropped,
-			FlaggedRequests = flagged
+			FlaggedRequests = flagged,
+			UnresolvedTargetRequests = unresolvedTargets,
+			TargetsProbed = targetsProbed,
+			// Carried whenever the probe set one, not only on total failure: a check that ran but hit its
+			// per-object ceiling is incomplete in a way TargetsProbed alone cannot express. Redacted at the
+			// point it is built.
+			TargetsNote = actionTargetsProbe?.Note
 		};
+	}
+
+	/// <summary>
+	/// Drops every action-target finding whose element a LATER removal pass took off the page. A finding is
+	/// recorded where the binding is written, which is before the empty-container and excludedComponents
+	/// passes run — so without this sweep the report would name a control the mobile page does not have, and
+	/// the guide would contradict its own element map. The element's own drop entry already accounts for it.
+	/// Mirrors <see cref="ReclassifyRemovedBindings"/>, which does the same for the request records.
+	/// </summary>
+	/// <param name="unresolvedTargets">Findings collected during the element-map build; mutated in place.</param>
+	/// <param name="removedMobileNames">Mobile names one removal pass discarded.</param>
+	private static void ReclassifyRemovedTargetFindings(
+		List<UnresolvedTargetRequest> unresolvedTargets, HashSet<string> removedMobileNames) {
+		if (removedMobileNames is not { Count: > 0 }) {
+			return;
+		}
+		unresolvedTargets.RemoveAll(r => removedMobileNames.Contains(r.ElementName ?? string.Empty));
 	}
 
 	/// <summary>

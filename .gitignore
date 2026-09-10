@@ -231,6 +231,7 @@ These files are used on local dev environment only
 .claude/settings.json
 .claude/settings.local.json
 .claude/worktrees/
+.worktrees/
 .mcp.json
 .serena
 .clio-pages/

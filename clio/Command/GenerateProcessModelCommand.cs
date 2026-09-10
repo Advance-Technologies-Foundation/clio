@@ -15,7 +15,7 @@ public class GenerateProcessModelCommandOptions : EnvironmentOptions{
 	/// <summary>
 	/// Process code as it appears in the Creatio process designer.
 	/// </summary>
-	[Value(0, MetaName = "Code", Required = true, HelpText = "Process code as it appears in the process designer")]
+	[Value(0, MetaName = "Code", Required = true, HelpText = "Process code (schema Name) or display caption as it appears in the process designer")]
 	public string Code { get; set; } = string.Empty;
 
 

@@ -205,6 +205,17 @@ public sealed class MobilePageConversionGuideTool {
 			_commandResolver, args.EnvironmentName, args.Uri, args.Login, args.Password,
 			args.SchemaName, pageResponse.Page?.PackageUId);
 
+		// Read-only probe: do the page's action bindings point at targets that EXIST on mobile — a page the
+		// converter has a mobile twin for, an object with a default mobile edit page? Best-effort and
+		// per-tier: an unreachable environment leaves every OBJECT target unknown, which reports nothing and
+		// changes no conversion decision. A web-page target needs no read at all, so it is still reported and
+		// still costs its binding (never its control) even offline (ENG-94839).
+		MobileActionTargetProbeResult actionTargets = MobileActionTargetProbe.Probe(
+			_commandResolver, args.EnvironmentName, args.Uri, args.Login, args.Password,
+			new MobileActionTargetProbeRequest(
+				pageResponse.Bundle?.ViewConfig, rules, pageResponse.Bundle?.ModelConfig,
+				pageResponse.Page?.PackageUId));
+
 		MobilePageConversionGuide guide;
 		try {
 			guide = WebToMobileAnalysisService.Analyze(
@@ -229,7 +240,8 @@ public sealed class MobilePageConversionGuideTool {
 				webTemplateUnavailable: webTemplateBaseline.Unavailable,
 				webTemplateResources: webTemplateBaseline.Resources,
 				mobileTypeDefinitions: mobileState.GlobalReferences?.TypeDefinitions,
-				mobileTemplateSlotElements: mobileTemplateProbe.SlotElementsByOwner);
+				mobileTemplateSlotElements: mobileTemplateProbe.SlotElementsByOwner,
+				actionTargetsProbe: actionTargets);
 		} catch (Exception ex) {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}

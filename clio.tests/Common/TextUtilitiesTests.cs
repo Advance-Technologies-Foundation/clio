@@ -11,6 +11,37 @@ public sealed class TextUtilitiesTests
 {
 	[Test]
 	[Category("Unit")]
+	[Description("Neutralises characters that are NOT control characters but still forge output. "
+		+ "char.IsControl is FALSE for UnicodeCategory.Format and for the two Unicode separators, so "
+		+ "U+2028 and U+2029 - which a terminal treats as line breaks - and the BiDi overrides "
+		+ "U+202A-U+202E / U+2066-U+2069 passed this filter verbatim. Those overrides reorder RENDERED "
+		+ "text without changing its bytes (Trojan Source, CVE-2021-42574), which is exactly the "
+		+ "forgery this helper exists to stop, and the values reaching it are caller-supplied and land "
+		+ "in an MCP agent's context. One case per character so a partial regression names the one that "
+		+ "got through. Mirrors CrtProcessBuilder SafeText.Sanitize, which carries the same rule.")]
+	[TestCase('\u2028', TestName = "SanitizeForDisplay_ShouldReplaceLineSeparator")]
+	[TestCase('\u2029', TestName = "SanitizeForDisplay_ShouldReplaceParagraphSeparator")]
+	[TestCase('\u202E', TestName = "SanitizeForDisplay_ShouldReplaceRightToLeftOverride")]
+	[TestCase('\u2066', TestName = "SanitizeForDisplay_ShouldReplaceLeftToRightIsolate")]
+	[TestCase('\u200B', TestName = "SanitizeForDisplay_ShouldReplaceZeroWidthSpace")]
+	public void SanitizeForDisplay_ShouldReplaceAFormatOrSeparatorCharacter(char forged) {
+		// Arrange - with a precondition, because a character this filter ALREADY caught would pass
+		// vacuously and prove nothing about the widening
+		string text = "before" + forged + "after";
+		char.IsControl(forged).Should().BeFalse(
+			because: "the point of this test is the set char.IsControl does NOT cover");
+
+		// Act
+		string sanitized = TextUtilities.SanitizeForDisplay(text);
+
+		// Assert
+		sanitized.Should().Be("before after",
+			because: "the character is replaced with a space and the surrounding text stays readable - a "
+			+ "reader has to be able to see what was said as well as be safe from it");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Replaces every control character (newline, carriage return, tab, ANSI escape) with a space so untrusted text cannot forge extra output lines or inject terminal escape sequences.")]
 	public void SanitizeForDisplay_ShouldReplaceControlCharactersWithSpaces_WhenTextContainsThem() {
 		// Arrange
@@ -27,6 +58,41 @@ public sealed class TextUtilitiesTests
 		sanitized.Should().Contain("line1 ", because: "visible content must be preserved with control characters replaced by spaces");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Text whose sanitized form is EXACTLY the cap comes back whole, with no ellipsis. This "
+		+ "is the boundary the scan bound can get wrong: the loop now stops once the output exceeds the "
+		+ "cap, and a condition off by one would stop a character early, return a string that happens to "
+		+ "be cap-length, and report it as complete - dropping the rest with nothing to mark the cut. "
+		+ "Mirrors the package half, CrtProcessBuilder SafeText.")]
+	public void SanitizeForDisplay_ShouldKeepTextExactlyAtTheCap() {
+		// Arrange, Act
+		string sanitized = TextUtilities.SanitizeForDisplay("abcd", 4);
+
+		// Assert
+		sanitized.Should().Be("abcd",
+			because: "nothing exceeded the cap, so nothing is cut and no ellipsis is added");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A long run of DROPPED characters before real text neither fills the cap nor hides the "
+		+ "text behind it. The scan is bounded on the OUTPUT rather than the input, deliberately: "
+		+ "bounding the input would be cheaper and would answer wrongly here, returning nothing because "
+		+ "the first thousand code units are unpaired surrogate halves. Pins a trade-off otherwise "
+		+ "stated only in a comment.")]
+	public void SanitizeForDisplay_ShouldNotSpendTheBudgetOnDroppedCharacters() {
+		// Arrange - a thousand lone high surrogates, then the text that matters
+		string crafted = new string((char)0xD83D, 1000) + "Approved";
+
+		// Act
+		string sanitized = TextUtilities.SanitizeForDisplay(crafted, 16);
+
+		// Assert
+		sanitized.Should().Be("Approved",
+			because: "dropped characters add nothing to the output, so they neither consume the cap nor "
+			+ "conceal the text after them");
+	}
 	[Test]
 	[Category("Unit")]
 	[Description("Caps text longer than the maximum length and appends an ellipsis so a large payload cannot flood the output.")]
@@ -207,4 +273,74 @@ public sealed class TextUtilitiesTests
 		// Assert
 		rendered.Should().BeEmpty(because: "an interpolated null must not become the word 'null' or an NRE");
 	}
+	[Test]
+	[Category("Unit")]
+	[Description("The cut never lands BETWEEN a surrogate pair. Substring counts UTF-16 units, so a cap falling inside an astral character (an emoji, and every supplementary-plane script) emitted a lone high surrogate - invalid UTF-16 that a console renders as a replacement glyph and that System.Text.Json refuses outright, which SensitiveErrorTextRedactorTests already relies on. This helper has 15+ call sites and its output reaches MCP tool results, so the failure would surface far from here as a serialization error rather than as truncated text. None of the tests above uses a non-BMP character, so deleting the back-off was green.")]
+	public void SanitizeForDisplay_ShouldNotSplitASurrogatePair_WhenTheCapFallsInsideOne() {
+		// Arrange - three ASCII characters then one astral character: five UTF-16 units.
+		const string text = "abc\U0001F600";
+
+		// Act
+		string sanitized = TextUtilities.SanitizeForDisplay(text, maxLength: 4);
+
+		// Assert
+		sanitized.Should().Be("abc...",
+			because: "the whole astral character is dropped rather than half of it kept, and the cut is still "
+				+ "marked with this helper's three-dot ellipsis");
+		sanitized.Should().NotContain("\uD83D",
+			because: "a lone high surrogate is what the naive cut produced, and it cannot be serialized into "
+				+ "a tool result at all");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A pre-existing UNPAIRED surrogate half is dropped, not merely protected from being split by truncation. It is invalid UTF-16, which System.Text.Json refuses - so a caller value carrying one would make this helper the cause of a serialization failure inside the very message it exists to make safe. Guarding the cut was not enough; a lone half passed straight through untouched, and no test covered that. Found by Copilot on the package PR, against the package twin, and the same gap was here. Built from a char cast because a lone surrogate cannot survive a string literal in metadata.")]
+	[TestCase(0xD83D, TestName = "SanitizeForDisplay_DropsALoneHighSurrogate")]
+	[TestCase(0xDE00, TestName = "SanitizeForDisplay_DropsALoneLowSurrogate")]
+	public void SanitizeForDisplay_ShouldDropAnUnpairedSurrogate(int codeUnit) {
+		// Arrange - with a precondition, because a substituted U+FFFD would pass vacuously
+		string text = "before" + (char)codeUnit + "after";
+		char.IsSurrogate(text[6]).Should().BeTrue(
+			because: "the value under test has to really carry an unpaired half");
+
+		// Act
+		string sanitized = TextUtilities.SanitizeForDisplay(text);
+
+		// Assert
+		sanitized.Should().Be("beforeafter",
+			because: "the half is removed rather than spaced - it is not a character, and leaving it makes "
+				+ "the JSON serializer throw on the message this helper was building");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An astral character that FITS is kept whole, so the back-off does not fire when there is room. Asserted separately because a version that always dropped the final unit would satisfy the test above.")]
+	public void SanitizeForDisplay_ShouldKeepAnAstralCharacter_WhenItFitsWithinTheCap() {
+		// Arrange
+		const string text = "abc\U0001F600";
+
+		// Act
+		string sanitized = TextUtilities.SanitizeForDisplay(text, maxLength: 5);
+
+		// Assert
+		sanitized.Should().Be(text,
+			because: "nothing exceeded the cap, so nothing is cut and no ellipsis is added");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase(0, TestName = "SanitizeForDisplay_ShouldNotThrow_WhenCapIsZero")]
+	[TestCase(-1, TestName = "SanitizeForDisplay_ShouldNotThrow_WhenCapIsNegative")]
+	[TestCase(int.MinValue, TestName = "SanitizeForDisplay_ShouldNotThrow_WhenCapIsIntMinValue")]
+	[Description("A non-positive cap yields the ellipsis rather than throwing. Its own comment calls this a REGRESSION GUARD and nothing guarded the guard: the surrogate back-off reads sanitized[cut - 1], which is an IndexOutOfRange at cut == 0, and deleting the clamp left the whole suite green. This helper is called while BUILDING a message about another failure, so a throw here masks the error it was reporting - the package's SafeText.Sanitize carries the same clamp and the same three cases for the same reason.")]
+	public void SanitizeForDisplay_ShouldNotThrow_WhenMaxLengthIsNotPositive(int maxLength) {
+		// Act
+		string sanitized = TextUtilities.SanitizeForDisplay("some untrusted value", maxLength);
+
+		// Assert
+		sanitized.Should().Be("...",
+			because: "no budget for the value degrades to marking that something was cut, never to throwing "
+				+ "inside a message build");
+	}
+
 }

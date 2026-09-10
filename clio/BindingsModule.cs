@@ -455,6 +455,10 @@ public class BindingsModule {
 		services.AddTransient<CreateBusinessProcessCommand>();
 		services.AddTransient<IModifyBusinessProcessService, ModifyBusinessProcessService>();
 		services.AddTransient<ModifyBusinessProcessCommand>();
+		services.AddTransient<IModifyProcessAsNewVersionService, ModifyProcessAsNewVersionService>();
+		services.AddTransient<ModifyProcessAsNewVersionCommand>();
+		services.AddTransient<ISetActiveProcessVersionService, SetActiveProcessVersionService>();
+		services.AddTransient<SetActiveProcessVersionCommand>();
 		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
 		services.AddTransient<GetAppSectionsCommand>();
 		services.AddTransient<IdentityProviderListCommand>();
@@ -470,6 +474,7 @@ public class BindingsModule {
 		services.AddTransient<CreateLookupCommand>();
 		services.AddTransient<PageListCommand>();
 		services.AddTransient<PageGetCommand>();
+		services.AddTransient<ProcessPageFactsCommand>();
 		services.AddTransient<GetPageHierarchyCommand>();
 		services.AddTransient<PageUpdateCommand>();
 		// Shared page conflict-baseline + file-output services consumed by both the CLI verbs
