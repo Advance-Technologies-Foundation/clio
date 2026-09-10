@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.IdentityServiceDeployment;
+using Clio.Command.OAuthAppConfiguration;
 using Clio.Common;
 using Clio.Common.IIS;
 using Clio.UserEnvironment;
@@ -34,10 +35,13 @@ public sealed class IdentityServiceDeploymentServiceTests
 	/// </remarks>
 	private static readonly string RealTempPath = ResolveRealPath(Path.GetTempPath());
 
-	[Test]
-	[Description("Deploy uses the persisted registered environment so EnvironmentPath survives option filling and ConnectionStrings.config can be read.")]
+	[TestCase(true, 200)]
+	[TestCase(true, 401)]
+	[TestCase(true, 403)]
+	[TestCase(false, 0)]
+	[Description("Deploy verifies the newly issued token against the persisted environment before saving OAuth credentials.")]
 	[Platform("Win", Reason = "deploy-identity performs Windows-only IIS deployment (DeploymentStrategyFactory throws PlatformNotSupportedException off-Windows); skipped on non-Windows")]
-	public void Deploy_Should_Use_Persisted_Environment_When_Resolving_Identity_Path_And_Db_Connection()
+	public void Deploy_ShouldPersistCredentialsOnlyWhenVerified_WhenTokenAndCrmChecksComplete(bool tokenAcquired, int crmStatus)
 	{
 		// Arrange
 		string environmentPath = CreateCreatioEnvironmentPath();
@@ -76,11 +80,16 @@ public sealed class IdentityServiceDeploymentServiceTests
 		IAvailableIisPortService availableIisPortService = Substitute.For<IAvailableIisPortService>();
 		IIdentityServiceRoleGrantService roleGrantService = Substitute.For<IIdentityServiceRoleGrantService>();
 		IDeploymentTargetReservation targetReservation = CreateTargetReservation();
+		IIdentityServerProbe probe = CreateProbe();
+		probe.AcquireClientCredentialsToken(Arg.Any<string>(), "client-id", "client-secret")
+			.Returns(tokenAcquired ? "test-token" : string.Empty);
+		probe.RunBearerDataServiceSmokeTest(persistedEnvironment, Arg.Any<string>(), "test-token").Returns(crmStatus);
 		IdentityServiceDeploymentService service = new(
 			settingsRepository,
 			archiveResolver,
 			creatioClient,
-			new StubHttpClientFactory(HttpStatusCode.OK),
+			probe,
+			Substitute.For<IServiceUrlBuilder>(),
 			sysSettingsManager,
 			processExecutor,
 			availableIisPortService,
@@ -98,11 +107,23 @@ public sealed class IdentityServiceDeploymentServiceTests
 		settingsRepository.ClearReceivedCalls();
 
 		// Act
+		if (!tokenAcquired || crmStatus != 200) {
+			Action act = () => service.Deploy(options);
+
+			// Assert
+			act.Should().Throw<InvalidOperationException>(because: "failed OAuth verification must stop deployment success");
+			settingsRepository.DidNotReceive().ConfigureEnvironment(Arg.Any<string>(), Arg.Any<EnvironmentSettings>());
+			if (!tokenAcquired) {
+				probe.DidNotReceive().RunBearerDataServiceSmokeTest(Arg.Any<EnvironmentSettings>(), Arg.Any<string>(), Arg.Any<string>());
+			}
+			return;
+		}
 		IdentityServiceDeploymentResult result = service.Deploy(options);
 
 		// Assert
 		result.Success.Should().BeTrue(
 			because: "a persisted EnvironmentPath should let deploy-identity read ConnectionStrings.config and complete");
+		probe.Received(1).RunBearerDataServiceSmokeTest(persistedEnvironment, Arg.Any<string>(), "test-token");
 		settingsRepository.DidNotReceive().GetEnvironment(Arg.Any<DeployIdentityOptions>());
 		settingsRepository.Received(1).ConfigureEnvironment(
 			"bank",
@@ -160,7 +181,8 @@ public sealed class IdentityServiceDeploymentServiceTests
 			settingsRepository,
 			archiveResolver,
 			creatioClient,
-			new StubHttpClientFactory(HttpStatusCode.OK),
+			CreateProbe(),
+			Substitute.For<IServiceUrlBuilder>(),
 			sysSettingsManager,
 			processExecutor,
 			availableIisPortService,
@@ -641,7 +663,8 @@ public sealed class IdentityServiceDeploymentServiceTests
 			settingsRepository ?? CreateSettingsRepository(),
 			archiveResolver ?? Substitute.For<IIdentityServiceArchiveResolver>(),
 			creatioClient ?? Substitute.For<IIdentityServiceCreatioClient>(),
-			new StubHttpClientFactory(HttpStatusCode.OK),
+			CreateProbe(),
+			Substitute.For<IServiceUrlBuilder>(),
 			sysSettingsManager,
 			processExecutor,
 			availableIisPortService,
@@ -717,30 +740,11 @@ public sealed class IdentityServiceDeploymentServiceTests
 	private static string CreateIdentityTargetPath() =>
 		Path.Combine(RealTempPath, $"identity-target-{Guid.NewGuid():N}");
 
-	private sealed class StubHttpClientFactory : IHttpClientFactory
-	{
-		private readonly HttpStatusCode _statusCode;
-
-		public StubHttpClientFactory(HttpStatusCode statusCode) {
-			_statusCode = statusCode;
-		}
-
-		public HttpClient CreateClient(string name) => new(new StubHandler(_statusCode));
-	}
-
-	private sealed class StubHandler : HttpMessageHandler
-	{
-		private readonly HttpStatusCode _statusCode;
-
-		public StubHandler(HttpStatusCode statusCode) {
-			_statusCode = statusCode;
-		}
-
-		protected override Task<HttpResponseMessage> SendAsync(
-			HttpRequestMessage request,
-			CancellationToken cancellationToken) =>
-			Task.FromResult(new HttpResponseMessage(_statusCode) {
-				Content = new StringContent("{}")
-			});
+	private static IIdentityServerProbe CreateProbe() {
+		IIdentityServerProbe probe = Substitute.For<IIdentityServerProbe>();
+		probe.IsDiscoveryReachable(Arg.Any<string>()).Returns(true);
+		probe.AcquireClientCredentialsToken(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns("test-token");
+		probe.RunBearerDataServiceSmokeTest(Arg.Any<EnvironmentSettings>(), Arg.Any<string>(), "test-token").Returns(200);
+		return probe;
 	}
 }
