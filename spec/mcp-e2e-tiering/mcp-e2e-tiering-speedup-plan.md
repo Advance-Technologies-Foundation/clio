@@ -276,15 +276,44 @@ dotnet test clio.tests/clio.tests.csproj -f net10.0 --no-build --filter "FullyQu
 
 ## 7. Результати (заповнюється по ходу)
 
+### 7.0 Головний вимір: контрольна група, а не один baseline
+
+**Спершу я порівнював з одним білдом (15999000, 57m 32s) — і завищив виграш.** Той білд виявився з
+повільного краю розподілу. Правильний вимір — порівняти успішні прогони **цієї ж конфігурації** на інших
+гілках за той самий період; вони не містять цих змін і є природною контрольною групою. Скрипт, яким це
+зроблено: [measure-teamcity-durations.py](measure-teamcity-durations.py) (читає GitHub-статуси
+`CLIO MCP e2e tests (ATF)` для всіх `head_sha` останніх запусків `teamcity-mcp-e2e.yml`; бере
+`pending "TeamCity build started"` → фінальний статус, бо ендпойнт `/statuses` показує обидва, а
+`/status` — ні).
+
+Вибірка 2026-09-09 13:52 … 2026-09-10 09:42, лише **успішні** прогони:
+
+| Група | n | min | max | середнє |
+|---|---:|---:|---:|---:|
+| `claude/repo-update-z18z41` (ці зміни) | 7 | 47.1 | 50.1 | **48.1 хв** |
+| усі інші гілки + master | 26 | 52.0 | 77.3 | **55.5 хв** |
+
+**Діапазони не перетинаються:** найповільніший прогін із цими змінами (50.1) швидший за найшвидший без
+них (52.0). На 33 успішних білдах — жодного винятку.
+
+**Чесні цифри виграшу: −7.4 хв, тобто −13 % усього білду** і ≈ **−17 % тестового кроку** (якщо деплой
+Creatio ~13 хв незмінний). Не −10 хв і не −18 %, як стояло тут раніше з одного baseline.
+
+**Чому суб'єктивно непомітно.** Сім хвилин на тлі майже години — менше десятої частини, а природний
+розкид чужих білдів 52…77 хв. На одному прогоні різниця тоне в шумі; вона видима лише на вибірці.
+
+### 7.1 Побілдова хронологія
+
+
 | Етап | Коміт | TeamCity build | Статус | Тривалість | Tests passed |
 |---|---|---|---|---|---|
 | baseline (PR #1399) | `77cc191` | 15999000 | success | **57m 32s** (статус pending `12:35:36Z` → success `13:33:08Z`; це весь білд — деплой Creatio + install-gate + seed + крок тестів, з яких ~44m 20s — тести за даними запиту) | статус не несе кількості (`"TeamCity build finished"`) |
 | Stage 1 — локально | робоче дерево | — | 13 фікстур / 63 тести: 25 passed, 19 skipped (Ignore через недосяжний стенд / вимкнений feature-flag), 19 failed — усі 19 з одним і тим самим текстом `EnsureSandboxIsConfigured` (задокументований локальний fail-fast без `Sandbox:EnvironmentName`, відтворюється на `master`); `McpFixturePolicyTests` 11/11 | 49 с на 63 тести з 13 стартами замість 63 (`CreateRelatedPageAddon`: 4–96 мс/тест замість ~3.8 с) | — |
-| Stage 1 + Stage 3 — TeamCity (PR #1427) | `c8472c0` | [15999407](https://teamcity-rnd.bpmonline.com/buildConfiguration/Team_Atf_ClioMcpE2eTests/15999407) | **success** | **≈50 хв** (черга `13:52:24Z` → success `14:42:56Z`; мітка pending недоступна через combined-status API, похибка ≈ ±30 с) — **−7.5 хв проти 57m 32s** (−13 % білду; ~−17 % тестового кроку, бо деплой незмінний). Це відповідає S ≈ 8 с на Windows-агенті при 49 знятих стартах + ~25 знятих `ping-app` | статус не несе кількості; порівняння `Tests passed` 15999000 vs 15999407 — у TeamCity |
+| Stage 1 + Stage 3 — TeamCity (PR #1427) | `c8472c0` | [15999407](https://teamcity-rnd.bpmonline.com/buildConfiguration/Team_Atf_ClioMcpE2eTests/15999407) | **success** | **≈50 хв** (черга `13:52:24Z` → success `14:42:56Z`; мітка pending недоступна через combined-status API, похибка ≈ ±30 с) — **−7.5 хв проти того одного baseline** (див. §7.0: чесна база — 55.5 хв, середнє по інших гілках). Це відповідає S ≈ 8 с на Windows-агенті при 49 знятих стартах + ~25 знятих `ping-app` | статус не несе кількості; порівняння `Tests passed` 15999000 vs 15999407 — у TeamCity |
 | Stage 3 — локально | робоче дерево | — | `--filter Category=McpE2E.NoEnvironment` по 5 перетегованих фікстурах: **28 passed, 0 failed, 0 skipped** (до перетегування ці 28 у швидкому гейті не запускались узагалі) | 39 с | — |
 | Stage 3 — TeamCity | `c8472c0` | 15999407 | success (той самий білд, що й Stage 1) | — | — |
 | Stage 2 — локально | робоче дерево | — | повний тир `NoEnvironment`, 2 воркери: **485 тестів** (457 + 28 перетегованих), 480 passed, ті самі 2 контейнерні failures і 3 skips, що й у baseline — **жодного нового падіння чи skip** | **10m 58s** проти 12m 40s baseline (−13 %, при +28 тестах) | `McpFixturePolicyTests` 13/13 (новий guard `ParallelFixtures_ShouldNotMutateProcessEnvironmentOrSharedSettings`) |
-| Stage 2 — TeamCity (PR #1427) | `b2d21c8` | [16000208](https://teamcity-rnd.bpmonline.com/buildConfiguration/Team_Atf_ClioMcpE2eTests/16000208) | **success** | **47m 04s** (pending `17:12:55Z` → success `17:59:59Z`) — **−3.3 хв проти Stage 1+3 (≈50m 20s) і −10.5 хв проти baseline 57m 32s** (−18 % білду; ≈ −24 % тестового кроку, якщо деплой ≈13 хв незмінний: 44m 20s → ≈33m 50s). Останні ~2.5 хв білд перекривався з 16000226 (рядок нижче) — на результат не вплинуло | статус не несе кількості; порівняння `Tests passed` 15999000 vs 16000208 — у TeamCity |
+| Stage 2 — TeamCity (PR #1427) | `b2d21c8` | [16000208](https://teamcity-rnd.bpmonline.com/buildConfiguration/Team_Atf_ClioMcpE2eTests/16000208) | **success** | **47m 04s** (pending `17:12:55Z` → success `17:59:59Z`) — **−3.3 хв проти Stage 1+3 (≈50m 20s)**; проти контрольної групи (55.5 хв, §7.0) це −8.4 хв, тобто −15 % білду. Останні ~2.5 хв білд перекривався з 16000226 (рядок нижче) — на результат не вплинуло | статус не несе кількості; порівняння `Tests passed` 15999000 vs 16000208 — у TeamCity |
 | merge `master` + CI-фікс — TeamCity | `6ac7245` | [16000226](https://teamcity-rnd.bpmonline.com/buildConfiguration/Team_Atf_ClioMcpE2eTests/16000226) | **failure за 2.5 хв** | queued `17:29:08Z` → failure `17:31:36Z`: упав до першого тесту (повний прогін ≈47–50 хв, сам деплой Creatio >10 хв), стартувавши **паралельно** з ще живим 16000208 — скрипт черги дедуплікує лише той самий коміт, тож новий коміт ставить другий одночасний full-Creatio білд (небезпека, описана в коментарі `queue-teamcity-build.ps1`). Лог TeamCity з контейнера недоступний (хост зовні резолвиться у публічний nginx з 404). На тому ж коміті GitHub Actions зелені, `clio.mcp.e2e` збирається під net8.0 і net10.0. Чистий перезапуск — наступний рядок | — |
 | tip після завершення 16000208 — TeamCity | `23f7423` | [16000274](https://teamcity-rnd.bpmonline.com/buildConfiguration/Team_Atf_ClioMcpE2eTests/16000274) | **success** | **47m 17s** (pending `18:10:21Z` → success `18:57:38Z`), +13 с до 16000208 — той самий код паралельного пулу після мержу `master` (з `ListEntityClientSchemasToolE2ETests` знову серійною). Разом із 16000208 це **два поспіль зелені прогони** змін паралелізму, як вимагає ENG-92558; GitHub Actions на тому ж коміті зелені | статус не несе кількості |
 | виправлення 3-lens review + фікс net8.0 | `1792af2` | [16002928](https://teamcity-rnd.bpmonline.com/buildConfiguration/Team_Atf_ClioMcpE2eTests/16002928) | **success** | **47m 55s** (pending `06:26:07Z` → success `07:14:02Z`). Підтверджує правки review на стенді. Перед цим 16002480 і 16002823 упали за 4m41s і 4m38s — **не** через накладання білдів, а через `System.Threading.Lock` (тип із .NET 9) у проєкті, що таргетить і net8.0: падіння було на кроці збірки, до першого тесту. Правило: падіння за ~4–5 хв тут означає помилку компіляції, а не стенд; збирати треба **обидва** TFM (запис у `docs/knowledge/process/`) | статус не несе кількості |
