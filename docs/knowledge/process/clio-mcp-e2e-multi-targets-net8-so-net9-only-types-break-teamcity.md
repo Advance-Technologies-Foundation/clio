@@ -23,13 +23,15 @@ names and no compiler output, and every GitHub Actions check stays green because
 a pointless re-run of a 47-minute build. Build BOTH frameworks before pushing a change to this project:
 `dotnet build clio.mcp.e2e/clio.mcp.e2e.csproj -f net8.0` and `-f net10.0`.
 
-**Do not invert this into "an early failure is always a compile error".** That over-generalization was
-written here once and is wrong. An early failure means only that the build died before the test step,
-and there is a second cause with the same signature: a build queued while another one is still running.
-`queue-teamcity-build.ps1` de-dupes only the SAME commit, so a push during a live build starts a second
-concurrent full-Creatio build, and the newer one dies early. Observed on 2026-09-10: 16002823 died at
-4m38s running alone, and its cause was this file's compile error; 16003535 died at 7m30s while 16003496
-was still running, with `clio.mcp.e2e` and `clio.tests` both compiling clean in Release for net8.0 and
-net10.0. Distinguish them by whether another build of this configuration was running, not by the
-duration — the `.../commits/<sha>/statuses` endpoint lists the pending entries and therefore the real
-start times, which the `/status` endpoint does not.
+**Do not invert this into "an early failure is always a compile error", and do not blame a concurrent
+build either.** Both inversions were written here and both are wrong. An early failure means only that
+the build died before the test step; the GitHub commit status carries neither a step name nor compiler
+output, so the cause has to come from the TeamCity log. Evidence from 2026-09-10: 16002823 died at 4m38s
+running alone and its cause was this file's compile error, which is the one mechanism proven here;
+16000226 and 16003535 died at 2m30s and 7m30s while another build of this configuration was running,
+with both projects compiling clean in Release for net8.0 and net10.0, and their cause was never
+established. Concurrency by itself is NOT it: 16003887 ran the whole 48m54s alongside another build of
+the same configuration and passed, while that other build failed. So: rule out the compile error first,
+because it is cheap and invisible to every GitHub lane, then read the build log — do not infer a cause
+from the duration. The `.../commits/<sha>/statuses` endpoint lists the pending entries and therefore the
+real start times, which `/status` hides; that is how you tell what else was running.
