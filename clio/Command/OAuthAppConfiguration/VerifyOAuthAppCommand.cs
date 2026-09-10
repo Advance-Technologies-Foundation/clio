@@ -18,13 +18,13 @@ public sealed class VerifyOAuthAppOptions : RemoteCommandOptions
 	/// <summary>
 	/// Gets or sets the OAuth client identifier to verify.
 	/// </summary>
-	[Option("client-id", Required = true, HelpText = "OAuth client id to verify")]
+	[Option("client-id", Required = false, HelpText = "OAuth client id to verify. Defaults to the registered environment credentials")]
 	public string ClientId { get; set; }
 
 	/// <summary>
 	/// Gets or sets the OAuth client secret to verify.
 	/// </summary>
-	[Option("client-secret", Required = true, HelpText = "OAuth client secret to verify")]
+	[Option("client-secret", Required = false, HelpText = "OAuth client secret to verify. Supply together with --client-id to override registered credentials")]
 	public string ClientSecret { get; set; }
 
 	/// <summary>
@@ -32,7 +32,7 @@ public sealed class VerifyOAuthAppOptions : RemoteCommandOptions
 	/// <c>OAuth20IdentityServerUrl</c> system setting, then derived from the Creatio host.
 	/// </summary>
 	[Option("identity-server-url", Required = false,
-		HelpText = "Explicit IdentityService base URL. Defaults to the OAuth20IdentityServerUrl system setting, then a derived -is host")]
+		HelpText = "Explicit IdentityService base URL. Defaults to registered AuthAppUri, then OAuth20IdentityServerUrl, then a derived -is host")]
 	public string IdentityServerUrl { get; set; }
 }
 
@@ -57,6 +57,7 @@ public sealed record VerifyOAuthAppResult(
 /// </summary>
 public class VerifyOAuthAppCommand : Command<VerifyOAuthAppOptions>
 {
+	internal const string VerificationFailureMessage = "OAuth verification failed. Check the IdentityService URL and CRM connectivity; configure OAuth credentials or supply both --client-id and --client-secret.";
 	private const string IdentityServerUrlSettingCode = "OAuth20IdentityServerUrl";
 	private const int HttpOk = 200;
 
@@ -97,8 +98,8 @@ public class VerifyOAuthAppCommand : Command<VerifyOAuthAppOptions>
 			_logger.WriteInfo(JsonSerializer.Serialize(result, WriteIndentedOptions));
 			return result.Ok ? 0 : 1;
 		}
-		catch (Exception exception) {
-			_logger.WriteError(exception.Message);
+		catch (Exception) {
+			_logger.WriteError(VerificationFailureMessage);
 			return 1;
 		}
 	}
@@ -111,18 +112,25 @@ public class VerifyOAuthAppCommand : Command<VerifyOAuthAppOptions>
 	/// <returns>The structured verification result. The access token text is never surfaced.</returns>
 	public virtual VerifyOAuthAppResult Verify(VerifyOAuthAppOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
-		if (string.IsNullOrWhiteSpace(options.ClientId) || string.IsNullOrWhiteSpace(options.ClientSecret)) {
-			throw new ArgumentException("Both --client-id and --client-secret are required.");
+		bool explicitCredentials = options.ClientId is not null || options.ClientSecret is not null;
+		string clientId = explicitCredentials ? options.ClientId : _environmentSettings.ClientId;
+		string clientSecret = explicitCredentials ? options.ClientSecret : _environmentSettings.ClientSecret;
+		if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(clientSecret)) {
+			throw new ArgumentException("OAuth credentials are missing. Configure the environment or supply both --client-id and --client-secret.");
 		}
 
 		string identityServerUrl = ResolveIdentityServerUrl(options);
-		if (string.IsNullOrWhiteSpace(identityServerUrl)) {
+		if (!Uri.TryCreate(identityServerUrl, UriKind.Absolute, out Uri identityUri)
+			|| identityUri.Scheme is not ("http" or "https")
+			|| !string.IsNullOrEmpty(identityUri.UserInfo)
+			|| !string.IsNullOrEmpty(identityUri.Query)
+			|| !string.IsNullOrEmpty(identityUri.Fragment)) {
 			throw new InvalidOperationException(
-				"Could not determine the IdentityService URL. Pass --identity-server-url explicitly.");
+				"A valid IdentityService base URL is required. Pass --identity-server-url explicitly.");
 		}
 
 		string accessToken = _identityServerProbe.AcquireClientCredentialsToken(
-			identityServerUrl, options.ClientId, options.ClientSecret);
+			identityServerUrl, clientId, clientSecret);
 		bool tokenAcquired = !string.IsNullOrWhiteSpace(accessToken);
 
 		int dataServiceStatus = 0;
@@ -143,6 +151,14 @@ public class VerifyOAuthAppCommand : Command<VerifyOAuthAppOptions>
 		if (!string.IsNullOrWhiteSpace(options.IdentityServerUrl)) {
 			return options.IdentityServerUrl.TrimEnd('/');
 		}
+		if (!string.IsNullOrWhiteSpace(_environmentSettings.AuthAppUri)) {
+			// Registered OAuth settings store the token endpoint, while the probe accepts the base URL.
+			const string tokenPath = "/connect/token";
+			string savedUrl = _environmentSettings.AuthAppUri.TrimEnd('/');
+			return savedUrl.EndsWith(tokenPath, StringComparison.OrdinalIgnoreCase)
+				? savedUrl[..^tokenPath.Length]
+				: savedUrl;
+		}
 		string settingUrl = TryReadSetting(IdentityServerUrlSettingCode);
 		if (!string.IsNullOrWhiteSpace(settingUrl)) {
 			return settingUrl.TrimEnd('/');
@@ -154,8 +170,8 @@ public class VerifyOAuthAppCommand : Command<VerifyOAuthAppOptions>
 		try {
 			return _sysSettingsManager.GetSysSettingValueByCode(code);
 		}
-		catch (Exception ex) {
-			_logger.WriteWarning($"Could not read system setting '{code}': {ex.Message}");
+		catch (Exception) {
+			_logger.WriteWarning($"Could not read system setting '{code}'.");
 			return string.Empty;
 		}
 	}

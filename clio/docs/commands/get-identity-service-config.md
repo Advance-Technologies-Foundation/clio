@@ -25,7 +25,7 @@ It reports:
 - `clientId` - the `OAuth20IdentityServerClientId` value
 - `tokenEndpoint` - `{base}/connect/token`
 - `discoveryEndpoint` - `{base}/.well-known/openid-configuration`
-- `reachable` - whether the discovery document responded with a success status
+- `reachable` - whether discovery succeeded with an issuer and valid endpoint URLs
 
 Use it first when configuring server-to-server OAuth on a remote Creatio.
 
