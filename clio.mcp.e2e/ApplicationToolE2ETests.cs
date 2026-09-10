@@ -677,6 +677,21 @@ public sealed class ApplicationToolE2ETests {
 			because: "get-app-info must include the virtual schema created in the application's primary package");
 		virtualEntity!.Virtual.Should().BeTrue(
 			because: "get-app-info must preserve the runtime virtual state for a real schema created through sync-schemas");
+		ApplicationColumnEnvelope? addedColumn = canonicalMainEntity.Columns
+			.FirstOrDefault(column => string.Equals(column.Name, addedColumnName, StringComparison.OrdinalIgnoreCase));
+		addedColumn.Should().NotBeNull(
+			because: "the column added by sync-schemas must appear in the get-app-info readback");
+		addedColumn!.DefaultValueConfig.Should().NotBeNull(
+			because: "a column default written through sync-schemas default-value-config must be reported by the get-app-info read shape (issue #969)");
+		addedColumn.DefaultValueConfig!.Source.Should().Be("Const",
+			because: "the readback must report the default source used at write time");
+		JsonElement? defaultValue = addedColumn.DefaultValueConfig.Value;
+		defaultValue.Should().NotBeNull(
+			because: "a Const default must carry its value in the readback");
+		defaultValue.Value.ValueKind.Should().Be(JsonValueKind.String,
+			because: "a scalar Text Const default is stored as a string value");
+		defaultValue.Value.GetString().Should().Be("Default status",
+			because: "the readback default value must round-trip unchanged to what sync-schemas wrote");
 	}
 
 	[Category("McpE2E.Sandbox")]
@@ -1187,7 +1202,13 @@ public sealed class ApplicationToolE2ETests {
 									["action"] = "add",
 									["column-name"] = addedColumnName,
 									["type"] = "Text",
-									["title-localizations"] = BuildLocalizations("Status")
+									["title-localizations"] = BuildLocalizations("Status"),
+									// A Const default written through the structured field — the readback below must
+									// surface it as default-value-config, proving the #969 round trip end to end.
+									["default-value-config"] = new Dictionary<string, object?> {
+										["source"] = "Const",
+										["value"] = "Default status"
+									}
 								}
 							}
 						},
