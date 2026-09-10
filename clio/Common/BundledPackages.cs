@@ -80,6 +80,29 @@ public static class BundledPackages {
 		"Run 'clio install-process-builder -e <environment>' (or call the install-process-builder "
 		+ "MCP tool) to install or update " + ProcessBuilderPackageName + ".";
 
+	/// <summary>
+	/// Package name of the bundled dashboards-migrator package (the "Dashboards migrator" app), which
+	/// migrates 7.x dashboards to Freedom UI and serves <c>DashboardsMigratorService</c> as its probe.
+	/// </summary>
+	/// <remarks>
+	/// Same byte-for-byte contract with the archive's <c>descriptor.json</c> as
+	/// <see cref="ProcessBuilderPackageName"/>. Unlike the process builder this package ships no assembly and
+	/// no compile marker: its own Source Code schemas are what puts it into the target's configuration build.
+	/// </remarks>
+	public const string DashboardsMigratorPackageName = "CrtDashboardsMigratorApp";
+
+	/// <summary>
+	/// File name of the bundled dashboards-migrator archive, inside the folder of the same name.
+	/// </summary>
+	public const string DashboardsMigratorArchiveFileName = DashboardsMigratorPackageName + ".gz";
+
+	/// <summary>
+	/// Remediation text naming both surfaces that install the dashboards migrator.
+	/// </summary>
+	public const string DashboardsMigratorInstallHint =
+		"Run 'clio install-dashboards-migrator -e <environment>' (or call the install-dashboards-migrator "
+		+ "MCP tool) to install or update " + DashboardsMigratorPackageName + ".";
+
 	#endregion
 
 }

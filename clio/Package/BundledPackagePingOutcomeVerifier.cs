@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -7,8 +8,9 @@ using Clio.Common;
 namespace Clio.Package;
 
 /// <summary>
-/// Verifies a bundled package's outcome by asking <c>ProcessDesignService.Ping</c> whether the package's own
-/// code is serving on the target.
+/// Verifies a bundled package's outcome by asking the package's own ungated <c>Ping</c> operation whether its
+/// code is serving on the target. One implementation for every bundled package: <see cref="PingRoutes"/> maps
+/// the package name to the route it exposes, so the interface auto-registration stays a single binding.
 /// </summary>
 /// <remarks>
 /// The name says what it USES, while <see cref="IPackageInstallOutcomeVerifier"/> says what it ANSWERS.
@@ -31,7 +33,7 @@ namespace Clio.Package;
 /// compile references, so a successful build on the target already implies they are present.
 /// </para>
 /// </remarks>
-public class ProcessDesignServiceOutcomeVerifier : IPackageInstallOutcomeVerifier {
+public class BundledPackagePingOutcomeVerifier : IPackageInstallOutcomeVerifier {
 
 	#region Constants: Private
 
@@ -73,6 +75,14 @@ public class ProcessDesignServiceOutcomeVerifier : IPackageInstallOutcomeVerifie
 
 	#region Fields: Private
 
+	// Package name -> its Ping route. Every package this verifier can answer for is listed here; an unknown
+	// name is a programming error at the call site, not a negative verdict.
+	private static readonly IReadOnlyDictionary<string, ServiceUrlBuilder.KnownRoute> PingRoutes =
+		new Dictionary<string, ServiceUrlBuilder.KnownRoute>(StringComparer.OrdinalIgnoreCase) {
+			[BundledPackages.ProcessBuilderPackageName] = ServiceUrlBuilder.KnownRoute.ProcessBuilderPing,
+			[BundledPackages.DashboardsMigratorPackageName] = ServiceUrlBuilder.KnownRoute.DashboardsMigratorPing
+		};
+
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly ILogger _logger;
@@ -82,12 +92,12 @@ public class ProcessDesignServiceOutcomeVerifier : IPackageInstallOutcomeVerifie
 	#region Constructors: Public
 
 	/// <summary>
-	/// Initializes a new instance of the <see cref="ProcessDesignServiceOutcomeVerifier"/> class.
+	/// Initializes a new instance of the <see cref="BundledPackagePingOutcomeVerifier"/> class.
 	/// </summary>
 	/// <param name="applicationClient">Client used to call the service on the target environment.</param>
-	/// <param name="serviceUrlBuilder">Builder for the <c>ProcessDesignService</c> route.</param>
+	/// <param name="serviceUrlBuilder">Builder for the package's Ping route.</param>
 	/// <param name="logger">Logger used to report why a probe failed.</param>
-	public ProcessDesignServiceOutcomeVerifier(
+	public BundledPackagePingOutcomeVerifier(
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,
 		ILogger logger) {
@@ -118,9 +128,14 @@ public class ProcessDesignServiceOutcomeVerifier : IPackageInstallOutcomeVerifie
 	/// </remarks>
 	public bool IsPackageOperational(string packageName, out string diagnosis) {
 		diagnosis = null;
+		if (!PingRoutes.TryGetValue(packageName ?? string.Empty, out ServiceUrlBuilder.KnownRoute route)) {
+			throw new ArgumentException(
+				$"No Ping route is known for package '{packageName}'; only bundled packages can be verified.",
+				nameof(packageName));
+		}
 		string url = null;
 		try {
-			url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.ProcessBuilderPing);
+			url = _serviceUrlBuilder.Build(route);
 			string response = _applicationClient.ExecutePostRequest(
 				url, "{}", ProbeTimeoutMs, ProbeAttempts, ProbeDelaySec);
 			// BEFORE parsing, because this is the one non-JSON answer that has a specific cause and a specific
@@ -134,7 +149,7 @@ public class ProcessDesignServiceOutcomeVerifier : IPackageInstallOutcomeVerifie
 					$"{packageName} was installed, but {url} answered with a login page: the session expired and "
 					+ "automatic re-authentication did not restore it. The configuration build is NOT implicated "
 					+ "and the package's state is UNKNOWN — check the environment's credentials, then verify "
-					+ "with 'clio call-service --service-path rest/ProcessDesignService/Ping -m POST -b {} "
+					+ $"with 'clio call-service --service-path {RelativeRoute(route)} -m POST -b {{}} "
 					+ "-e <environment>'.";
 				return false;
 			}
@@ -165,7 +180,7 @@ public class ProcessDesignServiceOutcomeVerifier : IPackageInstallOutcomeVerifie
 			// WriteError, not WriteInfo: this line carries the WebException status / HTTP code, i.e. the only
 			// statement of WHY the probe failed. The caller writes the summary at error level, so logging the
 			// cause below it hid the useful half from anyone filtering on errors.
-			_logger.WriteError($"ProcessDesignService did not answer: {e.GetReadableMessageException()}");
+			_logger.WriteError($"{packageName} Ping did not answer: {e.GetReadableMessageException()}");
 			return false;
 		}
 	}
@@ -173,6 +188,11 @@ public class ProcessDesignServiceOutcomeVerifier : IPackageInstallOutcomeVerifie
 	#endregion
 
 	#region Methods: Private
+
+	// The route as call-service takes it: without the leading slash, and without the `0/` prefix the url
+	// builder adds for .NET Framework, which call-service adds again itself.
+	private static string RelativeRoute(ServiceUrlBuilder.KnownRoute route) =>
+		ServiceUrlBuilder.KnownRoutes[route].TrimStart('/');
 
 	/// <summary>
 	/// Shortens an unexpected response for inclusion in a diagnosis.

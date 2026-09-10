@@ -486,6 +486,7 @@ public sealed class McpExecutionRouterTests {
 		// exists". Shipping them here would arrive with the plumbing rather than as a reviewed decision.
 		string[] supportedButNotShippedNames = [
 			"install-process-builder",
+			"install-dashboards-migrator",
 			"create-app-section"
 		];
 		// Story 8's promise, and the reason this test changed once already: these two are bounded by their

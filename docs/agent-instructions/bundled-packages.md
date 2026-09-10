@@ -1,31 +1,54 @@
 # Bundled Creatio packages — how to put a new version into clio
 
-clio ships two Creatio packages inside its own distribution and installs them into an environment on
+clio ships three Creatio packages inside its own distribution and installs them into an environment on
 request. This article is the procedure for replacing one of those archives, and the platform facts you need
 in order not to break it silently.
 
 Read it before touching any of:
 
-- `clio/CrtProcessBuilder/*.gz`, `clio/cliogate/*.gz` — the archives themselves
+- `clio/CrtProcessBuilder/*.gz`, `clio/CrtDashboardsMigratorApp/*.gz`, `clio/cliogate/*.gz` — the archives themselves
 - `clio/Common/BundledPackages.cs` — the identity constants
 - `clio/Common/BundledPackageCatalog.cs` — the reader that answers what the distribution carries
 - `clio/Common/BundledPackageConvergence.cs` — the rule that decides an environment is behind
-- `clio.tests/Common/BundledProcessBuilderPackageTests.cs` — the pins
+- `clio.tests/Common/BundledProcessBuilderPackageTests.cs`, `BundledDashboardsMigratorPackageTests.cs` — the pins
 - a `[RequiresPackage]` version literal
 
-## The two packages
+## The three packages
 
-| | `cliogate` | `CrtProcessBuilder` |
-|---|---|---|
-| Ships | a **prebuilt assembly** per framework (`Files/Bin`, `Files/Bin/netstandard`) | **source only** — no assembly at all |
-| Who compiles | nobody; the DLL is loaded as-is | the TARGET environment, during installation — substantially slower than a plain package install, by an amount that is a property of the target (configuration size, host, load) and not of clio. Deliberately no figure: `AGENTS.md` sends agents here, and a range on an agent surface stops being an estimate — one was read out of the MCP tool description and repeated to a user as a promise |
-| Archives | one per framework, chosen by `IsNetCore` | one, for every runtime |
-| Install verb | `install-gate` | `install-process-builder` |
-| Source repo | in this repo (`cliogate/`), regenerable via `build.ps1` | separate `ProcessBuilder` repo, produced by hand |
-| Build procedure | see the ClioGate sections in `AGENTS.md` | this article |
+| | `cliogate` | `CrtProcessBuilder` | `CrtDashboardsMigratorApp` |
+|---|---|---|---|
+| Ships | a **prebuilt assembly** per framework (`Files/Bin`, `Files/Bin/netstandard`) | **source only** — no assembly at all | **source only** — no assembly at all |
+| Who compiles | nobody; the DLL is loaded as-is | the TARGET environment, during installation — substantially slower than a plain package install, by an amount that is a property of the target (configuration size, host, load) and not of clio. Deliberately no figure: `AGENTS.md` sends agents here, and a range on an agent surface stops being an estimate — one was read out of the MCP tool description and repeated to a user as a promise | the TARGET environment, same as the process builder |
+| Archives | one per framework, chosen by `IsNetCore` | one, for every runtime | one, for every runtime |
+| Install verb | `install-gate` | `install-process-builder` | `install-dashboards-migrator` |
+| Source repo | in this repo (`cliogate/`), regenerable via `build.ps1` | separate `ProcessBuilder` repo, produced by hand | separate `crt-dashboards-migrator-app` repo (creatio.ghe.com/engineering), produced by hand |
+| Build procedure | see the ClioGate sections in `AGENTS.md` | this article | this article, with the differences in the next table |
+| What puts it into the target's configuration build | n/a | an empty compile-marker schema | its own Source Code schemas |
+| Outcome probe | none | `/rest/ProcessDesignService/Ping` | `/rest/DashboardsMigratorService/Ping` |
 
 The asymmetry matters for review: a changed `cliogate.gz` can be checked by rebuilding it from in-repo
-sources, a changed `CrtProcessBuilder.gz` cannot. That is why the latter carries pins (below).
+sources, a changed `CrtProcessBuilder.gz` or `CrtDashboardsMigratorApp.gz` cannot. That is why the latter two
+carry pins (below).
+
+### Where the dashboards migrator differs
+
+The procedure below is written for the process builder; `rebundle-bundled-package.ps1 -Package
+CrtDashboardsMigratorApp` applies these differences, and so must anyone doing it by hand:
+
+| | `CrtProcessBuilder` | `CrtDashboardsMigratorApp` |
+|---|---|---|
+| Build / test in the package repo | `dotnet build MainSolution.slnx -c dev-nf` / `dotnet test tests/CrtProcessBuilder/...` | `build-framework.cmd` / `run-unit-tests-framework.cmd` |
+| Stamping the descriptor | `clio set-pkg-version` | **by text edit** of both fields — `PackageDescriptor` does not model `InstallScripts`, and `set-pkg-version` dropped this package's `AfterInstall` block (measured, 2026-09-10; see `docs/knowledge/Package/set-pkg-version-drops-descriptor-fields-it-does-not-model.md`); the guard fixture asserts the block is still there |
+| `PackageVersion` vs the app version | n/a | the first three parts must equal `Version` in `Files/app-descriptor.json` (three-part app version, shown in App Hub); the script refuses otherwise |
+| `.dll` inventory | exactly two, both `Files/Libs` | **zero** |
+| Schemas | exactly one, the compile marker | at least `DashboardsMigratorService` (the probe); the rest are the app |
+| `Data/` | **forbidden** — executes on install | **allowed** — its bound rows (SysAdminOperation, SysModule, SysDetail, SysImage) register the migration page and its permission and run nothing |
+| `SqlScripts/` | forbidden | forbidden |
+| Schema-descriptor stamp pin | `ExpectedSchemaDescriptorModifiedOnUtc`, verified not refreshed | none |
+| Pins file | `BundledProcessBuilderPackageTests.cs` | `BundledDashboardsMigratorPackageTests.cs` |
+
+Everything else — the version-must-rise guard, the producing-commit provenance, `git archive` from the commit,
+`--skip-pdb`, the rebuild of one clio output — is identical.
 
 ## Platform facts you must know first
 
@@ -296,13 +319,16 @@ is merged, and costs one command. The alternative — requiring a true merge com
 resulting SHA on the default branch — also works, but it makes a review control depend on a merge-button
 choice someone else makes later.
 
-### One call — `rebundle-process-builder.ps1`
+### One call — `rebundle-bundled-package.ps1`
 
 The whole procedure, from the repository root:
 
 ```powershell
-pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <ProcessBuilder checkout> -Version 1.0.1.0
+pwsh ./rebundle-bundled-package.ps1 -Package CrtProcessBuilder -PackageRepoPath <ProcessBuilder checkout> -Version 1.0.1.0
+pwsh ./rebundle-bundled-package.ps1 -Package CrtDashboardsMigratorApp -PackageRepoPath <migrator checkout> -Version 1.1.4.0
 ```
+
+`rebundle-process-builder.ps1` still exists as a thin wrapper for the first form.
 
 `-Version` is required and must be HIGHER than the version currently in the descriptor. The script refuses
 before touching anything otherwise — an equal version publishes to nobody, and a lower one is worse:

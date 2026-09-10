@@ -114,7 +114,9 @@ public class BundledPackageCatalog : IBundledPackageCatalog {
 	private static readonly IReadOnlyDictionary<string, (string Folder, string FileName)> BundledArchives =
 		new Dictionary<string, (string, string)>(StringComparer.OrdinalIgnoreCase) {
 			[BundledPackages.ProcessBuilderPackageName] =
-				(BundledPackages.ProcessBuilderPackageName, BundledPackages.ProcessBuilderArchiveFileName)
+				(BundledPackages.ProcessBuilderPackageName, BundledPackages.ProcessBuilderArchiveFileName),
+			[BundledPackages.DashboardsMigratorPackageName] =
+				(BundledPackages.DashboardsMigratorPackageName, BundledPackages.DashboardsMigratorArchiveFileName)
 		};
 
 	private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
