@@ -48,8 +48,14 @@ You may pass the value the user gave — the display caption (for example
 command resolves both and echoes the resolved processCode; put that code into the
 button's processName.
 
-When a caption matches more than one process the command returns a failure listing
-the candidate codes — re-run with the exact code.
+A caption is shared by every version of a process, because each version is a separate
+schema with its own code but the same caption. Such a caption resolves to the **active
+version** — the one the runtime executes — so the signature you read is the signature
+that will be started.
+
+When a caption matches more than one process, or when the active version cannot be
+established for any candidate, the command returns a failure listing the candidate
+codes — re-run with the exact code.
 
 ## Examples
 

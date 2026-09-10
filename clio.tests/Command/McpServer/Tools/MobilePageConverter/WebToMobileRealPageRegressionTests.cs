@@ -284,6 +284,96 @@ public sealed class WebToMobileRealPageRegressionTests {
 					|| e.MobileName.StartsWith("GridContainer_", StringComparison.Ordinal)))
 			.ToList();
 
+	[Test]
+	[Description("On the real Leads page, the shipped rules find the OpenPage and CreateRecord targets the ticket names, with the right kinds.")]
+	public void Probe_ShouldCollectTheRealPagesNavigationTargets() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+
+		// Act
+		MobileActionTargetProbeResult collected = MobileActionTargetProbe.Probe(
+			null, "env", null, null, null,
+			new MobileActionTargetProbeRequest(
+				fixture["viewConfig"]!.DeepClone().AsArray(), BundledRules(),
+				ModelConfig: null, PagePackageUId: null));
+
+		// Assert
+		collected.Occurrences.Should().Contain(
+			o => o.WebRequest == "crt.OpenPageRequest" && o.Target == "PostponeQueueItemPage"
+				&& o.Kind == "web-page",
+			because: "the pinned page opens a page by schema name, and a web page's schemaName names a WEB page — "
+				+ "which the mobile app cannot open, so it needs no lookup to be reported");
+		collected.Occurrences.Where(o => o.WebRequest == "crt.CreateRecordRequest")
+			.Select(o => o.Target).Should().BeEquivalentTo(["LeadProduct", "Lead", "Opportunity"],
+				because: "each create action names the object whose default mobile page must exist");
+		collected.Occurrences.Should().OnlyContain(o => !string.IsNullOrWhiteSpace(o.ElementName),
+			because: "every finding must name a control the user can actually find on the page");
+	}
+
+	[Test]
+	[Description("With the real page's targets absent on mobile, every action is reported and NO element is removed.")]
+	public void Convert_WithMissingTargets_ReportsThemWithoutChangingTheElementMap() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+		IReadOnlySet<string> mobileTypes = MobileTypesResolvingSearchFilter(fixture["viewConfig"]!);
+		WebToMobilePageConversionRules rules = BundledRules();
+		MobilePageConversionGuide baseline = Convert(fixture, mobileTypes, rules);
+
+		// Act
+		MobilePageConversionGuide guide = Convert(fixture, mobileTypes, rules,
+			ProbeOverFixture(fixture, rules, _ => ActionTargetState.Missing));
+
+		// Assert
+		guide.RequestConversions!.TargetsProbed.Should().BeTrue(because: "the probe answered");
+		guide.RequestConversions.UnresolvedTargetRequests.Should().Contain(
+			r => r.ElementName == "PostponeQueueItemButton" && r.Target == "PostponeQueueItemPage"
+				&& r.State == "missing",
+			because: "the button opening a non-converted page is exactly what the user must be warned about");
+		guide.RequestConversions.UnresolvedTargetRequests.Should().OnlyContain(r => r.State == "missing",
+			because: "every target was resolved as absent in this run");
+		OperationDifferences(baseline, guide).Should().BeEmpty(
+			because: "the report is a warning: no control is removed on target grounds");
+	}
+
+	[Test]
+	[Description("With every target present on mobile, the real page produces no target warnings at all.")]
+	public void Convert_WithResolvedTargets_ReportsNoWarnings() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+		IReadOnlySet<string> mobileTypes = MobileTypesResolvingSearchFilter(fixture["viewConfig"]!);
+		WebToMobilePageConversionRules rules = BundledRules();
+
+		// Act
+		MobilePageConversionGuide guide = Convert(fixture, mobileTypes, rules,
+			ProbeOverFixture(fixture, rules, _ => ActionTargetState.Resolved));
+
+		// Assert
+		guide.RequestConversions!.UnresolvedTargetRequests.Should().BeEmpty(
+			because: "a page whose actions all resolve must produce a silent happy path");
+		guide.RequestConversions.TargetsProbed.Should().BeTrue(
+			because: "the caller distinguishes an empty list from an unchecked one by this flag");
+	}
+
+	[Test]
+	[Description("Without a probe the real page converts byte-for-byte as before — the fail-open pin for every existing consumer.")]
+	public void Convert_WithoutProbe_MatchesTheCurrentBaseline() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+		IReadOnlySet<string> mobileTypes = MobileTypesResolvingSearchFilter(fixture["viewConfig"]!);
+		MobilePageConversionGuide baseline = Convert(fixture, mobileTypes, BundledRules());
+
+		// Act
+		MobilePageConversionGuide guide = Convert(fixture, mobileTypes, BundledRules(), actionTargets: null);
+
+		// Assert
+		OperationDifferences(baseline, guide).Should().BeEmpty(
+			because: "an absent probe must not perturb the conversion in any way");
+		guide.RequestConversions!.UnresolvedTargetRequests.Should().BeEmpty(
+			because: "nothing was verified, so nothing may be reported");
+		guide.RequestConversions.TargetsProbed.Should().BeFalse(
+			because: "the caller must be told the targets were not checked");
+	}
+
 	/// <summary>The child-collection slots an entry's prebuilt <c>mobileValues</c> physically declares, ordered.</summary>
 	private static IReadOnlyList<string> DeclaredChildSlots(ElementMapEntry entry) =>
 		entry.MobileValues is JsonObject values
@@ -342,7 +432,8 @@ public sealed class WebToMobileRealPageRegressionTests {
 			.ToList();
 
 	private static MobilePageConversionGuide Convert(
-		JsonObject fixture, IReadOnlySet<string> mobileTypes, WebToMobilePageConversionRules rules) {
+		JsonObject fixture, IReadOnlySet<string> mobileTypes, WebToMobilePageConversionRules rules,
+		MobileActionTargetProbeResult actionTargets = null) {
 		// The analysis mutates the bundle it is given, so each run gets its own copy of the pinned page.
 		var bundle = new PageBundleInfo {
 			ViewConfig = fixture["viewConfig"]!.DeepClone().AsArray(),
@@ -356,7 +447,34 @@ public sealed class WebToMobileRealPageRegressionTests {
 			mobileByType: null, rules, templateRule: null,
 			sourcePage: "Leads_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
 			suggestedTarget: "UsrLeads_MobileFormPage",
-			containerNameMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+			containerNameMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+			actionTargetsProbe: actionTargets);
+	}
+
+	/// <summary>
+	/// Runs the SHIPPED probe collector over the pinned page, then resolves each distinct target with
+	/// <paramref name="state"/>. Deliberately not a hand-written occurrence list: this proves the collector
+	/// finds the real bindings in production-shaped metadata, which a hand-written list would assume.
+	/// </summary>
+	private static MobileActionTargetProbeResult ProbeOverFixture(
+		JsonObject fixture, WebToMobilePageConversionRules rules, Func<string, ActionTargetState> state) {
+		// No resolver: the probe collects offline and reports every target as unverified, which is exactly
+		// the occurrence list this helper then resolves itself.
+		MobileActionTargetProbeResult collected = MobileActionTargetProbe.Probe(
+			null, "env", null, null, null,
+			new MobileActionTargetProbeRequest(
+				fixture["viewConfig"]!.DeepClone().AsArray(), rules,
+				ModelConfig: null, PagePackageUId: null));
+		var byKey = new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase);
+		foreach (ActionTargetOccurrence occurrence in collected.Occurrences) {
+			byKey[MobileActionTargetProbe.TargetKey(occurrence.Kind, occurrence.Target)] =
+				new ActionTargetResolution {
+					Kind = occurrence.Kind, Target = occurrence.Target, State = state(occurrence.Target)
+				};
+		}
+		return new MobileActionTargetProbeResult {
+			ProbeOk = true, Occurrences = collected.Occurrences, TargetsByKey = byKey
+		};
 	}
 
 	private static List<ElementMapEntry> SearchFilterEntries(MobilePageConversionGuide guide) =>
