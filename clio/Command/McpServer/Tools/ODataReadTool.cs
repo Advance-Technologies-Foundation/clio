@@ -418,8 +418,9 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 				+ $"{(int)HttpStatusCode.NotFound}). {CreatioResponseError.UnregisteredEntityHint} Use "
 				+ "execute-esq to read schemas that never get an OData entity set.",
 			{ } knownStatus =>
-				$"The OData request for entity '{entity}' was answered with an HTTP {knownStatus} error page "
-				+ "instead of an OData response. Verify the environment URL, the authentication and any proxy.",
+				$"The OData request for entity '{entity}' was answered with an "
+				+ $"{CreatioResponseError.MarkupStatusPhrase(knownStatus)} instead of an OData response. Verify the "
+				+ "environment URL, the authentication and any proxy.",
 			//No status in the title means no diagnosis beyond "this was not an OData response". Creatio's
 			//own outage page (<title>Request Error</title>) and an SSO/proxy login page both land here,
 			//and neither says anything about whether the entity has an OData controller - claiming it

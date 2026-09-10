@@ -1274,6 +1274,7 @@ public sealed class ODataReadToolTests {
 	[Category("Unit")]
 	[Description("A server error body (ASP.NET EDM model NullReferenceException) is reported as a failure, not wrapped as a single-entity success.")]
 	public void Read_Should_Surface_Server_Error_As_Failure() {
+		// Arrange
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -1284,8 +1285,10 @@ public sealed class ODataReadToolTests {
 			.Returns("{\"Message\":\"An error has occurred.\",\"ExceptionMessage\":\"Object reference not set to an instance of an object.\",\"ExceptionType\":\"System.NullReferenceException\",\"StackTrace\":\"   at Terrasoft.Web.OData.ODataEntityModelBuilder...\"}");
 		ODataReadTool tool = new(commandResolver);
 
+		// Act
 		ODataReadResponse response = tool.Read(new ODataReadArgs { EnvironmentName = "dev", Entity = "AddressType" });
 
+		// Assert
 		response.Success.Should().BeFalse(
 			because: "an ASP.NET server error body must not be reported as a successful single-entity read");
 		response.Error.Should().NotContain("Object reference",
@@ -1319,6 +1322,12 @@ public sealed class ODataReadToolTests {
 			because: "the MessageDetail is server-controlled prose and is not copied into the transcript");
 		response.Error.Should().Contain(CreatioResponseError.UnregisteredEntityHint,
 			because: "the unregistered-entity hint (asserted via the shared constant to avoid literal drift) should steer the agent to wait-and-retry, not read this as a data gap");
+		response.Entity.Should().Be("UsrCustomerStatus",
+			because: "the JSON routing failure echoes the entity set back, which is the only correlation key a caller "
+				+ "gets on this path");
+		response.StatusCode.Should().BeNull(
+			because: "Creatio serves the JSON routing 404 with HTTP 200, so no status is lifted on this path - the "
+				+ "documented contract is that a caller branches on error too, never on status-code alone");
 	}
 
 	[Test]
@@ -1699,6 +1708,31 @@ public sealed class ODataReadToolTests {
 			because: "every failure raised once the entity name is known names it, so concurrent reads can be told apart");
 		response.Error.Should().NotContain("File or directory not found",
 			because: "no fragment of a server or proxy page may be copied into an MCP transcript");
+	}
+
+
+	[Test]
+	[Category("Unit")]
+	[Description("Sends a single-element select array whose element contains a comma through the whole tool and asserts the built URL keeps it as one column, so \"an array element is never split\" is proven end to end.")]
+	public void Read_Should_Not_Split_A_Single_Element_Select_Array_In_The_Built_Url() {
+		// Arrange
+		ODataReadTool tool = BuildToolReturning(
+			"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"value\":[]}",
+			out IApplicationClient client);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Select = Columns("Id,Name")
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "an array of strings is an accepted shape whatever the strings contain");
+		client.Received().ExecuteGetRequest(
+			Arg.Is<string>(url => url.Contains("$select=Id%2CName", StringComparison.Ordinal)),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 }

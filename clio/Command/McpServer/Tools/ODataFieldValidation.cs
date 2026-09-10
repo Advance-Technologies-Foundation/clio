@@ -528,7 +528,7 @@ internal static class ODataFieldValidation {
 	/// </remarks>
 	private static string DescribeMarkupProbeResponse(string entity, int? statusCode) {
 		string status = statusCode is { } knownStatus
-			? $"The server answered with an HTTP {knownStatus} error page"
+			? $"The server answered with an {CreatioResponseError.MarkupStatusPhrase(knownStatus)}"
 			: "The page states no HTTP status";
 		string hint = statusCode == (int)HttpStatusCode.NotFound
 			//The 404 probe and the 404 read are the same condition, so they share the one hint - the

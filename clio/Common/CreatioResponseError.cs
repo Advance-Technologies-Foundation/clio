@@ -97,10 +97,18 @@ internal static partial class CreatioResponseError {
 	/// </remarks>
 	internal static string DescribeNonJsonResponse(string body) {
 		string status = TryGetMarkupErrorStatusCode(body, out int statusCode)
-			? $" The server answered with an HTTP {statusCode} error page."
+			? $" The server answered with an {MarkupStatusPhrase(statusCode)}."
 			: string.Empty;
 		return $"Creatio did not return a JSON response.{status} {NonJsonResponseHint} Response: {Truncate(body)}";
 	}
+
+	/// <summary>
+	/// The one noun phrase every caller uses to name an error page by the status its title states, so
+	/// the wording has a single source. It is vocabulary, not a diagnosis: what each caller says AROUND
+	/// it stays that caller's own text.
+	/// </summary>
+	/// <param name="statusCode">The status read out of the page title.</param>
+	internal static string MarkupStatusPhrase(int statusCode) => $"HTTP {statusCode} error page";
 
 	/// <summary>
 	/// Classifies a response body as an IIS/proxy-style HTML error page and, when its title states
