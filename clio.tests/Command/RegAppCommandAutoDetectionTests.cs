@@ -1,9 +1,11 @@
+using System;
 using Clio.Command;
 using Clio.Common;
 using Clio.UserEnvironment;
 using Clio.Utilities;
 using FluentAssertions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
@@ -45,6 +47,67 @@ public sealed class RegAppCommandAutoDetectionTests {
 		settingsRepository.Received().ConfigureEnvironment("sandbox", Arg.Is<EnvironmentSettings>(settings =>
 			settings.Uri == "http://example.invalid"
 			&& settings.IsNetCore));
+	}
+
+	[Test]
+	[Description("Persists nothing and reports a failure when runtime auto-detection refuses to name a runtime.")]
+	public void Execute_Should_Not_Register_The_Environment_When_Runtime_Detection_Refuses() {
+		// Arrange
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		IEnvironmentRuntimeDetectionService runtimeDetectionService = Substitute.For<IEnvironmentRuntimeDetectionService>();
+		runtimeDetectionService.Detect(Arg.Any<EnvironmentSettings>())
+			.Throws(new InvalidOperationException("Unable to auto-detect the Creatio runtime."));
+		RegAppCommand sut = new(
+			settingsRepository,
+			Substitute.For<IApplicationClientFactory>(),
+			Substitute.For<IPowerShellFactory>(),
+			_logger,
+			runtimeDetectionService);
+		RegAppOptions options = new() {
+			EnvironmentName = "sandbox",
+			Uri = "http://example.invalid/",
+			Login = "Supervisor",
+			Password = "Supervisor"
+		};
+
+		// Act
+		int result = sut.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "a runtime that could not be determined is a registration failure, not a warning");
+		settingsRepository.DidNotReceiveWithAnyArgs().ConfigureEnvironment(default!, default!);
+		_logger.Received().WriteError(Arg.Is<string>(text => text.Contains("Unable to auto-detect the Creatio runtime")));
+	}
+
+	[Test]
+	[Description("Writes the environment exactly once, with the detected runtime, instead of persisting a guess first.")]
+	public void Execute_Should_Persist_The_Environment_Once_With_The_Detected_Runtime() {
+		// Arrange
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		IEnvironmentRuntimeDetectionService runtimeDetectionService = Substitute.For<IEnvironmentRuntimeDetectionService>();
+		runtimeDetectionService.Detect(Arg.Any<EnvironmentSettings>()).Returns(true);
+		RegAppCommand sut = new(
+			settingsRepository,
+			Substitute.For<IApplicationClientFactory>(),
+			Substitute.For<IPowerShellFactory>(),
+			_logger,
+			runtimeDetectionService);
+		RegAppOptions options = new() {
+			EnvironmentName = "sandbox",
+			Uri = "http://example.invalid/",
+			Login = "Supervisor",
+			Password = "Supervisor"
+		};
+
+		// Act
+		int result = sut.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "detection succeeded, so registration should complete normally");
+		settingsRepository.Received(1).ConfigureEnvironment("sandbox", Arg.Any<EnvironmentSettings>());
+		settingsRepository.DidNotReceive().ConfigureEnvironment("sandbox", Arg.Is<EnvironmentSettings>(settings => !settings.IsNetCore));
 	}
 
 	[Test]

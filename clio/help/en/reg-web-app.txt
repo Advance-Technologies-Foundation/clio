@@ -14,7 +14,9 @@ DESCRIPTION
     404 proves that runtime is absent. The health endpoints are only a last
     resort, because /api/HealthCheck/Ping answers on a .NET Framework site too.
     Detection stops with a diagnostic rather than guessing when the probes stay
-    inconclusive - pass --IsNetCore to skip it entirely.
+    inconclusive, and registers nothing in that case - pass --IsNetCore to skip
+    it entirely. When no route was served at all, the diagnostic says the site is
+    unreachable or not serving requests instead of asking for a runtime.
 
 SYNOPSIS
     clio reg-web-app <ENVIRONMENT_NAME> -u http://mysite.creatio.com -l administrator -p password

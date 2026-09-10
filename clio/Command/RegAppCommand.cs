@@ -111,13 +111,17 @@ public class RegAppCommand : Command<RegAppOptions> {
 				? null
 				: _settingsRepository.FindEnvironment(options.EnvironmentName);
 			
+			// Resolve the runtime BEFORE anything is persisted. Detection is allowed to refuse, and a refusal
+			// that leaves a registered environment behind is worse than a plain failure: the stored IsNetCore
+			// was guessed, nothing verified it, and every later command builds its URLs from it (issue #1435).
+			bool resolvedIsNetCore = ResolveIsNetCore(options, existingEnvironment);
 			EnvironmentSettings environment = new() {
 				Login = options.Login,
 				Password = options.Password,
 				Uri = options.Uri?.TrimEnd('/'),
 				Maintainer = options.Maintainer,
 				Safe = options.SafeValue ?? false,
-				IsNetCore = options.IsNetCore ?? existingEnvironment?.IsNetCore ?? false,
+				IsNetCore = resolvedIsNetCore,
 				DeveloperModeEnabled = options.DeveloperModeEnabled,
 				ClientId = options.ClientId,
 				ClientSecret = options.ClientSecret,
@@ -126,12 +130,6 @@ public class RegAppCommand : Command<RegAppOptions> {
 				EnvironmentPath = options.EnvironmentPath
 			};
 			_settingsRepository.ConfigureEnvironment(options.EnvironmentName, environment);
-
-			bool resolvedIsNetCore = ResolveIsNetCore(options, existingEnvironment);
-			if (resolvedIsNetCore != environment.IsNetCore) {
-				environment.IsNetCore = resolvedIsNetCore;
-				_settingsRepository.ConfigureEnvironment(options.EnvironmentName, environment);
-			}
 
 			_logger.WriteInfo($"Environment {options.EnvironmentName} was configured...");
 			environment = _settingsRepository.GetEnvironment(options);

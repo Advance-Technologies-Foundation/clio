@@ -105,6 +105,73 @@ public sealed class RegWebAppToolE2ETests {
 		AssertSettingsPersistedFrameworkRuntime(context.SettingsFilePath, actResult.EnvironmentName);
 	}
 
+	[Test]
+	[AllureTag(ToolName)]
+	[AllureName("reg-web-app registers nothing when runtime auto-detection refuses")]
+	[AllureDescription("Issue #1435: a refused detection used to leave a registered environment behind, carrying an IsNetCore value nothing verified. The command must fail and persist nothing.")]
+	[Description("Leaves the clio settings untouched when auto-detection cannot name a runtime.")]
+	public async Task RegisterWebApp_Should_Not_Persist_The_Environment_When_Detection_Refuses() {
+		// Arrange
+		(McpE2ESettings settings, TemporaryClioSettingsOverride settingsOverride) = ArrangeIsolatedClio();
+		using TemporaryClioSettingsOverride _ = settingsOverride;
+		await using RuntimeDetectionStubServer stubServer = RuntimeDetectionStubServer.Start(
+			new RuntimeDetectionStubServerConfiguration(
+				NetCoreHealthEnabled: true,
+				NetFrameworkHealthEnabled: true,
+				NetCoreServiceEnabled: false,
+				NetFrameworkServiceEnabled: false,
+				NetCoreUiMarkerMode: "notfound",
+				NetFrameworkUiMarkerMode: "notfound"));
+		await using ArrangeContext context = await ArrangeAsync(settings, stubServer);
+
+		// Act
+		RegWebAppActResult actResult = await ActAsync(context);
+
+		// Assert
+		actResult.Execution.ExitCode.Should().NotBe(0,
+			because: $"a runtime that could not be determined is a registration failure. Actual execution: {DescribeExecution(actResult.Execution)}");
+		AssertEnvironmentWasNotPersisted(context.SettingsFilePath, actResult.EnvironmentName);
+	}
+
+	[Test]
+	[AllureTag(ToolName)]
+	[AllureName("reg-web-app reports a stopped site instead of asking for a runtime")]
+	[AllureDescription("Issue #1435: when every probe route answers 503 the operator was told to pass --IsNetCore, which cannot fix a site that is down.")]
+	[Description("Reports that the site is not serving requests when every probe route answers an HTTP server error.")]
+	public async Task RegisterWebApp_Should_Report_An_Unavailable_Site_When_Every_Route_Answers_503() {
+		// Arrange
+		(McpE2ESettings settings, TemporaryClioSettingsOverride settingsOverride) = ArrangeIsolatedClio();
+		using TemporaryClioSettingsOverride _ = settingsOverride;
+		await using RuntimeDetectionStubServer stubServer = RuntimeDetectionStubServer.Start(
+			new RuntimeDetectionStubServerConfiguration(
+				NetCoreHealthEnabled: false,
+				NetFrameworkHealthEnabled: false,
+				NetCoreServiceEnabled: false,
+				NetFrameworkServiceEnabled: false,
+				AllRoutesUnavailable: true));
+		await using ArrangeContext context = await ArrangeAsync(settings, stubServer);
+
+		// Act
+		RegWebAppActResult actResult = await ActAsync(context);
+
+		// Assert
+		actResult.Execution.ExitCode.Should().NotBe(0,
+			because: $"a site that serves nothing cannot be registered. Actual execution: {DescribeExecution(actResult.Execution)}");
+		string reported = DescribeExecution(actResult.Execution);
+		reported.Should().Contain("is not serving requests",
+			because: "the operator has to be sent to the stopped application rather than to the --IsNetCore flag");
+		AssertEnvironmentWasNotPersisted(context.SettingsFilePath, actResult.EnvironmentName);
+	}
+
+	private static void AssertEnvironmentWasNotPersisted(string settingsFilePath, string environmentName) {
+		using JsonDocument document = JsonDocument.Parse(File.ReadAllText(settingsFilePath));
+		document.RootElement
+			.GetProperty("Environments")
+			.TryGetProperty(environmentName, out _)
+			.Should().BeFalse(
+				because: "a failed registration must not leave an environment whose runtime was never verified");
+	}
+
 	private static (McpE2ESettings Settings, TemporaryClioSettingsOverride Override) ArrangeIsolatedClio() {
 		string tempHome = Path.Combine(Path.GetTempPath(), $"clio-reg-web-app-e2e-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(tempHome);

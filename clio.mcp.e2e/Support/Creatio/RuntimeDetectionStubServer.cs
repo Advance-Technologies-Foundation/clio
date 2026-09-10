@@ -211,6 +211,11 @@ http.createServer((request, response) => {
       return;
     }
     recordedRequests.push({ method: request.method, url: url });
+    // A stopped or recycling application pool answers 503 on every route, including the auth endpoint.
+    if (config.AllRoutesUnavailable) {
+      sendText(response, 503, "Service Unavailable");
+      return;
+    }
     if (request.method === "POST" && url === "/ServiceModel/AuthService.svc/Login") {
       sendJson(
         response,
@@ -389,6 +394,7 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	bool NetFrameworkUiMarkerEnabled = false,
 	string? NetCoreUiMarkerMode = null,
 	string? NetFrameworkUiMarkerMode = null,
+	bool AllRoutesUnavailable = false,
 	string? ODataRoutingErrorEntity = null,
 	string? HtmlSelectQuerySchemaName = null,
 	string? ODataNonJsonEntity = null,
