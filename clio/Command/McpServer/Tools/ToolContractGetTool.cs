@@ -85,7 +85,7 @@ public sealed class ToolContractGetTool {
 	// Before ENG-95885 the flat call bound `args` to null, fell through to the no-tool-names branch, and
 	// handed the agent the entire index back as a plausible success.
 	[McpRecoversUnknownArguments]
-	[Description("Returns clio MCP tool contracts. Omit tool-names for a compact index of ALL tools (names + one-line purpose + safety flags) — cheap discovery without full schemas; pass tool-names to expand those tools' full contracts (parameter schema, aliases, defaults, examples, and preferred or fallback workflow hints); pass detail=full (with no tool-names) to expand every tool's full contract at once.")]
+	[Description("Returns clio MCP tool contracts. Omit tool-names for a compact index of ALL tools (names, purpose, safety flags); pass tool-names for full contracts (schemas, defaults, examples, workflows). Mixed batches retain valid contracts and report misses with suggestions in not-found. Pass detail=full without tool-names for every full contract.")]
 	public ToolContractGetResponse GetToolContracts(
 		[Description("Parameters: tool-names (optional array of tool names) and detail (optional 'index' | 'full'). Omit entirely for a compact index of all tools; pass tool-names for full contracts; pass detail=full to expand all full contracts.")]
 		ToolContractGetArgs? args = null,
@@ -324,11 +324,27 @@ public sealed record ToolContractGetArgs(
 	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }
 
+/// <summary>Contract discovery results, including independently unresolved names for named lookups.</summary>
+/// <param name="Success">Whether discovery succeeded or at least one requested name resolved.</param>
+/// <param name="Tools">Resolved full contracts, or null when none resolved.</param>
+/// <param name="Error">Request failure, including the first miss when no requested names resolved.</param>
+/// <param name="Index">Compact discovery index for requests without names.</param>
+/// <param name="NotFound">Unresolved normalized names with individual suggestions; omitted when there are no misses.</param>
 public sealed record ToolContractGetResponse(
 	[property: JsonPropertyName("success")] bool Success,
 	[property: JsonPropertyName("tools")] IReadOnlyList<ToolContractDefinition>? Tools = null,
 	[property: JsonPropertyName("error")] ToolContractError? Error = null,
-	[property: JsonPropertyName("index")] IReadOnlyList<ToolContractIndexEntry>? Index = null
+	[property: JsonPropertyName("index")] IReadOnlyList<ToolContractIndexEntry>? Index = null,
+	[property: JsonPropertyName("not-found"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	IReadOnlyList<ToolContractNotFound>? NotFound = null
+);
+
+/// <summary>One requested tool name that could not be resolved.</summary>
+/// <param name="Name">Trimmed requested name, deduplicated without regard to case.</param>
+/// <param name="Error">Lookup diagnostic and suggestions for this name.</param>
+public sealed record ToolContractNotFound(
+	[property: JsonPropertyName("name")] string Name,
+	[property: JsonPropertyName("error")] ToolContractError Error
 );
 
 /// <summary>
@@ -861,8 +877,7 @@ internal static class ToolContractCatalog {
 	}
 
 	/// <summary>
-	/// Resolves the explicit tool-names branch of <see cref="GetContracts"/> — extracted purely to keep
-	/// <see cref="GetContracts"/>'s cognitive complexity low (Sonar S3776), no behavior change.
+	/// Resolves every distinct requested name, retaining successful contracts alongside individual misses.
 	/// </summary>
 	private static ToolContractGetResponse ResolveNamedContracts(
 		IReadOnlyList<string> toolNames,
@@ -884,19 +899,24 @@ internal static class ToolContractCatalog {
 			normalizedNames.Add(name.Trim());
 		}
 		List<ToolContractDefinition> results = [];
+		List<ToolContractNotFound> notFound = [];
 		foreach (string normalizedName in normalizedNames.Distinct(StringComparer.OrdinalIgnoreCase)) {
 			if (TryResolveFullContract(normalizedName, toolInvokerRegistry, out ToolContractDefinition contract)) {
 				results.Add(contract);
 				continue;
 			}
-			return new ToolContractGetResponse(
-				false,
-				Error: new ToolContractError(
+			notFound.Add(new ToolContractNotFound(
+				normalizedName,
+				new ToolContractError(
 					"tool-not-found",
 					$"Tool '{normalizedName}' is not registered by clio MCP. {ToolContractGetTool.DiscoveryHint}",
-					BuildSuggestions(normalizedName, toolInvokerRegistry)));
+					BuildSuggestions(normalizedName, toolInvokerRegistry))));
 		}
-		return new ToolContractGetResponse(true, results);
+		return new ToolContractGetResponse(
+			results.Count > 0,
+			Tools: results.Count > 0 ? results : null,
+			Error: results.Count == 0 ? notFound[0].Error : null,
+			NotFound: notFound.Count > 0 ? notFound : null);
 	}
 
 	/// <summary>
@@ -940,13 +960,7 @@ internal static class ToolContractCatalog {
 		IMcpToolInvokerRegistry? toolInvokerRegistry) {
 		IEnumerable<string> derivedNames = toolInvokerRegistry?.ToolNames
 			?? McpToolSchemaCatalog.RegisteredToolNames;
-		return Contracts.Keys
-			.Concat(derivedNames)
-			.Distinct(StringComparer.OrdinalIgnoreCase)
-			.OrderBy(name => McpToolArgumentSupport.LevenshteinDistance(requestedName, name))
-			.ThenBy(name => name, StringComparer.OrdinalIgnoreCase)
-			.Take(3)
-			.ToArray();
+		return McpToolArgumentSupport.SuggestToolNames(requestedName, Contracts.Keys.Concat(derivedNames));
 	}
 
 	/// <summary>
@@ -1124,8 +1138,9 @@ internal static class ToolContractCatalog {
 				[
 					SuccessFalseSignal
 				],
-				Field(SuccessFieldName, BooleanType, "Whether the contract lookup succeeded."),
+				Field(SuccessFieldName, BooleanType, "Whether discovery succeeded or at least one requested name resolved. Check not-found for partial results."),
 				Field("tools", ArrayType, "Full tool contract definitions; populated when tool-names are passed or detail=full."),
+				Field("not-found", ArrayType, "Unresolved names with per-name error codes, messages and suggestions. Valid contracts remain in tools; omitted when all names resolve. If no names resolve, success=false and error retains the first tool-not-found diagnostic."),
 				Field("index", ArrayType, "Compact tool index (name, purpose, contract-available, resident, destructive); populated for a no-names request unless detail=full. resident=true tools are present in tools/list and are called natively; resident=false tools are reachable only via clio-run/clio-run-destructive — never wrap a resident tool in clio-run."),
 				Field(ErrorFieldName, ObjectType, "Structured error payload when lookup fails.")
 			),
