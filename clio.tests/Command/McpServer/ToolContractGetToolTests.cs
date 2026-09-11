@@ -1554,18 +1554,17 @@ public sealed class ToolContractGetToolTests {
 				field.Name == "body" &&
 				field.Description.Contains("get-page.files.bodyFile"),
 			because: "update-page should advertise the materialized body file as the source of fallback single-page saves");
-		// PR #1351 review - validate-page is the THIRD consumer named in issue #1185 and was the one clause left
-		// unguarded, so it could be reverted to `raw.body`, or lose the "no body-file parameter" qualifier that
-		// makes the get-page -> edit -> validate-page loop composable, with a fully green suite.
+		// validate-page is the third consumer in the get-page handoff. Keep its explicit body-file input pinned so
+		// callers do not have to inline or re-escape the materialized page body.
 		ToolContractDefinition pageValidateContract = tool
 			.GetToolContracts(new ToolContractGetArgs([PageValidateTool.ToolName])).Tools!.Single();
-		string pageValidateBodyDescription = pageValidateContract.InputSchema.Properties
-			.Single(field => field.Name == "body").Description;
-		pageValidateBodyDescription.Should().Contain("INLINE",
-			because: "validate-page takes the body inline only, and an agent that assumes a body-file parameter cannot close the get-page -> edit -> validate-page loop");
-		pageValidateBodyDescription.Should().Contain("get-page.files.bodyFile",
-			because: "the loop is only composable if the contract names the file get-page actually materializes");
-		pageValidateBodyDescription.Should().NotContain("raw.body",
+		string pageValidateBodyFileDescription = pageValidateContract.InputSchema.Properties
+			.Single(field => field.Name == "body-file").Description;
+		pageValidateBodyFileDescription.Should().Contain("get-page",
+			because: "the loop is composable when the contract names the file source get-page materializes");
+		pageValidateBodyFileDescription.Should().Contain("files.bodyFile",
+			because: "callers should pass the exact path returned by get-page without guessing a directory");
+		pageValidateBodyFileDescription.Should().NotContain("raw.body",
 			because: "get-page no longer returns raw.body over MCP, so validate-page must not point callers at it - the same drift the sync-pages guard above catches");
 		pageUpdateContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "resources" &&
@@ -3208,6 +3207,28 @@ public sealed class ToolContractGetToolTests {
 				"as distinct types that round-trip");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("The preferred batch schema contract exposes the same accepted column types and temporal alias caveat as the individual column tool.")]
+	public void ToolContractGet_ShouldDescribeTemporalAliases_WhenSyncSchemasIsRequested() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([SchemaSyncTool.ToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "agents must discover column limitations before writing schemas");
+		string description = result.Tools!.Single().InputSchema.Properties.Single(field => field.Name == "operations").Description;
+		description.Should().Contain("Accepted values:", because: "the batch write path must expose its column vocabulary");
+		description.Should().Contain("Date and Time are accepted but are aliases of DateTime",
+			because: "both temporal aliases lose their distinct schema type");
+		description.Should().Contain("readback tools report it as DateTime",
+			because: "successful writing does not prove date-only intent survived");
+		description.Should().Contain("pickerType: \"date\"",
+			because: "date-only UI intent requires explicit picker configuration");
+	}
+
 	// ENG-93885: IsLegacyStdioClient must match the CAADT 1.4.0 stdio fallback client's exact reported
 	// identity (name="mcp_client", version="1.0", both ordinal) and nothing else - not a version prefix,
 	// not an empty version, not a different client name.
@@ -3432,6 +3453,33 @@ public sealed class ToolContractGetToolTests {
 			because: "the named-tools branch must return the requested tool's contract");
 		legacyTrue.Should().BeEquivalentTo(legacyFalse,
 			because: "the named-tools branch is fully deterministic and must be completely independent of legacyNoNamesFullShape");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Advertises body-file as the stateless handoff from get-page without incorrectly requiring inline body.")]
+	public void ToolContractGet_ShouldAdvertiseBodyFile_WhenValidatePageContractIsRequested() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(
+			new ToolContractGetArgs([PageValidateTool.ToolName]));
+		ToolContractDefinition contract = result.Tools!.Single();
+
+		// Assert
+		contract.InputSchema.Required.Should().BeEmpty(
+			because: "body and body-file are alternatives that the runtime validates as a one-of requirement");
+		contract.InputSchema.AnyOf.Should().BeEquivalentTo(
+			[new[] { "body" }, new[] { "body-file" }],
+			because: "the served schema must express the same alternative-input rule that runtime validation enforces");
+		contract.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "body-file" && field.Description.Contains("files.bodyFile"),
+			because: "callers must be able to pass the exact path returned by get-page without guessing an output directory");
+		contract.InputSchema.Properties.Should().Contain(field => field.Name == "version",
+			because: "the curated contract must expose the version argument accepted by validate-page");
+		contract.Examples.Should().Contain(example => example.Arguments.ContainsKey("body-file"),
+			because: "the served contract should demonstrate the file-based handoff for large page bodies");
 	}
 
 	[Test]

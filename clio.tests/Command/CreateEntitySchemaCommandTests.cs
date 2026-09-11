@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
@@ -231,5 +232,50 @@ internal class CreateEntitySchemaCommandTests : BaseCommandTests<CreateEntitySch
 			because: "the optional virtual-schema flag should be accepted by the command parser");
 		parsedOptions!.IsVirtual.Should().Be(expected,
 			because: "the command must distinguish persistent schemas from explicitly virtual schemas");
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("Accepts repeated column groups across other options, preserving sequence order and JSON punctuation.")]
+	public void Parse_ShouldAcceptRepeatedColumns_WhenGroupsAreSeparated(bool useEquals) {
+		// Arrange
+		const string json = """{"name":"Notes","type":"Text","title":"A;B,C: D"}""";
+		List<string> args = ["create-entity-schema", "--name", "UsrVehicle", "--column", json, "Amount:Integer",
+			"--title", "Vehicle", "--package", "UsrPkg"];
+		args.AddRange(useEquals ? ["--column=Active:Boolean"] : ["--column", "Active:Boolean"]);
+		CreateEntitySchemaOptions? options = null;
+		// Act
+		var result = Parser.Default.ParseArguments<CreateEntitySchemaOptions>(
+			Program.NormalizeCommandLineArgs(args.ToArray()).Skip(1)).WithParsed(value => options = value);
+		// Assert
+		result.Tag.Should().Be(ParserResultType.Parsed, because: "documented repeated flags must parse successfully");
+		options!.Columns.Should().Equal([json, "Amount:Integer", "Active:Boolean"],
+			because: "every column token must reach the creator intact and in input order");
+		options.Title.Should().Be("Vehicle", because: "intervening options must keep their own values");
+	}
+
+	[TestCase("--column")]
+	[TestCase("--column=")]
+	[Description("Does not hide a missing repeated column value by combining it with a valid group.")]
+	public void Parse_ShouldRejectMissingColumn_WhenAnotherGroupIsValid(string emptyGroup) {
+		// Arrange
+		string[] args = ["create-entity-schema", "--name", "UsrVehicle", "--title", "Vehicle",
+			"--column", "Notes:Text", emptyGroup];
+		// Act
+		var result = Parser.Default.ParseArguments<CreateEntitySchemaOptions>(Program.NormalizeCommandLineArgs(args).Skip(1));
+		// Assert
+		result.Tag.Should().Be(ParserResultType.NotParsed, because: "an incomplete request must fail before schema creation");
+	}
+
+	[TestCase("update-entity-schema")]
+	[TestCase("create-data-binding")]
+	[Description("Scopes repeated-column normalization to entity creation.")]
+	public void Normalize_ShouldPreserveArguments_WhenCommandIsUnrelated(string verb) {
+		// Arrange
+		string[] args = [verb, "--column", "Notes:Text", "--column", "Amount:Integer"];
+		// Act
+		string[] result = Program.NormalizeCommandLineArgs(args);
+		// Assert
+		result.Should().Equal(args, because: "this workaround must not alter other command contracts");
 	}
 }

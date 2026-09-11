@@ -1264,6 +1264,59 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 				because: "the served contract must not restore a fixed list of producer fields"));
 	}
 
+	[Test]
+	[Description("Advertises the validate-page body-file alternative and its local-stdio boundary through the real MCP server.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureTag(PageValidateTool.ToolName)]
+	[AllureName("get-tool-contract advertises validate-page body-file")]
+	[AllureDescription("Requests the validate-page contract over a real stdio MCP session and verifies body-file is an alternative input tied to get-page files.bodyFile and unavailable over mcp-http.")]
+	public async Task GetToolContracts_ShouldAdvertiseValidatePageBodyFile_WhenRequested() {
+		// Arrange
+		await using var context = await AllureApi.Step(
+			"Arrange a real stdio MCP server session",
+			() => Task.FromResult(Arrange(TimeSpan.FromMinutes(3))));
+
+		// Act
+		ToolContractGetResponse response = await AllureApi.Step(
+			"Request the validate-page tool contract",
+			async () => await CallAsync(
+				context.Session,
+				context.CancellationTokenSource.Token,
+				new Dictionary<string, object?> {
+					["tool-names"] = new[] { PageValidateTool.ToolName }
+				}));
+
+		// Assert
+		AllureApi.Step("Assert contract lookup succeeded", () => response.Success.Should().BeTrue(
+			because: "validate-page must be discoverable through the executable MCP contract catalog"));
+		ToolContractDefinition contract = AllureApi.Step(
+			"Assert only validate-page was returned",
+			() => {
+				response.Tools.Should().ContainSingle(
+					because: "only validate-page was requested");
+				return response.Tools!.Single();
+			});
+		AllureApi.Step("Assert neither alternative is unconditionally required", () =>
+			contract.InputSchema.Required.Should().BeEmpty(
+				because: "body and body-file are alternatives"));
+		AllureApi.Step("Assert the one-of input rule", () =>
+			contract.InputSchema.AnyOf.Should().BeEquivalentTo(
+				[new[] { "body" }, new[] { "body-file" }],
+				because: "the live contract must match runtime alternative-input validation"));
+		ToolContractField bodyFile = AllureApi.Step(
+			"Assert body-file is present",
+			() => contract.InputSchema.Properties.Single(field => field.Name == "body-file"));
+		AllureApi.Step("Assert the get-page handoff is named", () =>
+			bodyFile.Description.Should().Contain("files.bodyFile",
+				because: "callers should pass the exact path returned by get-page"));
+		AllureApi.Step("Assert the transport boundary is named", () =>
+			bodyFile.Description.Should().Contain("Unavailable over mcp-http",
+				because: "remote callers must not mistake body-file for a server-side arbitrary-file API"));
+		AllureApi.Step("Assert a body-file example is included", () =>
+			contract.Examples.Should().Contain(example => example.Arguments.ContainsKey("body-file"),
+				because: "the live contract should demonstrate the file handoff"));
+	}
+
 	private static async Task<ToolContractGetResponse> CallAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,
