@@ -12,7 +12,7 @@ DESCRIPTION
     EntitySchemaDesignerService.
 
     The command creates a draft schema on the server, assigns a parent schema
-    (BaseEntity by default when --parent is omitted), applies the requested
+    (the same-name parent for replacements, BaseEntity otherwise), applies the requested
     name, title, and initial columns, saves the result, applies the DB
     structure, and publishes the
     configuration so the new schema is immediately visible to lookup pickers
@@ -50,9 +50,9 @@ OPTIONS
     --package              Target package name
     --name                 Entity schema name
     --title                Entity schema title/caption
-    --parent               Parent schema name. Defaults to BaseEntity when
-                           omitted (not applied with --extend-parent)
-    --extend-parent        Create a replacement schema. Requires --parent
+    --parent               Parent schema name. Defaults to the schema name for
+                           replacements, or BaseEntity otherwise
+    --extend-parent        Create a same-name replacement in the target package
     --is-virtual           Create a virtual entity schema without a physical
                            database table. Default: false
     --column               Column definition in format
@@ -98,7 +98,7 @@ EXAMPLES
     clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" --parent BaseEntity
 
     # Create a replacement schema
-    clio create-entity-schema -e dev --package Custom --name UsrAccount --title "Account" --parent Account --extend-parent
+    clio create-entity-schema -e dev --package Custom --name Account --title "Account" --extend-parent
 
     # Create a virtual entity without a physical database table
     clio create-entity-schema -e dev --package Custom --name UsrExternalVehicle --title "External vehicle" --is-virtual
@@ -106,11 +106,13 @@ EXAMPLES
 NOTES
     - The command works against a remote Creatio environment only
     - Package resolution requires cliogate to be installed on the target environment
-    - When --parent is omitted the schema inherits BaseEntity by default. A
+    - When --parent is omitted a non-replacement schema inherits BaseEntity. A
       parentless root schema gets a prefixed primary column (e.g. UsrId instead
       of Id) and is not reachable over OData in either direction, so BaseEntity is
       applied automatically. Pass --parent explicitly to inherit from a different
-      schema (--extend-parent still requires an explicit --parent)
+      schema. With --extend-parent, the parent defaults to --name and an explicit
+      parent must match that name. A replacement already in the target package
+      is rejected; use sync-schemas through MCP to reconcile it.
     - If no Guid column is supplied for a root schema, Id:Guid is added automatically
     - A schema with a parent keeps the parent's primary column; custom Guid columns
       remain ordinary columns
