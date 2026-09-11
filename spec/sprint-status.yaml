@@ -21,6 +21,18 @@
 # 2026-07-06) is a separate Jira ticket stacked on the same branch; tracked as its own row.
 
 stories:
+  - id: story-worker-runtime-policy
+    title: "Preserve the MCP worker runtime roll-forward policy"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: S
+    status: review
+    file: spec/stories/story-worker-runtime-policy.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    note: "GH-1409: Alex independently verified Windows and reported a teardown race. User authorized proceeding without a Mac runtime; Mac validation remains unverified."
+    depends_on: []
+    blocks: []
+
   - id: story-tool-contract-partial-results-1
     title: Publish remote OAuth workflow and keep partial tool contracts
     status: review

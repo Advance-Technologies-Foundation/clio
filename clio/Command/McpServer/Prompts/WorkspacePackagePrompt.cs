@@ -66,10 +66,12 @@ public static class WorkspacePackagePrompt {
 		[Description("Creatio environment name")]
 		string environmentName) =>
 		$"""
-		 Use clio mcp server `new-test-project` tool to create a test project for workspace package
+		 Use clio-run with command `new-test-project` to create a test project for workspace package
 		 `{packageName}` in the workspace at `{workspacePath}`.
 		 Pass `workspace-path` exactly as provided and use `environment-name` `{environmentName}`.
 		 Operate on the specified workspace package only.
+		 Use only the clio scaffold for test projects; write test cases inside the generated project.
+		 Verify the project appears in tests/UnitTests.slnx and MainSolution.slnx before running tests.
 		""";
 
 	/// <summary>Builds a prompt for portable integration-test project creation.</summary>
@@ -79,9 +81,11 @@ public static class WorkspacePackagePrompt {
 		[Required, Description("Absolute path to the local workspace")] string workspacePath,
 		[Description("Target framework")] string targetFramework = "net10.0") =>
 		$"""
-		 Read get-guidance name=integration-testing, then use the `new-integration-test-project` tool
+		 Read get-guidance name=integration-testing, then use clio-run with command `new-integration-test-project`
 		 to create a portable integration-test project for `{packageName}` in `{workspacePath}` with
 		 target framework `{targetFramework}`. Do not embed credentials or assume a local clio environment.
+		 Use only the clio scaffold for test projects; write test cases inside the generated project.
+		 Verify the project appears in tests/IntegrationTests.slnx and MainSolution.slnx before running tests.
 		 """;
 
 	/// <summary>

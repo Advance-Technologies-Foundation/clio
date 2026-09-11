@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Command;
@@ -195,6 +196,60 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 		exitCode.Should().Be(0,
 			because: "a non-interactive host must never be blocked by a prompt and proceeds to compile");
 		_interactiveConsole.DidNotReceive().Prompt(Arg.Any<string>());
+		_applicationClient.Received().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	// The two tests below construct the command directly instead of resolving it from the container: they
+	// need their own ICompilationHistoryPoller stub, and registering one in AdditionalRegistrations would
+	// change the poller every other test in this fixture runs against.
+	private CompileConfigurationCommand CreateCommandWith(ICompilationHistoryPoller poller) {
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>()).Returns(SuccessResponse);
+		return new CompileConfigurationCommand(_applicationClient, new EnvironmentSettings { Uri = "http://test" },
+			_serviceUrlBuilder, poller, _logger, _interactiveConsole);
+	}
+
+	[Test]
+	[Description("A give-up throw from the poll thread is reported as a warning instead of escaping: an unhandled exception on a dedicated thread terminates the process, so a short app-tier outage would otherwise have killed clio mid-compile (review finding on CompileConfigurationCommand.Execute - the guard existed but nothing pinned it).")]
+	public void Execute_ShouldReportPollFaultAsWarning_WhenPollThrows() {
+		// Arrange
+		ICompilationHistoryPoller poller = Substitute.For<ICompilationHistoryPoller>();
+		poller.GetBaseline().Returns(new CompilationHistory { CreatedOn = DateTime.UtcNow.AddMinutes(-1) });
+		poller.When(value => value.Poll(Arg.Any<DateTime>(), Arg.Any<CancellationToken>(),
+				Arg.Any<Action<CompilationHistory>>()))
+			.Do(_ => throw new InvalidOperationException("Compilation history is unreachable after 10 rounds."));
+		CompileConfigurationCommand command = CreateCommandWith(poller);
+
+		// Act
+		Action act = () => command.Execute(new CompileConfigurationOptions { Environment = "dev" });
+
+		// Assert
+		act.Should().NotThrow(
+			because: "losing the progress monitor is not a compile failure - the server keeps compiling and the command must still report its own verdict");
+		_logger.Received().WriteWarning(Arg.Is<string>(message =>
+			message.Contains("could not be monitored", StringComparison.Ordinal)
+			&& message.Contains("unreachable after 10 rounds", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("A failed baseline read is reported as a warning and the compilation is still sent: after ClassifyingDataProvider a failed OData round throws instead of returning an empty list, so an unguarded read would abort the compile before the request was ever sent (review finding on the GetBaseline call sites).")]
+	public void Execute_ShouldWarnAndCompile_WhenBaselineReadThrows() {
+		// Arrange
+		ICompilationHistoryPoller poller = Substitute.For<ICompilationHistoryPoller>();
+		poller.GetBaseline()
+			.Returns<CompilationHistory>(_ => throw new InvalidOperationException("Failed reading compilation history."));
+		CompileConfigurationCommand command = CreateCommandWith(poller);
+
+		// Act
+		int exitCode = command.Execute(new CompileConfigurationOptions { Environment = "dev" });
+
+		// Assert
+		exitCode.Should().Be(0,
+			because: "a transient compilation-history failure must not turn a successful compile into a failed command");
+		_logger.Received().WriteWarning(Arg.Is<string>(message =>
+			message.Contains("compilation history baseline", StringComparison.Ordinal)));
+		poller.Received(1).Poll(DateTime.MinValue, Arg.Any<CancellationToken>(), Arg.Any<Action<CompilationHistory>>());
 		_applicationClient.Received().ExecutePostRequest(
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
