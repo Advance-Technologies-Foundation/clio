@@ -216,6 +216,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		EntitySchemaDefaultValueConfig? defaultValueConfig = EntitySchemaDesignerSupport.CreateDefaultValueConfig(
 			column.DefValue);
 		defaultValueConfig = EnrichLookupConstDefaultValue(defaultValueConfig, column, options);
+		defaultValueConfig = EnrichSystemValueDefault(defaultValueConfig, column.DataValueType, options);
 		return new EntitySchemaColumnPropertiesInfo(
 			schema.Name,
 			schema.Package?.Name ?? options.Package,
@@ -276,6 +277,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		EntitySchemaDefaultValueConfig? defaultValueConfig =
 			EntitySchemaDesignerSupport.CreateDefaultValueConfig(defaultValue);
 		defaultValueConfig = EnrichLookupConstDefaultValue(defaultValueConfig, enrichmentColumn, options);
+		defaultValueConfig = EnrichSystemValueDefault(defaultValueConfig, runtimeColumn.DataValueType, options);
 
 		return new EntitySchemaColumnPropertiesInfo(
 			schema.Name,
@@ -343,6 +345,44 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		return config.WithDisplay(resolution.DisplayValue, resolution.RecordResolution);
 	}
 
+	private EntitySchemaDefaultValueConfig? EnrichSystemValueDefault(
+		EntitySchemaDefaultValueConfig? config, int? dataValueType,
+		GetEntitySchemaColumnPropertiesOptions options) {
+		if (config?.Source != "SystemValue") {
+			return config;
+		}
+		if (!Guid.TryParse(config.ValueSource, out Guid sourceId) || sourceId == Guid.Empty) {
+			return config.WithSourceDisplay(null, "invalid-source");
+		}
+		// Read the actual platform type even where the write contract does not expose SystemValue defaults.
+		Guid? dataValueTypeUId = dataValueType switch {
+			8 => new Guid("603d4960-a1a2-45e9-b232-206a54421b01"), // Date
+			9 => new Guid("04cc757b-8f06-482c-8a1a-0c0e171d2410"), // Time
+			16 => new Guid("b039feb0-ee7c-4884-8aa6-d6d45d84316f"), // ImageLookup
+			18 => new Guid("dafb71f9-ee9f-4e0b-a4d7-37aa15987155"), // Color
+			int type when EntitySchemaDesignerSupport.RuntimeDataValueTypeUIdMap.TryGetValue(type, out Guid uId) => uId,
+			_ => null
+		};
+		if (dataValueTypeUId is null) {
+			return config.WithSourceDisplay(null, "unsupported-type");
+		}
+		try {
+			SystemValueLookupValueDto? value = _entitySchemaDesignerClient.GetSystemValues(dataValueTypeUId.Value, options)
+				.SingleOrDefault(item => item.Value == sourceId);
+			if (value is null) {
+				return config.WithSourceDisplay(null, "not-found-for-type");
+			}
+			return string.IsNullOrWhiteSpace(value.DisplayValue)
+				? config.WithSourceDisplay(null, "caption-unavailable")
+				: config.WithSourceDisplay(value.DisplayValue, null);
+		} catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException
+				or WebException or TaskCanceledException or JsonException or Newtonsoft.Json.JsonException) {
+			// Catalog failures say nothing about the stored selector. Preserve the readback and do not
+			// expose raw responses (which can contain environment details) through the resolution marker.
+			return config.WithSourceDisplay(null, "catalog-unavailable");
+		}
+	}
+
 	public void PrintColumnProperties(GetEntitySchemaColumnPropertiesOptions options) {
 		EntitySchemaColumnPropertiesInfo column = GetColumnProperties(options);
 		WriteInfo("Entity schema column properties");
@@ -365,6 +405,9 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		}
 		if (column.DefaultValueConfig?.RecordResolution != null) {
 			WriteInfo($"Default value record resolution: {column.DefaultValueConfig.RecordResolution}");
+		}
+		if (column.DefaultValueConfig?.SourceResolution != null) {
+			WriteInfo($"Default value source resolution: {column.DefaultValueConfig.SourceResolution}");
 		}
 		WriteInfo($"Simple lookup: {FormatBoolean(column.SimpleLookup)}");
 		WriteInfo($"Cascade: {FormatBoolean(column.Cascade)}");

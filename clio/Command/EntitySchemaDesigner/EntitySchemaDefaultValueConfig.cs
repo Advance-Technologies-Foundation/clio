@@ -51,10 +51,11 @@ public sealed class EntitySchemaDefaultValueConfig
 	public int? SequenceNumberOfChars { get; init; }
 
 	/// <summary>
-	/// Gets the resolved display value of the referenced record for a lookup <c>Const</c> default.
+	/// Gets the referenced record's display value for a lookup <c>Const</c> default or the native
+	/// system-value caption for a <c>SystemValue</c> default.
 	/// </summary>
 	[JsonPropertyName("display-value")]
-	[Description("Display value of the referenced record for a lookup Const default, resolved in the connected user's culture. Null for non-lookup defaults or when unavailable (see record-resolution).")]
+	[Description("Referenced record display value for a lookup Const default, or native catalog caption for a SystemValue default of any supported column type, in the connected user's culture. Identifies the configured source, not its evaluated runtime value. Null when unavailable (see record-resolution or source-resolution).")]
 	public string? DisplayValue { get; init; }
 
 	/// <summary>
@@ -65,6 +66,13 @@ public sealed class EntitySchemaDefaultValueConfig
 	public string? RecordResolution { get; init; }
 
 	/// <summary>
+	/// Gets the reason a system-value caption could not be resolved, without changing its stored identifier.
+	/// </summary>
+	[JsonPropertyName("source-resolution")]
+	[Description("SystemValue caption resolution failure: invalid-source, unsupported-type, not-found-for-type, caption-unavailable, or catalog-unavailable. Null on success or for other sources. Catalog unavailability does not imply that the configured source is invalid.")]
+	public string? SourceResolution { get; init; }
+
+	/// <summary>
 	/// Returns a copy of this configuration enriched with the referenced-record display value and/or
 	/// record-resolution marker, leaving all other fields unchanged.
 	/// </summary>
@@ -72,6 +80,19 @@ public sealed class EntitySchemaDefaultValueConfig
 	/// <param name="recordResolution">Record-resolution marker, or null.</param>
 	/// <returns>A new <see cref="EntitySchemaDefaultValueConfig"/> with the display fields populated.</returns>
 	public EntitySchemaDefaultValueConfig WithDisplay(string? displayValue, string? recordResolution) {
+		return WithResolution(displayValue, recordResolution, SourceResolution);
+	}
+
+	/// <summary>Returns a copy enriched with the native system-value caption or its resolution failure.</summary>
+	/// <param name="displayValue">Native catalog caption, or null.</param>
+	/// <param name="sourceResolution">System-value resolution failure, or null on success.</param>
+	/// <returns>A copy retaining the configured source and canonical identifiers.</returns>
+	public EntitySchemaDefaultValueConfig WithSourceDisplay(string? displayValue, string? sourceResolution) {
+		return WithResolution(displayValue, RecordResolution, sourceResolution);
+	}
+
+	private EntitySchemaDefaultValueConfig WithResolution(
+		string? displayValue, string? recordResolution, string? sourceResolution) {
 		return new EntitySchemaDefaultValueConfig {
 			Source = Source,
 			Value = Value,
@@ -80,7 +101,8 @@ public sealed class EntitySchemaDefaultValueConfig
 			SequencePrefix = SequencePrefix,
 			SequenceNumberOfChars = SequenceNumberOfChars,
 			DisplayValue = displayValue,
-			RecordResolution = recordResolution
+			RecordResolution = recordResolution,
+			SourceResolution = sourceResolution
 		};
 	}
 }
