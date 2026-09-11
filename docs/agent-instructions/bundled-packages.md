@@ -27,6 +27,32 @@ Read it before touching any of:
 The asymmetry matters for review: a changed `cliogate.gz` can be checked by rebuilding it from in-repo
 sources, a changed `CrtProcessBuilder.gz` cannot. That is why the latter carries pins (below).
 
+## The third package — `CrtDashboardsMigratorApp`
+
+Added after the two above and deliberately closer to `cliogate` than to the process builder: it ships
+**prebuilt**, and the archive IS the package's SDLC (Jenkins) build — the package `.gz` inside the build zip,
+carrying `Files/Bin/CrtDashboardsMigratorApp.dll` (net472) and `Files/Bin/netstandard/CrtDashboardsMigratorApp.dll`
+(.NET). The target loads the assembly for its runtime instead of compiling the package; its configuration build
+for the package's schemas and the restart still happen. It goes through the same install command as the
+process builder (`install-dashboards-migrator`, `InstallBundledPackageCommand`), so the downgrade refusals,
+the restart wait and the ungated `Ping` outcome check (`/rest/DashboardsMigratorService/Ping`) apply unchanged.
+
+Nothing is built on the bundling machine, so the procedure below — build, tests, `git archive`, stripping
+`Files/Bin` — does NOT apply to it. Its whole procedure is one script:
+
+```powershell
+pwsh ./rebundle-dashboards-migrator.ps1 -BuildZip '\tscrm.com\dfs-ts\ComposableApps\CrtDashboardsMigratorApp\<X.Y.Z>\CrtDashboardsMigratorApp_<X.Y.Z>.zip' -Version <the build's full version, X.Y.Z.N>
+```
+
+It unpacks the build, checks the version extends the app version and is higher than what clio ships, stamps
+the descriptor with `clio set-pkg-version`, packs with `--skip-pdb`, verifies the inventory (exactly the two
+package assemblies, `Data/` allowed because its bound rows only register the migration page and its permission,
+no `SqlScripts/`, no `InstallScripts` in the descriptor, the `DashboardsMigratorService` schema present),
+rewrites the pins in `clio.tests/Common/BundledDashboardsMigratorPackageTests.cs` and rebuilds clio. The
+provenance pin is the SHA-256 of the build zip (`ExpectedSourceBuildSha256`); the commit is on the build's page
+in the SDLC app. Facts 1–3 below (UId, `ModifiedOnUtc`, installed-vs-serving) hold for it exactly as for the
+process builder; the package-side half of the procedure is `docs/bundling-into-clio.md` in its repository.
+
 ## Platform facts you must know first
 
 Three separate decisions, often confused. Getting them mixed up is what makes a rebundle fail silently.

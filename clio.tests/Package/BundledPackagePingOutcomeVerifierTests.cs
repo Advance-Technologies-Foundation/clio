@@ -11,7 +11,7 @@ namespace Clio.Tests.Package;
 [TestFixture]
 [Category("Unit")]
 [Property("Module", "Package")]
-public class ProcessDesignServiceOutcomeVerifierTests {
+public class BundledPackagePingOutcomeVerifierTests {
 
 	#region Constants: Private
 
@@ -26,7 +26,7 @@ public class ProcessDesignServiceOutcomeVerifierTests {
 	private IApplicationClient _applicationClient;
 	private IServiceUrlBuilder _serviceUrlBuilder;
 	private ILogger _logger;
-	private ProcessDesignServiceOutcomeVerifier _verifier;
+	private BundledPackagePingOutcomeVerifier _verifier;
 
 	#endregion
 
@@ -53,7 +53,7 @@ public class ProcessDesignServiceOutcomeVerifierTests {
 		_serviceUrlBuilder
 			.Build(ServiceUrlBuilder.KnownRoute.ProcessBuilderPing)
 			.Returns(PingUrl);
-		_verifier = new ProcessDesignServiceOutcomeVerifier(_applicationClient, _serviceUrlBuilder, _logger);
+		_verifier = new BundledPackagePingOutcomeVerifier(_applicationClient, _serviceUrlBuilder, _logger);
 	}
 
 	[TearDown]
@@ -328,18 +328,36 @@ public class ProcessDesignServiceOutcomeVerifierTests {
 	}
 
 	[Test]
+	[Description("Probes the dashboards-migrator Ping route when asked about that package: the name selects the route, so one verifier serves both bundled packages.")]
+	public void IsPackageOperational_ShouldProbeTheDashboardsMigratorRoute_ForThatPackage() {
+		// Arrange
+		_serviceUrlBuilder
+			.Build(ServiceUrlBuilder.KnownRoute.DashboardsMigratorPing)
+			.Returns("http://localhost/0/rest/DashboardsMigratorService/Ping");
+		ArrangeResponse(PingResponse());
+
+		// Act
+		bool operational = _verifier.IsPackageOperational(BundledPackages.DashboardsMigratorPackageName, out string _);
+
+		// Assert
+		operational.Should().BeTrue(because: "the migrator's own Ping answered in the expected envelope");
+		_serviceUrlBuilder.Received(1).Build(ServiceUrlBuilder.KnownRoute.DashboardsMigratorPing);
+		_serviceUrlBuilder.DidNotReceive().Build(ServiceUrlBuilder.KnownRoute.ProcessBuilderPing);
+	}
+
+	[Test]
 	[Description("Rejects null collaborators, so a misconfigured DI graph fails at construction rather than mid-install.")]
 	public void Constructor_ShouldRejectNullCollaborators() {
 		// Arrange, Act & Assert
 		Assert.Throws<ArgumentNullException>(
-			() => new ProcessDesignServiceOutcomeVerifier(null, _serviceUrlBuilder, _logger),
+			() => new BundledPackagePingOutcomeVerifier(null, _serviceUrlBuilder, _logger),
 			"the verifier cannot answer anything without a client, and failing here names the missing "
 			+ "dependency instead of throwing a NullReferenceException after the package is already installed");
 		Assert.Throws<ArgumentNullException>(
-			() => new ProcessDesignServiceOutcomeVerifier(_applicationClient, null, _logger),
+			() => new BundledPackagePingOutcomeVerifier(_applicationClient, null, _logger),
 			"without a url builder there is no route to probe");
 		Assert.Throws<ArgumentNullException>(
-			() => new ProcessDesignServiceOutcomeVerifier(_applicationClient, _serviceUrlBuilder, null),
+			() => new BundledPackagePingOutcomeVerifier(_applicationClient, _serviceUrlBuilder, null),
 			"without a logger the cause of a failed probe would be lost");
 	}
 

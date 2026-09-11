@@ -756,6 +756,7 @@ internal static class ToolContractCatalog {
 			[SysSettingUpdateTool.UpdateSysSettingToolName] = BuildUpdateSysSetting(),
 			[InstallGateTool.InstallGateToolName] = BuildInstallGate(),
 			[InstallProcessBuilderTool.InstallProcessBuilderToolName] = BuildInstallProcessBuilder(),
+			[InstallDashboardsMigratorTool.InstallDashboardsMigratorToolName] = BuildInstallDashboardsMigrator(),
 			[AssertInfrastructureTool.AssertInfrastructureToolName] = BuildAssertInfrastructure(),
 			[ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName] = BuildShowPassingInfrastructure(),
 			[FindEmptyIisPortTool.FindEmptyIisPortToolName] = BuildFindEmptyIisPort(),
@@ -5676,6 +5677,40 @@ internal static class ToolContractCatalog {
 				"A process-designer tool reported that the CrtProcessBuilder package is missing or older than required. Those tools (create-business-process, modify-business-process, describe-business-process, list-user-tasks, validate-process-graph) are long-tail like this one: absent from tools/list, discoverable through the get-tool-contract index, reachable through clio-run / clio-run-destructive.",
 				"The caller can install a package on the target environment, With DataService read access to SysPackage the downgrade check runs; WITHOUT it the install proceeds and says so, so a missing read permission is not a reason to decline this call.",
 				"NOTE for the follow-up call, not for this one: the process-designer tools additionally need the CanManageProcessDesign operation and a General (non-portal) user, which is the gate ProcessDesignService enforces. cliogate's broader CanManageSolution does NOT grant it."
+			]);
+	}
+
+	private static ToolContractDefinition BuildInstallDashboardsMigrator() {
+		return new ToolContractDefinition(
+			InstallDashboardsMigratorTool.InstallDashboardsMigratorToolName,
+			"Installs (or updates) the bundled CrtDashboardsMigratorApp package - the \"Dashboards migrator\" app that converts Classic UI (7.x) dashboards into Freedom UI dashboards - into a registered Creatio environment (the package requires Creatio 8.3.1 or later; an older instance fails the configuration build and the outcome check reports it). The package ships prebuilt (assemblies for both .NET Framework and .NET), so the target does not compile it; the install still runs the platform's configuration build for the package's schemas and a restart follows, and how long that takes depends entirely on the target environment - do not quote a duration to the user. You never trigger the restart yourself - the tool waits for the instance to answer its health check before judging the result. It checks the outcome rather than the install call: it asks the package's own service whether it is serving (DashboardsMigratorService Ping, ungated) and fails unless it answers, so a package that was accepted but is not serving is reported instead of looking like success - which list-packages cannot distinguish. The check is liveness, not identity: on an UPGRADE a stale assembly that still answers will pass. It installs in every case but two, and re-running is otherwise safe (one configuration build on the target). Both exceptions stop an environment moving BACKWARDS, both report exit code 1, and neither is retryable; the override is a command-line flag deliberately NOT available to you. (1) It REFUSES when the environment already carries a NEWER version than this clio ships; say the fix is to update clio. (2) It REFUSES when this clio's OWN bundled version carries a pre-release suffix; nothing about the target is wrong, say the fix is to reinstall or update clio. Reinstalling the SAME version is allowed - that is the repair path when a package installed but never compiled.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+				]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Install the dashboards migrator before moving Classic dashboards to Freedom UI",
+					new Dictionary<string, object?> {
+						[EnvironmentNameFieldName] = ExampleEnvironmentName
+					})
+			],
+			Flow(
+				[
+					InstallDashboardsMigratorTool.InstallDashboardsMigratorToolName
+				],
+				"Install the package, then have the user run the migration from System Designer (Dashboards migration) and review the Dashboards migration log section. The install's own success proves the package is COMPILED and serving - it asks the package's ungated Ping and fails unless it answers. It does NOT prove WHICH build is serving: on an upgrade a stale assembly that still answers passes, so treat a new version as verified only once the migration itself works."),
+			[],
+			[],
+			Preconditions: [
+				"The target environment is registered (see list-environments / reg-web-app) and runs Creatio 8.3.1 or later; the version is not checked up front.",
+				"The user has Classic UI (7.x) dashboards to move to Freedom UI, and has confirmed the target environment - this tool runs a configuration build and restarts a live instance.",
+				"The caller can install a package on the target environment. With DataService read access to SysPackage the downgrade check runs; WITHOUT it the install proceeds and says so, so a missing read permission is not a reason to decline this call.",
+				"This tool is long-tail like install-process-builder: absent from tools/list, discoverable through the get-tool-contract index, reachable through clio-run-destructive."
 			]);
 	}
 

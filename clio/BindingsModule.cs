@@ -752,6 +752,7 @@ public class BindingsModule {
 		services.AddTransient<SysSettingUpdateTool>();
 		services.AddTransient<InstallGateTool>();
 		services.AddTransient<InstallProcessBuilderTool>();
+		services.AddTransient<InstallDashboardsMigratorTool>();
 		services.AddTransient<ExperimentalTool>();
 		services.AddTransient<ListCreatioBuildsTool>();
 		services.AddTransient<GetCreatioInfoTool>();
@@ -821,6 +822,7 @@ public class BindingsModule {
 		services.AddTransient<OpenCfgCommand>();
 		services.AddTransient<InstallGateCommand>();
 		services.AddTransient<InstallProcessBuilderCommand>();
+		services.AddTransient<InstallDashboardsMigratorCommand>();
 		services.AddTransient<PingAppCommand>();
 		services.AddTransient<ReferenceCommand>();
 		// NewPkgCommand depends on the reference command via its Command<ReferenceOptions> base type.

@@ -265,7 +265,13 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>
 		///     Makes one member of a process version family the ACTUAL one via the ProcessDesignService package.
 		/// </summary>
-		SetActiveProcessVersion = 69
+		SetActiveProcessVersion = 69,
+
+		/// <summary>
+		///     Answers whether the bundled dashboards-migrator package's own code is serving — the same
+		///     liveness-only, ungated probe as <see cref="ProcessBuilderPing"/>, for the other bundled package.
+		/// </summary>
+		DashboardsMigratorPing = 70
 
 	}
 
@@ -330,6 +336,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.BuildProcess, "/rest/ProcessDesignService/BuildProcess"},
 		{KnownRoute.ListUserTasks, "/rest/ProcessDesignService/ListUserTasks"},
 		{KnownRoute.ProcessBuilderPing, "/rest/ProcessDesignService/Ping"},
+		{KnownRoute.DashboardsMigratorPing, "/rest/DashboardsMigratorService/Ping"},
 		{KnownRoute.FindSchemaLayers, "/rest/CreatioApiGateway/FindSchemaLayers"},
 		{KnownRoute.ExportSchema, "/rest/CreatioApiGateway/ExportSchema"},
 		{KnownRoute.ImportSchema, "/rest/CreatioApiGateway/ImportSchema"},

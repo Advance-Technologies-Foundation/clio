@@ -70,9 +70,9 @@ namespace Clio.Command
 		// re-emits that suffix verbatim with newlines intact. Only clio's own artifact reaches here, so this is
 		// tidiness rather than a defence — but it is a line printed to a console, and a version that could
 		// forge extra lines in `clio info` output is worth not having.
-		private string GetBundledProcessBuilderVersion() =>
+		private string GetBundledVersion(string packageName) =>
 			_bundledPackageCatalog.TryGetVersion(
-				BundledPackages.ProcessBuilderPackageName,
+				packageName,
 				out PackageVersion version,
 				out string diagnosis)
 				? TextUtilities.SanitizeVersionForDisplay(version)
@@ -107,7 +107,8 @@ namespace Clio.Command
 				// unpacking the archive. Compare it against `clio list-packages -e <env>` to tell whether an
 				// environment is behind — and it is the same value the convergence rule compares, because
 				// both read it from the archive.
-				_logger.WriteInfo($"process-builder:   {GetBundledProcessBuilderVersion()}");
+				_logger.WriteInfo($"process-builder:   {GetBundledVersion(BundledPackages.ProcessBuilderPackageName)}");
+				_logger.WriteInfo($"dashboards-migrator:   {GetBundledVersion(BundledPackages.DashboardsMigratorPackageName)}");
 				_logger.WriteInfo($"dotnet:   {Environment.Version.ToString()}");
 				_logger.WriteInfo($"settings file path: {SettingsRepository.AppSettingsFile}");
 				return 0;
