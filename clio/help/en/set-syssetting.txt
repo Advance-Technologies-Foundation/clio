@@ -27,6 +27,7 @@ OPTIONS
                      For a blob-data setting (Type Binary, e.g. the logo), pass the path to the file.
 
     Type (pos. 2)    Sys setting type (default: Text). Use Binary for blob-data settings such as the logo.
+    Download bytes: clio download-sys-setting-file --code <code> --file-name <path/filename> -e <environment>
 
     --get            Read the setting value instead of writing it.
                      The get-syssetting alias implies this automatically.

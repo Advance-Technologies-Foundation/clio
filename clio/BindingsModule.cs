@@ -398,6 +398,8 @@ public class BindingsModule {
 		services.AddTransient<IFeatureStateService, FeatureStateService>();
 		services.AddTransient<SetFileContentStorageConnectionStringCommand>();
 		services.AddTransient<SysSettingsCommand>();
+		services.AddTransient<IDownloadSysSettingFileService, DownloadSysSettingFileService>();
+		services.AddTransient<DownloadSysSettingFileCommand>();
 		services.AddTransient<BuildInfoCommand>();
 		services.AddTransient<BuildDockerImageCommand>();
 		services.AddTransient<InstallSkillsCommand>();

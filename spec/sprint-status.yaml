@@ -21,6 +21,11 @@
 # 2026-07-06) is a separate Jira ticket stacked on the same branch; tracked as its own row.
 
 stories:
+  - id: story-download-sys-setting-file-1
+    title: Download Binary system settings to a required filename
+    status: review
+    file: spec/stories/story-download-sys-setting-file-1.md
+    issue: https://github.com/Advance-Technologies-Foundation/clio/issues/873
   - id: story-worker-runtime-policy
     title: "Preserve the MCP worker runtime roll-forward policy"
     feature: "mcp-worker-execution-boundary"
