@@ -55,6 +55,11 @@ public sealed class DurableInvocationGateCompletenessTests {
 	/// instead of extending this list.
 	/// </remarks>
 	private static readonly HashSet<string> ReviewedSilentlyExecutableTools = new(StringComparer.Ordinal) {
+		// Administration inspection rejects mutation actions before resolving the environment.
+		"inspect-user",
+		"inspect-role",
+		"inspect-access",
+		"inspect-license",
 		"advise-theme-palette",
 		"assert-infrastructure",
 		"check-auth-code-flow",

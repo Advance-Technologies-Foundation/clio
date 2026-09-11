@@ -43,6 +43,12 @@ internal sealed class DataForgeSettings {
 internal sealed class SandboxSettings {
 	public string? EnvironmentName { get; set; }
 
+	/// <summary>Dedicated existing contact with no user, reserved for administration lifecycle tests.</summary>
+	public Guid? AdministrationContactId { get; set; }
+
+	/// <summary>Explicitly reserved, entirely unused license package with 2..8 seats for bounded capacity and redistribution testing.</summary>
+	public Guid? AdministrationLicensePackageId { get; set; }
+
 	/// <summary>
 	/// Explicit IIS application-pool name for the disposable uninstall sandbox. TeamCity resolves this
 	/// from its <c>ApplicationPoolName</c> build parameter because the externally routed environment URL

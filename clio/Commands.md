@@ -2,6 +2,17 @@
 
 Use `clio help` for the terminal overview and `clio <command> --help` for command details.
 
+## User and Role Administration
+
+<a id="manage-user"></a>
+- [`manage-user`](docs/commands/manage-user.md) - Inspect and manage Creatio user administration.
+<a id="manage-role"></a>
+- [`manage-role`](docs/commands/manage-role.md) - Inspect and manage Creatio role administration.
+<a id="manage-access"></a>
+- [`manage-access`](docs/commands/manage-access.md) - Inspect and manage Creatio access administration.
+<a id="manage-license"></a>
+- [`manage-license`](docs/commands/manage-license.md) - Inspect and manage Creatio license administration.
+
 ## Application Management
 
 <a id="clear-local-env"></a>
