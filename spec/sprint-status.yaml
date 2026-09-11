@@ -3568,11 +3568,34 @@ stories:
     adr: spec/adr/adr-process-versioning.md
     test_plan: spec/test-plans/tp-process-versioning.md
     note: >-
-      Manual-testing defects D4 and D5. Needs a libraryVersion + sequence bump in bundle-source.json.
+      Manual-testing defects D4 and D5. Also SPLIT the article: it stood at 99.9% of the
+      single-response budget, so no correction fit until the write half moved to
+      process-version-writes. libraryVersion 1.14.4 -> 1.15.0.
     depends_on:
       - story-process-versioning-18
       - story-process-versioning-19
       - story-process-versioning-20
+    blocks:
+      - story-process-versioning-24
+
+  - id: story-process-versioning-24
+    title: "Re-pin clio's guidance fixture after the process-versions split"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio"
+    size: S
+    status: ready-for-dev
+    file: spec/stories/story-process-versioning-24.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    note: >-
+      Blocked until story 21 publishes: the fixture pins a GENERATION (libraryVersion plus its derived
+      sequence), so it can only name a library that exists. Same step story 7 performed for the
+      original article. process-versions keeps its id, sourcePath and legacyUris - the new article is
+      additive.
+    depends_on:
+      - story-process-versioning-21
     blocks: []
 
   - id: story-process-versioning-22
