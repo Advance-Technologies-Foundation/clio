@@ -352,7 +352,8 @@ internal class Program {
 		List<string> columns = [];
 		int insertionIndex = -1;
 		int groups = 0;
-		for (int index = 0; index < args.Length; index++) {
+		int index = 0;
+		while (index < args.Length) {
 			string token = args[index];
 			if (token == "--") {
 				output.AddRange(args.Skip(index));
@@ -360,20 +361,16 @@ internal class Program {
 			}
 			if (token != "--column" && !token.StartsWith("--column=", StringComparison.Ordinal)) {
 				output.Add(token);
+				index++;
 				continue;
 			}
 			insertionIndex = insertionIndex < 0 ? output.Count : insertionIndex;
 			groups++;
-			int previousCount = columns.Count;
-			if (token.StartsWith("--column=", StringComparison.Ordinal)) {
-				columns.Add(token["--column=".Length..]);
-			}
-			while (index + 1 < args.Length && !args[index + 1].StartsWith("-", StringComparison.Ordinal)) {
-				columns.Add(args[++index]);
-			}
-			if (columns.Count == previousCount || columns.Skip(previousCount).Any(string.IsNullOrWhiteSpace)) {
+			List<string> group = ReadColumnGroup(args, ref index);
+			if (group.Count == 0 || group.Any(string.IsNullOrWhiteSpace)) {
 				return args;
 			}
+			columns.AddRange(group);
 		}
 		if (groups < 2) {
 			return args;
@@ -381,6 +378,18 @@ internal class Program {
 		output.Insert(insertionIndex, "--column");
 		output.InsertRange(insertionIndex + 1, columns);
 		return output.ToArray();
+	}
+
+	private static List<string> ReadColumnGroup(string[] args, ref int index) {
+		string token = args[index++];
+		List<string> values = [];
+		if (token.StartsWith("--column=", StringComparison.Ordinal)) {
+			values.Add(token["--column=".Length..]);
+		}
+		while (index < args.Length && !args[index].StartsWith("-", StringComparison.Ordinal)) {
+			values.Add(args[index++]);
+		}
+		return values;
 	}
 
 	// The `get-syssetting` alias shares the `set-syssetting` verb and its options, and read mode
