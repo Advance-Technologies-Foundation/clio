@@ -27,7 +27,11 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 
 	private const string ConnectionStringsFileName = "ConnectionStrings.config";
 	private const string EnvironmentName = "work";
-	private const string InstalledCreatioPath = @"C:\inetpub\wwwroot\work";
+	// Native path identity checks bypass MockFileSystem, so use the current user's
+	// accessible temp ancestor rather than a machine-owned IIS directory.
+	private static readonly string InstalledCreatioPath = Path.Combine(
+		DirectoryPathIdentity.Normalize(Path.GetTempPath()),
+		nameof(CreatioUninstallerTestFixture), Guid.NewGuid().ToString("N"), "work");
 	private const string AppPoolName = "custom-work-pool";
 	private const string ProfileDirectoryPath = @"C:\Users\custom-work-pool";
 

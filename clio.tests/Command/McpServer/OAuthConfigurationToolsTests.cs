@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using Clio.Command;
 using Clio.Command.IdentityServiceDeployment;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.OAuthAppConfiguration;
@@ -16,6 +17,32 @@ namespace Clio.Tests.Command.McpServer;
 [NonParallelizable]
 public sealed class OAuthConfigurationToolsTests
 {
+	[Test]
+	[Category("Unit")]
+	[TestCase(typeof(GetIdentityServiceConfigOptions), true)]
+	[TestCase(typeof(GetIdentityServiceConfigTool), true)]
+	[TestCase(typeof(ResolveOAuthSystemUserOptions), true)]
+	[TestCase(typeof(ResolveOAuthSystemUserTool), true)]
+	[TestCase(typeof(CreateServerToServerOAuthAppOptions), true)]
+	[TestCase(typeof(CreateServerToServerOAuthAppTool), true)]
+	[TestCase(typeof(VerifyOAuthAppOptions), true)]
+	[TestCase(typeof(VerifyOAuthAppTool), true)]
+	[TestCase(typeof(DeployIdentityOptions), false)]
+	[TestCase(typeof(DeployIdentityTool), false)]
+	[TestCase(typeof(CreateOAuthTechnicalUserOptions), false)]
+	[TestCase(typeof(CreateOAuthTechnicalUserTool), false)]
+	[Description("Makes only the four remote OAuth workflow commands and tools available when every feature is disabled.")]
+	public void IsEnabled_ShouldRespectOAuthPublicationScope_WhenFeaturesAreDisabled(Type type, bool expected) {
+		// Arrange
+		Func<string, bool> disabledFeature = _ => false;
+
+		// Act
+		bool enabled = FeatureToggleReflection.IsEnabled(type, disabledFeature);
+
+		// Assert
+		enabled.Should().Be(expected, because: "the four remote workflow steps are public while deployment and technical-user creation remain gated");
+	}
+
 	private static string GetToolName<TTool>(string methodName) =>
 		((McpServerToolAttribute)typeof(TTool)
 			.GetMethod(methodName)!

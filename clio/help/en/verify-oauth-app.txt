@@ -39,8 +39,7 @@ EXAMPLES
         --identity-server-url https://c-dev-is.creatio.com
 
 NOTES
-    This command is experimental and hidden by default. Enable it before use:
-        clio experimental --name deploy-identity --enable
+    Available by default in CLI and MCP. No Creatio server filesystem or database access is required.
 
     This command is read-only; it does not modify Creatio. The access token is never logged.
 
