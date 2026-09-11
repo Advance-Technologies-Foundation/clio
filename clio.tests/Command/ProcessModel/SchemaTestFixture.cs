@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using DataBindingValueConverter = Clio.Command.DataBindingValueConverter;
 using Clio.Command.ProcessModel;
 using Clio.Common;
 using ErrorOr;
@@ -35,6 +36,42 @@ public class SchemaTestFixture{
 	}
 	
 	private static Func<string, string> GetExampleFilePath => filename => Path.Join("Examples", "ProcessSchema", filename);
+
+	[Test]
+	[Description("Maps Creatio runtime dataValueType 18 to the native Color data type and keeps its native CLR type, so process signatures and codegen stay System.Drawing.Color.")]
+	public void FromRuntimeValueType_Should_Map_Color_To_NativeColorDataType() {
+		// Arrange
+		const int colorRuntimeDataValueType = 18;
+
+		// Act
+		Guid dataValueTypeUId = DataValueTypeMap.FromRuntimeValueType(colorRuntimeDataValueType);
+
+		// Assert
+		dataValueTypeUId.Should().Be(Guid.Parse("dafb71f9-ee9f-4e0b-a4d7-37aa15987155"),
+			because: "Creatio Color columns use the native Color data-value-type UId");
+		DataValueTypeMap.Resolve(dataValueTypeUId).Should().Be(typeof(System.Drawing.Color),
+			because: "the trunk defines ColorDataValueType.ValueType as System.Drawing.Color; mapping the "
+				+ "UId to string here would emit Color process parameters as System.String, because this "
+				+ "same map drives process-model and signature generation");
+		DataValueTypeMap.IsColor(dataValueTypeUId).Should().BeTrue(
+			because: "the hex-string wire format is asked for separately, by the data-binding path only");
+	}
+
+	[Test]
+	[Description("A Color column is not string-like, so it cannot be admitted into a localization row - the trunk marks Color non-localizable.")]
+	public void IsStringLike_Should_Reject_Color_So_It_Stays_Out_Of_Localization_Rows() {
+		// Arrange
+		Guid colorUId = DataValueTypeMap.FromRuntimeValueType(18);
+		Guid shortTextUId = DataValueTypeMap.FromRuntimeValueType(1);
+		DataBindingValueConverter converter = new(Substitute.For<IFileSystem>());
+
+		// Assert
+		converter.IsStringLike(colorUId).Should().BeFalse(
+			because: "ColorDataValueType.IsLocalizableText is false in the trunk, and a Color column in a "
+				+ "localization row would ship a per-culture hex value that the platform never reads");
+		converter.IsStringLike(shortTextUId).Should().BeTrue(
+			because: "a real text column must still be localizable, so the guard is not simply off");
+	}
 
 	[TestCase("ProcessSchemaResponse0.json")]
 	[TestCase("ProcessSchemaResponse1.json")]

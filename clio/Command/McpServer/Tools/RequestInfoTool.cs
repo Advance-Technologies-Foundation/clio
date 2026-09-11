@@ -85,6 +85,19 @@ public sealed class RequestInfoTool(
 	/// <param name="cancellationToken">Cancellation token propagated by the MCP host.</param>
 	/// <returns>A structured response with a request list or a full request definition.</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	// Worker, not in-process: the catalog itself is a CDN/cache read, but an environment-name/uri call probes
+	// the environment through cliogate (GetSysInfo) to resolve the platform version, so it can block on Creatio.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
+	// ENG-95885: returning the whole request catalog is the documented no-arguments operation of this tool
+	// (the description itself tells the agent to omit request-type), so an empty {} payload is a legitimate
+	// call and the normalizer synthesizes the empty args wrapper for it.
+	[McpAcceptsEmptyArguments]
 	[Description("Get curated Freedom UI request metadata (crt.*Request types wired through request bindings such as a button's clicked) by request type, or list all cataloged requests. " +
 		"PROACTIVELY list the catalog (omit request-type, or pass 'list') before wiring a button/menu action to a platform request, " +
 		"so the request name and its params come from the catalog instead of memory. " +
@@ -160,7 +173,7 @@ public sealed class RequestInfoTool(
 
 		string requestedType = args.RequestType.Trim();
 		if (state.Lookup.TryGetValue(requestedType, out RequestRegistryEntry? entry)) {
-			string? documentation = await ComponentDocumentationLoader
+			ComponentDocumentationOutcome documentation = await ComponentDocumentationLoader
 				.LoadAsync(docsClient, entry.References?.Docs, state.ResolvedVersion, cancellationToken).ConfigureAwait(false);
 			return CreateDetailResponse(entry, state.ResolvedVersion, resolvedFrom, documentation, state.GlobalReferences, resolvedFromReason);
 		}
@@ -225,16 +238,17 @@ public sealed class RequestInfoTool(
 		RequestRegistryEntry entry,
 		string? resolvedTargetVersion,
 		string? resolvedFrom,
-		string? documentation,
+		ComponentDocumentationOutcome? documentation,
 		RequestGlobalReferences? globalReferences,
 		string? resolvedFromReason = null) {
+		documentation ??= ComponentDocumentationOutcome.NotDeclared;
 		IReadOnlyDictionary<string, JsonElement>? typeDefinitions = TypeReferenceClosure.Resolve(
 			entry.Parameters,
 			WiringContractSeed,
 			entry.References?.TypeDefinitions,
 			globalReferences?.TypeDefinitions);
 		bool declaresDocs = entry.References?.Docs is { Count: > 0 };
-		bool documentationMissing = string.IsNullOrEmpty(documentation);
+		bool documentationMissing = string.IsNullOrEmpty(documentation.Documentation);
 		return new RequestInfoResponse {
 			Success = true,
 			Mode = "detail",
@@ -244,7 +258,9 @@ public sealed class RequestInfoTool(
 			Parameters = entry.Parameters,
 			BaseParameters = globalReferences?.BaseParameters is { Count: > 0 } baseParameters ? baseParameters : null,
 			References = typeDefinitions is null ? null : new RequestReferencesResponse { TypeDefinitions = typeDefinitions },
-			Documentation = documentationMissing ? null : documentation,
+			Documentation = documentationMissing ? null : documentation.Documentation,
+			DocumentationSource = documentation.Source,
+			DocumentationWarning = documentation.Warning,
 			DocumentationUnavailable = declaresDocs && documentationMissing ? true : null,
 			ResolvedTargetVersion = resolvedTargetVersion,
 			ResolvedFrom = resolvedFrom,
@@ -564,6 +580,16 @@ public sealed class RequestInfoResponse {
 	[JsonPropertyName("documentationUnavailable")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public bool? DocumentationUnavailable { get; init; }
+
+	/// <inheritdoc cref="ComponentInfoResponse.DocumentationSource"/>
+	[JsonPropertyName("documentationSource")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? DocumentationSource { get; init; }
+
+	/// <inheritdoc cref="ComponentInfoResponse.DocumentationWarning"/>
+	[JsonPropertyName("documentationWarning")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? DocumentationWarning { get; init; }
 
 	/// <summary>
 	/// Gets or sets the platform version the catalog was filtered against. Same semantics

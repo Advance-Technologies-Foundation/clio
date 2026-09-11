@@ -24,6 +24,7 @@ namespace Clio.Tests.Command;
 [Category("Unit")]
 [Property("Module", "Command")]
 public sealed class ApplicationSectionCreateServiceTests {
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 	private ISettingsRepository _settingsRepository = null!;
 	private IApplicationClientFactory _applicationClientFactory = null!;
 	[System.Diagnostics.CodeAnalysis.SuppressMessage("Structure", "NUnit1032:An IDisposable field/property should be Disposed in a TearDown method",
@@ -2859,7 +2860,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 
 	private static string ExtractInsertedSectionId(string insertBody) {
 		System.Text.RegularExpressions.Match match = System.Text.RegularExpressions.Regex.Match(
-			insertBody, "\"Id\":\\{\"expressionType\":2,\"parameter\":\\{\"dataValueType\":\\d+,\"value\":\"([^\"]+)\"\\}\\}");
+			insertBody, "\"Id\":\\{\"expressionType\":2,\"parameter\":\\{\"dataValueType\":\\d+,\"value\":\"([^\"]+)\"\\}\\}",
+			System.Text.RegularExpressions.RegexOptions.None, RegexTimeout);
 		return match.Success ? match.Groups[1].Value : string.Empty;
 	}
 
@@ -3115,6 +3117,9 @@ public sealed class ApplicationSectionCreateServiceTests {
 			int maxAttempts = 1, int delaySec = 1) where T : BaseResponse, new() => throw new NotSupportedException();
 
 		public string ExecutePatchRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
+			int maxAttempts = 1, int delaySec = 1) => throw new NotSupportedException();
+
+		public string ExecutePutRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 			int maxAttempts = 1, int delaySec = 1) => throw new NotSupportedException();
 
 		public void Listen(CancellationToken cancellationToken) => throw new NotSupportedException();

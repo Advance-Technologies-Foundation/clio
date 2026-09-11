@@ -1,6 +1,8 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
@@ -9,7 +11,15 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// MCP tool for updating a single Creatio record via OData v4 (HTTP PATCH).
+/// MCP tool for updating a single Creatio record via OData v4 (HTTP PATCH). Before the PATCH
+/// goes out, <see cref="ODataFieldValidation"/> verifies every data field NAME against the
+/// entity's OData type, read from the service-root <c>odata/$metadata</c> document (in OData v4
+/// <c>$metadata</c> is a service-root resource, so there is no per-entity variant to fetch).
+/// Field VALUES are validated in one respect only: a date-time literal with no UTC designator and
+/// no time-zone offset is refused before the PATCH (<see cref="ODataDateTimeGuard"/>), because the
+/// platform either rejects it opaquely or stores DateTime.MinValue while reporting success. Every
+/// other value is passed through - an empty-GUID lookup reference among them - so success:true means
+/// the service accepted the PATCH, not that every value survived it.
 /// </summary>
 [McpServerToolType]
 public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
@@ -18,9 +28,23 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 
 	/// <summary>Updates a single Creatio record using OData v4.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Update a single Creatio record via OData v4 (PATCH). " +
 		"Requires the record's GUID id; only the supplied fields are changed. " +
+		"Data field NAMES are verified against the entity's OData type ($metadata) before the write: " +
+		"an unknown field fails the call with nothing written. Field VALUES are otherwise not validated, with one " +
+		"exception: a date-time string without a UTC designator or offset (e.g. '2024-01-01T04:00:00') is rejected " +
+		"before the write - send '...Z' or '...+02:00' instead. " +
+		"success:true means the service accepted the PATCH after this pre-validation; " +
+		"platform builds that silently discard unsupported values can still leave some fields unwritten, so " +
+		"re-read important values with odata-read after a critical write. " +
 		"This tool never performs a keyless mass update. " +
 		"This is a destructive operation: it requires confirm=true to proceed. " +
 		"Use odata-read to find the record by its fields and obtain its Id. " +
@@ -42,7 +66,27 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 				return notConfirmed;
 			}
 
-			(IApplicationClient client, string url) = ODataKeyedWrite.ResolveTarget(commandResolver, args.EnvironmentName, args.Entity, args.Id);
+			//One resolve, one snapshot: validation and the PATCH share the client and URL builder that
+			//built this url. A second, independent resolve would reload the settings, so a repointed
+			//environment could validate against B and then write to A.
+			(IApplicationClient client, IServiceUrlBuilder urlBuilder, string url) =
+				ODataKeyedWrite.ResolveTarget(commandResolver, args.EnvironmentName, args.Entity, args.Id);
+			ODataWriteResponse fieldValidationError = ODataFieldValidation.ValidateDataFields(
+				client,
+				urlBuilder,
+				args.Entity.Trim(),
+				args.Id.Trim(),
+				data.EnumerateObject()
+					.Select(property => new ODataFieldValidation.DataField(property.Name))
+					.ToList(),
+				out IReadOnlyDictionary<string, string> propertyTypes);
+			if (fieldValidationError is not null) {
+				return fieldValidationError;
+			}
+			string zoneLessDateTime = ODataDateTimeGuard.FindZoneLessDateTime(data, propertyTypes);
+			if (zoneLessDateTime is not null) {
+				return ODataWriteResponse.Failure($"odata-update rejected: {zoneLessDateTime}");
+			}
 			string response = client.ExecutePatchRequest(url, data.GetRawText(), 30_000);
 			string validationError = ODataKeyedWrite.ValidateWriteResponse(response);
 			if (validationError is not null) {
@@ -73,7 +117,13 @@ public sealed record ODataUpdateArgs {
 	[JsonPropertyName("data")]
 	[Description(
 		"Object of field/value pairs to change. Only supplied fields are updated. " +
-		"Set lookup fields via their <Field>Id column with a GUID (e.g. AccountId), not the display name. " +
+		"Every field must exist on the entity's OData type; an unknown field fails the whole call before anything is written. " +
+		"Columns absent from $metadata (e.g. Color) cannot be written here - verify them with execute-esq instead. " +
+		"Set lookup fields via their <Field>Id column with a GUID (e.g. AccountId), not the display name; " +
+		"to CLEAR a lookup send null - the platform silently drops the empty GUID " +
+		"(00000000-0000-0000-0000-000000000000) on lookup fields rather than clearing the reference. " +
+		"Date-time values MUST carry a UTC designator or offset ('2024-01-01T04:00:00Z' or '2024-01-01T04:00:00+02:00'); " +
+		"a zone-less literal is rejected before the write, because the platform may silently store 0001-01-01 instead. " +
 		"Example: { \"Name\": \"New name\", \"JobTitle\": \"CEO\" }")]
 	[Required]
 	public JsonElement? Data { get; init; }

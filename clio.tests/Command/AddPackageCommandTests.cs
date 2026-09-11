@@ -100,6 +100,107 @@ public class AddPackageCommandTests : BaseCommandTests<AddPackageOptions> {
 			because: "follow-up configuration must not run after package-name validation fails");
 	}
 
+	[Test]
+	[Description("Forwards the requested schema-name prefix to package creation unchanged.")]
+	public void Execute_ShouldForwardSchemaNamePrefix_WhenRequested() {
+		// Arrange
+		AddPackageOptions options = new() {Name = "MyPackage", AsApp = true, SchemaNamePrefix = "Ktl"};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "an explicit prefix is a valid request");
+		_packageCreator.CapturedSchemaNamePrefix.Should().Be("Ktl",
+			because: "the explicit prefix must reach the generator instead of the environment value");
+	}
+
+	[Test]
+	[Description("Leaves the schema-name prefix unset so the generator reads it from the environment.")]
+	public void Execute_ShouldForwardNullSchemaNamePrefix_WhenNotRequested() {
+		// Arrange
+		AddPackageOptions options = new() {Name = "MyPackage", AsApp = true};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "omitting the prefix is the default request");
+		_packageCreator.CapturedSchemaNamePrefix.Should().BeNull(
+			because: "only a null prefix lets the generator fall back to the environment setting");
+	}
+
+	[Test]
+	[Description("Returns a caller-correctable error before creating anything for an unusable schema-name prefix.")]
+	public void Execute_ShouldReturnValidationError_WhenSchemaNamePrefixIsInvalid() {
+		// Arrange
+		AddPackageOptions options = new() {Name = "MyPackage", AsApp = true, SchemaNamePrefix = "9-x"};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "a prefix that cannot start a C# identifier is a caller-correctable command failure");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message == SchemaNamePrefixResolver.InvalidPrefixMessage));
+		_packageCreator.CreateCallCount.Should().Be(0,
+			because: "invalid input must be rejected before package creation is invoked");
+		_chain.ReceivedItems.Should().BeEmpty(
+			because: "follow-up configuration must not run after prefix validation fails");
+	}
+
+	[TestCase(" ")]
+	[TestCase("\t")]
+	[Description("Rejects a whitespace-only schema-name prefix instead of silently generating no prefix.")]
+	public void Execute_ShouldReturnValidationError_WhenSchemaNamePrefixIsOnlyWhitespace(string prefix) {
+		// Arrange
+		AddPackageOptions options = new() {Name = "MyPackage", AsApp = true, SchemaNamePrefix = prefix};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "a whitespace-only value is a typo, not the documented request for no prefix");
+		_packageCreator.CreateCallCount.Should().Be(0,
+			because: "silently generating an unprefixed schema is the outcome this option exists to prevent");
+	}
+
+	[Test]
+	[Description("Accepts an explicitly empty schema-name prefix as the documented request for an unprefixed schema.")]
+	public void Execute_ShouldForwardEmptySchemaNamePrefix_WhenExplicitlyRequested() {
+		// Arrange
+		AddPackageOptions options = new() {Name = "MyPackage", AsApp = true, SchemaNamePrefix = string.Empty};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "--schema-name-prefix \"\" is documented as the way to generate without a prefix");
+		_packageCreator.CapturedSchemaNamePrefix.Should().BeEmpty(
+			because: "an explicitly empty prefix is the documented request for an unprefixed schema, not "
+				+ "an omitted one, and only that difference selects between honouring the caller and "
+				+ "reading the environment");
+		_logger.DidNotReceive().WriteError(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Warns that a schema-name prefix is consumed by nothing when as-app is not requested.")]
+	public void Execute_ShouldWarn_WhenSchemaNamePrefixIsSuppliedWithoutAsApp() {
+		// Arrange
+		AddPackageOptions options = new() {Name = "MyPackage", AsApp = false, SchemaNamePrefix = "Usr"};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "an unused prefix is not a reason to fail the command");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("--schema-name-prefix has no effect without --as-app")));
+	}
+
 	private static string? NormalizeTempPathAlias(string? path) =>
 		path is not null && path.StartsWith("/private/var/", StringComparison.Ordinal)
 			? path[8..]
@@ -109,13 +210,15 @@ public class AddPackageCommandTests : BaseCommandTests<AddPackageOptions> {
 		public string CapturedCurrentDirectory { get; private set; }
 		public string CapturedPackageName { get; private set; }
 		public bool? CapturedAsApp { get; private set; }
+		public string CapturedSchemaNamePrefix { get; private set; }
 		public int CreateCallCount { get; set; }
 
-		public void Create(string packageName, bool? asApp) {
+		public void Create(string packageName, bool? asApp, string schemaNamePrefix = null) {
 			CreateCallCount++;
 			CapturedCurrentDirectory = Environment.CurrentDirectory;
 			CapturedPackageName = packageName;
 			CapturedAsApp = asApp;
+			CapturedSchemaNamePrefix = schemaNamePrefix;
 		}
 
 		public void Create(string packagesPath, string packageName) {

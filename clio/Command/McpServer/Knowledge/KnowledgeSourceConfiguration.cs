@@ -201,6 +201,7 @@ public sealed class KnowledgeSourceConfiguration {
 }
 
 internal static partial class KnowledgeSourceConfigurationValidator {
+	private const int RegexTimeoutMilliseconds = 1_000;
 
 	private static readonly Regex AliasPattern = AliasRegex();
 	private static readonly Regex LibraryIdPattern = LibraryIdRegex();
@@ -479,28 +480,28 @@ internal static partial class KnowledgeSourceConfigurationValidator {
 		return commit;
 	}
 
-	[GeneratedRegex("^[a-z0-9](?:[a-z0-9.-]{0,62}[a-z0-9])?$", RegexOptions.CultureInvariant)]
+	[GeneratedRegex("^[a-z0-9](?:[a-z0-9.-]{0,62}[a-z0-9])?$", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex AliasRegex();
 
 	[GeneratedRegex("^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)+$",
-		RegexOptions.CultureInvariant)]
+		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex LibraryIdRegex();
 
-	[GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$", RegexOptions.CultureInvariant)]
+	[GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex PackageIdRegex();
 
-	[GeneratedRegex("^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$", RegexOptions.CultureInvariant)]
+	[GeneratedRegex("^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex GitCommitRegex();
 
-	[GeneratedRegex("^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$", RegexOptions.CultureInvariant)]
+	[GeneratedRegex("^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex RepositoryOwnerRegex();
 
-	[GeneratedRegex("^[A-Za-z0-9_](?:[A-Za-z0-9._-]{0,98}[A-Za-z0-9_-])?$", RegexOptions.CultureInvariant)]
+	[GeneratedRegex("^[A-Za-z0-9_](?:[A-Za-z0-9._-]{0,98}[A-Za-z0-9_-])?$", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex RepositoryNameRegex();
 
-	[GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", RegexOptions.CultureInvariant)]
+	[GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex AssetNameRegex();
 
-	[GeneratedRegex("^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$", RegexOptions.CultureInvariant)]
+	[GeneratedRegex("^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex TopicIdRegex();
 }

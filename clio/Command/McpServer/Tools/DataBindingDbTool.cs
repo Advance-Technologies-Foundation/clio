@@ -18,6 +18,13 @@ public class CreateDataBindingDbTool(
 
 	[McpServerTool(Name = CreateDataBindingDbToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Creates a DB-first package data binding by saving data directly to the remote Creatio database.")]
 	public CommandExecutionResult CreateDataBindingDb(
 		[Description("Parameters: environment-name, package-name, schema-name (all required); binding-name, rows (optional)")]
@@ -46,6 +53,13 @@ public class UpsertDataBindingRowDbTool(
 
 	[McpServerTool(Name = UpsertDataBindingRowDbToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Upserts a single row in a remote DB-first data binding.")]
 	public CommandExecutionResult UpsertDataBindingRowDb(
 		[Description("Parameters: environment-name, package-name, binding-name, values (all required)")]
@@ -73,6 +87,13 @@ public class RemoveDataBindingRowDbTool(
 
 	[McpServerTool(Name = RemoveDataBindingRowDbToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("DELETES THE LIVE RECORD by primary-key value, not just its binding, then drops the package schema data record when no bound rows remain. No confirm argument and no undo, so get the user's agreement first. To stop shipping a value without destroying the row, upsert the binding instead.")]
 	public CommandExecutionResult RemoveDataBindingRowDb(
 		[Description("Parameters: environment-name, package-name, binding-name, key-value (all required)")]
@@ -104,6 +125,13 @@ public class ReadDataBindingDbTool(
 	/// </summary>
 	[McpServerTool(Name = ReadDataBindingDbToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Reports what a DB-first package data binding ships: entity schema, row count, the bound column set, and "
 		+ "each row's values. Only the columns a binding was created with transfer, so check this rather than the "

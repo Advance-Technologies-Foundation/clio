@@ -162,6 +162,25 @@ namespace Clio.Common
 		/// </summary>
 		void WriteOwnerOnlyTextToFile(string filePath, string contents);
 
+		/// <summary>
+		/// Writes <paramref name="contents"/> to <paramref name="filePath"/> the way
+		/// <see cref="WriteOwnerOnlyTextToFile"/> does, but through a sibling temporary file that is then
+		/// moved over the target in one step. A concurrent reader therefore sees either the whole previous
+		/// file or the whole new one — never a truncated prefix, which is what an in-place write exposes
+		/// while it is running.
+		/// </summary>
+		/// <param name="filePath">Target file. Its directory must already exist.</param>
+		/// <param name="contents">Text to write (UTF-8, no BOM).</param>
+		/// <remarks>
+		/// The temporary file is created with owner-read/write permissions (Unix mode <c>0600</c>) at
+		/// creation time, exactly as <see cref="WriteOwnerOnlyTextToFile"/> does, so the atomic variant
+		/// cannot reopen the world-readable window the owner-only write exists to close. Use this for any
+		/// file another process may read while it is being rewritten — a cached browser session, a page
+		/// baseline. Last write wins: the method makes the replacement indivisible, it does not arbitrate
+		/// between two writers.
+		/// </remarks>
+		void WriteOwnerOnlyTextToFileAtomic(string filePath, string contents);
+
 		void ClearOrCreateDirectory(string directoryPath);
 
 		void CreateOrOverwriteExistsDirectoryIfNeeded(string directoryPath, bool overwrite);

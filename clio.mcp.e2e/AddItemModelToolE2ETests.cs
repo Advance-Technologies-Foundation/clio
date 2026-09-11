@@ -1,4 +1,5 @@
 using Allure.NUnit;
+using System;
 using System.Text.RegularExpressions;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -20,6 +21,7 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class AddItemModelToolE2ETests {
 	private const string ToolName = AddItemModelTool.AddItemModelToolName;
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
@@ -142,7 +144,8 @@ public sealed class AddItemModelToolE2ETests {
 				Regex.IsMatch(
 					message.Value ?? string.Empty,
 					@"^Generated \d+ models; requested filter: none\.$",
-					RegexOptions.CultureInvariant),
+					RegexOptions.CultureInvariant,
+					RegexTimeout),
 			because: because);
 	}
 

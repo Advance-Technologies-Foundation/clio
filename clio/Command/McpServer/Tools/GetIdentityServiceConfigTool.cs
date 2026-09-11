@@ -13,7 +13,6 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool surface for the <c>get-identity-service-config</c> command.
 /// </summary>
 [McpServerToolType]
-[FeatureToggle("deploy-identity")]
 public sealed class GetIdentityServiceConfigTool(
 	GetIdentityServiceConfigCommand command,
 	ILogger logger,
@@ -28,6 +27,13 @@ public sealed class GetIdentityServiceConfigTool(
 	/// <summary>
 	/// Reads (or derives) the OAuth IdentityService configuration of a Creatio environment over REST.
 	/// </summary>
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = GetIdentityServiceConfigToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
 	[Description("""

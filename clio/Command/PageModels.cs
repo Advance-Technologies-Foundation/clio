@@ -1,5 +1,6 @@
 namespace Clio.Command;
 
+using System;
 using System.Collections.Generic;
 using System.Runtime.Serialization;
 using System.Text.Json.Nodes;
@@ -122,19 +123,21 @@ public sealed class PageGetResponse {
 	public PageMetadataInfo Page { get; init; }
 
 	/// <summary>
-	/// Gets or sets the merged bundle.
+	/// Gets or sets the merged bundle. CLI-only — the MCP tool writes it to <c>bundle.json</c> instead.
 	/// </summary>
 	[JsonProperty("bundle", NullValueHandling = NullValueHandling.Ignore)]
 	[JsonPropertyName("bundle")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[CliOnlyEnvelopeProperty]
 	public PageBundleInfo Bundle { get; init; }
 
 	/// <summary>
-	/// Gets or sets the raw editable payload.
+	/// Gets or sets the raw editable payload. CLI-only — the MCP tool writes it to <c>body.js</c> instead.
 	/// </summary>
 	[JsonProperty("raw", NullValueHandling = NullValueHandling.Ignore)]
 	[JsonPropertyName("raw")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[CliOnlyEnvelopeProperty]
 	public PageRawInfo Raw { get; init; }
 
 	/// <summary>
@@ -180,6 +183,17 @@ public sealed class PageGetResponse {
 	[JsonPropertyName("error")]
 	public string Error { get; init; }
 }
+
+/// <summary>
+/// Marks a serialized response property that the CLI envelope carries but the MCP tool NEVER sets, so the
+/// published MCP tool contract must not describe it. Issue #1185 was exactly this split going undeclared: the
+/// contract promised <c>raw.body</c> that the MCP envelope never returns. Declaring it on the property makes
+/// the split machine-checkable - the contract oracle derives the expected field set from the type and skips
+/// what is marked here, so a NEW property added to the response is required in the contract by default, and
+/// only a deliberate CLI-only addition carries this attribute.
+/// </summary>
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class CliOnlyEnvelopePropertyAttribute : Attribute { }
 
 /// <summary>
 /// Describes the editable (own) schema state at fetch time: whether a replacing schema already
@@ -320,6 +334,18 @@ public sealed class PageMetadataInfo {
 	[JsonPropertyName("schema-type")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public string SchemaType { get; init; }
+
+	/// <summary>
+	/// Gets or sets the RAW numeric <c>ClientUnitSchemaType</c> the hierarchy service reported, before the
+	/// web/mobile/unknown collapse — null when the service omitted it. The label above folds "present but neither
+	/// web nor mobile" (a Classic page, a module) and "absent" into one <c>unknown</c>, and a consumer that must
+	/// tell those apart (the process-page-facts guard) needs the difference: a PRESENT non-web value is a positive
+	/// identification, an absent one is not.
+	/// </summary>
+	[JsonProperty("schema-type-value", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("schema-type-value")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public int? SchemaTypeValue { get; init; }
 }
 
 /// <summary>
@@ -771,6 +797,17 @@ public sealed class PageUpdateResponse {
 	[JsonPropertyName("warnings")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<string> Warnings { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether this failure came from the SKIPPABLE half of the
+	/// validation chain (content rules), as opposed to the structural floor. It is transport-only: the
+	/// MCP adapter reads it to decide whether to advertise <c>validate=false</c>, which is an MCP-only
+	/// flag the CLI parser does not expose. Never serialized — a CLI user must not be told about a flag
+	/// they cannot set.
+	/// </summary>
+	[Newtonsoft.Json.JsonIgnore]
+	[System.Text.Json.Serialization.JsonIgnore]
+	public bool ContentValidationFailure { get; set; }
 
 	[JsonProperty("page", NullValueHandling = NullValueHandling.Ignore)]
 	[JsonPropertyName("page")]

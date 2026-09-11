@@ -10,6 +10,16 @@ SYNOPSIS
 OPTIONS
     Supports the canonical ref-to command options.
 
+NOTES
+    The current reference style is detected from the HintPath values: the nuget SDK
+    folder (CreatioSDK, and the pre-rename BpmonlineSDK), core sources, the local Bin
+    folder, unit-test binaries and $(TsCoreBinPath).
+
+    Exit code 0 means references were rewritten, or the project is already in the
+    requested style. Exit code 1 means the style was not recognized and nothing was
+    written - rewriting nothing while removing packages.config would leave a project
+    that cannot restore its assemblies.
+
 EXAMPLES
     clio ref-to --help
         Display canonical options and usage examples

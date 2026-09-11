@@ -1,4 +1,4 @@
-using Allure.NUnit;
+﻿using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Mcp;
@@ -310,6 +310,50 @@ public sealed class ODataReadToolE2ETests : McpContractFixtureBase {
 			because: "the total matching count must be distinct from the returned-page count");
 		contract.Aliases.Should().Contain(alias => alias.Alias == "filter" && alias.Status == "rejected",
 			because: "the previously silent raw filter must be explicitly rejected with a structured-filter hint");
+	}
+
+
+	[Test]
+	[Description("Pins the invalid-parameter-type binding contract on the real MCP wire: order-by sent as an array names the argument and its expected JSON type, and none of the generic SDK or JSON-reader wording survives.")]
+	[AllureTag(ODataReadTool.ToolName)]
+	[AllureName("odata-read reports invalid-parameter-type for order-by sent as an array")]
+	[AllureDescription("Sends order-by as a JSON array through the real stdio MCP server and asserts the pre-method binder's contract: IsError, the invalid-parameter-type marker, the argument name, the expected string type, and the absence of the generic SDK invocation error and raw JSON-reader text.")]
+	public async Task ODataRead_Should_Report_InvalidParameterType_When_OrderBy_Is_An_Array() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ODataReadTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = "dev",
+					["entity"] = "Contact",
+					//order-by is a single OData clause string; an array is the shape agents actually send.
+					["order-by"] = new[] { "Name asc" },
+					["top"] = 1
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().BeTrue(
+			because: "a wrongly typed argument is a binding failure, not a structured tool result");
+		callResult.StructuredContent.Should().BeNull(
+			because: "a binding-layer failure must not return a structured odata-read payload");
+		string diagnostics = string.Join(
+			Environment.NewLine,
+			(callResult.Content ?? []).Select(content => content.ToString()));
+		diagnostics.Should().Contain("invalid-parameter-type",
+			because: "the contracted marker is what lets an agent tell a type error from an execution failure");
+		diagnostics.Should().Contain("order-by",
+			because: "the diagnostic must name the offending argument by its wire name, not its CLR name");
+		diagnostics.Should().Contain("string",
+			because: "the diagnostic must state the expected JSON type so the agent can correct the call");
+		diagnostics.Should().NotContain("An error occurred invoking",
+			because: "the generic SDK invocation wording carries no argument or type and is what this contract replaced");
+		diagnostics.Should().NotContainAny(["JsonReaderException", "JsonException", "LineNumber", "BytePositionInLine"],
+			because: "raw JSON-reader text is not an agent-actionable diagnostic and must not leak through");
 	}
 
 }

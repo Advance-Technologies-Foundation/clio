@@ -24,6 +24,13 @@ public sealed class InstallGateTool(
 	/// </summary>
 	[McpServerTool(Name = InstallGateToolName, ReadOnly = false, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Installs (or updates) the bundled cliogate package into a registered Creatio environment.
 

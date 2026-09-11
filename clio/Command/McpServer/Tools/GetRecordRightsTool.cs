@@ -19,6 +19,13 @@ public sealed class GetRecordRightsTool(
 	internal const string ToolName = "get-record-rights";
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("See who has access to a record or dashboard — read the record-level access rights of a single Creatio record. " +
 		"Target it with entity + record-id (for a client-unit schema/dashboard, pass entity=SysSchemaAdminUnit and record-id=the schema UId). " +
 		"Returns each grant as operation (read/edit/delete) / level (granted/delegated) -> grantee.")]

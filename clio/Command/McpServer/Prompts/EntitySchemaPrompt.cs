@@ -70,7 +70,12 @@ public static class EntitySchemaPrompt {
 		 For a lookup column, a `Const` default is the GUID of a record in the referenced schema — obtain it
 		 by inserting/reading that record first (e.g. `odata-create` returns the new record `id`), then set
 		 `default-value-config` `source=Const`, `value=<that GUID>`. clio validates the record exists before
-		 save and rejects an unknown GUID. On readback, `get-entity-schema-column-properties` enriches the
+		 save and rejects an unknown GUID. On readback, omit `package-name` from
+		 `get-entity-schema-column-properties` to discover the column in the merged runtime schema across all
+		 packages; supply `package-name` only when package-layer metadata is required. Merged mode reports
+		 `track-changes`, `localizable-text`, and `do-not-control-integrity` as null because the runtime endpoint
+		 does not expose them, and its `source` means parent-schema inheritance rather than package ownership.
+		 The column readback enriches the
 		 lookup `Const` default-value-config with `display-value` (and a `record-resolution` marker when it
 		 cannot be resolved) so you can verify which record the default points to without a second query.
 		 Current parent request: `{parentSchemaName ?? "<not provided>"}`. Current replacement request:
@@ -200,14 +205,26 @@ public static class EntitySchemaPrompt {
 		 """;
 
 	/// <summary>
+	/// Builds a package-scoped prompt using the legacy public positional argument order.
+	/// </summary>
+	/// <param name="packageName">Target package name.</param>
+	/// <param name="schemaName">Entity schema name.</param>
+	/// <param name="columnName">Column name.</param>
+	/// <param name="environmentName">Creatio environment name.</param>
+	/// <returns>Agent-facing MCP prompt text.</returns>
+	public static string GetEntitySchemaColumnProperties(
+		string packageName,
+		string schemaName,
+		string columnName,
+		string environmentName) =>
+		GetEntitySchemaColumnPropertiesPrompt(schemaName, columnName, environmentName, packageName);
+
+	/// <summary>
 	/// Builds a prompt that directs the agent to read structured column properties through MCP.
 	/// </summary>
 	[McpServerPrompt(Name = GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName),
 		Description("Prompt to read structured remote entity schema column properties")]
-	public static string GetEntitySchemaColumnProperties(
-		[Required]
-		[Description("Target package name")]
-		string packageName,
+	public static string GetEntitySchemaColumnPropertiesPrompt(
 		[Required]
 		[Description("Entity schema name")]
 		string schemaName,
@@ -216,12 +233,17 @@ public static class EntitySchemaPrompt {
 		string columnName,
 		[Required]
 		[Description("Creatio environment name")]
-		string environmentName) =>
+		string environmentName,
+		[Description("Optional target package name; omit for the merged effective schema")]
+		string? packageName = null) =>
 		$"""
 		 Use clio mcp server `{GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName}` to read
-		 structured properties for column `{columnName}` in entity schema `{schemaName}` from package
-		 `{packageName}` on environment `{environmentName}`.
-		 Pass `package-name`, `schema-name`, `column-name`, and `environment-name` exactly as provided.
+		 structured properties for column `{columnName}` in entity schema `{schemaName}` on environment `{environmentName}`.
+		 Pass `schema-name`, `column-name`, and `environment-name` exactly as provided. Leave `package-name` empty to
+		 inspect the MERGED/EFFECTIVE schema across all packages; set it only for an authoritative single-package read.
+		 Current package request: `{packageName ?? "<merged: all packages>"}`.
+		 In merged mode, `track-changes`, `localizable-text`, and `do-not-control-integrity` are unavailable and return
+		 null rather than false. Merged `source` reports runtime inheritance, not the package that owns the column.
 		 The result includes `usage-type` as a friendly name (General/Advanced/None) that can be sent back verbatim as a `usage-type` write input.
 		 For the canonical discover -> inspect -> mutate flow, call `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
 		 Use this read step before and after `modify-entity-schema-column` when the requested change is scoped to one column.

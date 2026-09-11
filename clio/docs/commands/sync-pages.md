@@ -60,6 +60,14 @@ When `validate` is `true` (the default), the body is checked client-side before 
   **rejected**. Bind it via `$Resources.Strings.<Key>` (or `#ResourceString(<Key>)#` for data-grid
   column captions and validator messages) and register the key's default-language value through
   `resources`. Call `clio get-guidance --name page-schema-resources` for the full rule.
+  A **component's own data descriptor is exempt**: a `data` object that carries the platform's
+  `typeName` marker, on a node declaring a component `type`, is component metadata (uId, schemaType,
+  typeName and the caption the platform stamped on it) rather than page-authored text, so a literal
+  anywhere inside it is accepted — at any depth, not only at the entry root. This is what a Timeline
+  composer (`crt.EmailComposer` / `crt.FeedComposer`) ships as `data.caption: "Email"` / `"Feed"`.
+  Do NOT delete such a caption to satisfy the rule: the platform never restores it and the composer
+  stays permanently unlabelled. An author-writable input that merely happens to be named `data`
+  (e.g. `crt.FilterBuilderSource`) carries no `typeName` and stays fully validated.
 - **Inserted widget/metric titles must resolve.** A `title`/`caption`/`tooltip`/`placeholder` on a
   freshly inserted (`operation:"insert"`) widget/container bound as `$Resources.Strings.<Key>` or
   `#ResourceString(<Key>)#` is **rejected** when `<Key>` will not resolve — i.e. it is not passed in
@@ -166,6 +174,13 @@ being sent to Creatio:
 
 Validation failures prevent the page from being saved and are reported in the response.
 This replaces the need for separate dry-run calls.
+
+Advisory findings are different: they appear in each page's `validation.warnings` and never
+prevent a save. `sync-pages` forwards every warning `update-page` produces, so a page can come
+back successful with a warning that one of its `viewConfigDiff` operations is silently dropped at
+apply time because another operation for the same component name cancels it — the differ applies
+whole operation groups in a fixed order, not in array order. See
+[`update-page`](update-page.md) for the shapes and the remedies.
 
 When a page body contains `#ResourceString(key)#` macros, `sync-pages` forwards each page's
 optional `resources` JSON object string to `update-page`. The response returns

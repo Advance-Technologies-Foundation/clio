@@ -13,13 +13,18 @@ clio update-entity-schema [options]
 
 Apply batch column operations to a remote Creatio entity schema.
 
-After saving the batch the command publishes the configuration and requests an
-OData entities rebuild, so changed columns become visible to lookup pickers and
-reachable over OData (`/0/odata/<Entity>`) without a manual compile. The rebuild
-runs in the background — OData access appears within a few minutes, not
-immediately. A 404 (or "The request is invalid") from OData right after the
-change is the expected async gap; wait and retry rather than running a full
-compile. The whole batch publishes once.
+After saving the batch the command always publishes the configuration once for
+the whole batch, so changed columns become visible to lookup pickers without a
+manual compile. The command additionally requests an OData entities rebuild
+only if at least one operation in the batch changes the published OData
+contract — adding or removing a column, renaming one (`--new-name`), or changing
+its type or reference schema. A batch made only of caption, description, default
+value, mask, usage
+type, or required changes does not trigger a rebuild. When a rebuild is
+requested, it runs in the background — OData access (`/0/odata/<Entity>`)
+appears within a few minutes, not immediately. A 404 (or "The request is
+invalid") from OData right after the change is the expected async gap; wait
+and retry rather than running a full compile.
 
 ## Examples
 

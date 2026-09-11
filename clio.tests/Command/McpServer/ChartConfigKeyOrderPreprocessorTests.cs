@@ -1,3 +1,4 @@
+using System;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Clio.Command;
@@ -14,6 +15,7 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class ChartConfigKeyOrderPreprocessorTests {
 
 	private static readonly IPageBodyPreprocessor Preprocessor = new ChartConfigKeyOrderPreprocessor();
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
 	private const string Prefix = "define(\"UsrTest\", [], function() { return { viewConfigDiff: ";
 	private const string Suffix = " }; });";
@@ -45,7 +47,11 @@ public sealed class ChartConfigKeyOrderPreprocessorTests {
 		Prefix + "/**SCHEMA_VIEW_CONFIG_DIFF*/" + vcdJson + "/**SCHEMA_VIEW_CONFIG_DIFF*/" + Suffix;
 
 	private static string ExtractVcd(string body) =>
-		Regex.Match(body, @"/\*\*SCHEMA_VIEW_CONFIG_DIFF\*/(?<c>[\s\S]*?)/\*\*SCHEMA_VIEW_CONFIG_DIFF\*/")
+		Regex.Match(
+				body,
+				@"/\*\*SCHEMA_VIEW_CONFIG_DIFF\*/(?<c>[\s\S]*?)/\*\*SCHEMA_VIEW_CONFIG_DIFF\*/",
+				RegexOptions.None,
+				RegexTimeout)
 			.Groups["c"].Value;
 
 	private static JsonElement ChartConfig(string body, string chartName) {

@@ -33,6 +33,7 @@ using Clio.Common;
 using Clio.Common.Assertions;
 using Clio.Common.db;
 using Clio.Common.DeploymentStrategies;
+using Clio.Common.McpWorker;
 using Clio.Common.SystemServices;
 using Clio.Common.Telemetry;
 using Clio.Common.K8;
@@ -182,6 +183,12 @@ public class BindingsModule {
 				Command.McpServer.Tools.McpToolInvokerRegistry>();
 			services.AddSingleton<Command.McpServer.IMcpToolCompatibilityCatalog,
 				Command.McpServer.McpToolCompatibilityCatalog>();
+			// The execution-metadata reader and the execution router are deliberately NOT registered here.
+			// "One routing authority per host" must hold on BOTH transports, and this block runs for the
+			// stdio host only — mcp-http builds its graph from RegisterInto + RegisterMcpServer and never
+			// enters it. Both live in RegisterInto (transport-neutral) and are skip-listed out of the
+			// assembly auto-scan, so neither host can end up with a per-resolution transient copy of the
+			// routing rule (ENG-95262 Stage 4b, ADR §9).
 		}
 		additionalRegistrations?.Invoke(services);
 		ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions {
@@ -196,6 +203,15 @@ public class BindingsModule {
 			// surface abort HOST STARTUP instead — the constructors throw on any collision.
 			provider.GetRequiredService<Command.McpServer.IMcpToolCompatibilityCatalog>();
 			provider.GetRequiredService<Command.McpServer.Tools.IMcpToolInvokerRegistry>();
+			// Warms the reflected execution-metadata map once at host startup rather than on the first
+			// routing question, and is the resolution that keeps the RegisterInto registration from reading
+			// as dead (CLIO005) while Stage 1 has no routing consumer yet.
+			provider.GetRequiredService<Command.McpServer.IMcpToolExecutionMetadataReader>();
+			// Resolving the router at STARTUP rather than on the first dispatch: it is the authority three
+			// dispatch sites depend on, so a mis-declared route (a missing metadata-reader registration, a
+			// wrong lifetime) must abort host startup instead of surfacing as a failed tool call mid-session.
+			// Constructing it also warms the reflected metadata map it reads.
+			provider.GetRequiredService<Command.McpServer.IMcpExecutionRouter>();
 		}
 		return provider;
 	}
@@ -416,7 +432,12 @@ public class BindingsModule {
 		services.AddTransient<IPageBusinessRuleValidator, PageBusinessRuleValidator>();
 		services.AddTransient<IPageBusinessRuleService, PageBusinessRuleService>();
 		services.AddTransient<ISysSettingConditionOperandResolver, SysSettingConditionOperandResolver>();
-		services.AddTransient<IFeatureToggleService, FeatureToggleService>();
+		// Routed through CreateFeatureToggleService so a WORKER child reads the parent's frozen generation
+		// instead of appsettings.json. This registration and the one inside RegisterMcpServer must stay on the
+		// same factory: the first gates which verbs the parser accepts, the second gates which MCP primitives
+		// are registered, and the two disagreeing is exactly the defect the frozen generation prevents.
+		services.AddTransient<IFeatureToggleService>(sp =>
+			CreateFeatureToggleService(sp.GetRequiredService<ISettingsRepository>()));
 		services.AddTransient<IApplicationSectionDeleteService, ApplicationSectionDeleteService>();
 		services.AddTransient<DeleteAppSectionCommand>();
 		services.AddTransient<IListUserTasksService, ListUserTasksService>();
@@ -425,6 +446,10 @@ public class BindingsModule {
 		services.AddTransient<CreateBusinessProcessCommand>();
 		services.AddTransient<IModifyBusinessProcessService, ModifyBusinessProcessService>();
 		services.AddTransient<ModifyBusinessProcessCommand>();
+		services.AddTransient<IModifyProcessAsNewVersionService, ModifyProcessAsNewVersionService>();
+		services.AddTransient<ModifyProcessAsNewVersionCommand>();
+		services.AddTransient<ISetActiveProcessVersionService, SetActiveProcessVersionService>();
+		services.AddTransient<SetActiveProcessVersionCommand>();
 		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
 		services.AddTransient<GetAppSectionsCommand>();
 		services.AddTransient<IdentityProviderListCommand>();
@@ -440,12 +465,20 @@ public class BindingsModule {
 		services.AddTransient<CreateLookupCommand>();
 		services.AddTransient<PageListCommand>();
 		services.AddTransient<PageGetCommand>();
+		services.AddTransient<ProcessPageFactsCommand>();
 		services.AddTransient<GetPageHierarchyCommand>();
 		services.AddTransient<PageUpdateCommand>();
 		// Shared page conflict-baseline + file-output services consumed by both the CLI verbs
 		// (get-page / update-page) and the MCP tools (get-page / update-page / sync-pages).
 		services.AddTransient<IPageBaselineGuard, PageBaselineGuard>();
 		services.AddTransient<IPageFileWriter, PageFileWriter>();
+		// H-1 (ENG-95262): the cross-process gate for .clio-pages/{schema}. Registered explicitly as a
+		// SINGLETON because the intent is one gate per host: RegisterAssemblyInterfaceTypes would otherwise
+		// pick the type up as a transient and which registration wins would depend on declaration order
+		// rather than on intent. Correctness does not rest on the lifetime — the monitor table inside the
+		// gate is static, precisely so a second instance cannot become a second lock domain — but the
+		// lifetime should still say what it means.
+		services.AddSingleton<IInterprocessFileGate, InterprocessFileGate>();
 		services.AddTransient<PageCreateCommand>();
 		services.AddTransient<CreateRelatedPageAddonCommand>();
 		services.AddTransient<GetRelatedPageAddonCommand>();
@@ -767,16 +800,25 @@ public class BindingsModule {
 		// compile registry: restart-by-environment-name's Begin/Finish and restart-status's later lookup must
 		// share the SAME in-memory table regardless of which container resolves them.
 		services.AddSingleton<IRestartOperationRegistry, RestartOperationRegistry>();
+		// Session-target normalisation (ENG-95262 story 7, AC-00). Stateless and pure, so one SINGLETON
+		// instance is registered explicitly rather than left to the assembly auto-scan's transient default:
+		// every tenant-keyed registry stage 7 moves to the parent must fold a target through the SAME
+		// algorithm, and an explicit registration makes that intent readable instead of order-dependent.
+		services.AddSingleton<ISessionTargetNormalizer, SessionTargetNormalizer>();
 		services.AddTransient<IToolCommandResolver, ToolCommandResolver>();
 		services.AddTransient<IDataForgePlatformVersionGuard, DataForgePlatformVersionGuard>();
 		services.AddTransient<IDataForgeReadClient, DataForgeReadClient>();
 		services.AddTransient<IDataForgeMaintenanceClient, DataForgeMaintenanceClient>();
 		services.AddTransient<IRuntimeEntitySchemaReader, RuntimeEntitySchemaReader>();
+		services.AddTransient<IODataBuildGate, ODataBuildGate>();
+		services.AddTransient<IEntitySchemaPublisher, EntitySchemaPublisher>();
 		services.AddTransient<IDataForgeContextService, DataForgeContextService>();
 		services.AddTransient<ODataReadTool>();
 		services.AddTransient<ODataCreateTool>();
 		services.AddTransient<ODataUpdateTool>();
 		services.AddTransient<ODataDeleteTool>();
+		services.AddTransient<IEmailTemplateContentService, EmailTemplateContentService>();
+		services.AddTransient<EmailTemplateTool>();
 		services.AddTransient<OpenCfgCommand>();
 		services.AddTransient<InstallGateCommand>();
 		services.AddTransient<InstallProcessBuilderCommand>();
@@ -1057,6 +1099,82 @@ public class BindingsModule {
 			RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
 				? new Common.IIS.WindowsIISSiteDetector(sp.GetRequiredService<IProcessExecutor>())
 				: new Common.IIS.StubIISSiteDetector());
+		// ENG-95262 Stage 2 — the MCP worker execution boundary's process supervisor.
+		// Containment is chosen by an explicit runtime OS check, not by the assembly auto-scan: the scan
+		// would register BOTH implementations against IProcessContainment and let declaration order pick
+		// the winner, which on macOS or Linux would silently hand the caller the Windows job-object path.
+		// The whole Clio.Common.McpWorker interface namespace is excluded from the auto-scan for that
+		// reason and for the lifetimes below — see RegisterAssemblyInterfaceTypes.
+		services.AddSingleton<Common.McpWorker.IProcessContainment>(_ => CreateProcessContainment());
+		services.AddSingleton<Common.McpWorker.IClioExecutablePathProvider,
+			Common.McpWorker.ClioExecutablePathProvider>();
+		services.AddSingleton<Common.McpWorker.IStaleWorkerRegistry, Common.McpWorker.StaleWorkerRegistry>();
+		// Registered by hand for the same reason as its neighbours: the whole Clio.Common.McpWorker
+		// interface namespace is outside the auto-scan. Singleton because the sweep is host-startup work
+		// with no per-call state, and one instance keeps it that way.
+		services.AddSingleton<Common.McpWorker.IWorkerTempResidueSweeper,
+			Common.McpWorker.WorkerTempResidueSweeper>();
+		// SINGLETON because the concurrency cap IS the instance: the semaphore, the resource accounting and
+		// the recorded owner identity all live in it, so a transient supervisor would give every call its
+		// own cap and bound nothing at all.
+		services.AddSingleton<Common.McpWorker.IWorkerProcessSupervisor,
+			Common.McpWorker.WorkerProcessSupervisor>();
+		// ENG-95262 Stage 7 — the NARROW supervisor surface, and it must FORWARD to the singleton above
+		// rather than being registered as its own implementation. Two WorkerProcessSupervisor instances
+		// would give each its own concurrency cap AND make every ReachExisting throw "the lease was not
+		// issued by this supervisor", because a lease is validated against the instance that created it.
+		// The narrowing exists for the CONSUMER (StickyWorkerPoll, which must have no member that can
+		// acquire an admission slot — ADR §3.2c), not for the implementation.
+		services.AddSingleton<Common.McpWorker.IWorkerReach>(sp =>
+			sp.GetRequiredService<Common.McpWorker.IWorkerProcessSupervisor>());
+		// ENG-95262 Stage 4b — the execution-metadata reader and the single execution-routing authority.
+		// TRANSPORT-NEUTRAL on purpose: the property is "one routing authority per host", and a host is not
+		// only the stdio one. mcp-http builds its graph from RegisterInto + RegisterMcpServer and never runs
+		// the registerMcpHost block in Register(), so a registration made there would leave HTTP reaching the
+		// router through the assembly auto-scan's TRANSIENT — a fresh copy of the routing rule per
+		// resolution, which is precisely the drift ADR §9 forbids. Registering here covers stdio, mcp-http
+		// and the per-request tenant containers with one line.
+		// Both interfaces are ALSO in the RegisterAssemblyInterfaceTypes skip-list rather than relying on
+		// last-registration-wins: the scan CAN construct both, so without the skip the lifetime would depend
+		// on declaration order rather than on intent (same reasoning as IBundledPackageCatalog and
+		// ICompileOperationRegistry above).
+		// SINGLETON because both wrap a reflected map of the whole tool catalog; construction stays lazy, so
+		// a non-MCP CLI build that never resolves them pays nothing.
+		services.AddSingleton<Command.McpServer.IMcpToolExecutionMetadataReader,
+			Command.McpServer.McpToolExecutionMetadataReader>();
+		// ENG-95262 Stage 6 — the process-level worker-path gate the router consults. Registered next to
+		// the router and skip-listed with it: it answers a question about the PROCESS (which transport this
+		// host serves, and whether this process is itself a worker), so a per-resolution transient copy
+		// would be as wrong here as it is for the router.
+		services.AddSingleton<Command.McpServer.IMcpWorkerPathGate, Command.McpServer.McpWorkerPathGate>();
+		// ENG-95262 Stage 6/8 — which worker-classified tools have a worker path built for them yet. Not a
+		// toggle: the shipped membership is compile-time data (McpWorkerCohort.ShippedNames) with no
+		// runtime switch. It is a registration only because ADR §5 requires membership to be substitutable
+		// in DI for tests, which is how TC-E-603's in-process arm is obtained.
+		services.AddSingleton<Command.McpServer.IMcpWorkerCohort, Command.McpServer.McpWorkerCohort>();
+		services.AddSingleton<Command.McpServer.IMcpExecutionRouter,
+			Command.McpServer.McpExecutionRouter>();
+		// ENG-95262 Stage 6 — the worker relay's dispatch surface. Its namespace is excluded from the
+		// assembly auto-scan (see RegisterAssemblyInterfaceTypes), so these three are registered by hand:
+		// the relay and the transport owner are stateless and TRANSIENT, while the dispatcher is a
+		// SINGLETON because it caches the budget resolved once from the environment and is the seam three
+		// dispatch sites share.
+		services.AddTransient<Command.McpServer.Relay.IWorkerChildTransportOwner,
+			Command.McpServer.Relay.WorkerChildTransportOwner>();
+		services.AddTransient<Command.McpServer.Relay.IWorkerMcpRelay,
+			Command.McpServer.Relay.WorkerMcpRelay>();
+		// ENG-95262 Stage 7 — parent-owned sticky supervision. All three are SINGLETONS because each IS
+		// its state: the registry owns the leases of every live sticky worker (a transient copy would own
+		// none and reap none), and the reservation dictionary is the exclusion itself — a per-resolution
+		// copy would exclude nothing while looking exactly like a working guard.
+		services.AddSingleton<Command.McpServer.Relay.IStickyWorkerRegistry,
+			Command.McpServer.Relay.StickyWorkerRegistry>();
+		services.AddSingleton<Command.McpServer.Relay.ISharedResourceReservation,
+			Command.McpServer.Relay.SharedResourceReservation>();
+		services.AddSingleton<Command.McpServer.Relay.IStickyWorkerPoll,
+			Command.McpServer.Relay.StickyWorkerPoll>();
+		services.AddSingleton<Command.McpServer.Relay.IMcpWorkerCallDispatcher,
+			Command.McpServer.Relay.McpWorkerCallDispatcher>();
 		services.AddSingleton<Common.IIS.IPlatformDetector, Common.IIS.PlatformDetector>();
 		services.AddSingleton<Common.IIS.ITcpPortReservationReader, Common.IIS.TcpPortReservationReader>();
 		services.AddTransient<Common.IIS.IAvailableIisPortService, Common.IIS.AvailableIisPortService>();
@@ -1091,11 +1209,68 @@ public class BindingsModule {
 		services.AddTransient<LocalHelpViewer>();
 		services.AddTransient<WikiHelpViewer>();
 		
-		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(_ =>
-			envSettings => new SysSettingsManager(BuildRemoteDataProvider(envSettings)));
+		// The per-environment manager gets the SAME dependency set as the DI-resolved one. A provider-only
+		// manager would silently skip the authenticated DataService probe, so every command reached through
+		// this factory would keep reporting a rejected read as an empty success (the defect issue #1222 fixes).
+		// The client stays lazy, so building the factory result costs no HTTP call on its own.
+		//
+		// EVERY DEPENDENCY IS RESOLVED HERE, EAGERLY, AND THE RETURNED DELEGATE CAPTURES THE INSTANCES
+		// RATHER THAN THE PROVIDER (issue #1421). The delegate is invoked long after it is created, and on
+		// the MCP surface it can be invoked long after the provider it came from is GONE: the SDK gives
+		// every request its own service scope (McpServerOptions.ScopeRequests defaults to true) and disposes
+		// that scope the moment the tool's response is returned, while the long-running tools deliberately
+		// leave work running past their response deadline. A delegate that closed over `sp` therefore threw
+		// ObjectDisposedException on its first call in that detached continuation - and because the response
+		// had already been sent, the caller was told the work was still in progress when it had in fact
+		// stopped, which is how create-app-section came to report section-created=in-progress for a section
+		// it never created.
+		//
+		// KEEP EVERY SERVICE IN THIS LIST NON-DISPOSABLE. Microsoft.Extensions.DependencyInjection tracks
+		// a disposable TRANSIENT in the scope it was resolved from and disposes it with that scope, so a
+		// disposable added here would be captured already-dead and reproduce the same silent failure one
+		// layer down - where neither of the tests guarding this factory would see it. Today all five are
+		// safe: ILogger and IReauthExecutor are stateless singletons, and the two file systems and the
+		// working-directories provider are transients that implement no IDisposable.
+		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(sp => {
+			IReauthExecutor reauthExecutor = sp.GetRequiredService<IReauthExecutor>();
+			IWorkingDirectoriesProvider workingDirectoriesProvider =
+				sp.GetRequiredService<IWorkingDirectoriesProvider>();
+			Clio.Common.IFileSystem clioFileSystem = sp.GetRequiredService<Clio.Common.IFileSystem>();
+			IFileSystem fileSystem = sp.GetRequiredService<IFileSystem>();
+			ILogger logger = sp.GetRequiredService<ILogger>();
+			return envSettings => BuildEnvironmentScopedSysSettingsManager(
+				envSettings, reauthExecutor, workingDirectoriesProvider, clioFileSystem, fileSystem, logger);
+		});
 
 		RegisterFluentValidators(services);
 		return settingsRepository;
+	}
+
+	// Extracted from RegisterInto rather than left as an inline factory lambda: the OS branch is the only
+	// conditional the containment registration needs, and keeping it out of that already very long
+	// registration body is what holds RegisterInto inside its cognitive-complexity budget.
+	private static Common.McpWorker.IProcessContainment CreateProcessContainment() =>
+		RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+			? new Common.McpWorker.WindowsJobObjectContainment()
+			: new Common.McpWorker.UnixProcessGroupContainment();
+
+	/// <summary>
+	/// Builds the feature-toggle service this process must run on: the live settings-backed one for an
+	/// ordinary clio, and the immutable frozen one for an MCP worker child.
+	/// </summary>
+	/// <remarks>
+	/// A worker's tool surface is fixed inside this container build — MCP primitive registration happens
+	/// before the stdio transport is attached — so the generation has to be present at process start. It
+	/// arrives in an environment variable the parent composed at spawn; an absent payload freezes every gated
+	/// feature OFF rather than falling back to <c>appsettings.json</c>, because that fallback is precisely the
+	/// parent/child disagreement being prevented.
+	/// </remarks>
+	/// <param name="settingsRepository">The settings repository backing the live service.</param>
+	/// <returns>The feature-toggle service for this process.</returns>
+	private static IFeatureToggleService CreateFeatureToggleService(ISettingsRepository settingsRepository) {
+		return McpWorkerEnvironment.IsWorkerProcess
+			? new FrozenFeatureToggleService(McpWorkerEnvironment.ReadFrozenFeatures())
+			: new FeatureToggleService(settingsRepository);
 	}
 
 	private static void RegisterIisHttpsServices(IServiceCollection services) {
@@ -1117,6 +1292,64 @@ public class BindingsModule {
 	// Composed from Uri.UriSchemeHttp rather than a literal so this loopback bootstrap fallback is not
 	// a hardcoded absolute URI (Sonar S1075). It is only ever used when the environment supplies no Uri.
 	private static readonly string DefaultLocalhostUri = $"{Uri.UriSchemeHttp}://localhost";
+
+	/// <summary>
+	/// Builds a <see cref="SysSettingsManager"/> for one environment with the same dependency set the
+	/// DI-resolved manager gets, so a read rejected by authentication is reported as a failure rather
+	/// than as an empty success.
+	/// </summary>
+	/// <remarks>
+	/// Takes the already-resolved collaborators instead of an <see cref="IServiceProvider"/> ON PURPOSE.
+	/// The factory that calls this is invoked from work that outlives the request whose scope produced it
+	/// (see the registration site), so resolving anything here would resolve from a disposed provider.
+	/// Keeping the provider out of this signature makes that mistake unavailable rather than merely
+	/// unmade (issue #1421).
+	/// </remarks>
+	/// <param name="envSettings">The environment the manager reads settings from.</param>
+	/// <param name="reauthExecutor">Re-authentication executor; used only on the token path.</param>
+	/// <param name="workingDirectoriesProvider">Working-directory provider.</param>
+	/// <param name="clioFileSystem">clio's own file-system abstraction.</param>
+	/// <param name="fileSystem">The <c>System.IO.Abstractions</c> file system.</param>
+	/// <param name="logger">Logger.</param>
+	/// <returns>A manager bound to <paramref name="envSettings"/>.</returns>
+	private static ISysSettingsManager BuildEnvironmentScopedSysSettingsManager(
+		EnvironmentSettings envSettings,
+		IReauthExecutor reauthExecutor,
+		IWorkingDirectoriesProvider workingDirectoriesProvider,
+		Clio.Common.IFileSystem clioFileSystem,
+		IFileSystem fileSystem,
+		ILogger logger) {
+		Lazy<CreatioClient> lazyCreatioClient = new(() => BuildCreatioClient(envSettings));
+		// Same token rule as RegisterActiveEnvironmentServices: with an access token OR an OAuth client
+		// the adapter must never fall back to CreatioClient.Login() when it receives a login page -
+		// that crosses the bearer credential boundary (multi-tenant safety, ENG-93208 B1), and an OAuth
+		// profile has no username/password to log in with at all.
+		IApplicationClient applicationClient = UsesTokenAuthentication(envSettings)
+			? new CreatioClientAdapter(lazyCreatioClient, reauthExecutor)
+			: new CreatioClientAdapter(lazyCreatioClient);
+		return new SysSettingsManager(
+			applicationClient,
+			new ServiceUrlBuilder(envSettings),
+			BuildRemoteDataProvider(envSettings),
+			workingDirectoriesProvider,
+			clioFileSystem,
+			fileSystem,
+			logger);
+	}
+
+	/// <summary>
+	/// True when the environment authenticates with a token rather than with a login and password: an
+	/// <c>AccessToken</c>, or an OAuth client-credentials pair.
+	/// </summary>
+	/// <remarks>
+	/// Neither shape carries a username/password, so neither may reach the adapter's forms-login
+	/// reauthentication path: an OAuth client that receives a login page would otherwise attempt
+	/// <c>CreatioClient.Login()</c> with no credentials to log in with and turn a valid environment into
+	/// an <c>UnauthorizedAccessException</c>. The bearer rule (multi-tenant safety, ENG-93208 B1) applies
+	/// to both bearer shapes for the same reason.
+	/// </remarks>
+	private static bool UsesTokenAuthentication(EnvironmentSettings settings) =>
+		!string.IsNullOrEmpty(settings.AccessToken) || !string.IsNullOrEmpty(settings.ClientId);
 
 	// Builds an ATF RemoteDataProvider for the environment. Bearer-first: an AccessToken is
 	// consumed via the dedicated bearer ctor and must never reach the login/password path
@@ -1167,7 +1400,9 @@ public class BindingsModule {
 			// internal closure-based ReauthExecutor byte-for-byte. The adapter is the sole
 			// lifetime owner; registering the raw disposable client would bypass its listener
 			// teardown guard when the child provider is disposed.
-			return !string.IsNullOrEmpty(activeSettings.AccessToken)
+			// An OAuth client (ClientId) is a token shape too and has no username/password, so it takes
+			// the same no-login executor; only a login/password profile keeps the login-capable one.
+			return UsesTokenAuthentication(activeSettings)
 				? new CreatioClientAdapter(adapterClient, sp.GetRequiredService<IReauthExecutor>())
 				: new CreatioClientAdapter(adapterClient, ownsClient: true);
 		});
@@ -1200,7 +1435,7 @@ public class BindingsModule {
 		ISettingsRepository settingsRepository) {
 		JsonSerializerOptions mcpSerializerOptions = CreateMcpSerializerOptions();
 		Assembly mcpAssembly = Assembly.GetExecutingAssembly();
-		IFeatureToggleService mcpFeatureToggleService = new FeatureToggleService(settingsRepository);
+		IFeatureToggleService mcpFeatureToggleService = CreateFeatureToggleService(settingsRepository);
 		IMcpServerBuilder mcpServerBuilder = services.AddMcpServer(options => {
 					options.Capabilities ??= new();
 					// MCP9005: advertise the deprecated Logging capability for legacy initialize clients
@@ -1279,7 +1514,10 @@ public class BindingsModule {
 				string issue = report.Issues.FirstOrDefault()?.Message
 					?? "appsettings.json is unreadable.";
 				ConsoleLogger.Instance.WriteWarning(
-					$"clio settings bootstrap is degraded. {issue} File path: {report.SettingsFilePath}");
+					$"clio settings bootstrap is degraded. {issue} File path: {report.SettingsFilePath}. "
+					+ "Fix or delete it and retry — clio never rewrites a broken settings file on its own, "
+					+ "so a hand fix (or deletion, if the registered environments are not worth recovering) "
+					+ "is the only way forward.");
 				_bootstrapDiagnosticsLogged = true;
 			}
 		}
@@ -1288,7 +1526,13 @@ public class BindingsModule {
 	private static void RegisterAssemblyInterfaceTypes(IServiceCollection services){
 		Type[] types = Assembly.GetExecutingAssembly().GetTypes();
 		foreach (Type type in types) {
-			if (!type.IsClass || type.IsAbstract || type.IsGenericTypeDefinition || type == typeof(ConsoleLogger)) {
+			if (!type.IsClass || type.IsAbstract || type.IsGenericTypeDefinition || type == typeof(ConsoleLogger)
+				// The frozen feature-toggle service takes a runtime-only constructor argument — the immutable
+				// map the parent handed this worker at spawn — so the scan cannot construct it and
+				// ValidateOnBuild would stop every host from starting. CreateFeatureToggleService is the only
+				// site allowed to build it, which is also what keeps the parser gate and the MCP tool surface
+				// on one generation.
+				|| type == typeof(FrozenFeatureToggleService)) {
 				continue;
 			}
 			// An exception is never a service. Registering one (they carry a marker interface such as
@@ -1367,6 +1611,34 @@ public class BindingsModule {
 					// Knowledge services use explicit singleton registrations because they retain immutable
 					// runtime snapshots, source locks, and transport clients across MCP requests.
 					|| implementedInterface.Namespace == typeof(Command.McpServer.Knowledge.IKnowledgeBundleRuntime).Namespace
+					// The MCP worker execution boundary (ENG-95262 Stage 2) registers its whole namespace
+					// explicitly, and every reason is a correctness one rather than a preference:
+					// IProcessContainment has two implementations and the scan would let declaration order
+					// decide which platform's containment a host gets; the supervisor must be a SINGLETON or
+					// its concurrency cap bounds nothing; and the per-worker handle, lease and contained-worker
+					// types take runtime-only constructor arguments (streams and delegates over one live
+					// process), so auto-registering them would fail ValidateOnBuild and stop the host from
+					// starting at all.
+					|| implementedInterface.Namespace == typeof(Common.McpWorker.IProcessContainment).Namespace
+					// The worker MCP relay namespace (ENG-95262 Stage 4a/6) is registered explicitly in
+					// RegisterInto — with deliberate, differing lifetimes — rather than swept up by the scan.
+					// Skipping it also keeps the per-worker runtime types out of the container: WorkerRelaySession
+					// takes a live transport no container can supply, and auto-registering that would fail
+					// ValidateOnBuild and stop every host from starting.
+					|| implementedInterface.Namespace == typeof(Command.McpServer.Relay.IWorkerMcpRelay).Namespace
+					// The execution-routing authority and the metadata reader it wraps (ENG-95262 Stage 4b)
+					// are registered explicitly as SINGLETONS in RegisterInto. Their constructors resolve
+					// cleanly, so the scan WOULD register them — as transients, and every dispatch site would
+					// then get its own copy of the routing rule on whichever transport did not override the
+					// lifetime. Skipping them here makes "one authority per host" a property of the
+					// registration rather than of declaration order.
+					|| implementedInterface == typeof(Command.McpServer.IMcpToolExecutionMetadataReader)
+					|| implementedInterface == typeof(Command.McpServer.IMcpExecutionRouter)
+					// The worker-path gate is registered explicitly as a SINGLETON beside the router it
+					// feeds (ENG-95262 Stage 6), for the same reason: a transient copy per resolution turns
+					// "this process may not spawn workers" into a per-call re-derivation.
+					|| implementedInterface == typeof(Command.McpServer.IMcpWorkerPathGate)
+					|| implementedInterface == typeof(Command.McpServer.IMcpWorkerCohort)
 					|| implementedInterface == typeof(IKnowledgeSourceManagementService)
 					|| implementedInterface == typeof(IKnowledgeReferenceExampleService)
 					|| implementedInterface == typeof(IKnowledgeGuidanceResourceAdapter)

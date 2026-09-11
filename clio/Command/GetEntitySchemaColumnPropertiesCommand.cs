@@ -12,7 +12,8 @@ namespace Clio.Command;
 	HelpText = "Get column properties from a remote Creatio entity schema")]
 public class GetEntitySchemaColumnPropertiesOptions : RemoteCommandOptions
 {
-	[Option("package", Required = false, HelpText = "Target package name")]
+	[Option("package", Required = false,
+		HelpText = "Optional target package name; omit to inspect the merged runtime schema across all packages")]
 	public string Package { get; set; }
 
 	[Option("package-name", Required = false, Hidden = true, HelpText = "Alias for --package")]
@@ -65,9 +66,6 @@ public class GetEntitySchemaColumnPropertiesCommand : Command<GetEntitySchemaCol
 
 	private static void Validate(GetEntitySchemaColumnPropertiesOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
-		if (string.IsNullOrWhiteSpace(options.Package)) {
-			throw new ArgumentException("Package is required.", nameof(options.Package));
-		}
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
 			throw new ArgumentException("Schema name is required.", nameof(options.SchemaName));
 		}
@@ -112,6 +110,10 @@ public class GetEntitySchemaColumnPropertiesCommand : Command<GetEntitySchemaCol
 
 	private static string FormatBoolean(bool value) {
 		return value ? "true" : "false";
+	}
+
+	private static string FormatBoolean(bool? value) {
+		return value.HasValue ? FormatBoolean(value.Value) : "<unknown>";
 	}
 
 	private static string FormatText(string? value) {

@@ -57,7 +57,8 @@ public sealed class CredentialPassthroughSecretHygieneTests {
 			// Default substitute allows every url, so the cookie / missing-auth / non-Bearer branches
 			// (the ones under test) are reached instead of being short-circuited by the SSRF guard.
 			Substitute.For<ITargetUrlValidator>(),
-			new SessionContainerCache(SessionContainerCacheDefaults.IdleTtl, SessionContainerCacheDefaults.MaxSessions));
+			new SessionContainerCache(SessionContainerCacheDefaults.IdleTtl, SessionContainerCacheDefaults.MaxSessions),
+			new SessionTargetNormalizer());
 
 	private static ICredentialContextAccessor AccessorWith(CredentialContext context) {
 		ICredentialContextAccessor accessor = Substitute.For<ICredentialContextAccessor>();
@@ -203,7 +204,7 @@ public sealed class CredentialPassthroughSecretHygieneTests {
 		EnvironmentSettings settings = new() { Uri = Url, AccessToken = Secret, Password = Secret };
 
 		// Act
-		string key = ToolCommandResolver.BuildCacheKey(options, settings);
+		string key = CreateCacheKeyBuilder().BuildCacheKey(options, settings);
 
 		// Assert
 		key.Should().NotContain(Secret,
@@ -515,4 +516,15 @@ public sealed class CredentialPassthroughSecretHygieneTests {
 			return new PassthroughLogToolHarness(command, logger, resolver);
 		}
 	}
+
+	// BuildCacheKey became an INSTANCE method when session-target normalisation was injected
+	// (ENG-95262 story 7, AC-00). Only the normaliser participates in the key, so the remaining
+	// constructor dependencies are substitutes.
+	private static ToolCommandResolver CreateCacheKeyBuilder() =>
+		new(Substitute.For<ISettingsRepository>(),
+			Substitute.For<ISettingsBootstrapService>(),
+			Substitute.For<ICredentialContextAccessor>(),
+			Substitute.For<ITargetUrlValidator>(),
+			Substitute.For<ISessionContainerCache>(),
+			new SessionTargetNormalizer());
 }

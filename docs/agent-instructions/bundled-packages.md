@@ -99,10 +99,42 @@ environment recorded; that comparison is the entire delivery mechanism. So:
   environment's recorded version and will not move it backwards without `--force`. So a rebundle that
   lowers the version, or an older clio pointed at a stand that already carries a newer package, is turned
   away on every such environment;
-- **raising it costs nothing to maintain.** Nothing on the clio side has to be kept in step with it. That
-  used to be false: the version was also the `[RequiresPackage]` floor, so raising it forced a refusal on
-  every environment until upgraded, which is why the old guidance reserved it for contract changes. Both
-  the floor and that reason are gone.
+- **raising it costs nothing to MAINTAIN, and that is not the same as costing nothing.** Nothing on the
+  clio side has to be kept in step with it — no constant, no literal. What used to be true and is
+  half-true again is the delivery cost: the version was once also the `[RequiresPackage]` floor, and the
+  floor is gone, but `IBundledPackageConvergence` reintroduced the same refusal with a narrower blast
+  radius. `RequiredPackageChecker` **throws** on a convergence refusal (`PackageRequirementException`),
+  after the requirement gate has already passed — so an environment below the bundled version cannot run
+  the affected commands until it reinstalls, and for a source-shipped package like `CrtProcessBuilder`
+  that reinstall is a configuration build plus an instance restart, measured in minutes.
+
+  The gate is **TRIGGERED requirements, not decorated commands**, and the difference is worth the clause
+  because "decorated" invites a `grep` for the attribute and a wrong conclusion. `RequiredPackageChecker`
+  reflects first and evaluates convergence only inside its per-requirement loop, so a command with no
+  triggered requirement returns before touching the package list at all — no HTTP, no convergence. And
+  `CollectTriggeredRequirements` adds a PROPERTY-level requirement only when its bool flag is `true`, so
+  a conditionally-decorated command invoked without that flag is equally unaffected. Everything else
+  keeps working, which is the whole of the difference from the old floor.
+
+  **So rebundle when the archive's BEHAVIOUR changes, and once more at the end for everything else.**
+  A comment, a docblock or a renamed local still moves the archive bytes (this package ships as SOURCE),
+  and the provenance sentence in the commit message only has to be true at the cut — so batching those
+  into the last rebundle before the pull request produces the same archive, the same true sentence, and
+  one recompile instead of one per review round.
+
+  Be precise about who pays, because it is easy to overstate. Versions cut on an unpushed branch reach no
+  user: everyone jumps from what they had straight to the final one and recompiles ONCE however many times
+  the branch bumped. The environment that pays per bump is the STAND the branch is being tested on —
+  which is real, is where manual verification happens, and is exactly where an extra five minutes lands
+  on the person doing it.
+
+  **And it lands on whoever is VERIFYING the branch, not only on whoever cut the version.** Observed
+  rather than predicted: a rebundle to `1.4.0.63` left a reviewer's clio carrying .63 against a stand
+  still on .61, and convergence refused `describe-business-process` outright — *"This clio carries
+  CrtProcessBuilder 1.4.0.63, but the target environment has 1.4.0.61."* They finished the check through
+  OData, which carries no `[RequiresPackage]` and therefore no gate. So a rebundle mid-review breaks the
+  review, and the person it breaks is not the person who chose to cut. If someone is verifying against a
+  stand, either reinstall it in the same breath or tell them the version moved.
 
 An explicit `[RequiresPackage("CrtProcessBuilder", "X.Y.Z.W")]` literal is a separate and much rarer thing:
 add one in the commit where a command starts calling an operation an older server does not have. It states
@@ -114,6 +146,155 @@ not itself carry.
 tightened validator, a fixed authorization hole: those must be a `[RequiresPackage]` version, never left to
 convergence. Convergence warns and proceeds when it cannot read the archive, and it is a delivery policy
 rather than a gate — only the literal fails closed.
+
+### Two branches, two restamps — the second merger RE-CUTS, it does not pick a version
+
+When two branches each rebundle, each carries its own `descriptor.json` bump, and if neither branch is a
+descendant of the other's restamp those bumps are independent. Merging them conflicts on that file.
+
+**Resolve it by re-cutting from the merged tree. Never by choosing one side's version.**
+
+This conflict is worth its own rule because of a property the others here do not have: **both resolutions
+look correct.** Take the other branch's line and the archive holds one branch's bytes under a number that
+promises both; take your own and you get the same thing mirrored. Nothing downstream disagrees with you —
+only the SHA is computed from the archive, yet all four pins are refreshed together, so they are
+self-consistent whatever is in it,
+and `ExpectedProducingCommit` names a commit that genuinely was HEAD when the bytes were packed. Every
+test passes, the provenance is honest about the commit, and the version is still a claim about content
+that nobody made. Compare the failure modes above, where at least one resolution is visibly worse.
+
+The rule that prevents it is the same one the whole section rests on, applied to the merge: **a version
+moves because the CONTENT changed, not because circumstances did.** A stand that has moved ahead, a peer
+who took the next number, a rebase that changed nothing in the sources — none of those is a reason to cut
+a new number, and none is a reason to reuse one either. Re-cutting from the merged tree is what makes the
+number mean "these bytes" again, and it is cheap: the script does the whole thing in one call.
+
+A corollary, learned the expensive way: **claim the number before you cut, not after.** Two archives were
+produced under `1.4.0.9` on one day by two branches that fork off each other, and the number is burned —
+a gap in the sequence is always cheaper than a number that names two different sets of bytes. Others are
+skipped for the same reason. **There is no curated list of burned numbers, and you should not go looking
+for one** — two files have carried one, both went stale, and the test file's went stale four times. A list
+of gaps is write-only knowledge: appended to by whoever burns a number, read by nobody until it is already
+wrong.
+
+Choose the next number like this instead.
+
+1. **Go up from YOUR OWN last cut.** `ExpectedArchiveVersion` in
+   `clio.tests/Common/BundledProcessBuilderPackageTests.cs` is it. That is what makes your change
+   detectable to an environment that already carries your package, which is the whole purpose of the
+   version moving.
+2. **Check the candidate is not already taken by anyone**, in BOTH histories — a cut can exist in the
+   package repository without ever reaching a clio commit (`1.4.0.4` and `1.4.0.6` are real examples):
+
+   ```
+   git -C <clio> log --all -p -- clio.tests/Common/BundledProcessBuilderPackageTests.cs      | grep -oE 'ExpectedArchiveVersion = "[0-9.]+"' | sort -u -V
+   git -C <package repo> log --all -p -- packages/CrtProcessBuilder/descriptor.json      | grep -oE '"PackageVersion": "[0-9.]+"' | sort -u -V
+   ```
+
+   `sort -V`, not plain `sort`: `1.4.0.9` sorts above `1.4.0.27` lexically. If your candidate appears,
+   skip to the next free one.
+3. **Do NOT take one above the global maximum.** Another branch may sit far ahead — at the time of
+   writing one is three minor digits up — and adopting its number buys nothing: your archive still does
+   not contain its work, which is exactly the "newer stops meaning contains" trap described below. The
+   collision worth preventing is two archives under the SAME number, not two branches at different
+   heights.
+
+And claim the number before you cut, not after.
+
+And do not read a stand's installed version as the sequence's high-water mark. It records what someone
+last installed, which may be a branch that never merges. The sequence is owned by the branches, not by
+the environment.
+
+### A numeric floor cannot express a CAPABILITY once two branches cut numbers
+
+`[RequiresPackage("X", "A.B.C.D")]` says "this code needs version D or later", and the guard fixture
+checks the shipped archive satisfies every such literal. Both are comparisons of NUMBERS. They express
+"at least this version" and they cannot express "contains this capability" — which is the same thing only
+while every version comes from ONE line of development.
+
+Two branches cutting independently break that. A branch whose floor is `1.4.0.8` and whose feature
+landed in its own `1.4.0.16` will happily ship an archive numbered `1.4.0.18` cut from the OTHER branch:
+18 ≥ 8, the literal is satisfied, the guard fixture is green, and the capability is absent. The tool
+description, the prompt, the capability map and the E2E all promise it; the server silently drops the
+field it does not know and answers success. That is the failure the floor exists to prevent, reached
+through the floor's own arithmetic.
+
+It is the same root as the second-merger rule above, seen from the other end: **"newer" stops meaning**
+**"contains" as soon as two version numbers come from trees that do not contain each other.** Nothing
+in either repository detects it, for the reason the previous section gives — the fixture can compare
+numbers, not ask what an archive can do.
+
+So when a branch takes an archive cut from a branch that is not its ancestor, the floor is not evidence.
+Check the CAPABILITY, in the bytes:
+
+- decompress the committed archive and grep for something distinctive to the feature —
+  `python -c "import gzip;print(gzip.open('clio/<Pkg>/<Pkg>.gz','rb').read().count(b'<probe>'))"` — and
+  note that this searches the WHOLE archive, which is the wider scope the next bullet warns about;
+- **a field NAME cannot be a probe at all.** One name lives in three separate contracts — create,
+  describe and modify — and which of the three carries it is the only thing that distinguishes a feature
+  from its ancestor. `DataMember(Name = "caption")` counts 7 across the archive that does NOT support an
+  editable caption (1 in the create contract, 3 in describe, 3 in the descriptor contracts) and 0 in the
+  modify contract of that same archive. Both numbers are true and they are about different things, so the
+  count answers a question nobody asked. Only a FIELD ON A NAMED TYPE settles it: here
+  `ProcessElementUpdateDescriptor.Caption`, 0 without the feature and 1 with it;
+- a probe that agrees with what you already believe is the expensive kind, and agreeing is not evidence
+  even when the conclusion turns out right. The zero above was measured by someone who grepped the modify
+  contract because that is where they had added the field — not because they had reasoned that the older
+  copies live in the create and describe contracts. The same command one directory wider returns 7 and
+  reads as "the feature is present", which is the answer that opens a pull request. Confirm a probe can
+  come back BOTH ways: run it against an archive that definitely lacks the feature and one that
+  definitely has it.
+
+### The currency gates prove the cut was current WHEN CUT, not that it still is
+
+`rebundle-process-builder.ps1` refuses a dirty tree, a detached HEAD, and a branch behind its upstream. All
+three are asserted at CUT time — and the third only when the branch HAS an upstream. With none configured
+the comparison is skipped and the run still reports success, so a green run does not by itself mean
+currency was asserted. The script says so on that line; the point here is that the runbook must not read
+as if it always is. None of them says anything about the archive falling behind the branch
+AFTERWARDS — and that is not a hole in the gates, it is their boundary, as principled as the fact that
+"behind" is measured against the upstream ref as last fetched.
+
+It has already cost a shipped fix. An archive was cut at `1.4.0.15` from a clean, current checkout; a
+Blocker fix to the package landed in the next commit; and the branch then carried a bundled archive whose
+sources did not contain it. The pin was not wrong — that commit really was HEAD when the bytes were
+packed. Every test passed on both sides: the package's suite proved the fix, the clio guard fixture proved
+the pins matched the archive, and nothing compared the two.
+
+**No test in either repository can catch this, and that is worth understanding rather than working**
+**around.** A fixture in clio has one repository open, so it cannot ask where the package repository's
+branch now points. The script holds both, but it is not running at the moment that matters. The check
+belongs to the MERGE, not to the cut — so until CI checks out both sides, it is a human step:
+
+- before opening a pull request, and again before marking one ready, confirm the package repository has no
+  commit touching package sources after `ExpectedProducingCommit`. One command answers it:
+  `git -C <package repo> log --oneline <ExpectedProducingCommit>..HEAD -- packages/<Package>/`;
+- a restamp commit is the expected exception — it is what the cut itself produced. Anything else means the
+  archive is stale and the fix must be re-cut;
+- treat this as part of the pre-PR gate, not as tidiness. A stale archive ships a version number that
+  promises a fix the bytes do not carry, which is worse than shipping neither.
+
+**Keep the pinned commit REACHABLE, or that one command stops working.** The check above is the only
+control on an archive that is otherwise opaque to review, and it depends entirely on
+`ExpectedProducingCommit` still resolving in the package repository. A squash or rebase merge creates a
+new commit and does not preserve the SHA on the base branch, and deleting the source branch on merge
+takes the original with it — at which point the sole prescribed provenance check for a binary installed
+onto customer environments is permanently unrunnable, while
+`ExpectedProducingCommit_ShouldBeAFullCommitId` keeps passing, because it only validates that the string
+is forty hex characters.
+
+So **tag the producing commit in the package repository before merging**, named for the version it
+produced, and push the tag:
+
+```bash
+git -C <package repo> tag -a crtprocessbuilder-<version> <ExpectedProducingCommit> -m "<why>"
+git -C <package repo> push origin crtprocessbuilder-<version>
+```
+
+A tag survives every merge mode and every branch deletion, needs no agreement about how the package PR
+is merged, and costs one command. The alternative — requiring a true merge commit and re-pinning to the
+resulting SHA on the default branch — also works, but it makes a review control depend on a merge-button
+choice someone else makes later.
 
 ### One call — `rebundle-process-builder.ps1`
 
@@ -133,7 +314,7 @@ one and an install run from them ships it. It names them all at the end.
 
 What it does beyond running the steps below:
 
-- computes the pins **from the archive it just produced**, so "the pins are stale" stops being a
+- refreshes all four pins in the same run, so "the pins are stale" stops being a
   reachable state;
 - reads the archive back and checks the inventory — exactly two DLLs and both from `Files/Libs`, the compile
   marker present, the package's own assembly absent, and nothing outside the allowed top-level set (in
@@ -218,11 +399,30 @@ git -C <ProcessBuilder> commit -m "<ticket> rebundle to X.Y.Z.W"
 #    which installs, satisfies the gate, and then 404s on the other runtime.
 Remove-Item packages/CrtProcessBuilder/Files/Bin -Recurse -Force
 
-# 4. Pack straight into the clio checkout. --skip-pdb matches what the script passes: today step 3 has
+# 3b. Export the sources from the PRODUCING COMMIT, and pack THAT - never the working tree.
+#    This is what makes the SHA pin reproducible. Packing a working tree makes the hash depend on the line
+#    endings of the machine that packed it: a file just written by a tool is LF in the tree, and the same
+#    file after a clean checkout on Windows (core.autocrlf=true, or `* text=auto`) is CRLF. Same commit,
+#    same content, different bytes, different SHA-256 - so a reviewer following this recipe got a hash that
+#    did not match the pin, with nothing to say whether the archive had been tampered with or just repacked.
+#    It happened twice: once with nine files, once with thirteen.
+#
+#    The two -c flags are NOT optional and are the whole point. `git archive` runs the same working-tree
+#    conversion a checkout does, so without them it emits CRLF wherever core.autocrlf=true and the hash is
+#    machine-dependent again. With them it hands back blob bytes - LF - on every platform and every git
+#    configuration, which is what lets anyone verify the pin from the commit id alone.
+git -c core.autocrlf=false -c core.eol=lf -C <ProcessBuilder> archive --format=zip `
+  -o <tmp>/package.zip <ExpectedProducingCommit> -- packages/CrtProcessBuilder
+Expand-Archive <tmp>/package.zip -DestinationPath <tmp>/export
+#    descriptor.json is the ONE file that cannot come from the commit: the restamp is in the tree, and by
+#    contract the pin names the PRE-restamp commit. Overlay it.
+Copy-Item packages/CrtProcessBuilder/descriptor.json <tmp>/export/packages/CrtProcessBuilder/descriptor.json
+
+# 4. Pack the EXPORT into the clio checkout. --skip-pdb matches what the script passes: today step 3 has
 #    already removed the only .pdb there is, so the flag changes nothing about the output - but the archive
 #    is pinned BYTE-FOR-BYTE by SHA-256, and the two paths have to produce the same bytes for that pin to
 #    mean anything. Any .pdb that ever appears outside Files/Bin would otherwise make them diverge.
-dotnet <clio>/clio/bin/Debug/net8.0/clio.dll compress ./packages/CrtProcessBuilder --skip-pdb `
+dotnet <clio>/clio/bin/Debug/net8.0/clio.dll compress <tmp>/export/packages/CrtProcessBuilder --skip-pdb `
   -d <clio>/clio/CrtProcessBuilder/CrtProcessBuilder.gz
 
 # 5. VERIFY the archive rather than trusting step 3 - its failure is silent.
@@ -245,17 +445,61 @@ target's configuration build. Lose it and the package installs, the gate reports
 
 ### In this repository, in ONE commit
 
-| Update | Where |
-|---|---|
-| `ExpectedArchiveSha256` | `clio.tests/Common/BundledProcessBuilderPackageTests.cs` |
-| `ExpectedDescriptorModifiedOnUtc` | same file |
-| `ExpectedArchiveVersion` | same file |
+| Update | Where | Written by |
+|---|---|---|
+| `ExpectedArchiveSha256` | `clio.tests/Common/BundledProcessBuilderPackageTests.cs` | the script |
+| `ExpectedDescriptorModifiedOnUtc` | same file | the script |
+| `ExpectedArchiveVersion` | same file | the script |
+| `ExpectedProducingCommit` | same file — `git rev-parse HEAD` of the PACKAGE repo, before the restamp | the script |
+| `ExpectedSchemaDescriptorModifiedOnUtc` | same file — the COMPILE-MARKER schema's stamp; `set-pkg-version` does not touch schema descriptors (step 2b) | **BY HAND** |
+| `ExpectedOperationContractCount` | same file — `[OperationContract]` methods the shipped service exposes | **BY HAND** |
+| `ExpectedAuthorizationGateCallSites` | same file — live `_guard.EnsureCanManageProcessDesign()` call sites | **BY HAND** |
+
+**The last three are not written by anything.** The script refreshes the four provenance pins and knows
+nothing about the other three, so a rebundle that changed the service surface meets them as a red test with
+no explanation attached. That is what the two security counts are for, and why they are named here rather
+than only in the fixture: they are the ONLY reviewability a committed binary has on this boundary, because
+`ExpectedArchiveSha256` proves the bytes changed and says nothing about what they now contain.
+
+- `ExpectedOperationContractCount` is EXACT, not a floor: a floor cannot notice a new operation arriving
+  WITHOUT a gate, since the count simply rises and still clears it. Move it together with
+  `UngatedOperations`, in the same commit, or not at all.
+- `ExpectedAuthorizationGateCallSites` is the number of live gate calls, which is NOT one per operation —
+  `ProcessDesigner.Execute` is a shared boundary for the read operations. The constant's own remarks carry
+  the arithmetic; edit them with the number, because a derivation that no longer totals the pin gives the
+  next maintainer a documented reason to LOWER it, and a lowered pin accepts an archive with operations
+  de-gated.
+- **Which side moves first:** the package repository. Both counts are properties of the shipped sources, so
+  they cannot be computed until the archive exists — add the operation and its gate there, land its
+  guard-deny test there (a call-site count cannot tell a gate that MOVED from one that is present but off
+  the execution path), then cut the archive and move both pins here. The ADR's pre-implementation checklist
+  states the same rule: operation-contract count and authorization-gate call sites move together, on both
+  sides.
 
 **No PRODUCTION constant to update** — that is the point of the current design: clio reads the shipped
 version from the archive, so nothing in the product can fall out of step with it. `ExpectedArchiveVersion`
 is a test-side pin with no runtime consumer, and it exists for the same reason the SHA pin does — a `.gz`
 renders in a diff as a changed byte count, so without that line a reviewer cannot see whether the version
-moved. The script writes all three from the archive it produced.
+moved. The script writes all four, but they do not come from one place, and the difference decides how a
+reviewer reproduces them. Only `ExpectedArchiveSha256` is computed from the archive. `ExpectedArchiveVersion`
+is the `-Version` argument, canonicalised — deliberately not read back, for the reason the script states at
+that line. `ExpectedDescriptorModifiedOnUtc` is read from the package repository's `descriptor.json` AFTER
+the restamp. And `ExpectedProducingCommit` is that repository's HEAD BEFORE it, so the pin names the commit
+whose descriptor still carries the OLD version — by design, and unavoidably, since the script does not
+commit. Reproducing the bytes is therefore: export the pinned commit with the two `-c` flags of step 3b, re-run
+`set-pkg-version` with the pinned version, hand-set `ModifiedOnUtc` to the pinned value, overlay that
+`descriptor.json` onto the export, then pack. The timestamp step is not optional: `set-pkg-version` writes
+`DateTime.Now` and takes no timestamp argument, so re-running it stamps the present and the bytes differ
+every time — which is what `ExpectedDescriptorModifiedOnUtc` is for.
+
+Nothing in that recipe depends on the verifier's machine any more, and that is a recent change. Exporting
+from the commit with `core.autocrlf=false` and `core.eol=lf` yields blob bytes on every host, so the hash no
+longer varies with an editor setting or a git configuration — the property the previous wording had to admit
+it lacked. What is still host-dependent is the PATH SEPARATOR the archive records per entry, so cut and
+verify on Windows. Forgetting the producing-commit
+pin on the manual path is worse than forgetting the others. A stale SHA turns the fixture red. A stale producing
+commit stays 40 hex characters, passes every test, and points confidently at the wrong commit, which is
+the failure the constant was added to remove.
 
 The date pin must end in `000`. `PackageDescriptor.ConvertToModifiedOnUtc` truncates to whole seconds, so
 milliseconds in it prove the descriptor was written by something other than `set-pkg-version` — a test

@@ -88,6 +88,28 @@ internal class CreatioClientAdapterReauthTests {
 
 	#endregion
 
+	#region Tests: ExecutePutRequest
+
+	[Test]
+	[Description("ExecutePutRequest routes through IReauthExecutor with the HTML login-page predicate")]
+	public void ExecutePutRequest_ShouldRouteThroughReauthExecutorWithLoginPagePredicate_WhenInvoked() {
+		// Arrange
+		(CreatioClientAdapter adapter, CapturedExecute captured) = CreateAdapterWithCapture("{}");
+
+		// Act
+		string result = adapter.ExecutePutRequest("/x", "data");
+
+		// Assert
+		result.Should().Be("{}",
+			because: "the adapter must return what the reauth executor produced, unchanged");
+		captured.Predicate.Should().NotBeNull(
+			because: "the adapter must hand the predicate to the executor");
+		captured.Predicate(LoginPageBody).Should().BeTrue(
+			because: "the predicate must classify Creatio login HTML as an expired session");
+	}
+
+	#endregion
+
 	#region Tests: ExecuteGetRequest
 
 	[Test]

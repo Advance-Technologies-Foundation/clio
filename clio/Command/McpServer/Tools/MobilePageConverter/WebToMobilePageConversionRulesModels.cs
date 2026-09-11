@@ -66,6 +66,37 @@ public sealed class WebToMobilePageConversionRules {
 	public IReadOnlyList<ComponentPropertyOverrideRule> ComponentPropertyOverrides { get; init; } = [];
 
 	/// <summary>
+	/// Mobile component types that CAN host arbitrary children. The element-map walk carries, alongside the
+	/// nearest mapped mobile ancestor, the nearest ancestor whose mobile type is listed here; a receiver of any
+	/// other type — a <c>crt.TabPanel</c> renders only its tabs — does not become that carried value, so a
+	/// non-tab child of a tab strip is placed one level up instead of vanishing. Stated as an ACCEPT-list so the
+	/// converter names no component type at all: a type that cannot host children is handled by being ABSENT,
+	/// not by a branch.
+	/// <para>
+	/// The polarity is safe for PLACEMENT specifically. An under-inclusive list is harmless — an unlisted
+	/// legitimate host is skipped and the child lands one level higher, visible, with the move explained in the
+	/// entry's <c>reason</c>. The same list drove a REPORT in an earlier revision of this pass, and there the
+	/// identical under-inclusiveness produced a confident false STOP on every host it happened not to name.
+	/// Same data, opposite consequence: the mechanism is what makes the polarity safe, not the list.
+	/// </para>
+	/// <para>
+	/// Deliberately NOT <see cref="EmptyContainerRemoval"/>'s <c>removableTypes</c>, which is this list plus
+	/// <c>crt.TabPanel</c> and is correct for ITS purpose (an emptied tab strip must go). Sharing one list would
+	/// make an addition to one meaning silently change the other. The mobile registry cannot decide it either:
+	/// <c>crt.TabPanel</c> declares an <c>items</c> slot exactly as <c>crt.Gallery</c> does, and what differs —
+	/// that a strip's items must be tabs — is in prose, not in a field.
+	/// </para>
+	/// <para>
+	/// Empty or absent does NOT switch the behavior off the way <see cref="NonConvertingScopeContainers"/> does.
+	/// The rules file is CDN-fetched, so the file most likely to lack this key is an OLD one — exactly the file
+	/// whose <c>containers</c> list is also behind and which therefore needs the fallback most. The bundled list
+	/// is used instead; see the walk's resolution helper.
+	/// </para>
+	/// </summary>
+	[JsonPropertyName("contentContainerTypes")]
+	public IReadOnlyList<string> ContentContainerTypes { get; init; } = [];
+
+	/// <summary>
 	/// Group: deterministic removal of converter-created layout containers that end up EMPTY after all
 	/// element-map decisions — a closed allowlist of removable types, evaluated bottom-up so
 	/// emptiness cascades. Null when the section is absent from the rules file — the removal pass is then
@@ -492,6 +523,34 @@ public sealed class RequestMappingRule {
 	/// </summary>
 	[JsonPropertyName("paramMap")]
 	public IReadOnlyDictionary<string, string> ParamMap { get; init; } = new Dictionary<string, string>();
+
+	/// <summary>
+	/// Name of the <c>params</c> key carrying this request's NAVIGATION TARGET — the page or object the
+	/// action opens (e.g. <c>schemaName</c> for <c>crt.OpenPageRequest</c>, <c>entityName</c> for
+	/// <c>crt.CreateRecordRequest</c>). Null/absent means the request navigates nowhere and its target is
+	/// never checked. Paired with <see cref="TargetKind"/>: BOTH must be present for a check to run.
+	/// </summary>
+	/// <remarks>
+	/// This is data rather than code on purpose: a request whose target should be verified (today
+	/// <c>crt.OpenPageRequest</c> / <c>crt.CreateRecordRequest</c> / <c>crt.UpdateRecordRequest</c>, tomorrow
+	/// possibly <c>crt.ImportDataRequest</c> or <c>crt.AddNextStepRequest</c>) can be added by a CDN rules
+	/// push without a clio release — the same discipline <see cref="ParamMap"/> already follows.
+	/// </remarks>
+	[JsonPropertyName("targetParam")]
+	public string TargetParam { get; init; }
+
+	/// <summary>
+	/// What <see cref="TargetParam"/>'s value NAMES, so clio knows how to verify the target exists on mobile:
+	/// <c>web-page</c> (a WEB page schema, which the Creatio Mobile app cannot open at all) or
+	/// <c>entity-default-mobile-page</c> (an object that must have a default mobile edit page). Null/absent
+	/// means no check.
+	/// </summary>
+	/// <remarks>
+	/// An UNRECOGNIZED value is also "no check", never a failed check — a rules file naming a future kind
+	/// must degrade to silence on an older binary rather than reporting every such action as unresolvable.
+	/// </remarks>
+	[JsonPropertyName("targetKind")]
+	public string TargetKind { get; init; }
 
 	[JsonPropertyName("note")]
 	public string Note { get; init; }

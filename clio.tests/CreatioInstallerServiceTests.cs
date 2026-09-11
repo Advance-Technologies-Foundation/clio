@@ -3,11 +3,14 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
+using Clio.Command;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Common;
 using Clio.Common.IIS;
 using Clio.Common.K8;
 using Clio.Tests.Command;
+using Clio.UserEnvironment;
+using Newtonsoft.Json;
 using FluentAssertions;
 using k8s;
 using NSubstitute;
@@ -42,6 +45,11 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests{
 		? @"\\tscrm.com\dfs-ts\builds-7"
 		: "/mnt/tscrm.com/dfs-ts/builds-7";
 
+	// The native identity check reads the real ancestor even though deployment files are mocked.
+	private static readonly string IisRootPath = Path.Combine(
+		DirectoryPathIdentity.Normalize(Path.GetTempPath()),
+		nameof(CreatioInstallerServiceTests), Guid.NewGuid().ToString("N"));
+
 	private CreatioInstallerService _creatioInstallerService;
 	private IProcessExecutor _processExecutor;
 	private IIisDeploymentPortReservation _iisDeploymentPortReservation;
@@ -69,10 +77,17 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests{
 		_tcpPortReservationReader = Substitute.For<ITcpPortReservationReader>();
 		_tcpPortReservationReader.GetReservedPorts(Arg.Any<int>(), Arg.Any<int>()).Returns([]);
 		containerBuilder.AddSingleton(_tcpPortReservationReader);
+		IWindowsFeatureManager windowsFeatureManager = Substitute.For<IWindowsFeatureManager>();
+		windowsFeatureManager.GetMissedComponents().Returns([]);
+		containerBuilder.AddSingleton(windowsFeatureManager);
 	}
 
 	protected override MockFileSystem CreateFs() {
 		return new MockFileSystem(new Dictionary<string, MockFileData> {
+			{
+				SettingsRepository.AppSettingsFile,
+				new MockFileData(JsonConvert.SerializeObject(new Settings { IISClioRootPath = IisRootPath }))
+			},
 			{
 				Path.Combine(_remoteArtifactServerPath, "8.1.2", "8.1.2.3888",
 					"BankSales_BankCustomerJourney_Lending_Marketing_Softkey_ENU",
