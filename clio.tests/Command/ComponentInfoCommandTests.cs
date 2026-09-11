@@ -169,6 +169,30 @@ public sealed class ComponentInfoCommandTests {
 	}
 
 	[Test]
+	[Description("ENG-96840: the environment-scoped resolver must be awaited INSIDE its using — a non-async caller that returned the resolve Task unawaited disposed the owned application client while the probe was still running on its Task.Run thread, so every call degraded to probe-error.")]
+	public async Task Does_Not_Dispose_Resolver_Before_Async_Probe_Completes() {
+		// Arrange
+		using CapturedLogger logger = new();
+		RecordingCatalog catalog = new(SampleRegistry, echoRequestedVersion: true);
+		AsyncDisposalTrackingResolverFactory factory = new(
+			new PlatformVersionResolution("8.3.4", VersionResolutionSource.Environment));
+		ISettingsRepository repository = StubSettingsRepository("dev");
+		ComponentInfoCommand command = new(
+			catalog, StubMobileCatalog.Empty(), new FakeDocsClient(), factory, repository, logger);
+
+		// Act
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { Environment = "dev" }, CancellationToken.None);
+
+		// Assert
+		exit.Should().Be(0, because: "the environment version resolves cleanly once the resolver survives the probe");
+		factory.LastResolver!.DisposedBeforeResolveCompleted.Should().BeFalse(
+			because: "the owned application client must stay alive until the async probe completes; disposing it mid-probe made every environment-scoped get-component-info throw ObjectDisposedException and degrade to probe-error (ENG-96840)");
+		catalog.RequestedVersions.Should().Contain("8.3.4",
+			because: "the probed platform version must feed the catalog load once the resolver survives the probe");
+	}
+
+	[Test]
 	[Description("--pretty switches stdout to a human-readable block instead of JSON.")]
 	public async Task Emits_Pretty_Text_When_Pretty_Flag_Set() {
 		using CapturedLogger logger = new();
@@ -895,6 +919,49 @@ public sealed class ComponentInfoCommandTests {
 			public Task<PlatformVersionResolution> ResolveAsync(CancellationToken cancellationToken = default) =>
 				Task.FromResult(result);
 			public void Dispose() { }
+		}
+	}
+
+	/// <summary>
+	/// ENG-96840 regression factory: hands out an <see cref="AsyncDisposalTrackingResolver"/> whose
+	/// <see cref="AsyncDisposalTrackingResolver.ResolveAsync"/> completes ASYNCHRONOUSLY, mirroring the
+	/// real resolver whose probe runs on a <c>Task.Run</c> thread. If the caller returns the resolve Task
+	/// unawaited from inside its <c>using</c>, <see cref="AsyncDisposalTrackingResolver.Dispose"/> runs
+	/// before the continuation and the last resolver's <c>DisposedBeforeResolveCompleted</c> latches
+	/// <c>true</c> — the premature-disposal race that made the real owned CreatioClient throw
+	/// ObjectDisposedException.
+	/// </summary>
+	private sealed class AsyncDisposalTrackingResolverFactory(PlatformVersionResolution result)
+		: IPlatformVersionResolverFactory {
+		public AsyncDisposalTrackingResolver? LastResolver { get; private set; }
+
+		public IPlatformVersionResolver Create(EnvironmentSettings settings) {
+			AsyncDisposalTrackingResolver resolver = new(result);
+			LastResolver = resolver;
+			return resolver;
+		}
+
+		public sealed class AsyncDisposalTrackingResolver(PlatformVersionResolution result)
+			: IOwnedPlatformVersionResolver {
+			private volatile bool _resolveCompleted;
+
+			public bool DisposedBeforeResolveCompleted { get; private set; }
+
+			public async Task<PlatformVersionResolution> ResolveAsync(CancellationToken cancellationToken = default) {
+				// Task.Yield forces an asynchronous return: a buggy caller that returns this Task unawaited
+				// from inside its using disposes us at this point, before the line below runs.
+				await Task.Yield();
+				_resolveCompleted = true;
+				return result;
+			}
+
+			// Deterministic, timing-free: being disposed while the resolve has not completed means the
+			// caller returned the resolve Task unawaited from inside its using — the ENG-96840 race.
+			public void Dispose() {
+				if (!_resolveCompleted) {
+					DisposedBeforeResolveCompleted = true;
+				}
+			}
 		}
 	}
 }

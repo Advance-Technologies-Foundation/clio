@@ -186,22 +186,26 @@ public sealed class RequestInfoTool(
 	/// resolution order as <see cref="ComponentInfoTool"/>: explicit <c>version</c> →
 	/// environment probe → <c>latest</c> with the honest <c>latest-fallback</c> marker.
 	/// </summary>
-	private Task<PlatformVersionResolution> ResolveVersionAsync(
+	private async Task<PlatformVersionResolution> ResolveVersionAsync(
 		RequestInfoArgs args,
 		bool hasExplicitVersion,
 		bool hasEnvironment,
 		CancellationToken cancellationToken) {
 		if (hasExplicitVersion) {
-			return Task.FromResult(new PlatformVersionResolution(args.Version!.Trim(), VersionResolutionSource.Environment));
+			return new PlatformVersionResolution(args.Version!.Trim(), VersionResolutionSource.Environment);
 		}
 
 		if (hasEnvironment) {
 			EnvironmentSettings settings = ResolveEnvironmentSettings(args);
+			// Await the probe INSIDE the using scope. Returning the Task unawaited let the using
+			// dispose the resolver — and with it the owned IApplicationClient — while the probe was
+			// still running on its Task.Run thread, so the probe hit an already-disposed CreatioClient
+			// and every call degraded to probe-error (ENG-96840).
 			using IOwnedPlatformVersionResolver resolver = resolverFactory.CreateOwned(settings);
-			return resolver.ResolveAsync(cancellationToken);
+			return await resolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
 		}
 
-		return Task.FromResult(ComponentInfoResolution.CreateNoActiveEnvironmentFallback());
+		return ComponentInfoResolution.CreateNoActiveEnvironmentFallback();
 	}
 
 	/// <summary>
