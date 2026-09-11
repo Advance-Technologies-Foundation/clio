@@ -110,8 +110,14 @@ public sealed class PageValidateTool(
 		if (!IsAbsoluteLocalPath(args.BodyFile)) {
 			return (string.Empty, InvalidBodySource(NonLocalBodyFileMessage));
 		}
+		return await ReadBodyFileAsync(args.BodyFile, cancellationToken).ConfigureAwait(false);
+	}
+
+	private async Task<(string Body, PageValidateResponse? Failure)> ReadBodyFileAsync(
+		string bodyFilePath,
+		CancellationToken cancellationToken) {
 		try {
-			string bodyFile = fileSystem.Path.GetFullPath(args.BodyFile);
+			string bodyFile = fileSystem.Path.GetFullPath(bodyFilePath);
 			FileAttributes bodyFileAttributes = fileSystem.File.GetAttributes(bodyFile);
 			if ((bodyFileAttributes & (FileAttributes.Directory | FileAttributes.Device)) != 0) {
 				return (string.Empty, InvalidBodySource(UnreadableBodyFileMessage));
