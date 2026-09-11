@@ -477,7 +477,12 @@ public sealed class ClioRunExecutor(
 	// Matched case-insensitively.
 	private static readonly System.Collections.Generic.HashSet<string> FailureFieldNames =
 		new(StringComparer.OrdinalIgnoreCase) {
-			"error", "message", "detail", "details", "errorInfo", "exception", "stackTrace", "reason"
+			"error", "message", "detail", "details", "errorInfo", "exception", "stackTrace", "reason",
+			// "cause" carries the actionable half of every SysSettingFailure-shaped result (the sys-settings
+			// tools and get-schema-name-prefix), so it is failure-bearing in exactly the sense this set is
+			// about. Registering it is the MCP maintenance policy: an agent-visible failure field the
+			// backstop does not know about is contract drift, whatever the field happens to hold today.
+			"cause"
 		};
 
 	private static bool IsErrorFieldName(string key) => FailureFieldNames.Contains(key);
