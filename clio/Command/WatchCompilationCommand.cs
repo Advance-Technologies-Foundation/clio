@@ -40,7 +40,10 @@ public class WatchCompilationCommand : RemoteCommand<WatchCompilationOptions> {
 	private const int ExitGaveUpWaiting = 2;
 	private const int ExitStartupError = 3;
 
-	// Cadence between poll rounds while the channel is healthy; mirrors CompilationHistoryPoller.Poll's own cadence.
+	// Cadence between poll rounds while the channel is healthy; the same one-second cadence
+	// CompilationPollingOptions.Default gives CompilationHistoryPoller.Poll. This command does NOT go
+	// through Poll - it runs its own loop over PollOnce with IPollRetryPolicy's exponential backoff and
+	// its own --give-up-after-seconds deadline, so the give-up window of issue #1376 does not apply here.
 	private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
 
 	#endregion

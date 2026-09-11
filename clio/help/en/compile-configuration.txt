@@ -97,6 +97,17 @@ NOTES
     - Compilation errors include detailed information: error code, file name,
       line number, and error description
     - The command distinguishes between warnings (yellow) and errors (red)
+    - Progress monitoring tolerates an environment that briefly stops answering:
+      while the application tier is unreachable each failed poll round is reported
+      as a warning and the next round is delayed 1 s, 2 s, then 5 s. Only after
+      90 seconds in which no round succeeded does the command stop monitoring and
+      report "Compilation progress could not be monitored". That is a warning, not
+      a failure - the server keeps compiling and the exit code still comes from the
+      compilation itself.
+    - The 90 seconds are measured from the moment the FIRST failed round of the
+      current run is detected, and the check happens when a round fails - so with
+      the last 5 s backoff step the give-up is observed at about 93 seconds, and a
+      failing read that takes time to time out adds its own duration on top.
 
 RETURN VALUES
     0       Compilation completed successfully

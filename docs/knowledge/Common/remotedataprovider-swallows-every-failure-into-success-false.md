@@ -73,9 +73,10 @@ Three consequences worth knowing before writing code against this:
   `new Thread(...)` from `PackageBuilder.CompileWithPolling`, and an unhandled exception on a dedicated
   thread terminates the whole clio process — so before the tolerance was added, one timed-out OData read
   would have killed clio mid-compile and skipped every cleanup step. `Poll` now retries and gives up
-  only after a run of consecutive failures; `PackageBuilder` additionally captures the fault inside the
-  thread lambda and observes it on the main thread. Any new background consumer of `IDataProvider` needs
-  the same two guards.
+  only once rounds have been failing for longer than `CompilationPollingOptions.GiveUpWindow` (90 s,
+  issue #1376 — a duration, not a round count, because the 1/2/5 s backoff makes a count meaningless);
+  `PackageBuilder` additionally captures the fault inside the thread lambda and observes it on the main
+  thread. Any new background consumer of `IDataProvider` needs the same two guards.
 
 **What breaks if you ignore it** — a command that reads through `IDataProvider` on a bypassed or raw
 provider reports **success with an empty result** on expired or rejected credentials: `get-syssetting`

@@ -172,10 +172,14 @@
 				Exception pollFault = Volatile.Read(ref pollFaultBox[0]);
 				if (pollFault is not null) {
 					StopMonitoring(cts, pollThread, httpTask);
-					//The carrier is CHAINED, not interpolated. Interpolating its message made
+					//The fault is CHAINED, not interpolated. Interpolating its message made
 					//DescribeOuterContext treat this wrapper's own text as redundant (outer.Message contains
 					//the carrier's) and drop it, so the line lost every mention of the compile - the wrappers'
-					//context was destroyed by the very interpolation meant to carry it.
+					//context was destroyed by the very interpolation meant to carry it. Chained, EVERY link
+					//prints: this wrapper names the operation and the poller's own wrapper below it carries
+					//the give-up window and the failed-round count. That middle link survives only because
+					//DescribeChainAboveCarrier walks the whole chain - before issue #1376 the renderer kept
+					//just the outermost message and this three-link shape lost its diagnosis silently.
 					throw new InvalidOperationException(
 						"Package compilation could not be monitored", pollFault);
 				}
