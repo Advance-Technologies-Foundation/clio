@@ -322,7 +322,7 @@ internal class Program {
 
 	internal static IReadOnlyList<Type> GetCommandOptionTypes() => CommandOption;
 
-	private static string[] NormalizeCommandLineArgs(string[] args) {
+	internal static string[] NormalizeCommandLineArgs(string[] args) {
 		string[] result = args;
 		if (args.Length >= 3 &&
 			string.Equals(args[0], "create-data-binding", StringComparison.OrdinalIgnoreCase)) {
@@ -336,8 +336,51 @@ internal class Program {
 			result = normalizedArgs;
 		}
 
+		result = NormalizeEntityColumnArgs(result);
 		result = NormalizeGetSysSettingArgs(result);
 		return NormalizeJsonFlagArgs(result);
+	}
+
+	// CommandLineSDK rejects repeated sequence option names too. Gather complete --column
+	// groups before parsing, retaining payload tokens verbatim and leaving malformed groups
+	// to the parser so a missing value cannot silently create an incomplete schema.
+	private static string[] NormalizeEntityColumnArgs(string[] args) {
+		if (args.Length < 2 || args[0] != "create-entity-schema") {
+			return args;
+		}
+		List<string> output = [];
+		List<string> columns = [];
+		int insertionIndex = -1;
+		int groups = 0;
+		for (int index = 0; index < args.Length; index++) {
+			string token = args[index];
+			if (token == "--") {
+				output.AddRange(args.Skip(index));
+				break;
+			}
+			if (token != "--column" && !token.StartsWith("--column=", StringComparison.Ordinal)) {
+				output.Add(token);
+				continue;
+			}
+			insertionIndex = insertionIndex < 0 ? output.Count : insertionIndex;
+			groups++;
+			int previousCount = columns.Count;
+			if (token.StartsWith("--column=", StringComparison.Ordinal)) {
+				columns.Add(token["--column=".Length..]);
+			}
+			while (index + 1 < args.Length && !args[index + 1].StartsWith("-", StringComparison.Ordinal)) {
+				columns.Add(args[++index]);
+			}
+			if (columns.Count == previousCount || columns.Skip(previousCount).Any(string.IsNullOrWhiteSpace)) {
+				return args;
+			}
+		}
+		if (groups < 2) {
+			return args;
+		}
+		output.Insert(insertionIndex, "--column");
+		output.InsertRange(insertionIndex + 1, columns);
+		return output.ToArray();
 	}
 
 	// The `get-syssetting` alias shares the `set-syssetting` verb and its options, and read mode
