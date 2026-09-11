@@ -48,16 +48,16 @@ public class BundledDashboardsMigratorPackageTests {
 	/// produced out of the <c>crt-dashboards-migrator-app</c> repository at <see cref="ExpectedProducingCommit"/>.
 	/// </summary>
 	private const string ExpectedArchiveSha256 =
-		"38BC11C3AF3899E05D1BA91857DB6B709768A87945D5A747F446E062D14250A0";
+		"5B5B66A966F47F7FDA4AF249913CD007D09D6297AB397DC18AB4AC063976D6A1";
 
 	/// <summary>Version in the shipped descriptor; a test-side pin, no runtime consumer (see the ADR).</summary>
-	private const string ExpectedArchiveVersion = "1.1.4.2";
+	private const string ExpectedArchiveVersion = "1.1.4.3";
 
 	/// <summary>HEAD of the package repository when the bytes were cut, before the restamp.</summary>
-	private const string ExpectedProducingCommit = "563fd9e46d6bebe905535bc429d44d8bc121e749";
+	private const string ExpectedProducingCommit = "4abb032219f27db63b2f3ed9f8b8270763601475";
 
 	/// <summary>The descriptor stamp that makes the version bump take effect on the target (fact 2).</summary>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789112495000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789116389000)/";
 
 	#endregion
 
