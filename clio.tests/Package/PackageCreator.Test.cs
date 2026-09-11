@@ -34,14 +34,25 @@ internal class PackageCreatorTest : BaseClioModuleTests
 
 	private IWorkspaceSolutionCreator _solutionCreatorMock = Substitute.For<IWorkspaceSolutionCreator>();
 	private readonly ISchemaBuilder _schemaBuilderMock = Substitute.For<ISchemaBuilder>();
+	// Recreated per test rather than held readonly: ClearReceivedCalls resets recorded calls but not
+	// configured returns, so a stub arranged by one test would otherwise outlive it.
+	private ISchemaNamePrefixResolver _schemaNamePrefixResolverMock;
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		_solutionCreatorMock.ClearReceivedCalls();
 		_schemaBuilderMock.ClearReceivedCalls();
+		_schemaNamePrefixResolverMock = Substitute.For<ISchemaNamePrefixResolver>();
+		_schemaNamePrefixResolverMock.Resolve(Arg.Any<string>()).Returns(string.Empty);
 		base.AdditionalRegistrations(containerBuilder);
 		containerBuilder.AddSingleton(_solutionCreatorMock);
 		containerBuilder.AddSingleton(_schemaBuilderMock);
+		containerBuilder.AddSingleton(_schemaNamePrefixResolverMock);
 	}
+
+	private string CapturedSchemaName() =>
+		_schemaBuilderMock.ReceivedCalls().Should().ContainSingle(
+			because: "an application package needs exactly one generated localization owner")
+			.Which.GetArguments()[1] as string;
 	
 	private PackageCreator InitCreator(){
 		PackageCreator creator = Container.GetRequiredService<IPackageCreator>()
@@ -94,6 +105,184 @@ internal class PackageCreatorTest : BaseClioModuleTests
 		options.LocalizableStrings["LocalizableStrings.PackageLevelExample.Value"].Should()
 			.Be("Package-level localizable value",
 				because: "the new application package needs one working localization primitive");
+	}
+
+	[Test]
+	[Description("Prefixes the generated localization schema with the prefix the resolver reports.")]
+	public void Create_ShouldPrefixLocalizationSchema_WhenResolverReportsPrefix() {
+		// Arrange
+		_schemaNamePrefixResolverMock.Resolve(Arg.Any<string>()).Returns("Usr");
+		PackageCreator creator = InitCreator();
+
+		// Act
+		creator.Create(PackagesPath, PackageNameOne, true);
+
+		// Assert
+		CapturedSchemaName().Should().Be($"Usr{PackageNameOne}LocalizableStrings",
+			because: "Creatio rejects a custom schema whose code does not start with the configured prefix");
+	}
+
+	[Test]
+	[Description("Keeps a single prefix when the package name already starts with the resolved prefix.")]
+	public void Create_ShouldNotDoublePrefix_WhenPackageNameAlreadyStartsWithPrefix() {
+		// Arrange
+		_schemaNamePrefixResolverMock.Resolve(Arg.Any<string>()).Returns("Usr");
+		PackageCreator creator = InitCreator();
+
+		// Act
+		creator.Create(PackagesPath, "UsrAlreadyPrefixed", true);
+
+		// Assert
+		CapturedSchemaName().Should().Be("UsrAlreadyPrefixedLocalizableStrings",
+			because: "a package named after the prefix must not produce a doubled schema code");
+	}
+
+	[TestCase("ClioMcp_", "Alpha", "ClioMcp_AlphaLocalizableStrings")]
+	[TestCase("ClioMcp_", "ClioMcp_Alpha", "ClioMcp_AlphaLocalizableStrings")]
+	[TestCase("Usr", "Usr", "UsrLocalizableStrings")]
+	[TestCase("_", "Alpha", "_AlphaLocalizableStrings")]
+	[Description("Applies an underscore-carrying prefix once, whether or not the package name already has it.")]
+	public void Create_ShouldApplyPrefixOnce_WhenPrefixEndsWithUnderscore(string prefix, string packageName,
+		string expectedSchemaName) {
+		// Arrange
+		_schemaNamePrefixResolverMock.Resolve(Arg.Any<string>()).Returns(prefix);
+		PackageCreator creator = InitCreator();
+
+		// Act
+		creator.Create(PackagesPath, packageName, true);
+
+		// Assert
+		CapturedSchemaName().Should().Be(expectedSchemaName,
+			because: "a separator-carrying prefix must survive the already-prefixed check unchanged");
+	}
+
+	[Test]
+	[Description("Reports an existing package directory from a local check, without resolving a prefix.")]
+	public void Create_ShouldNotResolvePrefix_WhenPackageDirectoryAlreadyExists() {
+		// Arrange
+		PackageCreator creator = InitCreator();
+		creator.Create(PackagesPath, PackageNameOne, true);
+		_schemaNamePrefixResolverMock.ClearReceivedCalls();
+
+		// Act
+		Action act = () => creator.Create(PackagesPath, PackageNameOne, true);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+			because: "an existing package directory is still a caller-correctable failure");
+		_schemaNamePrefixResolverMock.ReceivedCalls().Should().BeEmpty(
+			because: "the caller must not pay for a Creatio request to be told the directory is taken");
+	}
+
+	[Test]
+	[Description("Leaves the generated schema unprefixed when the resolver reports no prefix.")]
+	public void Create_ShouldLeaveSchemaUnprefixed_WhenResolverReportsNoPrefix() {
+		// Arrange
+		_schemaNamePrefixResolverMock.Resolve(Arg.Any<string>()).Returns(string.Empty);
+		PackageCreator creator = InitCreator();
+
+		// Act
+		creator.Create(PackagesPath, PackageNameOne, true);
+
+		// Assert
+		CapturedSchemaName().Should().Be($"{PackageNameOne}LocalizableStrings",
+			because: "an environment that configures no prefix must keep the plain schema name");
+	}
+
+	[Test]
+	[Description("Passes the caller-supplied prefix to the resolver so it can win over the environment.")]
+	public void Create_ShouldPassExplicitPrefixToResolver_WhenCallerSuppliesOne() {
+		// Arrange
+		_schemaNamePrefixResolverMock.Resolve("Ktl").Returns("Ktl");
+		PackageCreator creator = InitCreator();
+
+		// Act
+		creator.Create(PackagesPath, PackageNameOne, true, "Ktl");
+
+		// Assert
+		_schemaNamePrefixResolverMock.Received(1).Resolve("Ktl");
+		CapturedSchemaName().Should().Be($"Ktl{PackageNameOne}LocalizableStrings",
+			because: "an explicitly requested prefix must reach the generated schema name");
+	}
+
+	[Test]
+	[Description("Does not resolve a schema-name prefix for a package that is not an application package.")]
+	public void Create_ShouldNotResolvePrefix_WhenAsAppIsNotTrue() {
+		// Arrange
+		PackageCreator creator = InitCreator();
+
+		// Act
+		creator.Create(PackagesPath, PackageNameOne, false);
+
+		// Assert
+		_schemaNamePrefixResolverMock.ReceivedCalls().Should().BeEmpty(
+			because: "a package that generates no schema must not pay for a Creatio request");
+		_schemaBuilderMock.ReceivedCalls().Should().BeEmpty(
+			because: "no schema is generated for a package that is not an application package");
+	}
+
+	[Test]
+	[Description("Resolves the schema-name prefix before writing anything, so an interrupted read leaves no package directory.")]
+	public void Create_ShouldResolvePrefixBeforeWritingFiles_WhenAsAppIsTrue() {
+		// Arrange
+		_schemaNamePrefixResolverMock.Resolve(Arg.Any<string>())
+			.Returns(_ => throw new InvalidOperationException("environment read interrupted"));
+		PackageCreator creator = InitCreator();
+
+		// Act
+		Action act = () => creator.Create(PackagesPath, PackageNameOne, true);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+			because: "the arranged resolver failure must surface rather than be swallowed")
+			.WithMessage("environment read interrupted",
+				because: "EnsurePackageDirectoryIsFree throws the same exception type, so an untyped "
+					+ "assertion would also pass for a run that never reached the resolver at all");
+		_schemaNamePrefixResolverMock.Received(1).Resolve(Arg.Any<string>());
+		_schemaBuilderMock.ReceivedCalls().Should().BeEmpty(
+			because: "the read runs before any generation, so a failed read must reach no generator");
+		FileSystem.Directory.Exists(Path.Combine(PackagesPath, PackageNameOne)).Should().BeFalse(
+			because: "a half-written package directory would make the next attempt fail as already existing");
+	}
+
+	[Test]
+	[Description("Rejects a generated schema name longer than Creatio stores, before any file is written.")]
+	public void Create_ShouldThrowBeforeWriting_WhenGeneratedSchemaNameExceedsThePlatformLimit() {
+		// Arrange
+		string oversizedPrefix = new('A', PackageCreator.MaxSchemaNameLength);
+		_schemaNamePrefixResolverMock.Resolve(Arg.Any<string>()).Returns(oversizedPrefix);
+		PackageCreator creator = InitCreator();
+
+		// Act
+		Action act = () => creator.Create(PackagesPath, PackageNameOne, true, oversizedPrefix);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(
+			because: "a schema code Creatio cannot store is a caller-correctable input, and failing "
+				+ "mid-write used to leave a package directory every later attempt refused")
+			.WithMessage($"*{PackageCreator.MaxSchemaNameLength}*",
+				because: "the error must name the limit the caller has to get under");
+		_schemaBuilderMock.ReceivedCalls().Should().BeEmpty(
+			because: "the length is checked before the schema is generated, not while generating it");
+		FileSystem.Directory.Exists(Path.Combine(PackagesPath, PackageNameOne)).Should().BeFalse(
+			because: "nothing may be written for an input the command is going to reject");
+	}
+
+	[Test]
+	[Description("Accepts a generated schema name that lands exactly on the platform limit.")]
+	public void Create_ShouldSucceed_WhenGeneratedSchemaNameIsExactlyThePlatformLimit() {
+		// Arrange
+		string suffixedName = $"{PackageNameOne}LocalizableStrings";
+		string prefix = new('A', PackageCreator.MaxSchemaNameLength - suffixedName.Length);
+		_schemaNamePrefixResolverMock.Resolve(Arg.Any<string>()).Returns(prefix);
+		PackageCreator creator = InitCreator();
+
+		// Act
+		creator.Create(PackagesPath, PackageNameOne, true, prefix);
+
+		// Assert
+		CapturedSchemaName().Should().HaveLength(PackageCreator.MaxSchemaNameLength,
+			because: "the limit is the longest ACCEPTED name, not the first rejected one");
 	}
 
 	[Test]

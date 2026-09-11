@@ -13,7 +13,6 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool surface for the <c>resolve-oauth-system-user</c> command.
 /// </summary>
 [McpServerToolType]
-[FeatureToggle("deploy-identity")]
 public sealed class ResolveOAuthSystemUserTool(
 	ResolveOAuthSystemUserCommand command,
 	ILogger logger,
