@@ -1,0 +1,32 @@
+COMMAND TYPE
+    Administration commands
+
+NAME
+    manage-role
+
+DESCRIPTION
+    Manage Creatio role administration. Read the administration guidance before changing accounts, roles or permissions.
+
+OPTIONS
+    --action  list | create | update | delete | ensure-manager | add-member | remove-member | memberships | members | functional-roles | add-functional | remove-functional Required.
+    --id  Role GUID, new for create.
+    --name  Exact name filter or new name.
+    --type  0 organization, 1 division, 2 manager (list only), 3 team, 6 functional.
+    --parent-id  Parent role GUID; required for create/ensure-manager.
+    --user-id  User GUID for memberships.
+    --functional-id  Functional role GUID to associate.
+    --effective  Read effective memberships or members; default is direct assignments.
+    --offset  Read offset.
+    --limit  Page size from 1 to 200. Default: 100.
+    --confirm  Apply a mutation.
+    -e, --environment  Registered target environment.
+    -u, --uri; -l, --login; -p, --password  Caller connection overrides.
+
+EXAMPLE
+    clio manage-role -e <environment> --action list
+
+NOTES
+    remove-functional requires ClioGate 2.0.0.50 or newer in both CLI and MCP.
+    members uses --id for the role; memberships uses --user-id for the user.
+    Inspect after failure before retrying. Writes may have partially completed.
+    Full behavior and per-action requirements: clio/docs/commands/manage-role.md

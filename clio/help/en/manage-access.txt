@@ -1,0 +1,33 @@
+COMMAND TYPE
+    Administration commands
+
+NAME
+    manage-access
+
+DESCRIPTION
+    Manage Creatio access administration. Read the administration guidance before changing accounts, roles or permissions.
+
+OPTIONS
+    --action  Operation: ip-list, ip-create, ip-update, ip-delete, delegations, delegate, revoke-delegation, operations, operation-grants, grant-operation, deny-operation, revoke-operation, operation-position. Required.
+    --id  IP rule or operation grant record GUID.
+    --unit-id  Target user or role GUID; grantee for delegation and operation permissions.
+    --grantor-id  User or role whose rights are delegated to the target user.
+    --operation-id  System operation GUID.
+    --code  Exact operation code filter.
+    --begin-ip  Beginning canonical IPv4 address.
+    --end-ip  Ending canonical IPv4 address.
+    --position  Explicit zero-based priority; required for operation-position.
+    --offset  Read offset.
+    --limit  Read page size from 1 to 200. Default: 100.
+    --confirm  Apply a mutation.
+    -e, --environment  Registered target environment.
+    -u, --uri; -l, --login; -p, --password  Caller connection overrides.
+
+EXAMPLE
+    clio manage-access -e <environment> --action ip-list --unit-id <guid>
+
+NOTES
+    operation-position requires Creatio 10.1.585.0 and ClioGate 2.0.0.52 or newer in CLI and MCP.
+    IP rules affect login only when Creatio IP restriction enforcement is enabled.
+    Inspect after failure before retrying. Writes may have partially completed.
+    Full behavior and per-action requirements: clio/docs/commands/manage-access.md
