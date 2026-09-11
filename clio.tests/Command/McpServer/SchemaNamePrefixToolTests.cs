@@ -17,6 +17,17 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class SchemaNamePrefixToolTests {
 
 	/// <summary>
+	/// The production classifier under a substituted logger. Issue #1379 moved these operations off
+	/// <c>SysSettingsCommand</c>'s statics and behind <see cref="ISysSettingFailureClassifier"/>; what is
+	/// asserted below is unchanged, only how the tests reach it is.
+	/// </summary>
+	/// <param name="logger">The sink to assert on, or <see langword="null"/> for an inert substitute.</param>
+	/// <returns>A classifier writing to <paramref name="logger"/>.</returns>
+	private static ISysSettingFailureClassifier BuildClassifier(ILogger logger = null) =>
+		new SysSettingFailureClassifier(logger ?? Substitute.For<ILogger>(),
+			new OperationCorrelationIdProvider());
+
+	/// <summary>
 	/// Builds a <see cref="SysSettingsManager"/> whose only meaningful collaborator is the data provider.
 	/// The read path exercised here (<c>GetSysSettingValueByCode</c>) resolves the value through the
 	/// provider, so the remaining constructor dependencies are inert substitutes.
@@ -70,7 +81,7 @@ public sealed class SchemaNamePrefixToolTests {
 		SysSettingsManager manager = BuildSysSettingsManager(dataProvider);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>()).Returns(manager);
-		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SchemaNamePrefixTool tool = new(commandResolver, BuildClassifier());
 
 		// Act
 		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("sandbox"));
@@ -94,7 +105,7 @@ public sealed class SchemaNamePrefixToolTests {
 		SysSettingsManager manager = BuildSysSettingsManager(dataProvider);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>()).Returns(manager);
-		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SchemaNamePrefixTool tool = new(commandResolver, BuildClassifier());
 
 		// Act
 		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("sandbox"));
@@ -116,7 +127,7 @@ public sealed class SchemaNamePrefixToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>())
 			.Returns(_ => throw new HttpRequestException("Connection refused."));
-		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SchemaNamePrefixTool tool = new(commandResolver, BuildClassifier());
 
 		// Act
 		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("offline-env"));
@@ -138,7 +149,7 @@ public sealed class SchemaNamePrefixToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>())
 			.Returns(_ => throw new InvalidOperationException("Environment 'unknown' is not registered."));
-		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SchemaNamePrefixTool tool = new(commandResolver, BuildClassifier());
 
 		// Act
 		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("unknown"));
@@ -162,7 +173,7 @@ public sealed class SchemaNamePrefixToolTests {
 		SysSettingsManager manager = BuildSysSettingsManager(dataProvider);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>()).Returns(manager);
-		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SchemaNamePrefixTool tool = new(commandResolver, BuildClassifier());
 
 		// Act
 		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("sandbox"));
@@ -181,7 +192,7 @@ public sealed class SchemaNamePrefixToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>())
 			.Returns(_ => throw new HttpRequestException("Connection refused."));
-		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SchemaNamePrefixTool tool = new(commandResolver, BuildClassifier());
 
 		// Act
 		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("offline-env"));
@@ -210,8 +221,7 @@ public sealed class SchemaNamePrefixToolTests {
 				"The SSL connection could not be established",
 				new System.Security.Authentication.AuthenticationException(
 					"The remote certificate is invalid according to the validation procedure.")));
-		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider(),
-			Substitute.For<ILogger>());
+		SchemaNamePrefixTool tool = new(commandResolver, BuildClassifier());
 
 		// Act
 		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("tls-env"));
@@ -231,8 +241,7 @@ public sealed class SchemaNamePrefixToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>())
 			.Returns(_ => throw new AggregateException(new HttpRequestException("Connection refused.")));
-		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider(),
-			Substitute.For<ILogger>());
+		SchemaNamePrefixTool tool = new(commandResolver, BuildClassifier());
 
 		// Act
 		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("offline-env"));
@@ -252,8 +261,7 @@ public sealed class SchemaNamePrefixToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>())
 			.Returns(_ => throw new EnvironmentResolutionException("Environment 'ghost' is not registered."));
-		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider(),
-			Substitute.For<ILogger>());
+		SchemaNamePrefixTool tool = new(commandResolver, BuildClassifier());
 
 		// Act
 		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("ghost"));

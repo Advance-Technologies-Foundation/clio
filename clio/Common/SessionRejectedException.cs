@@ -9,7 +9,7 @@ namespace Clio.Common;
 /// </summary>
 /// <remarks>
 /// Derives from <see cref="AuthenticationException"/> so every existing handler and test keeps working -
-/// <c>SysSettingsCommand.CategorizeFailure</c>'s authentication arms, <c>SchemaNamePrefixTool</c>'s
+/// <c>SysSettingFailureClassifier.Categorize</c>'s authentication arms, <c>SchemaNamePrefixTool</c>'s
 /// authentication catch, and the classifier's own <c>AuthenticationException</c> shortcut all match a
 /// subclass. The type exists because <see cref="AuthenticationException"/> has nowhere to put
 /// <see cref="ServerDetail"/>, and issue #1333 requires that text to leave the message.

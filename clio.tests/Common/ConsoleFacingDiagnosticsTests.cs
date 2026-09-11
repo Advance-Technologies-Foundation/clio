@@ -33,6 +33,34 @@ namespace Clio.Tests.Common;
 [Property("Module", "Common")]
 public sealed class ConsoleFacingDiagnosticsTests {
 
+	/// <summary>
+	/// Builds the command and its classifier over ONE logger. Two substitutes would make any future
+	/// assertion on a log line pass vacuously - the line would be written to the instance the test never
+	/// looks at.
+	/// </summary>
+	/// <param name="manager">The sys-settings manager the command reads and writes through.</param>
+	/// <param name="fileSystem">The file system, or <see langword="null"/> for an inert substitute.</param>
+	/// <param name="logger">The shared sink, or <see langword="null"/> for an inert substitute.</param>
+	/// <returns>A command whose classifier writes to the same logger it does.</returns>
+	private static SysSettingsCommand BuildCommand(ISysSettingsManager manager, IFileSystem fileSystem = null,
+		ILogger logger = null) {
+		ILogger sink = logger ?? Substitute.For<ILogger>();
+		return new SysSettingsCommand(manager, sink, fileSystem ?? Substitute.For<IFileSystem>(),
+			new OperationCorrelationIdProvider(),
+			new SysSettingFailureClassifier(sink, new OperationCorrelationIdProvider()));
+	}
+
+	/// <summary>
+	/// The production classifier under a substituted logger. Issue #1379 moved these operations off
+	/// <c>SysSettingsCommand</c>'s statics and behind <see cref="ISysSettingFailureClassifier"/>; what is
+	/// asserted below is unchanged, only how the tests reach it is.
+	/// </summary>
+	/// <param name="logger">The sink to assert on, or <see langword="null"/> for an inert substitute.</param>
+	/// <returns>A classifier writing to <paramref name="logger"/>.</returns>
+	private static SysSettingFailureClassifier BuildClassifier(ILogger logger = null) =>
+		new SysSettingFailureClassifier(logger ?? Substitute.For<ILogger>(),
+			new OperationCorrelationIdProvider());
+
 	private const string FenceMarker = "untrusted-source-text";
 
 	private const string PlatformValidationProse = "Column 'Name' is required.";
@@ -140,8 +168,9 @@ public sealed class ConsoleFacingDiagnosticsTests {
 				.ComposeMessage("reading sys-setting"));
 
 		// Act
-		string line = SysSettingsCommand.DescribeFailureForLog(
-			SysSettingsCommand.CategorizeFailure(exception, "reading sys-setting", "abc123"));
+		SysSettingFailureClassifier classifier = BuildClassifier();
+		string line = classifier.DescribeFailureForLog(
+			classifier.Categorize(exception, "reading sys-setting", "abc123"));
 
 		// Assert
 		line.Split($"[{FenceMarker} begin]").Length.Should().Be(2,
@@ -213,7 +242,7 @@ public sealed class ConsoleFacingDiagnosticsTests {
 	}
 
 	[Test]
-	[Description("A proven session rejection reaches Authentication through the PUBLIC read path, not only through CategorizeFailure: the fix is positional, so nothing but an end-to-end assertion pins it")]
+	[Description("A proven session rejection reaches Authentication through the PUBLIC read path, not only through ISysSettingFailureClassifier.Categorize: the fix is positional, so nothing but an end-to-end assertion pins it")]
 	public void TryGetSysSetting_Should_Report_Authentication_For_A_Rejected_Session() {
 		// Arrange
 		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
@@ -222,8 +251,7 @@ public sealed class ConsoleFacingDiagnosticsTests {
 				"Authentication failed while reading sys-setting 'SslCertificateThumbprint': "
 				+ "The password for the registered user has expired.",
 				"5: Your password has expired."));
-		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(),
-			Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(manager);
 
 		// Act
 		SysSettingGetResult result =

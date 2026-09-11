@@ -5,7 +5,9 @@ using System.Security.Authentication;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Clio.Command;
+using Clio.Common;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
@@ -19,6 +21,28 @@ namespace Clio.Tests.Command;
 [Category("Unit")]
 public sealed class SysSettingsErrorClassificationTests {
 
+	/// <summary>
+	/// The production classifier under a substituted logger. Issue #1379 moved these operations off
+	/// <c>SysSettingsCommand</c>'s statics and behind <see cref="ISysSettingFailureClassifier"/>; what is
+	/// asserted below is unchanged, only how the tests reach it is.
+	/// </summary>
+	/// <param name="logger">The sink to assert on, or <see langword="null"/> for an inert substitute.</param>
+	/// <returns>A classifier writing to <paramref name="logger"/>.</returns>
+	private static ISysSettingFailureClassifier BuildClassifier(ILogger logger = null) =>
+		new SysSettingFailureClassifier(logger ?? Substitute.For<ILogger>(),
+			new OperationCorrelationIdProvider());
+
+	/// <summary>
+	/// The legacy message-only shorthand these assertions are written against. It lives here rather than on
+	/// the classifier because no production caller wants a failure stripped of its cause, its recovery
+	/// action and the correlation ID - that loss is what issue #1329 was about.
+	/// </summary>
+	/// <param name="ex">The failure to classify.</param>
+	/// <param name="operationLabel">The operation, as it reads inside the legacy message.</param>
+	/// <returns>The classified failure's legacy message alone.</returns>
+	private static string CategorizeError(Exception ex, string operationLabel) =>
+		BuildClassifier().Categorize(ex, operationLabel, correlationId: null).Error;
+
 	private const string Operation = "reading sys-setting";
 	private const string AuthenticationError = "Authentication error reading sys-setting.";
 	private const string NetworkError = "Network error reading sys-setting.";
@@ -29,7 +53,7 @@ public sealed class SysSettingsErrorClassificationTests {
 	public void CategorizeError_Should_Report_Authentication_For_An_Aggregate_Wrapping_AuthenticationException() {
 		AggregateException exception = new(new AuthenticationException("credentials were rejected"));
 
-		string message = SysSettingsCommand.CategorizeError(exception, Operation);
+		string message = CategorizeError(exception, Operation);
 
 		message.Should().Be(AuthenticationError,
 			because: "switching on the outer type alone saw the wrapper and reported the generic failure");
@@ -41,7 +65,7 @@ public sealed class SysSettingsErrorClassificationTests {
 		AggregateException exception = new(
 			new HttpRequestException("request failed", null, HttpStatusCode.Unauthorized));
 
-		string message = SysSettingsCommand.CategorizeError(exception, Operation);
+		string message = CategorizeError(exception, Operation);
 
 		message.Should().Be(AuthenticationError);
 	}
@@ -52,7 +76,7 @@ public sealed class SysSettingsErrorClassificationTests {
 		AggregateException exception = new(new AggregateException(
 			new HttpRequestException("request failed", null, HttpStatusCode.Unauthorized)));
 
-		string message = SysSettingsCommand.CategorizeError(exception, Operation);
+		string message = CategorizeError(exception, Operation);
 
 		message.Should().Be(AuthenticationError);
 	}
@@ -64,7 +88,7 @@ public sealed class SysSettingsErrorClassificationTests {
 			new HttpRequestException("service unavailable", null, HttpStatusCode.ServiceUnavailable),
 			new AuthenticationException("credentials were rejected"));
 
-		string message = SysSettingsCommand.CategorizeError(exception, Operation);
+		string message = CategorizeError(exception, Operation);
 
 		message.Should().Be(AuthenticationError,
 			because: "no single inner represents a multi-fault aggregate, but a credential rejection among "
@@ -78,7 +102,7 @@ public sealed class SysSettingsErrorClassificationTests {
 			new HttpRequestException("service unavailable", null, HttpStatusCode.ServiceUnavailable),
 			new InvalidOperationException("nothing to do"));
 
-		string message = SysSettingsCommand.CategorizeError(exception, Operation);
+		string message = CategorizeError(exception, Operation);
 
 		message.Should().Be(GenericFailure);
 	}
@@ -90,7 +114,7 @@ public sealed class SysSettingsErrorClassificationTests {
 		HttpRequestException exception = new(
 			"upstream said 401 somewhere in its body", null, status);
 
-		string message = SysSettingsCommand.CategorizeError(exception, Operation);
+		string message = CategorizeError(exception, Operation);
 
 		message.Should().Be(NetworkError,
 			because: "only 401 short-circuited, so a typed 404 or 500 fell through to the text match and "
@@ -103,7 +127,7 @@ public sealed class SysSettingsErrorClassificationTests {
 		HttpRequestException exception = new(
 			"not found", new AuthenticationException("unauthorized"), HttpStatusCode.NotFound);
 
-		string message = SysSettingsCommand.CategorizeError(exception, Operation);
+		string message = CategorizeError(exception, Operation);
 
 		message.Should().Be(NetworkError);
 	}
@@ -113,7 +137,7 @@ public sealed class SysSettingsErrorClassificationTests {
 	public void CategorizeError_Should_Still_Match_Prose_When_No_Typed_Status_Is_Present() {
 		HttpRequestException exception = new("The remote server returned 401");
 
-		string message = SysSettingsCommand.CategorizeError(exception, Operation);
+		string message = CategorizeError(exception, Operation);
 
 		message.Should().Be(AuthenticationError);
 	}
@@ -128,7 +152,7 @@ public sealed class SysSettingsErrorClassificationTests {
 			exception = new AggregateException("wrapped", exception);
 		}
 
-		string message = SysSettingsCommand.CategorizeError(exception, Operation);
+		string message = CategorizeError(exception, Operation);
 
 		message.Should().NotBeNullOrEmpty(
 			because: "the walk is depth-bounded, so an arbitrarily deep chain returns an answer rather than hanging");
@@ -141,7 +165,7 @@ public sealed class SysSettingsErrorClassificationTests {
 			"The SSL connection could not be established, see inner exception.",
 			new AuthenticationException("The remote certificate is invalid according to the validation procedure."));
 
-		string message = SysSettingsCommand.CategorizeError(exception, Operation);
+		string message = CategorizeError(exception, Operation);
 
 		message.Should().Be(NetworkError,
 			because: "AuthenticationException is the framework's TLS exception as well as its credential one, and the certificate is what needs fixing");
@@ -152,7 +176,7 @@ public sealed class SysSettingsErrorClassificationTests {
 	public void CategorizeError_Should_Report_Network_For_A_Bare_Tls_AuthenticationException() {
 		AuthenticationException exception = new("The remote certificate is invalid according to the validation procedure.");
 
-		string message = SysSettingsCommand.CategorizeError(exception, Operation);
+		string message = CategorizeError(exception, Operation);
 
 		message.Should().Be(NetworkError);
 	}
@@ -166,7 +190,7 @@ public sealed class SysSettingsErrorClassificationTests {
 			WebExceptionStatus.TrustFailure,
 			response: null);
 
-		string message = SysSettingsCommand.CategorizeError(exception, Operation);
+		string message = CategorizeError(exception, Operation);
 
 		message.Should().Be(NetworkError);
 	}
@@ -176,7 +200,7 @@ public sealed class SysSettingsErrorClassificationTests {
 	public void CategorizeError_Should_Still_Report_Authentication_For_A_Credential_Rejection() {
 		AuthenticationException exception = new("Creatio rejected the supplied credentials: the password has expired.");
 
-		string message = SysSettingsCommand.CategorizeError(exception, Operation);
+		string message = CategorizeError(exception, Operation);
 
 		message.Should().Be(AuthenticationError);
 	}
@@ -187,7 +211,7 @@ public sealed class SysSettingsErrorClassificationTests {
 		HttpRequestException exception = new(
 			"Rejected while presenting the client certificate", null, HttpStatusCode.Unauthorized);
 
-		string message = SysSettingsCommand.CategorizeError(exception, Operation);
+		string message = CategorizeError(exception, Operation);
 
 		message.Should().Be(AuthenticationError);
 	}
@@ -197,7 +221,7 @@ public sealed class SysSettingsErrorClassificationTests {
 	public void CategorizeError_Should_Report_A_NonJson_Response_For_A_JsonException() {
 		JsonException fault = new("'<' is an invalid start of a value. Path: $ | LineNumber: 0 | BytePositionInLine: 0.");
 
-		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(fault, "creating sys-setting", "test-id");
+		SysSettingFailure failure = BuildClassifier().Categorize(fault, "creating sys-setting", "test-id");
 
 		failure.Error.Should().Be("Creatio returned a non-JSON response creating sys-setting.",
 			because: "the write path's only remaining diagnosis for a non-login-page body must say what came back, not the uncategorized \"Failed ...\"");
@@ -214,7 +238,7 @@ public sealed class SysSettingsErrorClassificationTests {
 	public void CategorizeError_Should_Report_A_NonJson_Response_For_An_Aggregate_Wrapping_A_JsonException() {
 		AggregateException fault = new(new JsonException("'<' is an invalid start of a value."));
 
-		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(fault, "updating sys-setting", "test-id");
+		SysSettingFailure failure = BuildClassifier().Categorize(fault, "updating sys-setting", "test-id");
 
 		failure.Error.Should().Contain("non-JSON response updating sys-setting",
 			because: "unwrapping a single-fault aggregate must not lose the non-JSON diagnosis");
@@ -227,7 +251,7 @@ public sealed class SysSettingsErrorClassificationTests {
 	public void CategorizeError_Should_Report_Network_For_A_Transport_Timeout() {
 		TaskCanceledException fault = new("The request was canceled due to the configured HttpClient.Timeout of 100 seconds elapsing.");
 
-		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(fault, Operation, "test-id");
+		SysSettingFailure failure = BuildClassifier().Categorize(fault, Operation, "test-id");
 
 		failure.Category.Should().Be(SysSettingErrorCategories.Network,
 			because: "an environment that stopped answering is a reachability problem, and the two classifiers must agree on that");
@@ -240,7 +264,7 @@ public sealed class SysSettingsErrorClassificationTests {
 	public void CategorizeError_Should_Report_Network_For_An_Aggregate_Wrapping_A_Transport_Timeout() {
 		AggregateException fault = new(new TaskCanceledException("HttpClient.Timeout elapsed"));
 
-		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(fault, Operation, "test-id");
+		SysSettingFailure failure = BuildClassifier().Categorize(fault, Operation, "test-id");
 
 		failure.Category.Should().Be(SysSettingErrorCategories.Network,
 			because: "the wrapper must not change the verdict the inner fault earns");
