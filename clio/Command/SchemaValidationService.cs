@@ -187,8 +187,9 @@ public static class SchemaValidationService
 		"via operation:\"insert\" in viewConfigDiff are validated for self-consistency in the SAME " +
 		"update-page call: (a) " + InsertedFieldBindingClause + "; and (b) " + InsertedFieldLabelClause +
 		". Violations are rejected at update-page validation time; the diagnostic names the offending " +
-		"field, attribute, and section. This contract does NOT apply to operation:\"merge\" — a parent " +
-		"schema or the current body may legitimately provide the attribute and resource.";
+		"field, attribute, and section. This contract does NOT apply to operation:\"merge\". " +
+		"Use merge in viewConfigDiff for parent-introduced components; for an own-body component, " +
+		"edit its complete insert and include its attribute declaration in the submitted body.";
 
 	/// <summary>
 	/// Canonical native-first custom-CSS policy (ENG-92541). Authored ONCE here and reused verbatim by
@@ -2935,8 +2936,11 @@ public static class SchemaValidationService
 			"the body does not declare attribute '" + attr + "' in viewModelConfigDiff. " +
 			"The control will have no data source. Add a viewModelConfigDiff entry such as " +
 			canonicalEntry + " so the control binds to the entity column. " +
-			"If the attribute is already provided by a parent schema or the current body, " +
-			"use operation 'merge' for the viewConfigDiff entry instead of 'insert'. " +
+			"Use operation 'merge' in viewConfigDiff only when the component itself is introduced by a parent schema. " +
+			"If this page's own body introduces the component, keep its complete 'insert' operation " +
+			"and edit its values; include the attribute declaration in the submitted viewModelConfigDiff, " +
+			"even when it is already in the stored body. Append replaces a matching insert as a whole. " +
+			"A separate 'merge' beside an own-body insert can be inert and does not patch that insert. " +
 			"Rule: " + InsertedFieldBindingClause + ".");
 	}
 

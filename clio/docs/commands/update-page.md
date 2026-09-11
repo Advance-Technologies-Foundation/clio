@@ -230,6 +230,13 @@ keys go with it. Handlers dedupe by `request`.
 `SCHEMA_CONVERTERS` and `SCHEMA_VALIDATORS` entries merge by type key, and incoming wins. The final merged web body is rejected when a custom validator reference has no matching
 `SCHEMA_VALIDATORS` declaration.
 
+For an undeclared field binding, use `merge` in `viewConfigDiff` only if the component itself comes from a parent
+schema. For an own-body field, submit its complete original `insert` with the edited values and
+the attribute declaration in `viewModelConfigDiff`, even if that declaration is already stored.
+Append replaces a matching insert as a whole, so retain its other values and placement properties.
+`viewModelConfigDiff` concatenates entries: resubmitting an unchanged declaration adds a duplicate
+merge with the same effective values. A second append cannot remove that duplicate.
+
 **Preserved is not the same as applied**, and this part is not about append at all — it is how the
 platform differ resolves any final body, so a hand-authored `--mode replace` body produces it too.
 Operations are applied in whole **groups** in a fixed order (merges, then removes/inserts/moves,

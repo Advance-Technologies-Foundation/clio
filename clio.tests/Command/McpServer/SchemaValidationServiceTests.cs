@@ -1488,6 +1488,7 @@ public sealed class SchemaValidationServiceTests
 	[Test]
 	[Description("Insert of a new field control without a matching viewModelConfigDiff attribute fails — without the attribute declaration the control has no data source at runtime.")]
 	public void ValidateInsertedFieldSelfConsistency_InsertWithoutViewModelAttribute_ReturnsInvalid() {
+		// Arrange
 		string body = BuildDiffBackedPageBody(
 			"""
 				[
@@ -1505,9 +1506,17 @@ public sealed class SchemaValidationServiceTests
 			""",
 			"[]");
 
+		// Act
 		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
 
+		// Assert
 		result.IsValid.Should().BeFalse("because the inserted control binds to an attribute that the body never declares — the field would have no data source at runtime");
+		result.Errors.Should().Contain(error =>
+			error.Contains("component itself is introduced by a parent schema") &&
+			error.Contains("keep its complete 'insert' operation") &&
+			error.Contains("include the attribute declaration") &&
+			error.Contains("Append replaces a matching insert as a whole"),
+			because: "GH-1189: the remediation must distinguish component ownership and preserve the own-body insert and binding");
 		result.Errors.Should().Contain(error =>
 			error.Contains("UsrEstimatedMinutes") &&
 			error.Contains("PDS_UsrEstimatedMinutes") &&
