@@ -40,14 +40,14 @@ public sealed class TelemetryFlushOptionsProviderTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Ships the default endpoint empty (telemetry off by default) until the production collector is live, while pinning the production endpoint to the HTTPS collector for the eventual one-line flip.")]
-	public void DefaultEndpoint_Should_Ship_Empty_Until_Production_Collector_Is_Live()
+	[Description("Ships the production collector as the built-in default endpoint, pinned to the HTTPS /v1/logs route.")]
+	public void DefaultEndpoint_Should_Ship_The_Production_Collector()
 	{
 		// Assert
-		TelemetryFlushOptionsProvider.DefaultEndpoint.Should().BeEmpty(
-			because: "the production collector is not live yet, so a merged clio must send nothing anywhere by default");
+		TelemetryFlushOptionsProvider.DefaultEndpoint.Should().Be(TelemetryFlushOptionsProvider.ProductionEndpoint,
+			because: "the binary is the only delivery vehicle that reaches existing installs on update, so the shipped default is what turns telemetry on for them");
 		TelemetryFlushOptionsProvider.ProductionEndpoint.Should().Be("https://caadt-telemetry.creatio.com/v1/logs",
-			because: "the production endpoint stays compile-pinned so flipping DefaultEndpoint to it is a one-line change");
+			because: "the hostname is declared on the production ingress because it is compiled in here, and the collector routes POST /v1/logs only, so the path is part of the endpoint");
 		TelemetryFlushOptionsProvider.ProductionEndpoint.Should().StartWith("https://",
 			because: "the production endpoint must satisfy the https-only transport guard for a remote host");
 	}
@@ -98,8 +98,8 @@ public sealed class TelemetryFlushOptionsProviderTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Disables uploading when neither the environment variables nor the settings file configure an endpoint, because the shipped default is empty until the production collector is live.")]
-	public void Resolve_Should_Disable_Sending_When_Nothing_Configured()
+	[Description("Falls back to the shipped production endpoint when neither the environment variables nor the settings file configure one.")]
+	public void Resolve_Should_Fall_Back_To_Production_Default_When_Nothing_Configured()
 	{
 		// Arrange
 		TelemetryFlushOptionsProvider provider = CreateProvider(new TelemetrySettings());
@@ -108,8 +108,10 @@ public sealed class TelemetryFlushOptionsProviderTests
 		TelemetryFlushOptions options = provider.Resolve();
 
 		// Assert
-		options.IsSendingEnabled.Should().BeFalse(
-			because: "the shipped default endpoint is empty until production is live, so an unconfigured clio sends nothing anywhere");
+		options.Endpoint.Should().Be(TelemetryFlushOptionsProvider.ProductionEndpoint,
+			because: "an install that configures nothing is the common case, and it is the one the shipped default exists to serve");
+		options.IsSendingEnabled.Should().BeTrue(
+			because: "a valid shipped endpoint enables the uploader; withholding events is the consent gate's job, not the endpoint resolver's");
 	}
 
 	[Test]
