@@ -64,7 +64,7 @@ public class SolutionCreator : ISolutionCreator{
 				projectNode.SetAttribute("Path", sp.Path);
 				solutionNode.AppendChild(projectNode);
 			}
-			if (sp.ForceBuild && projectNode != null && projectNode.SelectSingleNode("Build") == null) {
+			if (sp.ForceBuild && projectNode.SelectSingleNode("Build") == null) {
 				projectNode.AppendChild(doc.CreateElement("Build"));
 			}
 		}
