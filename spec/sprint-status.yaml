@@ -3511,6 +3511,108 @@ stories:
       - story-process-versioning-17
     blocks: []
 
+# ENG-94374 manual-testing round, 2026-09-11: 16 pass, 5 fail, 3 blocked, 1 not run.
+# Stories 19-23 answer the four defects that belong to this story. TC-06, TC-10 and TC-17 are
+# corrections to the CASES rather than to the product and are made in Jira, not here.
+
+  - id: story-process-versioning-19
+    title: "Name the package of every version-family member"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio"
+    size: S
+    status: review
+    file: spec/stories/story-process-versioning-19.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    note: >-
+      Manual-testing defect D2. versions[] carried packageUId only, so TC-03's answer rendered as a
+      raw GUID. packageName comes from a second, unfiltered SysPackage query - see
+      docs/knowledge/ProcessModel/version-family-package-names-need-a-second-query.md before
+      narrowing it.
+    depends_on:
+      - story-process-versioning-2
+    blocks:
+      - story-process-versioning-21
+
+  - id: story-process-versioning-20
+    title: "Stop the set-active contract forbidding what the platform allows"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio"
+    size: S
+    status: review
+    file: spec/stories/story-process-versioning-20.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    note: >-
+      Manual-testing defect D9. Text only - there was no guard anywhere, in clio or in the package.
+      The measurement is in
+      docs/knowledge/ProcessModel/the-family-root-can-be-made-the-actual-version.md.
+    depends_on:
+      - story-process-versioning-17
+    blocks:
+      - story-process-versioning-21
+
+  - id: story-process-versioning-21
+    title: "Correct the process-versions article where the run disagreed with it"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio-knowledge"
+    size: S
+    status: review
+    file: spec/stories/story-process-versioning-21.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    note: >-
+      Manual-testing defects D4 and D5. Needs a libraryVersion + sequence bump in bundle-source.json.
+    depends_on:
+      - story-process-versioning-18
+      - story-process-versioning-19
+      - story-process-versioning-20
+    blocks: []
+
+  - id: story-process-versioning-22
+    title: "Stop the create path warning about a schema it never created"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "crt-process-builder"
+    size: S
+    status: review
+    file: spec/stories/story-process-versioning-22.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    note: >-
+      The message manual testing reported, raised separately by QA. ProcessBuildHandler never
+      honoured the saveAttempted precondition ProcessVersionSaveHandler took in 1.6.1.1. NOT
+      restamped - the version and the archive re-cut belong to story 23.
+    depends_on: []
+    blocks:
+      - story-process-versioning-23
+
+  - id: story-process-versioning-23
+    title: "Rebundle CrtProcessBuilder once the create-path fix is on main"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio"
+    size: S
+    status: ready-for-dev
+    file: spec/stories/story-process-versioning-23.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    note: >-
+      Blocked until story 22 is on crt-process-builder's main AND tagged: the archive is cut from a
+      commit and clio's provenance pin names it, so a cut from the feature branch pins a commit no
+      permanent ref holds. Floors stay at 1.6.1.0.
+    depends_on:
+      - story-process-versioning-22
+    blocks: []
+
   - id: story-eng-91853-gateways-and-flows-1
     title: "Build exclusive/parallel gateways, conditional and default flows, and branch-aware layout"
     feature: "eng-91853-gateways-and-flows"

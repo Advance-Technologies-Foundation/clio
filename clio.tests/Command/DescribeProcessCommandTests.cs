@@ -321,6 +321,7 @@ public sealed class DescribeProcessCommandTests {
 						IsActiveVersion = true,
 						IsRoot = false,
 						PackageUId = "864d1545-a641-46c3-b866-e57bd6d39579",
+						PackageName = "Invoice",
 						Enabled = true
 					}
 				]
@@ -336,7 +337,8 @@ public sealed class DescribeProcessCommandTests {
 		result.Should().Be(0, because: "a described versioned process is still a successful describe");
 		JsonObject entry = JsonNode.Parse(written)!["versions"]!.AsArray()[0]!.AsObject();
 		entry.Should().ContainKeys(new[] {
-				"schemaUId", "name", "caption", "version", "isActiveVersion", "isRoot", "packageUId", "enabled"
+				"schemaUId", "name", "caption", "version", "isActiveVersion", "isRoot", "packageUId",
+				"packageName", "enabled"
 			}, "a family entry has to be complete enough to choose and address a version from it alone");
 		entry["isActiveVersion"]!.GetValue<bool>().Should().BeTrue(
 			because: "the entry that runs must be identifiable inside the list, not only at the graph root");
@@ -347,6 +349,9 @@ public sealed class DescribeProcessCommandTests {
 		entry["packageUId"]!.GetValue<string>().Should().Be("864d1545-a641-46c3-b866-e57bd6d39579",
 			because: "packageUId is promised in the tool description and is how a caller decides whether a "
 				+ "version sits in a package it may edit; carrying the wrong package makes that decision wrong");
+		entry["packageName"]!.GetValue<string>().Should().Be("Invoice",
+			because: "the UId alone reaches a builder as a raw GUID - manual testing on ENG-94374 read back "
+				+ "\"lives in package a00051f4-...\" - and the name is what the question was asking for");
 		entry["enabled"]!.GetValue<bool>().Should().BeTrue(
 			because: "enabled is promised too, and it is FAMILY state rather than per-version state "
 				+ "(BaseProcessSchemaManager.EnableProcess keys on the root SysSchema.Id), so it must relay what "

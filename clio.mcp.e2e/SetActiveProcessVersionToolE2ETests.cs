@@ -120,6 +120,59 @@ public sealed class SetActiveProcessVersionToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, the family ROOT can be made actual again after a version was activated - the 'go back to the original' rollback. The tool description used to state that the target must be a version and not the root; manual testing on ENG-94374 found the platform accepts the root, so a caller believing that text would conclude a rollback to the original is impossible.")]
+	[AllureTag(ToolName)]
+	[AllureName("set-active-business-process-version can make the family root actual again")]
+	public async Task SetActiveProcessVersion_Should_ActivateTheFamilyRoot_WhenRollingBackToTheOriginal() {
+		// Arrange — a family whose ACTIVE member is the version, so activating the root is a real switch
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpRootActivateE2e{Guid.NewGuid():N}";
+		await CallToolExpectingSuccessAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptor(processName)
+		});
+		await CallToolExpectingSuccessAsync(context, VersionToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["package-name"] = "Custom"
+		});
+		string versionName = $"{processName}Custom1";
+		await CallToolExpectingSuccessAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["version-name"] = versionName
+		});
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["version-name"] = processName
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("\u0022exit-code\u0022:0",
+			because: "activating the root is an ordinary activation, not a refused one");
+		callResultJson.Should().Contain(processName,
+			because: "the name comes from the read-back after the write, so the root appearing here is what "
+				+ "proves the environment reports IT as actual rather than the version");
+		JsonObject describedRoot = DescribedProcessGraph.Read(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			}));
+		describedRoot["isActiveVersion"]!.GetValue<bool>().Should().BeTrue(
+			because: "the root is the member the runtime executes once it has been made actual");
+		JsonObject describedVersion = DescribedProcessGraph.Read(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = versionName
+			}));
+		describedVersion["isActiveVersion"]!.GetValue<bool>().Should().BeFalse(
+			because: "a sibling deactivation the platform swallowed would leave two members active, and only "
+				+ "reading the other member catches it");
+	}
+
+	[Test]
 	[Description("Over the real MCP path, activating the same version twice succeeds both times and lands in the same state — the tool declares Idempotent=true, and this is what that claim means.")]
 	[AllureTag(ToolName)]
 	[AllureName("set-active-business-process-version is idempotent for a repeated activation")]

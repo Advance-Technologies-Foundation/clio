@@ -37,9 +37,10 @@ public class SetActiveProcessVersionTool(
 	[McpServerTool(Name = SetActiveProcessVersionToolName, ReadOnly = false, Destructive = true,
 		 Idempotent = true, OpenWorld = false),
 	 Description("Make one version of a Creatio business process the ACTUAL one — the product's UI word for "
-		 + "what the platform's data calls the active version. Identify the version by name (schema code) or "
-		 + "uid; it must be the version itself, not the family root. This is the rollback gesture: point the "
-		 + "environment at whichever member of the family should run. "
+		 + "what the platform's data calls the active version. Identify the member by name (schema code) or "
+		 + "uid. ANY member of the family is a valid target, the family ROOT included - activating the root is "
+		 + "how you go back to the original, and the platform accepts it like any other member. This is the "
+		 + "rollback gesture: point the environment at whichever member of the family should run. "
 		 + "WHAT IT CHANGES: only which version NEW process instances start on. Instances already running stay "
 		 + "on the version they started with and finish on it — activation never migrates them, so a long-lived "
 		 + "process keeps executing the old graph after this call and that is correct, not a failure. "
@@ -114,10 +115,12 @@ public sealed record SetActiveProcessVersionArgs(
 
 	[property: JsonPropertyName("version-name")]
 	[property: Description(
-		"Code (schema Name) of the VERSION to make actual; provide exactly one of version-name or version-uid.")]
+		"Code (schema Name) of the family member to make actual, the root included; provide exactly one of "
+		+ "version-name or version-uid.")]
 	string? VersionName = null,
 
 	[property: JsonPropertyName("version-uid")]
 	[property: Description(
-		"Schema UId of the VERSION to make actual; provide exactly one of version-name or version-uid.")]
+		"Schema UId of the family member to make actual, the root included; provide exactly one of "
+		+ "version-name or version-uid.")]
 	string? VersionUid = null);

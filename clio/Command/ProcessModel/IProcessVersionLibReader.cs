@@ -4,6 +4,7 @@ using System.Linq;
 using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.CreatioModel;
+using CreatioModel;
 
 namespace Clio.Command.ProcessModel;
 
@@ -39,6 +40,20 @@ public sealed record ProcessVersionFamilyMember {
 
 	/// <summary>UId of the package this member lives in.</summary>
 	public string PackageUId { get; init; }
+
+	/// <summary>
+	/// Name of that package, or <c>null</c> when it could not be resolved.
+	/// </summary>
+	/// <remarks>
+	/// A convenience over <see cref="PackageUId"/>, which stays the authority: the process library reports
+	/// the UId and nothing else, so this is read from <c>SysPackage</c> in a separate query and a family
+	/// whose package rows cannot be read still reports every other fact. Absent here therefore means "not
+	/// named", never "no package" — and unlike the value members on
+	/// <see cref="ProcessVersionFacts"/>, an individual absence carries no warning of its own. Only a
+	/// package read that FAILED does, because that is the case where every member loses its name at once
+	/// and the answer silently degrades to GUIDs.
+	/// </remarks>
+	public string PackageName { get; init; }
 
 	/// <summary>
 	/// Whether the process is enabled. This is FAMILY state, not per-version state: the platform keys
@@ -245,8 +260,38 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 		if (row.VersionParentUId == Guid.Empty) {
 			return NotEstablished($"the process library reports no version family key for schema '{row.UId}'");
 		}
-		return BuildFacts(row, ReadFamily(ctx, row.VersionParentUId));
+		List<VwProcessLib> family = ReadFamily(ctx, row.VersionParentUId);
+		return BuildFacts(row, family, ReadPackageNames(ctx));
 	}
+
+	/// <summary>
+	/// The package names this environment has, keyed by package UId, or <c>null</c> when they could not be read.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Separated from the family read because the two answer different questions and fail independently: a
+	/// family that reads fine must not lose its version facts because <c>SysPackage</c> did not answer. The
+	/// failure is absorbed here rather than by the caller's guard, which would degrade the WHOLE read.
+	/// </para>
+	/// <para>
+	/// Unfiltered on purpose. The filter that belongs here is "the UIds this family uses", and expressing it
+	/// needs a collection <c>Contains</c> in the ATF expression tree — an unproven shape on this surface,
+	/// where a wrong expression raises <c>ExpressionConvertException</c>, which
+	/// <see cref="ProcessLibRead.Guarded"/> deliberately does not catch (it is a call-site defect, not a fact
+	/// that could not be established). Asking per UId instead trades one round-trip for up to
+	/// <see cref="FamilyCap"/> of them on a cross-package family. So one query returns the table: a few
+	/// hundred rows of scalars, inside the budget this read already owns.
+	/// </para>
+	/// </remarks>
+	private static Dictionary<Guid, string> ReadPackageNames(IAppDataContext ctx) =>
+		ProcessLibRead.Guarded<Dictionary<Guid, string>>(
+			() => ctx.Models<SysPackage>()
+				.ToList()
+				// Last write wins rather than throwing: SysPackage.UId is unique in practice, and a
+				// duplicate is not a reason to lose the version facts this read exists to deliver.
+				.GroupBy(package => package.UId)
+				.ToDictionary(group => group.Key, group => group.Last().Name),
+			_ => null);
 
 	private static List<VwProcessLib> ReadFamily(IAppDataContext ctx, Guid rootUId) =>
 		// The root is included without a second query: the view computes VersionParentUId as
@@ -263,7 +308,8 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 			() => NotEstablished(
 				$"the process library read did not complete within {_readBudget.TotalSeconds:0.##}s"));
 
-	private static ProcessVersionFacts BuildFacts(VwProcessLib row, List<VwProcessLib> fetched) {
+	private static ProcessVersionFacts BuildFacts(VwProcessLib row, List<VwProcessLib> fetched,
+		Dictionary<Guid, string> packageNames) {
 		if (fetched.Count == 0) {
 			// The schema's own row came back but its family did not, so nothing about the family is
 			// established. Publishing an empty list here would read as "checked, and there are no versions",
@@ -294,10 +340,11 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 			ActiveVersionSchemaUId = active?.UId.ToString(),
 			ActiveVersionName = active?.Name,
 			VersionRootSchemaUId = row.VersionParentUId.ToString(),
-			Versions = family.Select(ToMember).ToList(),
+			Versions = family.Select(member => ToMember(member, packageNames)).ToList(),
 			FamilyTruncated = fetched.Count > FamilyCap,
 			ActiveVersionSource = ProcessLibraryViewSource,
-			Warning = Unestablished(row, flagged, family, truncated: fetched.Count > FamilyCap)
+			Warning = Unestablished(row, flagged, family, truncated: fetched.Count > FamilyCap,
+				packagesRead: packageNames is not null)
 		};
 	}
 
@@ -311,8 +358,14 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 	/// <see cref="ProcessVersionFacts"/> says cannot occur, and the one a caller reads as "unversioned".
 	/// </remarks>
 	private static string Unestablished(VwProcessLib row, List<VwProcessLib> flagged,
-		List<VwProcessLib> published, bool truncated) {
+		List<VwProcessLib> published, bool truncated, bool packagesRead) {
 		List<string> gaps = [];
+		// Reported once for the whole read rather than per member: when the package table did not answer,
+		// EVERY member loses its name at once, and a caller that says nothing renders raw GUIDs at a builder
+		// who asked which package a version lives in.
+		if (!packagesRead) {
+			gaps.Add("the package names could not be read, so every version reports its package as a UId only");
+		}
 		if (row.Version is null) {
 			gaps.Add("the view established no version number for this schema");
 		}
@@ -340,7 +393,7 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 		return gaps.Count == 0 ? null : $"{string.Join("; ", gaps)}, so those facts were not established";
 	}
 
-	private static ProcessVersionFamilyMember ToMember(VwProcessLib p) =>
+	private static ProcessVersionFamilyMember ToMember(VwProcessLib p, Dictionary<Guid, string> packageNames) =>
 		new() {
 			SchemaUId = p.UId.ToString(),
 			Name = p.Name,
@@ -349,6 +402,9 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 			IsActiveVersion = p.IsActiveVersion,
 			IsRoot = p.UId == p.VersionParentUId,
 			PackageUId = p.PackageUId.ToString(),
+			PackageName = packageNames is not null && packageNames.TryGetValue(p.PackageUId, out string name)
+				? name
+				: null,
 			Enabled = p.Enabled
 		};
 
