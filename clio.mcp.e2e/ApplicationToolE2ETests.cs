@@ -530,24 +530,9 @@ public sealed class ApplicationToolE2ETests {
 		}
 
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
-		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(10));
-		string suffix = Guid.NewGuid().ToString("N")[..8];
-		string createdApplicationCode = $"UsrWeb{suffix}";
-		string applicationName = $"Web Only E2E {suffix}";
 
 		// Act
-		ApplicationInfoActResult actResult = await ActCreateAsync(
-			arrangeContext.Session,
-			arrangeContext.CancellationTokenSource.Token,
-			arrangeContext.EnvironmentName,
-			applicationName,
-			createdApplicationCode,
-			description: null,
-			ApplicationTemplateCode,
-			ApplicationIconId,
-			ApplicationIconBackground,
-			optionalTemplateDataJson: null,
-			withMobilePages: false);
+		ApplicationInfoActResult actResult = await GetOrCreateWebOnlyAutoIconApplicationAsync(settings);
 
 		// Assert
 		actResult.CallResult.IsError.Should().NotBeTrue(
@@ -865,21 +850,9 @@ public sealed class ApplicationToolE2ETests {
 		}
 
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
-		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(10));
-		string suffix = Guid.NewGuid().ToString("N")[..8];
 
 		// Act
-		ApplicationInfoActResult actResult = await ActCreateAsync(
-			arrangeContext.Session,
-			arrangeContext.CancellationTokenSource.Token,
-			arrangeContext.EnvironmentName,
-			name: $"Codex Auto Icon {suffix}",
-			code: $"UsrAutoIcon{suffix}",
-			description: null,
-			templateCode: ApplicationTemplateCode,
-			iconId: "auto",
-			iconBackground: ApplicationIconBackground,
-			optionalTemplateDataJson: null);
+		ApplicationInfoActResult actResult = await GetOrCreateWebOnlyAutoIconApplicationAsync(settings);
 		// Diagnostic: dump the create payload before anything asserts on it, so a create that failed on the
 		// environment is visible in the run output even when the assertion below is the first thing to notice.
 		TestContext.Out.WriteLine($"[create payload] {DescribeCallResult(actResult.CallResult)}");
@@ -1423,4 +1396,52 @@ public sealed class ApplicationToolE2ETests {
 	private sealed record ApplicationInfoActResult(
 		CallToolResult CallResult,
 		ApplicationContextResponseEnvelope Result);
+
+	/// <summary>
+	/// Creates — once for this fixture — one application with <c>icon-id='auto'</c> and
+	/// <c>with-mobile-pages=false</c>, and returns that single create's result to every test that asserts
+	/// on it.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// The auto-icon test and the web-only test each used to create an application of their own. A
+	/// create-app is a real Creatio compile — roughly 40 s each on CI — and the two options are
+	/// orthogonal: resolving an icon has nothing to do with suppressing mobile pages, so one create
+	/// carrying both exercises both paths without weakening either assertion. The tests stay separate,
+	/// so a failure still names which property broke.
+	/// </para>
+	/// <para>
+	/// Lazy rather than <c>[OneTimeSetUp]</c>: the destructive-tests gate and the sandbox check are
+	/// per-test <c>Assert.Ignore</c>s, and an ignore raised from one-time setup would skip the whole
+	/// fixture. The fixture is <c>[NonParallelizable]</c>, so the lazy create needs no lock.
+	/// </para>
+	/// </remarks>
+	/// <param name="settings">Settings for the MCP session.</param>
+	/// <returns>The shared create-app result.</returns>
+	private static async Task<ApplicationInfoActResult> GetOrCreateWebOnlyAutoIconApplicationAsync(
+		McpE2ESettings settings) {
+		if (_webOnlyAutoIconApplication is not null) {
+			return _webOnlyAutoIconApplication;
+		}
+		ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(10));
+		await using (arrangeContext) {
+			string suffix = Guid.NewGuid().ToString("N")[..8];
+			_webOnlyAutoIconApplication = await ActCreateAsync(
+				arrangeContext.Session,
+				arrangeContext.CancellationTokenSource.Token,
+				arrangeContext.EnvironmentName,
+				name: $"Codex Auto Icon Web Only {suffix}",
+				code: $"UsrAutoIconWeb{suffix}",
+				description: null,
+				templateCode: ApplicationTemplateCode,
+				iconId: "auto",
+				iconBackground: ApplicationIconBackground,
+				optionalTemplateDataJson: null,
+				withMobilePages: false);
+		}
+		return _webOnlyAutoIconApplication;
+	}
+
+	private static ApplicationInfoActResult? _webOnlyAutoIconApplication;
+
 }

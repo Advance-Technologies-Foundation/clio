@@ -834,7 +834,11 @@ public sealed class ApplicationSectionToolE2ETests {
 			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to point at the seeded sandbox before running this test.");
 		}
 
-		const int concurrentCount = 3;
+		// Two is what the property needs: contention is a property of MORE THAN ONE call arriving at the
+		// same application, and a third adds another full serialized section (~33 s on CI) without
+		// exercising anything the second does not already cover. This was the most expensive test in the
+		// suite at 102 s, and all of that was the platform compiling sections one after another.
+		const int concurrentCount = 2;
 		string runId = Guid.NewGuid().ToString("N")[..8];
 		string[] captions = Enumerable.Range(1, concurrentCount)
 			.Select(index => $"E2E Conc {runId} {index}")

@@ -73,7 +73,12 @@ public sealed class McpSharedHomeSetUpFixture {
 	}
 
 	[OneTimeTearDown]
-	public void RestoreSharedClioHome() {
+	public async Task RestoreSharedClioHomeAsync() {
+		await McpContractFixtureBase.ReleaseProcessWideSessionAsync();
+		RestoreSharedClioHome();
+	}
+
+	private void RestoreSharedClioHome() {
 		// Runs last in the assembly, so every fixture's arrange cost has already been recorded.
 		E2ETimingProbe.WriteReportToProcessStandardOutput();
 		TestConfiguration.ClearSharedClioHome();

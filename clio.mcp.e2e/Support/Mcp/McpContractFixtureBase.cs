@@ -28,18 +28,69 @@ public abstract class McpContractFixtureBase {
 			: Path.GetFullPath(settings.ClioProcessPath);
 		ConfigureMcpServerSettings(settings);
 		using CancellationTokenSource startupCts = new(TimeSpan.FromMinutes(5));
-		_session = await McpServerSession.StartAsync(settings, startupCts.Token);
+		if (CustomizesServerSettings) {
+			_ownedSession = await McpServerSession.StartAsync(settings, startupCts.Token);
+			_session = _ownedSession;
+			return;
+		}
+		_session = ProcessWideSession ??= await McpServerSession.StartAsync(settings, startupCts.Token);
 	}
 
 	[OneTimeTearDown]
 	public async Task StopSharedMcpServerAsync() {
 		try {
-			if (_session is not null) {
-				await _session.DisposeAsync();
+			// Only a session this fixture STARTED is disposed here. The process-wide one outlives every
+			// fixture and is disposed once, by ReleaseProcessWideSessionAsync at the end of the run.
+			if (_ownedSession is not null) {
+				await _ownedSession.DisposeAsync();
+				_ownedSession = null;
 			}
 		} finally {
+			_session = null;
 			CleanupFixtureDirectories();
 		}
+	}
+
+	/// <summary>
+	/// Server process shared by every contract fixture that does not customize the child's settings.
+	/// </summary>
+	/// <remarks>
+	/// A fixture-scoped server was already a large improvement over a per-test one, but the suite has
+	/// roughly a hundred contract fixtures, and starting a child process for each costs about 1.8 s to
+	/// start plus half a second to tear down — time TeamCity bills to no test, so it was invisible until
+	/// the run-level counters made it measurable. These fixtures exercise a read-only, stateless tool
+	/// surface against one identical configuration, so one process answers all of them.
+	/// <para>
+	/// A fixture that overrides <see cref="ConfigureMcpServerSettings"/> is excluded automatically: its
+	/// child differs (an isolated CLIO_HOME, a loopback stub, a specific client identity), so sharing
+	/// would silently give it the wrong server. That check is by declaration, not by a flag somebody has
+	/// to remember to set.
+	/// </para>
+	/// </remarks>
+	private static McpServerSession? ProcessWideSession;
+
+	private McpServerSession? _ownedSession;
+
+	private bool CustomizesServerSettings =>
+		GetType()
+			.GetMethod(
+				nameof(ConfigureMcpServerSettings),
+				System.Reflection.BindingFlags.Instance
+					| System.Reflection.BindingFlags.NonPublic
+					| System.Reflection.BindingFlags.Public)
+			?.DeclaringType != typeof(McpContractFixtureBase);
+
+	/// <summary>
+	/// Disposes the process-wide contract server. Called once, after every fixture has finished.
+	/// </summary>
+	/// <returns>A task that completes when the shared child has exited.</returns>
+	internal static async Task ReleaseProcessWideSessionAsync() {
+		if (ProcessWideSession is null) {
+			return;
+		}
+		McpServerSession session = ProcessWideSession;
+		ProcessWideSession = null;
+		await session.DisposeAsync();
 	}
 
 	/// <summary>
