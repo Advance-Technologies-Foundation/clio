@@ -366,8 +366,8 @@ public sealed class PageBaselineGuardTests {
 	}
 
 	[Test]
-	[Description("TryArm_ShouldClearThePinAndWarn_WhenTheWriteIsRedirectedByTargetSchemaUId — a checksum copied from a get-page response describes the automatically resolved schema, so keeping it as the comparison value against a redirect target reports a conflict that says nothing about either schema.")]
-	public void TryArm_ShouldClearThePinAndWarn_WhenTheWriteIsRedirectedByTargetSchemaUId() {
+	[Description("A --target-schema-uid redirect KEEPS a caller-supplied checksum. TryResolveContext sets EditableSchemaUId from that option with IsCreateReplacing false, so the comparison runs against exactly the schema the caller pinned — clearing it turned external-modification detection off on a destructive write and still reported success: true / conflict: false, which is the failure this guard exists to prevent.")]
+	public void TryArm_ShouldKeepThePinAndWarn_WhenTheWriteIsRedirectedByTargetSchemaUId() {
 		// Arrange
 		AddMetaWithBaseline("dev", "disk-checksum");
 		PageUpdateOptions options = CreateOptions("dev");
@@ -375,20 +375,62 @@ public sealed class PageBaselineGuardTests {
 		options.TargetSchemaUId = "99999999-8888-7777-6666-444444444444";
 
 		// Act
-		(string metaFilePath, bool armed, string warning) = _guard.TryArm(options, OutputDirectory);
+		(string metaFilePath, bool refreshBaseline, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		options.ExpectedChecksum.Should().Be("caller-pinned-checksum",
+			because: "--target-schema-uid names the write target outright, so the pin describes exactly the schema being written and must still govern the save");
+		refreshBaseline.Should().BeFalse(
+			because: "the schema-name-keyed baseline describes the auto-resolved schema, so it must not be moved forward from a redirected write");
+		metaFilePath.Should().BeNull(because: "there is nothing to refresh, so no baseline path is reported");
+		options.ExpectedSchemaUId.Should().BeNull(because: "the disk identity describes the auto-resolved schema");
+		options.ExpectedSchemaAbsent.Should().BeFalse(because: "a stale on-disk absence marker cannot veto a redirected write");
+		_fileGate.EnteredLockPaths.Should().BeEmpty(because: "an inapplicable baseline must not be read at all");
+		warning.Should().NotBeNull();
+		warning.Should().Contain("could not be corroborated locally",
+			because: "the pin governs the save while nothing local backs it, and the caller has to be able to tell that apart from a fully corroborated check");
+		warning.Should().NotContain("was ignored",
+			because: "the pin is NOT ignored on this path any more - saying so would describe the very fail-open this change removed");
+	}
+
+	[Test]
+	[Description("The redirect must clear the schema-absent marker even when the baseline actually recorded an absent editable schema. Asserting BeFalse on a baseline built with editableSchemaExists: true holds on the normal path too, so it cannot fail on the mutation it claims to pin.")]
+	public void TryArm_ShouldClearTheSchemaAbsentMarker_WhenTheWriteIsRedirectedAndTheBaselineRecordedNoEditableSchema() {
+		// Arrange
+		AddMetaWithBaseline("dev", "disk-checksum", editableExists: false);
+		PageUpdateOptions options = CreateOptions("dev");
+		options.TargetSchemaUId = "99999999-8888-7777-6666-444444444444";
+
+		// Act
+		(_, bool refreshBaseline, _) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		options.ExpectedSchemaAbsent.Should().BeFalse(
+			because: "the recorded absence describes the auto-resolved schema, so carrying it into a redirected write would refuse the save as schema-created-externally on a schema the baseline never described");
+		refreshBaseline.Should().BeFalse(
+			because: "a redirected write must not move the schema-name-keyed baseline forward");
+	}
+
+	[Test]
+	[Description("A --target-package-uid redirect still clears the pin: the hierarchy resolver may land on a different or newly created replacing schema, so a checksum taken from get-page describes something else. The trace says the detection did not run and points at the option that keeps it.")]
+	public void TryArm_ShouldClearThePinAndWarn_WhenTheWriteIsRedirectedByTargetPackageUIdOnly() {
+		// Arrange
+		AddMetaWithBaseline("dev", "disk-checksum");
+		PageUpdateOptions options = CreateOptions("dev");
+		options.ExpectedChecksum = "caller-pinned-checksum";
+		options.TargetPackageUId = "11111111-2222-3333-4444-555555555555";
+
+		// Act
+		(_, bool refreshBaseline, string warning) = _guard.TryArm(options, OutputDirectory);
 
 		// Assert
 		options.ExpectedChecksum.Should().BeNull(
-			because: "get-page has no redirect, so a checksum taken from it cannot describe the schema --target-schema-uid writes to");
-		armed.Should().BeFalse(because: "no baseline governs a redirected write, so nothing may be moved forward after it");
-		metaFilePath.Should().BeNull(because: "there is nothing to refresh, so no baseline path is reported");
-		options.ExpectedSchemaUId.Should().BeNull(because: "the disk identity describes the auto-resolved schema");
-		_fileGate.EnteredLockPaths.Should().BeEmpty(because: "an inapplicable baseline must not be read at all");
-		warning.Should().NotBeNull();
+			because: "the resolver may land on a different schema than the one the pin was read from, so the pin cannot govern this write");
+		refreshBaseline.Should().BeFalse(because: "nothing governs a redirected write, so nothing may be moved forward after it");
 		warning.Should().Contain("was ignored",
 			because: "silently dropping a checksum the caller supplied would leave the caller believing the save was checked");
-		warning.Should().Contain("target-package-uid",
-			because: "the trace names both redirect options so the caller can tell which family of arguments disabled the check");
+		warning.Should().Contain("target-schema-uid",
+			because: "the trace has to name the option that keeps the pin in force, otherwise the caller has no way back to a checked write");
 	}
 
 	[Test]

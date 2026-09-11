@@ -46,7 +46,7 @@ public sealed class CwdConcurrencyIsolationTests {
 		Monitor.Enter(McpToolExecutionLock.CwdLock, ref cwdLockHeld);
 		try {
 			// Act — while the test holds CwdLock, the reader must not be able to resolve its anchor.
-			Task<(string MetaFilePath, bool Armed, string Warning)> reader =
+			Task<(string MetaFilePath, bool RefreshBaseline, string Warning)> reader =
 				Task.Run(() => guard.TryArm(options, null));
 			bool completedWhileHeld = reader.Wait(BlockedProbe);
 

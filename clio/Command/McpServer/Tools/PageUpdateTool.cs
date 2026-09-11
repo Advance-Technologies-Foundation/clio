@@ -115,7 +115,7 @@ public sealed class PageUpdateTool(
 			AppendPersistedResourceKeyWarning(earlyFailure, options);
 			return earlyFailure;
 		}
-		(string metaFilePath, bool baselineArmed, string baselineWarning) =
+		(string metaFilePath, bool refreshBaseline, string baselineWarning) =
 			pageBaselineGuard.TryArm(options, args.OutputDirectory);
 		PageUpdateResponse response = ExecuteWithCleanLog(options, () => {
 			PageUpdateCommand resolvedCommand;
@@ -138,7 +138,7 @@ public sealed class PageUpdateTool(
 		// discovery and the refresh diagnostics travel on the response's warning channel (ENG-95262 AC-02).
 		// Runs on the hinted response: the hint changes only the error wording, never Success, so it cannot
 		// alter whether the refresh is due.
-		string refreshWarning = baselineArmed && response.Success && !options.DryRun
+		string refreshWarning = refreshBaseline && response.Success && !options.DryRun
 			? pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response)
 			: null;
 		response.SamplingReview = samplingReview;

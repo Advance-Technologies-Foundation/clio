@@ -3096,6 +3096,31 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
+	[Description("A caption-only save leaves the existing primary-display column alone. HasAnyPropertyToSet made SetSchemaProperties reachable with no --primary-display-column at all, and the request DTO carries the whole schema: if the caption path ever stopped preserving the loaded PrimaryDisplayColumn, a rename would silently clear the column the list view is built on, on a published write.")]
+	public void SetSchemaProperties_ShouldKeepThePrimaryDisplayColumn_WhenOnlyTheCaptionChanges() {
+		// Arrange
+		EntitySchemaColumnDto nameColumn = CreateTextColumn("Name", NameColumnUId);
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), nameColumn]);
+		_loadedSchema.PrimaryDisplayColumn = nameColumn;
+		SetupLoadedSchema();
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Car"
+		};
+
+		// Act
+		_manager.SetSchemaProperties(options);
+
+		// Assert
+		_savedSchema.Should().NotBeNull(because: "a caption rename is a save");
+		_savedSchema.PrimaryDisplayColumn.Should().NotBeNull(
+			because: "a request that names no primary-display column must not clear the one the schema already has");
+		_savedSchema.PrimaryDisplayColumn.Name.Should().Be("Name",
+			because: "the column the schema was loaded with is the column it must be saved with when the caller changed only the caption");
+	}
+
+	[Test]
 	[Description("AC-3, the shipped promise: cultures not named in the request keep the caption they already have. ApplySchemaCaption merges through SetLocalizableValue rather than replacing the collection, and a one-token change to ReplaceLocalizableValues would turn a rename into a silent wipe of every other language on a published, destructive write (PR #1356 gate-3 review).")]
 	public void SetSchemaProperties_ShouldKeepCaptionsOfCulturesNotNamed_WhenRenamingOne() {
 		// Arrange

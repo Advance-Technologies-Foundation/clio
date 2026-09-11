@@ -58,6 +58,6 @@ internal static class McpToolDescriptions {
 	/// <c>McpFeatureToggleFilterTests.RegisterEnabledPrimitives_ShouldKeepToolsSerializedSizeWithinBudget_WhenCalled</c>.
 	/// </summary>
 	internal const string PageResourcesAdditive =
-		" Additions/overrides only: a key already stored on the schema stays registered and does NOT have to " +
-		"be repeated on a later save of the same page.";
+		" Additions only: a key already stored on the schema stays registered and is NOT updated by " +
+		"re-sending it on a later save.";
 }

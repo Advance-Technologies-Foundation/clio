@@ -612,10 +612,10 @@
 			// Mirror the MCP tool: auto-discover the on-disk baseline so a CLI save (e.g. an AI agent
 			// running `clio update-page --body-file .clio-pages/<schema>/body.js`) is blocked when the
 			// schema was modified out-of-band, instead of silently overwriting the external edit.
-			(string metaFilePath, bool baselineArmed, string baselineWarning) =
+			(string metaFilePath, bool refreshBaseline, string baselineWarning) =
 				_pageBaselineGuard.TryArm(options, outputDirectory: null);
 			bool success = TryUpdatePage(options, out PageUpdateResponse response);
-			if (baselineArmed && success && !options.DryRun) {
+			if (refreshBaseline && success && !options.DryRun) {
 				// A failed refresh cannot fail a save that already landed on the server, so it surfaces as a
 				// warning on the response instead (ENG-95262 AC-02).
 				AppendBaselineWarning(response, _pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response));
