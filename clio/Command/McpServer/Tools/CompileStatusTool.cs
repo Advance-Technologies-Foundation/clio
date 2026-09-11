@@ -81,7 +81,7 @@ public sealed record CompileStatusArgs(
 
 	[property: JsonPropertyName("operation-id")]
 	[Description("Optional operation id from a compile-creatio in-progress response. When omitted, returns the most recently started operation for this environment.")]
-	string? OperationId);
+	string? OperationId = null);
 
 /// <summary>
 /// Response payload for the compile-status tool.
