@@ -103,11 +103,12 @@ namespace Clio.Tests
                     + "next versioned operation ships, move this pin WITH the rebundle in the same commit ENG-91853 raises BOTH to 1.6.0.2 and closes the one-patch gap - not by discarding the rule above but by applying it: the gateway ELEMENTS, the three declarative flow kinds and the by-name condition expansion are advertised by create (it builds them) AND by modify (setFlow re-kinds a flow in place), so both commands depend on the same newer archive. 1.6.0.2 and not 1.6.0.1 because master and this branch BOTH stamped 1.6.0.1, on different content - two archives at one version, which is the case where an environment already carrying it is never offered the other. The number is the first cut from a package source that merges both lines.");
         }
 
-        [TestCase(typeof(ModifyProcessAsNewVersionOptions))]
-        [TestCase(typeof(SetActiveProcessVersionOptions))]
+        [TestCase(typeof(ModifyProcessAsNewVersionOptions), "1.6.2.1")]
+        [TestCase(typeof(SetActiveProcessVersionOptions), "1.6.1.0")]
         [Test]
-        [Description("The two versioning commands declare 1.6.1.0 for a STRICTER reason than its siblings: the ModifyProcessAsNewVersion OPERATION does not exist before that archive at all. Create/Modify name a version because an older server MISHANDLES a newer input form; these name a version because an older server has no such route, and answers a 404 the caller would read as a transport fault rather than 'your package is behind'. The bundled-archive guard asserts the shipped archive satisfies the literal, so the floor can never demand a version clio does not carry - which is why these floors land with their tools and the archive ships first.")]
-        public void VersioningOptionsType_ShouldDeclareTheVersionTheOperationFirstShippedIn(Type optionsType)
+        [Description("The two versioning commands declare a version for a STRICTER reason than their siblings: the versioning OPERATIONS do not exist before the 1.6.1.0 archive at all. Create/Modify name a version because an older server MISHANDLES a newer input form; these name a version because an older server has no such route, and answers a 404 the caller would read as a transport fault rather than 'your package is behind'. modify-process-as-new-version then moved to 1.6.2.1 with ENG-95986: it shares the operations vocabulary that now advertises the Send email template members, runs no read-back, and convergence already refuses everything below the shipped archive on it - so the raise adds no lockout and keeps the route fail-closed in convergence's degraded modes. set-active-business-process-version carries no operations and stays at 1.6.1.0. The bundled-archive guard asserts the shipped archive satisfies every literal, so a floor can never demand a version clio does not carry.")]
+        public void VersioningOptionsType_ShouldDeclareTheVersionTheOperationFirstShippedIn(Type optionsType,
+            string expectedVersion)
         {
             // Arrange & Act
             RequiresPackageAttribute requirement = GetProcessBuilderRequirement(optionsType);
@@ -115,10 +116,11 @@ namespace Clio.Tests
             // Assert
             requirement.Should().NotBeNull(
                 because: $"{optionsType.Name} calls an operation that only exists in a recent {BundledPackages.ProcessBuilderPackageName}, so the gate must fire");
-            requirement!.Version.Should().Be("1.6.1.0",
-                because: "both versioning operations first ship in the 1.6.1.0 archive. Presence-only would let "
-                    + "the call reach an older package and come back a 404 - the one failure shape that reads as "
-                    + "clio being broken rather than the environment being behind");
+            requirement!.Version.Should().Be(expectedVersion,
+                because: "the versioning operations first ship in the 1.6.1.0 archive, and the one that carries an "
+                    + "operations array followed the Send email template members to 1.6.2.1 (ENG-95986). Presence-only "
+                    + "would let the call reach an older package and come back a 404 - the one failure shape that "
+                    + "reads as clio being broken rather than the environment being behind");
             requirement.Hint.Should().Be(ExpectedProcessBuilderHint,
                 because: "the install hint must be consistent across all process-designer gates");
         }

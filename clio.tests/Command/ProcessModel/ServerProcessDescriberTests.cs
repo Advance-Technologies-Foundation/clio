@@ -792,6 +792,8 @@ public sealed class ServerProcessDescriberTests {
 		email.TemplateEntity.Value.Should().Contain("[Parameter:{",
 			because: "the binding is a parameter meta-path the agent can map back to a processParameter");
 		email.HasBody.Should().BeFalse(because: "a template element suppresses a stale body so the block re-applies");
+		email.Mode.Should().Be("auto", because: "the send mode is reported identically in both message modes (AC-7)");
+		email.IgnoreErrors.Should().BeTrue(because: "ignoreErrors is reported identically in both message modes (AC-7)");
 	}
 
 	[Test]

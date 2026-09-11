@@ -800,9 +800,10 @@ public class BundledProcessBuilderPackageTests {
 				+ $"a gate and {nameof(ProcessBuilderGatedTypes)} moves in the same commit, so a lost "
 				+ "declaration cannot pass as slack and a new one cannot arrive unreviewed");
 		// The loop EXECUTES today: four of the seven carry a version literal, and they do NOT all agree with
-		// each other — create and modify both at 1.6.2.1 since ENG-95986 (they had diverged before, when modify's
-		// page-change reconciliation promise needed a newer archive than create's), and both versioning options
-		// at the 1.6.1.0 their own operations first ship in. That spread is the reason the assertion counts literals
+		// each other — create, modify and modify-as-new-version at 1.6.2.1 since ENG-95986 (create and modify had
+		// diverged before, when modify's page-change reconciliation promise needed a newer archive than create's;
+		// the new-version route followed because it shares the operations vocabulary and runs no read-back), and
+		// set-active-version at the 1.6.1.0 its operation first ships in. That spread is the reason the assertion counts literals
 		// rather than pinning a value: no single number describes the set. It was vacuous when written,
 		// deliberately — the invariant had to be in place before the first literal appeared, because the
 		// commit that adds one is exactly when it must already work. It replaces the old pin (descriptor

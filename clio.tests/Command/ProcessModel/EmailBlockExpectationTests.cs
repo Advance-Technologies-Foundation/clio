@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Clio.Command.ProcessModel;
 using FluentAssertions;
@@ -16,6 +17,60 @@ namespace Clio.Tests.Command.ProcessModel;
 public class EmailBlockExpectationTests {
 
 	#region Methods: FromDescriptor
+
+	[Test]
+	[Description("A build descriptor with a DUPLICATE property name - accepted by JsonNode.Parse, thrown as ArgumentException only when the JsonObject materialises - must not escape the detectors: the parse helper materialises the tree under its own catch, so every detector returns empty instead of taking the whole read-back verification down. Pinned at both nesting levels, because the throw happens on whichever object carries the duplicate.")]
+	public void Detectors_ShouldReturnEmptyWithoutThrowing_WhenTheDescriptorCarriesADuplicateKey() {
+		// Arrange - a duplicate at the top level and one nested inside an elements[] entry
+		const string duplicateTopLevel = """
+			{"name":"UsrProc","name":"UsrProc2","elements":[
+				{"name":"SendMail1","type":"sendEmail","email":{"template":"Case closure notification"}}]}
+			""";
+		const string duplicateNested = """
+			{"name":"UsrProc","elements":[
+				{"name":"SendMail1","type":"sendEmail","email":{"template":"T","template":"T2"}}]}
+			""";
+
+		// Act
+		Func<IReadOnlyList<string>> topLevelEmail = () => EmailBlockExpectation.FromDescriptor(duplicateTopLevel);
+		Func<IReadOnlyList<string>> topLevelTemplate = () => EmailBlockExpectation.TemplateElements(duplicateTopLevel);
+		Func<IReadOnlyList<string>> nestedEmail = () => EmailBlockExpectation.FromDescriptor(duplicateNested);
+		Func<IReadOnlyList<string>> nestedTemplate = () => EmailBlockExpectation.TemplateElements(duplicateNested);
+
+		// Assert
+		topLevelEmail.Should().NotThrow(because: "a duplicate key is the caller's payload problem, reported by the command's own error path, not by the read-back guard")
+			.Which.Should().BeEmpty(because: "an unparseable payload skips the verification rather than accusing the server");
+		topLevelTemplate.Should().NotThrow().Which.Should().BeEmpty();
+		nestedEmail.Should().NotThrow(because: "the duplicate sits on a nested object, which is where a materialisation that stopped at the root would still throw in the caller")
+			.Which.Should().BeEmpty();
+		nestedTemplate.Should().NotThrow().Which.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("The same duplicate-key payload on the modify path: the operations detectors return empty without throwing, for a duplicate on the operation object and for one nested in elementUpdate.email.")]
+	public void OperationsDetectors_ShouldReturnEmptyWithoutThrowing_WhenAnOperationCarriesADuplicateKey() {
+		// Arrange
+		const string duplicateOnOperation = """
+			[{"op":"setElement","op":"setElement","elementName":"SendMail1",
+			  "elementUpdate":{"email":{"template":"Case closure notification"}}}]
+			""";
+		const string duplicateInEmail = """
+			[{"op":"setElement","elementName":"SendMail1",
+			  "elementUpdate":{"email":{"template":"T","template":"T2"}}}]
+			""";
+
+		// Act
+		Func<IReadOnlyList<string>> onOperationEmail = () => EmailBlockExpectation.FromOperations(duplicateOnOperation);
+		Func<IReadOnlyList<string>> onOperationTemplate = () => EmailBlockExpectation.TemplateElementsFromOperations(duplicateOnOperation);
+		Func<IReadOnlyList<string>> inEmailEmail = () => EmailBlockExpectation.FromOperations(duplicateInEmail);
+		Func<IReadOnlyList<string>> inEmailTemplate = () => EmailBlockExpectation.TemplateElementsFromOperations(duplicateInEmail);
+
+		// Assert
+		onOperationEmail.Should().NotThrow().Which.Should().BeEmpty(because: "the verification is skipped, not the command");
+		onOperationTemplate.Should().NotThrow().Which.Should().BeEmpty();
+		inEmailEmail.Should().NotThrow(because: "the duplicate is three objects deep; the walk must reach it").Which.Should().BeEmpty();
+		inEmailTemplate.Should().NotThrow().Which.Should().BeEmpty();
+	}
 
 	[Test]
 	[Description("A build descriptor's elements carrying an email block are the ones whose configuration must be verified; elements without one are irrelevant to the check.")]

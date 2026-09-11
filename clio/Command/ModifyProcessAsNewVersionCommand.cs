@@ -19,7 +19,18 @@ namespace Clio.Command;
 // error, so without the literal the caller would see a transport failure instead of "your package is behind".
 // The guard fixture asserts the shipped archive satisfies this literal, so clio can never demand a version it
 // does not itself carry.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.1.0",
+//
+// From ENG-95986 the literal is 1.6.2.1, for the SAME reason Create/Modify moved: the operations vocabulary this
+// route shares with modify-business-process now advertises `email.messageSource` / `email.template` /
+// `email.templateEntity`, and a server below 1.6.2.1 has no such members - its serializer discards them and the
+// version is saved with an element in NO message mode, answering success. Create/Modify at least read the
+// element back and warn (EmailBlockExpectation); this route runs no read-back at all, so the floor is the only
+// thing standing between the caller and a silently wrong version. The lockout argument that kept it at 1.6.1.0
+// for one review round (refusing the whole versioning route on a 1.6.1.x environment for a field most
+// operations arrays never carry) no longer buys anything: BundledPackageConvergence already refuses every
+// environment below the archive clio ships (1.6.2.1) on this same command, so the raise adds no refusal in
+// normal mode and is the one fail-closed refusal left in convergence's degraded warn-and-allow modes.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.2.1",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyProcessAsNewVersionOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) of the SOURCE. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>

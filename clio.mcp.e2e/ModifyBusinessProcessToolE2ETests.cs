@@ -394,6 +394,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		afterTemplate.HasBody.Should().BeFalse(because: "a template element reports no body, and the custom body was cleared on the switch");
 		afterTemplate.Subject.Should().BeNull(because: "a constant subject not re-supplied is cleared on the switch so the template's own subject is sent");
 		afterTemplate.To.Should().NotBeNull().And.HaveCount(1, because: "recipients are untouched by the mode switch");
+		AssertOptionsUnchanged(await ReadSendEmailElementAsync(context, processName), "the switch to template mode");
 
 		// Act 2 — a body switches it back to a custom message.
 		CallToolResult toCustom = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
@@ -411,11 +412,31 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		afterCustom.MessageSource.Should().Be("custom", because: "a body selects the custom message");
 		afterCustom.Template.Should().BeNull(because: "the template and its macro source are cleared on the switch, as the designer's card does");
 		afterCustom.HasBody.Should().BeTrue(because: "the body sent with the switch is stored");
+		AssertOptionsUnchanged(await ReadSendEmailElementAsync(context, processName), "the switch back to a custom message");
+	}
+
+	// AC-7 of ENG-95986: sender, recipients, importance, ignoreErrors and useBackgroundMode behave identically in both
+	// modes. A mode switch is exactly the operation that CLEARS what the other mode owns, so this is where an over-eager
+	// clear of an option would show - the values are the ones BuildSendEmailWithRecipientDescriptor seeds.
+	private static void AssertOptionsUnchanged(DescribedElement sendEmail, string afterWhat) {
+		sendEmail.Email!.Importance.Should().Be("high",
+			because: $"importance is not owned by either message mode, so {afterWhat} must leave it alone");
+		sendEmail.Email.IgnoreErrors.Should().BeFalse(
+			because: $"ignoreErrors is not owned by either message mode, so {afterWhat} must leave it alone");
+		sendEmail.Email.Mode.Should().Be("manual",
+			because: $"the send mode is not owned by either message mode, so {afterWhat} must leave it alone");
+		sendEmail.UseBackgroundMode.Should().BeTrue(
+			because: $"useBackgroundMode is an element-level flag outside the email block, so {afterWhat} must leave it alone");
 	}
 
 	// Reads the process back and returns the sendEmail element's email block, so a recipient assertion can be made
 	// against typed fields instead of substring-matching the escaped MCP envelope.
-	private static async Task<DescribedEmail> ReadEmailAsync(ArrangeContext context, string processName) {
+	private static async Task<DescribedEmail> ReadEmailAsync(ArrangeContext context, string processName) =>
+		(await ReadSendEmailElementAsync(context, processName)).Email!;
+
+	// The whole SendEmail1 element, for the assertions that need element-level fields (useBackgroundMode) beside the
+	// email block.
+	private static async Task<DescribedElement> ReadSendEmailElementAsync(ArrangeContext context, string processName) {
 		CallToolResult describeResult = await CallToolAsync(context, DescribeProcessTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
@@ -428,7 +449,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				&& value!.TrimStart().StartsWith("{", StringComparison.Ordinal))!;
 		DescribeProcessResult graph = JsonSerializer.Deserialize<DescribeProcessResult>(graphJson,
 			new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
-		return graph.Elements.Single(element => element.Name == "SendEmail1").Email!;
+		return graph.Elements.Single(element => element.Name == "SendEmail1");
 	}
 
 	// A sendEmail element seeded with exactly one To recipient, so the modify calls that follow are measured against
@@ -441,8 +462,9 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		  "packageName": "Custom",
 		  "elements": [
 		    { "name": "StartEvent1", "type": "startEvent" },
-		    { "name": "SendEmail1", "type": "sendEmail",
+		    { "name": "SendEmail1", "type": "sendEmail", "useBackgroundMode": true,
 		      "email": { "mode": "manual", "subject": "Recipient merge probe",
+		        "importance": "high", "ignoreErrors": false,
 		        "to": [ { "value": "first@example.com" } ] } },
 		    { "name": "EndEvent1", "type": "endEvent" }
 		  ],

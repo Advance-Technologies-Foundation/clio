@@ -1003,6 +1003,83 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			because: "a template element reports no body, so the block re-applies without a template-beside-body refusal");
 	}
 
+	[Test]
+	[Description("Over the real MCP path, a sendEmail element carrying BOTH a template and a body is refused BY THE SERVER, naming the element and the two fields, and no process is created (ENG-95986: template and body/bodyFormat are mutually exclusive). Without this the create contract's refusal text would rest on a manual stand run alone.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process refuses a template beside a body and creates nothing")]
+	public async Task CreateBusinessProcess_Should_RefuseATemplateBesideABody_AndCreateNothing() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpEmailTplBodyE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildRefusedTemplateEmailDescriptor(processName,
+				"\"template\": \"Case closure notification\", \"body\": \"<p>ClioTemplateBesideBodyProbe</p>\"")
+		});
+
+		// Assert
+		// NOT on callResult.IsError: measured null on a server refusal, exactly as on success (see the bad-formula
+		// test above). What the description promises is the diagnostic and that nothing was CREATED.
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("mutually exclusive",
+			because: "the refusal must say WHY - one element, one message - so the caller drops one of the two rather than guessing");
+		callResultJson.Should().Contain("AskFeedback",
+			because: "the refusal must name the element, or the caller cannot find it in a multi-element descriptor");
+		JsonSerializer.Serialize(await DescribeAsync(context, processName)).Should().Contain("was not found",
+			because: "a refused descriptor must leave no process behind - asserted positively on the not-found answer, "
+				+ "because the not-found message quotes the name it looked for");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, a sendEmail element naming a template that does not exist is refused BY THE SERVER at build time, the refusal names the template, and no process is created (ENG-95986 AC: an unresolved reference fails at build with a message naming the template). A template that slipped through would fail only at run time with 'Localizable template not found', which the element's ignore-errors default then swallows.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process refuses an unknown template, naming it, and creates nothing")]
+	public async Task CreateBusinessProcess_Should_RefuseAnUnknownTemplate_NamingIt_AndCreateNothing() {
+		// Arrange - a name no environment carries
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpEmailTplUnknownE2e{Guid.NewGuid():N}";
+		string templateName = $"ClioNoSuchTemplate{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildRefusedTemplateEmailDescriptor(processName, $"\"template\": \"{templateName}\"")
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain(templateName,
+			because: "the refusal must name the template the caller passed, so a typo is visible in the message");
+		callResultJson.Should().Contain("no email template is named",
+			because: "the refusal must say the name resolved to NOTHING of the email type, distinguishing it from an ambiguous name");
+		JsonSerializer.Serialize(await DescribeAsync(context, processName)).Should().Contain("was not found",
+			because: "an unresolved template must fail the BUILD, leaving no process behind for a run-time failure to hide in");
+	}
+
+	// A sendEmail element whose email block is supplied by the caller, for the refusal tests: the surrounding process
+	// is valid, so the only thing the server can object to is the email block itself.
+	private static string BuildRefusedTemplateEmailDescriptor(string processName, string emailFields) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Email Template Refusal E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "AskFeedback", "type": "sendEmail", "caption": "Ask for feedback",
+		      "email": { {{emailFields}}, "mode": "manual",
+		        "to": [ { "value": "probe@example.com" } ] } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "AskFeedback" },
+		    { "source": "AskFeedback", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
 	// A sendEmail element in TEMPLATE mode against an object-bound stock template, with the macro source bound to a
 	// Lookup process parameter of that object. `sender` is omitted for the same reason as in the full-contract
 	// descriptor; the template NAME is stock content shipped by the case packages, not stand data.
