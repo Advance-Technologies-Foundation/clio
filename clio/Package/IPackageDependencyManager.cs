@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace Clio.Package;
@@ -45,23 +46,36 @@ public interface IPackageDependencyManager
 	IReadOnlyList<string> GetDependencies(string packageName);
 
 	/// <summary>
-	/// Reads the dependencies <paramref name="packageName"/> currently declares with an explicit
-	/// per-request timeout, without changing anything.
+	/// Reads the dependencies the package identified by <paramref name="packageUId"/> currently declares,
+	/// with an explicit per-request timeout and without changing anything.
 	/// </summary>
 	/// <remarks>
-	/// Same contract as <see cref="GetDependencies(string)"/>, which reads with no timeout at all. The bound
-	/// exists for callers that run this read inside an already-failing operation - the entity-schema designer
-	/// reads it only to build an error message. An environment that accepts the connection and then stops
-	/// answering must cost such a caller a bounded wait, not a hung tool call; in a long-lived MCP server an
-	/// unbounded read there holds the tenant open with no way back.
+	/// <para>
+	/// Returns the same DIRECT dependency names as <see cref="GetDependencies(string)"/>, but it is NOT the
+	/// same contract in two respects. That overload reads with no timeout at all, and it resolves the name
+	/// against the installed packages first, so an unknown package fails with "Package with name X not found
+	/// in the environment"; this one asks the server about the UId it is given and reports whatever
+	/// <c>GetPackageProperties</c> answers, so a UId that does not exist surfaces as the server's own
+	/// message. The bound exists for callers that run this read inside an already-failing operation - the
+	/// entity-schema designer reads it only to build an error message. An environment that accepts the
+	/// connection and then stops answering must cost such a caller a bounded wait, not a hung tool call; in a
+	/// long-lived MCP server an unbounded read there holds the tenant open with no way back.
+	/// </para>
+	/// <para>
+	/// The UId is taken from the caller rather than resolved by name on purpose. Resolving a name costs a
+	/// whole <c>GetPackages("{}")</c> round-trip - the full installed-package list - only to arrive at a UId
+	/// the caller already holds, which doubles the cost of a read that exists to enrich an error message.
+	/// <paramref name="packageName"/> is carried only for the failure text.
+	/// </para>
 	/// </remarks>
-	/// <param name="packageName">Package whose dependency list is read.</param>
+	/// <param name="packageUId">Identifier of the package whose dependency list is read; must not be empty.</param>
+	/// <param name="packageName">Package name, used only to describe a failed read.</param>
 	/// <param name="requestTimeoutMs">
-	/// Per-request timeout in milliseconds, applied to both the package lookup and the properties read, or
-	/// <see cref="System.Threading.Timeout.Infinite"/> for no bound.
+	/// Per-request timeout in milliseconds, or <see cref="System.Threading.Timeout.Infinite"/> for no bound.
 	/// </param>
 	/// <returns>The declared dependency package names.</returns>
-	IReadOnlyList<string> GetDependencies(string packageName, int requestTimeoutMs);
+	/// <exception cref="ArgumentException"><paramref name="packageUId"/> is <see cref="Guid.Empty"/>.</exception>
+	IReadOnlyList<string> GetDependencies(Guid packageUId, string packageName, int requestTimeoutMs);
 
 	/// <summary>
 	/// Removes the requested dependencies from <paramref name="packageName"/> and persists the change.
