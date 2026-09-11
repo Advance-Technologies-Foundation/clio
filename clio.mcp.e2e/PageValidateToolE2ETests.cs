@@ -124,7 +124,7 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	[AllureTag(ToolName)]
 	[AllureName("validate-page reports a missing body-file")]
 	[AllureDescription("Dispatches validate-page through clio-run with a nonexistent body-file and verifies the MCP response classifies the failure while all validation flags remain false.")]
-	public async Task PageValidateTool_ShouldReportMissingPath_WhenBodyFileDoesNotExist() {
+	public async Task PageValidateTool_ShouldReportMissingFile_WhenBodyFileDoesNotExist() {
 		// Arrange
 		string bodyFile = AllureApi.Step(
 			"Create an absolute missing body-file path",

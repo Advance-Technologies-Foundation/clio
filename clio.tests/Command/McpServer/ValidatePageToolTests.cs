@@ -111,7 +111,7 @@ public sealed class ValidatePageToolTests {
 
 	[Test]
 	[Description("Reports a stable missing-file classification instead of treating the request as an empty JavaScript body.")]
-	public async System.Threading.Tasks.Task ValidatePage_ShouldReportPath_WhenBodyFileDoesNotExist() {
+	public async System.Threading.Tasks.Task ValidatePage_ShouldReportMissingFile_WhenBodyFileDoesNotExist() {
 		// Arrange
 		string bodyFile = BodyFilePath("MissingPage");
 		PageValidateTool tool = CreateTool(new MockFileSystem());
@@ -269,8 +269,8 @@ public sealed class ValidatePageToolTests {
 	}
 
 	[Test]
-	[Description("Rejects a body-file that is itself a reparse point before reading its target.")]
-	public async System.Threading.Tasks.Task ValidatePage_ShouldRejectBodyFile_WhenFileIsReparsePoint() {
+	[Description("Accepts a regular body-file with a non-link reparse attribute, as used by cloud-backed files.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldAcceptBodyFile_WhenReparsePointIsNotLink() {
 		// Arrange
 		string bodyFile = BodyFilePath("LinkedBody");
 		var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData> {
@@ -284,8 +284,37 @@ public sealed class ValidatePageToolTests {
 		PageValidateResponse response = await tool.ValidatePage(args);
 
 		// Assert
+		response.Valid.Should().BeTrue(
+			because: "cloud-backed regular files must remain valid inputs when they are not symbolic links");
+	}
+
+	[Test]
+	[Description("Rejects a body-file that is itself a symbolic link before reading its target.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldRejectBodyFile_WhenFileHasLinkTarget() {
+		// Arrange
+		string bodyFile = BodyFilePath("LinkedBody");
+		var backingFileSystem = new MockFileSystem(new Dictionary<string, MockFileData> {
+			[bodyFile] = new(ValidWebBody)
+		});
+		IFileInfo linkedFile = Substitute.For<IFileInfo>();
+		linkedFile.LinkTarget.Returns(BodyFilePath("TargetBody"));
+		IFileInfoFactory fileInfoFactory = Substitute.For<IFileInfoFactory>();
+		fileInfoFactory.New(bodyFile).Returns(linkedFile);
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		fileSystem.Path.Returns(backingFileSystem.Path);
+		fileSystem.File.Returns(backingFileSystem.File);
+		fileSystem.FileInfo.Returns(fileInfoFactory);
+		PageValidateTool tool = CreateTool(fileSystem);
+		PageValidateArgs args = new(BodyFile: bodyFile);
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
 		response.Valid.Should().BeFalse(
-			because: "OpenWorld=false must not follow a local-looking body-file link to another location");
+			because: "a symbolic link must not redirect validation to a different file");
+		response.Validation.Errors.Should().ContainSingle(error => error.Contains("could not be read"),
+			because: "symbolic links must produce the same path-safe structured failure as other unreadable files");
 	}
 
 	[Test]

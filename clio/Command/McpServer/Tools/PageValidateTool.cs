@@ -39,7 +39,7 @@ public sealed class PageValidateTool(
 		OperationFamily = McpToolOperationFamily.None,
 		BudgetPolicy = McpToolBudgetPolicy.None,
 		RequiresClientRequests = McpToolClientRequests.None,
-		SharedFileResource = McpToolSharedFileResource.ClioPages)]
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Validates a Freedom UI page body without saving. Checks web markers, JS syntax, field/column bindings, handlers, converters, and validators; mobile disallowed constructs, diff application, `type` placement, Scaffold slot merges, and action-button placement. Accepts inline body or local-stdio get-page files.bodyFile via body-file; inline wins. Run before update-page. See get-guidance page-schema-converters, page-schema-handlers, page-schema-validators, or mobile-page-modification.")]
 	public async Task<PageValidateResponse> ValidatePage(
 		[Description("Parameters: body or body-file; optional resources and version")]
@@ -115,13 +115,16 @@ public sealed class PageValidateTool(
 		try {
 			string bodyFile = fileSystem.Path.GetFullPath(args.BodyFile);
 			FileAttributes bodyFileAttributes = fileSystem.File.GetAttributes(bodyFile);
-			if ((bodyFileAttributes & (FileAttributes.Directory | FileAttributes.Device | FileAttributes.ReparsePoint)) != 0) {
+			if ((bodyFileAttributes & (FileAttributes.Directory | FileAttributes.Device)) != 0) {
 				return (string.Empty, InvalidBodySource(UnreadableBodyFileMessage));
 			}
 			// This preflight is only a fast guard against directories and special zero-length files
 			// such as Unix FIFOs, whose synchronous open can block. The opened handle below remains
 			// authoritative for the size bound because the path may change between these operations.
 			IFileInfo fileInfo = fileSystem.FileInfo.New(bodyFile);
+			if (fileInfo.LinkTarget is not null) {
+				return (string.Empty, InvalidBodySource(UnreadableBodyFileMessage));
+			}
 			if (!fileInfo.Exists) {
 				return (string.Empty, InvalidBodySource(MissingBodyFileMessage));
 			}
