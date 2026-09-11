@@ -154,16 +154,8 @@ public sealed class PackageFileToolE2ETests {
 				because: "the tool must stop before its companion project read"));
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
-		string? environmentName = settings.Sandbox.EnvironmentName;
-		if (string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run package file MCP E2E tests.");
-		}
-		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-			settings, ["ping-app", "-e", environmentName]);
-		if (result.ExitCode != 0) {
-			Assert.Ignore($"Package file MCP E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
-		}
-		return environmentName!;
-	}
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
+			settings,
+			"Configure McpE2E:Sandbox:EnvironmentName to run package file MCP E2E tests.");
 }

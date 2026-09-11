@@ -74,29 +74,10 @@ public sealed class AddItemModelToolE2ETests {
 		return new AddItemModelArrangeContext(rootDirectory, outputFolderPath, environmentName, session, cancellationTokenSource);
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
-		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
-			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
-			return configuredEnvironmentName;
-		}
-
-		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
-			return fallbackEnvironmentName;
-		}
-
-		Assert.Ignore(
-			$"add-item-model MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
-		return string.Empty;
-	}
-
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
 			settings,
-			["ping-app", "-e", environmentName]);
-		return result.ExitCode == 0;
-	}
+			$"add-item-model MCP E2E requires a reachable environment. Configured sandbox environment '{settings.Sandbox.EnvironmentName}' was not reachable, and fallback environment '{ReachableSandboxEnvironment.FallbackEnvironmentName}' was also unavailable.");
 
 	private static async Task<AddItemModelActResult> ActAsync(
 		McpServerSession session,

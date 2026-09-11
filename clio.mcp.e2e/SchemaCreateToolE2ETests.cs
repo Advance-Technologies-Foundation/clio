@@ -168,34 +168,9 @@ public sealed class SchemaCreateToolE2ETests : McpContractFixtureBase {
 		duplicateResponse.Error.Should().Contain(schemaName).And.Contain("already exists");
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
-		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
-			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
-			return configuredEnvironmentName;
-		}
-
-		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
-			return fallbackEnvironmentName;
-		}
-
-		Assert.Ignore(
-			$"create-schema MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
-		return string.Empty;
-	}
-
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		using CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
-		try {
-			ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-				settings,
-				["ping-app", "-e", environmentName],
-				cancellationToken: cts.Token);
-			return result.ExitCode == 0;
-		} catch (OperationCanceledException) {
-			return false;
-		}
-	}
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
+			settings,
+			$"create-schema MCP E2E requires a reachable environment. Configured sandbox environment '{settings.Sandbox.EnvironmentName}' was not reachable, and fallback environment '{ReachableSandboxEnvironment.FallbackEnvironmentName}' was also unavailable.");
 
 }

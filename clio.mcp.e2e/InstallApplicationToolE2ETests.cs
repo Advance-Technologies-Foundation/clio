@@ -147,12 +147,8 @@ public sealed class InstallApplicationToolE2ETests {
 	private static string ResolveBundledFixturePackagePath() =>
 		Path.Combine(AppContext.BaseDirectory, "Assets", "ClioMcpE2EFixture.gz");
 
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-			settings,
-			["ping-app", "-e", environmentName]);
-		return result.ExitCode == 0;
-	}
+	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) =>
+		await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName);
 
 	private static async Task<InstallApplicationActResult> ActAsync(
 		McpServerSession session,

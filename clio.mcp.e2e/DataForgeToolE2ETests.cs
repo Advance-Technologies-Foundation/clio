@@ -608,25 +608,10 @@ public sealed class DataForgeToolE2ETests {
 		return new ArrangeContext(session, cancellationTokenSource, environmentName);
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
-		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (string.IsNullOrWhiteSpace(configuredEnvironmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run Data Forge MCP E2E tests.");
-		}
-
-		if (!await CanReachEnvironmentAsync(settings, configuredEnvironmentName!)) {
-			Assert.Ignore($"Data Forge MCP E2E requires a reachable sandbox environment. '{configuredEnvironmentName}' was not reachable.");
-		}
-
-		return configuredEnvironmentName!;
-	}
-
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
 			settings,
-			["ping-app", "-e", environmentName]);
-		return result.ExitCode == 0;
-	}
+			"Configure McpE2E:Sandbox:EnvironmentName to run Data Forge MCP E2E tests.");
 
 	private sealed record ArrangeContext(
 		McpServerSession Session,

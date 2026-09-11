@@ -1020,34 +1020,10 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 			? "Custom"
 			: settings.Sandbox.PackageName;
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
-		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (string.IsNullOrWhiteSpace(configuredEnvironmentName)) {
-			Assert.Ignore("create-entity-business-rule MCP E2E requires McpE2E:Sandbox:EnvironmentName for destructive tests.");
-			return string.Empty;
-		}
-
-		if (await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
-			return configuredEnvironmentName;
-		}
-
-		Assert.Ignore(
-			$"create-entity-business-rule MCP E2E requires a reachable configured sandbox environment. Environment '{configuredEnvironmentName}' was not reachable.");
-		return string.Empty;
-	}
-
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		using CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
-		try {
-			ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-				settings,
-				["ping-app", "-e", environmentName],
-				cancellationToken: cts.Token);
-			return result.ExitCode == 0;
-		} catch (OperationCanceledException) {
-			return false;
-		}
-	}
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
+			settings,
+			"create-entity-business-rule MCP E2E requires McpE2E:Sandbox:EnvironmentName for destructive tests.");
 
 	private static IReadOnlyDictionary<string, object?> CreateContactEntityRule(string caption) =>
 		new Dictionary<string, object?> {

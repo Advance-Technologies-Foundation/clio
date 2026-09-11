@@ -112,29 +112,12 @@ public sealed class ProcessPageFactsToolE2ETests : McpContractFixtureBase {
 	/// Resolves an environment the sandbox can actually reach, ignoring the test rather than failing it when none
 	/// is available — the same policy the other environment-dependent E2E fixtures follow.
 	/// </summary>
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
-		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName)
-			&& await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
-			return configuredEnvironmentName;
-		}
-		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
-			return fallbackEnvironmentName;
-		}
-		Assert.Ignore(
-			$"get-process-page-facts MCP E2E requires a reachable environment. Configured sandbox environment "
-			+ $"'{configuredEnvironmentName}' was not reachable, and fallback environment "
-			+ $"'{fallbackEnvironmentName}' was also unavailable.");
-		return string.Empty;
-	}
-
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
 			settings,
-			["ping-app", "-e", environmentName]);
-		return result.ExitCode == 0;
-	}
+			$"get-process-page-facts MCP E2E requires a reachable environment. Configured sandbox environment "
+			+ $"'{settings.Sandbox.EnvironmentName}' was not reachable, and fallback environment "
+			+ $"'{ReachableSandboxEnvironment.FallbackEnvironmentName}' was also unavailable.");
 
 	private new sealed record ArrangeContext(
 		McpServerSession Session,

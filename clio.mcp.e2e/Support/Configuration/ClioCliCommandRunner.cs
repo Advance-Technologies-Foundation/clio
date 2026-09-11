@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Linq;
 using System.Net.Http;
@@ -113,12 +114,58 @@ internal static class ClioCliCommandRunner {
 		McpE2ESettings settings,
 		string environmentName,
 		CancellationToken cancellationToken = default) {
-		ClioCliCommandResult result = await RunAsync(
-			settings,
-			["ping-app", "-e", environmentName],
-			cancellationToken: cancellationToken);
-		return result.ExitCode == 0;
+		if (ReachedEnvironments.ContainsKey(environmentName)) {
+			return true;
+		}
+		// The probe carries its own ceiling so no caller can hang the run on an environment that accepts
+		// the connection and never answers. A caller-supplied token still applies; this only adds a bound.
+		using CancellationTokenSource probeCancellation =
+			CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+		probeCancellation.CancelAfter(ReachabilityProbeTimeout);
+		bool isReachable;
+		try {
+			ClioCliCommandResult result = await RunAsync(
+				settings,
+				["ping-app", "-e", environmentName],
+				cancellationToken: probeCancellation.Token,
+				timingKey: "ping-app (reachability)");
+			isReachable = result.ExitCode == 0;
+		} catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
+			return false;
+		}
+		if (isReachable) {
+			ReachedEnvironments[environmentName] = true;
+		}
+		return isReachable;
 	}
+
+	/// <summary>
+	/// Ceiling for one reachability probe. An unreachable stand must cost a bounded wait, never a hang.
+	/// </summary>
+	private static readonly TimeSpan ReachabilityProbeTimeout = TimeSpan.FromSeconds(30);
+
+	/// <summary>
+	/// Environments already proven reachable in this process.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// The probe is an out-of-process clio start plus a real authenticated round trip to Creatio, and
+	/// dozens of fixtures ran it inside their own arrange — once per test — against the single stand the
+	/// build deploys and removes around the run. Once an environment has answered, every repeat probe is
+	/// pure cost, so a success is remembered for the rest of the process.
+	/// </para>
+	/// <para>
+	/// A FAILURE is deliberately not remembered. A transient refusal during the stand's warm-up would
+	/// otherwise be frozen for the whole run and silently turn every sandbox fixture into a skip, which
+	/// reads as a green build with no coverage. Re-probing after a failure costs one extra CLI start on a
+	/// stand that is genuinely down, and such a run has no sandbox coverage to lose anyway.
+	/// </para>
+	/// <para>
+	/// A fixture that deliberately makes an environment unreachable must not use this probe to observe
+	/// that transition; call <see cref="RunAsync"/> directly instead.
+	/// </para>
+	/// </remarks>
+	private static readonly ConcurrentDictionary<string, bool> ReachedEnvironments = new();
 
 	/// <summary>
 	/// Waits for Creatio to finish the delayed recycle triggered by package installation or hot-fix changes.

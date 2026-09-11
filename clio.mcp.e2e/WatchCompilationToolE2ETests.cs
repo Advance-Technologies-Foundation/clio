@@ -113,12 +113,8 @@ public sealed class WatchCompilationToolE2ETests {
 		return new ArrangeContext(session, cancellationTokenSource);
 	}
 
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-			settings,
-			["ping-app", "-e", environmentName]);
-		return result.ExitCode == 0;
-	}
+	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) =>
+		await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName);
 
 	private static async Task<CallToolResult> CallToolAsync(
 		ArrangeContext arrangeContext, string environmentName, int? giveUpAfterSeconds) {

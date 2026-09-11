@@ -1296,29 +1296,10 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	}
 
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
-		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (string.IsNullOrWhiteSpace(configuredEnvironmentName)) {
-			Assert.Ignore(
-				"mobile-page-conversion MCP E2E requires a configured sandbox environment: set Sandbox.EnvironmentName "
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
+			settings,
+			"mobile-page-conversion MCP E2E requires a configured sandbox environment: set Sandbox.EnvironmentName "
 				+ "in the MCP E2E settings to a registered clio environment that hosts the seed application.");
-		}
-		if (!await CanReachEnvironmentAsync(settings, configuredEnvironmentName!)) {
-			Assert.Ignore(
-				$"mobile-page-conversion MCP E2E requires a reachable environment: configured sandbox environment "
-				+ $"'{configuredEnvironmentName}' did not answer ping-app. Start it or point Sandbox.EnvironmentName at a reachable environment.");
-		}
-		return configuredEnvironmentName!;
-	}
 
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		using CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
-		try {
-			ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-				settings, ["ping-app", "-e", environmentName], cancellationToken: cts.Token);
-			return result.ExitCode == 0;
-		} catch (OperationCanceledException) {
-			return false;
-		}
-	}
 }
