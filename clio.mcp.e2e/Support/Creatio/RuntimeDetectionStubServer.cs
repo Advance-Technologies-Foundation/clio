@@ -190,6 +190,14 @@ http.createServer((request, response) => {
       return;
     }
     recordedRequests.push({ method: request.method, url: url });
+    if (config.PackageSynchronizationResponse && url.endsWith("/WorkspaceExplorerService.svc/GetIsFileDesignMode")) {
+      sendJson(response, 200, { success: true, value: true });
+      return;
+    }
+    if (config.PackageSynchronizationResponse && (url.endsWith("/AppInstallerService.svc/LoadPackagesToDB") || url.endsWith("/AppInstallerService.svc/LoadPackagesToFileSystem"))) {
+      sendJson(response, 200, JSON.parse(config.PackageSynchronizationResponse));
+      return;
+    }
     if (request.method === "POST" && url === "/ServiceModel/AuthService.svc/Login") {
       sendJson(
         response,
@@ -371,7 +379,8 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	string? ODataNonJsonEntity = null,
 	string? ODataEntity = null,
 	string? ODataPreWriteMode = null,
-	string? AuthRejectedSelectQuerySchemaName = null);
+	string? AuthRejectedSelectQuerySchemaName = null,
+	string? PackageSynchronizationResponse = null);
 
 /// <summary>
 /// One request served by <see cref="RuntimeDetectionStubServer"/>, as reported by

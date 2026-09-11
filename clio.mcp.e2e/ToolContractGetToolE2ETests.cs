@@ -18,6 +18,28 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 	[Test]
+	[Description("An unknown set-system-setting name suggests the update tool first over real stdio.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract suggests update for set")]
+	[AllureDescription("Checks the serialized shortlist without executing any system-setting operation.")]
+	public async Task GetToolContracts_ShouldSuggestUpdateFirst_WhenSetVerbIsRequested() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["tool-names"] = new[] { "set-sys-setting" } });
+
+		// Assert
+		AllureApi.Step("Assert lookup remains a failure", () =>
+			response.Success.Should().BeFalse(because: "suggestions must not execute or alias the unknown tool"));
+		AllureApi.Step("Assert update ranks first", () =>
+			response.Error!.Suggestions!.First().Should().Be(SysSettingUpdateTool.UpdateSysSettingToolName,
+				because: "the matching write intent must survive the real wire path"));
+	}
+
+	[Test]
 	[TestCase(false)]
 	[TestCase(true)]
 	[Description("Returns valid contracts and individual misses through the real MCP server in either request order.")]
