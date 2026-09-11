@@ -115,6 +115,11 @@ DESCRIPTION
       viewConfigDiff must be a localizable-string binding, not an inline
       literal. Bind via #ResourceString(<Key>)# and register the key's
       default-language value with --resources. Inline literals are rejected.
+      Gallery itemConfig.templateValuesMapping values name record attributes
+      (e.g. caption: "GalleryDS_Name") and must stay unchanged. Other captions
+      still require localization. For a standalone merge, repeat type:
+      "crt.Gallery" unless the same body declares that node's type elsewhere.
+      Designer-only _designOptions mappings are also excluded.
       A component's own data descriptor is exempt: a "data" object carrying the
       platform's "typeName" marker, on any node that declares a component type
       and at any depth, is component metadata (uId, schemaType, typeName and

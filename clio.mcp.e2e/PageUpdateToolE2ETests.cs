@@ -1,5 +1,6 @@
 ﻿using System.Text.Json;
 using System.Text.RegularExpressions;
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio;
@@ -1343,6 +1344,85 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		} finally {
 			TryDeleteDirectory(sessionDir);
 			TryDeleteDirectory(outOfBandDir);
+		}
+	}
+
+	[TestCase(PageUpdateTool.ToolName)]
+	[TestCase(PageSyncTool.ToolName)]
+	[Description("Saves Gallery and Playbook attribute mappings with validation enabled and verifies the persisted identifiers through get-page on the explicitly configured sandbox.")]
+	[AllureTag(PageUpdateTool.ToolName, PageSyncTool.ToolName)]
+	[AllureName("Page writers preserve Gallery and Playbook mappings")]
+	[AllureDescription("Creates a unique blank page in Custom, saves both mapping shapes with validation enabled, and reads it back to prove the identifiers were not localized or removed.")]
+	public async Task PageWriters_ShouldPreserveMappings_WhenValidationEnabled(string toolName) {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping sandbox page writes.");
+		}
+		string environmentName = settings.Sandbox.EnvironmentName!;
+		environmentName.Should().NotBeNullOrWhiteSpace(because: "this test must never fall back to a shared environment");
+		string schemaName = "UsrMapping" + Guid.NewGuid().ToString("N")[..12];
+		string outputDirectory = CreateFixtureDirectory("page-mapping-roundtrip");
+		await using var context = Arrange(TimeSpan.FromMinutes(5));
+		await AllureApi.Step("Create a uniquely named sandbox page", async () => {
+			CallToolResult created = await context.Session.CallToolAsync(PageCreateTool.ToolName,
+				new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> {
+					["schema-name"] = schemaName, ["template"] = "BlankPageTemplate",
+					["package-name"] = "Custom", ["environment-name"] = environmentName
+				} }, context.CancellationTokenSource.Token);
+			EntitySchemaStructuredResultParser.Extract<PageCreateResponse>(created).Success.Should().BeTrue(
+				because: "a fresh page isolates this test from existing sandbox content");
+		});
+		PageGetResponse original = await GetPageAsync(context, schemaName, environmentName, outputDirectory);
+		original.Success.Should().BeTrue(because: "the new page must be readable before editing");
+		string originalBody = await File.ReadAllTextAsync(original.Files.BodyFile);
+		const string mappingDiff = """
+			[{"operation":"insert","name":"GalleryProbe","parentName":"Main","propertyName":"items","values":{"type":"crt.Gallery","itemConfig":{"templateValuesMapping":{"caption":"GalleryDS_Name","description":"GalleryDS_Description","image":"GalleryDS_Image","id":"GalleryDS_Id"}}}},
+			{"operation":"insert","name":"PlaybookProbe","parentName":"Main","propertyName":"items","values":{"type":"crt.Playbook","_designOptions":{"templateValuesMapping":{"caption":"PlaybookDS_Name"}}}}]
+			""";
+		string body = Regex.Replace(originalBody,
+			@"/\*\*SCHEMA_VIEW_CONFIG_DIFF\*/[\s\S]*?/\*\*SCHEMA_VIEW_CONFIG_DIFF\*/",
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/" + mappingDiff + "/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			RegexOptions.None, TimeSpan.FromSeconds(1));
+		body.Should().NotBe(originalBody, because: "the probe must actually add both mapping shapes");
+
+		// Act
+		await AllureApi.Step("Save with content validation enabled", async () => {
+			if (toolName == PageUpdateTool.ToolName) {
+				PageUpdateResponse saved = await UpdatePageAsync(context, schemaName, body, environmentName, outputDirectory);
+				saved.Success.Should().BeTrue(because: $"valid mappings must save through update-page: {saved.Error}");
+			} else {
+				CallToolResult saved = await context.Session.CallToolAsync(PageSyncTool.ToolName,
+					new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName, ["validate"] = true, ["skip-sampling"] = true,
+						["output-directory"] = outputDirectory,
+						["pages"] = new[] { new Dictionary<string, object?> { ["schema-name"] = schemaName, ["body"] = body } }
+					} }, context.CancellationTokenSource.Token);
+				PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(saved);
+				response.Success.Should().BeTrue(because: $"valid mappings must save through sync-pages: {string.Join("; ", response.Pages.Select(page => page.Error))}");
+			}
+		});
+
+		// Assert
+		PageGetResponse readback = await AllureApi.Step("Read the saved schema from Creatio", async () =>
+			await GetPageAsync(context, schemaName, environmentName, outputDirectory));
+		readback.Success.Should().BeTrue(because: "a save response alone does not prove persistence");
+		string persisted = await File.ReadAllTextAsync(readback.Files.BodyFile);
+		string persistedDiff = Regex.Match(persisted,
+			@"/\*\*SCHEMA_VIEW_CONFIG_DIFF\*/(?<diff>[\s\S]*?)/\*\*SCHEMA_VIEW_CONFIG_DIFF\*/",
+			RegexOptions.None, TimeSpan.FromSeconds(1)).Groups["diff"].Value;
+		using JsonDocument actual = JsonDocument.Parse(persistedDiff);
+		using JsonDocument expected = JsonDocument.Parse(mappingDiff);
+		foreach (JsonElement expectedNode in expected.RootElement.EnumerateArray()) {
+			string nodeName = expectedNode.GetProperty("name").GetString()!;
+			JsonElement actualNode = actual.RootElement.EnumerateArray().Single(node => node.GetProperty("name").GetString() == nodeName);
+			string configProperty = nodeName == "GalleryProbe" ? "itemConfig" : "_designOptions";
+			Dictionary<string, string?> actualMapping = actualNode.GetProperty("values").GetProperty(configProperty)
+				.GetProperty("templateValuesMapping").EnumerateObject().ToDictionary(property => property.Name, property => property.Value.GetString());
+			Dictionary<string, string?> expectedMapping = expectedNode.GetProperty("values").GetProperty(configProperty)
+				.GetProperty("templateValuesMapping").EnumerateObject().ToDictionary(property => property.Name, property => property.Value.GetString());
+			AllureApi.Step($"Verify {nodeName} mapping values and paths are unchanged", () => actualMapping.Should().BeEquivalentTo(expectedMapping,
+				because: "mapping slots must retain plain record identifiers at their original paths, without resource prefixes"));
 		}
 	}
 
