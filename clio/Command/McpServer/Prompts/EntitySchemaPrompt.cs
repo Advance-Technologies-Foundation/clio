@@ -200,6 +200,9 @@ public static class EntitySchemaPrompt {
 		 column is absent. Before concluding a field is missing, re-read without `package-name`, or use
 		 `{FindEntitySchemaTool.FindEntitySchemaToolName}` to find the package that customizes the schema.
 		 Current package request: `{packageName ?? "<merged: all packages>"}`.
+		 For a SystemValue default, verify `default-value-config.value-source` together with its native
+		 `display-value` caption. If the caption is absent, inspect `source-resolution`; catalog-unavailable
+		 does not mean the stored selector is invalid. The caption identifies the source, not its current evaluated value.
 		 For the canonical discover -> inspect -> mutate flow, call `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
 		 Use this read step before `modify-entity-schema-column` or `sync-schemas`, and read the schema again after mutation when explicit verification is needed.
 		 """;
