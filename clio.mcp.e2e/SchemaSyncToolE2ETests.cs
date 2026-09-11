@@ -2165,8 +2165,14 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 				}
 			}
 		};
-		CallToolResult firstResult = await context.Session.CallToolAsync(
-			ToolName, batchArgs, context.CancellationTokenSource.Token);
+		// This first call is arrange, not the subject: the test is about what the REPLAY reports. An
+		// OData rebuild left running by an earlier test on the shared stand would fail it here for a
+		// reason that has nothing to do with replay semantics, so it goes through the retry gate. The
+		// batch is convergent by construction (no seed-rows), which is exactly what makes a repeat safe.
+		CallToolResult firstResult = await TransientPlatformConditionRetryGate.InvokeWithRetryAsync(
+			async attemptToken => await context.Session.CallToolAsync(ToolName, batchArgs, attemptToken),
+			reauthenticateAsync: null,
+			context.CancellationTokenSource.Token);
 		ExtractSchemaSyncResponse(firstResult).GetProperty("success").GetBoolean().Should().BeTrue(
 			because: "the initial convergent batch must apply before the identical replay");
 		EntitySchemaPropertiesInfo afterFirst = await GetSchemaPropertiesAsync(

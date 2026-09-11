@@ -1015,18 +1015,27 @@ public sealed class ApplicationToolE2ETests {
 		string? iconBackground,
 		string? optionalTemplateDataJson,
 		bool withMobilePages = true) {
-		CallToolResult callResult = await CallCreateAsync(
-			session,
-			cancellationToken,
-			environmentName,
-			name,
-			code,
-			description,
-			templateCode,
-			iconId,
-			iconBackground,
-			optionalTemplateDataJson,
-			withMobilePages);
+		// create-app is answered with "Creatio is currently rebuilding the OData library" whenever an
+		// earlier test's schema publish is still finishing on the shared stand — a condition that outlives
+		// the command that started it and therefore cannot be serialized away (see
+		// docs/knowledge/Tests/the-parallel-pool-cannot-disturb-the-shared-stand.md). The gate is the
+		// repository's existing answer to exactly that window, and it deliberately refuses to retry a
+		// create that may already have happened, so a real failure still fails.
+		CallToolResult callResult = await TransientPlatformConditionRetryGate.InvokeWithRetryAsync(
+			async attemptToken => await CallCreateAsync(
+				session,
+				attemptToken,
+				environmentName,
+				name,
+				code,
+				description,
+				templateCode,
+				iconId,
+				iconBackground,
+				optionalTemplateDataJson,
+				withMobilePages),
+			reauthenticateAsync: null,
+			cancellationToken);
 		ApplicationContextResponseEnvelope result;
 		try {
 			result = ApplicationResultParser.ExtractInfo(callResult);
