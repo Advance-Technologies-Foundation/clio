@@ -216,43 +216,56 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 			// baseline must still move forward after the save: report armed so RefreshOrDrop persists the
 			// post-save checksum. Otherwise the next unpinned save auto-arms from a now-superseded
 			// checksum and raises a false conflict.
-			//
-			// A MACHINE-READABLE TRACE when the pin disagrees with the baseline. The bypass this guards
-			// against is: a save is refused, the caller copies actualChecksum out of conflictDetails,
-			// resubmits the SAME body with the new pin, and the guard passes - the other author's edit is
-			// gone, the response says success:true / conflict:false, and RefreshOrDrop then rewrites
-			// meta.json to the post-save checksum, erasing the only local record that the pin ever
-			// diverged. Without this, a caller that took the bypass and a caller that made a legitimate
-			// up-to-date save are byte-identical on the wire. Guidance prose is not enough for something
-			// only a machine reads.
-			if (!string.IsNullOrWhiteSpace(baseline.Checksum)
-				&& !string.Equals(baseline.Checksum, options.ExpectedChecksum, StringComparison.Ordinal)) {
-				AddWarning(warnings,
-					$"The checksum pinned for '{options.SchemaName}' differs from the baseline clio last "
-					+ "recorded for this page. " + PinnedChecksumMergeAdvice);
-				// AND THE IDENTITY HALF, on this path only. The schema UId is deliberately not armed from
-				// disk - a stale on-disk UId refused saves whose pin matched the server, which is the false
-				// positive this change set removes - but SysSchema.Checksum is CONTENT-derived, so two
-				// schemas carrying a verbatim-copied body share it: a matching pin proves the caller read a
-				// schema with this content, not that it read THIS schema. While the pin agrees with the
-				// recorded baseline the local record corroborates both halves and there is nothing to
-				// report; once it diverges, neither half is corroborated any more, and the identity the
-				// caller can no longer see is the one that decides which package the write lands in.
-				if (!string.IsNullOrWhiteSpace(baseline.EditableSchemaUId)) {
-					AddWarning(warnings,
-						$"The schema-identity check is not armed for this pinned save of '{options.SchemaName}', "
-						+ $"and clio last recorded schema {baseline.EditableSchemaUId} for this page and "
-						+ "environment. A checksum is derived from the page content, so a matching pin does not "
-						+ "by itself prove the write is landing on that same schema; pass target-schema-uid "
-						+ "when the target matters.");
-				}
-			}
-
+			AppendPinnedBaselineDivergenceWarnings(warnings, options, baseline);
 			return (metaFilePath, true, JoinWarnings(warnings));
 		}
 		options.ExpectedChecksum = baseline.Checksum;
 		options.ExpectedSchemaUId = baseline.EditableSchemaUId;
 		return (metaFilePath, true, JoinWarnings(warnings));
+	}
+
+	/// <summary>
+	/// Records the machine-readable trace for a pinned save whose pin disagrees with the baseline clio
+	/// last recorded for this page, and — on that same path only — the fact that the schema-identity half
+	/// is not armed.
+	/// </summary>
+	/// <remarks>
+	/// The bypass this guards against is: a save is refused, the caller copies actualChecksum out of
+	/// conflictDetails, resubmits the SAME body with the new pin, and the guard passes - the other
+	/// author's edit is gone, the response says success:true / conflict:false, and RefreshOrDrop then
+	/// rewrites meta.json to the post-save checksum, erasing the only local record that the pin ever
+	/// diverged. Without this, a caller that took the bypass and a caller that made a legitimate
+	/// up-to-date save are byte-identical on the wire. Guidance prose is not enough for something only a
+	/// machine reads.
+	/// <para>
+	/// The schema UId is deliberately not armed from disk - a stale on-disk UId refused saves whose pin
+	/// matched the server, which is the false positive this change set removes - but SysSchema.Checksum is
+	/// CONTENT-derived, so two schemas carrying a verbatim-copied body share it: a matching pin proves the
+	/// caller read a schema with this content, not that it read THIS schema. While the pin agrees with the
+	/// recorded baseline the local record corroborates both halves and there is nothing to report; once it
+	/// diverges, neither half is corroborated any more, and the identity the caller can no longer see is
+	/// the one that decides which package the write lands in.
+	/// </para>
+	/// </remarks>
+	private static void AppendPinnedBaselineDivergenceWarnings(
+		List<string> warnings, PageUpdateOptions options, PageBaselineInfo baseline) {
+		bool pinDivergesFromBaseline = !string.IsNullOrWhiteSpace(baseline.Checksum)
+			&& !string.Equals(baseline.Checksum, options.ExpectedChecksum, StringComparison.Ordinal);
+		if (!pinDivergesFromBaseline) {
+			return;
+		}
+		AddWarning(warnings,
+			$"The checksum pinned for '{options.SchemaName}' differs from the baseline clio last "
+			+ "recorded for this page. " + PinnedChecksumMergeAdvice);
+		if (string.IsNullOrWhiteSpace(baseline.EditableSchemaUId)) {
+			return;
+		}
+		AddWarning(warnings,
+			$"The schema-identity check is not armed for this pinned save of '{options.SchemaName}', "
+			+ $"and clio last recorded schema {baseline.EditableSchemaUId} for this page and "
+			+ "environment. A checksum is derived from the page content, so a matching pin does not "
+			+ "by itself prove the write is landing on that same schema; pass target-schema-uid "
+			+ "when the target matters.");
 	}
 
 	/// <summary>
