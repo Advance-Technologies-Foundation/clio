@@ -213,7 +213,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("ListPageV2Template (the older section list template) mirrors ListPageV3Template's rule verbatim: same mobile target, same container correspondence, and the same DataTable->List / FolderTree->FolderTreeActions (with its carryProperties whitelist) components, so a section built on the legacy template converts identically to one on the current template.")]
+	[Description("ListPageV2Template (the older section list template) mirrors ListPageV3Template's rule apart from ListContainer: same mobile target, the same MainContainer/LeftFilterContainer/RightFilterContainer correspondence, and the same DataTable->List / FolderTree->FolderTreeActions (with its carryProperties whitelist) components, so a section built on the legacy template converts identically to one on the current template. V2's real shape has no ListContainer wrapper (DataTable sits directly in SectionContentWrapper, ENG-94838), so its container map omits the ListContainer pairing that V3 needs.")]
 	public void LoadBundled_ListPageV2TemplateMirrorsListPageV3() {
 		// Arrange & Act
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
@@ -223,8 +223,10 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		TemplateMappingRule v2 = rules.Templates.Single(t => t.Web == "ListPageV2Template");
 
 		v2.Mobile.Should().Be(v3.Mobile, because: "both list-page generations target the same mobile list template");
-		v2.Containers.Should().BeEquivalentTo(v3.Containers,
-			because: "the two web templates lay out the section list identically, so their container correspondence must match");
+		v2.Containers.Should().BeEquivalentTo(v3.Containers.Where(c => c.Web != "ListContainer"),
+			because: "the two web templates lay out the section list identically apart from ListContainer, which V2 does not have");
+		v2.Containers.Should().NotContain(c => c.Web == "ListContainer",
+			because: "V2's DataTable sits directly in SectionContentWrapper, with no ListContainer wrapper to map");
 
 		ComponentMappingRule v2FolderTree = v2.Components.Single(c => c.Web == "FolderTree");
 		ComponentMappingRule v3FolderTree = v3.Components.Single(c => c.Web == "FolderTree");
