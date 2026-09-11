@@ -308,7 +308,9 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>Schedules native license redistribution for one role.</summary>
 		AdministrationRedistributeRoleLicenses = 89,
 		/// <summary>Invalidates native rights caches after system-operation priority changes.</summary>
-		AdministrationInvalidateRightsCache = 90
+		AdministrationInvalidateRightsCache = 90,
+		/// <summary>Reads stored or virtual package metadata without materializing the package.</summary>
+		GetPackageProperties = 91
 
 	}
 
@@ -323,6 +325,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 	#region Fields: Private
 
 	public static readonly IReadOnlyDictionary<KnownRoute, string> KnownRoutes = new Dictionary<KnownRoute, string> {
+		{KnownRoute.GetPackageProperties, "ServiceModel/PackageService.svc/GetPackageProperties"},
 		{KnownRoute.AdministrationSaveRole, "/rest/AdministrationService/SaveRole"},
 		{KnownRoute.AdministrationSaveChiefsRole, "/rest/AdministrationService/SaveChiefsRole"},
 		{KnownRoute.AdministrationSaveUser, "/rest/AdministrationService/UpdateOrCreateUser"},

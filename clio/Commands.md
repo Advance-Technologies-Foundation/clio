@@ -458,7 +458,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`open-settings`](docs/commands/open-settings.md) - Open the clio settings file, `conf`, `configuration`, `os`, `settings`
 <a id="get-page"></a>
 <a id="page-get"></a>
-- [`get-page`](docs/commands/get-page.md) - Get a Freedom UI page bundle and raw schema body, `page-get`
+- [`get-page`](docs/commands/get-page.md) - Get a Freedom UI page bundle, editable body, and current-leaf/design-package metadata, `page-get`
 <a id="get-process-page-facts"></a>
 <a id="page-facts"></a>
 - [`get-process-page-facts`](docs/commands/get-process-page-facts.md) - Read the completing-button candidates and page-scoped data sources a Pre-configured page process element needs, `page-facts`

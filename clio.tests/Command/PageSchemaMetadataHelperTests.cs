@@ -27,6 +27,44 @@ public sealed class PageSchemaMetadataHelperTests
 	}
 
 	[Test]
+	[Description("PackageService names a virtual design package without querying a nonexistent SysPackage row.")]
+	public void QueryPackageName_ShouldReturnVirtualName_WhenPackageServiceResolvesIt() {
+		// Arrange
+		const string url = TestBase + "/ServiceModel/PackageService.svc/GetPackageProperties";
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetPackageProperties).Returns(url);
+		_applicationClient.ExecutePostRequest(url, "\"" + SchemaUId + "\"")
+			.Returns("""{"success":true,"package":{"name":"UsrVendor_customer"}}""");
+
+		// Act
+		string name = PageSchemaMetadataHelper.QueryPackageName(_applicationClient, _serviceUrlBuilder, SchemaUId);
+
+		// Assert
+		name.Should().Be("UsrVendor_customer", because: "virtual packages have names before they have database rows");
+		_applicationClient.ReceivedCalls().Should().ContainSingle(because: "a resolved virtual name needs no database lookup");
+	}
+
+	[TestCase("{\"success\":false}")]
+	[TestCase("{\"success\":false,\"package\":null}")]
+	[TestCase("{\"success\":true,\"package\":null}")]
+	[TestCase("<html>Unavailable</html>")]
+	[TestCase("{\"success\":true,\"package\":{\"name\":null}}")]
+	[Description("Unavailable optional package metadata retains the existing stored-package name fallback.")]
+	public void QueryPackageName_ShouldUseStoredName_WhenPackageServiceIsUnavailable(string response) {
+		// Arrange
+		const string url = TestBase + "/ServiceModel/PackageService.svc/GetPackageProperties";
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetPackageProperties).Returns(url);
+		_applicationClient.ExecutePostRequest(url, Arg.Any<string>()).Returns(response);
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>())
+			.Returns("""{"success":true,"rows":[{"Name":"StoredCustomer"}]}""");
+
+		// Act
+		string name = PageSchemaMetadataHelper.QueryPackageName(_applicationClient, _serviceUrlBuilder, SchemaUId);
+
+		// Assert
+		name.Should().Be("StoredCustomer", because: "optional package metadata must retain compatibility with restricted servers");
+	}
+
+	[Test]
 	[Description("QuerySysSchemaRowByUId must filter SysSchema by UId (GUID dataValueType 0) and by ClientUnitSchemaManager, projecting the requested columns.")]
 	public void QuerySysSchemaRowByUId_ShouldFilterByUIdAndManager_WhenCalled() {
 		// Arrange
