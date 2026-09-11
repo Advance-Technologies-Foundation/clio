@@ -11,6 +11,22 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public class CreateTestProjectToolTests {
+	[TestCase(typeof(CreateTestProjectTool), nameof(CreateTestProjectTool.CreateTestProject), CreateTestProjectTool.ToolName)]
+	[TestCase(typeof(CreateIntegrationTestProjectTool), nameof(CreateIntegrationTestProjectTool.Create), CreateIntegrationTestProjectTool.ToolName)]
+	[Category("Unit")]
+	[Description("Keeps both package-test MCP tool names discoverable through their production constants.")]
+	public void Scaffold_ShouldExposeStableName_WhenInspectingToolContract(System.Type toolType, string methodName, string toolName) {
+		// Arrange
+		System.Reflection.MethodInfo method = toolType.GetMethod(methodName)!;
+
+		// Act
+		object[] attributes = method.GetCustomAttributes(typeof(ModelContextProtocol.Server.McpServerToolAttribute), false);
+
+		// Assert
+		attributes.Should().ContainSingle(because: "each scaffold must expose one MCP tool contract");
+		((ModelContextProtocol.Server.McpServerToolAttribute)attributes[0]).Name.Should().Be(toolName,
+			because: "discovery and E2E callers must share the production tool-name constant");
+	}
 
 	[Test]
 	[Description("Resolves the new-test-project command for the requested environment and maps structured MCP arguments into command options.")]
