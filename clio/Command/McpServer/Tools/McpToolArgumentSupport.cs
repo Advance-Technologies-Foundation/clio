@@ -198,6 +198,30 @@ internal static class McpToolArgumentSupport {
 	}
 
 	/// <summary>
+	/// Ranks distinct alternative tool names, preferring an exact subject match for set/update synonyms.
+	/// </summary>
+	/// <param name="requestedName">The unresolved tool name.</param>
+	/// <param name="candidates">Tool names available to the calling surface.</param>
+	/// <returns>At most three alternatives, excluding the requested name regardless of casing.</returns>
+	public static IReadOnlyList<string> SuggestToolNames(string requestedName, IEnumerable<string> candidates) {
+		string rankingName = requestedName.Length > 64 ? requestedName[..64] : requestedName;
+		string? synonym = rankingName.StartsWith("set-", StringComparison.OrdinalIgnoreCase)
+			? "update-" + rankingName[4..]
+			: rankingName.StartsWith("update-", StringComparison.OrdinalIgnoreCase)
+				? "set-" + rankingName[7..]
+				: null;
+		return candidates
+			.Where(name => !string.IsNullOrWhiteSpace(name)
+				&& !string.Equals(name, requestedName, StringComparison.OrdinalIgnoreCase))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.OrderBy(name => string.Equals(name, synonym, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+			.ThenBy(name => LevenshteinDistance(rankingName, name))
+			.ThenBy(name => name, StringComparer.OrdinalIgnoreCase)
+			.Take(3)
+			.ToArray();
+	}
+
+	/// <summary>
 	/// Case-insensitive Levenshtein edit distance between two identifiers. Drives the "closest
 	/// match" ranking for unknown tool names and unknown component types. Equal strings score 0.
 	/// </summary>
