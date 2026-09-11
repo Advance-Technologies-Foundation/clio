@@ -8,8 +8,22 @@ namespace Clio.Command.Administration;
 /// <summary>Preserves native administration semantics and verifies mutation effects.</summary>
 public sealed partial class AdministrationService(IAdministrationClient client) : IAdministrationService {
 
+	private const string SysAdminOperationSchema = "SysAdminOperation";
+	private const string SysAdminOperationGranteeSchema = "SysAdminOperationGrantee";
+	private const string SysAdminUnitSchema = "SysAdminUnit";
+	private const string SysAdminUnitIPRangeSchema = "SysAdminUnitIPRange";
+	private const string SysLicPackageInRoleSchema = "SysLicPackageInRole";
+	private const string ContactColumn = "Contact";
+	private const string ActiveColumn = "Active";
+	private const string SysAdminUnitTypeValueColumn = "SysAdminUnitTypeValue";
+	private const string ParentRoleColumn = "ParentRole";
+	private const string ConnectionTypeColumn = "ConnectionType";
+	private const string SysUserInRoleSchema = "SysUserInRole";
+	private const string SysRoleColumn = "SysRole";
+	private const string SysUserColumn = "SysUser";
+
 	private static readonly string[] UnitColumns = [
-		"Id", "Name", "SysAdminUnitTypeValue", "ParentRole", "Active", "Contact", "ConnectionType",
+		"Id", "Name", SysAdminUnitTypeValueColumn, ParentRoleColumn, ActiveColumn, ContactColumn, ConnectionTypeColumn,
 		"SynchronizeWithLDAP", "ForceChangePassword"
 	];
 	private static readonly Guid SystemAdministrators = Guid.Parse("83a43ebc-f36b-1410-298d-001e8c82bcad");
@@ -19,14 +33,14 @@ public sealed partial class AdministrationService(IAdministrationClient client) 
 		Dictionary<string, object> filters = new();
 		if (id.HasValue) { RequireId(id.Value); filters["Id"] = id.Value; }
 		if (name is not null) { RequireName(name); filters["Name"] = name; }
-		if (type.HasValue) { filters["SysAdminUnitTypeValue"] = type.Value; }
+		if (type.HasValue) { filters[SysAdminUnitTypeValueColumn] = type.Value; }
 		if (!type.HasValue && rolesOnly.HasValue) {
-			filters["SysAdminUnitTypeValue"] = rolesOnly.Value ? new[] { 0, 1, 2, 3, 6 } : new[] { 4, 5, 7 };
+			filters[SysAdminUnitTypeValueColumn] = rolesOnly.Value ? new[] { 0, 1, 2, 3, 6 } : new[] { 4, 5, 7 };
 		}
 		if (rolesOnly == true && type.HasValue && type.Value is not (0 or 1 or 2 or 3 or 6)) {
 			throw new ArgumentException("Role inspection accepts only role types 0, 1, 2, 3 or 6.");
 		}
-		return client.Select("SysAdminUnit", UnitColumns, filters, offset, limit);
+		return client.Select(SysAdminUnitSchema, UnitColumns, filters, offset, limit);
 	}
 
 	/// <inheritdoc />
@@ -48,14 +62,14 @@ public sealed partial class AdministrationService(IAdministrationClient client) 
 			throw new AdministrationStateException("Creatio did not return one matching role type.");
 		}
 		Dictionary<string, object> values = new() {
-			["Id"] = id, ["Name"] = name, ["ParentRole"] = parentId.ToString(),
+			["Id"] = id, ["Name"] = name, [ParentRoleColumn] = parentId.ToString(),
 			["SysAdminUnitType"] = typeRows[0].GetProperty("Id").GetString(),
-			["ConnectionType"] = parent.GetProperty("ConnectionType").GetInt32(), ["Active"] = true
+			[ConnectionTypeColumn] = parent.GetProperty(ConnectionTypeColumn).GetInt32(), [ActiveColumn] = true
 		};
 		SaveRole(values);
 		JsonElement result = GetUnit(id);
 		if (TypeOf(result) != type || result.GetProperty("Name").GetString() != name
-			|| LookupId(result, "ParentRole") != parentId) {
+			|| LookupId(result, ParentRoleColumn) != parentId) {
 			throw new AdministrationStateException("Role readback differs from the requested state. Inspect it before retrying.");
 		}
 		return result;
@@ -75,24 +89,17 @@ public sealed partial class AdministrationService(IAdministrationClient client) 
 			}
 			JsonElement parent = GetRole(parentId.Value);
 			ValidateParent(parent, TypeOf(current));
-			HashSet<Guid> visited = [id];
-			Guid cursor = parentId.Value;
-			while (cursor != Guid.Empty) {
-				if (!visited.Add(cursor) || visited.Count > 200) {
-					throw new ArgumentException("The requested role hierarchy is cyclic or exceeds the supported depth.");
-				}
-				cursor = LookupId(GetRole(cursor), "ParentRole");
-			}
-			if (parent.GetProperty("ConnectionType").GetInt32() != current.GetProperty("ConnectionType").GetInt32()) {
+			ValidateHierarchy(id, parentId.Value);
+			if (parent.GetProperty(ConnectionTypeColumn).GetInt32() != current.GetProperty(ConnectionTypeColumn).GetInt32()) {
 				throw new ArgumentException("The parent must have the same connection type as the role.");
 			}
-			values["ParentRole"] = parentId.Value.ToString();
+			values[ParentRoleColumn] = parentId.Value.ToString();
 		}
 		SaveRole(values);
 		Actualize();
 		JsonElement result = GetRole(id);
 		if ((name is not null && result.GetProperty("Name").GetString() != name)
-			|| (parentId.HasValue && LookupId(result, "ParentRole") != parentId.Value)) {
+			|| (parentId.HasValue && LookupId(result, ParentRoleColumn) != parentId.Value)) {
 			throw new AdministrationStateException("Role update could not be verified.");
 		}
 		return result;
@@ -109,7 +116,7 @@ public sealed partial class AdministrationService(IAdministrationClient client) 
 			throw new AdministrationStateException("More than one manager role exists for this parent. Resolve the ambiguity explicitly.");
 		}
 		if (children.GetArrayLength() == 1) { return children[0].Clone(); }
-		if (parent.GetProperty("ConnectionType").GetInt32() != 0) {
+		if (parent.GetProperty(ConnectionTypeColumn).GetInt32() != 0) {
 			throw new ArgumentException("Creating a missing external-user manager role is not verified; use the native administrator UI.");
 		}
 		client.Post(ServiceUrlBuilder.KnownRoute.AdministrationSaveChiefsRole, "SaveChiefsRoleResult",
@@ -124,13 +131,13 @@ public sealed partial class AdministrationService(IAdministrationClient client) 
 	/// <inheritdoc />
 	public void DeleteRole(Guid id) {
 		JsonElement role = GetRole(id);
-		if (id == SystemAdministrators || LookupId(role, "ParentRole") == Guid.Empty) {
+		if (id == SystemAdministrators || LookupId(role, ParentRoleColumn) == Guid.Empty) {
 			throw new ArgumentException("Built-in root and system-administrator roles cannot be deleted by this command.");
 		}
-		JsonElement children = client.Select("SysAdminUnit", ["Id"],
-			new Dictionary<string, object> { ["ParentRole"] = id }, limit: 1);
-		JsonElement members = client.Select("SysUserInRole", ["Id"],
-			new Dictionary<string, object> { ["SysRole"] = id }, limit: 1);
+		JsonElement children = client.Select(SysAdminUnitSchema, ["Id"],
+			new Dictionary<string, object> { [ParentRoleColumn] = id }, limit: 1);
+		JsonElement members = client.Select(SysUserInRoleSchema, ["Id"],
+			new Dictionary<string, object> { [SysRoleColumn] = id }, limit: 1);
 		if (children.GetArrayLength() != 0 || members.GetArrayLength() != 0) {
 			throw new ArgumentException("Remove or move the role's children and direct members before deleting it.");
 		}
@@ -147,7 +154,7 @@ public sealed partial class AdministrationService(IAdministrationClient client) 
 		JsonElement user = GetUnit(userId);
 		if (TypeOf(user) is not (4 or 5 or 7)) { throw new ArgumentException("The member ID must identify a user."); }
 		JsonElement role = GetRole(roleId);
-		if (!remove && user.GetProperty("ConnectionType").GetInt32() != role.GetProperty("ConnectionType").GetInt32()) {
+		if (!remove && user.GetProperty(ConnectionTypeColumn).GetInt32() != role.GetProperty(ConnectionTypeColumn).GetInt32()) {
 			throw new ArgumentException("The user and role must have matching connection types.");
 		}
 		if (remove) {
@@ -159,8 +166,8 @@ public sealed partial class AdministrationService(IAdministrationClient client) 
 				new { userId, roleIds = JsonSerializer.Serialize(new[] { roleId }) }, AdministrationResponseKind.ErrorString);
 		}
 		Actualize();
-		JsonElement direct = client.Select("SysUserInRole", ["Id", "SysUser", "SysRole"],
-			new Dictionary<string, object> { ["SysUser"] = userId, ["SysRole"] = roleId }, limit: 2);
+		JsonElement direct = client.Select(SysUserInRoleSchema, ["Id", SysUserColumn, SysRoleColumn],
+			new Dictionary<string, object> { [SysUserColumn] = userId, [SysRoleColumn] = roleId }, limit: 2);
 		if (direct.GetArrayLength() != (remove ? 0 : 1)) {
 			throw new AdministrationStateException("Direct membership does not match the requested state.");
 		}
@@ -172,25 +179,36 @@ public sealed partial class AdministrationService(IAdministrationClient client) 
 		JsonElement user = GetUnit(userId);
 		if (TypeOf(user) is not (4 or 5 or 7)) { throw new ArgumentException("The member ID must identify a user."); }
 		return effective
-			? client.Select("SysAdminUnitInRole", ["Id", "SysAdminUnit", "SysAdminUnitRoleId"],
-				new Dictionary<string, object> { ["SysAdminUnit"] = userId }, offset, limit)
-			: client.Select("SysUserInRole", ["Id", "SysUser", "SysRole"],
-				new Dictionary<string, object> { ["SysUser"] = userId }, offset, limit);
+			? client.Select("SysAdminUnitInRole", ["Id", SysAdminUnitSchema, "SysAdminUnitRoleId"],
+				new Dictionary<string, object> { [SysAdminUnitSchema] = userId }, offset, limit)
+			: client.Select(SysUserInRoleSchema, ["Id", SysUserColumn, SysRoleColumn],
+				new Dictionary<string, object> { [SysUserColumn] = userId }, offset, limit);
 	}
 
 	/// <inheritdoc />
 	public JsonElement GetMembers(Guid roleId, bool effective, int offset, int limit) {
 		GetRole(roleId);
 		return effective
-			? client.Select("SysAdminUnitInRole", ["Id", "SysAdminUnit", "SysAdminUnitRoleId"],
+			? client.Select("SysAdminUnitInRole", ["Id", SysAdminUnitSchema, "SysAdminUnitRoleId"],
 				new Dictionary<string, object> { ["SysAdminUnitRoleId"] = roleId,
 					["SysAdminUnit.SysAdminUnitTypeValue"] = new[] { 4, 5, 7 } }, offset, limit)
-			: client.Select("SysUserInRole", ["Id", "SysUser", "SysRole"],
-				new Dictionary<string, object> { ["SysRole"] = roleId }, offset, limit);
+			: client.Select(SysUserInRoleSchema, ["Id", SysUserColumn, SysRoleColumn],
+				new Dictionary<string, object> { [SysRoleColumn] = roleId }, offset, limit);
 	}
 
-	private JsonElement ManagerChildren(Guid parentId) => client.Select("SysAdminUnit", UnitColumns,
-		new Dictionary<string, object> { ["ParentRole"] = parentId, ["SysAdminUnitTypeValue"] = 2 }, limit: 2);
+	private void ValidateHierarchy(Guid id, Guid parentId) {
+		HashSet<Guid> visited = [id];
+		Guid cursor = parentId;
+		while (cursor != Guid.Empty) {
+			if (!visited.Add(cursor) || visited.Count > 200) {
+				throw new ArgumentException("The requested role hierarchy is cyclic or exceeds the supported depth.");
+			}
+			cursor = LookupId(GetRole(cursor), ParentRoleColumn);
+		}
+	}
+
+	private JsonElement ManagerChildren(Guid parentId) => client.Select(SysAdminUnitSchema, UnitColumns,
+		new Dictionary<string, object> { [ParentRoleColumn] = parentId, [SysAdminUnitTypeValueColumn] = 2 }, limit: 2);
 
 	private void SaveRole(Dictionary<string, object> values) => client.Post(
 		ServiceUrlBuilder.KnownRoute.AdministrationSaveRole, "SaveRoleResult",
@@ -211,7 +229,7 @@ public sealed partial class AdministrationService(IAdministrationClient client) 
 		return role;
 	}
 
-	private static int TypeOf(JsonElement unit) => unit.GetProperty("SysAdminUnitTypeValue").GetInt32();
+	private static int TypeOf(JsonElement unit) => unit.GetProperty(SysAdminUnitTypeValueColumn).GetInt32();
 
 	private static Guid LookupId(JsonElement unit, string column) {
 		JsonElement value = unit.GetProperty(column);

@@ -33,6 +33,10 @@ public sealed class AdministrationClient(IApplicationClient client, IServiceUrlB
 			}
 			return result.Clone();
 		}
+		return ParseStringResult(result, kind);
+	}
+
+	private static JsonElement ParseStringResult(JsonElement result, AdministrationResponseKind kind) {
 		if (result.ValueKind != JsonValueKind.String) {
 			throw new InvalidOperationException(InvalidResponse);
 		}

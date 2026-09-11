@@ -7,13 +7,13 @@ using System.Text.Json;
 namespace Clio.Command.Administration;
 
 public sealed partial class AdministrationService {
-	private static readonly string[] IpColumns = ["Id", "SysAdminUnit", "BeginIP", "EndIP"];
+	private static readonly string[] IpColumns = ["Id", SysAdminUnitSchema, "BeginIP", "EndIP"];
 
 	/// <inheritdoc />
 	public JsonElement GetIpRanges(Guid unitId, int offset, int limit) {
 		GetUnit(unitId);
-		return client.Select("SysAdminUnitIPRange", IpColumns,
-			new Dictionary<string, object> { ["SysAdminUnit"] = unitId }, offset, limit);
+		return client.Select(SysAdminUnitIPRangeSchema, IpColumns,
+			new Dictionary<string, object> { [SysAdminUnitSchema] = unitId }, offset, limit);
 	}
 
 	/// <inheritdoc />
@@ -31,17 +31,17 @@ public sealed partial class AdministrationService {
 			}
 		}
 		Dictionary<string, object> filter = new() { ["Id"] = id };
-		JsonElement rows = client.Select("SysAdminUnitIPRange", IpColumns, filter, limit: 2);
+		JsonElement rows = client.Select(SysAdminUnitIPRangeSchema, IpColumns, filter, limit: 2);
 		RequireExpectedCount(rows, create ? 0 : 1);
-		if (!create && LookupId(rows[0], "SysAdminUnit") != unitId) {
+		if (!create && LookupId(rows[0], SysAdminUnitSchema) != unitId) {
 			throw new ArgumentException("The access rule belongs to a different user or role.");
 		}
-		client.WriteEntity("SysAdminUnitIPRange", id, new Dictionary<string, object> {
-			["SysAdminUnit"] = unitId, ["BeginIP"] = begin.ToString(), ["EndIP"] = end.ToString()
+		client.WriteEntity(SysAdminUnitIPRangeSchema, id, new Dictionary<string, object> {
+			[SysAdminUnitSchema] = unitId, ["BeginIP"] = begin.ToString(), ["EndIP"] = end.ToString()
 		}, create);
-		rows = client.Select("SysAdminUnitIPRange", IpColumns, filter, limit: 2);
+		rows = client.Select(SysAdminUnitIPRangeSchema, IpColumns, filter, limit: 2);
 		RequireExpectedCount(rows, 1);
-		if (LookupId(rows[0], "SysAdminUnit") != unitId || rows[0].GetProperty("BeginIP").GetString() != begin.ToString()
+		if (LookupId(rows[0], SysAdminUnitSchema) != unitId || rows[0].GetProperty("BeginIP").GetString() != begin.ToString()
 			|| rows[0].GetProperty("EndIP").GetString() != end.ToString()) {
 			throw new AdministrationStateException("IP access rule readback differs from the request.");
 		}
@@ -53,11 +53,11 @@ public sealed partial class AdministrationService {
 		RequireId(id);
 		GetUnit(unitId);
 		Dictionary<string, object> filter = new() { ["Id"] = id };
-		JsonElement rows = client.Select("SysAdminUnitIPRange", IpColumns, filter, limit: 2);
+		JsonElement rows = client.Select(SysAdminUnitIPRangeSchema, IpColumns, filter, limit: 2);
 		RequireExpectedCount(rows, 1);
-		if (LookupId(rows[0], "SysAdminUnit") != unitId) { throw new ArgumentException("The access rule belongs to a different user or role."); }
-		client.DeleteEntity("SysAdminUnitIPRange", id);
-		RequireExpectedCount(client.Select("SysAdminUnitIPRange", IpColumns, filter, limit: 1), 0);
+		if (LookupId(rows[0], SysAdminUnitSchema) != unitId) { throw new ArgumentException("The access rule belongs to a different user or role."); }
+		client.DeleteEntity(SysAdminUnitIPRangeSchema, id);
+		RequireExpectedCount(client.Select(SysAdminUnitIPRangeSchema, IpColumns, filter, limit: 1), 0);
 	}
 
 	private static IPAddress ParseIpv4(string value) {

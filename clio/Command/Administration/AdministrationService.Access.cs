@@ -8,7 +8,7 @@ namespace Clio.Command.Administration;
 public sealed partial class AdministrationService {
 	private static readonly string[] FunctionalColumns = ["Id", "OrgRole", "FuncRole"];
 	private static readonly string[] DelegationColumns = ["Id", "GrantorSysAdminUnit", "GranteeSysAdminUnit"];
-	private static readonly string[] OperationGrantColumns = ["Id", "SysAdminOperation", "SysAdminUnit", "CanExecute", "Position"];
+	private static readonly string[] OperationGrantColumns = ["Id", SysAdminOperationSchema, SysAdminUnitSchema, "CanExecute", "Position"];
 
 	/// <inheritdoc />
 	public JsonElement GetFunctionalRoles(Guid roleId, int offset, int limit) {
@@ -22,7 +22,7 @@ public sealed partial class AdministrationService {
 		JsonElement org = GetOrganizationalRole(roleId);
 		JsonElement functional = GetRole(functionalId);
 		if (TypeOf(functional) != 6) { throw new ArgumentException("The associated role must be functional (type 6)."); }
-		if (org.GetProperty("ConnectionType").GetInt32() != functional.GetProperty("ConnectionType").GetInt32()) {
+		if (org.GetProperty(ConnectionTypeColumn).GetInt32() != functional.GetProperty(ConnectionTypeColumn).GetInt32()) {
 			throw new ArgumentException("Associated roles must have matching connection types.");
 		}
 		Dictionary<string, object> filters = new() { ["OrgRole"] = roleId, ["FuncRole"] = functionalId };
@@ -80,23 +80,23 @@ public sealed partial class AdministrationService {
 	}
 
 	/// <inheritdoc />
-	public JsonElement GetOperations(string code, int offset, int limit) => client.Select("SysAdminOperation",
+	public JsonElement GetOperations(string code, int offset, int limit) => client.Select(SysAdminOperationSchema,
 		["Id", "Name", "Code", "Description"], code is null ? new Dictionary<string, object>()
 			: new Dictionary<string, object> { ["Code"] = code }, offset, limit);
 
 	/// <inheritdoc />
 	public JsonElement GetOperationGrants(Guid operationId, int offset, int limit) {
 		RequireOperation(operationId);
-		return client.Select("SysAdminOperationGrantee", OperationGrantColumns,
-			new Dictionary<string, object> { ["SysAdminOperation"] = operationId }, offset, limit);
+		return client.Select(SysAdminOperationGranteeSchema, OperationGrantColumns,
+			new Dictionary<string, object> { [SysAdminOperationSchema] = operationId }, offset, limit);
 	}
 
 	/// <inheritdoc />
 	public JsonElement SetOperationGrant(Guid operationId, Guid unitId, bool canExecute, bool remove) {
 		RequireOperation(operationId);
 		GetUnit(unitId);
-		Dictionary<string, object> filters = new() { ["SysAdminOperation"] = operationId, ["SysAdminUnit"] = unitId };
-		JsonElement rows = client.Select("SysAdminOperationGrantee", OperationGrantColumns, filters, limit: 2);
+		Dictionary<string, object> filters = new() { [SysAdminOperationSchema] = operationId, [SysAdminUnitSchema] = unitId };
+		JsonElement rows = client.Select(SysAdminOperationGranteeSchema, OperationGrantColumns, filters, limit: 2);
 		if (rows.GetArrayLength() > 1) { throw new AdministrationStateException("Duplicate operation grants require explicit repair."); }
 		if (remove && rows.GetArrayLength() == 1) {
 			client.Post(ServiceUrlBuilder.KnownRoute.RightsDeleteOperationGrantee, "DeleteAdminOperationGranteeResult",
@@ -105,7 +105,7 @@ public sealed partial class AdministrationService {
 			client.Post(ServiceUrlBuilder.KnownRoute.RightsSetOperationGrantee, "SetAdminOperationGranteeResult",
 				new { adminOperationId = operationId, adminUnitIds = new[] { unitId }, canExecute }, AdministrationResponseKind.SuccessObject);
 		}
-		rows = client.Select("SysAdminOperationGrantee", OperationGrantColumns, filters, limit: 2);
+		rows = client.Select(SysAdminOperationGranteeSchema, OperationGrantColumns, filters, limit: 2);
 		RequireExpectedCount(rows, remove ? 0 : 1);
 		if (!remove && rows[0].GetProperty("CanExecute").GetBoolean() != canExecute) {
 			throw new AdministrationStateException("Operation permission readback differs from the request.");
@@ -118,7 +118,7 @@ public sealed partial class AdministrationService {
 		RequireId(grantId);
 		if (position < 0) { throw new ArgumentException("Operation grant position must be nonnegative."); }
 		Dictionary<string, object> filters = new() { ["Id"] = grantId };
-		JsonElement rows = client.Select("SysAdminOperationGrantee", OperationGrantColumns, filters, limit: 2);
+		JsonElement rows = client.Select(SysAdminOperationGranteeSchema, OperationGrantColumns, filters, limit: 2);
 		RequireExpectedCount(rows, 1);
 		// Validate bridge authorization and native cache support before persisting a new priority.
 		client.Post(ServiceUrlBuilder.KnownRoute.AdministrationInvalidateRightsCache, "InvalidateAdministrationRightsCacheResult",
@@ -127,7 +127,7 @@ public sealed partial class AdministrationService {
 			new { granteeId = grantId, position }, AdministrationResponseKind.SuccessObject);
 		client.Post(ServiceUrlBuilder.KnownRoute.AdministrationInvalidateRightsCache, "InvalidateAdministrationRightsCacheResult",
 			new { }, AdministrationResponseKind.True);
-		rows = client.Select("SysAdminOperationGrantee", OperationGrantColumns, filters, limit: 2);
+		rows = client.Select(SysAdminOperationGranteeSchema, OperationGrantColumns, filters, limit: 2);
 		RequireExpectedCount(rows, 1);
 		if (rows[0].GetProperty("Position").GetInt32() != position) {
 			throw new AdministrationStateException("Operation priority readback differs from the request.");
@@ -143,7 +143,7 @@ public sealed partial class AdministrationService {
 
 	private void RequireOperation(Guid id) {
 		RequireId(id);
-		RequireExpectedCount(client.Select("SysAdminOperation", ["Id"], new Dictionary<string, object> { ["Id"] = id }, limit: 2), 1);
+		RequireExpectedCount(client.Select(SysAdminOperationSchema, ["Id"], new Dictionary<string, object> { ["Id"] = id }, limit: 2), 1);
 	}
 
 	private static void RequireExpectedCount(JsonElement rows, int count) {

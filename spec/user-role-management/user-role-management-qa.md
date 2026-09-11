@@ -13,6 +13,7 @@ ClioGate 2.0.0.52 was built for net472 and netstandard2.0, packaged, installed a
 | Accounts | Create/contact readback, deactivate/unlock remains inactive/reactivate, password environment references, delete | External MCP verified |
 | Authentication | Old password rejected/new password accepted; actual repeated-login lockout followed by unlock and fresh login | Manual native runtime verified |
 | Roles/managers | Division and functional create/delete; auto manager reuse; assignment and direct/effective memberships | External MCP verified |
+| Native UI | Reopened organizational role shows the persisted probe in both Users and Managers details | Browser verified |
 | Manager semantics | Organizational functional association becomes effective for manager; guarded removal removes it | External MCP verified |
 | Role-centric members | Direct manager member list; effective user-kind-filtered member query | External MCP verified |
 | External lifecycle | ConnectionType=1 account, division, automatic manager, memberships, functional associations, delegation and IP rules | External MCP verified |
@@ -36,7 +37,7 @@ to its original false value and the probe authenticated afterward.
 
 The first full Clio unit run found three expected discovery/guidance baseline omissions (12,309
 passed). Baselines were updated only after read-only classification review and regeneration from
-the knowledge catalog. The final full unit run passed 12,337 tests with 25 skipped and no failures.
+the knowledge catalog. After rebasing onto current master, the full unit run passed 12,373 tests with 25 skipped and no failures.
 The test process must leave CLIO_NO_UPDATE_CHECK unset because an existing updater test expects its
 mock updater to run; setting it caused one unrelated refusal before the clean rerun. Live CLI/MCP
 processes retain the update-disable setting. All 14 external MCP cases passed, including both internal

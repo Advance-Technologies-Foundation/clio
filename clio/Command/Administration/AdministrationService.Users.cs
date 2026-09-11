@@ -20,14 +20,14 @@ public sealed partial class AdministrationService {
 		}
 		// Membership is deliberately separate: native creation saves the account before assigning a role.
 		SaveUser(new Dictionary<string, object> {
-			["Id"] = id, ["Name"] = login, ["Contact"] = contactId.ToString(),
+			["Id"] = id, ["Name"] = login, [ContactColumn] = contactId.ToString(),
 			["SysAdminUnitType"] = "472e97c7-6bd7-df11-9b2a-001d60e938c6",
-			["ConnectionType"] = external ? 1 : 0, ["Active"] = true,
+			[ConnectionTypeColumn] = external ? 1 : 0, [ActiveColumn] = true,
 			["UserPassword"] = password, ["ForceChangePassword"] = forceChangePassword
 		});
 		JsonElement user = GetUser(id);
-		if (user.GetProperty("Name").GetString() != login || LookupId(user, "Contact") != contactId
-			|| user.GetProperty("ConnectionType").GetInt32() != (external ? 1 : 0)) {
+		if (user.GetProperty("Name").GetString() != login || LookupId(user, ContactColumn) != contactId
+			|| user.GetProperty(ConnectionTypeColumn).GetInt32() != (external ? 1 : 0)) {
 			throw new AdministrationStateException("Created account readback differs from the request. Inspect before retrying.");
 		}
 		return user;
@@ -41,13 +41,13 @@ public sealed partial class AdministrationService {
 		}
 		Dictionary<string, object> values = new() { ["Id"] = id };
 		if (login is not null) { RequireName(login); values["Name"] = login; }
-		if (contactId.HasValue) { RequireContact(contactId.Value); values["Contact"] = contactId.Value.ToString(); }
-		if (active.HasValue) { values["Active"] = active.Value; }
+		if (contactId.HasValue) { RequireContact(contactId.Value); values[ContactColumn] = contactId.Value.ToString(); }
+		if (active.HasValue) { values[ActiveColumn] = active.Value; }
 		SaveUser(values);
 		JsonElement user = GetUser(id);
 		if ((login is not null && user.GetProperty("Name").GetString() != login)
-			|| (contactId.HasValue && LookupId(user, "Contact") != contactId.Value)
-			|| (active.HasValue && user.GetProperty("Active").GetBoolean() != active.Value)) {
+			|| (contactId.HasValue && LookupId(user, ContactColumn) != contactId.Value)
+			|| (active.HasValue && user.GetProperty(ActiveColumn).GetBoolean() != active.Value)) {
 			throw new AdministrationStateException("Account update could not be verified.");
 		}
 		return user;
@@ -65,8 +65,8 @@ public sealed partial class AdministrationService {
 		});
 		JsonElement after = GetUser(id);
 		if (before.GetProperty("Name").GetString() != after.GetProperty("Name").GetString()
-			|| before.GetProperty("Active").GetBoolean() != after.GetProperty("Active").GetBoolean()
-			|| LookupId(before, "Contact") != LookupId(after, "Contact")
+			|| before.GetProperty(ActiveColumn).GetBoolean() != after.GetProperty(ActiveColumn).GetBoolean()
+			|| LookupId(before, ContactColumn) != LookupId(after, ContactColumn)
 			|| after.GetProperty("ForceChangePassword").GetBoolean() != forceChangePassword) {
 			throw new AdministrationStateException("Password service accepted the request but account readback differs. Inspect before retrying.");
 		}
@@ -86,7 +86,7 @@ public sealed partial class AdministrationService {
 			new { userId = id }, AdministrationResponseKind.SuccessObject);
 		if (IsUserBlocked(id)) { throw new AdministrationStateException("The account remains blocked after unlocking."); }
 		JsonElement after = GetUser(id);
-		if (before.GetProperty("Active").GetBoolean() != after.GetProperty("Active").GetBoolean()) {
+		if (before.GetProperty(ActiveColumn).GetBoolean() != after.GetProperty(ActiveColumn).GetBoolean()) {
 			throw new AdministrationStateException("The account active state changed during unlock. Inspect it before proceeding.");
 		}
 		return after;
@@ -110,7 +110,7 @@ public sealed partial class AdministrationService {
 
 	private void RequireContact(Guid id) {
 		RequireId(id);
-		if (client.Select("Contact", ["Id"], new Dictionary<string, object> { ["Id"] = id }, limit: 2).GetArrayLength() != 1) {
+		if (client.Select(ContactColumn, ["Id"], new Dictionary<string, object> { ["Id"] = id }, limit: 2).GetArrayLength() != 1) {
 			throw new ArgumentException("The contact ID must identify one existing contact.");
 		}
 	}
