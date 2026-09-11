@@ -61,8 +61,8 @@ public sealed record GetThemeResponse
 	public string CssFilePath { get; init; }
 
 	/// <summary>
-	/// The theme CSS content, byte-for-byte as served by the environment (an existing theme with empty
-	/// content yields an empty string). Omitted when <c>output-file</c> was used or on failure.
+	/// The theme CSS content, byte-for-byte as served by the environment; always non-empty on success.
+	/// Omitted when <c>output-file</c> was used or on failure.
 	/// </summary>
 	[JsonPropertyName("cssContent")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -223,9 +223,15 @@ public class GetThemeCommand : Command<GetThemeOptions>
 		string content = _applicationClient.ExecuteGetRequest(url, options.TimeOut, options.MaxAttempts,
 			options.RetryDelay) ?? string.Empty;
 		string trimmed = content.TrimStart().TrimStart('\uFEFF').TrimStart();
-		if (trimmed.StartsWith('<')) {
-			error = $"The environment returned an HTML page instead of the theme CSS for '{theme.Id}'. " +
-				"The CSS file may be missing on the server or the request was redirected.";
+		if (trimmed.StartsWith('<') || trimmed.StartsWith('{')) {
+			error = "The environment returned an HTML page or a JSON error envelope instead of the theme CSS " +
+				$"for '{theme.Id}'. The CSS file may be missing on the server or the request was redirected.";
+			return false;
+		}
+		if (string.IsNullOrWhiteSpace(content)) {
+			error = $"The environment served no content for the theme CSS of '{theme.Id}' " +
+				$"('{TextUtilities.SanitizeForDisplay(theme.CssFilePath)}'). The file is missing, empty or " +
+				"unreadable on the server, or the request failed.";
 			return false;
 		}
 		if (Encoding.UTF8.GetByteCount(content) > ThemeParameterValidator.MaxCssContentBytes) {

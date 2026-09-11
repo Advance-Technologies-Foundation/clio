@@ -333,8 +333,25 @@ public sealed class GetThemeCommandTests : BaseCommandTests<GetThemeOptions> {
 	}
 
 	[Test, Category("Unit")]
-	[Description("Returns success with empty content when the theme exists but its CSS file is empty — an empty theme is a theme to fill in, not an error.")]
-	public void TryGetTheme_ShouldReturnEmptyContent_WhenCssFileIsEmpty() {
+	[Description("Fails the read when the CSS fetch returns a JSON error envelope, which is how a non-2xx answer from the platform middleware reaches this layer: valid CSS never starts with a brace.")]
+	public void TryGetTheme_ShouldFail_WhenCssFetchReturnsJsonErrorEnvelope() {
+		// Arrange
+		ArrangeCatalog();
+		ArrangeCss("""{"success":false,"errorInfo":{"message":"File not found"}}""");
+
+		// Act
+		bool result = _command.TryGetTheme(new GetThemeOptions { Id = ThemeId }, out GetThemeResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "a JSON error envelope is never theme CSS and must not be returned as content");
+		response.CssContent.Should().BeNull(
+			because: "a failed read must carry no content a caller could feed back to update-theme");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Fails the read when the CSS body is empty, because a non-2xx status on a deleted or relocated file reaches this layer as an empty body and success would hand update-theme content that overwrites real CSS with nothing.")]
+	public void TryGetTheme_ShouldFail_WhenCssFileIsEmpty() {
 		// Arrange
 		ArrangeCatalog();
 		ArrangeCss(string.Empty);
@@ -343,15 +360,17 @@ public sealed class GetThemeCommandTests : BaseCommandTests<GetThemeOptions> {
 		bool result = _command.TryGetTheme(new GetThemeOptions { Id = ThemeId }, out GetThemeResponse response);
 
 		// Assert
-		result.Should().BeTrue(because: "a theme that exists with empty content is still a successful read");
-		response.CssContent.Should().Be(string.Empty,
-			because: "the empty content is the theme's actual state");
-		response.CssContentLength.Should().Be(0, because: "the reported length must match the empty content");
+		result.Should().BeFalse(
+			because: "an empty body is indistinguishable from a 404/403 on the CSS file and is never valid theme CSS");
+		response.CssContent.Should().BeNull(
+			because: "a failed read must carry no content a caller could feed back to update-theme");
+		response.Error.Should().Contain("served no content",
+			because: "the error must name the empty body as the reason the read failed");
 	}
 
 	[Test, Category("Unit")]
-	[Description("Treats a response with no body as an empty theme rather than throwing, so the documented empty-content contract holds when the environment returns nothing at all.")]
-	public void TryGetTheme_ShouldReturnEmptyContent_WhenCssResponseHasNoBody() {
+	[Description("Fails the read when the response carries no body at all, because the HTTP client turns a transport failure into a null body and a successful-looking empty read would hide it.")]
+	public void TryGetTheme_ShouldFail_WhenCssResponseHasNoBody() {
 		// Arrange
 		ArrangeCatalog();
 		ArrangeCss(null);
@@ -360,11 +379,27 @@ public sealed class GetThemeCommandTests : BaseCommandTests<GetThemeOptions> {
 		bool result = _command.TryGetTheme(new GetThemeOptions { Id = ThemeId }, out GetThemeResponse response);
 
 		// Assert
-		result.Should().BeTrue(because: "a body-less response must not fail the read");
-		response.CssContent.Should().BeEmpty(
-			because: "a missing body is reported as empty content, not as a null the caller must guard");
-		response.CssContentLength.Should().Be(0,
-			because: "the reported length must match the empty content");
+		result.Should().BeFalse(
+			because: "a body-less response is a failed fetch, not a theme whose CSS is legitimately empty");
+		response.CssContent.Should().BeNull(
+			because: "a failed read must carry no content a caller could feed back to update-theme");
+		response.Error.Should().Contain("served no content",
+			because: "the error must name the missing body as the reason the read failed");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Names the catalog-reported CSS file path in the empty-body error, so a caller can tell which asset the environment failed to serve.")]
+	public void TryGetTheme_ShouldNameCssFilePath_WhenCssBodyIsEmpty() {
+		// Arrange
+		ArrangeCatalog();
+		ArrangeCss(string.Empty);
+
+		// Act
+		_command.TryGetTheme(new GetThemeOptions { Id = ThemeId }, out GetThemeResponse response);
+
+		// Assert
+		response.Error.Should().Contain(CssFilePath,
+			because: "the failing asset is server-reported data the caller cannot otherwise see in the error");
 	}
 
 	[Test, Category("Unit")]

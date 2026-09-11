@@ -20,7 +20,8 @@ including a known-good theme id. Its request contract is opaque, so it is unused
 `spec/adr/adr-theming.md` E-D1 carries the probe evidence.
 
 **What breaks if you ignore it** — "the platform has a GetTheme endpoint, why are we doing two
-requests?" is the predictable review question, and switching to it produces a tool that reports
-success with empty `cssContent` on every call. An empty body is not distinguishable from a theme
-that genuinely has no CSS, so the failure is silent and the `update-theme` round-trip then writes
-that emptiness over a real theme.
+requests?" is the predictable review question, and switching to it produces a tool that answers every
+call with an empty body. `TryFetchCss` refuses an empty body outright (see
+[the HTTP client exposes no status for a GET](../Common/executegetrequest-exposes-no-status-and-swallows-transport-failures.md)),
+so the switch no longer writes emptiness over a real theme through `update-theme` — it makes
+`get-theme` fail on every theme instead.

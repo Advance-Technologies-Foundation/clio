@@ -26,6 +26,11 @@ printed (`cssContent` is omitted from the envelope; `cssContentLength` is still
 reported). The path must stay inside the workspace or the OS temp directory and
 must not already exist.
 
+The read fails rather than reporting empty content when the environment does not
+serve the theme CSS: an empty body, an HTML error page and a JSON error
+envelope are all reported as errors, so `cssContent` is never an empty string
+that [`update-theme`](update-theme.md) would write back over a real stylesheet.
+
 The command requires Creatio 10.0.0 or later on the target environment and the
 `CanCustomizeBranding` license; a caller without the license sees an empty
 theme catalog and therefore a not-found result. An unknown theme id is reported
