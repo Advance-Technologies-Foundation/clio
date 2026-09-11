@@ -26,6 +26,11 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 	/// </summary>
 	private const int MaxBodyScanCharacters = 4096;
 
+	/// <summary>
+	/// UTF-8 byte-order mark, which <see cref="char.IsWhiteSpace(char)"/> does not report as whitespace.
+	/// </summary>
+	private const char ByteOrderMark = '\uFEFF';
+
 	#endregion
 
 	#region Fields: Private
@@ -146,7 +151,14 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 			return false;
 		}
 		int start = 0;
-		while (start < body.Length && char.IsWhiteSpace(body[start])) {
+		// A byte-order mark is skipped alongside whitespace, and char.IsWhiteSpace does NOT report one.
+		// Creatio's WCF endpoints demonstrably emit it: the GetSchemaDesignItem error page captured from a
+		// 10.1.725 stand begins U+FEFF "<?xml ...". Without this a BOM-prefixed sign-in page leaves the
+		// first character neither '<' nor '{', the predicate returns false, and every caller loses the
+		// classification - automatic re-authentication never fires, and the entity-schema designer attaches
+		// a missing-dependency diagnosis to what is actually an authentication failure.
+		while (start < body.Length
+			&& (char.IsWhiteSpace(body[start]) || body[start] == ByteOrderMark)) {
 			start++;
 		}
 		if (start >= body.Length) {
@@ -157,7 +169,10 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 			return IsHtmlAuthRedirect(body, start);
 		}
 		if (first == '{') {
-			return IsJsonAuthFailureEnvelope(body);
+			// Sliced at the first real character: Newtonsoft refuses to parse a body whose first character is
+			// a byte-order mark, so passing the raw body here would lose the JSON arm on exactly the shape the
+			// skip loop above was widened for.
+			return IsJsonAuthFailureEnvelope(start == 0 ? body : body[start..]);
 		}
 		// JSON arrays, quoted strings, and plain-text bodies cannot be a session-expired
 		// response — they are never produced by Creatio's auth-rejection path.

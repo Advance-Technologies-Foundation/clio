@@ -79,8 +79,7 @@ public sealed class CaptionCultureArgMappingToolTests {
 		commandResolver.Resolve<PageCreateCommand>(Arg.Any<PageCreateOptions>())
 			.Returns(command);
 		PageCreateTool tool = new(command, ConsoleLogger.Instance, commandResolver);
-		PageCreateArgs args = new("UsrPage", "BlankPageTemplate", "Custom", null, null, null, "dev", null, null, null,
-			CaptionCultureValue);
+		PageCreateArgs args = new("UsrPage", "BlankPageTemplate", "Custom", null, null, null, CaptionCultureValue) { EnvironmentName = "dev" };
 
 		// Act
 		ConsoleLogger.Instance.ClearMessages();
@@ -104,8 +103,7 @@ public sealed class CaptionCultureArgMappingToolTests {
 		commandResolver.Resolve<PageCreateCommand>(Arg.Any<PageCreateOptions>())
 			.Returns(command);
 		PageCreateTool tool = new(command, ConsoleLogger.Instance, commandResolver);
-		PageCreateArgs args = new("UsrPage", "BaseDashboardTemplate", "Custom", null, null, null, "dev", null, null, null,
-			OptionalProperties: optionalProperties);
+		PageCreateArgs args = new("UsrPage", "BaseDashboardTemplate", "Custom", OptionalProperties: optionalProperties) { EnvironmentName = "dev" };
 
 		// Act
 		ConsoleLogger.Instance.ClearMessages();

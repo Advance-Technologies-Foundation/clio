@@ -22,9 +22,7 @@ public sealed class SchemaNamePreValidationToolTests {
 
 		// Act
 		PageCreateResponse response = tool.CreatePage(
-			new PageCreateArgs("   ", "FormPage", "UsrPackage",
-				Caption: null, Description: null, EntitySchemaName: null,
-				EnvironmentName: "dev", Uri: null, Login: null, Password: null));
+			new PageCreateArgs("   ", "FormPage", "UsrPackage", Caption: null, Description: null, EntitySchemaName: null) { EnvironmentName = "dev" });
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -46,9 +44,7 @@ public sealed class SchemaNamePreValidationToolTests {
 
 		// Act
 		PageCreateResponse response = tool.CreatePage(
-			new PageCreateArgs("1BadName", "FormPage", "UsrPackage",
-				Caption: null, Description: null, EntitySchemaName: null,
-				EnvironmentName: "dev", Uri: null, Login: null, Password: null));
+			new PageCreateArgs("1BadName", "FormPage", "UsrPackage", Caption: null, Description: null, EntitySchemaName: null) { EnvironmentName = "dev" });
 
 		// Assert
 		response.Success.Should().BeFalse(

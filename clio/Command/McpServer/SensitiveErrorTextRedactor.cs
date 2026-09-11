@@ -45,7 +45,11 @@ internal static partial class SensitiveErrorTextRedactor {
 	// redacted. Without the second half,  alone refuses the position (a hex digit and "h" are both word
 	// characters, so there is no boundary between them) and the host ships in the clear - trading a
 	// corrupted response for a leaked one, which this class's policy above rejects outright.
-	[GeneratedRegex(@"(?<!\\u?[0-9A-Fa-f]{0,3})(?:(?<=\\u[0-9A-Fa-f]{4})|\b)[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s""'<>\\]+", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
+	// ')' is excluded from the tail: clio's own messages render endpoints as "(URL: <uri>)", and a class
+	// that accepts ')' consumed the closing bracket too, leaving the reader an unbalanced
+	// "(URL: [redacted-uri]". A URI whose path genuinely ends in ')' loses only that character, and it is
+	// redacted either way.
+	[GeneratedRegex(@"(?<!\\u?[0-9A-Fa-f]{0,3})(?:(?<=\\u[0-9A-Fa-f]{4})|\b)[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s""'<>)\\]+", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex UriRegex();
 
 	// Windows drive-rooted (C:\…) and UNC (\\host\share\…) absolute paths.
@@ -64,11 +68,17 @@ internal static partial class SensitiveErrorTextRedactor {
 	// HTTP auth headers/cookies so a bearer token or session cookie surfaced under its header name
 	// is scrubbed.
 	//
+	// The session-cookie NAMES are listed individually because none of them contains any of the generic
+	// key words above: a body reading ".ASPXAUTH=<value>; BPMCSRF=<value>; sessionid=<value>" matched
+	// nothing at all and reached an agent transcript verbatim through the unparseable-body preview,
+	// measured on a stand. A Creatio Forms-auth cookie IS the session - possessing it is possessing the
+	// session - so it belongs in the same class as a password.
+	//
 	// The value alternation takes the QUOTED forms first: the bare class excludes a quote character, so
 	// without them a quoted secret (password="s3cr3t") matches nothing at all and reaches the reader
 	// verbatim — the pattern has to fail closed on the whole pair, not on the quote.
 	[GeneratedRegex(
-		@"\b(password|pwd|pass|secret|token|api[_-]?key|client[_-]?secret|access[_-]?key|connection ?string|data ?source|server|host|hostname|initial ?catalog|database|uid|user ?id|authorization|auth|bearer|cookie)\b\s*[=:]\s*(?:""[^""]*""|'[^']*'|[^\s,;""']+)",
+		@"\b(password|pwd|pass|secret|token|api[_-]?key|client[_-]?secret|access[_-]?key|connection ?string|data ?source|server|host|hostname|initial ?catalog|database|uid|user ?id|authorization|auth|bearer|set-cookie|cookie|asp\.net_sessionid|aspxauth|bpmcsrf|jsessionid|phpsessid|session[_-]?id|[xc]srf[_-]?token)\b\s*[=:]\s*(?:""[^""]*""|'[^']*'|[^\s,;""']+)",
 		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
 	private static partial Regex CredentialPairRegex();
 
