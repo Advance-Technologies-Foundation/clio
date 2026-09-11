@@ -1154,8 +1154,13 @@ public sealed class ToolContractGetToolTests {
 		result.Success.Should().BeTrue(
 			because: "tool-contract-get should expose the create-page-business-rule contract");
 		ToolContractDefinition contract = result.Tools!.Single();
-		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "page-schema-name", "rules"],
-			because: "page-business-rule creation requires environment package page and rules payload");
+		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "rules"],
+			because: "page-business-rule creation requires environment package and rules payload");
+		contract.InputSchema.Required.Should().NotContain("page-schema-name",
+			because: "the page schema may arrive under the accepted 'schema-name' alias, so a client validating against the advertised schema must not reject that call");
+		contract.Aliases.Should().Contain(alias =>
+				alias.CanonicalName == "page-schema-name" && alias.Alias == "schema-name" && alias.Status == "accepted",
+			because: "an alias the server honors must be discoverable in the contract agents read before calling");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
 				validator.Field == "rules[*].actions[*].type" &&
@@ -3209,6 +3214,33 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The honored 'name' spelling of the column identity is published as an accepted alias, so an agent scanning the contract's aliases finds every spelling it may send in one place instead of reading the any-of and the field descriptions for the honored ones (PR #1352 review).")]
+	public void ToolContractGet_Should_PublishHonoredColumnIdentityAlias_ForModifyEntitySchemaColumn() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(
+			new ToolContractGetArgs(["modify-entity-schema-column"]));
+
+		// Assert
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Aliases.Should().Contain(alias =>
+				alias.CanonicalName == "column-name" && alias.Alias == "name" && alias.Status == "accepted",
+			because: "the runtime resolves 'name' as the column identity, so the aliases array — the one place an " +
+				"agent looks for spellings it may send — must say so rather than leaving it to the any-of");
+		contract.Aliases.Should().Contain(alias =>
+				alias.CanonicalName == "column-name" && alias.Alias == "columnName" && alias.Status == "rejected",
+			because: "publishing the honored alias must not displace the rejected camelCase one — the two carry " +
+				"opposite instructions and a reader needs both");
+		contract.Aliases!.Where(alias => alias.Alias == "name")
+			.Should().OnlyContain(alias => alias.Status == "accepted",
+				because: "one spelling cannot be both honored and refused — a stale rejected entry beside the " +
+					"accepted one would tell an agent not to send a call the tool answers");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The modify-entity-schema-column contract enumerates the accepted column types and maps the Creatio display name Money onto the command value Currency2, so the vocabulary is discoverable without provoking a failed write (issue #955).")]
 	public void ToolContractGet_Should_EnumerateColumnTypes_ForModifyEntitySchemaColumn() {
 		// Arrange
@@ -3529,6 +3561,58 @@ public sealed class ToolContractGetToolTests {
 			because: "the legacy stdio client's ClientInfo must be detected end-to-end so the no-names call returns full tool contracts, not the compact index");
 		result.Index.Should().BeNull(
 			because: "the legacy client's full-shape response must not also carry the compact index");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("validate-page's curated contract states the either-or shape in the machine-readable any-of, not only in English inside a field description (PR #1352 review; AC-1297).")]
+	public void ToolContractGet_Should_Publish_AnyOf_For_ValidatePage_BodyInputs() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractDefinition contract = tool.GetToolContracts(new ToolContractGetArgs([
+			PageValidateTool.ToolName
+		])).Tools!.Single();
+
+		// Assert — emptying `required` without adding `any-of` made the contract contradict itself: the machine
+		// list said nothing was required while the `body` description said one of the two was. Only a consumer
+		// that parses English inside a description recovered the truth.
+		contract.InputSchema.Required.Should().NotContain("body",
+			because: "either input alone is a complete call, so neither may be unconditionally required");
+		contract.InputSchema.Required.Should().NotContain("body-file",
+			because: "requiring the alternative would mirror the same defect");
+		contract.InputSchema.AnyOf.Should().NotBeNull(
+			because: "the either-or requirement has a first-class slot and must not live only in prose");
+		contract.InputSchema.AnyOf!.Select(group => string.Join(",", group)).Should().BeEquivalentTo(
+			["body", "body-file"],
+			because: "the two accepted shapes are 'body alone' and 'body-file alone'");
+		contract.InputSchema.Properties.Select(field => field.Name).Should().Contain(["body", "body-file"],
+			because: "both inputs must still be advertised for the any-of groups to name anything");
+	}
+
+	[TestCase(CreatePageBusinessRuleTool.BusinessRuleCreateToolName)]
+	[TestCase(ReadPageBusinessRuleTool.ToolName)]
+	[TestCase(UpdatePageBusinessRuleTool.ToolName)]
+	[TestCase(DeletePageBusinessRuleTool.ToolName)]
+	[Category("Unit")]
+	[Description("Each page business-rule contract publishes the page-schema-name / schema-name either-or as any-of, so the alias relaxation is machine-readable rather than described in prose (PR #1352 review).")]
+	public void ToolContractGet_Should_Publish_AnyOf_For_PageSchemaNameAlias(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractDefinition contract = tool.GetToolContracts(new ToolContractGetArgs([toolName])).Tools!.Single();
+
+		// Assert
+		contract.InputSchema.Required.Should().NotContain("page-schema-name",
+			because: "the alias is advertised as equally valid, so the canonical spelling is not mandatory");
+		contract.InputSchema.AnyOf.Should().NotBeNull(
+			because: "a field description saying 'the alias is accepted in its place' is not a contract a " +
+				"client can validate against");
+		contract.InputSchema.AnyOf!.Select(group => string.Join(",", group)).Should().BeEquivalentTo(
+			["page-schema-name", "schema-name"],
+			because: "exactly one of the two spellings identifies the page");
 	}
 
 	[Test]

@@ -676,7 +676,6 @@ public sealed class BusinessRuleToolTests {
 	[Description("Exposes kebab-case required fields inside the create-page-business-rules args wrapper.")]
 	[TestCase(nameof(CreatePageBusinessRulesArgs.EnvironmentName), "environment-name")]
 	[TestCase(nameof(CreatePageBusinessRulesArgs.PackageName), "package-name")]
-	[TestCase(nameof(CreatePageBusinessRulesArgs.PageSchemaName), "page-schema-name")]
 	[TestCase(nameof(CreatePageBusinessRulesArgs.Rules), "rules")]
 	public void PageBusinessRuleCreateArgs_Should_Expose_Required_Kebab_Case_Fields(
 		string propertyName,
@@ -1363,5 +1362,149 @@ public sealed class BusinessRuleToolTests {
 			because: "the caption must survive contract conversion");
 		rule.Actions.Single().UId.Should().Be(ActionUId,
 			because: "action block uIds must survive contract conversion so update can preserve identity");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("read-page-business-rules accepts the 'schema-name' alias for 'page-schema-name' (issue #1305, point 3).")]
+	public void PageRead_Should_Accept_SchemaName_Alias() {
+		// Arrange
+		IPageBusinessRuleService service = Substitute.For<IPageBusinessRuleService>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IPageBusinessRuleService>(Arg.Any<EnvironmentOptions>()).Returns(service);
+		service.Read(Arg.Any<BusinessRulesReadRequest>()).Returns([]);
+		ReadPageBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
+
+		// Act
+		tool.BusinessRulesRead(new ReadPageBusinessRulesArgs {
+			EnvironmentName = "dev",
+			PackageName = "UsrPkg",
+			SchemaNameAlias = "UsrOrder_FormPage"
+		});
+
+		// Assert
+		BusinessRulesReadRequest capturedRequest = (BusinessRulesReadRequest)service.ReceivedCalls()
+			.Single(call => call.GetMethodInfo().Name == nameof(IPageBusinessRuleService.Read))
+			.GetArguments()[0];
+		capturedRequest.SchemaName.Should().Be("UsrOrder_FormPage",
+			because: "every other page tool names this parameter 'schema-name', so the alias must resolve to the page schema");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The canonical 'page-schema-name' wins over the 'schema-name' alias when both are supplied.")]
+	public void PageRead_Should_Prefer_Canonical_PageSchemaName_Over_Alias() {
+		// Arrange
+		IPageBusinessRuleService service = Substitute.For<IPageBusinessRuleService>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IPageBusinessRuleService>(Arg.Any<EnvironmentOptions>()).Returns(service);
+		service.Read(Arg.Any<BusinessRulesReadRequest>()).Returns([]);
+		ReadPageBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
+
+		// Act
+		tool.BusinessRulesRead(new ReadPageBusinessRulesArgs {
+			EnvironmentName = "dev",
+			PackageName = "UsrPkg",
+			PageSchemaName = "Canonical_FormPage",
+			SchemaNameAlias = "Alias_FormPage"
+		});
+
+		// Assert
+		BusinessRulesReadRequest capturedRequest = (BusinessRulesReadRequest)service.ReceivedCalls()
+			.Single(call => call.GetMethodInfo().Name == nameof(IPageBusinessRuleService.Read))
+			.GetArguments()[0];
+		capturedRequest.SchemaName.Should().Be("Canonical_FormPage",
+			because: "the canonical parameter must win so an accidental alias cannot silently retarget the call");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("create-page-business-rules accepts the 'schema-name' alias for 'page-schema-name'.")]
+	public void PageCreate_Should_Accept_SchemaName_Alias() {
+		// Arrange
+		IPageBusinessRuleService service = Substitute.For<IPageBusinessRuleService>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IPageBusinessRuleService>(Arg.Any<EnvironmentOptions>()).Returns(service);
+		service.Create(Arg.Any<BusinessRulesBatchRequest>()).Returns([]);
+		CreatePageBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
+		PageBusinessRuleMcpContract rule = new(
+			"Alias rule",
+			new BusinessRuleConditionGroup("AND", []),
+			[new PageShowElementBusinessRuleActionMcpContract(["EscalateButton"]) { UId = ActionUId }]);
+
+		// Act
+		tool.BusinessRuleCreate(new CreatePageBusinessRulesArgs {
+			EnvironmentName = "dev",
+			PackageName = "UsrPkg",
+			SchemaNameAlias = "UsrOrder_FormPage",
+			Rules = [rule]
+		});
+
+		// Assert
+		BusinessRulesBatchRequest capturedRequest = (BusinessRulesBatchRequest)service.ReceivedCalls()
+			.Single(call => call.GetMethodInfo().Name == nameof(IPageBusinessRuleService.Create))
+			.GetArguments()[0];
+		capturedRequest.SchemaName.Should().Be("UsrOrder_FormPage",
+			because: "the alias must resolve to the page schema on the create path too");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("update-page-business-rules accepts the 'schema-name' alias for 'page-schema-name'.")]
+	public void PageUpdate_Should_Accept_SchemaName_Alias() {
+		// Arrange
+		IPageBusinessRuleService service = Substitute.For<IPageBusinessRuleService>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IPageBusinessRuleService>(Arg.Any<EnvironmentOptions>()).Returns(service);
+		service.Update(Arg.Any<BusinessRulesBatchRequest>()).Returns([]);
+		UpdatePageBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
+		PageBusinessRuleMcpContract rule = new(
+			"Alias rule",
+			new BusinessRuleConditionGroup("AND", []),
+			[new PageShowElementBusinessRuleActionMcpContract(["EscalateButton"]) { UId = ActionUId }]) {
+			Name = "BusinessRule_pg"
+		};
+
+		// Act
+		tool.BusinessRulesUpdate(new UpdatePageBusinessRulesArgs {
+			EnvironmentName = "dev",
+			PackageName = "UsrPkg",
+			SchemaNameAlias = "UsrOrder_FormPage",
+			Rules = [rule]
+		});
+
+		// Assert
+		BusinessRulesBatchRequest capturedRequest = (BusinessRulesBatchRequest)service.ReceivedCalls()
+			.Single(call => call.GetMethodInfo().Name == nameof(IPageBusinessRuleService.Update))
+			.GetArguments()[0];
+		capturedRequest.SchemaName.Should().Be("UsrOrder_FormPage",
+			because: "the alias must resolve to the page schema on the update path too");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("delete-page-business-rules accepts the 'schema-name' alias for 'page-schema-name'.")]
+	public void PageDelete_Should_Accept_SchemaName_Alias() {
+		// Arrange
+		IPageBusinessRuleService service = Substitute.For<IPageBusinessRuleService>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IPageBusinessRuleService>(Arg.Any<EnvironmentOptions>()).Returns(service);
+		service.Delete(Arg.Any<BusinessRulesDeleteRequest>()).Returns([]);
+		DeletePageBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
+
+		// Act
+		tool.BusinessRulesDelete(new DeletePageBusinessRulesArgs {
+			EnvironmentName = "dev",
+			PackageName = "UsrPkg",
+			SchemaNameAlias = "UsrOrder_FormPage",
+			RuleNames = ["BusinessRule_pg"]
+		});
+
+		// Assert
+		BusinessRulesDeleteRequest capturedRequest = (BusinessRulesDeleteRequest)service.ReceivedCalls()
+			.Single(call => call.GetMethodInfo().Name == nameof(IPageBusinessRuleService.Delete))
+			.GetArguments()[0];
+		capturedRequest.SchemaName.Should().Be("UsrOrder_FormPage",
+			because: "the alias must resolve to the page schema on the delete path too");
 	}
 }
