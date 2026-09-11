@@ -3530,7 +3530,8 @@ stories:
       Manual-testing defect D2. versions[] carried packageUId only, so TC-03's answer rendered as a
       raw GUID. packageName comes from a second, unfiltered SysPackage query - see
       docs/knowledge/ProcessModel/version-family-package-names-need-a-second-query.md before
-      narrowing it.
+      narrowing it. Verified on a live stand (creatio_2, CrtProcessBuilder 1.6.1.9, 2026-09-11): the
+      stock InvoiceVisaProcess family reports both members in package Invoice, no versionReadWarning.
     depends_on:
       - story-process-versioning-2
     blocks:

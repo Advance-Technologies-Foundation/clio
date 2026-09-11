@@ -40,6 +40,23 @@ verbatim as *"lives in package a00051f4-cde3-4f3f-b08e-c5ad1a5c735a"*.
 - [x] **AC-04** — Given the package table cannot be read at all, when the response is read, then the version facts are still established and `versionReadWarning` says the packages could not be named
 - [x] **AC-05** — Given the `describe-business-process` tool description, when it lists the family-entry fields, then it names `packageName` and says to report the package by name rather than by UId
 
+## Verification
+
+Measured on a live stand (`creatio_2`, CrtProcessBuilder 1.6.1.9, clio 8.1.0.125, 2026-09-11), over the
+real MCP path, against the stock family the article's V1-V4 were read off:
+
+```
+version: 0   isActiveVersion: false   activeVersionName: InvoiceVisaProcessInvoice1
+versionReadWarning: none
+  InvoiceVisaProcess           v=0  root=true   active=false  package=Invoice
+  InvoiceVisaProcessInvoice1   v=1  root=false  active=true   package=Invoice
+```
+
+Both members name `Invoice`. The UId they share — `e7a2c20a-9591-484e-bf77-5953f2dc592e` — is what the
+same read printed before this story, and is the shape manual testing reported as
+"lives in package a00051f4-...". No `versionReadWarning` accompanies it, so the package read succeeded
+rather than degrading quietly.
+
 ## Implementation Notes
 
 `VwProcessLib` has no package-name column, so the name comes from a second, unfiltered `SysPackage`

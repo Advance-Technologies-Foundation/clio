@@ -13,6 +13,10 @@ nothing else**. There is no name column on `VwProcessLib`, and the model maps ev
 has. So `versions[].packageName` cannot come from the family read: it is a second query, against
 `SysPackage`, joined in memory on `PackageUId`.
 
+Measured on a live stand (`creatio_2`, core 10.2.20, CrtProcessBuilder 1.6.1.9, 2026-09-11): the stock
+`InvoiceVisaProcess` family reports both members in package `Invoice`, resolved from the single UId
+`e7a2c20a-9591-484e-bf77-5953f2dc592e` the view returns for each of them, with no `versionReadWarning`.
+
 **That query is deliberately unfiltered.** The filter that belongs on it — "the package UIds this
 family uses" — needs a collection `Contains` inside the ATF expression tree. `ProcessLibRead`'s own
 docblock records the measurement: a call-site LINQ expression ATF cannot convert raises
