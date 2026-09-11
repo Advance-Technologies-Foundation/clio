@@ -28,7 +28,7 @@ Use GitHub's existing primitives only:
 - Issue Type and labels: the evidence-backed classification, normalized before investigation hands work to repair or another owner.
 - `Mitigation stage` issue field: `Investigating`, `Fixing`, `QA`, or `Waiting for human approval`.
 - Development: the linked branch and later the draft pull request.
-- Relationships: the original issue is `blocked by` an issue in another repository when that downstream issue owns work required to resolve the report.
+- Relationships: create and verify GitHub-native `blocked by` / `blocking` links for confirmed dependencies, in the same repository or across repositories. Follow the investigation skill's native relationship procedure before handoff; a diagnosis comment, Markdown link, or shared PR alone does not populate the Relationships section.
 
 Do not introduce claim records, leases, receipts, lock files, custom refs, or a separate state store.
 
