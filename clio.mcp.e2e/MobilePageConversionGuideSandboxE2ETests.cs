@@ -55,7 +55,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// <summary>
 	/// The seeded pages the converter accepts, resolved once for the whole fixture. The seed application
 	/// also carries pages the converter must REFUSE (see
-	/// <see cref="ResolveConvertibleSeededPageCandidatesOrIgnoreAsync"/>), and the probe that separates
+	/// <see cref="ResolveConvertibleSeededPageCandidatesAsync"/>), and the probe that separates
 	/// them costs one conversion per seeded page — paying that once per fixture rather than once per test
 	/// keeps the sandbox tier's call count where it was.
 	/// </summary>
@@ -81,7 +81,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
 		await RequireConverterToolAsync(context);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesOrIgnoreAsync(
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
 			context.Session, context.CancellationTokenSource.Token, environmentName);
 
 		// Act — convert candidates until one carries a data-section diff. The diff IS this test's subject:
@@ -139,7 +139,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
 		await RequireConverterToolAsync(context);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesOrIgnoreAsync(
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
 			context.Session, context.CancellationTokenSource.Token, environmentName);
 
 		// Act — convert candidates until one yields a FAB conversion; a conversion FAILURE is a regression, not a seed gap.
@@ -200,7 +200,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
 		await RequireConverterToolAsync(context);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesOrIgnoreAsync(
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
 			context.Session, context.CancellationTokenSource.Token, environmentName);
 		List<ExcludedComponentFilterRule> filters = WebToMobilePageConversionRulesCatalog.LoadBundled()
 			.ExcludedComponents
@@ -417,7 +417,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
 		await RequireConverterToolAsync(context);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesOrIgnoreAsync(
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
 			context.Session, context.CancellationTokenSource.Token, environmentName);
 
 		// Act — convert candidates (form pages first) until one synthesizes tab layers. A candidate that
@@ -516,7 +516,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
 		await RequireConverterToolAsync(context);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesOrIgnoreAsync(
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
 			context.Session, context.CancellationTokenSource.Token, environmentName);
 
 		// Act — convert candidates until one places content above an anchor. The converter's own reason text is
@@ -610,7 +610,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
 		await RequireConverterToolAsync(context);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesOrIgnoreAsync(
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
 			context.Session, context.CancellationTokenSource.Token, environmentName);
 
 		// Act + Assert (per page) — convert EVERY seeded page; a conversion failure is a runtime
@@ -746,7 +746,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
 		await RequireConverterToolAsync(context);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesOrIgnoreAsync(
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
 			context.Session, context.CancellationTokenSource.Token, environmentName);
 		IReadOnlySet<string> removableTypes = ResolveBundledRemovableTypes();
 
@@ -806,10 +806,13 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
-		await RequireConverterFeatureOrIgnoreAsync(context);
+		await RequireConverterToolAsync(context);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		// Every seeded page is a candidate: a navigating action can sit on any page shape, not only a tabbed one.
-		IReadOnlyList<string> candidates = await ResolveSeededTabbedPageCandidatesOrIgnoreAsync(
+		// Every CONVERTIBLE seeded page is a candidate: a navigating action can sit on any page shape, not
+		// only a tabbed one. The filter removes nothing this test wants — it drops only the pages the converter
+		// refuses by contract, which can carry no converted action at all and whose refusal this loop would
+		// otherwise report as a conversion regression (issue #1382).
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
 			context.Session, context.CancellationTokenSource.Token, environmentName);
 		IReadOnlySet<string> declaredKinds = ResolveBundledTargetKinds();
 		declaredKinds.Should().NotBeEmpty(
@@ -833,13 +836,8 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				break;
 			}
 		}
+		FailOnConversionFailures(failedCandidates, candidates.Count, environmentName);
 		if (guide is null) {
-			if (failedCandidates.Count > 0) {
-				Assert.Fail(
-					$"{failedCandidates.Count} of {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment "
-					+ $"'{environmentName}' failed to convert; get-mobile-page-conversion-guide must succeed on every seeded "
-					+ $"page, so this is a runtime regression, not missing seed data: {string.Join("; ", failedCandidates)}");
-			}
 			Assert.Ignore(
 				$"All {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
 				+ "converted successfully, but none carried an action whose request declares a navigation target. Add a "
@@ -1117,8 +1115,14 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// ignores. The seed application is provisioned with Freedom UI web pages (<c>create-app</c> always
 	/// generates them), so "every seeded page was refused" is a product regression, not a seed gap — and an
 	/// Ignore there would recreate exactly the silent-green state this fixture was repaired to remove.
+	/// <para>
+	/// The name carries no <c>OrIgnore</c> suffix on purpose: every branch THIS method owns fails. It can
+	/// still end in an Ignore, but only by propagating one from the precondition resolvers it calls (no
+	/// seeded application, or an application with no pages at all). Do not add an Ignore exit here — an
+	/// ambiguous candidate set is exactly what this fixture was repaired to stop reporting as a skip.
+	/// </para>
 	/// </remarks>
-	private async Task<IReadOnlyList<string>> ResolveConvertibleSeededPageCandidatesOrIgnoreAsync(
+	private async Task<IReadOnlyList<string>> ResolveConvertibleSeededPageCandidatesAsync(
 		McpServerSession session, CancellationToken cancellationToken, string environmentName) {
 		if (_probeFailure is not null) {
 			Assert.Fail(_probeFailure);
@@ -1136,8 +1140,22 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		List<string> rejected = [];
 		List<string> unreachable = [];
 		foreach (string schemaName in seededCandidates) {
-			CandidateProbeResult probe = await ProbeCandidateAsync(
-				session, probeCts.Token, environmentName, schemaName);
+			CandidateProbeResult probe;
+			try {
+				probe = await ProbeCandidateAsync(session, probeCts.Token, environmentName, schemaName);
+			} catch (Exception exception) when (exception is OperationCanceledException or JsonException) {
+				// The probe budget elapsing on a hung conversion, or a structured response that will not
+				// parse, are the two ways this loop throws instead of returning a verdict. Both must still
+				// CACHE a reason: a throw that leaves _probeFailure null sends the next test through the
+				// whole probe again, which is the cost the cache exists to remove — and it is the hung or
+				// intermittently-dropping sandbox, the likeliest fault of all, that would pay it seven times.
+				FailProbeAndCache(
+					$"Probing seeded page '{schemaName}' of '{ApplicationCode}' on environment '{environmentName}' "
+					+ $"threw after {ProbeTimeout.TotalMinutes:0} minute(s) of probe budget: "
+					+ $"{exception.GetType().Name}: {exception.Message}. The candidate set could not be established, "
+					+ "so this is a sandbox availability or response-shape fault, not a converter regression.");
+				throw;
+			}
 			switch (probe.Verdict) {
 				case CandidateVerdict.RefusedBySourceType:
 					rejected.Add(probe.Detail);
