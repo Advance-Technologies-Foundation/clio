@@ -3208,6 +3208,28 @@ public sealed class ToolContractGetToolTests {
 				"as distinct types that round-trip");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("The preferred batch schema contract exposes the same accepted column types and temporal alias caveat as the individual column tool.")]
+	public void ToolContractGet_ShouldDescribeTemporalAliases_WhenSyncSchemasIsRequested() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([SchemaSyncTool.ToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "agents must discover column limitations before writing schemas");
+		string description = result.Tools!.Single().InputSchema.Properties.Single(field => field.Name == "operations").Description;
+		description.Should().Contain("Accepted values:", because: "the batch write path must expose its column vocabulary");
+		description.Should().Contain("Date and Time are accepted but are aliases of DateTime",
+			because: "both temporal aliases lose their distinct schema type");
+		description.Should().Contain("readback tools report it as DateTime",
+			because: "successful writing does not prove date-only intent survived");
+		description.Should().Contain("pickerType: \"date\"",
+			because: "date-only UI intent requires explicit picker configuration");
+	}
+
 	// ENG-93885: IsLegacyStdioClient must match the CAADT 1.4.0 stdio fallback client's exact reported
 	// identity (name="mcp_client", version="1.0", both ordinal) and nothing else - not a version prefix,
 	// not an empty version, not a different client name.

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.EntitySchemaDesigner;
@@ -36,6 +37,72 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 	private const string ReadSchemaToolName = GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName;
 	private const string ReadColumnToolName = GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName;
 	private const string CurrentDateTimeSystemValueUId = "d7c295d3-3146-4ee1-ac49-3a7bd0edc45d";
+
+	[Test]
+	[Explicit("Publishes schemas; requires an exclusively owned local Creatio sandbox.")]
+	[Category("LocalOnly")]
+	[Category("McpE2E.Manual")]
+	[Description("Date and Time aliases advertised by the batch contract persist and read back as DateTime on real Creatio.")]
+	[AllureTag(ToolName)]
+	[AllureTag(ReadSchemaToolName)]
+	[AllureName("sync-schemas temporal alias documentation matches Creatio")]
+	[AllureDescription("Reads the published MCP contract, creates and adds Date and Time columns through sync-schemas, and verifies all four persisted types through Creatio schema readback.")]
+	public async Task SchemaSync_ShouldReadBackDateTime_WhenTemporalAliasesAreWritten() {
+		// Arrange
+		TeamCityRunGuard.IgnoreIfRunningUnderTeamCityOrGitHubActions("Temporal alias schema publication requires an exclusive local sandbox.");
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: true);
+		CancellationToken token = context.CancellationTokenSource.Token;
+		CallToolResult contractResult = await context.Session.CallToolAsync(ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> {
+				["tool-names"] = new[] { ToolName }
+			} }, token);
+		ToolContractGetResponse contract = EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+		string description = contract.Tools!.Single().InputSchema.Properties.Single(field => field.Name == "operations").Description;
+		AllureApi.Step("Verify the published alias caveat", () => description.Should().Contain("Date and Time are accepted but are aliases of DateTime",
+			because: "the caveat must reach agents over the real MCP transport before they write columns"));
+		AllureApi.Step("Verify explicit date picker guidance", () => description.Should().Contain("pickerType: \"date\"",
+			because: "the contract must explain how to preserve date-only UI intent"));
+
+		// Act
+		CallToolResult write = await context.Session.CallToolAsync(ToolName, new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["package-name"] = context.PackageName,
+				["operations"] = new object[] {
+					new Dictionary<string, object?> {
+						["type"] = "create-entity", ["schema-name"] = context.EntitySchemaName,
+						["title-localizations"] = BuildLocalizations("Temporal alias probe"),
+						["columns"] = new object[] {
+							new Dictionary<string, object?> { ["name"] = "UsrCreatedDate", ["type"] = "Date" },
+							new Dictionary<string, object?> { ["name"] = "UsrCreatedTime", ["type"] = "Time" }
+						}
+					},
+					new Dictionary<string, object?> {
+						["type"] = "update-entity", ["schema-name"] = context.EntitySchemaName,
+						["update-operations"] = new object[] {
+							new Dictionary<string, object?> { ["action"] = "add", ["column-name"] = "UsrAddedDate", ["type"] = "Date" },
+							new Dictionary<string, object?> { ["action"] = "add", ["column-name"] = "UsrAddedTime", ["type"] = "Time" }
+						}
+					}
+				}
+			}
+		}, token);
+
+		// Assert
+		AllureApi.Step("Verify the MCP call succeeded", () => write.IsError.Should().NotBeTrue(because: "both aliases are accepted on the schema write path"));
+		JsonElement response = ExtractSchemaSyncResponse(write);
+		AllureApi.Step("Verify both schema operations succeeded", () => response.GetProperty("success").GetBoolean().Should().BeTrue(because: $"both schema operations must succeed: {FormatPayload(response)}"));
+		foreach (JsonElement operation in response.GetProperty("results").EnumerateArray()) {
+			AllureApi.Step("Verify operation execution evidence", () => GetMessageTypes(operation).Should().Contain(LogDecoratorType.Info, because: "successful writes report execution evidence"));
+		}
+		EntitySchemaPropertiesInfo readback = await GetSchemaPropertiesAsync(context.Session,
+			context.EnvironmentName!, context.PackageName!, context.EntitySchemaName!, token);
+		foreach (string name in new[] { "UsrCreatedDate", "UsrCreatedTime", "UsrAddedDate", "UsrAddedTime" }) {
+			AllureApi.Step($"Verify {name} reads back as DateTime", () => readback.Columns.Should().ContainSingle(column => column.Name == name && column.Source == "own" && column.Type == "DateTime",
+				because: $"{name} must persist as the documented DateTime type after create/update alias conversion"));
+		}
+		TestContext.Out.WriteLine($"Creatio temporal alias readback: {context.EntitySchemaName}; Date/Time on create and update -> DateTime.");
+	}
 
 	// ENG-92459: one shared workspace+package+push for the whole fixture instead of one push-workspace
 	// round-trip per environment-bound test. Lazily initialized by the first requireEnvironment arrange so
