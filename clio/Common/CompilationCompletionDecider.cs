@@ -72,6 +72,14 @@ public record CompilationCompletionState(
 /// reported defect inverted. The reload is what separates the two: a finished build makes the
 /// environment unreachable and then reachable again, and an intermediary's reset does not.
 /// </para>
+/// <para>
+/// <b>Why every completion verdict requires a reachable environment.</b> Both observed verdicts - the
+/// reload and the quiet window - are only reached while the environment is answering. A runtime that
+/// crashed mid-build and never came back presents the same evidence as the quiet case (one clean history
+/// row, then silence), so without that precondition an outage would end the wait, the verdict read would
+/// fail, and the command would report the build as finished from the history rows alone. An environment
+/// that never recovers is a timeout, not a completed build.
+/// </para>
 /// </remarks>
 public interface ICompilationCompletionDecider {
 
@@ -117,14 +125,23 @@ public class CompilationCompletionDecider : ICompilationCompletionDecider {
 		//    projects (45 s, which is what ICompilationSettleTracker is calibrated for) settles while the
 		//    build is still finishing - and then reads an undated verdict that may still be the previous
 		//    build's. That is the false success rule 3 exists to prevent, arrived at from the other side.
-		if (state.NewRecordCount > 0 && state.LastActivityAtUtc is { } lastActivity
+		//
+		//    EnvironmentReachable IS REQUIRED HERE TOO. Without it, a runtime that crashed mid-build and
+		//    never came back looks exactly like this rule's case: one clean history row, then silence. The
+		//    build did NOT finish, but the wait would end anyway, the verdict read would fail, and the
+		//    command would report the outcome from the history alone - a successful exit for a build that
+		//    never completed. The reporter's case is unaffected: there the environment answers throughout
+		//    and only the request is stuck. A permanently unreachable environment now waits out the
+		//    command timeout and is reported as a timeout, which is what it is.
+		if (state.NewRecordCount > 0 && state.EnvironmentReachable
+			&& state.LastActivityAtUtc is { } lastActivity
 			&& state.NowUtc - lastActivity >= state.QuietFallback) {
 			return CompilationCompletionKind.InferredFromQuiet;
 		}
 
 		// 4. Nothing was ever built, and the grace period for a slow first row has passed. Two shapes
 		//    reach this, and BOTH have to, which is why it is not gated on the request ending alone:
-		//      - the request failed outright (connection refused, a login page, a 404);
+		//      - the request failed outright, on a refused connection, a login page or a 404;
 		//      - the request is still hanging because the host silently drops packets - a wrong --uri, a
 		//        firewall, a VPN that is down. There the POST does not fail fast, so waiting for it would
 		//        mean waiting out the whole timeout with nothing to show. What answers instead is the

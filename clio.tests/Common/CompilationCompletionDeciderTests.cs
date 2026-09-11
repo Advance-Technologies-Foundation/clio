@@ -104,6 +104,23 @@ public class CompilationCompletionDeciderTests {
 	}
 
 	[Test]
+	[Description("THE PROLONGED-OUTAGE GUARD. A runtime that crashed mid-build and never came back leaves exactly the quiet rule's evidence - one clean history row, then silence - so quiet must not end the wait while the environment is still not answering. Ending it there reads an unavailable verdict and reports a build that never completed as finished.")]
+	public void Decide_ShouldKeepWaiting_WhenActivityStoppedButTheEnvironmentIsStillUnreachable() {
+		// Arrange
+		ICompilationCompletionDecider decider = new CompilationCompletionDecider();
+		CompilationCompletionState state = State(newRecordCount: 1, quietForSeconds: 400,
+			reloadObserved: false, environmentReachable: false, environmentEverReachable: true,
+			secondsElapsed: 420);
+
+		// Act
+		CompilationCompletionKind kind = decider.Decide(state);
+
+		// Assert
+		kind.Should().Be(CompilationCompletionKind.KeepWaiting,
+			because: "an environment that is not answering has not been shown to have finished its build, and waiting it out to the timeout is the honest report");
+	}
+
+	[Test]
 	[Description("Quiet that has not yet outlasted the reload does NOT end the wait. The runtime reload lands about two minutes after the last compilation-history row, so concluding on a shorter gap reads the undated verdict before the build has actually finished.")]
 	public void Decide_ShouldKeepWaiting_WhenActivityStoppedButNotForLongEnough() {
 		// Arrange

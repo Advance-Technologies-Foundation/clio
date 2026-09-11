@@ -45,6 +45,12 @@ runtime reload observed as the environment going unreachable and coming back, th
 `GetLastCompilationResult` read **after** that reload. Reading the undated verdict before the reload
 returns the PREVIOUS build's result while this one is still running.
 
+**A crashed runtime leaves the same evidence a finished build leaves.** Both end with compilation
+history rows that simply stop, so every completion verdict is gated on the environment answering at
+that instant, and an inferred completion whose verdict cannot then be read is reported as a FAILURE.
+Without both of those, a prolonged outage after one clean history row exits 0 and prints "Compilation
+finished" for a build that never completed.
+
 **The reload is visible on the verdict endpoint and NOT on the compilation-history channel.** Measured
 directly across an application-pool recycle: `api/ConfigurationStatus/GetLastCompilationResult` stopped
 answering for 44 seconds (requests hung until their own timeout rather than failing fast), while

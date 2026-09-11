@@ -48,6 +48,12 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 	/// <summary>The environment has never answered a probe - an unreachable host, not a build.</summary>
 	private static readonly EnvironmentReloadSnapshot NeverReachable = new(false, false, false);
 
+	/// <summary>
+	/// The environment answered, then stopped answering and has not come back - a runtime that crashed
+	/// mid-build, which leaves the same history evidence a finished build leaves.
+	/// </summary>
+	private static readonly EnvironmentReloadSnapshot WentAwayAndStayedAway = new(false, false, true);
+
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		base.AdditionalRegistrations(containerBuilder);
 		containerBuilder.AddSingleton(_serviceUrlBuilder);
@@ -412,6 +418,54 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 			because: "the observed history carried no real error, so the build is reported as successful");
 		_logger.Received().WriteWarning(Arg.Is<string>(message =>
 			message.Contains("Could not read the compilation result", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("THE PROLONGED-OUTAGE GUARD. A runtime that crashed after writing one clean history row and never came back must not be reported as a finished build: the quiet window is not allowed to conclude while the environment is still unreachable, so the command waits out its timeout and exits 1 instead of printing 'Compilation finished'.")]
+	public void Execute_ShouldNotReportSuccess_WhenTheEnvironmentStoppedAnsweringAfterActivityStarted() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		command.QuietFallbackOverride = TimeSpan.Zero;
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true, TimeOut = 200 };
+		StubNeverAnsweringCompileRequest();
+		_activityWatcher.Snapshot.Returns(Built);
+		_reloadWatcher.Snapshot.Returns(WentAwayAndStayedAway);
+		_compilationResultReader.TryRead().Returns((CreatioCompilationLogResponse)null);
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1,
+			because: "a build whose environment never came back was never shown to have completed, and reporting it as successful releases the reservation on nothing");
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(message =>
+			message.Contains("Compilation finished", StringComparison.Ordinal)));
+		_logger.Received().WriteError(Arg.Is<string>(message =>
+			message.Contains("Timed out waiting for the compilation", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("Completion inferred from quiet AND a verdict that cannot be read are two unknowns stacked, so the run is reported as a failure. Only a reload-CONFIRMED build may fall back to the observed history, because there the build demonstrably ran to its end.")]
+	public void Execute_ShouldFail_WhenCompletionWasInferredAndTheVerdictCannotBeRead() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		command.QuietFallbackOverride = TimeSpan.Zero;
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		StubNeverAnsweringCompileRequest();
+		_activityWatcher.Snapshot.Returns(Built);
+		_reloadWatcher.Snapshot.Returns(NoReload);
+		_compilationResultReader.TryRead().Returns((CreatioCompilationLogResponse)null);
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1,
+			because: "nothing confirmed the build ended and nothing confirmed how it ended, so the outcome is unknown rather than successful");
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(message =>
+			message.Contains("Compilation finished", StringComparison.Ordinal)));
+		_logger.Received().WriteError(Arg.Is<string>(message =>
+			message.Contains("The outcome is unknown", StringComparison.Ordinal)));
 	}
 
 	private CompileConfigurationCommand CreateCommand() {

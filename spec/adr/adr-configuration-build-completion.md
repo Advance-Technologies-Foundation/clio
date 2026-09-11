@@ -57,8 +57,14 @@ ordered rule (`ICompilationCompletionDecider`):
 3. **The request ended, but no reload was seen** → keep waiting. This is the false-success guard: an
    intermediary resetting an idle socket does so in the *middle* of a build, and treating that as
    completion would report the previous build's verdict while this one still runs.
-4. **Activity that stopped for a five-minute quiet window, no reload** → inferred, and reported as
-   inferred. This is the reporter's case, where the request never ends at all.
+4. **Activity that stopped for a five-minute quiet window, no reload, environment still answering**
+   → inferred, and reported as inferred. This is the reporter's case, where the request never ends at
+   all.
+   **The environment has to be reachable at that instant.** A runtime that crashed mid-build and never
+   came back writes the same evidence as this rule's case — one clean history row, then silence — so
+   without that precondition a prolonged outage would end the wait, the verdict read would fail, and
+   the outcome would be reported from the history rows alone: a successful exit for a build that never
+   completed. An environment that never recovers waits out `--timeout` and is reported as a timeout.
    The window has to OUTLAST the reload or it makes rule 2 unreachable. Measured on the stand: the
    reload lands about two minutes after the last compilation-history row, and a first implementation
    that reused `ICompilationSettleTracker`'s 45-second window (calibrated for the gaps between
@@ -85,7 +91,10 @@ printed its error and then "Compilation finished" immediately after it.
   building", and the verdict endpoint answers "did it restart". They fail differently on purpose -
   the history channel survives the reload, which is why it cannot be the one that detects it.
 - The quiet-window path (rule 4) is circumstantial. It is reported as inferred, and it is reachable
-  only when the request never terminates.
+  only when the request never terminates and the environment is still answering. When completion was
+  inferred that way AND the verdict cannot be read, the command reports a FAILURE: two unknowns
+  stacked are not evidence of success, and that pair is exactly what a prolonged runtime outage
+  produces.
 
 ## Alternatives rejected
 

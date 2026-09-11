@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq;
 using System.Text;
@@ -77,6 +78,12 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 
 	#region Constructors: Public
 
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "The command composes its required collaborators (application client, environment "
+			+ "settings, URL builder, history poller, logger, interactive console, client factory, activity "
+			+ "watcher, reload watcher, completion decider, result reader) via constructor injection; "
+			+ "bundling them into a parameter object would hide the injected contract without changing "
+			+ "behaviour, which is how the other multi-collaborator commands in this assembly are handled.")]
 	public CompileConfigurationCommand(IApplicationClient applicationClient,
 		EnvironmentSettings settings, IServiceUrlBuilder serviceUrlBuilder,
 		ICompilationHistoryPoller compilationHistoryPoller, ILogger logger,
@@ -168,6 +175,11 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 	/// endpoint carries no timestamp, so what gets read at that moment may still be the previous build's
 	/// result. Five minutes keeps the reload the normal path and leaves this one for the case it exists
 	/// for: an intermediary holding the request open so nothing else ever terminates (issue #1422).
+	/// <para>
+	/// The window is not the only precondition. Quiet only concludes the build while the environment is
+	/// still answering - a runtime that stopped answering mid-build and never came back writes the same
+	/// evidence, and waiting it out to the timeout is the correct report there.
+	/// </para>
 	/// </remarks>
 	internal static readonly TimeSpan QuietFallback = TimeSpan.FromMinutes(5);
 
@@ -375,9 +387,22 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 				"The compilation request never returned and no runtime reload was observed. Completion was "
 				+ "inferred from the environment's compilation activity having stopped.");
 		}
+		if (result is null && inferred) {
+			// The build was never confirmed to have ENDED - the reload was not seen, completion was inferred
+			// from activity stopping - and now its verdict cannot be read either. Two unknowns stacked is not
+			// evidence of success: a runtime that stopped answering mid-build presents exactly this. Report a
+			// failure so nothing downstream treats an unverified build as a delivered one.
+			CommandSuccess = _isSuccess = false;
+			Logger.WriteError(
+				"Could not read the compilation result from the environment, and the build's completion was "
+				+ "only inferred from its activity having stopped. The outcome is unknown; check "
+				+ "`clio last-compilation-log` before relying on this environment.");
+			return;
+		}
 		if (result is null) {
-			// The build demonstrably ran; only the verdict lookup failed. Reporting a clio error here would
-			// replace something known with something unknown, so the observed diagnostics decide instead.
+			// Completion here was CONFIRMED by the runtime reload, so the build demonstrably ran to its end
+			// and only the verdict lookup failed. Reporting a clio error would replace something known with
+			// something unknown, so the observed diagnostics decide instead.
 			CommandSuccess = _isSuccess = !activity.HasErrors;
 			Logger.WriteWarning(
 				"Could not read the compilation result from the environment; reporting the outcome from the "
