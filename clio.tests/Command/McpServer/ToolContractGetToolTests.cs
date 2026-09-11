@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -21,6 +21,29 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class ToolContractGetToolTests {
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+
+	[Test]
+	[Category("Unit")]
+	[TestCase(CreateDataBindingTool.CreateDataBindingToolName)]
+	[TestCase(AddDataBindingRowTool.AddDataBindingRowToolName)]
+	[TestCase(RemoveDataBindingRowTool.RemoveDataBindingRowToolName)]
+	[Description("Local binding contracts consistently describe and illustrate the workspace root rather than a package directory.")]
+	public void GetToolContracts_ShouldIdentifyWorkspaceRoot_WhenLocalBindingIsRequested(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractDefinition contract = tool.GetToolContracts(new ToolContractGetArgs([toolName])).Tools!.Single();
+
+		// Assert
+		contract.InputSchema.Properties.Single(field => field.Name == "workspace-path").Description.Should()
+			.Contain(".clio/workspaceSettings.json", because: "callers need the marker that identifies the root")
+			.And.Contain("packages/<package-name>", because: "the package path is resolved beneath the root")
+			.And.Contain("not the package directory", because: "the reported ambiguity must be removed");
+		contract.Examples.Should().NotBeEmpty(because: "binding callers need a working example");
+		contract.Examples.Should().OnlyContain(example => Equals(example.Arguments["workspace-path"], "<workspace-root>"),
+			because: "every local binding example must use the same unambiguous root placeholder");
+	}
 
 	[Test]
 	[Category("Unit")]
@@ -1876,7 +1899,7 @@ public sealed class ToolContractGetToolTests {
 			because: "create-data-binding should advertise that runtime schemas require environment-name on the MCP surface");
 		createContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "workspace-path" &&
-				field.Description.Contains("Absolute local workspace path", StringComparison.Ordinal),
+				field.Description.Contains("Absolute local workspace root containing .clio/workspaceSettings.json", StringComparison.Ordinal),
 			because: "create-data-binding should canonically describe the local workspace requirement");
 		createContract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "require-environment-name-for-runtime-schema"

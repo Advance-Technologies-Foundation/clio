@@ -662,7 +662,7 @@ internal static class ToolContractCatalog {
 	private const string EventNameFieldName = "event_name";
 	private const string TelemetryConsentFieldName = "telemetry_consent";
 	private const string ExampleOrderPageSchemaName = "UsrOrder_FormPage";
-	private const string ExampleWorkspacePath = "<workspace>/UsrTaskApp";
+	private const string ExampleWorkspacePath = "<workspace-root>";
 	private const string MakeReadOnlyActionTypeName = "make-read-only";
 	private const string MakeRequiredActionTypeName = "make-required";
 	private const string RuleNamesFieldName = "rule-names";
@@ -679,6 +679,7 @@ internal static class ToolContractCatalog {
 	private const string VerifyFieldName = "verify";
 	private const string BindingNameDescription = "Binding name.";
 	private const string WorkspacePathDescription = "Absolute local workspace path. Network-share paths are not supported.";
+	private const string DataBindingWorkspacePathDescription = "Absolute local workspace root containing .clio/workspaceSettings.json, not the package directory. The package is resolved under packages/<package-name> beneath that root. Network-share paths are not supported.";
 	private const string WorkspacePathFieldName = "workspace-path";
 	private const string DataForgePlatformRequirementDescription =
 		"Requires Creatio platform version 10.0.0 or later; CrtDataForge is included in supported platform versions.";
@@ -4591,7 +4592,7 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameFieldName, StringType, "Registered clio environment name. Required when schema-name is not SysSettings because the MCP tool does not expose a uri fallback."),
 						Field(PackageNameFieldName, StringType, PackageNameDescription),
 						Field(SchemaNameFieldName, StringType, "Entity schema name for the binding. The built-in offline template currently includes SysSettings."),
-						Field(WorkspacePathFieldName, StringType, WorkspacePathDescription),
+						Field(WorkspacePathFieldName, StringType, DataBindingWorkspacePathDescription),
 						Field(BindingNameFieldName, StringType, "Optional binding name; defaults to the schema name."),
 						Field("install-type", NumberType, "Optional descriptor install type; defaults to 0."),
 						Field(ValuesFieldName, StringType, "Optional JSON object keyed by column name for the initial row."),
@@ -4665,7 +4666,7 @@ internal static class ToolContractCatalog {
 					[
 						Field(PackageNameFieldName, StringType, PackageNameDescription),
 						Field(BindingNameFieldName, StringType, BindingNameDescription),
-						Field(WorkspacePathFieldName, StringType, WorkspacePathDescription),
+						Field(WorkspacePathFieldName, StringType, DataBindingWorkspacePathDescription),
 						Field(ValuesFieldName, StringType, "JSON object keyed by column name for the row to add or replace."),
 						Field("localizations", StringType, "Optional JSON object keyed by culture then column name.")
 					]),
@@ -4704,7 +4705,7 @@ internal static class ToolContractCatalog {
 				[
 						Field(PackageNameFieldName, StringType, PackageNameDescription),
 						Field(BindingNameFieldName, StringType, BindingNameDescription),
-						Field(WorkspacePathFieldName, StringType, WorkspacePathDescription),
+						Field(WorkspacePathFieldName, StringType, DataBindingWorkspacePathDescription),
 						Field(KeyValueFieldName, StringType, "Primary-key value of the row to remove.")
 					]),
 			CommandExecutionOutput(),
