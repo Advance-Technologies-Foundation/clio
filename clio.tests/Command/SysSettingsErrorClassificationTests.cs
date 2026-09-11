@@ -2,6 +2,8 @@ using System;
 using System.Net;
 using System.Net.Http;
 using System.Security.Authentication;
+using System.Text.Json;
+using System.Threading.Tasks;
 using Clio.Command;
 using FluentAssertions;
 using NUnit.Framework;
@@ -188,5 +190,59 @@ public sealed class SysSettingsErrorClassificationTests {
 		string message = SysSettingsCommand.CategorizeError(exception, Operation);
 
 		message.Should().Be(AuthenticationError);
+	}
+
+	[Test]
+	[Description("A JsonException - what a proxy/gateway or 404 page raises when it reaches JsonSerializer.Deserialize on the write path - is reported as a non-JSON response naming the likely cause, not as the uncategorized \"Failed ...\" the operator used to get after the preflight probe was removed.")]
+	public void CategorizeError_Should_Report_A_NonJson_Response_For_A_JsonException() {
+		JsonException fault = new("'<' is an invalid start of a value. Path: $ | LineNumber: 0 | BytePositionInLine: 0.");
+
+		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(fault, "creating sys-setting", "test-id");
+
+		failure.Error.Should().Be("Creatio returned a non-JSON response creating sys-setting.",
+			because: "the write path's only remaining diagnosis for a non-login-page body must say what came back, not the uncategorized \"Failed ...\"");
+		failure.Category.Should().Be(SysSettingErrorCategories.Network,
+			because: "an answer that is not JSON at all did not come from Creatio's DataService - it is a reachability problem, not a credential one");
+		failure.Cause.Should().Be(SysSettingFailureTexts.NonJsonResponseCause,
+			because: "the actionable half - that the URL may not reach Creatio, or a proxy answered instead - belongs in the cause field");
+		failure.RecoveryAction.Should().Be(SysSettingFailureTexts.NonJsonResponseRecovery,
+			because: "every classified failure ships the action next to the verdict");
+	}
+
+	[Test]
+	[Description("The JsonException arm is reached through the transport wrapper too: the Creatio client surfaces faults via Task.Result, so an AggregateException carrying a single JsonException must classify as the same non-JSON response.")]
+	public void CategorizeError_Should_Report_A_NonJson_Response_For_An_Aggregate_Wrapping_A_JsonException() {
+		AggregateException fault = new(new JsonException("'<' is an invalid start of a value."));
+
+		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(fault, "updating sys-setting", "test-id");
+
+		failure.Error.Should().Contain("non-JSON response updating sys-setting",
+			because: "unwrapping a single-fault aggregate must not lose the non-JSON diagnosis");
+		failure.Category.Should().Be(SysSettingErrorCategories.Network,
+			because: "the wrapper must not change the verdict the inner fault earns");
+	}
+
+	[Test]
+	[Description("An HttpClient timeout - which surfaces as TaskCanceledException, since nothing on these paths supplies a cancellation token - is a network failure, the verdict SysSettingCodes.ClassifyReadFailure already gives it, not an unknown one telling the caller to retry.")]
+	public void CategorizeError_Should_Report_Network_For_A_Transport_Timeout() {
+		TaskCanceledException fault = new("The request was canceled due to the configured HttpClient.Timeout of 100 seconds elapsing.");
+
+		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(fault, Operation, "test-id");
+
+		failure.Category.Should().Be(SysSettingErrorCategories.Network,
+			because: "an environment that stopped answering is a reachability problem, and the two classifiers must agree on that");
+		failure.Error.Should().Be(NetworkError,
+			because: "the timeout must not fall to the uncategorized \"Failed ...\" label");
+	}
+
+	[Test]
+	[Description("The timeout arm survives the transport wrapper: the Creatio client reaches faults through Task.Result, so an aggregate carrying a single TaskCanceledException classifies as the same network failure.")]
+	public void CategorizeError_Should_Report_Network_For_An_Aggregate_Wrapping_A_Transport_Timeout() {
+		AggregateException fault = new(new TaskCanceledException("HttpClient.Timeout elapsed"));
+
+		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(fault, Operation, "test-id");
+
+		failure.Category.Should().Be(SysSettingErrorCategories.Network,
+			because: "the wrapper must not change the verdict the inner fault earns");
 	}
 }

@@ -95,7 +95,15 @@ internal sealed record ApplicationColumnEnvelope(
 	[property: JsonPropertyName("name")] string Name,
 	[property: JsonPropertyName("caption")] string Caption,
 	[property: JsonPropertyName("data-value-type")] string DataValueType,
-	[property: JsonPropertyName("reference-schema")] string? ReferenceSchema);
+	[property: JsonPropertyName("reference-schema")] string? ReferenceSchema,
+	[property: JsonPropertyName("default-value-config")] ApplicationDefaultValueConfigEnvelope? DefaultValueConfig);
+
+internal sealed record ApplicationDefaultValueConfigEnvelope(
+	[property: JsonPropertyName("source")] string? Source,
+	[property: JsonPropertyName("value")] JsonElement? Value,
+	[property: JsonPropertyName("value-source")] string? ValueSource,
+	[property: JsonPropertyName("sequence-prefix")] string? SequencePrefix,
+	[property: JsonPropertyName("sequence-number-of-chars")] int? SequenceNumberOfChars);
 
 internal sealed record ApplicationPageEnvelope(
 	[property: JsonPropertyName("schema-name")] string SchemaName,

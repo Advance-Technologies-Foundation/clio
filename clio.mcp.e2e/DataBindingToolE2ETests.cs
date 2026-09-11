@@ -41,7 +41,7 @@ public sealed class DataBindingToolE2ETests : McpContractFixtureBase {
 				["package-name"] = arrangeContext.PackageName,
 				["schema-name"] = "SysSettings",
 				["workspace-path"] = arrangeContext.WorkspacePath,
-				["values"] = """{"Code":"UsrMcpSetting","Name":"Created by MCP"}"""
+				["values"] = """{"Code":"UsrMcpSetting","Name":"Created by MCP","ReferenceSchemaUId":"27aeadd6-d508-4572-8061-5b55b667c902"}"""
 			});
 
 		// Assert
@@ -65,6 +65,8 @@ public sealed class DataBindingToolE2ETests : McpContractFixtureBase {
 			because: "explicit-value mode should retain the requested business columns from the template");
 		dataJson.Should().Contain("UsrMcpSetting",
 			because: "the created row should preserve the user-provided payload columns");
+		descriptorJson.Should().NotContain("ReferenceSchemaName", because: "the platform rejects generator-only descriptor properties");
+		dataJson.Should().Contain("\"Value\": \"27aeadd6-d508-4572-8061-5b55b667c902\"", because: "the referenced schema identity must remain in the row payload");
 		string? keyColumnUId = null;
 		foreach (JsonElement column in JsonDocument.Parse(descriptorJson).RootElement.GetProperty("Descriptor").GetProperty("Columns").EnumerateArray()) {
 			if (column.GetProperty("IsKey").GetBoolean()) {

@@ -7,7 +7,7 @@
 **ADR**: [adr-process-versioning.md](../adr/adr-process-versioning.md)
 **Test plan**: [tp-process-versioning.md](../test-plans/tp-process-versioning.md)
 **Repository**: crt-process-builder
-**Status**: in-progress
+**Status**: done
 **Size**: L
 
 ---
@@ -58,7 +58,7 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
 - [x] Operation count and gate call sites move together, expressed as deltas — `VersioningOperationContractCount` 1 → 2 (baseline 5 + 2 = 7), gate call sites 4 → 5, same commit
 - [x] Code compiles clean; tests use fixture-level `[TestFixture(Category = "UnitTests")]` — this repo's convention, and the opposite of clio's
 - [x] Workspace-diary entry added (`CLAUDE.md:131-150`) — mandatory in this repo
-- [ ] PR description references this story file
+- [x] PR description references this story file
 - [x] `docs/process-builder-architecture.md` and `.puml` updated together
 - [x] ClioRing MCP compatibility verdict recorded — the anchor `AGENTS.md:241-299` does not resolve in this repository. Verdict: no MCP surface changes, nothing for ClioRing to be compatible with until stories 16-17.
 
