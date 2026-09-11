@@ -10,18 +10,20 @@ namespace Clio.Command;
 
 
 /// <summary>
-/// Installs one bundled, source-only package into a Creatio environment and verifies that the target compiled
-/// it. Derived commands name the package (<see cref="PackageName"/>) and its probe (<see cref="PingRoute"/>);
+/// Installs one bundled package into a Creatio environment and verifies that its service answers afterwards.
+/// Derived commands name the package (<see cref="PackageName"/>) and its probe (<see cref="PingRoute"/>);
 /// everything else — the downgrade refusals, the readiness wait, the outcome check — is shared.
 /// </summary>
 /// <remarks>
 /// Modelled on <see cref="InstallGateCommand"/>, with four deliberate differences that the on-stand
-/// experiments justified:
+/// experiments justified. Written for the source-only process builder; the prebuilt dashboards migrator
+/// goes through the same steps, and where a remark below says "compiled" read "accepted and serving".
 /// <list type="number">
 /// <item><description>
-/// <b>No <c>IsNetCore</c> branch and no per-framework archive.</b> The package ships as SOURCE ONLY —
-/// with no compiled assembly — and the target compiles it against its own core, choosing the target
-/// framework for its own host. Verified with the same bytes on .NET Framework 4.8 and .NET 8.0.29.
+/// <b>No <c>IsNetCore</c> branch and no per-framework archive.</b> One archive per package serves every
+/// runtime: the process builder ships as SOURCE ONLY and the target compiles it against its own core,
+/// the dashboards migrator carries its assembly for both runtimes side by side (<c>Files/Bin</c> and
+/// <c>Files/Bin/netstandard</c>, resolved by the platform). Verified on .NET Framework 4.8 and .NET 8.0.29.
 /// </description></item>
 /// <item><description>
 /// <b>No restart of OURS, but one still happens — and from a different place on each runtime.</b> Unlike

@@ -86,8 +86,10 @@ public static class BundledPackages {
 	/// </summary>
 	/// <remarks>
 	/// Same byte-for-byte contract with the archive's <c>descriptor.json</c> as
-	/// <see cref="ProcessBuilderPackageName"/>. Unlike the process builder this package ships no assembly and
-	/// no compile marker: its own Source Code schemas are what puts it into the target's configuration build.
+	/// <see cref="ProcessBuilderPackageName"/>. Unlike the process builder this package ships PREBUILT, like
+	/// cliogate: the archive is the package's SDLC build and carries its assembly for both runtimes, so the
+	/// target loads it instead of compiling it. It still goes through the shared install command, because the
+	/// downgrade refusals, the restart wait and the Ping outcome check apply to it unchanged.
 	/// </remarks>
 	public const string DashboardsMigratorPackageName = "CrtDashboardsMigratorApp";
 

@@ -42,7 +42,14 @@
     this script may branch on the name.
 
 .PARAMETER PackageRepoPath
-    Path to the package repository checkout (the folder containing packages/<Package>).
+    Source 'git' packages (CrtProcessBuilder): path to the package repository checkout (the folder
+    containing packages/<Package>). The archive is cut from the producing commit and the target compiles it.
+
+.PARAMETER BuildZip
+    Source 'build' packages (CrtDashboardsMigratorApp): the SDLC build zip of the release, e.g.
+    \\tscrm.com\dfs-ts\ComposableApps\CrtDashboardsMigratorApp\1.1.4\CrtDashboardsMigratorApp_1.1.4.zip.
+    It carries the package .gz with the assemblies Jenkins compiled for net472 and .NET; nothing is built here
+    and the target does not compile the package. -Version must be the SDLC build's full version (1.1.4.6).
 
 .PARAMETER Version
     Four-part version to stamp. REQUIRED, and it must be higher than the version currently in the
@@ -74,13 +81,17 @@
     ./rebundle-bundled-package.ps1 -Package CrtProcessBuilder -PackageRepoPath C:\Projects\workspace\ProcessBuilder -Version 1.0.1.0
 
 .EXAMPLE
-    ./rebundle-bundled-package.ps1 -Package CrtDashboardsMigratorApp -PackageRepoPath C:\Projects\crt-dashboards-migrator-app `
-        -Version 1.1.4.0 -Configuration Debug -Framework net8.0
+    ./rebundle-bundled-package.ps1 -Package CrtDashboardsMigratorApp `
+        -BuildZip \\tscrm.com\dfs-ts\ComposableApps\CrtDashboardsMigratorApp\1.1.4\CrtDashboardsMigratorApp_1.1.4.zip `
+        -Version 1.1.4.6 -Configuration Debug -Framework net8.0
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][ValidateSet('CrtProcessBuilder','CrtDashboardsMigratorApp')][string] $Package,
-    [Parameter(Mandatory = $true)][string] $PackageRepoPath,
+    # Source 'git' packages: the package repository checkout. Source 'build' packages: not used.
+    [string] $PackageRepoPath,
+    # Source 'build' packages: the SDLC build zip (contains the package .gz with its compiled assemblies).
+    [string] $BuildZip,
     [Parameter(Mandatory = $true)][string] $Version,
     [ValidateSet('Debug','Release')][string] $Configuration,
     [string] $Framework,
@@ -97,6 +108,9 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 # Everything package-specific, in one place. Keys:
+#   Source              'git'   - cut from a commit of the package repository; the TARGET compiles it.
+#                       'build' - taken from an SDLC build zip; ships Jenkins-compiled assemblies, no build,
+#                                 no tests, no git provenance here (the SDLC build IS the provenance).
 #   Build / Test        script blocks run inside the package repository (step 1).
 #   TestProjectFilter   the test csproj the Test block needs, discovered rather than hardcoded (may be $null).
 #   AppDescriptor       app-descriptor.json whose three-part Version must prefix -Version ($null = none).
@@ -109,6 +123,7 @@ Set-StrictMode -Version Latest
 #   SchemaStampPinned   $true when the pins file carries ExpectedSchemaDescriptorModifiedOnUtc (step 2b).
 $packages = @{
     CrtProcessBuilder = @{
+        Source = 'git'
         Build = { dotnet build MainSolution.slnx -c dev-nf --nologo -v q }
         TestProjectFilter = 'CrtProcessBuilder.Tests.csproj'
         Test = { param($proj) dotnet test $proj -c dev-nf --no-build --nologo -v q }
@@ -122,11 +137,12 @@ $packages = @{
         SchemaStampPinned = $true
     }
     CrtDashboardsMigratorApp = @{
-        Build = { cmd /c .\build-framework.cmd }
+        Source = 'build'
+        Build = $null
         TestProjectFilter = $null
-        Test = { param($proj) cmd /c .\run-unit-tests-framework.cmd --no-build }
+        Test = $null
         AppDescriptor = 'Files\app-descriptor.json'
-        ExpectedDlls = @()
+        ExpectedDlls = @('Files/Bin/CrtDashboardsMigratorApp.dll', 'Files/Bin/netstandard/CrtDashboardsMigratorApp.dll')
         CompileMarker = $null
         RequiredSchemas = @('DashboardsMigratorService')
         ExactlyTheseSchemas = $false
@@ -138,7 +154,22 @@ $packages = @{
 $pkg = $packages[$Package]
 
 $clioRoot     = $PSScriptRoot
-$packageDir   = Join-Path $PackageRepoPath "packages\$Package"
+$stageRoot    = $null
+if ($pkg.Source -eq 'build') {
+    if (-not $BuildZip) { throw "-BuildZip is required for $Package (Source = 'build')." }
+    if (-not (Test-Path -LiteralPath $BuildZip)) { throw "Not found: $BuildZip" }
+    # The SDLC zip wraps the package .gz; unpack both into a staging folder that is treated as the
+    # "package directory" from here on. Removed at the end.
+    $stageRoot = Join-Path ([IO.Path]::GetTempPath()) ("clio-rebundle-" + [Guid]::NewGuid().ToString('n'))
+    New-Item -ItemType Directory -Path $stageRoot -Force | Out-Null
+    Expand-Archive -LiteralPath $BuildZip -DestinationPath (Join-Path $stageRoot 'zip') -Force
+    $innerGz = @(Get-ChildItem -LiteralPath (Join-Path $stageRoot 'zip') -Filter '*.gz' -Recurse -File)
+    if ($innerGz.Count -ne 1) { throw "Expected exactly one package .gz inside $BuildZip, found $($innerGz.Count)." }
+    $packageDir = Join-Path $stageRoot "pkg\$Package"
+} else {
+    if (-not $PackageRepoPath) { throw "-PackageRepoPath is required for $Package (Source = 'git')." }
+    $packageDir = Join-Path $PackageRepoPath "packages\$Package"
+}
 $descriptor   = Join-Path $packageDir 'descriptor.json'
 $binDir       = Join-Path $packageDir 'Files\Bin'
 $archive      = Join-Path $clioRoot "clio\$Package\$Package.gz"
@@ -155,8 +186,10 @@ function Die ([string] $text) {
     throw 'Rebundle aborted - see the message above.'
 }
 
-foreach ($p in @($packageDir, $descriptor)) {
-    if (-not (Test-Path -LiteralPath $p)) { Die "Not found: $p. Is -PackageRepoPath the $Package checkout?" }
+if ($pkg.Source -eq 'git') {
+    foreach ($p in @($packageDir, $descriptor)) {
+        if (-not (Test-Path -LiteralPath $p)) { Die "Not found: $p. Is -PackageRepoPath the $Package checkout?" }
+    }
 }
 # Which build output to drive and refresh. NOT hardcoded: the repo's own build.ps1 uses Release/net10.0
 # while a developer typically has Debug, and picking the wrong one is the very failure this script exists
@@ -190,7 +223,15 @@ if ($candidates.Count -gt 1) {
 $chosen  = $candidates[0]
 $clioDll = $chosen.Dll
 Write-Host "Using clio $($chosen.Configuration)/$($chosen.Framework)" -ForegroundColor Cyan
+if ($pkg.Source -eq 'build') {
+    dotnet $clioDll extract-pkg-zip $innerGz[0].FullName -d (Join-Path $stageRoot 'pkg') | Out-Null
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $descriptor)) { Die "Could not unpack $($innerGz[0].FullName) into $packageDir." }
+    $sourceSha = (Get-FileHash -LiteralPath $BuildZip -Algorithm SHA256).Hash.ToUpperInvariant()
+    Ok "source build $BuildZip (sha256 $sourceSha)"
+}
 
+$producingCommit = $null
+if ($pkg.Source -eq 'git') {
 # ---------------------------------------------------------------- 0b. provenance, mechanically
 # Only the SHA is computed from the archive; the other three come from the -Version argument, the descriptor
 # after the restamp, and HEAD before it. All four are refreshed together, so they agree with any
@@ -273,11 +314,16 @@ if ($LASTEXITCODE -ne 0 -or -not $upstream) {
     Ok "producing commit $producingCommit (branch $branch, tree clean, $ahead ahead of $upstream, 0 behind)"
 }
 
+}
+
 if ($ValidateOnly) {
     Ok "-ValidateOnly: the gates passed and nothing was written. Re-run without it to cut for real."
     exit 0
 }
 
+if ($pkg.Source -eq 'build') {
+    Step '1. SKIPPED: the SDLC build compiled and tested the package'
+} else {
 # ---------------------------------------------------------------- 1. sources compile, tests pass
 if ($SkipTests) {
     Write-Host "`n=== 1. SKIPPED: package build and tests" -ForegroundColor Yellow
@@ -313,6 +359,8 @@ Without it the package tests cannot run, and this script must not ship an archiv
         if ($LASTEXITCODE -ne 0) { Die 'Package tests failed.' }
     } finally { Pop-Location }
     Ok 'build + tests green'
+}
+
 }
 
 # ---------------------------------------------------------------- 2. both descriptor fields
@@ -478,6 +526,15 @@ $($pkg.PinsFile) to the new value and re-run.
 "@
 }
 
+if ($pkg.Source -eq 'build') {
+    # Nothing to strip and nothing to export: the SDLC zip is the artifact, assemblies included, and its
+    # descriptor was stamped in place above. --skip-pdb still applies.
+    Step '4. Pack the SDLC build straight into the clio checkout'
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $archive) | Out-Null
+    dotnet $clioDll compress $packageDir --skip-pdb -d $archive
+    if ($LASTEXITCODE -ne 0) { Die 'compress failed.' }
+    Ok $archive
+} else {
 # ---------------------------------------------------------------- 3. keep the archive source-only
 Step '3. Remove the build output so the archive stays source-only'
 if (Test-Path -LiteralPath $binDir) {
@@ -555,6 +612,8 @@ try {
     if (Test-Path -LiteralPath $packRoot) { Remove-Item -LiteralPath $packRoot -Recurse -Force }
 }
 
+}
+
 # ---------------------------------------------------------------- 5. verify, do not trust
 Step '5. Verify the archive contents (step 3 is easy to forget and its failure is silent)'
 # clio's .gz is not a zip: per entry it is [int32 nameLength][UTF-16LE path][int32 contentLength][bytes].
@@ -613,7 +672,7 @@ if (-not $entries) { Die 'The archive contains no entries at all - the format ma
 
 $dlls = @($entries | Where-Object { $_.Name -like '*.dll' })
 $ownAssembly = $dlls | Where-Object { $_.Name -match ('(?i)(^|[\\/])' + [regex]::Escape($Package) + '\.dll$') }
-if ($ownAssembly) {
+if ($ownAssembly -and $pkg.Source -eq 'git') {
     Die "The archive carries the package's OWN assembly ($($ownAssembly.Name)). Step 3 did not take effect. Shipping it makes a FAILED target-side build undetectable: the stale DLL answers the install command's Ping probe."
 }
 # The EXACT dll inventory from the table: compile references the target needs and nothing else. Anchored on
@@ -708,7 +767,11 @@ if ($SkipTests) {
 # cannot shorten it.
 Replace-InFile $pinsFile 'ExpectedArchiveVersion = "[^"]*";' "ExpectedArchiveVersion = `"$($parsedNew.ToString())`";" 'ExpectedArchiveVersion'
 Replace-InFile $pinsFile 'ExpectedDescriptorModifiedOnUtc = "[^"]*";' "ExpectedDescriptorModifiedOnUtc = `"$stamp`";" 'ExpectedDescriptorModifiedOnUtc'
-Replace-InFile $pinsFile 'ExpectedProducingCommit = "[^"]*";' "ExpectedProducingCommit = `"$producingCommit`";" 'ExpectedProducingCommit'
+if ($pkg.Source -eq 'git') {
+    Replace-InFile $pinsFile 'ExpectedProducingCommit = "[^"]*";' "ExpectedProducingCommit = `"$producingCommit`";" 'ExpectedProducingCommit'
+} else {
+    Replace-InFile $pinsFile '(?s)(ExpectedSourceBuildSha256\s*=\s*)"[0-9A-Fa-f]{64}";' "`${1}`"$sourceSha`";" 'ExpectedSourceBuildSha256'
+}
 # There is deliberately no version constant to update. clio reads the shipped version out of this very
 # archive (IBundledPackageCatalog), so nothing on the clio side has to be kept in step with it - which is
 # what made raising the version cheap enough to require on every rebundle.
@@ -752,3 +815,5 @@ Write-Host @"
       * install onto a stand and confirm the service answers
       * commit BOTH repositories, and say in the clio commit message which package-repo commit the bytes came from
 "@
+
+if ($stageRoot -and (Test-Path -LiteralPath $stageRoot)) { Remove-Item -LiteralPath $stageRoot -Recurse -Force }

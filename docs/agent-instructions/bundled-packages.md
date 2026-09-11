@@ -17,18 +17,18 @@ Read it before touching any of:
 
 | | `cliogate` | `CrtProcessBuilder` | `CrtDashboardsMigratorApp` |
 |---|---|---|---|
-| Ships | a **prebuilt assembly** per framework (`Files/Bin`, `Files/Bin/netstandard`) | **source only** — no assembly at all | **source only** — no assembly at all |
-| Who compiles | nobody; the DLL is loaded as-is | the TARGET environment, during installation — substantially slower than a plain package install, by an amount that is a property of the target (configuration size, host, load) and not of clio. Deliberately no figure: `AGENTS.md` sends agents here, and a range on an agent surface stops being an estimate — one was read out of the MCP tool description and repeated to a user as a promise | the TARGET environment, same as the process builder |
+| Ships | a **prebuilt assembly** per framework (`Files/Bin`, `Files/Bin/netstandard`) | **source only** — no assembly at all | **prebuilt assemblies** for both frameworks in ONE archive (`Files/Bin`, `Files/Bin/netstandard`) — the package's SDLC (Jenkins) build, taken as-is |
+| Who compiles | nobody; the DLL is loaded as-is | the TARGET environment, during installation — substantially slower than a plain package install, by an amount that is a property of the target (configuration size, host, load) and not of clio. Deliberately no figure: `AGENTS.md` sends agents here, and a range on an agent surface stops being an estimate — one was read out of the MCP tool description and repeated to a user as a promise | nobody; the platform loads the DLL for its runtime. The configuration build for the package's schemas and the restart still happen |
 | Archives | one per framework, chosen by `IsNetCore` | one, for every runtime | one, for every runtime |
 | Install verb | `install-gate` | `install-process-builder` | `install-dashboards-migrator` |
-| Source repo | in this repo (`cliogate/`), regenerable via `build.ps1` | separate `ProcessBuilder` repo, produced by hand | separate `crt-dashboards-migrator-app` repo (creatio.ghe.com/engineering), produced by hand |
-| Build procedure | see the ClioGate sections in `AGENTS.md` | this article | this article, with the differences in the next table |
-| What puts it into the target's configuration build | n/a | an empty compile-marker schema | its own Source Code schemas |
+| Source repo | in this repo (`cliogate/`), regenerable via `build.ps1` | separate `ProcessBuilder` repo, produced by hand | separate `crt-dashboards-migrator-app` repo (creatio.ghe.com/engineering); the archive comes from its SDLC build on `\\tscrm.com\dfs-ts\ComposableApps\CrtDashboardsMigratorApp\<X.Y.Z>\` |
+| Build procedure | see the ClioGate sections in `AGENTS.md` | this article | this article, with the differences in the next table; nothing is built on the bundling machine |
+| What puts it into the target's configuration build | n/a | an empty compile-marker schema | n/a — the assembly is shipped |
 | Outcome probe | none | `/rest/ProcessDesignService/Ping` | `/rest/DashboardsMigratorService/Ping` |
 
 The asymmetry matters for review: a changed `cliogate.gz` can be checked by rebuilding it from in-repo
 sources, a changed `CrtProcessBuilder.gz` or `CrtDashboardsMigratorApp.gz` cannot. That is why the latter two
-carry pins (below).
+carry pins (below) — for the migrator, one of them is the SHA-256 of the SDLC build zip the archive was cut from.
 
 ### Where the dashboards migrator differs
 
@@ -37,19 +37,22 @@ CrtDashboardsMigratorApp` applies these differences, and so must anyone doing it
 
 | | `CrtProcessBuilder` | `CrtDashboardsMigratorApp` |
 |---|---|---|
-| Build / test in the package repo | `dotnet build MainSolution.slnx -c dev-nf` / `dotnet test tests/CrtProcessBuilder/...` | `build-framework.cmd` / `run-unit-tests-framework.cmd` |
-| Stamping the descriptor | `clio set-pkg-version` | `clio set-pkg-version` |
-| Install scripts | none | none, and the guard fixture forbids them: the platform runs `InstallScripts` BEFORE compiling a source-only package, so a script in the package's own assembly fails every first install (measured 2026-09-10). The migrator applies its column rights from an app-start listener instead |
-| `PackageVersion` vs the app version | n/a | the first three parts must equal `Version` in `Files/app-descriptor.json` (three-part app version, shown in App Hub); the script refuses otherwise |
-| `.dll` inventory | exactly two, both `Files/Libs` | **zero** |
+| Source (`Source` in the script's table) | `git`: a commit of the package repository, exported with `git archive` | `build`: the SDLC build zip (`-BuildZip`); the package `.gz` inside is unpacked, stamped and repacked |
+| Build / test | `dotnet build MainSolution.slnx -c dev-nf` / `dotnet test tests/CrtProcessBuilder/...`, run by the script | none here — Jenkins built and tested it; the SDLC build must be a `ReleaseCandidate` |
+| Provenance pin | `ExpectedProducingCommit` (git HEAD, clean tree, not behind upstream) | `ExpectedSourceBuildSha256` (SHA-256 of the build zip); the commit is on the build's SDLC page |
+| `-Version` | any higher four-part number | the SDLC build's **full version** (`1.1.4.6`); its first three parts must equal `Version` in `Files/app-descriptor.json`, the script refuses otherwise |
+| Stamping the descriptor | `clio set-pkg-version` | `clio set-pkg-version`, on the unpacked build |
+| Install scripts | none | none, and the guard fixture forbids them: the platform runs `InstallScripts` BEFORE compiling a source package, so a script in the package's own assembly fails a first source install (measured 2026-09-10). The migrator applies its column rights from an app-start listener instead, which works prebuilt and from source alike |
+| `.dll` inventory | exactly two, both `Files/Libs` | exactly two, both the package's own: `Files/Bin/CrtDashboardsMigratorApp.dll`, `Files/Bin/netstandard/CrtDashboardsMigratorApp.dll` |
+| `Files/Bin` | removed before packing | kept — it IS the payload |
 | Schemas | exactly one, the compile marker | at least `DashboardsMigratorService` (the probe); the rest are the app |
 | `Data/` | **forbidden** — executes on install | **allowed** — its bound rows (SysAdminOperation, SysModule, SysDetail, SysImage) register the migration page and its permission and run nothing |
 | `SqlScripts/` | forbidden | forbidden |
 | Schema-descriptor stamp pin | `ExpectedSchemaDescriptorModifiedOnUtc`, verified not refreshed | none |
 | Pins file | `BundledProcessBuilderPackageTests.cs` | `BundledDashboardsMigratorPackageTests.cs` |
 
-Everything else — the version-must-rise guard, the producing-commit provenance, `git archive` from the commit,
-`--skip-pdb`, the rebuild of one clio output — is identical.
+Everything else — the version-must-rise guard, `--skip-pdb`, the inventory allowlist, the rebuild of one clio
+output — is identical.
 
 ## Platform facts you must know first
 
@@ -326,7 +329,7 @@ The whole procedure, from the repository root:
 
 ```powershell
 pwsh ./rebundle-bundled-package.ps1 -Package CrtProcessBuilder -PackageRepoPath <ProcessBuilder checkout> -Version 1.0.1.0
-pwsh ./rebundle-bundled-package.ps1 -Package CrtDashboardsMigratorApp -PackageRepoPath <migrator checkout> -Version 1.1.4.0
+pwsh ./rebundle-bundled-package.ps1 -Package CrtDashboardsMigratorApp -BuildZip <SDLC build zip> -Version <its full version>
 ```
 
 `rebundle-process-builder.ps1` still exists as a thin wrapper for the first form.

@@ -118,9 +118,9 @@ The install command is `push-pkg`, **not** `push-package` (that verb does not ex
 
 # Bundled Creatio packages
 
-clio ships three Creatio packages inside its own distribution — `cliogate` (prebuilt assembly),
-`CrtProcessBuilder` and `CrtDashboardsMigratorApp` (both source only, compiled by the target) — and
-installs them on request.
+clio ships three Creatio packages inside its own distribution — `cliogate` and `CrtDashboardsMigratorApp`
+(prebuilt assemblies), `CrtProcessBuilder` (source only, compiled by the target) — and installs them on
+request.
 
 **Before changing any of the following, read [docs/agent-instructions/bundled-packages.md](docs/agent-instructions/bundled-packages.md):**
 

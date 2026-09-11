@@ -21,17 +21,17 @@ review the result in the **Dashboards migration log** section.
 The package requires **Creatio 8.3.1 or later**. The command does not check this up front: an older
 instance accepts the archive and fails the configuration build, which the outcome check below reports.
 
-The package ships as source, without a compiled assembly, and the target environment compiles it
-during installation against its own core. One archive therefore serves every runtime. A restart
-happens — the platform recycles itself on .NET Framework, the package installer issues it on .NET —
-and the command waits for the instance to answer its health check before checking the result.
+The package ships **prebuilt**, like cliogate: one archive carries the package assembly for both .NET
+Framework (`Files/Bin`) and .NET (`Files/Bin/netstandard`), so the target does not compile the package.
+The platform still runs its configuration build for the package's schemas and restarts afterwards — the
+platform recycles itself on .NET Framework, the package installer issues the restart on .NET — and the
+command waits for the instance to answer its health check before checking the result.
 
-Because the assembly is produced by the target rather than shipped, installing and working are
-different states. After a successful install the command asks the package's own service whether it
-is serving — `DashboardsMigratorService/Ping`, ungated — and fails unless it answers. No database
-read can establish this: `SysPackage` records the version the environment ACCEPTED whether or not
-anything compiled. The check is **liveness, not identity**: on an upgrade a stale assembly that still
-answers passes, so after an upgrade treat the migration working as the proof.
+After a successful install the command asks the package's own service whether it is serving —
+`DashboardsMigratorService/Ping`, ungated — and fails unless it answers, so a package that was accepted
+but is not serving is reported instead of looking like success. The check is **liveness, not identity**:
+on an upgrade a stale assembly that still answers passes, so after an upgrade treat the migration working
+as the proof.
 
 The command **always installs except in two cases**, and re-running is otherwise safe; it costs one
 configuration build on the target. Both exceptions are about moving an environment **backwards**, and
@@ -92,9 +92,9 @@ clio update-dashboards-migrator -e dev
 - If the command reports that the Ping route does not answer, the package installed but the
   environment did not compile it. Check the environment's configuration build log;
   `clio restore-configuration` rolls the install back.
-- Measured once, on a shared net472 stand (2026-09-10): a repeat install took under two minutes end to
-  end, dominated by the target's configuration build. An anecdote, not a budget — the duration belongs
-  to the environment.
+- Measured once, on a shared net472 stand (2026-09-10, source archive): a repeat install took under two
+  minutes end to end, dominated by the target's configuration build. An anecdote, not a budget — the
+  duration belongs to the environment.
 
 ## See Also
 

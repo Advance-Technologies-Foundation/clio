@@ -59,19 +59,19 @@ public sealed class InstallDashboardsMigratorTool(
 	             `get-info` reports for this clio. There is no gated tool that refuses and sends you here; the
 	             need comes from the user's task. Confirm the target environment with the user first.
 
-	             The package ships as source and the target environment compiles it during installation, so
-	             this takes substantially longer than a plain package install. How long depends entirely on
-	             the target - its configuration size, host and current load - so do NOT quote a duration to
-	             the user or treat an overrun as a failure. You never restart anything yourself, though a
-	             restart does happen - the platform recycles itself on .NET Framework, the installer issues it
-	             on .NET - and the tool waits for the instance to come back before judging it. It then checks
-	             the OUTCOME rather than the install call: it asks the package's own service whether it is
-	             serving (DashboardsMigratorService Ping, ungated) and fails unless it answers. So "installed
-	             but never compiled" is reported instead of looking like success - which no version reported
-	             by list-packages can distinguish, because the database records what was accepted, not what
-	             was built. Note the limit: the check is liveness, not identity, so on an UPGRADE a stale
-	             assembly that still answers will pass. Treat a successful install of a NEW version as
-	             authoritative only after the migration itself works.
+	             The package ships prebuilt - its assembly is included for both .NET Framework and .NET, so
+	             the target does not compile it - but the install still runs the platform's configuration
+	             build for the package's schemas and the platform restarts afterwards. How long that takes
+	             depends entirely on the target - its configuration size, host and current load - so do NOT
+	             quote a duration to the user or treat an overrun as a failure. You never restart anything
+	             yourself - the platform recycles itself on .NET Framework, the installer issues it on .NET -
+	             and the tool waits for the instance to come back before judging it. It then checks the
+	             OUTCOME rather than the install call: it asks the package's own service whether it is serving
+	             (DashboardsMigratorService Ping, ungated) and fails unless it answers, so a package that was
+	             accepted but is not serving is reported instead of looking like success. Note the limit: the
+	             check is liveness, not identity, so on an UPGRADE a stale assembly that still answers will
+	             pass. Treat a successful install of a NEW version as authoritative only after the migration
+	             itself works.
 
 	             The package requires Creatio 8.3.1 or later. This is not checked up front: an older instance
 	             accepts the archive and fails the configuration build, which the outcome check then reports.

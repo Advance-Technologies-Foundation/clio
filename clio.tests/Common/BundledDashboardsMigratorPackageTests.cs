@@ -13,18 +13,18 @@ using NUnit.Framework;
 namespace Clio.Tests.Common;
 
 /// <summary>
-/// Guards the bundled <c>CrtDashboardsMigratorApp</c> archive the same way
-/// <see cref="BundledProcessBuilderPackageTests"/> guards the process builder: provenance pins that
-/// <c>rebundle-bundled-package.ps1</c> rewrites from the archive it produced, plus the inventory a
-/// source-only package must have. The reasoning behind each pin lives on the process-builder fixture and in
+/// Guards the bundled <c>CrtDashboardsMigratorApp</c> archive: provenance pins that
+/// <c>rebundle-bundled-package.ps1</c> rewrites from the archive it produced, plus the inventory the archive must
+/// have. The reasoning behind the pin mechanism lives on <see cref="BundledProcessBuilderPackageTests"/> and in
 /// <c>docs/agent-instructions/bundled-packages.md</c>; it is not repeated here.
 /// </summary>
 /// <remarks>
-/// Two deliberate differences from the process-builder fixture. <c>Data/</c> IS allowed: the package's bound
-/// data (SysAdminOperation, SysModule, SysDetail, SysImage rows) is what registers the migration page and its
-/// permission, and none of it executes. And there is no compile-marker schema and no <c>Files/Libs</c>: the
-/// package's own Source Code schemas put it into the target's configuration build, and it references nothing
-/// outside the platform core.
+/// Unlike the process builder this package ships PREBUILT, like cliogate: the archive is the SDLC (Jenkins)
+/// build of the release, carrying the package assembly compiled for both .NET Framework and .NET, so the target
+/// installs it without compiling the package. Consequences for the pins: exactly two own assemblies are
+/// expected rather than none; provenance is the SHA-256 of the SDLC build zip the archive was cut from rather
+/// than a git commit; <c>Data/</c> is allowed because its bound rows register the migration page and its
+/// permission and run nothing; and there is no compile-marker schema.
 /// </remarks>
 [TestFixture]
 [Category("Unit")]
@@ -43,21 +43,31 @@ public class BundledDashboardsMigratorPackageTests {
 		"descriptor.json", "Files", "Schemas", "Resources", "Data"
 	];
 
+	/// <summary>The package's own assembly, once per runtime the platform can load it on.</summary>
+	private static readonly string[] ExpectedAssemblies = [
+		"Files/Bin/CrtDashboardsMigratorApp.dll",
+		"Files/Bin/netstandard/CrtDashboardsMigratorApp.dll"
+	];
+
 	/// <summary>
 	/// SHA-256 of the committed archive, written by <c>rebundle-bundled-package.ps1</c> from the archive it
-	/// produced out of the <c>crt-dashboards-migrator-app</c> repository at <see cref="ExpectedProducingCommit"/>.
+	/// produced out of the SDLC build zip pinned in <see cref="ExpectedSourceBuildSha256"/>.
 	/// </summary>
 	private const string ExpectedArchiveSha256 =
-		"5B5B66A966F47F7FDA4AF249913CD007D09D6297AB397DC18AB4AC063976D6A1";
+		"0000000000000000000000000000000000000000000000000000000000000000";
 
 	/// <summary>Version in the shipped descriptor; a test-side pin, no runtime consumer (see the ADR).</summary>
-	private const string ExpectedArchiveVersion = "1.1.4.3";
+	private const string ExpectedArchiveVersion = "0.0.0.0";
 
-	/// <summary>HEAD of the package repository when the bytes were cut, before the restamp.</summary>
-	private const string ExpectedProducingCommit = "4abb032219f27db63b2f3ed9f8b8270763601475";
+	/// <summary>
+	/// SHA-256 of the SDLC build zip the archive was cut from. The build's full version equals
+	/// <see cref="ExpectedArchiveVersion"/>; the commit is recorded on the build's page in the SDLC app.
+	/// </summary>
+	private const string ExpectedSourceBuildSha256 =
+		"0000000000000000000000000000000000000000000000000000000000000000";
 
 	/// <summary>The descriptor stamp that makes the version bump take effect on the target (fact 2).</summary>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789116389000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(0)/";
 
 	#endregion
 
@@ -114,7 +124,7 @@ public class BundledDashboardsMigratorPackageTests {
 
 		// Assert
 		actual.Should().Be(ExpectedArchiveSha256,
-			because: "the archive is produced from another repository and ships executable source into "
+			because: "the archive is produced from another team's build and ships compiled code into "
 				+ "customers' Creatio instances; a change to it must be a reviewable line, not a byte count");
 	}
 
@@ -131,7 +141,7 @@ public class BundledDashboardsMigratorPackageTests {
 	}
 
 	[Test]
-	[Description("The descriptor inside the archive must carry the identity clio advertises, the pinned stamp, and a plain four-part version readable through the production catalog.")]
+	[Description("The descriptor inside the archive must carry the identity clio advertises, the pinned stamp, a plain four-part version readable through the production catalog, and no install script.")]
 	public void BundledArchive_ShouldCarryADescriptorMatchingBundledPackages() {
 		// Arrange
 		string archive = ReadBundledArchiveAsText();
@@ -150,29 +160,28 @@ public class BundledDashboardsMigratorPackageTests {
 		ExpectedArchiveVersion.Should().MatchRegex("^[0-9]+(\\.[0-9]+){3}$",
 			because: "four parts and no suffix: the install command refuses a suffixed distribution outright");
 		archive.Should().NotContain("\"InstallScripts\"",
-			because: "install scripts run BEFORE the target compiles a source-only package, so a script living in the "
-				+ "package's own assembly fails every first install (measured: 'Path to assembly "
-				+ "crtdashboardsmigratorapp.dll not found'); the package applies its rights at app start instead");
+			because: "the package applies its column rights from an app-start listener instead; an install script "
+				+ "would run before the target compiles a source package, and this archive must stay installable "
+				+ "either way");
 	}
 
 	[Test]
-	[Description("The archive carries NO .dll at all: the package has no compile references outside the platform core, so any dll is a leaked build output that would answer Ping from stale code after a failed target-side build.")]
-	public void BundledArchive_ShouldCarryNoAssembly() {
+	[Description("The archive carries the package's own assembly for both runtimes and no other binary, so the target loads it without compiling the package and no leaked build output rides along.")]
+	public void BundledArchive_ShouldCarryExactlyTheTwoPackageAssemblies() {
 		// Arrange
 		IReadOnlyList<string> entries = ReadBundledArchiveEntryNames();
 
 		// Act
 		List<string> binaries = entries
 			.Where(entry => entry.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
-				|| entry.EndsWith(".pdb", StringComparison.OrdinalIgnoreCase)
-				|| entry.StartsWith("Files/Bin/", StringComparison.OrdinalIgnoreCase))
+				|| entry.EndsWith(".pdb", StringComparison.OrdinalIgnoreCase))
 			.ToList();
 
 		// Assert
-		binaries.Should().BeEmpty(
-			because: "clio compress copies Files/ wholesale and clioignore does not filter Files/Bin, so the only "
-				+ "thing keeping this archive source-only is the delete step before packing — this pin is what "
-				+ "notices when it was skipped");
+		binaries.Should().BeEquivalentTo(ExpectedAssemblies,
+			because: "the platform resolves the package assembly as <packageName>.dll under Files/Bin (net472) or "
+				+ "Files/Bin/netstandard (.NET); a missing one makes that runtime compile the package after all, an "
+				+ "extra one is leaked payload, and a pdb means --skip-pdb was dropped");
 	}
 
 	[Test]
@@ -198,12 +207,8 @@ public class BundledDashboardsMigratorPackageTests {
 				+ "still be shipped or the list has silently widened. Data/ is allowed for this package: its bound "
 				+ "rows register the migration page and its permission and run nothing");
 		schemaFolders.Should().Contain(PingSchemaName,
-			because: "the install command's whole verdict rests on this schema's Ping answering; without it the "
-				+ "package installs and clio reports 'the environment did not compile the package' about an "
-				+ "environment that compiled everything else");
-		entries.Should().NotContain(entry => entry.StartsWith("Autogenerated/", StringComparison.OrdinalIgnoreCase),
-			because: "clio compress copies an allowlist of package folders that excludes Autogenerated/; the "
-				+ "target regenerates those stubs itself");
+			because: "the install command's verdict rests on this schema's Ping answering; without it the "
+				+ "package installs and clio reports it as not serving");
 	}
 
 	[Test]
@@ -224,11 +229,11 @@ public class BundledDashboardsMigratorPackageTests {
 	}
 
 	[Test]
-	[Description("The producing-commit pin is a full 40-hex commit id, so a reviewer can `git show` it in the package repository.")]
-	public void ExpectedProducingCommit_ShouldBeAFullCommitId() {
+	[Description("The source-build pin is a full SHA-256, so a reviewer can verify the SDLC zip the archive was cut from.")]
+	public void ExpectedSourceBuildSha256_ShouldBeAFullHash() {
 		// Arrange, Act & Assert
-		ExpectedProducingCommit.Should().MatchRegex("^[0-9a-f]{40}$",
-			because: "an abbreviated or placeholder id cannot be resolved unambiguously later");
+		ExpectedSourceBuildSha256.Should().MatchRegex("^[0-9A-F]{64}$",
+			because: "a placeholder or abbreviated hash cannot be checked against the build on the share");
 	}
 
 	#endregion
