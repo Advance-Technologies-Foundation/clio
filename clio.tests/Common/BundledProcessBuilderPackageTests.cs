@@ -74,9 +74,10 @@ public class BundledProcessBuilderPackageTests {
 	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1</c> at
 	/// <see cref="ExpectedArchiveVersion"/> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-96503-read-data-count-aggregation</c>, merged from <c>main</c> — the branch
-	/// therefore also carries the ENG-91853 flow-labels and ENG-94374 process-versioning work
-	/// <c>main</c> had gained since this branch forked), at the commit recorded mechanically in
+	/// <c>feature/ENG-96503-read-data-count-aggregation</c>, merged from <c>nitro/sprint-3-release</c> — the
+	/// branch therefore also carries the ENG-95986 Send-email template-mode work and everything
+	/// <c>nitro/sprint-3-release</c> had accumulated by then (including the earlier ENG-91853 flow-labels and
+	/// ENG-94374 process-versioning work that branch itself carries), at the commit recorded mechanically in
 	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
 	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
 	/// by hand. Many numbers below the current one are burned rather than reused — some because two branches drew
@@ -91,32 +92,43 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries, over the 1.6.0.6 line it replaces: the Read data element's <c>count</c> and
-	/// <c>aggregation</c> modes (ENG-96503) — <c>readData.mode</c> now takes <c>first</c> | <c>count</c> |
-	/// <c>aggregation</c>, the aggregation pair is validated against the source object's column types, and the
-	/// element's result flag moves to the output the runtime will actually write. The MINOR digit had already
-	/// moved at 1.6.0.0; every PATCH digit over it fixes something a review or a manual case found, and each is
-	/// raised so a stand still carrying an earlier one is DETECTABLY behind — same-version re-cuts make equal
-	/// version numbers mean nothing, which the convergence check cannot see through. Two numbers are burned
-	/// below this one for that reason, both of them cuts of THIS story that reached a reviewer: 1.6.0.7 was the
-	/// first cut, taken before four review fixes landed, and 1.6.0.8 carried those but not the top-N clear that
-	/// a second review round found (the pair was cleared only on a mode change, never on an in-place update).
-	/// The bytes here are 1.6.0.9 and carry both rounds.</para>
+	/// <para>What this cut carries, over the 1.6.1.9 flow-label delivery (ENG-91853) on <c>nitro/sprint-3-release</c>
+	/// it was cut above: the Send email TEMPLATE message mode (ENG-95986) — <c>email.messageSource</c>,
+	/// <c>email.template</c> and <c>email.templateEntity</c>, written as the three-parameter template mode with the
+	/// shared <c>EmailTemplateResolver</c>; the subject-only regression fixed (a subject no longer flips a template
+	/// element to a custom message); an <c>IsDBNull</c> guard on the template reads; and the review fixes (describe
+	/// hides a stale template in custom mode, the <c>templateEntity</c> texts name a record ID rather than a Read data
+	/// element's whole-record <c>ResultEntity</c>, which the server refuses; then the second review round: a stored
+	/// subject kept on a non-switching update, the mode inferred from a stored template on a mode-less element,
+	/// the custom-alone refusal, and the shared entity/parameter seams). The version is 1.6.2.3 — 1.6.2.1 and
+	/// 1.6.2.2 were the earlier review rounds' cuts, each superseded on the same branch before it shipped; the
+	/// create/modify FLOOR stays at 1.6.2.1, the first archive carrying the mode, which this one satisfies. 1.6.2.0 is
+	/// BURNED — it was cut from a commit below ENG-91853, so an archive numbered above 1.6.1.9 would have lacked the
+	/// flow labels 1.6.1.4-1.6.1.9 ship (the "newer stops meaning contains" trap of bundled-packages.md), and its tag
+	/// still names that commit; the .2 minor step over 1.6.1.x records that a new element behaviour the clio
+	/// descriptions advertise is a capability. Each raise is what makes a stand still carrying an earlier archive
+	/// DETECTABLY behind — same-version re-cuts make equal version numbers mean nothing, which the convergence
+	/// check cannot see through.</para>
+	/// <para>On TOP of that (this cut, merged from <c>feature/ENG-96503-read-data-count-aggregation</c>): the Read
+	/// data element's <c>count</c> and <c>aggregation</c> modes — <c>readData.mode</c> takes <c>first</c> |
+	/// <c>count</c> | <c>aggregation</c>, the aggregation pair validated against the source object's column types,
+	/// the result flag moved to the output the runtime actually writes — AND a same-batch dependency-guard bypass
+	/// closed (AC 9a): the retarget/mode-change guards on Read data, Modify data, Add data and Pre-configured page
+	/// used to scan the schema LIVE at the moment each guard ran, so an earlier operation in the SAME
+	/// <c>modify-business-process</c> call could repoint or clear a dependent mapping and let a later operation in
+	/// that call dodge the guard — confirmed via a live CAADT/Playwright run that completed a "forbidden" mode
+	/// switch end to end. <c>IProcessDependencySnapshot</c> (request-scoped) now answers every one of those four
+	/// guards with the union of a frozen pre-batch capture and a fresh live re-scan, so neither a dependent cleared
+	/// nor one added mid-batch escapes detection. Every PATCH digit over 1.6.2.5 fixes something a review or a
+	/// live-test run found, and each is raised so a stand still carrying an earlier one is DETECTABLY behind.</para>
 	/// <para>
-	/// This cut DID run under <c>-SkipTests</c>, and the SHA above was therefore refreshed by hand rather than
-	/// by the script. Why, and what was done instead: the package's suite is green on the producing commit
-	/// (1573 of 1574 with the CI filter) except for
+	/// This cut DID run under <c>-SkipTests</c>. The package's suite is green on the producing commit
+	/// (1865 of 1866 with the CI filter) except for
 	/// <c>CiContractGuardTests.FeatureToggling_LoadedIdentityMatchesThePlatformDemandAndTheTestKit</c>, which
-	/// fails on this machine because the local <c>.application/net-framework/core-bin</c> binds
-	/// <c>Creatio.FeatureToggling</c> 1.0.18.0 while the test project references the 1.0.19.0 CI provisions —
-	/// verified identical with the change stashed, i.e. a stale local dependency set, not a defect in the cut.
-	/// The four <c>IProcessDesignGuard</c> deny cases that <c>-SkipTests</c> warns about — the only check that
-	/// each operation is still bound to its authorization gate — were run separately and pass (57 of 57 across
-	/// <c>ProcessBuildHandlerTests</c>, <c>ProcessModifyHandlerTests</c> and
-	/// <c>ProcessDesignerOrchestratorTests</c>). The build was validated with
-	/// <c>MSBuildWarningsAsMessages=MSB3245</c> in the environment, which demotes only the three references the
-	/// local core-bin lacks and leaves the repository's warning policy untouched.
-	/// The script verified the archive inventory it produced. The byte-for-byte comparison of every archive entry
+	/// fails on this machine because the local <c>.application/net-framework/core-bin</c> binds an older
+	/// <c>Creatio.FeatureToggling</c> than the test project references — a stale local dependency set, not a
+	/// defect in the cut. The script verified the archive inventory it produced. The byte-for-byte comparison of
+	/// every archive entry
 	/// against the commit's CHECKOUT rendering was NOT re-run here, and the clean-tree refusal does NOT cover
 	/// it: a clean TREE and a clean CHECKOUT are different states. `git add` normalises to LF in the INDEX while
 	/// the working tree keeps what was written, so LF files can be committed, leave the tree clean, pass the
@@ -183,17 +195,16 @@ public class BundledProcessBuilderPackageTests {
 	/// and this removes the operator's editor and git configuration from the hash instead of gating on them.
 	/// </para>
 	/// <para>
-	/// Measured for the archive pinned below, entry by entry against
-	/// <c>git show &lt;ExpectedProducingCommit&gt;:&lt;path&gt;</c>: 157 entries, 156 byte-IDENTICAL to the
-	/// commit blob, 0 line-ending-only differences, 0 content differences. The 157th is
-	/// <c>descriptor.json</c>, which by contract cannot match the pre-restamp commit and is pinned separately by
-	/// <see cref="ExpectedArchiveVersion"/> and <see cref="ExpectedDescriptorModifiedOnUtc"/>. That audit was
-	/// re-run for THIS cut rather than inherited from an earlier one.
+	/// The entry-by-entry byte audit (every archive entry compared against
+	/// <c>git show &lt;ExpectedProducingCommit&gt;:&lt;path&gt;</c>; last measured on the 1.6.1.2 cut as 157 entries,
+	/// 156 byte-identical, the 157th being the restamped <c>descriptor.json</c>) was NOT re-run for the 1.6.2.3 cut.
+	/// Its reproducibility rests on the export flags above, which are what made the earlier audit come out clean;
+	/// a reviewer can repeat the audit from the producing commit alone.
 	/// </para>
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"828D8F9E94257749F57FB53F4A523650E9A4760A19706B07A05C3263AC690C70";
+		"87356982732683451E31124029900E92CE913808C2A84C87DAB3673CAF6DF824";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -221,7 +232,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.1.21";
+	private const string ExpectedArchiveVersion = "1.6.2.7";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -233,7 +244,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "cfecd2017a5fb8f78c5b3874edecf2e5fe2bff12";
+	private const string ExpectedProducingCommit = "752f145f4d1a5597f669e7d71fa3a5c3dfee0fce";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -259,7 +270,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789134712000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789142486000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -810,10 +821,11 @@ public class BundledProcessBuilderPackageTests {
 			because: $"every gate must be visible to this scan and no other type may carry one. Add or remove "
 				+ $"a gate and {nameof(ProcessBuilderGatedTypes)} moves in the same commit, so a lost "
 				+ "declaration cannot pass as slack and a new one cannot arrive unreviewed");
-		// The loop EXECUTES today: four of the seven carry a version literal, and they do NOT agree with each
-		// other — create at 1.4.0.44, modify at 1.6.0.1 (they diverged when modify's page-change
-		// reconciliation promise needed a newer archive than create's), and both versioning options at the
-		// version their own operations first ship in. That spread is the reason the assertion counts literals
+		// The loop EXECUTES today: four of the seven carry a version literal, and they do NOT all agree with
+		// each other — create, modify and modify-as-new-version at 1.6.2.1 since ENG-95986 (create and modify had
+		// diverged before, when modify's page-change reconciliation promise needed a newer archive than create's;
+		// the new-version route followed because it shares the operations vocabulary and runs no read-back), and
+		// set-active-version at the 1.6.1.0 its operation first ships in. That spread is the reason the assertion counts literals
 		// rather than pinning a value: no single number describes the set. It was vacuous when written,
 		// deliberately — the invariant had to be in place before the first literal appeared, because the
 		// commit that adds one is exactly when it must already work. It replaces the old pin (descriptor

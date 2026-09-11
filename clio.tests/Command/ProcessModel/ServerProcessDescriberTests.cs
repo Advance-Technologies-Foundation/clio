@@ -336,6 +336,50 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes a collection parameter's provenance tag and its per-item shape (itemProperties, each a parameter with name/type/tag) into the DescribedParameter DTO - the design-time contract a consumer binds against - so the shape the server reports is not dropped by the client the way an untyped field would be (ENG-96230).")]
+	public void Describe_ShouldReadParameterTagAndItemProperties_WhenServerReportsThem() {
+		// Arrange — a process-level collection mirrored from a read element's shaped output, plus a scalar beside it
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\",\"elements\":[],\"flows\":[],"
+			+ "\"parameters\":[{\"name\":\"Contacts\",\"uid\":\"c1\",\"type\":\"CompositeObjectList\",\"direction\":\"Out\",\"isResult\":false,"
+			+ "\"source\":\"Script\",\"value\":\"[#...#]\",\"tag\":\"ReadContacts.ResultCompositeObjectList\","
+			+ "\"itemProperties\":[{\"name\":\"Name\",\"uid\":\"i1\",\"type\":\"ShortText\",\"direction\":\"Out\",\"tag\":\"a5cca792-47dd-428a-83fb-5c92bdd97ff8\"},"
+			+ "{\"name\":\"Email\",\"uid\":\"i2\",\"type\":\"ShortText\",\"direction\":\"Out\",\"tag\":\"dbf202ec-c444-479b-bcf4-d8e5b1863201\"}]},"
+			+ "{\"name\":\"RowsRead\",\"uid\":\"r1\",\"type\":\"Integer\",\"direction\":\"Out\",\"source\":\"Script\",\"value\":\"[#...#]\",\"tag\":null,\"itemProperties\":null}]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedParameter collection = result.Value.Parameters[0];
+		collection.Tag.Should().Be("ReadContacts.ResultCompositeObjectList",
+			because: "the provenance stamp is what a caller re-mirrors from (the designer's Regenerate)");
+		collection.ItemProperties.Should().HaveCount(2, because: "the per-item shape is the contract a consumer binds to");
+		collection.ItemProperties[0].Name.Should().Be("Name",
+			because: "an item is named after the column it carries, which is how a consumer binds to it");
+		collection.ItemProperties[0].Type.Should().Be("ShortText",
+			because: "each item reports its own resolved type, so a caller can tell what the column holds");
+		collection.ItemProperties[0].Tag.Should().Be("a5cca792-47dd-428a-83fb-5c92bdd97ff8",
+			because: "each item keeps the column UId the platform stamped when it shaped the source output");
+		collection.ItemProperties[1].Name.Should().Be("Email",
+			because: "every column of the shape is deserialized, in order, not just the first");
+		collection.ItemProperties[0].ItemProperties.Should().BeNull(
+			because: "an item carries no shape of its own, and an absent nested field must read as null rather than an empty shape");
+		DescribedParameter scalar = result.Value.Parameters[1];
+		scalar.Tag.Should().BeNull(because: "a parameter without provenance reports no tag");
+		scalar.ItemProperties.Should().BeNull(because: "a scalar has no item shape, and absence must not read as an empty shape");
+		JsonNode output = JsonNode.Parse(JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions));
+		output["parameters"]![0]!["itemProperties"]![0]!["tag"]!.GetValue<string>().Should().Be("a5cca792-47dd-428a-83fb-5c92bdd97ff8",
+			because: "the shape must survive re-serialization to the caller, not merely deserialization into the DTO");
+		output["parameters"]![1]!.AsObject().ContainsKey("tag").Should().BeFalse(
+			because: "an untagged parameter must OMIT the field rather than emit null, so an older server and an untagged parameter read alike");
+		output["parameters"]![1]!.AsObject().ContainsKey("itemProperties").Should().BeFalse(
+			because: "a shapeless parameter must omit the shape for the same reason");
+	}
+
+	[Test]
 	[Description("Deserializes a Lookup ConstValue's valueDisplay - the referenced record's NAME - into the DescribedParameter DTO, beside the unchanged bare-Guid value, so a caller can show a word without a second read.")]
 	public void Describe_ShouldReadParameterValueDisplay_WhenServerReportsIt() {
 		// Arrange - a Lookup constant the server resolved a name for (ENG-96325); value stays the bare record id
@@ -724,6 +768,7 @@ public sealed class ServerProcessDescriberTests {
 			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SendEmail1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"sendemail\",\"userTaskName\":\"EmailTemplateUserTask\","
 			+ "\"email\":{\"mode\":\"manual\",\"sender\":\"[#Lookup.5e487721-02e2-48ee-b755-dfa5160f5315.11111111-2222-3333-4444-555555555555#]\",\"senderDisplay\":\"sales@example.com\","
 			+ "\"subject\":\"After modify\",\"hasBody\":true,\"body\":\"<p>Hi [[param:ContactName]]</p>\",\"importance\":\"high\",\"ignoreErrors\":true,"
+			+ "\"messageSource\":\"custom\",\"template\":null,\"templateDisplay\":null,\"templateObject\":null,\"templateEntity\":null,"
 			+ "\"to\":[{\"name\":\"Recipient1\",\"uid\":\"p1\",\"type\":\"MaxSizeText\",\"source\":\"ConstValue\",\"value\":\"to@example.com\"}],"
 			+ "\"performer\":{\"type\":\"role\",\"role\":\"[#Lookup.84f44b9a-4bc3-4cbf-a1a8-cec02c1c029c.a29a3ba5-4b0d-de11-9a51-005056c00008#]\",\"roleDisplay\":\"All employees\",\"showPage\":true}}}],"
 			+ "\"flows\":[],\"parameters\":[]}}");
@@ -756,6 +801,43 @@ public sealed class ServerProcessDescriberTests {
 			because: "roleDisplay carries the resolved role name for a human reader");
 		email.Performer.ShowPage.Should().BeTrue(
 			because: "the show-execution-page flag is part of the performer block");
+		email.MessageSource.Should().Be("custom",
+			because: "the message-mode token (ENG-95986) maps to the DTO instead of landing in the extension bag");
+		email.Template.Should().BeNull(because: "a custom-message element reports no template");
+	}
+
+	[Test]
+	[Description("Deserializes a TEMPLATE-mode Send email element (messageSource, template id, templateDisplay, templateObject and the templateEntity binding) into the DescribedEmail DTO, so the template fields (ENG-95986) survive read-back as typed members rather than only in the extension bag.")]
+	public void Describe_ShouldReadTemplateModeConfiguration_WhenServerReportsIt() {
+		// Arrange - the shape a CrtProcessBuilder with template mode returns, as read on dev-local 2026-09-09
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000003\",\"name\":\"AskFeedback\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"sendemail\",\"userTaskName\":\"EmailTemplateUserTask\","
+			+ "\"email\":{\"mode\":\"auto\",\"messageSource\":\"template\",\"hasBody\":false,\"body\":null,\"ignoreErrors\":true,"
+			+ "\"template\":\"c8fb10f1-b79c-4b64-9d15-72f40ee7167b\",\"templateDisplay\":\"Case feedback request notification\",\"templateObject\":\"Case\","
+			+ "\"templateEntity\":{\"name\":\"EmailTemplateEntityId\",\"caption\":\"Record for macros\",\"type\":\"Lookup\",\"referenceSchema\":\"Case\",\"source\":\"Script\",\"value\":\"[#[IsOwnerSchema:false].[IsSchema:false].[Parameter:{cb24a474-4404-497f-8cbe-d68822d59aa5}]#]\",\"valueDisplay\":\"Case\"}}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedEmail email = result.Value.Elements[0].Email;
+		email.MessageSource.Should().Be("template", because: "the mode token maps to the DTO");
+		email.Template.Should().Be("c8fb10f1-b79c-4b64-9d15-72f40ee7167b",
+			because: "the stored template id is what re-applies through email.template");
+		email.TemplateDisplay.Should().Be("Case feedback request notification",
+			because: "the template's name is what a human reader needs beside the id");
+		email.TemplateObject.Should().Be("Case",
+			because: "the macro-source object tells the agent whether personalization is possible at all");
+		email.TemplateEntity.Should().NotBeNull(because: "the macro-source binding must survive read-back");
+		email.TemplateEntity.Value.Should().Contain("[Parameter:{",
+			because: "the binding is a parameter meta-path the agent can map back to a processParameter");
+		email.HasBody.Should().BeFalse(because: "a template element suppresses a stale body so the block re-applies");
+		email.Mode.Should().Be("auto", because: "the send mode is reported identically in both message modes (AC-7)");
+		email.IgnoreErrors.Should().BeTrue(because: "ignoreErrors is reported identically in both message modes (AC-7)");
 	}
 
 	[Test]

@@ -942,6 +942,37 @@ public sealed class DescribedEmail {
 	public string Subject { get; set; }
 
 	/// <summary>
+	/// Which message the element sends: <c>custom</c> (<c>BodyTemplateType = "1"</c>) or <c>template</c>
+	/// (<c>"0"</c>); null when the element carries no stored mode — which the platform RUNS as template mode, so null
+	/// beside a null <see cref="Template"/> is the pre-run signal of the <c>Localizable template not found</c> trap.
+	/// Null also from a server that predates template mode (ENG-95986), which reports no such member.
+	/// </summary>
+	[JsonPropertyName("messageSource")]
+	public string MessageSource { get; set; }
+
+	/// <summary>TEMPLATE mode: the stored <c>EmailTemplate</c> record id; null when none is set. Re-appliable through <c>email.template</c>.</summary>
+	[JsonPropertyName("template")]
+	public string Template { get; set; }
+
+	/// <summary>The template's name as the designer shows it; null when the schema stores no display value.</summary>
+	[JsonPropertyName("templateDisplay")]
+	public string TemplateDisplay { get; set; }
+
+	/// <summary>
+	/// The entity the template's macros resolve against — the macro-source parameter's reference object by name;
+	/// null when the element carries none (a template without an object cannot be personalized).
+	/// </summary>
+	[JsonPropertyName("templateObject")]
+	public string TemplateObject { get; set; }
+
+	/// <summary>
+	/// TEMPLATE mode: the macro-source record binding (<c>EmailTemplateEntityId</c>) with its source and value,
+	/// projected like a recipient; null when unbound. Re-appliable through <c>email.templateEntity</c>.
+	/// </summary>
+	[JsonPropertyName("templateEntity")]
+	public DescribedParameter TemplateEntity { get; set; }
+
+	/// <summary>
 	/// True when the element carries a custom-message body. A lightweight presence flag beside <see cref="Body"/>,
 	/// for callers that only need to know a body exists without pulling the (possibly large) decoded HTML.
 	/// <para>Nullable defensively, NOT because a known server omits it: the flag is a non-nullable <c>bool</c>
@@ -995,8 +1026,8 @@ public sealed class DescribedEmail {
 
 	/// <summary>
 	/// Captures every other field the server reports inside the email block so the description round-trips
-	/// losslessly: a newer <c>CrtProcessBuilder</c> reporting something this build does not declare — a template
-	/// selection, a body format, an attachment list — reaches the command output verbatim instead of being
+	/// losslessly: a newer <c>CrtProcessBuilder</c> reporting something this build does not declare — a body format, an
+	/// attachment list — reaches the command output verbatim instead of being
 	/// discarded without a trace. This block is where the next email feature lands, so it needs the bag most.
 	/// </summary>
 	[JsonExtensionData]
@@ -1549,6 +1580,26 @@ public sealed class DescribedParameter {
 	/// </summary>
 	[JsonPropertyName("valueDisplay")]
 	public string ValueDisplay { get; set; }
+
+	/// <summary>
+	/// Provenance stamp, when the parameter carries one: a collection parameter mirrored from an element output is
+	/// tagged <c>&lt;elementName&gt;.&lt;parameterName&gt;</c> — the designer's own "create parameter from element"
+	/// stamp — so a caller can re-issue the mirror later (<c>setParameter</c> with the same pair, the designer's
+	/// <i>Regenerate</i>). Null when untagged; omitted when the server (an older <c>CrtProcessBuilder</c>)
+	/// does not report it.
+	/// </summary>
+	[JsonPropertyName("tag")]
+	public string Tag { get; set; }
+
+	/// <summary>
+	/// The per-item shape of a collection parameter (<c>CompositeObjectList</c>): one entry per column the collection
+	/// carries, each a parameter in its own right (name, type, tag = the column UId). This is the DESIGN-TIME contract
+	/// a consumer binds against — a collection without it is an opaque list. Null for a scalar and for a bare,
+	/// shapeless collection; omitted when the server does not report it. Feed a described collection back through
+	/// <c>addParameter</c>'s <c>typeFromElement</c> naming its source, never by re-typing the shape.
+	/// </summary>
+	[JsonPropertyName("itemProperties")]
+	public List<DescribedParameter> ItemProperties { get; set; }
 }
 
 #endregion

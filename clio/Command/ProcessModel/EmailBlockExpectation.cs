@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace Clio.Command.ProcessModel;
@@ -27,6 +26,13 @@ public static class EmailBlockExpectation {
 	// repeated string literals out of the analyzer's duplicate-literal radar.
 	private const string ElementsKey = "elements";
 	private const string EmailKey = "email";
+
+	/// <summary>
+	/// The one phrase every template-landed warning carries. Public so the e2e negative assertion ("the warning
+	/// did NOT fire on a healthy server") references the same literal the warning is built from — a reworded
+	/// warning then fails to compile the test instead of turning it into a pass-always check.
+	/// </summary>
+	public const string TemplateWarningMarker = "sent a 'template' that the read-back does NOT show";
 
 	/// <summary>
 	/// Element names that a build descriptor asks to configure as email elements — every entry under
@@ -94,8 +100,9 @@ public static class EmailBlockExpectation {
 
 	/// <summary>
 	/// Of the elements the caller asked to configure, those the server does NOT report an <c>email</c> block for —
-	/// i.e. the ones whose configuration was discarded. An element missing from the description entirely counts as
-	/// dropped too: the caller asked for an email element and the read-back cannot show one.
+	/// i.e. the ones whose configuration was discarded. An element ABSENT from the description is deliberately not
+	/// reported: the read-back is the only evidence this check has, and an identifier it cannot resolve is a
+	/// reason to stay quiet rather than to accuse the server (see the body).
 	/// </summary>
 	/// <param name="described">The description read back after the successful operation.</param>
 	/// <param name="expected">Element names returned by <see cref="FromDescriptor"/> / <see cref="FromOperations"/>.</param>
@@ -229,6 +236,160 @@ public static class EmailBlockExpectation {
 			+ "designer's Content designer.";
 	}
 
+	/// <summary>
+	/// Element names whose build descriptor <c>email.template</c> names a template (ENG-95986). A template must be
+	/// verified after a build for the same reason a body macro is: a CrtProcessBuilder that predates template mode
+	/// declares no <c>template</c> member, so its serializer DISCARDS the field and the build still answers success —
+	/// leaving an element that either has NO mode (which the platform runs as template mode with no template, the
+	/// <c>Localizable template not found</c> run-time failure) or, when a subject travelled with it, a CUSTOM-message
+	/// element with no body. Both are wrong modes reported as configured.
+	/// </summary>
+	/// <param name="descriptorJson">The build descriptor JSON exactly as the caller supplied it.</param>
+	public static IReadOnlyList<string> TemplateElements(string descriptorJson) {
+		JsonObject? descriptor = BlockExpectationJson.Parse(descriptorJson) as JsonObject;
+		if (descriptor?[ElementsKey] is not JsonArray elements) {
+			return Array.Empty<string>();
+		}
+
+		List<string> names = [];
+		foreach (JsonNode? element in elements) {
+			if (element is JsonObject candidate && CarriesTemplate(candidate[EmailKey])) {
+				string? name = ReadName(candidate["name"]);
+				if (!string.IsNullOrWhiteSpace(name)) {
+					names.Add(name);
+				}
+			}
+		}
+
+		return BlockExpectationJson.Distinct(names);
+	}
+
+	/// <summary>
+	/// Element names whose modify operations name a template — <c>addElement</c> (under <c>element.email</c>) and
+	/// <c>setElement</c> (under <c>elementUpdate.email</c>) — for the same post-operation verification.
+	/// </summary>
+	/// <param name="operationsJson">The operations array JSON exactly as the caller supplied it.</param>
+	public static IReadOnlyList<string> TemplateElementsFromOperations(string operationsJson) {
+		if (BlockExpectationJson.Parse(operationsJson) is not JsonArray operations) {
+			return Array.Empty<string>();
+		}
+
+		// Walked IN ORDER, because operations run in order and a later one can legitimately undo the template: a
+		// batch that sets a template and then sends a body (or messageSource:"custom") for the SAME element ends,
+		// by contract, as a custom-message element with no template — reading "no template" back is then the
+		// requested state, not a discarded member, and accusing the server would send the caller to reinstall a
+		// package that did exactly what it was told.
+		List<string> names = [];
+		foreach (JsonNode? operation in operations) {
+			if (operation is not JsonObject op) {
+				continue;
+			}
+
+			string? name = null;
+			JsonNode? email = null;
+			if (op["element"] is JsonObject added) {
+				name = ReadName(added["name"]);
+				email = added[EmailKey];
+			} else if (op["elementUpdate"] is JsonObject update) {
+				name = ReadName(op["elementName"]);
+				email = update[EmailKey];
+			}
+
+			if (string.IsNullOrWhiteSpace(name) || email is not JsonObject) {
+				continue;
+			}
+
+			if (CarriesTemplate(email)) {
+				names.Add(name);
+			} else if (SwitchesToCustom(email)) {
+				names.RemoveAll(existing => string.Equals(existing, name, StringComparison.OrdinalIgnoreCase));
+			}
+		}
+
+		return BlockExpectationJson.Distinct(names);
+	}
+
+	/// <summary>
+	/// Of the elements that sent a template (<see cref="TemplateElements"/> / <see cref="TemplateElementsFromOperations"/>),
+	/// those whose read-back reports NO template — the signature of a server that discarded the member. An element
+	/// absent from the read-back, or one reporting no email block at all, is not reported here: <see cref="Missing"/>
+	/// already covers the dropped block, and an unresolvable identifier is a reason to stay quiet.
+	/// <para>COVERAGE: this sees a discarded <c>template</c> only. A block carrying <c>templateEntity</c> or
+	/// <c>messageSource</c> WITHOUT a template (a macro-source rebind, an explicit mode) is discarded just as
+	/// silently by a pre-template server and is not detected here — the <c>[RequiresPackage]</c> floor on the
+	/// two commands is what gates those, not this read-back.</para>
+	/// </summary>
+	/// <param name="described">The description read back after the successful operation.</param>
+	/// <param name="templateElements">Element names returned by the two template detectors.</param>
+	public static IReadOnlyList<string> UnlandedTemplates(DescribeProcessResult described,
+			IReadOnlyList<string> templateElements) {
+		if (templateElements.Count == 0 || described?.Elements is null) {
+			return Array.Empty<string>();
+		}
+
+		List<string> unlanded = [];
+		foreach (string name in templateElements) {
+			DescribedElement? element = BlockExpectationJson.ResolveElement(described, name);
+			if (element?.Email is { } email && string.IsNullOrWhiteSpace(email.Template)) {
+				unlanded.Add(name);
+			}
+		}
+
+		return unlanded;
+	}
+
+	/// <summary>
+	/// The caller-facing warning for a template that did not land. Returns null when every template landed, so a
+	/// caller can treat null as "no warning to emit".
+	/// </summary>
+	public static string? BuildTemplateWarning(IReadOnlyList<string> unlanded) {
+		if (unlanded.Count == 0) {
+			return null;
+		}
+
+		string elements = string.Join("', '", unlanded);
+		string subject = ElementNoun(unlanded.Count);
+		return $"The operation reported success, but the Send email {subject} '{elements}' {TemplateWarningMarker} "
+			+ "(describe reports no template on the element). The usual cause is a deployed "
+			+ "CrtProcessBuilder that predates the template message mode (ENG-95986): it has no 'template' member, so it "
+			+ "discards the field while answering success. The element is then in the WRONG mode — no mode at all, which "
+			+ "the platform runs as template mode with no template and fails with 'Localizable template not found', or a "
+			+ "custom message with no body when a subject travelled with the template. Do not report it as configured: "
+			+ "install a package that supports template mode (clio install-process-builder) and re-apply the email block, "
+			+ "or pick the template in the designer.";
+	}
+
+	// True when an email block moves the element to (or keeps it in) the custom message: a NON-EMPTY body, or an
+	// explicit messageSource:"custom". The server clears the template on that switch, so a template sent EARLIER
+	// in the same batch for this element is expected to be gone from the read-back.
+	//
+	// Deliberately narrower than "the block mentions a body". An EMPTY or whitespace body is refused at build
+	// ("requires a non-empty 'email.body'"), and a bodyFormat with no body is refused as well ("the 'email' block
+	// specifies no field to apply") - neither can leave a custom-message element behind, so neither is a reason to
+	// stop verifying that the template landed. Counting them would drop the element from the check on a batch the
+	// server in fact refuses outright, which is the one case where the check still has something to say.
+	private static bool SwitchesToCustom(JsonNode? email) {
+		if (email is not JsonObject block) {
+			return false;
+		}
+		if (block["body"] is JsonValue body
+				&& body.TryGetValue(out string? bodyText)
+				&& !string.IsNullOrWhiteSpace(bodyText)) {
+			return true;
+		}
+		// No null-conditional on `token`: TryGetValue is [NotNullWhen(true)], so a true result already guarantees it.
+		return block["messageSource"] is JsonValue mode
+			&& mode.TryGetValue(out string? token)
+			&& string.Equals(token.Trim(), "custom", StringComparison.OrdinalIgnoreCase);
+	}
+
+	// True when an email block names a template — the field that a pre-template server discards.
+	private static bool CarriesTemplate(JsonNode? email) =>
+		email is JsonObject block
+		&& block["template"] is JsonValue value
+		&& value.TryGetValue(out string? template)
+		&& !string.IsNullOrWhiteSpace(template);
+
 	// Singular/plural of "element" for a count, kept in one place so the noun is not a duplicated string literal.
 	private static string ElementNoun(int count) => BlockExpectationJson.ElementNoun(count);
 
@@ -244,7 +405,4 @@ public static class EmailBlockExpectation {
 		body.IndexOf("[[param:", StringComparison.OrdinalIgnoreCase) >= 0
 		|| body.IndexOf("[[element:", StringComparison.OrdinalIgnoreCase) >= 0;
 
-	// Parsed defensively: an unparseable payload is the command's problem to report through the normal error
-	// path, not this check's. Returning null here just skips the verification rather than masking the real
-	// failure with a second, less useful message.
 }
