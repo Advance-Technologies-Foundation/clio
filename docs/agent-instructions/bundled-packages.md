@@ -38,7 +38,8 @@ CrtDashboardsMigratorApp` applies these differences, and so must anyone doing it
 | | `CrtProcessBuilder` | `CrtDashboardsMigratorApp` |
 |---|---|---|
 | Build / test in the package repo | `dotnet build MainSolution.slnx -c dev-nf` / `dotnet test tests/CrtProcessBuilder/...` | `build-framework.cmd` / `run-unit-tests-framework.cmd` |
-| Stamping the descriptor | `clio set-pkg-version` | `clio set-pkg-version`; the guard fixture asserts the `InstallScripts` block survived it (the model used to drop what it did not name) |
+| Stamping the descriptor | `clio set-pkg-version` | `clio set-pkg-version` |
+| Install scripts | none | none, and the guard fixture forbids them: the platform runs `InstallScripts` BEFORE compiling a source-only package, so a script in the package's own assembly fails every first install (measured 2026-09-10). The migrator applies its column rights from an app-start listener instead |
 | `PackageVersion` vs the app version | n/a | the first three parts must equal `Version` in `Files/app-descriptor.json` (three-part app version, shown in App Hub); the script refuses otherwise |
 | `.dll` inventory | exactly two, both `Files/Libs` | **zero** |
 | Schemas | exactly one, the compile marker | at least `DashboardsMigratorService` (the probe); the rest are the app |

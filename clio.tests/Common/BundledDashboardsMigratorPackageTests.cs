@@ -48,16 +48,16 @@ public class BundledDashboardsMigratorPackageTests {
 	/// produced out of the <c>crt-dashboards-migrator-app</c> repository at <see cref="ExpectedProducingCommit"/>.
 	/// </summary>
 	private const string ExpectedArchiveSha256 =
-		"F94E93C95A520221A3AE1FC5171D9368E25A927D78DC85C45738A047D6224CB9";
+		"38BC11C3AF3899E05D1BA91857DB6B709768A87945D5A747F446E062D14250A0";
 
 	/// <summary>Version in the shipped descriptor; a test-side pin, no runtime consumer (see the ADR).</summary>
-	private const string ExpectedArchiveVersion = "1.1.4.0";
+	private const string ExpectedArchiveVersion = "1.1.4.2";
 
 	/// <summary>HEAD of the package repository when the bytes were cut, before the restamp.</summary>
-	private const string ExpectedProducingCommit = "f26875bb0a81199dcf77b3574f09678ab16c5b7a";
+	private const string ExpectedProducingCommit = "563fd9e46d6bebe905535bc429d44d8bc121e749";
 
 	/// <summary>The descriptor stamp that makes the version bump take effect on the target (fact 2).</summary>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789045232000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789112495000)/";
 
 	#endregion
 
@@ -149,10 +149,10 @@ public class BundledDashboardsMigratorPackageTests {
 			because: "the shipped version is what clio info reports and what the downgrade check compares; pinning puts a version move on a reviewable line");
 		ExpectedArchiveVersion.Should().MatchRegex("^[0-9]+(\\.[0-9]+){3}$",
 			because: "four parts and no suffix: the install command refuses a suffixed distribution outright");
-		archive.Should().Contain("\"InstallScripts\"",
-			because: "the package runs an AfterInstall script that grants rights on its log section; a descriptor "
-				+ "writer that drops blocks it does not model (set-pkg-version once did) would ship a package whose "
-				+ "script never runs, with every other pin green");
+		archive.Should().NotContain("\"InstallScripts\"",
+			because: "install scripts run BEFORE the target compiles a source-only package, so a script living in the "
+				+ "package's own assembly fails every first install (measured: 'Path to assembly "
+				+ "crtdashboardsmigratorapp.dll not found'); the package applies its rights at app start instead");
 	}
 
 	[Test]
