@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text.Json;
 using Clio.Common;
@@ -717,6 +719,8 @@ public sealed class SensitiveErrorTextRedactorTests {
 	[TestCase("Request to \"https://prod.creatio.com/0/rest/x\" failed", "prod.creatio.com", TestName = "SerializedJson_QuotedUri")]
 	[TestCase("Could not connect to \"db.internal:1433\" - timeout", "db.internal:1433", TestName = "SerializedJson_QuotedHostPort")]
 	[TestCase("the inline literal \"name@firm.com\" instead of x", "name@firm.com", TestName = "SerializedJson_QuotedEmail")]
+	[TestCase("the inline literal \"admin@localhost\" instead of x", "admin@localhost", TestName = "SerializedJson_QuotedSingleLabelEmail")]
+	[TestCase("the inline literal \"user@[10.0.0.5]\" instead of x", "user@[10.0.0.5]", TestName = "SerializedJson_QuotedBracketedIpEmail")]
 	[Description("Every rule that can begin a match on the 'u' of a \u0022 escape carries the same guard: a quoted URL and a quoted host:port are as routine in clio error text as an address, and eating the escape leaves a dangling backslash that stops the whole tool response from parsing (PR #1372 review).")]
 	public void Redact_ShouldKeepSerializedJsonParseable_ForEveryQuotedSecretShape(string inner, string secret) {
 		// Arrange - the exact shape ClioRunTool.RedactFailureContent scrubs.
@@ -812,5 +816,166 @@ public sealed class SensitiveErrorTextRedactorTests {
 			index = text.IndexOf(token, index + token.Length, StringComparison.OrdinalIgnoreCase);
 		}
 		return count;
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An address on a SINGLE-label host is redacted: an on-prem Creatio deployment is the population whose authentication failures most often name one, and requiring a dotted host missed exactly there (issue #1380).")]
+	[TestCase("admin@localhost", TestName = "SingleLabel_Localhost")]
+	[TestCase("svc@creatio-app", TestName = "SingleLabel_Hyphenated")]
+	[TestCase("user@INTRANET", TestName = "SingleLabel_UppercaseUpn")]
+	[TestCase("svc@WEB01", TestName = "SingleLabel_TrailingDigit")]
+	[TestCase("svc@beta", TestName = "SingleLabel_PlausibleHostNamedLikeADistTag")]
+	[TestCase("svc@latest", TestName = "SingleLabel_PlausibleHostNamedLikeTheNpmDistTag")]
+	[TestCase("uuid@latest", TestName = "SingleLabel_NpmDistTagIsTheAcceptedLoss")]
+	public void Redact_ShouldRedactAnAddressOnASingleLabelHost(string address) {
+		// Arrange
+		string message = $"Authentication failed for {address} on this environment.";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(message);
+
+		// Assert
+		redacted.Should().Be("Authentication failed for [redacted] on this environment.",
+			because: "an identity naming a single-label on-prem host is still an identity and must not reach "
+				+ "an MCP envelope or a pasted log, and redaction stays surgical around it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An address whose host is a bracketed IP literal is redacted together with its brackets, so no stray ']' is left behind for the reader (issue #1380).")]
+	[TestCase("user@[10.0.0.5]", TestName = "BracketedIp_V4")]
+	[TestCase("user@[::1]", TestName = "BracketedIp_V6Loopback")]
+	[TestCase("svc@[fe80::1]", TestName = "BracketedIp_V6LinkLocal")]
+	[TestCase("user@[fe80::1%eth0]", TestName = "BracketedIp_V6ZoneIndex")]
+	[TestCase("user@[IPv6:fe80::1]", TestName = "BracketedIp_Rfc5321TaggedForm")]
+	public void Redact_ShouldRedactAnAddressOnABracketedIpLiteral(string address) {
+		// Arrange
+		string message = $"Login rejected for {address} after 3 attempts.";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(message);
+
+		// Assert
+		redacted.Should().NotContain(address,
+			because: "the literal names an internal endpoint as directly as a DNS host does");
+		redacted.Should().Be("Login rejected for [redacted] after 3 attempts.",
+			because: "the brackets belong to the match - leaving a dangling ']' would give the reader an "
+				+ "unbalanced fragment, and everything else the operator acts on survives around the placeholder");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("EmailRegex runs BEFORE HostPortRegex, so an address with a trailing port leaves no partially redacted fragment - the whole address goes and only the port number remains, on a dotted host, a single-label host and a bracketed IP alike (issue #1380).")]
+	[TestCase("user@host.example.com:8080", "user@host.example.com", "8080", TestName = "WithPort_DottedHost")]
+	[TestCase("user@localhost:8080", "user@localhost", "8080", TestName = "WithPort_SingleLabelHost")]
+	[TestCase("user@[10.0.0.5]:1433", "user@[10.0.0.5]", "1433", TestName = "WithPort_BracketedIp")]
+	public void Redact_ShouldLeaveNoPartiallyRedactedFragment_WhenAnAddressCarriesAPort(
+		string endpoint, string address, string port) {
+		// Arrange
+		string message = $"Could not connect as {endpoint} - timeout.";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(message);
+
+		// Assert
+		redacted.Should().NotContain(address,
+			because: "the address itself is what must disappear, whichever rule claims the trailing port");
+		redacted.Should().Be($"Could not connect as [redacted]:{port} - timeout.",
+			because: "the result must be one placeholder plus the port - no half-redacted host, no leftover local part");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Shapes that carry an '@' but are not addresses survive the widened host rule: an npm scope has no local part at all, a mention and a git reflog reference are not hosts, and a version tail is still blocked by the 'final label alphabetic' narrowing from PR #1374.")]
+	[TestCase("@angular/core", TestName = "Survives_NpmScopeNoLocalPart")]
+	[TestCase("@creatio/ui-kit", TestName = "Survives_CreatioScopeNoLocalPart")]
+	[TestCase("@claude", TestName = "Survives_Mention")]
+	[TestCase("HEAD@{1}", TestName = "Survives_GitReflog")]
+	[TestCase("clio@8.0.1", TestName = "Survives_VersionSpecifier")]
+	[TestCase("node@20.11.1", TestName = "Survives_NodeVersionSpecifier")]
+	[TestCase("@creatio/ui-kit@1.2.3", TestName = "Survives_ScopedVersionSpecifier")]
+	public void Redact_ShouldNotRedactANonAddressAtShape(string shape) {
+		// Arrange
+		string message = $"Restore step reported {shape} during the run.";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(message);
+
+		// Assert
+		redacted.Should().Contain(shape,
+			because: "the placeholder is indistinguishable from a real credential removal, so a non-identity must never get one");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A host whose LAST label is too short or not alphabetic for the dotted rule still loses everything up to that label, instead of shipping whole: the single-label branch must not refuse the match just because a dot follows it (review of the first #1380 revision).")]
+	[TestCase("user@host.example.c", "[redacted].c", TestName = "DotTail_DottedHeadShortLastLabel")]
+	[TestCase("user@localhost.c", "[redacted].c", TestName = "DotTail_SingleLabelHeadShortLastLabel")]
+	[TestCase("user@node1.k8s", "[redacted].k8s", TestName = "DotTail_SingleLabelHeadNumericLeadLastLabel")]
+	[TestCase("admin@host.i18n", "[redacted].i18n", TestName = "DotTail_SingleLabelHeadAlphanumericLastLabel")]
+	public void Redact_ShouldNotLeaveTheWholeHost_WhenTheLastLabelFailsTheDottedRule(string address, string expected) {
+		// Arrange
+		string message = $"Validation failed for {address} on column 'Name'.";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(message);
+
+		// Assert
+		redacted.Should().Be($"Validation failed for {expected} on column 'Name'.",
+			because: "refusing the match outright published the whole address, which this class's policy "
+				+ "rejects - over-redacting is acceptable, leaking is not");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("RedactAll applies the widened rule to every entry, so a batch of lines carrying one of each new host shape comes back with no address left (issue #1380).")]
+	public void RedactAll_ShouldRedactEveryNewHostShape() {
+		// Arrange
+		string[] lines = [
+			"Authentication failed for admin@localhost.",
+			"Authentication failed for svc@creatio-app.",
+			"Authentication failed for user@INTRANET.",
+			"Authentication failed for user@[10.0.0.5].",
+			"Authentication failed for john.doe@acme.com."
+		];
+
+		// Act
+		List<string> redacted = SensitiveErrorTextRedactor.RedactAll(lines);
+
+		// Assert
+		redacted.Should().HaveCount(lines.Length,
+			because: "RedactAll preserves input order and arity so a caller can zip the results back");
+		redacted.Should().OnlyContain(line => !line.Contains('@'),
+			because: "every entry carried exactly one address and no other '@' shape");
+		redacted.Should().OnlyContain(line => line.Contains("[redacted]"),
+			because: "each line must show the placeholder where its address stood");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The widened host alternation must not backtrack its way into the 1 s MatchTimeout: a timeout on this failure-reporting path replaces the ENTIRE text with the bare '[redacted]' sentinel, so the operator loses the whole diagnostic rather than one token.")]
+	[TestCase(true, TestName = "Adversarial_LongLocalPartAndManyLabels")]
+	[TestCase(false, TestName = "Adversarial_LongRunWithNoAtSign")]
+	public void Redact_ShouldNotHitTheRegexTimeout_OnAnAdversarialBody(bool withAtSign) {
+		// Arrange - the two shapes the e-mail rule backtracks worst on: a huge local part in front of a
+		// host made of many labels whose last one can never satisfy the dotted rule, and a long run with
+		// no '@' at all, where every position is a candidate start for the local-part class.
+		string text = withAtSign
+			? new string('a', 5_000) + "@" + string.Join(".", Enumerable.Repeat("a1", 1_600))
+			: new string('a', 10_000);
+
+		// Act
+		Stopwatch stopwatch = Stopwatch.StartNew();
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+		stopwatch.Stop();
+
+		// Assert
+		redacted.Should().NotBe("[redacted]",
+			because: "that exact value is ExecuteRegex's timeout sentinel - seeing it means the chain timed "
+				+ "out and the whole message was thrown away");
+		stopwatch.ElapsedMilliseconds.Should().BeLessThan(500,
+			because: "the bound is half the MatchTimeout and generous enough for a loaded CI agent, so a "
+				+ "failure here means real backtracking growth, not a slow machine");
 	}
 }

@@ -128,7 +128,51 @@ internal static partial class SensitiveErrorTextRedactor {
 	// update-page inline-placeholder e2e tests). The lookbehind refuses a match that begins anywhere inside
 	// a "\uXXXX" escape - including on the "u" itself, which is where the corrupting match actually started
 	// - while a match that begins right AFTER the complete escape (the address) is still redacted.
-	[GeneratedRegex(@"(?<!\\u?[0-9A-Fa-f]{0,3})[A-Za-z0-9._%+\-]+@[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}",
+	//
+	// THE HOST IS AN ORDERED ALTERNATION of three shapes (issue #1380). The dotted shape alone required at
+	// least one dot, so an address on a SINGLE-label host was not matched at all - "admin@localhost",
+	// "svc@creatio-app", "user@INTRANET", "user@[10.0.0.5]". On-prem Creatio deployments are the population
+	// whose authentication failures most often name such an address, so the rule missed exactly where it is
+	// most needed. Order is load-bearing: the dotted branch is tried BEFORE the single-label one, so
+	// "user@host.example.com" is consumed whole instead of stopping after "user@host" and leaving a
+	// half-redacted ".example.com" tail in the clear.
+	//   1. \[[^\]\s]{1,45}\] - anything bracketed, matched together with its brackets so no stray "]" is
+	//      left behind. Brackets immediately after "@" are the authority-literal syntax and nothing else, so
+	//      the class is deliberately loose rather than IP-shaped: it also covers the zone index .NET writes
+	//      into socket errors ("user@[fe80::1%eth0]") and the RFC 5321 tagged form ("user@[IPv6:fe80::1]"),
+	//      both of which an IP-only class left in the clear. The length bound keeps the branch from
+	//      scanning a whole line after an unmatched "[".
+	//   2. the pre-existing dotted host, whose FINAL label must be alphabetic and at least two characters
+	//      (PR #1374 review): with a purely alphanumeric last label, "clio@8.0.1" and the "kit@1.2.3" tail
+	//      of "@creatio/ui-kit@1.2.3" matched, so package-and-version - load-bearing diagnostic content in
+	//      this product - was silently replaced by a placeholder indistinguishable from a real credential
+	//      redaction. Unchanged here; widening must not reopen it.
+	//   3. a single label: starts with a LETTER, is at least two characters long, and may carry digits or
+	//      hyphens after the first character. The letter start is what keeps rule 2's narrowing intact -
+	//      "@8.0.1", "@20" and "@1.2.3" cannot enter this branch at all. A trailing DIGIT is allowed,
+	//      because on-prem host names routinely end in one ("user@WEB01", "svc@dev04").
+	// Branch 3's trailing (?![A-Za-z0-9\-]) only forbids stopping part-way through a label. It deliberately
+	// does NOT also forbid a following ".<label>". An earlier revision did, on the theory that it prevented
+	// a partial match; it does not - for "user@host.example.c" branch 2 backtracks to "user@host.example"
+	// and the ".c" is left over either way. What the extra arm actually did was turn a single-label host
+	// followed by a short or numeric label into a TOTAL leak: "user@localhost.c", "user@node1.k8s" and
+	// "admin@host.i18n" fail branch 2 (last label too short / not alphabetic) and were then refused by
+	// branch 3 as well, so they shipped in the clear. Without it they become "[redacted].c" / "[redacted]
+	// .k8s". The price is that a four-part version behind a letter-led head ("x@v4.1.1") is cut to
+	// "[redacted].1.1", which this class's policy accepts: over-redacting is acceptable, leaking is not.
+	// SHAPES THIS BRANCH NOW EATS, all accepted for the same reason - none of them can be told apart from a
+	// UPN on a single-label host, which is exactly what must be redacted:
+	//   "Contact@Account"-style identifiers, GitHub Actions refs ("checkout@v5", "setup-dotnet@v4", which
+	//   live in .github/workflows and never reach this redactor), branch references
+	//   ("ProcessBuilder@feature"), and npm dist-tags ("uuid@latest" - the npm prose around it still tells
+	//   the operator what happened when it reads "uuid@[redacted]"). A case-sensitive carve-out for
+	//   "latest" was tried and removed: it let "svc@latest" leak while redacting "svc@LATEST", and an
+	//   on-prem host may well be named either.
+	// "git@github.com:org/repo.git" was already matched by branch 2 and still becomes
+	// "[redacted]:org/repo.git"; a digest specifier ("image@sha256:...") stops at the ":" the same way.
+	// Also unchanged by this widening: "Prop@odata.mediaReadLink"-style OData annotations were already
+	// eaten by the dotted branch before issue #1380 and still are.
+	[GeneratedRegex(@"(?<!\\u?[0-9A-Fa-f]{0,3})[A-Za-z0-9._%+\-]+@(?:\[[^\]\s]{1,45}\]|[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}|[A-Za-z][A-Za-z0-9\-]*[A-Za-z0-9](?![A-Za-z0-9\-]))",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex EmailRegex();
 
