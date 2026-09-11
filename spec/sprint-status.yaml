@@ -21,6 +21,12 @@
 # 2026-07-06) is a separate Jira ticket stacked on the same branch; tracked as its own row.
 
 stories:
+  - id: story-cliogate-sql-log-1
+    title: Persist full SQL requests and execution results in ClioGate
+    status: review
+    issue: https://github.com/Advance-Technologies-Foundation/clio/issues/397
+    depends_on: []
+    blocks: []
   - id: story-download-sys-setting-file-1
     title: Download Binary system settings to a required filename
     status: review
