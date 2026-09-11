@@ -20,7 +20,9 @@ tweaks).
       `update-theme` inputs (read → edit → update-theme round-trip works).
 - [x] A clear, actionable result is returned when the theme id doesn't exist (names the id, points at
       `list-themes`, and names the possibly-missing `CanCustomizeBranding` license when the catalog is
-      empty) or has no content (success with empty `cssContent`).
+      empty), and when the environment does not serve the CSS at all — an empty body, an HTML error page
+      or a JSON error envelope are each reported as a failure naming the `cssFilePath`, so `cssContent`
+      is never an empty string a round trip could write back over a real stylesheet.
 - [x] `--output-file` writes the CSS to a confined path (workspace / OS temp, no overwrite) and omits the
       content from the envelope, feeding `update-theme --css-content-file` directly.
 - [ ] The modify-existing-theme flow works end-to-end (live sandbox E2E: create → read → edit → update →

@@ -425,13 +425,19 @@ empty catalog → the not-found also names the possibly-missing `CanCustomizeBra
 through `ListThemesOptions.From` as well). A CSS fetch answering with markup (login redirect / error page,
 BOM-prefixed included) → an explicit "HTML instead of CSS" failure. The sniff is a leading-`<` check, not
 the `<!DOCTYPE`/`<html` document markers: valid CSS can never start with `<`, so the broad form also
-catches an error page leading with `<!-- -->`, `<HEAD`, or `<?xml` — bodies that would otherwise be handed
-back as `cssContent` and written straight over a real theme by the update-theme round-trip. The known limitation is
+catches an error page leading with `<!-- -->`, `<HEAD`, or `<?xml`. A leading `{` is refused on the same
+grounds — it is the platform's JSON error envelope, and CSS never opens with a brace. Both are bodies that
+would otherwise be handed back as `cssContent` and written straight over a real theme by the update-theme
+round-trip. The known limitation is
 correspondingly that CSS deliberately starting with `<` cannot be read back. The read enforces the write
 side's 1 MiB `cssContent` cap — a larger body cannot be a clio-managed theme and is refused instead of
 flooding an MCP transcript (NOT a memory bound: `ExecuteGetRequest` has already materialized the whole body
-by then; capping the allocation would need a transport-layer content-length/stream limit). An existing theme with an empty CSS file → success with `cssContent: ""` (a theme to
-fill in, not an error). `cssFilePath` is the one envelope field that IS `SanitizeForDisplay`-treated —
+by then; capping the allocation would need a transport-layer content-length/stream limit). An empty or whitespace-only body → an explicit failure naming the
+`cssFilePath` the environment did not serve. The synchronous client exposes no status code and turns a
+transport failure into an empty string, so a 404/403 on a deleted or relocated theme file, a dropped
+request and a genuinely empty stylesheet are one indistinguishable outcome at this layer; the write side
+refuses empty `cssContent` outright (`ThemeParameterValidator.TryValidateCssContent`), so an empty body is
+never a theme state the read may hand back to update-theme. `cssFilePath` is the one envelope field that IS `SanitizeForDisplay`-treated —
 it is display/diagnostic only (update-theme never consumes it), mirroring list-themes.
 
 **E-D5 — `--output-file` on both surfaces.** Confined via the shared `OutputPathConfinement.Resolve`
