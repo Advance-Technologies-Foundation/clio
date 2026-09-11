@@ -1,0 +1,8 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Resources Culture="ro-RO">
+	<Group Type="String">
+		<Items>
+			<Item Name="EventsProcessSchema.Caption" Value="Obiect de bază" />
+		</Items>
+	</Group>
+</Resources>
