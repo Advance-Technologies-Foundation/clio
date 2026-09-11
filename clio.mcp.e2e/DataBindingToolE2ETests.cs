@@ -25,6 +25,69 @@ public sealed class DataBindingToolE2ETests : McpContractFixtureBase {
 	private const string RemoveRowToolName = RemoveDataBindingRowTool.RemoveDataBindingRowToolName;
 
 	[Test]
+	[Description("Creates localization-only columns over real MCP and verifies invalid localization input preserves existing artifacts and creates no partial new binding.")]
+	[AllureTag(CreateToolName)]
+	[AllureName("Local binding localization validation preserves files")]
+	[AllureDescription("Checks local-only SysSettings localization generation and failure preservation through the external MCP server.")]
+	public async Task CreateDataBinding_ShouldPreserveArtifacts_WhenLocalizationValidationFails() {
+		// Arrange
+		await using DataBindingArrangeContext context = await ArrangeWorkspaceAsync(requireEnvironment: false);
+		Dictionary<string, object?> args = new() {
+			["package-name"] = context.PackageName,
+			["schema-name"] = "SysSettings",
+			["workspace-path"] = context.WorkspacePath,
+			["values"] = """{"Code":"UsrLocalized"}""",
+			["localizations"] = """{"en-US":{"Name":"Localized name","Description":"Localized description"}}"""
+		};
+
+		// Act
+		CommandExecutionActResult created = await ActCommandAsync(context, CreateToolName, args);
+
+		// Assert
+		Allure.Net.Commons.AllureApi.Step("Verify successful localization-only generation", () => {
+			AssertToolCallSucceeded(created);
+			AssertCommandExitCode(created, 0, "localization-only columns must be accepted");
+			AssertIncludesInfoMessage(created, "successful creation must report progress");
+		});
+		string bindingPath = Path.Combine(context.WorkspacePath, "packages", context.PackageName, "Data", "SysSettings");
+		Allure.Net.Commons.AllureApi.Step("Verify culture content", () =>
+			File.ReadAllText(Path.Combine(bindingPath, "Localization", "data.en-US.json"))
+				.Should().Contain("Localized description", because: "Description must be generated without a duplicate base value"));
+
+		// Arrange
+		Dictionary<string, string> original = Directory.GetFiles(bindingPath, "*", SearchOption.AllDirectories)
+			.ToDictionary(path => path, File.ReadAllText);
+		args["values"] = """{"Code":"Changed"}""";
+		args["localizations"] = """{"en-US":{"Name":"Valid first culture"},"de-DE":{"Unknown":"Invalid"}}""";
+
+		// Act
+		CommandExecutionActResult failed = await ActCommandAsync(context, CreateToolName, args);
+
+		// Assert
+		Allure.Net.Commons.AllureApi.Step("Verify failure diagnostics", () => {
+			AssertCommandExitCode(failed, 1, "unknown localization columns must fail");
+			failed.Execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Error,
+				because: "validation failure must report an error");
+		});
+		Allure.Net.Commons.AllureApi.Step("Verify all existing content is unchanged", () =>
+			Directory.GetFiles(bindingPath, "*", SearchOption.AllDirectories).ToDictionary(path => path, File.ReadAllText)
+				.Should().BeEquivalentTo(original, because: "failed regeneration must preserve every binding artifact"));
+
+		// Arrange
+		args["binding-name"] = "InvalidNewBinding";
+
+		// Act
+		CommandExecutionActResult failedNew = await ActCommandAsync(context, CreateToolName, args);
+
+		// Assert
+		Allure.Net.Commons.AllureApi.Step("Verify invalid new binding leaves no folder", () => {
+			AssertCommandExitCode(failedNew, 1, "the same invalid localization must fail for a new binding");
+			Directory.Exists(Path.Combine(Path.GetDirectoryName(bindingPath)!, "InvalidNewBinding")).Should().BeFalse(
+				because: "validation must precede any new binding files");
+		});
+	}
+
+	[Test]
 	[Description("Creates a workspace and package with the real clio CLI, invokes create-data-binding through MCP for the built-in SysSettings template without a Creatio environment, and verifies the descriptor and data files are generated with an auto-created GUID primary key.")]
 	[AllureTag(CreateToolName)]
 	[AllureName("Create templated data binding offline auto-generates missing GUID primary key")]
