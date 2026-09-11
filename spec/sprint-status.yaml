@@ -21,6 +21,18 @@
 # 2026-07-06) is a separate Jira ticket stacked on the same branch; tracked as its own row.
 
 stories:
+  - id: story-worker-runtime-policy
+    title: "Preserve the MCP worker runtime roll-forward policy"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: S
+    status: review
+    file: spec/stories/story-worker-runtime-policy.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    note: "GH-1409: Windows/Linux reproduction and validation complete; merge requires Alexandr-Kravchuk's live Mac confirmation."
+    depends_on: []
+    blocks: []
+
   - id: story-knowledge-bundle-runtime-1
     title: "Install and hot-reload external knowledge"
     feature: "knowledge-bundle-runtime"
