@@ -244,4 +244,65 @@ public sealed class ConsoleFacingDiagnosticsTests {
 		result.Error.Should().NotContain("Your password has expired",
 			because: "the server excerpt never reaches a caller-visible field (issue #1333)");
 	}
+
+	[Test]
+	[Description("A THREE-link chain keeps the middle wrapper too: PackageBuilder wraps the compilation poll's give-up exception, which itself wraps the provider's carrier, and rendering only the outermost message reported that monitoring stopped while silently dropping why.")]
+	public void ReadableMessage_Should_Keep_Every_Wrapper_Above_The_Carrier() {
+		// Arrange
+		DataProviderFailureException carrier = new("Failed reading records: the provider refused.");
+		InvalidOperationException middle = new(
+			"Compilation polling gave up after 93 s of rounds that all failed "
+			+ "(give-up window 90 s, 21 failed rounds)", carrier);
+		InvalidOperationException outer = new("Package compilation could not be monitored", middle);
+
+		// Act
+		string rendered = outer.GetReadableMessageException();
+
+		// Assert
+		rendered.Should().Contain("Package compilation could not be monitored",
+			because: "the outermost wrapper is what names the operation the operator started");
+		rendered.Should().Contain("give-up window 90 s",
+			because: "the middle wrapper carries the elapsed time, the window and the round count - the entire diagnosis of WHY monitoring stopped, which only this link holds");
+		rendered.Should().Contain("the provider refused.",
+			because: "the carrier's own diagnosis still has to survive underneath both wrappers");
+	}
+
+	[Test]
+	[Description("A wrapper that merely restates the message below it is still printed once: the de-duplication that protects the two-link case must not be lost when the walk visits every link.")]
+	public void ReadableMessage_Should_Not_Repeat_A_Wrapper_That_Restates_The_One_Below_It() {
+		// Arrange
+		DataProviderFailureException carrier = new("Failed reading records: the provider refused.");
+		InvalidOperationException middle = new("Monitoring stopped", carrier);
+		InvalidOperationException outer = new("Monitoring stopped while compiling", middle);
+
+		// Act
+		string rendered = outer.GetReadableMessageException();
+
+		// Assert
+		rendered.Should().Contain("Monitoring stopped while compiling",
+			because: "the outermost wrapper is the more specific of the two and is the one worth keeping");
+		rendered.Should().NotContain("Monitoring stopped: Monitoring stopped",
+			because: "printing a restatement twice is exactly the noise the per-link duplicate check exists to prevent");
+	}
+
+	[Test]
+	[Description("A wrapper whose inner carries NO server detail keeps its own text and scrubs the inner: ClassifyingDataProvider rethrows a transport fault unchanged, and that arm used to return the inner message alone - raw, and without the wrapper's diagnosis.")]
+	public void ReadableMessage_Should_Keep_The_Wrapper_And_Scrub_The_Inner_When_There_Is_No_Carrier() {
+		// Arrange
+		Exception inner = new("Connection refused reading https://ts1-core-dev04:88/app/0/DataService");
+		InvalidOperationException outer = new(
+			"Compilation polling gave up after 93 s of rounds that all failed "
+			+ "(give-up window 90 s, 21 failed rounds)", inner);
+
+		// Act
+		string rendered = outer.GetReadableMessageException();
+
+		// Assert
+		rendered.Should().Contain("give-up window 90 s",
+			because: "the wrapper's diagnosis is the only place the window and the round count exist, and returning the inner message alone deleted them");
+		rendered.Should().NotContain("ts1-core-dev04",
+			because: "a transport fault's message routinely carries the full request URI, and this line reaches a console and a CI log unfenced");
+		rendered.Should().Contain("Connection refused",
+			because: "the underlying cause is scrubbed, not dropped - it is still what tells a refused connection apart from a rejected session");
+	}
 }

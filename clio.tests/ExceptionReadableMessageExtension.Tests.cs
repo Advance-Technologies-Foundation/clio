@@ -43,11 +43,18 @@ public class ExceptionReadableMessageExtensionTestCase
 	}
 
 	[Test]
+	[Description("An InvalidOperationException wrapping a fault with no server detail of its own keeps BOTH: the wrapper says what was being done, the inner says what went wrong. Returning the inner alone silently deleted the wrapper's diagnosis - which for the compilation poll's give-up was the window and the failed-round count (issue #1376).")]
 	public void GetReadableMessageException_PrintsCorrectMessage_WhenInvalidOperationException() {
+		// Arrange
 		var innerException = new Exception("InnerMessage");
 		var exception = new InvalidOperationException("Message", innerException);
+
+		// Act
 		var messageResult = exception.GetReadableMessageException();
-		messageResult.Should().Be($"{innerException.Message}");
+
+		// Assert
+		messageResult.Should().Be($"{exception.Message}: {innerException.Message}",
+			because: "the wrapper leads and the inner follows, the same order the WebException arm already uses so the operation context is preserved");
 	}
 
 	[Test]

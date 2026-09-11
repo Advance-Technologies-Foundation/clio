@@ -98,7 +98,8 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 
 		using CancellationTokenSource cts = new();
 		// The poll fault is CAPTURED, never allowed to escape this lambda - the same guard PackageBuilder.
-		// CompileWithPolling applies. Poll gives up and THROWS after MaxConsecutiveFailures rounds, and an
+		// CompileWithPolling applies. Poll gives up and THROWS once rounds have been failing for longer
+		// than CompilationPollingOptions.GiveUpWindow (issue #1376), and an
 		// unhandled exception on a dedicated thread terminates the whole process: a short app-tier outage
 		// during `clio cc` would have killed clio mid-compile with no error line and no exit code, skipping
 		// cts.Cancel / thread.Join and the result reporting below. Published through a one-element holder with

@@ -218,7 +218,7 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 		poller.GetBaseline().Returns(new CompilationHistory { CreatedOn = DateTime.UtcNow.AddMinutes(-1) });
 		poller.When(value => value.Poll(Arg.Any<DateTime>(), Arg.Any<CancellationToken>(),
 				Arg.Any<Action<CompilationHistory>>()))
-			.Do(_ => throw new InvalidOperationException("Compilation history is unreachable after 10 rounds."));
+			.Do(_ => throw new InvalidOperationException("Compilation polling gave up after 93 s of rounds that all failed (give-up window 90 s, 21 failed rounds)"));
 		CompileConfigurationCommand command = CreateCommandWith(poller);
 
 		// Act
@@ -229,7 +229,7 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 			because: "losing the progress monitor is not a compile failure - the server keeps compiling and the command must still report its own verdict");
 		_logger.Received().WriteWarning(Arg.Is<string>(message =>
 			message.Contains("could not be monitored", StringComparison.Ordinal)
-			&& message.Contains("unreachable after 10 rounds", StringComparison.Ordinal)));
+			&& message.Contains("give-up window 90 s", StringComparison.Ordinal)));
 	}
 
 	[Test]
