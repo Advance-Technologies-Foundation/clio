@@ -310,7 +310,18 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>Invalidates native rights caches after system-operation priority changes.</summary>
 		AdministrationInvalidateRightsCache = 90,
 		/// <summary>Reads stored or virtual package metadata without materializing the package.</summary>
-		GetPackageProperties = 91
+		GetPackageProperties = 91,
+
+		/// <summary>
+		///     Reads the configuration compilation result Creatio persisted for the last build.
+		/// </summary>
+		/// <remarks>
+		///     The verdict source for a configuration build whose HTTP response never arrives: the platform
+		///     closes the compile connection while it reloads the runtime, so this is what the build result is
+		///     read from afterwards. It carries no timestamp, which is why it is only trusted once the reload
+		///     that ends the build has been observed.
+		/// </remarks>
+		LastCompilationResult = 92
 
 	}
 
@@ -404,6 +415,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.ModifyProcess, "/rest/ProcessDesignService/ModifyProcess"},
 		{KnownRoute.ModifyProcessAsNewVersion, "/rest/ProcessDesignService/ModifyProcessAsNewVersion"},
 		{KnownRoute.SetActiveProcessVersion, "/rest/ProcessDesignService/SetActiveProcessVersion"},
+		{KnownRoute.LastCompilationResult, "api/ConfigurationStatus/GetLastCompilationResult"},
 		{KnownRoute.GetAvailableThemes, "ServiceModel/ThemeService.svc/GetAvailableThemes"},
 		{KnownRoute.ClearThemesCache, "ServiceModel/ThemeService.svc/ClearThemesCache"},
 		{KnownRoute.CreateTheme, "ServiceModel/ThemeService.svc/CreateTheme"},

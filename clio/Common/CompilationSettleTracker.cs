@@ -125,6 +125,11 @@ public class CompilationSettleTracker : ICompilationSettleTracker {
 		// trigger: a single package row, then 45s quiet, while the actual full compile was
 		// still running). The caller keeps polling, bounded by its own overall give-up-after
 		// budget, until either the marker appears or that budget is exhausted.
+		//
+		// NOTE: the marker holds for the trigger paths this command watches, and NOT for a build clio
+		// itself requests - a configuration compile does not write the ODataEntities row (see
+		// docs/knowledge/Command/odata-entities-is-not-a-compile-completion-marker.md). That is why
+		// compile-configuration decides completion from the runtime reload instead of from this tracker.
 		return _newRecordCount == 0 || _sawFinalMarker;
 	}
 
@@ -145,27 +150,11 @@ public class CompilationSettleTracker : ICompilationSettleTracker {
 		}
 	}
 
-	// ErrorsWarnings can legitimately hold warning-only entries on an otherwise successful compile
-	// (observed live: a real compile-configuration --all run on cec finished successfully with one
-	// CS0114 "hides inherited member" warning). Only a non-warning entry should fail the watch's
-	// exit code, matching the IsWarning field CompileConfigurationCommand's own CompError already
-	// parses. Unparseable content is treated as an error - favor under-claiming success in a
-	// CI-facing exit code over a false "clean" result.
-	private static bool HasRealError(string errorsWarnings) {
-		if (string.IsNullOrWhiteSpace(errorsWarnings) || string.Equals(errorsWarnings, "[]", StringComparison.OrdinalIgnoreCase)) {
-			return false;
-		}
-		try {
-			List<CompilationLogEntry> entries = JsonSerializer.Deserialize<List<CompilationLogEntry>>(errorsWarnings, JsonOptions);
-			return entries is not null && entries.Exists(entry => !entry.IsWarning);
-		} catch (JsonException) {
-			return true;
-		}
-	}
+	// Shared with CompilationActivityWatcher via CompilationDiagnostics so the warning/error
+	// distinction has one definition; the rules themselves are documented there.
+	private static bool HasRealError(string errorsWarnings) =>
+		CompilationDiagnostics.HasRealError(errorsWarnings);
 
-	private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
-
-	private sealed record CompilationLogEntry([property: JsonPropertyName("IsWarning")] bool IsWarning);
 
 	#endregion
 

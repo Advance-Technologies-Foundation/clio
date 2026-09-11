@@ -769,7 +769,12 @@ public sealed class WorkerOperationCompletionSignalTests {
 		internal FakeCompileConfigurationCommand()
 			: base(Substitute.For<IApplicationClient>(), new EnvironmentSettings(),
 				Substitute.For<IServiceUrlBuilder>(), Substitute.For<ICompilationHistoryPoller>(),
-				Substitute.For<ILogger>(), Substitute.For<IInteractiveConsole>()) {
+				Substitute.For<ILogger>(), Substitute.For<IInteractiveConsole>(),
+				Substitute.For<IApplicationClientFactory>(),
+				Substitute.For<ICompilationActivityWatcher>(),
+				Substitute.For<IEnvironmentReloadWatcher>(),
+				Substitute.For<ICompilationCompletionDecider>(),
+				Substitute.For<ICompilationResultReader>()) {
 		}
 
 		public override int Execute(CompileConfigurationOptions options) {
