@@ -27,6 +27,22 @@ alternative, one `FirstOrDefault` per distinct UId, is bounded only by `FamilyCa
 on a cross-package family, inside a read that already owns a ten-second budget. One query returning
 the package table — a few hundred rows of scalars — is the cheaper of the three.
 
+**It runs on a SLICE of that budget, not the whole of it, and no rows means NOT READ.** Two corrections
+the review of this change forced, and both are about the same asymmetry: this is a convenience field
+sitting inside the read that answers the version facts.
+
+- `Guarded` converts a package read that FAILS into an absent name, but it cannot convert one that is
+  merely SLOW — `ProcessLibRead`'s own remarks say so. Left on the shared budget, a stalled `SysPackage`
+  pushes the whole read past expiry and the caller loses `version`, `isActiveVersion`,
+  `activeVersionName` and the entire family. Trading all of that for a name is the wrong way round, so
+  the package read gets a third of the budget and the call is deferred past the early return that
+  discards it.
+- An EMPTY result is a refusal, not an answer. A Creatio environment always carries packages; and
+  measured on ATF.Repository 2.0.3.1, a null or unsuccessful `IItemsResponse` does not throw, it yields
+  no rows — which is what a restricted-NUI object like `SysPackage` comes back as for a rights-limited
+  account. Classified as a successful read it publishes every member with no name and NO warning, the
+  one combination the contract on `ProcessVersionFamilyMember.PackageName` forbids.
+
 **Why it is this way** — `VwProcessLib` exists to drive the process library section, which renders the
 package through a lookup the UI resolves for itself; nothing on the server side ever needed the name
 in the same row. The substitute provider replays a canned set whatever the filter says, so no test in
