@@ -44,24 +44,27 @@ public sealed class TelemetryFlushOptionsProvider : ITelemetryFlushOptionsProvid
 	internal const string EnabledEnvironmentVariable = "CLIO_TELEMETRY_ENABLED";
 
 	/// <summary>
-	/// Production OTLP/HTTP logs collector — the intended built-in default once it is live. Kept as
-	/// a named constant so the value is documented and compile-pinned ahead of launch; flipping
-	/// <see cref="DefaultEndpoint"/> to it is the one-line change that turns telemetry on.
+	/// Production OTLP/HTTP logs collector — the built-in default shipped in the binary
+	/// (<see cref="DefaultEndpoint"/>). Kept as a named constant so the value stays documented and
+	/// compile-pinned. The hostname is fixed by the production ingress and is not interchangeable:
+	/// the same name is declared on the ingress manifest precisely because it is compiled in here.
+	/// The collector exposes a single route, <c>POST /v1/logs</c>, so the path is part of the
+	/// endpoint and must not be trimmed to the bare host — the bare host answers 404.
 	/// </summary>
 	internal const string ProductionEndpoint = "https://caadt-telemetry.creatio.com/v1/logs";
 
 	/// <summary>
 	/// The lowest-precedence endpoint source, shipped in the binary. <c>CLIO_TELEMETRY_ENDPOINT</c>
 	/// and the settings <c>telemetry.endpoint</c> override it; a configured-but-invalid endpoint
-	/// disables uploading rather than falling back here. It currently ships <b>empty</b> because the
-	/// production collector (<see cref="ProductionEndpoint"/>) is not live yet, so a freshly
-	/// installed or in-place-updated clio sends nothing anywhere until an endpoint is explicitly
-	/// configured. When the collector is provisioned, set this to <see cref="ProductionEndpoint"/>
-	/// (and update the pin test) to turn every install on without per-machine configuration — the
-	/// binary is the only delivery vehicle that reaches existing installs on update, since clio
-	/// neither ships <c>appsettings.json</c> nor creates it with a telemetry default.
+	/// disables uploading rather than falling back here. It carries the production collector because
+	/// the binary is the only delivery vehicle that reaches existing installs on update — clio
+	/// neither ships <c>appsettings.json</c> nor creates it with a telemetry default, so anything
+	/// short of a shipped value would leave every already-installed clio silent forever.
+	/// Collection remains consent-gated (nothing is uploaded until consent is granted), and
+	/// operators can still opt out with <c>CLIO_TELEMETRY_ENABLED=false</c> or
+	/// <c>telemetry.enabled: false</c>, which wins over this default.
 	/// </summary>
-	internal const string DefaultEndpoint = "";
+	internal const string DefaultEndpoint = ProductionEndpoint;
 
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly ILogger<TelemetryFlushOptionsProvider> _logger;

@@ -368,6 +368,10 @@ public class BindingsModule {
 
 		services.AddTransient<Clio.Command.RecordRights.GetRecordRightsCommand>();
 		services.AddTransient<Clio.Command.RecordRights.SetRecordRightsCommand>();
+		services.AddTransient<Clio.Command.Administration.ManageUserCommand>();
+		services.AddTransient<Clio.Command.Administration.ManageRoleCommand>();
+		services.AddTransient<Clio.Command.Administration.ManageAccessCommand>();
+		services.AddTransient<Clio.Command.Administration.ManageLicenseCommand>();
 		services.AddTransient<Clio.Common.IFileSystem, Clio.Common.FileSystem>();
 		services.AddTransient<IFileSecurityHardening, FileSecurityHardening>();
 		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionCache, Clio.Common.BrowserSession.BrowserSessionCache>();
@@ -398,6 +402,8 @@ public class BindingsModule {
 		services.AddTransient<IFeatureStateService, FeatureStateService>();
 		services.AddTransient<SetFileContentStorageConnectionStringCommand>();
 		services.AddTransient<SysSettingsCommand>();
+		services.AddTransient<IDownloadSysSettingFileService, DownloadSysSettingFileService>();
+		services.AddTransient<DownloadSysSettingFileCommand>();
 		services.AddTransient<BuildInfoCommand>();
 		services.AddTransient<BuildDockerImageCommand>();
 		services.AddTransient<InstallSkillsCommand>();
@@ -739,6 +745,10 @@ public class BindingsModule {
 		services.AddTransient<GetUserCultureTool>();
 		services.AddTransient<GetRecordRightsTool>();
 		services.AddTransient<SetRecordRightsTool>();
+		services.AddTransient<ManageUserTool>();
+		services.AddTransient<ManageRoleTool>();
+		services.AddTransient<ManageAccessTool>();
+		services.AddTransient<ManageLicenseTool>();
 		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<AddPackageDependencyTool>();
 		services.AddTransient<AddCustomLoggingTool>();

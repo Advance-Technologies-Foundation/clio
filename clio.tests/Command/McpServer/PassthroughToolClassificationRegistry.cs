@@ -294,6 +294,8 @@ internal static class PassthroughToolClassificationRegistry {
 			["describe-environment"] = PassthroughClassification.NotApplicable,
 			["download-configuration-by-build"] = PassthroughClassification.NotApplicable,
 			["download-configuration-by-environment"] = PassthroughClassification.NotApplicable,
+			// Environment-scoped BaseTool path; outside the original resident-tool passthrough audit.
+			[DownloadSysSettingFileTool.ToolName] = PassthroughClassification.NotApplicable,
 			["execute-esq"] = PassthroughClassification.NotApplicable,
 			["export-schema"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - already resolver-backed (class a), not part of the ENG-93347 passthrough audit
 			["experimental"] = PassthroughClassification.NotApplicable,
@@ -320,6 +322,15 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-process-page-facts"] = PassthroughClassification.NotApplicable,
 			["get-process-signature"] = PassthroughClassification.NotApplicable,
 			["get-record-rights"] = PassthroughClassification.NotApplicable,
+			// New administration tools use the existing environment-aware BaseTool resolver path.
+			["inspect-user"] = PassthroughClassification.NotApplicable,
+			["manage-user"] = PassthroughClassification.NotApplicable,
+			["inspect-role"] = PassthroughClassification.NotApplicable,
+			["manage-role"] = PassthroughClassification.NotApplicable,
+			["inspect-access"] = PassthroughClassification.NotApplicable,
+			["manage-access"] = PassthroughClassification.NotApplicable,
+			["inspect-license"] = PassthroughClassification.NotApplicable,
+			["manage-license"] = PassthroughClassification.NotApplicable,
 			["get-related-page-addon"] = PassthroughClassification.NotApplicable,
 			["get-schema"] = PassthroughClassification.NotApplicable,
 			["get-schema-name-prefix"] = PassthroughClassification.NotApplicable,
