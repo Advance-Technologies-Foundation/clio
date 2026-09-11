@@ -58,15 +58,15 @@ key (`X-Ingest-Key`) therefore never traverses the network in cleartext to a rem
 The endpoint-default mechanism ships as the **lowest-precedence** source in the binary:
 `CLIO_TELEMETRY_ENDPOINT` and the settings `telemetry.endpoint` override it, and a
 configured-but-invalid endpoint disables uploading rather than silently falling back to the default.
-The production collector is identified (`TelemetryFlushOptionsProvider.ProductionEndpoint`), but
-because it is not live yet the **active default (`DefaultEndpoint`) ships empty**: a freshly
-installed or in-place-updated clio therefore sends nothing anywhere until an endpoint is explicitly
-configured (e.g. a developer pointing `CLIO_TELEMETRY_ENDPOINT` at the stage collector). When the
-collector is provisioned, flipping `DefaultEndpoint` to `ProductionEndpoint` (a one-line change plus
-the pin test) turns every install on without per-machine configuration — the binary is the only
-delivery vehicle that reaches existing installs on update (clio neither ships `appsettings.json` nor
-creates it with a telemetry default). This supersedes the original "no default endpoint ships"
-decision: the mechanism is in place; only the production value is deferred until the endpoint is live.
+**Amended by ENG-96309:** the active default (`DefaultEndpoint`) is now
+`TelemetryFlushOptionsProvider.ProductionEndpoint`, so a freshly installed or in-place-updated clio
+uploads to the production collector with no per-machine configuration. The binary is the only
+delivery vehicle that reaches existing installs on update — clio neither ships `appsettings.json`
+nor creates it with a telemetry default — so anything short of a shipped value would leave every
+already-installed clio silent forever. The path is part of the endpoint: the collector routes
+`POST /v1/logs` only, and the bare host answers 404. This supersedes both the original "no default
+endpoint ships" decision and the interim empty default that held while the collector was being
+provisioned; the opt-out paragraph below is what bounds it.
 
 Uploading is **opt-out** at the operator level: `CLIO_TELEMETRY_ENABLED=false` (environment, wins)
 or `telemetry.enabled: false` (settings) resolves the endpoint to none and hard-disables uploads
