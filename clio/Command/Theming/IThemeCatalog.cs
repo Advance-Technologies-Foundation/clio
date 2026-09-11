@@ -20,3 +20,19 @@ public interface IThemeCatalog
 	bool TryGetAvailableThemes(ListThemesOptions options,
 		out IReadOnlyList<ThemeDescriptor> themes, out string errorMessage);
 }
+
+/// <summary>
+/// Shared wording for theme-catalog resolution diagnostics, so the same condition is always reported with
+/// the same message.
+/// </summary>
+internal static class ThemeCatalogMessages
+{
+	/// <summary>
+	/// The empty-catalog ambiguity caveat: an empty theme catalog means either that the environment has no
+	/// custom themes or that the caller lacks the <c>CanCustomizeBranding</c> license, so it cannot be
+	/// treated as definitively empty.
+	/// </summary>
+	internal const string EmptyCatalogLicenseCaveat =
+		"This can also mean the CanCustomizeBranding license is missing (list-themes returns an empty " +
+		"catalog in that case) — verify access with check-theming-access.";
+}
