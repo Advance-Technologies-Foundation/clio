@@ -1,4 +1,4 @@
-# Story 23: Rebundle CrtProcessBuilder once the create-path fix is on main
+# Story 23: Rebundle CrtProcessBuilder at 1.6.2.3 with the create-path fix
 
 **Feature**: process-versioning
 **Jira**: ENG-94374
