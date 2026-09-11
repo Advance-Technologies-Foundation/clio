@@ -21,6 +21,23 @@
 # 2026-07-06) is a separate Jira ticket stacked on the same branch; tracked as its own row.
 
 stories:
+  - id: story-worker-runtime-policy
+    title: "Preserve the MCP worker runtime roll-forward policy"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: S
+    status: review
+    file: spec/stories/story-worker-runtime-policy.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    note: "GH-1409: Alex independently verified Windows and reported a teardown race. User authorized proceeding without a Mac runtime; Mac validation remains unverified."
+    depends_on: []
+    blocks: []
+
+  - id: story-tool-contract-partial-results-1
+    title: Publish remote OAuth workflow and keep partial tool contracts
+    status: review
+    file: spec/stories/story-tool-contract-partial-results-1.md
+    issue: https://github.com/Advance-Technologies-Foundation/clio/issues/1408
   - id: story-knowledge-bundle-runtime-1
     title: "Install and hot-reload external knowledge"
     feature: "knowledge-bundle-runtime"
@@ -3314,7 +3331,7 @@ stories:
     jira: "ENG-94374"
     repo: "clio"
     size: S
-    status: ready-for-dev
+    status: done
     file: spec/stories/story-process-versioning-7.md
     prd: spec/prd/prd-process-versioning.md
     adr: spec/adr/adr-process-versioning.md
@@ -3601,7 +3618,7 @@ stories:
     feature: "eng-91853-gateways-and-flows"
     repo: "clio"
     size: M
-    status: review
+    status: done
     pr: https://github.com/Advance-Technologies-Foundation/clio/pull/1398
     jira: ENG-91853
     file: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-plan.md
@@ -3683,6 +3700,96 @@ stories:
       not enforced, gateway elements and default flows listed as unbuildable, R14 stated without its
       arity scope, and R7/R14 missing the new findings). It is the article branch-conditions.md routes
       to for R1-R17, so it reaches users; the fix belongs inside the same 1.13.94 bump.
+    depends_on:
+      - story-eng-91853-gateways-and-flows-2
+    blocks: []
+
+  - id: story-eng-91853-flow-labels-1
+    title: "Give a sequence flow a diagram label, on all three write paths and on describe"
+    feature: "eng-91853-gateways-and-flows"
+    repo: "clio + workspace/ProcessBuilder + clio-knowledge"
+    size: M
+    status: review
+    pr: https://github.com/Advance-Technologies-Foundation/clio/pull/1414
+    prs:
+      - https://github.com/Advance-Technologies-Foundation/clio/pull/1414
+      - https://creatio.ghe.com/engineering/crt-process-builder/pull/53
+      - https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/138
+    jira: ENG-91853
+    file: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-flow-labels-brief.md
+    notes: >
+      The follow-up ENG-91853 deferred: a flow had no label, so a two-branch decision rendered as two
+      identical unlabelled arrows and describe could not report a designer's label either, which made
+      read-modify-write lossy with nothing reporting it. Delivered as one story across three
+      repositories rather than three, because the field is one contract and splitting it would have
+      shipped a clio that advertises a package field the package does not have.
+      SPIKED FIRST, deliberately, and both open questions came back favourable. (1) Assigning
+      ProcessSchemaSequenceFlow.Caption really does produce BaseElements.<FlowName>.Caption and the
+      designer really does draw it - proven for an element, never for a flow until now, and everything
+      else would have been rework. (2) THE TRAP IS BENIGN: a re-kind re-derives a generated flow's NAME
+      and the resource key is built from that name, yet the row is re-materialised under the new name
+      and nothing lingers under the old one. Measured through the exact route FreeTheDefaultSlot()
+      prescribes. So none of the three remedies the brief proposed was needed, and the guard they
+      invite would have broken the shipped remedy on the flows most likely to carry a label.
+      Package CrtProcessBuilder 1.6.1.4 (sources 9c86d9b094cb35590f163bc5b1f627389a1c8262, tag
+      crtprocessbuilder-1.6.1.4). Do NOT read that pair from here: the authoritative values are
+      ExpectedArchiveVersion and ExpectedProducingCommit in
+      clio.tests/Common/BundledProcessBuilderPackageTests.cs, which the rebundle script writes.
+      This sentence is prose and prose goes stale at the next rebundle - it already did, naming
+      1.6.0.16 / 9c9aee2 through four later cuts, and a reviewer taking those numbers would have run
+      the article's staleness and tag controls against an archive that is not shipped. Superseded
+      cuts, as dated chronology only: 1.6.0.9 at 849dd2f pre-review, then .10 dc6583f, .11 5e94574,
+      .12 66a1c08 across review passes one to three, .13 dff43da for the Copilot findings, .16
+      9c9aee2, then the 1.6.1.x line after the origin/master merge.
+
+      What the package carries, unchanged since .8: flows[].label on the build
+      path, label on addFlow/setFlow, label in the describe projection, and a refusal of label on
+      setFlowCondition/removeFlow, where it deserializes off the shared operation descriptor and is
+      read by nobody. On setFlow, OMITTED keeps / EMPTY clears / text replaces - and the label is
+      applied on the kind NO-OP path too, which is the only way to relabel a flow at all since kind is
+      mandatory there.
+      The [RequiresPackage] FLOORS DID NOT MOVE and stay at 1.6.0.3. A label is an optional field whose
+      absence is detectable after the fact, so it takes the read-back warning the sendEmail body macros
+      established (FlowLabelExpectation) rather than a floor that would refuse every build and edit on
+      an environment one archive behind, including the ones that ask for no label. The exception is
+      written down beside the rule it looks like a violation of.
+      Guidance: process-naming N10 stops saying the label is missing and states the rule instead, with
+      the corpus share behind it; process-branch-conditions and process-element-catalog cite it.
+      libraryVersion 1.13.100.
+      MEASURED, not asserted: over the 1 710 shipped 7.8.0 schemas containing flows, 84.9% of
+      conditional flows carry a label (1 193 of 1 405), 25.5% of default flows do, and 0.7% of plain
+      sequence flows do (50 of 7 599). The scan that produces those figures is committed beside the
+      brief and is self-contained now - it previously exec'd two helpers out of a session scratchpad,
+      so the sole owner of a figure quoted across three repositories could not be run.
+      Also corrected while in the same files, and both were left stale by this ticket's own merge:
+      McpCapabilityMap said the create bullet joins elements "by plain sequence flows" and that the
+      conditional flows routing resultsByColumn are "not buildable yet"; DescribeProcessTool carried
+      the flow-condition paragraph four times verbatim (three copies removed, ~2 KB off every tool
+      listing). And the null-vs-absent claim this change first shipped was WRONG in both directions:
+      measured on a 1.6.0.8 stand, the server omits `label` for an unlabelled flow exactly as an older
+      server omits it for every flow, so absence cannot say which - the DTO doc, both tool descriptions
+      and N10 now say so. (Later corrected again: those surfaces first pointed at the installed package
+      version as the way to tell, which a review showed cannot work - convergence refuses anything below
+      the archive clio ships, so a number is no evidence the member is present. They now say an
+      all-absent read is uninformative.)
+      Two things fixed because they blocked the canonical rebundle: the rebundle script still ran the
+      package tests from the path the package repo moved them out of (MSB1009, which reads as a broken
+      checkout - the project is DISCOVERED now, and zero matches is a refusal rather than a silently
+      skipped suite), and the knowledge record on the .application junctions covered one of the two
+      links. The second fails differently and later: only the TEST project falls over, with one
+      MSB3245, after the package's own Build succeeded.
+      Validated: package 1547 tests; clio full Category=Unit 11410 pass / 25 skip; clio.mcp.e2e's two
+      label fixtures against the live stand `Creatio` on 1.6.0.9; knowledge bundle 148.
+      Pre-merge review remediation then produced 1.6.0.10 and knowledge 1.13.101. (The earlier
+      figures in this note read 1.6.0.8 / 98b1a8c / f38349c / 11392: that was the FIRST cut, superseded
+      by the review-fix rebundle, and a note naming a version other than the one that ships makes the
+      producing-commit pair - the only reviewability a committed .gz has - point at the wrong bytes.) Release rather
+      than Debug throughout, because a running MCP server holds the Debug output open - and only
+      Release/net10.0 received the new archive, so an install from any other output ships whatever that
+      folder holds.
+      STILL OPEN: the autolayout defect the brief notes in passing is untouched - our back edge is
+      still drawn over the forward flow rather than lifted onto a free row. Three PRs to open; the
+      merges are a human's.
     depends_on:
       - story-eng-91853-gateways-and-flows-2
     blocks: []

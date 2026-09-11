@@ -102,6 +102,8 @@ public sealed class SchemaSyncTool(
 		Idempotent = false, OpenWorld = false)]
 	[Description("Executes a batch of schema operations in a single call: " +
 		"create lookups, create entities, seed data, update entities. " +
+		"Date and Time column types are write-time aliases of DateTime; readback reports DateTime. " +
+		"For date-only Freedom UI fields, explicitly set crt.DateTimePicker pickerType to date. " +
 		"For create-entity, set is-virtual to true only when the schema must not have a physical database table; it defaults to false. " +
 		"Before setting is-virtual to true, call get-guidance with name virtual-entities and follow its schema-before-executor, bounded-provider, authorization, and version-gated write rules. " +
 		"Reduces MCP round-trips and lock overhead compared to individual tool calls. " +
@@ -117,6 +119,9 @@ public sealed class SchemaSyncTool(
 		"name/data-value-type/reference-schema/is-required/caption are accepted), so a column read from " +
 		"get-app-info can be sent back without field translation — add an 'action' verb for modify/remove, " +
 		"or drop read/create-shape columns into a 'columns' array for an implicit add-batch. " +
+		"A column read with a default carries default-value-config — send it back as-is to re-apply the default, " +
+		"or set source: None to remove it; create-entity/create-lookup columns and update-operations also accept " +
+		"default-value-config (Const value = the stable lookup record GUID) or the legacy default-value-source + default-value shorthand. " +
 		"Long-running: streams notifications/progress (a per-operation stage marker before each op) while " +
 		"working — await completion and do not retry on a perceived timeout.")]
 	public async Task<SchemaSyncResponse> SchemaSync(

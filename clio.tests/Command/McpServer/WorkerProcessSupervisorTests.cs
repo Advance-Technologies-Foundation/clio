@@ -604,6 +604,23 @@ public sealed class WorkerProcessSupervisorTests {
 			because: "the variable that tells an apphost where the shared runtime lives is architecture-specific — measured on arm64 macOS only DOTNET_ROOT_ARM64 was set — and a frozen environment missing it makes every worker die at startup with \"You must install or update .NET\"");
 	}
 
+	[TestCase("Major")]
+	[TestCase("LatestMajor")]
+	[TestCase("Disable")]
+	[Description("Workers preserve the parent's explicit runtime roll-forward policy instead of independently selecting a runtime or failing before the MCP handshake.")]
+	public void ComposeEffectiveEnvironment_ShouldPreserveRollForward_WhenConfigured(string policy) {
+		// Arrange
+		WorkerSpawnRequest request = new();
+
+		// Act
+		IReadOnlyDictionary<string, string> environment = WorkerProcessSupervisor.ComposeEffectiveEnvironment(
+			request, name => name == "DOTNET_ROLL_FORWARD" ? policy : null);
+
+		// Assert
+		environment.Should().Contain("DOTNET_ROLL_FORWARD", policy,
+			because: "a working parent and its workers must use the same operator-selected runtime policy");
+	}
+
 	[Test]
 	[Description("Every host-behaviour knob a worker can actually reach is inherited, because an operator tunes clio and not one process of it: a knob that lands in the parent only produces two clios that disagree, and the difference is invisible because the parent is the process an operator can watch.")]
 	public void DefaultInheritedEnvironmentVariableAllowlist_ShouldKeepEveryHostBehaviourVariableAWorkerCanReach() {

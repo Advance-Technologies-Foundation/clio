@@ -13,7 +13,6 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool surface for the <c>create-server-to-server-oauth-app</c> command.
 /// </summary>
 [McpServerToolType]
-[FeatureToggle("deploy-identity")]
 public sealed class CreateServerToServerOAuthAppTool(
 	CreateServerToServerOAuthAppCommand command,
 	ILogger logger,
@@ -39,7 +38,7 @@ public sealed class CreateServerToServerOAuthAppTool(
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Creates a server-to-server (client_credentials) OAuth app in Creatio via OAuthConfigService/AddClient over REST,
-				 binding it to a system user. Supply systemUserId (from resolve-oauth-system-user or create-oauth-technical-user)
+				 binding it to a system user. Supply systemUserId (from resolve-oauth-system-user)
 				 or systemUser by name (defaults to Supervisor). Returns clientId and clientSecret in the structured result ONLY:
 				 the secret is never written to logs and is NOT persisted to clio settings by this tool. Capture the secret from
 				 the response immediately - it cannot be retrieved again.
@@ -79,7 +78,7 @@ public sealed record CreateServerToServerOAuthAppArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("system-user-id")]
-	[property: Description("System user id to bind the OAuth app to. Resolve it first with resolve-oauth-system-user or create-oauth-technical-user.")]
+	[property: Description("System user id to bind the OAuth app to. Resolve it first with resolve-oauth-system-user.")]
 	string? SystemUserId = null,
 
 	[property: JsonPropertyName("system-user")]

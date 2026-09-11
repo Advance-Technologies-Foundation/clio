@@ -36,9 +36,17 @@ public interface IProcessDescriber {
 	/// read-back callers that consume <c>elements[]</c> alone pass <c>false</c>, since for them the facts cost
 	/// an ATF session plus two DataService round-trips on a WRITE path and are then discarded.
 	/// </param>
+	/// <param name="bestEffort">
+	/// Whether this read is a VERIFICATION of a write that already landed, in which case it gets one
+	/// attempt and a short timeout instead of the full retry budget. A verification runs on the SUCCESS
+	/// path - the caller treats an error as a caveat, never as a failure, because the write is committed
+	/// either way - so spending three attempts at ten seconds stalls the common case to establish
+	/// something the caller will report as unverified anyway. The population that pays the whole budget
+	/// is the one these guards target: an environment whose DescribeProcess route is failing.
+	/// </param>
 	/// <returns>The structured description, or an error (not found / unreachable / server failure).</returns>
 	ErrorOr<DescribeProcessResult> Describe(ProcessIdentity identity, string culture,
-		bool includeVersionFacts = true);
+		bool includeVersionFacts = true, bool bestEffort = false);
 }
 
 /// <inheritdoc cref="IProcessDescriber" />
@@ -82,7 +90,7 @@ public sealed class ServerProcessDescriber(
 
 	/// <inheritdoc />
 	public ErrorOr<DescribeProcessResult> Describe(ProcessIdentity identity, string culture,
-		bool includeVersionFacts = true) {
+		bool includeVersionFacts = true, bool bestEffort = false) {
 		ErrorOr<ResolvedIdentity> resolved = BuildIdentityPayload(identity);
 		if (resolved.IsError) {
 			return resolved.Errors;
@@ -96,7 +104,14 @@ public sealed class ServerProcessDescriber(
 		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.DescribeProcess);
 		string responseBody;
 		try {
-			responseBody = applicationClient.ExecutePostRequest(url, body, 10_000, 3, 1);
+			// A verification read-back is paid on the success path of EVERY labelled build and every
+			// relabelling edit - the common case, since the create tool tells an agent to label every
+			// branch. The full budget is three attempts at ten seconds, so a wedged environment stalls a
+			// write that already committed for about half a minute and then reports only "could not
+			// verify". One attempt at half the timeout is sound HERE and nowhere else: the caller already
+			// treats IsError as a caveat rather than a failure.
+			(int timeoutMs, int attempts) = bestEffort ? (5_000, 1) : (10_000, 3);
+			responseBody = applicationClient.ExecutePostRequest(url, body, timeoutMs, attempts, 1);
 		} catch (Exception e) {
 			return Error.Failure(DescribeErrorCode, e.Message);
 		}
@@ -1435,6 +1450,33 @@ public sealed class DescribedFlow {
 	[JsonPropertyName("branchesOnActivityResult")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public bool? BranchesOnActivityResult { get; set; }
+
+	/// <summary>
+	/// The flow's LABEL on the diagram - the text the designer draws on the connector - or <c>null</c> when
+	/// it carries none.
+	/// <para>It does not live in the process metadata. The flow's caption is a platform
+	/// <c>LocalizableString</c>, so it is stored in the schema's RESOURCES as
+	/// <c>BaseElements.&lt;FlowName&gt;.Caption</c> - which is why diffing two processes' <c>metadata.json</c>
+	/// says nothing about their labels.</para>
+	/// <para>Typed rather than left to <see cref="AdditionalData"/> for the reason <see cref="Condition"/>
+	/// gives: the post-write guard reads it BY NAME to tell a caller their label did not land, and a
+	/// <c>JsonElement</c> in a dictionary is not that.</para>
+	/// <para>ABSENCE DOES NOT SAY WHY, and an earlier revision of this remark claimed it did. Measured on a
+	/// 1.6.0.8 stand: the server omits <c>label</c> for a flow that carries none, exactly as a server
+	/// predating the field omits it for every flow - so "this flow has no label" and "this environment does
+	/// not report labels" are the same bytes. Clio mirrors that omission rather than inventing an explicit
+	/// <c>null</c>, which would only move the ambiguity, not resolve it.</para>
+	/// <para>The consequence is worth stating because the shipped guidance tells an agent to read this field
+	/// before overwriting a human's label: on an environment whose package predates the member, an
+	/// all-absent result is NOT evidence that a designer-authored process is unlabelled. Nothing in the
+	/// READ distinguishes the two, and the installed version does not either - clio normally refuses a
+	/// package older than the one it ships, so a high number is no evidence the member is present. Treat
+	/// an all-absent read as uninformative. The write side needs no such check: <see cref="FlowLabelExpectation"/> reads the flows back and
+	/// reports a label that did not land, whatever the reason.</para>
+	/// </summary>
+	[JsonPropertyName("label")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Label { get; set; }
 
 	/// <summary>
 	/// Every other field the server returns on a flow, so a description round-trips losslessly - the same bag

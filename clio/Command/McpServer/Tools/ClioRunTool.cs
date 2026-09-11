@@ -138,10 +138,9 @@ public sealed class ClioRunExecutor(
 		if (!toolRegistry.TryGetTool(toolName, out McpServerTool tool)) {
 			// The long tail clio-run targets is hidden from tools/list, so agents frequently GUESS the
 			// name and miss by a typo. Append a "did you mean" shortlist of the nearest REAL tool names so
-			// the agent can self-correct without an extra discovery round-trip. Only the RANKING (Levenshtein
-			// distance then ordinal) matches the BuildSuggestions helper in ToolContractGetTool. The candidate
-			// SOURCE SET is caller-specific and intentionally divergent — here it is the registry's invokable
-			// names + the reflection catalog (the hidden long tail clio-run targets), deduped case-insensitively.
+			// the agent can self-correct without an extra discovery round-trip. Ranking is shared with
+			// contract lookup: exact set/update subject matches, then edit distance and name. Candidates
+			// come only from the live invokable registry, which includes the enabled hidden long tail.
 			IReadOnlyList<string> suggestions = BuildSuggestions(toolName);
 			string didYouMean = suggestions.Count > 0
 				? $" Did you mean: {string.Join(", ", suggestions)}?"
@@ -478,7 +477,12 @@ public sealed class ClioRunExecutor(
 	// Matched case-insensitively.
 	private static readonly System.Collections.Generic.HashSet<string> FailureFieldNames =
 		new(StringComparer.OrdinalIgnoreCase) {
-			"error", "message", "detail", "details", "errorInfo", "exception", "stackTrace", "reason"
+			"error", "message", "detail", "details", "errorInfo", "exception", "stackTrace", "reason",
+			// "cause" carries the actionable half of every SysSettingFailure-shaped result (the sys-settings
+			// tools and get-schema-name-prefix), so it is failure-bearing in exactly the sense this set is
+			// about. Registering it is the MCP maintenance policy: an agent-visible failure field the
+			// backstop does not know about is contract drift, whatever the field happens to hold today.
+			"cause"
 		};
 
 	private static bool IsErrorFieldName(string key) => FailureFieldNames.Contains(key);
@@ -580,42 +584,15 @@ public sealed class ClioRunExecutor(
 	private static bool IsBindableToolParameter(ParameterInfo parameter) =>
 		McpToolArgumentSupport.IsBindableToolParameter(parameter);
 
-	// Top-3 nearest real tool names for an unknown `command`, ordered by Levenshtein distance to the
-	// requested name then ordinally by name — the same ranking the BuildSuggestions helper in
-	// ToolContractGetTool uses. The candidate source set here is caller-specific (intentionally divergent):
-	// it is the FULL invokable name
-	// set — the registry's invokable names (the hidden long tail clio-run targets) unioned with the
-	// reflection catalog — deduped case-insensitively. The executor names themselves are excluded so a
-	// near-miss never suggests re-entering clio-run / clio-run-destructive.
+	// Use only the live invokable registry: reflection also includes feature-disabled tools.
 	private IReadOnlyList<string> BuildSuggestions(string requestedName) =>
 		BuildSuggestions(requestedName, toolRegistry);
 
-	// Upper bound on the requested-name length fed into the O(n·m) Levenshtein ranking. This is a cold
-	// error path (only reached on an unknown tool), but the requested name is caller-supplied and could be
-	// arbitrarily long, so it is capped before ranking — mirroring the same 64-char cap the durable handler
-	// applies when sanitizing the name for prose reflection.
-	private const int MaxRequestedNameLengthForRanking = 64;
-
-	// Static form shared with the durable (forgiving) call-tool handler, so both callers rank the same
-	// candidate set with the same algorithm and never drift apart.
-	internal static IReadOnlyList<string> BuildSuggestions(string requestedName, IMcpToolInvokerRegistry registry) {
-		// Cap the caller-supplied name before it drives the per-candidate Levenshtein computation, so an
-		// oversized name cannot inflate the cost of the ranking on this cold error path.
-		string rankingName = requestedName is { Length: > MaxRequestedNameLengthForRanking }
-			? requestedName[..MaxRequestedNameLengthForRanking]
-			: requestedName;
-		return registry.ToolNames
-			.Concat(McpToolSchemaCatalog.RegisteredToolNames)
-			.Where(name => !string.IsNullOrWhiteSpace(name)
-				&& !string.Equals(name, ClioRunTool.ToolName, StringComparison.OrdinalIgnoreCase)
-				&& !string.Equals(name, ClioRunDestructiveTool.ToolName, StringComparison.OrdinalIgnoreCase))
-			.Distinct(StringComparer.OrdinalIgnoreCase)
-			.OrderBy(name => McpToolArgumentSupport.LevenshteinDistance(rankingName, name))
-			.ThenBy(name => name, StringComparer.OrdinalIgnoreCase)
-			.Take(3)
-			.ToArray();
-	}
-
+	// Shared with the durable handler; never suggest re-entering either executor.
+	internal static IReadOnlyList<string> BuildSuggestions(string requestedName, IMcpToolInvokerRegistry registry) =>
+		McpToolArgumentSupport.SuggestToolNames(requestedName, registry.ToolNames.Where(name =>
+			!string.Equals(name, ClioRunTool.ToolName, StringComparison.OrdinalIgnoreCase)
+			&& !string.Equals(name, ClioRunDestructiveTool.ToolName, StringComparison.OrdinalIgnoreCase)));
 
 	private static CallToolResult Error(string message) =>
 		new() {
