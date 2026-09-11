@@ -22,6 +22,103 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class ToolContractGetToolTests {
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
+	[Test]
+	[Category("Unit")]
+	[TestCase("set-sys-setting")]
+	[TestCase("SET-SYS-SETTING")]
+	[Description("A set-system-setting miss ranks the registered update tool before read/create lexical matches.")]
+	public void GetToolContracts_ShouldSuggestUpdateFirst_WhenSetVerbIsRequested(string requestedName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([requestedName]));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "suggesting a tool must not turn a miss into a successful lookup");
+		result.Error!.Suggestions!.First().Should().Be(SysSettingUpdateTool.UpdateSysSettingToolName,
+			because: "the exact subject with synonymous update intent should precede a read tool");
+		result.Error.Suggestions.Should().NotContain(requestedName.ToLowerInvariant(),
+			because: "an unknown name must never suggest itself");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("Retains valid contracts regardless of where unknown names occur in a batch and deduplicates names.")]
+	public void GetToolContracts_ShouldRetainResolvedContracts_WhenBatchContainsUnknownNames(bool unknownFirst) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		string known = SysSettingUpdateTool.UpdateSysSettingToolName;
+		string[] names = unknownFirst
+			? ["page-updte", known, "missing-tool-two", " PAGE-UPDTE ", known.ToUpperInvariant()]
+			: [known, "page-updte", "missing-tool-two", " PAGE-UPDTE ", known.ToUpperInvariant()];
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(names));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "a resolved contract makes a mixed lookup useful");
+		result.Tools!.Select(item => item.Name).Should().Equal([known],
+			because: "unknown guesses must not discard valid contracts or introduce duplicates");
+		result.Error.Should().BeNull(because: "individual misses belong in not-found for a partial success");
+		result.NotFound!.Select(item => item.Name).Should().Equal(["page-updte", "missing-tool-two"],
+			because: "each distinct miss must be reported in request order");
+		result.NotFound[0].Error.Suggestions.Should().Contain(PageUpdateTool.ToolName,
+			because: "suggestions must correspond to the individual miss");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns every unresolved name while preserving the original top-level error when all names miss.")]
+	public void GetToolContracts_ShouldReturnAllMisses_WhenNoNamesResolve() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(["page-updte", "missing-tool-two"]));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "no requested contract resolved");
+		result.Tools.Should().BeNull(because: "the existing all-miss contract has no tools payload");
+		result.NotFound.Should().HaveCount(2, because: "both misses need independent diagnostics");
+		result.Error.Should().Be(result.NotFound![0].Error,
+			because: "existing clients must retain the first tool-not-found error");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects malformed names before resolving any contracts, even in a mixed batch.")]
+	public void GetToolContracts_ShouldRejectWholeRequest_WhenBatchContainsBlankName() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName, " "]));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "blank names remain invalid input rather than lookup misses");
+		result.Tools.Should().BeNull(because: "input validation must precede lookup");
+		result.NotFound.Should().BeNull(because: "invalid input must not be reported as an unknown tool");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Omits the additive not-found field from successful responses without misses.")]
+	public void GetToolContracts_ShouldOmitNotFound_WhenAllNamesResolve() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		string json = JsonSerializer.Serialize(tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName])));
+		using JsonDocument document = JsonDocument.Parse(json);
+
+		// Assert
+		document.RootElement.TryGetProperty("not-found", out _).Should().BeFalse(
+			because: "existing successful response shapes must remain unchanged");
+	}
+
 	// Builds the same REAL invoker registry BuildToolWithRegistry wraps in a tool, so contracts for
 	// uncurated tools derive from the same MCP tool input schema clio-run dispatches against (Codex
 	// review #1, story-6). Exposed separately so ENG-93885 tests can call ToolContractCatalog.GetContracts
