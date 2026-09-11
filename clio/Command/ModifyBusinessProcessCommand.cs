@@ -158,7 +158,17 @@ namespace Clio.Command;
 // floor alone for the same reason. AccessRightsBlockExpectation is the guard instead - it reads the
 // process back after the write and warns when the block did not land, which is the behavioural
 // equivalent that does not punish callers who never send one.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.0.3",
+// From ENG-95986, 1.6.2.1: the Send email TEMPLATE message mode - `email.messageSource`, `email.template`
+// and `email.templateEntity`. The descriptions above now advertise it, and an older server has no such
+// members: its serializer DISCARDS them and answers success, leaving an element in the WRONG mode - no
+// mode at all (which the platform runs as template mode with no template and fails with "Localizable
+// template not found"), or a custom message with no body when a subject travelled with the template.
+// EmailBlockExpectation's template-landed read-back still warns behind this floor, but a floor is the gate
+// and the read-back is the evidence; the rule stays "moves when clio starts ADVERTISING behaviour the
+// deployed server may not have", which is exactly this raise. 1.6.2.1 is the archive cut from the
+// producing commit that carries the mode (crt-process-builder fe18ff3); every in-flight branch numbered
+// below it at the time of the cut.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.2.1",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>

@@ -74,7 +74,7 @@ public class BundledProcessBuilderPackageTests {
 	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1</c> at
 	/// <see cref="ExpectedArchiveVersion"/> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-91853-flow-labels</c>, tag <c>crtprocessbuilder-1.6.1.4</c>), at the commit
+	/// <c>feature/ENG-95986-send-email-template-mode</c>, tag <c>crtprocessbuilder-1.6.2.3</c>), at the commit
 	/// recorded mechanically in
 	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
 	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
@@ -90,16 +90,27 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries, over the 1.3.1.1 performer/lookup delivery it replaces: server-side
-	/// VALIDATION of formula expressions — an <c>expression</c> mapping source and a conditional-flow condition
-	/// are now parsed, their parameter references resolved against the process, and their result type checked
-	/// against the declared target, instead of being stored unchecked. The MINOR digit moved at 1.4.0.0 because
-	/// that is a new capability; every PATCH digit over it fixes something a review or a manual case found, and
-	/// each is raised so a stand still carrying an earlier one is DETECTABLY behind — same-version re-cuts make
-	/// equal version numbers mean nothing, which the convergence check cannot see through.</para>
+	/// <para>What this cut carries, over the 1.6.1.9 flow-label delivery (ENG-91853) on <c>nitro/sprint-3-release</c>
+	/// it was cut above: the Send email TEMPLATE message mode (ENG-95986) — <c>email.messageSource</c>,
+	/// <c>email.template</c> and <c>email.templateEntity</c>, written as the three-parameter template mode with the
+	/// shared <c>EmailTemplateResolver</c>; the subject-only regression fixed (a subject no longer flips a template
+	/// element to a custom message); an <c>IsDBNull</c> guard on the template reads; and the review fixes (describe
+	/// hides a stale template in custom mode, the <c>templateEntity</c> texts name a record ID rather than a Read data
+	/// element's whole-record <c>ResultEntity</c>, which the server refuses; then the second review round: a stored
+	/// subject kept on a non-switching update, the mode inferred from a stored template on a mode-less element,
+	/// the custom-alone refusal, and the shared entity/parameter seams). The version is 1.6.2.3 — 1.6.2.1 and
+	/// 1.6.2.2 were the earlier review rounds' cuts, each superseded on the same branch before it shipped; the
+	/// create/modify FLOOR stays at 1.6.2.1, the first archive carrying the mode, which this one satisfies. 1.6.2.0 is
+	/// BURNED — it was cut from a commit below ENG-91853, so an archive numbered above 1.6.1.9 would have lacked the
+	/// flow labels 1.6.1.4–1.6.1.9 ship (the "newer stops meaning contains" trap of bundled-packages.md), and its tag
+	/// still names that commit; the .2 minor step over 1.6.1.x records that a new element behaviour the clio
+	/// descriptions advertise is a capability. Each raise is what makes a stand still carrying an earlier archive
+	/// DETECTABLY behind — same-version re-cuts make equal version numbers mean nothing, which the convergence
+	/// check cannot see through.</para>
 	/// <para>
-	/// The cut ran with the package's own gate tests passing rather than under <c>-SkipTests</c>, and the
-	/// script verified the archive inventory it produced. The byte-for-byte comparison of every archive entry
+	/// The cut ran under <c>-SkipTests</c> (the cutting host builds clio with the .NET 8 SDK and the test project
+	/// targets net10.0); the package's own suite was run on the producing commit beforehand (1718 pass, 0 fail) and
+	/// this guard fixture after the cut, and the script verified the archive inventory it produced. The byte-for-byte comparison of every archive entry
 	/// against the commit's CHECKOUT rendering was NOT re-run here, and the clean-tree refusal does NOT cover
 	/// it: a clean TREE and a clean CHECKOUT are different states. `git add` normalises to LF in the INDEX while
 	/// the working tree keeps what was written, so LF files can be committed, leave the tree clean, pass the
@@ -166,17 +177,16 @@ public class BundledProcessBuilderPackageTests {
 	/// and this removes the operator's editor and git configuration from the hash instead of gating on them.
 	/// </para>
 	/// <para>
-	/// Measured for the archive pinned below, entry by entry against
-	/// <c>git show &lt;ExpectedProducingCommit&gt;:&lt;path&gt;</c>: 157 entries, 156 byte-IDENTICAL to the
-	/// commit blob, 0 line-ending-only differences, 0 content differences. The 157th is
-	/// <c>descriptor.json</c>, which by contract cannot match the pre-restamp commit and is pinned separately by
-	/// <see cref="ExpectedArchiveVersion"/> and <see cref="ExpectedDescriptorModifiedOnUtc"/>. That audit was
-	/// re-run for THIS cut rather than inherited from an earlier one.
+	/// The entry-by-entry byte audit (every archive entry compared against
+	/// <c>git show &lt;ExpectedProducingCommit&gt;:&lt;path&gt;</c>; last measured on the 1.6.1.2 cut as 157 entries,
+	/// 156 byte-identical, the 157th being the restamped <c>descriptor.json</c>) was NOT re-run for the 1.6.2.3 cut.
+	/// Its reproducibility rests on the export flags above, which are what made the earlier audit come out clean;
+	/// a reviewer can repeat the audit from the producing commit alone.
 	/// </para>
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"ECF7618DC827655E3578603BA249CBC8618B72F89890CD1E9610E45CAFDDF649";
+		"C636411EB04CEACC97A07B028E3758345E7AB1BA66257AED183DEA61F8150B70";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -204,7 +214,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.1.9";
+	private const string ExpectedArchiveVersion = "1.6.2.3";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -216,7 +226,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "ee5188ef404dfae299a373f1d67adfa9bb13df3b";
+	private const string ExpectedProducingCommit = "a1263e5c1bb9a6dcb587177f1edd7465f765f657";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -242,7 +252,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789033773000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789128281000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -793,10 +803,11 @@ public class BundledProcessBuilderPackageTests {
 			because: $"every gate must be visible to this scan and no other type may carry one. Add or remove "
 				+ $"a gate and {nameof(ProcessBuilderGatedTypes)} moves in the same commit, so a lost "
 				+ "declaration cannot pass as slack and a new one cannot arrive unreviewed");
-		// The loop EXECUTES today: four of the seven carry a version literal, and they do NOT agree with each
-		// other — create at 1.4.0.44, modify at 1.6.0.1 (they diverged when modify's page-change
-		// reconciliation promise needed a newer archive than create's), and both versioning options at the
-		// version their own operations first ship in. That spread is the reason the assertion counts literals
+		// The loop EXECUTES today: four of the seven carry a version literal, and they do NOT all agree with
+		// each other — create, modify and modify-as-new-version at 1.6.2.1 since ENG-95986 (create and modify had
+		// diverged before, when modify's page-change reconciliation promise needed a newer archive than create's;
+		// the new-version route followed because it shares the operations vocabulary and runs no read-back), and
+		// set-active-version at the 1.6.1.0 its operation first ships in. That spread is the reason the assertion counts literals
 		// rather than pinning a value: no single number describes the set. It was vacuous when written,
 		// deliberately — the invariant had to be in place before the first literal appeared, because the
 		// commit that adds one is exactly when it must already work. It replaces the old pin (descriptor

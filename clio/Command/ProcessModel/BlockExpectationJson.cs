@@ -158,9 +158,37 @@ internal static class BlockExpectationJson {
 		}
 
 		try {
-			return JsonNode.Parse(json);
+			JsonNode? node = JsonNode.Parse(json);
+			Materialize(node);
+			return node;
 		} catch (JsonException) {
 			return null;
+		} catch (ArgumentException) {
+			// A duplicate property name is accepted by JsonNode.Parse and only surfaces when the JsonObject builds
+			// its dictionary - on the first indexer access or enumeration - as ArgumentException
+			// (dotnet/runtime#70604). Without the walk above that first access would happen in the CALLERS, outside
+			// this try, so the catch would be inert and the exception would still take every other read-back
+			// warning down with it through the commands' blanket verification catch. The payload is the caller's,
+			// so a duplicate key is treated like unparseable text: the verification is skipped, not the command.
+			return null;
+		}
+	}
+
+	// Walks the parsed tree once so every JsonObject materialises under the catch in Parse. Enumerating a
+	// JsonObject is what triggers its lazy dictionary build (and the duplicate-key throw); arrays are walked
+	// for the objects nested in them (elements[], operations[]).
+	private static void Materialize(JsonNode? node) {
+		switch (node) {
+			case JsonObject jsonObject:
+				foreach (KeyValuePair<string, JsonNode?> property in jsonObject) {
+					Materialize(property.Value);
+				}
+				break;
+			case JsonArray jsonArray:
+				foreach (JsonNode? item in jsonArray) {
+					Materialize(item);
+				}
+				break;
 		}
 	}
 }

@@ -724,6 +724,7 @@ public sealed class ServerProcessDescriberTests {
 			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SendEmail1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"sendemail\",\"userTaskName\":\"EmailTemplateUserTask\","
 			+ "\"email\":{\"mode\":\"manual\",\"sender\":\"[#Lookup.5e487721-02e2-48ee-b755-dfa5160f5315.11111111-2222-3333-4444-555555555555#]\",\"senderDisplay\":\"sales@example.com\","
 			+ "\"subject\":\"After modify\",\"hasBody\":true,\"body\":\"<p>Hi [[param:ContactName]]</p>\",\"importance\":\"high\",\"ignoreErrors\":true,"
+			+ "\"messageSource\":\"custom\",\"template\":null,\"templateDisplay\":null,\"templateObject\":null,\"templateEntity\":null,"
 			+ "\"to\":[{\"name\":\"Recipient1\",\"uid\":\"p1\",\"type\":\"MaxSizeText\",\"source\":\"ConstValue\",\"value\":\"to@example.com\"}],"
 			+ "\"performer\":{\"type\":\"role\",\"role\":\"[#Lookup.84f44b9a-4bc3-4cbf-a1a8-cec02c1c029c.a29a3ba5-4b0d-de11-9a51-005056c00008#]\",\"roleDisplay\":\"All employees\",\"showPage\":true}}}],"
 			+ "\"flows\":[],\"parameters\":[]}}");
@@ -756,6 +757,43 @@ public sealed class ServerProcessDescriberTests {
 			because: "roleDisplay carries the resolved role name for a human reader");
 		email.Performer.ShowPage.Should().BeTrue(
 			because: "the show-execution-page flag is part of the performer block");
+		email.MessageSource.Should().Be("custom",
+			because: "the message-mode token (ENG-95986) maps to the DTO instead of landing in the extension bag");
+		email.Template.Should().BeNull(because: "a custom-message element reports no template");
+	}
+
+	[Test]
+	[Description("Deserializes a TEMPLATE-mode Send email element (messageSource, template id, templateDisplay, templateObject and the templateEntity binding) into the DescribedEmail DTO, so the template fields (ENG-95986) survive read-back as typed members rather than only in the extension bag.")]
+	public void Describe_ShouldReadTemplateModeConfiguration_WhenServerReportsIt() {
+		// Arrange - the shape a CrtProcessBuilder with template mode returns, as read on dev-local 2026-09-09
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000003\",\"name\":\"AskFeedback\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"sendemail\",\"userTaskName\":\"EmailTemplateUserTask\","
+			+ "\"email\":{\"mode\":\"auto\",\"messageSource\":\"template\",\"hasBody\":false,\"body\":null,\"ignoreErrors\":true,"
+			+ "\"template\":\"c8fb10f1-b79c-4b64-9d15-72f40ee7167b\",\"templateDisplay\":\"Case feedback request notification\",\"templateObject\":\"Case\","
+			+ "\"templateEntity\":{\"name\":\"EmailTemplateEntityId\",\"caption\":\"Record for macros\",\"type\":\"Lookup\",\"referenceSchema\":\"Case\",\"source\":\"Script\",\"value\":\"[#[IsOwnerSchema:false].[IsSchema:false].[Parameter:{cb24a474-4404-497f-8cbe-d68822d59aa5}]#]\",\"valueDisplay\":\"Case\"}}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedEmail email = result.Value.Elements[0].Email;
+		email.MessageSource.Should().Be("template", because: "the mode token maps to the DTO");
+		email.Template.Should().Be("c8fb10f1-b79c-4b64-9d15-72f40ee7167b",
+			because: "the stored template id is what re-applies through email.template");
+		email.TemplateDisplay.Should().Be("Case feedback request notification",
+			because: "the template's name is what a human reader needs beside the id");
+		email.TemplateObject.Should().Be("Case",
+			because: "the macro-source object tells the agent whether personalization is possible at all");
+		email.TemplateEntity.Should().NotBeNull(because: "the macro-source binding must survive read-back");
+		email.TemplateEntity.Value.Should().Contain("[Parameter:{",
+			because: "the binding is a parameter meta-path the agent can map back to a processParameter");
+		email.HasBody.Should().BeFalse(because: "a template element suppresses a stale body so the block re-applies");
+		email.Mode.Should().Be("auto", because: "the send mode is reported identically in both message modes (AC-7)");
+		email.IgnoreErrors.Should().BeTrue(because: "ignoreErrors is reported identically in both message modes (AC-7)");
 	}
 
 	[Test]
