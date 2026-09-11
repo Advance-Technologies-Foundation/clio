@@ -152,9 +152,15 @@ public class BundledProcessBuilderPackageTests {
 	/// existing name-conflict check; splitting resolution from writing removed that side effect, so
 	/// <c>ResolveDataSources</c> now runs its own intra-request duplicate check, mirroring the one
 	/// <c>ResolveButtons</c> already runs for completing buttons.</para>
+	/// <para>1.6.2.12 (this cut): the previous cut's new check used <c>StringComparer.Ordinal</c>, but the
+	/// runtime's parameter dictionary is case-insensitive while the generated parameter name is only
+	/// case-sensitive as TEXT, so <c>PDS</c> and <c>pds</c> in one request both passed the check and then
+	/// collided at write time the same way an exact duplicate does. Switched to <c>OrdinalIgnoreCase</c>,
+	/// matching the sibling existing-parameter conflict check right below it and <c>ResolveButtons</c>' own
+	/// duplicate check.</para>
 	/// <para>
 	/// This cut DID run under <c>-SkipTests</c>. The package's suite is green on the producing commit
-	/// (1870 of 1871 with the CI filter) except for
+	/// (1871 of 1872 with the CI filter) except for
 	/// <c>CiContractGuardTests.FeatureToggling_LoadedIdentityMatchesThePlatformDemandAndTheTestKit</c>, which
 	/// fails on this machine because the local <c>.application/net-framework/core-bin</c> binds an older
 	/// <c>Creatio.FeatureToggling</c> than the test project references — a stale local dependency set, not a
@@ -235,7 +241,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"E59F311546FFE2F2EFCD24BEE9FD2762B2A9C537BDE2681F23FF524080EF2988";
+		"4ACFB27CD24421AD62EEF1402A46D8F8753905F0E48709250161B16A08928E5A";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -263,7 +269,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.2.11";
+	private const string ExpectedArchiveVersion = "1.6.2.12";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -275,7 +281,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "093edd213047e444308d3ad43090caa273dcb45e";
+	private const string ExpectedProducingCommit = "bc5a9d1c465d33e40fc60cf05408fd7864f1bdc3";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -301,7 +307,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789148449000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789149468000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
