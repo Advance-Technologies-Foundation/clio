@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Threading;
 using Clio.Common;
 using Clio.Common.Responses;
 
@@ -42,13 +43,26 @@ internal abstract class BasePackageOperation
 		return packageInfo.Descriptor.UId;
 	}
 
-	protected TResponse SendRequest<TRequest, TResponse>(string serviceName, string methodName, TRequest request)
+	/// <summary>
+	/// Posts <paramref name="request"/> to a package service method.
+	/// </summary>
+	/// <param name="serviceName">Service the method belongs to (for example <c>PackageService.svc</c>).</param>
+	/// <param name="methodName">Method to invoke.</param>
+	/// <param name="request">Request payload, serialized by <see cref="CreateRequestData"/>.</param>
+	/// <param name="requestTimeoutMs">
+	/// Per-request timeout in milliseconds. Defaults to <see cref="Timeout.Infinite"/>, which keeps the
+	/// historical behavior; pass a bound when the call runs inside an already-failing operation, where an
+	/// environment that stops answering must cost a bounded wait rather than block the caller forever.
+	/// </param>
+	/// <returns>The deserialized response.</returns>
+	protected TResponse SendRequest<TRequest, TResponse>(string serviceName, string methodName, TRequest request,
+		int requestTimeoutMs = Timeout.Infinite)
 		where TResponse : BaseResponse, new()
 	{
 		string urlPart = $"/{string.Join("/", "ServiceModel", serviceName, methodName)}";
 		string fullUrl = _serviceUrlBuilder.Build(urlPart);
 		string requestData = CreateRequestData(request);
-		return _applicationClient.ExecutePostRequest<TResponse>(fullUrl, requestData);
+		return _applicationClient.ExecutePostRequest<TResponse>(fullUrl, requestData, requestTimeoutMs);
 	}
 
 	protected abstract string CreateRequestData<TRequest>(TRequest request);
