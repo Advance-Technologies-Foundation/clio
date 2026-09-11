@@ -26,6 +26,29 @@ namespace Clio.Common;
 /// reach a caller as an empty result.
 /// </para>
 /// <para>
+/// The provider's per-member behaviour is NOT uniform, and the difference decides what this decorator
+/// can see (verified with ilspycmd against ATF.Repository 2.0.3.5, issue #1377):
+/// <c>GetItems</c> and <c>ExecuteProcess</c> catch <c>Exception</c>, so everything becomes
+/// <c>Success == false</c>; <c>BatchExecute</c> catches only <c>WebException</c>, so any other fault
+/// ESCAPES as a thrown exception; <c>GetDefaultValues</c> is a stub that returns <c>Success = true</c>
+/// without contacting the server at all.
+/// </para>
+/// <para>
+/// A <c>Success == false</c> whose text reads "The operation was canceled." or "A task was canceled."
+/// is a TIMEOUT, never a caller's cancellation. <see cref="IDataProvider"/> carries no
+/// <see cref="System.Threading.CancellationToken"/> and the synchronous
+/// <c>CreatioClient.ExecutePostRequest</c> (creatio.client 2.0.2) passes
+/// <c>CancellationToken.None</c>, so <c>CreateTimeout</c>'s <c>CancelAfter</c> is the only cancellation
+/// source in the whole stack. It surfaces in three shapes: a
+/// <c>WebException(WebExceptionStatus.Timeout)</c> from the authentication step's 100 000 ms cap, an
+/// <c>AggregateException(TaskCanceledException)</c> from the <c>Task.Result</c> body read once the
+/// request cap expires (1 800 000 ms for a select, 600 000 ms for a batch), or that same text carried
+/// in <c>ErrorMessage</c> after <c>GetItems</c> / <c>ExecuteProcess</c> swallowed it. None of the three
+/// is an <see cref="OperationCanceledException"/>, and none of them may be reported as one: doing so
+/// would hide every timeout from the operator and make <c>CompilationHistoryPoller</c>'s
+/// <c>exception is not OperationCanceledException</c> filter tolerate a dead environment forever.
+/// </para>
+/// <para>
 /// <see cref="IDataProvider.GetSysSettingValue{T}"/> and <see cref="IDataProvider.GetFeatureEnabled"/>
 /// return a plain value with no <c>Success</c> flag to inspect, and their provider implementations do
 /// <b>not</b> catch - a login page instead of JSON surfaces as a raw <c>JsonReaderException</c>. Those
@@ -118,8 +141,11 @@ public sealed class ClassifyingDataProvider : IDataProvider {
 		try {
 			return call();
 		} catch (OperationCanceledException) {
-			//Cancellation is the caller's own decision, not a provider failure; rewriting it would hide
-			//a co-operative shutdown behind a diagnosis about credentials.
+			//A decorator-contract guard, not a production path: no caller token reaches this stack (see
+			//the transport paragraph in the class remarks), so a real timeout arrives as a WebException
+			//or an AggregateException and is classified below. Kept so that a future consumer which does
+			//own a token gets its co-operative shutdown back unchanged rather than as a credentials
+			//diagnosis.
 			throw;
 		} catch (AuthenticationException) {
 			//Already the strongest available diagnosis, whichever way CategorizeFailure later reads it
