@@ -54,7 +54,7 @@ public sealed class DownloadSysSettingFileService(ISysSettingsManager settings, 
 		if (fileSystem.File.Exists(destination) || fileSystem.Directory.Exists(destination)) {
 			throw new IOException("Destination already exists; choose a new filename.");
 		}
-		string directory = fileSystem.Path.GetDirectoryName(destination)!;
+		string directory = fileSystem.Path.GetDirectoryName(destination);
 		if (!fileSystem.Directory.Exists(directory)) {
 			throw new DirectoryNotFoundException("Destination directory does not exist.");
 		}

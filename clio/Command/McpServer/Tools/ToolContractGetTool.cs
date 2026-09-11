@@ -6227,7 +6227,7 @@ internal static class ToolContractCatalog {
 			"Creates a new Creatio system setting and optionally assigns an initial All-Users default value. " +
 			"Allowed value-type-name values match Creatio internal names: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, " +
 			"Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup, Binary. " +
-			"Aliases: Currency = Money, Decimal = Float. Binary settings (a value stored as blob data, e.g. the logo) are write-only: assign the value via update-sys-setting with value-file-path; reading a Binary value back is not exposed through MCP. " +
+			"Aliases: Currency = Money, Decimal = Float. Binary settings store opaque bytes: assign the value via update-sys-setting with value-file-path; download exact bytes via clio-run command=download-sys-setting-file with a required absolute file-name. No MIME type or extension is inferred. " +
 			"For Lookup type, reference-schema-name is required.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, SysSettingCodeFieldName, "name", SysSettingValueTypeFieldName],
@@ -6235,7 +6235,7 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(SysSettingCodeFieldName, StringType, "Sys-setting code (unique)."),
 					Field("name", StringType, "Display name of the sys-setting."),
-					Field(SysSettingValueTypeFieldName, StringType, "Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup, Binary. Aliases: Currency = Money, Decimal = Float. Binary (blob data, e.g. the logo) is write-only via update-sys-setting value-file-path."),
+					Field(SysSettingValueTypeFieldName, StringType, "Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup, Binary. Aliases: Currency = Money, Decimal = Float. Binary stores opaque bytes: upload via update-sys-setting value-file-path and download via clio-run command=download-sys-setting-file with a required absolute file-name."),
 					Field(SysSettingValueFieldName, StringType, "Optional initial All-Users default value applied via update-sys-setting after creation."),
 					Field("description", StringType, "Optional description text."),
 					Field("is-cacheable", BooleanType, "Whether the setting is cacheable. Defaults to true."),

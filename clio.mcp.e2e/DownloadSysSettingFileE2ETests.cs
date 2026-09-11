@@ -35,7 +35,7 @@ public sealed class DownloadSysSettingFileE2ETests : McpContractFixtureBase {
 		string directory = CreateFixtureDirectory("binary-download");
 		string code = $"UsrDownload{Guid.NewGuid():N}"[..32];
 		byte[] bytes = kind switch {
-			"png" => Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="),
+			"png" => Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=="),
 			"txt" => Encoding.UTF8.GetBytes("Hello Ω 日本語\r\nsecond line\n"),
 			"json" => Encoding.UTF8.GetBytes("{\"message\":\"日本語\",\"number\":42}\r\n"),
 			"xml" => Encoding.Unicode.GetPreamble().Concat(Encoding.Unicode.GetBytes("<?xml version=\"1.0\" encoding=\"utf-16\"?><root>Ω</root>\r\n")).ToArray(),
