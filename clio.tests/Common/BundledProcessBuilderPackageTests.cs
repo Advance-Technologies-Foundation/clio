@@ -121,9 +121,18 @@ public class BundledProcessBuilderPackageTests {
 	/// guards with the union of a frozen pre-batch capture and a fresh live re-scan, so neither a dependent cleared
 	/// nor one added mid-batch escapes detection. Every PATCH digit over 1.6.2.5 fixes something a review or a
 	/// live-test run found, and each is raised so a stand still carrying an earlier one is DETECTABLY behind.</para>
+	/// <para>1.6.2.8 (this cut): two more post-merge review findings on the same feature branch, both confirmed
+	/// against current code before fixing. <c>ProcessElementDependencyScanner.CaptureSnapshot</c> now also walks
+	/// <c>schema.ExecutionContexts</c> — a second schema-level parameter collection, distinct from
+	/// <c>schema.Parameters</c>, that <c>ProcessParameterService</c>'s parameter-delete guard already scanned; a
+	/// reference living only there was invisible to every retarget/mode-change guard above. And
+	/// <c>ReadDataConfigBinder.Describe</c> now omits <c>columns</c>/<c>sort</c> for <c>count</c>/<c>aggregation</c>
+	/// — a shipped Function-mode element can carry stale stored values from a designer-side mode switch (the
+	/// designer does not clear them the way this package's own <c>Apply</c> does), and reporting them produced a
+	/// block <c>build</c>/<c>modify</c> immediately refuses, breaking the round-trip.</para>
 	/// <para>
 	/// This cut DID run under <c>-SkipTests</c>. The package's suite is green on the producing commit
-	/// (1865 of 1866 with the CI filter) except for
+	/// (1867 of 1868 with the CI filter) except for
 	/// <c>CiContractGuardTests.FeatureToggling_LoadedIdentityMatchesThePlatformDemandAndTheTestKit</c>, which
 	/// fails on this machine because the local <c>.application/net-framework/core-bin</c> binds an older
 	/// <c>Creatio.FeatureToggling</c> than the test project references — a stale local dependency set, not a
@@ -204,7 +213,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"87356982732683451E31124029900E92CE913808C2A84C87DAB3673CAF6DF824";
+		"9C64E60A4E38E01C812E17A91C47F1DE37D254EE183485BED2A736C562B80D48";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -232,7 +241,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.2.7";
+	private const string ExpectedArchiveVersion = "1.6.2.8";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -244,7 +253,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "752f145f4d1a5597f669e7d71fa3a5c3dfee0fce";
+	private const string ExpectedProducingCommit = "237b82a9982497f0849f4728a04cd472d3fdc940";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -270,7 +279,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789142486000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789143700000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
