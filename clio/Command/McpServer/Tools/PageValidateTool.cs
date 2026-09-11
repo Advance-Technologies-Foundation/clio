@@ -107,9 +107,7 @@ public sealed class PageValidateTool(
 		if (httpContextAccessor?.HttpContext is not null) {
 			return (string.Empty, InvalidBodySource(HttpBodyFileMessage));
 		}
-		if (!fileSystem.Path.IsPathFullyQualified(args.BodyFile)
-				|| args.BodyFile.StartsWith(@"\\", StringComparison.Ordinal)
-				|| args.BodyFile.StartsWith("//", StringComparison.Ordinal)) {
+		if (!IsAbsoluteLocalPath(args.BodyFile)) {
 			return (string.Empty, InvalidBodySource(NonLocalBodyFileMessage));
 		}
 		try {
@@ -149,7 +147,7 @@ public sealed class PageValidateTool(
 			await stream.ReadExactlyAsync(bytes, cancellationToken).ConfigureAwait(false);
 			using var memory = new MemoryStream(bytes, writable: false);
 			using var reader = new StreamReader(memory, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-			string body = reader.ReadToEnd();
+			string body = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
 			return string.IsNullOrWhiteSpace(body)
 				? (string.Empty, InvalidBodySource(EmptyBodyFileMessage))
 				: (body, null);
@@ -162,6 +160,11 @@ public sealed class PageValidateTool(
 			return (string.Empty, InvalidBodySource(UnreadableBodyFileMessage));
 		}
 	}
+
+	private bool IsAbsoluteLocalPath(string bodyFile) =>
+		fileSystem.Path.IsPathFullyQualified(bodyFile)
+		&& !bodyFile.StartsWith(@"\\", StringComparison.Ordinal)
+		&& !bodyFile.StartsWith("//", StringComparison.Ordinal);
 
 	private static PageValidateResponse InvalidBodySource(string error) => new() {
 		Valid = false,
