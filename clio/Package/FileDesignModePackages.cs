@@ -221,6 +221,9 @@ namespace Clio.Package
 			string responseFormServer = _applicationClient.ExecutePostRequest(endpoint, string.Empty,Timeout.Infinite, maxRequestAttempts, delayBetweenRetryAttemptsSec);
 			var response = _jsonConverter.DeserializeObject<PackageSynchronizationResponse>(responseFormServer);
 			if (response.Errors is { Length: > 0 }) {
+				if (!response.Success && response.ErrorInfo is not null) {
+					PrintErrorOperationMessage(storageName, GetErrorDetails(response.ErrorInfo));
+				}
 				foreach (PackageSynchronizationError error in response.Errors) {
 					PrintErrorOperationMessage(storageName,
 						$"Synchronization rejected item '{error?.WorkspaceItem?.Name ?? "unknown"}': " +

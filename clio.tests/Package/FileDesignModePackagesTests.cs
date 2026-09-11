@@ -98,6 +98,28 @@ public class FileDesignModePackagesTests {
 		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(message => message.Contains("completed")));
 	}
 
+	[Test]
+	[Description("A failed synchronization retains both the overall error and item diagnostics.")]
+	public void LoadPackagesToDb_ShouldRetainOverallError_WhenItemErrorsAreAlsoPresent() {
+		// Arrange
+		ArrangeFileDesignModeProbe(success: true, value: true);
+		ArrangeLoadResponse(LoadPackagesToDbUrl, success: false);
+		_jsonConverter.DeserializeObject<PackageSynchronizationResponse>("load-response")
+			.Returns(new PackageSynchronizationResponse {
+				Success = false,
+				ErrorInfo = new ErrorInfo { Message = "overall failure" },
+				Errors = [new PackageSynchronizationError { ErrorInfo = new ErrorInfo { Message = "item failure" } }]
+			});
+
+		// Act
+		FileDesignModeLoadResult result = _sut.LoadPackagesToDb();
+
+		// Assert
+		result.Should().Be(FileDesignModeLoadResult.LoadRefused, because: "both diagnostics describe a failed synchronization");
+		_logger.Received().WriteError(Arg.Is<string>(message => message.Contains("overall failure")));
+		_logger.Received().WriteError(Arg.Is<string>(message => message.Contains("item failure")));
+	}
+
 	[SetUp]
 	public void SetUp() {
 		_applicationClient = Substitute.For<IApplicationClient>();
