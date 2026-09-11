@@ -450,6 +450,52 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A schema name ending in FormPage is a form page regardless of the resolved template rule.")]
+	public void IsFormPage_SchemaNameSuffix_TakesPrecedenceOverTemplateRule() {
+		// Arrange
+		var listRule = new TemplateMappingRule { Web = "ListPageV3Template", IsFormPage = false };
+
+		// Act
+		bool result = MobilePageConversionGuideTool.IsFormPage("UsrApp_FormPage", "ListPageV3Template", listRule);
+
+		// Assert
+		result.Should().BeTrue(because: "a page literally named *FormPage is a form page regardless of its template rule");
+	}
+
+	[Test]
+	[Description("A cataloged template rule's IsFormPage flag is authoritative when the schema name carries no FormPage suffix, including a template the old hardcoded allowlist never named.")]
+	public void IsFormPage_UsesTemplateRuleFlag_WhenSchemaNameSuffixAbsent() {
+		// Arrange
+		var rightAreaRule = new TemplateMappingRule { Web = "PageWithRightAreaAndTabsFreedomTemplate", IsFormPage = true };
+		var listRule = new TemplateMappingRule { Web = "ListPageV3Template", IsFormPage = false };
+
+		// Act
+		bool rightAreaResult = MobilePageConversionGuideTool.IsFormPage(
+			"UsrApp_Details", "PageWithRightAreaAndTabsFreedomTemplate", rightAreaRule);
+		bool listResult = MobilePageConversionGuideTool.IsFormPage("UsrApp_Details", "ListPageV3Template", listRule);
+
+		// Assert
+		rightAreaResult.Should().BeTrue(
+			because: "the catalog flag recognizes this template as a form page even though the hardcoded "
+				+ "fallback list never named it");
+		listResult.Should().BeFalse(because: "the catalog flag says this template is not a form page");
+	}
+
+	[Test]
+	[Description("With no matched template rule (uncataloged custom template, or rules unavailable), IsFormPage falls back to the hardcoded template-name allowlist.")]
+	public void IsFormPage_FallsBackToHardcodedTemplateNames_WhenNoRuleMatched() {
+		// Arrange & Act
+		bool knownRootResult = MobilePageConversionGuideTool.IsFormPage(
+			"UsrApp_Details", "BasePageFreedomTemplate", templateRule: null);
+		bool unknownResult = MobilePageConversionGuideTool.IsFormPage(
+			"UsrApp_Details", "SomeCustomUncatalogedTemplate", templateRule: null);
+
+		// Assert
+		knownRootResult.Should().BeTrue(because: "the fallback allowlist still recognizes the hardcoded root template names");
+		unknownResult.Should().BeFalse(because: "an uncataloged template with no FormPage suffix matches neither the fallback allowlist nor a rule");
+	}
+
+	[Test]
 	[Description("Container detection uses the registry container flag; an unknown type falls back to a name-suffix heuristic.")]
 	public void Analyze_ContainerDetection_UsesRegistryFlagThenNameSuffix() {
 		PageBundleInfo bundle = Bundle("""

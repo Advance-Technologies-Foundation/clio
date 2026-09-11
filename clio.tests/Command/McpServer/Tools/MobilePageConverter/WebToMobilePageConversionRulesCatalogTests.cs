@@ -43,6 +43,32 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
+	[Description("Each bundled template rule declares isFormPage matching whether it is an edit/form (record) template or a list/section/blank one — the authoritative source MobilePageConversionGuideTool.IsFormPage consults before falling back to its hardcoded template-name heuristic.")]
+	public void LoadBundled_TemplatesDeclareIsFormPage() {
+		// Arrange & Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		rules.Templates.Single(t => t.Web == "BasePageFreedomTemplate").IsFormPage.Should().BeTrue(
+			because: "the base non-tabbed record page is a form page");
+		rules.Templates.Single(t => t.Web == "PageWithTabsFreedomTemplate").IsFormPage.Should().BeTrue(
+			because: "the tabbed record page is a form page");
+		rules.Templates.Single(t => t.Web == "PageWithRightAreaAndTabsFreedomTemplate").IsFormPage.Should().BeTrue(
+			because: "the right-area tabbed record page is a form page, matching the hardcoded fallback's intent "
+				+ "even though it was never in the old 3-name allowlist");
+		rules.Templates.Single(t => t.Web == "BasePageTemplate").IsFormPage.Should().BeTrue(
+			because: "the classic base page template also maps to a mobile record page");
+		rules.Templates.Single(t => t.Web == "ListPageV3Template").IsFormPage.Should().BeFalse(
+			because: "a section/list template is not a form page and omits the key, defaulting to false");
+		rules.Templates.Single(t => t.Web == "ListPageV2Template").IsFormPage.Should().BeFalse(
+			because: "a section/list template is not a form page and omits the key, defaulting to false");
+		rules.Templates.Single(t => t.Web == "BlankPageTemplate").IsFormPage.Should().BeFalse(
+			because: "a blank page is not a form page and omits the key, defaulting to false");
+		rules.Templates.Single(t => t.Web == "BaseTemplate").IsFormPage.Should().BeFalse(
+			because: "the structural root template is not itself a form page and omits the key, defaulting to false");
+	}
+
+	[Test]
 	[Description("ENG-95046: the grid mapping is a components entry carrying filters + viewConfigTemplates (the root viewConfigTemplates section was folded in). It carries NO web/mobile pair: the filters identify the source and the template's own value.type declares the target — which is also what the converter derives the element's mobile type from.")]
 	public void LoadBundled_GridEntryCarriesFiltersAndViewConfigTemplate() {
 		// Arrange & Act

@@ -153,6 +153,22 @@ public sealed class TemplateMappingRule {
 	public string Mobile { get; init; }
 
 	/// <summary>
+	/// Whether a page built on this web template is an edit/form (record) page rather than a
+	/// list/section page. Opt-in per template — set <c>true</c> only on the rules that ARE a form
+	/// (e.g. <c>BasePageFreedomTemplate</c>, <c>PageWithTabsFreedomTemplate</c>); a list/section
+	/// template (e.g. <c>ListPageV3Template</c>) simply omits the key and gets the type default
+	/// (<c>false</c>), so nothing needs to be written where the answer is "no". This is the
+	/// AUTHORITATIVE source once a page's effective template resolves to a cataloged rule; it exists
+	/// only to tailor the read-only section-registration advice (the default mobile edit page is a
+	/// manual step), never to drive container/component mapping. See
+	/// <see cref="MobilePageConversionGuideTool.IsFormPage"/>, which falls back to a schema-name-suffix
+	/// / hardcoded-template-name heuristic only when no rule matches (e.g. an uncataloged custom
+	/// template, or the rules file failed to load).
+	/// </summary>
+	[JsonPropertyName("isFormPage")]
+	public bool IsFormPage { get; init; }
+
+	/// <summary>
 	/// Container-name correspondence between the web template and the mobile template. Used to
 	/// remap each converted element's <c>parentName</c> from its web container to the mobile one.
 	/// </summary>
