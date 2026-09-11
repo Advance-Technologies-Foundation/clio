@@ -3,17 +3,16 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
-using Clio.Common;
 
-namespace Clio.Command.McpServer;
+namespace Clio.Common;
 
 /// <summary>
 /// Scrubs sensitive tokens out of an exception-derived message before it is surfaced to a caller -
 /// the MCP client, and since issue #1333 the CLI output and the log as well (it is called from
 /// <c>Clio.Common.ClassifyingDataProvider</c>, <c>SysSettingsManager</c> and
-/// <c>ExceptionReadableMessageExtension</c>). The type still lives under <c>Command/McpServer</c>; moving
-/// it to <c>Clio.Common</c> is a 90-file mechanical change deliberately left out of this pull request. The MCP tool result is copied verbatim into the model/host transcript and is frequently
-/// logged or forwarded to a third-party LLM, so inner-most messages from the data/HTTP/DB layers —
+/// <c>ExceptionReadableMessageExtension</c>). The MCP tool result is copied verbatim into the model/host
+/// transcript and is frequently logged or forwarded to a third-party LLM, so inner-most messages from the
+/// data/HTTP/DB layers —
 /// which routinely carry absolute file paths, full request URIs (including the target host for
 /// <c>*-by-credentials</c> flows), connection-string hosts, and credential values — must not leak.
 /// <para>

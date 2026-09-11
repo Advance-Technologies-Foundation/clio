@@ -696,7 +696,7 @@
             "Clio.Tests.Command.McpServer.RequiredArgValidationTests",
             "Clio.Tests.Command.McpServer.RestartToolTests",
             "Clio.Tests.Command.McpServer.SchemaEnrichmentServiceTests",
-            "Clio.Tests.Command.McpServer.SensitiveErrorTextRedactorTests",
+            "Clio.Tests.Common.SensitiveErrorTextRedactorTests",
             "Clio.Tests.Command.McpServer.SessionContainerCacheTests",
             "Clio.Tests.Command.McpServer.SetLogoToolTests",
             "Clio.Tests.Command.McpServer.SqlSchemaGetToolTests",

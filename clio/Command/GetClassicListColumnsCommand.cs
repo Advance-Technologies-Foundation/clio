@@ -151,10 +151,10 @@ public class GetClassicListColumnsCommand(IClassicListColumnResolver resolver, I
 		// read), not just the one GetDesignPackageUId message that reaches Notes. The redactor returns already
 		// clean text unchanged, so the caller-actionable messages survive intact.
 		if (!string.IsNullOrEmpty(response?.Error)) {
-			response.Error = Clio.Command.McpServer.SensitiveErrorTextRedactor.Redact(response.Error);
+			response.Error = SensitiveErrorTextRedactor.Redact(response.Error);
 		}
 		if (response?.Notes is {Count: > 0}) {
-			response.Notes = Clio.Command.McpServer.SensitiveErrorTextRedactor.RedactAll(response.Notes);
+			response.Notes = SensitiveErrorTextRedactor.RedactAll(response.Notes);
 		}
 		logger.WriteInfo(System.Text.Json.JsonSerializer.Serialize(response));
 		return success ? 0 : 1;

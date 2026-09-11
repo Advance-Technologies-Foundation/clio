@@ -6,7 +6,6 @@ namespace Clio.Command {
 	using System.Net.Http;
 	using System.Net.Sockets;
 	using System.Threading.Tasks;
-	using Clio.Command.McpServer;
 	using Clio.Common;
 	using Clio.Package;
 	using Newtonsoft.Json;

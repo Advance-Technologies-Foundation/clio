@@ -1,7 +1,7 @@
 ---
 description: SensitiveErrorTextRedactor replaces a URI with everything up to the next whitespace, so a ")" or "." pressed against a URL disappears with it and the MCP-channel message arrives malformed
 applies-to:
-  - clio/Command/McpServer/SensitiveErrorTextRedactor.cs
+  - clio/Common/SensitiveErrorTextRedactor.cs
   - clio/Package/ServiceResponseJsonGuard.cs
 ticket: GH-1322
 date: 2026-09-05
