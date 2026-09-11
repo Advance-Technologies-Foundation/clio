@@ -2385,10 +2385,11 @@ public static class SchemaValidationService
 	/// page body's <c>viewConfigDiff</c> are authored as localizable-string bindings rather than inline
 	/// literals. Walks every <c>insert</c>/<c>merge</c> entry's <c>values</c> subtree (including nested
 	/// child components) so a panel title, tab caption, or input placeholder set as a plain string is
-	/// rejected at any nesting depth — with two whole-subtree exemptions: <c>_designOptions</c>, and a
+	/// rejected at any nesting depth, except for <c>_designOptions</c> and a
 	/// component's own data descriptor (a <c>data</c> object carrying the platform's <c>typeName</c>
 	/// marker on a node that declares a component type — see <see cref="ComponentDataPropertyName"/>).
-	/// Both are platform-written metadata rather than page-authored text.
+	/// These are platform-written metadata rather than page-authored text. A Gallery's direct
+	/// <c>itemConfig.templateValuesMapping</c> is also excluded because its values name record attributes.
 	/// </summary>
 	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema (marker-delimited).</param>
 	/// <returns>
@@ -2397,7 +2398,7 @@ public static class SchemaValidationService
 	/// expression) and any value that references a <c>#ResourceString(Key)#</c> macro — bare,
 	/// concatenated, or wrapped (e.g. <c>#MacrosTemplateString(#ResourceString(Key)#)#</c>) — are
 	/// accepted; non-string and empty values are ignored. Anything inside an exempt subtree
-	/// (<c>_designOptions</c>, a component data descriptor) is not examined at all, at any depth.
+	/// (<c>_designOptions</c>, a component data descriptor, or Gallery's template mapping) is not examined.
 	/// </returns>
 	public static SchemaValidationResult ValidateLocalizableTextLiterals(string jsBody) {
 		var result = new SchemaValidationResult { IsValid = true };
@@ -2671,7 +2672,8 @@ public static class SchemaValidationService
 	// same-name sibling insert's type for a bare merge). It is applied ONLY when this object has no "type" of
 	// its own AND is the entry root; nested children are recursed with an empty entryRootType so a nested
 	// non-exempt node can never inherit an ancestor's exemption.
-	private static void ScanNodeForTextLiterals(JsonElement node, string ownerName, string entryRootType, SchemaValidationResult result) {
+	private static void ScanNodeForTextLiterals(JsonElement node, string ownerName, string entryRootType,
+		SchemaValidationResult result, bool isGalleryItemConfig = false) {
 		switch (node.ValueKind) {
 			case JsonValueKind.Object:
 				string currentName = TryGetNodeName(node, out string nodeName) ? nodeName : ownerName;
@@ -2683,11 +2685,15 @@ public static class SchemaValidationService
 				// for the entry root — see the entryRootType note above).
 				string currentType = TryGetComponentType(node, out string nodeType) ? nodeType : entryRootType;
 				foreach (JsonProperty property in node.EnumerateObject()) {
-					if (IsExemptFromTextScan(currentType, property)) {
+					// Gallery template slots map to record attribute names, not displayed captions.
+					// Carry this context only across the direct Gallery -> itemConfig edge.
+					if (IsExemptFromTextScan(currentType, property) ||
+					    (isGalleryItemConfig && property.NameEquals("templateValuesMapping"))) {
 						continue;
 					}
 					ScanTextPropertyForLiterals(currentName, currentType, property, result);
-					ScanNodeForTextLiterals(property.Value, currentName, string.Empty, result);
+					ScanNodeForTextLiterals(property.Value, currentName, string.Empty, result,
+						currentType == "crt.Gallery" && property.NameEquals("itemConfig"));
 				}
 				break;
 			case JsonValueKind.Array:

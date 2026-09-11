@@ -2685,6 +2685,65 @@ public sealed class SchemaValidationServiceTests
 			because: "designer metadata must not produce a localizable-text validation error");
 	}
 
+	[TestCase("insert")]
+	[TestCase("merge")]
+	[Description("Gallery template slots name projected attributes rather than localized UI text, for both insert and merge operations.")]
+	public void ValidateLocalizableTextLiterals_ShouldAcceptGalleryMapping_WhenItemConfigNamesAttributes(string operation) {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"OPERATION","name":"Gallery","values":{"type":"crt.Gallery","itemConfig":{"templateValuesMapping":{"caption":"GalleryDS_Name","description":"GalleryDS_Description","image":"GalleryDS_Image","id":"GalleryDS_Id"}}}}]""".Replace("OPERATION", operation),
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "Gallery mappings contain attribute identifiers, not display text");
+		result.Errors.Should().BeEmpty(because: "the caption mapping must not require a resource binding");
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("Nested Gallery mappings and a same-body untyped merge use the same scoped exemption for web and mobile bodies.")]
+	public void ValidateLocalizableTextLiterals_ShouldAcceptMapping_WhenNestedOrSameBodyMerge(bool mobile) {
+		// Arrange
+		const string diff = """
+			[{"operation":"insert","name":"Container","values":{"type":"crt.FlexContainer","items":[{"name":"NestedGallery","type":"crt.Gallery","itemConfig":{"templateValuesMapping":{"caption":"NestedDS_Name"}}}]}},
+			{"operation":"insert","name":"Gallery","values":{"type":"crt.Gallery"}},
+			{"operation":"merge","name":"Gallery","values":{"itemConfig":{"templateValuesMapping":{"caption":"GalleryDS_Name"}}}}]
+			""";
+		string body = mobile ? "{\"viewConfigDiff\":" + diff + "}" : BuildDiffBackedPageBody(diff, "[]");
+
+		// Act
+		SchemaValidationResult result = mobile
+			? SchemaValidationService.ValidateMobileLocalizableTextLiterals(body)
+			: SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "nested nodes and same-body type resolution preserve the Gallery mapping contract");
+		result.Errors.Should().BeEmpty(because: "all captions in this body are attribute identifiers");
+	}
+
+	[TestCase("""{"type":"crt.Gallery","caption":"Visible caption","itemConfig":{"templateValuesMapping":{"caption":"GalleryDS_Name"}}}""")]
+	[TestCase("""{"type":"crt.Gallery","itemConfig":{"caption":"Visible caption","templateValuesMapping":{"caption":"GalleryDS_Name"}}}""")]
+	[TestCase("""{"type":"crt.Gallery","itemConfig":{"items":[{"type":"crt.Label","caption":"Visible caption"}],"templateValuesMapping":{"caption":"GalleryDS_Name"}}}""")]
+	[TestCase("""{"type":"crt.FlexContainer","itemConfig":{"templateValuesMapping":{"caption":"Visible caption"}}}""")]
+	[TestCase("""{"type":"crt.Gallery","templateValuesMapping":{"caption":"Visible caption"}}""")]
+	[Description("The Gallery mapping exemption must not hide captions on the component, sibling item configuration, children, other components or other paths.")]
+	public void ValidateLocalizableTextLiterals_ShouldRejectCaption_WhenOutsideGalleryMapping(string values) {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			$$"""[{"operation":"insert","name":"Gallery","values":{{values}}}]""", "[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "ordinary visible captions still require localization");
+		result.Errors.Should().ContainSingle(error => error.Contains("Visible caption"),
+			because: "only the real caption should be rejected, not the projected attribute name");
+	}
+
 	[Test]
 	[Description("A Timeline composer's platform-authored data.caption literal is accepted — a component's data descriptor is metadata, not page-authored user-visible text (issue #1298).")]
 	public void ValidateLocalizableTextLiterals_ComposerDataCaptionLiteral_ReturnsValid() {

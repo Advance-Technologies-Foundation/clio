@@ -133,7 +133,11 @@ name instead of trying to edit a non-existent local `insert`.
   column captions and validator messages) and register the key's default-language value through
   `--resources`. Binding expressions (any `$`-prefixed value) and non-string values (e.g.
   `placeholder: false`) are not literals and pass. Call `clio get-guidance --name page-schema-resources`
-  for the full rule.
+  for the full rule. Gallery's `itemConfig.templateValuesMapping` is excluded: values such as
+  `caption: "GalleryDS_Name"` name projected record attributes. Keep those identifiers unchanged;
+  captions elsewhere on the Gallery or its children still require localization. For a standalone
+  `merge` that patches this mapping, include `type: "crt.Gallery"` unless another entry in the
+  same body declares that node's type. Designer-only `_designOptions` mappings are also excluded.
   A **component's own data descriptor is exempt**: a `data` object that carries the platform's
   `typeName` marker, on a node declaring a component `type`, is component metadata (uId, schemaType,
   typeName and the caption the platform stamped on it) rather than page-authored text, so a literal
