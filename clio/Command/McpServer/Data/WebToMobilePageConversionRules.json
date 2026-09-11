@@ -28,8 +28,7 @@
       "containers": [
         { "web": "MainContainer", "mobile": "MainContainer" },
         { "web": "LeftFilterContainer", "mobile": "HeaderContainer" },
-        { "web": "RightFilterContainer", "mobile": "HeaderContainer" },
-        { "web": "ListContainer", "mobile": "ListContainer" }
+        { "web": "RightFilterContainer", "mobile": "HeaderContainer" }
       ],
       "components": [
         { "web": "DataTable", "mobile": "List", "note": "Primary list component." },
