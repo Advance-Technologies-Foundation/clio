@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -140,6 +140,7 @@ public class RemoveDataBindingRowCommand(IDataBindingService dataBindingService,
 public interface IDataBindingService {
 	/// <summary>
 	/// Creates or regenerates a binding folder from the requested schema.
+	/// Validates and serializes all content before modifying binding files; input validation failures preserve existing artifacts.
 	/// </summary>
 	void CreateBinding(CreateDataBindingOptions options);
 
@@ -235,17 +236,19 @@ internal sealed class DataBindingService(
 				$"Binding '{bindingName}' already exists for schema '{existingDescriptor.Descriptor.Schema.Name}'.");
 		}
 
-		fileSystem.CreateDirectoryIfNotExists(fileSystem.Combine(packagePath, DataFolderName));
-		fileSystem.CreateDirectoryIfNotExists(bindingDirectoryPath);
-
 		Dictionary<string, JsonNode?>? values = ParseColumnObject(options.ValuesJson, "values", required: false);
 		Dictionary<string, Dictionary<string, JsonNode?>>? localizations =
 			ParseLocalizations(options.LocalizationsJson);
 
+		HashSet<string>? selectedColumns = values?.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		if (selectedColumns is not null && localizations is not null) {
+			selectedColumns.UnionWith(localizations.Values.SelectMany(columns => columns.Keys));
+		}
+
 		bool isTemplate = values is null;
 		List<DataBindingColumnDefinition> descriptorColumns = BuildDescriptorColumns(
 			schema,
-			values?.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase),
+			selectedColumns,
 			includeAllColumns: isTemplate);
 		DataBindingDescriptorFile descriptor = BuildDescriptor(
 			existingDescriptor?.Descriptor.UId,
@@ -266,23 +269,24 @@ internal sealed class DataBindingService(
 				!string.IsNullOrWhiteSpace(options.Environment) || !string.IsNullOrWhiteSpace(options.Uri),
 				valueFileBasePath: workspaceRoot);
 
-		fileSystem.WriteAllTextToFile(fileSystem.Combine(bindingDirectoryPath, DescriptorFileName),
-			serializer.SerializeDescriptor(descriptor));
-		fileSystem.WriteAllTextToFile(fileSystem.Combine(bindingDirectoryPath, DataFileName),
-			serializer.SerializePackageData(dataFile));
+		string descriptorContent = serializer.SerializeDescriptor(descriptor);
+		string dataContent = serializer.SerializePackageData(dataFile);
+		Dictionary<string, string> localizationFiles = BuildLocalizationFiles(
+			schema, dataFile, localizations, createTemplateDefault: isTemplate,
+			descriptorColumns, valueFileBasePath: workspaceRoot);
+
+		fileSystem.CreateDirectoryIfNotExists(fileSystem.Combine(packagePath, DataFolderName));
+		fileSystem.CreateDirectoryIfNotExists(bindingDirectoryPath);
+		fileSystem.WriteAllTextToFile(fileSystem.Combine(bindingDirectoryPath, DescriptorFileName), descriptorContent);
+		fileSystem.WriteAllTextToFile(fileSystem.Combine(bindingDirectoryPath, DataFileName), dataContent);
 		fileSystem.WriteAllTextToFile(fileSystem.Combine(bindingDirectoryPath, FilterFileName), string.Empty);
 
 		string localizationDirectoryPath = fileSystem.Combine(bindingDirectoryPath, LocalizationFolderName);
 		fileSystem.DeleteDirectoryIfExists(localizationDirectoryPath);
 		fileSystem.CreateDirectoryIfNotExists(localizationDirectoryPath);
-		WriteLocalizationFiles(
-			localizationDirectoryPath,
-			schema,
-			dataFile,
-			localizations,
-			createTemplateDefault: isTemplate,
-			descriptorColumns,
-			valueFileBasePath: workspaceRoot);
+		foreach ((string fileName, string content) in localizationFiles) {
+			fileSystem.WriteAllTextToFile(fileSystem.Combine(localizationDirectoryPath, fileName), content);
+		}
 	}
 
 	public void AddOrUpdateRow(AddDataBindingRowOptions options) {
@@ -812,14 +816,14 @@ internal sealed class DataBindingService(
 			string.Equals(Convert.ToString(value, CultureInfo.InvariantCulture), "null", StringComparison.OrdinalIgnoreCase);
 	}
 
-	private void WriteLocalizationFiles(
-		string localizationDirectoryPath,
+	private Dictionary<string, string> BuildLocalizationFiles(
 		DataBindingSchema schema,
 		DataBindingPackageDataFile dataFile,
 		Dictionary<string, Dictionary<string, JsonNode?>>? localizations,
 		bool createTemplateDefault,
 		IReadOnlyCollection<DataBindingColumnDefinition> descriptorColumns,
 		string? valueFileBasePath = null) {
+		Dictionary<string, string> files = new(StringComparer.OrdinalIgnoreCase);
 		DataBindingRuntimeDescriptor descriptor =
 			DataBindingRuntimeDescriptor.FromSchema(schema, descriptorColumns, valueConverter);
 		DataBindingRow sourceRow = dataFile.PackageData.Single();
@@ -829,23 +833,20 @@ internal sealed class DataBindingService(
 
 		if (defaultTemplateRow is not null) {
 			DataBindingPackageDataFile defaultFile = new() { PackageData = [defaultTemplateRow] };
-			fileSystem.WriteAllTextToFile(
-				fileSystem.Combine(localizationDirectoryPath, "data.en-US.json"),
-				serializer.SerializePackageData(defaultFile));
+			files["data.en-US.json"] = serializer.SerializePackageData(defaultFile);
 		}
 
 		if (localizations is null) {
-			return;
+			return files;
 		}
 
 		string primaryKey = GetPrimaryKey(sourceRow, descriptor);
 		foreach ((string culture, Dictionary<string, JsonNode?> cultureValues) in localizations) {
 			DataBindingRow localizedRow = BuildLocalizationRow(descriptor, primaryKey, cultureValues, valueFileBasePath);
 			DataBindingPackageDataFile localizedFile = new() { PackageData = [localizedRow] };
-			fileSystem.WriteAllTextToFile(
-				fileSystem.Combine(localizationDirectoryPath, $"data.{culture}.json"),
-				serializer.SerializePackageData(localizedFile));
+			files[$"data.{culture}.json"] = serializer.SerializePackageData(localizedFile);
 		}
+		return files;
 	}
 
 	private void UpdateLocalizationFilesForRow(
