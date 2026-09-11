@@ -28,6 +28,53 @@ public sealed class PageGetToolE2ETests : McpContractFixtureBase {
 	private const string SavePage = "ClioMcp_BlankPageToSave";
 
 	[Test]
+	[Description("Reads a selected real page and verifies that its current leaf and named design destination survive the MCP envelope and persisted metadata.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-page distinguishes the current leaf from the design package")]
+	public async Task PageGetTool_ShouldNameDesignPackage_WhenReadingSelectedPage() {
+		// Arrange
+		string? schemaName = Environment.GetEnvironmentVariable("CLIO_E2E_PACKAGE_PAGE");
+		string? expectedName = Environment.GetEnvironmentVariable("CLIO_E2E_EXPECTED_DESIGN_PACKAGE");
+		if (string.IsNullOrWhiteSpace(schemaName) || string.IsNullOrWhiteSpace(expectedName)) {
+			Assert.Ignore("Set CLIO_E2E_PACKAGE_PAGE and independently discovered CLIO_E2E_EXPECTED_DESIGN_PACKAGE; run before and after its first replacing save.");
+		}
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		string directory = CreateFixtureDirectory("page-package-metadata");
+
+		// Act
+		CallToolResult result = await context.Session.Client.CallToolAsync(ClioRunTool.ToolName,
+			new Dictionary<string, object?> {
+				["command"] = ToolName,
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = schemaName,
+					["environment-name"] = context.EnvironmentName,
+					["output-directory"] = directory
+				}
+			}, cancellationToken: context.CancellationTokenSource.Token);
+		PageGetResponse response = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(result);
+
+		// Assert
+		AllureApi.Step("Assert a normal MCP result", () => result.IsError.Should().NotBeTrue(
+			because: "the selected page must be readable through real MCP"));
+		AllureApi.Step("Assert page read success", () => response.Success.Should().BeTrue(
+			because: $"package metadata must not prevent a page read: {response.Error}"));
+		AllureApi.Step("Assert page metadata exists", () => response.Page.Should().NotBeNull(
+			because: "the compact envelope must identify both packages"));
+		AllureApi.Step("Assert current leaf alias", () => response.Page.CurrentLeafPackageName.Should().Be(response.Page.PackageName,
+			because: "the new alias preserves the existing packageName contract"));
+		AllureApi.Step("Assert independently known destination", () => response.Page.DesignPackageName.Should().Be(expectedName,
+			because: "the destination must match independent platform metadata, not merely contain a leaf name"));
+		using JsonDocument metadata = JsonDocument.Parse(File.ReadAllText(response.Files.MetaFile));
+		JsonElement page = metadata.RootElement.GetProperty("page");
+		AllureApi.Step("Assert persisted current leaf", () => page.GetProperty("currentLeafPackageName").GetString().Should().Be(response.Page.PackageName,
+			because: "the on-disk alias must describe the same leaf as the MCP envelope"));
+		AllureApi.Step("Assert persisted destination", () => page.GetProperty("designPackageName").GetString().Should().Be(response.Page.DesignPackageName,
+			because: "the on-disk destination must retain the virtual package name"));
+	}
+
+	[Test]
 	[Description("Advertises get-page MCP tool in the server tool list so callers can discover it.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-page tool is advertised by the MCP server")]
