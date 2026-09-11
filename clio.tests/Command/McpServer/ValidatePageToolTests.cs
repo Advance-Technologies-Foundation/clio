@@ -1,12 +1,17 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http;
 using NSubstitute;
 using NSubstitute.Core;
 using NUnit.Framework;
+using System.IO.Abstractions;
+using System.IO.Abstractions.TestingHelpers;
 
 namespace Clio.Tests.Command.McpServer;
 
@@ -14,8 +19,23 @@ namespace Clio.Tests.Command.McpServer;
 [Category("Unit")]
 [Property("Module", "McpServer")]
 public sealed class ValidatePageToolTests {
+	private const string ValidWebBody =
+		"define(\"TestPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+		"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+		"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
-	private static PageValidateTool CreateTool() => new(Substitute.For<IMobileComponentInfoCatalog>(), Substitute.For<IComponentInfoCatalog>());
+	private static PageValidateTool CreateTool(IFileSystem? fileSystem = null) => new(
+		Substitute.For<IMobileComponentInfoCatalog>(),
+		Substitute.For<IComponentInfoCatalog>(),
+		fileSystem ?? new MockFileSystem());
+
+	private static string BodyFilePath(string schemaName = "TestPage") =>
+		Path.GetFullPath(Path.Combine("workspace", ".clio-pages", schemaName, "body.js"));
 
 	[Test]
 	[Description("Advertises the stable MCP tool name for validate-page.")]
@@ -28,6 +48,357 @@ public sealed class ValidatePageToolTests {
 		// Assert
 		toolName.Should().Be("validate-page",
 			because: "the MCP tool name must stay centralized on the production type");
+	}
+
+	[Test]
+	[Description("Reads and validates the page body from body-file when no inline body is supplied.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldValidateFileContent_WhenBodyFileIsProvided() {
+		// Arrange
+		string bodyFile = BodyFilePath("ContactPageV2");
+		var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData> {
+			[bodyFile] = new(ValidWebBody)
+		});
+		PageValidateTool tool = CreateTool(fileSystem);
+		PageValidateArgs args = new(BodyFile: bodyFile);
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "validate-page must consume the exact body file returned by get-page");
+		response.Validation.Errors.Should().BeNullOrEmpty(
+			because: "a well-formed body loaded from disk should validate the same as the inline body");
+	}
+
+	[Test]
+	[Description("Prefers the inline body when both body and body-file are supplied, preserving the existing inline contract.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldPreferInlineBody_WhenBothBodySourcesAreProvided() {
+		// Arrange
+		PageValidateTool tool = CreateTool(new MockFileSystem());
+		PageValidateArgs args = new(Body: ValidWebBody, BodyFile: "C:\\missing\\body.js");
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "body-file is a fallback and must not override a populated inline body");
+	}
+
+	[Test]
+	[Description("Rejects a validate-page request that supplies neither inline body nor body-file with honest validation flags.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldRejectRequest_WhenNoBodySourceIsProvided() {
+		// Arrange
+		PageValidateTool tool = CreateTool();
+		PageValidateArgs args = new();
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "validation cannot run without page body content");
+		response.Validation.MarkersOk.Should().BeFalse(
+			because: "no body exists in which markers could be verified");
+		response.Validation.JsSyntaxOk.Should().BeFalse(
+			because: "missing JavaScript must not be reported as syntactically valid");
+		response.Validation.ContentOk.Should().BeFalse(
+			because: "missing content must not be reported as valid");
+		response.Validation.Errors.Should().ContainSingle(error => error.Contains("body-file"),
+			because: "the error must identify both supported body sources");
+	}
+
+	[Test]
+	[Description("Reports a stable missing-file classification instead of treating the request as an empty JavaScript body.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldReportMissingFile_WhenBodyFileDoesNotExist() {
+		// Arrange
+		string bodyFile = BodyFilePath("MissingPage");
+		PageValidateTool tool = CreateTool(new MockFileSystem());
+		PageValidateArgs args = new(BodyFile: bodyFile);
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "a missing file cannot supply validation content");
+		response.Validation.JsSyntaxOk.Should().BeFalse(
+			because: "a file read failure is not a successful syntax check");
+		response.Validation.Errors.Should().ContainSingle(error => error.Contains("not found"),
+			because: "the caller needs a stable missing-file classification");
+		response.Validation.Errors.Should().NotContain(error => error.Contains(bodyFile),
+			because: "structured MCP failures must not disclose host filesystem paths");
+	}
+
+	[Test]
+	[Description("Rejects a body-file containing only whitespace with an actionable file-specific diagnostic.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldRejectFile_WhenBodyFileIsEmpty() {
+		// Arrange
+		string bodyFile = BodyFilePath("EmptyPage");
+		var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData> {
+			[bodyFile] = new("   ")
+		});
+		PageValidateTool tool = CreateTool(fileSystem);
+		PageValidateArgs args = new(BodyFile: bodyFile);
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "whitespace-only file content cannot be validated as a page body");
+		response.Validation.Errors.Should().ContainSingle(error => error.Contains("empty"),
+			because: "the diagnostic must distinguish an empty file from a missing one");
+	}
+
+	[Test]
+	[Description("Rejects a zero-length body-file before opening it so Unix special files cannot block the MCP request.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldRejectBodyFileBeforeOpen_WhenLengthIsZero() {
+		// Arrange
+		string bodyFile = BodyFilePath("ZeroLengthPage");
+		var backingFileSystem = new MockFileSystem(new Dictionary<string, MockFileData> {
+			[bodyFile] = new(Array.Empty<byte>())
+		});
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		fileSystem.Path.Returns(backingFileSystem.Path);
+		fileSystem.FileInfo.Returns(backingFileSystem.FileInfo);
+		fileSystem.File.Returns(Substitute.For<IFile>());
+		PageValidateTool tool = CreateTool(fileSystem);
+		PageValidateArgs args = new(BodyFile: bodyFile);
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "zero-length files cannot provide a page body");
+		response.Validation.Errors.Should().ContainSingle(error => error.Contains("empty"),
+			because: "the caller needs the stable empty-file classification");
+		fileSystem.File.ReceivedCalls().Should().NotContain(call => call.GetMethodInfo().Name == nameof(IFile.Open),
+			because: "zero-length special files such as Unix FIFOs must be rejected before a blocking open");
+	}
+
+	[Test]
+	[Description("Converts body-file access failures into a structured validation response instead of an MCP invocation error.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldReturnStructuredFailure_WhenBodyFileCannotBeRead() {
+		// Arrange
+		string bodyFile = BodyFilePath("ProtectedPage");
+		var backingFileSystem = new MockFileSystem(new Dictionary<string, MockFileData> {
+			[bodyFile] = new(ValidWebBody)
+		});
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		fileSystem.Path.Returns(backingFileSystem.Path);
+		fileSystem.FileInfo.Returns(backingFileSystem.FileInfo);
+		IFile file = Substitute.For<IFile>();
+		file.GetAttributes(Arg.Any<string>()).Returns(call => backingFileSystem.File.GetAttributes(call.Arg<string>()));
+		file.Open(bodyFile, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete)
+			.Returns(_ => throw new UnauthorizedAccessException("access denied at C:\\secret"));
+		fileSystem.File.Returns(file);
+		PageValidateTool tool = CreateTool(fileSystem);
+		PageValidateArgs args = new(BodyFile: bodyFile);
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "an unreadable file cannot supply validation content");
+		response.Validation.Errors.Should().ContainSingle(error => error == "body-file could not be read.",
+			because: "filesystem errors must remain actionable without leaking paths or provider exception text");
+	}
+
+	[Test]
+	[Description("Rejects network body-file paths before touching the filesystem.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldRejectBodyFile_WhenPathIsNetworkLocation() {
+		// Arrange
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		PageValidateTool tool = CreateTool(fileSystem);
+		PageValidateArgs args = new(BodyFile: @"\\server\share\body.js");
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "an OpenWorld=false tool must not initiate network filesystem access");
+		response.Validation.Errors.Should().ContainSingle(error => error.Contains("local path"),
+			because: "the caller needs a stable explanation of the rejected path class");
+		fileSystem.File.ReceivedCalls().Should().NotContain(call => call.GetMethodInfo().Name == nameof(IFile.Open),
+			because: "network paths must be rejected before any open attempt can negotiate remote credentials");
+	}
+
+	[Test]
+	[Description("Rejects relative body-file paths so concurrent process working-directory changes cannot retarget a read.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldRejectBodyFile_WhenPathIsRelative() {
+		// Arrange
+		PageValidateTool tool = CreateTool(new MockFileSystem());
+		PageValidateArgs args = new(BodyFile: Path.Combine(".clio-pages", "TestPage", "body.js"));
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "an absolute path is required to preserve the exact get-page handoff across concurrent calls");
+	}
+
+	[Test]
+	[Description("Rejects body-file over MCP HTTP before touching the filesystem.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldRejectBodyFile_WhenHttpRequestIsActive() {
+		// Arrange
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		var httpContextAccessor = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
+		var tool = new PageValidateTool(
+			Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(),
+			fileSystem,
+			httpContextAccessor);
+		PageValidateArgs args = new(BodyFile: BodyFilePath());
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "remote MCP callers must not gain a server-side local-file oracle");
+		response.Validation.Errors.Should().ContainSingle(error => error.Contains("local stdio"),
+			because: "the caller needs a stable explanation of the transport boundary");
+		fileSystem.File.ReceivedCalls().Should().NotContain(call => call.GetMethodInfo().Name == nameof(IFile.Open),
+			because: "HTTP body-file requests must be rejected before any filesystem access");
+	}
+
+	[Test]
+	[Description("Accepts a regular body-file with a non-link reparse attribute, as used by cloud-backed files.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldAcceptBodyFile_WhenReparsePointIsNotLink() {
+		// Arrange
+		string bodyFile = BodyFilePath("LinkedBody");
+		var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData> {
+			[bodyFile] = new(ValidWebBody)
+		});
+		fileSystem.File.SetAttributes(bodyFile, FileAttributes.ReparsePoint);
+		PageValidateTool tool = CreateTool(fileSystem);
+		PageValidateArgs args = new(BodyFile: bodyFile);
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "cloud-backed regular files must remain valid inputs when they are not symbolic links");
+	}
+
+	[Test]
+	[Description("Rejects a body-file that is itself a symbolic link before reading its target.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldRejectBodyFile_WhenFileHasLinkTarget() {
+		// Arrange
+		string bodyFile = BodyFilePath("LinkedBody");
+		var backingFileSystem = new MockFileSystem(new Dictionary<string, MockFileData> {
+			[bodyFile] = new(ValidWebBody)
+		});
+		IFileInfo linkedFile = Substitute.For<IFileInfo>();
+		linkedFile.LinkTarget.Returns(BodyFilePath("TargetBody"));
+		IFileInfoFactory fileInfoFactory = Substitute.For<IFileInfoFactory>();
+		fileInfoFactory.New(bodyFile).Returns(linkedFile);
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		fileSystem.Path.Returns(backingFileSystem.Path);
+		fileSystem.File.Returns(backingFileSystem.File);
+		fileSystem.FileInfo.Returns(fileInfoFactory);
+		PageValidateTool tool = CreateTool(fileSystem);
+		PageValidateArgs args = new(BodyFile: bodyFile);
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "a symbolic link must not redirect validation to a different file");
+		response.Validation.Errors.Should().ContainSingle(error => error.Contains("could not be read"),
+			because: "symbolic links must produce the same path-safe structured failure as other unreadable files");
+	}
+
+	[Test]
+	[Description("Rejects an oversized body-file before allocating or parsing its contents.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldRejectBodyFile_WhenFileExceedsLimit() {
+		// Arrange
+		string bodyFile = BodyFilePath("OversizedPage");
+		var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData> {
+			[bodyFile] = new(new byte[PageValidateTool.MaxBodyFileBytes + 1])
+		});
+		PageValidateTool tool = CreateTool(fileSystem);
+		PageValidateArgs args = new(BodyFile: bodyFile);
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "file input must not bypass the bounded MCP payload policy");
+		response.Validation.Errors.Should().ContainSingle(error => error.Contains("byte limit"),
+			because: "the caller needs an actionable size-limit diagnostic");
+	}
+
+	[Test]
+	[Description("Accepts a valid body-file whose byte length is exactly the inclusive input limit.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldAcceptBodyFile_WhenFileIsExactlyAtLimit() {
+		// Arrange
+		string bodyFile = BodyFilePath("BoundaryPage");
+		string body = ValidWebBody.PadRight(PageValidateTool.MaxBodyFileBytes, ' ');
+		var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData> {
+			[bodyFile] = new(Encoding.UTF8.GetBytes(body))
+		});
+		PageValidateTool tool = CreateTool(fileSystem);
+		PageValidateArgs args = new(BodyFile: bodyFile);
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "the documented byte limit is inclusive and a valid body at that boundary must be parsed");
+	}
+
+	[Test]
+	[Description("Detects a UTF-8 BOM before classifying and validating a mobile page body.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldValidateMobileBody_WhenBodyFileHasUtf8Bom() {
+		// Arrange
+		string bodyFile = BodyFilePath("BomMobilePage");
+		const string body = "{\"viewConfigDiff\":[],\"viewModelConfigDiff\":[],\"modelConfigDiff\":[]}";
+		byte[] bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(body)).ToArray();
+		var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData> {
+			[bodyFile] = new(bytes)
+		});
+		PageValidateTool tool = CreateTool(fileSystem);
+		PageValidateArgs args = new(BodyFile: bodyFile);
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "body-file decoding should match normal text-file BOM detection before mobile/web classification");
+	}
+
+	[Test]
+	[Description("Honors cancellation while reading a body-file before validation begins.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldCancelBodyFileRead_WhenRequestIsCancelled() {
+		// Arrange
+		string bodyFile = BodyFilePath("CancelledPage");
+		var fileSystem = new MockFileSystem(new Dictionary<string, MockFileData> {
+			[bodyFile] = new(ValidWebBody)
+		});
+		PageValidateTool tool = CreateTool(fileSystem);
+		PageValidateArgs args = new(BodyFile: bodyFile);
+		using var cancellation = new System.Threading.CancellationTokenSource();
+		cancellation.Cancel();
+
+		// Act
+		System.Func<System.Threading.Tasks.Task> act = () =>
+			tool.ValidatePage(args, cancellation.Token);
+
+		// Assert
+		await act.Should().ThrowAsync<System.OperationCanceledException>(
+			because: "a cancelled MCP request must not continue reading and validating a file payload");
 	}
 
 	[Test]
@@ -307,7 +678,7 @@ public sealed class ValidatePageToolTests {
 	public async System.Threading.Tasks.Task ValidatePage_WhenVersionProvided_ScopesChartCatalogToThatVersion() {
 		// Arrange
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageValidateTool tool = new(Substitute.For<IMobileComponentInfoCatalog>(), webCatalog);
+		PageValidateTool tool = new(Substitute.For<IMobileComponentInfoCatalog>(), webCatalog, new MockFileSystem());
 		string amdBody =
 			"define(\"UsrPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{ return { " +
@@ -328,86 +699,5 @@ public sealed class ValidatePageToolTests {
 			.GetArguments()[0];
 		requestedVersion.Should().Be("8.1.5",
 			because: "validate-page must scope its chart-widget pre-flight check to the version the agent passed");
-	}
-
-	[Test]
-	[Description("body-file: the file contents are validated when body is omitted (issue #1297).")]
-	public async System.Threading.Tasks.Task ValidatePage_WhenBodyFileSupplied_ValidatesFileContents() {
-		// Arrange
-		PageValidateTool tool = CreateTool();
-		string mobileBody = """
-			{
-			  "viewConfigDiff": [],
-			  "viewModelConfigDiff": [],
-			  "modelConfigDiff": []
-			}
-			""";
-		string bodyFilePath = Path.Combine(Path.GetTempPath(), $"clio-validate-page-{Guid.NewGuid():N}.js");
-		File.WriteAllText(bodyFilePath, mobileBody);
-		try {
-			PageValidateArgs args = new(null, null, null, bodyFilePath);
-
-			// Act
-			PageValidateResponse response = await tool.ValidatePage(args);
-
-			// Assert
-			response.Valid.Should().BeTrue(
-				because: "body-file is the documented escape hatch for large bodies and must be read instead of reported as an empty body");
-			response.Validation.Errors.Should().BeNullOrEmpty(
-				because: "the file content is a well-formed mobile body and must produce no errors");
-		} finally {
-			File.Delete(bodyFilePath);
-		}
-	}
-
-	[Test]
-	[Description("body wins over body-file when both are supplied, matching the update-page precedence.")]
-	public async System.Threading.Tasks.Task ValidatePage_WhenBodyAndBodyFileSupplied_InlineBodyWins() {
-		// Arrange
-		PageValidateTool tool = CreateTool();
-		PageValidateArgs args = new("{\"viewConfigDiff\": []}", null, null, "/this/path/does/not/exist.js");
-
-		// Act
-		PageValidateResponse response = await tool.ValidatePage(args);
-
-		// Assert
-		response.Valid.Should().BeTrue(
-			because: "an inline body must short-circuit body-file resolution without touching the filesystem");
-	}
-
-	[Test]
-	[Description("A body-file path that does not exist is reported as a file-not-found error, not as an empty body.")]
-	public async System.Threading.Tasks.Task ValidatePage_WhenBodyFileMissing_ReportsFileNotFound() {
-		// Arrange
-		PageValidateTool tool = CreateTool();
-		string missingPath = Path.Combine(Path.GetTempPath(), $"clio-missing-{Guid.NewGuid():N}.js");
-		PageValidateArgs args = new(null, null, null, missingPath);
-
-		// Act
-		PageValidateResponse response = await tool.ValidatePage(args);
-
-		// Assert
-		response.Valid.Should().BeFalse(
-			because: "an unreadable body-file cannot be validated");
-		response.Validation.Errors.Should().ContainSingle(error => error.Contains("File not found"),
-			because: "the caller must learn the path was unreadable rather than that the body was empty");
-	}
-
-	[Test]
-	[Description("Neither body nor body-file supplied: the caller is told exactly which two parameters can carry the body.")]
-	public async System.Threading.Tasks.Task ValidatePage_WhenNoBodySource_ReportsBothParameterNames() {
-		// Arrange
-		PageValidateTool tool = CreateTool();
-		PageValidateArgs args = new(null, null);
-
-		// Act
-		PageValidateResponse response = await tool.ValidatePage(args);
-
-		// Assert
-		response.Valid.Should().BeFalse(
-			because: "there is nothing to validate without a body");
-		response.Validation.Errors.Should().ContainSingle(error =>
-				error.Contains("'body'") && error.Contains("'body-file'"),
-			because: "the error must name both accepted parameters instead of the bare 'JS body is null or empty.'");
 	}
 }

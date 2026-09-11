@@ -493,9 +493,9 @@ internal static class ToolContractCatalog {
 	private const string ApplicationIdFieldName = "application-id";
 	private const string ArrayType = "array";
 	private const string BindingNameFieldName = "binding-name";
-	private const string BodyFileFieldName = "body-file";
 	private const string BooleanFalseLiteral = "false";
 	private const string BooleanType = "boolean";
+	private const string BodyFileFieldName = "body-file";
 	private const string ColumnNameFieldName = "column-name";
 	private const string ColumnsFieldName = "columns";
 	private const string CountFieldName = "count";
@@ -617,18 +617,9 @@ internal static class ToolContractCatalog {
 	private const string ReferenceSchemaNameFieldName = "reference-schema-name";
 	private const string RegisteredEnvironmentNameDescription = "Registered clio environment name.";
 	private const string RejectedStatus = "rejected";
-
-	// An alias the server actually honors, as opposed to RejectedStatus, which documents a spelling that is
-	// refused. Agents read this contract before calling, so an accepted alias must be discoverable here.
-	private const string AcceptedStatus = "accepted";
 	private const string SelectorCodeFieldName = "code";
 	private const string SelectorIdFieldName = "id";
 	private const string SchemaNameFieldName = "schema-name";
-	private const string PageSchemaNameWithAliasDescription =
-		"Target Freedom UI page schema name. Required, but the alias 'schema-name' is accepted in its place.";
-	private const string SchemaNameAliasDescription =
-		"Accepted alias for 'page-schema-name' \u2014 the spelling every other page tool uses. Supply one of the two.";
-	private const string VersionFieldName = "version";
 	private const string ResourcesFieldName = "resources";
 	private const string SelectFieldName = "select";
 	private const string SkipSamplingFieldName = "skip-sampling";
@@ -674,6 +665,7 @@ internal static class ToolContractCatalog {
 	private const string ExampleRightExpressionUId = "81b8b8ea-6ad4-4f0e-9d6b-2f70b9a2c202";
 	private const string ExampleActionUId = "c334b501-8a53-46fa-9b7e-7d41c3d4c303";
 	private const string ValidateFieldName = "validate";
+	private const string VersionFieldName = "version";
 	private const string ValueFieldName = "value";
 	private const string ValuesFieldName = "values";
 	private const string VerifyFieldName = "verify";
@@ -2948,17 +2940,12 @@ internal static class ToolContractCatalog {
 			CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
 			"Creates a page-level Freedom UI business rule that changes visibility, editability, or required state of named page elements. Conditions key off page attributes: declared page attributes, data source columns (including ones not surfaced on the page, addressed as '<dataSource>.<column>'), page parameters ('PageParameters.<name>'), system values, and constants. Read get-guidance business-rules and this get-tool-contract entry before calling.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, PackageNameFieldName, RulesFieldName],
+				[EnvironmentNameFieldName, PackageNameFieldName, PageSchemaNameFieldName, RulesFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, "Target package name where the page BusinessRule add-on will be saved."),
-					Field(PageSchemaNameFieldName, StringType, PageSchemaNameWithAliasDescription),
-					Field(SchemaNameFieldName, StringType, SchemaNameAliasDescription),
+					Field(PageSchemaNameFieldName, StringType, "Target Freedom UI page schema name."),
 					Field(RulesFieldName, ArrayType, "Array of one or more page business-rule definitions saved together in a single batch (one configuration rebuild for the whole array; prefer one call over many). A failed rule does not abort the others. Each item is a rule with caption, one top-level condition group, and one or more page actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. EITHER side of a condition may be a page attribute (type AttributeValue), a constant (type Const), a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles), or a system setting (type SysSetting with sysSettingName set to the setting code, for example DisableEquipmentDelivery; the setting's value type is resolved from the environment, and Binary/SecureText settings are not supported). A common visibility pattern is hiding a control when a Boolean system setting is enabled: SysSetting equal a Const true. For role-based or current-user visibility (e.g. 'show field only for administrators / for the supervisor') put CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id, or compare CurrentUser/CurrentUserContact/CurrentUserAccount to a Const id — use this instead of a HandleViewModelInitRequest handler. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
-				],
-				AnyOf: [
-					new[] { PageSchemaNameFieldName },
-					[SchemaNameFieldName]
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
@@ -2966,10 +2953,7 @@ internal static class ToolContractCatalog {
 				]),
 			BusinessRuleBatchOutput(),
 			CommonErrorContract,
-			[
-				Alias(ParameterScope, PageSchemaNameFieldName, SchemaNameFieldName, AcceptedStatus,
-					$"'{SchemaNameFieldName}' is accepted as an alias for '{PageSchemaNameFieldName}'; '{PageSchemaNameFieldName}' wins when both are supplied.")
-			],
+			[],
 			[],
 			[
 				PageBusinessRuleExample(
@@ -3189,23 +3173,15 @@ internal static class ToolContractCatalog {
 			ReadPageBusinessRuleTool.ToolName,
 			"Reads ALL page-level Freedom UI business rules persisted for a page schema (full package hierarchy, so inherited rules are included). Call this BEFORE update-page-business-rules or delete-page-business-rules to obtain exact rule names and block uIds.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, PackageNameFieldName],
+				[EnvironmentNameFieldName, PackageNameFieldName, PageSchemaNameFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, PackageNameDescription),
-					Field(PageSchemaNameFieldName, StringType, PageSchemaNameWithAliasDescription),
-					Field(SchemaNameFieldName, StringType, SchemaNameAliasDescription)
-				],
-				AnyOf: [
-					new[] { PageSchemaNameFieldName },
-					[SchemaNameFieldName]
+					Field(PageSchemaNameFieldName, StringType, "Target Freedom UI page schema name.")
 				]),
 			BusinessRulesReadOutput(),
 			CommonErrorContract,
-			[
-				Alias(ParameterScope, PageSchemaNameFieldName, SchemaNameFieldName, AcceptedStatus,
-					$"'{SchemaNameFieldName}' is accepted as an alias for '{PageSchemaNameFieldName}'; '{PageSchemaNameFieldName}' wins when both are supplied.")
-			],
+			[],
 			[],
 			[
 				Example("Read all business rules persisted for a page schema", new Dictionary<string, object?> {
@@ -3371,17 +3347,12 @@ internal static class ToolContractCatalog {
 			UpdatePageBusinessRuleTool.ToolName,
 			"Updates page-level Freedom UI business rules matched by 'name' in ONE batch (single SaveSchema and one configuration rebuild). Full replacement, no partial patch. Rule items use the same contract as create-page-business-rules plus name/enabled/block uIds; read the rules first with read-page-business-rules.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, PackageNameFieldName, RulesFieldName],
+				[EnvironmentNameFieldName, PackageNameFieldName, PageSchemaNameFieldName, RulesFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, "Target package name where the layered rule diff is stored."),
-					Field(PageSchemaNameFieldName, StringType, PageSchemaNameWithAliasDescription),
-					Field(SchemaNameFieldName, StringType, SchemaNameAliasDescription),
+					Field(PageSchemaNameFieldName, StringType, "Target Freedom UI page schema name."),
 					Field(RulesFieldName, ArrayType, "Full replacement definitions for existing rules. Each item uses the same contract as create-page-business-rules plus: name (REQUIRED — case-insensitive match key from read), enabled (optional; omitted preserves the existing value), and optional block uIds on conditions/expressions/actions — pass the values from read to preserve unchanged-block identity so the platform stores a short diff; omitted blocks get fresh ids. An unknown name fails only that rule; the rest of the batch still saves.")
-				],
-				AnyOf: [
-					new[] { PageSchemaNameFieldName },
-					[SchemaNameFieldName]
 				],
 				Validators: [
 					.. BusinessRuleUpdateValidators(ReadPageBusinessRuleTool.ToolName),
@@ -3391,10 +3362,7 @@ internal static class ToolContractCatalog {
 			BusinessRuleBatchOutput(
 				"Per-rule outcomes in input order; each item has name (the match key), success, ruleName, and error."),
 			CommonErrorContract,
-			[
-				Alias(ParameterScope, PageSchemaNameFieldName, SchemaNameFieldName, AcceptedStatus,
-					$"'{SchemaNameFieldName}' is accepted as an alias for '{PageSchemaNameFieldName}'; '{PageSchemaNameFieldName}' wins when both are supplied.")
-			],
+			[],
 			[],
 			[
 				Example("Change a rule's constant threshold, passing the name and block uIds returned by read", new Dictionary<string, object?> {
@@ -3530,25 +3498,17 @@ internal static class ToolContractCatalog {
 			DeletePageBusinessRuleTool.ToolName,
 			"Deletes page-level Freedom UI business rules by internal rule name in ONE batch (one configuration rebuild). Rule names come from read-page-business-rules.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, PackageNameFieldName, RuleNamesFieldName],
+				[EnvironmentNameFieldName, PackageNameFieldName, PageSchemaNameFieldName, RuleNamesFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, PackageNameDescription),
-					Field(PageSchemaNameFieldName, StringType, PageSchemaNameWithAliasDescription),
-					Field(SchemaNameFieldName, StringType, SchemaNameAliasDescription),
+					Field(PageSchemaNameFieldName, StringType, "Target Freedom UI page schema name."),
 					Field(RuleNamesFieldName, ArrayType, "Internal rule names to delete (from read-page-business-rules), NOT captions. An unknown name fails only that entry; the remaining names still delete.")
-				],
-				AnyOf: [
-					new[] { PageSchemaNameFieldName },
-					[SchemaNameFieldName]
 				]),
 			BusinessRuleBatchOutput(
 				"Per-name outcomes in input order; each item has name, success, and error."),
 			CommonErrorContract,
-			[
-				Alias(ParameterScope, PageSchemaNameFieldName, SchemaNameFieldName, AcceptedStatus,
-					$"'{SchemaNameFieldName}' is accepted as an alias for '{PageSchemaNameFieldName}'; '{PageSchemaNameFieldName}' wins when both are supplied.")
-			],
+			[],
 			[],
 			[
 				Example("Delete a page rule by internal rule name", new Dictionary<string, object?> {
@@ -3968,7 +3928,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
-					Field(OperationsFieldName, ArrayType, "Ordered schema operations. Supported `type` values: create-lookup, create-entity, update-entity, seed-data. For create-entity, set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. A standalone `seed-data` operation inserts `seed-rows` into an existing schema (used by resume-plan when a create succeeded but its inline seeding failed). Column fields are unified with get-app-info and are the same for the create-entity/create-lookup `columns` array: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. Default values are accepted on create-entity/create-lookup `columns` items and on `update-operations` items: `default-value-config` with `source` Const (its `value` is the scalar — for a lookup column the STABLE RECORD GUID of the target record, which must exist at write time), Settings (`value-source` = setting code), SystemValue (`value-source` = system value GUID), or Sequence (`sequence-prefix` + `sequence-number-of-chars`); `source: None` removes an existing default. The legacy shorthand `default-value-source: Const|None` (+ `default-value` for Const) is also accepted. A column read from get-app-info reports its default as `default-value-config` — send it back as-is to re-apply, or set `source: None` to clear it. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied).")),
+					Field(OperationsFieldName, ArrayType, "Ordered schema operations. Supported `type` values: create-lookup, create-entity, update-entity, seed-data. For create-entity, set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. A standalone `seed-data` operation inserts `seed-rows` into an existing schema (used by resume-plan when a create succeeded but its inline seeding failed). Column fields are unified with get-app-info and are the same for the create-entity/create-lookup `columns` array: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. Default values are accepted on create-entity/create-lookup `columns` items and on `update-operations` items: `default-value-config` with `source` Const (its `value` is the scalar — for a lookup column the STABLE RECORD GUID of the target record, which must exist at write time), Settings (`value-source` = setting code), SystemValue (`value-source` = system value GUID), or Sequence (`sequence-prefix` + `sequence-number-of-chars`); `source: None` removes an existing default. The legacy shorthand `default-value-source: Const|None` (+ `default-value` for Const) is also accepted. A column read from get-app-info reports its default as `default-value-config` — send it back as-is to re-apply, or set `source: None` to clear it. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied). " + ColumnTypeVocabularyDescription + " Applies to column types in both columns and update-operations. Read columns back with get-entity-schema-properties after writing. For date-only Freedom UI fields, explicitly set pickerType: \"date\" on crt.DateTimePicker.")),
 				Validators: [
 					new ToolContractValidator(
 						"sync-schemas-operations-localizations",
@@ -4866,7 +4826,6 @@ internal static class ToolContractCatalog {
 			CommonErrorContract,
 			EnvironmentPackageSchemaAliases(
 				ColumnNameParameterAlias(),
-				ColumnNameReadbackAlias(),
 				ReferenceSchemaNameParameterAlias(),
 				DefaultValueParameterAlias(),
 				DefaultValueConfigParameterAlias(),
@@ -5191,17 +5150,17 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageValidate() {
 		return new ToolContractDefinition(
 			PageValidateTool.ToolName,
-			"Client-side Freedom UI page body validation without saving to Creatio. " +
+			"Client-side Freedom UI page body validation without saving to Creatio. Pass body inline, or on local stdio pass body-file using files.bodyFile returned by get-page. " +
 			"For web pages (body starts with `define(`): checks marker integrity, JS syntax, JSON content, field bindings, column bindings, " +
 			"handler structure, and VendorPrefix.Name format for converters, validators, and handler request values. " +
 			"For mobile pages (plain JSON body starting with `{`): validates that disallowed constructs (validators, handlers, custom converters sections) are absent.",
 			new ToolInputSchemaContract(
 				[],
 				[
-					Field("body", StringType, "Full JavaScript page body with markers (web) or plain JSON body (mobile). Auto-detected by leading character. Pass either 'body' or 'body-file'; one of the two is required."),
-					Field(BodyFileFieldName, StringType, "Absolute path to a file holding the page body. Used when 'body' is empty; lets a large body be validated without inline JSON escaping."),
-					Field(VersionFieldName, StringType, "Optional platform version (3-part semver, e.g. '8.3.3') scoping the registry-driven chart-widget check. Falls back to the 'latest' catalog when omitted."),
-					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom titles, button captions, validator messages, explicit overrides). Applicable to web pages only. Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance.")
+					Field("body", StringType, "Optional inline JavaScript page body with markers (web) or plain JSON body (mobile). Auto-detected by leading character. Takes precedence when body-file is also provided."),
+					Field(BodyFileFieldName, StringType, $"Optional absolute local stdio path, normally the exact files.bodyFile returned by get-page. Unavailable over mcp-http. Used when body is empty; one of body or body-file is required. Files larger than {PageValidateTool.MaxBodyFileBytes} bytes are rejected."),
+					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom titles, button captions, validator messages, explicit overrides). Applicable to web pages only. Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance."),
+					Field(VersionFieldName, StringType, "Optional target platform version used to scope registry-driven chart-widget validation. Uses the latest catalog when omitted.")
 				],
 				AnyOf: [
 					new[] { "body" },
@@ -5222,15 +5181,15 @@ internal static class ToolContractCatalog {
 				Example("Validate a web page body before saving", new Dictionary<string, object?> {
 					["body"] = "define(\"MyApp/MyPage\", /** ... */)"
 				}),
+				Example("Validate the body file returned by get-page", new Dictionary<string, object?> {
+					[BodyFileFieldName] = "C:\\workspace\\.clio-pages\\MyPage\\body.js"
+				}),
 				Example("Validate a web page body with resources", new Dictionary<string, object?> {
 					["body"] = "define(\"MyApp/MyPage\", /** ... */)",
 					[ResourcesFieldName] = "{\"UsrDetailsTab_caption\":\"Details\"}"
 				}),
 				Example("Validate a mobile page body", new Dictionary<string, object?> {
 					["body"] = "{\"type\": \"ep.MobileViewElement\", \"items\": []}"
-				}),
-				Example("Validate a large body straight from the file get-page wrote", new Dictionary<string, object?> {
-					[BodyFileFieldName] = "/abs/path/.clio-pages/UsrMyApp_FormPage/body.js"
 				})
 			],
 			Flow(
@@ -5364,17 +5323,6 @@ internal static class ToolContractCatalog {
 	private static ToolContractAlias ColumnNameParameterAlias() {
 		return Alias(ParameterScope, ColumnNameFieldName, "columnName", RejectedStatus,
 			$"Use '{ColumnNameFieldName}' instead of 'columnName'.");
-	}
-
-	// The 'name' spelling modify-entity-schema-column really HONORS for its column identity, published with the
-	// same AcceptedStatus the page business-rule tools use for their 'schema-name' alias (PR #1352 review). It was
-	// expressed only through the tool's any-of and the two field descriptions, so an agent scanning 'aliases' for
-	// the spellings it may send found the rejected ones and missed this one — honored aliases now live in exactly
-	// one place per tool, whichever way the tool enforces them.
-	private static ToolContractAlias ColumnNameReadbackAlias() {
-		return Alias(ParameterScope, ColumnNameFieldName, "name", AcceptedStatus,
-			$"'name' is accepted as an alias for '{ColumnNameFieldName}' — it is the spelling get-app-info reports "
-			+ "a column identity under, so a readback payload can be sent back unchanged. Supply exactly one of the two.");
 	}
 
 	private static ToolContractAlias BindingNameParameterAlias() {
