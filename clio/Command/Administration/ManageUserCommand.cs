@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Text.Json;
 using Clio.Common;
 using CommandLine;
@@ -31,7 +32,7 @@ public sealed class ManageUserOptions : EnvironmentOptions {
 	[Option("external", HelpText = "Create an external-user account.")]
 	public bool External { get; set; }
 	/// <summary>Name of the process environment variable containing the new password.</summary>
-	[Option("password-env", HelpText = "Name of an environment variable containing the new password, never the password itself.")]
+	[Option("password-env", HelpText = "Name of a populated CLIO_ADMIN_PASSWORD_<SUFFIX> variable; suffix uses uppercase letters, digits or underscores. Never pass the password itself.")]
 	public string PasswordEnvironmentVariable { get; set; }
 	/// <summary>Requires a password change on next login.</summary>
 	[Option("force-change-password", Default = true, HelpText = "Require password change on next login; applies to create/password.")]
@@ -88,11 +89,16 @@ public sealed class ManageUserCommand(IAdministrationService administration, ILo
 	}
 
 	private static string ReadPassword(ManageUserOptions options) {
-		if (string.IsNullOrWhiteSpace(options.PasswordEnvironmentVariable)) {
-			throw new ArgumentException("Supply --password-env with the name of a process environment variable containing the new password.");
+		const string prefix = "CLIO_ADMIN_PASSWORD_";
+		const string invalidReference = "Supply a populated password reference named CLIO_ADMIN_PASSWORD_<SUFFIX> using uppercase letters, digits or underscores.";
+		string reference = options.PasswordEnvironmentVariable;
+		if (reference is null || !reference.StartsWith(prefix, StringComparison.Ordinal)
+			|| reference.Length == prefix.Length
+			|| reference[prefix.Length..].Any(character => character is not (>= 'A' and <= 'Z' or >= '0' and <= '9' or '_'))) {
+			throw new ArgumentException(invalidReference);
 		}
-		string password = Environment.GetEnvironmentVariable(options.PasswordEnvironmentVariable);
-		if (string.IsNullOrEmpty(password)) { throw new ArgumentException("The password environment variable is missing or empty."); }
+		string password = Environment.GetEnvironmentVariable(reference);
+		if (string.IsNullOrEmpty(password)) { throw new ArgumentException(invalidReference); }
 		return password;
 	}
 }

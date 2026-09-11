@@ -30,7 +30,7 @@ Use --confirm for every mutation. Inspection does not require confirmation. Muta
 
 ## Behavior
 
-Create accepts types 0 (organization), 1 (division), 3 (team), or 6 (functional), a name, new id and existing parent-id. The parent must have a compatible type and connection type. Update accepts a name or parent-id; cycles and moving a manager role are rejected. Delete requires an empty leaf role and refuses root and System administrators roles.
+Create accepts types 0 (organization), 1 (division), 3 (team), or 6 (functional), a name, new id and existing parent-id. The parent must have a compatible type and connection type. A functional role belongs under another functional role or the built-in All employees/All external users anchor; arbitrary organizational parents hide it from the native functional tree. Update accepts a name or parent-id; cycles and moving a manager role are rejected. Delete requires an empty leaf role and refuses root and System administrators roles.
 
 ensure-manager takes parent-id and returns its unique manager child. Creatio automatically creates a manager child for an organization/division. More than one manager child is an error. Managers are a separate role (type 2), not a contact manager field or an arbitrary user flag. Assign a user with add-member using the returned manager ID. Creating missing external manager roles is currently unsupported.
 

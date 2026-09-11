@@ -8,17 +8,18 @@ ClioGate 2.0.0.52 was built for net472 and netstandard2.0, packaged, installed a
 | --- | --- | --- |
 | Package gates | CLI/MCP reject 2.0.0.48 and 2.0.0.49; accept 2.0.0.50; native read actions avoid inventory calls | Unit verified |
 | Priority gates | CLI/MCP reject 2.0.0.50/51 before reorder; 2.0.0.52 and verified Creatio version required | Unit verified |
+| Password references | CLI and live MCP reject unrelated host variables; dedicated uppercase CLIO_ADMIN_PASSWORD_ references succeed without echo | Unit + external MCP verified |
 | Password prerequisite | CLI/MCP reject 8.1.5, 10.1.584 and unversioned development builds before service execution | Unit verified |
 | Discovery | Eight tool names/classifications, missing environment envelopes, four inspection mutation refusals | External MCP verified |
 | Accounts | Create/contact readback, deactivate/unlock remains inactive/reactivate, password environment references, delete | External MCP verified |
 | Authentication | Old password rejected/new password accepted; actual repeated-login lockout followed by unlock and fresh login | Manual native runtime verified |
-| Roles/managers | Division and functional create/delete; auto manager reuse; assignment and direct/effective memberships | External MCP verified |
-| Native UI | Reopened organizational role shows the persisted probe in both Users and Managers details | Browser verified |
+| Roles/managers | Division and functional create/update/delete; auto manager reuse; assignment and direct/effective memberships | External MCP verified |
+| Native UI | Reopened organizational role shows the persisted probe in Users and Managers; nested functional role appears after native tree expansion | Browser verified |
 | Manager semantics | Organizational functional association becomes effective for manager; guarded removal removes it | External MCP verified |
 | Role-centric members | Direct manager member list; effective user-kind-filtered member query | External MCP verified |
 | External lifecycle | ConnectionType=1 account, division, automatic manager, memberships, functional associations, delegation and IP rules | External MCP verified |
 | Missing managers | Internal manager recovery works; native external recovery fails with a required Name error and the tool refuses that unverified path | Compiled CLI/native probe verified |
-| IP rules | Create/read/delete through MCP; actual login allowed with enforcement off, denied with UseRestrictedIP=true, restored after cleanup | Runtime verified |
+| IP rules | Create/read/update/delete through MCP; actual login allowed with enforcement off, denied with UseRestrictedIP=true, restored after cleanup | Runtime verified |
 | Delegation | Grantor role to receiving user adds effective role; revoke removes it | External MCP verified |
 | Operation permissions | Grant permits native administration call; deny blocks it; revoke removes fixture grant | Compiled CLI + fresh-session runtime verified |
 | Operation priority | Allow-first permits native read; deny-first blocks it after backend/client cache invalidation, including explicit logout/login | Compiled CLI + external MCP verified |
@@ -41,8 +42,8 @@ the knowledge catalog. After rebasing onto current master, the full unit run pas
 The test process must leave CLIO_NO_UPDATE_CHECK unset because an existing updater test expects its
 mock updater to run; setting it caused one unrelated refusal before the clean rerun. Live CLI/MCP
 processes retain the update-disable setting. All 14 external MCP cases passed, including both internal
-and external lifecycles, effective role-centric members, and the priority bridge. Knowledge producer
-tests passed 160 cases.
+and external lifecycles, direct-member removal, effective role-centric members, IP updates and the priority bridge. Knowledge producer
+tests passed 160 cases. After the final Claude corrections, the command/MCP module run passed 9,520 tests with 15 skipped; all 14 expanded live MCP cases passed again.
 
 No credentials or password values belong in this record. The lab has no usable license packages;
 there is no claimed licensed redistribution success. The user was asked for an authorized licensed

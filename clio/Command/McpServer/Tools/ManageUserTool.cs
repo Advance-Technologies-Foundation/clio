@@ -82,8 +82,8 @@ public sealed record ManageUserArgs {
 	/// <summary>Create an external user.</summary>
 	[JsonPropertyName("external"), Description("Create an external user.")]
 	public bool External { get; init; }
-	/// <summary>Name of a server process environment variable containing the new password. Never supply the password itself.</summary>
-	[JsonPropertyName("password-env"), Description("Name of a server process environment variable containing the new password. Never supply the password itself.")]
+	/// <summary>Name of a populated CLIO_ADMIN_PASSWORD_&lt;SUFFIX&gt; process variable; suffix uses uppercase letters, digits or underscores. Never supply the password itself.</summary>
+	[JsonPropertyName("password-env"), Description("Name of a populated CLIO_ADMIN_PASSWORD_<SUFFIX> process variable; suffix uses uppercase letters, digits or underscores. Never supply the password itself.")]
 	public string PasswordEnvironmentVariable { get; init; }
 	/// <summary>Require a password change at next login.</summary>
 	[JsonPropertyName("force-change-password"), Description("Require a password change at next login.")]

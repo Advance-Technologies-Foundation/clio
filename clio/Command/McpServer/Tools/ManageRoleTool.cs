@@ -33,7 +33,7 @@ public sealed class ManageRoleTool(ManageRoleCommand command, ILogger logger, IT
 		OperationFamily = McpToolOperationFamily.None, BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None, SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Manage role administration through native Creatio services. Read get-guidance name=administration first. remove-functional requires ClioGate 2.0.0.50 or newer in the selected environment; use install-gate to satisfy the requirement. Mutations verify persisted state; inspect after a failure before retrying because partial changes may exist.")]
+	[Description("Manage role administration through native Creatio services. Read get-guidance name=administration first. Functional parents must be functional roles or the All employees/All external users anchor. remove-functional requires ClioGate 2.0.0.50 or newer in the selected environment; use install-gate to satisfy the requirement. Mutations verify persisted state; inspect after a failure before retrying because partial changes may exist.")]
 	public CommandExecutionResult Manage([Required, Description("Environment and exact action parameters.")] ManageRoleArgs args) => Execute(args, true);
 
 	private CommandExecutionResult Execute(ManageRoleArgs args, bool confirm) {

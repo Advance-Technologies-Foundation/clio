@@ -9,7 +9,7 @@ namespace Clio.Command.Administration;
 [Verb("manage-access", HelpText = "Manage IP restrictions, delegation and system-operation permissions.")]
 public sealed class ManageAccessOptions : EnvironmentOptions {
 	/// <summary>Priority changes require native rights-cache invalidation from the administration bridge.</summary>
-	[RequiresPackage("cliogate", "2.0.0.52")]
+	[RequiresPackage("cliogate", "2.0.0.52", Hint = "Run clio install-gate for this environment.")]
 	[RequiresCreatioVersion("10.1.585.0", AllowDevelopmentBuild = false)]
 	public bool RequiresAdministrationGate => Action == "operation-position";
 

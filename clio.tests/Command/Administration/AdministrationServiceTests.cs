@@ -245,6 +245,44 @@ public sealed class AdministrationServiceTests : BaseClioModuleTests {
 			because: "a deterministic cache authorization failure must not change persisted access ordering");
 	}
 
+	[TestCase(0, false)]
+	[TestCase(1, false)]
+	[TestCase(3, false)]
+	[TestCase(0, true)]
+	[TestCase(1, true)]
+	[TestCase(3, true)]
+	[Description("Functional roles cannot be created or moved below organizational nodes hidden by the native functional tree.")]
+	public void FunctionalRole_RejectsInvisibleParent(int parentType, bool update) {
+		// Arrange
+		Seed(Unit(RoleId, parentType));
+		if (update) { Seed(Unit(UserId, 6)); }
+		// Act
+		Action action = () => {
+			if (update) { _service.UpdateRole(UserId, null, RoleId); }
+			else { _service.CreateRole(UserId, "Fixture", 6, RoleId); }
+		};
+		// Assert
+		action.Should().Throw<ArgumentException>(because: "an arbitrary organizational parent is absent from the functional tree");
+		Writes().Should().BeEmpty(because: "tree-incompatible hierarchy changes must fail before persistence");
+	}
+
+	[TestCase("a29a3ba5-4b0d-de11-9a51-005056c00008", 0)]
+	[TestCase("720b771c-e7a7-4f31-9cfb-52cd21c3739f", 0)]
+	[TestCase("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 6)]
+	[Description("Native functional-tree anchors and functional parents remain valid for hierarchy updates.")]
+	public void FunctionalRole_AcceptsVisibleParent(string parentIdentity, int parentType) {
+		// Arrange
+		Guid parent = Guid.Parse(parentIdentity);
+		Seed(Unit(parent, parentType));
+		Seed(Unit(UserId, 6, parent));
+		// Act
+		JsonElement result = _service.UpdateRole(UserId, null, parent);
+		// Assert
+		result.GetProperty("ParentRole").GetString().Should().Be(parent.ToString(), because: "the native tree must remain reachable through its supported parent");
+		Writes().Select(call => (ServiceUrlBuilder.KnownRoute)call[0]).Should().Contain(ServiceUrlBuilder.KnownRoute.AdministrationSaveRole,
+			because: "supported parent choices must reach the native save service");
+	}
+
 	private void Seed(JsonElement unit) {
 		Guid id = unit.GetProperty("Id").GetGuid();
 		_units[id] = unit;

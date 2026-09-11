@@ -15,14 +15,16 @@ namespace Clio.Mcp.E2E;
 [TestFixture, Category("McpE2E.Sandbox"), NonParallelizable, AllureNUnit]
 [AllureFeature("Administration")]
 public sealed class AdministrationToolE2ETests : McpContractFixtureBase {
-	private const string PasswordVariable = "CLIO_ADMIN_E2E_PASSWORD";
-	private const string NextPasswordVariable = "CLIO_ADMIN_E2E_NEXT_PASSWORD";
+	private const string PasswordVariable = "CLIO_ADMIN_PASSWORD_E2E";
+	private const string NextPasswordVariable = "CLIO_ADMIN_PASSWORD_E2E_NEXT";
+	private const string UnrelatedVariable = "CLIO_ADMIN_E2E_UNRELATED_SECRET";
 	private readonly string _password = "C!9a" + Guid.NewGuid().ToString("N");
 	private readonly string _nextPassword = "C!9b" + Guid.NewGuid().ToString("N");
 
 	private protected override void ConfigureMcpServerSettings(McpE2ESettings settings) {
 		settings.ProcessEnvironmentVariables[PasswordVariable] = _password;
 		settings.ProcessEnvironmentVariables[NextPasswordVariable] = _nextPassword;
+		settings.ProcessEnvironmentVariables[UnrelatedVariable] = _nextPassword;
 	}
 
 	[TestCase(false)]
@@ -43,6 +45,7 @@ public sealed class AdministrationToolE2ETests : McpContractFixtureBase {
 		string login = "clio-admin-e2e-" + user.ToString("N");
 		Guid root = Guid.Parse(external ? "720b771c-e7a7-4f31-9cfb-52cd21c3739f" : "a29a3ba5-4b0d-de11-9a51-005056c00008");
 		bool userCreated = false, divisionCreated = false, functionalCreated = false;
+		bool assertionsCompleted = false;
 		try {
 			// Act
 			userCreated = true; // Attempt cleanup even when persistence succeeds but the response fails.
@@ -63,6 +66,22 @@ public sealed class AdministrationToolE2ETests : McpContractFixtureBase {
 			await Success(ManageRoleTool.ToolName, new() {
 				["action"] = "create", ["id"] = functional, ["name"] = login + " functional", ["type"] = 6,
 				["parent-id"] = root
+			});
+			CallToolResult deniedReference = await context.Session.CallToolAsync(ManageUserTool.ToolName,
+				new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environment, ["action"] = "password", ["id"] = user,
+					["password-env"] = UnrelatedVariable
+				} }, context.CancellationTokenSource.Token);
+			string denial = string.Join(" ", deniedReference.Content.OfType<TextContentBlock>().Select(block => block.Text));
+			denial.Contains(_password, StringComparison.Ordinal).Should().BeFalse(because: "rejection must not echo the original password");
+			denial.Contains(_nextPassword, StringComparison.Ordinal).Should().BeFalse(because: "a rejected host secret must never be returned to the agent");
+			CommandExecutionEnvelope deniedEnvelope = McpCommandExecutionParser.Extract(deniedReference);
+			deniedEnvelope.ExitCode.Should().Be(1,
+				because: "the real MCP host must reject unrelated process secret references");
+			string.Join(" ", deniedEnvelope.Output!.Select(message => message.Value)).Should().Contain("CLIO_ADMIN_PASSWORD_<SUFFIX>",
+				because: "the namespace check must reject before native password execution");
+			JsonElement renamedRole = await Success(ManageRoleTool.ToolName, new() {
+				["action"] = "update", ["id"] = functional, ["name"] = login + " renamed functional", ["parent-id"] = root
 			});
 			await Success(ManageRoleTool.ToolName, new() { ["action"] = "add-member", ["id"] = manager, ["user-id"] = user });
 			JsonElement managerMembers = await Success(ManageRoleTool.InspectToolName, new() { ["action"] = "members", ["id"] = manager });
@@ -108,6 +127,9 @@ public sealed class AdministrationToolE2ETests : McpContractFixtureBase {
 				["action"] = "ip-create", ["id"] = ip, ["unit-id"] = user, ["begin-ip"] = "0.0.0.0", ["end-ip"] = "255.255.255.255"
 			});
 			JsonElement ranges = await Success(ManageAccessTool.InspectToolName, new() { ["action"] = "ip-list", ["unit-id"] = user });
+			await Success(ManageAccessTool.ToolName, new() {
+				["action"] = "ip-update", ["id"] = ip, ["unit-id"] = user, ["begin-ip"] = "127.0.0.1", ["end-ip"] = "127.0.0.1"
+			});
 			await Success(ManageAccessTool.ToolName, new() { ["action"] = "ip-delete", ["id"] = ip, ["unit-id"] = user });
 			await Success(ManageAccessTool.ToolName, new() { ["action"] = "delegate", ["grantor-id"] = functional, ["unit-id"] = user });
 			JsonElement delegated = await Success(ManageRoleTool.InspectToolName, new() {
@@ -118,7 +140,11 @@ public sealed class AdministrationToolE2ETests : McpContractFixtureBase {
 				["action"] = "memberships", ["user-id"] = user, ["effective"] = true
 			});
 			JsonElement licenses = await Success(ManageLicenseTool.InspectToolName, new() { ["action"] = "user-list", ["user-id"] = user });
+			await Success(ManageRoleTool.ToolName, new() { ["action"] = "remove-member", ["id"] = manager, ["user-id"] = user });
+			JsonElement removedMembers = await Success(ManageRoleTool.InspectToolName, new() { ["action"] = "members", ["id"] = manager });
 			// Assert
+			renamedRole.GetProperty("Name").GetString().Should().Be(login + " renamed functional", because: "the native role update must persist the supplied name");
+			removedMembers.GetArrayLength().Should().Be(0, because: "the native membership removal must remove the selected direct member");
 			created.GetProperty("Name").GetString().Should().Be(login, because: "the account must persist the requested login");
 			created.GetProperty("ConnectionType").GetInt32().Should().Be(external ? 1 : 0,
 				because: "internal and external users must retain their requested connection type");
@@ -144,13 +170,18 @@ public sealed class AdministrationToolE2ETests : McpContractFixtureBase {
 			afterRevoke.EnumerateArray().Select(row => row.GetProperty("SysAdminUnitRoleId").GetGuid()).Should().NotContain(functional,
 				because: "revocation must remove the isolated delegated membership");
 			licenses.ValueKind.Should().Be(JsonValueKind.Array, because: "license inspection must work even on an unlicensed lab");
+			assertionsCompleted = true;
 		} finally {
 			List<string> cleanupFailures = [];
 			if (userCreated) { await Cleanup(ManageUserTool.ToolName, ManageUserTool.InspectToolName, user); }
 			if (manager != Guid.Empty) { await Cleanup(ManageRoleTool.ToolName, ManageRoleTool.InspectToolName, manager); }
 			if (divisionCreated) { await Cleanup(ManageRoleTool.ToolName, ManageRoleTool.InspectToolName, division); }
 			if (functionalCreated) { await Cleanup(ManageRoleTool.ToolName, ManageRoleTool.InspectToolName, functional); }
-			cleanupFailures.Should().BeEmpty(because: "every attempted fixture must be removed; listed IDs need explicit inspection");
+			if (assertionsCompleted) {
+				cleanupFailures.Should().BeEmpty(because: "every attempted fixture must be removed; listed IDs need explicit inspection");
+			} else if (cleanupFailures.Count != 0) {
+				TestContext.Error.WriteLine("Additional cleanup failures (original test failure preserved): " + string.Join(", ", cleanupFailures));
+			}
 
 			async Task Cleanup(string manageTool, string inspectTool, Guid id) {
 				try {

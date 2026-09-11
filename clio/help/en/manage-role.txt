@@ -26,6 +26,7 @@ EXAMPLE
     clio manage-role -e <environment> --action list
 
 NOTES
+    Functional parents must be functional roles or the All employees/All external users anchor.
     remove-functional requires ClioGate 2.0.0.50 or newer in both CLI and MCP.
     members uses --id for the role; memberships uses --user-id for the user.
     Inspect after failure before retrying. Writes may have partially completed.

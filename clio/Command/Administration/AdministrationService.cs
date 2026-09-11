@@ -240,6 +240,12 @@ public sealed partial class AdministrationService(IAdministrationClient client) 
 
 	private static void ValidateParent(JsonElement parent, int childType) {
 		int parentType = TypeOf(parent);
+		Guid parentId = parent.GetProperty("Id").GetGuid();
+		if (childType == 6 && parentType != 6
+			&& parentId != Guid.Parse("a29a3ba5-4b0d-de11-9a51-005056c00008")
+			&& parentId != Guid.Parse("720b771c-e7a7-4f31-9cfb-52cd21c3739f")) {
+			throw new ArgumentException("A functional role must belong to another functional role or the All employees/All external users anchor.");
+		}
 		if (parentType is not (0 or 1 or 3 or 6) || (childType != 6 && parentType == 6)) {
 			throw new ArgumentException("The parent role type is incompatible with the requested role.");
 		}
