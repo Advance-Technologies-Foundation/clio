@@ -837,6 +837,14 @@ internal static class ToolContractCatalog {
 	private const int MaxPurposeLength = 120;
 
 	/// <summary>
+	/// The names that have a HANDWRITTEN contract, as opposed to one synthesized from the registered tool
+	/// schema by <see cref="McpToolRegistrySchemaContract"/>. Exposed so a test can tell the two apart:
+	/// only a handwritten contract can disagree with the emitted schema, because the synthesized one is
+	/// read straight out of it (issue #965).
+	/// </summary>
+	internal static IReadOnlyCollection<string> CuratedToolNames => (IReadOnlyCollection<string>)Contracts.Keys;
+
+	/// <summary>
 	/// Resolves clio MCP tool contracts. When <paramref name="toolNames"/> is omitted the response depends
 	/// on <paramref name="detail"/> and <paramref name="legacyNoNamesFullShape"/>: any <paramref name="detail"/>
 	/// other than <c>full</c> (the default) returns the cheap compact INDEX of EVERY invokable tool — curated
@@ -4684,10 +4692,25 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildGetEntitySchemaProperties() {
 		return new ToolContractDefinition(
 			GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
-			"Returns a structured summary of entity schema metadata for read-before-write inspection and read-back verification.",
+			"Returns a structured summary of entity schema metadata for read-before-write inspection and read-back verification. " +
+			"Omit package-name to read the merged/effective schema with columns from ALL packages (recommended for column " +
+			"discovery); supply it only to inspect a single package layer's slice, which reports that layer's own columns and " +
+			"treats everything else as inherited.",
+			// package-name is NOT required here: the emitted tool schema makes it optional and its own text
+			// recommends omitting it for column discovery. Spelling it as required in the curated contract is
+			// the exact divergence issue #965 reports — an agent that trusts get-tool-contract always sends a
+			// package name and never sees the merged view. Mirrors BuildGetEntitySchemaColumnProperties; the
+			// EnvironmentPackageSchemaFields helper cannot be reused because it hard-codes the terse
+			// "Target package name." text that hides the merged mode.
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, PackageNameFieldName, SchemaNameFieldName],
-				EnvironmentPackageSchemaFields(EntitySchemaNameDescription)),
+				[EnvironmentNameFieldName, SchemaNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(PackageNameFieldName, StringType,
+						"Optional target package name. Omit to read the merged/effective schema with columns from ALL " +
+						"packages (recommended for column discovery). Supply only to inspect a single package layer's slice."),
+					Field(SchemaNameFieldName, StringType, EntitySchemaNameDescription)
+				]),
 			StructuredResultOutput(
 				Field("name", StringType, "Schema name."),
 				Field("title", StringType, "Schema title."),
@@ -4697,7 +4720,11 @@ internal static class ToolContractCatalog {
 			EnvironmentPackageSchemaAliases(),
 			[],
 			[
-				Example("Read deployed schema properties", new Dictionary<string, object?> {
+				Example("Discover every column across all packages", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[SchemaNameFieldName] = ExamplePackageName
+				}),
+				Example("Read one package layer's own slice", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[PackageNameFieldName] = ExamplePackageName,
 					[SchemaNameFieldName] = ExamplePackageName
@@ -4725,7 +4752,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildGetEntitySchemaColumnProperties() {
 		return new ToolContractDefinition(
 			GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
-			"Returns detailed metadata for one deployed entity schema column. Omit package-name for merged runtime discovery across all packages; supply it for the original package-scoped designer read. Merged mode cannot expose track-changes, localizable-text, or do-not-control-integrity (returned as null), and source then describes parent-schema inheritance rather than package ownership. For a lookup column with a Const default, default-value-config is enriched with display-value (the referenced record's display value) or a record-resolution marker (no-access, not-found-or-no-access, display-column-unavailable) when it cannot be resolved.",
+			"Returns detailed metadata for one deployed entity schema column. Omit package-name for merged runtime discovery across all packages; supply it for the original package-scoped designer read. Merged mode cannot expose track-changes, localizable-text, or do-not-control-integrity (returned as null), and source then describes parent-schema inheritance rather than package ownership. For a lookup column with a Const default, default-value-config is enriched with display-value (the referenced record's display value) or a record-resolution marker (no-access, not-found-or-no-access, display-column-unavailable) when it cannot be resolved. SystemValue defaults on any supported column type include the native catalog caption in display-value while preserving canonical GUIDs. If unavailable, source-resolution is invalid-source, unsupported-type, not-found-for-type, caption-unavailable, or catalog-unavailable. This identifies the configured source, not its evaluated value.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, SchemaNameFieldName, ColumnNameFieldName],
 				[
@@ -5289,7 +5316,13 @@ internal static class ToolContractCatalog {
 		];
 	}
 
-	private static IReadOnlyList<IReadOnlyList<string>> EnvironmentOrExplicitConnectionRequirements() {
+	/// <summary>
+	/// The connection alternative every environment-sensitive contract advertises: EITHER a registered
+	/// <c>environment-name</c> OR the explicit <c>uri</c>/<c>login</c>/<c>password</c> triple. Exposed to
+	/// <see cref="McpToolRegistrySchemaContract" /> so a registry-derived contract states the same
+	/// alternative as the 75 curated ones instead of inventing a second spelling of it (issue #965).
+	/// </summary>
+	internal static IReadOnlyList<IReadOnlyList<string>> EnvironmentOrExplicitConnectionRequirements() {
 		return [
 			[EnvironmentNameFieldName],
 			["uri", LoginFieldName, PasswordFieldName]

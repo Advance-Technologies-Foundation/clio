@@ -1090,6 +1090,46 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Category("McpE2E.Sandbox")]
+	[TestCase("CreatedBy", "4f367ca9-549b-4a1a-b64e-a40123f52ac0", "CrtCoreBase")]
+	[TestCase("CreatedBy", "4f367ca9-549b-4a1a-b64e-a40123f52ac0", null)]
+	[TestCase("CreatedOn", CurrentDateTimeSystemValueUId, "CrtCoreBase")]
+	[TestCase("CreatedOn", CurrentDateTimeSystemValueUId, null)]
+	[Description("Resolves native SystemValue captions on lookup and DateTime columns through both real MCP read modes without mutating the sandbox.")]
+	[AllureTag(ReadColumnToolName)]
+	[AllureName("SystemValue readback identifies the native default source")]
+	[AllureDescription("Reads inherited Contact defaults through package-scoped and merged MCP routes and verifies localized source captions alongside unchanged canonical GUIDs.")]
+	public async Task GetEntitySchemaColumnProperties_ShouldResolveSystemValueCaption_WhenColumnHasSystemDefault(
+		string columnName, string sourceId, string? packageName) {
+		// Arrange
+		await using SandboxFindEntitySchemaArrangeContext arrangeContext = await ArrangeSandboxFindEntitySchemaAsync();
+
+		// Act
+		CallToolResult callResult = await CallGetColumnPropertiesAsync(
+			arrangeContext.Session, arrangeContext.EnvironmentName, packageName, "Contact", columnName,
+			arrangeContext.CancellationTokenSource.Token);
+		EntitySchemaColumnPropertiesInfo properties =
+			EntitySchemaStructuredResultParser.Extract<EntitySchemaColumnPropertiesInfo>(callResult);
+
+		// Assert
+		AllureApi.Step("Verify successful structured readback", () =>
+			callResult.IsError.Should().NotBeTrue(because: "native catalog enrichment must succeed for built-in defaults"));
+		AllureApi.Step("Verify configured source identity", () => {
+			properties.DefaultValue.Should().Be(sourceId, because: "the legacy value must remain the system-value identifier");
+			properties.DefaultValueConfig.Should().NotBeNull(because: "SystemValue metadata must remain structured");
+			properties.DefaultValueConfig!.Source.Should().Be("SystemValue", because: "the configured source is a system value");
+			properties.DefaultValueConfig.ValueSource.Should().Be(sourceId, because: "the persisted selector must not become an evaluated value");
+			properties.DefaultValueConfig.ResolvedValueSource.Should().Be(sourceId, because: "canonical IDs remain backward compatible");
+		});
+		AllureApi.Step("Verify native source caption", () => {
+			properties.DefaultValueConfig!.DisplayValue.Should().NotBeNullOrWhiteSpace(
+				because: "the connected user's native catalog must identify the configured source");
+			properties.DefaultValueConfig.DisplayValue.Should().NotBe(sourceId, because: "the caption must add human-readable identification");
+			properties.DefaultValueConfig.SourceResolution.Should().BeNull(because: "the built-in source resolves successfully");
+			properties.DefaultValueConfig.RecordResolution.Should().BeNull(because: "system-value resolution is not record resolution");
+		});
+	}
+
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Discovers Contact.Name through the merged runtime schema when package-name is omitted and reports unavailable designer-only flags as null.")]
 	[AllureTag(ReadColumnToolName)]

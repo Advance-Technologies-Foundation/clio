@@ -25,11 +25,8 @@ public sealed class PageUpdateToolChecksumTests {
 			SchemaName: "Usr_FormPage",
 			Body: "body",
 			Resources: null,
-			DryRun: false,
-			EnvironmentName: "dev",
-			Uri: null,
-			Login: null,
-			Password: null) {
+			DryRun: false) {
+			EnvironmentName = "dev",
 			Checksum = checksum
 		};
 

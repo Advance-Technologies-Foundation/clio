@@ -120,15 +120,14 @@ public sealed class PageUpdateToolBaselineTests
 	}
 
 	private static PageUpdateArgs CreateArgs(bool? force = null, string checksum = null) =>
-		new(SchemaName, ValidBody, null, null, "sandbox", null, null, null,
-			SkipSampling: true, OutputDirectory: "/ws", Force: force, Checksum: checksum);
+		new(SchemaName, ValidBody, SkipSampling: true, OutputDirectory: "/ws", Force: force, Checksum: checksum)
+			{ EnvironmentName = "sandbox" };
 
 	[Test]
 	[Description("update-page scopes the registry-driven chart-widget validation to the platform version resolved from the target environment.")]
 	public async System.Threading.Tasks.Task UpdatePage_ShouldScopeChartValidationToResolvedEnvironmentVersion() {
 		// Arrange
-		PageUpdateArgs args = new(SchemaName, ValidBody, null, null, "sandbox", null, null, null,
-			SkipSampling: true, OutputDirectory: "/ws");
+		PageUpdateArgs args = new(SchemaName, ValidBody, SkipSampling: true, OutputDirectory: "/ws") { EnvironmentName = "sandbox" };
 
 		// Act
 		await _tool.UpdatePage(args, null);
@@ -257,9 +256,7 @@ public sealed class PageUpdateToolBaselineTests
 			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
 			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
-		PageUpdateArgs args = new(SchemaName, bodyWithResourceBoundInsert,
-			"{\"PDS_UsrContactPhone\":\"Contact phone\"}", null, "sandbox", null, null, null,
-			SkipSampling: true, OutputDirectory: "/ws");
+		PageUpdateArgs args = new(SchemaName, bodyWithResourceBoundInsert, "{\"PDS_UsrContactPhone\":\"Contact phone\"}", SkipSampling: true, OutputDirectory: "/ws") { EnvironmentName = "sandbox" };
 
 		// Act
 		PageUpdateResponse response = _tool.UpdatePage(args, null).Result;
@@ -400,8 +397,8 @@ public sealed class PageUpdateToolBaselineTests
 		call.GetArguments()[0] as string == GetSchemaUrl);
 
 	private static PageUpdateArgs CreateArgs(string body) =>
-		new(SchemaName, body, null, null, "sandbox", null, null, null,
-			SkipSampling: true, OutputDirectory: "/ws");
+		new(SchemaName, body, SkipSampling: true, OutputDirectory: "/ws")
+			{ EnvironmentName = "sandbox" };
 
 	[Test]
 	[Description("AC-2 through the MCP tool, which is the surface issue #1320 was reported against: a label resource that is NOT repeated in `resources` but IS already persisted on the schema passes the tool's PRE-EXECUTION gate and the save is issued. Deleting the provider argument the gate is given, or breaking command resolution inside it, restores the reported bug - and until now did so with a fully green suite.")]
