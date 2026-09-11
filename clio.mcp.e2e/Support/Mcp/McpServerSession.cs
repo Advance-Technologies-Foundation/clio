@@ -343,13 +343,18 @@ internal sealed class McpServerSession : IAsyncDisposable {
 		string toolName,
 		IReadOnlyDictionary<string, object?> arguments,
 		CancellationToken cancellationToken) {
-		if (await IsToolAdvertisedAsync(toolName, cancellationToken)) {
-			return await Client.CallToolAsync(toolName, arguments, cancellationToken: cancellationToken);
+		long startedAt = Stopwatch.GetTimestamp();
+		try {
+			if (await IsToolAdvertisedAsync(toolName, cancellationToken)) {
+				return await Client.CallToolAsync(toolName, arguments, cancellationToken: cancellationToken);
+			}
+			return await Client.CallToolAsync(
+				ClioRunTool.ToolName,
+				BuildClioRunArguments(toolName, arguments),
+				cancellationToken: cancellationToken);
+		} finally {
+			E2ETimingProbe.RecordToolCall(toolName, Stopwatch.GetElapsedTime(startedAt));
 		}
-		return await Client.CallToolAsync(
-			ClioRunTool.ToolName,
-			BuildClioRunArguments(toolName, arguments),
-			cancellationToken: cancellationToken);
 	}
 
 	/// <summary>
@@ -366,14 +371,19 @@ internal sealed class McpServerSession : IAsyncDisposable {
 		IReadOnlyDictionary<string, object?> arguments,
 		IProgress<ProgressNotificationValue> progress,
 		CancellationToken cancellationToken) {
-		if (await IsToolAdvertisedAsync(toolName, cancellationToken)) {
-			return await Client.CallToolAsync(toolName, arguments, progress: progress, cancellationToken: cancellationToken);
+		long startedAt = Stopwatch.GetTimestamp();
+		try {
+			if (await IsToolAdvertisedAsync(toolName, cancellationToken)) {
+				return await Client.CallToolAsync(toolName, arguments, progress: progress, cancellationToken: cancellationToken);
+			}
+			return await Client.CallToolAsync(
+				ClioRunTool.ToolName,
+				BuildClioRunArguments(toolName, arguments),
+				progress: progress,
+				cancellationToken: cancellationToken);
+		} finally {
+			E2ETimingProbe.RecordToolCall(toolName, Stopwatch.GetElapsedTime(startedAt));
 		}
-		return await Client.CallToolAsync(
-			ClioRunTool.ToolName,
-			BuildClioRunArguments(toolName, arguments),
-			progress: progress,
-			cancellationToken: cancellationToken);
 	}
 
 	/// <summary>

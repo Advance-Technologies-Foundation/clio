@@ -47,6 +47,26 @@ internal static class E2ETimingProbe {
 	}
 
 	/// <summary>
+	/// Records one MCP tool call made through the harness.
+	/// </summary>
+	/// <remarks>
+	/// A handful of tool names cost a real Creatio compile — create-app, create-app-section, every
+	/// schema mutation that publishes — and those calls, not the harness, are what the run's remaining
+	/// time is made of. Counting them by name is the only way to answer "how many compiles does one run
+	/// pay for" without reading every fixture.
+	/// </remarks>
+	/// <param name="toolName">Name of the tool invoked.</param>
+	/// <param name="elapsed">Wall time the call took.</param>
+	public static void RecordToolCall(string toolName, TimeSpan elapsed) {
+		ToolCalls.AddOrUpdate(
+			toolName,
+			_ => (1, (long)elapsed.TotalMilliseconds),
+			(_, existing) => (existing.Count + 1, existing.Milliseconds + (long)elapsed.TotalMilliseconds));
+	}
+
+	private static readonly ConcurrentDictionary<string, (int Count, long Milliseconds)> ToolCalls = new();
+
+	/// <summary>
 	/// Renders the collected counters as a human-readable block plus TeamCity build statistics, so the
 	/// numbers are both visible in the build log and comparable across builds.
 	/// </summary>
@@ -72,6 +92,17 @@ internal static class E2ETimingProbe {
 		report.AppendLine(Statistic("e2eCliInvocations", cliCount));
 		report.AppendLine(Statistic("e2eCliMs", cliTotal));
 		report.AppendLine(Statistic("e2eFixedCostMs", overall));
+		report.AppendLine("[e2e-timing] MCP tool calls, most expensive first");
+		long toolTotal = 0;
+		int toolCount = 0;
+		foreach ((string toolName, (int Count, long Milliseconds) value) in ToolCalls.OrderByDescending(entry => entry.Value.Milliseconds)) {
+			report.AppendLine(Line($"tool {toolName}", value.Count, value.Milliseconds));
+			toolTotal += value.Milliseconds;
+			toolCount += value.Count;
+		}
+		report.AppendLine(Line("tool calls total", toolCount, toolTotal));
+		report.AppendLine(Statistic("e2eToolCalls", toolCount));
+		report.AppendLine(Statistic("e2eToolMs", toolTotal));
 		return report.ToString();
 	}
 
