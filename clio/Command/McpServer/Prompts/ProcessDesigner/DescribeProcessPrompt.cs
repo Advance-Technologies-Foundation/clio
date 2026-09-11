@@ -32,7 +32,7 @@ public static class DescribeProcessPrompt {
 		   `process-uid` / `process-caption`. It returns a STRUCTURED graph: `elements`
 		   (name, uid, caption, type, buildType, userTaskName, parameters; `signal` for a signal start, and a
 		   configuration block for a configured element - `email`, `readData`, `changeData`, `openEditPage`),
-		   `flows` (name, source, target, kind, and on a branch its `condition` plus
+		   `flows` (name, source, target, kind, `label`, and on a branch its `condition` plus
 		   `branchesOnActivityResult`), and process `parameters` — not raw metadata. It also reports the
 		   version standing: `version`, `isActiveVersion`, `activeVersionName`, `activeVersionSchemaUId` and
 		   the `versions[]` family.
@@ -67,6 +67,17 @@ public static class DescribeProcessPrompt {
 		So never narrate a condition as "what decides this branch" without checking `kind` and
 		`branchesOnActivityResult` first — on 337 of the 1 406 conditional flows in the shipped 7.8.0 corpus
 		that reading would be wrong.
+		`label` is the text the designer draws ON the connector, and it is the wording a human reader of the
+		diagram actually sees — so narrate a branch by its label when it has one, and by its condition when it
+		does not. It is also the field to READ BEFORE ANY WRITE that touches a flow: a label is a person's own
+		wording, most flows that have one were labelled by hand, and a `setFlow` or `addFlow` carrying a
+		`label` overwrites it silently. Report the label you found before proposing to change it. An ABSENT
+		`label` is genuinely ambiguous and must not be reported as "this flow has no label": the server omits
+		the key both when the flow carries none and when the environment's `CrtProcessBuilder` PREDATES
+		the label member and cannot report one at all. A version NUMBER cannot tell those apart - clio already
+		refuses a package older than the one it ships, so a high number is no evidence the member is there. If
+		NO flow in the process reports a label, treat the read as uninformative rather than concluding the
+		process is unlabelled.
 		Note: expressions (mapping formulas, filters) are returned RAW, not decoded into semantics — narrate
 		structure, types, flow, and parameter sources; where a condition/filter is not decodable, say so
 		explicitly instead of guessing.

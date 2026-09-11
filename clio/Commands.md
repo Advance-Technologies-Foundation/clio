@@ -227,7 +227,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="up"></a>
 - [`unlock-package`](docs/commands/unlock-package.md) - Unlock a package in Creatio, `up`
 <a id="autoupdate"></a>
-- [`autoupdate`](docs/commands/autoupdate.md) - Enable or disable automatic clio updates on startup
+- [`autoupdate`](docs/commands/autoupdate.md) - Enable or disable automatic clio updates on startup (disabled by default; knowledge enabled, toolkit disabled)
 <a id="experimental"></a>
 <a id="exp"></a>
 - [`experimental`](docs/commands/experimental.md) - List and toggle clio experimental feature flags, `exp`
@@ -539,7 +539,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="create-server-to-server-oauth-app"></a>
 - [`create-server-to-server-oauth-app`](docs/commands/create-server-to-server-oauth-app.md) - Create a server-to-server (client_credentials) OAuth app in Creatio via OAuthConfigService REST
 <a id="verify-oauth-app"></a>
-- [`verify-oauth-app`](docs/commands/verify-oauth-app.md) - Verify a server-to-server OAuth app: acquire a client_credentials token and run a bearer DataService smoke test
+- [`verify-oauth-app`](docs/commands/verify-oauth-app.md) - Verify registered or explicit OAuth credentials by obtaining a bearer token and testing CRM access
 <a id="deploy-infrastructure"></a>
 <a id="di"></a>
 - [`deploy-infrastructure`](docs/commands/deploy-infrastructure.md) - Deploy Kubernetes infrastructure for Creatio (namespace, storage, redis, postgres, pgadmin), `di`

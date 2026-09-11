@@ -159,6 +159,9 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 		"DOTNET_ROOT_X86",
 		"DOTNET_ROOT(x86)",
 		"DOTNET_HOST_PATH",
+		// A parent running through a newer installed runtime must give its worker the same policy.
+		// Otherwise the parent starts, but the worker fails before its MCP handshake (GH-1409).
+		"DOTNET_ROLL_FORWARD",
 		"CLIO_HOME",
 		"CLIO_WORKING_DIRECTORY",
 		"LANG",

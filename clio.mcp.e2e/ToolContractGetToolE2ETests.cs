@@ -18,6 +18,62 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 	[Test]
+	[Description("An unknown set-system-setting name suggests the update tool first over real stdio.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract suggests update for set")]
+	[AllureDescription("Checks the serialized shortlist without executing any system-setting operation.")]
+	public async Task GetToolContracts_ShouldSuggestUpdateFirst_WhenSetVerbIsRequested() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["tool-names"] = new[] { "set-sys-setting" } });
+
+		// Assert
+		AllureApi.Step("Assert lookup remains a failure", () =>
+			response.Success.Should().BeFalse(because: "suggestions must not execute or alias the unknown tool"));
+		AllureApi.Step("Assert update ranks first", () =>
+			response.Error!.Suggestions!.First().Should().Be(SysSettingUpdateTool.UpdateSysSettingToolName,
+				because: "the matching write intent must survive the real wire path"));
+	}
+
+	[Test]
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("Returns valid contracts and individual misses through the real MCP server in either request order.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract preserves partial batch results")]
+	[AllureDescription("Requests one real tool and two unknown names over stdio and checks contracts plus per-name suggestions.")]
+	public async Task GetToolContracts_ShouldReturnPartialResults_WhenBatchContainsUnknownNames(bool unknownFirst) {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string known = SysSettingUpdateTool.UpdateSysSettingToolName;
+		string[] names = unknownFirst
+			? ["page-updte", known, "missing-tool-two"]
+			: [known, "page-updte", "missing-tool-two"];
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["tool-names"] = names });
+
+		// Assert
+		AllureApi.Step("Assert partial lookup succeeds", () =>
+			response.Success.Should().BeTrue(because: "the valid contract remains usable"));
+		AllureApi.Step("Assert the valid contract survives", () =>
+			response.Tools!.Select(item => item.Name).Should().Equal([known],
+				because: "unknown names must not discard the registered tool contract"));
+		AllureApi.Step("Assert every miss is identified", () =>
+			response.NotFound!.Select(item => item.Name).Should().Equal(["page-updte", "missing-tool-two"],
+				because: "both unknown names need separate diagnostics"));
+		AllureApi.Step("Assert suggestions survive serialization", () =>
+			response.NotFound![0].Error.Suggestions.Should().Contain(PageUpdateTool.ToolName,
+				because: "the misspelled page tool must suggest its registered name"));
+	}
+
+	[Test]
 	[Description("Returns the list-packages paging inputs, defaults, and completeness fields through the real MCP contract endpoint.")]
 	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract advertises list-packages paging")]
