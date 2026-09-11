@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -91,6 +92,9 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 
 	#region Constructors: Public
 
+	// Keep the existing environment-scoped services explicit; a dependency bundle would only hide them.
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "DI composition requires the existing designer collaborators and package-scoped schema finder.")]
 	public RemoteEntitySchemaCreator(
 		IApplicationPackageListProvider applicationPackageListProvider,
 		IEntitySchemaDefaultValueSourceResolver defaultValueSourceResolver,
@@ -563,12 +567,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		return package ?? throw new InvalidOperationException($"Package '{packageName}' was not found.");
 	}
 
-	#endregion
-
-	#region Methods: Public
-
-	public void Create(CreateEntitySchemaOptions options) {
-		ArgumentNullException.ThrowIfNull(options);
+	private void EnsureSchemaNameAvailable(CreateEntitySchemaOptions options) {
 		bool nameExists = options.ExtendParent
 			? _findEntitySchemaCommand.FindSchemas(new FindEntitySchemaOptions { SchemaName = options.SchemaName })
 				.Any(item => string.Equals(item.PackageName, options.Package, StringComparison.OrdinalIgnoreCase))
@@ -576,6 +575,15 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		if (nameExists) {
 			throw new InvalidOperationException($"Schema '{options.SchemaName}' already exists.");
 		}
+	}
+
+	#endregion
+
+	#region Methods: Public
+
+	public void Create(CreateEntitySchemaOptions options) {
+		ArgumentNullException.ThrowIfNull(options);
+		EnsureSchemaNameAvailable(options);
 		PackageInfo package = ResolvePackage(options.Package);
 		List<ParsedColumn> parsedColumns = ParseColumns(options.Columns).ToList();
 		DesignerResponse<EntityDesignSchemaDto> createResponse = _entitySchemaDesignerClient.CreateNewSchema(
