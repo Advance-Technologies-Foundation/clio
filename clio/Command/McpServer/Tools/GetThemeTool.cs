@@ -32,6 +32,13 @@ public class GetThemeTool(
 	/// <summary>Reads the theme's metadata and CSS content as a structured result.</summary>
 	// ReadOnly=false: with output-file set the tool writes the theme CSS to disk. Destructive stays false —
 	// the write is confined (OutputPathConfinement) and refuses to overwrite an existing target.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false),
 	 Description("Read the content (theme.css) and metadata of a custom Creatio theme by its id. " +
 		"Requires Creatio " + ThemeServiceRequirement.MinVersion + " or later on the target environment. " +
