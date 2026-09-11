@@ -159,12 +159,16 @@ public sealed class SetActiveProcessVersionToolE2ETests {
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
 		execution.ExitCode.Should().Be(0,
 			because: "activating the root is an ordinary activation, not a refused one");
-		string reported = string.Join(" ", (execution.Output ?? [])
-			.Select(message => message.Value ?? string.Empty));
-		reported.Should().Contain(processName,
-			because: "the name comes from the read-back after the write, so the root appearing here is what "
-				+ "proves the environment reports IT as actual rather than the version");
-		reported.Should().NotContain(versionName,
+		// The READ-BACK line, not the joined log. The command echoes the request before the POST
+		// ("Activating version '<name>' on '<env>'..."), and on this test that echo already contains
+		// processName - so a Contain over every message is satisfied by the request, including in the
+		// regression it is meant to catch. Only the line the environment answered with is evidence.
+		string readBack = (execution.Output ?? [])
+			.Select(message => message.Value ?? string.Empty)
+			.Single(value => value.Contains("is now the actual one"));
+		readBack.Should().Contain(processName,
+			because: "the environment reports which member it considers actual, and that has to be the root");
+		readBack.Should().NotContain(versionName,
 			because: "the root's code is a PREFIX of the version's, so only the absence of the version's own "
 				+ "code separates 'the root is actual' from 'the activation was a no-op'");
 		JsonObject describedRoot = DescribedProcessGraph.Read(await CallToolAsync(context, DescribeToolName,

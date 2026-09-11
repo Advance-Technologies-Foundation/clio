@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using ATF.Repository;
 using ATF.Repository.Providers;
@@ -260,19 +261,32 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 		if (row.VersionParentUId == Guid.Empty) {
 			return NotEstablished($"the process library reports no version family key for schema '{row.UId}'");
 		}
+		Stopwatch elapsed = Stopwatch.StartNew();
 		List<VwProcessLib> family = ReadFamily(ctx, row.VersionParentUId);
-		return BuildFacts(row, family, () => ReadPackageNames(ctx));
+		return BuildFacts(row, family, () => ReadPackageNames(ctx, elapsed));
 	}
 
 	/// <summary>
-	/// Wall-clock slice of <see cref="_readBudget"/> the package-name read may spend.
+	/// Wall-clock slice the package-name read may spend, bounded by what is actually left.
 	/// </summary>
 	/// <remarks>
-	/// A third, so a stalled <c>SysPackage</c> table cannot spend what the family read still needs. Letting
-	/// it run on the shared budget trades the whole answer - version, active-version flag and family - for a
-	/// field whose absence this reader already knows how to report.
+	/// A third of the total, so a stalled <c>SysPackage</c> table cannot spend what the family read still
+	/// needs - letting it run on the shared budget trades the whole answer, version and active-version flag
+	/// and family, for a field whose absence this reader already knows how to report.
+	/// <para>
+	/// A fraction of the TOTAL is not enough on its own, and that was the first version of this: the package
+	/// read runs nested inside the outer budget and only after the family read, so if the family took more
+	/// than two thirds, a full third on top pushes past the outer bound - the outer wait expires and
+	/// discards version facts that were already computed, which is the loss the slice exists to prevent.
+	/// Bounding it by the REMAINING time closes that: the package read can never be the reason the outer
+	/// budget is exceeded, only the reason it is reached slightly sooner.
+	/// </para>
 	/// </remarks>
-	private TimeSpan PackageReadBudget => TimeSpan.FromTicks(_readBudget.Ticks / 3);
+	private TimeSpan PackageReadBudget(Stopwatch elapsed) {
+		TimeSpan remaining = _readBudget - elapsed.Elapsed;
+		TimeSpan slice = TimeSpan.FromTicks(_readBudget.Ticks / 3);
+		return remaining <= TimeSpan.Zero ? TimeSpan.Zero : (slice < remaining ? slice : remaining);
+	}
 
 	/// <summary>
 	/// The package names this environment has, keyed by package UId, or <c>null</c> when they could not be read.
@@ -287,12 +301,15 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 	/// field is the worse trade.
 	/// </para>
 	/// <para>
-	/// No rows is NOT an answer. A Creatio environment always carries packages, so an empty set means the
-	/// read was refused rather than that there are none to name: measured on ATF.Repository 2.0.3.1, a null
-	/// or unsuccessful <c>IItemsResponse</c> does not throw, it yields no rows, which is the shape a
-	/// restricted <c>SysPackage</c> comes back as. Reporting that as read would publish every member with
+	/// No rows is NOT an answer either. A Creatio environment always carries packages, so an empty set is
+	/// not a legitimate "read, nothing to name" - and reporting it as read would publish every member with
 	/// no package name and no warning, the one combination the contract on
-	/// <see cref="ProcessVersionFamilyMember.PackageName"/> says cannot occur.
+	/// <see cref="ProcessVersionFamilyMember.PackageName"/> says cannot occur. This arm is a guard rather
+	/// than the expected path: the registered <c>IDataProvider</c> is wrapped in
+	/// <c>ClassifyingDataProvider</c>, which turns ATF's swallow-and-report failure (<c>Success=false</c>
+	/// with an empty payload, never a throw) into an exception the guard above already catches. So a
+	/// genuinely refused read arrives as a failure, and zero rows should only be reachable through a
+	/// provider that is not wrapped - which is exactly the case worth refusing to interpret.
 	/// </para>
 	/// <para>
 	/// Unfiltered on purpose. The filter that belongs here is "the UIds this family uses", and expressing it
@@ -304,8 +321,8 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 	/// hundred rows of scalars, inside the slice of the budget this read is given.
 	/// </para>
 	/// </remarks>
-	private Dictionary<Guid, string> ReadPackageNames(IAppDataContext ctx) =>
-		ProcessLibRead.WithinBudget(PackageReadBudget,
+	private Dictionary<Guid, string> ReadPackageNames(IAppDataContext ctx, Stopwatch elapsed) =>
+		ProcessLibRead.WithinBudget(PackageReadBudget(elapsed),
 			() => ProcessLibRead.Guarded<Dictionary<Guid, string>>(
 				() => {
 					List<SysPackage> rows = ctx.Models<SysPackage>().ToList();
@@ -393,7 +410,10 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 		// EVERY member loses its name at once, and a caller that says nothing renders raw GUIDs at a builder
 		// who asked which package a version lives in.
 		if (!packagesRead) {
-			gaps.Add("the package names could not be read, so every version reports its package as a UId only");
+			// Phrased to survive the shared ", so those facts were not established" tail this method appends.
+			// The earlier wording carried its own "so" clause and composed into a doubled conjunction whose
+			// closing claim was false: the version facts WERE established and are published beside it.
+			gaps.Add("the package names could not be read");
 		}
 		if (row.Version is null) {
 			gaps.Add("the view established no version number for this schema");
