@@ -134,6 +134,24 @@ public class EnvManageUiCommandTests : BaseCommandTests<EnvManageUiOptions>
 			because: "compilation history has to be read from the environment the build was actually started on");
 	}
 
+	[Test]
+	[Description("THE WRONG-STAND GUARD, second half. The verdict reader, the availability probe and the reload watcher are all built against the client and URL builder made from the CLONE, so the transport every one of them uses has to carry the selected environment. Only the history poller was covered before, which is why the mis-binding this test would catch was found by review rather than by a test.")]
+	public void ExecuteCompileConfiguration_ShouldBuildTheOwnedClient_ForTheSelectedEnvironment()
+	{
+		// Arrange - the substitute service provider cannot build the whole compile command, so the call
+		// throws part-way; the owned client is created before that, which is what this asserts.
+		var environmentSettings = new EnvironmentSettings {
+			Uri = "https://selected-stand.example", Login = "s", Password = "p"
+		};
+
+		// Act
+		try { _command.ExecuteCompileConfiguration("selected", environmentSettings); } catch { /* the substitute provider cannot complete the graph */ }
+
+		// Assert
+		_applicationClientFactory.Received(1).CreateOwnedClient(
+			Arg.Is<EnvironmentSettings>(settings => settings.Uri == environmentSettings.Uri));
+	}
+
 	#endregion
 
 	#region Tests: Constructor
