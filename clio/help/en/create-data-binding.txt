@@ -78,6 +78,8 @@ NOTES
     - For the templated schema SysSettings, --environment and --uri are optional
     - For non-templated schemas, the command requires either --environment or --uri
     - Unknown columns in --values or --localizations are rejected
+    - Columns supplied only in --localizations are included in the descriptor; no base-row value is invented
+    - Input validation finishes before any files change; failed validation creates no partial binding and preserves existing artifacts
     - If the primary key column is a Guid and is omitted or null in --values, create-data-binding generates it automatically
     - For lookup and image-reference columns, clio writes SchemaColumnUId, Value, and DisplayValue in data.json
     - For create-data-binding, lookup and image-reference values may use {"value":"...","displayValue":"..."}; if displayValue is omitted and Creatio runtime lookup data is available, clio resolves it automatically

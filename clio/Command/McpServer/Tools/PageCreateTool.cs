@@ -100,31 +100,15 @@ public sealed record PageCreateArgs(
 
 	[property: JsonPropertyName("caption")]
 	[property: Description("Optional display caption. Defaults to schema-name when omitted.")]
-	string? Caption,
+	string? Caption = null,
 
 	[property: JsonPropertyName("description")]
 	[property: Description("Optional schema description.")]
-	string? Description,
+	string? Description = null,
 
 	[property: JsonPropertyName("entity-schema-name")]
 	[property: Description("Optional entity schema name to record in the new page dependencies.")]
-	string? EntitySchemaName,
-
-	[property: JsonPropertyName("environment-name")]
-	[property: Description(McpToolDescriptions.EnvironmentName)]
-	string? EnvironmentName,
-
-	[property: JsonPropertyName("uri")]
-	[property: Description(McpToolDescriptions.Uri)]
-	string? Uri,
-
-	[property: JsonPropertyName("login")]
-	[property: Description(McpToolDescriptions.Login)]
-	string? Login,
-
-	[property: JsonPropertyName("password")]
-	[property: Description(McpToolDescriptions.Password)]
-	string? Password,
+	string? EntitySchemaName = null,
 
 	[property: JsonPropertyName("caption-culture")]
 	[property: Description("Optional culture override for the page caption (e.g. 'en-US', 'uk-UA'). Precedence: caption-culture > detected profile culture > en-US. Skips the profile-culture lookup.")]
@@ -133,4 +117,4 @@ public sealed record PageCreateArgs(
 	[property: JsonPropertyName("optional-properties")]
 	[property: Description("Optional JSON array of {key, value} objects to seed into the new schema optionalProperties, e.g. '[{\"key\":\"DashboardsEntitySchemaName\",\"value\":\"UsrMyEntity\"}]'. Used to create a dashboard (template BaseDashboardTemplate): set DashboardsEntitySchemaName, DashboardsElementName, DashboardsClientUnitSchemaUId — read get-guidance name `dashboard-creation` for how to obtain each value.")]
 	string? OptionalProperties = null
-);
+) : ConnectionArgsBase;
