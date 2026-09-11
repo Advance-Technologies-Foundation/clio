@@ -85,7 +85,7 @@ public sealed class ToolContractGetTool {
 	// Before ENG-95885 the flat call bound `args` to null, fell through to the no-tool-names branch, and
 	// handed the agent the entire index back as a plausible success.
 	[McpRecoversUnknownArguments]
-	[Description("Returns clio MCP tool contracts. Omit tool-names for a compact index of ALL tools (names + one-line purpose + safety flags) — cheap discovery without full schemas; pass tool-names to expand those tools' full contracts (parameter schema, aliases, defaults, examples, and preferred or fallback workflow hints); pass detail=full (with no tool-names) to expand every tool's full contract at once.")]
+	[Description("Returns clio MCP tool contracts. Omit tool-names for a compact index of ALL tools (names, purpose, safety flags); pass tool-names for full contracts (schemas, defaults, examples, workflows). Mixed batches retain valid contracts and report misses with suggestions in not-found. Pass detail=full without tool-names for every full contract.")]
 	public ToolContractGetResponse GetToolContracts(
 		[Description("Parameters: tool-names (optional array of tool names) and detail (optional 'index' | 'full'). Omit entirely for a compact index of all tools; pass tool-names for full contracts; pass detail=full to expand all full contracts.")]
 		ToolContractGetArgs? args = null,
@@ -324,11 +324,27 @@ public sealed record ToolContractGetArgs(
 	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }
 
+/// <summary>Contract discovery results, including independently unresolved names for named lookups.</summary>
+/// <param name="Success">Whether discovery succeeded or at least one requested name resolved.</param>
+/// <param name="Tools">Resolved full contracts, or null when none resolved.</param>
+/// <param name="Error">Request failure, including the first miss when no requested names resolved.</param>
+/// <param name="Index">Compact discovery index for requests without names.</param>
+/// <param name="NotFound">Unresolved normalized names with individual suggestions; omitted when there are no misses.</param>
 public sealed record ToolContractGetResponse(
 	[property: JsonPropertyName("success")] bool Success,
 	[property: JsonPropertyName("tools")] IReadOnlyList<ToolContractDefinition>? Tools = null,
 	[property: JsonPropertyName("error")] ToolContractError? Error = null,
-	[property: JsonPropertyName("index")] IReadOnlyList<ToolContractIndexEntry>? Index = null
+	[property: JsonPropertyName("index")] IReadOnlyList<ToolContractIndexEntry>? Index = null,
+	[property: JsonPropertyName("not-found"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	IReadOnlyList<ToolContractNotFound>? NotFound = null
+);
+
+/// <summary>One requested tool name that could not be resolved.</summary>
+/// <param name="Name">Trimmed requested name, deduplicated without regard to case.</param>
+/// <param name="Error">Lookup diagnostic and suggestions for this name.</param>
+public sealed record ToolContractNotFound(
+	[property: JsonPropertyName("name")] string Name,
+	[property: JsonPropertyName("error")] ToolContractError Error
 );
 
 /// <summary>
@@ -860,8 +876,7 @@ internal static class ToolContractCatalog {
 	}
 
 	/// <summary>
-	/// Resolves the explicit tool-names branch of <see cref="GetContracts"/> — extracted purely to keep
-	/// <see cref="GetContracts"/>'s cognitive complexity low (Sonar S3776), no behavior change.
+	/// Resolves every distinct requested name, retaining successful contracts alongside individual misses.
 	/// </summary>
 	private static ToolContractGetResponse ResolveNamedContracts(
 		IReadOnlyList<string> toolNames,
@@ -883,19 +898,24 @@ internal static class ToolContractCatalog {
 			normalizedNames.Add(name.Trim());
 		}
 		List<ToolContractDefinition> results = [];
+		List<ToolContractNotFound> notFound = [];
 		foreach (string normalizedName in normalizedNames.Distinct(StringComparer.OrdinalIgnoreCase)) {
 			if (TryResolveFullContract(normalizedName, toolInvokerRegistry, out ToolContractDefinition contract)) {
 				results.Add(contract);
 				continue;
 			}
-			return new ToolContractGetResponse(
-				false,
-				Error: new ToolContractError(
+			notFound.Add(new ToolContractNotFound(
+				normalizedName,
+				new ToolContractError(
 					"tool-not-found",
 					$"Tool '{normalizedName}' is not registered by clio MCP. {ToolContractGetTool.DiscoveryHint}",
-					BuildSuggestions(normalizedName, toolInvokerRegistry)));
+					BuildSuggestions(normalizedName, toolInvokerRegistry))));
 		}
-		return new ToolContractGetResponse(true, results);
+		return new ToolContractGetResponse(
+			results.Count > 0,
+			Tools: results.Count > 0 ? results : null,
+			Error: results.Count == 0 ? notFound[0].Error : null,
+			NotFound: notFound.Count > 0 ? notFound : null);
 	}
 
 	/// <summary>
@@ -1123,8 +1143,9 @@ internal static class ToolContractCatalog {
 				[
 					SuccessFalseSignal
 				],
-				Field(SuccessFieldName, BooleanType, "Whether the contract lookup succeeded."),
+				Field(SuccessFieldName, BooleanType, "Whether discovery succeeded or at least one requested name resolved. Check not-found for partial results."),
 				Field("tools", ArrayType, "Full tool contract definitions; populated when tool-names are passed or detail=full."),
+				Field("not-found", ArrayType, "Unresolved names with per-name error codes, messages and suggestions. Valid contracts remain in tools; omitted when all names resolve. If no names resolve, success=false and error retains the first tool-not-found diagnostic."),
 				Field("index", ArrayType, "Compact tool index (name, purpose, contract-available, resident, destructive); populated for a no-names request unless detail=full. resident=true tools are present in tools/list and are called natively; resident=false tools are reachable only via clio-run/clio-run-destructive — never wrap a resident tool in clio-run."),
 				Field(ErrorFieldName, ObjectType, "Structured error payload when lookup fails.")
 			),
@@ -1559,7 +1580,7 @@ internal static class ToolContractCatalog {
 				Field(ApplicationNameFieldName, StringType, InstalledApplicationDisplayNameDescription),
 				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
-				Field("entities", ArrayType, "Application entities. Each entity includes `virtual`, and each entity `columns` item carries a vocabulary unified with the sync-schemas write surfaces so it round-trips without translation: `name`, `caption`, canonical `type` (with `data-value-type` kept as a legacy alias), canonical `reference-schema-name` (with `reference-schema` kept as a legacy alias), and `required`. Send a column back to sync-schemas update-entity by adding the `action` verb."),
+				Field("entities", ArrayType, "Application entities. Each entity includes `virtual`, and each entity `columns` item carries a vocabulary unified with the sync-schemas write surfaces so it round-trips without translation: `name`, `caption`, canonical `type` (with `data-value-type` kept as a legacy alias), canonical `reference-schema-name` (with `reference-schema` kept as a legacy alias), and `required`. A column with a default additionally carries `default-value-config` (`source` Const/Settings/SystemValue/Sequence; `value` for Const — the stable record GUID for a lookup column, otherwise a scalar; `value-source` for Settings/SystemValue; `sequence-prefix` + `sequence-number-of-chars` for Sequence); absent means no default. Send a column back to sync-schemas update-entity by adding the `action` verb — send `default-value-config` back as-is to re-apply the default, or send `{\"source\": \"None\"}` to remove it."),
 				Field(PagesFieldName, ArrayType, "Primary-package Freedom UI pages using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field("schema-name-prefix", StringType, "Active SchemaNamePrefix resolved from the environment. Use as the prefix for all subsequent custom schema codes (lookups, columns, supporting entities). Empty string means no prefix is configured."),
 				Field("dataforge", ObjectType, "Optional Data Forge enrichment diagnostics including health/status/coverage, warnings, and a compact context-summary."),
@@ -2550,7 +2571,7 @@ internal static class ToolContractCatalog {
 				Field(ApplicationNameFieldName, StringType, InstalledApplicationDisplayNameDescription),
 				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
-				Field("entities", ArrayType, "Application entities. Each entity includes `virtual`, and each entity `columns` item carries a vocabulary unified with the sync-schemas write surfaces so it round-trips without translation: `name`, `caption`, canonical `type` (with `data-value-type` kept as a legacy alias), canonical `reference-schema-name` (with `reference-schema` kept as a legacy alias), and `required`. Send a column back to sync-schemas update-entity by adding the `action` verb."),
+				Field("entities", ArrayType, "Application entities. Each entity includes `virtual`, and each entity `columns` item carries a vocabulary unified with the sync-schemas write surfaces so it round-trips without translation: `name`, `caption`, canonical `type` (with `data-value-type` kept as a legacy alias), canonical `reference-schema-name` (with `reference-schema` kept as a legacy alias), and `required`. A column with a default additionally carries `default-value-config` (`source` Const/Settings/SystemValue/Sequence; `value` for Const — the stable record GUID for a lookup column, otherwise a scalar; `value-source` for Settings/SystemValue; `sequence-prefix` + `sequence-number-of-chars` for Sequence); absent means no default. Send a column back to sync-schemas update-entity by adding the `action` verb — send `default-value-config` back as-is to re-apply the default, or send `{\"source\": \"None\"}` to remove it."),
 				Field(PagesFieldName, ArrayType, "Primary-package Freedom UI pages using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field("schema-name-prefix", StringType, "Active SchemaNamePrefix system setting for the environment. Use as the prefix for all subsequent custom schema codes. Empty string means no prefix is configured."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
@@ -3876,7 +3897,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
-					Field(OperationsFieldName, ArrayType, "Ordered schema operations. Supported `type` values: create-lookup, create-entity, update-entity, seed-data. For create-entity, set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. A standalone `seed-data` operation inserts `seed-rows` into an existing schema (used by resume-plan when a create succeeded but its inline seeding failed). Column fields are unified with get-app-info and are the same for the create-entity/create-lookup `columns` array: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied).")),
+					Field(OperationsFieldName, ArrayType, "Ordered schema operations. Supported `type` values: create-lookup, create-entity, update-entity, seed-data. For create-entity, set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. A standalone `seed-data` operation inserts `seed-rows` into an existing schema (used by resume-plan when a create succeeded but its inline seeding failed). Column fields are unified with get-app-info and are the same for the create-entity/create-lookup `columns` array: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. Default values are accepted on create-entity/create-lookup `columns` items and on `update-operations` items: `default-value-config` with `source` Const (its `value` is the scalar — for a lookup column the STABLE RECORD GUID of the target record, which must exist at write time), Settings (`value-source` = setting code), SystemValue (`value-source` = system value GUID), or Sequence (`sequence-prefix` + `sequence-number-of-chars`); `source: None` removes an existing default. The legacy shorthand `default-value-source: Const|None` (+ `default-value` for Const) is also accepted. A column read from get-app-info reports its default as `default-value-config` — send it back as-is to re-apply, or set `source: None` to clear it. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied).")),
 				Validators: [
 					new ToolContractValidator(
 						"sync-schemas-operations-localizations",
@@ -5858,7 +5879,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildDeployIdentity() {
 		return new ToolContractDefinition(
 			DeployIdentityTool.DeployIdentityToolName,
-			"Deploys IdentityService to IIS for a registered local Creatio environment, connects Creatio through the platform sys-settings/REST path, creates a fresh clio OAuth client bound to an existing user by default, and stores the returned client credentials in local clio appsettings. Never echo the generated client secret in logs or public messages.",
+			"Deploys IdentityService to IIS for a registered local Creatio environment, connects Creatio through the platform sys-settings/REST path, creates a fresh clio OAuth client bound to an existing user by default, and stores the returned client credentials in local clio appsettings only after discovery, token issuance, and a read-only CRM bearer request succeed. With noApp, token and CRM checks are skipped. Never echo the generated client secret in logs or public messages.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName],
 				[

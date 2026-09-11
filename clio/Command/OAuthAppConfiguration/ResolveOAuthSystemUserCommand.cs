@@ -16,7 +16,6 @@ namespace Clio.Command.OAuthAppConfiguration;
 /// </summary>
 [Verb("resolve-oauth-system-user",
 	HelpText = "Resolve a Creatio system user (SysAdminUnit) by name or id over DataService REST")]
-[FeatureToggle("deploy-identity")]
 public sealed class ResolveOAuthSystemUserOptions : RemoteCommandOptions
 {
 	/// <summary>
