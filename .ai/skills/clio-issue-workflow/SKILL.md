@@ -14,7 +14,7 @@ Treat the issue number or URL as required input. The original Clio issue remains
 ## Route the request
 
 - For `take`, `triage`, `fix`, `implement`, or `resolve`, start with the `claim-clio-issue` skill; claiming always precedes investigation.
-- Continue with the `investigate-clio-issue` skill to prove the failure boundary and identify every affected repository.
+- Continue with the `investigate-clio-issue` skill to prove the failure boundary, identify every affected repository, and check related open, unclaimed issues before deciding whether one PR should resolve multiple reports.
 - Use the `repair-clio-issue` skill only when the user authorized implementation. A triage-only request stops after publishing the diagnosis and any authorized downstream issue relationships.
 - For brainstorming, planning, explanation, or review-only requests, stay read-only and do not claim the issue.
 
@@ -64,6 +64,6 @@ If the field, option, permission, or API support is missing, report the exact fa
 
 ## Completion
 
-Report the original issue, assignee, current stage, linked branch or PR, owning repositories, blocking downstream issues, validation state, and any genuine human decision still required.
+Report the original issue, assignee, current stage, linked branch or PR, owning repositories, blocking downstream issues, related-issue search and grouping decision, validation state, and any genuine human decision still required.
 
 Do not add coordination artifacts beyond the assignee, Issue Type, labels, stage field, Development link, issue relationships, and normal issue or PR comments required to explain a blocker.
