@@ -30,6 +30,13 @@ public sealed class ExperimentalTool : BaseTool<ExperimentalOptions> {
 	/// <param name="disable">When <c>true</c>, disables the feature named by <paramref name="name"/>.</param>
 	/// <returns>The structured command execution result.</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Lists clio experimental feature flags, or enables/disables a single feature flag in local clio settings. Omit 'name' to list; pass 'name' plus exactly one of 'enable'/'disable' to toggle.")]
 	public CommandExecutionResult Experimental(
 		[Description("The feature key to enable or disable. Omit to list all known feature flags.")]

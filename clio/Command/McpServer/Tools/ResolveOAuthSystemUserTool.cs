@@ -13,7 +13,6 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool surface for the <c>resolve-oauth-system-user</c> command.
 /// </summary>
 [McpServerToolType]
-[FeatureToggle("deploy-identity")]
 public sealed class ResolveOAuthSystemUserTool(
 	ResolveOAuthSystemUserCommand command,
 	ILogger logger,
@@ -30,6 +29,13 @@ public sealed class ResolveOAuthSystemUserTool(
 	/// </summary>
 	[McpServerTool(Name = ResolveOAuthSystemUserToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Resolves a Creatio system user (SysAdminUnit) by name (default Supervisor) or by id over DataService REST
 				 (no DB access). Returns systemUserId, name, and found. Use this to obtain the systemUserId that

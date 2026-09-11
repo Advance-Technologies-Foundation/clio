@@ -280,6 +280,31 @@ public static class SchemaValidationService
 	private const string DesignOptionsPropertyName = "_designOptions";
 
 	/// <summary>
+	/// Name of a component's data-descriptor property. On a view node that declares a component
+	/// <c>type</c>, the <c>data</c> subtree is that component's own descriptor - metadata the component
+	/// carries about itself (its uId, schemaType, typeName and the caption the platform stamped on it),
+	/// not user-visible text authored on the page. The Freedom UI designer writes it and round-trips it
+	/// unchanged: <c>crt.EmailComposer</c> and <c>crt.FeedComposer</c> ship <c>data.caption</c> as the
+	/// plain literals "Email" / "Feed", so scanning it refused every page carrying a Timeline composer
+	/// (issue #1298). Deleting the key is NOT a repair - the platform never restores it, and a read-back
+	/// shows the descriptor permanently without a caption. Both localizable-text scanners therefore skip
+	/// this subtree, with an ordinal (case-sensitive) comparison and only when the object carries the
+	/// platform's <c>typeName</c> marker, so an ordinary page object that happens to be named "data" -
+	/// including the author-writable <c>data</c> input of crt.FilterBuilderSource - stays fully validated.
+	/// The inserted-widget-caption scanner does NOT skip it: that engine also backs the blocking save
+	/// gate, and #1298 is about a plain literal, which that scanner never reported in the first place.
+	/// </summary>
+	private const string ComponentDataPropertyName = "data";
+
+	/// <summary>
+	/// Marker property the platform writes inside a component's data descriptor. Its presence is what
+	/// distinguishes a descriptor object from an author-writable input that merely happens to be named
+	/// <c>data</c> - see <see cref="IsComponentDescriptorProperty"/> for why the owner's component type
+	/// is not a sufficient gate on its own.
+	/// </summary>
+	private const string ComponentDescriptorTypeNamePropertyName = "typeName";
+
+	/// <summary>
 	/// Canonical clause describing the widget-caption rule, authored here and embedded verbatim in the
 	/// per-occurrence diagnostic (<see cref="BuildUnresolvedCaptionError"/>)
 	/// </summary>
@@ -2360,7 +2385,10 @@ public static class SchemaValidationService
 	/// page body's <c>viewConfigDiff</c> are authored as localizable-string bindings rather than inline
 	/// literals. Walks every <c>insert</c>/<c>merge</c> entry's <c>values</c> subtree (including nested
 	/// child components) so a panel title, tab caption, or input placeholder set as a plain string is
-	/// rejected regardless of nesting depth.
+	/// rejected at any nesting depth — with two whole-subtree exemptions: <c>_designOptions</c>, and a
+	/// component's own data descriptor (a <c>data</c> object carrying the platform's <c>typeName</c>
+	/// marker on a node that declares a component type — see <see cref="ComponentDataPropertyName"/>).
+	/// Both are platform-written metadata rather than page-authored text.
 	/// </summary>
 	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema (marker-delimited).</param>
 	/// <returns>
@@ -2368,7 +2396,8 @@ public static class SchemaValidationService
 	/// inline literal. Binding forms (<c>$Resources.Strings.*</c> and any other <c>$</c>-prefixed
 	/// expression) and any value that references a <c>#ResourceString(Key)#</c> macro — bare,
 	/// concatenated, or wrapped (e.g. <c>#MacrosTemplateString(#ResourceString(Key)#)#</c>) — are
-	/// accepted; non-string and empty values are ignored.
+	/// accepted; non-string and empty values are ignored. Anything inside an exempt subtree
+	/// (<c>_designOptions</c>, a component data descriptor) is not examined at all, at any depth.
 	/// </returns>
 	public static SchemaValidationResult ValidateLocalizableTextLiterals(string jsBody) {
 		var result = new SchemaValidationResult { IsValid = true };
@@ -2475,7 +2504,12 @@ public static class SchemaValidationService
 				string currentName = TryGetNodeName(node, out string nodeName) ? nodeName : ownerName;
 				foreach (JsonProperty property in node.EnumerateObject()) {
 					// Designer metadata mirrors the real component's captions; scanning it reports the same
-					// caption twice and flags designer-only copies that no runtime binding reads.
+					// caption twice and flags designer-only copies that no runtime binding reads. The
+					// data-descriptor exemption of issue #1298 deliberately does NOT apply here: this engine
+					// is shared with ValidateInsertedWidgetCaptionsRegistered, which REFUSES the write, and
+					// #1298 is about a plain literal - which this scanner never reported anyway, since
+					// ResourceStringHelper.ExtractKeys yields no keys for one. Exempting the descriptor here
+					// would let "#ResourceString(Unregistered)#" in data.caption save and render raw.
 					if (string.Equals(property.Name, DesignOptionsPropertyName, StringComparison.Ordinal)) {
 						continue;
 					}
@@ -2649,7 +2683,7 @@ public static class SchemaValidationService
 				// for the entry root — see the entryRootType note above).
 				string currentType = TryGetComponentType(node, out string nodeType) ? nodeType : entryRootType;
 				foreach (JsonProperty property in node.EnumerateObject()) {
-					if (string.Equals(property.Name, DesignOptionsPropertyName, StringComparison.Ordinal)) {
+					if (IsExemptFromTextScan(currentType, property)) {
 						continue;
 					}
 					ScanTextPropertyForLiterals(currentName, currentType, property, result);
@@ -2711,6 +2745,35 @@ public static class SchemaValidationService
 		}
 		return false;
 	}
+
+	// Single predicate for "this subtree is not page-authored text", so the two conditions cannot drift
+	// apart at the call sites (the file extracts FormatOwnerNode and ResolveEntryRootType for the same
+	// reason). Used by the literal scanners only - the inserted-widget-caption engine intentionally
+	// applies neither exemption, because it also backs the blocking save gate.
+	private static bool IsExemptFromTextScan(string componentType, JsonProperty property) =>
+		string.Equals(property.Name, DesignOptionsPropertyName, StringComparison.Ordinal) ||
+		IsComponentDescriptorProperty(componentType, property);
+
+	// True when the property is the data descriptor of a node that declares a component type (see
+	// ComponentDataPropertyName). Callers skip the subtree entirely: it is component metadata, never
+	// page-authored user-visible text.
+	//
+	// Two conditions, both required. The owner-has-a-type clause is the pre-filter; the DISTINGUISHING
+	// gate layered on top is the descriptor's own shape - a "typeName" string inside the object is the
+	// marker the platform writes on every ComposerViewConfig descriptor, and nothing else carries it.
+	// Keying on the pre-filter ALONE would be far broader than the rationale - it accepts
+	// any non-blank string (a chart series' "doughnut" qualifies), and it would exempt
+	// crt.FilterBuilderSource / crt.FilterBuilderToggler, whose "data" IS an author-writable input whose
+	// elements[].caption is a required user-visible string. On the OOTB Leads form page the marker cuts
+	// exactly right: of 13 "data" objects only the two composer descriptors carry a typeName, and they are
+	// the only two with any text property - TimelineTile and WidgetDataConfig have none, so nothing
+	// regresses by leaving them scanned.
+	private static bool IsComponentDescriptorProperty(string componentType, JsonProperty property) =>
+		!string.IsNullOrEmpty(componentType) &&
+		string.Equals(property.Name, ComponentDataPropertyName, StringComparison.Ordinal) &&
+		property.Value.ValueKind == JsonValueKind.Object &&
+		property.Value.TryGetProperty(ComponentDescriptorTypeNamePropertyName, out JsonElement descriptorTypeName) &&
+		descriptorTypeName.ValueKind == JsonValueKind.String;
 
 	// True when an inline literal is legitimately allowed for (componentType, property) — the component
 	// does not consume a localizable resource for that property (see LiteralAllowedTextProperties).
@@ -3475,6 +3538,149 @@ public static class SchemaValidationService
 		}
 		return result;
 	}
+
+	/// <summary>
+	/// Validates that every custom validator type referenced by a view-model attribute is declared
+	/// in the page body's <c>SCHEMA_VALIDATORS</c> section. Built-in <c>crt.*</c> validators do not
+	/// require page-local declarations.
+	/// </summary>
+	/// <param name="jsBody">Freedom UI web page body.</param>
+	/// <returns>A validation result containing every unresolved custom validator reference.</returns>
+	public static SchemaValidationResult ValidateCustomValidatorReferences(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrWhiteSpace(jsBody)) {
+			return result;
+		}
+
+		var declaredTypes = new HashSet<string>(StringComparer.Ordinal);
+		if (PageSchemaSectionReader.TryRead(jsBody, out string validatorsContent, SchemaValidatorsMarker)) {
+			declaredTypes.UnionWith(EnumerateTopLevelDeclarationKeys(validatorsContent));
+		}
+		var reportedReferences = new HashSet<string>(StringComparer.Ordinal);
+		ForEachMarkerAttributesContainer(jsBody, SchemaViewModelConfig, false,
+			attributes => CollectMissingCustomValidatorReferences(attributes, declaredTypes, reportedReferences, result));
+		ForEachMarkerAttributesContainer(jsBody, SchemaViewModelConfigDiff, true,
+			attributes => CollectMissingCustomValidatorReferences(attributes, declaredTypes, reportedReferences, result));
+		CollectTargetedDiffMissingCustomValidatorReferences(
+			jsBody, declaredTypes, reportedReferences, result);
+		result.IsValid = result.Errors.Count == 0;
+		return result;
+	}
+
+	private static void CollectMissingCustomValidatorReferences(
+		JsonElement attributesElement,
+		IReadOnlySet<string> declaredTypes,
+		ISet<string> reportedReferences,
+		SchemaValidationResult result) {
+		foreach (JsonProperty attribute in EnumerateAttributesWithValidatorObjects(attributesElement)) {
+			CollectMissingCustomValidatorReferences(
+				attribute.Name, attribute.Value, declaredTypes, reportedReferences, result);
+		}
+	}
+
+	private static void CollectMissingCustomValidatorReferences(
+		string attributeName,
+		JsonElement attributeBody,
+		IReadOnlySet<string> declaredTypes,
+		ISet<string> reportedReferences,
+		SchemaValidationResult result) {
+		if (!attributeBody.TryGetProperty(ValidatorsPropertyName, out JsonElement validators) ||
+			validators.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		CollectMissingCustomValidatorReferencesFromValidators(
+			attributeName, validators, declaredTypes, reportedReferences, result);
+	}
+
+	private static void CollectMissingCustomValidatorReferencesFromValidators(
+		string attributeName,
+		JsonElement validators,
+		IReadOnlySet<string> declaredTypes,
+		ISet<string> reportedReferences,
+		SchemaValidationResult result) {
+		foreach (JsonProperty validator in validators.EnumerateObject()) {
+			CollectMissingCustomValidatorReference(
+				attributeName, validator.Value, declaredTypes, reportedReferences, result);
+		}
+	}
+
+	private static void CollectMissingCustomValidatorReference(
+		string attributeName,
+		JsonElement validator,
+		IReadOnlySet<string> declaredTypes,
+		ISet<string> reportedReferences,
+		SchemaValidationResult result) {
+		if (!validator.TryGetProperty(TypePropertyName, out JsonElement typeElement) ||
+			typeElement.ValueKind != JsonValueKind.String) {
+			return;
+		}
+		string validatorType = typeElement.GetString();
+		if (string.IsNullOrWhiteSpace(validatorType) ||
+			validatorType.StartsWith("crt.", StringComparison.OrdinalIgnoreCase) ||
+			declaredTypes.Contains(validatorType)) {
+			return;
+		}
+		string referenceKey = $"{attributeName}\u0000{validatorType}";
+		if (!reportedReferences.Add(referenceKey)) {
+			return;
+		}
+		result.Errors.Add(
+			$"Attribute '{attributeName}' references custom validator type '{validatorType}', " +
+			"but the final page body does not declare that key in SCHEMA_VALIDATORS.");
+	}
+
+	private static void CollectTargetedDiffMissingCustomValidatorReferences(
+		string jsBody,
+		IReadOnlySet<string> declaredTypes,
+		ISet<string> reportedReferences,
+		SchemaValidationResult result) {
+		if (!TryReadMarkerRootElement(jsBody, SchemaViewModelConfigDiff, out JsonDocument? document)) {
+			return;
+		}
+		using (document) {
+			if (document.RootElement.ValueKind != JsonValueKind.Array) {
+				return;
+			}
+			foreach (JsonElement operation in document.RootElement.EnumerateArray()) {
+				if (operation.ValueKind != JsonValueKind.Object) {
+					continue;
+				}
+				if (operation.TryGetProperty(OperationPropertyName, out JsonElement operationKind) &&
+					operationKind.ValueKind == JsonValueKind.String &&
+					string.Equals(operationKind.GetString(), "remove", StringComparison.OrdinalIgnoreCase)) {
+					continue;
+				}
+				if (!operation.TryGetProperty("path", out JsonElement path) ||
+					path.ValueKind != JsonValueKind.Array || path.GetArrayLength() is < 2 or > 4 ||
+					path[0].ValueKind != JsonValueKind.String ||
+					!string.Equals(path[0].GetString(), AttributesPropertyName, StringComparison.OrdinalIgnoreCase) ||
+					path[1].ValueKind != JsonValueKind.String ||
+					!operation.TryGetProperty(ValuesPropertyName, out JsonElement attributeBody) ||
+					attributeBody.ValueKind != JsonValueKind.Object) {
+					continue;
+				}
+				string attributeName = path[1].GetString();
+				switch (path.GetArrayLength()) {
+					case 2:
+						CollectMissingCustomValidatorReferences(
+							attributeName, attributeBody, declaredTypes, reportedReferences, result);
+						break;
+					case 3 when IsValidatorsPathSegment(path[2]):
+						CollectMissingCustomValidatorReferencesFromValidators(
+							attributeName, attributeBody, declaredTypes, reportedReferences, result);
+						break;
+					case 4 when IsValidatorsPathSegment(path[2]) && path[3].ValueKind == JsonValueKind.String:
+						CollectMissingCustomValidatorReference(
+							attributeName, attributeBody, declaredTypes, reportedReferences, result);
+						break;
+				}
+			}
+		}
+	}
+
+	private static bool IsValidatorsPathSegment(JsonElement segment) =>
+		segment.ValueKind == JsonValueKind.String &&
+		string.Equals(segment.GetString(), ValidatorsPropertyName, StringComparison.OrdinalIgnoreCase);
 
 	/// <summary>
 	/// Validates that validator <c>params</c> values do not use the reactive binding syntax

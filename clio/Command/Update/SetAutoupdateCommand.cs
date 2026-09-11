@@ -4,13 +4,16 @@ using CommandLine;
 
 namespace Clio.Command.Update;
 
-[Verb("autoupdate", HelpText = "Enable or disable automatic updates on startup")]
+/// <summary>Options for inspecting or changing automatic clio updates.</summary>
+[Verb("autoupdate", HelpText = "Enable or disable automatic clio updates on startup")]
 public class SetAutoupdateOptions {
 
-	[Option("enable", SetName = "enable", HelpText = "Enable automatic updates on startup (default behavior)")]
+	/// <summary>Gets or sets whether to opt in to automatic clio updates.</summary>
+	[Option("enable", SetName = "enable", HelpText = "Enable automatic updates on startup")]
 	public bool Enable { get; set; }
 
-	[Option("disable", SetName = "disable", HelpText = "Disable automatic updates on startup")]
+	/// <summary>Gets or sets whether to disable automatic clio updates.</summary>
+	[Option("disable", SetName = "disable", HelpText = "Disable automatic updates on startup (default behavior)")]
 	public bool Disable { get; set; }
 
 }
@@ -28,16 +31,16 @@ public class SetAutoupdateCommand : Command<SetAutoupdateOptions> {
 	public override int Execute(SetAutoupdateOptions options) {
 		if (options.Enable) {
 			_settingsRepository.SetAutoupdate(true);
-			_logger.WriteInfo("Auto-update enabled. clio will update automatically on startup.");
+			_logger.WriteInfo("Automatic clio updates enabled.");
 			return 0;
 		}
 		if (options.Disable) {
 			_settingsRepository.SetAutoupdate(false);
-			_logger.WriteInfo("Auto-update disabled. Run 'clio update' to update manually.");
+			_logger.WriteInfo("Automatic clio updates disabled. Run 'clio update' to update manually.");
 			return 0;
 		}
 		bool current = _settingsRepository.GetAutoupdate();
-		_logger.WriteInfo($"Auto-update is currently {(current ? "enabled" : "disabled")}.");
+		_logger.WriteInfo($"Automatic clio updates are currently {(current ? "enabled" : "disabled")}.");
 		_logger.WriteInfo("Use --enable or --disable to change.");
 		return 0;
 	}

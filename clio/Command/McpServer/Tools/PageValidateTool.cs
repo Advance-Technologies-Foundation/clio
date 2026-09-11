@@ -10,6 +10,7 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Acornima.Ast;
+using Microsoft.AspNetCore.Http;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -18,7 +19,8 @@ namespace Clio.Command.McpServer.Tools;
 public sealed class PageValidateTool(
 	IMobileComponentInfoCatalog mobileComponentCatalog,
 	IComponentInfoCatalog webComponentCatalog,
-	IFileSystem fileSystem) {
+	IFileSystem fileSystem,
+	IHttpContextAccessor? httpContextAccessor = null) {
 
 	internal const string ToolName = "validate-page";
 	internal const int MaxBodyFileBytes = 4 * 1024 * 1024;
@@ -26,21 +28,29 @@ public sealed class PageValidateTool(
 	private const string MissingBodyFileMessage = "body-file was not found.";
 	private const string EmptyBodyFileMessage = "body-file is empty.";
 	private const string UnreadableBodyFileMessage = "body-file could not be read.";
-	private const string NonLocalBodyFileMessage = "body-file must reference a local path.";
+	private const string NonLocalBodyFileMessage = "body-file must be an absolute local path.";
+	private const string HttpBodyFileMessage = "body-file is supported only by the local stdio MCP transport.";
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
-	[Description("Validates a Freedom UI page body without saving. Pass body inline or body-file from get-page. Checks web syntax and schema sections or mobile structure and diffs. Run before update-page; use the relevant page-schema or mobile-page-modification guidance for authoring rules.")]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.ClioPages)]
+	[Description("Validates a Freedom UI page body without saving. Checks web markers, JS syntax, field/column bindings, handlers, converters, and validators; mobile disallowed constructs, diff application, `type` placement, Scaffold slot merges, and action-button placement. Accepts inline body or local-stdio get-page files.bodyFile via body-file; inline wins. Run before update-page. See get-guidance page-schema-converters, page-schema-handlers, page-schema-validators, or mobile-page-modification.")]
 	public async Task<PageValidateResponse> ValidatePage(
-		[Description("Parameters: one of body or body-file (required); resources and version (optional)")]
+		[Description("Parameters: body or body-file; optional resources and version")]
 		[Required] PageValidateArgs args,
 		CancellationToken cancellationToken = default) {
-		(string? resolvedBody, PageValidateResponse? inputFailure) =
+		(string resolvedBody, PageValidateResponse? inputFailure) =
 			await ResolveBodyAsync(args, cancellationToken).ConfigureAwait(false);
 		if (inputFailure is not null) {
 			return inputFailure;
 		}
-		string body = resolvedBody!;
+		string body = resolvedBody;
 		// Mobile path: MobilePageValidation.RunAsync applies the diff sections through the faithful client-engine
 		// clones (JsonDiffApplier / JsonPathDiffApplier) and returns any differ exception (e.g. a not-a-container
 		// insert) to the caller for analysis — no heuristic body normalization.
@@ -85,42 +95,68 @@ public sealed class PageValidateTool(
 		};
 	}
 
-	private async Task<(string? Body, PageValidateResponse? Failure)> ResolveBodyAsync(
+	private async Task<(string Body, PageValidateResponse? Failure)> ResolveBodyAsync(
 		PageValidateArgs args,
 		CancellationToken cancellationToken) {
 		if (!string.IsNullOrWhiteSpace(args.Body)) {
 			return (args.Body, null);
 		}
 		if (string.IsNullOrWhiteSpace(args.BodyFile)) {
-			return (null, InvalidBodySource(MissingBodyMessage));
+			return (string.Empty, InvalidBodySource(MissingBodyMessage));
 		}
-		if (args.BodyFile.StartsWith(@"\\", StringComparison.Ordinal)
+		if (httpContextAccessor?.HttpContext is not null) {
+			return (string.Empty, InvalidBodySource(HttpBodyFileMessage));
+		}
+		if (!fileSystem.Path.IsPathFullyQualified(args.BodyFile)
+				|| args.BodyFile.StartsWith(@"\\", StringComparison.Ordinal)
 				|| args.BodyFile.StartsWith("//", StringComparison.Ordinal)) {
-			return (null, InvalidBodySource(NonLocalBodyFileMessage));
+			return (string.Empty, InvalidBodySource(NonLocalBodyFileMessage));
 		}
 		try {
-			await using FileSystemStream stream = fileSystem.File.Open(
-				args.BodyFile, FileMode.Open, FileAccess.Read, FileShare.Read);
-			if (stream.Length == 0) {
-				return (null, InvalidBodySource(EmptyBodyFileMessage));
+			string bodyFile = fileSystem.Path.GetFullPath(args.BodyFile);
+			FileAttributes bodyFileAttributes = fileSystem.File.GetAttributes(bodyFile);
+			if ((bodyFileAttributes & (FileAttributes.Directory | FileAttributes.Device | FileAttributes.ReparsePoint)) != 0) {
+				return (string.Empty, InvalidBodySource(UnreadableBodyFileMessage));
 			}
-			if (stream.Length > MaxBodyFileBytes) {
-				return (null, InvalidBodySource(
+			// This preflight is only a fast guard against directories and special zero-length files
+			// such as Unix FIFOs, whose synchronous open can block. The opened handle below remains
+			// authoritative for the size bound because the path may change between these operations.
+			IFileInfo fileInfo = fileSystem.FileInfo.New(bodyFile);
+			if (!fileInfo.Exists) {
+				return (string.Empty, InvalidBodySource(MissingBodyFileMessage));
+			}
+			if (fileInfo.Length == 0) {
+				return (string.Empty, InvalidBodySource(EmptyBodyFileMessage));
+			}
+			if (fileInfo.Length > MaxBodyFileBytes) {
+				return (string.Empty, InvalidBodySource(
 					$"body-file exceeds the {MaxBodyFileBytes}-byte limit."));
 			}
-			byte[] bytes = new byte[checked((int)stream.Length)];
+			await using FileSystemStream stream = fileSystem.File.Open(
+				bodyFile, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+			long bodyFileLength = stream.Length;
+			if (bodyFileLength == 0) {
+				return (string.Empty, InvalidBodySource(EmptyBodyFileMessage));
+			}
+			if (bodyFileLength > MaxBodyFileBytes) {
+				return (string.Empty, InvalidBodySource(
+					$"body-file exceeds the {MaxBodyFileBytes}-byte limit."));
+			}
+			byte[] bytes = new byte[checked((int)bodyFileLength)];
 			await stream.ReadExactlyAsync(bytes, cancellationToken).ConfigureAwait(false);
-			string body = Encoding.UTF8.GetString(bytes);
+			using var memory = new MemoryStream(bytes, writable: false);
+			using var reader = new StreamReader(memory, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+			string body = reader.ReadToEnd();
 			return string.IsNullOrWhiteSpace(body)
-				? (null, InvalidBodySource(EmptyBodyFileMessage))
+				? (string.Empty, InvalidBodySource(EmptyBodyFileMessage))
 				: (body, null);
 		} catch (FileNotFoundException) {
-			return (null, InvalidBodySource(MissingBodyFileMessage));
+			return (string.Empty, InvalidBodySource(MissingBodyFileMessage));
 		} catch (DirectoryNotFoundException) {
-			return (null, InvalidBodySource(MissingBodyFileMessage));
+			return (string.Empty, InvalidBodySource(MissingBodyFileMessage));
 		} catch (Exception exception) when (exception is IOException
 				or UnauthorizedAccessException or ArgumentException or NotSupportedException) {
-			return (null, InvalidBodySource(UnreadableBodyFileMessage));
+			return (string.Empty, InvalidBodySource(UnreadableBodyFileMessage));
 		}
 	}
 
@@ -327,7 +363,7 @@ public sealed class PageValidateTool(
 /// </summary>
 public sealed record PageValidateArgs(
 	[property: JsonPropertyName("body")]
-	[property: Description("Optional inline page body. Takes precedence when body-file is also provided.")]
+	[property: Description("Inline page body; takes precedence over body-file.")]
 	string? Body = null,
 
 	[property: JsonPropertyName("resources")]
@@ -339,7 +375,7 @@ public sealed record PageValidateArgs(
 	string? Version = null,
 
 	[property: JsonPropertyName("body-file")]
-	[property: Description("Optional path to a page body file, normally files.bodyFile returned by get-page. Used when body is empty.")]
+	[property: Description("Absolute local stdio path, normally get-page files.bodyFile.")]
 	string? BodyFile = null
 );
 

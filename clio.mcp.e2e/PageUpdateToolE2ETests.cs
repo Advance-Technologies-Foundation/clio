@@ -54,10 +54,10 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("The update-page get-tool-contract description carries the ENG-92541 custom-CSS policy (native-first + upgrade-risk + explicit confirmation) and routes to page-modification-components, over the real MCP contract surface (AGENTS.md mandates e2e for a changed tool [Description], not only unit-level reflection).")]
+	[Description("The update-page get-tool-contract response carries the custom-CSS policy and the append-mode validator merge contract over the real MCP surface.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page contract description carries the custom-CSS policy")]
-	[AllureDescription("Fetches the update-page contract via get-tool-contract over the real clio MCP server and asserts the served description carries the native-first custom-CSS policy and routes to page-modification-components.")]
+	[AllureDescription("Fetches the update-page contract via get-tool-contract over the real clio MCP server and asserts the served description carries both the native-first custom-CSS policy and append-mode SCHEMA_VALIDATORS merge behavior.")]
 	public async Task PageUpdateTool_Contract_Should_Carry_CustomCssPolicy() {
 		// Arrange
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
@@ -91,6 +91,10 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		contract.InputSchema.Properties.Should().Contain(field =>
 			field.Name == "validate" && field.Description.Contains("pre-existing"),
 			because: "the served input schema must expose the guarded validation escape hatch, not only the prose tool description");
+		contract.InputSchema.Properties.Should().Contain(field =>
+			field.Name == "mode" && field.Description.Contains("SCHEMA_VALIDATORS") &&
+			field.Description.Contains("incoming wins"),
+			because: "the served append contract must tell MCP callers that custom validator declarations merge by type key");
 	}
 
 	[Test]
@@ -183,6 +187,79 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			because: "the agent-facing error must begin with the shared rejection-prefix constant so the caller does not chase a phantom environment / syntax failure (ENG-93090 RC-5)");
 		response.Error.Should().Contain("replace",
 			because: "the corrective hint must route the caller to replace mode, the working alternative for a full-config body");
+	}
+
+	[Test]
+	[Description("GitHub #1132: the update-page contract served over the real MCP transport describes the append merge identity as (operation, name) and promises existing operations are preserved. update-page is non-resident, so this curated string is the ENTIRE description an agent receives — the tool's [Description] attribute is never merged in.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page contract states the (operation, name) append merge identity")]
+	[AllureDescription("Starts the real clio MCP server, fetches the update-page contract through get-tool-contract, and verifies the served 'mode' field description states that a viewConfigDiff entry is replaced only on an (operation, name) match and that every other existing operation is preserved. Guards against the contract rotting back to the pre-#1132 'dedupe by name' claim, which described behaviour that silently dropped an existing move operation. No environment-name is supplied: contract resolution must not touch an environment.")]
+	public async Task PageUpdateTool_Contract_Should_State_Operation_And_Name_Merge_Identity() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult contractResult = await arrangeContext.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { ToolName }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+
+		// Assert
+		contractResult.IsError.Should().NotBeTrue(
+			because: "resolving a tool contract is a structured read, not an MCP transport error");
+		ToolContractField modeField = contracts.Tools!.Single(definition => definition.Name == ToolName)
+			.InputSchema.Properties.Single(field => field.Name == "mode");
+		modeField.Description.Should().Contain("`operation` and `name`",
+			because: "the append merge identity an agent plans against must reach it end-to-end through the real MCP transport, per the AGENTS.md MCP e2e rule");
+		modeField.Description.Should().Contain("does not collide with is preserved",
+			because: "the safety guarantee the issue disputed — an unrelated append never drops an existing operation — must be stated on the wire");
+		modeField.Description.Should().Contain("The one exception",
+			because: "the caller must also learn the one case where an existing entry IS dropped, or the contract repeats #1132 by promising more than the code delivers");
+		modeField.Description.Should().NotContain("dedupe by `name`",
+			because: "the pre-#1132 claim describes behaviour the merger no longer has, and shipping it would keep steering agents into the data-loss assumption");
+	}
+
+	[Test]
+	[Description("GitHub #1240: the update-page contract served over the real MCP transport discloses that the differ applies whole operation GROUPS in a fixed order, so an operation preserved beside another for one component name can be silently dropped — and declares the `warnings` array that reports it. update-page is non-resident, so this curated string is the ENTIRE description an agent receives.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page contract discloses that a transform beside an insert never applies")]
+	[AllureDescription("Starts the real clio MCP server, fetches the update-page contract through get-tool-contract, and verifies the served 'mode' field states that the differ applies whole operation groups in a fixed order — never in viewConfigDiff array order — so a transform beside an insert for one name is silently dropped, that this is not append-specific, and that the output envelope declares the advisory 'warnings' array carrying the finding. #1132 shipped a merger that PRESERVES both operations, which reads as 'both take effect'; it does not, and the contract has to say so on the wire. No environment-name is supplied: contract resolution must not touch an environment.")]
+	public async Task PageUpdateTool_Contract_Should_Disclose_ApplyOrder_Inertness_And_Warnings_Envelope() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult contractResult = await arrangeContext.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { ToolName }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+
+		// Assert
+		contractResult.IsError.Should().NotBeTrue(
+			because: "resolving a tool contract is a structured read, not an MCP transport error");
+		ToolContractDefinition pageUpdate = contracts.Tools!.Single(definition => definition.Name == ToolName);
+		ToolContractField modeField = pageUpdate.InputSchema.Properties.Single(field => field.Name == "mode");
+		modeField.Description.Should().Contain("whole operation GROUPS in a fixed order",
+			because: "an agent that believes the viewConfigDiff array is applied in order will keep authoring a transform beside an insert and keep wondering why nothing happened");
+		modeField.Description.Should().Contain("silently dropped",
+			because: "preserved-but-inert is exactly the confusion #1240 filed, and naming the outcome on the wire is what makes the warning actionable");
+		modeField.Description.Should().Contain("not append-specific",
+			because: "the inertness comes from the differ rather than the merger, so a hand-authored 'replace' body produces it too — scoping the caveat to append would mislead");
+		ToolContractField warningsField = pageUpdate.OutputContract.Fields.Single(field => field.Name == "warnings");
+		warningsField.Description.Should().Contain("never retry on a warning",
+			because: "the save already succeeded; an agent that reads an advisory finding as a failure will re-save and can trip conflict detection");
 	}
 
 	[Test]
@@ -992,6 +1069,72 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Issue 1249: append persists both a view-model custom-validator binding and its SCHEMA_VALIDATORS factory through the real MCP server and Creatio save path.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page append preserves custom validator declaration")]
+	[AllureDescription("Uses the real clio MCP server and a dedicated Creatio sandbox to append a custom validator binding plus its matching SCHEMA_VALIDATORS factory, then reads the page back and proves both survived the server save. The original page body is restored in cleanup.")]
+	public async Task PageUpdateTool_Should_Persist_CustomValidator_Through_Append() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive issue-1249 append regression test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
+		const string savePage = "McpServer_FormPage";
+		const string validatorType = "usr.Issue1249Validator";
+		string outputDirectory = Directory.CreateTempSubdirectory("clio-e2e-validator-append-").FullName;
+		string? originalBody = null;
+		try {
+			PageGetResponse original = await GetPageAsync(arrangeContext, savePage, environmentName, outputDirectory);
+			original.Success.Should().BeTrue(
+				because: $"get-page must load the seeded page before the append regression. Error: {original.Error}");
+			originalBody = await File.ReadAllTextAsync(original.Files.BodyFile);
+			string appendBody = "define('Issue1249', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+				"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+				"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+				"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"path\":[\"attributes\"],\"values\":{\"UsrIssue1249Probe\":{\"validators\":{\"Probe\":{\"type\":\"usr.Issue1249Validator\",\"params\":{\"message\":\"#ResourceString(DefaultHeaderCaption)#\"}}}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+				"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+				"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+				"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+				"validators: /**SCHEMA_VALIDATORS*/{\"usr.Issue1249Validator\":{\"validator\":function(config){return function(control){return control.value?null:{\"usr.Issue1249Validator\":{\"message\":config.message}};};},\"params\":[{\"name\":\"message\"}],\"async\":false}}/**SCHEMA_VALIDATORS*/ }; });";
+
+			// Act
+			PageUpdateResponse saveResponse = await UpdatePageAsync(
+				arrangeContext, savePage, appendBody, environmentName, outputDirectory, mode: "append");
+			PageGetResponse readBack = await GetPageAsync(arrangeContext, savePage, environmentName, outputDirectory);
+
+			// Assert
+			saveResponse.Success.Should().BeTrue(
+				because: $"append must save the self-contained custom validator change. Error: {saveResponse.Error}");
+			readBack.Success.Should().BeTrue(
+				because: $"get-page must read the saved page back from Creatio. Error: {readBack.Error}");
+			string readBackBody = await File.ReadAllTextAsync(readBack.Files.BodyFile);
+			Match validatorsSection = Regex.Match(
+				readBackBody,
+				@"/\*\*SCHEMA_VALIDATORS\*/(?<content>[\s\S]*?)/\*\*SCHEMA_VALIDATORS\*/",
+				RegexOptions.CultureInvariant);
+			readBackBody.Should().Contain("UsrIssue1249Probe",
+				because: "the view-model validator binding must survive the append and server save");
+			validatorsSection.Success.Should().BeTrue(
+				because: "the read-back body must contain a SCHEMA_VALIDATORS marker pair");
+			validatorsSection.Groups["content"].Value.Should().Contain($"\"{validatorType}\"",
+				because: "the matching validator type key must survive inside SCHEMA_VALIDATORS, not only in the binding");
+			validatorsSection.Groups["content"].Value.Should().Contain("function(config){return function(control)",
+				because: "the raw JavaScript validator factory must remain intact after keyed-object merging");
+		} finally {
+			if (!string.IsNullOrWhiteSpace(originalBody)) {
+				PageUpdateResponse restore = await UpdatePageAsync(
+					arrangeContext, savePage, originalBody, environmentName, outputDirectory, force: true);
+				restore.Success.Should().BeTrue(
+					because: $"the E2E test must restore the seeded page body. Error: {restore.Error}");
+			}
+			TryDeleteDirectory(outputDirectory);
+		}
+	}
+
+	[Test]
 	[Description("ENG-91317 ticket scenario: get-page captures a checksum baseline, an out-of-band save changes the schema, update-page detects the conflict (verifying SysSchema.Checksum is bumped on save — risk A-01), recovery via get-page + retry succeeds, and force=true overwrites deliberately.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page detects out-of-band schema modification via checksum baseline and recovers")]
@@ -1188,7 +1331,8 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		string body,
 		string environmentName,
 		string outputDirectory,
-		bool? force = null) {
+		bool? force = null,
+		string? mode = null) {
 		Dictionary<string, object?> args = new() {
 			["schema-name"] = schemaName,
 			["body"] = body,
@@ -1198,6 +1342,9 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		};
 		if (force == true) {
 			args["force"] = true;
+		}
+		if (!string.IsNullOrWhiteSpace(mode)) {
+			args["mode"] = mode;
 		}
 		CallToolResult result = await arrangeContext.Session.CallToolAsync(
 			ToolName,

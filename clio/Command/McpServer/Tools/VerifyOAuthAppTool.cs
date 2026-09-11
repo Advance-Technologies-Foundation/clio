@@ -13,7 +13,6 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool surface for the <c>verify-oauth-app</c> command.
 /// </summary>
 [McpServerToolType]
-[FeatureToggle("deploy-identity")]
 public sealed class VerifyOAuthAppTool(
 	VerifyOAuthAppCommand command,
 	ILogger logger,
@@ -30,15 +29,24 @@ public sealed class VerifyOAuthAppTool(
 	/// </summary>
 	[McpServerTool(Name = VerifyOAuthAppToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Verifies a server-to-server OAuth app end to end over REST: acquires a client_credentials access token from the
 				 IdentityService token endpoint, then runs a minimal bearer-authenticated Creatio DataService smoke request with that
 				 token. Returns tokenAcquired, dataServiceStatus (HTTP status of the smoke request), and ok (token acquired AND
-				 dataServiceStatus 200). The access token text is never returned or logged. Supply identity-server-url to override the
-				 IdentityService URL otherwise read from the OAuth20IdentityServerUrl system setting or derived from the Creatio host.
+				 dataServiceStatus 200 with a successful DataService response). The access token text is never returned or logged.
+				 Defaults to the registered environment OAuth credentials and AuthAppUri. Supply both client-id and client-secret
+				 to override credentials, and identity-server-url to override the IdentityService URL. Without AuthAppUri, the URL
+				 is read from OAuth20IdentityServerUrl or derived from the Creatio host. No configuration or credentials are changed.
 				 """)]
 	public VerifyOAuthAppResponse VerifyOAuthApp(
-		[Description("Parameters: environment-name (required); client-id (required); client-secret (required); identity-server-url (optional override).")]
+		[Description("Parameters: environment-name (required); client-id and client-secret (optional pair); identity-server-url (optional override).")]
 		[Required]
 		VerifyOAuthAppArgs args) {
 		try {
@@ -52,8 +60,8 @@ public sealed class VerifyOAuthAppTool(
 			VerifyOAuthAppResult result = resolvedCommand.Verify(options);
 			return new VerifyOAuthAppResponse(true, result, null);
 		}
-		catch (Exception exception) {
-			return new VerifyOAuthAppResponse(false, null, exception.Message);
+		catch (Exception) {
+			return new VerifyOAuthAppResponse(false, null, VerifyOAuthAppCommand.VerificationFailureMessage);
 		}
 	}
 }
@@ -68,17 +76,15 @@ public sealed record VerifyOAuthAppArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("client-id")]
-	[property: Description("OAuth client id to verify")]
-	[property: Required]
-	string ClientId,
+	[property: Description("OAuth client id override. Omit both credentials to use the registered environment.")]
+	string? ClientId = null,
 
 	[property: JsonPropertyName("client-secret")]
 	[property: Description("OAuth client secret to verify. Never returned or logged.")]
-	[property: Required]
-	string ClientSecret,
+	string? ClientSecret = null,
 
 	[property: JsonPropertyName("identity-server-url")]
-	[property: Description("Explicit IdentityService base URL. Defaults to the OAuth20IdentityServerUrl system setting, then a derived -is host.")]
+	[property: Description("Explicit IdentityService base URL. Defaults to registered AuthAppUri, then OAuth20IdentityServerUrl, then a derived -is host.")]
 	string? IdentityServerUrl = null);
 
 /// <summary>

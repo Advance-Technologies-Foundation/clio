@@ -368,7 +368,7 @@ namespace Clio.UserEnvironment
 		string GetActualEnvironmentName(string environmentName);
 
 		/// <summary>
-		/// Gets the AutoUpdate setting. Returns true when not explicitly configured (opt-out model).
+		/// Gets the AutoUpdate setting. Returns false when not explicitly configured (opt-in model).
 		/// </summary>
 		bool GetAutoupdate();
 
@@ -376,6 +376,12 @@ namespace Clio.UserEnvironment
 		/// Persists the AutoUpdate setting.
 		/// </summary>
 		void SetAutoupdate(bool value);
+
+		/// <summary>Advances a due enabled update schedule and reports whether its update should run.</summary>
+		/// <param name="target">Component whose schedule is checked.</param>
+		/// <param name="now">Current time.</param>
+		/// <returns><c>true</c> when the component should be updated.</returns>
+		bool TryScheduleAutoupdate(global::Clio.Common.AutoUpdateTarget target, DateTimeOffset now) => false;
 
 		/// <summary>
 		/// Determines whether the named feature flag is enabled.

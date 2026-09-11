@@ -406,6 +406,12 @@ public class PageToolsTests
 			because: "get-page prompt guidance must require verifying a component type exists before inserting it, so the agent does not author an invented crt.* type that saves successfully but renders broken");
 		prompt.Should().Contain("ask the user whether to use one of the existing components or build a custom one",
 			because: "get-page prompt guidance must instruct the agent to ask the user when no existing component matches, instead of fabricating a type (ENG-90939)");
+		prompt.Should().Contain("files.bodyFile",
+			because: "the prompt must route the agent to the file get-page materializes, which is the only place the editable body exists (issue #1185)");
+		prompt.Should().NotContain("raw.body",
+			because: "the MCP get-page envelope has no raw property, so a prompt naming raw.body sends the agent after a value that never arrives (issue #1185)");
+		prompt.Should().Contain("REPLACES",
+			because: "the prompt routes edits to files.bodyFile, so it must also say that the next get-page of that schema deletes and rewrites the directory holding it (PR #1351 review)");
 		prompt.Should().Contain(GuidanceGetTool.ToolName,
 			because: "get-page prompt guidance should route guide lookups through the dedicated guidance tool");
 		prompt.Should().Contain("`existing-app-maintenance`",
@@ -2257,6 +2263,117 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("TryUpdatePage returns BOTH the insert-downgrade warning and the inert-operation warning instead of one overwriting the other (locks CombineWarnings).")]
+	public void TryUpdatePage_WhenDowngradeAndInertPairBothApply_ReturnsBothWarningsAndSaves() {
+		// Arrange — the stored schema inserts UsrName AND UsrPhone. The incoming replace body downgrades
+		// UsrName's insert to a merge (a downgrade finding) and carries an insert+merge pair for UsrPhone
+		// (an inert-operation finding), so the two detectors fire on one save.
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse(
+				"UsrBothWarnings_FormPage",
+				"both-schema-uid",
+				"both-package-uid",
+				"UsrBothPackage",
+				"BasePage").ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["body"] = CreatePageBody("""
+						[
+							{ "operation": "insert", "name": "UsrName", "values": { "type": "crt.Input" } },
+							{ "operation": "insert", "name": "UsrPhone", "values": { "type": "crt.Input" } }
+						]
+						"""),
+					["localizableStrings"] = new JArray()
+				}
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrBothWarnings_FormPage",
+			Body = CreatePageBody("""
+				[
+					{ "operation": "merge", "name": "UsrName", "values": { "label": "X" } },
+					{ "operation": "insert", "name": "UsrPhone", "values": { "type": "crt.Input" } },
+					{ "operation": "merge", "name": "UsrPhone", "values": { "visible": false } }
+				]
+				"""),
+			DryRun = false
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "both findings are advisory and neither may block the save");
+		response.Warnings.Should().Contain(w => w.Contains("UsrName") && w.Contains("orphaned"),
+			because: "the insert->merge downgrade warning must survive the second warning source");
+		response.Warnings.Should().Contain(w => w.Contains("UsrPhone") && w.Contains("'merge'"),
+			because: "the inert insert+merge pair must be reported too — assigning response.Warnings per source would silently drop whichever ran first");
+	}
+
+	[Test]
+	[Description("TryUpdatePage reports an inert operation pair on a dry run, without saving, so the caller learns before writing.")]
+	public void TryUpdatePage_WhenDryRunBodyCarriesInertPair_ReturnsWarningWithoutSaving() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse(
+				"UsrDryInert_FormPage",
+				"dry-inert-schema-uid",
+				"dry-inert-package-uid",
+				"UsrDryInertPackage",
+				"BasePage").ToString());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrDryInert_FormPage",
+			Body = CreatePageBody("""
+				[
+					{ "operation": "remove", "name": "UsrName" },
+					{ "operation": "move", "name": "UsrName", "parentName": "Other", "propertyName": "items", "index": 0 }
+				]
+				"""),
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "a dry run of a valid body succeeds; the finding is advisory");
+		response.DryRun.Should().BeTrue(because: "the dry-run flag must still be reported on the envelope");
+		response.Warnings.Should().Contain(w => w.Contains("UsrName") && w.Contains("'move'"),
+			because: "a dry run is exactly the call that asks whether a body is right before writing it, so a body-only finding belongs there");
+		applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("SaveSchema")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
 	[Description("PageUpdateTool merges the command's downgrade warning with body-only validation warnings instead of overwriting either (locks MergeWarnings).")]
 	public async System.Threading.Tasks.Task UpdatePage_WhenDowngradeAndAwaitWarningsBothApply_MergesBothIntoResponse() {
 		// Arrange — the stored schema inserts UsrName (so the incoming merge is a downgrade), and the
@@ -2629,7 +2746,7 @@ public class PageToolsTests
 			because: "an empty page body should fail before the command attempts remote validation or save");
 		response.Success.Should().BeFalse(
 			because: "the validation failure should be surfaced in the response envelope");
-		response.Error.Should().Contain("get-page raw.body",
+		response.Error.Should().Contain("files.bodyFile",
 			because: "the error should teach callers which page payload shape is required");
 		serviceUrlBuilder.ReceivedCalls().Should().BeEmpty(
 			because: "validation should fail before the command builds any service URLs");
@@ -4303,7 +4420,7 @@ public class PageToolsTests
 		ok.Should().BeFalse();
 		response.Error.Should().Contain("Object", "original server error must be preserved");
 		response.Error.Should().Contain("hint:", "hint annotation must be appended");
-		response.Error.Should().Contain("re-sending the full get-page raw.body",
+		response.Error.Should().Contain("re-sending the full get-page body verbatim",
 			"hint must explain the likely cause");
 		response.Error.Should().Contain("page-modification",
 			"hint must point back to the canonical guide resource");
@@ -4360,7 +4477,7 @@ public class PageToolsTests
 	}
 
 	[Test]
-	[Description("PageBodyMerger.Merge concatenates viewConfigDiff entries, dedupes by name (incoming wins), and preserves other sections")]
+	[Description("PageBodyMerger.Merge concatenates viewConfigDiff entries, replaces on an (operation, name) collision (incoming wins), and preserves other sections")]
 	public void PageBodyMerger_Should_Merge_ViewConfigDiff_And_Handlers() {
 		string currentBody = "define(\"P\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"RefreshButton\",\"values\":{\"size\":\"large\"}},{\"operation\":\"insert\",\"name\":\"Existing\",\"values\":{\"type\":\"crt.Input\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
@@ -4379,10 +4496,141 @@ public class PageToolsTests
 
 		merged.Should().Contain("\"name\": \"Existing\"", because: "existing entries without collisions are preserved");
 		merged.Should().Contain("\"name\": \"TestButton\"", because: "new entries are appended");
-		merged.Should().Contain("\"size\": \"small\"", because: "incoming wins when names collide (RefreshButton gets size:small)");
+		merged.Should().Contain("\"size\": \"small\"", because: "incoming wins when operation AND name both collide (both entries are a merge on RefreshButton, so it gets size:small)");
 		merged.Should().NotContain("\"size\": \"large\"", because: "the colliding entry is superseded");
 		merged.Should().Contain("crt.KeepMeRequest", because: "existing handlers without request collision are preserved");
 		merged.Should().Contain("usr.TestRequest", because: "new handlers are appended");
+	}
+
+	[Test]
+	[Description("update-page: a save with nothing to report leaves response.Warnings NULL, so the envelope omits the field rather than emitting an empty array")]
+	public void TryUpdatePage_Should_LeaveWarningsNull_WhenNothingToReport() {
+		// Arrange - a body no detector has anything to say about: one insert, one name, no pairs, and a
+		// current body that introduces nothing to downgrade. CombineWarnings must therefore collapse
+		// three empty sources to null, NOT to an empty list: PageUpdateResponse.Warnings is serialized
+		// with null-omission on both Newtonsoft and STJ, so returning [] would ship "warnings":[] on
+		// every clean save. Nothing else pins that, and flipping the return would keep every other test
+		// green while the envelope silently gained a field.
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse(
+				"UsrCleanSave_FormPage", "clean-schema-uid", "clean-package-uid", "UsrCleanPackage", "BasePage").ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["body"] = CreatePageBody("""[{ "operation": "merge", "name": "UsrUntouched", "values": { "visible": true } }]"""),
+					["localizableStrings"] = new JArray()
+				}
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrCleanSave_FormPage",
+			Body = CreatePageBody("""[{ "operation": "insert", "name": "UsrSolo", "values": { "type": "crt.Input" } }]"""),
+			DryRun = false
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "the body is clean, so the save succeeds");
+		response.Warnings.Should().BeNull(
+			because: "CombineWarnings must return null rather than an empty list when every source is empty - the envelope omits the field only when it is null, and an empty array would appear on every clean save");
+	}
+
+	[Test]
+	[Description("update-page append: the #1132 AC4 superseded-drop warning reaches response.Warnings through the real save path, for web and mobile")]
+	public void TryUpdatePage_AppendMode_Should_SurfaceSupersededDropWarning_WhenCurrentBodyCarriesOneIdentityTwice(
+		[Values(PageSchemaType.Web, PageSchemaType.Mobile)] PageSchemaType kind) {
+		// Arrange - the current body carries `merge UsrDup` TWICE with DISJOINT keys, and the incoming
+		// fragment supersedes that identity. The merger replaces the first occurrence and must DROP the
+		// later one, taking its `b` key with it - the one loss #1132 AC4 requires be reported rather than
+		// applied silently. Without this test, removing mergeWarnings from the CombineWarnings call in
+		// TryUpdatePage would leave every other test green.
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		var hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		const string originalUId = "86416224-550a-4087-87d9-d4ebc9aa69c8";
+		const string designPkg = "520a3697-4d73-c598-38d4-a7501f8c8e9b";
+		const string schemaName = "UsrSupersededDrop_FormPage";
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		hierarchyClient.GetDesignPackageUId(originalUId).Returns(designPkg);
+		hierarchyClient.GetParentSchemas(originalUId, designPkg).Returns(new List<PageDesignerHierarchySchema> {
+			new() { UId = originalUId, Name = schemaName, PackageUId = designPkg, PackageName = "UsrSupersededDropPackage" }
+		});
+		const string duplicatedDiff =
+			"[{\"operation\":\"merge\",\"name\":\"UsrDup\",\"values\":{\"a\":1}}," +
+			"{\"operation\":\"merge\",\"name\":\"UsrDup\",\"values\":{\"b\":2}}]";
+		const string supersedingDiff =
+			"[{\"operation\":\"merge\",\"name\":\"UsrDup\",\"values\":{\"a\":99}}]";
+		string currentBody = kind == PageSchemaType.Mobile
+			? "{ \"viewConfigDiff\": " + duplicatedDiff + ", \"viewModelConfigDiff\": [], \"modelConfigDiff\": [] }"
+			: "define(\"" + schemaName + "\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			  "viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/" + duplicatedDiff + "/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			  "viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			  "modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			  "handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			  "converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			  "validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		string incomingFragment = kind == PageSchemaType.Mobile
+			? "{ \"viewConfigDiff\": " + supersedingDiff + " }"
+			: "/**SCHEMA_VIEW_CONFIG_DIFF*/" + supersedingDiff + "/**SCHEMA_VIEW_CONFIG_DIFF*/";
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["UId"] = originalUId } }
+		};
+		var getSchemaResponse = new JObject {
+			["success"] = true,
+			["schema"] = new JObject { ["uId"] = originalUId, ["name"] = schemaName, ["body"] = currentBody, ["package"] = new JObject { ["uId"] = designPkg } }
+		};
+		var saveResponse = new JObject { ["success"] = true };
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ci => {
+				callIndex++;
+				return callIndex switch {
+					1 => metadataResponse.ToString(),
+					2 => getSchemaResponse.ToString(),
+					_ => saveResponse.ToString()
+				};
+			});
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
+
+		// Act
+		bool ok = command.TryUpdatePage(new PageUpdateOptions {
+			SchemaName = schemaName,
+			Body = incomingFragment,
+			Mode = "append",
+			DryRun = false
+		}, out PageUpdateResponse response);
+
+		// Assert
+		ok.Should().BeTrue(
+			because: $"the drop is advisory and must not block the save - refusing the write would leave the caller with no way to append at all ({kind})");
+		response.Success.Should().BeTrue(because: $"the schema was saved ({kind}). Error: {response.Error}");
+		response.Warnings.Should().NotBeNull(
+			because: $"the merger reported a drop, so CombineWarnings must have materialized a list rather than leaving it null ({kind})");
+		response.Warnings.Should().ContainSingle(w => w.Contains("UsrDup") && w.Contains("carried more than one"),
+			because: $"the later 'merge UsrDup' entry was dropped and its disjoint 'b' key went with it - #1132 AC4 requires that be reported through the save response, once per identity ({kind})");
+		response.Warnings.Should().Contain(w => w.Contains("get-page"),
+			because: $"the caller cannot see the body they just overwrote, so the warning has to tell them how to recover it ({kind})");
 	}
 
 	[Test]
@@ -4432,6 +4680,64 @@ public class PageToolsTests
 		ok.Should().BeTrue(because: "append mode should accept bodies with only the sections that change");
 		response.Error.Should().BeNull();
 		response.Success.Should().BeTrue();
+	}
+
+	[Test]
+	[Description("update-page append dry-run rejects a custom validator binding that remains unresolved after merging, before any save request")]
+	public void TryUpdatePage_AppendDryRun_Should_Reject_Unresolved_CustomValidator_Before_Save() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		var hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		const string originalUId = "86416224-550a-4087-87d9-d4ebc9aa69c8";
+		const string designPkg = "520a3697-4d73-c598-38d4-a7501f8c8e9b";
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(call => "http://test" + call.ArgAt<string>(0));
+		hierarchyClient.GetDesignPackageUId(originalUId).Returns(designPkg);
+		hierarchyClient.GetParentSchemas(originalUId, designPkg).Returns(new List<PageDesignerHierarchySchema> {
+			new() { UId = originalUId, Name = "UsrValidator_FormPage", PackageUId = designPkg, PackageName = "UsrValidator" }
+		});
+		string currentBody = "define(\"UsrValidator_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["UId"] = originalUId } }
+		};
+		var getSchemaResponse = new JObject {
+			["success"] = true,
+			["schema"] = new JObject { ["uId"] = originalUId, ["name"] = "UsrValidator_FormPage", ["body"] = currentBody, ["package"] = new JObject { ["uId"] = designPkg } }
+		};
+		bool saveAttempted = false;
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => {
+				callIndex++;
+				if (callIndex == 1) return metadataResponse.ToString();
+				if (callIndex == 2) return getSchemaResponse.ToString();
+				saveAttempted = true;
+				return new JObject { ["success"] = true }.ToString();
+			});
+		string incomingBody = "/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"path\":[\"attributes\"],\"values\":{\"UsrName\":{\"validators\":{\"Probe\":{\"type\":\"usr.Missing\"}}}}}]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/";
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
+
+		// Act
+		bool ok = command.TryUpdatePage(new PageUpdateOptions {
+			SchemaName = "UsrValidator_FormPage",
+			Body = incomingBody,
+			Mode = "append",
+			DryRun = true
+		}, out PageUpdateResponse response);
+
+		// Assert
+		ok.Should().BeFalse(because: "dry-run must validate the same final merged body that a real append would save");
+		response.ContentValidationFailure.Should().BeTrue(because: "an unresolved custom validator is a skippable content-rule failure");
+		response.Error.Should().Contain("usr.Missing", because: "the failure must identify the unresolved validator type");
+		saveAttempted.Should().BeFalse(because: "dry-run must never send a SaveSchema request");
 	}
 
 	[Test]
@@ -4946,6 +5252,111 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("PageBodyMerger validators merge: incoming validator keys are added while existing validator factories remain intact")]
+	public void PageBodyMerger_Should_Merge_Validators_By_Key() {
+		// Arrange
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.Existing\":{validator:function(){return function(){return null;};},params:[],async:false}}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.Added\":{validator:function(config){return function(control){return control.value?null:{\"usr.Added\":{message:config.message}};};},params:[{name:\"message\"}],async:false}}/**SCHEMA_VALIDATORS*/";
+
+		// Act
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		// Assert
+		merged.Should().Contain("usr.Existing", because: "the existing validator must survive an append");
+		merged.Should().Contain("usr.Added", because: "the incoming validator must be added to the saved body");
+		merged.Should().Contain("control.value?null", because: "the incoming JavaScript factory must be preserved verbatim");
+	}
+
+	[Test]
+	[Description("PageBodyMerger validators dedupe: an incoming validator factory replaces the current entry with the same type key")]
+	public void PageBodyMerger_Should_Replace_Validator_When_Key_Matches() {
+		// Arrange
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.Unique\":{validator:function(){return function(){return \"old\";};},params:[],async:false},\"usr.Keep\":{validator:function(){return function(){return null;};},params:[],async:false}}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.Unique\":{validator:function(){return function(){return \"new\";};},params:[],async:false}}/**SCHEMA_VALIDATORS*/";
+
+		// Act
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		// Assert
+		merged.Should().Contain("return \"new\"", because: "the incoming validator must win when its type key matches");
+		merged.Should().NotContain("return \"old\"", because: "the replaced validator factory must not remain in the saved body");
+		merged.Should().Contain("usr.Keep", because: "non-colliding existing validators must be preserved");
+	}
+
+	[Test]
+	[Description("PageBodyMerger validators: an empty incoming validator section preserves current validator factories")]
+	public void PageBodyMerger_Should_Preserve_Validators_When_Incoming_Is_Empty() {
+		// Arrange
+		string currentBody = "/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/ /**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.Keep\":{validator:function(){return function(){return null;};},params:[],async:false}}/**SCHEMA_VALIDATORS*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+
+		// Act
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		// Assert
+		merged.Should().Contain("usr.Keep", because: "an empty incoming validator object must not erase current validators");
+	}
+
+	[Test]
+	[Description("PageBodyMerger validators: regex literals and comments remain intact and do not consume sibling validator entries")]
+	public void PageBodyMerger_Should_Preserve_Regex_Comment_And_Sibling_Validators() {
+		// Arrange
+		string currentBody = "define(\"X\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{\"usr.Regex\":{validator:function(){return function(control){/* keep }, comment */ return /[},]/.test(control.value)?null:{};};},params:[],async:false},\"usr.Keep\":{validator:function(){return function(){return null;};},params:[],async:false}}/**SCHEMA_VALIDATORS*/ }; });";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
+			"/**SCHEMA_VALIDATORS*/{\"usr.Added\":{validator:function(){return function(){return null;};},params:[],async:false}}/**SCHEMA_VALIDATORS*/";
+
+		// Act
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+		PageBodySyntaxValidationResult syntax = PageBodySyntaxValidator.Validate(merged);
+
+		// Assert
+		merged.Should().Contain("/[},]/", because: "braces and commas inside a regex literal must remain raw JavaScript");
+		merged.Should().Contain("keep }, comment", because: "comment text must not alter object-entry boundaries");
+		merged.Should().Contain("usr.Keep", because: "a complex validator must not consume its following sibling");
+		merged.Should().Contain("usr.Added", because: "the incoming validator must still be appended");
+		syntax.IsValid.Should().BeTrue("because the keyed-object merge must produce syntactically valid JavaScript");
+	}
+
+	[Test]
 	[Description("ParseSamplingResponse parses a valid JSON response with ok=true")]
 	public void ParseSamplingResponse_Should_Parse_Ok_Response() {
 		string text = "{\"ok\":true,\"issues\":[],\"warnings\":[]}";
@@ -5035,7 +5446,7 @@ public class PageToolsTests
 	}
 
 	[Test]
-	[Description("PageBodyMerger mobile: merges viewConfigDiff by name, viewModelConfigDiff and modelConfigDiff by append")]
+	[Description("PageBodyMerger mobile: merges viewConfigDiff by (operation, name), viewModelConfigDiff and modelConfigDiff by append")]
 	public void PageBodyMerger_Should_Merge_Mobile_Bodies() {
 		string currentBody = "{\"viewConfigDiff\":[{\"operation\":\"merge\",\"name\":\"Existing\",\"values\":{\"size\":\"large\"}}],\"viewModelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"VM1\"}],\"modelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"M1\"}]}";
 		string incomingBody = "{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"NewButton\",\"values\":{\"type\":\"crt.Button\"}},{\"operation\":\"merge\",\"name\":\"Existing\",\"values\":{\"size\":\"small\"}}],\"viewModelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"VM2\"}],\"modelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"M2\"}]}";
@@ -5046,8 +5457,8 @@ public class PageToolsTests
 		JArray viewConfigDiff = (JArray)result["viewConfigDiff"];
 		viewConfigDiff.Count.Should().Be(2, because: "existing + new entry, collision replaced");
 		viewConfigDiff.Any(t => t["name"]?.ToString() == "NewButton").Should().BeTrue(because: "new entry is appended");
-		viewConfigDiff.Any(t => t["values"]?["size"]?.ToString() == "small").Should().BeTrue(because: "incoming wins on name collision");
-		viewConfigDiff.Any(t => t["values"]?["size"]?.ToString() == "large").Should().BeFalse(because: "old entry with same name is replaced");
+		viewConfigDiff.Any(t => t["values"]?["size"]?.ToString() == "small").Should().BeTrue(because: "incoming wins on an (operation, name) collision");
+		viewConfigDiff.Any(t => t["values"]?["size"]?.ToString() == "large").Should().BeFalse(because: "the old entry with the same operation and name is replaced");
 
 		JArray viewModelConfigDiff = (JArray)result["viewModelConfigDiff"];
 		viewModelConfigDiff.Count.Should().Be(2, because: "viewModelConfigDiff uses append, both items kept");

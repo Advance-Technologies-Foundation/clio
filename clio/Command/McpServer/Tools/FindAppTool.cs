@@ -30,6 +30,13 @@ public sealed class FindAppTool(
 	/// </summary>
 	[McpServerTool(Name = FindAppToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Finds installed Creatio applications AND their sections in one call, matching a case-insensitive substring " +
 		"against application name/code/description and section captions/codes — use it to resolve an imprecise app name to its real code. " +

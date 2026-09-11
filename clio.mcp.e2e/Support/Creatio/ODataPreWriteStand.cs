@@ -112,6 +112,24 @@ internal sealed class ODataPreWriteStand : IAsyncDisposable {
 			},
 			CancellationToken);
 
+	/// <summary>
+	/// Calls <c>odata-create</c> against the registered stub environment with a single row.
+	/// </summary>
+	/// <param name="entity">Entity set to insert into.</param>
+	/// <param name="row">Field/value map sent as the only element of the <c>rows</c> argument.</param>
+	/// <returns>The raw MCP tool result.</returns>
+	public Task<CallToolResult> CreateAsync(string entity, Dictionary<string, object?> row) =>
+		Session.CallToolAsync(
+			Clio.Command.McpServer.Tools.ODataCreateTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = EnvironmentName,
+					["entity"] = entity,
+					["rows"] = new List<Dictionary<string, object?>> { row }
+				}
+			},
+			CancellationToken);
+
 	/// <summary>Requests the stub recorded, oldest first.</summary>
 	/// <returns>Every request the stub served during this stand's lifetime.</returns>
 	public Task<IReadOnlyList<RecordedStubRequest>> GetRecordedRequestsAsync() =>

@@ -110,6 +110,53 @@ public sealed class PageHierarchyGetToolE2ETests : McpContractFixtureBase {
 			because: "the default (non-metadata-only) response inlines each body-bearing schema's raw body");
 	}
 
+	[Test]
+	[Category("McpE2E.Sandbox")]
+	[Category("E2E")]
+	[Description("get-page-hierarchy reports an absent schema as a failure on BOTH surfaces: the MCP tool result carries success:false with a not-found error, and the CLI exits non-zero (ENG-95262 story 13 AC-01).")]
+	[AllureTag(ToolName)]
+	[AllureName("get-page-hierarchy reports an absent schema as a failure on both surfaces")]
+	[AllureDescription("Requests a schema name that cannot exist on the target environment and verifies the outcomes agree: the MCP tool answers with success:false and a not-found error (never a chain), and `clio get-page-hierarchy` exits non-zero so a script or arrange step that checks the exit code cannot mistake a failed read for a page it can use.")]
+	public async Task GetPageHierarchy_Should_Report_Absent_Schema_As_Failure_On_Both_Surfaces() {
+		// Arrange — a name that is syntactically valid and cannot be seeded on any stand.
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(3));
+		string environmentName = await ResolveReachableEnvironmentOrIgnoreAsync(settings);
+		const string absentSchemaName = "UsrClioMcpAbsentPage_FormPage";
+
+		// Act — the MCP surface (long-tail tool: dispatched through clio-run) and then the CLI surface.
+		CallToolResult callResult = await Session.CallToolAsync(
+			ClioRunTool.ToolName,
+			new Dictionary<string, object?> {
+				["command"] = ToolName,
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = absentSchemaName,
+					["environment-name"] = environmentName
+				}
+			},
+			cts.Token);
+		ClioCliCommandResult cliResult = await ClioCliCommandRunner.RunAsync(
+			settings,
+			["get-page-hierarchy", "--schema-name", absentSchemaName, "-e", environmentName],
+			cancellationToken: cts.Token);
+
+		// Assert — MCP: a failure envelope, never a chain.
+		GetPageHierarchyResponse response = ExtractHierarchy(callResult);
+		response.Success.Should().BeFalse(
+			because: "an absent page cannot be answered with a chain, so the tool result must say the read failed");
+		response.Error.Should().Contain("not found",
+			because: "the environment answered that the schema does not exist, and the caller is told exactly that");
+		response.Schemas.Should().BeNullOrEmpty(
+			because: "no chain may accompany a failed read, or an agent will treat it as the page hierarchy");
+
+		// Assert — CLI: the exit code agrees with the envelope.
+		cliResult.ExitCode.Should().NotBe(0,
+			because: $"a failed read must be visible to a script that only checks the exit code. Output: {cliResult.StandardOutput}");
+		cliResult.StandardOutput.Should().Contain("\"success\":false",
+			because: "the structured envelope is still printed alongside the non-zero exit code");
+	}
+
 	private static async Task<ToolContractGetResponse> CallToolContractAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,

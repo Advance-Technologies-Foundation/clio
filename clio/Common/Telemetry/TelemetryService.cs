@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -54,29 +55,69 @@ public sealed class TelemetryService : ITelemetryService
 	private const string SessionStartedEvent = "session_started";
 
 	/// <summary>
+	/// Reserved <c>workflow</c> value for an event whose flow is unknown - the deterministic session-start
+	/// floor, which sees a tool name rather than a flow, and any event that omitted the field.
+	/// </summary>
+	private const string FloorWorkflow = "unattributed";
+
+	/// <summary>Canonical session-start event; anchors every elapsed-time measurement for a run.</summary>
+	internal const string WorkflowStartedEvent = "workflow_started";
+
+	/// <summary>Developer approval of the presented plan; the span a build is measured from.</summary>
+	private const string PlanApprovedEvent = "plan_approved";
+
+	/// <summary>Start of execution; the narrowest span a terminal stage prefers to report.</summary>
+	private const string BuildStartedEvent = "build_started";
+
+	/// <summary>
 	/// Version of the persisted event payload shape. Bump when attributes are added or renamed
 	/// so downstream consumers can parse events without relying on their creation date.
 	/// </summary>
-	private const string SchemaVersion = "1";
+	/// <remarks>
+	/// 1 -> 2: adds <c>workflow</c>, <c>variant</c>, <c>model</c> and the three token counters, and
+	/// changes the meaning of <c>coding_agent</c> (a canonical slug, not the caller's spelling). Without
+	/// the bump a consumer could only tell the two shapes apart by event date, which is the inference
+	/// this field exists to remove.
+	/// </remarks>
+	private const string SchemaVersion = "2";
 
 	private static readonly object SyncRoot = new();
 	private static readonly JsonSerializerOptions JsonOptions = new() {
 		WriteIndented = true,
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
 	};
+
+	/// <summary>UTF-8 without a byte-order mark, for every file written under the telemetry home.</summary>
+	/// <remarks>
+	/// <see cref="Encoding.UTF8"/> emits a BOM. .NET strips it again on read, so clio never noticed, but
+	/// the spool is no longer read only by clio: the CAADT hook reads <c>consent.json</c>, and a reviewer
+	/// reading the event files with a plain <c>json.load</c> gets "Unexpected UTF-8 BOM" instead of an
+	/// event. A BOM carries no information in UTF-8 and is not valid leading JSON, so nothing is lost by
+	/// dropping it — and a reader that already strips one (the hook does) is unaffected either way.
+	/// <para>
+	/// Aliased to <see cref="FileSystem.Utf8NoBom"/> rather than constructed here: file encoding for
+	/// interop artefacts is a <c>Clio.Common</c> concern and that module already owns the assembly's
+	/// no-BOM constant. A private copy would be one more place a future policy change has to be found.
+	/// </para>
+	/// </remarks>
+	private static readonly Encoding SpoolEncoding = FileSystem.Utf8NoBom;
 	private readonly Ms.IFileSystem _fileSystem;
 	private readonly TimeProvider _timeProvider;
 	private readonly string _telemetryRoot;
 	private readonly ILogger<TelemetryService> _logger;
 
 	/// <summary>
-	/// Canonical, ordered set of product workflow event names accepted by the telemetry tool.
-	/// Single source of truth: both the runtime allow-list (<see cref="AllowedEventNameSet"/>) and
-	/// the <c>get-tool-contract</c> <c>event_name</c> description are derived from this list, so the
-	/// announced contract can never drift from what clio actually enforces. Kept in the same order
-	/// as the CAADT telemetry contract (<c>context/product-telemetry.md</c>).
+	/// Legacy app-creation names: DEPRECATED, still accepted, never to be advertised as a choice.
 	/// </summary>
-	internal static readonly IReadOnlyList<string> AllowedEventNames = [
+	/// <remarks>
+	/// Superseded by <see cref="CanonicalEventNames"/>, which carry the flow in the <c>workflow</c> field.
+	/// Kept accepted because clio and the toolkit release independently: an older installed toolkit still
+	/// emits these, and rejecting them would silently zero out its telemetry on a clio update. Held apart
+	/// from the canonical list so the generated contract can lead with the vocabulary an agent SHOULD use
+	/// and label these as deprecated, rather than flattening all 29 into one undifferentiated allow-list
+	/// whose first 13 entries are the ones nobody should pick.
+	/// </remarks>
+	internal static readonly IReadOnlyList<string> LegacyAppCreationEventNames = [
 		SessionStartedEvent,
 		"pre_plan_clarification_requested",
 		"pre_plan_user_input_received",
@@ -92,6 +133,62 @@ public sealed class TelemetryService : ITelemetryService
 		"implementation_changes_applied",
 		"implementation_failed"
 	];
+
+	/// <summary>The current vocabulary: the only names a new contract may emit.</summary>
+	internal static readonly IReadOnlyList<string> CanonicalEventNames = [
+		// --- Flow-agnostic stage vocabulary (canonical) ---
+		// WHICH flow a run belongs to travels in the `workflow` FIELD, not in the event name. The
+		// alternative — a name per flow per stage (migration_plan_approved, branding_approved, ...) — encodes
+		// a dimension into the enum: it multiplies names by flows, forces a clio release for every new skill,
+		// and turns "what is our plan-approval rate" into a UNION over a hand-maintained list instead of one
+		// GROUP BY workflow. These stages are deliberately generic so flows stay comparable.
+		WorkflowStartedEvent,
+		"clarification_requested",
+		"user_input_received",
+		"plan_presented",
+		"plan_skipped",
+		"plan_blocked",
+		"plan_changes_requested",
+		PlanApprovedEvent,
+		BuildStartedEvent,
+		"work_item_completed",
+		"workflow_completed",
+		"workflow_failed",
+		"changes_requested",
+		"changes_applied",
+
+		// --- Session measurement (NOT a funnel stage) ---
+		// Reports what a host session consumed. It is deliberately not a stage: it marks no progress
+		// through a run, belongs to the session rather than to any one flow, and must never be counted
+		// in a funnel.
+		//
+		// It exists because per-stage token attribution turned out to be unachievable, which only a
+		// measurement showed: across 52 agent-emitted events, ZERO carried a token counter. An agent
+		// cannot see its own running totals — nothing in the tool surface exposes them — so the guide's
+		// promise that "the differences show which stage of which flow cost the tokens" could not be
+		// kept. The host's own session transcript does have the numbers, and a hook can read it at the
+		// end of a session, which is the one place a true total exists.
+		SessionUsageEvent
+	];
+
+	/// <summary>
+	/// Every product workflow event name the telemetry tool accepts, canonical and legacy, in the wire
+	/// order the CAADT contract uses.
+	/// Single source of truth: the runtime allow-list (<see cref="AllowedEventNameSet"/>) and the
+	/// <c>get-tool-contract</c> <c>event_name</c> description are both derived from these lists, so the
+	/// announced contract can never drift from what clio actually enforces. Kept in the same order as
+	/// the CAADT telemetry contract (<c>context/product-telemetry.md</c>), split into
+	/// <see cref="LegacyAppCreationEventNames"/> and <see cref="CanonicalEventNames"/> so the contract
+	/// can tell an agent which half to use.
+	/// </summary>
+	internal static readonly IReadOnlyList<string> AllowedEventNames =
+		[..LegacyAppCreationEventNames, ..CanonicalEventNames];
+
+	/// <summary>
+	/// Session-scoped consumption measurement, emitted once per host session. Not a funnel stage: it
+	/// anchors nothing, terminates nothing, and is never counted as progress through a run.
+	/// </summary>
+	internal const string SessionUsageEvent = "session_usage";
 
 	private static readonly HashSet<string> AllowedEventNameSet = new(AllowedEventNames, StringComparer.Ordinal);
 
@@ -171,6 +268,11 @@ public sealed class TelemetryService : ITelemetryService
 		}
 		TelemetryEventResult validation = ValidateRequest(request);
 		if (!validation.Success) {
+			// The single choke point every validation rejection passes through. Such an event is never
+			// written, and the tool contract tells the agent never to surface the error, so without this
+			// line a malformed payload loses the whole event with no trace on either side. The CODE only:
+			// two of the messages quote the offending value, and telemetry must not log caller content.
+			_logger.LogWarning("telemetry event rejected code={Code}", validation.Error?.Code);
 			return validation;
 		}
 		lock (SyncRoot) {
@@ -187,13 +289,21 @@ public sealed class TelemetryService : ITelemetryService
 
 				string eventId = Guid.NewGuid().ToString("N");
 				DateTimeOffset eventTimestamp = _timeProvider.GetUtcNow();
-				TelemetrySessionState sessionState = ReadSessionState(request.SessionId);
-				long? inferredDurationMs = request.DurationMs ?? InferDurationMs(sessionState, request.EventName, eventTimestamp);
-				TelemetryEventRequest enrichedRequest = request with { DurationMs = inferredDurationMs };
-				long? durationSinceSessionStartMs = InferDurationSinceSessionStartMs(sessionState, request.EventName, eventTimestamp);
+				// An absent `workflow` becomes the reserved `unattributed` rather than an empty string. It is
+				// now the state key, so "" would silently give the event its own anchor bucket and drop it
+				// out of every GROUP BY workflow. Legacy app-creation events land here too; their event
+				// names still identify the flow.
+				TelemetryEventRequest attributed = string.IsNullOrWhiteSpace(request.Workflow)
+					? request with { Workflow = FloorWorkflow }
+					: request;
+				TelemetrySessionState sessionState =
+					StartOfANewRun(ReadSessionState(attributed.SessionId, attributed.Workflow), attributed);
+				long? inferredDurationMs = attributed.DurationMs ?? InferDurationMs(sessionState, attributed.EventName, eventTimestamp);
+				TelemetryEventRequest enrichedRequest = attributed with { DurationMs = inferredDurationMs };
+				long? durationSinceSessionStartMs = InferDurationSinceSessionStartMs(sessionState, attributed.EventName, eventTimestamp);
 				OpenTelemetryLogEvent logEvent = BuildLogEvent(enrichedRequest, eventId, eventTimestamp, durationSinceSessionStartMs);
 				WriteEvent(eventId, logEvent);
-				UpdateSessionState(sessionState, request.EventName, eventTimestamp);
+				UpdateSessionState(sessionState, attributed.EventName, eventTimestamp);
 				return new TelemetryEventResult(true, StatusRecorded, eventId);
 			} catch (Exception ex) {
 				// Telemetry must never disturb the caller: any failure (I/O, serialization, etc.) is
@@ -235,6 +345,13 @@ public sealed class TelemetryService : ITelemetryService
 		if (request.DurationMs.HasValue && request.DurationMs.Value < 0) {
 			return Invalid("invalid-duration", "duration_ms must be a non-negative value when supplied.");
 		}
+		// Token counters are a running total for the session, so they only ever grow; a negative value
+		// is a client bug and storing it would poison any sum or max taken over the session.
+		foreach ((string name, long? value) in TokenCounterFields(request)) {
+			if (value.HasValue && value.Value < 0) {
+				return Invalid("invalid-token-count", $"{name} must be a non-negative value when supplied.");
+			}
+		}
 		return new TelemetryEventResult(true, "valid");
 	}
 
@@ -249,12 +366,128 @@ public sealed class TelemetryService : ITelemetryService
 				$"session_id must be 1-{MaxSessionIdLength} characters of letters, digits, '.', '_', ':' or '-'.");
 		}
 		foreach ((string name, string value) in BoundedFields(request)) {
-			if (value.Length > MaxFieldLength) {
+			// Null is legal: these fields are optional, and the guidance tells agents to omit rather than
+			// guess. Only a value that IS present is length-checked.
+			if (value is not null && value.Length > MaxFieldLength) {
 				return Invalid("field-too-long", $"Telemetry field '{name}' exceeds {MaxFieldLength} characters.");
+			}
+		}
+		foreach ((string name, string value) in OptionalTokenFields(request)) {
+			// Blank means absent, exactly as it does for BoundedFields above and for every consumer of
+			// these three values downstream: Send substitutes `unattributed` for a blank workflow, and
+			// BuildLogEvent omits a blank variant/model. Only a value that IS present is shape-checked.
+			// Rejecting "" here would cost the WHOLE event for the value a hook emits by accident
+			// (`workflow: env.WORKFLOW ?? ""`), and would silently lose the guaranteed floor event.
+			if (!string.IsNullOrWhiteSpace(value) && !IsAllowedToken(value)) {
+				return Invalid("invalid-token",
+					$"Telemetry field '{name}' must be {TokenShapeSentence}.");
 			}
 		}
 		return new TelemetryEventResult(true, "valid");
 	}
+
+	// workflow/variant are shape-checked rather than matched against a fixed list of known values. A
+	// closed list would need a clio release every time a skill is added — the exact coupling the
+	// dimension-in-a-field design exists to remove.
+	//
+	// What the shape does and does not buy: a 64-char lowercase token cannot carry a prompt, a path, or
+	// generated content, so the bulk-leak shapes are structurally excluded. It is NOT a content control.
+	// `variant` is agent-authored at emission time and a slugged phrase passes cleanly, so a value like
+	// acme-corporation is well-formed and wrong. Keeping customer data out of it is the emitting
+	// contract's job, stated as a rule in the field description, not something enforced here.
+	private static IReadOnlyList<(string name, string value)> OptionalTokenFields(TelemetryEventRequest request) =>
+	[
+		("workflow", request.Workflow),
+		("variant", request.Variant),
+		// The model identifier answers "which model produced this run", which is the first thing asked
+		// of any regression in the funnel. It shares the bounded-token shape because published model
+		// ids already fit it (claude-opus-5, gpt-5, claude-haiku-4-5-20251001) and because the shape is
+		// what keeps a free-text field from becoming a place to leak prompt content.
+		("model", request.Model)
+	];
+
+	/// <summary>
+	/// The running token counters a caller may attach to any stage.
+	/// </summary>
+	/// <remarks>
+	/// Deliberately a snapshot per event rather than one total at the end: an event is emitted when a
+	/// stage is reached, so the series is monotonic and a session's real consumption is the maximum.
+	/// Per-STAGE attribution is NOT claimed - measured, no agent-emitted event carried a counter at all,
+	/// because nothing in the tool surface reports an agent its own running totals; `session_usage`
+	/// carries the host-side series instead. A single total
+	/// would also require a session-end signal, which not every host provides.
+	/// </remarks>
+	private static IReadOnlyList<(string name, long? value)> TokenCounterFields(TelemetryEventRequest request) =>
+	[
+		("input_tokens", request.InputTokens),
+		("output_tokens", request.OutputTokens),
+		("cached_input_tokens", request.CachedInputTokens)
+	];
+
+	/// <summary>
+	/// Canonicalizes <c>coding_agent</c> to a lowercase slug so one host counts as one cohort.
+	/// </summary>
+	/// <remarks>
+	/// Unlike <c>workflow</c> / <c>variant</c> / <c>model</c>, this field is only length-checked, because
+	/// a host name is a proper noun rather than a bounded token the flow chooses. That let the same host
+	/// arrive spelled three different ways in a single measured session ("Claude Code", "claude-code",
+	/// "claude"), splitting one host across three cohorts — and instructing agents not to reshape the
+	/// value did not stop it. Slugging is deterministic and merges the spellings that differ only in case
+	/// and separators. Values that differ in WORDS (a truncated "claude") are deliberately left distinct:
+	/// mapping them onto a canonical host would be a guess recorded as data.
+	/// </remarks>
+	internal static string NormalizeCodingAgent(string value)
+	{
+		if (string.IsNullOrWhiteSpace(value)) {
+			return value;
+		}
+		StringBuilder slug = new(value.Length);
+		foreach (char character in value.Trim()) {
+			if (char.IsAsciiLetterOrDigit(character)) {
+				slug.Append(char.ToLowerInvariant(character));
+			} else if (character is ('.' or '_' or '-' or ' ') && slug.Length > 0 && slug[^1] != '-') {
+				// Collapse runs of separators so "GitHub  Copilot-CLI" and "github-copilot-cli" agree.
+				slug.Append('-');
+			}
+		}
+		string canonical = slug.ToString().TrimEnd('-');
+		if (canonical.Length > 0) {
+			return canonical;
+		}
+		// A name with no ASCII alphanumerics at all — a non-Latin host name, or punctuation — slugs to
+		// nothing. Storing "" would trade the failure this fixes for a worse one: three spellings of one
+		// host can still be merged afterwards, an erased value cannot be recovered. Keep the original,
+		// minus Unicode control and format characters: those carry no host identity, survive the slug
+		// path only because it never runs for such a value, and reach a dashboard cell or a label as
+		// arbitrary bytes — U+202E alone reverses the rendering of everything after it.
+		string kept = new(value.Trim().ToLowerInvariant()
+			.Where(character => !char.IsControl(character)
+				&& char.GetUnicodeCategory(character) != UnicodeCategory.Format)
+			.ToArray());
+		return kept.Trim();
+	}
+
+	/// <summary>
+	/// The one human-readable statement of what <see cref="IsAllowedToken"/> accepts. A rejection message
+	/// and three curated contract strings used to restate this charset by hand. Neither telemetry tool is
+	/// resident, so for both of them the curated contract IS the entire description the agent receives - a
+	/// charset change that updated the predicate and missed one sentence would ship a confident description
+	/// of a validator that no longer exists, and the agent would keep sending values the event dies on.
+	/// Pinned to the predicate by TelemetryService_Should_Describe_The_Token_Shape_It_Actually_Enforces,
+	/// which probes IsAllowedToken over ASCII rather than trusting this text.
+	/// </summary>
+	internal static readonly string TokenShapeSentence =
+		$"1-{MaxFieldLength} characters of lowercase letters, digits, '.', '_' or '-'";
+
+	/// <summary>
+	/// Validates a bounded lowercase identifier (a workflow, variant or model value). Linear scan rather
+	/// than a regex, matching <see cref="IsAllowedSessionId"/>: no ReDoS surface, O(length) on capped input.
+	/// </summary>
+	internal static bool IsAllowedToken(string value) =>
+		!string.IsNullOrWhiteSpace(value)
+		&& value.Length <= MaxFieldLength
+		&& value.All(character =>
+			char.IsAsciiDigit(character) || char.IsAsciiLetterLower(character) || character is '.' or '_' or '-');
 
 	private static IReadOnlyList<(string name, string value)> BoundedFields(TelemetryEventRequest request) =>
 	[
@@ -268,12 +501,15 @@ public sealed class TelemetryService : ITelemetryService
 	private static bool IsAllowedSessionId(string value) =>
 		value.All(character => char.IsAsciiLetterOrDigit(character) || character is '.' or '_' or ':' or '-');
 
+	// `coding_agent` and `plugin_version` are deliberately NOT here. The guidance article and the
+	// toolkit's hook both instruct an agent to OMIT them rather than send a guessed version or the
+	// placeholder `unknown` — so requiring them rejected every event from an agent that obeyed, and the
+	// case it hurt most was the skill-less run with no Analytics Context, which is the gap this work
+	// exists to close. They stay length-checked as optional bounded fields.
 	private static IReadOnlyList<(string name, string value)> RequiredFields(TelemetryEventRequest request) =>
 	[
 		("session_id", request.SessionId),
-		("event_name", request.EventName),
-		("coding_agent", request.CodingAgent),
-		("plugin_version", request.PluginVersion)
+		("event_name", request.EventName)
 	];
 
 	private static TelemetryEventResult Invalid(string code, string message) =>
@@ -313,11 +549,34 @@ public sealed class TelemetryService : ITelemetryService
 			StringAttribute("event_timestamp", timestamp.ToString("O")),
 			StringAttribute("platform", GetPlatform()),
 			StringAttribute("clio_version", GetClioVersion()),
-			StringAttribute("coding_agent", request.CodingAgent),
 			StringAttribute("installation_id", GetOrCreateInstallationId()),
-			StringAttribute("plugin_version", request.PluginVersion),
 			StringAttribute("event_id", eventId)
 		];
+		// Omitted rather than stored as null when the caller omitted them: the guidance tells agents to
+		// send nothing rather than a guessed version, and an absent attribute says that, where an empty
+		// one reads as a real value.
+		if (!string.IsNullOrWhiteSpace(request.CodingAgent)) {
+			attributes.Add(StringAttribute("coding_agent", NormalizeCodingAgent(request.CodingAgent)));
+		}
+		if (!string.IsNullOrWhiteSpace(request.PluginVersion)) {
+			attributes.Add(StringAttribute("plugin_version", request.PluginVersion));
+		}
+		// The flow dimension. Every stage event carries it, which is what keeps the stage names generic
+		// and lets one query compare the same funnel step across flows.
+		if (!string.IsNullOrWhiteSpace(request.Workflow)) {
+			attributes.Add(StringAttribute("workflow", request.Workflow));
+		}
+		if (!string.IsNullOrWhiteSpace(request.Variant)) {
+			attributes.Add(StringAttribute("variant", request.Variant));
+		}
+		if (!string.IsNullOrWhiteSpace(request.Model)) {
+			attributes.Add(StringAttribute("model", request.Model));
+		}
+		foreach ((string name, long? value) in TokenCounterFields(request)) {
+			if (value.HasValue) {
+				attributes.Add(new OpenTelemetryAttribute(name, new OpenTelemetryValue(IntValue: value.Value)));
+			}
+		}
 		if (request.DurationMs.HasValue) {
 			attributes.Add(new OpenTelemetryAttribute("duration_ms", new OpenTelemetryValue(IntValue: request.DurationMs.Value)));
 		}
@@ -332,28 +591,89 @@ public sealed class TelemetryService : ITelemetryService
 			EventName: request.EventName);
 	}
 
-	private TelemetrySessionState ReadSessionState(string sessionId)
+	private TelemetrySessionState ReadSessionState(string sessionId, string workflow)
 	{
-		string path = SessionStatePath(sessionId);
+		string path = SessionStatePath(sessionId, workflow);
 		if (!_fileSystem.File.Exists(path)) {
-			return new TelemetrySessionState(sessionId, new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal));
+			return NewSessionState(sessionId, workflow);
 		}
 		try {
 			return JsonSerializer.Deserialize<TelemetrySessionState>(_fileSystem.File.ReadAllText(path, Encoding.UTF8), JsonOptions)
-				?? new TelemetrySessionState(sessionId, new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal));
+				?? NewSessionState(sessionId, workflow);
 		} catch {
-			return new TelemetrySessionState(sessionId, new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal));
+			return NewSessionState(sessionId, workflow);
 		}
 	}
+
+	private static TelemetrySessionState NewSessionState(string sessionId, string workflow) =>
+		new(sessionId, new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal), workflow);
+
+	/// <summary>
+	/// Starts a clean state when a session-start arrives for a pair whose previous run already ended.
+	/// </summary>
+	/// <remarks>
+	/// One session legitimately runs the same flow twice — the developer asks for one edit, then
+	/// another. Both land in the same (session_id, workflow) pair, so without this the second run
+	/// inherits the first one's stage timestamps: a measured 4-second edit reported
+	/// <c>duration_ms</c> of 18 minutes, anchored on a <c>build_started</c> from the earlier run.
+	/// A stale span is worse than a missing one — it is indistinguishable from a genuinely slow run.
+	///
+	/// Only a TERMINATED previous run is cleared. A repeated session-start inside a run that is still
+	/// open keeps its history, so a stray second start cannot erase the stages already recorded.
+	/// </remarks>
+	private static TelemetrySessionState StartOfANewRun(TelemetrySessionState sessionState,
+		TelemetryEventRequest request)
+	{
+		if (!IsSessionStartEvent(request.EventName)) {
+			return sessionState;
+		}
+		bool previousRunEnded = sessionState.Events.Keys.Any(IsTerminalEvent);
+		return previousRunEnded
+			? NewSessionState(sessionState.SessionId, sessionState.Workflow)
+			: sessionState;
+	}
+
+	/// <summary>
+	/// True for a stage that ENDS a run, canonical or deprecated, after which a session-start belongs
+	/// to a new run rather than the finished one.
+	/// </summary>
+	private static bool IsTerminalEvent(string eventName) =>
+		eventName is "workflow_completed" or "workflow_failed" or "plan_blocked"
+			or "implementation_completed" or "implementation_failed";
 
 	private static long? InferDurationMs(TelemetrySessionState sessionState, string eventName, DateTimeOffset timestamp)
 	{
 		string startEventName = eventName switch {
-			"business_plan_generated" => SessionStartedEvent,
+			"business_plan_generated" => FirstKnown(sessionState, SessionStartedEvent, WorkflowStartedEvent),
 			"business_plan_approved" => FirstKnown(sessionState, "business_plan_generated"),
 			"implementation_completed" => "implementation_started",
 			"implementation_failed" => "implementation_started",
 			"implementation_changes_applied" => "implementation_changes_requested",
+			// Stage vocabulary: one mapping serves every flow, because the stages are flow-agnostic.
+			// Each pair answers a question the raw funnel counts cannot — how long the plan took to
+			// produce, how long the developer took to approve it, and how long the build then ran.
+			// Either start name anchors these, exactly as IsSessionStartEvent does for total elapsed.
+			// clio and the toolkit release independently, so a run whose start is the legacy
+			// `session_started` and whose stages are canonical is a state this design expects; anchoring
+			// only on the canonical name would report elapsed-since-session but no stage duration.
+			"plan_presented" => FirstKnown(sessionState, WorkflowStartedEvent, SessionStartedEvent),
+			"plan_blocked" => FirstKnown(sessionState, WorkflowStartedEvent, SessionStartedEvent),
+			PlanApprovedEvent => FirstKnown(sessionState, "plan_presented"),
+			BuildStartedEvent => FirstKnown(sessionState, PlanApprovedEvent),
+			// Terminal events report the NARROWEST span available, so a run that failed during the build
+			// reports the build duration rather than the whole session (total elapsed is carried
+			// separately as duration_since_session_start_ms).
+			"workflow_completed" => PreferredKnown(sessionState, BuildStartedEvent, PlanApprovedEvent, WorkflowStartedEvent, SessionStartedEvent),
+			"workflow_failed" => PreferredKnown(sessionState, BuildStartedEvent, PlanApprovedEvent, WorkflowStartedEvent, SessionStartedEvent),
+			"changes_applied" => FirstKnown(sessionState, "changes_requested"),
+			// Deliberately unmapped: `work_item_completed` REPEATS within a run, so any anchor would
+			// measure the gap since the previous REPORTED unit rather than the cost of this one. An
+			// agent that finishes several units and then reports them together would produce spans of
+			// milliseconds each - indistinguishable from genuinely fast work, and worse than an absent
+			// field because it is confidently wrong. Per-unit cost is still available to a consumer:
+			// every stored event carries its own timestamp, so it is the difference between consecutive
+			// `work_item_completed` events of the same (session_id, workflow) pair, computed where the
+			// reporting cadence is visible instead of frozen into one interpretation here.
 			_ => null
 		};
 		if (string.IsNullOrWhiteSpace(startEventName)
@@ -363,14 +683,33 @@ public sealed class TelemetryService : ITelemetryService
 		return Math.Max(0, (long)(timestamp - startedAt).TotalMilliseconds);
 	}
 
+	// Anchored on whichever start event this (session_id, workflow) pair actually produced — the
+	// canonical `workflow_started` or the deprecated app-creation `session_started`, so anchoring only
+	// on the app-creation name would leave every migration, mobile-conversion and branding event with
+	// no elapsed-time measure at all. State is keyed per pair, so a flow never inherits the anchor of
+	// another flow in the same host session (notably the `unattributed` session-start floor): a stage
+	// with no start of its own reports no elapsed time rather than a span measured from a foreign run.
 	private static long? InferDurationSinceSessionStartMs(TelemetrySessionState sessionState, string eventName, DateTimeOffset timestamp)
 	{
-		if (eventName == SessionStartedEvent
-			|| !sessionState.Events.TryGetValue(SessionStartedEvent, out DateTimeOffset sessionStartedAt)) {
+		if (IsSessionStartEvent(eventName)) {
 			return null;
 		}
-		return Math.Max(0, (long)(timestamp - sessionStartedAt).TotalMilliseconds);
+		string anchorEventName = sessionState.Events.Keys
+			.Where(IsSessionStartEvent)
+			.OrderBy(name => sessionState.Events[name])
+			.FirstOrDefault();
+		if (anchorEventName is null) {
+			return null;
+		}
+		return Math.Max(0, (long)(timestamp - sessionState.Events[anchorEventName]).TotalMilliseconds);
 	}
+
+	/// <summary>
+	/// True for a session-start event — the canonical <c>workflow_started</c> or the deprecated
+	/// app-creation <c>session_started</c> — which anchors that session's elapsed-time measurements.
+	/// </summary>
+	private static bool IsSessionStartEvent(string eventName) =>
+		eventName is WorkflowStartedEvent or SessionStartedEvent;
 
 	private static string FirstKnown(TelemetrySessionState sessionState, params string[] eventNames)
 	{
@@ -380,10 +719,30 @@ public sealed class TelemetryService : ITelemetryService
 			.FirstOrDefault();
 	}
 
+	/// <summary>
+	/// Returns the first recorded event in the caller's PREFERENCE order, unlike
+	/// <see cref="FirstKnown"/> which returns the chronologically earliest.
+	/// </summary>
+	/// <remarks>
+	/// Used by the terminal failure events, where the useful span is the narrowest one available: a
+	/// migration that failed after approval should report the BUILD duration, not the whole session
+	/// (total elapsed is already carried separately as <c>duration_since_session_start_ms</c>).
+	/// Chronological order would always pick the session start and lose that distinction.
+	/// </remarks>
+	private static string PreferredKnown(TelemetrySessionState sessionState, params string[] eventNames) =>
+		eventNames.FirstOrDefault(sessionState.Events.ContainsKey);
+
 	private void UpdateSessionState(TelemetrySessionState sessionState, string eventName, DateTimeOffset timestamp)
 	{
 		sessionState.Events[eventName] = timestamp;
-		WriteJson(SessionStatePath(sessionState.SessionId), sessionState);
+		WriteJson(SessionStatePath(sessionState.SessionId, sessionState.Workflow), sessionState);
+		// Retention is NOT swept here. State moved to one file per (session, workflow) pair, so it grows
+		// faster than before — but TelemetryFlushService.PruneSessions already reclaims it, and does it
+		// strictly better: the same 30-day cutoff PLUS a 500-file cap, on a background thread, as the
+		// first statement of every flush (ahead of the endpoint and consent checks, so it always runs),
+		// and SendTelemetryTool schedules a flush after every recorded event. Sweeping here as well would
+		// re-scan the whole directory on the caller's thread under the process-wide lock, once per event,
+		// to delete files that path had already taken. The ADR names the flush prune as the design.
 	}
 
 	private static OpenTelemetryAttribute StringAttribute(string key, string value) =>
@@ -411,7 +770,7 @@ public sealed class TelemetryService : ITelemetryService
 		_fileSystem.Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 		string json = JsonSerializer.Serialize(value, JsonOptions);
 		string tempPath = path + ".tmp";
-		_fileSystem.File.WriteAllText(tempPath, json, Encoding.UTF8);
+		_fileSystem.File.WriteAllText(tempPath, json, SpoolEncoding);
 		_fileSystem.File.Move(tempPath, path, overwrite: true);
 	}
 
@@ -423,7 +782,7 @@ public sealed class TelemetryService : ITelemetryService
 		}
 		string installationId = Guid.NewGuid().ToString("N");
 		string tempPath = $"{InstallationIdPath}.{installationId}.tmp";
-		_fileSystem.File.WriteAllText(tempPath, installationId, Encoding.UTF8);
+		_fileSystem.File.WriteAllText(tempPath, installationId, SpoolEncoding);
 		// Replace only a blank/corrupt file; for a missing file use create-only Move so concurrent
 		// clio processes converge on a single installation id (first writer wins) instead of churning.
 		bool replaceExisting = _fileSystem.File.Exists(InstallationIdPath);
@@ -508,13 +867,17 @@ public sealed class TelemetryService : ITelemetryService
 	private string ConsentPath => Path.Combine(TelemetryRoot, "consent.json");
 	private string InstallationIdPath => Path.Combine(TelemetryRoot, "installation-id.txt");
 	private string SessionsDirectory => TelemetryStoragePaths.SessionsDirectory(TelemetryRoot);
-	private string SessionStatePath(string sessionId) =>
-		Path.Combine(SessionsDirectory, $"{SessionFileName(sessionId)}.json");
+	private string SessionStatePath(string sessionId, string workflow) =>
+		Path.Combine(SessionsDirectory, $"{SessionFileName(sessionId, workflow)}.json");
 
-	// Derive the session-state file name from a hash of the (validated) session id: collision-free
-	// (distinct ids can never share state, unlike a lossy character-replace) and traversal-safe.
-	private static string SessionFileName(string sessionId) =>
-		Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sessionId))).ToLowerInvariant();
+	// Derive the session-state file name from a hash of the (validated) session id AND workflow: the
+	// funnel's unit of a run is that pair, so each flow in a session keeps its own start anchor and
+	// stage history. Hashing is collision-free (distinct pairs can never share state, unlike a lossy
+	// character-replace) and traversal-safe. The unit separator cannot occur in either validated
+	// value, so no ("ab", null) / ("a", "b") pair can collide.
+	private static string SessionFileName(string sessionId, string workflow) =>
+		Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{sessionId}\u001f{workflow ?? string.Empty}")))
+			.ToLowerInvariant();
 
 	private string EventsDirectory => TelemetryStoragePaths.EventsDirectory(TelemetryRoot);
 }

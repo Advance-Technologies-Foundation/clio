@@ -38,10 +38,30 @@ public sealed class RunProcessTool(
 		+ "work. Judge the outcome from the process's own effects, or from a later SysProcessLog read "
 		+ "(odata-read on SysProcessLog, newest row for this process).";
 
+	// A launch can outlive the MCP response deadline and holds the per-tenant monitor for the whole call, so a
+	// wedged run wedges the host: the boundary belongs in a worker. PerCall with no family because the platform
+	// exposes no handle for an in-flight synchronous run (see BuildStillRunningNote), so there is no status
+	// poller for a sticky worker to serve. ParentKillDefault is safe here: the process runs server-side in
+	// Creatio, so killing the worker abandons the wait, it does not abort the process.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.Progress,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description(
 		"Run (launch) a Creatio business process; resolve its CODE and parameter codes with get-process-signature "
-		+ "first, and read the outcome from `status`.")]
+		+ "first, and read the outcome from `status`. VERSIONS: a code names ONE version, because every saved "
+		+ "version is a separate schema with its own code, and the version the platform's own triggers and "
+		+ "schedules execute is the family's ACTIVE version - which is usually NOT the family root you reach by "
+		+ "the base name. Before launching a process that has versions, read `isActiveVersion` from "
+		+ "describe-business-process and launch the code it reports in `activeVersionName`. Whether this endpoint "
+		+ "itself folds a non-active code onto the active version is NOT established, so do not rely on it: pass "
+		+ "the active version's code explicitly. A display caption is still refused - launching must name a code "
+		+ "- but the refusal names the code it resolved to, and that IS the active version's code, so the refusal "
+		+ "message is the short path to the right one.")]
 	public async Task<RunProcessResponse> RunProcess(
 		[Description("run-process parameters")]
 		[Required]
@@ -110,9 +130,11 @@ public sealed class RunProcessTool(
 public sealed record RunProcessArgs {
 
 	[JsonPropertyName("process-name")]
-	[Description("Process CODE (schema Name), e.g. 'MigrateDashboardsProcess'. A display caption is rejected, "
-		+ "naming the code it resolved to — captions are not unique, so launching by one could start the wrong "
-		+ "process.")]
+	[Description("Process CODE (schema Name), e.g. 'MigrateDashboardsProcess', naming ONE version of a "
+		+ "process. A display caption is rejected, naming the code it resolved to - the ACTIVE version's code "
+		+ "when the caption belongs to one version family, since a caption is shared by every member; a caption "
+		+ "shared by several distinct processes is refused with the candidates, because launching by one could "
+		+ "start the wrong process.")]
 	[Required]
 	public required string ProcessName { get; init; }
 

@@ -11,6 +11,11 @@ DESCRIPTION
     The update-page command validates and saves the raw JavaScript body of a
     Freedom UI page schema. Pass the full body string directly, typically
     after reading raw.body from get-page.
+    CLI vs MCP: the CLI get-page verb returns raw.body inline, so the CLI
+    caller copies that. The MCP get-page tool returns no raw property - it
+    writes the body to disk and reports the path in files.bodyFile. MCP
+    callers pass that path straight through as --body-file, or send the
+    file contents as --body.
 
     The MCP update-page tool also accepts validate=false as an explicit escape
     hatch when a full replacement body contains a pre-existing defect unrelated
@@ -103,6 +108,14 @@ DESCRIPTION
       viewConfigDiff must be a localizable-string binding, not an inline
       literal. Bind via #ResourceString(<Key>)# and register the key's
       default-language value with --resources. Inline literals are rejected.
+      A component's own data descriptor is exempt: a "data" object carrying the
+      platform's "typeName" marker, on any node that declares a component type
+      and at any depth, is component metadata (uId, schemaType, typeName and
+      the caption the platform stamped on it), not page-authored text, so a
+      literal anywhere inside it is accepted. An input merely named "data"
+      (crt.FilterBuilderSource) has no typeName and stays validated. Do not
+      delete such a caption to satisfy the rule - the platform never restores
+      it.
     - Inserted widget/metric titles must resolve. A title/caption/tooltip/
       placeholder on a freshly inserted (operation:"insert") widget bound as
       $Resources.Strings.<Key> or #ResourceString(<Key>)# is rejected when <Key>
@@ -138,14 +151,39 @@ DESCRIPTION
 
     WRITE MODES:
     --mode replace (default) saves the body verbatim. --mode append loads the
-    current schema body from the server and merges your incoming fragment into
-    it (viewConfigDiff dedupes by name, handlers by request). Append requires the
-    diff form: a full-config body (the SCHEMA_VIEW_MODEL_CONFIG / SCHEMA_MODEL_CONFIG
-    markers, instead of the *_DIFF markers) cannot be merged and is rejected with
-    an actionable hint — use --mode replace for such a body. The message names which
-    body is full-config: convert your own incoming body to the diff form, but if the
-    current page on the server is full-config (every create-app-section page is), append
-    is not supported against it — use --mode replace.
+    current schema body from the server and merges your incoming fragment into it.
+    A viewConfigDiff entry is replaced only when both operation and name match one
+    of yours - and, for a remove, whether it targets properties. Incoming wins and
+    keeps the existing entry's position; every other existing operation is preserved
+    verbatim, including a second operation on a component you already target. One
+    exception: if your fragment supersedes an identity the page carries TWICE, only
+    the first is replaced and the later one is dropped, since keeping it would
+    re-apply stale values after your replacement. Handlers dedupe by request.
+    SCHEMA_CONVERTERS and SCHEMA_VALIDATORS entries merge by type key and
+    incoming wins. The merged web body is rejected when a custom
+    validator reference lacks a matching SCHEMA_VALIDATORS declaration;
+    built-in crt.* validators need no local entry.
+    Preserved is not the same as applied, and this is not specific to append - it
+    is how the platform differ resolves any final body, so a hand-authored
+    --mode replace body produces it too. Operations run in whole GROUPS in a fixed
+    order (merges, then removes/inserts/moves, set last), never in array order.
+    - Warned: a merge, move or element remove sitting beside an insert for the
+      same name. It resolves against a base that lacks the component and is
+      dropped. Same for a move whose name the body also element-removes; a
+      merge whose name the body also element-removes or sets; and a property
+      remove whose name the body also sets, or also element-removes unless an
+      insert re-creates the element. Fold the values into the insert, or use set,
+      which runs after it. Reordering the array changes nothing. The save
+      still succeeds; --dry-run reports it too.
+      Advisory only: a parent schema inserting the same name can make the
+      transform apply after all, and clio cannot see the replacing chain.
+    Append requires the diff form: a full-config body (the SCHEMA_VIEW_MODEL_CONFIG
+    / SCHEMA_MODEL_CONFIG markers, instead of the *_DIFF markers) cannot be merged
+    and is rejected with an actionable hint — use --mode replace for such a body.
+    The message names which body is full-config: convert your own incoming body to
+    the diff form, but if the current page on the server is full-config (every
+    create-app-section page is), append is not supported against it — use
+    --mode replace.
 
 SYNOPSIS
     clio update-page [options]

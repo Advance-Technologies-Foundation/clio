@@ -384,9 +384,12 @@ public sealed class TelemetryFlushServiceTests
 			.GetProperty("logRecords")[0].GetProperty("attributes");
 		AttributeString(attributes, "session_id").Should().Be("sess-roundtrip",
 			because: "the stored session_id attribute must survive the store-to-wire mapping");
-		AttributeString(attributes, "coding_agent").Should().Be("Codex",
+		// Canonicalized at record time (see TelemetryService.NormalizeCodingAgent), so the wire carries the
+		// slug rather than the spelling the caller happened to use. What this asserts is that the
+		// attribute survives the store-to-wire mapping, not which casing it was sent in.
+		AttributeString(attributes, "coding_agent").Should().Be("codex",
 			because: "agent metadata must survive the mapping");
-		AttributeString(attributes, "schema_version").Should().Be("1",
+		AttributeString(attributes, "schema_version").Should().Be("2",
 			because: "the schema_version enrichment must survive the mapping");
 	}
 

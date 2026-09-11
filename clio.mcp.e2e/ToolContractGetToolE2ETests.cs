@@ -18,6 +18,62 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 	[Test]
+	[Description("An unknown set-system-setting name suggests the update tool first over real stdio.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract suggests update for set")]
+	[AllureDescription("Checks the serialized shortlist without executing any system-setting operation.")]
+	public async Task GetToolContracts_ShouldSuggestUpdateFirst_WhenSetVerbIsRequested() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["tool-names"] = new[] { "set-sys-setting" } });
+
+		// Assert
+		AllureApi.Step("Assert lookup remains a failure", () =>
+			response.Success.Should().BeFalse(because: "suggestions must not execute or alias the unknown tool"));
+		AllureApi.Step("Assert update ranks first", () =>
+			response.Error!.Suggestions!.First().Should().Be(SysSettingUpdateTool.UpdateSysSettingToolName,
+				because: "the matching write intent must survive the real wire path"));
+	}
+
+	[Test]
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("Returns valid contracts and individual misses through the real MCP server in either request order.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract preserves partial batch results")]
+	[AllureDescription("Requests one real tool and two unknown names over stdio and checks contracts plus per-name suggestions.")]
+	public async Task GetToolContracts_ShouldReturnPartialResults_WhenBatchContainsUnknownNames(bool unknownFirst) {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string known = SysSettingUpdateTool.UpdateSysSettingToolName;
+		string[] names = unknownFirst
+			? ["page-updte", known, "missing-tool-two"]
+			: [known, "page-updte", "missing-tool-two"];
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["tool-names"] = names });
+
+		// Assert
+		AllureApi.Step("Assert partial lookup succeeds", () =>
+			response.Success.Should().BeTrue(because: "the valid contract remains usable"));
+		AllureApi.Step("Assert the valid contract survives", () =>
+			response.Tools!.Select(item => item.Name).Should().Equal([known],
+				because: "unknown names must not discard the registered tool contract"));
+		AllureApi.Step("Assert every miss is identified", () =>
+			response.NotFound!.Select(item => item.Name).Should().Equal(["page-updte", "missing-tool-two"],
+				because: "both unknown names need separate diagnostics"));
+		AllureApi.Step("Assert suggestions survive serialization", () =>
+			response.NotFound![0].Error.Suggestions.Should().Contain(PageUpdateTool.ToolName,
+				because: "the misspelled page tool must suggest its registered name"));
+	}
+
+	[Test]
 	[Description("Returns the list-packages paging inputs, defaults, and completeness fields through the real MCP contract endpoint.")]
 	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract advertises list-packages paging")]
@@ -207,9 +263,9 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		response.Tools.Single(tool => tool.Name == PageSyncTool.ToolName)
 			.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "pages" &&
-				field.Description.Contains("get-page.raw.body", StringComparison.Ordinal) &&
+				field.Description.Contains("get-page.files.bodyFile", StringComparison.Ordinal) &&
 				field.Description.Contains("localizable string", StringComparison.Ordinal),
-				because: "sync-pages should advertise raw.body as the source of page write payloads and clarify resources as localizable strings");
+				because: "sync-pages should advertise the materialized body file as the source of page write payloads and clarify resources as localizable strings");
 		response.Tools.Single(tool => tool.Name == PageSyncTool.ToolName)
 			.Description.Should().Contain("page-modification",
 				because: "sync-pages should route body and resource-payload edits through the general page modification guide");
@@ -951,9 +1007,13 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		pageGetContract.Description.Should().NotContain("page-schema-resources",
 			because: "get-page should avoid surfacing localizable-string leaf guidance directly in the broad contract description");
 		pageGetContract.OutputContract.Fields.Should().Contain(field =>
-				field.Name == "raw" &&
-				field.Description.Contains("raw.body", StringComparison.Ordinal),
-			because: "get-page should explicitly advertise raw.body as the editable JavaScript source");
+				field.Name == "files" &&
+				field.Description.Contains("bodyFile", StringComparison.Ordinal),
+			because: "get-page materializes the editable JavaScript source on disk, so the contract must advertise files.bodyFile");
+		pageGetContract.OutputContract.Fields.Should().NotContain(field => field.Name == "raw",
+			because: "the successful get-page MCP envelope carries no raw property (issue #1185)");
+		pageGetContract.OutputContract.Fields.Should().NotContain(field => field.Name == "bundle",
+			because: "the successful get-page MCP envelope writes the bundle to disk instead of inlining it (issue #1185)");
 	}
 
 	[Test]
@@ -1204,6 +1264,59 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 				because: "the served contract must not restore a fixed list of producer fields"));
 	}
 
+	[Test]
+	[Description("Advertises the validate-page body-file alternative and its local-stdio boundary through the real MCP server.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureTag(PageValidateTool.ToolName)]
+	[AllureName("get-tool-contract advertises validate-page body-file")]
+	[AllureDescription("Requests the validate-page contract over a real stdio MCP session and verifies body-file is an alternative input tied to get-page files.bodyFile and unavailable over mcp-http.")]
+	public async Task GetToolContracts_ShouldAdvertiseValidatePageBodyFile_WhenRequested() {
+		// Arrange
+		await using var context = await AllureApi.Step(
+			"Arrange a real stdio MCP server session",
+			() => Task.FromResult(Arrange(TimeSpan.FromMinutes(3))));
+
+		// Act
+		ToolContractGetResponse response = await AllureApi.Step(
+			"Request the validate-page tool contract",
+			async () => await CallAsync(
+				context.Session,
+				context.CancellationTokenSource.Token,
+				new Dictionary<string, object?> {
+					["tool-names"] = new[] { PageValidateTool.ToolName }
+				}));
+
+		// Assert
+		AllureApi.Step("Assert contract lookup succeeded", () => response.Success.Should().BeTrue(
+			because: "validate-page must be discoverable through the executable MCP contract catalog"));
+		ToolContractDefinition contract = AllureApi.Step(
+			"Assert only validate-page was returned",
+			() => {
+				response.Tools.Should().ContainSingle(
+					because: "only validate-page was requested");
+				return response.Tools!.Single();
+			});
+		AllureApi.Step("Assert neither alternative is unconditionally required", () =>
+			contract.InputSchema.Required.Should().BeEmpty(
+				because: "body and body-file are alternatives"));
+		AllureApi.Step("Assert the one-of input rule", () =>
+			contract.InputSchema.AnyOf.Should().BeEquivalentTo(
+				[new[] { "body" }, new[] { "body-file" }],
+				because: "the live contract must match runtime alternative-input validation"));
+		ToolContractField bodyFile = AllureApi.Step(
+			"Assert body-file is present",
+			() => contract.InputSchema.Properties.Single(field => field.Name == "body-file"));
+		AllureApi.Step("Assert the get-page handoff is named", () =>
+			bodyFile.Description.Should().Contain("files.bodyFile",
+				because: "callers should pass the exact path returned by get-page"));
+		AllureApi.Step("Assert the transport boundary is named", () =>
+			bodyFile.Description.Should().Contain("Unavailable over mcp-http",
+				because: "remote callers must not mistake body-file for a server-side arbitrary-file API"));
+		AllureApi.Step("Assert a body-file example is included", () =>
+			contract.Examples.Should().Contain(example => example.Arguments.ContainsKey("body-file"),
+				because: "the live contract should demonstrate the file handoff"));
+	}
+
 	private static async Task<ToolContractGetResponse> CallAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,
@@ -1225,15 +1338,19 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		string diagnostics = string.Join(
 			Environment.NewLine,
 			(callResult.Content ?? []).Select(content => content.ToString()));
-		// A binding-layer failure surfaces either as the SDK's generic invocation error (e.g. a missing
-		// required args wrapper) or as clio's more specific argument-deserialization diagnostic (e.g. an
-		// args payload whose type cannot bind to the tool's argument record). Both correctly identify a
-		// pre-execution binding failure for this tool, so accept either (ENG-91828 contract drift).
-		// "invalid-parameter-type" is the contracted diagnostic the pre-method binder now emits; the two
-		// older SDK shapes stay accepted because they carry the same binding-layer contract.
+		// A binding-layer failure surfaces in one of four forms, each of which correctly identifies a
+		// pre-execution binding failure for this tool (ENG-91828 contract drift):
+		//   * "invalid-parameter-type", the contracted diagnostic the pre-method binder now emits;
+		//   * the SDK's generic invocation error (e.g. a missing required args wrapper);
+		//   * clio's argument-deserialization diagnostic (an args payload whose type cannot bind);
+		//   * ENG-95885's precise shape-naming error, which now pre-empts the raw deserializer text
+		//     whenever an argument the tool expects as a JSON OBJECT arrives as a JSON string. That
+		//     replacement is the point of the change — "... BytePositionInLine: 9" told an agent nothing
+		//     about the required shape.
 		(diagnostics.Contains("invalid-parameter-type", StringComparison.Ordinal)
 			|| diagnostics.Contains("An error occurred invoking 'get-tool-contract'.", StringComparison.Ordinal)
-			|| diagnostics.Contains("Failed to deserialize argument 'args' for MCP tool 'get-tool-contract'", StringComparison.Ordinal))
+			|| diagnostics.Contains("Failed to deserialize argument 'args' for MCP tool 'get-tool-contract'", StringComparison.Ordinal)
+			|| diagnostics.Contains("must be a JSON object", StringComparison.Ordinal))
 			.Should().BeTrue(
 				because: "the transport-level failure should surface as a binding-layer invocation/deserialization error for the tool");
 	}

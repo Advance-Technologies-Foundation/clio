@@ -24,10 +24,10 @@ internal sealed class TemporaryClioSettingsOverride : IDisposable {
 		string? clioProcessPath = null,
 		IReadOnlyDictionary<string, string?>? processEnvironmentVariables = null) {
 		string appSettingsPath = GetClioAppSettingsPath(clioProcessPath, processEnvironmentVariables);
-		string originalContent = File.ReadAllText(appSettingsPath);
+		string originalContent = ReadWithRetry(appSettingsPath);
 		JObject settings = JObject.Parse(originalContent);
 		settings["workspaces-root"] = workspacesRoot;
-		File.WriteAllText(appSettingsPath, settings.ToString(Newtonsoft.Json.Formatting.Indented));
+		WriteWithRetry(appSettingsPath, settings.ToString(Newtonsoft.Json.Formatting.Indented));
 		return new TemporaryClioSettingsOverride(appSettingsPath, originalContent, true);
 	}
 
@@ -37,9 +37,9 @@ internal sealed class TemporaryClioSettingsOverride : IDisposable {
 		IReadOnlyDictionary<string, string?>? processEnvironmentVariables = null) {
 		string appSettingsPath = GetClioAppSettingsPath(clioProcessPath, processEnvironmentVariables);
 		bool fileExisted = File.Exists(appSettingsPath);
-		string? originalContent = fileExisted ? File.ReadAllText(appSettingsPath) : null;
+		string? originalContent = fileExisted ? ReadWithRetry(appSettingsPath) : null;
 		Directory.CreateDirectory(Path.GetDirectoryName(appSettingsPath)!);
-		File.WriteAllText(appSettingsPath, newContent);
+		WriteWithRetry(appSettingsPath, newContent);
 		return new TemporaryClioSettingsOverride(appSettingsPath, originalContent, fileExisted);
 	}
 
@@ -60,6 +60,47 @@ internal sealed class TemporaryClioSettingsOverride : IDisposable {
 			""",
 			clioProcessPath,
 			processEnvironmentVariables);
+	}
+
+
+	// clio mutates appsettings.json under a cross-process lock with an atomic replace, and retries a publish
+	// a contending reader refuses. This helper does neither — it is a bare read-modify-write — and on Windows
+	// that is the same MoveFileEx/sharing-violation exposure: 18 of the 46 failures in TeamCity 15893259 were
+	// `IOException: The process cannot access the file because it is being used by another process` raised
+	// from exactly these two methods. The isolation fixes remove most of the contention by giving fixtures
+	// private homes; this bounded retry covers what is left, including the writes that still target a shared
+	// catalog. Same policy, same reason, as FileSystem.PublishAtomicReplacement.
+	private static readonly TimeSpan WriteRetryWindow = TimeSpan.FromSeconds(2.5);
+
+	private static void WriteWithRetry(string path, string content) {
+		const int backoffStepMilliseconds = 15;
+		const int backoffCapMilliseconds = 100;
+		Stopwatch startedAt = Stopwatch.StartNew();
+		for (int attempt = 1; ; attempt++) {
+			try {
+				File.WriteAllText(path, content);
+				return;
+			}
+			catch (Exception e) when (startedAt.Elapsed < WriteRetryWindow
+				&& (e is UnauthorizedAccessException || (e is IOException && e is not FileNotFoundException
+					&& e is not DirectoryNotFoundException))) {
+				Thread.Sleep(Math.Min(backoffStepMilliseconds * attempt, backoffCapMilliseconds));
+			}
+		}
+	}
+
+	private static string ReadWithRetry(string path) {
+		const int backoffStepMilliseconds = 15;
+		const int backoffCapMilliseconds = 100;
+		Stopwatch startedAt = Stopwatch.StartNew();
+		for (int attempt = 1; ; attempt++) {
+			try {
+				return File.ReadAllText(path);
+			}
+			catch (IOException) when (startedAt.Elapsed < WriteRetryWindow) {
+				Thread.Sleep(Math.Min(backoffStepMilliseconds * attempt, backoffCapMilliseconds));
+			}
+		}
 	}
 
 	internal static string GetClioAppSettingsPath(
@@ -135,7 +176,7 @@ internal sealed class TemporaryClioSettingsOverride : IDisposable {
 		}
 		try {
 			if (_fileExisted) {
-				File.WriteAllText(_appSettingsPath, _originalContent!);
+				WriteWithRetry(_appSettingsPath, _originalContent!);
 				return;
 			}
 			if (File.Exists(_appSettingsPath)) {

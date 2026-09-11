@@ -270,6 +270,10 @@ public sealed class RequestInfoToolTests {
 			because: "the fetched markdown must surface on the detail response");
 		response.DocumentationUnavailable.Should().BeNull(
 			because: "all declared docs loaded, so no fetch-failure flag is emitted");
+		response.DocumentationSource.Should().Be("cdn",
+			because: "get-request-info must declare which tier served the markdown, exactly as get-component-info does");
+		response.DocumentationWarning.Should().BeNull(
+			because: "no local override miss occurred, so there is nothing to warn about");
 		docsClient.Requests.Should().ContainSingle(
 				because: "exactly one doc path is declared on the entry")
 			.Which.Should().Be(("latest", CloseDocPath),
@@ -295,6 +299,28 @@ public sealed class RequestInfoToolTests {
 	}
 
 	[Test]
+	[Description("With a local override active and the declared doc absent from the working copy, the request detail response reports documentationSource none and names the file plus the override variable.")]
+	public async Task GetRequestInfo_ShouldSurfaceProvenance_WhenLocalOverrideLacksTheDoc() {
+		// Arrange
+		FakeDocsClient docsClient = new();
+		docsClient.SeedLocalMiss("latest", CloseDocPath, RegistryFlavor.Requests.LocalFileEnvironmentVariable);
+		RequestInfoTool tool = CreateTool(docsClient);
+
+		// Act
+		RequestInfoResponse response = await tool.GetRequestInfo(new RequestInfoArgs("crt.ClosePageRequest"));
+
+		// Assert
+		response.Documentation.Should().BeNull(
+			because: "substituting the published CDN copy for a missing local file is the defect being fixed (issue #1361)");
+		response.DocumentationSource.Should().Be("none",
+			because: "nothing was served, and the caller must be able to tell that apart from a served doc");
+		response.DocumentationWarning.Should().Contain(CloseDocPath,
+			because: "the warning must name the registry-relative file the developer has to generate");
+		response.DocumentationWarning.Should().Contain(RegistryFlavor.Requests.LocalFileEnvironmentVariable,
+			because: "naming the override that captured the path is what makes the warning actionable");
+	}
+
+	[Test]
 	[Description("A request without declared docs omits both documentation fields — absence of docs is not an error condition.")]
 	public async Task GetRequestInfo_ShouldOmitDocumentationFields_WhenEntryDeclaresNoDocs() {
 		// Arrange
@@ -308,6 +334,9 @@ public sealed class RequestInfoToolTests {
 		response.Documentation.Should().BeNull(because: "the entry declares no docs");
 		response.DocumentationUnavailable.Should().BeNull(
 			because: "no docs were declared, so there is no fetch failure to flag");
+		response.DocumentationSource.Should().BeNull(
+			because: "an absent documentationSource must mean 'no documentation exists', not 'provenance unknown'");
+		response.DocumentationWarning.Should().BeNull(because: "there is no declared file to be missing");
 	}
 
 	[Test]
@@ -419,6 +448,35 @@ public sealed class RequestInfoToolTests {
 			because: "no caveat applies on the authoritative environment tier");
 		response.RequiresVersionConfirmation.Should().BeNull(
 			because: "the hard-stop flag is emitted only on latest-fallback");
+	}
+
+	[Test]
+	[Description("ENG-96840: the environment-scoped resolver must be awaited INSIDE its using — a non-async caller that returned the resolve Task unawaited disposed the owned application client while the probe was still running on its Task.Run thread, so every call degraded to probe-error.")]
+	public async Task GetRequestInfo_ShouldNotDisposeResolver_BeforeAsyncProbeCompletes() {
+		// Arrange
+		RequestInfoCatalog catalog = new(new InMemoryRequestRegistryClient(TestRegistryJson));
+		AsyncDisposalTrackingResolver resolver = new(
+			new PlatformVersionResolution("8.3.4", VersionResolutionSource.Environment));
+		IPlatformVersionResolverFactory factory = Substitute.For<IPlatformVersionResolverFactory>();
+		factory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
+			.Returns(new EnvironmentSettings { Uri = "http://test-stand" });
+		RequestInfoTool tool = new(
+			catalog,
+			new InMemoryMobileRequestCatalog(TestMobileRegistryJson),
+			new FakeDocsClient(),
+			factory,
+			commandResolver);
+
+		// Act
+		RequestInfoResponse response = await tool.GetRequestInfo(new RequestInfoArgs(EnvironmentName: "dev"));
+
+		// Assert
+		resolver.DisposedBeforeResolveCompleted.Should().BeFalse(
+			because: "the owned application client must stay alive until the async probe completes; disposing it mid-probe made every environment-scoped get-request-info throw ObjectDisposedException and degrade to probe-error (ENG-96840)");
+		response.ResolvedFrom.Should().Be("environment",
+			because: "with the resolver alive through the probe, the environment version resolves cleanly instead of latest-fallback");
 	}
 
 	[Test]
@@ -836,6 +894,36 @@ public sealed class RequestInfoToolTests {
 	}
 
 	/// <summary>
+	/// ENG-96840 regression double: its <see cref="ResolveAsync"/> completes ASYNCHRONOUSLY (it yields),
+	/// mirroring the real resolver whose probe runs on a <c>Task.Run</c> thread. If the
+	/// caller returns the resolve Task unawaited from inside its <c>using</c>, <see cref="Dispose"/> runs
+	/// before the continuation and <see cref="DisposedBeforeResolveCompleted"/> latches <c>true</c> — the
+	/// premature-disposal race that made the real owned CreatioClient throw ObjectDisposedException.
+	/// </summary>
+	private sealed class AsyncDisposalTrackingResolver(PlatformVersionResolution resolution)
+		: IOwnedPlatformVersionResolver {
+		private volatile bool _resolveCompleted;
+
+		public bool DisposedBeforeResolveCompleted { get; private set; }
+
+		public async Task<PlatformVersionResolution> ResolveAsync(CancellationToken cancellationToken = default) {
+			// Task.Yield forces an asynchronous return: a buggy caller that returns this Task unawaited
+			// from inside its using disposes us at this point, before the line below runs.
+			await Task.Yield();
+			_resolveCompleted = true;
+			return resolution;
+		}
+
+		// Deterministic, timing-free: being disposed while the resolve has not completed means the
+		// caller returned the resolve Task unawaited from inside its using — the ENG-96840 race.
+		public void Dispose() {
+			if (!_resolveCompleted) {
+				DisposedBeforeResolveCompleted = true;
+			}
+		}
+	}
+
+	/// <summary>
 	/// In-memory requests-flavor registry client: serves the given JSON for every version. By default it
 	/// echoes the requested version back as the resolved version (exact match); pass
 	/// <paramref name="resolvedVersionOverride"/> to report a fixed resolved version regardless of the
@@ -875,22 +963,34 @@ public sealed class RequestInfoToolTests {
 
 	/// <summary>
 	/// Test double for the docs client. Returns a pre-seeded markdown blob for the matching
-	/// (version, path) tuple or <see langword="null"/> otherwise — matching the contract the
+	/// (version, path) tuple or a <c>None</c>-sourced result otherwise — matching the contract the
 	/// real client uses to signal "skip this doc".
 	/// </summary>
 	private sealed class FakeDocsClient : IComponentRegistryDocsClient {
-		private readonly Dictionary<(string Version, string DocPath), string> _docs = new();
+		private readonly Dictionary<(string Version, string DocPath), ComponentDocumentationFetchResult> _docs = new();
 
 		public List<(string Version, string DocPath)> Requests { get; } = new();
 
-		public FakeDocsClient Seed(string version, string docPath, string content) {
-			_docs[(version, docPath)] = content;
+		public FakeDocsClient Seed(
+			string version,
+			string docPath,
+			string content,
+			ComponentDocumentationSource source = ComponentDocumentationSource.Cdn) {
+			_docs[(version, docPath)] = new ComponentDocumentationFetchResult(content, source);
 			return this;
 		}
 
-		public Task<string?> GetDocAsync(string version, string docPath, CancellationToken cancellationToken = default) {
+		public FakeDocsClient SeedLocalMiss(string version, string docPath, string overrideVariable) {
+			_docs[(version, docPath)] = new ComponentDocumentationFetchResult(
+				Content: null, ComponentDocumentationSource.None, overrideVariable);
+			return this;
+		}
+
+		public Task<ComponentDocumentationFetchResult> GetDocAsync(string version, string docPath, CancellationToken cancellationToken = default) {
 			Requests.Add((version, docPath));
-			return Task.FromResult(_docs.TryGetValue((version, docPath), out string? value) ? value : null);
+			return Task.FromResult(_docs.TryGetValue((version, docPath), out ComponentDocumentationFetchResult? value)
+				? value
+				: ComponentDocumentationFetchResult.Missing);
 		}
 	}
 }

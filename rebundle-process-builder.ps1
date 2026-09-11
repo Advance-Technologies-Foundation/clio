@@ -25,9 +25,11 @@
       * forgetting to rebuild clio means every local verification tests the PREVIOUS archive, since an
         install resolves the bundled .gz from the BUILD OUTPUT, not from the repository.
 
-    The three pins this run can derive - the archive SHA-256, the descriptor's ModifiedOnUtc, and the
-    version - are computed FROM the archive it just produced, so "those pins are stale" stops being a
-    reachable state. The SCHEMA descriptor pin is deliberately verified rather than refreshed: it guards a
+    Four pins are refreshed on every successful run: the archive SHA-256, the descriptor's ModifiedOnUtc,
+    the version, and the producing commit. Only the SHA is computed FROM the archive - the version is the
+    -Version argument, the stamp is read from the package descriptor after the restamp, and the commit is
+    that repository's HEAD before it. Refreshing all four together is what makes "those pins are stale"
+    stop being a reachable state. The SCHEMA descriptor pin is deliberately verified rather than refreshed: it guards a
     field clio's own tooling does not stamp, so a moved value stops the run instead of being accepted
     silently. Nothing is committed and nothing is pushed: the script reports what it changed and leaves
     both repositories dirty for review.
@@ -74,7 +76,13 @@ param(
     [Parameter(Mandatory = $true)][string] $Version,
     [ValidateSet('Debug','Release')][string] $Configuration,
     [string] $Framework,
-    [switch] $SkipTests
+    [switch] $SkipTests,
+    # Run the gates and STOP before anything is written. This exists because the gates could not be
+    # tested without risking the repository they protect: steps 6 and 7 write into the CLIO tree, not the
+    # package tree, so exercising the provenance checks against a throwaway package clone still overwrote
+    # clio's archive and pins with whatever placeholder version the test passed. A clean tree, an honest
+    # pin and the wrong content - the exact class the gates exist to stop, reachable by testing them.
+    [switch] $ValidateOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -134,6 +142,93 @@ $chosen  = $candidates[0]
 $clioDll = $chosen.Dll
 Write-Host "Using clio $($chosen.Configuration)/$($chosen.Framework)" -ForegroundColor Cyan
 
+# ---------------------------------------------------------------- 0b. provenance, mechanically
+# Only the SHA is computed from the archive; the other three come from the -Version argument, the descriptor
+# after the restamp, and HEAD before it. All four are refreshed together, so they agree with any
+# bytes from any tree - which is why the producing commit has been recorded in PROSE, and why that prose
+# has already been wrong three times (a commit whose descriptor could not yield the bytes; a commit that
+# was behind because the restamp was left uncommitted; bytes that corresponded to no commit at all, when a
+# tree with just-written LF files was packed on a core.autocrlf host). Two lines of git close the whole
+# class: refuse to cut from a dirty tree, and write the commit into a constant instead of a sentence.
+$dirty = git -C $PackageRepoPath status --porcelain 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Die "Cannot read git status in $PackageRepoPath. The producing commit has to be recordable, or the archive has no provenance at all."
+}
+if ($dirty) {
+    Die ("The package repository has uncommitted changes, so the archive would correspond to no commit:`n" +
+        ($dirty -join "`n") +
+        "`n`nCommit them first. This is the failure that shipped an unreproducible hash once already.")
+}
+$producingCommit = (git -C $PackageRepoPath rev-parse HEAD).Trim()
+if ($producingCommit -notmatch '^[0-9a-f]{40}$') {
+    Die "git rev-parse HEAD did not return a commit id in $PackageRepoPath."
+}
+
+# Clean is not the same as CURRENT, and the difference is the whole remaining hole. A detached HEAD on an
+# old commit, or a branch left behind after someone else advanced it, is perfectly clean - the script would
+# cut it and the pin would name that commit HONESTLY. The provenance would not lie; the head would just be
+# the wrong one. That has happened: an archive was cut before a rebase and silently predated it.
+#
+# This check belongs here and cannot live in clio.tests. A fixture there has ONE repository open, so
+# "is this commit the tip of a branch in the OTHER repository" is a question it cannot ask. The script has
+# both, so it is the only place the question is answerable at all.
+$branch = git -C $PackageRepoPath symbolic-ref -q --short HEAD 2>$null
+if (-not $branch) {
+    Die ("The package repository is on a DETACHED HEAD at $producingCommit, so the archive would correspond " +
+        "to no branch. The pin would name that commit truthfully and still be useless to a reviewer, who " +
+        "has a branch name and not a loose commit. Check out the branch you mean to ship.")
+}
+$upstream = git -C $PackageRepoPath rev-parse --abbrev-ref --symbolic-full-name "@{upstream}" 2>$null
+if ($LASTEXITCODE -ne 0 -or -not $upstream) {
+    # No upstream is normal for local work and is NOT an error: there is nothing to be behind. Said out
+    # loud rather than passed over, because it is also the state in which this check proves least.
+    Ok "producing commit $producingCommit (branch $branch, tree clean, no upstream to compare against)"
+} else {
+    $behind = (git -C $PackageRepoPath rev-list --count "HEAD..$upstream" 2>$null).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        Die "Cannot compare $branch against $upstream in $PackageRepoPath."
+    }
+    $ahead = (git -C $PackageRepoPath rev-list --count "$upstream..HEAD" 2>$null).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        Die "Cannot compare $branch against $upstream in $PackageRepoPath."
+    }
+    # BEHIND and DIVERGED are refused for the same reason and fixed by opposite actions, so they must not
+    # share a message. The first wording covered only "someone else advanced the branch", and told a
+    # diverged operator to rebase - which changes nothing when their commits are already on the right base
+    # and the count is stale history awaiting a force-push. Following that advice literally costs minutes
+    # and reads as "the rebase did not work".
+    if ([int]$behind -gt 0 -and [int]$ahead -eq 0) {
+        Die ("Branch $branch is $behind commit(s) behind $upstream and has none of its own, so the archive " +
+            "would omit work that is already on the branch it claims to ship. Merge or rebase first, THEN " +
+            "cut. This is the failure an archive hit once by predating a rebase - it was clean, and the pin " +
+            "named its head correctly.")
+    }
+    if ([int]$behind -gt 0) {
+        Die ("Branch $branch has DIVERGED from ${upstream}: $behind commit(s) there are not here, and " +
+            "$ahead here are not there. This script cannot tell which of two situations that is, and they " +
+            "are fixed by opposite actions:`n" +
+            "  * the upstream carries work you do not have -> pull it in, then cut;`n" +
+            "  * you rewrote your own history (rebase) and have not pushed -> those $behind are the OLD " +
+            "ids, already replayed in your tree, and rebasing again changes nothing.`n" +
+            "Tell them apart by CONTENT, not by the counts: diff $upstream..HEAD over the package sources " +
+            "and see whether your tree is a superset. If it is, the branch needs a force-push - which " +
+            "rewrites published history and is a decision for a person, not for this script, so it will " +
+            "keep refusing until someone makes it. Cutting from a checkout with no upstream is the " +
+            "supported way to proceed without that decision.")
+    }
+    # Ahead is expected - the restamp below is itself an unpushed commit. Reported so the operator can see
+    # how much of what is being shipped exists only locally.
+    # LIMIT, stated rather than papered over: "behind" is measured against the upstream ref AS LAST FETCHED.
+    # This script does not fetch - a build script that reaches the network fails differently on every host,
+    # and off-VPN it would fail always. So it catches a stale checkout, not an unfetched remote.
+    Ok "producing commit $producingCommit (branch $branch, tree clean, $ahead ahead of $upstream, 0 behind)"
+}
+
+if ($ValidateOnly) {
+    Ok "-ValidateOnly: the gates passed and nothing was written. Re-run without it to cut for real."
+    exit 0
+}
+
 # ---------------------------------------------------------------- 1. sources compile, tests pass
 if ($SkipTests) {
     Write-Host "`n=== 1. SKIPPED: package build and tests" -ForegroundColor Yellow
@@ -151,7 +246,18 @@ if ($SkipTests) {
     try {
         dotnet build MainSolution.slnx -c dev-nf --nologo -v q
         if ($LASTEXITCODE -ne 0) { Die 'Package build failed. Shipping sources the target cannot compile installs a package that never works.' }
-        dotnet test tests/CrtProcessBuilder/CrtProcessBuilder.Tests.csproj -c dev-nf --no-build --nologo -v q
+        # The test project is DISCOVERED, not hardcoded. Its path moved once already - the package repo
+        # relocated it to tests/UnitTests/<project>/ when it grew a Jenkins pipeline - and a hardcoded
+        # path fails as `MSBUILD : error MSB1009: Project file does not exist`, which reads as a broken
+        # checkout rather than as a stale line in this script. Exactly one match is required: zero means
+        # the suite would be silently skipped while the rebundle carried on to ship the archive.
+        $testProjects = @(Get-ChildItem -Path 'tests' -Recurse -Filter 'CrtProcessBuilder.Tests.csproj' -File)
+        if ($testProjects.Count -ne 1) {
+            Die "Expected exactly one CrtProcessBuilder.Tests.csproj under $(Join-Path $PackageRepoPath 'tests'), found $($testProjects.Count).
+Without it the package tests - the only check that each operation is still bound to its authorization
+gate - cannot run, and this script must not ship an archive it did not test."
+        }
+        dotnet test $testProjects[0].FullName -c dev-nf --no-build --nologo -v q
         if ($LASTEXITCODE -ne 0) { Die 'Package tests failed.' }
     } finally { Pop-Location }
     Ok 'build + tests green'
@@ -311,11 +417,72 @@ if (Test-Path -LiteralPath $binDir) {
 $objDir = Join-Path $packageDir 'Files\obj'
 if (Test-Path -LiteralPath $objDir) { Remove-Item -LiteralPath $objDir -Recurse -Force; Ok 'Files/obj removed' }
 
-# ---------------------------------------------------------------- 4. pack into the clio checkout
-Step '4. Pack straight into the clio checkout'
-dotnet $clioDll compress $packageDir --skip-pdb -d $archive
-if ($LASTEXITCODE -ne 0) { Die 'compress failed.' }
-Ok $archive
+# ------------------------------------------------- 3b. materialise the sources from the COMMIT, not the tree
+# The archive is cut from `git archive <producing commit>`, never from the working tree, and this is a
+# correctness fix rather than tidiness.
+#
+# Packing the tree made the hash depend on the LINE ENDINGS of the machine that ran the script. A file
+# freshly written by a tool sits in the tree as LF; the same file after a clean checkout on Windows
+# (core.autocrlf=true, or `* text=auto` in .gitattributes) is CRLF. Both are the same commit and the same
+# content, and they produce DIFFERENT bytes and therefore a different SHA-256 - so a reviewer following the
+# documented recipe on their own machine got a hash that did not match the pin, with nothing to tell them
+# whether the archive had been tampered with or merely repacked. That is the sole prescribed control on a
+# binary that installs executable C# onto customer environments, and it was decided by an editor setting.
+# It had already happened once with nine files and once more with thirteen.
+#
+# The existing clean-tree gate provably cannot catch it: a tree can be clean, correct and CRLF at the same
+# time.
+#
+# `git archive` ALONE is not enough, and this was measured rather than assumed: it runs the same
+# working-tree conversion a checkout does, so with core.autocrlf=true it emits CRLF and the hash still
+# depends on the operator's git configuration. The export is therefore pinned with `-c core.autocrlf=false
+# -c core.eol=lf`, which makes it hand back blob bytes - LF - on every platform and every configuration.
+# That is what turns the pin into something a reviewer can reproduce from the commit id alone, and it is
+# why the reproduction recipe in docs/agent-instructions/bundled-packages.md quotes the flags: dropping
+# them yields a different, machine-dependent hash.
+#
+# The one file that cannot come from the commit is descriptor.json: the restamp above is not committed yet,
+# and by contract the pin names the PRE-restamp commit. So it is overlaid from the tree, where this script
+# has just written it. That keeps exactly one file's bytes owned by tooling instead of by git, and the
+# tooling is deterministic - see the reproduction recipe in docs/agent-instructions/bundled-packages.md.
+Step '3b. Materialise the package from the producing commit (never from the working tree)'
+$packRoot = Join-Path ([IO.Path]::GetTempPath()) ("clio-rebundle-" + [Guid]::NewGuid().ToString('n'))
+New-Item -ItemType Directory -Path $packRoot -Force | Out-Null
+try {
+    # ZIP rather than tar, and expanded in-process. `tar` on PATH here can be GNU tar, which reads a
+    # Windows `C:\...` argument as a REMOTE host spec and fails with "Cannot connect to C: resolve
+    # failed" - measured. Expand-Archive has no such ambiguity and needs nothing installed.
+    $zipPath = Join-Path $packRoot 'package.zip'
+    git -c core.autocrlf=false -c core.eol=lf -C $PackageRepoPath archive --format=zip -o $zipPath `
+        $producingCommit -- 'packages/CrtProcessBuilder'
+    if ($LASTEXITCODE -ne 0) { Die "git archive failed for $producingCommit in $PackageRepoPath." }
+    Expand-Archive -LiteralPath $zipPath -DestinationPath $packRoot -Force
+    Remove-Item -LiteralPath $zipPath -Force
+
+    $packDir = Join-Path $packRoot 'packages\CrtProcessBuilder'
+    if (-not (Test-Path -LiteralPath $packDir)) {
+        Die ("The export produced no packages/CrtProcessBuilder at $producingCommit. The commit does not " +
+            'carry the package, which means the producing commit is not the one you meant to ship.')
+    }
+    # Both are gitignored, so an export cannot contain them. Asserted rather than assumed: if either ever
+    # became tracked, this script's whole point - a source-only archive - would fail silently.
+    foreach ($leaked in @((Join-Path $packDir 'Files\Bin'), (Join-Path $packDir 'Files\obj'))) {
+        if (Test-Path -LiteralPath $leaked) {
+            Die ("$leaked is TRACKED at $producingCommit, so build output would ship inside a source-only " +
+                'package. Untrack it before cutting.')
+        }
+    }
+    Copy-Item -LiteralPath $descriptor -Destination (Join-Path $packDir 'descriptor.json') -Force
+    Ok "exported $producingCommit to $packDir (descriptor.json overlaid from the restamped tree)"
+
+    # ---------------------------------------------------------------- 4. pack into the clio checkout
+    Step '4. Pack straight into the clio checkout'
+    dotnet $clioDll compress $packDir --skip-pdb -d $archive
+    if ($LASTEXITCODE -ne 0) { Die 'compress failed.' }
+    Ok $archive
+} finally {
+    if (Test-Path -LiteralPath $packRoot) { Remove-Item -LiteralPath $packRoot -Recurse -Force }
+}
 
 # ---------------------------------------------------------------- 5. verify, do not trust
 Step '5. Verify the archive contents (step 3 is easy to forget and its failure is silent)'
@@ -432,8 +599,8 @@ if ($schemaFolders.Count -ne 1 -or $schemaFolders[0] -ne 'CrtProcessBuilderCompi
 }
 Ok "$($entries.Count) entries, $($dlls.Count) DLLs (both Files/Libs), compile marker present, no own assembly, nothing that executes on install"
 
-# ---------------------------------------------------------------- 6. pins, computed from the archive
-Step '6. Refresh the clio-side pins FROM the archive just produced'
+# ---------------------------------------------------------------- 6. pins (only the SHA comes from the archive)
+Step '6. Refresh the clio-side pins (SHA from the archive; version, stamp and commit from the package repo)'
 $sha = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToUpperInvariant()
 $stamp = $afterStamp
 
@@ -472,6 +639,7 @@ if ($SkipTests) {
 # cannot shorten it.
 Replace-InFile $pinsFile 'ExpectedArchiveVersion = "[^"]*";' "ExpectedArchiveVersion = `"$($parsedNew.ToString())`";" 'ExpectedArchiveVersion'
 Replace-InFile $pinsFile 'ExpectedDescriptorModifiedOnUtc = "[^"]*";' "ExpectedDescriptorModifiedOnUtc = `"$stamp`";" 'ExpectedDescriptorModifiedOnUtc'
+Replace-InFile $pinsFile 'ExpectedProducingCommit = "[^"]*";' "ExpectedProducingCommit = `"$producingCommit`";" 'ExpectedProducingCommit'
 # There is deliberately no version constant to update. clio reads the shipped version out of this very
 # archive (IBundledPackageCatalog), so nothing on the clio side has to be kept in step with it - which is
 # what made raising the version cheap enough to require on every rebundle.

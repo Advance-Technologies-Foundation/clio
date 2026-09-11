@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -89,26 +90,33 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	[AllureDescription("Writes a valid page body to a temporary file, calls validate-page with body-file only, and verifies the file-based handoff succeeds over stdio MCP.")]
 	public async Task PageValidateTool_ShouldAcceptBodyFile_WhenFileContainsValidBody() {
 		// Arrange
-		string bodyFile = Path.Combine(CreateFixtureDirectory("validate-page-body-file"), "body.js");
-		await File.WriteAllTextAsync(bodyFile, ValidPageBody);
-		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string bodyFile = AllureApi.Step(
+			"Create an absolute local body-file path",
+			() => Path.Combine(CreateFixtureDirectory("validate-page-body-file"), "body.js"));
+		await AllureApi.Step("Write a valid page body", async () =>
+			await File.WriteAllTextAsync(bodyFile, ValidPageBody));
+		await using var context = await AllureApi.Step(
+			"Start a real stdio MCP session",
+			() => Task.FromResult(Arrange(TimeSpan.FromMinutes(3))));
 
 		// Act
-		CallToolResult callResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> { ["body-file"] = bodyFile }
-			},
-			context.CancellationTokenSource.Token);
+		CallToolResult callResult = await AllureApi.Step(
+			"Call validate-page with body-file only",
+			async () => await context.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> { ["body-file"] = bodyFile }
+				},
+				context.CancellationTokenSource.Token));
 		PageValidateResponse response = EntitySchemaStructuredResultParser.Extract<PageValidateResponse>(callResult);
 
 		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: "a readable body-file should return a structured validation result, not a protocol error");
-		response.Valid.Should().BeTrue(
-			because: "the same well-formed body must validate whether supplied inline or by file path");
-		response.Validation.Errors.Should().BeNullOrEmpty(
-			because: "the file-based input contains a valid page body");
+		AllureApi.Step("Assert the call returned a normal result", () => callResult.IsError.Should().NotBeTrue(
+			because: "a readable body-file should return a structured validation result, not a protocol error"));
+		AllureApi.Step("Assert the file body is valid", () => response.Valid.Should().BeTrue(
+			because: "the same well-formed body must validate whether supplied inline or by file path"));
+		AllureApi.Step("Assert validation has no errors", () => response.Validation.Errors.Should().BeNullOrEmpty(
+			because: "the file-based input contains a valid page body"));
 	}
 
 	[Test]
@@ -118,34 +126,40 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	[AllureDescription("Dispatches validate-page through clio-run with a nonexistent body-file and verifies the MCP response classifies the failure while all validation flags remain false.")]
 	public async Task PageValidateTool_ShouldReportMissingPath_WhenBodyFileDoesNotExist() {
 		// Arrange
-		string bodyFile = Path.Combine(CreateFixtureDirectory("validate-page-missing-file"), "missing-body.js");
-		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string bodyFile = AllureApi.Step(
+			"Create an absolute missing body-file path",
+			() => Path.Combine(CreateFixtureDirectory("validate-page-missing-file"), "missing-body.js"));
+		await using var context = await AllureApi.Step(
+			"Start a real stdio MCP session",
+			() => Task.FromResult(Arrange(TimeSpan.FromMinutes(3))));
 
 		// Act
-		CallToolResult callResult = await context.Session.CallToolAsync(
-			ClioRunTool.ToolName,
-			new Dictionary<string, object?> {
-				["command"] = ToolName,
-				["args"] = new Dictionary<string, object?> { ["body-file"] = bodyFile }
-			},
-			context.CancellationTokenSource.Token);
+		CallToolResult callResult = await AllureApi.Step(
+			"Call validate-page through clio-run with a missing body-file",
+			async () => await context.Session.CallToolAsync(
+				ClioRunTool.ToolName,
+				new Dictionary<string, object?> {
+					["command"] = ToolName,
+					["args"] = new Dictionary<string, object?> { ["body-file"] = bodyFile }
+				},
+				context.CancellationTokenSource.Token));
 		PageValidateResponse response = EntitySchemaStructuredResultParser.Extract<PageValidateResponse>(callResult);
 
 		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: "an input failure should remain a structured validation result");
-		response.Valid.Should().BeFalse(
-			because: "a missing file cannot provide a page body");
-		response.Validation.MarkersOk.Should().BeFalse(
-			because: "markers were not checked without file content");
-		response.Validation.JsSyntaxOk.Should().BeFalse(
-			because: "missing content must not be reported as syntactically valid");
-		response.Validation.ContentOk.Should().BeFalse(
-			because: "missing content must not be reported as valid content");
-		response.Validation.Errors.Should().ContainSingle(error => error.Contains("not found"),
-			because: "the response must classify the missing input without exposing the host path");
-		response.Validation.Errors.Should().NotContain(error => error.Contains(bodyFile),
-			because: "structured MCP failures must not disclose host filesystem paths");
+		AllureApi.Step("Assert the input failure stayed structured", () => callResult.IsError.Should().NotBeTrue(
+			because: "an input failure should remain a structured validation result"));
+		AllureApi.Step("Assert the missing file is invalid", () => response.Valid.Should().BeFalse(
+			because: "a missing file cannot provide a page body"));
+		AllureApi.Step("Assert markers were not checked", () => response.Validation.MarkersOk.Should().BeFalse(
+			because: "markers were not checked without file content"));
+		AllureApi.Step("Assert syntax was not checked", () => response.Validation.JsSyntaxOk.Should().BeFalse(
+			because: "missing content must not be reported as syntactically valid"));
+		AllureApi.Step("Assert content was not checked", () => response.Validation.ContentOk.Should().BeFalse(
+			because: "missing content must not be reported as valid content"));
+		AllureApi.Step("Assert the missing-file classification", () => response.Validation.Errors.Should().ContainSingle(error => error.Contains("not found"),
+			because: "the response must classify the missing input without exposing the host path"));
+		AllureApi.Step("Assert the path is not disclosed", () => response.Validation.Errors.Should().NotContain(error => error.Contains(bodyFile),
+			because: "structured MCP failures must not disclose host filesystem paths"));
 	}
 
 	[Test]
@@ -451,6 +465,41 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 			because: "no content-level validator, including the localizable-text rule, should reject the ImageInput tooltip literal");
 		response.Validation.Errors.Should().BeNullOrEmpty(
 			because: "the ImageInput tooltip literal is a valid, working authoring form and must not produce an error");
+	}
+
+	[Test]
+	[Description("Returns valid: true when an inserted crt.EmailComposer carries the platform-authored data.caption literal — a component's data descriptor is component metadata, not page-authored user-visible text, so the localizable-text rule must NOT reject it (issue #1298). Proves the descriptor exemption reaches through the real MCP transport.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts platform-authored data.caption on a Timeline composer")]
+	[AllureDescription("Sends a page body whose inserted crt.EmailComposer carries the descriptor the Freedom UI designer writes (uId, schemaType, typeName, caption: \"Email\") and verifies validate-page accepts it — otherwise every page containing a Timeline composer would be unsaveable through clio.")]
+	public async Task PageValidateTool_Should_Accept_Platform_Authored_Composer_Data_Caption() {
+		// Arrange
+		string bodyWithComposerDescriptor = ValidPageBody.Replace(
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+				"{\"operation\":\"insert\",\"name\":\"EmailComposer\",\"parentName\":\"MessageComposer\"," +
+				"\"propertyName\":\"items\",\"values\":{\"type\":\"crt.EmailComposer\"," +
+				"\"classes\":[\"view-element\"],\"data\":{\"uId\":\"f80b7f5b-ad11-09ed-189a-6190abb76340\"," +
+				"\"schemaType\":\"Email\",\"typeName\":\"crt.EmailComposer\",\"caption\":\"Email\"}," +
+				"\"recordId\":\"$Id\",\"visible\":true}}" +
+				"]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithComposerDescriptor);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "values.data is the composer's own descriptor, written and round-tripped unchanged by the platform (issue #1298)");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeTrue(
+			because: "no content-level validator, including the localizable-text rule, should reject a platform-authored component descriptor");
+		response.Validation.Errors.Should().BeNullOrEmpty(
+			because: "a page carrying a Timeline composer must stay saveable through clio");
 	}
 
 	[Test]

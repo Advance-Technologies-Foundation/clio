@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -45,6 +45,21 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	private const string ElementSourceTaskType = "performTask";
 	private const string ElementSourceOutput = "ActivityResult";
 	private const string ElementTargetInput = "UserId";
+
+	// Open edit page (ENG-92715). AccountPageV2 is the base product's Classic Account edit page and is registered
+	// on the Accounts section, so it is inside the designer's own candidate set on any stand. It also belongs to an
+	// UNTYPED object, which is what keeps these tests free of a recordType discriminator. Swap the pair if a stand
+	// lacks it - any section-registered edit page of an untyped object works.
+	private const string OpenEditPageName = "AccountPageV2";
+	private const string OpenEditPageObject = "Account";
+
+	// A lookup column present on Account on every environment, so the results list needs no seeded metadata.
+	private const string OpenEditPageResultColumn = "Owner";
+
+	// A platform role present on every environment, so the name-resolution path can be exercised without seeding data.
+	private const string OpenEditPagePerformerRole = "All employees";
+	// A text column of that object, for the add-mode pre-filled value: a constant is only storable on a TEXT column.
+	private const string OpenEditPageTextColumn = "Address";
 
 	[Test]
 	[Description("Starts the real clio MCP server and verifies create-business-process is discoverable via the get-tool-contract compact index (hermetic).")]
@@ -164,6 +179,88 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		describeJson.Should().Contain(SourceOutputParameter,
 			because: "the element's output parameter (the mapping source) is surfaced by describe because it is a result/output");
 	}
+
+	[Test]
+	[Description("Over the real MCP path, a build descriptor's mappings[] may carry an 'expression' source, and it is validated, stored and read back as a Script. The formula is checked by the PLATFORM at the pre-save gate, not by clio's package - from CrtProcessBuilder 1.4.0.41 the package does not look at it at all - so what this proves is that a valid formula survives the gate, is stored as a Script and reads back. The modify path had this coverage and create did not, while the floor was raised on both.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process stores a formula mapping that reads back")]
+	public async Task CreateBusinessProcess_Should_StoreAndReadBackAFormulaMapping() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpCreateFormulaE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildFormulaMappingDescriptor(processName, "FormulaUtilities.Max(1, 2, 3)")
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "FormulaUtilities.Max is one of the four Creatio formula functions and its result fits a Float parameter, so the build must be accepted on the create path exactly as it is on modify");
+		string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+		describeJson.Should().Contain("FormulaUtilities.Max(1, 2, 3)",
+			because: "the formula text must survive the save verbatim - the platform, not clio, decides its meaning");
+		describeJson.Should().Contain("Script",
+			because: "a formula is stored as a Script source, not a constant; that is how the runtime knows to evaluate it rather than read it");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, a build descriptor's formula whose result cannot become the target's declared type is refused BY THE SERVER, and the process is not created. Without this the create path would accept what modify refuses, and the difference would only surface at run time.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process refuses a formula the target type cannot hold")]
+	public async Task CreateBusinessProcess_Should_RefuseAFormulaTheTargetTypeCannotHold() {
+		// Arrange - the target is Integer and the formula is fractional.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpCreateBadFormulaE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildIntegerTargetFormulaDescriptor(processName, "1.5")
+		});
+
+		// Assert
+		// NOT on callResult.IsError: measured null on this refusal, exactly as it is on success — every
+		// sibling assertion in this fixture is deliberately NotBeTrue for that reason, so the flag carries no
+		// signal here. What the description promises is that nothing was CREATED, so that is what is asserted.
+		string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+		describeJson.Should().Contain("was not found",
+			because: "the description promises the process is not created, and the refusal now comes from the "
+				+ "whole-schema save gate rather than from the operation - so atomicity is newly load-bearing "
+				+ "on this path and asserting only the message text would not notice a half-created schema. "
+				+ "Asserted POSITIVELY on the not-found answer rather than as NotContain(processName): the "
+				+ "not-found message quotes the name it looked for, so the negative form fails on a correct "
+				+ "result");
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("Int32",
+			because: "the refusal must name the type the result cannot become, so the caller can correct the formula instead of guessing");
+		callResultJson.Should().Contain("1.5",
+			because: "the refusal must quote the expression, or the caller cannot find it in a multi-mapping "
+				+ "descriptor. Deliberately a SUBSTRING and not equality to \"1.5\": the platform quotes the "
+				+ "expression as its own converter left it, and the converter suffixes a fractional literal with m "
+				+ "- measured, the message reads 'Error while executing expression \"1.5m\"'. An earlier version of "
+				+ "this rationale claimed the text is quoted AS WRITTEN, which the same measurement disproves: a "
+				+ "parameter reference is shown by the parameter NAME, not by the metapath the caller sent");
+	}
+
+	private static string BuildFormulaMappingDescriptor(string processName, string expression) =>
+		"{\"name\":\"" + processName + "\",\"caption\":\"Clio BP Create Formula E2E\",\"packageName\":\"Custom\","
+		+ "\"elements\":[{\"name\":\"StartEvent1\",\"type\":\"startEvent\"},"
+		+ "{\"name\":\"EndEvent1\",\"type\":\"endEvent\"}],"
+		+ "\"flows\":[{\"source\":\"StartEvent1\",\"target\":\"EndEvent1\"}],"
+		+ "\"parameters\":[{\"name\":\"Sum\",\"type\":\"Float\",\"direction\":\"Variable\"}],"
+		+ "\"mappings\":[{\"targetProcessParameter\":\"Sum\",\"expression\":\""
+		+ expression.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"}]}";
+
+	private static string BuildIntegerTargetFormulaDescriptor(string processName, string expression) =>
+		"{\"name\":\"" + processName + "\",\"caption\":\"Clio BP Create Bad Formula E2E\",\"packageName\":\"Custom\","
+		+ "\"elements\":[{\"name\":\"StartEvent1\",\"type\":\"startEvent\"},"
+		+ "{\"name\":\"EndEvent1\",\"type\":\"endEvent\"}],"
+		+ "\"flows\":[{\"source\":\"StartEvent1\",\"target\":\"EndEvent1\"}],"
+		+ "\"parameters\":[{\"name\":\"Count\",\"type\":\"Integer\",\"direction\":\"Variable\"}],"
+		+ "\"mappings\":[{\"targetProcessParameter\":\"Count\",\"expression\":\""
+		+ expression.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"}]}";
 
 	[Test]
 	[Description("Over the real MCP path, create-business-process REJECTS an element->process mapping whose types are incompatible (a Boolean element output into an Integer process parameter), enforcing the ENG-92127 type-compatibility rule (AC#3).")]
@@ -454,6 +551,98 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		}
 		""";
 
+	// ENG-91853's whole build-path contract in one descriptor, over the real MCP path: an exclusiveGateway
+	// ELEMENT (a type token the package refused before 1.4.0.58), flows[].kind on all three kinds, and a
+	// flows[].condition written as a parameter NAME — which is the only way a caller can write one here,
+	// because the parameter's UId is generated by this same call. Nothing else in this suite sends any of
+	// these fields, so a binder that silently dropped kind or condition would go unnoticed everywhere.
+	//
+	// It now also carries flows[].label on all three kinds, for the same reason and with a sharper
+	// version of it: a dropped label is the failure the whole field exists to prevent (two identical
+	// unlabelled arrows), it is invisible in metadata because a caption lives in the schema RESOURCES,
+	// and the unit tests construct these records positionally in C# so the JSON member name is
+	// exercised nowhere else.
+	private static string BuildGatewayAndDeclaredBranchDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Gateway Branch E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "Start1", "type": "startEvent" },
+		    { "name": "Decide", "type": "exclusiveGateway", "caption": "Check the amount" },
+		    { "name": "EndApprove", "type": "endEvent", "caption": "Approval path" },
+		    { "name": "EndFast", "type": "endEvent", "caption": "Fast-track path" }
+		  ],
+		  "flows": [
+		    { "source": "Start1", "target": "Decide", "label": "Amount known" },
+		    { "source": "Decide", "target": "EndApprove", "kind": "conditional",
+		      "condition": "[#AmountParameter#] > 100", "label": "Above the threshold" },
+		    { "source": "Decide", "target": "EndFast", "kind": "default", "label": "Everything else" }
+		  ],
+		  "parameters": [
+		    { "name": "AmountParameter", "type": "Integer", "direction": "In", "caption": "Amount" }
+		  ]
+		}
+		""";
+
+	[Test]
+	[Description("Over the real MCP path, create-business-process builds an exclusiveGateway ELEMENT with a declared conditional branch and a declared default branch, and the condition — written as a parameter NAME — comes back EXPANDED into its UId meta-path. This is the only e2e that sends flows[].kind, flows[].condition or a gateway type token at all; the unit tests construct those records positionally in C#, so the JSON binder is never exercised by them and a renamed or mistyped property would drop the value with the whole suite green.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process builds a gateway with declared branches and expands a named condition")]
+	public async Task CreateBusinessProcess_Should_BuildDeclaredBranches_AndExpandTheNamedCondition() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpGatewayE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildGatewayAndDeclaredBranchDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a gateway element with declared branches must build without a transport error");
+		JsonSerializer.Serialize(callResult).Should().Contain(processName,
+			because: "a successful build reports the created schema name");
+
+		// Readback on the typed graph, because every one of these can fail silently: a dropped `kind` leaves a
+		// plain flow that describe still reports, and an unexpanded condition is stored verbatim and only fails
+		// later, at run time, on a graph that looked correct at every earlier step.
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribedFlow conditional = graph.Flows.Single(f => f.Source == "Decide" && f.Target == "EndApprove");
+		DescribedFlow fallback = graph.Flows.Single(f => f.Source == "Decide" && f.Target == "EndFast");
+
+		conditional.Kind.Should().Be("conditional",
+			because: "flows[].kind has to survive the JSON binder, the build and the save - dropped, this reads "
+				+ "back as 'sequence' and the branch silently never branches");
+		fallback.Kind.Should().Be("default",
+			because: "the default marker is a separate field from the condition and is dropped independently");
+		conditional.Condition.Should().Contain("[Parameter:",
+			because: "the NAME the caller wrote must be expanded into the UId meta-path the runtime evaluates - "
+				+ "this is the only route by which a build-path condition can reference a parameter at all");
+		conditional.Condition.Should().NotContain("AmountParameter",
+			because: "a condition still carrying the bare name was never expanded, and the platform would refuse "
+				+ "it at run time on a process that built and described cleanly");
+		conditional.Condition.Should().EndWith("> 100",
+			because: "only the token is rewritten - the operator and the literal around it must survive verbatim");
+
+		// The labels, on the same read-back. A dropped one is silent in the worst way: the process builds,
+		// describes and RUNS correctly, and the only symptom is a diagram a human cannot read.
+		conditional.Label.Should().Be("Above the threshold",
+			because: "flows[].label has to survive the JSON binder, the build, the resource extraction and the "
+				+ "read-back - and it is stored in the schema RESOURCES, not in metadata, so no metadata check "
+				+ "anywhere else in this suite would notice it missing");
+		fallback.Label.Should().Be("Everything else",
+			because: "a default branch carries a label as readily as a conditional one, and this is the pair "
+				+ "whose two arrows are otherwise indistinguishable");
+		graph.Flows.Single(f => f.Source == "Start1" && f.Target == "Decide").Label.Should()
+			.Be("Amount known",
+				because: "a plain sequence flow takes a label through the same field - it is unusual in the "
+					+ "shipped corpus, not unsupported");
+	}
+
 	[Test]
 	[Description("Over the real MCP path, create-business-process builds a signalStart with a DELETE trigger (on:deleted) and describe-business-process reads the trigger back as 'deleted' (round-trip of the third record-event type).")]
 	[AllureTag(ToolName)]
@@ -620,6 +809,120 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			because: "an 'expression' recipient is stored as a formula, which is what makes it resolve at send time");
 	}
 
+	[Test]
+	[Description("Closes the accessRights guard's load-bearing assumption end to end. AccessRightsBlockExpectation decides whether to warn by looking for the block on DescribedElement.AdditionalData, and every unit test around it CONSTRUCTS that dictionary by hand - so if the real server never surfaces the block there, the block-presence check returns false on a SUCCESSFUL write and clio tells the caller the permissions were not changed when they were. Requires a sandbox whose deployed CrtProcessBuilder understands the element: one that predates it rejects the changeAccessRights element TYPE outright, before any block-level check, so that environment is Ignored rather than failed.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process: the accessRights drop warning agrees with what actually landed")]
+	public async Task CreateBusinessProcess_Should_KeepTheAccessRightsDropWarning_ConsistentWithWhatLanded() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpAccessRightsE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildAccessRightsDescriptor(processName)
+		});
+
+		// Gate BEFORE asserting: a CrtProcessBuilder that predates the element rejects the element TYPE, which is
+		// a different failure from the block-level discard this test is about. Such a sandbox cannot exercise
+		// either direction, so Ignore it instead of reporting a red that means "environment too old".
+		//
+		// Matched on the package's OWN refusal text (ProcessElementFactory: "Element type '<type>' is not
+		// supported yet"), not on "the create failed somehow". A bare IsError gate swallows every other create
+		// failure too - a malformed descriptor, an auth failure, a genuine regression in this very block - and
+		// reports each of them as "environment too old", so the test could never go red for the thing it exists
+		// to catch.
+		string payload = JsonSerializer.Serialize(callResult);
+		bool elementTypeRejected = callResult.IsError is true
+			&& payload.Contains("is not supported yet")
+			&& payload.Contains("changeAccessRights");
+		if (elementTypeRejected) {
+			Assert.Ignore(
+				"The sandbox's deployed CrtProcessBuilder does not accept a 'changeAccessRights' element type, so "
+				+ "the accessRights block never reaches the read-back guard. This is expected until the "
+				+ "bundled archive is rebuilt from a source tree that CONTAINS the element - note the floors are "
+				+ "already at 1.4.0.40 and the bundled archive already reports that version, so the version "
+				+ "precondition passes while the block is still discarded. Until then this test is Ignored, "
+				+ "NOT passing, and the create path is unverified end to end.");
+		}
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "once the element type is accepted, the build must succeed whether or not the deployed "
+				+ "package understands the BLOCK - a server that cannot deserialize it discards it and still "
+				+ "answers success, which is the whole reason the read-back guard exists");
+		payload.Should().Contain("created (UId:",
+			because: "only a genuinely successful build logs the created-schema line");
+
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribedElement element = graph.Elements.Single(e => e.Name == "GrantRights1");
+
+		// The exact predicate AccessRightsBlockExpectation applies internally, run against a REAL read-back
+		// instead of a hand-built dictionary.
+		bool blockLanded = element.AdditionalData is not null
+			&& element.AdditionalData.Any(entry =>
+				string.Equals(entry.Key, "accessRights", StringComparison.OrdinalIgnoreCase)
+				&& entry.Value.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null));
+		bool warnedItWasDiscarded = payload.Contains("does not implement IExtensibleDataObject");
+
+		warnedItWasDiscarded.Should().Be(!blockLanded,
+			because: "the warning must track reality in BOTH directions. Warning when the block DID land tells a "
+				+ "caller to treat a real permission change as not applied; staying silent when it did NOT land "
+				+ "is the silent discard the guard was written to catch. Either way round the caller acts on a "
+				+ "false belief about who can reach the records.");
+
+		if (blockLanded) {
+			// Read from AdditionalData deliberately: DescribedElement has no typed AccessRights member, so the
+			// extension bag is not a convenience here — it is the ONLY channel the block travels on, which is
+			// what makes the guard's dependency on that bag structural rather than incidental.
+			JsonElement block = element.AdditionalData!.First(entry =>
+				string.Equals(entry.Key, "accessRights", StringComparison.OrdinalIgnoreCase)).Value;
+			block.GetProperty("object").GetString().Should().Be("Contact",
+				because: "the target object must round-trip through build and describe");
+			block.GetProperty("add").GetArrayLength().Should().Be(1,
+				because: "the single add entry that was sent must read back, so a landed block means a landed "
+					+ "CONFIGURATION and not merely a present key");
+		}
+	}
+
+	// A minimal but COMPLETE changeAccessRights element: an object that uses record permissions, one add entry with
+	// an explicit level and a role grantee, and a record filter targeting a single record through a process
+	// parameter. The filter matters even though this process is never run — without one the element is a documented
+	// silent no-op, and clio emits a second, different warning that would muddy the assertion this test makes.
+	private static string BuildAccessRightsDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Access Rights E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "GrantRights1", "type": "changeAccessRights", "caption": "Grant read",
+		      "accessRights": {
+		        "object": "Contact",
+		        "add": [
+		          { "operations": [ "read" ], "level": "permit",
+		            "grantee": { "type": "role", "role": "All employees" } }
+		        ]
+		      },
+		      "filter": {
+		        "object": "Contact",
+		        "conditions": [
+		          { "column": "Id", "comparison": "equal", "processParameter": "ContactIdParameter" }
+		        ]
+		      } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "GrantRights1" },
+		    { "source": "GrantRights1", "target": "EndEvent1" }
+		  ],
+		  "parameters": [
+		    { "name": "ContactIdParameter", "type": "Guid", "direction": "In", "caption": "Contact Id" }
+		  ]
+		}
+		""";
+
 	// Exercises EVERY field the create-business-process email contract advertises, in one element, so the write path
 	// has executable verification rather than only prose. `sender` is deliberately omitted: it needs a mailbox record
 	// (or an address configured on that specific environment), which would make this test depend on stand data rather
@@ -660,6 +963,385 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	// A sendEmail element carrying a custom-message HTML body with a distinctive probe token, so the describe read-back
 	// proves the body round-tripped (build stores it as a ConstValue on the Body parameter, describe decodes it) rather
 	// than just that a sendEmail element exists. StartEvent1 -> SendEmail1 -> EndEvent1 is a minimal valid graph.
+
+	[Test]
+	[Description("Over the real MCP path, create-business-process builds an openEditPage element in ADD mode with a pre-filled column value, and describe-business-process reads the whole block back. This is the ONLY place the page-candidate query is exercised end to end: the unit tests substitute that reader, so the SysModule/SysModuleEntity/SysModuleEdit join, the SysSchema name resolution and the derivation of the object from the page are proven here and nowhere else.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process builds an openEditPage add-mode element and describe reads it back")]
+	public async Task CreateBusinessProcess_Should_BuildOpenEditPageAddMode_AndReadItBack() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpOpenEditPageAddE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildOpenEditPageAddDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "an openEditPage element with a page and pre-filled values must build without a transport error");
+		// The success LINE, not merely the name: the command logs "Building process '<name>'..." BEFORE it calls the
+		// server, so a name match alone also passes when the build then fails - and a rejected descriptor would then
+		// surface as an unrelated describe parse error instead of the real server message.
+		JsonSerializer.Serialize(callResult).Should().Contain("created (UId:",
+			because: "only a genuinely successful build logs the created-schema line (run against an environment whose "
+				+ "ProcessDesignService package supports the openEditPage element)");
+
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribedElement element = graph.Elements.Single(node => node.Name == "OpenPage1");
+		element.BuildType.Should().Be("openeditpage",
+			because: "an Open edit page element round-trips to the dedicated openEditPage build token, not the generic "
+				+ "userTask - which is what the handler registration order guarantees");
+		element.OpenEditPage.Should().NotBeNull(
+			because: "describe surfaces the element's configuration in its own openEditPage block");
+		element.OpenEditPage!.Page.Should().Be(OpenEditPageName,
+			because: "the stored page UId resolves back to the name the descriptor asked for - the SysSchema read");
+		element.OpenEditPage.Object.Should().Be(OpenEditPageObject,
+			because: "the object is DERIVED from the page by the candidate query, never supplied by the caller, so "
+				+ "reading it back is what proves that query ran against the real tables");
+		element.OpenEditPage.EditMode.Should().Be("add",
+			because: "the stored RecordEditMode maps back to the token the caller used");
+		element.OpenEditPage.PageTypeUId.Should().BeNull(
+			because: "the target object is untyped, so no record type is stored - the same result all three designer "
+				+ "captures show");
+		element.OpenEditPage.CompletionMode.Should().Be("onSave",
+			because: "the completion mode is written explicitly at create, so describe can report it rather than "
+				+ "answering 'no mode' for an element that completes on save");
+		element.OpenEditPage.Recommendation.Should().Be("Fill in the account details",
+			because: "the recommendation is stored as a single-line constant and round-trips");
+		element.OpenEditPage.DefaultValues.Should().NotBeNullOrEmpty(
+			because: "the pre-filled column value must read back - it is stored through the platform's own packer, so "
+				+ "an empty read here would mean the designer card cannot show it either");
+		JsonSerializer.Serialize(element.OpenEditPage.DefaultValues).Should().Contain(OpenEditPageTextColumn,
+			because: "the read-back names the column that was pre-filled");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, create-business-process builds an openEditPage element in EDIT mode whose record comes from a signalStart element's RecordId output, and describe reads the block back. This pairs the element with the trigger it is used with in practice, and exercises the element-output value source rather than a fixed record id.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process builds an openEditPage edit-mode element from a trigger record")]
+	public async Task CreateBusinessProcess_Should_BuildOpenEditPageEditMode_FromTriggerRecord() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpOpenEditPageEditE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildOpenEditPageEditDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "an edit-mode element taking its record from an earlier element's output must build cleanly");
+		JsonSerializer.Serialize(callResult).Should().Contain("created (UId:",
+			because: "only a successful build logs the created-schema line");
+
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribedElement element = graph.Elements.Single(node => node.Name == "OpenPage1");
+		element.OpenEditPage.Should().NotBeNull(because: "the element is configured, so it reports its block");
+		element.OpenEditPage!.EditMode.Should().Be("edit",
+			because: "edit mode is what makes the element open an EXISTING record");
+		element.OpenEditPage.RecordId.Should().NotBeNull(
+			because: "edit mode requires a record, so the read-back must report which one it opens");
+		element.OpenEditPage.DefaultValues.Should().BeNullOrEmpty(
+			because: "pre-filled values belong to add mode only and the write path refuses them here, so an edit-mode "
+				+ "element must come back without any");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, create-business-process turns on an openEditPage element's results-by-column list against a real LOOKUP column, and describe resolves the stored UId back to the column name. Only a stand proves this end: the column is stored as a UId resolved through the platform's own metadata, so a wrong encoding would read back as 'no column' rather than failing the build.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process configures an openEditPage results-by-column list")]
+	public async Task CreateBusinessProcess_Should_ConfigureOpenEditPageResultsByColumn() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpOpenEditPageResultsE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildOpenEditPageResultsByColumnDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "Owner is a lookup column on Account on every environment, so the list must configure cleanly");
+		JsonSerializer.Serialize(callResult).Should().Contain("created (UId:",
+			because: "IsError stays null on a refusal, so without the success line a refused build surfaces as an "
+				+ "unrelated failure inside the describe step instead of as the server's refusal");
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribedOpenEditPageResultsByColumn results = graph.Elements
+			.Single(node => node.Name == "OpenPage1").OpenEditPage!.ResultsByColumn;
+		results.Should().NotBeNull(because: "describe is how a caller sees which results a step offers");
+		results!.Enabled.Should().BeTrue(because: "naming a column turns the list on");
+		results.Column.Should().Be(OpenEditPageResultColumn,
+			because: "the stored UId resolved back to the column name, which is what proves the write used the "
+				+ "platform's own column identifier rather than the name");
+		results.ColumnUId.Should().NotBeNullOrWhiteSpace(
+			because: "an empty UId here would mean the column never landed, however successful the build looked");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, create-business-process configures an openEditPage element's Log activity block and describe reads every scheduling PAIR back with its unit. Only a real server proves the pairing: each interval is two independent platform parameters, and a stand is the only place that shows both members actually landed - a number stored without its period would read back with a null unit here rather than failing anywhere.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process configures an openEditPage element's Log activity block")]
+	public async Task CreateBusinessProcess_Should_ConfigureOpenEditPageLogActivity() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpOpenEditPageActivityE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildOpenEditPageLogActivityDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(because: "a logged activity with paired intervals must build cleanly");
+		JsonSerializer.Serialize(callResult).Should().Contain("created (UId:",
+			because: "only a successful build logs the created-schema line");
+
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribedOpenEditPageLogActivity activity = graph.Elements
+			.Single(node => node.Name == "OpenPage1").OpenEditPage!.LogActivity;
+		activity.Should().NotBeNull(
+			because: "the element stores the block, and describe is how a caller confirms an activity is logged at all");
+		activity!.Enabled.Should().BeTrue(
+			because: "supplying the block turns the gate on - without it the platform creates no activity and every "
+				+ "scheduling field below is inert");
+		activity.Duration!.Value.Should().Be(20, because: "the amount reached the server as written");
+		activity.Duration.Unit.Should().Be("minutes",
+			because: "the PERIOD member landed too and decoded back - a unit of null here would mean the number was "
+				+ "stored alone, measured in whatever the schema default happened to be");
+		activity.RemindIn!.Unit.Should().Be("hours", because: "each interval carries its own unit independently");
+		activity.ShowInCalendar.Should().BeTrue(because: "the calendar flag persists as written");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, create-business-process assigns an openEditPage element to a ROLE named by name, and describe reads the assignment back. Only a real environment can prove this end of it: the role name is resolved against SysAdminUnit, and the assignment lives on a RoleId parameter the user-task schema does not declare - the element has to grow it, exactly as the designer does, or the designer card shows no performer at all.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process assigns an openEditPage element to a role by name")]
+	public async Task CreateBusinessProcess_Should_AssignOpenEditPagePerformer_ByRoleName() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpOpenEditPagePerformerE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildOpenEditPagePerformerDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a role named by name must resolve on a real environment - All employees is a platform role "
+				+ "present on every stand");
+		JsonSerializer.Serialize(callResult).Should().Contain("created (UId:",
+			because: "only a successful build logs the created-schema line");
+
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+		DescribedPerformer performer = graph.Elements
+			.Single(node => node.Name == "OpenPage1").OpenEditPage!.Performer;
+		performer.Should().NotBeNull(
+			because: "the assignment is stored on the element's own options, so a null here would mean the designer "
+				+ "card renders an unassigned step whatever the parameters say");
+		performer!.Type.Should().Be("role",
+			because: "the stored assignment type is what the read-back derives the kind from");
+		performer.Role.Should().NotBeNullOrWhiteSpace(
+			because: "the role macro must be written on the dynamically CREATED RoleId parameter - an empty read here "
+				+ "would mean the parameter was never added, which no schema-declared lookup would reveal");
+		performer.RoleDisplay.Should().Be(OpenEditPagePerformerRole,
+			because: "the name the caller used is kept as the display value, so a human opening the element sees a "
+				+ "role name rather than a GUID");
+		performer.ShowPage.Should().BeFalse(
+			because: "the flag is written explicitly at create — so describe can report it rather than leaving it to an "
+				+ "unreportable schema default — but its VALUE follows the performer, and a ROLE performer cannot have "
+				+ "the page open by itself: the platform opens it only for the user a step is assigned to, and the "
+				+ "designer disables that checkbox for role/manager");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, a page the process designer does NOT offer is REFUSED rather than stored. This is the protective half of the page rule: the designer resolves a stored page against its own candidate list, so an unlisted one would render 'Which page to open?' empty and lose the element's configuration on the next human save.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process refuses a page outside the designer's candidate set")]
+	public async Task CreateBusinessProcess_Should_RefuseOpenEditPage_WhenPageIsNotOffered() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpOpenEditPageRefuseE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildOpenEditPageUnlistedPageDescriptor(processName)
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().NotContain("created (UId:",
+			because: "the build must be refused, not saved - storing an unshowable page is the silent data-loss case "
+				+ "this rule exists to prevent");
+		callResultJson.Should().Contain("not a page the process designer can open",
+			because: "the refusal has to say WHY and point at how to find a valid page, or the caller cannot act on it");
+	}
+
+	private static string BuildOpenEditPageAddDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Open Edit Page Add E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "OpenPage1", "type": "openEditPage", "caption": "Open the account page",
+		      "openEditPage": {
+		        "page": "{{OpenEditPageName}}",
+		        "editMode": "add",
+		        "recommendation": "Fill in the account details",
+		        "hint": "Confirm the billing address with the customer",
+		        "defaultValues": [ { "column": "{{OpenEditPageTextColumn}}", "value": "ClioOpenEditPageProbe" } ],
+		        "completion": { "mode": "onSave" }
+		      } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "OpenPage1" },
+		    { "source": "OpenPage1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	// A results-by-column list on a lookup column that exists on Account everywhere, so the test needs no seeding.
+	private static string BuildOpenEditPageResultsByColumnDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Open Edit Page Results By Column E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "OpenPage1", "type": "openEditPage", "caption": "Fill in the account",
+		      "openEditPage": {
+		        "page": "{{OpenEditPageName}}",
+		        "editMode": "add",
+		        "recommendation": "Fill in the account details",
+		        "resultsByColumn": { "column": "{{OpenEditPageResultColumn}}" }
+		      } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "OpenPage1" },
+		    { "source": "OpenPage1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	// A logged activity with two of the three scheduling pairs set to DIFFERENT units, so a server that mixed the
+	// period parameters up would be caught by the read-back rather than passing on symmetry.
+	private static string BuildOpenEditPageLogActivityDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Open Edit Page Log Activity E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "OpenPage1", "type": "openEditPage", "caption": "Fill in the account",
+		      "openEditPage": {
+		        "page": "{{OpenEditPageName}}",
+		        "editMode": "add",
+		        "recommendation": "Fill in the account details",
+		        "logActivity": {
+		          "duration": { "value": 20, "unit": "minutes" },
+		          "remindIn": { "value": 2, "unit": "hours" },
+		          "showInCalendar": true
+		        }
+		      } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "OpenPage1" },
+		    { "source": "OpenPage1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	// A performer assigned by ROLE NAME. The role is resolved server-side against SysAdminUnit, so this descriptor is
+	// also what proves the name-resolution path against real data rather than a substituted reader.
+	private static string BuildOpenEditPagePerformerDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Open Edit Page Performer E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "OpenPage1", "type": "openEditPage", "caption": "Open the account page",
+		      "openEditPage": {
+		        "page": "{{OpenEditPageName}}",
+		        "editMode": "add",
+		        "recommendation": "Fill in the account details",
+		        "performer": { "type": "role", "role": "{{OpenEditPagePerformerRole}}" }
+		      } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "OpenPage1" },
+		    { "source": "OpenPage1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	// Edit mode taking its record from the signal that STARTED the process - the shape this element is actually used
+	// in, and the one that exercises the element-output value source instead of a fixed record id.
+	private static string BuildOpenEditPageEditDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Open Edit Page Edit E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "Start1", "type": "signalStart",
+		      "signal": { "entity": "{{OpenEditPageObject}}", "on": "added" } },
+		    { "name": "OpenPage1", "type": "openEditPage", "caption": "Review the new account",
+		      "openEditPage": {
+		        "page": "{{OpenEditPageName}}",
+		        "editMode": "edit",
+		        "recommendation": "Review the account that was just created",
+		        "recordId": { "sourceElement": "Start1", "sourceElementParameter": "RecordId" }
+		      } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "Start1", "target": "OpenPage1" },
+		    { "source": "OpenPage1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	// A real schema that is NOT a section-registered edit page. ProcessSchemaManager is a configuration schema that
+	// exists on every stand, so the refusal proves the CANDIDATE-SET check rather than a name-resolution failure.
+	private static string BuildOpenEditPageUnlistedPageDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Open Edit Page Refusal E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "OpenPage1", "type": "openEditPage",
+		      "openEditPage": { "page": "BaseUserTaskPropertiesPage", "editMode": "add" } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "OpenPage1" },
+		    { "source": "OpenPage1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
 	private static string BuildSendEmailDescriptor(string processName) =>
 		$$"""
 		{

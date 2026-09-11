@@ -97,6 +97,93 @@ public sealed class SendTelemetryToolE2ETests
 	}
 
 	[Test]
+	[Description("Binds the six schema-v2 fields over the real stdio server, so the wire names the contract advertises are the ones the request record actually accepts.")]
+	[AllureTag(ToolName)]
+	[AllureName("Send Telemetry binds the schema v2 stage vocabulary over the wire")]
+	[AllureDescription("Uses the real clio MCP server to send a flow-agnostic stage carrying workflow, variant, model and the three token counters, and verifies each one reaches the stored event.")]
+	public async Task SendTelemetry_Should_Bind_The_Stage_Vocabulary_Over_The_Wire()
+	{
+		// Arrange — every unit test builds a TelemetryEventRequest in C#, so none of them exercises the
+		// JSON -> record binding. TelemetryEventRequest carries [JsonExtensionData]: any snake_case name
+		// the record does not bind is rejected as unsupported-fields, losing the WHOLE event, and the
+		// names live in two hand-maintained places (the [JsonPropertyName] attributes and the curated
+		// contract strings). This is the only test that puts both on the same wire.
+		string sessionId = Guid.NewGuid().ToString();
+		string telemetryHome = Path.Combine(Path.GetTempPath(), "clio-telemetry-e2e", Guid.NewGuid().ToString("N"));
+		string? previousTelemetryHome = Environment.GetEnvironmentVariable(TelemetryHomeEnvironmentVariable);
+		string? previousTelemetryEnabled = Environment.GetEnvironmentVariable(TelemetryEnabledEnvironmentVariable);
+		Environment.SetEnvironmentVariable(TelemetryHomeEnvironmentVariable, telemetryHome);
+		Environment.SetEnvironmentVariable(TelemetryEnabledEnvironmentVariable, "false");
+		await using RawMcpSession session = RawMcpSession.Start();
+
+		try {
+			// Act — a canonical stage from a flow that is not app creation, carrying every new field.
+			// No plugin_version: the contract now tells an agent with no toolkit context to omit it
+			// rather than send a placeholder, and omitted-not-empty is the behaviour under test.
+			JsonDocument callResult = await session.SendRequestAsync("tools/call", new {
+				name = ClioRunTool.ToolName,
+				arguments = new {
+					command = ToolName,
+					args = new {
+						session_id = sessionId,
+						event_name = "plan_presented",
+						workflow = "classic-to-freedom-migration",
+						variant = "single-section",
+						model = "claude-opus-5",
+						input_tokens = 12_345,
+						output_tokens = 678,
+						cached_input_tokens = 90_123,
+						coding_agent = "Codex",
+						telemetry_consent = "granted"
+					}
+				}
+			});
+
+			// Assert
+			callResult.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+				because: "a payload built from the advertised field names must not be a protocol error");
+			(callResult.RootElement.GetProperty("result").TryGetProperty("isError", out JsonElement isError)
+					&& isError.ValueKind == JsonValueKind.True)
+				.Should().BeFalse(
+					because: "an unbound field would come back as unsupported-fields and cost the whole event");
+			string? eventFile = FindEventFile(telemetryHome, sessionId);
+			eventFile.Should().NotBeNull(because: "the stage should be persisted locally");
+			using JsonDocument document = JsonDocument.Parse(File.ReadAllText(eventFile!));
+			document.RootElement.GetProperty("event_name").GetString().Should().Be("plan_presented",
+				because: "a flow-agnostic stage name has to survive the wire, not only the legacy ones");
+			Dictionary<string, JsonElement> attributes = document.RootElement.GetProperty("attributes")
+				.EnumerateArray()
+				.ToDictionary(a => a.GetProperty("key").GetString()!, a => a.GetProperty("value"));
+			foreach ((string key, string expected) in new[] {
+				("workflow", "classic-to-freedom-migration"), ("variant", "single-section"),
+				("model", "claude-opus-5"), ("coding_agent", "codex")
+			}) {
+				attributes.Should().ContainKey(key,
+					because: $"'{key}' is advertised in the contract, so the record must bind it from that name");
+				attributes[key].GetProperty("string_value").GetString().Should().Be(expected);
+			}
+			foreach ((string key, long expected) in new[] {
+				("input_tokens", 12_345L), ("output_tokens", 678L), ("cached_input_tokens", 90_123L)
+			}) {
+				attributes.Should().ContainKey(key,
+					because: $"'{key}' is advertised in the contract, so the record must bind it from that name");
+				attributes[key].GetProperty("int_value").GetInt64().Should().Be(expected);
+			}
+			attributes.Should().NotContainKey("plugin_version",
+				because: "an omitted optional field is absent, not an empty string that reads as a real value");
+			document.RootElement.GetProperty("attributes").EnumerateArray()
+				.Should().Contain(a => a.GetProperty("key").GetString() == "schema_version",
+					because: "the consumer routes on the schema version this PR bumped");
+		} finally {
+			Environment.SetEnvironmentVariable(TelemetryHomeEnvironmentVariable, previousTelemetryHome);
+			Environment.SetEnvironmentVariable(TelemetryEnabledEnvironmentVariable, previousTelemetryEnabled);
+			if (Directory.Exists(telemetryHome)) {
+				Directory.Delete(telemetryHome, recursive: true);
+			}
+		}
+	}
+
+	[Test]
 	[Description("Starts the real clio MCP server, grants consent and stores an event, then withdraws consent and verifies the local outbox is purged.")]
 	[AllureTag("withdraw-telemetry-consent")]
 	[AllureName("Withdraw Telemetry Consent purges the local outbox")]

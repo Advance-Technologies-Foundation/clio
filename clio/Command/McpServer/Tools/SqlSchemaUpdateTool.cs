@@ -17,6 +17,13 @@ public sealed class SqlSchemaUpdateTool(
 	internal const string ToolName = "update-sql-schema";
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
 		"Update the body of a SQL script schema on a remote Creatio environment via ScriptSchemaDesignerService. " +
 		"Provide the body inline via `body` or, for large bodies, as an absolute file path via `body-file`. " +

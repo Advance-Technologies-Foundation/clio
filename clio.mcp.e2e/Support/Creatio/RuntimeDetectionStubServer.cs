@@ -160,6 +160,9 @@ function metadataCsdl(entity) {
     + '<Key><PropertyRef Name="Id" /></Key>'
     + '<Property Name="Id" Type="Edm.Guid" Nullable="false" />'
     + '<Property Name="Name" Type="Edm.String" />'
+    // Declared so a test can show the zone-less date-time guard firing on a temporal column while a
+    // date-shaped value on the Edm.String column above is still written (GitHub issue #1369).
+    + '<Property Name="DueDate" Type="Edm.DateTimeOffset" />'
     + '</EntityType>'
     + '</Schema>'
     + '</edmx:DataServices></edmx:Edmx>';
@@ -187,6 +190,14 @@ http.createServer((request, response) => {
       return;
     }
     recordedRequests.push({ method: request.method, url: url });
+    if (config.PackageSynchronizationResponse && url.endsWith("/WorkspaceExplorerService.svc/GetIsFileDesignMode")) {
+      sendJson(response, 200, { success: true, value: true });
+      return;
+    }
+    if (config.PackageSynchronizationResponse && (url.endsWith("/AppInstallerService.svc/LoadPackagesToDB") || url.endsWith("/AppInstallerService.svc/LoadPackagesToFileSystem"))) {
+      sendJson(response, 200, JSON.parse(config.PackageSynchronizationResponse));
+      return;
+    }
     if (request.method === "POST" && url === "/ServiceModel/AuthService.svc/Login") {
       sendJson(
         response,
@@ -269,6 +280,7 @@ http.createServer((request, response) => {
         && url.includes("/odata/" + config.ODataEntity + "(")
         && url.includes("$select=");
       const isPatch = request.method === "PATCH" && url.includes("/odata/" + config.ODataEntity + "(");
+      const isCollectionPost = request.method === "POST" && url.endsWith("/odata/" + config.ODataEntity);
       if (isMetadata && config.ODataPreWriteMode === "{{ODataPreWriteMetadata}}") {
         response.writeHead(200, { "Content-Type": "application/xml" });
         response.end(metadataCsdl(config.ODataEntity));
@@ -314,6 +326,11 @@ http.createServer((request, response) => {
         // Empty 204 ack, the shape Creatio returns for a successful PATCH.
         response.writeHead(204);
         response.end();
+        return;
+      }
+      if (isCollectionPost) {
+        // The created record echoed with its Id, which is what odata-create reads as proof of an insert.
+        sendJson(response, 201, { Id: "00000000-0000-0000-0000-000000000002" });
         return;
       }
     }
@@ -362,7 +379,8 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	string? ODataNonJsonEntity = null,
 	string? ODataEntity = null,
 	string? ODataPreWriteMode = null,
-	string? AuthRejectedSelectQuerySchemaName = null);
+	string? AuthRejectedSelectQuerySchemaName = null,
+	string? PackageSynchronizationResponse = null);
 
 /// <summary>
 /// One request served by <see cref="RuntimeDetectionStubServer"/>, as reported by

@@ -27,6 +27,13 @@ public sealed class ApplicationDeleteTool(
 	/// <param name="args">MCP arguments describing the target application and connection.</param>
 	/// <returns>A structured response that reports whether the uninstall completed successfully.</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Uninstall (delete) a Creatio application by name or code. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public ApplicationDeleteResponse DeleteApplication(
 		[Description("Parameters: app-name (required); environment-name preferred; uri/login/password emergency fallback only.")]

@@ -109,5 +109,7 @@ public sealed class ODataWriteToolsLiveIntegrationTests {
 			serviceProvider.GetRequiredService<TCommand>();
 		public string GetTenantKey(EnvironmentOptions options) =>
 			$"test:{options?.Environment ?? options?.Uri ?? "default"}";
+		public string GetTargetKey(EnvironmentOptions options) =>
+			$"test-target:{options?.Environment ?? options?.Uri ?? "default"}";
 	}
 }

@@ -67,7 +67,9 @@ public interface IClioRunExecutor {
 /// <inheritdoc />
 public sealed class ClioRunExecutor(
 	IMcpToolInvokerRegistry toolRegistry,
-	IMcpToolCompatibilityCatalog compatibilityCatalog) : IClioRunExecutor {
+	IMcpToolCompatibilityCatalog compatibilityCatalog,
+	IMcpExecutionRouter executionRouter,
+	Relay.IMcpWorkerCallDispatcher workerCallDispatcher = null) : IClioRunExecutor {
 
 	/// <inheritdoc />
 	public ValueTask<CallToolResult> RunAsync(
@@ -136,10 +138,9 @@ public sealed class ClioRunExecutor(
 		if (!toolRegistry.TryGetTool(toolName, out McpServerTool tool)) {
 			// The long tail clio-run targets is hidden from tools/list, so agents frequently GUESS the
 			// name and miss by a typo. Append a "did you mean" shortlist of the nearest REAL tool names so
-			// the agent can self-correct without an extra discovery round-trip. Only the RANKING (Levenshtein
-			// distance then ordinal) matches the BuildSuggestions helper in ToolContractGetTool. The candidate
-			// SOURCE SET is caller-specific and intentionally divergent — here it is the registry's invokable
-			// names + the reflection catalog (the hidden long tail clio-run targets), deduped case-insensitively.
+			// the agent can self-correct without an extra discovery round-trip. Ranking is shared with
+			// contract lookup: exact set/update subject matches, then edit distance and name. Candidates
+			// come only from the live invokable registry, which includes the enabled hidden long tail.
 			IReadOnlyList<string> suggestions = BuildSuggestions(toolName);
 			string didYouMean = suggestions.Count > 0
 				? $" Did you mean: {string.Join(", ", suggestions)}?"
@@ -164,6 +165,34 @@ public sealed class ClioRunExecutor(
 		}
 		catch (ArgumentException ex) {
 			return Error(SensitiveErrorTextRedactor.Redact($"Error: {ex.Message}"));
+		}
+
+		// ENG-95262 dispatch site (c) of three — the CLIO-RUN INNER path, and the only place ADR rule 7 can
+		// be satisfied: `toolName` here is the UNWRAPPED, alias-canonicalised inner command, so a long-tail
+		// tool reached through the executor routes exactly as it would when named directly. Keying on the
+		// wrapper's own name instead would give the entire long tail clio-run's in-process row.
+		// The resolved name is passed EXPLICITLY rather than read off callContext, because DispatchAsync
+		// below retargets that context in place (and restores it in a finally, sometimes late).
+		// DispatchAsync is the single funnel for BOTH long-tail paths — this one and the durable handler's
+		// InvokeResolvedAsync — but the routing decision cannot be folded into it: site (b) must route right
+		// after its write-capability confirmation gate, and that gate refuses the call long before any
+		// dispatch happens, so a decision made inside DispatchAsync would never run for a refused write.
+		McpExecutionRoute route = executionRouter.Resolve(toolName, innerCommand: null);
+		if (!route.ExecutesInProcess) {
+			if (workerCallDispatcher is null) {
+				// Fail-closed: a site with no dispatcher refuses rather than running a worker-routed call in
+				// the host process, which would silently bypass the execution boundary.
+				return McpExecutionRouter.WorkerPathNotWiredResult(route);
+			}
+			// The ORIGINAL clio-run params are relayed, not the unwrapped inner call. The child's own
+			// clio-run executes any tool directly (the host-level destructive gating this call already
+			// passed lives in the parent), so unwrapping here would only add a params rebuild that can drop
+			// arguments — the double-wrapping trap BuildChildParams exists to avoid — and would lose the
+			// caller's _meta, taking ClioRing's progress-token correlation with it.
+			return await workerCallDispatcher
+				.DispatchAsync(route, callContext.Params,
+					new Relay.McpServerParentSession(callContext.Server), cancellationToken)
+				.ConfigureAwait(false);
 		}
 
 		// ENG-93373: bound a retry-safe (read-only, or the get-page local-write read) inner dispatch by the
@@ -537,59 +566,28 @@ public sealed class ClioRunExecutor(
 	// A complex args parameter is a non-string reference/record type (e.g. SchemaSyncArgs) that the
 	// tool expects to receive as a single bound argument object; scalars (string, bool, numbers, enums)
 	// are not, so a single scalar parameter is bound by name from the args object's matching key.
-	private static bool IsComplexArgsParameter(Type type) {
-		Type underlying = Nullable.GetUnderlyingType(type) ?? type;
-		return underlying != typeof(string) && !underlying.IsValueType;
-	}
+	// ENG-95885: the definition now lives in McpToolArgumentSupport so this executor and
+	// McpToolErrorFilter's flat-argument normalizer share ONE notion of "single composite args
+	// parameter" and can never drift into fighting over the same payload.
+	private static bool IsComplexArgsParameter(Type type) =>
+		McpToolArgumentSupport.IsCompositeArgsParameter(type);
 
 	// Parameters the SDK injects from the request context (RequestContext, CancellationToken,
 	// IServiceProvider, McpServer, etc.) are not bound from the arguments object, so they are excluded
-	// when deciding whether a tool exposes a single user-supplied parameter.
-	private static bool IsBindableToolParameter(ParameterInfo parameter) {
-		Type type = parameter.ParameterType;
-		if (type == typeof(CancellationToken) || type == typeof(IServiceProvider) ||
-			typeof(ModelContextProtocol.Server.McpServer).IsAssignableFrom(type)) {
-			return false;
-		}
-		return !(type.IsGenericType && type.GetGenericTypeDefinition() == typeof(RequestContext<>));
-	}
+	// when deciding whether a tool exposes a single user-supplied parameter. Shared definition — see
+	// McpToolArgumentSupport.IsBindableToolParameter.
+	private static bool IsBindableToolParameter(ParameterInfo parameter) =>
+		McpToolArgumentSupport.IsBindableToolParameter(parameter);
 
-	// Top-3 nearest real tool names for an unknown `command`, ordered by Levenshtein distance to the
-	// requested name then ordinally by name — the same ranking the BuildSuggestions helper in
-	// ToolContractGetTool uses. The candidate source set here is caller-specific (intentionally divergent):
-	// it is the FULL invokable name
-	// set — the registry's invokable names (the hidden long tail clio-run targets) unioned with the
-	// reflection catalog — deduped case-insensitively. The executor names themselves are excluded so a
-	// near-miss never suggests re-entering clio-run / clio-run-destructive.
+	// Use only the live invokable registry: reflection also includes feature-disabled tools.
 	private IReadOnlyList<string> BuildSuggestions(string requestedName) =>
 		BuildSuggestions(requestedName, toolRegistry);
 
-	// Upper bound on the requested-name length fed into the O(n·m) Levenshtein ranking. This is a cold
-	// error path (only reached on an unknown tool), but the requested name is caller-supplied and could be
-	// arbitrarily long, so it is capped before ranking — mirroring the same 64-char cap the durable handler
-	// applies when sanitizing the name for prose reflection.
-	private const int MaxRequestedNameLengthForRanking = 64;
-
-	// Static form shared with the durable (forgiving) call-tool handler, so both callers rank the same
-	// candidate set with the same algorithm and never drift apart.
-	internal static IReadOnlyList<string> BuildSuggestions(string requestedName, IMcpToolInvokerRegistry registry) {
-		// Cap the caller-supplied name before it drives the per-candidate Levenshtein computation, so an
-		// oversized name cannot inflate the cost of the ranking on this cold error path.
-		string rankingName = requestedName is { Length: > MaxRequestedNameLengthForRanking }
-			? requestedName[..MaxRequestedNameLengthForRanking]
-			: requestedName;
-		return registry.ToolNames
-			.Concat(McpToolSchemaCatalog.RegisteredToolNames)
-			.Where(name => !string.IsNullOrWhiteSpace(name)
-				&& !string.Equals(name, ClioRunTool.ToolName, StringComparison.OrdinalIgnoreCase)
-				&& !string.Equals(name, ClioRunDestructiveTool.ToolName, StringComparison.OrdinalIgnoreCase))
-			.Distinct(StringComparer.OrdinalIgnoreCase)
-			.OrderBy(name => McpToolArgumentSupport.LevenshteinDistance(rankingName, name))
-			.ThenBy(name => name, StringComparer.OrdinalIgnoreCase)
-			.Take(3)
-			.ToArray();
-	}
-
+	// Shared with the durable handler; never suggest re-entering either executor.
+	internal static IReadOnlyList<string> BuildSuggestions(string requestedName, IMcpToolInvokerRegistry registry) =>
+		McpToolArgumentSupport.SuggestToolNames(requestedName, registry.ToolNames.Where(name =>
+			!string.Equals(name, ClioRunTool.ToolName, StringComparison.OrdinalIgnoreCase)
+			&& !string.Equals(name, ClioRunDestructiveTool.ToolName, StringComparison.OrdinalIgnoreCase)));
 
 	private static CallToolResult Error(string message) =>
 		new() {
@@ -614,6 +612,17 @@ public sealed class ClioRunTool(IClioRunExecutor executor) {
 	/// Runs any clio MCP tool by name with free-form JSON arguments (read or write/destructive).
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true)]
+	// The wrapper itself only resolves the inner tool and dispatches it in-process; the router keys on the
+	// UNWRAPPED inner tool name (ADR rule 7), so the inner tool's own metadata decides whether that call is
+	// relayed to a worker. The caller's progress token is forwarded to the inner tool, which is why the
+	// wrapper declares no client requests of its own.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Generic executor for clio MCP tools hidden from tools/list (the long tail). `command` is an MCP tool name (kebab-case, e.g. \"sync-schemas\", \"create-lookup\", \"execute-esq\", \"odata-read\") and `args` is the JSON arguments object that tool expects. Call shape: {\"command\":\"<tool>\",\"args\":{...}}. The wrapped shape {\"args\":{\"command\":\"<tool>\",\"args\":{...}}} is also accepted. Runs ANY tool — including write/destructive ones — directly; you do NOT need a different executor. Unknown tool or invalid args return a structured Error result with the real cause. Marked destructive so the host can confirm; not auto-approved.")]
 	public ValueTask<CallToolResult> Run(
 		RequestContext<CallToolRequestParams> context,
@@ -641,6 +650,17 @@ public sealed class ClioRunDestructiveTool(IClioRunExecutor executor) {
 	/// Runs any clio MCP tool by name with free-form JSON arguments. Alias of <c>clio-run</c>.
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true)]
+	// Identical to clio-run: `destructiveSurface: true` is retained on the executor signature for back-compat
+	// but no longer routes or refuses (see ClioRunExecutor.RunAsync), so both names run ONE body and must carry
+	// the same execution metadata. AliasOf makes that link machine-readable.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None,
+		AliasOf = ClioRunTool.ToolName)]
 	[Description("Deprecated alias of `clio-run` (identical behavior — runs ANY clio MCP tool by name, read or write/destructive). Kept so a caller that picks either executor succeeds. Prefer `clio-run`. `command` is an MCP tool name (kebab-case); `args` is the JSON arguments object that tool expects. Call shape: {\"command\":\"<tool>\",\"args\":{...}}; the wrapped shape {\"args\":{\"command\":\"<tool>\",\"args\":{...}}} is also accepted.")]
 	public ValueTask<CallToolResult> Run(
 		RequestContext<CallToolRequestParams> context,

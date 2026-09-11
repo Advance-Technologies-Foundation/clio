@@ -9,6 +9,7 @@ namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
 [Property("Module", "McpServer")]
+[NonParallelizable] // mutates process-wide CLIO_MCP_TELEMETRY_* environment variables
 public sealed class TelemetryFlushOptionsProviderTests
 {
 	private string _previousEndpoint;
@@ -212,20 +213,5 @@ public sealed class TelemetryFlushOptionsProviderTests
 		ISettingsRepository repository = Substitute.For<ISettingsRepository>();
 		repository.GetTelemetrySettings().Returns(settings);
 		return new TelemetryFlushOptionsProvider(repository);
-	}
-
-	private sealed class EnvironmentVariableScope : IDisposable
-	{
-		private readonly string _name;
-		private readonly string _previous;
-
-		public EnvironmentVariableScope(string name, string value)
-		{
-			_name = name;
-			_previous = Environment.GetEnvironmentVariable(name);
-			Environment.SetEnvironmentVariable(name, value);
-		}
-
-		public void Dispose() => Environment.SetEnvironmentVariable(_name, _previous);
 	}
 }

@@ -21,6 +21,23 @@
 # 2026-07-06) is a separate Jira ticket stacked on the same branch; tracked as its own row.
 
 stories:
+  - id: story-worker-runtime-policy
+    title: "Preserve the MCP worker runtime roll-forward policy"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: S
+    status: review
+    file: spec/stories/story-worker-runtime-policy.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    note: "GH-1409: Alex independently verified Windows and reported a teardown race. User authorized proceeding without a Mac runtime; Mac validation remains unverified."
+    depends_on: []
+    blocks: []
+
+  - id: story-tool-contract-partial-results-1
+    title: Publish remote OAuth workflow and keep partial tool contracts
+    status: review
+    file: spec/stories/story-tool-contract-partial-results-1.md
+    issue: https://github.com/Advance-Technologies-Foundation/clio/issues/1408
   - id: story-knowledge-bundle-runtime-1
     title: "Install and hot-reload external knowledge"
     feature: "knowledge-bundle-runtime"
@@ -2733,6 +2750,294 @@ stories:
       - story-process-element-connections-3
     blocks: []
 
+  # --- mcp-worker-execution-boundary (ENG-95262) — added 2026-08-17 ---
+  # Stage 0 delivered as design artifacts only; the issue itself gates production code on
+  # "no production code until the ADR and the three inventories exist". Stages 1-10 are the
+  # staged rollout from the ADR; stories 11-12 are the two folded-in production fixes, which
+  # are independent of every stage and can be picked up in any order.
+  - id: story-mcp-worker-execution-boundary-0
+    title: "Design artifacts: ADR, inventories, stories, test plan"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: M
+    status: review
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-0.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 0. No PRD: the Jira issue is the PRD (requirements, measured evidence, decision, rejected alternatives, 11 constraints, DoD) — recorded in ADR section 1.1 rather than skipped. Census RE-MEASURED on master 3fc50bf99: 189 tools / 65 ReadOnly / 87 Destructive / 37 bounded by nothing, against the issue's 185/63/84/38 on 82947ba0c — the catalog grew by 4 tools over 35 commits, so the numbers reconcile rather than conflict. Two structural facts re-verified with drifted citations: only two operation registries exist (BindingsModule.cs:738 and :742, issue said 736/740), and constraint 10 survives but its code changed — ENG-94529 made BuildCacheKey (name|uri) rather than (Environment ?? Uri), and a registered name still keys differently from an explicit URI for one target. Reproduction lab preserved on spike/eng-95262-lab, deliberately not a merge candidate."
+    depends_on: []
+    blocks:
+      - story-mcp-worker-execution-boundary-1
+  - id: story-mcp-worker-execution-boundary-1
+    title: "Execution metadata + catalog coverage test"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: L
+    status: review
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-1.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 1. Six reflected fields per tool; the inventory is the worklist, NOT a paste source — its Location column is a file-level heuristic that over-assigns 'worker' and inventory section 4 names the classes to re-check by hand. Routing cannot reuse an existing property: the invoker registry exposes only ReadOnly/Destructive/retry-safety and McpCoreToolProfile is residency, not execution. The key must be resolved AFTER unwrapping clio-run. Metadata only — must not change dispatch."
+    depends_on:
+      - story-mcp-worker-execution-boundary-0
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-2
+    title: "Process supervisor: containment, concurrency cap, stale-worker cleanup"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: L
+    status: review
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-2.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 2. Containment, not EOF: Windows Job Object with kill-on-close, Unix process-group plus parent-death signalling, identity-checked stale cleanup (PIDs are reused). The prototype LEAKED one orphan when the parent was killed mid-operation, which is what the parent-SIGKILL E2E exists for. Carries the two open measurements that gate the stage: OQ-1 Windows spawn cost and Job Object containment, OQ-2 the concurrent-children ceiling as a number. Everything measured so far was macOS, so no cohort ships on Windows until OQ-1 closes. Touches the DI composition root — full unit suite required."
+    depends_on:
+      - story-mcp-worker-execution-boundary-1
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-3
+    title: "Worker mode: no host bootstrap, frozen tool generation"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: M
+    status: review
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-3.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 3. Asymmetric deadline handling is deliberate: a STICKY worker keeps CLIO_MCP_RESPONSE_DEADLINE_SECONDS (stripping it turned a 25s backend call into a 77s block in the prototype, because the in-progress envelope is what returns the call), while an ORDINARY worker must not inherit a read-deadline override since the parent enforces by killing. The worker builds its client through the SAME ApplicationClientFactory path as the parent — a second construction site is exactly how a bearer principal silently became Supervisor once before, and the discriminating test is a fail-first identity assertion at the Creatio end, not 'the call succeeded'. Full unit suite required."
+    depends_on:
+      - story-mcp-worker-execution-boundary-2
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-4
+    title: "Transparent full-duplex relay"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: XL
+    status: review
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-4.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 4. The relay MUST own the child's transport read loop: measured on SDK 1.4.1, forwarding through McpClientHandlers.NotificationHandlers reordered sequences 0..5 into [5,4,2,3,0,1], and a single-consumer FIFO in the parent did not fix it ([2,0,1,3,4] on retry). The two runs disagreeing shows the SDK dispatches notification callbacks CONCURRENTLY — a FIFO fed by racing producers preserves their disorder, so no buffering depth helps; owning the read loop works because it takes messages off the wire serially, before SDK dispatch. Full unit suite required — BindingsModule.cs is touched to register the relay filter on both dispatch seams. Sampling relay and _meta/progressToken fidelity both PASS unchanged. Highest silent risk is sampling: update-page and sync-pages call server.SampleAsync, and a non-full-duplex relay degrades semantic review to Skipped=true with no error at all. Composes with adr-mcp-durable-invocation (ENG-93370) on the shared WithCallToolHandler seam in one order only — durable name resolution first, then routing; routing first would key on an alias and miss. Extend that handler, do not register a competing one."
+    depends_on:
+      - story-mcp-worker-execution-boundary-3
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-5
+    title: "HTTP credential channel + per-client sticky isolation"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: L
+    status: deferred
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-5.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "DEFERRED 2026-08-18 by the branch owner: mcp-http does not currently work and may be removed, so a credential channel for it is work for a transport that may not survive. The design already scoped Stage 6 stdio-only for exactly this reason (on stdio no secret crosses the channel - the child reads appsettings.json and gets only the environment name). Enforced consequence: the worker path must be STDIO-ONLY until this is revived, because a cohort tool routed over mcp-http would need the missing channel. Tracked as OQ-9. Original note follows. Stage 5. Secret material must never reach a child's command line — /proc/<pid>/cmdline and ps make it world-readable to any local user; the channel is an inherited handle or a pipe written after spawn (pipe preferred: env blocks are inherited by grandchildren and appear in crash dumps). Sticky scope key is principal + normalised target + credential fingerprint, all three: status tools are credential-scoped TODAY, so environment-only scoping would be both a cross-client boundary violation and a regression against shipped behaviour. Normalisation must be conservative — over-normalising merges two targets and carries one caller's credentials to another's; when in doubt spawn another worker, 0.7s against a credential crossover. Full unit suite required."
+    depends_on:
+      - story-mcp-worker-execution-boundary-3
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-6
+    title: "First cohort routed to workers"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: M
+    status: review
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-6.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 6. The cohort is exactly the commands agents were forced off in creatio-ai-app-development-toolkit#93. Acceptance is the wedge scenario asserted ON BACKEND REQUEST COUNTERS, not timings: the wedged system also finishes at 12s, so only the counter delta distinguishes 'answered' from 'never asked'. Call D (backend healthy again) succeeding with at least one request is the acceptance criterion for the whole feature. NO FEATURE TOGGLE (decided 2026-08-17): the branch is the test environment, so a toggle defaulting to off would mean the branch verifies the OLD path. Cohort membership is the tool Location metadata from story 1 - data, not a switch - and the in-process arm of the A/B comparison is a DI substitution of the metadata reader. The merge-time default for master is OQ-5, decided at merge proposal. The e2e suite is NOT run by GitHub CI — trigger Team_Atf_ClioMcpE2eTests on TeamCity and state the result in the PR. AC-06 carries the .clio-pages ordering constraint: get-page is a .clio-pages reader-writer and a child escapes CwdLock by being another process, so story 9's file gate must exist before this cohort routes get-page, or get-page leaves the cohort. AC-07 added: the stdio-only constraint is now a testable acceptance criterion (TC-U-601) rather than design prose. Since story 5 was deferred it is a CORRECTNESS requirement, not a scope boundary -- a cohort tool over mcp-http would need the credential channel that does not exist. The coverage ALREADY EXISTS (McpExecutionRouterTests.Resolve_ShouldRefuseToRelay_WhenHostTransportIsNotStdio); the criterion names it rather than commissioning work. Unit tier deliberately: mcp-http does not currently run, so an end-to-end test there would only skip."
+    depends_on:
+      - story-mcp-worker-execution-boundary-4
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-7
+    title: "Sticky supervision + parent-owned configuration-build reservation"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: L
+    status: review
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-7.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "BLOCKER identified 2026-08-18, in neither the ADR nor the kill-safety inventory: ADMISSION SLOTS DEADLOCK STICKY SUPERVISION, and it defeats AC-01 as written. SpawnContainedAsync takes a slot from a pool capped at ProcessorCount BEFORE launching and returns it only on lease dispose; a sticky worker holds its slot for the whole operation. AC-01 requires compile-status to reach that same worker, and today the only path to a worker begins by acquiring a slot -- so the poll waits for a slot held by the worker it is trying to reach. Hold-and-wait, not starvation: the state is stable until the operation ends unobserved, bounded only by the reservation 30-minute reclaim ceiling. On a single-core host the cap is 1, so ONE sticky worker makes every later call unreachable including its own poll. Why it was missed: the supervisor remarks already call the cap a shared HELD resource and already sketch a second pool, but frame it as FAIRNESS -- neither says the sticky worker own status poll is one of the callers it blocks. RESOLUTION, three parts, first one removes the cycle: (1) admission governs CREATING a worker, never TALKING to one that already exists -- a call resolving to a live lease reuses it and takes no slot, which the prototype 0.00-0.02s poll latency already implies; (2) sticky workers get their own pool with its own cap, which WorkerSlotPool already anticipates so the release path does not change; (3) the sticky cap must be STRICTLY LESS than the total so per-call work keeps a guaranteed floor -- two pools merely summing to ProcessorCount relabel the exhaustion. AC-01 must be amended to say the poll acquires no admission slot, and a new AC is needed: with the sticky pool saturated an ordinary per-call cohort read still completes. TESTING NOTE: the discriminating case is a poll issued while the sticky pool is SATURATED; a poll on an idle host passes under both the correct and the deadlocking implementation. Recorded in ADR section 3.2c and in the story. AC SET AMENDED 2026-08-18 by the blocker above: AC-01 now requires the poll to reach the same worker WITHOUT acquiring an admission slot, asserted with the sticky pool SATURATED (a poll on an idle host passes under both the correct and the deadlocking implementation, so the original wording could be satisfied by a deadlock). Added AC-06, the per-call floor: with the sticky pool saturated an ordinary per-call cohort read still completes -- nothing asserts this today. Added AC-07, closing threat-model gap G-1: the concurrency cap becomes operator-configurable following the CLIO_MCP_WORKER_QUEUE_WAIT_SECONDS precedent, which T-9 says is needed precisely at Stage 7 because sticky workers make a slot held for a whole lifetime the ordinary case. IN PROGRESS 2026-08-18: two foundations building in parallel on disjoint files -- AC-00 session-key normalisation against the binding T-5 component table (both directions, near-miss pairs must NOT fold, since over-normalising is a credential crossover on a sticky worker rather than a cache miss), and the admission-capacity model (reach-an-existing-worker seam, second pool, sticky cap strictly less than total, plus G-1). Sticky supervision, the private completion signal and the parent-owned configuration-build reservation are the NEXT phase and depend on both. AC-00 DELIVERED 2026-08-18: ISessionTargetNormalizer composed at ToolCommandResolver.BuildTargetIdentity (so R-5 principal + credential fingerprint are added at that CALL SITE when mcp-http returns, leaving the normaliser untouched); BuildCacheKey is now an instance method with NO static overload left behind, because a static that skips normalisation is green in a test and divergent in production. Red-before proven on the real path against unmodified production code, with the credential hash byte-identical on both sides so the failure is provably the split identity. 59 cases labelled by T-5 row, every row in both directions, IDNA/IPv6/combined pinned to explicit strings so a per-OS formatting difference fails instead of agreeing with itself. TWO PLATFORM TRAPS FOUND BY PROBING: new Uri(http://0177.0.0.1/).Host returns 127.0.0.1, i.e. System.Uri performs the exact octal fold T-5 REJECTS (IPAddress.Parse too), hence a manual authority split; and IdnMapping with UseStd3AsciiRules THROWS on underscore hosts, which are ordinary on dev stands, so IDNA runs only for non-ASCII. CONSEQUENCE HANDLED: RestartTool argued in two places that credentials-started and name-started restarts were STRUCTURALLY disjoint because BuildCacheKey used Environment ?? Uri -- convergence removes that guarantee, so both comments were corrected; behaviour deliberately unchanged and now conservative rather than structural, RestartToolTests 15/15 green. Module=McpServer 3735/0; Module!=Common 8256/0 as the discriminator that none of the 20 baseline failures is ours. ADMISSION CAPACITY DELIVERED 2026-08-18 (blocker parts 1-3 plus G-1). Part 1: IWorkerChannel split out of IWorkerLease and reached only via IWorkerReach, whose single member returns a non-owning channel implementing neither IWorkerLease nor IDisposable -- the guarantee is the DEPENDENCY, not the documentation, so routing a poll through admission becomes code that does not compile rather than a mistake someone might make. Parts 2-3 CORRECTED DURING REVIEW from a partition to a CEILING: the first implementation carved total into two pools and cost four-core hosts half their per-call throughput on the day it shipped with ZERO sticky workers in existence, and two-core build agents all but one slot, serialising the very e2e suite this branch needs green. Shipped model is one pool plus a ceiling of total/2 on sticky occupancy -- per-call uses every slot while no sticky worker exists, and the floor appears the moment one does. Counter reserved before the slot and released with it on every failure path, because a counter that drifts either leaks capacity or refuses forever and neither shows up in a green suite. G-1 CLOSED: CLIO_MCP_WORKER_CONCURRENCY sets the TOTAL only, sticky stays derived because two knobs would let an operator set sticky >= total and reintroduce the exhaustion the ceiling removes. Six mutations each caught by exactly the intended test, including the hold-and-wait cycle reproduced verbatim as a 2.002 s queue wait for a slot held by the worker being reached; reverting the ceiling to a partition turns four tests red. Module!=Common 8262/0 as the discriminator. STATED LIMITATION: on a single-slot host sticky capacity is 0 and long operations get a named refusal naming the knob -- a max(1, total/2) fallback was considered and rejected because it would leave per-call a floor of zero and break AC-06 exactly where it matters. STILL TO WIRE in the next phase: Lifetime=Sticky on the long-operation spawn, IWorkerReach injected into the poll path (never the full supervisor), and IWorkerReach registered as a forwarder to the SAME singleton -- a second instance makes every ReachExisting throw and gives each its own cap. REMAINING: AC-01 to AC-05 (sticky supervision, private completion signal, parent-owned configuration-build reservation, OQ-4). COMPLETE 2026-08-19. AC-01 to AC-05 delivered on the AC-00 and admission foundations. TWO TOOLS DELIBERATELY NOT SHIPPED: install-process-builder and create-app-section are supported by the machinery -- the private completion signal exists precisely because neither has a registry -- but a sticky worker is still killed at its lifetime bound and the kill-safety audit lists both under a kill leaves durable damage nothing repairs. ADR 2.5 reserves cohort expansion for Stage 10 tool by tool, so both the shipped and the withheld sets are pinned and moving a name between them is a reviewed line. The completion LINGER is a design decision the story did not ask for and reaping on the signal alone would have been wrong: on stdio the compile/restart registries are DI singletons INSIDE the worker, so an immediately reaped worker takes the operation record with it and a shipped e2e would have gone red. OQ-4 resolved: create-app-section gets the signal and NO registry, because a registry with no status tool is unobservable state."
+    depends_on:
+      - story-mcp-worker-execution-boundary-6
+    blocks:
+      - story-mcp-worker-execution-boundary-10
+  - id: story-mcp-worker-execution-boundary-8
+    title: "Long synchronous / streaming commands (deploy, uninstall)"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio+clio-ring"
+    size: L
+    status: review
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-8.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "DELIVERED 2026-08-18. ADR section 3.3 terminal-stage protocol implemented: TerminalStageWatch observes the read loop, terminal detection is eventType == run-completed at the run ROOT runId, a 300 s stage-event silence bound restarted by every stage event (CLIO_MCP_WORKER_STAGE_SILENCE_SECONDS), a 30 s post-terminal exit grace via lease.HasExited + KillContained, synthetic-token injection with relay-side SUPPRESSION (the one deliberate exception to rule 1, decided in ADR 3.3), and an indeterminate result carrying IsError plus success:false plus an ADDITIVE outcome:indeterminate with no-retry guidance. BudgetExpiredErrorClass deliberately NOT reused -- its shipped guidance says the call is safe to retry, the worst possible instruction for a possibly half-installed environment. WaitWithinBudgetAsync deliberately not used. Bounds are Stopwatch-based so an NTP step cannot move them. Cohort membership added LAST, and the two pin tests were updated ON PURPOSE with story 8 as their new source -- those pins had been mutation-verified the same day as genuinely pinning literal names, so their going red was the mechanism working rather than a break. COUNTERS: there is no Creatio backend delta to assert here, because both tools are local-only with no IApplicationClient and deploy CREATES the instance; the test-plan rule is satisfied instead by spawn == 1, the only assertion that can observe an automatic retry, plus kill == 1, the kill ordinal AFTER the warning naming the last stage, and the child emit log stopping at the kill. State this in the PR or a reviewer applying the rule mechanically will ask for a backend delta that cannot exist. VERIFIED HERE: 12 unit tests over a scripted stage-streaming child on a real pipe with the production dispatcher/relay/transport, four mutations each caught by exactly the intended test; full unit suite 9194 passed / 20 failed with the 20 matching the macOS baseline BY NAME; ClioRing 155 passed / 1 failed, that one the known macOS path-separator artifact. HANDED BACK: AC-01/05/06 are E2E needing a Windows host with a disposable sandbox -- written, Explicit, opt-in, TeamCity-guarded and fail-closed, but unverified here; the TC-E-803 hang half is covered deterministically by the unit fixture because producing it against a real child would need a fault-injection hook deliberately not added to a shipping binary. AC-03 not re-run, and that is a CONCLUSION not an omission: ClioStageEvent.cs, ClioStageEventContract.cs (SchemaVersion still 1) and the Ring mirror are all unmodified, so no source-generated serialization path changed. TWO REVIEWER NOTES: the protocol is reachable ONLY through clio-run, because the write-capability gate stops a raw-name deploy-creatio before routing, and the synthetic token survives that vector since ClioRunTool copies Meta to the child params -- there is now a router test pinning the executor-unwrapped route, without which the live vector could silently fall back to the 120 s branch with every other test green; and a worker own tool result is never second-guessed against the stage stream, so the indeterminate path is only for no-result-obtained. ADR 3.3 CLARIFIED so code and ADR do not silently disagree: cancellation resolves as indeterminate in CLASSIFICATION at the wire, but a cancelled caller is no longer awaiting a response, so Stage 8 kills, emits a warning naming the last stage, and rethrows OperationCanceledException per the dispatcher documented caller-token contract."
+    depends_on:
+      - story-mcp-worker-execution-boundary-7
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-9
+    title: "Interprocess file gates"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: M
+    status: review
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-9.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 9. Separate address spaces isolate memory, not the filesystem. .clio-pages/{schema}/meta.json is read-modify-write WITH SWALLOWED I/O failures, so an interleaved write is lost with no error — and CwdLock is today the only thing accidentally serialising it. Hard ordering constraint, and the trigger is a tool going CROSS-PROCESS, not the stage-10 deletion: a child escapes CwdLock simply by being another process, so the gate must exist before any .clio-pages writer joins the worker cohort (get-page, stage 6). Encoded as story 6 AC-06 rather than an inverted depends_on edge, which would make the graph cyclic. Stage 10's CwdLock removal is a second, later checkpoint on the same gate. DbHub needs nothing, already cross-process safe via .clio.lock and FileShare.None."
+    depends_on:
+      - story-mcp-worker-execution-boundary-6
+    blocks:
+      - story-mcp-worker-execution-boundary-10
+  - id: story-mcp-worker-execution-boundary-10
+    title: "Expand by cohort, then delete the old machinery"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: L
+    status: ready-for-dev
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-10.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 10. Deletes the universal per-tenant monitor, McpReadResponseDeadline + McpReadDeadlineGate, CwdLock, session-container pinning and the CLIO_MCP_READ_DEADLINE_SECONDS contract — this work ends by removing machinery rather than adding a second layer. Deletion order is constrained: the .clio-pages gate (story 9) before CwdLock, the parent-owned reservation (story 7) before per-call children reach compile-creatio, and the monitor and deadline LAST since they are the only bound for any cohort still in-process. Both ordering constraints are encoded, not prose-only: depends_on lists story 7 and story 9, and both list story 10 in blocks. Full unit suite required — the deletions touch BindingsModule.cs (monitor, deadline, session pinning) and clio/Common/** (CwdLock), and span well over 3 modules. Also reverts the CLI-first exception in creatio-ai-app-development-toolkit#93, which names this work as its own reversal condition; that PR's two prohibitions stay regardless."
+    depends_on:
+      - story-mcp-worker-execution-boundary-7
+      - story-mcp-worker-execution-boundary-9
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-11
+    title: "Transport failures must not surface as domain answers (PageSchemaMetadataHelper)"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: S
+    status: review
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-11.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Folded in, independent of every stage. PageSchemaMetadataHelper.ExecuteSelectQuery (clio/Command/PageSchemaMetadataHelper.cs:33-46) ends in a bare catch, so an HTML login page, a timeout and a 500 all become 'Failed to query SysPackage' while the same command through the CLI returns success:true in ~1s. It is a SECOND, unguarded copy of the SelectQuery plumbing sitting next to the one ENG-93365 already fixed with ServiceResponseJsonGuard. Closes a feature DoD item on its own."
+    depends_on: []
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-13
+    title: "get-page exits 0 when it fails"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: S
+    status: review
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-13.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Found by RUNNING TC-E-901 on a live stand, not by reading. clio get-page on a missing schema prints success:false with an error and exits 0, so TC-E-901's arrange assertion (ExitCode == 0) passed while nothing was materialised and the test failed later at the meta.json check with a misleading message. The MCP surface is unaffected - this is the CLI exit-code contract. Treat it as a class rather than an instance: audit list-pages, get-schema, get-client-unit-schema and get-classic-page-sources for the same shape, and scan callers before flipping it, because anything currently reading exit 0 as carry-on starts failing (which is the point)."
+    depends_on: []
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-12
+    title: "MobilePageConversionGuideTool leaks the shared fallback lock mapping"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: S
+    status: review
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-12.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Folded in, independent of every stage. Two defects in one call site: the tool takes GetLock(SharedFallbackKey) at three places (MobilePageConversionGuideTool.cs:111, :339, :531) after it has already resolved a real tenant — so it serializes unrelated tenants — and never calls the balancing MarkAvailable. GetLock PINS the lock-provider mapping in-use and is documented as 'balanced by MarkAvailable' (McpToolExecutionLock.cs:157-159), so unbalanced the mapping is pinned permanently. Fix by using the ExecuteUnderTenantLock helper, which balances by construction, instead of a hand-rolled lock."
+    depends_on: []
+    blocks: []
+
+  # Stories 14-18 record what Stage 4a (the full-duplex relay, commit 6299b4f63) deliberately left open.
+  # Each is a gap in shipped relay code, not a plan item: the relay exists with zero consumers, so none of
+  # them is reachable in production yet — and every one of them becomes reachable the moment routing starts.
+  # The sixth finding of that set is a CONTRACT question, not a task, and is carried as ADR OQ-10 instead.
+  - id: story-mcp-worker-execution-boundary-14
+    title: "A cancelled tools/call never tells the worker"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: M
+    status: review
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-14.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 4a gap, deferred to Stage 7 on purpose rather than guessed. Cancelling a call runs TakePending(key)?.TrySetCanceled (WorkerMcpRelay.cs:279-283) — the LOCAL pending slot is dropped and the awaiter released — and nothing is written on the child leg; the worker's late answer then hits TakePending on a missing key (:471-473) and is discarded silently. A per-call worker is reclaimed by the supervisor kill, so the abandoned work dies with the process; a STICKY worker keeps executing the abandoned tool, keeps its Creatio session, and is then handed the next call on the same transport. Sending notifications/cancelled is one SendMessageAsync; what is undecided is the contract around it — whether a cancelled sticky worker is reusable or retired, what a cancelled STARTER means for the three families with no operation registry (rule 5), and how it composes with the terminal-stage protocol (ADR 3.3), where a cancelled deploy must still produce an explicit indeterminate outcome. Do not emit it from inside the cancellation callback: that runs on the canceller's thread under the token registration. TC-E-404 is satisfied today in the per-call sense only, by the kill — the test plan row now says so."
+    depends_on:
+      - story-mcp-worker-execution-boundary-7
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-15
+    title: "The liveness probe never returns for a mute-but-live worker"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: S
+    status: review
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-15.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 4a gap. ProbeLivenessAsync (WorkerMcpRelay.cs:240-252) documents its return as 'false when the worker failed or closed', but it is ListToolsAsync in a catch and that path completes only on an answer, on the pipe closing, or on the CALLER's token — there is no timer in it. So the one condition a probe exists to catch, a worker whose pipe is open and which answers nothing (the wedge one process down), makes the probe itself hang. No production caller exists yet — the only reference is the unit test at WorkerMcpRelayTests.cs:405 and the relay namespace is excluded from DI auto-registration (BindingsModule.cs:1381-1386) — and its first real caller is Stage 7 sticky reuse, which is why the stage is 7 and not 2. The two exits must stay distinguishable: a fired caller token keeps throwing OperationCanceledException (a cancelled probe learned nothing), while the new internal bound returns false. Bound belongs to the probe with a caller override, sized against the measured 2.76s Windows spawn cost — a probe dearer than a spawn has no reason to exist. Fix it INSIDE Stage 7 and ahead of the reuse decision that calls it — story 14's AC-03 (return a cancelled sticky worker to the pool only after a bounded liveness confirmation) has no meaning until this bound exists."
+    depends_on:
+      - story-mcp-worker-execution-boundary-4
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-16
+    title: "The McpClient structural guard inspects signatures only"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: M
+    status: review
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-16.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 4a gap in the guard for binding rule 12. TC-U-401's structural case (WorkerMcpRelayTests.cs:43-69) feeds every relay type to SignatureTypes (:698-717), which yields field, property, return and parameter types — so 'var child = await McpClient.CreateAsync(...)' written as a method-body LOCAL, the precise regression the rule exists to prevent, passes it green. Nothing the test's signature-level reflection looks at can see it: the local's type is compiler-emitted debug info and the call is a member reference inside the IL body. Hence a story, not a two-line fix — it needs System.Reflection.Metadata over the relay types' method bodies, or runtime IL reflection (GetMethodBody().GetILAsByteArray() plus Module.ResolveMethod on the call operands). Keep the existing signature assertion (cheap, catches the stored-client shape) and keep the forbidden set and the inspected namespace narrow, or the guard becomes a repo-wide ban somebody suppresses. Prove it fails first on a planted offender, the way TC-U-102 proves the metadata gate is not vacuous."
+    depends_on:
+      - story-mcp-worker-execution-boundary-4
+    blocks: []
+  - id: story-mcp-worker-execution-boundary-17
+    title: "Nobody reads the worker's standard error"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: S
+    status: review
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-17.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 4a finding, but the stream belongs to the SUPERVISOR, not the relay: WorkerProcessSupervisor redirects it (WorkerProcessSupervisor.cs:339) and exposes it on the lease (IWorkerProcessSupervisor.cs:126), while IWorkerChildTransportOwner.ConnectAsync deliberately takes stdin/stdout only (WorkerChildTransportOwner.cs:51). Nothing in clio/ reads it. Two consequences: a worker that dies at startup produces only 'The worker closed its transport before answering' (WorkerMcpRelay.cs:480-482), the same sentence for every startup failure there is; and an undrained redirected pipe has a finite OS buffer, so a chatty worker BLOCKS on the write and goes silent — the documented .NET Process deadlock — which ADR 3.3's stage-event silence timer then reports as a lost child with the blame pointing at the environment. Redaction is not optional: TC-U-505 already requires that no secret marker survives 'worker-stderr passthrough', so that row presumes this drain exists. Drain continuously (capturing after exit is the deadlocking case), keep a bounded tail, and never route it to the parent's stdout, which IS the parent's MCP transport. Encoded one-sided (blocks story 6) so no existing row is reshaped."
+    depends_on:
+      - story-mcp-worker-execution-boundary-2
+    blocks:
+      - story-mcp-worker-execution-boundary-6
+  - id: story-mcp-worker-execution-boundary-18
+    title: "Concurrent sends to one child transport are unverified"
+    feature: "mcp-worker-execution-boundary"
+    repo: "clio"
+    size: S
+    status: review
+    jira: ENG-95262
+    file: spec/stories/story-mcp-worker-execution-boundary-18.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "Stage 4a gap, and the only one of the five whose status is UNKNOWN rather than wrong. The relay writes to the child from the caller's thread (WorkerMcpRelay.cs:285-288), from the handshake (:428, :448-451) and from the off-loop request answerer (:556-559, :575-579, dispatched at :469 so a slow client cannot stall notification forwarding). The READ side is documented single-consumer and asserted; the WRITE side has no equivalent statement, and whether the SDK's StreamClientSessionTransport serialises writes was assumed, never checked. Interleaved writes corrupt newline-delimited framing, so the worker either fails to parse or drops a request — which reads as a sick environment, not as a client bug. Reachability, stated honestly: per-call traffic does not overlap by construction (one tools/call, then an await during which the only other write is a sampling answer), so the overlap becomes ordinary at Stage 7 — a second tools/call on a sticky worker while a sampling answer is being written — and story 14 adds a fifth writer. Verify first, then branch: pin the SDK's guarantee with an interleaving test, or add an async send gate (never a lock across an await) and pin the same test. Encoded one-sided (blocks story 7) so no existing row is reshaped."
+    depends_on:
+      - story-mcp-worker-execution-boundary-4
+    blocks:
+      - story-mcp-worker-execution-boundary-7
+
+  - id: story-mcp-worker-execution-boundary-19
+    title: "A cohort member serializes every tenant on the shared fallback lock"
+    feature: "mcp-worker-execution-boundary"
+    status: review
+    file: spec/stories/story-mcp-worker-execution-boundary-19.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "RESOLVED 2026-08-18. AC-01 fixed at GetRelatedPageAddonTool.cs:56. AC-02 proven red-before-green: reverting the fix turns the new tests red naming __mcp_shared_fallback__ where the tenant key was expected, and the assertion covers WHICH key three ways including MarkInUse, which is skipped entirely for a fallback key and is therefore independent evidence rather than restated wiring. AC-03 measured 36 real ExecuteWithCleanLog call sites (NOT 188 -- that was the file count under Tools/**, and the story body is corrected): 8 environment-less before, 0 after. AC-04 fixed CreateRelatedPageAddonTool plus 8 BusinessRuleTool sites, and excluded BuildThemeTool and CompileCreatioTool with stated reasons. THE FINDING WORTH CARRYING FORWARD: BaseTool.ResolveTenantLockKey returns SharedFallbackKey whenever the base has no IToolCommandResolver, so two business-rule tools already passed options to the correct overload and were STILL on the shared key. A correct-looking call site degrades silently. The complete detector is: environment-less overload OR per-tenant work in a BaseTool subclass that does not thread commandResolver to its base. Module=McpServer green at 3645 passed / 0 failed. MCP, docs and ClioRing compatibility all reviewed, no update required."
+    depends_on: []
+  - id: story-mcp-worker-execution-boundary-20
+    title: "The end-to-end delta this branch owes an explanation"
+    feature: "mcp-worker-execution-boundary"
+    status: in-progress
+    file: spec/stories/story-mcp-worker-execution-boundary-20.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "ROOT CAUSE PROVEN 2026-08-18, and it is neither hypothesis this story offered. The isolated run was executed: the test PASSED and the settings file was INTACT -- but that settles nothing, because the mechanism is targeting, not tearing. CLIO_HOME overrides HOME/LOCALAPPDATA verbatim and TestConfiguration.Load injects the suite-owned CLIO_HOME into every spawned process, so the test's isolation was INERT and its six reg-web-app registrations landed in the SHARED catalog (observed directly by snapshotting it mid-run). Second proven fact: 'clio settings bootstrap is broken' does NOT imply file damage -- CanExecuteEnvTools is just 'the ActiveEnvironmentKey resolves', and two runs on byte-identical files differing in that one key reproduce the message exactly. So this story's earlier conclusion that the file was damaged is NOT supported by the message used to establish it. TeamCity 15893259 primary source buckets the 46: 24 unresolvable-active-key, 18 IOException naming the shared home in the exception text with stack frames inside TemporaryClioSettingsOverride, 4 downstream parse failures. Nine fixtures rewrite that one shared file with non-atomic WriteAllText taking none of clio's cross-process locks, and SettingsHealthToolE2ETests deliberately installs the unresolvable key there; a sharing violation during its restore leaves that breakage for the rest of the run, which is also the 10->98 skip explosion. The branch owns the cascade -- through inert test isolation, NOT through the interprocess gate, which was never involved. AC-05 complete, all five classified with evidence: CreateWorkspace is NOT a working-directory regression (it died in Arrange on the shared-home IOException and never reached the omitted-directory path; failed 12 of the last 40 runs, all on this branch, never on master); ApplicationGetInfo is environmental (sync-schemas returned success:false on a stand-side configuration build failure, and none of create-app/sync-schemas/get-app-info is in the cohort). AC-06 both addressed: the settings test is fixed by IsolatedClioHome plus a self-check that refuses to run outside its private home, and BrowserSessionCache was a GENUINE Windows product defect -- WriteOwnerOnlyTextToFileAtomic publishes via MoveFileEx, which a reader's FileShare.Read handle denies, while Unix rename(2) ignores readers, so it was structurally invisible to a green macOS suite; the real consumer is Playwright reading storageState while clio refreshes it. Fixed with a bounded retry for contention shapes only, three unit tests all confirmed red against pre-fix code. STILL OPEN: AC-01/02/04 (heartbeat allowlist and worker progress) and AC-03 (the e2e run itself). The retry's behaviour under real Windows contention is argued from MoveFileEx semantics and pinned by substituted-move tests, not yet observed on an agent. AC-03 ANSWERED 2026-08-19 by TeamCity 15895074, FINAL counts: 3 failed / 595 passed / 12 IGNORED (615 recorded, 5 muted) against this branch previous 46/470/98 and the master baseline 4/585/10 -- so the branch now fails FEWER tests than master. An earlier reading of this same run said 496 passed / 9 ignored; that was taken at 100 percent complete but before the build finished, and testOccurrences lags by tens of minutes, which the runbook warns about explicitly. Ninety-eight ignored became twelve, which is the indicator that settles it -- tests skip when their environment is unreachable, not when a feature regresses -- and all 24 bootstrap-is-broken failures are gone. The first launch died at Deploy with InstallBundlePackages failed and a run launched by someone else failed with byte-identical text, i.e. job-wide product breakage, so it was relaunched pinned to the baseline product build. THE GATE TEST STILL FAILS, AND THAT IS THE FINDING: now in its OWN private home, so the reader fighting the writer is its own loop exactly as arranged, and it exposed SettingsRepository.CommitSettingsFile publishing with File.Replace / File.Move and NO retry -- the identical Windows publish a reader FileShare.Read handle denies, in a second place. Both original readings held a piece: hypothesis 2 (flaky host) WRONG, hypothesis 1 (the gate does not hold for the settings catalogue) RIGHT and unprovable until the inert isolation was removed. Fixed with the already-measured policy; SettingsFileChangedException deliberately not caught because it is the optimistic-concurrency answer. Remaining three failures named and tracked separately: one auth failure against the stand, two page tools that are in no cohort."
+    depends_on:
+      - story-mcp-worker-execution-boundary-6
+
+  - id: story-mcp-worker-execution-boundary-21
+    title: "Truncating the worker's standard error can un-redact a secret"
+    feature: "mcp-worker-execution-boundary"
+    status: review
+    file: spec/stories/story-mcp-worker-execution-boundary-21.md
+    adr: spec/adr/adr-mcp-worker-execution-boundary.md
+    status_note: "RESOLVED 2026-08-18. AC-01: a trimmed tail drops its leading PARTIAL line unconditionally, and when no complete line survives the tail is withheld behind an explicit notice rather than emptied -- an empty tail would fail CarriesStandardError and strip worker-stderr, its truncation marker AND the caveat together, telling the reader the worker said nothing when the truth is that clio withheld what it kept. Unconditional rather than only-when-the-cut-landed-mid-token, because the conditional form puts the redactor pattern list inside the drain and has to be kept in step with it forever. Applied at snapshot time, not in the pump, because Tail() runs on paths before StopAsync while the buffer may still be growing. AC-02 observed red-before: reverting only Tail() to the pre-fix expression fails 2 of 33 with the marker leaking verbatim into worker-stderr; the sibling fits-inside-the-bound test stays green in that run, which is what pins the drop to truncation. The fixture asserts its own precondition -- that the last StandardErrorTailLimit characters really do begin mid-key -- and sizes the payload FROM the dispatcher constant, so moving the bound moves the cut instead of quietly re-padding the orphan into filler, which is exactly how it went unnoticed. AC-03 asserts on the whole StructuredContent of a real RelayFailureResult envelope built through the real drain, no redactor called directly. AC-04 records the failure CLASS in the threat model: redaction can be defeated UPSTREAM of itself, because every pattern recognises a secret by context and any transformation between capture and redaction can remove that evidence; the rule is REDACT FIRST then transform, with the stated exception that where bounding is liveness the order cannot be inverted and the cut must at least be structural. RESIDUAL, recorded not fixed: CredentialPairRegex uses backslash-s which includes a newline, so a key ending the dropped line with its value beginning the surviving one is still orphaned -- and tightening the pattern would make the untruncated multi-line case WORSE, so this is the limit of context-based redaction rather than a bug. Full unit suite 9181 passed / 20 failed, names matching the macOS baseline exactly. MCP, docs and ClioRing all reviewed, no contract changed -- Ring does not consume the worker failure envelope. TWO ADJACENT R-7 EXPOSURES found by the mandated scope sweep and verified independently, both DIFFERENT classes from this story: CompileOperationRegistry.BuildMessageTail returns 50 log messages to an MCP caller with no redaction at all (missing redaction, not truncation), and ExecuteEsqTool returned an unredacted DataService error body from two paths while a third redacted the same body -- the ExecuteEsqTool asymmetry is FIXED here since execute-esq is a stage-6 cohort tool; the compile tail is tracked separately because a compile log is what the user needs to read and over-redacting it is its own harm."
+    depends_on:
+      - story-mcp-worker-execution-boundary-17
+
   - id: story-export-component-registry-1
     title: "MCP tool + CLI verb for bulk component registry export"
     feature: "export-component-registry"
@@ -2794,4 +3099,697 @@ stories:
     depends_on:
       - story-localization-ready-packages-1
       - story-localization-ready-packages-2
+    blocks: []
+
+  - id: story-eng-95891-formula-expressions-1
+    title: "Validate an 'expression' mapping and author a conditional flow's condition"
+    feature: "eng-95891-formula-expressions"
+    repo: "workspace/ProcessBuilder"
+    size: M
+    status: review
+    jira: ENG-95891
+    pr: https://creatio.ghe.com/engineering/crt-process-builder/pull/42
+    file: spec/eng-95891-formula-expressions/eng-95891-formula-expressions-plan.md
+    test_plan: spec/eng-95891-formula-expressions/eng-95891-formula-expressions-test-plan.md
+    note: >-
+      S0-S6 on branch feature/ENG-95891-formula-expressions. Adds IProcessFormulaValidator over the
+      platform's own IScriptSession, the setFlowCondition modify operation with an in-place conditional
+      re-kind, condition read-back on DescribeProcessFlow, and the parameter-deletion scan over
+      conditions/execution contexts/sub-processes. 928 unit tests green. The declarative build path
+      (flows[].kind / .condition), the default marker, gateways and branch-aware layout are ENG-91853's.
+      Probes P1-P4 pass; P5-P8 need a live stand and are not run.
+      FOLLOW-UP ON THE SAME BRANCH AND PR (2026-09-03, ADR
+      spec/adr/adr-collapse-formula-validation-onto-platform-rule.md): the validator is DELETED.
+      Measured first, because the ADR made the scope depend on it and had it wrong - the platform's
+      pre-save gate refuses a bad flow CONDITION too, on every class we checked, because the
+      flow-schema generator builds the synthetic Boolean Source=Script parameter itself and
+      ParameterValuesValidationRule runs that generator first
+      (spec/eng-95891-formula-expressions/eng-95891-formula-expressions-save-gate-probe.md).
+      ProcessFormulaValidator 827 -> 118 lines (the length bound alone), IProcessFormulaValidator and
+      SetFlowCondition's unrecognised-macro-family guard deleted with it: 186 insertions against
+      2 158 deletions. PlatformValidationMessage added - it rewrites the ONE platform message that
+      arrives as a serialised object, and decides nothing about validity. Three review lenses; both
+      blockers were an absent test that let the change be reverted with a clean run. Two lens claims
+      refuted on the stand (a ZWSP-poisoned reference does not save; the gate does refuse a newline).
+      1111 unit tests pass, six mutations each observed red. Rebundled - see the archive for the
+      version, which is the source of truth rather than this note.
+    depends_on: []
+    blocks:
+      - story-eng-95891-formula-expressions-2
+      - story-eng-95891-formula-expressions-3
+
+  - id: story-eng-95891-formula-expressions-2
+    title: "Ship the formula/condition contract through clio's MCP surface and rebundle"
+    feature: "eng-95891-formula-expressions"
+    repo: "clio"
+    size: M
+    status: review
+    jira: ENG-95891
+    pr: https://github.com/Advance-Technologies-Foundation/clio/pull/1340
+    file: spec/eng-95891-formula-expressions/eng-95891-formula-expressions-plan.md
+    test_plan: spec/eng-95891-formula-expressions/eng-95891-formula-expressions-test-plan.md
+    note: >-
+      S4 (clio half), S7 and S9 on branch feature/ENG-95891-formula-expressions. DescribedFlow.condition
+      (mandatory; it carries a JsonExtensionData bag, added in review), setFlowCondition documented on the modify tool/prompt/capability
+      map, the phantom described-parameter 'expression' field corrected on both surfaces, CrtProcessBuilder
+      rebundled (1.4.0.38 at the time of writing; the archive version is the source of truth, not this note)
+      with pins refreshed, and the create/modify [RequiresPackage] literals raised to
+      1.4.0.3 for a new operation plus a tightened validator. e2e added (not in CI, needs a stand).
+      The floor was 1.4.0.3, reasoning that .0-.1 disagreed with the platform's pre-save gate and .2 was
+      the first to agree. Right about .2, wrong as a floor: it enumerated 1.4.0.4 through 1.4.0.8 and
+      inferred the rest, while this branch went on to produce some thirty versions. Measured by
+      decompressing every archive commit on the branch and grepping for each refusal the shipped tool
+      descriptions promise - the activity-result guard and the unrecognised-family refusal on a NEW
+      condition first ship in 1.4.0.32, the platform-grammar element segment in 1.4.0.35, and the
+      element-retarget refusal the same descriptions promise kept a fail-open hole until
+      1.4.0.37. The floor has since moved to 1.4.0.44 (see [RequiresPackage], which is
+      authoritative): .37 was the first version where every refusal those
+      descriptions promise actually happens. Below it a dead condition is stored in silence,
+      which is what the descriptions promise protection from. It refuses more environments, and
+      that is the floor doing its job rather than a cost to avoid; the guard fixture asserts the
+      shipped archive satisfies the floor, so every environment this distribution can install
+      satisfies it without either number being restated here.
+      ClioRing compatibility reviewed, no Ring-consumed contract changed - restated against the FULL
+      branch diff, not the one commit that first said it. Ring names none of the four process tools;
+      it can reach them generically through clio-run from the get-tool-contract index
+      (clio-ring/ClioRing/ViewModels/ClioIpcViewModel.cs RunEntryAsync,
+      clio-ring/ClioRing.Ipc/ClioIpcClient.cs GetCatalogAsync/ParseCatalog), and ParseCatalog reads only
+      name / purpose / contract-available / resident / destructive. Recomputed BuildPurpose (first
+      sentence, 120 chars) for validate/modify/describe: byte-identical base vs HEAD, tool names
+      unchanged, safety flags unchanged, refusals still travel as {success:false, error} through the
+      same catch chain. Also inspected clio-ring/ClioRing.Desktop/actions.json and
+      clio-ring/ClioRing/ViewModels/ClioWorkflowViewModel.cs. ClioRing.Tests: 157 passed, 0 failed.
+      FOLLOW-UP ON THE SAME BRANCH AND PR (2026-09-03): with the package's validator deleted, the
+      refusal MESSAGES become the platform's, so both tool [Description]s, both [RequiresPackage]
+      floors (a floor states what the descriptions NEED, so it is not the bundled version and does
+      not track it - read the literal off [RequiresPackage]), the MCP
+      E2E assertions, two knowledge records and the manual tier all move. The E2E had pinned the
+      PACKAGE's unknown-identifier wording, so it would have gone red on a stand rather than in
+      review. Every message the guidance promises verbatim was re-measured, which is how the
+      quotes-the-CONVERTED-expression finding surfaced (1.5 -> 1.5m, a parameter reference -> the
+      parameter NAME); two surfaces had claimed the opposite. The floor is no longer a tightened
+      validator (.42 checks strictly LESS than .37), and the .35 platform-grammar element segment it
+      cited as load-bearing turns out not to have been. 9215 targeted unit tests pass; MCP E2E on
+      krestov-test, 60 pass. ClioRing statement re-verified against the new diff: BuildPurpose's
+      input - the first sentence of each description - is byte-identical, names and safety flags
+      unchanged.
+    depends_on:
+      - story-eng-95891-formula-expressions-1
+    blocks: []
+
+  - id: story-eng-95891-formula-expressions-3
+    title: "Publish the formula vocabulary through clio-knowledge"
+    feature: "eng-95891-formula-expressions"
+    repo: "clio-knowledge"
+    size: S
+    status: review
+    jira: ENG-95891
+    pr: https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/122
+    file: spec/eng-95891-formula-expressions/eng-95891-formula-expressions-plan.md
+    note: >-
+      S8. The process-modeling article currently tells agents an 'expression' is passed through
+      UNVALIDATED and that removeParameter is blocked only by parameters and element mappings - both
+      become false with 1.4.0.0. Needs a libraryVersion + sequence bump and a re-pin of
+      clio.tests/Command/McpServer/Fixtures/curated-knowledge-names.json.
+      FOLLOW-UP ON THE SAME BRANCH AND PR (2026-09-03): processes/formulas is rewritten around WHO
+      validates, and its refusal table re-measured row by row. Four false promises removed - "always
+      names the character index and the expression" (true of the parse family only), "does not check
+      it at all" twelve lines above "still checks length", "one thing: length" (it is two), and
+      "wording, not capability" for an older package, which refuses MORE rather than less. The
+      sibling processes/parameters.md - shipped in the same bundle - still said an expression is
+      "checked before it is stored"; a review lens found it, my grep did not, because I searched for
+      the phrases I had written instead of for the claim. libraryVersion bumped and the fixture
+      re-pinned to match it (read the pair off bundle-source.json and curated-knowledge-names.json
+      rather than from this note),
+      the bundle suite passes (count moves with the branch - read it off a run, not off this note).
+      process-formulas WAS split, into process-branch-conditions; the article now first against the
+      single-response budget is process-data-elements, and that is ENG-96536.
+    depends_on:
+      - story-eng-95891-formula-expressions-1
+
+# ENG-94374 — business process versioning (read, save as new version, set actual)
+
+  - id: story-process-versioning-1
+    title: "Read version facts from the process-library view"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio"
+    size: M
+    status: done
+    file: spec/stories/story-process-versioning-1.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on: []
+    blocks:
+      - story-process-versioning-2
+      - story-process-versioning-3
+
+  - id: story-process-versioning-2
+    title: "Report version facts in the describe response"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio"
+    size: M
+    status: done
+    file: spec/stories/story-process-versioning-2.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-1
+    blocks:
+      - story-process-versioning-3
+      - story-process-versioning-4
+      - story-process-versioning-5
+
+  - id: story-process-versioning-3
+    title: "Resolve a caption to the active version, in one place"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio"
+    size: M
+    status: done
+    file: spec/stories/story-process-versioning-3.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-1
+      - story-process-versioning-2
+    blocks: []
+
+  - id: story-process-versioning-4
+    title: "State the version contract on the MCP surface"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio"
+    size: S
+    status: done
+    file: spec/stories/story-process-versioning-4.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-2
+    blocks: []
+
+  - id: story-process-versioning-5
+    title: "Prove the version read end to end against a stand"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio"
+    size: S
+    status: done
+    file: spec/stories/story-process-versioning-5.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-2
+    blocks: []
+
+  - id: story-process-versioning-6
+    title: "Publish the process-versions guidance article"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio-knowledge"
+    size: M
+    status: review
+    file: spec/stories/story-process-versioning-6.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on: []
+    blocks:
+      - story-process-versioning-7
+      - story-process-versioning-18
+
+  - id: story-process-versioning-7
+    title: "Re-pin clio's guidance fixture to the published generation"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio"
+    size: S
+    status: done
+    file: spec/stories/story-process-versioning-7.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-6
+    blocks: []
+
+  - id: story-process-versioning-8
+    title: "Spike: measure the version-creation mechanics on a stand"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio"
+    size: L
+    status: done
+    file: spec/stories/story-process-versioning-8.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on: []
+    blocks:
+      - story-process-versioning-9
+
+  - id: story-process-versioning-9
+    title: "ModifyProcessAsNewVersion contracts, guard and transport"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "crt-process-builder"
+    size: M
+    status: done
+    file: spec/stories/story-process-versioning-9.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-8
+    blocks:
+      - story-process-versioning-10
+
+  - id: story-process-versioning-10
+    title: "Materialise the clone through a metadata round-trip"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "crt-process-builder"
+    size: M
+    status: done
+    file: spec/stories/story-process-versioning-10.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-9
+    blocks:
+      - story-process-versioning-11
+
+  - id: story-process-versioning-11
+    title: "Apply the edits to the clone through the shared applier"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "crt-process-builder"
+    size: M
+    status: done
+    file: spec/stories/story-process-versioning-11.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-10
+    blocks:
+      - story-process-versioning-12
+
+  - id: story-process-versioning-12
+    title: "Number, name and persist the new version"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "crt-process-builder"
+    size: M
+    status: done
+    file: spec/stories/story-process-versioning-12.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-11
+    blocks:
+      - story-process-versioning-13
+      - story-process-versioning-14
+
+  - id: story-process-versioning-13
+    title: "SetActiveProcessVersion with a verified read-back"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "crt-process-builder"
+    size: L
+    status: done
+    file: spec/stories/story-process-versioning-13.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-12
+    blocks:
+      - story-process-versioning-14
+
+  - id: story-process-versioning-14
+    title: "Stamp the package version for the rebundle"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "crt-process-builder"
+    size: S
+    status: done
+    file: spec/stories/story-process-versioning-14.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-12
+      - story-process-versioning-13
+    blocks:
+      - story-process-versioning-15
+
+  - id: story-process-versioning-15
+    title: "Rebundle into clio and move the pins"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio"
+    size: M
+    status: done
+    file: spec/stories/story-process-versioning-15.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-14
+    blocks:
+      - story-process-versioning-16
+      - story-process-versioning-17
+
+  - id: story-process-versioning-16
+    title: "Expose modify-business-process-as-new-version through MCP"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio"
+    size: M
+    status: done
+    file: spec/stories/story-process-versioning-16.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-15
+    # Merge order only. Agreed 2026-09-06 to BUILD this before 15: the archive is cut last, from
+    # sources its consumer has exercised. Two named pins stay red until 15 - see the story file.
+    blocks:
+      - story-process-versioning-18
+
+  - id: story-process-versioning-17
+    title: "Expose set-active-business-process-version through MCP"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio"
+    size: M
+    status: done
+    file: spec/stories/story-process-versioning-17.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-15
+    # Merge order only. Agreed 2026-09-06 to BUILD this before 15: the archive is cut last, from
+    # sources its consumer has exercised. Two named pins stay red until 15 - see the story file.
+    blocks:
+      - story-process-versioning-18
+
+  - id: story-process-versioning-18
+    title: "Guidance for saving a new version and rolling back"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio-knowledge"
+    size: S
+    status: review
+    file: spec/stories/story-process-versioning-18.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    depends_on:
+      - story-process-versioning-6
+      - story-process-versioning-16
+      - story-process-versioning-17
+    blocks: []
+
+  - id: story-eng-91853-gateways-and-flows-1
+    title: "Build exclusive/parallel gateways, conditional and default flows, and branch-aware layout"
+    feature: "eng-91853-gateways-and-flows"
+    repo: "workspace/ProcessBuilder"
+    size: M
+    status: done
+    jira: ENG-91853
+    file: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-plan.md
+    test_plan: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-test-plan.md
+    note: >-
+      PR: https://creatio.ghe.com/engineering/crt-process-builder/pull/45
+      Branch feature/ENG-91853-gateways-and-flows, off main (7e93995 - crt-process-builder's default
+      branch is main, not master). Work packages S1-S5, all implemented; 1530 tests pass at the
+      RELOCATED path: -c dev-nf against tests/UnitTests/CrtProcessBuilder.Tests/, not
+      tests/CrtProcessBuilder/. main moved the test project in the Jenkins pipeline merge (#44).
+      TWO comprehensive review gates are closed (spec/reviews/, 2026-09-05 and 2026-09-06) and both
+      manual-test legs have run (spec/eng-91853-gateways-and-flows/...-manual-test-run-2026-09-06b.md):
+      the agent leg attempted all 15 cases and the browser leg verified runtime on a stand, including
+      the one thing nothing else could - a build-path condition written as a NAME expands and then
+      EVALUATES. MERGED into main 2026-09-08 as 4a000d035, head 9dba08b, all 25 review threads resolved.
+      Shipped at CrtProcessBuilder 1.6.0.6 - the version moved through 1.6.0.1-1.6.0.6 because main
+      claimed the earlier numbers while this branch was landing, so read it out of the descriptor
+      rather than from any document. Merging this FIRST was the whole ordering constraint: clio's
+      ExpectedProducingCommit pins 016dd61, which is now an ancestor of main, so that provenance
+      resolves. Two findings arrived after the pre-merge push and are fixed at 9dba08b: a doc command
+      naming the pre-relocation test path, and seven files that had silently acquired a byte-order
+      mark - review flagged four of the seven, a census found the rest.
+      S4 (branch-aware Y auto-layout) is DONE. ProcessLayoutEngine rewritten from a per-COLUMN vertical
+      stagger to a five-phase lane model: adjacency in flow declaration order, DFS back-edge
+      classification, longest-path columns over the remaining DAG, one lane per branch, Y from the lane.
+      Fixes the three defects the analysis named - L1 (a branch's Y was not stable along its length,
+      because a node alone in its column always landed back on the centre row), L2 (a back-edge starved
+      the Kahn queue and collapsed four of six elements into column 0 on 15% of real gateway processes),
+      L3 (a merge aligned with its split only by accident). Layout.BranchStep = 130 and
+      Layout.GatewaySizePx = 55 added; Layout.VerticalStep is now unreferenced and kept per the written
+      plan, documented as such rather than silently left behind - a deletion candidate for review.
+      TWO DEVIATIONS from layout.md section 4, both traced in
+      spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-layout-addendum.md.
+      (1) A merge's midpoint rounds DOWN, not to even. The spec says round(mean(...)) and does not pin
+      the tie-break; C#'s default breaks the spec's own stated property, because a two-way split on lane
+      L feeds its merge lanes L and L+1 and banker's rounding aligns them only when L is even. An odd
+      parent lane needs no nesting - a second start event pushes a whole component down a lane.
+      (2) NEEDS AN OWNER DECISION: case B is not fixed and cannot be fixed by placement. Measured on the
+      graph the spec writes verbatim, every element lands on lane 0 and the short branch's connector
+      still crosses the long branch. Aligning a merge with its split (L3), keeping the first-declared
+      branch on the parent lane (T-7) and keeping a skipping connector clear (L1) are in direct conflict
+      for that one shape, and connector routing is out of scope. Left as specified. Recommended
+      resolution, traced in the addendum: a merge with a column-skipping inbound branch takes THAT
+      branch's lane, which fixes case B without touching the spec's rows A or E.
+      18 tests added, 7 existing kept and untouched: 1167 unit tests pass (baseline 1149).
+      Validated: dotnet test tests/CrtProcessBuilder/CrtProcessBuilder.Tests.csproj -c dev-nf
+      (dev-n8 is unbuildable on this host - .application/net-core is absent, only net-framework is
+      checked out).
+      Every new test was observed RED against the implementation it replaces: 8 of the first 9 fail on
+      the old engine, and the ninth (idempotence) is deliberately a property both share. Five mutations
+      of the NEW engine each caught, 14 in all: rounding mode, corridor reservation, back-edge
+      exclusion, the second root pass, start-first walk ordering, parent-lane inheritance, branch
+      declaration order, column-order processing, endpoint guards, pair de-duplication, cell claiming,
+      end-event lanes, tree-edges-only DFS, skip-if-already-positioned. Nine of those survived the first
+      round and were closed after review. The corridor reservation initially survived deletion with the
+      whole fixture green - it is reachable only from graphs an argument said were impossible, so the
+      case that pins it was found by enumerating small single-source graphs rather than by reasoning.
+      Reviewed by four parallel lenses; the test-coverage lens found more than the other three combined.
+      Two review claims refuted by measurement: a duplicate element UId cannot reach the engine
+      (MetaItemCollection.InsertItem throws first) and a dangling endpoint cannot be set directly (the
+      TargetRefUId setter throws) - the reachable shape is an element removed after its flows.
+      S1, S2, S3 and S5 are also DONE (commits f9d9ea2, 55b5c99, cb59f2c). Gateways and the three flow
+      kinds are buildable: two gateway element handlers with the measured 55x55 DefaultSize, the
+      default-flow palette item and per-kind name prefixes, a new FlowKindRules holding the authoring
+      rules shared by both write paths, AddFlow/SetFlow on the graph builder with the re-kind body
+      generalised out of ENG-95891's conditional-only version, RemoveFlow detaching its endpoints (T-8),
+      ValidateStructure's stale remark rewritten with three fixtures (T-13), and describe reporting a
+      flow's name while delegating kind classification to the write path's own classifier instead of
+      keeping a second copy.
+      The build path and addFlow no longer refuse `kind` and `condition`; the two-step workaround those
+      refusals named had a window in which the process was saved with a flow that did not yet branch.
+      A lone unconditional flow out of a deciding gateway is NORMALISED to a default branch rather than
+      refused - that shape is 45 shipped gateways, and it exists because the designer cannot draw a plain
+      sequence flow out of a gateway at all.
+      RECORDED, and it invalidates an argument this spec folder itself makes: setting VisualType has NO
+      effect on serialization. ProcessSchemaSequenceFlow.WriteMetaData passes the LITERAL AutoPolyline
+      rather than the property, so CI6 is 1 whatever the object holds - which is why all 9 762 shipped
+      flows read back AutoPolyline. That count is therefore not evidence of designer behaviour. Knowledge
+      record: docs/knowledge/platform/sequence-flow-visualtype-is-written-as-a-literal.md.
+      1201 unit tests pass (from 1149 at the start of the ticket).
+      STILL OPEN on this story: nothing. The remaining work is stories 2 and 3.
+    depends_on: []
+    blocks:
+      - story-eng-91853-gateways-and-flows-2
+
+  - id: story-eng-91853-gateways-and-flows-2
+    title: "Ship gateways and flow kinds through clio's validator, MCP surface and bundled archive"
+    feature: "eng-91853-gateways-and-flows"
+    repo: "clio"
+    size: M
+    status: done
+    pr: https://github.com/Advance-Technologies-Foundation/clio/pull/1398
+    jira: ENG-91853
+    file: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-plan.md
+    test_plan: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-test-plan.md
+    note: >-
+      S6-S7 and the rebundle half of S8, on branch feature/ENG-91853-gateways-and-flows off master.
+      The headline is a FIX, not a feature: ProcessGraphValidator.CheckDefaultFlowRules raises an error
+      when a default flow has no sibling conditional flow, and that rejects exactly 45 shipped gateways
+      (40 exclusive, 5 inclusive) whose only outgoing flow is a default one - because the designer
+      cannot draw a plain sequence flow out of an or-gateway at all. R14 must be scoped to sources with
+      MORE THAN ONE outgoing flow. Symmetrically R6 (gateway arity) must NOT be implemented: it would
+      reject 60+ shipped gateways.
+      DescribeProcessPrompt introduces `condition` AND `branchesOnActivityResult` together - ENG-95891
+      reverted its own edit to that file so this ticket ships both at once.
+      DONE (commits 96061c532, 3f2bc0fbd, 61c777e72). R14 is arity-scoped, and the regression test is a
+      converging gateway rather than a phrasing change. Added: R15 self-loop, one default per source,
+      the or-gateway plain-flow WARNING (arity-scoped for the same reason - 14 shipped gateways carry a
+      single plain flow), the empty-condition error, and the parallel-join deadlock warning
+      ai-bp-connection-rules promised and nobody wrote. R7/R9's warning stopped saying the process
+      "dead-ends" - it briefly named MismatchItemsCountException instead, and a manual run replaced
+      that with the process-log line an operator can actually search for.
+      The empty-condition rule needed a CONTRACT change and could not have existed before: the edge
+      argument was {source, target, flow-kind}, so the validator could not see conditions. `condition` is
+      now an optional fourth field. A supplied-but-BLANK one is an error; an OMITTED one is a warning
+      (it was silent until the final review gate, which hid a certain build refusal).
+      S7: both prompts and three tool descriptions stopped saying a gateway ELEMENT is not buildable, and
+      say instead what is still out (inclusive/event-based gateways, timer/message starts, intermediate
+      events, sub-processes, formula/script tasks, the activity-result dialect) - the fork narrowed, it
+      did not close. DescribeProcessPrompt introduces condition AND branchesOnActivityResult together,
+      which is what ENG-95891's revert was for, and says never to narrate a condition as "what decides
+      this branch" without checking both. TC-D-01 in the manual QA doc INVERTS from a negative case to a
+      positive one, checking the three things an error message would never have shown.
+      Rebundled 1.6.0.6 from crt-process-builder 016dd61. The FLOORS DID NOT MOVE and stay at 1.6.0.3,
+      in two places (CreateBusinessProcessCommand, ModifyBusinessProcessCommand): a [RequiresPackage]
+      floor tracks what clio depends on or advertises, not what it ships, and the guard fixture asserts
+      the archive SATISFIES the literal rather than equalling it. Three further sites gate the package by
+      PRESENCE with no version (describe-business-process, list-user-tasks, validate-process-graph) and
+      they refuse a behind environment just the same, because convergence never reads the attribute's
+      version - see docs/knowledge/Common/a-presence-only-requirespackage-still-takes-a-convergence-
+      refusal.md. So a stand upgrade affects five commands, not the two carrying a literal.
+      10312 targeted unit tests pass on
+      Category=Unit&(Module=ProcessModel|Module=McpServer|Module=Command|Module=Common). Release rather
+      than Debug, because a running MCP server holds the Debug output open; only Release/net10.0 received
+      the new archive, so an install run from any other output ships whatever archive that folder holds.
+      STILL OPEN: nothing on this story. PR 1398 is open with all 10 threads resolved; both manual legs
+      and the stand verification have run (four blind rounds on 2026-09-08, evidence committed under
+      spec/eng-91853-gateways-and-flows/). The merge is a human's.
+    depends_on:
+      - story-eng-91853-gateways-and-flows-1
+    blocks:
+      - story-eng-91853-gateways-and-flows-3
+
+  - id: story-eng-91853-gateways-and-flows-3
+    title: "Publish the gateway and branch vocabulary through clio-knowledge"
+    feature: "eng-91853-gateways-and-flows"
+    repo: "clio-knowledge"
+    size: S
+    status: done
+    pr: https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/135
+    jira: ENG-91853
+    file: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-plan.md
+    note: >-
+      process-modeling.md and branch-conditions.md, on branch feature/ENG-91853-gateways-and-flows in
+      the linked worktree .worktrees/eng-91853 (that repository's root checkout is coordination-only).
+      Committed: cd0602e rewrites both articles and bumps libraryVersion to 1.13.94; e621362 is the
+      review-gate fix - the article said there was no clear-condition operation, and setFlow with
+      kind 'sequence' is one. The curated-knowledge-names.json re-pin landed on the clio side as
+      ed670759c. MERGED 2026-09-08 as 8a21fd9c4 and RELEASED: master carries libraryVersion 1.13.99 and the
+        Latest release is 1.13.99 (12:59:11Z), so the guidance is live - which still needs
+        `update-knowledge` on any environment holding an older generation, because a stale cache
+        keeps serving the OLD articles silently. Remaining: clio#1398 and
+        engineering/crt-process-builder#45, package first - clio's ExpectedProducingCommit names
+        a package commit.
+      Two facts the articles did not carry and that nothing else records: branch evaluation order is
+      flows[] ARRAY order, first true wins, and nothing encodes it - so the order an agent declares
+      branches in silently decides which one runs; and the layout re-runs over the WHOLE schema on
+      every modify, so hand-arranged element positions do not survive an unrelated edit.
+      REMAINING: activity-connections.md still states five things this change made false (R8 listed as
+      not enforced, gateway elements and default flows listed as unbuildable, R14 stated without its
+      arity scope, and R7/R14 missing the new findings). It is the article branch-conditions.md routes
+      to for R1-R17, so it reaches users; the fix belongs inside the same 1.13.94 bump.
+    depends_on:
+      - story-eng-91853-gateways-and-flows-2
+    blocks: []
+
+  - id: story-eng-91853-flow-labels-1
+    title: "Give a sequence flow a diagram label, on all three write paths and on describe"
+    feature: "eng-91853-gateways-and-flows"
+    repo: "clio + workspace/ProcessBuilder + clio-knowledge"
+    size: M
+    status: review
+    pr: https://github.com/Advance-Technologies-Foundation/clio/pull/1414
+    prs:
+      - https://github.com/Advance-Technologies-Foundation/clio/pull/1414
+      - https://creatio.ghe.com/engineering/crt-process-builder/pull/53
+      - https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/138
+    jira: ENG-91853
+    file: spec/eng-91853-gateways-and-flows/eng-91853-gateways-and-flows-flow-labels-brief.md
+    notes: >
+      The follow-up ENG-91853 deferred: a flow had no label, so a two-branch decision rendered as two
+      identical unlabelled arrows and describe could not report a designer's label either, which made
+      read-modify-write lossy with nothing reporting it. Delivered as one story across three
+      repositories rather than three, because the field is one contract and splitting it would have
+      shipped a clio that advertises a package field the package does not have.
+      SPIKED FIRST, deliberately, and both open questions came back favourable. (1) Assigning
+      ProcessSchemaSequenceFlow.Caption really does produce BaseElements.<FlowName>.Caption and the
+      designer really does draw it - proven for an element, never for a flow until now, and everything
+      else would have been rework. (2) THE TRAP IS BENIGN: a re-kind re-derives a generated flow's NAME
+      and the resource key is built from that name, yet the row is re-materialised under the new name
+      and nothing lingers under the old one. Measured through the exact route FreeTheDefaultSlot()
+      prescribes. So none of the three remedies the brief proposed was needed, and the guard they
+      invite would have broken the shipped remedy on the flows most likely to carry a label.
+      Package CrtProcessBuilder 1.6.1.4 (sources 9c86d9b094cb35590f163bc5b1f627389a1c8262, tag
+      crtprocessbuilder-1.6.1.4). Do NOT read that pair from here: the authoritative values are
+      ExpectedArchiveVersion and ExpectedProducingCommit in
+      clio.tests/Common/BundledProcessBuilderPackageTests.cs, which the rebundle script writes.
+      This sentence is prose and prose goes stale at the next rebundle - it already did, naming
+      1.6.0.16 / 9c9aee2 through four later cuts, and a reviewer taking those numbers would have run
+      the article's staleness and tag controls against an archive that is not shipped. Superseded
+      cuts, as dated chronology only: 1.6.0.9 at 849dd2f pre-review, then .10 dc6583f, .11 5e94574,
+      .12 66a1c08 across review passes one to three, .13 dff43da for the Copilot findings, .16
+      9c9aee2, then the 1.6.1.x line after the origin/master merge.
+
+      What the package carries, unchanged since .8: flows[].label on the build
+      path, label on addFlow/setFlow, label in the describe projection, and a refusal of label on
+      setFlowCondition/removeFlow, where it deserializes off the shared operation descriptor and is
+      read by nobody. On setFlow, OMITTED keeps / EMPTY clears / text replaces - and the label is
+      applied on the kind NO-OP path too, which is the only way to relabel a flow at all since kind is
+      mandatory there.
+      The [RequiresPackage] FLOORS DID NOT MOVE and stay at 1.6.0.3. A label is an optional field whose
+      absence is detectable after the fact, so it takes the read-back warning the sendEmail body macros
+      established (FlowLabelExpectation) rather than a floor that would refuse every build and edit on
+      an environment one archive behind, including the ones that ask for no label. The exception is
+      written down beside the rule it looks like a violation of.
+      Guidance: process-naming N10 stops saying the label is missing and states the rule instead, with
+      the corpus share behind it; process-branch-conditions and process-element-catalog cite it.
+      libraryVersion 1.13.100.
+      MEASURED, not asserted: over the 1 710 shipped 7.8.0 schemas containing flows, 84.9% of
+      conditional flows carry a label (1 193 of 1 405), 25.5% of default flows do, and 0.7% of plain
+      sequence flows do (50 of 7 599). The scan that produces those figures is committed beside the
+      brief and is self-contained now - it previously exec'd two helpers out of a session scratchpad,
+      so the sole owner of a figure quoted across three repositories could not be run.
+      Also corrected while in the same files, and both were left stale by this ticket's own merge:
+      McpCapabilityMap said the create bullet joins elements "by plain sequence flows" and that the
+      conditional flows routing resultsByColumn are "not buildable yet"; DescribeProcessTool carried
+      the flow-condition paragraph four times verbatim (three copies removed, ~2 KB off every tool
+      listing). And the null-vs-absent claim this change first shipped was WRONG in both directions:
+      measured on a 1.6.0.8 stand, the server omits `label` for an unlabelled flow exactly as an older
+      server omits it for every flow, so absence cannot say which - the DTO doc, both tool descriptions
+      and N10 now say so. (Later corrected again: those surfaces first pointed at the installed package
+      version as the way to tell, which a review showed cannot work - convergence refuses anything below
+      the archive clio ships, so a number is no evidence the member is present. They now say an
+      all-absent read is uninformative.)
+      Two things fixed because they blocked the canonical rebundle: the rebundle script still ran the
+      package tests from the path the package repo moved them out of (MSB1009, which reads as a broken
+      checkout - the project is DISCOVERED now, and zero matches is a refusal rather than a silently
+      skipped suite), and the knowledge record on the .application junctions covered one of the two
+      links. The second fails differently and later: only the TEST project falls over, with one
+      MSB3245, after the package's own Build succeeded.
+      Validated: package 1547 tests; clio full Category=Unit 11410 pass / 25 skip; clio.mcp.e2e's two
+      label fixtures against the live stand `Creatio` on 1.6.0.9; knowledge bundle 148.
+      Pre-merge review remediation then produced 1.6.0.10 and knowledge 1.13.101. (The earlier
+      figures in this note read 1.6.0.8 / 98b1a8c / f38349c / 11392: that was the FIRST cut, superseded
+      by the review-fix rebundle, and a note naming a version other than the one that ships makes the
+      producing-commit pair - the only reviewability a committed .gz has - point at the wrong bytes.) Release rather
+      than Debug throughout, because a running MCP server holds the Debug output open - and only
+      Release/net10.0 received the new archive, so an install from any other output ships whatever that
+      folder holds.
+      STILL OPEN: the autolayout defect the brief notes in passing is untouched - our back edge is
+      still drawn over the forward flow rather than lifted onto a free row. Three PRs to open; the
+      merges are a human's.
+    depends_on:
+      - story-eng-91853-gateways-and-flows-2
     blocks: []

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command;
@@ -115,54 +116,64 @@ public sealed class PageGetToolE2ETests : McpContractFixtureBase {
 	[AllureDescription("Uses a reachable Creatio environment to fetch the seeded page beneath an explicit output-directory, then passes the exact returned files.bodyFile path to validate-page over stdio MCP.")]
 	public async Task PageGetTool_ShouldSupportValidatePage_WhenCustomOutputDirectoryReturnsBodyFile() {
 		// Arrange
-		const string schemaName = "ContactPageV2";
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
-		string outputDirectory = CreateFixtureDirectory("get-page-validate-page-round-trip");
+		McpE2ESettings settings = AllureApi.Step("Arrange MCP settings", () => {
+			McpE2ESettings result = TestConfiguration.Load();
+			result.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+			return result;
+		});
+		await using ArrangeContext arrangeContext = await AllureApi.Step(
+			"Start a real stdio MCP session",
+			async () => await ArrangeAsync(settings, TimeSpan.FromMinutes(3)));
+		string outputDirectory = AllureApi.Step(
+			"Create a custom output directory",
+			() => CreateFixtureDirectory("get-page-validate-page-round-trip"));
 
 		// Act
-		CallToolResult getResult = await arrangeContext.Session.Client.CallToolAsync(
-			ClioRunTool.ToolName,
-			new Dictionary<string, object?> {
-				["command"] = ToolName,
-				["args"] = new Dictionary<string, object?> {
-					["schema-name"] = schemaName,
-					["environment-name"] = arrangeContext.EnvironmentName,
-					["output-directory"] = outputDirectory
-				}
-			},
-			cancellationToken: arrangeContext.CancellationTokenSource.Token);
+		CallToolResult getResult = await AllureApi.Step(
+			"Fetch the seeded page into the custom output directory",
+			async () => await arrangeContext.Session.Client.CallToolAsync(
+				ClioRunTool.ToolName,
+				new Dictionary<string, object?> {
+					["command"] = ToolName,
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = SavePage,
+						["environment-name"] = arrangeContext.EnvironmentName,
+						["output-directory"] = outputDirectory
+					}
+				},
+				cancellationToken: arrangeContext.CancellationTokenSource.Token));
 		PageGetResponse getResponse = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(getResult);
-		CallToolResult validateResult = await arrangeContext.Session.Client.CallToolAsync(
-			ClioRunTool.ToolName,
-			new Dictionary<string, object?> {
-				["command"] = PageValidateTool.ToolName,
-				["args"] = new Dictionary<string, object?> {
-					["body-file"] = getResponse.Files?.BodyFile
-				}
-			},
-			cancellationToken: arrangeContext.CancellationTokenSource.Token);
+		CallToolResult validateResult = await AllureApi.Step(
+			"Validate the exact returned bodyFile",
+			async () => await arrangeContext.Session.Client.CallToolAsync(
+				ClioRunTool.ToolName,
+				new Dictionary<string, object?> {
+					["command"] = PageValidateTool.ToolName,
+					["args"] = new Dictionary<string, object?> {
+						["body-file"] = getResponse.Files?.BodyFile
+					}
+				},
+				cancellationToken: arrangeContext.CancellationTokenSource.Token));
 		PageValidateResponse validateResponse =
 			EntitySchemaStructuredResultParser.Extract<PageValidateResponse>(validateResult);
 
 		// Assert
-		getResult.IsError.Should().NotBeTrue(
-			because: "the real page read must complete before validating its materialized body");
-		getResponse.Success.Should().BeTrue(
-			because: $"get-page must fetch the seeded page from '{arrangeContext.EnvironmentName}'. Error: {getResponse.Error}");
-		getResponse.Files.Should().NotBeNull(
-			because: "the file-based validation handoff needs get-page file metadata");
-		getResponse.Files!.BodyFile.Should().StartWith(outputDirectory,
-			because: "get-page must honor the explicit output-directory used by the reported workflow");
-		File.Exists(getResponse.Files.BodyFile).Should().BeTrue(
-			because: "validate-page must receive a real file created by get-page");
-		validateResult.IsError.Should().NotBeTrue(
-			because: "the returned bodyFile should bind through the real MCP transport");
-		validateResponse.Valid.Should().BeTrue(
-			because: "validate-page must read and validate the exact body file get-page returned");
-		validateResponse.Validation.Errors.Should().BeNullOrEmpty(
-			because: "the seeded page body fetched from Creatio should pass client-side validation");
+		AllureApi.Step("Assert get-page returned a normal result", () => getResult.IsError.Should().NotBeTrue(
+			because: "the real page read must complete before validating its materialized body"));
+		AllureApi.Step("Assert get-page succeeded", () => getResponse.Success.Should().BeTrue(
+			because: $"get-page must fetch the seeded page from '{arrangeContext.EnvironmentName}'. Error: {getResponse.Error}"));
+		AllureApi.Step("Assert file metadata is present", () => getResponse.Files.Should().NotBeNull(
+			because: "the file-based validation handoff needs get-page file metadata"));
+		AllureApi.Step("Assert the custom output directory was honored", () => getResponse.Files!.BodyFile.Should().StartWith(outputDirectory,
+			because: "get-page must honor the explicit output-directory used by the reported workflow"));
+		AllureApi.Step("Assert bodyFile exists", () => File.Exists(getResponse.Files.BodyFile).Should().BeTrue(
+			because: "validate-page must receive a real file created by get-page"));
+		AllureApi.Step("Assert validate-page returned a normal result", () => validateResult.IsError.Should().NotBeTrue(
+			because: "the returned bodyFile should bind through the real MCP transport"));
+		AllureApi.Step("Assert the fetched page is valid", () => validateResponse.Valid.Should().BeTrue(
+			because: "validate-page must read and validate the exact body file get-page returned"));
+		AllureApi.Step("Assert validation has no errors", () => validateResponse.Validation.Errors.Should().BeNullOrEmpty(
+			because: "the seeded page body fetched from Creatio should pass client-side validation"));
 	}
 
 	[Test]

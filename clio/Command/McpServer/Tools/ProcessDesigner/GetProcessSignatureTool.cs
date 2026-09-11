@@ -22,8 +22,19 @@ public sealed class GetProcessSignatureTool(
 	internal const string ToolName = "get-process-signature";
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
-		"Resolve a Creatio business process by its code (schema Name) OR its display caption and return " +
+		"Resolve a Creatio business process by its code (schema Name) OR its display caption. " +
+		"A caption is shared by every version of a process — each version is a "
+		+ "separate schema with its own code but the same caption — so a caption resolves to the ACTIVE "
+		+ "version, the one the runtime executes; a caption matching several distinct processes, or one "
+		+ "whose active version cannot be established, is refused with the candidate codes. Returns " +
 		"its parameter signature: per parameter " +
 		"the CODE (name), caption, CLR type, dataValueTypeId, direction, and lookup reference schema. " +
 		"Use this BEFORE authoring a run-process button (crt.RunBusinessProcessRequest): the parameter " +
