@@ -1,7 +1,9 @@
 using System.Text.Json;
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
+using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
@@ -26,6 +28,62 @@ namespace Clio.Mcp.E2E;
 public sealed class ClioRunToolE2ETests : McpContractFixtureBase {
 
 	private const string SyntheticMissingName = "synthetic-missing-guide";
+
+	private protected override void ConfigureMcpServerSettings(McpE2ESettings settings) {
+		settings.ProcessEnvironmentVariables["CLIO_HOME"] = CreateIsolatedClioHome("{}", "clio-run-suggestions");
+	}
+
+	[Test]
+	[Category("E2E")]
+	[Description("A disabled identity tool is not echoed back in the unknown-name shortlist over stdio.")]
+	[AllureTag(ClioRunTool.ToolName)]
+	[AllureName("clio-run excludes disabled identity tool suggestions")]
+	[AllureDescription("Uses isolated settings with all experimental flags off to reproduce reflection-only self-suggestions.")]
+	public async Task ClioRun_ShouldExcludeRequestedName_WhenIdentityToolIsDisabled() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		const string requestedName = DeployIdentityTool.DeployIdentityToolName;
+
+		// Act
+		CallToolResult result = await context.Session.CallToolAsync(ClioRunTool.ToolName,
+			new Dictionary<string, object?> { ["command"] = requestedName },
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		AllureApi.Step("Assert disabled tool remains unavailable", () =>
+			result.IsError.Should().BeTrue(because: "experimental tools must remain unavailable with flags off"));
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(block => block.Text));
+		AllureApi.Step("Assert rejected name occurs only in the diagnostic", () =>
+			text.Split(requestedName).Length.Should().Be(2,
+				because: "the rejected name must appear once in the error and never again in suggestions"));
+	}
+
+	[Test]
+	[Category("E2E")]
+	[Description("Unknown executor targets suggest update for set without dispatching the suggestion.")]
+	[AllureTag(ClioRunTool.ToolName)]
+	[AllureName("clio-run suggests update for set")]
+	[AllureDescription("Calls an unregistered name over stdio and verifies the failure shortlist and discovery hint.")]
+	public async Task ClioRun_ShouldSuggestUpdateFirst_WhenSetVerbIsRequested() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult result = await context.Session.CallToolAsync(ClioRunTool.ToolName,
+			new Dictionary<string, object?> { ["command"] = "set-sys-setting" },
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		AllureApi.Step("Assert unknown tool is an error", () =>
+			result.IsError.Should().BeTrue(because: "a suggestion must never execute a write tool"));
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(block => block.Text));
+		AllureApi.Step("Assert update ranks first", () =>
+			text.Should().Contain("Did you mean: " + SysSettingUpdateTool.UpdateSysSettingToolName + ",",
+				because: "write intent must precede lexical read matches"));
+		AllureApi.Step("Assert discovery remains available", () =>
+			text.Should().Contain(ToolContractGetTool.DiscoveryHint,
+				because: "the full catalog remains the recovery path if the suggestions miss"));
+	}
 
 	// Either typed outcome proves the dispatch reached get-guidance with the forwarded name:
 	// "guidance-not-found" when a knowledge bundle is active and the synthetic name is absent from

@@ -396,17 +396,44 @@ public sealed class ClioRunDispatchTests {
 			because: "the hint must follow with exactly one space (no double space) after the suggestions segment");
 	}
 
-	// The executor's suggestion source unions the (mockable) registry with the static reflection catalog
-	// of every clio MCP tool, which is always non-empty — so a real ClioRunExecutor cannot emit a literally
-	// empty 'did you mean' segment. The append is unconditional (outside the suggestions ternary), so this
-	// pins the invariant that matters regardless of the shortlist: the hint is the trailing sentence and is
-	// appended with correct single-space punctuation, with no empty-fragment double punctuation.
+	[Test]
+	[Category("Unit")]
+	[TestCase("get-identity-service-config")]
+	[TestCase("GET-IDENTITY-SERVICE-CONFIG")]
+	[Description("Unknown-name suggestions exclude the requested name and tools absent from the live registry.")]
+	public async Task RunAsync_ShouldExcludeUnavailableAndRequestedNames_WhenToolIsUnknown(string requestedName) {
+		// Arrange
+		_registry.ToolNames.Returns(new[] { requestedName.ToLowerInvariant(), "get-identity-assertion" });
+
+		// Act
+		CallToolResult result = await _sut.RunAsync(requestedName, null, false, CallContext(), CancellationToken.None);
+
+		// Assert
+		ErrorText(result).Should().Contain("Did you mean: get-identity-assertion?",
+			because: "only the other live registry name may be suggested, without reflection-only candidates");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A set-system-setting guess suggests the update operation before lexical read matches.")]
+	public async Task RunAsync_ShouldSuggestUpdateFirst_WhenSetVerbIsRequested() {
+		// Arrange
+		_registry.ToolNames.Returns(new[] { "get-sys-setting", "create-sys-setting", "list-sys-settings",
+			SysSettingUpdateTool.UpdateSysSettingToolName });
+
+		// Act
+		CallToolResult result = await _sut.RunAsync("set-sys-setting", null, false, CallContext(), CancellationToken.None);
+
+		// Assert
+		ErrorText(result).Should().Contain("Did you mean: " + SysSettingUpdateTool.UpdateSysSettingToolName + ",",
+			because: "set and update describe the same intent for this exact subject");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("The get-tool-contract compact-index discovery hint is always the trailing sentence of the unknown-tool error and is appended with single-space punctuation (no double space) — independent of the 'did you mean' shortlist.")]
 	public async Task RunAsync_ShouldEndWithDiscoveryHint_WhenToolIsUnknown() {
-		// Arrange — registry advertises ONLY the executor names (BuildSuggestions strips them), so any
-		// shortlist here can only come from the reflection catalog, exercising the hint append path.
+		// Arrange — registry advertises only executor names, so no alternative remains.
 		_registry.ToolNames.Returns(new[] { ClioRunTool.ToolName, ClioRunDestructiveTool.ToolName });
 		_registry.TryGetTool("zzzzzzzzzzzzzzzz", out Arg.Any<McpServerTool>()).Returns(false);
 
@@ -424,6 +451,8 @@ public sealed class ClioRunDispatchTests {
 			because: "the hint must always be the trailing sentence regardless of whether suggestions exist");
 		text.Should().NotContain(". .",
 			because: "an empty 'did you mean' fragment must not double-punctuate before the hint");
+		text.Should().NotContain("Did you mean",
+			because: "reflection-only tools must not fill an empty live candidate pool");
 	}
 
 	[Test]
