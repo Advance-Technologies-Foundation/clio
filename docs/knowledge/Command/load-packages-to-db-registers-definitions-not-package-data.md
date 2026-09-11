@@ -12,7 +12,7 @@ date: 2026-09-06
 
 **What is true** — `pkg-to-db` posts `AppInstallerService.svc/LoadPackagesToDB`, which registers package
 CONTENT (schemas, resources, descriptors) in the configuration database. It never installs package DATA.
-The endpoint answers with a bare `BaseResponse` (`success` + `errorInfo`), so no row count exists for it to
+The endpoint returns `SynchronizationResultResponse` (`success`, `errorInfo`, `changes`, and `errors`). Item errors can coexist with `success: true`; inspect them before claiming completion. No data-row count exists for it to
 report. Data installation lives on a different service — `PackageInstaller` posts
 `PackageInstallerService.svc/InstallPackage` with `installPackageData`, surfaced as
 `push-pkg --install-package-data`. On an FSM environment, where the shipped workspace template forbids

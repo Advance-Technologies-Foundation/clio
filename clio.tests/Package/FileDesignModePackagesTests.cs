@@ -58,8 +58,8 @@ public class FileDesignModePackagesTests {
 		_applicationClient
 			.ExecutePostRequest(endpointUrl, string.Empty, Timeout.Infinite, Arg.Any<int>(), Arg.Any<int>())
 			.Returns("load-response");
-		_jsonConverter.DeserializeObject<BaseResponse>("load-response")
-			.Returns(new BaseResponse {
+		_jsonConverter.DeserializeObject<PackageSynchronizationResponse>("load-response")
+			.Returns(new PackageSynchronizationResponse {
 				Success = success,
 				ErrorInfo = success
 					? null
@@ -73,6 +73,30 @@ public class FileDesignModePackagesTests {
 	#endregion
 
 	#region Methods: Public
+
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("Item errors override overall success for both package synchronization directions.")]
+	public void LoadPackages_ShouldReportFailure_WhenSuccessfulResponseContainsItemErrors(bool toDatabase) {
+		// Arrange
+		ArrangeFileDesignModeProbe(success: true, value: true);
+		string endpoint = toDatabase ? LoadPackagesToDbUrl : LoadPackagesToFileSystemUrl;
+		ArrangeLoadResponse(endpoint, success: true);
+		PackageSynchronizationResponse response = Newtonsoft.Json.JsonConvert.DeserializeObject<PackageSynchronizationResponse>(
+			"""{"success":true,"changes":[],"errors":[{"workspaceItem":{"name":"LookupBinding"},"errorInfo":{"message":"Unsupported descriptor property","errorCode":"InvalidDescriptor"}}]}""");
+		_jsonConverter.DeserializeObject<PackageSynchronizationResponse>("load-response").Returns(response);
+
+		// Act
+		FileDesignModeLoadResult result = toDatabase ? _sut.LoadPackagesToDb() : _sut.LoadPackagesToFileSystem();
+
+		// Assert
+		result.Should().Be(FileDesignModeLoadResult.LoadRefused,
+			because: "partial synchronization must not be reported as a completed import or export");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("LookupBinding") && message.Contains("Unsupported descriptor property")));
+		_logger.DidNotReceive().WriteLine(Arg.Is<string>(message => message.Contains("completed")));
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(message => message.Contains("completed")));
+	}
 
 	[SetUp]
 	public void SetUp() {
@@ -179,8 +203,8 @@ public class FileDesignModePackagesTests {
 		_applicationClient
 			.ExecutePostRequest(LoadPackagesToDbUrl, string.Empty, Timeout.Infinite, Arg.Any<int>(), Arg.Any<int>())
 			.Returns("load-response");
-		_jsonConverter.DeserializeObject<BaseResponse>("load-response")
-			.Returns(new BaseResponse { Success = false, ErrorInfo = null });
+		_jsonConverter.DeserializeObject<PackageSynchronizationResponse>("load-response")
+			.Returns(new PackageSynchronizationResponse { Success = false, ErrorInfo = null });
 
 		// Act
 		FileDesignModeLoadResult result = _sut.LoadPackagesToDb();

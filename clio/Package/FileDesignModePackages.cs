@@ -219,9 +219,17 @@ namespace Clio.Package
 			}
 			_logger.WriteLine($"Start load packages to {storageName} on a web application");
 			string responseFormServer = _applicationClient.ExecutePostRequest(endpoint, string.Empty,Timeout.Infinite, maxRequestAttempts, delayBetweenRetryAttemptsSec);
-			var response = _jsonConverter.DeserializeObject<BaseResponse>(responseFormServer);
+			var response = _jsonConverter.DeserializeObject<PackageSynchronizationResponse>(responseFormServer);
+			if (response.Errors is { Length: > 0 }) {
+				foreach (PackageSynchronizationError error in response.Errors) {
+					PrintErrorOperationMessage(storageName,
+						$"Synchronization rejected item '{error?.WorkspaceItem?.Name ?? "unknown"}': " +
+						GetErrorDetails(error?.ErrorInfo));
+				}
+				return FileDesignModeLoadResult.LoadRefused;
+			}
 			if (response.Success) {
-				_logger.WriteLine($"Load packages to {storageName} on a web application completed");
+				_logger.WriteInfo($"Load packages to {storageName} on a web application completed");
 				return FileDesignModeLoadResult.Completed;
 			}
 			PrintErrorOperationMessage(storageName, GetErrorDetails(response.ErrorInfo));
