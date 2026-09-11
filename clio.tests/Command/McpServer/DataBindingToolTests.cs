@@ -202,7 +202,8 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 			_packageName,
 			"SysSettings",
 			_workspaceRoot,
-			ValuesJson: """{"Name":"Tool row"}"""));
+			ValuesJson: """{"Code":"UsrToolRow"}""",
+			LocalizationsJson: """{"en-US":{"Name":"Tool row"}}"""));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -210,6 +211,8 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 		commandResolver.DidNotReceiveWithAnyArgs().Resolve<CreateDataBindingCommand>(default!);
 		_mockFileSystem.File.Exists(Path.Combine(_workspaceRoot, "packages", _packageName, "Data", "SysSettings", "data.json")).Should().BeTrue(
 			because: "the resolved create-data-binding command should create binding files in the requested workspace");
+		_mockFileSystem.File.ReadAllText(Path.Combine(_workspaceRoot, "packages", _packageName, "Data", "SysSettings", "Localization", "data.en-US.json"))
+			.Should().Contain("Tool row", because: "the MCP adapter must pass localization-only columns to the shared service");
 		string dataJson = _mockFileSystem.File.ReadAllText(Path.Combine(_workspaceRoot, "packages", _packageName, "Data", "SysSettings", "data.json"));
 		string? generatedId = null;
 		foreach (JsonElement rowValue in JsonDocument.Parse(dataJson).RootElement.GetProperty("PackageData")[0].GetProperty("Row").EnumerateArray()) {
