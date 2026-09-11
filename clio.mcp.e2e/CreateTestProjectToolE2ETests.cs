@@ -17,17 +17,20 @@ namespace Clio.Mcp.E2E;
 public sealed class CreateTestProjectToolE2ETests {
 	[TestCase(false)]
 	[TestCase(true)]
+	[TestCase(null)]
 	[Description("Creates or preserves unit-test projects through real MCP and verifies both solutions across multiple packages and reruns.")]
 	[AllureName("Unit-test scaffolding registers every project and preserves reruns")]
-	public async Task Tool_ShouldRegisterProjects_WhenScaffoldingOrRepairing(bool existingProject) {
+	public async Task Tool_ShouldRegisterProjects_WhenScaffoldingOrRepairing(bool? existingProject) {
 		// Arrange
 		string workspace = Path.Combine(Path.GetTempPath(), $"clio unit e2e {Guid.NewGuid():N}");
 		Directory.CreateDirectory(Path.Combine(workspace, ".clio"));
 		Directory.CreateDirectory(Path.Combine(workspace, "tests", "Acme"));
 		await File.WriteAllTextAsync(Path.Combine(workspace, ".clio", "workspaceSettings.json"),
 			"{\"Packages\":[\"Acme\",\"Other\"],\"ApplicationVersion\":\"8.1.0\"}");
-		await File.WriteAllTextAsync(Path.Combine(workspace, "tests", "UnitTests.slnx"), "<Solution />");
-		await File.WriteAllTextAsync(Path.Combine(workspace, "MainSolution.slnx"), "<Solution />");
+		if (existingProject.HasValue) {
+			await File.WriteAllTextAsync(Path.Combine(workspace, "tests", "UnitTests.slnx"), "<Solution />");
+			await File.WriteAllTextAsync(Path.Combine(workspace, "MainSolution.slnx"), "<Solution />");
+		}
 		foreach (string package in new[] { "Acme", "Other" }) {
 			string directory = Path.Combine(workspace, "packages", package, "Files");
 			Directory.CreateDirectory(directory);
@@ -37,7 +40,7 @@ public sealed class CreateTestProjectToolE2ETests {
 		string projectPath = Path.Combine(workspace, "tests", "Acme", "Acme.Tests.csproj");
 		string fixturePath = Path.Combine(workspace, "tests", "Acme", "BaseComposableAppTestFixture.cs");
 		const string customizedProject = "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net8.0</TargetFramework><Description>Keep customizations</Description></PropertyGroup></Project>";
-		if (existingProject) {
+		if (existingProject == true) {
 			await File.WriteAllTextAsync(projectPath, customizedProject);
 			await File.WriteAllTextAsync(fixturePath, "// existing custom fixture");
 			await File.WriteAllTextAsync(Path.Combine(workspace, "tests", "UnitTests.slnx"),
@@ -81,7 +84,7 @@ public sealed class CreateTestProjectToolE2ETests {
 					AssertProject(Path.Combine(workspace, "MainSolution.slnx"), Path.Combine(workspace, "tests", package, package + ".Tests.csproj"));
 				}
 			});
-			if (existingProject) {
+			if (existingProject == true) {
 				File.ReadAllText(projectPath).Should().Be(customizedProject, because: "solution repair must preserve the user's project");
 				File.ReadAllText(fixturePath).Should().Be("// existing custom fixture", because: "reruns must preserve custom fixture code");
 			}

@@ -25,4 +25,5 @@ NOTES
     MCP: clio-run command=new-test-project with package-name, absolute workspace-path,
     and environment-name. No ClioGate installation is needed for scaffolding.
 
-The package project packages/<NAME>/Files/<NAME>.csproj must exist before unit-test scaffolding. A missing package project fails before any files are written.
+    The package project packages/<NAME>/Files/<NAME>.csproj must exist first.
+    A missing package project fails before any files are written.

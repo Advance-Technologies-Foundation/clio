@@ -90,7 +90,7 @@ public class SolutionCreator : ISolutionCreator{
 	private void CreateNewMainSolution(string solutionPath) {
 		string solutionContent = _templateProvider.GetTemplate("workspace/MainSolution.slnx");
 		_fileSystem.WriteAllTextToFile(solutionPath, solutionContent);
-		_logger.WriteWarning($"[WARNING] Solution file {solutionPath} does not exist, created new MainSolution.slnx");
+		_logger.WriteInfo($"Created solution file {solutionPath}");
 	}
 
 	#endregion

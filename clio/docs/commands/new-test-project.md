@@ -1,91 +1,45 @@
 # new-test-project
 
-Create package unit-test projects from a clio workspace root. Registers each test project and package project in `tests/UnitTests.slnx`, and the test project in `MainSolution.slnx`.
+## Name
 
+new-test-project (aliases: unit-test, create-test-project) - Create package unit-test projects
 
-## Usage
+## Synopsis
 
 ```bash
-clio new-test-project [options]
+clio new-test-project --package <NAME[,NAME...]>
 ```
 
 ## Description
 
-Create package unit-test projects from a clio workspace root. Registers each test project and package project in `tests/UnitTests.slnx`, and the test project in `MainSolution.slnx`.
+Run from a clio workspace root. Creates tests/<NAME>/<NAME>.Tests.csproj and
+its base fixture. Registers test and package projects in tests/UnitTests.slnx,
+and the test project in MainSolution.slnx using Clio's solution writer.
 
-## Aliases
+## Options
 
-`create-test-project`, `unit-test`
+```bash
+--package <NAME[,NAME...]>
+Required package name or comma-separated package names.
+```
 
 ## Examples
 
 ```bash
 clio new-test-project --package UsrOrders
+clio new-test-project --package UsrOrders,UsrInvoices
 ```
 
-## Options
+## Notes
 
-```bash
---package <VALUE>
-Required package name or comma-separated package names
-```
+Existing project and fixture files are preserved. Rerun to repair missing
+solution registrations. Existing legacy .sln files are left untouched.
+A solution-write failure returns a nonzero exit code; do not report success.
+Use the Clio scaffold before writing test cases; do not create a separate harness.
+MCP: clio-run command=new-test-project with package-name, absolute workspace-path,
+and environment-name. No ClioGate installation is needed for scaffolding.
 
-## Environment Options
-
-```bash
--u, --uri <VALUE>
-Application uri
--p, --Password <VALUE>
-User password
--l, --Login <VALUE>
-User login (administrator permission required)
--i, --IsNetCore
-Use NetCore application
--e, --Environment <VALUE>
-Environment name
--m, --Maintainer <VALUE>
-Maintainer name
--c, --dev <VALUE>
-Developer mode state for environment
---WorkspacePathes <VALUE>
-Workspace path
--s, --Safe <VALUE>
-Safe action in this environment
---clientId <VALUE>
-OAuth client id
---clientSecret <VALUE>
-OAuth client secret
---authAppUri <VALUE>
-OAuth app URI
---silent
-Use default behavior without user interaction
---restart-environment
-Restart environment after execute command
---db-server-uri <VALUE>
-Db server uri
---db-user <VALUE>
-Database user
---db-password <VALUE>
-Database password
---backup-file <VALUE>
-Full path to backup file
---db-working-folder <VALUE>
-Folder visible to db server
---db-name <VALUE>
-Desired database name
---force
-Force restore
---callback-process <VALUE>
-Callback process name
---ep <VALUE>
-Path to the application root folder
-```
+The package project packages/<NAME>/Files/<NAME>.csproj must exist first.
+A missing package project fails before any files are written.
 
 - [Clio Command Reference](../../Commands.md#new-test-project)
-
-Existing project and fixture files are preserved. Rerun to repair missing solution entries. Legacy .sln files are left untouched. Solution-write failures return a nonzero exit code.
-
-Use only the Clio scaffold for package test projects, then write test cases inside the generated project. MCP callers use clio-run with command new-test-project and package-name, absolute workspace-path, and environment-name. Scaffolding needs no ClioGate installation.
-
-
-The package project packages/<NAME>/Files/<NAME>.csproj must exist before unit-test scaffolding. A missing package project fails before any files are written.

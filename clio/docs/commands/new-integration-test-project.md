@@ -1,49 +1,41 @@
 # new-integration-test-project
 
-Create a portable, scenario-neutral Creatio integration-test project.
+## Name
 
-## Usage
+new-integration-test-project (alias: integration-test) - Create a portable Creatio integration-test project
+
+## Synopsis
 
 ```bash
 clio new-integration-test-project --package <NAME> [--target-framework <TFM>]
 ```
 
-Alias: `integration-test`.
-
-The project uses NUnit, FluentAssertions, ATF.Repository, and Allure. It contains only
-configuration and a base fixture; process models, entity models, business assertions, and
-Playwright are added when a scenario requires them.
-
 ## Options
 
-- `--package` — required workspace package name.
-- `--target-framework` — generated target framework; defaults to `net10.0`.
+```bash
+--package <NAME>
+Required workspace package name.
 
-## Runtime configuration
-
-NUnit parameters take precedence over environment variables. Supply `CREATIO_URL`,
-`CREATIO_IS_NETCORE`, and exactly one authentication mode:
-
-- `CREATIO_ACCESS_TOKEN`; or
-- `CREATIO_USERNAME` and `CREATIO_PASSWORD`.
-
-Keep credentials in CI secret storage. The generated project does not depend on clio's local
-environment registry.
+--target-framework <TFM>
+Generated project target framework. Default: net10.0.
+```
 
 ## Examples
 
 ```bash
 clio new-integration-test-project --package UsrFinancialApplicatio
-clio integration-test --package UsrFinancialApplicatio --target-framework net8.0
+clio new-integration-test-project --package UsrFinancialApplicatio --target-framework net8.0
 ```
 
+## Notes
+
+The generated project reads CREATIO_URL, CREATIO_IS_NETCORE, and either
+CREATIO_ACCESS_TOKEN or CREATIO_USERNAME plus CREATIO_PASSWORD from NUnit parameters
+or environment variables. It does not require a registered clio environment.
+Registers the generated project in tests/IntegrationTests.slnx and MainSolution.slnx.
+An existing project directory is refused to preserve customizations.
+Solution-write errors return a nonzero exit code. Success emits an Info message.
+MCP: clio-run command=new-integration-test-project with package-name, absolute
+workspace-path, and optional target-framework. Write test cases in the generated project.
+
 - [Clio Command Reference](../../Commands.md#new-integration-test-project)
-
-Creates `tests/<Package>.IntegrationTests/<Package>.IntegrationTests.csproj` and registers it
-in `tests/IntegrationTests.slnx` and `MainSolution.slnx`. An existing project directory is
-refused to preserve customizations. Solution-write errors return a nonzero exit code;
-success emits an Info message. Verify both solution entries before running tests.
-
-Use only the Clio scaffold for package integration-test projects, then write test cases in
-the generated project. For MCP, call `clio-run` with command `new-integration-test-project`,
-`package-name`, absolute `workspace-path`, and optional `target-framework`.
