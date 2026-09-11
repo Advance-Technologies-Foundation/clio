@@ -12,7 +12,6 @@ namespace Clio.Command.OAuthAppConfiguration;
 /// </summary>
 [Verb("get-identity-service-config",
 	HelpText = "Read (or derive) the OAuth IdentityService configuration of a Creatio environment over REST")]
-[FeatureToggle("deploy-identity")]
 public sealed class GetIdentityServiceConfigOptions : RemoteCommandOptions
 {
 }

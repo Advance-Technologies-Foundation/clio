@@ -13,7 +13,6 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool surface for the <c>get-identity-service-config</c> command.
 /// </summary>
 [McpServerToolType]
-[FeatureToggle("deploy-identity")]
 public sealed class GetIdentityServiceConfigTool(
 	GetIdentityServiceConfigCommand command,
 	ILogger logger,
