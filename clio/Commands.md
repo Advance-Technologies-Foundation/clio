@@ -363,7 +363,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`download-configuration`](docs/commands/download-configuration.md) - Download configuration libraries from Creatio, `dconf`
 <a id="execute-sql-script"></a>
 <a id="sql"></a>
-- [`execute-sql-script`](docs/commands/execute-sql-script.md) - Execute a SQL script in Creatio, `sql`
+- [`execute-sql-script`](docs/commands/execute-sql-script.md) - Execute a SQL script in Creatio; CSV requires `-d/--destination-path`, `sql`
 <a id="export-component-registry"></a>
 <a id="export-registry"></a>
 - [`export-component-registry`](docs/commands/export-component-registry.md) - Write the full Freedom UI component registry for a resolved platform version to a file, `export-registry`
