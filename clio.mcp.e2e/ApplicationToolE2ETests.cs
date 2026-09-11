@@ -904,8 +904,38 @@ public sealed class ApplicationToolE2ETests {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
 		return new ApplicationArrangeContext(environmentName, session, cancellationTokenSource);
+	}
+
+	/// <summary>
+	/// Returns this fixture's single MCP server process, starting it on first use.
+	/// </summary>
+	/// <remarks>
+	/// Every test here used to start its own child server: 16 process lifecycles for one fixture, each
+	/// costing roughly 1.8 s to start and 0.5 s to tear down, none of which TeamCity bills to a test.
+	/// The tests share a read/create workload against one environment and none of them mutates server
+	/// state at startup, so one process serves them all. The fixture is <c>[NonParallelizable]</c>, so
+	/// the lazy start needs no lock. Started lazily rather than in <c>[OneTimeSetUp]</c> on purpose: an
+	/// <c>Assert.Ignore</c> raised from one-time setup skips the WHOLE fixture, which would hide the
+	/// tests that need no reachable stand.
+	/// </remarks>
+	/// <param name="settings">Settings for the child process.</param>
+	/// <param name="cancellationToken">Bounds the start.</param>
+	/// <returns>The shared session.</returns>
+	private static async Task<McpServerSession> GetOrStartSharedSessionAsync(
+		McpE2ESettings settings,
+		CancellationToken cancellationToken) =>
+		_sharedSession ??= await McpServerSession.StartAsync(settings, cancellationToken);
+
+	private static McpServerSession? _sharedSession;
+
+	[OneTimeTearDown]
+	public static async Task StopSharedSessionAsync() {
+		if (_sharedSession is not null) {
+			await _sharedSession.DisposeAsync();
+			_sharedSession = null;
+		}
 	}
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
@@ -1375,9 +1405,14 @@ public sealed class ApplicationToolE2ETests {
 		string EnvironmentName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		/// <summary>
+		/// Releases only what this test owns. The session is the fixture's, shared by every test here and
+		/// disposed once in <c>[OneTimeTearDown]</c>; disposing it per test is what made the fixture pay
+		/// 16 process lifecycles.
+		/// </summary>
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 

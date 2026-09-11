@@ -37,7 +37,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
 
 		// Act
 		CallToolResult callResult = await session.CallToolAsync(
@@ -72,7 +72,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
 		ApplicationListItemEnvelope installedApplication = await SeededApplicationResolver.ResolveOrIgnoreAsync(
 			session,
 			cancellationTokenSource.Token,
@@ -121,7 +121,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
 
 		// Act
 		CallToolResult callResult = await session.CallToolAsync(
@@ -166,7 +166,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 
 		string caption = $"E2E Del {Guid.NewGuid():N}"[..24];
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
 		string? createdSectionCode = null;
 		try {
 			// Act 1: create a new section in the seeded application
@@ -289,4 +289,40 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 			callResult.Content
 		});
 	}
+
+	/// <summary>
+	/// Returns this fixture's single MCP server process, starting it on first use.
+	/// </summary>
+	/// <remarks>
+	/// Each test used to start its own child server. TeamCity bills only test bodies, so those process
+	/// lifecycles — roughly 1.8 s to start and 0.5 s to tear down apiece — were invisible while still
+	/// being paid on every run. The tests here share one read/create workload against one environment
+	/// and none of them mutates server state at startup, so a single process serves them all. The
+	/// fixture is <c>[NonParallelizable]</c>, so the lazy start needs no lock. It is lazy rather than
+	/// <c>[OneTimeSetUp]</c> on purpose: an <c>Assert.Ignore</c> raised from one-time setup skips the
+	/// WHOLE fixture, which would hide the tests that need no reachable stand.
+	/// <para>
+	/// A test that needs its OWN session — different client capabilities, or a deliberate restart — must
+	/// keep calling <see cref="McpServerSession.StartAsync(McpE2ESettings, CancellationToken)"/> directly
+	/// and dispose what it started.
+	/// </para>
+	/// </remarks>
+	/// <param name="settings">Settings for the child process.</param>
+	/// <param name="cancellationToken">Bounds the start.</param>
+	/// <returns>The shared session.</returns>
+	private static async Task<McpServerSession> GetOrStartSharedSessionAsync(
+		McpE2ESettings settings,
+		CancellationToken cancellationToken) =>
+		_sharedSession ??= await McpServerSession.StartAsync(settings, cancellationToken);
+
+	private static McpServerSession? _sharedSession;
+
+	[OneTimeTearDown]
+	public static async Task StopSharedSessionAsync() {
+		if (_sharedSession is not null) {
+			await _sharedSession.DisposeAsync();
+			_sharedSession = null;
+		}
+	}
+
 }

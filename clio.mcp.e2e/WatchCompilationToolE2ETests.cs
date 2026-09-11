@@ -93,8 +93,10 @@ public sealed class WatchCompilationToolE2ETests {
 
 		// Act
 		// A short give-up-after keeps this bounded even if the sandbox happens to be mid-compile from
-		// an unrelated concurrent test run; the fast-idle path is what this test actually verifies.
-		CallToolResult callResult = await CallToolAsync(arrangeContext, environmentName!, giveUpAfterSeconds: 30);
+		// an unrelated concurrent test run; the fast-idle path is what this test actually verifies. An
+		// idle stand settles in well under a second, so this number is only the ceiling paid when the
+		// stand is busy — and on CI it IS busy, which made the test cost its whole budget every run.
+		CallToolResult callResult = await CallToolAsync(arrangeContext, environmentName!, giveUpAfterSeconds: 10);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
 
 		// Assert
