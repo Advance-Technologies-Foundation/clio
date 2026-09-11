@@ -33,6 +33,13 @@ EXAMPLES
     execute-sql-script -f c:\Path\to\file.sql -v xlsx -d result.xlsx
 
 NOTES
+    ClioGate 2.0.0.53+ records the full executor SQL in ClioSqlRequestLog before execution.
+    The same record is completed with elapsed milliseconds, known returned/affected rows,
+    and any error. Unknown counts are -1. Completed=false identifies pending requests.
+    SQL is refused if the initial log cannot be saved. Completion-log failures are reported
+    in the server log without changing a successful SQL response. The entity uses object
+    operation permissions. Full statements are retained; no automatic cleanup is provided.
+
     If both Script and File are omitted, the command prompts for SQL input.
     Output is shown in the console unless --silent is specified.
     Results can be saved to a file in the chosen format. CSV requires -d/--destination-path.

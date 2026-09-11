@@ -263,19 +263,27 @@ public class CreateEntitySchemaToolTests {
 	}
 
 	[Test]
-	[Description("When extend-parent is true and no parent-schema-name is supplied, the tool should return exit code 1 because CreateEntitySchemaCommand.Validate rejects extend-parent without an explicit parent.")]
+	[Description("Infers the same-name replacement parent through the real command when MCP omits parent-schema-name.")]
 	[Category("Unit")]
-	public async Task CreateEntitySchema_Should_Fail_When_ExtendParent_Is_True_And_ParentSchemaName_Is_Omitted() {
+	public async Task CreateEntitySchema_ShouldInferSameNameParent_WhenReplacementParentIsOmitted() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
-		FakeCreateEntitySchemaCommand defaultCommand = new();
-		CreateEntitySchemaCommand realCommand = new(
-			Substitute.For<IRemoteEntitySchemaCreator>(),
-			ConsoleLogger.Instance);
+		IRemoteEntitySchemaCreator creator = Substitute.For<IRemoteEntitySchemaCreator>();
+		List<string> capturedParents = [];
+		creator.When(c => c.Create(Arg.Any<CreateEntitySchemaOptions>()))
+			.Do(call => capturedParents.Add(call.Arg<CreateEntitySchemaOptions>().ParentSchemaName));
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		IServiceCollection services = new ServiceCollection();
+		services.AddSingleton(creator);
+		services.AddSingleton<ILogger>(ConsoleLogger.Instance);
+		services.AddSingleton(commandResolver);
+		services.AddTransient<CreateEntitySchemaCommand>();
+		services.AddTransient<CreateEntitySchemaTool>();
+		using ServiceProvider provider = services.BuildServiceProvider();
+		CreateEntitySchemaCommand realCommand = provider.GetRequiredService<CreateEntitySchemaCommand>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(realCommand);
-		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		CreateEntitySchemaTool tool = provider.GetRequiredService<CreateEntitySchemaTool>();
 
 		// Act
 		CommandExecutionResult result = await tool.CreateEntitySchema(new CreateEntitySchemaArgs(
@@ -287,8 +295,8 @@ public class CreateEntitySchemaToolTests {
 			ExtendParent: true));
 
 		// Assert
-		result.ExitCode.Should().Be(1,
-			because: "extend-parent=true without a parent-schema-name must be rejected by the command validation guard, not silently proceed against BaseEntity");
+		result.ExitCode.Should().Be(0, because: "a replacement can infer its parent from its own name");
+		capturedParents.Should().Equal(["UsrVehicle"], because: "MCP must reach the creator with the same-name parent rather than BaseEntity");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 

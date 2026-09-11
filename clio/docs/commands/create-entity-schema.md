@@ -17,11 +17,14 @@ The command saves the schema, applies the DB structure, and publishes the
 configuration, so the new schema is immediately visible to lookup pickers and
 sys-setting reference schema lists. No separate compile is required.
 
-When `--parent` is omitted the schema inherits `BaseEntity` by default. A parentless
+When `--parent` is omitted a non-replacement schema inherits `BaseEntity`. A parentless
 root schema gets a prefixed primary column (e.g. `UsrId` instead of `Id`) and is not
 reachable over OData in either direction, so `BaseEntity` is applied automatically to
 keep the entity usable. Pass `--parent` explicitly to inherit from a different schema;
-`--extend-parent` still requires an explicit `--parent`.
+with `--extend-parent`, the parent defaults to `--name`. An explicit replacement
+parent must match the schema name. The base schema may exist in another package,
+but an existing replacement in the target package is rejected. Use MCP
+`sync-schemas` to create or reconcile a replacement and its columns.
 
 Set `--is-virtual` when the schema must not have a physical database table.
 The option defaults to `false`, so existing calls continue to create persistent entities.
@@ -51,9 +54,9 @@ Schema name. Required.
 --title <VALUE>
 Schema title. Required.
 --parent <VALUE>
-Parent schema name. Defaults to `BaseEntity` when omitted (not applied with `--extend-parent`).
+Parent schema name. Defaults to the schema name for replacements, or `BaseEntity` otherwise.
 --extend-parent
-Create replacement schema
+Create a same-name replacement schema in the target package.
 --is-virtual
 Create a virtual entity schema without a physical database table. Default: false.
 --column <VALUE>

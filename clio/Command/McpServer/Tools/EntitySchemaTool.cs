@@ -83,7 +83,7 @@ public sealed class CreateEntitySchemaTool(
 				 Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more. For the schema-design workflow call get-guidance with name app-modeling.
 				 """)]
 	public async Task<CommandExecutionResult> CreateEntitySchema(
-		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns, parent-schema-name (optional, defaults to BaseEntity unless extend-parent is true), extend-parent (optional, requires parent-schema-name when true)")] [Required] CreateEntitySchemaArgs args
+		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns, parent-schema-name (optional, defaults to schema-name for replacements or BaseEntity otherwise), extend-parent (optional; an explicit parent must match schema-name)")] [Required] CreateEntitySchemaArgs args
 	) {
 		ApplicationDataForgeResult? dataForge = enrichmentService is not null
 			? enrichmentService.Enrich(
@@ -773,11 +773,11 @@ public sealed record CreateEntitySchemaArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("parent-schema-name")]
-	[property: Description("Optional parent schema name. Defaults to BaseEntity when omitted (not applied with extend-parent); a parentless schema is not reachable over OData.")]
+	[property: Description("Optional parent schema name. Defaults to schema-name for replacements, or BaseEntity otherwise. An explicit replacement parent must match schema-name.")]
 	string? ParentSchemaName = null,
 
 	[property: JsonPropertyName("extend-parent")]
-	[property: Description("Create a replacement schema. Requires parent-schema-name.")]
+	[property: Description("Create a same-name replacement in the target package. Omitted parent-schema-name is inferred from schema-name; an existing replacement in this package is rejected.")]
 	bool ExtendParent = false,
 
 	IEnumerable<CreateEntitySchemaColumnArgs>? Columns = null

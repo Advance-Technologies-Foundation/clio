@@ -352,7 +352,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="client-unit-schema-create"></a>
 - [`create-client-unit-schema`](docs/commands/create-client-unit-schema.md) - Create a new JavaScript (ClientUnit) schema on a remote Creatio environment, `client-unit-schema-create`
 <a id="create-entity-schema"></a>
-- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create a persistent or virtual entity schema in a remote Creatio package; columns accept repeated flags or a JSON array
+- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create a persistent, virtual, or same-name replacing entity schema in a remote Creatio package; columns accept repeated flags or a JSON array
 <a id="create-lookup"></a>
 - [`create-lookup`](docs/commands/create-lookup.md) - Create a lookup entity schema in a remote Creatio package
 <a id="create-schema"></a>
@@ -377,7 +377,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`download-configuration`](docs/commands/download-configuration.md) - Download configuration libraries from Creatio, `dconf`
 <a id="execute-sql-script"></a>
 <a id="sql"></a>
-- [`execute-sql-script`](docs/commands/execute-sql-script.md) - Execute a SQL script in Creatio, `sql`
+- [`execute-sql-script`](docs/commands/execute-sql-script.md) - Execute a SQL script in Creatio, with full request logging in ClioGate 2.0.0.53+, `sql`
 <a id="export-component-registry"></a>
 <a id="export-registry"></a>
 - [`export-component-registry`](docs/commands/export-component-registry.md) - Write the full Freedom UI component registry for a resolved platform version to a file, `export-registry`
