@@ -14,6 +14,25 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class InstalledKnowledgeVersionsTests {
 	[Test]
+	[Description("Invalid knowledge configuration must not prevent the info command from reporting other components.")]
+	public void Read_ShouldReturnNoVersions_WhenKnowledgeConfigurationIsInvalid() {
+		// Arrange
+		ISettingsRepository settings = Substitute.For<ISettingsRepository>();
+		settings.GetKnowledgeConfiguration().Returns(_ => throw new ArgumentException("Invalid knowledge source"));
+		ServiceCollection services = new();
+		services.AddSingleton(settings);
+		services.AddSingleton(Substitute.For<IKnowledgeSourceInstallationStore>());
+		services.AddSingleton<IInstalledKnowledgeVersions, InstalledKnowledgeVersions>();
+		using ServiceProvider provider = services.BuildServiceProvider();
+
+		// Act
+		IReadOnlyDictionary<string, string> versions = provider.GetRequiredService<IInstalledKnowledgeVersions>().Read();
+
+		// Assert
+		versions.Should().BeEmpty(because: "unavailable knowledge must not hide the runtime version or settings path");
+	}
+
+	[Test]
 	[Description("Installed versions come from local markers, include disabled sources, and omit absent markers.")]
 	public void Read_ShouldReportRecordedVersions_WhenSourcesHaveMixedInstallationState() {
 		// Arrange
