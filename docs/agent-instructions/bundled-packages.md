@@ -1,58 +1,57 @@
 # Bundled Creatio packages — how to put a new version into clio
 
-clio ships three Creatio packages inside its own distribution and installs them into an environment on
+clio ships two Creatio packages inside its own distribution and installs them into an environment on
 request. This article is the procedure for replacing one of those archives, and the platform facts you need
 in order not to break it silently.
 
 Read it before touching any of:
 
-- `clio/CrtProcessBuilder/*.gz`, `clio/CrtDashboardsMigratorApp/*.gz`, `clio/cliogate/*.gz` — the archives themselves
+- `clio/CrtProcessBuilder/*.gz`, `clio/cliogate/*.gz` — the archives themselves
 - `clio/Common/BundledPackages.cs` — the identity constants
 - `clio/Common/BundledPackageCatalog.cs` — the reader that answers what the distribution carries
 - `clio/Common/BundledPackageConvergence.cs` — the rule that decides an environment is behind
-- `clio.tests/Common/BundledProcessBuilderPackageTests.cs`, `BundledDashboardsMigratorPackageTests.cs` — the pins
+- `clio.tests/Common/BundledProcessBuilderPackageTests.cs` — the pins
 - a `[RequiresPackage]` version literal
 
-## The three packages
+## The two packages
 
-| | `cliogate` | `CrtProcessBuilder` | `CrtDashboardsMigratorApp` |
-|---|---|---|---|
-| Ships | a **prebuilt assembly** per framework (`Files/Bin`, `Files/Bin/netstandard`) | **source only** — no assembly at all | **prebuilt assemblies** for both frameworks in ONE archive (`Files/Bin`, `Files/Bin/netstandard`) — the package's SDLC (Jenkins) build, taken as-is |
-| Who compiles | nobody; the DLL is loaded as-is | the TARGET environment, during installation — substantially slower than a plain package install, by an amount that is a property of the target (configuration size, host, load) and not of clio. Deliberately no figure: `AGENTS.md` sends agents here, and a range on an agent surface stops being an estimate — one was read out of the MCP tool description and repeated to a user as a promise | nobody; the platform loads the DLL for its runtime. The configuration build for the package's schemas and the restart still happen |
-| Archives | one per framework, chosen by `IsNetCore` | one, for every runtime | one, for every runtime |
-| Install verb | `install-gate` | `install-process-builder` | `install-dashboards-migrator` |
-| Source repo | in this repo (`cliogate/`), regenerable via `build.ps1` | separate `ProcessBuilder` repo, produced by hand | separate `crt-dashboards-migrator-app` repo (creatio.ghe.com/engineering); the archive comes from its SDLC build on `\\tscrm.com\dfs-ts\ComposableApps\CrtDashboardsMigratorApp\<X.Y.Z>\` |
-| Build procedure | see the ClioGate sections in `AGENTS.md` | this article | this article, with the differences in the next table; nothing is built on the bundling machine |
-| What puts it into the target's configuration build | n/a | an empty compile-marker schema | n/a — the assembly is shipped |
-| Outcome probe | none | `/rest/ProcessDesignService/Ping` | `/rest/DashboardsMigratorService/Ping` |
+| | `cliogate` | `CrtProcessBuilder` |
+|---|---|---|
+| Ships | a **prebuilt assembly** per framework (`Files/Bin`, `Files/Bin/netstandard`) | **source only** — no assembly at all |
+| Who compiles | nobody; the DLL is loaded as-is | the TARGET environment, during installation — substantially slower than a plain package install, by an amount that is a property of the target (configuration size, host, load) and not of clio. Deliberately no figure: `AGENTS.md` sends agents here, and a range on an agent surface stops being an estimate — one was read out of the MCP tool description and repeated to a user as a promise |
+| Archives | one per framework, chosen by `IsNetCore` | one, for every runtime |
+| Install verb | `install-gate` | `install-process-builder` |
+| Source repo | in this repo (`cliogate/`), regenerable via `build.ps1` | separate `ProcessBuilder` repo, produced by hand |
+| Build procedure | see the ClioGate sections in `AGENTS.md` | this article |
 
 The asymmetry matters for review: a changed `cliogate.gz` can be checked by rebuilding it from in-repo
-sources, a changed `CrtProcessBuilder.gz` or `CrtDashboardsMigratorApp.gz` cannot. That is why the latter two
-carry pins (below) — for the migrator, one of them is the SHA-256 of the SDLC build zip the archive was cut from.
+sources, a changed `CrtProcessBuilder.gz` cannot. That is why the latter carries pins (below).
 
-### Where the dashboards migrator differs
+## The third package — `CrtDashboardsMigratorApp`
 
-The procedure below is written for the process builder; `rebundle-bundled-package.ps1 -Package
-CrtDashboardsMigratorApp` applies these differences, and so must anyone doing it by hand:
+Added after the two above and deliberately closer to `cliogate` than to the process builder: it ships
+**prebuilt**, and the archive IS the package's SDLC (Jenkins) build — the package `.gz` inside the build zip,
+carrying `Files/Bin/CrtDashboardsMigratorApp.dll` (net472) and `Files/Bin/netstandard/CrtDashboardsMigratorApp.dll`
+(.NET). The target loads the assembly for its runtime instead of compiling the package; its configuration build
+for the package's schemas and the restart still happen. It goes through the same install command as the
+process builder (`install-dashboards-migrator`, `InstallBundledPackageCommand`), so the downgrade refusals,
+the restart wait and the ungated `Ping` outcome check (`/rest/DashboardsMigratorService/Ping`) apply unchanged.
 
-| | `CrtProcessBuilder` | `CrtDashboardsMigratorApp` |
-|---|---|---|
-| Source (`Source` in the script's table) | `git`: a commit of the package repository, exported with `git archive` | `build`: the SDLC build zip (`-BuildZip`); the package `.gz` inside is unpacked, stamped and repacked |
-| Build / test | `dotnet build MainSolution.slnx -c dev-nf` / `dotnet test tests/CrtProcessBuilder/...`, run by the script | none here — Jenkins built and tested it; the SDLC build must be a `ReleaseCandidate` |
-| Provenance pin | `ExpectedProducingCommit` (git HEAD, clean tree, not behind upstream) | `ExpectedSourceBuildSha256` (SHA-256 of the build zip); the commit is on the build's SDLC page |
-| `-Version` | any higher four-part number | the SDLC build's **full version** (`1.1.4.6`); its first three parts must equal `Version` in `Files/app-descriptor.json`, the script refuses otherwise |
-| Stamping the descriptor | `clio set-pkg-version` | `clio set-pkg-version`, on the unpacked build |
-| Install scripts | none | none, and the guard fixture forbids them: the platform runs `InstallScripts` BEFORE compiling a source package, so a script in the package's own assembly fails a first source install (measured 2026-09-10). The migrator applies its column rights from an app-start listener instead, which works prebuilt and from source alike |
-| `.dll` inventory | exactly two, both `Files/Libs` | exactly two, both the package's own: `Files/Bin/CrtDashboardsMigratorApp.dll`, `Files/Bin/netstandard/CrtDashboardsMigratorApp.dll` |
-| `Files/Bin` | removed before packing | kept — it IS the payload |
-| Schemas | exactly one, the compile marker | at least `DashboardsMigratorService` (the probe); the rest are the app |
-| `Data/` | **forbidden** — executes on install | **allowed** — its bound rows (SysAdminOperation, SysModule, SysDetail, SysImage) register the migration page and its permission and run nothing |
-| `SqlScripts/` | forbidden | forbidden |
-| Schema-descriptor stamp pin | `ExpectedSchemaDescriptorModifiedOnUtc`, verified not refreshed | none |
-| Pins file | `BundledProcessBuilderPackageTests.cs` | `BundledDashboardsMigratorPackageTests.cs` |
+Nothing is built on the bundling machine, so the procedure below — build, tests, `git archive`, stripping
+`Files/Bin` — does NOT apply to it. Its whole procedure is one script:
 
-Everything else — the version-must-rise guard, `--skip-pdb`, the inventory allowlist, the rebuild of one clio
-output — is identical.
+```powershell
+pwsh ./rebundle-dashboards-migrator.ps1 -BuildZip '\tscrm.com\dfs-ts\ComposableApps\CrtDashboardsMigratorApp\<X.Y.Z>\CrtDashboardsMigratorApp_<X.Y.Z>.zip' -Version <the build's full version, X.Y.Z.N>
+```
+
+It unpacks the build, checks the version extends the app version and is higher than what clio ships, stamps
+the descriptor with `clio set-pkg-version`, packs with `--skip-pdb`, verifies the inventory (exactly the two
+package assemblies, `Data/` allowed because its bound rows only register the migration page and its permission,
+no `SqlScripts/`, no `InstallScripts` in the descriptor, the `DashboardsMigratorService` schema present),
+rewrites the pins in `clio.tests/Common/BundledDashboardsMigratorPackageTests.cs` and rebuilds clio. The
+provenance pin is the SHA-256 of the build zip (`ExpectedSourceBuildSha256`); the commit is on the build's page
+in the SDLC app. Facts 1–3 below (UId, `ModifiedOnUtc`, installed-vs-serving) hold for it exactly as for the
+process builder; the package-side half of the procedure is `docs/bundling-into-clio.md` in its repository.
 
 ## Platform facts you must know first
 
@@ -323,16 +322,13 @@ is merged, and costs one command. The alternative — requiring a true merge com
 resulting SHA on the default branch — also works, but it makes a review control depend on a merge-button
 choice someone else makes later.
 
-### One call — `rebundle-bundled-package.ps1`
+### One call — `rebundle-process-builder.ps1`
 
 The whole procedure, from the repository root:
 
 ```powershell
-pwsh ./rebundle-bundled-package.ps1 -Package CrtProcessBuilder -PackageRepoPath <ProcessBuilder checkout> -Version 1.0.1.0
-pwsh ./rebundle-bundled-package.ps1 -Package CrtDashboardsMigratorApp -BuildZip <SDLC build zip> -Version <its full version>
+pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <ProcessBuilder checkout> -Version 1.0.1.0
 ```
-
-`rebundle-process-builder.ps1` still exists as a thin wrapper for the first form.
 
 `-Version` is required and must be HIGHER than the version currently in the descriptor. The script refuses
 before touching anything otherwise — an equal version publishes to nobody, and a lower one is worse:

@@ -209,36 +209,6 @@ public class SetPackageVersionCommandTests : BaseCommandTests<SetPackageVersionO
 	}
 
 	[Test]
-	[Description("Keeps every descriptor block the model does not name, because a version stamp that deletes InstallScripts ships a package whose after-install script never runs.")]
-	public void Execute_ShouldKeepDescriptorBlocksTheModelDoesNotName() {
-		// Arrange
-		const string installScripts = """
-			,
-			    "InstallScripts": {
-			      "AfterInstall": [
-			        {
-			          "Position": 1,
-			          "SchemaUId": "56d48938-b594-466b-a168-48e947eeca18"
-			        }
-			      ]
-			    }
-			""";
-		string descriptor = Descriptor.Replace("\"DependsOn\": []", "\"DependsOn\": []" + installScripts);
-		FileSystem.AddFile(DescriptorPath, new MockFileData(descriptor));
-
-		// Act
-		int result = _command.Execute(Options("1.0.1.0"));
-
-		// Assert
-		result.Should().Be(0, because: "the version parses and the descriptor exists");
-		string onDisk = DescriptorOnDisk();
-		onDisk.Should().Contain("\"PackageVersion\": \"1.0.1.0\"", because: "the stamp itself must still land");
-		onDisk.Should().Contain("\"AfterInstall\"", because: "the block the model does not name must survive the round-trip");
-		onDisk.Should().Contain("56d48938-b594-466b-a168-48e947eeca18",
-			because: "the script reference inside it is what the target executes after install");
-	}
-
-	[Test]
 	[Description("Refuses a version that does not parse at all, quoting the offending value so the operator can see what was rejected.")]
 	public void Execute_ShouldRefuse_WhenTheVersionDoesNotParse() {
 		// Arrange

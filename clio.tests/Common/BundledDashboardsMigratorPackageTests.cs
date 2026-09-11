@@ -14,7 +14,7 @@ namespace Clio.Tests.Common;
 
 /// <summary>
 /// Guards the bundled <c>CrtDashboardsMigratorApp</c> archive: provenance pins that
-/// <c>rebundle-bundled-package.ps1</c> rewrites from the archive it produced, plus the inventory the archive must
+/// <c>rebundle-dashboards-migrator.ps1</c> rewrites from the archive it produced, plus the inventory the archive must
 /// have. The reasoning behind the pin mechanism lives on <see cref="BundledProcessBuilderPackageTests"/> and in
 /// <c>docs/agent-instructions/bundled-packages.md</c>; it is not repeated here.
 /// </summary>
@@ -50,7 +50,7 @@ public class BundledDashboardsMigratorPackageTests {
 	];
 
 	/// <summary>
-	/// SHA-256 of the committed archive, written by <c>rebundle-bundled-package.ps1</c> from the archive it
+	/// SHA-256 of the committed archive, written by <c>rebundle-dashboards-migrator.ps1</c> from the archive it
 	/// produced out of the SDLC build zip pinned in <see cref="ExpectedSourceBuildSha256"/>.
 	/// </summary>
 	private const string ExpectedArchiveSha256 =

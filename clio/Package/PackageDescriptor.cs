@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using Clio.Common;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
 namespace Clio.Package;
 
@@ -22,16 +21,6 @@ public class PackageDescriptor{
 	[JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
 	public int? InstallBehavior { get; set; }
 	public IList<PackageDependency> DependsOn { get; set; }
-
-	/// <summary>
-	/// Every descriptor member this model does not name, carried through a read-modify-write untouched.
-	/// </summary>
-	/// <remarks>
-	/// A Creatio descriptor can carry blocks clio never interprets — <c>InstallScripts</c> is one — and a
-	/// model that drops them turns <c>set-pkg-version</c> into a silent delete of package behaviour.
-	/// </remarks>
-	[JsonExtensionData]
-	public IDictionary<string, JToken> AdditionalData { get; set; }
 
 	#endregion
 

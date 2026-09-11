@@ -119,7 +119,7 @@ The install command is `push-pkg`, **not** `push-package` (that verb does not ex
 # Bundled Creatio packages
 
 clio ships three Creatio packages inside its own distribution — `cliogate` and `CrtDashboardsMigratorApp`
-(prebuilt assemblies), `CrtProcessBuilder` (source only, compiled by the target) — and installs them on
+(prebuilt assemblies) and `CrtProcessBuilder` (source only, compiled by the target) — and installs them on
 request.
 
 **Before changing any of the following, read [docs/agent-instructions/bundled-packages.md](docs/agent-instructions/bundled-packages.md):**
@@ -134,11 +134,13 @@ request.
   changed the service surface has to move them by hand, in the same commit, and the package side moves first
 - a `[RequiresPackage]` version literal
 
-The normal path is one call — `pwsh ./rebundle-bundled-package.ps1 -Package <CrtProcessBuilder |
-CrtDashboardsMigratorApp> -PackageRepoPath <package checkout> -Version X.Y.Z.W`
-(`rebundle-process-builder.ps1` is a thin wrapper for the first). It runs the whole procedure, computes
-the pins from the archive it just produced, and checks the archive's inventory. The article documents it,
-and keeps the manual steps as the fallback for a host without `pwsh`.
+The normal path is one call — `pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <ProcessBuilder
+checkout> -Version X.Y.Z.W`. It runs the whole procedure, refreshes all four clio-side PROVENANCE pins — only
+the SHA is computed from the archive it just produced; the version comes from `-Version`, the stamp from the
+package descriptor after the restamp, and the commit from that repository's HEAD before it — and checks
+the archive's inventory. It does NOT write the schema-descriptor stamp or the two security counts; those are
+hand-maintained, and the article's pin table says which. It documents the procedure, and keeps the manual
+steps as the fallback for a host without `pwsh`.
 
 **`-Version` is required and must go UP on every rebundle.** clio reads the shipped version out of the
 archive and compares it against the version the environment recorded; an unchanged version therefore
