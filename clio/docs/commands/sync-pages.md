@@ -95,7 +95,9 @@ Each entry in the `pages` array must have:
 |---|---|---|
 | `schema-name` | Yes | Freedom UI page schema name |
 | `body` | Yes | Full JavaScript page body |
-| `resources` | No | JSON object string with resource key-value pairs for `#ResourceString(key)#` macros |
+| `resources` | No | JSON object string with resource key-value pairs for `#ResourceString(key)#` macros. **Additions only** — a key already stored on the schema stays registered and does not have to be re-sent on a later save |
+| `optional-properties` | No | JSON array of `{key, value}` objects merged into the schema's `optionalProperties` |
+| `checksum` | No | The `editable.checksum` from the `get-page` this page's edit is based on. Becomes the authoritative conflict baseline for **this page** |
 | `force` | No | Skip the external-modification (checksum) conflict check for this page and deliberately overwrite out-of-band changes. Default `false` |
 
 ## Example
@@ -187,6 +189,15 @@ optional `resources` JSON object string to `update-page`. The response returns
 `resources-registered` for each page so callers can see how many child-schema resources
 were added during save.
 
+`resources` is an **additions** payload, not the full registered set. A key registered by one save
+is written into the page schema's `localizableStrings` and stays there, so it resolves at runtime
+whether or not a later save repeats it — and re-sending it answers `resources-registered: 0`,
+because an already-stored key is never rewritten. The validation gate honours this: a label bound to
+a key that is only persisted on the schema is accepted without being repeated. The lookup costs one
+extra schema read and is paid ONLY when a label-resource check has already rejected the body, so a
+clean page pays nothing. If that read fails (an unreachable environment, a refused schema read), the
+stricter verdict stands and the page result carries a warning naming the reason.
+
 When `verify` is `true`, each successful page result also returns:
 
 - `page` — the same metadata shape as `get-page.page`
@@ -194,11 +205,18 @@ When `verify` is `true`, each successful page result also returns:
 
 ## Conflict Detection (external modifications)
 
-When the MCP `get-page` tool previously stored a checksum baseline in
-`.clio-pages/{schema-name}/meta.json` for the **same environment**, each page write first
-compares the stored `SysSchema.Checksum` against the server. A page whose schema was
-modified outside the current session (e.g. edited in the Creatio designer) fails with a
-per-page conflict — the rest of the batch continues:
+Pass the per-page `checksum` — the `editable.checksum` from the `get-page` that page's edit is based
+on — on every save that follows a `get-page`. It becomes the authoritative baseline for that page,
+so the comparison runs against the body the caller actually read.
+
+Without it the check falls back to the baseline the MCP `get-page` tool stored in
+`.clio-pages/{schema-name}/meta.json` for the **same environment**. That baseline is keyed by
+(anchor directory, schema name) only, so it can be present, environment-matched, and still describe a
+different body — a different working directory between the `get-page` and the save is enough to
+produce a conflict nothing external caused.
+
+Either way, a page whose schema was modified outside the current session (e.g. edited in the Creatio
+designer) fails with a per-page conflict — the rest of the batch continues:
 
 ```jsonc
 {
@@ -212,7 +230,9 @@ per-page conflict — the rest of the batch continues:
 
 Recovery: re-run `get-page` for the conflicted schema, re-apply the change on top of the
 fresh body, then retry — or set the per-page `force: true` after the user explicitly
-confirms overwriting the external changes.
+confirms overwriting the external changes. Re-sending the conflict response's `actualChecksum`
+as the page's `checksum` is **not** a recovery: it discards the external change exactly like
+`force: true` and needs the same explicit confirmation.
 
 Baseline maintenance after a successful save:
 
@@ -222,8 +242,9 @@ Baseline maintenance after a successful save:
   checksum; if fresh metadata could not be obtained, the baseline is removed so the next
   write skips the check instead of reporting a false conflict.
 
-Pages without a baseline (no prior MCP `get-page`, legacy `meta.json`, or a different
-environment) are saved without the check — fully backward compatible.
+Pages with neither a `checksum` nor a baseline (no prior MCP `get-page`, legacy `meta.json`, or a
+different environment) are saved without the check — fully backward compatible. A pinned save that no
+local baseline corroborates still runs the check, and says so in that page's warnings.
 
 ## Error Handling
 

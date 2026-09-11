@@ -272,7 +272,7 @@ public sealed class PageHierarchyRecoveryHintTests {
 			.Returns($$"""{"success":true,"rows":[{"Name":"{{SchemaName}}","UId":"{{SchemaUId}}","PackageName":"UsrPkg","PackageUId":"{{DesignPackageUId}}","ParentSchemaName":"BasePage"}]}""");
 
 	private PageUpdateCommand CreateUpdateCommand(IPageDesignerHierarchyClient hierarchyClient) =>
-		new(_applicationClient, _serviceUrlBuilder, _logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
+		new(_applicationClient, _serviceUrlBuilder, _logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient);
 
 	private PageGetCommand CreateGetCommand(IPageDesignerHierarchyClient hierarchyClient) =>
 		new(_applicationClient, _serviceUrlBuilder, _logger, hierarchyClient,

@@ -2262,7 +2262,16 @@ public static class SchemaValidationService
 		result.Errors.Add($"Invalid JavaScript object section in {marker}: {string.Join("; ", syntaxResult.Errors)}");
 	}
 
-	private static void MergeResult(SchemaValidationResult target, SchemaValidationResult source) {
+	/// <summary>
+	/// Folds <paramref name="source"/> into <paramref name="target"/>: warnings always, and on a
+	/// rejection the errors together with their machine-readable identities.
+	/// </summary>
+	/// <remarks>
+	/// <c>internal</c> rather than <c>private</c> so the identity half can be pinned directly. Its only
+	/// production caller merges a validator that carries no identity today, so a behavioural test cannot
+	/// reach the rule — and a silently dropped identity is exactly the failure the kind exists to prevent.
+	/// </remarks>
+	internal static void MergeResult(SchemaValidationResult target, SchemaValidationResult source) {
 		target.Warnings.AddRange(source.Warnings);
 		if (source.IsValid) {
 			return;
@@ -2270,6 +2279,10 @@ public static class SchemaValidationService
 
 		target.IsValid = false;
 		target.Errors.AddRange(source.Errors);
+		// The identities travel with the messages. Copying only Errors silently strips the half a caller
+		// BRANCHES on, so a merged result would keep the unresolved-label sentence while the rescue - which
+		// reads the kind, not the text - no longer fires for it (issue #1464 review).
+		target.ErrorKinds.UnionWith(source.ErrorKinds);
 	}
 
 	public static SchemaValidationResult ValidateColumnBindings(string jsBody) {
@@ -2375,8 +2388,10 @@ public static class SchemaValidationService
 		if (!standardFields.IsValid) {
 			return (standardFields, insertedFields);
 		}
-		if (!insertedFields.Errors.Any(error => error.Contains(UnresolvedLabelResourceClause,
-				StringComparison.Ordinal))) {
+		// Keyed on the machine-readable KIND, not on a substring of the user-facing sentence: the sentence
+		// is a wording decision and every reword, appended hint or localization would silently disarm this
+		// gate with nothing to notice it (issue #1464).
+		if (!insertedFields.ErrorKinds.Contains(SchemaValidationErrorKind.UnresolvedLabelResource)) {
 			return (standardFields, insertedFields);
 		}
 		IReadOnlySet<string>? persistedResourceKeys = persistedResourceKeysProvider?.Invoke();
@@ -2993,10 +3008,12 @@ public static class SchemaValidationService
 	}
 
 	/// <summary>
-	/// The invariant clause of the unresolved-label-resource diagnostic. It is the marker that identifies
-	/// an inserted-field rejection a persisted resource key could still clear, which is what
-	/// <see cref="ValidateFieldLabelResources"/> gates its remote lookup on — so a rejection about
-	/// attribute BINDINGS never spends a round-trip that cannot help it.
+	/// The invariant clause of the unresolved-label-resource diagnostic — the human-facing half of the
+	/// rule whose machine-readable half is
+	/// <see cref="SchemaValidationErrorKind.UnresolvedLabelResource"/>. Nothing BRANCHES on this text any
+	/// more: <see cref="ValidateFieldLabelResources"/> gates its remote lookup on the kind, so a rejection
+	/// about attribute BINDINGS never spends a round-trip that cannot help it, and rewording this sentence
+	/// cannot disarm the rescue (issue #1464).
 	/// </summary>
 	internal const string UnresolvedLabelResourceClause =
 		"is neither auto-provided by a DS-bound attribute nor registered in the 'resources' parameter.";
@@ -3021,7 +3038,10 @@ public static class SchemaValidationService
 			return;
 		}
 		string suggestion = BuildAutoProvideSuggestion(descriptor.BindingAttribute, modelPaths);
-		result.Errors.Add(
+		// AddError, not Errors.Add: this is the one rejection a persisted resource key can clear, and the
+		// rescue in ValidateFieldLabelResources branches on the KIND. The sentence is unchanged.
+		result.AddError(
+			SchemaValidationErrorKind.UnresolvedLabelResource,
 			$"Inserted field '{descriptor.DisplayName}' has label '$Resources.Strings.{resourceKey}' but resource '{resourceKey}' " +
 			UnresolvedLabelResourceClause + " " +
 			$"The label will render blank. {suggestion}; or register it by passing {{\"{resourceKey}\": \"<Display name>\"}} in 'resources'.");
@@ -5289,9 +5309,53 @@ public static class SchemaValidationService
 	}
 }
 
+/// <summary>
+/// Stable, machine-readable identity of a validation rejection, for a caller that must BRANCH on the
+/// verdict rather than merely report it.
+/// </summary>
+/// <remarks>
+/// Added because the persisted-resource-key rescue was gated by substring-matching a user-facing
+/// diagnostic sentence (issue #1464). A sentence is a product of wording decisions — it is reworded for
+/// clarity, gets a hint appended, is localized — and every one of those edits silently disarms a gate
+/// keyed on it, with no compiler or test complaining. The sentence itself is unchanged and still says
+/// what a human needs; the kind is what a machine reads.
+/// </remarks>
+public enum SchemaValidationErrorKind {
+
+	/// <summary>
+	/// An inserted field declares a <c>$Resources.Strings.X</c> label whose key is neither auto-provided
+	/// by a DS-bound attribute nor registered in the current call's <c>resources</c>. The ONE verdict a
+	/// resource key already persisted on the schema can clear, which is why the remote persisted-key
+	/// lookup is gated on exactly this kind.
+	/// </summary>
+	UnresolvedLabelResource
+}
+
 public class SchemaValidationResult
 {
 	public bool IsValid { get; set; }
 	public List<string> Errors { get; set; } = new List<string>();
 	public List<string> Warnings { get; set; } = new List<string>();
+
+	/// <summary>
+	/// The machine-readable identities of the rejections in <see cref="Errors"/>.
+	/// </summary>
+	/// <remarks>
+	/// A SET, not a single code: one result routinely carries several rejections of different kinds —
+	/// an undeclared-attribute binding error and an unresolved label resource can be reported for the
+	/// same body — and a scalar would lose whichever one it did not win. Populated only by the
+	/// validators that have a caller branching on them; an empty set means "no caller-branchable
+	/// identity", never "valid".
+	/// </remarks>
+	public ISet<SchemaValidationErrorKind> ErrorKinds { get; } = new HashSet<SchemaValidationErrorKind>();
+
+	/// <summary>
+	/// Records a rejection together with its machine-readable identity.
+	/// </summary>
+	/// <param name="kind">The rejection's stable identity.</param>
+	/// <param name="message">The user-facing diagnostic.</param>
+	public void AddError(SchemaValidationErrorKind kind, string message) {
+		Errors.Add(message);
+		ErrorKinds.Add(kind);
+	}
 }

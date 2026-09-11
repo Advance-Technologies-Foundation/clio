@@ -77,7 +77,7 @@ public sealed class PageSyncToolBaselineTests
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("""{"success": true}""");
 		return new PageUpdateCommand(
-			applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), Substitute.For<IPageBaselineGuard>(), CreateHierarchyClient());
+			applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), CreateHierarchyClient());
 	}
 
 	private static string ChecksumRow(string checksum) =>
@@ -98,7 +98,7 @@ public sealed class PageSyncToolBaselineTests
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			Substitute.For<IComponentInfoCatalog>(),
 			Substitute.For<IPageBodySamplingService>(),
-			new PageBaselineGuard(fileSystem),
+			new PageBaselineGuard(fileSystem), new PersistedResourceKeyReader(),
 			fileGate: fileGate);
 	}
 

@@ -83,7 +83,7 @@ public sealed class PageUpdateCommandMobileSplitGuardTests
 
 	private PageUpdateCommand Command(int headSchemaType, string headBody) =>
 		new(_applicationClient, _serviceUrlBuilder, Substitute.For<ILogger>(),
-			Substitute.For<IPageBaselineGuard>(), HierarchyClient(headSchemaType, headBody));
+			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), HierarchyClient(headSchemaType, headBody));
 
 	private static PageUpdateOptions Options(string body, string targetSchemaUId = null) =>
 		new() { SchemaName = SchemaName, Body = body, TargetSchemaUId = targetSchemaUId };

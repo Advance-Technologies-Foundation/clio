@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -15,6 +16,11 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 [McpServerToolType]
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+	Justification = "DI composition root: update-page requires ten constructor-injected collaborators, the "
+		+ "tenth being the persisted-resource-key reader that keeps the label-resource rescue to one schema "
+		+ "read per (environment, schema) across this tool's gate and the command-level gate. A parameter "
+		+ "object would obscure the tool's injected contract; this mirrors the S107 suppression on PageSyncTool.")]
 public sealed class PageUpdateTool(
 	PageUpdateCommand command,
 	ILogger logger,
@@ -23,6 +29,7 @@ public sealed class PageUpdateTool(
 	IComponentInfoCatalog webComponentCatalog,
 	IPageBodySamplingService samplingService,
 	IPageBaselineGuard pageBaselineGuard,
+	IPersistedResourceKeyReader persistedResourceKeyReader,
 	IPlatformVersionResolverFactory? resolverFactory = null,
 	ISettingsRepository? settingsRepository = null)
 	: BaseTool<PageUpdateOptions>(command, logger, commandResolver) {
@@ -98,6 +105,11 @@ public sealed class PageUpdateTool(
 		[Required] PageUpdateArgs args,
 		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
+		// Opened at the TOP of the entry point so both gates below run inside ONE scope: the value flows
+		// DOWN to awaited callees, never back UP to the caller, so a scope opened inside a nested helper
+		// would cover that helper and nothing else. One call = one persisted-key cache, so the tool gate
+		// and the command-level gate resolve the schema hierarchy once between them.
+		using IDisposable persistedResourceKeyScope = persistedResourceKeyReader.BeginRequestScope();
 		PageUpdateOptions options = BuildOptions(args);
 		(PageUpdateResponse earlyFailure,
 			IReadOnlyList<string> validationWarnings,
@@ -129,6 +141,12 @@ public sealed class PageUpdateTool(
 				TryVerifyPage(args, inner);
 			return inner;
 		});
+		// A save REGISTERS keys, so any cached read of this schema is now stale. One update-page call
+		// makes at most one save, so nothing in THIS call reads it again - the drop keeps the rule stated
+		// in one place rather than making the two write tools differ on when a cache entry survives.
+		if (response.Success) {
+			persistedResourceKeyReader.Invalidate(options);
+		}
 		// The command layer marks a content-rule failure but does not word the hint - `validate` is
 		// MCP-only, so the CLI-reachable command must not tell its users to re-run with a flag their
 		// parser does not accept. This is the MCP side of that split.
@@ -154,13 +172,15 @@ public sealed class PageUpdateTool(
 
 	// Puts a failed persisted-key read on the response's warning channel. A failed read only leaves the
 	// stricter verdict standing, so it is never an error - but it must be visible, because the log
-	// channel it is also written to does not reach an MCP caller of this typed-response tool.
-	private static void AppendPersistedResourceKeyWarning(PageUpdateResponse response, PageUpdateOptions options) {
-		if (response is null || string.IsNullOrWhiteSpace(options.PersistedResourceKeysFailure)) {
+	// channel it is also written to does not reach an MCP caller of this typed-response tool. The reason
+	// is read back from the scope, so it surfaces whichever gate performed the read.
+	private void AppendPersistedResourceKeyWarning(PageUpdateResponse response, PageUpdateOptions options) {
+		string failure = persistedResourceKeyReader.GetFailureWarning(options);
+		if (response is null || string.IsNullOrWhiteSpace(failure)) {
 			return;
 		}
 		List<string> warnings = response.Warnings?.ToList() ?? [];
-		warnings.Add(options.PersistedResourceKeysFailure);
+		warnings.Add(failure);
 		response.Warnings = warnings;
 	}
 
@@ -682,32 +702,15 @@ public sealed class PageUpdateTool(
 		}
 	}
 
-	/// <summary>The empty answer: nothing was read, so the stricter verdict stands (Sonar S1168).</summary>
-	private static readonly IReadOnlySet<string> NoPersistedResourceKeys =
-		new HashSet<string>(StringComparer.Ordinal);
-
 	/// <summary>
 	/// Reads the resource keys already stored on the target schema, resolving the command lazily.
 	/// Used only when a label-resource validator has already failed, so the extra round-trips are never
-	/// paid by a body that validates cleanly.
+	/// paid by a body that validates cleanly, and never more than once per target for this call's
+	/// sequential gates. Shared with <c>sync-pages</c> through <see cref="McpPersistedResourceKeyGate"/>.
 	/// </summary>
-	private IReadOnlySet<string> TryGetPersistedResourceKeys(PageUpdateOptions options) {
-		try {
-			return ResolveCommand<PageUpdateCommand>(options).TryGetPersistedResourceKeys(options)
-				?? NoPersistedResourceKeys;
-		} catch (Exception ex) when (ex is not OperationCanceledException) {
-			// Only command RESOLUTION can fail here - the read itself reports its own reason inside the
-			// command. Failing closed leaves the stricter verdict standing, but the reason must be
-			// observable rather than surfacing as a misleading "resource is not registered".
-			string warning = PageUpdateCommand.BuildPersistedResourceKeyWarning(ex.Message);
-			_logger?.WriteWarning(warning);
-			// WriteWarning alone is unreachable for this tool's caller: UpdatePage answers with a typed
-			// PageUpdateResponse that has no log member, and ExecuteWithCleanLog discards the capture
-			// buffer. The carrier is what UpdatePage puts on the response's warning channel.
-			options.PersistedResourceKeysFailure ??= warning;
-			return NoPersistedResourceKeys;
-		}
-	}
+	private IReadOnlySet<string> TryGetPersistedResourceKeys(PageUpdateOptions options) =>
+		McpPersistedResourceKeyGate.ReadKeys(
+			persistedResourceKeyReader, _logger, options, () => ResolveCommand<PageUpdateCommand>(options));
 
 	private static (string Error, IReadOnlyList<string> Warnings) ValidateWebPageBody(
 		string body,
