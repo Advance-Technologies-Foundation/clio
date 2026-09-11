@@ -4,6 +4,7 @@ using System.Text.Json;
 using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
+using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common.McpWorker;
 using Clio.Mcp.E2E.Support.Configuration;
@@ -13,6 +14,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
+using ModelContextProtocol.Server;
 
 namespace Clio.Mcp.E2E;
 
@@ -45,11 +47,16 @@ public sealed class McpWorkerModeE2ETests {
 
 	private const string EnvironmentName = "worker-mode-stub-e2e";
 	private const string ListPagesToolName = PageListTool.ToolName;
-	// A tool that is STILL behind a FeatureToggle, which is the whole mechanism under test. The probe used to
-	// be list-user-tasks / process-designer; ENG-96132 shipped the process designer on by default and removed
-	// its [FeatureToggle], so freezing that flag off stopped removing anything and the frozen-off arm reached
-	// the tool. Whenever a toggle goes to general availability, this pair has to move to one that has not.
-	private const string FeatureGatedToolName = "get-identity-service-config";
+	// The probe has to be a tool that is STILL behind a [FeatureToggle]: that gate is the whole mechanism
+	// under test, and a tool without one is registered regardless of the frozen flag by design (pinned by
+	// McpFeatureToggleFilterTests.GetEnabledTypes_ShouldIncludeUngatedMarkedType_WhenNoFeatureTogglePresent).
+	// This pair has gone stale twice for exactly that reason - list-user-tasks / process-designer until
+	// ENG-96132 shipped the process designer on by default, then get-identity-service-config until #1448 took
+	// deploy-identity off it - and both times the frozen-off arm silently reached the tool and the failure
+	// read as "the worker disagreed with its parent". The type is named rather than the string so a rename is
+	// a compile error, and AssertProbeIsStillGated turns the next go-live into a message that says so.
+	private static readonly Type FeatureGatedToolType = typeof(DeployIdentityTool);
+	private const string FeatureGatedToolName = DeployIdentityTool.DeployIdentityToolName;
 	private const string GatedToolFeature = "deploy-identity";
 
 	private static readonly TimeSpan CallBudget = TimeSpan.FromSeconds(90);
@@ -312,6 +319,7 @@ public sealed class McpWorkerModeE2ETests {
 	[AllureDescription("Writes a settings file whose features block enables the gated feature, then starts two real worker children against that SAME file: one frozen with the flag off, one with it on. Dispatches the feature-gated tool through clio-run in each. The frozen-off worker must report the tool as not registered — proving it ignored the settings file — while the frozen-on worker must reach the tool and fail for some other reason. Feature-gated primitives are filtered out of registration before the transport is attached, so this is the only observable form of the guarantee. The probe must be a tool that is still behind a FeatureToggle: when one goes to general availability its toggle stops removing anything, and the frozen-off arm silently reaches the tool.")]
 	public async Task Worker_Should_UseTheParentsFrozenGeneration_NotAppSettings() {
 		// Arrange
+		AssertProbeIsStillGated();
 		await using CreatioWedgeStubServer stub = CreatioWedgeStubServer.Start();
 		using WorkerHome home = WorkerHome.Create();
 		using TemporaryClioSettingsOverride settingsOverride = home.ReplaceSettings($$"""
@@ -333,9 +341,18 @@ public sealed class McpWorkerModeE2ETests {
 		settingsOverride.AppSettingsPath.Should().StartWith(home.Path,
 			because: "the settings file the workers must DISAGREE with lives in this fixture's own clio home");
 		using CancellationTokenSource cancellation = new(TimeSpan.FromMinutes(4));
+		//identitySitePort is pinned only to keep the CONTROL arm cheap: without it the command scans the
+		//40001-40100 IIS range for a free port (IdentityServiceDeploymentService.ResolveIdentitySitePort)
+		//before it reaches the missing-archive failure this arm expects, and on a Windows agent that scan can
+		//outlast CallBudget - turning the control arm into a timeout that reads as a worker defect. It changes
+		//nothing for the arm that matters: the frozen-off worker fails to FIND the tool, before any argument
+		//is bound.
 		Dictionary<string, object?> gatedCall = new() {
 			["command"] = FeatureGatedToolName,
-			["args"] = new Dictionary<string, object?> { ["environment-name"] = EnvironmentName }
+			["args"] = new Dictionary<string, object?> {
+				["environment-name"] = EnvironmentName,
+				["identitySitePort"] = 40001
+			}
 		};
 
 		// Act
@@ -376,6 +393,34 @@ public sealed class McpWorkerModeE2ETests {
 					+ $"all would satisfy the assertion above for the wrong reason.{diagnostics}");
 			return Task.CompletedTask;
 		});
+	}
+
+	/// <summary>
+	/// Fails with the REAL cause when the probe tool stops being feature-gated, before any worker is started.
+	/// </summary>
+	/// <remarks>
+	/// Without this the staleness is silent and misattributed: an ungated tool is registered whatever the
+	/// frozen flag says, so the frozen-off arm reaches it and the assertion blames the worker for reading
+	/// appsettings.json. It has cost a red trunk twice. The check runs first because it needs no process and
+	/// turns a four-minute two-worker failure into an immediate one that names the tool to move to.
+	/// </remarks>
+	private static void AssertProbeIsStillGated() {
+		FeatureToggleAttribute? gate = (FeatureToggleAttribute?)Attribute.GetCustomAttribute(
+			FeatureGatedToolType, typeof(FeatureToggleAttribute));
+		gate.Should().NotBeNull(
+			because: $"this test observes the frozen generation by the DISAPPEARANCE of '{FeatureGatedToolName}' "
+				+ $"from a worker frozen with '{GatedToolFeature}' off, which only happens while "
+				+ $"{FeatureGatedToolType.Name} carries a [FeatureToggle]. It no longer does - the feature went "
+				+ "to general availability - so the probe is stale, not the worker: move this pair to a tool "
+				+ "that is still gated");
+		FeatureGatedToolType.Should().BeDecoratedWith<McpServerToolTypeAttribute>(
+			because: "only a registered tool can DISAPPEAR from a frozen-off worker: if this type stops being "
+				+ "an MCP tool it is absent from both arms, the control arm fails, and the failure reads as a "
+				+ "worker defect again - the very misattribution this guard exists to prevent");
+		gate!.FeatureName.Should().Be(GatedToolFeature,
+			because: $"freezing '{GatedToolFeature}' off only removes {FeatureGatedToolType.Name} while that is "
+				+ "the very feature gating it; a pair naming two different features would leave the frozen-off "
+				+ "arm reaching the tool for a reason that has nothing to do with the mechanism under test");
 	}
 
 	// ─────────────────────────────────────────────────────────────────────────────────────────────────
