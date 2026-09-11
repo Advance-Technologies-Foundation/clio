@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using Clio.Common;
 using Clio.Package.Responses;
 using Newtonsoft.Json;
@@ -57,11 +58,7 @@ internal sealed class PackageDependencyManager : BasePackageOperation, IPackageD
 			throw new ArgumentException("At least one dependency must be specified.", nameof(dependencies));
 		}
 
-		List<PackageInfo> installedPackages = _applicationPackageListProvider.GetPackages("{}").ToList();
-		PackageInfo targetPackage = FindPackage(installedPackages, packageName)
-			?? throw new InvalidOperationException($"Package with name \"{packageName}\" not found in the environment.");
-
-		WorkspacePackageDto package = LoadPackageProperties(targetPackage.Descriptor.UId, packageName);
+		(List<PackageInfo> installedPackages, WorkspacePackageDto package) = LoadTargetPackage(packageName);
 		package.DependsOnPackages ??= [];
 
 		foreach (PackageDependencySpec dependency in requestedDependencies) {
@@ -82,9 +79,18 @@ internal sealed class PackageDependencyManager : BasePackageOperation, IPackageD
 
 		SavePackageProperties(package);
 
-		return package.DependsOnPackages
-			.Select(dependency => dependency.Name ?? dependency.UId.ToString())
-			.ToList();
+		return ToDependencyNames(package.DependsOnPackages);
+	}
+
+	/// <inheritdoc cref="IPackageDependencyManager.GetDependencies(string)"/>
+	public IReadOnlyList<string> GetDependencies(string packageName) =>
+		GetDependencies(packageName, Timeout.Infinite);
+
+	/// <inheritdoc cref="IPackageDependencyManager.GetDependencies(string, int)"/>
+	public IReadOnlyList<string> GetDependencies(string packageName, int requestTimeoutMs) {
+		packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
+		(_, WorkspacePackageDto package) = LoadTargetPackage(packageName, requestTimeoutMs);
+		return ToDependencyNames(package.DependsOnPackages);
 	}
 
 	/// <inheritdoc cref="IPackageDependencyManager.RemoveDependencies"/>
@@ -101,11 +107,7 @@ internal sealed class PackageDependencyManager : BasePackageOperation, IPackageD
 			throw new ArgumentException("At least one dependency must be specified.", nameof(dependencyNames));
 		}
 
-		List<PackageInfo> installedPackages = _applicationPackageListProvider.GetPackages("{}").ToList();
-		PackageInfo targetPackage = FindPackage(installedPackages, packageName)
-			?? throw new InvalidOperationException($"Package with name \"{packageName}\" not found in the environment.");
-
-		WorkspacePackageDto package = LoadPackageProperties(targetPackage.Descriptor.UId, packageName);
+		(_, WorkspacePackageDto package) = LoadTargetPackage(packageName);
 		package.DependsOnPackages ??= [];
 
 		// Match by name only (case-insensitive): the version is irrelevant for wiring, and removing an absent
@@ -116,22 +118,47 @@ internal sealed class PackageDependencyManager : BasePackageOperation, IPackageD
 			SavePackageProperties(package);
 		}
 
-		return package.DependsOnPackages
-			.Select(dependency => dependency.Name ?? dependency.UId.ToString())
-			.ToList();
+		return ToDependencyNames(package.DependsOnPackages);
 	}
 
 	#endregion
 
 	#region Methods: Private
 
+	/// <summary>
+	/// Resolves <paramref name="packageName"/> against the environment and loads its editable properties.
+	/// </summary>
+	/// <param name="packageName">Package to resolve.</param>
+	/// <returns>The installed package list (the add path needs it to resolve dependencies) and the properties.</returns>
+	/// <exception cref="InvalidOperationException">The package is not installed in the environment.</exception>
+	private (List<PackageInfo> Installed, WorkspacePackageDto Package) LoadTargetPackage(string packageName,
+		int requestTimeoutMs = Timeout.Infinite) {
+		List<PackageInfo> installedPackages =
+			_applicationPackageListProvider.GetPackages("{}", requestTimeoutMs).ToList();
+		PackageInfo targetPackage = FindPackage(installedPackages, packageName)
+			?? throw new InvalidOperationException($"Package with name \"{packageName}\" not found in the environment.");
+		return (installedPackages, LoadPackageProperties(targetPackage.Descriptor.UId, packageName, requestTimeoutMs));
+	}
+
+	/// <summary>
+	/// Projects a dependency list to names, falling back to the UId for a row the server sent without one.
+	/// </summary>
+	/// <param name="dependencies">Dependency rows, possibly <see langword="null"/>.</param>
+	/// <returns>The dependency names.</returns>
+	private static IReadOnlyList<string> ToDependencyNames(List<WorkspacePackageDto>? dependencies) =>
+		(dependencies ?? [])
+			.Select(dependency => dependency.Name ?? dependency.UId.ToString())
+			.ToList();
+
 	private static PackageInfo FindPackage(IEnumerable<PackageInfo> packages, string packageName) =>
 		packages.FirstOrDefault(package =>
 			string.Equals(package.Descriptor.Name, packageName, StringComparison.OrdinalIgnoreCase));
 
-	private WorkspacePackageDto LoadPackageProperties(Guid packageUId, string packageName) {
+	private WorkspacePackageDto LoadPackageProperties(Guid packageUId, string packageName,
+		int requestTimeoutMs = Timeout.Infinite) {
 		PackagePropertiesResponse response =
-			SendRequest<Guid, PackagePropertiesResponse>(PackageServiceUrl, "GetPackageProperties", packageUId);
+			SendRequest<Guid, PackagePropertiesResponse>(PackageServiceUrl, "GetPackageProperties", packageUId,
+				requestTimeoutMs);
 		string couldNotReadMessage = $"Could not read properties of package \"{packageName}\".";
 		if (!response.Success) {
 			// Mirror the save path's null-safe guard: a failed GetPackageProperties response may carry a null

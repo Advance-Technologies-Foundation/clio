@@ -92,7 +92,7 @@ public sealed class PageUpdateToolTests {
 	}
 
 	private static PageUpdateArgs CreateArgs(string environmentName) =>
-		new(SchemaName, ValidBody, null, null, environmentName, null, null, null, SkipSampling: true);
+		new(SchemaName, ValidBody, SkipSampling: true) { EnvironmentName = environmentName };
 
 	private string ReceivedChartValidationVersion() =>
 		(string)_webComponentCatalog.ReceivedCalls()
@@ -223,7 +223,7 @@ public sealed class PageUpdateToolTests {
 				Substitute.For<IPageFileWriter>());
 			_commandResolver.Resolve<PageGetCommand>(Arg.Do<EnvironmentOptions>(o => captured = o)).Returns(getCommand);
 
-			PageUpdateArgs args = new(SchemaName, mobileBody, null, true, "dev", null, null, null, SkipSampling: true, Mode: mode);
+			PageUpdateArgs args = new(SchemaName, mobileBody, null, true, SkipSampling: true, Mode: mode) { EnvironmentName = "dev" };
 			await _tool.UpdatePage(args, null);
 
 			captured.Should().BeOfType<PageGetOptions>(
