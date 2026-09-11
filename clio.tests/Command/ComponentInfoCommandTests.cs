@@ -169,6 +169,30 @@ public sealed class ComponentInfoCommandTests {
 	}
 
 	[Test]
+	[Description("ENG-96840: the environment-scoped resolver must be awaited INSIDE its using — a non-async caller that returned the resolve Task unawaited disposed the owned application client while the probe was still running on its Task.Run thread, so every call degraded to probe-error.")]
+	public async Task Does_Not_Dispose_Resolver_Before_Async_Probe_Completes() {
+		// Arrange
+		using CapturedLogger logger = new();
+		RecordingCatalog catalog = new(SampleRegistry, echoRequestedVersion: true);
+		AsyncDisposalTrackingResolverFactory factory = new(
+			new PlatformVersionResolution("8.3.4", VersionResolutionSource.Environment));
+		ISettingsRepository repository = StubSettingsRepository("dev");
+		ComponentInfoCommand command = new(
+			catalog, StubMobileCatalog.Empty(), new FakeDocsClient(), factory, repository, logger);
+
+		// Act
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { Environment = "dev" }, CancellationToken.None);
+
+		// Assert
+		exit.Should().Be(0, because: "the environment version resolves cleanly once the resolver survives the probe");
+		factory.LastResolver!.DisposedBeforeResolveCompleted.Should().BeFalse(
+			because: "the owned application client must stay alive until the async probe completes; disposing it mid-probe made every environment-scoped get-component-info throw ObjectDisposedException and degrade to probe-error (ENG-96840)");
+		catalog.RequestedVersions.Should().Contain("8.3.4",
+			because: "the probed platform version must feed the catalog load once the resolver survives the probe");
+	}
+
+	[Test]
 	[Description("--pretty switches stdout to a human-readable block instead of JSON.")]
 	public async Task Emits_Pretty_Text_When_Pretty_Flag_Set() {
 		using CapturedLogger logger = new();
@@ -625,6 +649,43 @@ public sealed class ComponentInfoCommandTests {
 	}
 
 	[Test]
+	[Description("--pretty renders documentationSource and documentationWarning even when no markdown was served, because with a local override active the warning is the only signal the developer gets.")]
+	public async Task Pretty_Output_Renders_Documentation_Provenance_When_Local_Override_Lacks_The_Doc() {
+		// Arrange
+		const string registry = """
+		{
+		  "components": [
+		    { "componentType": "crt.Button", "category": "action", "properties": {},
+		      "references": { "docs": ["docs/button.component.md"] } }
+		  ]
+		}
+		""";
+		using CapturedLogger logger = new();
+		FakeDocsClient docsClient = new FakeDocsClient()
+			.SeedLocalMiss("latest", "docs/button.component.md", RegistryFlavor.Web.LocalFileEnvironmentVariable);
+		ComponentInfoCommand command = CreateCommandWith(
+			new RecordingCatalog(registry, echoRequestedVersion: true),
+			logger,
+			resolverFactoryProbeCount: 0,
+			docsClient: docsClient);
+
+		// Act
+		int exit = await command.ExecuteAsync(
+			new ComponentInfoCommandOptions { ComponentType = "crt.Button", Pretty = true }, CancellationToken.None);
+
+		// Assert
+		exit.Should().Be(0, because: "a missing recipe degrades gracefully rather than failing the lookup");
+		logger.Captured.Should().Contain("documentationSource:",
+			because: "the operator must be able to tell a working-copy read from a published one");
+		logger.Captured.Should().Contain("documentationWarning:",
+			because: "with no markdown served the warning is the only signal the --pretty inner loop gets");
+		logger.Captured.Should().Contain("docs/button.component.md",
+			because: "the warning must name the file the developer has to generate");
+		logger.Captured.Should().Contain(RegistryFlavor.Web.LocalFileEnvironmentVariable,
+			because: "naming the override that captured the path is what makes the warning actionable");
+	}
+
+	[Test]
 	[Description("List --pretty renders a 'composites:' section listing each composite caption.")]
 	public async Task Pretty_Output_Renders_Composites_Section_In_List_Mode() {
 		using CapturedLogger logger = new();
@@ -702,21 +763,33 @@ public sealed class ComponentInfoCommandTests {
 
 	/// <summary>
 	/// Test double for the docs client. Returns a pre-seeded markdown blob for the
-	/// matching (version, path) tuple or <see langword="null"/> otherwise — matching
+	/// matching (version, path) tuple or a <c>None</c>-sourced result otherwise — matching
 	/// the contract that the real client uses to signal "skip this doc".
 	/// </summary>
 	private sealed class FakeDocsClient : IComponentRegistryDocsClient {
-		private readonly Dictionary<(string Version, string DocPath), string> _docs = new();
+		private readonly Dictionary<(string Version, string DocPath), ComponentDocumentationFetchResult> _docs = new();
 		public List<(string Version, string DocPath)> Requests { get; } = new();
 
-		public FakeDocsClient Seed(string version, string docPath, string content) {
-			_docs[(version, docPath)] = content;
+		public FakeDocsClient Seed(
+			string version,
+			string docPath,
+			string content,
+			ComponentDocumentationSource source = ComponentDocumentationSource.Cdn) {
+			_docs[(version, docPath)] = new ComponentDocumentationFetchResult(content, source);
 			return this;
 		}
 
-		public Task<string> GetDocAsync(string version, string docPath, CancellationToken cancellationToken = default) {
+		public FakeDocsClient SeedLocalMiss(string version, string docPath, string overrideVariable) {
+			_docs[(version, docPath)] = new ComponentDocumentationFetchResult(
+				Content: null, ComponentDocumentationSource.None, overrideVariable);
+			return this;
+		}
+
+		public Task<ComponentDocumentationFetchResult> GetDocAsync(string version, string docPath, CancellationToken cancellationToken = default) {
 			Requests.Add((version, docPath));
-			return Task.FromResult(_docs.TryGetValue((version, docPath), out string value) ? value : null);
+			return Task.FromResult(_docs.TryGetValue((version, docPath), out ComponentDocumentationFetchResult value)
+				? value
+				: ComponentDocumentationFetchResult.Missing);
 		}
 	}
 
@@ -846,6 +919,49 @@ public sealed class ComponentInfoCommandTests {
 			public Task<PlatformVersionResolution> ResolveAsync(CancellationToken cancellationToken = default) =>
 				Task.FromResult(result);
 			public void Dispose() { }
+		}
+	}
+
+	/// <summary>
+	/// ENG-96840 regression factory: hands out an <see cref="AsyncDisposalTrackingResolver"/> whose
+	/// <see cref="AsyncDisposalTrackingResolver.ResolveAsync"/> completes ASYNCHRONOUSLY, mirroring the
+	/// real resolver whose probe runs on a <c>Task.Run</c> thread. If the caller returns the resolve Task
+	/// unawaited from inside its <c>using</c>, <see cref="AsyncDisposalTrackingResolver.Dispose"/> runs
+	/// before the continuation and the last resolver's <c>DisposedBeforeResolveCompleted</c> latches
+	/// <c>true</c> — the premature-disposal race that made the real owned CreatioClient throw
+	/// ObjectDisposedException.
+	/// </summary>
+	private sealed class AsyncDisposalTrackingResolverFactory(PlatformVersionResolution result)
+		: IPlatformVersionResolverFactory {
+		public AsyncDisposalTrackingResolver? LastResolver { get; private set; }
+
+		public IPlatformVersionResolver Create(EnvironmentSettings settings) {
+			AsyncDisposalTrackingResolver resolver = new(result);
+			LastResolver = resolver;
+			return resolver;
+		}
+
+		public sealed class AsyncDisposalTrackingResolver(PlatformVersionResolution result)
+			: IOwnedPlatformVersionResolver {
+			private volatile bool _resolveCompleted;
+
+			public bool DisposedBeforeResolveCompleted { get; private set; }
+
+			public async Task<PlatformVersionResolution> ResolveAsync(CancellationToken cancellationToken = default) {
+				// Task.Yield forces an asynchronous return: a buggy caller that returns this Task unawaited
+				// from inside its using disposes us at this point, before the line below runs.
+				await Task.Yield();
+				_resolveCompleted = true;
+				return result;
+			}
+
+			// Deterministic, timing-free: being disposed while the resolve has not completed means the
+			// caller returned the resolve Task unawaited from inside its using — the ENG-96840 race.
+			public void Dispose() {
+				if (!_resolveCompleted) {
+					DisposedBeforeResolveCompleted = true;
+				}
+			}
 		}
 	}
 }

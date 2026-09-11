@@ -31,8 +31,11 @@ namespace Clio.CreatioModel
 		[SchemaProperty("ManagerName")]
 		public string ManagerName { get; set; }
 
+		// Nullable: the view passes SysSchema.ParentId through unchanged, and it is NULL for every
+		// process that is not a version of another one. A non-nullable Guid turns that into Guid.Empty
+		// before any caller can tell "no parent" from "parent unknown".
 		[SchemaProperty("Parent")]
-		public Guid ParentId { get; set; }
+		public Guid? ParentId { get; set; }
 
 		[SchemaProperty("ExtendParent")]
 		public bool ExtendParent { get; set; }
@@ -43,12 +46,12 @@ namespace Clio.CreatioModel
 		[SchemaProperty("IsLocked")]
 		public bool IsLocked { get; set; }
 
-		[SchemaProperty("MetaData")]
-		public byte[] MetaData { get; set; }
+		// MetaData / MetaDataModifiedOn are deliberately NOT mapped, and this note is about their ABSENCE —
+		// not about the column declared below it. ATF builds the select from this type's properties, so
+		// declaring the metadata blob makes every query over the process library carry the full serialized
+		// schema for every row, including a version-family read of up to 50 members. No caller has ever read
+		// them. Re-adding either column re-adds that cost everywhere.
 
-		[SchemaProperty("MetaDataModifiedOn")]
-		public DateTime MetaDataModifiedOn { get; set; }
-		
 		[SchemaProperty("PackageUId")]
 		public Guid PackageUId { get; set; }
 		
@@ -73,8 +76,13 @@ namespace Clio.CreatioModel
 		[SchemaProperty("Enabled")]
 		public bool Enabled { get; set; }
 
+		// Nullable: Version and IsActiveVersion both come from VwProcessSchemaVersion, whose subqueries
+		// run against VwProcessSchemaInfo — and that view INNER JOINs SysPackage, so a schema whose
+		// package does not resolve yields NULL here while the VwProcessLib row itself survives.
+		// Non-nullable types collapse that into 0 / false, i.e. into "version 0, and it is the one
+		// that runs" — the exact wrong answer this feature exists to stop reporting.
 		[SchemaProperty("Version")]
-		public int Version { get; set; }
+		public int? Version { get; set; }
 
 		[SchemaProperty("ProcessSchemaType")]
 		public Guid ProcessSchemaTypeId { get; set; }
@@ -89,7 +97,7 @@ namespace Clio.CreatioModel
 		public bool AddToRunButton { get; set; }
 
 		[SchemaProperty("IsActiveVersion")]
-		public bool IsActiveVersion { get; set; }
+		public bool? IsActiveVersion { get; set; }
 
 		[SchemaProperty("VersionParentId")]
 		public Guid VersionParentId { get; set; }

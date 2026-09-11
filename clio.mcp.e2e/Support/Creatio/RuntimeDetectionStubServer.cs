@@ -160,6 +160,9 @@ function metadataCsdl(entity) {
     + '<Key><PropertyRef Name="Id" /></Key>'
     + '<Property Name="Id" Type="Edm.Guid" Nullable="false" />'
     + '<Property Name="Name" Type="Edm.String" />'
+    // Declared so a test can show the zone-less date-time guard firing on a temporal column while a
+    // date-shaped value on the Edm.String column above is still written (GitHub issue #1369).
+    + '<Property Name="DueDate" Type="Edm.DateTimeOffset" />'
     + '</EntityType>'
     + '</Schema>'
     + '</edmx:DataServices></edmx:Edmx>';
@@ -187,6 +190,14 @@ http.createServer((request, response) => {
       return;
     }
     recordedRequests.push({ method: request.method, url: url });
+    if (config.PackageSynchronizationResponse && url.endsWith("/WorkspaceExplorerService.svc/GetIsFileDesignMode")) {
+      sendJson(response, 200, { success: true, value: true });
+      return;
+    }
+    if (config.PackageSynchronizationResponse && (url.endsWith("/AppInstallerService.svc/LoadPackagesToDB") || url.endsWith("/AppInstallerService.svc/LoadPackagesToFileSystem"))) {
+      sendJson(response, 200, JSON.parse(config.PackageSynchronizationResponse));
+      return;
+    }
     if (request.method === "POST" && url === "/ServiceModel/AuthService.svc/Login") {
       sendJson(
         response,
@@ -220,20 +231,35 @@ http.createServer((request, response) => {
       sendText(response, config.NetFrameworkUiMarkerEnabled ? 200 : 404, config.NetFrameworkUiMarkerEnabled ? "OK" : "Not Found");
       return;
     }
+    // The WRITE endpoints answer the same rejected session with the same login page, and that path keeps
+    // the raw body - so clio can prove the rejection there (AuthenticationFailureClassifier
+    // .IsAuthenticationFailureResponse) rather than only naming it as one of two possibilities. Gated on
+    // the same switch so an environment registration that does not opt in is unaffected.
+    if (request.method === "POST"
+      && config.AuthRejectedSelectQuerySchemaName
+      && (url === "/DataService/json/SyncReply/InsertSysSettingRequest"
+        || url === "/0/DataService/json/SyncReply/InsertSysSettingRequest"
+        || url === "/DataService/json/SyncReply/PostSysSettingsValues"
+        || url === "/0/DataService/json/SyncReply/PostSysSettingsValues")) {
+      response.writeHead(200, { "Content-Type": "text/html" });
+      response.end("<!DOCTYPE html><html><head><title>Creatio</title></head><body><form action=\"/Login/NuiLogin.aspx\"></form></body></html>");
+      return;
+    }
     if (request.method === "POST"
       && (url === "/DataService/json/SyncReply/SelectQuery" || url === "/0/DataService/json/SyncReply/SelectQuery")
       && config.AuthRejectedSelectQuerySchemaName
       && body.includes('"' + config.AuthRejectedSelectQuerySchemaName + '"')) {
-      // Issue #1222: an expired password makes Creatio answer the authenticated SelectQuery with a
-      // DataService fault envelope (ErrorCode 5) under HTTP 200. The repository provider collapses that
-      // to an empty successful collection, which is the false-success this PR removes. Keyed on the
-      // queried schema so the runtime-detection probe (SysAdminUnit) still gets valid JSON and
-      // environment registration is unaffected.
-      sendJson(response, 200, {
-        responseStatus: { ErrorCode: "5", Message: "Your password has expired.", Errors: [] },
-        rows: [],
-        success: false
-      });
+      // Issue #1222 / #1371: an expired password makes Creatio serve its LOGIN PAGE - HTML, under
+      // HTTP 200 - in answer to the authenticated SelectQuery. ATF.Repository's RemoteDataProvider
+      // deserializes that with Newtonsoft, catches the parser failure, and returns
+      // Success = false + empty Items; AppDataContext then drops the flag, which is the false empty
+      // success ClassifyingDataProvider removes.
+      // A DataService fault envelope (ErrorCode 5 with rows: []) is deliberately NOT used here: the
+      // provider parses it without error and reports Success = true, so no barrier downstream of the
+      // provider can see the rejection at all. Keyed on the queried schema so the runtime-detection
+      // probe (SysAdminUnit) still gets valid JSON and environment registration is unaffected.
+      response.writeHead(200, { "Content-Type": "text/html" });
+      response.end("<!DOCTYPE html><html><head><title>Creatio</title></head><body><form action=\"/Login/NuiLogin.aspx\"></form></body></html>");
       return;
     }
     if (request.method === "POST"
@@ -269,6 +295,7 @@ http.createServer((request, response) => {
         && url.includes("/odata/" + config.ODataEntity + "(")
         && url.includes("$select=");
       const isPatch = request.method === "PATCH" && url.includes("/odata/" + config.ODataEntity + "(");
+      const isCollectionPost = request.method === "POST" && url.endsWith("/odata/" + config.ODataEntity);
       if (isMetadata && config.ODataPreWriteMode === "{{ODataPreWriteMetadata}}") {
         response.writeHead(200, { "Content-Type": "application/xml" });
         response.end(metadataCsdl(config.ODataEntity));
@@ -314,6 +341,11 @@ http.createServer((request, response) => {
         // Empty 204 ack, the shape Creatio returns for a successful PATCH.
         response.writeHead(204);
         response.end();
+        return;
+      }
+      if (isCollectionPost) {
+        // The created record echoed with its Id, which is what odata-create reads as proof of an insert.
+        sendJson(response, 201, { Id: "00000000-0000-0000-0000-000000000002" });
         return;
       }
     }
@@ -362,7 +394,8 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	string? ODataNonJsonEntity = null,
 	string? ODataEntity = null,
 	string? ODataPreWriteMode = null,
-	string? AuthRejectedSelectQuerySchemaName = null);
+	string? AuthRejectedSelectQuerySchemaName = null,
+	string? PackageSynchronizationResponse = null);
 
 /// <summary>
 /// One request served by <see cref="RuntimeDetectionStubServer"/>, as reported by

@@ -227,7 +227,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="up"></a>
 - [`unlock-package`](docs/commands/unlock-package.md) - Unlock a package in Creatio, `up`
 <a id="autoupdate"></a>
-- [`autoupdate`](docs/commands/autoupdate.md) - Enable or disable automatic clio updates on startup
+- [`autoupdate`](docs/commands/autoupdate.md) - Enable or disable automatic clio updates on startup (disabled by default; knowledge enabled, toolkit disabled)
 <a id="experimental"></a>
 <a id="exp"></a>
 - [`experimental`](docs/commands/experimental.md) - List and toggle clio experimental feature flags, `exp`
@@ -279,11 +279,11 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="pkg-to-db"></a>
 <a id="2db"></a>
 <a id="todb"></a>
-- [`pkg-to-db`](docs/commands/pkg-to-db.md) - Load packages into Creatio database storage, `2db`, `todb`
+- [`pkg-to-db`](docs/commands/pkg-to-db.md) - Load file-system package definitions into the configuration database (no package data), `2db`, `todb`
 <a id="pkg-to-file-system"></a>
 <a id="2fs"></a>
 <a id="tofs"></a>
-- [`pkg-to-file-system`](docs/commands/pkg-to-file-system.md) - Load packages into Creatio file system storage, `2fs`, `tofs`
+- [`pkg-to-file-system`](docs/commands/pkg-to-file-system.md) - Export configuration-database packages to the file system (no package data), `2fs`, `tofs`
 <a id="publish-app"></a>
 <a id="ph"></a>
 <a id="publish-hub"></a>
@@ -338,7 +338,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="client-unit-schema-create"></a>
 - [`create-client-unit-schema`](docs/commands/create-client-unit-schema.md) - Create a new JavaScript (ClientUnit) schema on a remote Creatio environment, `client-unit-schema-create`
 <a id="create-entity-schema"></a>
-- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create a persistent or virtual entity schema in a remote Creatio package
+- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create a persistent or virtual entity schema in a remote Creatio package; columns accept repeated flags or a JSON array
 <a id="create-lookup"></a>
 - [`create-lookup`](docs/commands/create-lookup.md) - Create a lookup entity schema in a remote Creatio package
 <a id="create-schema"></a>
@@ -445,6 +445,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="get-page"></a>
 <a id="page-get"></a>
 - [`get-page`](docs/commands/get-page.md) - Get a Freedom UI page bundle and raw schema body, `page-get`
+<a id="get-process-page-facts"></a>
+<a id="page-facts"></a>
+- [`get-process-page-facts`](docs/commands/get-process-page-facts.md) - Read the completing-button candidates and page-scoped data sources a Pre-configured page process element needs, `page-facts`
 <a id="get-page-hierarchy"></a>
 <a id="page-hierarchy-get"></a>
 - [`get-page-hierarchy`](docs/commands/get-page-hierarchy.md) - Get the full Freedom UI page replacing-schema chain (root first) with each schema's raw body in one round-trip, `page-hierarchy-get`
@@ -536,7 +539,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="create-server-to-server-oauth-app"></a>
 - [`create-server-to-server-oauth-app`](docs/commands/create-server-to-server-oauth-app.md) - Create a server-to-server (client_credentials) OAuth app in Creatio via OAuthConfigService REST
 <a id="verify-oauth-app"></a>
-- [`verify-oauth-app`](docs/commands/verify-oauth-app.md) - Verify a server-to-server OAuth app: acquire a client_credentials token and run a bearer DataService smoke test
+- [`verify-oauth-app`](docs/commands/verify-oauth-app.md) - Verify registered or explicit OAuth credentials by obtaining a bearer token and testing CRM access
 <a id="deploy-infrastructure"></a>
 <a id="di"></a>
 - [`deploy-infrastructure`](docs/commands/deploy-infrastructure.md) - Deploy Kubernetes infrastructure for Creatio (namespace, storage, redis, postgres, pgadmin), `di`

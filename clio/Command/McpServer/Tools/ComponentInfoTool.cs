@@ -229,7 +229,8 @@ public sealed class ComponentInfoTool(
 		}
 
 		if (state.Lookup.TryGetValue(args.ComponentType.Trim(), out ComponentRegistryEntry? entry)) {
-			string? documentation = await LoadDocumentationAsync(entry, state.ResolvedVersion, cancellationToken).ConfigureAwait(false);
+			ComponentDocumentationOutcome documentation =
+				await LoadDocumentationAsync(entry, state.ResolvedVersion, cancellationToken).ConfigureAwait(false);
 			return CreateDetailResponse(entry, state.ResolvedVersion, resolvedFrom, documentation, state.GlobalReferences, resolvedFromReason);
 		}
 
@@ -255,25 +256,29 @@ public sealed class ComponentInfoTool(
 	/// <item>neither — <c>latest</c> with a non-authoritative source so the response carries <c>latest-fallback</c>.</item>
 	/// </list>
 	/// </summary>
-	private Task<PlatformVersionResolution> ResolveVersionAsync(
+	private async Task<PlatformVersionResolution> ResolveVersionAsync(
 		ComponentInfoArgs args,
 		bool hasExplicitVersion,
 		bool hasEnvironment,
 		CancellationToken cancellationToken) {
 		if (hasExplicitVersion) {
-			return Task.FromResult(new PlatformVersionResolution(args.Version!.Trim(), VersionResolutionSource.Environment));
+			return new PlatformVersionResolution(args.Version!.Trim(), VersionResolutionSource.Environment);
 		}
 
 		if (hasEnvironment) {
 			EnvironmentSettings settings = ResolveEnvironmentSettings(args);
+			// Await the probe INSIDE the using scope. Returning the Task unawaited let the using
+			// dispose the resolver — and with it the owned IApplicationClient — while the probe was
+			// still running on its Task.Run thread, so the probe hit an already-disposed CreatioClient
+			// and every call degraded to probe-error (ENG-96840).
 			using IOwnedPlatformVersionResolver resolver = resolverFactory.CreateOwned(settings);
-			return resolver.ResolveAsync(cancellationToken);
+			return await resolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
 		}
 
 		// Neither an explicit version nor an environment was supplied, so there is nothing to probe:
 		// a clear input gap (no-active-environment), not a probe error. Built via the shared factory so
 		// the CLI verb and this MCP tool stay byte-identical on the no-flags fallback.
-		return Task.FromResult(ComponentInfoResolution.CreateNoActiveEnvironmentFallback());
+		return ComponentInfoResolution.CreateNoActiveEnvironmentFallback();
 	}
 
 	/// <summary>
@@ -336,7 +341,7 @@ public sealed class ComponentInfoTool(
 			return ComponentInfoResponseFactory.CreateCompositeNotFoundResponse(
 				state.Composites, caption, isMobile, state.ResolvedVersion, resolvedFrom, resolvedFromReason);
 		}
-		string? documentation = await ComponentDocumentationLoader
+		ComponentDocumentationOutcome documentation = await ComponentDocumentationLoader
 			.LoadAsync(docsClient, composite.Docs, state.ResolvedVersion, cancellationToken).ConfigureAwait(false);
 		return ComponentInfoResponseFactory.CreateCompositeDetailResponse(
 			composite, documentation, state.ResolvedVersion, resolvedFrom, resolvedFromReason);
@@ -346,9 +351,12 @@ public sealed class ComponentInfoTool(
 		ComponentRegistryEntry entry,
 		string? resolvedTargetVersion,
 		string? resolvedFrom,
-		string? documentation,
+		ComponentDocumentationOutcome? documentation,
 		RegistryGlobalReferences? globalReferences,
 		string? resolvedFromReason = null) {
+		// Null is accepted so callers that never load documentation (list/summary builders and
+		// focused tests) do not have to name an empty outcome.
+		documentation ??= ComponentDocumentationOutcome.NotDeclared;
 		IReadOnlyDictionary<string, JsonElement>? mergedInputs = MergeBindings(globalReferences?.BaseInputs, entry.Inputs);
 		ComponentReferencesResponse? references = BuildReferencesResponse(entry, globalReferences);
 		return new ComponentInfoResponse {
@@ -378,7 +386,9 @@ public sealed class ComponentInfoTool(
 			ResolvedTargetVersion = resolvedTargetVersion,
 			ResolvedFrom = resolvedFrom,
 			ResolvedFromReason = resolvedFromReason,
-			Documentation = string.IsNullOrEmpty(documentation) ? null : documentation,
+			Documentation = string.IsNullOrEmpty(documentation.Documentation) ? null : documentation.Documentation,
+			DocumentationSource = documentation.Source,
+			DocumentationWarning = documentation.Warning,
 			References = references
 		};
 	}
@@ -443,7 +453,7 @@ public sealed class ComponentInfoTool(
 	/// and the CLI verb produce identical <c>documentation</c> payloads. See the loader
 	/// for the cache → CDN pipeline contract and the partial-failure semantics.
 	/// </summary>
-	private Task<string?> LoadDocumentationAsync(
+	private Task<ComponentDocumentationOutcome> LoadDocumentationAsync(
 		ComponentRegistryEntry entry,
 		string resolvedVersion,
 		CancellationToken cancellationToken) =>
@@ -829,6 +839,30 @@ public sealed class ComponentInfoResponse : ComponentSelectionMetadata {
 	[JsonPropertyName("documentation")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? Documentation { get; init; }
+
+	/// <summary>
+	/// Gets the tier that served <see cref="Documentation"/>: <c>local</c> (the developer working
+	/// copy next to a <c>*_LOCAL_FILE</c> registry override), <c>cache</c>, <c>cdn</c>,
+	/// <c>mixed</c> when the declared files came from different tiers, or <c>none</c> when
+	/// nothing could be served. Emitted on detail responses whose registry entry declares
+	/// <c>references.docs[]</c>; omitted when it declares none, so an absent field means
+	/// "no documentation exists" rather than "provenance unknown" (issue #1361).
+	/// </summary>
+	[JsonPropertyName("documentationSource")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? DocumentationSource { get; init; }
+
+	/// <summary>
+	/// Gets the operator-facing explanation emitted only when a component-registry
+	/// local-file override is active and at least one declared documentation file was not
+	/// present in the working copy. While an override is active the published CDN copy is deliberately
+	/// never substituted, so this warning is the only signal that a recipe is missing. The
+	/// registry-relative path and the override variable name are named; the resolved host
+	/// path is deliberately not echoed onto the wire.
+	/// </summary>
+	[JsonPropertyName("documentationWarning")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? DocumentationWarning { get; init; }
 
 	/// <summary>
 	/// Gets the disambiguation flag for a <c>mode: "composite"</c> detail response: emitted

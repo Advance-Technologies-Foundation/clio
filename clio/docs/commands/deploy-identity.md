@@ -154,3 +154,6 @@ clio OAuth credential updates, and `connect/token` verification because no clien
 The `db-first` mode is the default contract requested for the command, but direct DB
 seeding is not used until it is fully proven. The command falls back to the supported
 REST/sys-settings path and refuses explicit `--configuration-mode db`.
+
+Deployment validates discovery issuer and endpoint metadata, obtains a usable bearer token, and checks it with a read-only CRM DataService request before saving client credentials. Failed verification returns a nonzero exit code.
+With --no-app, token and CRM OAuth verification are explicitly skipped.

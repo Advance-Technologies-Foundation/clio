@@ -130,7 +130,7 @@ public sealed class ComponentInfoCommand {
 		ComponentRegistryEntry entry,
 		string? resolvedTargetVersion,
 		string? resolvedFrom,
-		string? documentation,
+		ComponentDocumentationOutcome documentation,
 		RegistryGlobalReferences globalReferences,
 		string? resolvedFromReason) =>
 		ComponentInfoTool.CreateDetailResponse(
@@ -143,7 +143,7 @@ public sealed class ComponentInfoCommand {
 		_logger.WriteLine(payload);
 	}
 
-	private Task<PlatformVersionResolution> ResolveVersionAsync(
+	private async Task<PlatformVersionResolution> ResolveVersionAsync(
 		ComponentInfoCommandOptions options,
 		bool hasExplicitVersion,
 		bool hasEnvironment,
@@ -152,20 +152,24 @@ public sealed class ComponentInfoCommand {
 			// Explicit user choice — treat as authoritative. MapResolvedFrom maps to
 			// "environment-superset" (soft caveat) if the CDN has no catalog for this version
 			// and falls back to latest; it does NOT downgrade to "latest-fallback".
-			return Task.FromResult(new PlatformVersionResolution(options.Version.Trim(), VersionResolutionSource.Environment));
+			return new PlatformVersionResolution(options.Version.Trim(), VersionResolutionSource.Environment);
 		}
 
 		if (hasEnvironment) {
 			EnvironmentSettings settings = ResolveEnvironmentSettings(options);
+			// Await the probe INSIDE the using scope. Returning the Task unawaited let the using
+			// dispose the resolver — and with it the owned IApplicationClient — while the probe was
+			// still running on its Task.Run thread, so the probe hit an already-disposed CreatioClient
+			// and every call degraded to probe-error (ENG-96840).
 			using IOwnedPlatformVersionResolver resolver = _resolverFactory.CreateOwned(settings);
-			return resolver.ResolveAsync(cancellationToken);
+			return await resolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
 		}
 
 		// No flags — default to latest with a non-authoritative source so the response carries
 		// "latest-fallback" regardless of what the catalog returns. Nothing to probe, so the reason
 		// is the input gap (no-active-environment), not a probe error. Built via the shared factory so
 		// this CLI verb and the MCP tool stay byte-identical on the no-flags fallback.
-		return Task.FromResult(ComponentInfoResolution.CreateNoActiveEnvironmentFallback());
+		return ComponentInfoResolution.CreateNoActiveEnvironmentFallback();
 	}
 
 	private EnvironmentSettings ResolveEnvironmentSettings(ComponentInfoCommandOptions options) {
@@ -207,7 +211,7 @@ public sealed class ComponentInfoCommand {
 				return ComponentInfoResponseFactory.CreateCompositeNotFoundResponse(
 					state.Composites, composite!, IsMobile(options.SchemaType), state.ResolvedVersion, resolvedFrom, resolvedFromReason);
 			}
-			string? compositeDocs = await ComponentDocumentationLoader
+			ComponentDocumentationOutcome compositeDocs = await ComponentDocumentationLoader
 				.LoadAsync(_docsClient, definition.Docs, state.ResolvedVersion, cancellationToken)
 				.ConfigureAwait(false);
 			return ComponentInfoResponseFactory.CreateCompositeDetailResponse(
@@ -235,7 +239,7 @@ public sealed class ComponentInfoCommand {
 		}
 
 		if (state.Lookup.TryGetValue(componentType!, out ComponentRegistryEntry entry)) {
-			string? documentation = await ComponentDocumentationLoader
+			ComponentDocumentationOutcome documentation = await ComponentDocumentationLoader
 				.LoadAsync(_docsClient, entry, state.ResolvedVersion, cancellationToken)
 				.ConfigureAwait(false);
 			return BuildDetail(entry, state.ResolvedVersion, resolvedFrom, documentation, state.GlobalReferences, resolvedFromReason);

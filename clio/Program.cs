@@ -143,6 +143,7 @@ internal class Program {
 		typeof(CreateLookupOptions),
 		typeof(PageListOptions),
 		typeof(PageGetOptions),
+		typeof(ProcessPageFactsOptions),
 		typeof(GetPageHierarchyOptions),
 		typeof(PageUpdateOptions),
 		typeof(PageCreateOptions),
@@ -321,7 +322,7 @@ internal class Program {
 
 	internal static IReadOnlyList<Type> GetCommandOptionTypes() => CommandOption;
 
-	private static string[] NormalizeCommandLineArgs(string[] args) {
+	internal static string[] NormalizeCommandLineArgs(string[] args) {
 		string[] result = args;
 		if (args.Length >= 3 &&
 			string.Equals(args[0], "create-data-binding", StringComparison.OrdinalIgnoreCase)) {
@@ -335,8 +336,60 @@ internal class Program {
 			result = normalizedArgs;
 		}
 
+		result = NormalizeEntityColumnArgs(result);
 		result = NormalizeGetSysSettingArgs(result);
 		return NormalizeJsonFlagArgs(result);
+	}
+
+	// CommandLineSDK rejects repeated sequence option names too. Gather complete --column
+	// groups before parsing, retaining payload tokens verbatim and leaving malformed groups
+	// to the parser so a missing value cannot silently create an incomplete schema.
+	private static string[] NormalizeEntityColumnArgs(string[] args) {
+		if (args.Length < 2 || args[0] != "create-entity-schema") {
+			return args;
+		}
+		List<string> output = [];
+		List<string> columns = [];
+		int insertionIndex = -1;
+		int groups = 0;
+		int index = 0;
+		while (index < args.Length) {
+			string token = args[index];
+			if (token == "--") {
+				output.AddRange(args.Skip(index));
+				break;
+			}
+			if (token != "--column" && !token.StartsWith("--column=", StringComparison.Ordinal)) {
+				output.Add(token);
+				index++;
+				continue;
+			}
+			insertionIndex = insertionIndex < 0 ? output.Count : insertionIndex;
+			groups++;
+			List<string> group = ReadColumnGroup(args, ref index);
+			if (group.Count == 0 || group.Any(string.IsNullOrWhiteSpace)) {
+				return args;
+			}
+			columns.AddRange(group);
+		}
+		if (groups < 2) {
+			return args;
+		}
+		output.Insert(insertionIndex, "--column");
+		output.InsertRange(insertionIndex + 1, columns);
+		return output.ToArray();
+	}
+
+	private static List<string> ReadColumnGroup(string[] args, ref int index) {
+		string token = args[index++];
+		List<string> values = [];
+		if (token.StartsWith("--column=", StringComparison.Ordinal)) {
+			values.Add(token["--column=".Length..]);
+		}
+		while (index < args.Length && !args[index].StartsWith("-", StringComparison.Ordinal)) {
+			values.Add(args[index++]);
+		}
+		return values;
 	}
 
 	// The `get-syssetting` alias shares the `set-syssetting` verb and its options, and read mode
@@ -678,6 +731,7 @@ internal class Program {
 			SqlSchemaInstallOptions opts => Resolve<SqlSchemaInstallCommand>(opts).Execute(opts),
 			PageTemplatesListOptions opts => Resolve<PageTemplatesListCommand>(opts).Execute(opts),
 			PageGetOptions opts => Resolve<PageGetCommand>(opts).Execute(opts),
+			ProcessPageFactsOptions opts => Resolve<ProcessPageFactsCommand>(opts).Execute(opts),
 			GetPageHierarchyOptions opts => Resolve<GetPageHierarchyCommand>(opts).Execute(opts),
 			PageUpdateOptions opts => Resolve<PageUpdateCommand>(opts).Execute(opts),
 			PageListOptions opts => Resolve<PageListCommand>(opts).Execute(opts),

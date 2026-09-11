@@ -40,11 +40,14 @@ public static class LoadPackagesPrompt {
 		[Description("Target environment name")]
 		string environmentName) =>
 		$"""
-		 Import package source code from the file system back into the Creatio database
-		 for environment `{environmentName}` using the `pkg-to-db` tool.
+		 Import package definitions (schemas, resources, descriptors) from the file system back into
+		 the Creatio configuration database for environment `{environmentName}` using the `pkg-to-db` tool.
 		 Use this after editing package files locally to apply changes to the running
 		 Creatio instance. Consider compiling configuration and restarting the
 		 environment afterward to ensure changes take full effect.
-		 **Prerequisite:** The environment must have file-system development (FSD) mode enabled.
+		 **Scope:** It does not install package data. A `Data/` binding folder is applied only by package
+		 installation (`push-pkg`, `push-workspace`) or by `create-data-binding-db` / `upsert-data-binding-row-db`.
+		 **Prerequisite:** The environment must have file-system development (FSD) mode enabled;
+		 the call fails when it is disabled.
 		 """;
 }

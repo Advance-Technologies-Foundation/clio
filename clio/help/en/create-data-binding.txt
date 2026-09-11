@@ -86,6 +86,12 @@ NOTES
       command fails instead of overwriting it
     - filter.json is always created as an empty file
 
+Lookup descriptor compatibility: ReferenceSchemaName is a generator-only hint and is
+not written to descriptor.json. Lookup Value and DisplayValue remain in data.json.
+For older affected bindings, remove only ReferenceSchemaName and advance ModifiedOnUtc,
+preserving existing rows and localizations. Regeneration requires supplying all intended
+rows and localizations again. Verify target rows after applying the binding.
+
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
 

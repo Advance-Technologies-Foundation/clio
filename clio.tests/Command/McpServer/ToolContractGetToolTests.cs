@@ -22,6 +22,103 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class ToolContractGetToolTests {
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
+	[Test]
+	[Category("Unit")]
+	[TestCase("set-sys-setting")]
+	[TestCase("SET-SYS-SETTING")]
+	[Description("A set-system-setting miss ranks the registered update tool before read/create lexical matches.")]
+	public void GetToolContracts_ShouldSuggestUpdateFirst_WhenSetVerbIsRequested(string requestedName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([requestedName]));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "suggesting a tool must not turn a miss into a successful lookup");
+		result.Error!.Suggestions!.First().Should().Be(SysSettingUpdateTool.UpdateSysSettingToolName,
+			because: "the exact subject with synonymous update intent should precede a read tool");
+		result.Error.Suggestions.Should().NotContain(requestedName.ToLowerInvariant(),
+			because: "an unknown name must never suggest itself");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("Retains valid contracts regardless of where unknown names occur in a batch and deduplicates names.")]
+	public void GetToolContracts_ShouldRetainResolvedContracts_WhenBatchContainsUnknownNames(bool unknownFirst) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		string known = SysSettingUpdateTool.UpdateSysSettingToolName;
+		string[] names = unknownFirst
+			? ["page-updte", known, "missing-tool-two", " PAGE-UPDTE ", known.ToUpperInvariant()]
+			: [known, "page-updte", "missing-tool-two", " PAGE-UPDTE ", known.ToUpperInvariant()];
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(names));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "a resolved contract makes a mixed lookup useful");
+		result.Tools!.Select(item => item.Name).Should().Equal([known],
+			because: "unknown guesses must not discard valid contracts or introduce duplicates");
+		result.Error.Should().BeNull(because: "individual misses belong in not-found for a partial success");
+		result.NotFound!.Select(item => item.Name).Should().Equal(["page-updte", "missing-tool-two"],
+			because: "each distinct miss must be reported in request order");
+		result.NotFound[0].Error.Suggestions.Should().Contain(PageUpdateTool.ToolName,
+			because: "suggestions must correspond to the individual miss");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns every unresolved name while preserving the original top-level error when all names miss.")]
+	public void GetToolContracts_ShouldReturnAllMisses_WhenNoNamesResolve() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(["page-updte", "missing-tool-two"]));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "no requested contract resolved");
+		result.Tools.Should().BeNull(because: "the existing all-miss contract has no tools payload");
+		result.NotFound.Should().HaveCount(2, because: "both misses need independent diagnostics");
+		result.Error.Should().Be(result.NotFound![0].Error,
+			because: "existing clients must retain the first tool-not-found error");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects malformed names before resolving any contracts, even in a mixed batch.")]
+	public void GetToolContracts_ShouldRejectWholeRequest_WhenBatchContainsBlankName() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName, " "]));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "blank names remain invalid input rather than lookup misses");
+		result.Tools.Should().BeNull(because: "input validation must precede lookup");
+		result.NotFound.Should().BeNull(because: "invalid input must not be reported as an unknown tool");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Omits the additive not-found field from successful responses without misses.")]
+	public void GetToolContracts_ShouldOmitNotFound_WhenAllNamesResolve() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		string json = JsonSerializer.Serialize(tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName])));
+		using JsonDocument document = JsonDocument.Parse(json);
+
+		// Assert
+		document.RootElement.TryGetProperty("not-found", out _).Should().BeFalse(
+			because: "existing successful response shapes must remain unchanged");
+	}
+
 	// Builds the same REAL invoker registry BuildToolWithRegistry wraps in a tool, so contracts for
 	// uncurated tools derive from the same MCP tool input schema clio-run dispatches against (Codex
 	// review #1, story-6). Exposed separately so ENG-93885 tests can call ToolContractCatalog.GetContracts
@@ -257,6 +354,76 @@ public sealed class ToolContractGetToolTests {
 			because: "the contract must derive from the real dispatched MCP schema, which carries the environmentName argument clio-run binds");
 		entry.InputSchema.Required.Should().Contain("environmentName",
 			because: "environmentName is marked [Required] on the tool method, so the derived contract must mark it required");
+	}
+
+	// Pins the issue #952 secondary defect: a registry-derived (uncurated, hidden) tool that returns a
+	// CommandExecutionResult used to advertise `success == false` as its only failure signal — a field
+	// that envelope never carries — so an agent watching for it saw every failure as a success.
+	[Test]
+	[Category("Unit")]
+	[TestCase("pkg-to-db")]
+	[TestCase("pkg-to-file-system")]
+	[Description("An uncurated tool that returns a command execution result advertises the command-execution-result failure signals instead of a success field it never emits.")]
+	public void ToolContractGet_Should_AdvertiseCommandExecutionFailureSignals_ForUncuratedCommandTool(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([toolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: $"{toolName} is invokable through clio-run and must expose a discoverable contract");
+		ToolContractDefinition entry = result.Tools!.Single();
+		entry.OutputContract.Kind.Should().Be("command-execution-result",
+			because: "the tool returns the command execution envelope, not a tool-native response");
+		entry.OutputContract.FailureSignals.Should().BeEquivalentTo(
+			["exit-code != 0", "execution-log-messages[*].message-type == Error"],
+			because: "an agent must be pointed at the two fields the command execution envelope actually carries");
+	}
+
+	// Guards the blast radius of the issue #952 output-contract change: BuildOutputContract keys the
+	// advertised output shape on a McpToolSchemaCatalog lookup, so a regression in that lookup would flip
+	// EVERY registry-derived contract back to the tool-native-response default at once, silently. The
+	// reflection catalog enumerates every [McpServerTool] method in the assembly while the invoker
+	// registry additionally filters by feature toggle, so the catalog is a superset and no dispatchable
+	// tool may fall back.
+	[Test]
+	[Category("Unit")]
+	[Description("Every tool the invoker registry can dispatch resolves an output contract in the reflection catalog, so no registry-derived contract falls back to the tool-native-response default.")]
+	public void ToolContractGet_Should_ResolveOutputContractForEveryDispatchableTool() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildInvokerRegistry();
+
+		// Act
+		string[] unresolved = registry.ToolNames
+			.Where(toolName => !McpToolSchemaCatalog.TryGetOutputContract(toolName, out _))
+			.OrderBy(toolName => toolName, StringComparer.Ordinal)
+			.ToArray();
+
+		// Assert
+		registry.ToolNames.Should().NotBeEmpty(
+			because: "the assertion below is only meaningful when the registry actually discovered tools");
+		unresolved.Should().BeEmpty(
+			because: "a dispatchable tool whose name does not resolve in the reflection catalog silently " +
+			"reverts to advertising `success == false`, the exact defect GitHub issue #952 reported");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An output contract lookup for a name that is not a registered MCP tool reports a miss, which is what makes the registry contract builder fall back to its defensive tool-native-response default.")]
+	public void ToolContractGet_Should_ReportOutputContractMiss_ForUnregisteredToolName() {
+		// Arrange
+		const string unregisteredToolName = "clio-tests-not-a-registered-mcp-tool";
+
+		// Act
+		bool resolved = McpToolSchemaCatalog.TryGetOutputContract(unregisteredToolName, out ToolOutputContract contract);
+
+		// Assert
+		resolved.Should().BeFalse(
+			because: "a name that no MCP tool declares must not resolve an output contract");
+		contract.Should().BeNull(
+			because: "the miss must leave no contract behind for the caller to publish as if it were reflected");
 	}
 
 	[Test]
@@ -1387,18 +1554,17 @@ public sealed class ToolContractGetToolTests {
 				field.Name == "body" &&
 				field.Description.Contains("get-page.files.bodyFile"),
 			because: "update-page should advertise the materialized body file as the source of fallback single-page saves");
-		// PR #1351 review - validate-page is the THIRD consumer named in issue #1185 and was the one clause left
-		// unguarded, so it could be reverted to `raw.body`, or lose the "no body-file parameter" qualifier that
-		// makes the get-page -> edit -> validate-page loop composable, with a fully green suite.
+		// validate-page is the third consumer in the get-page handoff. Keep its explicit body-file input pinned so
+		// callers do not have to inline or re-escape the materialized page body.
 		ToolContractDefinition pageValidateContract = tool
 			.GetToolContracts(new ToolContractGetArgs([PageValidateTool.ToolName])).Tools!.Single();
-		string pageValidateBodyDescription = pageValidateContract.InputSchema.Properties
-			.Single(field => field.Name == "body").Description;
-		pageValidateBodyDescription.Should().Contain("INLINE",
-			because: "validate-page takes the body inline only, and an agent that assumes a body-file parameter cannot close the get-page -> edit -> validate-page loop");
-		pageValidateBodyDescription.Should().Contain("get-page.files.bodyFile",
-			because: "the loop is only composable if the contract names the file get-page actually materializes");
-		pageValidateBodyDescription.Should().NotContain("raw.body",
+		string pageValidateBodyFileDescription = pageValidateContract.InputSchema.Properties
+			.Single(field => field.Name == "body-file").Description;
+		pageValidateBodyFileDescription.Should().Contain("get-page",
+			because: "the loop is composable when the contract names the file source get-page materializes");
+		pageValidateBodyFileDescription.Should().Contain("files.bodyFile",
+			because: "callers should pass the exact path returned by get-page without guessing a directory");
+		pageValidateBodyFileDescription.Should().NotContain("raw.body",
 			because: "get-page no longer returns raw.body over MCP, so validate-page must not point callers at it - the same drift the sync-pages guard above catches");
 		pageUpdateContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "resources" &&
@@ -1865,6 +2031,47 @@ public sealed class ToolContractGetToolTests {
 		contract.OutputContract.Fields.Should().Contain(field =>
 				field.Name == "entities" && field.Description.Contains("`virtual`", StringComparison.Ordinal),
 			because: "get-app-info should document virtual status within each entity result");
+		contract.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "entities" &&
+				field.Description.Contains("default-value-config", StringComparison.Ordinal) &&
+				field.Description.Contains("stable record GUID", StringComparison.Ordinal) &&
+				field.Description.Contains("sequence-prefix", StringComparison.Ordinal),
+			because: "the get-app-info contract must document the typed column default so a defaulted column round-trips to sync-schemas (issue #969)");
+		contract.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "entities" &&
+				field.Description.Contains("None", StringComparison.Ordinal),
+			because: "the contract must tell the agent how to remove a default via source: None (issue #969)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Advertises the sync-schemas default-value fields for columns and update-operations, including the lookup record-GUID Const rule and default removal.")]
+	public void ToolContractGet_Should_Advertise_Sync_Schemas_Default_Value_Fields() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			SchemaSyncTool.ToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the sync-schemas contract should be available through get-tool-contract");
+		ToolContractField operationsField = result.Tools!.Single().InputSchema.Properties
+			.Single(field => field.Name == "operations");
+		operationsField.Description.Should().Contain("default-value-config",
+			because: "the structured default-value field is the primary way to declare a column default and must be discoverable in the contract (issue #969)");
+		operationsField.Description.Should().Contain("STABLE RECORD GUID",
+			because: "a lookup Const default is the stable record GUID and the contract must say so");
+		operationsField.Description.Should().Contain("Sequence",
+			because: "Sequence defaults (sequence-prefix + sequence-number-of-chars) are accepted and must be documented");
+		operationsField.Description.Should().Contain("SystemValue",
+			because: "SystemValue defaults (value-source = system value GUID) are accepted and must be documented");
+		operationsField.Description.Should().Contain("None",
+			because: "explicit default removal via source: None must be documented");
+		operationsField.Description.Should().Contain("default-value-source",
+			because: "the legacy Const/None shorthand remains accepted and must stay documented");
 	}
 
 	[Test]
@@ -3000,6 +3207,28 @@ public sealed class ToolContractGetToolTests {
 				"as distinct types that round-trip");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("The preferred batch schema contract exposes the same accepted column types and temporal alias caveat as the individual column tool.")]
+	public void ToolContractGet_ShouldDescribeTemporalAliases_WhenSyncSchemasIsRequested() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([SchemaSyncTool.ToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "agents must discover column limitations before writing schemas");
+		string description = result.Tools!.Single().InputSchema.Properties.Single(field => field.Name == "operations").Description;
+		description.Should().Contain("Accepted values:", because: "the batch write path must expose its column vocabulary");
+		description.Should().Contain("Date and Time are accepted but are aliases of DateTime",
+			because: "both temporal aliases lose their distinct schema type");
+		description.Should().Contain("readback tools report it as DateTime",
+			because: "successful writing does not prove date-only intent survived");
+		description.Should().Contain("pickerType: \"date\"",
+			because: "date-only UI intent requires explicit picker configuration");
+	}
+
 	// ENG-93885: IsLegacyStdioClient must match the CAADT 1.4.0 stdio fallback client's exact reported
 	// identity (name="mcp_client", version="1.0", both ordinal) and nothing else - not a version prefix,
 	// not an empty version, not a different client name.
@@ -3228,6 +3457,33 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Advertises body-file as the stateless handoff from get-page without incorrectly requiring inline body.")]
+	public void ToolContractGet_ShouldAdvertiseBodyFile_WhenValidatePageContractIsRequested() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(
+			new ToolContractGetArgs([PageValidateTool.ToolName]));
+		ToolContractDefinition contract = result.Tools!.Single();
+
+		// Assert
+		contract.InputSchema.Required.Should().BeEmpty(
+			because: "body and body-file are alternatives that the runtime validates as a one-of requirement");
+		contract.InputSchema.AnyOf.Should().BeEquivalentTo(
+			[new[] { "body" }, new[] { "body-file" }],
+			because: "the served schema must express the same alternative-input rule that runtime validation enforces");
+		contract.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "body-file" && field.Description.Contains("files.bodyFile"),
+			because: "callers must be able to pass the exact path returned by get-page without guessing an output directory");
+		contract.InputSchema.Properties.Should().Contain(field => field.Name == "version",
+			because: "the curated contract must expose the version argument accepted by validate-page");
+		contract.Examples.Should().Contain(example => example.Arguments.ContainsKey("body-file"),
+			because: "the served contract should demonstrate the file-based handoff for large page bodies");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("GetToolContracts derives legacyNoNamesFullShape end-to-end from a live RequestContext whose ClientInfo matches the legacy CAADT 1.4.0 stdio identity, dispatching a no-names call to full tool contracts instead of the compact index.")]
 	public void ToolContractGet_Should_ReturnFullShape_ForLegacyClientInfo_EndToEnd() {
 		// Arrange
@@ -3250,5 +3506,161 @@ public sealed class ToolContractGetToolTests {
 			because: "the legacy stdio client's ClientInfo must be detected end-to-end so the no-names call returns full tool contracts, not the compact index");
 		result.Index.Should().BeNull(
 			because: "the legacy client's full-shape response must not also carry the compact index");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase(SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
+		TestName = "GetSchemaNamePrefixContractCarriesTheEmptyVersusFailureRule")]
+	[TestCase(SysSettingGetTool.GetSysSettingToolName,
+		TestName = "GetSysSettingContractCarriesTheEmptyVersusFailureRule")]
+	[Description("get-tool-contract restates each tool's description in its own literal, so the sys-settings reading rule - an empty value only ever arrives with success:true, a rejected session is success:false - must be present in BOTH places or an agent reading the contract is told something the tool no longer does.")]
+	public void ToolContract_Should_Carry_The_Empty_Versus_Failure_Rule(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractDefinition contract =
+			tool.GetToolContracts(new ToolContractGetArgs([toolName])).Tools!.Single();
+
+		// Assert
+		contract.Description.Should().Contain("success:true",
+			because: "the contract has to say that an empty read is a SUCCESSFUL read, otherwise an agent reads emptiness as ambiguous");
+		contract.Description.Should().Contain("success:false",
+			because: "a rejected session is now a reported failure rather than an empty value (issue #1371), and the contract is where an agent learns that");
+		contract.Description.Should().Contain("authentication error",
+			because: "the contract must name the diagnosis the caller will actually receive");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The curated update-page contract describes the append merge identity as (operation, name) — the shipped agent-facing claim, since update-page is non-resident and the [Description] attribute is never merged in (GitHub #1132)")]
+	public void ToolContractGet_Should_Describe_UpdatePage_Mode_With_Operation_And_Name_Identity() {
+		// Arrange
+		// update-page is NOT in McpCoreToolProfile.CoreToolTypes, so the curated Contracts entry is the
+		// ENTIRE description an agent ever reads. Pinning it here is mandatory: editing the tool's
+		// [Description] attribute alone ships nothing, and without this assertion the curated string can
+		// silently rot back to the pre-#1132 "dedupe by name" claim the code no longer implements.
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the update-page contract must be resolvable through get-tool-contract");
+		ToolContractField modeField = result.Tools!.Single(contract => contract.Name == PageUpdateTool.ToolName)
+			.InputSchema.Properties.Single(field => field.Name == "mode");
+		modeField.Description.Should().Contain("`operation` and `name`",
+			because: "an agent must be told the append merge identity is the operation AND the name, so it can predict which existing entries a fragment replaces");
+		modeField.Description.Should().Contain("does not collide with is preserved",
+			because: "the safety guarantee the issue disputed — an unrelated append never drops an existing operation — must be stated on the surface agents actually read");
+		modeField.Description.Should().Contain("The one exception",
+			because: "the merger DOES drop a further existing entry of a superseded identity; promising unqualified preservation would repeat the #1132 defect of shipping a claim the code does not honour");
+		modeField.Description.Should().NotContain("dedupe by `name`",
+			because: "the pre-#1132 claim describes behaviour the merger no longer has and caused the silent loss of an existing move operation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase(SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
+		TestName = "GetSchemaNamePrefixContractDeclaresTheFailureEnvelopeFields")]
+	[TestCase(SysSettingGetTool.GetSysSettingToolName,
+		TestName = "GetSysSettingContractDeclaresTheFailureEnvelopeFields")]
+	[TestCase(SysSettingsListTool.ListSysSettingsToolName,
+		TestName = "ListSysSettingsContractDeclaresTheFailureEnvelopeFields")]
+	[TestCase(SysSettingCreateTool.CreateSysSettingToolName,
+		TestName = "CreateSysSettingContractDeclaresTheFailureEnvelopeFields")]
+	[TestCase(SysSettingUpdateTool.UpdateSysSettingToolName,
+		TestName = "UpdateSysSettingContractDeclaresTheFailureEnvelopeFields")]
+	[Description("Issue #1329 added error-category, cause, recovery-action and correlation-id to every sys-setting failure envelope; get-tool-contract restates the output shape in its own literal, so a field the tool returns and the contract omits is a field no agent knows to read.")]
+	public void ToolContract_Should_Declare_The_Sys_Setting_Failure_Envelope_Fields(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractDefinition contract =
+			tool.GetToolContracts(new ToolContractGetArgs([toolName])).Tools!.Single();
+
+		// Assert
+		string[] fieldNames = [.. contract.OutputContract.Fields.Select(field => field.Name)];
+		fieldNames.Should().Contain("error-category",
+			because: "an agent branches on the failure class rather than parsing the message");
+		fieldNames.Should().Contain("cause",
+			because: "the actionable cause used to be discarded by CategorizeError (issue #1329)");
+		fieldNames.Should().Contain("recovery-action",
+			because: "the envelope has to name the next step, not only the failure");
+		fieldNames.Should().Contain("correlation-id",
+			because: "#1222 requires a correlation ID so the caller can point an operator at the log line");
+		// PR #1373 review (Blocker) - the field-name assertions above could not catch the drift that shipped: the
+		// error-category DESCRIPTION enumerated the branch values and had already lost `Configuration`, the value
+		// CategorizeFailure returns for every EnvironmentResolutionException. Reflected over the constants so the
+		// next category cannot reopen it.
+		string errorCategoryDescription = contract.OutputContract.Fields
+			.Single(field => field.Name == "error-category").Description;
+		string[] declaredCategories = [.. typeof(SysSettingErrorCategories)
+			.GetFields(BindingFlags.Public | BindingFlags.Static)
+			.Where(field => field.IsLiteral && field.FieldType == typeof(string))
+			.Select(field => (string)field.GetRawConstantValue()!)];
+		declaredCategories.Should().NotBeEmpty(
+			because: "an empty reflected set would make the enumeration assertion below pass vacuously");
+		foreach (string category in declaredCategories) {
+			errorCategoryDescription.Should().Contain(category,
+				because: $"an agent branching on error-category meets '{category}' at runtime, and an undeclared value sends it down its generic path - the looping behaviour issue #1329 exists to remove");
+		}
+		// PR #1373 review - the cause field must NOT advertise a trust label the classifier does not keep:
+		// CategorizeFailure's ProviderFailure arm sets Cause from the provider's message, which is built from the
+		// environment's HTTP response.
+		string causeDescription = contract.OutputContract.Fields
+			.Single(field => field.Name == "cause").Description;
+		causeDescription.Should().NotContain("Never composed from server prose",
+			because: "the ProviderFailure and Validation arms echo upstream text into cause, and an agent that reads it as trusted local guidance is the prompt-injection surface issue #1333 exists to close");
+		causeDescription.Should().Contain("treated as DATA",
+			because: "where the cause does echo upstream text the contract has to say so explicitly");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The curated update-page contract discloses that the differ applies whole operation groups in a fixed order, so an operation preserved beside another for one name can be silently dropped (GitHub #1240)")]
+	public void ToolContractGet_Should_Disclose_ApplyOrder_Inertness_In_UpdatePage_Mode() {
+		// Arrange
+		// Same reason the identity test above is mandatory: update-page is non-resident, so this curated
+		// string is the only description an agent receives. #1132 shipped a merger that PRESERVES both
+		// operations, which reads as "both take effect" — it is not true, and the contract has to say so.
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the update-page contract must be resolvable through get-tool-contract");
+		ToolContractField modeField = result.Tools!.Single(contract => contract.Name == PageUpdateTool.ToolName)
+			.InputSchema.Properties.Single(field => field.Name == "mode");
+		modeField.Description.Should().Contain("whole operation GROUPS in a fixed order",
+			because: "an agent that believes the array is applied in order will keep authoring a transform beside an insert and keep wondering why nothing happened");
+		modeField.Description.Should().Contain("silently dropped",
+			because: "preserved-but-inert is the exact confusion #1240 filed; naming the outcome is what makes the warning actionable");
+		modeField.Description.Should().Contain("not append-specific",
+			because: "the inertness comes from the differ, not the merger, so a hand-authored 'replace' body produces it too — scoping the caveat to append would mislead");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The curated update-page output contract declares the warnings array the envelope carries, so an agent knows to read it")]
+	public void ToolContractGet_Should_Declare_Warnings_In_UpdatePage_Output_Envelope() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the update-page contract must be resolvable through get-tool-contract");
+		ToolContractField warningsField = result.Tools!.Single(contract => contract.Name == PageUpdateTool.ToolName)
+			.OutputContract.Fields.Single(field => field.Name == "warnings");
+		warningsField.Description.Should().Contain("never retry on a warning",
+			because: "these findings are advisory and the save already succeeded; an agent that reads a warning as a failure will re-save and can trip conflict detection");
 	}
 }
