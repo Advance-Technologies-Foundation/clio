@@ -2885,7 +2885,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 	[Test]
 	[Description("A declared element whose name the source page ALREADY uses for an element of its own is NOT declared (the two would collide on the mobile page); the page element converts as itself and the guide reports the conflict as a constraint.")]
-	public void Analyze_ShouldSkipDeclaredDeclaredElement_WhenPageOwnsTheName() {
+	public void Analyze_ShouldSkipDeclaredElement_WhenPageOwnsTheName() {
 		// Arrange
 		JArray page = DeclaredElementsPage(withRightWidget: true, withPageTab: false);
 		JObject generalGrid = (JObject)page.SelectToken("$..[?(@.name == 'GridContainer_hq3ajyu')]")!;
