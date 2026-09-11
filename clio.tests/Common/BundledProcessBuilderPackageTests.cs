@@ -74,8 +74,10 @@ public class BundledProcessBuilderPackageTests {
 	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1</c> at
 	/// <see cref="ExpectedArchiveVersion"/> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-95986-send-email-template-mode</c>, tag <c>crtprocessbuilder-1.6.2.3</c>), at the commit
-	/// recorded mechanically in
+	/// <c>feature/ENG-96503-read-data-count-aggregation</c>, merged from <c>nitro/sprint-3-release</c> — the
+	/// branch therefore also carries the ENG-95986 Send-email template-mode work and everything
+	/// <c>nitro/sprint-3-release</c> had accumulated by then (including the earlier ENG-91853 flow-labels and
+	/// ENG-94374 process-versioning work that branch itself carries), at the commit recorded mechanically in
 	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
 	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
 	/// by hand. Many numbers below the current one are burned rather than reused — some because two branches drew
@@ -102,15 +104,68 @@ public class BundledProcessBuilderPackageTests {
 	/// 1.6.2.2 were the earlier review rounds' cuts, each superseded on the same branch before it shipped; the
 	/// create/modify FLOOR stays at 1.6.2.1, the first archive carrying the mode, which this one satisfies. 1.6.2.0 is
 	/// BURNED — it was cut from a commit below ENG-91853, so an archive numbered above 1.6.1.9 would have lacked the
-	/// flow labels 1.6.1.4–1.6.1.9 ship (the "newer stops meaning contains" trap of bundled-packages.md), and its tag
+	/// flow labels 1.6.1.4-1.6.1.9 ship (the "newer stops meaning contains" trap of bundled-packages.md), and its tag
 	/// still names that commit; the .2 minor step over 1.6.1.x records that a new element behaviour the clio
 	/// descriptions advertise is a capability. Each raise is what makes a stand still carrying an earlier archive
 	/// DETECTABLY behind — same-version re-cuts make equal version numbers mean nothing, which the convergence
 	/// check cannot see through.</para>
+	/// <para>On TOP of that (this cut, merged from <c>feature/ENG-96503-read-data-count-aggregation</c>): the Read
+	/// data element's <c>count</c> and <c>aggregation</c> modes — <c>readData.mode</c> takes <c>first</c> |
+	/// <c>count</c> | <c>aggregation</c>, the aggregation pair validated against the source object's column types,
+	/// the result flag moved to the output the runtime actually writes — AND a same-batch dependency-guard bypass
+	/// closed (AC 9a): the retarget/mode-change guards on Read data, Modify data, Add data and Pre-configured page
+	/// used to scan the schema LIVE at the moment each guard ran, so an earlier operation in the SAME
+	/// <c>modify-business-process</c> call could repoint or clear a dependent mapping and let a later operation in
+	/// that call dodge the guard — confirmed via a live CAADT/Playwright run that completed a "forbidden" mode
+	/// switch end to end. <c>IProcessDependencySnapshot</c> (request-scoped) now answers every one of those four
+	/// guards with the union of a frozen pre-batch capture and a fresh live re-scan, so neither a dependent cleared
+	/// nor one added mid-batch escapes detection. Every PATCH digit over 1.6.2.5 fixes something a review or a
+	/// live-test run found, and each is raised so a stand still carrying an earlier one is DETECTABLY behind.</para>
+	/// <para>1.6.2.8 (this cut): two more post-merge review findings on the same feature branch, both confirmed
+	/// against current code before fixing. <c>ProcessElementDependencyScanner.CaptureSnapshot</c> now also walks
+	/// <c>schema.ExecutionContexts</c> — a second schema-level parameter collection, distinct from
+	/// <c>schema.Parameters</c>, that <c>ProcessParameterService</c>'s parameter-delete guard already scanned; a
+	/// reference living only there was invisible to every retarget/mode-change guard above. And
+	/// <c>ReadDataConfigBinder.Describe</c> now omits <c>columns</c>/<c>sort</c> for <c>count</c>/<c>aggregation</c>
+	/// — a shipped Function-mode element can carry stale stored values from a designer-side mode switch (the
+	/// designer does not clear them the way this package's own <c>Apply</c> does), and reporting them produced a
+	/// block <c>build</c>/<c>modify</c> immediately refuses, breaking the round-trip.</para>
+	/// <para>1.6.2.9 (this cut): a High-severity post-merge finding on <c>PreconfiguredPageApplier.Apply</c> — it
+	/// mutated the page (and, further down, buttons/performer/data sources) BEFORE its stale-data-source
+	/// dependency guard ran, so a refusal from that guard left the page already switched to the retarget's
+	/// destination while the stale, now-orphaned parameter it named stayed in place. <c>ApplyPage</c> and
+	/// <c>ApplyDataSources</c> are now split into a read-only resolve phase and a mutation-only write phase; every
+	/// guard — the newly-hoisted "no buttons on a new Freedom element" check included — now runs before any write,
+	/// in the method's original relative write order, so a refusal leaves the element exactly as it was.</para>
+	/// <para>1.6.2.10 (this cut): the same atomicity fix, closed the rest of the way. <c>ApplyPerformer</c> called
+	/// the shared <c>IUserTaskPerformerApplier.ApplyToUserTask</c> — which writes the owner/role assignment —
+	/// BEFORE its own "showPage applies to a user performer only" gate, so a role/manager performer with an
+	/// explicit <c>showPage</c> wrote the assignment and only then refused; it now uses the shared mechanism's own
+	/// <c>ResolveForUserTask</c>/<c>ApplyResolvedToUserTask</c> split (the same one <c>OpenEditPageConfigBinder</c>
+	/// already uses), with the gate checked against the resolved-but-unwritten performer. <c>ApplyButtons</c> and
+	/// <c>ApplyRecommendation</c> were each already validate-before-write internally, but ran in the write phase
+	/// AFTER the page had already been written; both are now split into a resolve half (validation, no schema
+	/// mutation) and a write half, so every guard in the method runs before any of it commits.</para>
+	/// <para>1.6.2.11 (this cut): a self-regression the atomicity split introduced, found by the same review pass.
+	/// The original <c>ApplyDataSources</c> caught two data sources sharing a name in one request because each
+	/// iteration added its parameter to <c>element.Parameters</c> immediately, so a later duplicate hit the
+	/// existing name-conflict check; splitting resolution from writing removed that side effect, so
+	/// <c>ResolveDataSources</c> now runs its own intra-request duplicate check, mirroring the one
+	/// <c>ResolveButtons</c> already runs for completing buttons.</para>
+	/// <para>1.6.2.12 (this cut): the previous cut's new check used <c>StringComparer.Ordinal</c>, but the
+	/// runtime's parameter dictionary is case-insensitive while the generated parameter name is only
+	/// case-sensitive as TEXT, so <c>PDS</c> and <c>pds</c> in one request both passed the check and then
+	/// collided at write time the same way an exact duplicate does. Switched to <c>OrdinalIgnoreCase</c>,
+	/// matching the sibling existing-parameter conflict check right below it and <c>ResolveButtons</c>' own
+	/// duplicate check.</para>
 	/// <para>
-	/// The cut ran under <c>-SkipTests</c> (the cutting host builds clio with the .NET 8 SDK and the test project
-	/// targets net10.0); the package's own suite was run on the producing commit beforehand (1718 pass, 0 fail) and
-	/// this guard fixture after the cut, and the script verified the archive inventory it produced. The byte-for-byte comparison of every archive entry
+	/// This cut DID run under <c>-SkipTests</c>. The package's suite is green on the producing commit
+	/// (1871 of 1872 with the CI filter) except for
+	/// <c>CiContractGuardTests.FeatureToggling_LoadedIdentityMatchesThePlatformDemandAndTheTestKit</c>, which
+	/// fails on this machine because the local <c>.application/net-framework/core-bin</c> binds an older
+	/// <c>Creatio.FeatureToggling</c> than the test project references — a stale local dependency set, not a
+	/// defect in the cut. The script verified the archive inventory it produced. The byte-for-byte comparison of
+	/// every archive entry
 	/// against the commit's CHECKOUT rendering was NOT re-run here, and the clean-tree refusal does NOT cover
 	/// it: a clean TREE and a clean CHECKOUT are different states. `git add` normalises to LF in the INDEX while
 	/// the working tree keeps what was written, so LF files can be committed, leave the tree clean, pass the
@@ -186,7 +241,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"B8C88F99183A9D5F4A694AD41B8390AB07DA9182833D1452222B563921D30694";
+		"4ACFB27CD24421AD62EEF1402A46D8F8753905F0E48709250161B16A08928E5A";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -214,7 +269,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.2.5";
+	private const string ExpectedArchiveVersion = "1.6.2.12";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -226,7 +281,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "93fad208c8e538c81babd73646476d56ee9c7818";
+	private const string ExpectedProducingCommit = "bc5a9d1c465d33e40fc60cf05408fd7864f1bdc3";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -252,7 +307,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789139250000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789149468000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
