@@ -29,7 +29,7 @@ stories:
     status: review
     file: spec/stories/story-worker-runtime-policy.md
     adr: spec/adr/adr-mcp-worker-execution-boundary.md
-    note: "GH-1409: Windows/Linux reproduction and validation complete; merge requires Alexandr-Kravchuk's live Mac confirmation."
+    note: "GH-1409: Alex independently verified Windows and reported a teardown race. User authorized proceeding without a Mac runtime; Mac validation remains unverified."
     depends_on: []
     blocks: []
 

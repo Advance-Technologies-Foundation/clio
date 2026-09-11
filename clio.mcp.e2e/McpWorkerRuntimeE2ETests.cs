@@ -27,6 +27,7 @@ public sealed class McpWorkerRuntimeE2ETests {
 		// Arrange
 		string scratch = Path.Combine(Path.GetTempPath(), $"clio-runtime-e2e-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(scratch);
+		bool testFailed = false;
 		try {
 			string source = Path.GetDirectoryName(TestConfiguration.ResolveFreshClioProcessPath())!;
 			string install = Path.Combine(scratch, "clio");
@@ -75,8 +76,33 @@ public sealed class McpWorkerRuntimeE2ETests {
 					because: "the worker must actually read from Creatio after its runtime starts");
 				return Task.CompletedTask;
 			});
+		} catch {
+			testFailed = true;
+			throw;
 		} finally {
-			Directory.Delete(scratch, recursive: true);
+			await DeleteScratchAsync(scratch, testFailed);
+		}
+	}
+
+	private static async Task DeleteScratchAsync(string scratch, bool testFailed) {
+		// Disposing the MCP transport can precede Windows releasing the copied assemblies.
+		// Bound the retry, but never replace a tool assertion with a cleanup exception.
+		for (int attempt = 0; attempt < 20; attempt++) {
+			try {
+				if (Directory.Exists(scratch)) {
+					Directory.Delete(scratch, recursive: true);
+				}
+				return;
+			} catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+				if (attempt == 19) {
+					if (!testFailed) {
+						throw;
+					}
+					TestContext.Error.WriteLine($"Cleanup failed for '{scratch}': {exception.Message}");
+					return;
+				}
+			}
+			await Task.Delay(250);
 		}
 	}
 
