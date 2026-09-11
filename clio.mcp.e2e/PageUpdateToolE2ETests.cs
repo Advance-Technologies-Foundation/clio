@@ -26,6 +26,44 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = PageUpdateTool.ToolName;
+
+	[Test]
+	[Description("GH-1189: the real update-page validation response gives safe remediation for an own-body field insert with an undeclared binding.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page preserves own-body inserts in binding remediation")]
+	public async Task UpdatePage_ShouldExplainInsertPreservation_WhenBindingIsUndeclared() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		const string body = """
+			define("UsrBindingRemediation", [], function() { return {
+				viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[
+					{"operation":"insert","name":"NameField","values":{"type":"crt.Input","control":"$PDS_Name","label":"$Resources.Strings.PDS_Name"}}
+				]/**SCHEMA_VIEW_CONFIG_DIFF*/,
+				viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/,
+				modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/
+			}; });
+			""";
+
+		// Act
+		CallToolResult result = await context.Session.CallToolAsync(ToolName,
+			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> {
+				["schema-name"] = "UsrBindingRemediation", ["body"] = body,
+				["mode"] = "append", ["dry-run"] = true, ["skip-sampling"] = true,
+				["environment-name"] = "missing-binding-remediation-environment"
+			} }, context.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(result);
+
+		// Assert
+		result.IsError.Should().NotBeTrue(because: "validation errors use the structured response envelope");
+		response.Success.Should().BeFalse(because: "the missing binding must remain a validation failure");
+		response.Error.Should().Contain("component itself is introduced by a parent schema",
+			because: "attribute ownership alone does not make a merge safe");
+		response.Error.Should().Contain("keep its complete 'insert' operation",
+			because: "the proposed correction must preserve an own-body component");
+		response.Error.Should().Contain("include the attribute declaration",
+			because: "the corrected fragment must satisfy the self-contained binding check");
+	}
+
 	private const string MinimalMarkerPageBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 		"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
 		"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
