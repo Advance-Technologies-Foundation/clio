@@ -202,6 +202,11 @@ public sealed class ComponentInfoToolE2ETests : McpContractFixtureBase {
 			because: "every standard field component must advertise the three-part inserted-field contract that update-page enforces");
 		fieldResponse.DataSourceBindingContract!.Should().Contain("viewModelConfigDiff",
 			because: "the contract must name the section where the binding attribute is declared");
+		fieldResponse.DataSourceBindingContract.Should().Contain(
+			"Use merge in viewConfigDiff for parent-introduced components; for an own-body component",
+			because: "GH-1189: an existing attribute alone does not justify replacing the component's insert with a merge");
+		fieldResponse.DataSourceBindingContract.Should().Contain("edit its complete insert",
+			because: "the field contract must give the same safe correction as the update-page diagnostic");
 		fieldResponse.DataSourceBindingContract.Should().Contain("$Resources.Strings.<bindingAttribute>",
 			because: "the contract must describe the auto-provided label form — keyed by the view-model attribute name — that the IsAutoProvidedLabelResourceKey rule accepts");
 		fieldResponse.DataSourceBindingContract.Should().Contain("operation:\"merge\"",

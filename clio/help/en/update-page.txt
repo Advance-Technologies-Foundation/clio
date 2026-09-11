@@ -47,6 +47,13 @@ DESCRIPTION
     entry for it in viewConfigDiff, add a local merge for that control
     name instead of editing a non-existent local insert.
 
+    For an own-body field with an undeclared binding, keep the complete insert,
+    edit its values, and include its attribute declaration in viewModelConfigDiff
+    even when already stored. Append replaces a matching insert as a whole;
+    a separate merge does not patch the insert.
+    viewModelConfigDiff concatenates entries, so an unchanged declaration is
+    appended again with the same effective values. Another append cannot remove it.
+
     VALIDATION RULES:
     - SCHEMA_CONVERTERS keys (object form) must follow VendorPrefix.Name
       format (e.g., usr.MyConverter).
