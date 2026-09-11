@@ -467,6 +467,30 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 			because: "the ImageInput tooltip literal is a valid, working authoring form and must not produce an error");
 	}
 
+	[TestCase("crt.Gallery", "itemConfig")]
+	[TestCase("crt.Playbook", "_designOptions")]
+	[Description("Accepts attribute-name caption mappings on Gallery and Playbook through the real MCP validator.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts Gallery and Playbook attribute mappings")]
+	[AllureDescription("Checks issue #1194 and related #1224 without converting record attribute identifiers to resource bindings.")]
+	public async Task PageValidateTool_ShouldAcceptMapping_WhenCaptionNamesRecordAttribute(string componentType, string configProperty) {
+		// Arrange
+		string diff = """[{"operation":"insert","name":"MappingProbe","values":{"type":"COMPONENT","CONFIG":{"templateValuesMapping":{"caption":"GalleryDS_Name"}}}}]"""
+			.Replace("COMPONENT", componentType).Replace("CONFIG", configProperty);
+		string body = ValidPageBody.Replace("/**SCHEMA_VIEW_CONFIG_DIFF*/[]", "/**SCHEMA_VIEW_CONFIG_DIFF*/" + diff);
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		PageValidateResponse response = await AllureApi.Step("Validate the mapping through stdio MCP", async () =>
+			await CallAsync(context.Session, context.CancellationTokenSource.Token, body));
+
+		// Assert
+		AllureApi.Step("Verify the mapping is valid", () => response.Valid.Should().BeTrue(
+			because: "template slots name attributes rather than user-visible text"));
+		AllureApi.Step("Verify no content errors were reported", () => response.Validation!.Errors.Should().BeNullOrEmpty(
+			because: "valid mapping identifiers must not require resource registration"));
+	}
+
 	[Test]
 	[Description("Returns valid: true when an inserted crt.EmailComposer carries the platform-authored data.caption literal — a component's data descriptor is component metadata, not page-authored user-visible text, so the localizable-text rule must NOT reject it (issue #1298). Proves the descriptor exemption reaches through the real MCP transport.")]
 	[AllureTag(ToolName)]

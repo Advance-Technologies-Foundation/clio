@@ -29,6 +29,20 @@ Confirm that the original issue is open, assigned to the current GitHub user, li
 
 Do not routinely spend a cross-provider review during investigation. Engage the other coding agent only when the user explicitly requests it or a concrete high-risk ambiguity could materially change repository ownership or the repair: destructive/security/authentication behavior, concurrency, migration, public protocol compatibility, or unfamiliar Creatio platform behavior. Claude is the consultant when running as Codex; Codex is the consultant when running as Claude. Ask for a narrow, independent challenge to the current root cause and smallest repair, with concrete evidence rather than a broad audit. Verify its claims locally and distinguish accepted, rejected, and unresolved findings. If Collab is unavailable or quota-limited, record that and continue without retrying; investigation consultation is optional and is not a blocker.
 
+## Check related open, unclaimed issues
+
+Before handing investigation to repair, search open issues in Clio and any confirmed owning repository using the affected command, symbols, error text, and reported behavior. Start with unassigned issues, then inspect plausible candidates' full bodies, comments, acceptance criteria, assignees, Development links, and matching issue branches. An empty assignee list alone does not prove an issue is unclaimed: an existing branch or active PR is ownership evidence. Do not take over or regroup claimed or ambiguous work, including work assigned to the current user from another task.
+
+Compare root causes and required outcomes, not just similar titles or labels. Decide autonomously within the user's authorized scope:
+
+- **One PR:** the original issue and candidates belong to the same repository and one cohesive repair fully satisfies each issue's acceptance criteria with a shared validation boundary. This includes duplicate reports and different symptoms of the same defect. Route issues in other repositories through the downstream procedure below; never link them to the original Clio branch as a group.
+- **Separate PRs:** the issues have independent causes, require separately useful changes, belong to different repositories, or combining them would materially broaden scope or complicate validation. Cross-link relevant evidence and preserve required downstream dependencies.
+- **Uncertain:** retain the original repair boundary and record what evidence is missing; do not treat a suspected duplicate as confirmed or block otherwise independent work.
+
+Record the search scope, candidate issue links, evidence, and the one-PR/separate-PR decision in the original issue's diagnosis comment, including when no candidates are found. If search is unavailable or incomplete, disclose that limitation rather than claiming no related issues exist. Finding a related issue does not authorize unrelated repairs, third-party writes, or closing it as a duplicate.
+
+When implementation is authorized and one PR is selected, claim only the additional issues included in that repair. Immediately before assignment, re-read their open state, assignees, branches, and PR links; exclude any candidate whose ownership changed or is ambiguous. Assign the current user and verify sole assignment using the claim skill's readback rule. For these grouped issues only, link the original issue's existing Development branch instead of creating another branch or worktree; retain the original issue as coordinator. Verify the link and `Investigating` stage through the canonical procedure. If setup fails, stop the grouped handoff and report the incomplete claim without hiding successful writes. Apply the metadata gate below to every included issue. A triage-only request records the proposed grouping without claiming additional issues or starting repair.
+
 ## Normalize issue metadata
 
 After the diagnosis is evidence-backed and before handing work to repair or another owner:
@@ -70,4 +84,4 @@ Set and verify the original issue's stage using the `clio-issue-workflow` skill:
 - `Waiting for human approval` when investigation is complete but a human decision, permission, or missing answer blocks progress.
 - `Investigating` only while evidence gathering can still continue without human input.
 
-Return the diagnosis, evidence, verified Issue Type and labels, affected repositories, existing or created downstream issues, relationships added, proposed repair boundary, cross-agent contribution or unavailability, and unresolved questions.
+Return the diagnosis, evidence, verified Issue Type and labels, affected repositories, existing or created downstream issues, relationships added, related-issue search and grouping decision, included issues and their verified claims, proposed repair boundary, cross-agent contribution or unavailability, and unresolved questions. Set and verify the same handoff stage for every grouped issue; the original issue remains authoritative for overall status.
