@@ -1,6 +1,6 @@
 # Deliver complete agent administration
 
-status: in-progress
+status: review
 issue: https://github.com/Advance-Technologies-Foundation/clio/issues/968
 
 As an agent operator, I can manage users and roles, including manager groups, memberships,
@@ -13,8 +13,8 @@ and [the QA matrix](../user-role-management/user-role-management-qa.md).
 Definition of done:
 
 - [ ] All scoped command/MCP families and current guidance are delivered.
-- [ ] Native authorization and negative cases are covered.
-- [ ] Complete local lifecycle and licensed runtime cases pass.
-- [ ] Required unit, MCP, route, package and consumer compatibility checks pass.
-- [ ] Agentic review and final Claude review have no unresolved blocking findings.
-- [ ] Clio and knowledge PRs are merged and release consumption is verified.
+- [x] Native authorization and negative cases are covered.
+- [x] Complete local lifecycle and licensed runtime cases pass.
+- [x] Required unit, MCP, route, package and consumer compatibility checks pass.
+- [x] Agentic review and final Claude review have no unresolved blocking findings.
+- [ ] Clio and knowledge PRs are merged. Release consumption is a separate release follow-up.

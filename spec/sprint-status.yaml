@@ -24,7 +24,7 @@ stories:
   - id: story-user-role-management-1
     title: Complete agent-facing user and role administration
     feature: user-role-management
-    status: in-progress
+    status: review
     file: spec/stories/story-user-role-management-1.md
     adr: spec/adr/adr-user-role-management.md
     issue: https://github.com/Advance-Technologies-Foundation/clio/issues/968

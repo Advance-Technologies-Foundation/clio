@@ -39,6 +39,7 @@ public sealed class AdministrationToolE2ETests : McpContractFixtureBase {
 			Assert.Ignore("Enable destructive tests and configure Sandbox.EnvironmentName and a dedicated AdministrationContactId.");
 		}
 		await using var context = Arrange(TimeSpan.FromMinutes(12));
+		CancellationToken requestToken = context.CancellationTokenSource.Token;
 		string environment = settings.Sandbox.EnvironmentName!;
 		Guid user = Guid.NewGuid(), division = Guid.NewGuid(), functional = Guid.NewGuid(), ip = Guid.NewGuid();
 		Guid manager = Guid.Empty;
@@ -172,6 +173,8 @@ public sealed class AdministrationToolE2ETests : McpContractFixtureBase {
 			licenses.ValueKind.Should().Be(JsonValueKind.Array, because: "license inspection must work even on an unlicensed lab");
 			assertionsCompleted = true;
 		} finally {
+			using CancellationTokenSource cleanupBudget = new(TimeSpan.FromMinutes(3));
+			requestToken = cleanupBudget.Token;
 			List<string> cleanupFailures = [];
 			if (userCreated) { await Cleanup(ManageUserTool.ToolName, ManageUserTool.InspectToolName, user); }
 			if (manager != Guid.Empty) { await Cleanup(ManageRoleTool.ToolName, ManageRoleTool.InspectToolName, manager); }
@@ -198,7 +201,7 @@ public sealed class AdministrationToolE2ETests : McpContractFixtureBase {
 		[AllureStep("Call administration tool and verify its execution envelope")]
 		async Task<JsonElement> Success(string toolName, Dictionary<string, object?> args) {
 			args["environment-name"] = environment;
-			CallToolResult call = await context.Session.CallToolAsync(toolName, new Dictionary<string, object?> { ["args"] = args }, context.CancellationTokenSource.Token);
+			CallToolResult call = await context.Session.CallToolAsync(toolName, new Dictionary<string, object?> { ["args"] = args }, requestToken);
 			string allText = string.Join(" ", call.Content.OfType<TextContentBlock>().Select(block => block.Text));
 			allText.Contains(_password, StringComparison.Ordinal).Should().BeFalse(because: "the first password must never appear in MCP content");
 			allText.Contains(_nextPassword, StringComparison.Ordinal).Should().BeFalse(because: "the replacement password must never appear in MCP content");
