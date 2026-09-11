@@ -2202,6 +2202,137 @@ internal class RemoteEntitySchemaColumnManagerTests
 			.Resolve(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<RemoteCommandOptions>());
 	}
 
+	[TestCase(10, false)]
+	[TestCase(10, true)]
+	[TestCase(7, false)]
+	[TestCase(7, true)]
+	[TestCase(8, false)]
+	[TestCase(8, true)]
+	[TestCase(9, false)]
+	[TestCase(9, true)]
+	[TestCase(16, false)]
+	[TestCase(16, true)]
+	[TestCase(18, false)]
+	[TestCase(18, true)]
+	[Description("Resolves native SystemValue captions for lookup and non-lookup columns in both read modes, retaining source identity.")]
+	public void GetColumnProperties_ShouldResolveNativeCaption_WhenDefaultIsSystemValue(int dataValueType, bool merged) {
+		// Arrange
+		const string source = "{4F367CA9-549B-4A1A-B64E-A40123F52AC0}";
+		const string caption = "Поточний контакт користувача";
+		GetEntitySchemaColumnPropertiesOptions options = ArrangeSystemDefault(source, dataValueType, merged);
+		Guid typeUId = dataValueType switch {
+			8 => Guid.Parse("603d4960-a1a2-45e9-b232-206a54421b01"),
+			9 => Guid.Parse("04cc757b-8f06-482c-8a1a-0c0e171d2410"),
+			16 => Guid.Parse("b039feb0-ee7c-4884-8aa6-d6d45d84316f"),
+			18 => Guid.Parse("dafb71f9-ee9f-4e0b-a4d7-37aa15987155"),
+			_ => EntitySchemaDesignerSupport.RuntimeDataValueTypeUIdMap[dataValueType]
+		};
+		_designerClient.GetSystemValues(typeUId, options).Returns([
+			new SystemValueLookupValueDto { Value = Guid.NewGuid(), DisplayValue = "Other source" },
+			new SystemValueLookupValueDto { Value = Guid.Parse(source), DisplayValue = caption }
+		]);
+
+		// Act
+		EntitySchemaColumnPropertiesInfo result = _manager.GetColumnProperties(options);
+
+		// Assert
+		result.DefaultValueConfig!.DisplayValue.Should().Be(caption,
+			because: "the native catalog caption must be used rather than a hardcoded alias or evaluated record value");
+		result.DefaultValueConfig.SourceResolution.Should().BeNull(because: "the catalog resolved this source");
+		result.DefaultValueConfig.RecordResolution.Should().BeNull(because: "this is a system value, not a record lookup");
+		result.DefaultValueConfig.ValueSource.Should().Be(source, because: "enrichment must preserve the stored selector");
+		result.DefaultValueConfig.ResolvedValueSource.Should().Be(source, because: "the canonical source field must not become a caption");
+		result.DefaultValue.Should().Be(source, because: "legacy readback must retain its source identifier");
+		_designerClient.Received(1).GetSystemValues(typeUId, options);
+		_designerClient.DidNotReceiveWithAnyArgs().SaveSchema(default, default);
+	}
+
+	[TestCase("not-a-guid", 10, "invalid-source")]
+	[TestCase("00000000-0000-0000-0000-000000000000", 10, "invalid-source")]
+	[TestCase("4f367ca9-549b-4a1a-b64e-a40123f52ac0", 999, "unsupported-type")]
+	[Description("Reports malformed selectors and unknown column types without issuing a catalog request.")]
+	public void GetColumnProperties_ShouldExplainUnresolvableSource_WhenMetadataCannotBeQueried(
+		string source, int dataValueType, string expectedMarker) {
+		// Arrange
+		GetEntitySchemaColumnPropertiesOptions options = ArrangeSystemDefault(source, dataValueType, false);
+
+		// Act
+		EntitySchemaColumnPropertiesInfo result = _manager.GetColumnProperties(options);
+
+		// Assert
+		result.DefaultValueConfig!.SourceResolution.Should().Be(expectedMarker, because: "readback must explain why source identity was not resolved");
+		result.DefaultValueConfig.ValueSource.Should().Be(source, because: "unresolved identifiers remain inspectable");
+		_designerClient.DidNotReceiveWithAnyArgs().GetSystemValues(default, default);
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("Distinguishes a source absent from the type-filtered catalog from a present source with no caption.")]
+	public void GetColumnProperties_ShouldExplainMissingCaption_WhenCatalogHasNoUsableMatch(bool present) {
+		// Arrange
+		const string source = "4f367ca9-549b-4a1a-b64e-a40123f52ac0";
+		GetEntitySchemaColumnPropertiesOptions options = ArrangeSystemDefault(source, 10, true);
+		_designerClient.GetSystemValues(Arg.Any<Guid>(), options).Returns(present
+			? [new SystemValueLookupValueDto { Value = Guid.Parse(source), DisplayValue = " " }]
+			: Array.Empty<SystemValueLookupValueDto>());
+
+		// Act
+		EntitySchemaColumnPropertiesInfo result = _manager.GetColumnProperties(options);
+
+		// Assert
+		result.DefaultValueConfig!.SourceResolution.Should().Be(present ? "caption-unavailable" : "not-found-for-type",
+			because: "a successful catalog query must distinguish absent entries from unavailable captions");
+		result.DefaultValueConfig.DisplayValue.Should().BeNull(because: "there is no usable caption");
+	}
+
+	[TestCase("http")]
+	[TestCase("service")]
+	[TestCase("timeout")]
+	[TestCase("json")]
+	[Description("Catalog transport, service, timeout and serialization failures preserve readback with an honest marker.")]
+	public void GetColumnProperties_ShouldPreserveSource_WhenCatalogIsUnavailable(string failure) {
+		// Arrange
+		const string source = "4f367ca9-549b-4a1a-b64e-a40123f52ac0";
+		GetEntitySchemaColumnPropertiesOptions options = ArrangeSystemDefault(source, 10, false);
+		Exception exception = failure switch {
+			"http" => new HttpRequestException("Unavailable"),
+			"timeout" => new System.Threading.Tasks.TaskCanceledException("Timeout"),
+			"json" => new Newtonsoft.Json.JsonReaderException("Malformed response"),
+			_ => new InvalidOperationException("Access denied")
+		};
+		_designerClient.GetSystemValues(Arg.Any<Guid>(), options)
+			.Returns(_ => throw exception);
+
+		// Act
+		EntitySchemaColumnPropertiesInfo result = _manager.GetColumnProperties(options);
+
+		// Assert
+		result.DefaultValueConfig!.SourceResolution.Should().Be("catalog-unavailable",
+			because: "a failed request cannot prove the stored source is invalid");
+		result.DefaultValueConfig.ValueSource.Should().Be(source, because: "optional enrichment must not lose the original readback");
+		result.DefaultValueConfig.DisplayValue.Should().BeNull(because: "failed catalog requests provide no caption");
+	}
+
+	private GetEntitySchemaColumnPropertiesOptions ArrangeSystemDefault(string source, int dataValueType, bool merged) {
+		EntitySchemaColumnDto column = CreateTextColumn("UsrDefault", NameColumnUId);
+		column.DataValueType = dataValueType;
+		column.DefValue = new EntitySchemaColumnDefValueDto {
+			ValueSourceType = EntitySchemaColumnDefSource.SystemValue, ValueSource = source
+		};
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), column]);
+		SetupLoadedSchema();
+		_runtimeEntitySchemaReader.GetByName("Account").Returns(CreateMergedRuntimeSchema() with {
+			Columns = [new Clio.Common.EntitySchema.RuntimeEntitySchemaColumnResult(
+				NameColumnUId, "UsrDefault", "Default", null, dataValueType, false, false, null,
+				DefaultValue: new Clio.Common.EntitySchema.RuntimeEntitySchemaDefaultValueResult(
+					(int)EntitySchemaColumnDefSource.SystemValue, JsonSerializer.SerializeToElement("evaluated"), source, null, 0))]
+		});
+		return new GetEntitySchemaColumnPropertiesOptions {
+			Environment = "issue-1363", Package = merged ? null : "UsrPkg",
+			SchemaName = merged ? "Account" : "UsrVehicle", ColumnName = "UsrDefault"
+		};
+	}
+
 	[Test]
 	[Description("Returns additive resolved-value-source metadata for system-value defaults in structured readback.")]
 	public void GetColumnProperties_ReturnsResolvedValueSource_ForSystemValueDefault() {
