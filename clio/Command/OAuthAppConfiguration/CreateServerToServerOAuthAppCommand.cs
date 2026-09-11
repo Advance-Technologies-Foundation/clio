@@ -13,7 +13,6 @@ namespace Clio.Command.OAuthAppConfiguration;
 /// </summary>
 [Verb("create-server-to-server-oauth-app",
 	HelpText = "Create a server-to-server (client_credentials) OAuth app in Creatio via OAuthConfigService REST")]
-[FeatureToggle("deploy-identity")]
 public sealed class CreateServerToServerOAuthAppOptions : RemoteCommandOptions
 {
 	/// <summary>

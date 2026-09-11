@@ -12,7 +12,6 @@ namespace Clio.Command.OAuthAppConfiguration;
 /// </summary>
 [Verb("verify-oauth-app",
 	HelpText = "Verify a server-to-server OAuth app: acquire a client_credentials token and run a bearer DataService smoke test")]
-[FeatureToggle("deploy-identity")]
 public sealed class VerifyOAuthAppOptions : RemoteCommandOptions
 {
 	/// <summary>

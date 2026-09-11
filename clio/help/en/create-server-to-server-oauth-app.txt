@@ -52,8 +52,7 @@ EXAMPLES
     clio create-server-to-server-oauth-app -e c-dev --system-user-id 410006e1-ca4e-4502-a9ec-e54d922d2c00
 
 NOTES
-    This command is experimental and hidden by default. Enable it before use:
-        clio experimental --name deploy-identity --enable
+    Available by default in CLI and MCP. No Creatio server filesystem or database access is required.
 
     This command mutates Creatio (creates an OAuth client). The generated client secret is
     returned only in the structured result and is never logged.

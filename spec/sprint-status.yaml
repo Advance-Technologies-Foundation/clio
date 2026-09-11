@@ -21,6 +21,11 @@
 # 2026-07-06) is a separate Jira ticket stacked on the same branch; tracked as its own row.
 
 stories:
+  - id: story-tool-contract-partial-results-1
+    title: Publish remote OAuth workflow and keep partial tool contracts
+    status: review
+    file: spec/stories/story-tool-contract-partial-results-1.md
+    issue: https://github.com/Advance-Technologies-Foundation/clio/issues/1408
   - id: story-knowledge-bundle-runtime-1
     title: "Install and hot-reload external knowledge"
     feature: "knowledge-bundle-runtime"

@@ -13,7 +13,6 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool surface for the <c>create-server-to-server-oauth-app</c> command.
 /// </summary>
 [McpServerToolType]
-[FeatureToggle("deploy-identity")]
 public sealed class CreateServerToServerOAuthAppTool(
 	CreateServerToServerOAuthAppCommand command,
 	ILogger logger,
