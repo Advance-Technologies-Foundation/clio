@@ -242,7 +242,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 ## Workspace
 
 <a id="add-data-binding-row"></a>
-- [`add-data-binding-row`](docs/commands/add-data-binding-row.md) - Add or replace a row in a package data binding. Pass the workspace root containing `.clio/workspaceSettings.json`, not the package directory.
+- [`add-data-binding-row`](docs/commands/add-data-binding-row.md) - Add or replace a row in a package data binding
 <a id="build-workspace"></a>
 <a id="build"></a>
 <a id="compile"></a>
@@ -254,7 +254,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="configure-workspace"></a>
 - [`cfg-worspace`](docs/commands/cfg-worspace.md) - Configure workspace package selection, `cfgw`
 <a id="create-data-binding"></a>
-- [`create-data-binding`](docs/commands/create-data-binding.md) - Create or regenerate a package data binding. Pass the workspace root containing `.clio/workspaceSettings.json`, not the package directory.
+- [`create-data-binding`](docs/commands/create-data-binding.md) - Create or regenerate a package data binding
 <a id="create-data-binding-db"></a>
 - [`create-data-binding-db`](docs/commands/create-data-binding-db.md) - Create a DB-first package data binding by saving data directly to the remote Creatio database
 <a id="create-workspace"></a>
@@ -294,7 +294,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="pushw"></a>
 - [`push-workspace`](docs/commands/push-workspace.md) - Push workspace to selected environment, `pushw`
 <a id="remove-data-binding-row"></a>
-- [`remove-data-binding-row`](docs/commands/remove-data-binding-row.md) - Remove a row from a package data binding. Pass the workspace root containing `.clio/workspaceSettings.json`, not the package directory.
+- [`remove-data-binding-row`](docs/commands/remove-data-binding-row.md) - Remove a row from a package data binding
 <a id="remove-data-binding-row-db"></a>
 - [`remove-data-binding-row-db`](docs/commands/remove-data-binding-row-db.md) - Remove a row from a DB-first package data binding
 <a id="restore-workspace"></a>

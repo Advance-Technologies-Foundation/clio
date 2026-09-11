@@ -21,7 +21,8 @@ DESCRIPTION
 OPTIONS
     --package              Target package name
     --binding-name         Binding folder name under package Data
-    --workspace-path       Workspace root path. Defaults to the current workspace
+    --workspace-path       Workspace root containing .clio/workspaceSettings.json,
+                           not the package directory. Defaults to the current workspace
     --values               JSON object keyed by column name for the row payload.
                            If the GUID primary key column is omitted or null,
                            it is generated automatically. For image-content
@@ -46,7 +47,7 @@ EXAMPLES
 
 NOTES
     - --workspace-path is the workspace root containing .clio/workspaceSettings.json,
-      not the package directory. Clio resolves packages/<package-name> beneath that root.
+      not the package directory. Clio resolves packages/{package-name} beneath that root.
     - The binding must already exist locally
     - The row key is the primary column marked in descriptor.json
     - If that primary key is Guid-based and omitted or null in --values, add-data-binding-row generates it automatically
