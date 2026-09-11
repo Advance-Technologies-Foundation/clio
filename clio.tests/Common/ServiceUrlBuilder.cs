@@ -182,6 +182,13 @@ internal class ServiceUrlBuilderCommandTests
 				ServiceUrlBuilder.KnownRoute.LastCompilationResult,
 				"http://localhost/api/ConfigurationStatus/GetLastCompilationResult");
 
+			yield return new TestCaseDataWithKnownRoutes(false, "https://localhost",
+				ServiceUrlBuilder.KnownRoute.GetPackageProperties,
+				"https://localhost/0/ServiceModel/PackageService.svc/GetPackageProperties");
+			yield return new TestCaseDataWithKnownRoutes(true, "https://localhost",
+				ServiceUrlBuilder.KnownRoute.GetPackageProperties,
+				"https://localhost/ServiceModel/PackageService.svc/GetPackageProperties");
+
 			yield return new TestCaseDataWithKnownRoutes(false, "http://localhost",
 				ServiceUrlBuilder.KnownRoute.RestoreFromPackageBackup,
 				"http://localhost/0/ServiceModel/PackageInstallerService.svc/RestoreFromPackageBackup");

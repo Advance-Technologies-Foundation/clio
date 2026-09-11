@@ -17,6 +17,28 @@ public sealed class SchemaConvergenceServiceTests {
 	private const string TargetPackage = "UsrPkg";
 	private const string SchemaName = "UsrTodoStatus";
 
+	[TestCase(null)]
+	[TestCase("BaseEntity")]
+	[Category("Unit")]
+	[Description("Refuses to reconcile a replacement request onto an ordinary schema already in the target package.")]
+	public void Classify_ShouldReturnCollision_WhenReplacementTargetIsAnOrdinarySchema(string? parentName) {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		FakeFind(resolver, [new EntitySchemaSearchResult(SchemaName, TargetPackage, "Customer", parentName)]);
+		GetEntitySchemaPropertiesCommand properties = FakeProperties(resolver, Properties());
+		IServiceCollection services = new ServiceCollection();
+		services.AddSingleton(resolver);
+		services.AddTransient<ISchemaConvergenceService, SchemaConvergenceService>();
+		using ServiceProvider provider = services.BuildServiceProvider();
+		ISchemaConvergenceService service = provider.GetRequiredService<ISchemaConvergenceService>();
+		// Act
+		SchemaConvergencePlan plan = service.Classify(ReplacementEntityTarget(RequestedColumn("UsrExtra", "Text")));
+		// Assert
+		plan.Outcome.Should().Be(SchemaConvergenceOutcome.Collision, because: "an ordinary target row cannot stand in for a replacement");
+		plan.ColumnsToAdd.Should().BeEmpty(because: "the original schema must not receive replacement columns");
+		properties.ReceivedCalls().Should().BeEmpty(because: "collision detection must precede reconciliation reads");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Classifies an absent schema as Create with an empty column delta and no error.")]
@@ -219,14 +241,14 @@ public sealed class SchemaConvergenceServiceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Classifies a create-entity replacement as Reconcile on replay when the replacement already exists in the target package, ignoring the different-package base row and the parent gate.")]
+	[Description("Classifies a same-name replacement as Reconcile on replay when it already exists in the target package.")]
 	public void Classify_ShouldReconcile_WhenExtendParentReplacementExistsInTargetPackage() {
 		// Arrange
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		// Both the base row (lower package) and the already-created replacement (target package) exist.
 		FakeFind(resolver, [
 			new EntitySchemaSearchResult(SchemaName, "Base", "Customer", "BaseEntity"),
-			new EntitySchemaSearchResult(SchemaName, TargetPackage, "Customer", "Contact")
+			new EntitySchemaSearchResult(SchemaName, TargetPackage, "Customer", SchemaName)
 		]);
 		FakeProperties(resolver, Properties(Column("UsrExisting", "Text")));
 		SchemaConvergenceService service = new(resolver);
@@ -386,7 +408,7 @@ public sealed class SchemaConvergenceServiceTests {
 	private static SchemaConvergenceTarget ReplacementEntityTarget(params CreateEntitySchemaColumnArgs[] requestedColumns) {
 		// A create-entity replacement schema (extend-parent=true) that shadows a same-name base schema.
 		return new SchemaConvergenceTarget(
-			"dev", TargetPackage, SchemaName, "Contact", IsLookup: false, ExtendParent: true, requestedColumns);
+			"dev", TargetPackage, SchemaName, SchemaName, IsLookup: false, ExtendParent: true, requestedColumns);
 	}
 
 	private static CreateEntitySchemaColumnArgs RequestedColumn(string name, string type) {

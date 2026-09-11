@@ -352,7 +352,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="client-unit-schema-create"></a>
 - [`create-client-unit-schema`](docs/commands/create-client-unit-schema.md) - Create a new JavaScript (ClientUnit) schema on a remote Creatio environment, `client-unit-schema-create`
 <a id="create-entity-schema"></a>
-- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create a persistent or virtual entity schema in a remote Creatio package; columns accept repeated flags or a JSON array
+- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create a persistent, virtual, or same-name replacing entity schema in a remote Creatio package; columns accept repeated flags or a JSON array
 <a id="create-lookup"></a>
 - [`create-lookup`](docs/commands/create-lookup.md) - Create a lookup entity schema in a remote Creatio package
 <a id="create-schema"></a>
@@ -377,7 +377,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`download-configuration`](docs/commands/download-configuration.md) - Download configuration libraries from Creatio, `dconf`
 <a id="execute-sql-script"></a>
 <a id="sql"></a>
-- [`execute-sql-script`](docs/commands/execute-sql-script.md) - Execute a SQL script in Creatio, `sql`
+- [`execute-sql-script`](docs/commands/execute-sql-script.md) - Execute a SQL script in Creatio, with full request logging in ClioGate 2.0.0.53+, `sql`
 <a id="export-component-registry"></a>
 <a id="export-registry"></a>
 - [`export-component-registry`](docs/commands/export-component-registry.md) - Write the full Freedom UI component registry for a resolved platform version to a file, `export-registry`
@@ -421,7 +421,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="get-version"></a>
 <a id="i"></a>
 <a id="ver"></a>
-- [`info`](docs/commands/info.md) - Show clio, cliogate, and .NET runtime versions, `get-version`, `i`, `ver`
+- [`info`](docs/commands/info.md) - Show clio, cliogate, bundled process-builder, installed knowledge, and .NET runtime versions, `get-version`, `i`, `ver`
 <a id="install-sql-schema"></a>
 <a id="sql-schema-install"></a>
 <a id="execute-sql-schema"></a>
@@ -458,7 +458,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`open-settings`](docs/commands/open-settings.md) - Open the clio settings file, `conf`, `configuration`, `os`, `settings`
 <a id="get-page"></a>
 <a id="page-get"></a>
-- [`get-page`](docs/commands/get-page.md) - Get a Freedom UI page bundle and raw schema body, `page-get`
+- [`get-page`](docs/commands/get-page.md) - Get a Freedom UI page bundle, editable body, and current-leaf/design-package metadata, `page-get`
 <a id="get-process-page-facts"></a>
 <a id="page-facts"></a>
 - [`get-process-page-facts`](docs/commands/get-process-page-facts.md) - Read the completing-button candidates and page-scoped data sources a Pre-configured page process element needs, `page-facts`

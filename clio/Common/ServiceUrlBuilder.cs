@@ -309,7 +309,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		AdministrationRedistributeRoleLicenses = 89,
 		/// <summary>Invalidates native rights caches after system-operation priority changes.</summary>
 		AdministrationInvalidateRightsCache = 90,
-
+		/// <summary>Reads stored or virtual package metadata without materializing the package.</summary>
+		GetPackageProperties = 91,
 
 		/// <summary>
 		///     Reads the configuration compilation result Creatio persisted for the last build.
@@ -320,7 +321,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		///     read from afterwards. It carries no timestamp, which is why it is only trusted once the reload
 		///     that ends the build has been observed.
 		/// </remarks>
-		LastCompilationResult = 91
+		LastCompilationResult = 92
 
 	}
 
@@ -335,6 +336,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 	#region Fields: Private
 
 	public static readonly IReadOnlyDictionary<KnownRoute, string> KnownRoutes = new Dictionary<KnownRoute, string> {
+		{KnownRoute.GetPackageProperties, "ServiceModel/PackageService.svc/GetPackageProperties"},
 		{KnownRoute.AdministrationSaveRole, "/rest/AdministrationService/SaveRole"},
 		{KnownRoute.AdministrationSaveChiefsRole, "/rest/AdministrationService/SaveChiefsRole"},
 		{KnownRoute.AdministrationSaveUser, "/rest/AdministrationService/UpdateOrCreateUser"},

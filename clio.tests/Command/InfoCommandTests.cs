@@ -1,4 +1,7 @@
 using Clio.Command;
+using System.Collections.Generic;
+using System.Linq;
+using Clio.Command.McpServer.Knowledge;
 using Clio.Common;
 using Clio.Project.NuGet;
 using FluentAssertions;
@@ -24,6 +27,7 @@ public class InfoCommandTests : BaseCommandTests<InfoCommandOptions> {
 	private readonly IBundledPackageCatalog _bundledPackageCatalog = Substitute.For<IBundledPackageCatalog>();
 	private readonly ILogger _logger = Substitute.For<ILogger>();
 	private InfoCommand _sut;
+	private readonly IInstalledKnowledgeVersions _knowledgeVersions = Substitute.For<IInstalledKnowledgeVersions>();
 
 	#endregion
 
@@ -33,6 +37,7 @@ public class InfoCommandTests : BaseCommandTests<InfoCommandOptions> {
 		base.AdditionalRegistrations(containerBuilder);
 		containerBuilder.AddSingleton(_bundledPackageCatalog);
 		containerBuilder.AddSingleton(_logger);
+		containerBuilder.AddSingleton(_knowledgeVersions);
 	}
 
 	#endregion
@@ -42,12 +47,14 @@ public class InfoCommandTests : BaseCommandTests<InfoCommandOptions> {
 	[SetUp]
 	public void SetUp() {
 		_sut = Container.GetRequiredService<InfoCommand>();
+		_knowledgeVersions.Read().Returns(new Dictionary<string, string>());
 	}
 
 	[TearDown]
 	public void TearDown() {
 		_bundledPackageCatalog.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
+		_knowledgeVersions.ClearReceivedCalls();
 	}
 
 	[Test]
@@ -110,5 +117,53 @@ public class InfoCommandTests : BaseCommandTests<InfoCommandOptions> {
 	}
 
 	#endregion
+
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("Default and all-version output include each locally installed knowledge bundle version.")]
+	public void Execute_ShouldReportInstalledKnowledge_WhenVersionsAreAvailable(bool all) {
+		// Arrange
+		_knowledgeVersions.Read().Returns(new Dictionary<string, string> {
+			["creatio-curated"] = "1.14.10", ["partner"] = "2.0.0"
+		});
+
+		// Act
+		int result = _sut.Execute(new InfoCommandOptions { All = all });
+
+		// Assert
+		result.Should().Be(0, because: "local knowledge versions are ordinary information output");
+		_logger.ReceivedCalls().Select(call => call.GetArguments()[0]).Should()
+			.Contain("knowledge (creatio-curated):   1.14.10", because: "the installed curated version must be visible")
+			.And.Contain("knowledge (partner):   2.0.0", because: "multiple installed sources must be distinguishable");
+	}
+
+	[Test]
+	[Description("A clean installation reports that no local knowledge version is available without failing info.")]
+	public void Execute_ShouldReportMissingKnowledge_WhenNoVersionIsRecorded() {
+		// Arrange
+		InfoCommandOptions options = new();
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "knowledge is optional for reporting installed component versions");
+		_logger.ReceivedCalls().Select(call => call.GetArguments()[0]).Should()
+			.Contain("knowledge:   not installed or unavailable", because: "absence must not look like a current remote version");
+	}
+
+	[Test]
+	[Description("A component-specific version query does not inspect knowledge state.")]
+	public void Execute_ShouldSkipKnowledge_WhenOnlyClioIsRequested() {
+		// Arrange
+		InfoCommandOptions options = new() { Clio = true };
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "the existing component-specific output stays supported");
+		_knowledgeVersions.ReceivedCalls().Should().BeEmpty(because: "a clio-only query needs no knowledge I/O");
+	}
 
 }

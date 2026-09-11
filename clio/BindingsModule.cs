@@ -706,15 +706,11 @@ public class BindingsModule {
 		services.AddSingleton(new KnowledgeGitHubReleaseOptions(TransportDeadlineMilliseconds: 15_000));
 		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 1_000));
 		services.AddSingleton(new KnowledgeInstallationStoreOptions(LockTimeoutMilliseconds: 30_000));
-		services.AddSingleton(new KnowledgeBundleClientCapabilities(
+		services.AddSingleton(provider => new KnowledgeBundleClientCapabilities(
 			ResolveKnowledgeBundleClioVersion(typeof(BindingsModule).Assembly.GetName().Version),
 			new Version(1, 1, 0),
-			new HashSet<string>(StringComparer.Ordinal) {
-				KnowledgeFeedbackPolicyTools.ConfigureToolName,
-				GuidanceGetTool.ToolName,
-				KnowledgeFeedbackPolicyTools.GetToolName,
-				KnowledgeManagementTools.ListKnowledgeExamplesToolName
-			}));
+			provider.GetRequiredService<IMcpToolInvokerRegistry>().ToolNames.ToHashSet(StringComparer.Ordinal)));
+		services.AddSingleton<IInstalledKnowledgeVersions, InstalledKnowledgeVersions>();
 		// LOCAL DEV TOGGLE (off by default): let a Git knowledge bundle that omits the explicit
 		// "sequence" (e.g. clio-knowledge master) load for local iteration. The key is declared in
 		// ExperimentalCommand.StandaloneFeatureKeys so `clio experimental` lists and sets it.

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -10,9 +11,12 @@ using Terrasoft.Core.Entities;
 
 namespace Clio.Command.EntitySchemaDesigner;
 
+/// <summary>Creates and publishes entity schemas in a remote package.</summary>
 public interface IRemoteEntitySchemaCreator{
 	#region Methods: Public
 
+	/// <summary>Creates a new schema, rejecting an existing schema in the target package.</summary>
+	/// <param name="options">Schema metadata and target environment/package.</param>
 	void Create(CreateEntitySchemaOptions options);
 
 	#endregion
@@ -35,6 +39,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	private readonly ISysSettingsManager _sysSettingsManager;
 	private readonly IEntitySchemaCaptionCultureResolver _captionCultureResolver;
 	private readonly IEntitySchemaPublisher _entitySchemaPublisher;
+	private readonly FindEntitySchemaCommand _findEntitySchemaCommand;
 
 	#endregion
 
@@ -87,6 +92,9 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 
 	#region Constructors: Public
 
+	// Keep the existing environment-scoped services explicit; a dependency bundle would only hide them.
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "DI composition requires the existing designer collaborators and package-scoped schema finder.")]
 	public RemoteEntitySchemaCreator(
 		IApplicationPackageListProvider applicationPackageListProvider,
 		IEntitySchemaDefaultValueSourceResolver defaultValueSourceResolver,
@@ -94,7 +102,8 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		ILogger logger,
 		ISysSettingsManager sysSettingsManager,
 		IEntitySchemaCaptionCultureResolver captionCultureResolver,
-		IEntitySchemaPublisher entitySchemaPublisher) {
+		IEntitySchemaPublisher entitySchemaPublisher,
+		FindEntitySchemaCommand findEntitySchemaCommand) {
 		_applicationPackageListProvider = applicationPackageListProvider;
 		_defaultValueSourceResolver = defaultValueSourceResolver;
 		_entitySchemaDesignerClient = entitySchemaDesignerClient;
@@ -102,6 +111,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		_sysSettingsManager = sysSettingsManager;
 		_captionCultureResolver = captionCultureResolver;
 		_entitySchemaPublisher = entitySchemaPublisher;
+		_findEntitySchemaCommand = findEntitySchemaCommand;
 	}
 
 	/// <summary>
@@ -557,15 +567,23 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		return package ?? throw new InvalidOperationException($"Package '{packageName}' was not found.");
 	}
 
+	private void EnsureSchemaNameAvailable(CreateEntitySchemaOptions options) {
+		bool nameExists = options.ExtendParent
+			? _findEntitySchemaCommand.FindSchemas(new FindEntitySchemaOptions { SchemaName = options.SchemaName })
+				.Any(item => string.Equals(item.PackageName, options.Package, StringComparison.OrdinalIgnoreCase))
+			: !CheckUniqueSchemaName(options.SchemaName, Guid.Empty, options);
+		if (nameExists) {
+			throw new InvalidOperationException($"Schema '{options.SchemaName}' already exists.");
+		}
+	}
+
 	#endregion
 
 	#region Methods: Public
 
 	public void Create(CreateEntitySchemaOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
-		if (!CheckUniqueSchemaName(options.SchemaName, Guid.Empty, options)) {
-			throw new InvalidOperationException($"Schema '{options.SchemaName}' already exists.");
-		}
+		EnsureSchemaNameAvailable(options);
 		PackageInfo package = ResolvePackage(options.Package);
 		List<ParsedColumn> parsedColumns = ParseColumns(options.Columns).ToList();
 		DesignerResponse<EntityDesignSchemaDto> createResponse = _entitySchemaDesignerClient.CreateNewSchema(
@@ -577,7 +595,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		EntityDesignSchemaDto schema = createResponse.Schema ??
 									   throw new InvalidOperationException("CreateNewSchema returned no schema.");
 		EntitySchemaDesignerSupport.EnsurePackageAssigned(schema, package);
-		if (!CheckUniqueSchemaName(options.SchemaName, schema.UId, options)) {
+		if (!options.ExtendParent && !CheckUniqueSchemaName(options.SchemaName, schema.UId, options)) {
 			throw new InvalidOperationException($"Schema '{options.SchemaName}' already exists.");
 		}
 
