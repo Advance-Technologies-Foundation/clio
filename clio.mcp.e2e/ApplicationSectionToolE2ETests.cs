@@ -450,152 +450,49 @@ public sealed class ApplicationSectionToolE2ETests {
 	[Description("Creates a section with a brand-new custom entity in a known installed application and verifies the structured read-back data including the created section metadata.")]
 	public async Task ApplicationSectionCreate_WithCustomEntity_Should_Return_Structured_Readback_Data() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string? environmentName = settings.Sandbox.EnvironmentName;
-		if (!settings.AllowDestructiveMcpTests) {
-			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive create-app-section test.");
-		}
+		SharedCustomEntitySection created = await GetOrCreateCustomEntitySectionAsync();
 
-		if (string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to point at the seeded sandbox before running this test.");
-		}
-
-		string caption = $"E2E Custom {Guid.NewGuid():N}"[..24];
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
-		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
-		await SeededApplicationResolver.ResolveOrIgnoreAsync(
-			session, cancellationTokenSource.Token, environmentName!, ApplicationCode);
-		string? createdSectionCode = null;
-		try {
-			// Act
-			CallToolResult callResult = await session.CallToolAsync(
-				SectionCreateToolName,
-				new Dictionary<string, object?> {
-					["args"] = new Dictionary<string, object?> {
-						["environment-name"] = environmentName,
-						["application-code"] = ApplicationCode,
-						["caption"] = caption
-					}
-				},
-				cancellationTokenSource.Token);
-			ApplicationSectionContextResponseEnvelope response = ApplicationResultParser.ExtractSectionCreate(callResult);
-
-			// Assert
-			callResult.IsError.Should().NotBeTrue(
-				because: $"create-app-section with a custom entity should not throw an MCP-level error. Actual: {DescribeCallResult(callResult)}");
-			response.Success.Should().BeTrue(
-				because: $"create-app-section without entity-schema-name must succeed and auto-create the entity schema. Error: {response.Error}");
-			response.Section.Should().NotBeNull(
-				because: "a successful create-app-section must include the created section metadata in the readback");
-			response.Section!.Code.Should().NotBeNullOrWhiteSpace(
-				because: "the readback must expose the generated section code");
-			response.Section.EntitySchemaName.Should().NotBeNullOrWhiteSpace(
-				because: "the readback must expose the auto-created entity schema name");
-
-			createdSectionCode = response.Section.Code;
-		} finally {
-			if (!string.IsNullOrWhiteSpace(createdSectionCode)) {
-				try {
-					using CancellationTokenSource cleanupCts = new(TimeSpan.FromMinutes(1));
-					await session.CallToolAsync(
-						SectionDeleteToolName,
-						new Dictionary<string, object?> {
-							["args"] = new Dictionary<string, object?> {
-								["environment-name"] = environmentName,
-								["application-code"] = ApplicationCode,
-								["section-code"] = createdSectionCode
-							}
-						},
-						cleanupCts.Token);
-				} catch (Exception ex) {
-					await Console.Error.WriteLineAsync($"[cleanup] delete-app-section '{createdSectionCode}' failed: {ex.Message}");
-				}
-			}
-		}
+		// Assert
+		created.CallResult.IsError.Should().NotBeTrue(
+			because: $"create-app-section with a custom entity should not throw an MCP-level error. Actual: {DescribeCallResult(created.CallResult)}");
+		created.Response.Success.Should().BeTrue(
+			because: $"create-app-section without entity-schema-name must succeed and auto-create the entity schema. Error: {created.Response.Error}");
+		created.Response.Section.Should().NotBeNull(
+			because: "a successful create-app-section must include the created section metadata in the readback");
+		created.Response.Section!.Code.Should().NotBeNullOrWhiteSpace(
+			because: "the readback must expose the generated section code");
+		created.Response.Section.EntitySchemaName.Should().NotBeNullOrWhiteSpace(
+			because: "the readback must expose the auto-created entity schema name");
 	}
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
-	[Description("Creates a section through the progress-capable overload and verifies the client observes the per-phase stage markers 'loading application info', 'creating section', and 'loading created section' (ENG-93087).")]
+	[Description("Verifies the client observes the per-phase stage markers 'loading application info', 'creating section', and 'loading created section' streamed by the create-app-section the readback test also asserts on (ENG-93087).")]
 	[AllureFeature(SectionCreateToolName)]
 	[AllureTag(SectionCreateToolName)]
 	[AllureName("Application section create streams per-phase progress markers")]
-	[AllureDescription("Uses the real clio MCP server to call create-app-section with an IProgress sink and asserts the client observed the service-level stage markers 'loading application info', 'creating section', and 'loading created section', proving the per-phase progress path is wired end to end (ENG-93087).")]
+	[AllureDescription("Asserts the client observed the service-level stage markers 'loading application info', 'creating section', and 'loading created section' on the fixture's single create-app-section call, proving the per-phase progress path is wired end to end (ENG-93087).")]
 	public async Task ApplicationSectionCreate_Should_Stream_PerPhase_Progress_Markers() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string? environmentName = settings.Sandbox.EnvironmentName;
-		if (!settings.AllowDestructiveMcpTests) {
-			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive create-app-section progress-marker test.");
+		// Arrange — the same create the readback test asserts on; its progress stream was captured then.
+		SharedCustomEntitySection created = await GetOrCreateCustomEntitySectionAsync();
+
+		// Diagnostic: surface the exact progress stream the client received so a failure shows the markers.
+		foreach (string progressMessage in created.ProgressMessages) {
+			TestContext.Out.WriteLine($"[progress] {progressMessage}");
 		}
 
-		if (string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to point at the seeded sandbox before running this test.");
-		}
-
-		string caption = $"E2E Progress {Guid.NewGuid():N}"[..24];
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
-		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
-		await SeededApplicationResolver.ResolveOrIgnoreAsync(
-			session, cancellationTokenSource.Token, environmentName!, ApplicationCode);
-		MessageCollectingProgress progress = new();
-		string? createdSectionCode = null;
-		try {
-			// Act — invoke create-app-section through the progress-capable overload so the client observes
-			// the service-level stage markers the tool streams as notifications/progress.
-			CallToolResult callResult = await session.CallToolAsync(
-				SectionCreateToolName,
-				new Dictionary<string, object?> {
-					["args"] = new Dictionary<string, object?> {
-						["environment-name"] = environmentName,
-						["application-code"] = ApplicationCode,
-						["caption"] = caption
-					}
-				},
-				progress,
-				cancellationTokenSource.Token);
-
-			// Diagnostic: surface the exact progress stream the client received so a failure shows the markers.
-			foreach (string progressMessage in progress.Messages) {
-				TestContext.Out.WriteLine($"[progress] {progressMessage}");
-			}
-
-			ApplicationSectionContextResponseEnvelope response = ApplicationResultParser.ExtractSectionCreate(callResult);
-			createdSectionCode = response.Section?.Code;
-
-			// Assert
-			callResult.IsError.Should().NotBeTrue(
-				because: $"a valid create-app-section request should return a structured payload. Actual: {DescribeCallResult(callResult)}");
-			progress.Messages.Should().Contain(
-				message => message.Contains("loading application info", StringComparison.Ordinal),
-				because: "create-app-section must stream the 'loading application info' stage marker so the client can show the app-resolution phase (ENG-93087)");
-			progress.Messages.Should().Contain(
-				message => message.Contains("creating section", StringComparison.Ordinal),
-				because: "create-app-section must stream the 'creating section' stage marker so the client can show the section-creation phase (ENG-93087)");
-			progress.Messages.Should().Contain(
-				message => message.Contains("loading created section", StringComparison.Ordinal),
-				because: "create-app-section must stream the 'loading created section' stage marker so the client can show the readback phase (ENG-93087)");
-		} finally {
-			if (!string.IsNullOrWhiteSpace(createdSectionCode)) {
-				try {
-					using CancellationTokenSource cleanupCts = new(TimeSpan.FromMinutes(1));
-					await session.CallToolAsync(
-						SectionDeleteToolName,
-						new Dictionary<string, object?> {
-							["args"] = new Dictionary<string, object?> {
-								["environment-name"] = environmentName,
-								["application-code"] = ApplicationCode,
-								["section-code"] = createdSectionCode
-							}
-						},
-						cleanupCts.Token);
-				} catch (Exception ex) {
-					await Console.Error.WriteLineAsync($"[cleanup] delete-app-section '{createdSectionCode}' failed: {ex.Message}");
-				}
-			}
-		}
+		// Assert
+		created.CallResult.IsError.Should().NotBeTrue(
+			because: $"the progress-marker create must itself succeed before its markers can be judged. Actual: {DescribeCallResult(created.CallResult)}");
+		created.ProgressMessages.Should().Contain(
+			message => message.Contains(SectionCreatePhaseMarkers[0], StringComparison.OrdinalIgnoreCase),
+			because: $"create-app-section must stream the '{SectionCreatePhaseMarkers[0]}' phase marker so the client can show progress");
+		created.ProgressMessages.Should().Contain(
+			message => message.Contains(SectionCreatePhaseMarkers[1], StringComparison.OrdinalIgnoreCase),
+			because: $"create-app-section must stream the '{SectionCreatePhaseMarkers[1]}' phase marker so the client can show progress");
+		created.ProgressMessages.Should().Contain(
+			message => message.Contains(SectionCreatePhaseMarkers[2], StringComparison.OrdinalIgnoreCase),
+			because: $"create-app-section must stream the '{SectionCreatePhaseMarkers[2]}' phase marker so the client can show progress");
 	}
 
 	[Category("McpE2E.Sandbox")]
@@ -1064,6 +961,98 @@ public sealed class ApplicationSectionToolE2ETests {
 		if (_sharedSession is not null) {
 			await _sharedSession.DisposeAsync();
 			_sharedSession = null;
+		}
+	}
+
+
+	/// <summary>Phase markers create-app-section streams while it works.</summary>
+	private static readonly string[] SectionCreatePhaseMarkers = [
+		"loading application info",
+		"creating section",
+		"loading created section"
+	];
+
+	/// <summary>
+	/// Creates — once for this fixture — one section from a custom entity, capturing the progress stream
+	/// of that same create, and removes it in one-time teardown.
+	/// </summary>
+	/// <remarks>
+	/// The structured-readback test and the progress-marker test each used to create a section of their
+	/// own. A create-app-section is a real Creatio compile (~30 s on CI), and the second create existed
+	/// only so the progress-capable overload could watch it — the readback create streams exactly the
+	/// same markers. Capturing them once serves both. The tests stay separate, so a failure still names
+	/// whether the readback or the progress stream broke.
+	/// </remarks>
+	/// <returns>The shared create's result, envelope and captured progress.</returns>
+	private static async Task<SharedCustomEntitySection> GetOrCreateCustomEntitySectionAsync() {
+		if (_customEntitySection is not null) {
+			return _customEntitySection;
+		}
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive create-app-section test.");
+		}
+		string? environmentName = settings.Sandbox.EnvironmentName;
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to point at the seeded sandbox before running this test.");
+		}
+
+		string caption = $"E2E Custom {Guid.NewGuid():N}"[..24];
+		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
+		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
+		await SeededApplicationResolver.ResolveOrIgnoreAsync(
+			session, cancellationTokenSource.Token, environmentName!, ApplicationCode);
+		MessageCollectingProgress progress = new();
+		CallToolResult callResult = await session.CallToolAsync(
+			SectionCreateToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["application-code"] = ApplicationCode,
+					["caption"] = caption
+				}
+			},
+			progress,
+			cancellationTokenSource.Token);
+		ApplicationSectionContextResponseEnvelope response = ApplicationResultParser.ExtractSectionCreate(callResult);
+		_customEntitySectionEnvironmentName = environmentName;
+		_customEntitySectionCode = response.Section?.Code;
+		cancellationTokenSource.Dispose();
+		_customEntitySection = new SharedCustomEntitySection(callResult, response, [.. progress.Messages]);
+		return _customEntitySection;
+	}
+
+	private static SharedCustomEntitySection? _customEntitySection;
+	private static string? _customEntitySectionCode;
+	private static string? _customEntitySectionEnvironmentName;
+
+	private sealed record SharedCustomEntitySection(
+		CallToolResult CallResult,
+		ApplicationSectionContextResponseEnvelope Response,
+		IReadOnlyList<string> ProgressMessages);
+
+	[OneTimeTearDown]
+	public static async Task RemoveSharedCustomEntitySectionAsync() {
+		if (string.IsNullOrWhiteSpace(_customEntitySectionCode) || _sharedSession is null) {
+			return;
+		}
+		string sectionCode = _customEntitySectionCode;
+		_customEntitySectionCode = null;
+		try {
+			using CancellationTokenSource cleanupCts = new(TimeSpan.FromMinutes(1));
+			await _sharedSession.CallToolAsync(
+				SectionDeleteToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = _customEntitySectionEnvironmentName,
+						["application-code"] = ApplicationCode,
+						["section-code"] = sectionCode
+					}
+				},
+				cleanupCts.Token);
+		} catch (Exception exception) {
+			TestContext.Out.WriteLine($"[cleanup] failed to remove shared section '{sectionCode}': {exception.Message}");
 		}
 	}
 
