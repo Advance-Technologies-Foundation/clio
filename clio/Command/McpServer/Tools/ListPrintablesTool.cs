@@ -92,21 +92,21 @@ public sealed record ListPrintablesArgs(
 	[property: Description("Optional entity schema name to filter by (e.g. 'Contact'). Matches printables "
 		+ "attached to the entity directly or through their section module. Omit to list every "
 		+ "MS Word printable of the environment.")]
-	string? EntityName,
+	string? EntityName = null,
 
 	[property: JsonPropertyName("environment-name")]
 	[property: Description(McpToolDescriptions.EnvironmentName)]
-	string? EnvironmentName,
+	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("uri")]
 	[property: Description("Creatio base URI (emergency fallback only; prefer environment-name)")]
-	string? Uri,
+	string? Uri = null,
 
 	[property: JsonPropertyName("login")]
 	[property: Description(McpToolDescriptions.Login)]
-	string? Login,
+	string? Login = null,
 
 	[property: JsonPropertyName("password")]
 	[property: Description(McpToolDescriptions.Password)]
-	string? Password
+	string? Password = null
 );

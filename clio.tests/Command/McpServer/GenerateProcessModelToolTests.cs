@@ -62,11 +62,11 @@ public sealed class GenerateProcessModelToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.GenerateProcessModel(new GenerateProcessModelArgs(
-			"UsrProcess",
-			@"src\generated",
-			"Contoso.ProcessModels",
-			"uk-UA",
-			"dev"));
+			Code: "UsrProcess",
+			EnvironmentName: "dev",
+			DestinationPath: @"src\generated",
+			Namespace: "Contoso.ProcessModels",
+			Culture: "uk-UA"));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -99,11 +99,11 @@ public sealed class GenerateProcessModelToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.GenerateProcessModel(new GenerateProcessModelArgs(
-			"UsrProcess",
-			null,
-			null,
-			null,
-			"dev"));
+			Code: "UsrProcess",
+			EnvironmentName: "dev",
+			DestinationPath: null,
+			Namespace: null,
+			Culture: null));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -133,11 +133,11 @@ public sealed class GenerateProcessModelToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.GenerateProcessModel(new GenerateProcessModelArgs(
-			"UsrProcess",
-			null,
-			null,
-			null,
-			"missing-env"));
+			Code: "UsrProcess",
+			EnvironmentName: "missing-env",
+			DestinationPath: null,
+			Namespace: null,
+			Culture: null));
 
 		// Assert
 		result.ExitCode.Should().Be(1,

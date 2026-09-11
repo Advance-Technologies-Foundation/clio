@@ -80,7 +80,7 @@ public class CreateIntegrationTestProjectCommand(
 			solutionCreator.AddProjectToSolution(
 				infrastructure.Combine(context.RootPath, "MainSolution.slnx"),
 				[new SolutionProject(projectFileName, relativeToRoot)]);
-			logger.WriteLine($"Created {projectPath}");
+			logger.WriteInfo($"Created {projectPath}");
 			return 0;
 		}
 		catch (Exception exception) {

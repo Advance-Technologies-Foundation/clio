@@ -2,6 +2,17 @@
 
 Use `clio help` for the terminal overview and `clio <command> --help` for command details.
 
+## User and Role Administration
+
+<a id="manage-user"></a>
+- [`manage-user`](docs/commands/manage-user.md) - Inspect and manage Creatio user administration.
+<a id="manage-role"></a>
+- [`manage-role`](docs/commands/manage-role.md) - Inspect and manage Creatio role administration.
+<a id="manage-access"></a>
+- [`manage-access`](docs/commands/manage-access.md) - Inspect and manage Creatio access administration.
+<a id="manage-license"></a>
+- [`manage-license`](docs/commands/manage-license.md) - Inspect and manage Creatio license administration.
+
 ## Application Management
 
 <a id="clear-local-env"></a>
@@ -95,6 +106,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="set-file-content-storage-connection-string"></a>
 <a id="set-fcs-connection-string"></a>
 - [`set-file-content-storage-connection-string`](docs/commands/set-file-content-storage-connection-string.md) - Set the connection string of a file content storage, `set-fcs-connection-string`
+<a id="download-sys-setting-file"></a>
+- [`download-sys-setting-file`](docs/commands/download-sys-setting-file.md) - Save a Binary system setting's exact bytes to a required destination filename.
+
 <a id="set-syssetting"></a>
 <a id="get-syssetting"></a>
 <a id="ss"></a>
@@ -384,7 +398,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="client-unit-schema-get"></a>
 - [`get-client-unit-schema`](docs/commands/get-client-unit-schema.md) - Read body and metadata of a client unit (JavaScript) schema on a remote Creatio environment, `client-unit-schema-get`
 <a id="get-entity-schema-column-properties"></a>
-- [`get-entity-schema-column-properties`](docs/commands/get-entity-schema-column-properties.md) - Get one column's properties (omit `--package` for merged discovery across all packages)
+- [`get-entity-schema-column-properties`](docs/commands/get-entity-schema-column-properties.md) - Get one column's properties and resolve SystemValue default captions (omit `--package` for merged discovery across all packages)
 <a id="find-entity-schema"></a>
 - [`find-entity-schema`](docs/commands/find-entity-schema.md) - Find entity schemas in a Creatio environment by name, pattern, or UId
 <a id="get-entity-schema-properties"></a>
@@ -622,6 +636,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`create-theme`](docs/commands/create-theme.md) - Create a custom Creatio theme on an environment (Creatio 10.0.0+)
 <a id="delete-theme"></a>
 - [`delete-theme`](docs/commands/delete-theme.md) - Delete a custom Creatio theme from an environment (Creatio 10.0.0+)
+<a id="get-theme"></a>
+- [`get-theme`](docs/commands/get-theme.md) - Read the content (theme.css) and metadata of a custom Creatio theme (Creatio 10.0.0+)
 <a id="list-themes"></a>
 <a id="get-themes"></a>
 - [`list-themes`](docs/commands/list-themes.md) - List the custom Creatio themes available on an environment (Creatio 10.0.0+), `get-themes`

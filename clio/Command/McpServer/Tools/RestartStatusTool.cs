@@ -84,7 +84,7 @@ public sealed record RestartStatusArgs(
 
 	[property: JsonPropertyName("operation-id")]
 	[Description("Optional operation id from a restart in-progress response. When omitted, returns the most recently started restart for this environment.")]
-	string? OperationId);
+	string? OperationId = null);
 
 /// <summary>
 /// Response payload for the restart-status tool.

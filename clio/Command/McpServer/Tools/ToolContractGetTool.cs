@@ -654,7 +654,7 @@ internal static class ToolContractCatalog {
 	private const string EventNameFieldName = "event_name";
 	private const string TelemetryConsentFieldName = "telemetry_consent";
 	private const string ExampleOrderPageSchemaName = "UsrOrder_FormPage";
-	private const string ExampleWorkspacePath = "<workspace>/UsrTaskApp";
+	private const string ExampleWorkspacePath = "<workspace-root>";
 	private const string MakeReadOnlyActionTypeName = "make-read-only";
 	private const string MakeRequiredActionTypeName = "make-required";
 	private const string RuleNamesFieldName = "rule-names";
@@ -671,6 +671,7 @@ internal static class ToolContractCatalog {
 	private const string VerifyFieldName = "verify";
 	private const string BindingNameDescription = "Binding name.";
 	private const string WorkspacePathDescription = "Absolute local workspace path. Network-share paths are not supported.";
+	private const string DataBindingWorkspacePathDescription = "Absolute local workspace root containing .clio/workspaceSettings.json, not the package directory. The package is resolved under packages/<package-name> beneath that root. Network-share paths are not supported.";
 	private const string WorkspacePathFieldName = "workspace-path";
 	private const string DataForgePlatformRequirementDescription =
 		"Requires Creatio platform version 10.0.0 or later; CrtDataForge is included in supported platform versions.";
@@ -835,6 +836,14 @@ internal static class ToolContractCatalog {
 
 	/// <summary>The one-line purpose is truncated to this many characters for the compact index.</summary>
 	private const int MaxPurposeLength = 120;
+
+	/// <summary>
+	/// The names that have a HANDWRITTEN contract, as opposed to one synthesized from the registered tool
+	/// schema by <see cref="McpToolRegistrySchemaContract"/>. Exposed so a test can tell the two apart:
+	/// only a handwritten contract can disagree with the emitted schema, because the synthesized one is
+	/// read straight out of it (issue #965).
+	/// </summary>
+	internal static IReadOnlyCollection<string> CuratedToolNames => (IReadOnlyCollection<string>)Contracts.Keys;
 
 	/// <summary>
 	/// Resolves clio MCP tool contracts. When <paramref name="toolNames"/> is omitted the response depends
@@ -4543,11 +4552,11 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameFieldName, StringType, "Registered clio environment name. Required when schema-name is not SysSettings because the MCP tool does not expose a uri fallback."),
 						Field(PackageNameFieldName, StringType, PackageNameDescription),
 						Field(SchemaNameFieldName, StringType, "Entity schema name for the binding. The built-in offline template currently includes SysSettings."),
-						Field(WorkspacePathFieldName, StringType, WorkspacePathDescription),
+						Field(WorkspacePathFieldName, StringType, DataBindingWorkspacePathDescription),
 						Field(BindingNameFieldName, StringType, "Optional binding name; defaults to the schema name."),
 						Field("install-type", NumberType, "Optional descriptor install type; defaults to 0."),
 						Field(ValuesFieldName, StringType, "Optional JSON object keyed by column name for the initial row."),
-						Field("localizations", StringType, "Optional JSON object keyed by culture then column name.")
+						Field("localizations", StringType, "Optional JSON object keyed by culture then column name. Localization-only columns are included in the descriptor without inventing base values. Input validation failures preserve existing binding files.")
 					],
 					Validators: [
 						new ToolContractValidator(
@@ -4617,7 +4626,7 @@ internal static class ToolContractCatalog {
 					[
 						Field(PackageNameFieldName, StringType, PackageNameDescription),
 						Field(BindingNameFieldName, StringType, BindingNameDescription),
-						Field(WorkspacePathFieldName, StringType, WorkspacePathDescription),
+						Field(WorkspacePathFieldName, StringType, DataBindingWorkspacePathDescription),
 						Field(ValuesFieldName, StringType, "JSON object keyed by column name for the row to add or replace."),
 						Field("localizations", StringType, "Optional JSON object keyed by culture then column name.")
 					]),
@@ -4656,7 +4665,7 @@ internal static class ToolContractCatalog {
 				[
 						Field(PackageNameFieldName, StringType, PackageNameDescription),
 						Field(BindingNameFieldName, StringType, BindingNameDescription),
-						Field(WorkspacePathFieldName, StringType, WorkspacePathDescription),
+						Field(WorkspacePathFieldName, StringType, DataBindingWorkspacePathDescription),
 						Field(KeyValueFieldName, StringType, "Primary-key value of the row to remove.")
 					]),
 			CommandExecutionOutput(),
@@ -4684,10 +4693,25 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildGetEntitySchemaProperties() {
 		return new ToolContractDefinition(
 			GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
-			"Returns a structured summary of entity schema metadata for read-before-write inspection and read-back verification.",
+			"Returns a structured summary of entity schema metadata for read-before-write inspection and read-back verification. " +
+			"Omit package-name to read the merged/effective schema with columns from ALL packages (recommended for column " +
+			"discovery); supply it only to inspect a single package layer's slice, which reports that layer's own columns and " +
+			"treats everything else as inherited.",
+			// package-name is NOT required here: the emitted tool schema makes it optional and its own text
+			// recommends omitting it for column discovery. Spelling it as required in the curated contract is
+			// the exact divergence issue #965 reports — an agent that trusts get-tool-contract always sends a
+			// package name and never sees the merged view. Mirrors BuildGetEntitySchemaColumnProperties; the
+			// EnvironmentPackageSchemaFields helper cannot be reused because it hard-codes the terse
+			// "Target package name." text that hides the merged mode.
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, PackageNameFieldName, SchemaNameFieldName],
-				EnvironmentPackageSchemaFields(EntitySchemaNameDescription)),
+				[EnvironmentNameFieldName, SchemaNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(PackageNameFieldName, StringType,
+						"Optional target package name. Omit to read the merged/effective schema with columns from ALL " +
+						"packages (recommended for column discovery). Supply only to inspect a single package layer's slice."),
+					Field(SchemaNameFieldName, StringType, EntitySchemaNameDescription)
+				]),
 			StructuredResultOutput(
 				Field("name", StringType, "Schema name."),
 				Field("title", StringType, "Schema title."),
@@ -4697,7 +4721,11 @@ internal static class ToolContractCatalog {
 			EnvironmentPackageSchemaAliases(),
 			[],
 			[
-				Example("Read deployed schema properties", new Dictionary<string, object?> {
+				Example("Discover every column across all packages", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[SchemaNameFieldName] = ExamplePackageName
+				}),
+				Example("Read one package layer's own slice", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[PackageNameFieldName] = ExamplePackageName,
 					[SchemaNameFieldName] = ExamplePackageName
@@ -4725,7 +4753,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildGetEntitySchemaColumnProperties() {
 		return new ToolContractDefinition(
 			GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
-			"Returns detailed metadata for one deployed entity schema column. Omit package-name for merged runtime discovery across all packages; supply it for the original package-scoped designer read. Merged mode cannot expose track-changes, localizable-text, or do-not-control-integrity (returned as null), and source then describes parent-schema inheritance rather than package ownership. For a lookup column with a Const default, default-value-config is enriched with display-value (the referenced record's display value) or a record-resolution marker (no-access, not-found-or-no-access, display-column-unavailable) when it cannot be resolved.",
+			"Returns detailed metadata for one deployed entity schema column. Omit package-name for merged runtime discovery across all packages; supply it for the original package-scoped designer read. Merged mode cannot expose track-changes, localizable-text, or do-not-control-integrity (returned as null), and source then describes parent-schema inheritance rather than package ownership. For a lookup column with a Const default, default-value-config is enriched with display-value (the referenced record's display value) or a record-resolution marker (no-access, not-found-or-no-access, display-column-unavailable) when it cannot be resolved. SystemValue defaults on any supported column type include the native catalog caption in display-value while preserving canonical GUIDs. If unavailable, source-resolution is invalid-source, unsupported-type, not-found-for-type, caption-unavailable, or catalog-unavailable. This identifies the configured source, not its evaluated value.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, SchemaNameFieldName, ColumnNameFieldName],
 				[
@@ -5285,7 +5313,13 @@ internal static class ToolContractCatalog {
 		];
 	}
 
-	private static IReadOnlyList<IReadOnlyList<string>> EnvironmentOrExplicitConnectionRequirements() {
+	/// <summary>
+	/// The connection alternative every environment-sensitive contract advertises: EITHER a registered
+	/// <c>environment-name</c> OR the explicit <c>uri</c>/<c>login</c>/<c>password</c> triple. Exposed to
+	/// <see cref="McpToolRegistrySchemaContract" /> so a registry-derived contract states the same
+	/// alternative as the 75 curated ones instead of inventing a second spelling of it (issue #965).
+	/// </summary>
+	internal static IReadOnlyList<IReadOnlyList<string>> EnvironmentOrExplicitConnectionRequirements() {
 		return [
 			[EnvironmentNameFieldName],
 			["uri", LoginFieldName, PasswordFieldName]
@@ -6227,7 +6261,7 @@ internal static class ToolContractCatalog {
 			"Creates a new Creatio system setting and optionally assigns an initial All-Users default value. " +
 			"Allowed value-type-name values match Creatio internal names: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, " +
 			"Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup, Binary. " +
-			"Aliases: Currency = Money, Decimal = Float. Binary settings (a value stored as blob data, e.g. the logo) are write-only: assign the value via update-sys-setting with value-file-path; reading a Binary value back is not exposed through MCP. " +
+			"Aliases: Currency = Money, Decimal = Float. Binary settings store opaque bytes: assign the value via update-sys-setting with value-file-path; download exact bytes via clio-run command=download-sys-setting-file with a required absolute file-name. No MIME type or extension is inferred. " +
 			"For Lookup type, reference-schema-name is required.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, SysSettingCodeFieldName, "name", SysSettingValueTypeFieldName],
@@ -6235,7 +6269,7 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(SysSettingCodeFieldName, StringType, "Sys-setting code (unique)."),
 					Field("name", StringType, "Display name of the sys-setting."),
-					Field(SysSettingValueTypeFieldName, StringType, "Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup, Binary. Aliases: Currency = Money, Decimal = Float. Binary (blob data, e.g. the logo) is write-only via update-sys-setting value-file-path."),
+					Field(SysSettingValueTypeFieldName, StringType, "Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup, Binary. Aliases: Currency = Money, Decimal = Float. Binary stores opaque bytes: upload via update-sys-setting value-file-path and download via clio-run command=download-sys-setting-file with a required absolute file-name."),
 					Field(SysSettingValueFieldName, StringType, "Optional initial All-Users default value applied via update-sys-setting after creation."),
 					Field("description", StringType, "Optional description text."),
 					Field("is-cacheable", BooleanType, "Whether the setting is cacheable. Defaults to true."),

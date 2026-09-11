@@ -250,4 +250,4 @@ public sealed record CompileCreatioArgs(
 
 	[property: JsonPropertyName("package-name")]
 	[Description("Optional package name. When omitted, the tool performs a full compilation.")]
-	string? PackageName);
+	string? PackageName = null);
