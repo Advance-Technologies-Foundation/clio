@@ -31,8 +31,8 @@ public static class DescribeProcessPrompt {
 		1. Call `describe-business-process` with `environment-name` and exactly one of `process-name` /
 		   `process-uid` / `process-caption`. It returns a STRUCTURED graph: `elements`
 		   (name, uid, caption, type, buildType, userTaskName, parameters; `signal` for a signal start, and a
-		   configuration block for a configured element - `email`, `readData`, `changeData`, `openEditPage`),
-		   `flows` (name, source, target, kind, `label`, and on a branch its `condition` plus
+		   configuration block for a configured element - `email`, `readData`, `changeData`, `addData`,
+		   `openEditPage`), `flows` (name, source, target, kind, `label`, and on a branch its `condition` plus
 		   `branchesOnActivityResult`), and process `parameters` — not raw metadata. It also reports the
 		   version standing: `version`, `isActiveVersion`, `activeVersionName`, `activeVersionSchemaUId` and
 		   the `versions[]` family.
