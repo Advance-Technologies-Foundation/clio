@@ -104,7 +104,7 @@ public sealed class SysSettingCreateTool(IToolCommandResolver commandResolver,
 	             "MediumText (Text 250), LongText (Text 500), SecureText (Encrypted string), MaxSizeText (Unlimited), " +
 	             "Boolean, DateTime, Date, Time, Integer, Money (Currency), Float (Decimal), Lookup, Binary. " +
 	             "Aliases accepted: Currency = Money, Decimal = Float. " +
-	             "For a Binary setting (e.g. the logo), set the value via update-sys-setting value-file-path; MCP does not read it back. " +
+	             "For a Binary setting (e.g. the logo), set the value via update-sys-setting value-file-path; download exact bytes via clio-run command=download-sys-setting-file with a required file-name. " +
 	             "For Lookup type, reference-schema-name is required.")]
 	public SysSettingCreateResult CreateSysSetting(
 		[Description("Parameters: environment-name, code, name, value-type-name (required); value, description, is-cacheable, is-personal (optional)")]

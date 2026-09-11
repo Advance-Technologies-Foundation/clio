@@ -1,5 +1,8 @@
 using System;
+using System.Linq;
+using System.Net.Http;
 using System.Threading;
+using System.Threading.Tasks;
 using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Command;
@@ -21,9 +24,35 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 	private readonly IApplicationClient _applicationClient = Substitute.For<IApplicationClient>();
 	private readonly IInteractiveConsole _interactiveConsole = Substitute.For<IInteractiveConsole>();
 	private readonly ILogger _logger = Substitute.For<ILogger>();
+	private readonly IApplicationClientFactory _applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+	private readonly IOwnedApplicationClient _ownedClient = Substitute.For<IOwnedApplicationClient>();
+	private readonly ICompilationActivityWatcher _activityWatcher = Substitute.For<ICompilationActivityWatcher>();
+	private readonly IEnvironmentReloadWatcher _reloadWatcher = Substitute.For<IEnvironmentReloadWatcher>();
+	private readonly ICompilationResultReader _compilationResultReader = Substitute.For<ICompilationResultReader>();
 
 	private const string SuccessResponse =
 		"{\"success\":true,\"buildResult\":0,\"errorInfo\":{\"errorCode\":null,\"message\":null}}";
+
+	/// <summary>A snapshot in which nothing has been observed on the environment.</summary>
+	private static readonly CompilationActivitySnapshot NoActivity = new(0, null, false);
+
+	/// <summary>Rows were written; whether the build ENDED is the reload watcher's answer, not this one.</summary>
+	private static CompilationActivitySnapshot Built => new(7, DateTime.UtcNow, false);
+
+	/// <summary>The environment is answering and was seen to restart - the end-of-build signature.</summary>
+	private static readonly EnvironmentReloadSnapshot Reloaded = new(true, true, true);
+
+	/// <summary>The environment is answering and has not restarted.</summary>
+	private static readonly EnvironmentReloadSnapshot NoReload = new(true, false, true);
+
+	/// <summary>The environment has never answered a probe - an unreachable host, not a build.</summary>
+	private static readonly EnvironmentReloadSnapshot NeverReachable = new(false, false, false);
+
+	/// <summary>
+	/// The environment answered, then stopped answering and has not come back - a runtime that crashed
+	/// mid-build, which leaves the same history evidence a finished build leaves.
+	/// </summary>
+	private static readonly EnvironmentReloadSnapshot WentAwayAndStayedAway = new(false, false, true);
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		base.AdditionalRegistrations(containerBuilder);
@@ -35,6 +64,16 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 		containerBuilder.AddSingleton(_interactiveConsole);
 		// Capture the injected logger so the postpone "run it later" hint can be asserted.
 		containerBuilder.AddSingleton(_logger);
+		// The compile request now goes out on its own owned client, asynchronously and cancellably, so the
+		// factory is what a test has to control to decide whether a response ever arrives.
+		containerBuilder.AddSingleton(_applicationClientFactory);
+		// Substituted so no test starts a real poll thread against a substitute data provider; every test
+		// states the observed evidence directly instead.
+		containerBuilder.AddSingleton(_activityWatcher);
+		// Availability is watched separately from build activity, on the verdict endpoint, so a test
+		// states the reload here rather than through the history snapshot.
+		containerBuilder.AddSingleton(_reloadWatcher);
+		containerBuilder.AddSingleton(_compilationResultReader);
 	}
 
 	[SetUp]
@@ -49,6 +88,10 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 		// the confirmation gate (order-dependent false negative, review RC-13). Tests that need an
 		// interactive terminal re-stub IsInteractive=true explicitly.
 		_interactiveConsole.IsInteractive.Returns(false);
+		_applicationClientFactory.CreateClient(Arg.Any<EnvironmentSettings>()).Returns(_ownedClient);
+		_activityWatcher.Snapshot.Returns(NoActivity);
+		_reloadWatcher.Snapshot.Returns(NoReload);
+		StubCompileResponse(SuccessResponse);
 	}
 
 	[TearDown]
@@ -58,37 +101,38 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 		_applicationClient.ClearReceivedCalls();
 		_interactiveConsole.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
+		_applicationClientFactory.ClearReceivedCalls();
+		_ownedClient.ClearReceivedCalls();
+		_activityWatcher.ClearReceivedCalls();
+		_reloadWatcher.ClearReceivedCalls();
+		_compilationResultReader.ClearReceivedCalls();
 		base.TearDown();
 	}
 
-	[Test]
-	[Description("Verifies that the command completes successfully without ObjectDisposedException when background thread is monitoring compilation history")]
-	public void Execute_CompletesWithoutObjectDisposedException_WhenBackgroundThreadIsRunning() {
-		// Arrange
-		CompileConfigurationCommand command = Container.GetRequiredService<CompileConfigurationCommand>();
-		CompileConfigurationOptions options = new() {
-			All = false
-		};
+	// The owned-client substitute implements IDisposable because the production contract does (the
+	// command disposes the client it created), so the fixture disposes its own copy once at the end.
+	[OneTimeTearDown]
+	public void DisposeOwnedClientSubstitute() => _ownedClient.Dispose();
 
-		// Setup successful response - this ensures Execute completes quickly
-		string successResponse = "{\"success\":true,\"buildResult\":0,\"errorInfo\":{\"errorCode\":null,\"message\":null}}";
-		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
-			.Returns(successResponse);
+	[Test]
+	[Description("Verifies that the command completes without ObjectDisposedException while the activity watcher is running, which is what the watcher's stop-then-dispose ordering exists to guarantee.")]
+	public void Execute_CompletesWithoutObjectDisposedException_WhenActivityWatcherIsRunning() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { All = false };
 
 		// Act & Assert
-		// The fix ensures thread.Join() is called before CancellationTokenSource is disposed
-		// Without the fix, this would throw ObjectDisposedException
 		Action act = () => command.Execute(options);
-		
+
 		act.Should().NotThrow<ObjectDisposedException>(
-			because: "the background thread should complete via Join() before CancellationTokenSource is disposed");
+			because: "the watcher must be stopped and joined before anything it uses is disposed");
 	}
 
 	[Test]
 	[Description("On an interactive terminal the user is warned that compilation is heavy and, when they decline, the compilation is postponed: nothing is sent to Creatio, the command returns the distinct DeclinedExitCode (2) rather than 0, and a run-later hint is shown (ENG-93157, RC-10).")]
 	public void Execute_ShouldPostponeAndNotCompile_WhenInteractiveUserDeclines() {
 		// Arrange
-		CompileConfigurationCommand command = Container.GetRequiredService<CompileConfigurationCommand>();
+		CompileConfigurationCommand command = CreateCommand();
 		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
 		_interactiveConsole.IsInteractive.Returns(true);
 		_interactiveConsole.Prompt(Arg.Any<string>()).Returns(false);
@@ -102,8 +146,9 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 		// The user must see the exact heavy-operation warning before deciding.
 		_interactiveConsole.Received(1).Prompt(Arg.Is<string>(message =>
 			message == CompileConfigurationCommand.SiteCompilationWarning));
-		_applicationClient.DidNotReceive().ExecutePostRequest(
-			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_ownedClient.DidNotReceive().ExecutePostRequestAsync(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<CancellationToken>());
 		_logger.Received().WriteInfo(Arg.Is<string>(message =>
 			message.Contains("postponed", StringComparison.Ordinal)
 			&& message.Contains("clio cc", StringComparison.Ordinal)
@@ -121,12 +166,10 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 	[Description("The warning is shown on EVERY compilation, not once per session: two Execute calls on the same command instance prompt twice (ENG-93157 AC-5).")]
 	public void Execute_ShouldPromptEveryTime_WhenInvokedRepeatedlyInteractive() {
 		// Arrange
-		CompileConfigurationCommand command = Container.GetRequiredService<CompileConfigurationCommand>();
+		CompileConfigurationCommand command = CreateCommand();
 		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
 		_interactiveConsole.IsInteractive.Returns(true);
 		_interactiveConsole.Prompt(Arg.Any<string>()).Returns(true);
-		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(SuccessResponse);
 
 		// Act
 		command.Execute(options);
@@ -140,12 +183,10 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 	[Description("On an interactive terminal, when the user confirms the heavy-operation warning, the compilation proceeds exactly as before and the request is sent to Creatio (ENG-93157 regression guard).")]
 	public void Execute_ShouldCompile_WhenInteractiveUserConfirms() {
 		// Arrange
-		CompileConfigurationCommand command = Container.GetRequiredService<CompileConfigurationCommand>();
+		CompileConfigurationCommand command = CreateCommand();
 		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
 		_interactiveConsole.IsInteractive.Returns(true);
 		_interactiveConsole.Prompt(Arg.Any<string>()).Returns(true);
-		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(SuccessResponse);
 
 		// Act
 		int exitCode = command.Execute(options);
@@ -154,19 +195,17 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 		exitCode.Should().Be(0,
 			because: "a confirmed compilation runs to completion against a successful server response");
 		_interactiveConsole.Received(1).Prompt(Arg.Any<string>());
-		_applicationClient.Received().ExecutePostRequest(
-			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		ReceivedCompileRequests().Should().Be(1,
+			because: "a confirmed compilation sends the build request");
 	}
 
 	[Test]
 	[Description("--silent requests default behavior without user interaction, so compilation proceeds WITHOUT prompting even on an interactive terminal (review RC-1).")]
 	public void Execute_ShouldCompileWithoutPrompting_WhenSilentEvenIfInteractive() {
 		// Arrange
-		CompileConfigurationCommand command = Container.GetRequiredService<CompileConfigurationCommand>();
+		CompileConfigurationCommand command = CreateCommand();
 		CompileConfigurationOptions options = new() { Environment = "dev", All = true, IsSilent = true };
 		_interactiveConsole.IsInteractive.Returns(true);
-		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(SuccessResponse);
 
 		// Act
 		int exitCode = command.Execute(options);
@@ -175,19 +214,16 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 		exitCode.Should().Be(0,
 			because: "--silent must never block on a prompt and proceeds to compile");
 		_interactiveConsole.DidNotReceive().Prompt(Arg.Any<string>());
-		_applicationClient.Received().ExecutePostRequest(
-			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		ReceivedCompileRequests().Should().Be(1, because: "--silent still compiles");
 	}
 
 	[Test]
 	[Description("On a non-interactive host (the MCP server that runs this same command, CI, redirected stdin) the compilation proceeds WITHOUT prompting, so the confirmed-compile behavior is unchanged (ENG-93157 regression guard).")]
 	public void Execute_ShouldCompileWithoutPrompting_WhenNonInteractive() {
 		// Arrange
-		CompileConfigurationCommand command = Container.GetRequiredService<CompileConfigurationCommand>();
+		CompileConfigurationCommand command = CreateCommand();
 		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
 		_interactiveConsole.IsInteractive.Returns(false);
-		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(SuccessResponse);
 
 		// Act
 		int exitCode = command.Execute(options);
@@ -196,61 +232,290 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 		exitCode.Should().Be(0,
 			because: "a non-interactive host must never be blocked by a prompt and proceeds to compile");
 		_interactiveConsole.DidNotReceive().Prompt(Arg.Any<string>());
-		_applicationClient.Received().ExecutePostRequest(
-			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
-	}
-
-	// The two tests below construct the command directly instead of resolving it from the container: they
-	// need their own ICompilationHistoryPoller stub, and registering one in AdditionalRegistrations would
-	// change the poller every other test in this fixture runs against.
-	private CompileConfigurationCommand CreateCommandWith(ICompilationHistoryPoller poller) {
-		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
-			Arg.Any<int>()).Returns(SuccessResponse);
-		return new CompileConfigurationCommand(_applicationClient, new EnvironmentSettings { Uri = "http://test" },
-			_serviceUrlBuilder, poller, _logger, _interactiveConsole);
+		ReceivedCompileRequests().Should().Be(1, because: "a non-interactive host still compiles");
 	}
 
 	[Test]
-	[Description("A give-up throw from the poll thread is reported as a warning instead of escaping: an unhandled exception on a dedicated thread terminates the process, so a short app-tier outage would otherwise have killed clio mid-compile (review finding on CompileConfigurationCommand.Execute - the guard existed but nothing pinned it).")]
-	public void Execute_ShouldReportPollFaultAsWarning_WhenPollThrows() {
+	[Description("The build request is issued with maxAttempts=1. RemoteCommandOptions defaults MaxAttempts to 3, and the retry it produced re-sent a build whose connection the runtime reload had just reset - measured on a live stand as three full rebuilds for one `clio cc --all` (issue #1422).")]
+	public void Execute_ShouldSendTheBuildRequestOnce_WithoutRetry() {
 		// Arrange
-		ICompilationHistoryPoller poller = Substitute.For<ICompilationHistoryPoller>();
-		poller.GetBaseline().Returns(new CompilationHistory { CreatedOn = DateTime.UtcNow.AddMinutes(-1) });
-		poller.When(value => value.Poll(Arg.Any<DateTime>(), Arg.Any<CancellationToken>(),
-				Arg.Any<Action<CompilationHistory>>()))
-			.Do(_ => throw new InvalidOperationException("Compilation history is unreachable after 10 rounds."));
-		CompileConfigurationCommand command = CreateCommandWith(poller);
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
 
 		// Act
-		Action act = () => command.Execute(new CompileConfigurationOptions { Environment = "dev" });
+		command.Execute(options);
 
 		// Assert
-		act.Should().NotThrow(
-			because: "losing the progress monitor is not a compile failure - the server keeps compiling and the command must still report its own verdict");
-		_logger.Received().WriteWarning(Arg.Is<string>(message =>
-			message.Contains("could not be monitored", StringComparison.Ordinal)
-			&& message.Contains("unreachable after 10 rounds", StringComparison.Ordinal)));
+		ReceivedCompileRequests().Should().Be(1,
+			because: "a retry re-runs the whole configuration build on the environment");
+		_ownedClient.Received(1).ExecutePostRequestAsync(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), 1, Arg.Any<int>(),
+			Arg.Any<CancellationToken>());
 	}
 
 	[Test]
-	[Description("A failed baseline read is reported as a warning and the compilation is still sent: after ClassifyingDataProvider a failed OData round throws instead of returning an empty list, so an unguarded read would abort the compile before the request was ever sent (review finding on the GetBaseline call sites).")]
-	public void Execute_ShouldWarnAndCompile_WhenBaselineReadThrows() {
+	[Description("--timeout reaches the build request. It used to be discarded: Execute overwrote options.TimeOut with Timeout.Infinite before the request was sent, so the value a caller passed had no effect at all.")]
+	public void Execute_ShouldPassTheRequestedTimeout_ToTheBuildRequest() {
 		// Arrange
-		ICompilationHistoryPoller poller = Substitute.For<ICompilationHistoryPoller>();
-		poller.GetBaseline()
-			.Returns<CompilationHistory>(_ => throw new InvalidOperationException("Failed reading compilation history."));
-		CompileConfigurationCommand command = CreateCommandWith(poller);
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true, TimeOut = 123_456 };
 
 		// Act
-		int exitCode = command.Execute(new CompileConfigurationOptions { Environment = "dev" });
+		command.Execute(options);
+
+		// Assert
+		ReceivedCompileRequests().Should().Be(1,
+			because: "the timeout assertion below is only meaningful for a single request");
+		_ownedClient.Received(1).ExecutePostRequestAsync(
+			Arg.Any<string>(), Arg.Any<string>(), 123_456, Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Description("--timeout bounds the WAIT, not only the request. This is the reporter's case (issue #1422): an intermediary holds the request open so it never fails, the environment builds nothing, and without this bound nothing ever terminates.")]
+	public void Execute_ShouldStopWaiting_WhenTheTimeoutElapsesWithNoCompletion() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true, TimeOut = 200 };
+		StubNeverAnsweringCompileRequest();
+		// Reachable, so the transport-failure rule stays out of the way and only the deadline can end it.
+		_activityWatcher.Snapshot.Returns(NoActivity);
+		_reloadWatcher.Snapshot.Returns(NoReload);
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1,
+			because: "a compilation that never reports completion must end on the timeout rather than wait forever");
+		_logger.Received().WriteError(Arg.Is<string>(message =>
+			message.Contains("Timed out waiting", StringComparison.Ordinal)));
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(message =>
+			message.Contains("Compilation finished", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("A host that silently drops packets never fails the request, so the completion rule ends the wait on the environment having never answered a probe - not on the request, and not on the full timeout.")]
+	public void Execute_ShouldReportTransportFailure_WhenTheEnvironmentNeverAnswers() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		StubNeverAnsweringCompileRequest();
+		_activityWatcher.Snapshot.Returns(NoActivity);
+		_reloadWatcher.Snapshot.Returns(NeverReachable);
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "an environment that never answered is not building anything");
+		_logger.Received().WriteError(Arg.Is<string>(message =>
+			message.Contains("never started building", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("A build whose completion is only inferred from activity having stopped says so, because the verdict it then reads carries no timestamp and was not confirmed by a runtime reload.")]
+	public void Execute_ShouldWarn_WhenCompletionIsOnlyInferredFromQuiet() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		command.QuietFallbackOverride = TimeSpan.Zero;
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		StubNeverAnsweringCompileRequest();
+		_activityWatcher.Snapshot.Returns(Built);
+		_reloadWatcher.Snapshot.Returns(NoReload);
+		_compilationResultReader.TryRead().Returns(new CreatioCompilationLogResponse([], 0, true));
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the environment reported a successful compilation");
+		_logger.Received().WriteWarning(Arg.Is<string>(message =>
+			message.Contains("inferred", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("A build whose request never answers - the normal case on current platforms, where the runtime reload resets the connection - succeeds when the environment reports a successful compilation after the reload was observed.")]
+	public void Execute_ShouldSucceedFromTheEnvironmentVerdict_WhenTheRequestNeverAnswers() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		StubNeverAnsweringCompileRequest();
+		_activityWatcher.Snapshot.Returns(Built);
+		_reloadWatcher.Snapshot.Returns(Reloaded);
+		_compilationResultReader.TryRead().Returns(new CreatioCompilationLogResponse([], 0, true));
+
+		// Act
+		int exitCode = command.Execute(options);
 
 		// Assert
 		exitCode.Should().Be(0,
-			because: "a transient compilation-history failure must not turn a successful compile into a failed command");
-		_logger.Received().WriteWarning(Arg.Is<string>(message =>
-			message.Contains("compilation history baseline", StringComparison.Ordinal)));
-		poller.Received(1).Poll(DateTime.MinValue, Arg.Any<CancellationToken>(), Arg.Any<Action<CompilationHistory>>());
-		_applicationClient.Received().ExecutePostRequest(
-			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+			because: "the environment built the configuration, reloaded, and then reported success - which is the whole point of not depending on the response");
+		_compilationResultReader.Received(1).TryRead();
 	}
+
+	[Test]
+	[Description("A build the environment reports as failed returns exit code 1 and does NOT print the 'Compilation finished' line. CommandSuccess defaults to true and used to be cleared only inside ProceedResponse, which a build with no response never reaches - so a failed run printed its error and then claimed to have finished.")]
+	public void Execute_ShouldFailAndNotClaimCompletion_WhenTheEnvironmentReportsFailure() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		StubNeverAnsweringCompileRequest();
+		_activityWatcher.Snapshot.Returns(Built);
+		_reloadWatcher.Snapshot.Returns(Reloaded);
+		_compilationResultReader.TryRead().Returns(new CreatioCompilationLogResponse(
+			[new CreatioCompilationError(12, 3, "CS0103", "The name 'x' does not exist", false, "Foo.cs")],
+			1, false));
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the environment reported the compilation as failed");
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(message =>
+			message.Contains("Compilation finished", StringComparison.Ordinal)));
+		_logger.Received().WriteError(Arg.Is<string>(message =>
+			message.Contains("CS0103", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("A request that fails while the environment never builds anything is reported as a transport failure rather than waited out, so an unreachable host or a login page is not mistaken for a slow compilation.")]
+	public void Execute_ShouldReportTransportFailure_WhenNothingWasEverBuilt() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		_ownedClient.ExecutePostRequestAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromException<HttpResponseMessage>(new HttpRequestException("connection refused")));
+		_activityWatcher.Snapshot.Returns(NoActivity);
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "nothing was compiled, so this is a failure and not a slow build");
+		_logger.Received().WriteError(Arg.Is<string>(message =>
+			message.Contains("never started building", StringComparison.Ordinal)));
+		_compilationResultReader.DidNotReceive().TryRead();
+	}
+
+	[Test]
+	[Description("The transport failure names the actual cause. ObserveAbandonedRequest consumes the request's exception, and nothing else reads it - so without keeping it the user is told to 'check the URI, the IsNetCore flag and the credentials' for a 401 the command already had in hand.")]
+	public void Execute_ShouldReportTheRequestError_WhenTheTransportFailed() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		_ownedClient.ExecutePostRequestAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromException<HttpResponseMessage>(
+				new HttpRequestException("Response status code does not indicate success: 401 (Unauthorized).")));
+		_activityWatcher.Snapshot.Returns(NoActivity);
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "nothing was compiled");
+		_logger.Received().WriteError(Arg.Is<string>(message =>
+			message.Contains("401 (Unauthorized)", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("When the build ended but the verdict cannot be read back, the outcome comes from the observed compilation history instead of being turned into a clio error - a build that demonstrably ran must not be reported as failed because the lookup after it failed.")]
+	public void Execute_ShouldFallBackToObservedHistory_WhenTheVerdictCannotBeRead() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		StubNeverAnsweringCompileRequest();
+		_activityWatcher.Snapshot.Returns(Built);
+		_reloadWatcher.Snapshot.Returns(Reloaded);
+		_compilationResultReader.TryRead().Returns((CreatioCompilationLogResponse)null);
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0,
+			because: "the observed history carried no real error, so the build is reported as successful");
+		_logger.Received().WriteWarning(Arg.Is<string>(message =>
+			message.Contains("Could not read the compilation result", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("THE PROLONGED-OUTAGE GUARD. A runtime that crashed after writing one clean history row and never came back must not be reported as a finished build: the quiet window is not allowed to conclude while the environment is still unreachable, so the command waits out its timeout and exits 1 instead of printing 'Compilation finished'.")]
+	public void Execute_ShouldNotReportSuccess_WhenTheEnvironmentStoppedAnsweringAfterActivityStarted() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		command.QuietFallbackOverride = TimeSpan.Zero;
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true, TimeOut = 200 };
+		StubNeverAnsweringCompileRequest();
+		_activityWatcher.Snapshot.Returns(Built);
+		_reloadWatcher.Snapshot.Returns(WentAwayAndStayedAway);
+		_compilationResultReader.TryRead().Returns((CreatioCompilationLogResponse)null);
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1,
+			because: "a build whose environment never came back was never shown to have completed, and reporting it as successful releases the reservation on nothing");
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(message =>
+			message.Contains("Compilation finished", StringComparison.Ordinal)));
+		_logger.Received().WriteError(Arg.Is<string>(message =>
+			message.Contains("Timed out waiting for the compilation", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("Completion inferred from quiet AND a verdict that cannot be read are two unknowns stacked, so the run is reported as a failure. Only a reload-CONFIRMED build may fall back to the observed history, because there the build demonstrably ran to its end.")]
+	public void Execute_ShouldFail_WhenCompletionWasInferredAndTheVerdictCannotBeRead() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		command.QuietFallbackOverride = TimeSpan.Zero;
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		StubNeverAnsweringCompileRequest();
+		_activityWatcher.Snapshot.Returns(Built);
+		_reloadWatcher.Snapshot.Returns(NoReload);
+		_compilationResultReader.TryRead().Returns((CreatioCompilationLogResponse)null);
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1,
+			because: "nothing confirmed the build ended and nothing confirmed how it ended, so the outcome is unknown rather than successful");
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(message =>
+			message.Contains("Compilation finished", StringComparison.Ordinal)));
+		_logger.Received().WriteError(Arg.Is<string>(message =>
+			message.Contains("The outcome is unknown", StringComparison.Ordinal)));
+	}
+
+	private CompileConfigurationCommand CreateCommand() {
+		CompileConfigurationCommand command = Container.GetRequiredService<CompileConfigurationCommand>();
+		// The production grace is 90 seconds, sized for a cold stand's first compilation-history row. A
+		// test asserting the transport-failure branch would otherwise spend all of it waiting.
+		command.StartupGraceOverride = TimeSpan.FromMilliseconds(1);
+		command.DecisionIntervalOverride = TimeSpan.FromMilliseconds(1);
+		// Production waits five minutes before quiet ALONE ends a build, so that path is driven
+		// explicitly by the tests that want it rather than reached by waiting.
+		command.QuietFallbackOverride = TimeSpan.FromHours(1);
+		return command;
+	}
+
+	private void StubCompileResponse(string body) =>
+		_ownedClient.ExecutePostRequestAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(_ => Task.FromResult(new HttpResponseMessage {
+				Content = new StringContent(body)
+			}));
+
+	// The platform's own behaviour on a successful build: the request is answered by nothing, because the
+	// runtime reload that ends the build tears the connection down first.
+	private void StubNeverAnsweringCompileRequest() =>
+		_ownedClient.ExecutePostRequestAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(_ => new TaskCompletionSource<HttpResponseMessage>().Task);
+
+	private int ReceivedCompileRequests() =>
+		_ownedClient.ReceivedCalls().Count(call =>
+			call.GetMethodInfo().Name == nameof(IOwnedApplicationClient.ExecutePostRequestAsync));
 }
