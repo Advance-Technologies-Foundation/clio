@@ -63,15 +63,6 @@
       ]
     },
     {
-      "web": "PageWithTopAreaAndTabsFreedomTemplate",
-      "mobile": "BaseMobilePageTemplate",
-      "containers": [
-        { "web": "MainContainer", "mobile": "MainContainer" },
-        { "web": "Tabs", "mobile": "Tabs" },
-        { "web": "GeneralInfoTab", "mobile": "GeneralInfoTab" }
-      ]
-    },
-    {
       "web": "PageWithRightAreaAndTabsFreedomTemplate",
       "mobile": "BaseMobilePageTemplate",
       "declaredElements": [
@@ -91,15 +82,6 @@
         { "web": "Tabs", "mobile": "Tabs" },
         { "web": "GeneralInfoTab", "mobile": "GeneralInfoTab" },
         { "web": "RightAreaProfileContainer", "mobile": "RightPanelTab" }
-      ]
-    },
-    {
-      "web": "PageWithAreaFreedomTemplate",
-      "mobile": "BaseMobilePageTemplate",
-      "containers": [
-        { "web": "MainContainer", "mobile": "MainContainer" },
-        { "web": "CardContentWrapper", "mobile": "MainContainer" },
-        { "web": "TopAreaProfileContainer", "mobile": "AreaProfileContainer" }
       ]
     },
     {
