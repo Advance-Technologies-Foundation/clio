@@ -1,6 +1,6 @@
 # new-test-project
 
-Create a new test project.
+Create package unit-test projects from a clio workspace root. Registers each test project and package project in `tests/UnitTests.slnx`, and the test project in `MainSolution.slnx`.
 
 
 ## Usage
@@ -11,7 +11,7 @@ clio new-test-project [options]
 
 ## Description
 
-Create a new test project.
+Create package unit-test projects from a clio workspace root. Registers each test project and package project in `tests/UnitTests.slnx`, and the test project in `MainSolution.slnx`.
 
 ## Aliases
 
@@ -20,14 +20,14 @@ Create a new test project.
 ## Examples
 
 ```bash
-clio new-test-project -e dev
+clio new-test-project --package UsrOrders
 ```
 
 ## Options
 
 ```bash
 --package <VALUE>
-Package name
+Required package name or comma-separated package names
 ```
 
 ## Environment Options
@@ -82,3 +82,10 @@ Path to the application root folder
 ```
 
 - [Clio Command Reference](../../Commands.md#new-test-project)
+
+Existing project and fixture files are preserved. Rerun to repair missing solution entries. Legacy .sln files are left untouched. Solution-write failures return a nonzero exit code.
+
+Use only the Clio scaffold for package test projects, then write test cases inside the generated project. MCP callers use clio-run with command new-test-project and package-name, absolute workspace-path, and environment-name. Scaffolding needs no ClioGate installation.
+
+
+The package project packages/<NAME>/Files/<NAME>.csproj must exist before unit-test scaffolding. A missing package project fails before any files are written.

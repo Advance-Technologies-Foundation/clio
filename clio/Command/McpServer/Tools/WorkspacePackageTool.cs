@@ -66,14 +66,15 @@ public class CreateTestProjectTool(
 	ILogger logger,
 	IToolCommandResolver commandResolver)
 	: BaseTool<CreateTestProjectOptions>(createTestProjectCommand, logger, commandResolver) {
+	internal const string ToolName = "new-test-project";
 
 	/// <summary>
 	/// Creates a new test project for a package in the specified workspace.
 	/// </summary>
-	[McpServerTool(Name = "new-test-project", ReadOnly = false, Destructive = false, Idempotent = false,
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false,
 		OpenWorld = false)]
 	// InProcess (the inventory's file-level heuristic said worker, and §4 pre-flagged this row):
-	// CreateTestProjectCommand.Execute only writes templates and drives the local dotnet CLI. The
+	// CreateTestProjectCommand.Execute only writes templates and solution files. The
 	// environment-name argument exists because the options inherit EnvironmentOptions; nothing on the path
 	// holds an IApplicationClient, so the call can never block on Creatio.
 	[McpToolExecution(
@@ -87,7 +88,9 @@ public class CreateTestProjectTool(
 				 Creates a new unit test project for a package in the specified local workspace.
 				 
 				 The workspace path is required because the command generates files under that workspace and
-				 updates the workspace solution structure.
+				 registers the test project in tests/UnitTests.slnx and MainSolution.slnx.
+				 Existing project and fixture files are preserved; rerun to repair missing solution entries.
+				 Use this scaffold before writing test cases; do not create a separate test project or harness.
 				 """)]
 	public CommandExecutionResult CreateTestProject(
 		[Description("new-test-project parameters")] [Required] CreateTestProjectArgs args
@@ -106,9 +109,10 @@ public class CreateIntegrationTestProjectTool(
 	CreateIntegrationTestProjectCommand command,
 	ILogger logger)
 	: BaseTool<CreateIntegrationTestProjectOptions>(command, logger) {
+	internal const string ToolName = "new-integration-test-project";
 
 	/// <summary>Creates a scenario-neutral integration-test project in a local clio workspace.</summary>
-	[McpServerTool(Name = "new-integration-test-project", ReadOnly = false, Destructive = false,
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false,
 		Idempotent = false, OpenWorld = false)]
 	// InProcess (the inventory's file-level heuristic said worker): CreateIntegrationTestProjectOptions does
 	// not inherit EnvironmentOptions, the tool takes no IToolCommandResolver and the generated project is
@@ -125,6 +129,8 @@ public class CreateIntegrationTestProjectTool(
 		Read get-guidance name=integration-testing before adding scenario-specific tests. The generated
 		project accepts Creatio URL, runtime, and password or access-token authentication from NUnit
 		parameters or environment variables and does not depend on a local clio environment registry.
+		Registers the project in tests/IntegrationTests.slnx and MainSolution.slnx.
+		Use this scaffold before writing test cases; do not create a separate test project or harness.
 		""")]
 	public CommandExecutionResult Create(
 		[Description("new-integration-test-project parameters")] [Required] CreateIntegrationTestProjectArgs args) {

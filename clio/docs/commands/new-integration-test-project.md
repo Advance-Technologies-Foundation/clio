@@ -38,3 +38,12 @@ clio integration-test --package UsrFinancialApplicatio --target-framework net8.0
 ```
 
 - [Clio Command Reference](../../Commands.md#new-integration-test-project)
+
+Creates `tests/<Package>.IntegrationTests/<Package>.IntegrationTests.csproj` and registers it
+in `tests/IntegrationTests.slnx` and `MainSolution.slnx`. An existing project directory is
+refused to preserve customizations. Solution-write errors return a nonzero exit code;
+success emits an Info message. Verify both solution entries before running tests.
+
+Use only the Clio scaffold for package integration-test projects, then write test cases in
+the generated project. For MCP, call `clio-run` with command `new-integration-test-project`,
+`package-name`, absolute `workspace-path`, and optional `target-framework`.

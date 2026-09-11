@@ -1,13 +1,18 @@
+using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Xml;
 using Clio.Common;
 using Clio.Workspaces;
 
 namespace Clio.Workspace;
 
+/// <summary>Creates and updates XML solution project registrations.</summary>
 public interface ISolutionCreator{
 	#region Methods: Public
+	/// <summary>Adds missing projects, preserving existing registrations and solution folders.</summary>
+	/// <param name="solutionPath">Path to the XML solution to create or update.</param>
+	/// <param name="solutionProjects">Projects with paths relative to the solution directory.</param>
+	/// <exception cref="XmlException">The existing file is not a valid XML solution.</exception>
 	void AddProjectToSolution(string solutionPath, IEnumerable<SolutionProject> solutionProjects);
 
 	#endregion
@@ -37,6 +42,7 @@ public class SolutionCreator : ISolutionCreator{
 
 	#region Methods: Public
 	
+	/// <inheritdoc />
 	public void AddProjectToSolution(string solutionPath, IEnumerable<SolutionProject> solutionProjects) {
 
 		if (!_fileSystem.ExistsFile(solutionPath)) {
@@ -49,28 +55,14 @@ public class SolutionCreator : ISolutionCreator{
 
 		XmlNode solutionNode = doc.SelectSingleNode("Solution");
 		if (solutionNode == null) {
-			_logger.WriteWarning($"[WARNING] Solution file {solutionPath} does not contain a root <Solution> node.");
-			return;
-		}
-		XmlNodeList existingProjects = solutionNode.SelectNodes("Project");
-		List<string> paths = [];
-		if (existingProjects != null) {
-			foreach (XmlNode existingProject in existingProjects) {
-				if (existingProject.Attributes != null) {
-					string path = existingProject.Attributes["Path"].Value;
-					paths.Add(path);
-				}
-			}
+			throw new XmlException($"Solution file {solutionPath} does not contain a root <Solution> node. Repair the solution and rerun the command.");
 		}
 		foreach (SolutionProject sp in solutionProjects) {
-			XmlElement projectNode;
-			if (!paths.Contains(sp.Path)) {
+			XmlElement projectNode = FindProjectNode(solutionNode, sp.Path);
+			if (projectNode == null) {
 				projectNode = doc.CreateElement("Project");
 				projectNode.SetAttribute("Path", sp.Path);
 				solutionNode.AppendChild(projectNode);
-				paths.Add(sp.Path);
-			} else {
-				projectNode = FindProjectNode(solutionNode, sp.Path);
 			}
 			if (sp.ForceBuild && projectNode != null && projectNode.SelectSingleNode("Build") == null) {
 				projectNode.AppendChild(doc.CreateElement("Build"));
@@ -81,13 +73,14 @@ public class SolutionCreator : ISolutionCreator{
 	}
 
 	private static XmlElement FindProjectNode(XmlNode solutionNode, string path) {
-		XmlNodeList existingProjects = solutionNode.SelectNodes("Project");
+		XmlNodeList existingProjects = solutionNode.SelectNodes(".//Project");
 		if (existingProjects == null) {
 			return null;
 		}
 		foreach (XmlNode existingProject in existingProjects) {
 			if (existingProject is XmlElement element
-				&& element.Attributes?["Path"]?.Value == path) {
+				&& string.Equals(element.Attributes?["Path"]?.Value.Replace('\\', '/'), path.Replace('\\', '/'),
+					OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)) {
 				return element;
 			}
 		}
