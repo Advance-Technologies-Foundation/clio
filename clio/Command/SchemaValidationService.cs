@@ -2687,8 +2687,7 @@ public static class SchemaValidationService
 				foreach (JsonProperty property in node.EnumerateObject()) {
 					// Gallery template slots map to record attribute names, not displayed captions.
 					// Carry this context only across the direct Gallery -> itemConfig edge.
-					if (IsExemptFromTextScan(currentType, property) ||
-					    (isGalleryItemConfig && property.NameEquals("templateValuesMapping"))) {
+					if (IsExemptFromTextScan(currentType, property, isGalleryItemConfig)) {
 						continue;
 					}
 					ScanTextPropertyForLiterals(currentName, currentType, property, result);
@@ -2752,13 +2751,14 @@ public static class SchemaValidationService
 		return false;
 	}
 
-	// Single predicate for "this subtree is not page-authored text", so the two conditions cannot drift
+	// Single predicate for "this subtree is not page-authored text", so the exemptions cannot drift
 	// apart at the call sites (the file extracts FormatOwnerNode and ResolveEntryRootType for the same
 	// reason). Used by the literal scanners only - the inserted-widget-caption engine intentionally
-	// applies neither exemption, because it also backs the blocking save gate.
-	private static bool IsExemptFromTextScan(string componentType, JsonProperty property) =>
+	// applies only the designer-metadata exemption, because it also backs the blocking save gate.
+	private static bool IsExemptFromTextScan(string componentType, JsonProperty property, bool isGalleryItemConfig) =>
 		string.Equals(property.Name, DesignOptionsPropertyName, StringComparison.Ordinal) ||
-		IsComponentDescriptorProperty(componentType, property);
+		IsComponentDescriptorProperty(componentType, property) ||
+		(isGalleryItemConfig && property.NameEquals("templateValuesMapping"));
 
 	// True when the property is the data descriptor of a node that declares a component type (see
 	// ComponentDataPropertyName). Callers skip the subtree entirely: it is component metadata, never
