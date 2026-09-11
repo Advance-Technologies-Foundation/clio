@@ -1533,7 +1533,8 @@ internal sealed class DataBindingColumnDefinition {
 	[JsonPropertyName("DataTypeValueUId")]
 	public Guid DataTypeValueUId { get; set; }
 
-	[JsonPropertyName("ReferenceSchemaName")]
+	// Runtime lookup hint; Creatio's PackageSchemaDataColumnDescriptor reader rejects this property.
+	[JsonIgnore]
 	public string? ReferenceSchemaName { get; set; }
 }
 

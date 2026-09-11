@@ -24,6 +24,26 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[TestCase("set-sys-setting")]
+	[TestCase("SET-SYS-SETTING")]
+	[Description("A set-system-setting miss ranks the registered update tool before read/create lexical matches.")]
+	public void GetToolContracts_ShouldSuggestUpdateFirst_WhenSetVerbIsRequested(string requestedName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([requestedName]));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "suggesting a tool must not turn a miss into a successful lookup");
+		result.Error!.Suggestions!.First().Should().Be(SysSettingUpdateTool.UpdateSysSettingToolName,
+			because: "the exact subject with synonymous update intent should precede a read tool");
+		result.Error.Suggestions.Should().NotContain(requestedName.ToLowerInvariant(),
+			because: "an unknown name must never suggest itself");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[TestCase(false)]
 	[TestCase(true)]
 	[Description("Retains valid contracts regardless of where unknown names occur in a batch and deduplicates names.")]

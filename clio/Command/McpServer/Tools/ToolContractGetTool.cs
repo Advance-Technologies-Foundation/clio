@@ -969,13 +969,7 @@ internal static class ToolContractCatalog {
 		IMcpToolInvokerRegistry? toolInvokerRegistry) {
 		IEnumerable<string> derivedNames = toolInvokerRegistry?.ToolNames
 			?? McpToolSchemaCatalog.RegisteredToolNames;
-		return Contracts.Keys
-			.Concat(derivedNames)
-			.Distinct(StringComparer.OrdinalIgnoreCase)
-			.OrderBy(name => McpToolArgumentSupport.LevenshteinDistance(requestedName, name))
-			.ThenBy(name => name, StringComparer.OrdinalIgnoreCase)
-			.Take(3)
-			.ToArray();
+		return McpToolArgumentSupport.SuggestToolNames(requestedName, Contracts.Keys.Concat(derivedNames));
 	}
 
 	/// <summary>
