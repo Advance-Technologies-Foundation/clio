@@ -3579,6 +3579,28 @@ stories:
     blocks:
       - story-process-versioning-24
 
+  - id: story-process-versioning-25
+    title: "Document versions[].packageName once a clio build ships it"
+    feature: "process-versioning"
+    jira: "ENG-94374"
+    repo: "clio-knowledge"
+    size: S
+    status: ready-for-dev
+    file: spec/stories/story-process-versioning-25.md
+    prd: spec/prd/prd-process-versioning.md
+    adr: spec/adr/adr-process-versioning.md
+    test_plan: spec/test-plans/tp-process-versioning.md
+    note: >-
+      Review of story 21 took packageName back OUT of the article's field list: no RELEASED clio returns
+      it, so the ABSENT rule would have told an agent the package "could not be named" on every current
+      environment - the same shape of wrong-by-a-version claim D4 was. The field goes back in, with a
+      clio boundary naming the build, once story 19 has shipped in one. Until then the article tells the
+      agent to resolve the name itself rather than read a GUID out loud.
+    depends_on:
+      - story-process-versioning-19
+      - story-process-versioning-21
+    blocks: []
+
   - id: story-process-versioning-24
     title: "Re-pin clio's guidance fixture after the process-versions split"
     feature: "process-versioning"
@@ -3620,7 +3642,7 @@ stories:
       - story-process-versioning-23
 
   - id: story-process-versioning-23
-    title: "Rebundle CrtProcessBuilder once the create-path fix is on main"
+    title: "Rebundle CrtProcessBuilder at 1.6.2.3 with the create-path fix"
     feature: "process-versioning"
     jira: "ENG-94374"
     repo: "clio"

@@ -254,6 +254,27 @@ public sealed class ProcessVersionLibReaderTests {
 	}
 
 	[Test]
+	[Description("A SysPackage read that comes back with NO ROWS is treated as not read, not as read-and-empty. A Creatio environment always carries packages, so an empty set is a refusal - and measured on ATF.Repository 2.0.3.1 a null or unsuccessful IItemsResponse does not throw, it yields no rows, which is the shape a restricted SysPackage comes back as. Classified as success it would publish every member with no package name and NO warning, the one combination the contract says cannot occur.")]
+	public void Read_Should_WarnAboutTheUnreadablePackages_When_ThePackageQueryReturnsNoRows() {
+		// Arrange
+		ProcessVersionLibReader sut = ReaderOver(
+			[Row(RootUId, "InvoiceVisaProcess", version: 0, isActive: true, rootUId: RootUId)],
+			[]);
+
+		// Act
+		ProcessVersionFacts facts = sut.Read(RootUId.ToString());
+
+		// Assert
+		facts.Version.Should().Be(0,
+			because: "the view answered, so the version facts are established whatever SysPackage did");
+		facts.Versions.Should().OnlyContain(v => v.PackageName == null,
+			because: "no row named this package, and an invented name is worse than none");
+		facts.Warning.Should().Contain("package names could not be read",
+			because: "every member lost its name at once, which is the case a caller has to be told about - "
+				+ "silently answering in UIds is the defect the name was added to remove");
+	}
+
+	[Test]
 	[Description("When the package table itself cannot be read, every member loses its name at once - so THAT is reported, unlike a single UId with no row. Without it the answer degrades silently to raw GUIDs in front of a builder who asked which package a version lives in.")]
 	public void Read_Should_WarnAboutTheUnreadablePackages_When_ThePackageQueryFails() {
 		// Arrange
@@ -511,6 +532,10 @@ public sealed class ProcessVersionLibReaderTests {
 			Row(RootUId, "InvoiceVisaProcess", version: 0, isActive: false, rootUId: RootUId),
 			Row(ChildUId, "InvoiceVisaProcessInvoice1", version: 1, isActive: true, rootUId: RootUId)
 		]);
+		// Mocked even though this test is about the query COUNT on the view: an unmocked SysPackage answers
+		// with no rows, which the reader reads as a refused package table and reports - correctly, and
+		// unrelated to what is under test here.
+		provider.MockItems(PackageSchemaName).Returns([PackageRow(PackageUId, PackageName)]);
 		ProcessVersionLibReader sut = new(provider);
 
 		// Act

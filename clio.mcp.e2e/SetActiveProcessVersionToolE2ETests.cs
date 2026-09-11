@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
@@ -10,6 +11,7 @@ using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
+using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 
@@ -149,12 +151,22 @@ public sealed class SetActiveProcessVersionToolE2ETests {
 		});
 
 		// Assert
-		string callResultJson = JsonSerializer.Serialize(callResult);
-		callResultJson.Should().Contain("\u0022exit-code\u0022:0",
+		// Parsed rather than substring-matched on the serialized envelope, and that is load-bearing TWICE
+		// here. The version's code is $"{processName}Custom1", so it CONTAINS the root's: a Contain check
+		// passes on an envelope that named the version, which is the exact regression this test exists to
+		// catch. And the payload is a JSON string nested inside the envelope, so its quotes arrive escaped -
+		// a naive Contain("\"exit-code\":0") searches for a sequence that cannot occur.
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+		execution.ExitCode.Should().Be(0,
 			because: "activating the root is an ordinary activation, not a refused one");
-		callResultJson.Should().Contain(processName,
+		string reported = string.Join(" ", (execution.Output ?? [])
+			.Select(message => message.Value ?? string.Empty));
+		reported.Should().Contain(processName,
 			because: "the name comes from the read-back after the write, so the root appearing here is what "
 				+ "proves the environment reports IT as actual rather than the version");
+		reported.Should().NotContain(versionName,
+			because: "the root's code is a PREFIX of the version's, so only the absence of the version's own "
+				+ "code separates 'the root is actual' from 'the activation was a no-op'");
 		JsonObject describedRoot = DescribedProcessGraph.Read(await CallToolAsync(context, DescribeToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,

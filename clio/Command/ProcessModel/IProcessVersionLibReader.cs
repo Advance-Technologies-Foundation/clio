@@ -261,8 +261,18 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 			return NotEstablished($"the process library reports no version family key for schema '{row.UId}'");
 		}
 		List<VwProcessLib> family = ReadFamily(ctx, row.VersionParentUId);
-		return BuildFacts(row, family, ReadPackageNames(ctx));
+		return BuildFacts(row, family, () => ReadPackageNames(ctx));
 	}
+
+	/// <summary>
+	/// Wall-clock slice of <see cref="_readBudget"/> the package-name read may spend.
+	/// </summary>
+	/// <remarks>
+	/// A third, so a stalled <c>SysPackage</c> table cannot spend what the family read still needs. Letting
+	/// it run on the shared budget trades the whole answer - version, active-version flag and family - for a
+	/// field whose absence this reader already knows how to report.
+	/// </remarks>
+	private TimeSpan PackageReadBudget => TimeSpan.FromTicks(_readBudget.Ticks / 3);
 
 	/// <summary>
 	/// The package names this environment has, keyed by package UId, or <c>null</c> when they could not be read.
@@ -271,7 +281,18 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 	/// <para>
 	/// Separated from the family read because the two answer different questions and fail independently: a
 	/// family that reads fine must not lose its version facts because <c>SysPackage</c> did not answer. The
-	/// failure is absorbed here rather than by the caller's guard, which would degrade the WHOLE read.
+	/// failure is absorbed here rather than by the caller's guard, which would degrade the WHOLE read. A
+	/// read that is merely SLOW is absorbed the same way and for the same reason: the budget it would
+	/// otherwise spend is the one the version facts are answered out of, and losing them to a convenience
+	/// field is the worse trade.
+	/// </para>
+	/// <para>
+	/// No rows is NOT an answer. A Creatio environment always carries packages, so an empty set means the
+	/// read was refused rather than that there are none to name: measured on ATF.Repository 2.0.3.1, a null
+	/// or unsuccessful <c>IItemsResponse</c> does not throw, it yields no rows, which is the shape a
+	/// restricted <c>SysPackage</c> comes back as. Reporting that as read would publish every member with
+	/// no package name and no warning, the one combination the contract on
+	/// <see cref="ProcessVersionFamilyMember.PackageName"/> says cannot occur.
 	/// </para>
 	/// <para>
 	/// Unfiltered on purpose. The filter that belongs here is "the UIds this family uses", and expressing it
@@ -280,18 +301,23 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 	/// <see cref="ProcessLibRead.Guarded"/> deliberately does not catch (it is a call-site defect, not a fact
 	/// that could not be established). Asking per UId instead trades one round-trip for up to
 	/// <see cref="FamilyCap"/> of them on a cross-package family. So one query returns the table: a few
-	/// hundred rows of scalars, inside the budget this read already owns.
+	/// hundred rows of scalars, inside the slice of the budget this read is given.
 	/// </para>
 	/// </remarks>
-	private static Dictionary<Guid, string> ReadPackageNames(IAppDataContext ctx) =>
-		ProcessLibRead.Guarded<Dictionary<Guid, string>>(
-			() => ctx.Models<SysPackage>()
-				.ToList()
-				// Last write wins rather than throwing: SysPackage.UId is unique in practice, and a
-				// duplicate is not a reason to lose the version facts this read exists to deliver.
-				.GroupBy(package => package.UId)
-				.ToDictionary(group => group.Key, group => group.Last().Name),
-			_ => null);
+	private Dictionary<Guid, string> ReadPackageNames(IAppDataContext ctx) =>
+		ProcessLibRead.WithinBudget(PackageReadBudget,
+			() => ProcessLibRead.Guarded<Dictionary<Guid, string>>(
+				() => {
+					List<SysPackage> rows = ctx.Models<SysPackage>().ToList();
+					// Last write wins rather than throwing: SysPackage.UId is unique in practice, and a
+					// duplicate is not a reason to lose the version facts this read exists to deliver.
+					return rows.Count == 0
+						? null
+						: rows.GroupBy(package => package.UId)
+							.ToDictionary(group => group.Key, group => group.Last().Name);
+				},
+				_ => null),
+			() => null);
 
 	private static List<VwProcessLib> ReadFamily(IAppDataContext ctx, Guid rootUId) =>
 		// The root is included without a second query: the view computes VersionParentUId as
@@ -309,7 +335,7 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 				$"the process library read did not complete within {_readBudget.TotalSeconds:0.##}s"));
 
 	private static ProcessVersionFacts BuildFacts(VwProcessLib row, List<VwProcessLib> fetched,
-		Dictionary<Guid, string> packageNames) {
+		Func<Dictionary<Guid, string>> readPackageNames) {
 		if (fetched.Count == 0) {
 			// The schema's own row came back but its family did not, so nothing about the family is
 			// established. Publishing an empty list here would read as "checked, and there are no versions",
@@ -334,6 +360,9 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 		// picks between them by a key this view does not expose. FirstOrDefault over an unordered ATF result
 		// would name the loser, differently between calls, while publishing two isActiveVersion: true members.
 		VwProcessLib active = flagged.Count == 1 ? flagged[0] : null;
+		// Deferred to here because the early return above would pay for the names and then discard them, and
+		// the read spends a slice of the same budget the version facts are answered out of.
+		Dictionary<Guid, string> packageNames = readPackageNames();
 		return new ProcessVersionFacts {
 			Version = row.Version,
 			IsActiveVersion = row.IsActiveVersion,
