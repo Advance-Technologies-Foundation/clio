@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
@@ -120,7 +120,7 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 			// from a successful compile. Only reachable on an interactive, non-silent terminal.
 			return InteractiveConsoleExtensions.DeclinedExitCode;
 		}
-		CompilationHistory baseline = _compilationHistoryPoller.GetBaseline();
+		CompilationHistory baseline = TryGetBaseline();
 		_compileAll = options.All;
 		_reloadReported = false;
 		Stopwatch sw = new();
@@ -436,6 +436,32 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 			: $" -e {options.Environment}";
 		string allPart = options.All ? " --all" : string.Empty;
 		return $"Compilation postponed. Nothing was compiled. Run it later with: clio cc{environmentPart}{allPart}";
+	}
+
+	/// <summary>
+	/// Reads the compilation-history baseline, degrading to <c>null</c> when the read fails.
+	/// </summary>
+	/// <remarks>
+	/// ClassifyingDataProvider turns a failed OData round into an exception instead of an empty list, so an
+	/// unguarded read here would abort the compile before the compile request is ever sent - a single
+	/// transient failure would be strictly worse than before that decorator existed. A missing baseline only
+	/// costs precision in the progress lines (Poll falls back to DateTime.MinValue), and monitoring is not the
+	/// point of the command, so the failure is reported as a warning and the compile goes ahead.
+	/// Mirrors WatchCompilationCommand.TryGetBaseline, except that command cannot continue without a
+	/// baseline and therefore aborts, while this one can.
+	/// </remarks>
+	private CompilationHistory TryGetBaseline() {
+		try {
+			return _compilationHistoryPoller.GetBaseline();
+		} catch (Exception exception) {
+			//GetReadableMessageException, not .Message: a DataProviderFailureException's Message is the AGENT
+			//rendering and carries the [untrusted-source-text begin] … [end] fence, which on a terminal has no
+			//reader and makes an ordinary platform failure read as clio malfunctioning. The extension picks
+			//the carrier's ConsoleMessage instead (PR #1374 review).
+			_logger.WriteWarning(
+				$"Could not read the compilation history baseline: {exception.GetReadableMessageException()}");
+			return null;
+		}
 	}
 
 	private void LogRecord(CompilationHistory record) {
