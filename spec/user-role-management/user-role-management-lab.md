@@ -47,3 +47,10 @@ release, merge or complete-delivery claim has been made.
 
 The deployed Terrasoft.Core.dll used for the priority investigation has SHA-256
 53444D1A6A0FC6832B65D5BA8E77C2DAF4063DA1CBB933740D33937C0959B1A5.
+
+Licensed follow-up: the user selected WuestenrotPermissionProbe (local Creatio10.1.585.0).
+The unused five-seat adobe esign package was reserved for six disposable accounts/contacts and one
+functional role. Native MCP assignment reached capacity, rejected the sixth account, released seats,
+and completed role-based redistribution with both manual-preserving and include-manual modes.
+The first run passed in3m17s; cleanup and independent license inventory restored5available/0used.
+AdministrationLicenseE2ETests preserves this opt-in scenario and its capacity bounds.

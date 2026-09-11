@@ -1,6 +1,6 @@
 # Runtime verification for user and role management
 
-Target: exclusive issue-968 lab, Creatio 10.1.585.0, .NET 8, PostgreSQL.
+Targets: exclusive issue-968 lab and the user-authorized licensed WuestenrotPermissionProbe local lab; both Creatio 10.1.585.0, .NET 8, PostgreSQL.
 The compiled Clio CLI and external MCP server are built from this issue worktree.
 ClioGate 2.0.0.52 was built for net472 and netstandard2.0, packaged, installed and exercised.
 
@@ -26,7 +26,7 @@ ClioGate 2.0.0.52 was built for net472 and netstandard2.0, packaged, installed a
 | Cache bridge authorization | Missing CanManageSolution or CanChangeAdminOperationGrantee is denied; preflight failure cannot reorder | Native runtime + unit verified |
 | Bridge authorization | Both methods reject missing CanManageSolution and CanManageAdministration; explicit scheduling rejects missing CanManageLicUsers; denied calls preserve association | Native runtime + server log verified |
 | License inspection | Empty available-package array handled correctly | External MCP verified |
-| Licensed assignment | User assignment/removal, role-driven redistribution, capacity/manual assignment preservation | Pending licensed target |
+| Licensed assignment | Five seats assigned, sixth user rejected; direct removal returns all seats; role assignment/removal completes asynchronously; manual source preserved by default and removed with include-manual=true | External MCP verified |
 | Scheduling conditional permission | With UseRoleBasedLicenseDistribution=1 and RedistributeLicensesOnRoleChanges=true, missing CanManageLicUsers denies removal and preserves association | Native runtime verified; original setting restored |
 | Guidance | Canonical administration article and existing rights/routing links; explicit compatible tool requirements | Producer suite 160 passed |
 | Ring | 157 Release tests and Windows x64 NativeAOT publish | Passed; no trim/AOT warnings |
@@ -45,6 +45,10 @@ processes retain the update-disable setting. All 14 external MCP cases passed, i
 and external lifecycles, direct-member removal, effective role-centric members, IP updates and the priority bridge. Knowledge producer
 tests passed 160 cases. After the final Claude corrections, the command/MCP module run passed 9,520 tests with 15 skipped; all 14 expanded live MCP cases passed again.
 
-No credentials or password values belong in this record. The lab has no usable license packages;
-there is no claimed licensed redistribution success. The user was asked for an authorized licensed
-local target or test license. Final publication/merge remains gated on required verification and reviews.
+No credentials or password values belong in this record. The initial issue-968 lab has no usable
+license packages. The user supplied WuestenrotPermissionProbe for licensed verification; its unused
+five-seat add-on was exercised through AdministrationLicenseE2ETests using six disposable users and
+contacts and one functional role. All fixtures were removed, and independent readback confirmed all
+five seats available and zero used. Native scheduling retained its 60-second delay; the test waited
+for real assignment changes instead of treating scheduling receipts as completion. ClioGate 2.0.0.52
+was installed on this target. No merge or release claim is made by this lab record.
