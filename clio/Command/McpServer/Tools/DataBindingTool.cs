@@ -165,7 +165,7 @@ public sealed record CreateDataBindingArgs(
 	string SchemaName,
 
 	[property: JsonPropertyName("workspace-path")]
-	[property: Description("Absolute path to the local workspace")]
+	[property: Description("Absolute workspace root containing .clio/workspaceSettings.json, not the package directory. The package is resolved under packages/<package-name> beneath that root.")]
 	[property: Required]
 	string WorkspacePath,
 
@@ -204,7 +204,7 @@ public sealed record AddDataBindingRowArgs(
 	string BindingName,
 
 	[property: JsonPropertyName("workspace-path")]
-	[property: Description("Absolute path to the local workspace")]
+	[property: Description("Absolute workspace root containing .clio/workspaceSettings.json, not the package directory. The package is resolved under packages/<package-name> beneath that root.")]
 	[property: Required]
 	string WorkspacePath,
 
@@ -233,7 +233,7 @@ public sealed record RemoveDataBindingRowArgs(
 	string BindingName,
 
 	[property: JsonPropertyName("workspace-path")]
-	[property: Description("Absolute path to the local workspace")]
+	[property: Description("Absolute workspace root containing .clio/workspaceSettings.json, not the package directory. The package is resolved under packages/<package-name> beneath that root.")]
 	[property: Required]
 	string WorkspacePath,
 

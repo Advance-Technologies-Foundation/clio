@@ -266,6 +266,49 @@ public sealed class DataBindingToolE2ETests : McpContractFixtureBase {
 			because: "the failure should explain why offline generation is unavailable for the requested schema");
 	}
 
+	[TestCase(CreateToolName)]
+	[TestCase(AddRowToolName)]
+	[TestCase(RemoveRowToolName)]
+	[Description("Rejects a package directory passed as workspace-path through the real MCP process, with actionable diagnostics and no binding output.")]
+	[AllureTag(CreateToolName, AddRowToolName, RemoveRowToolName)]
+	[AllureName("Local binding commands require the workspace root")]
+	[AllureDescription("Passes a real local package directory to each binding tool and verifies the missing root marker diagnostic, error log, failure exit code, and absence of output.")]
+	public async Task DataBinding_ShouldExplainWorkspaceRoot_WhenPackageDirectoryIsSupplied(string toolName) {
+		// Arrange
+		await using DataBindingArrangeContext context = await ArrangeWorkspaceAsync(requireEnvironment: false);
+		string packagePath = Path.Combine(context.WorkspacePath, "packages", context.PackageName);
+		Dictionary<string, object?> args = new() {
+			["package-name"] = context.PackageName,
+			["workspace-path"] = packagePath
+		};
+		if (toolName == CreateToolName) {
+			args["schema-name"] = "SysSettings";
+		} else {
+			args["binding-name"] = "SysSettings";
+			args[toolName == AddRowToolName ? "values" : "key-value"] =
+				toolName == AddRowToolName ? "{}" : Guid.NewGuid().ToString();
+		}
+
+		// Act
+		CommandExecutionActResult result = await ActCommandAsync(context, toolName, args);
+
+		// Assert
+		Allure.Net.Commons.AllureApi.Step("Verify failure envelope and root guidance", () => {
+			result.CallResult.IsError.Should().NotBeTrue(because: "path validation returns a command execution envelope");
+			AssertCommandExitCode(result, 1, "a package directory does not contain the workspace marker");
+			result.Execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Error,
+				because: "invalid workspace input must emit an Error diagnostic");
+			DescribeExecution(result.Execution).Should()
+				.Contain(Path.Combine(packagePath, ".clio", "workspaceSettings.json"), because: "the diagnostic identifies the missing marker")
+				.And.Contain("not the package directory", because: "the correction must name the expected root")
+				.And.Contain("packages/<package-name>", because: "the package resolution rule must be explicit");
+		});
+		Allure.Net.Commons.AllureApi.Step("Verify no binding artifacts were written", () => {
+			Directory.Exists(Path.Combine(packagePath, "Data", "SysSettings")).Should().BeFalse(
+				because: "invalid workspace input must be rejected before local binding writes");
+		});
+	}
+
 	private async Task<DataBindingArrangeContext> ArrangeWorkspaceAsync(bool requireEnvironment = true) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
