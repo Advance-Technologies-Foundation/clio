@@ -7,7 +7,7 @@
 **ADR**: [adr-process-versioning.md](../adr/adr-process-versioning.md)
 **Test plan**: [tp-process-versioning.md](../test-plans/tp-process-versioning.md)
 **Repository**: clio
-**Status**: in-progress
+**Status**: done
 **Size**: M
 
 ---
@@ -66,7 +66,7 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
 - [x] Knowledge records whose `applies-to` names a file this story touches are updated or deleted **in this PR** (`AGENTS.md:456-457`)
 - [x] Docs verdict stated explicitly in the PR body, including "no update required" where that is the verdict
 - [x] MCP verdict stated in the PR body ("MCP reviewed, no update required" where that applies)
-- [ ] PR description references this story file
+- [x] PR description references this story file
 
 ## Dev Agent Record
 

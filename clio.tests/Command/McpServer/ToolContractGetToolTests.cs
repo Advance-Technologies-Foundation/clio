@@ -22,6 +22,103 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class ToolContractGetToolTests {
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
+	[Test]
+	[Category("Unit")]
+	[TestCase("set-sys-setting")]
+	[TestCase("SET-SYS-SETTING")]
+	[Description("A set-system-setting miss ranks the registered update tool before read/create lexical matches.")]
+	public void GetToolContracts_ShouldSuggestUpdateFirst_WhenSetVerbIsRequested(string requestedName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([requestedName]));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "suggesting a tool must not turn a miss into a successful lookup");
+		result.Error!.Suggestions!.First().Should().Be(SysSettingUpdateTool.UpdateSysSettingToolName,
+			because: "the exact subject with synonymous update intent should precede a read tool");
+		result.Error.Suggestions.Should().NotContain(requestedName.ToLowerInvariant(),
+			because: "an unknown name must never suggest itself");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("Retains valid contracts regardless of where unknown names occur in a batch and deduplicates names.")]
+	public void GetToolContracts_ShouldRetainResolvedContracts_WhenBatchContainsUnknownNames(bool unknownFirst) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		string known = SysSettingUpdateTool.UpdateSysSettingToolName;
+		string[] names = unknownFirst
+			? ["page-updte", known, "missing-tool-two", " PAGE-UPDTE ", known.ToUpperInvariant()]
+			: [known, "page-updte", "missing-tool-two", " PAGE-UPDTE ", known.ToUpperInvariant()];
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(names));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "a resolved contract makes a mixed lookup useful");
+		result.Tools!.Select(item => item.Name).Should().Equal([known],
+			because: "unknown guesses must not discard valid contracts or introduce duplicates");
+		result.Error.Should().BeNull(because: "individual misses belong in not-found for a partial success");
+		result.NotFound!.Select(item => item.Name).Should().Equal(["page-updte", "missing-tool-two"],
+			because: "each distinct miss must be reported in request order");
+		result.NotFound[0].Error.Suggestions.Should().Contain(PageUpdateTool.ToolName,
+			because: "suggestions must correspond to the individual miss");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns every unresolved name while preserving the original top-level error when all names miss.")]
+	public void GetToolContracts_ShouldReturnAllMisses_WhenNoNamesResolve() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(["page-updte", "missing-tool-two"]));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "no requested contract resolved");
+		result.Tools.Should().BeNull(because: "the existing all-miss contract has no tools payload");
+		result.NotFound.Should().HaveCount(2, because: "both misses need independent diagnostics");
+		result.Error.Should().Be(result.NotFound![0].Error,
+			because: "existing clients must retain the first tool-not-found error");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects malformed names before resolving any contracts, even in a mixed batch.")]
+	public void GetToolContracts_ShouldRejectWholeRequest_WhenBatchContainsBlankName() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName, " "]));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "blank names remain invalid input rather than lookup misses");
+		result.Tools.Should().BeNull(because: "input validation must precede lookup");
+		result.NotFound.Should().BeNull(because: "invalid input must not be reported as an unknown tool");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Omits the additive not-found field from successful responses without misses.")]
+	public void GetToolContracts_ShouldOmitNotFound_WhenAllNamesResolve() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		string json = JsonSerializer.Serialize(tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName])));
+		using JsonDocument document = JsonDocument.Parse(json);
+
+		// Assert
+		document.RootElement.TryGetProperty("not-found", out _).Should().BeFalse(
+			because: "existing successful response shapes must remain unchanged");
+	}
+
 	// Builds the same REAL invoker registry BuildToolWithRegistry wraps in a tool, so contracts for
 	// uncurated tools derive from the same MCP tool input schema clio-run dispatches against (Codex
 	// review #1, story-6). Exposed separately so ENG-93885 tests can call ToolContractCatalog.GetContracts
@@ -1935,6 +2032,47 @@ public sealed class ToolContractGetToolTests {
 		contract.OutputContract.Fields.Should().Contain(field =>
 				field.Name == "entities" && field.Description.Contains("`virtual`", StringComparison.Ordinal),
 			because: "get-app-info should document virtual status within each entity result");
+		contract.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "entities" &&
+				field.Description.Contains("default-value-config", StringComparison.Ordinal) &&
+				field.Description.Contains("stable record GUID", StringComparison.Ordinal) &&
+				field.Description.Contains("sequence-prefix", StringComparison.Ordinal),
+			because: "the get-app-info contract must document the typed column default so a defaulted column round-trips to sync-schemas (issue #969)");
+		contract.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "entities" &&
+				field.Description.Contains("None", StringComparison.Ordinal),
+			because: "the contract must tell the agent how to remove a default via source: None (issue #969)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Advertises the sync-schemas default-value fields for columns and update-operations, including the lookup record-GUID Const rule and default removal.")]
+	public void ToolContractGet_Should_Advertise_Sync_Schemas_Default_Value_Fields() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			SchemaSyncTool.ToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the sync-schemas contract should be available through get-tool-contract");
+		ToolContractField operationsField = result.Tools!.Single().InputSchema.Properties
+			.Single(field => field.Name == "operations");
+		operationsField.Description.Should().Contain("default-value-config",
+			because: "the structured default-value field is the primary way to declare a column default and must be discoverable in the contract (issue #969)");
+		operationsField.Description.Should().Contain("STABLE RECORD GUID",
+			because: "a lookup Const default is the stable record GUID and the contract must say so");
+		operationsField.Description.Should().Contain("Sequence",
+			because: "Sequence defaults (sequence-prefix + sequence-number-of-chars) are accepted and must be documented");
+		operationsField.Description.Should().Contain("SystemValue",
+			because: "SystemValue defaults (value-source = system value GUID) are accepted and must be documented");
+		operationsField.Description.Should().Contain("None",
+			because: "explicit default removal via source: None must be documented");
+		operationsField.Description.Should().Contain("default-value-source",
+			because: "the legacy Const/None shorthand remains accepted and must stay documented");
 	}
 
 	[Test]
@@ -3324,6 +3462,30 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[TestCase(SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
+		TestName = "GetSchemaNamePrefixContractCarriesTheEmptyVersusFailureRule")]
+	[TestCase(SysSettingGetTool.GetSysSettingToolName,
+		TestName = "GetSysSettingContractCarriesTheEmptyVersusFailureRule")]
+	[Description("get-tool-contract restates each tool's description in its own literal, so the sys-settings reading rule - an empty value only ever arrives with success:true, a rejected session is success:false - must be present in BOTH places or an agent reading the contract is told something the tool no longer does.")]
+	public void ToolContract_Should_Carry_The_Empty_Versus_Failure_Rule(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractDefinition contract =
+			tool.GetToolContracts(new ToolContractGetArgs([toolName])).Tools!.Single();
+
+		// Assert
+		contract.Description.Should().Contain("success:true",
+			because: "the contract has to say that an empty read is a SUCCESSFUL read, otherwise an agent reads emptiness as ambiguous");
+		contract.Description.Should().Contain("success:false",
+			because: "a rejected session is now a reported failure rather than an empty value (issue #1371), and the contract is where an agent learns that");
+		contract.Description.Should().Contain("authentication error",
+			because: "the contract must name the diagnosis the caller will actually receive");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The curated update-page contract describes the append merge identity as (operation, name) — the shipped agent-facing claim, since update-page is non-resident and the [Description] attribute is never merged in (GitHub #1132)")]
 	public void ToolContractGet_Should_Describe_UpdatePage_Mode_With_Operation_And_Name_Identity() {
 		// Arrange
@@ -3349,6 +3511,64 @@ public sealed class ToolContractGetToolTests {
 			because: "the merger DOES drop a further existing entry of a superseded identity; promising unqualified preservation would repeat the #1132 defect of shipping a claim the code does not honour");
 		modeField.Description.Should().NotContain("dedupe by `name`",
 			because: "the pre-#1132 claim describes behaviour the merger no longer has and caused the silent loss of an existing move operation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase(SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
+		TestName = "GetSchemaNamePrefixContractDeclaresTheFailureEnvelopeFields")]
+	[TestCase(SysSettingGetTool.GetSysSettingToolName,
+		TestName = "GetSysSettingContractDeclaresTheFailureEnvelopeFields")]
+	[TestCase(SysSettingsListTool.ListSysSettingsToolName,
+		TestName = "ListSysSettingsContractDeclaresTheFailureEnvelopeFields")]
+	[TestCase(SysSettingCreateTool.CreateSysSettingToolName,
+		TestName = "CreateSysSettingContractDeclaresTheFailureEnvelopeFields")]
+	[TestCase(SysSettingUpdateTool.UpdateSysSettingToolName,
+		TestName = "UpdateSysSettingContractDeclaresTheFailureEnvelopeFields")]
+	[Description("Issue #1329 added error-category, cause, recovery-action and correlation-id to every sys-setting failure envelope; get-tool-contract restates the output shape in its own literal, so a field the tool returns and the contract omits is a field no agent knows to read.")]
+	public void ToolContract_Should_Declare_The_Sys_Setting_Failure_Envelope_Fields(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractDefinition contract =
+			tool.GetToolContracts(new ToolContractGetArgs([toolName])).Tools!.Single();
+
+		// Assert
+		string[] fieldNames = [.. contract.OutputContract.Fields.Select(field => field.Name)];
+		fieldNames.Should().Contain("error-category",
+			because: "an agent branches on the failure class rather than parsing the message");
+		fieldNames.Should().Contain("cause",
+			because: "the actionable cause used to be discarded by CategorizeError (issue #1329)");
+		fieldNames.Should().Contain("recovery-action",
+			because: "the envelope has to name the next step, not only the failure");
+		fieldNames.Should().Contain("correlation-id",
+			because: "#1222 requires a correlation ID so the caller can point an operator at the log line");
+		// PR #1373 review (Blocker) - the field-name assertions above could not catch the drift that shipped: the
+		// error-category DESCRIPTION enumerated the branch values and had already lost `Configuration`, the value
+		// CategorizeFailure returns for every EnvironmentResolutionException. Reflected over the constants so the
+		// next category cannot reopen it.
+		string errorCategoryDescription = contract.OutputContract.Fields
+			.Single(field => field.Name == "error-category").Description;
+		string[] declaredCategories = [.. typeof(SysSettingErrorCategories)
+			.GetFields(BindingFlags.Public | BindingFlags.Static)
+			.Where(field => field.IsLiteral && field.FieldType == typeof(string))
+			.Select(field => (string)field.GetRawConstantValue()!)];
+		declaredCategories.Should().NotBeEmpty(
+			because: "an empty reflected set would make the enumeration assertion below pass vacuously");
+		foreach (string category in declaredCategories) {
+			errorCategoryDescription.Should().Contain(category,
+				because: $"an agent branching on error-category meets '{category}' at runtime, and an undeclared value sends it down its generic path - the looping behaviour issue #1329 exists to remove");
+		}
+		// PR #1373 review - the cause field must NOT advertise a trust label the classifier does not keep:
+		// CategorizeFailure's ProviderFailure arm sets Cause from the provider's message, which is built from the
+		// environment's HTTP response.
+		string causeDescription = contract.OutputContract.Fields
+			.Single(field => field.Name == "cause").Description;
+		causeDescription.Should().NotContain("Never composed from server prose",
+			because: "the ProviderFailure and Validation arms echo upstream text into cause, and an agent that reads it as trusted local guidance is the prompt-injection surface issue #1333 exists to close");
+		causeDescription.Should().Contain("treated as DATA",
+			because: "where the cause does echo upstream text the contract has to say so explicitly");
 	}
 
 	[Test]

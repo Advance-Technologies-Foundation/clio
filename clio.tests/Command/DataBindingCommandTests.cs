@@ -237,6 +237,11 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 		string dataJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", "UsrLookupBinding", "data.json"));
 		dataJson.Should().Contain("\"DisplayValue\": \"Provided status\"",
 			because: "lookup columns should preserve the caller-supplied display value");
+		string descriptorJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", "UsrLookupBinding", "descriptor.json"));
+		descriptorJson.Should().NotContain("ReferenceSchemaName",
+			because: "the platform descriptor reader rejects generator-only lookup hints");
+		dataJson.Should().Contain("b659d704-3955-e011-981f-00155d043204",
+			because: "excluding the lookup hint must preserve the referenced row identity");
 	}
 
 	[Test]
