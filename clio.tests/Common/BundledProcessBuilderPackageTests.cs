@@ -130,9 +130,16 @@ public class BundledProcessBuilderPackageTests {
 	/// — a shipped Function-mode element can carry stale stored values from a designer-side mode switch (the
 	/// designer does not clear them the way this package's own <c>Apply</c> does), and reporting them produced a
 	/// block <c>build</c>/<c>modify</c> immediately refuses, breaking the round-trip.</para>
+	/// <para>1.6.2.9 (this cut): a High-severity post-merge finding on <c>PreconfiguredPageApplier.Apply</c> — it
+	/// mutated the page (and, further down, buttons/performer/data sources) BEFORE its stale-data-source
+	/// dependency guard ran, so a refusal from that guard left the page already switched to the retarget's
+	/// destination while the stale, now-orphaned parameter it named stayed in place. <c>ApplyPage</c> and
+	/// <c>ApplyDataSources</c> are now split into a read-only resolve phase and a mutation-only write phase; every
+	/// guard — the newly-hoisted "no buttons on a new Freedom element" check included — now runs before any write,
+	/// in the method's original relative write order, so a refusal leaves the element exactly as it was.</para>
 	/// <para>
 	/// This cut DID run under <c>-SkipTests</c>. The package's suite is green on the producing commit
-	/// (1867 of 1868 with the CI filter) except for
+	/// (1868 of 1869 with the CI filter) except for
 	/// <c>CiContractGuardTests.FeatureToggling_LoadedIdentityMatchesThePlatformDemandAndTheTestKit</c>, which
 	/// fails on this machine because the local <c>.application/net-framework/core-bin</c> binds an older
 	/// <c>Creatio.FeatureToggling</c> than the test project references — a stale local dependency set, not a
@@ -213,7 +220,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"9C64E60A4E38E01C812E17A91C47F1DE37D254EE183485BED2A736C562B80D48";
+		"CC867FD018A00232CFAB04871F103A2CFD1694FFC18CB6CEEE77FD3BEFFF7C97";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -241,7 +248,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.2.8";
+	private const string ExpectedArchiveVersion = "1.6.2.9";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -253,7 +260,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "237b82a9982497f0849f4728a04cd472d3fdc940";
+	private const string ExpectedProducingCommit = "bea571e02883ababe2e95c6a551ca0a7b2636440";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -279,7 +286,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789143700000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789145470000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
