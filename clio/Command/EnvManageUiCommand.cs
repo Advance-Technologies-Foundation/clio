@@ -53,6 +53,12 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 	private readonly IApplicationClientFactory _applicationClientFactory;
 	private readonly IDataAdapter _dataAdapter;
 
+	/// <summary>
+	/// Builds a compilation-history poller for a GIVEN environment. The container-bound poller closes over
+	/// the process-active one, which is never the selected one here.
+	/// </summary>
+	private readonly Func<EnvironmentSettings, ICompilationHistoryPoller> _compilationHistoryPollerFactory;
+
 	#endregion
 
 	#region Constructors: Public
@@ -62,13 +68,16 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 		ISettingsRepository settingsRepository,
 		ILogger logger,
 		IEnvManageUiService service,
-		IApplicationClientFactory applicationClientFactory)
+		IApplicationClientFactory applicationClientFactory,
+		Func<EnvironmentSettings, ICompilationHistoryPoller> compilationHistoryPollerFactory)
 	{
 		_serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
 		_settingsRepository = settingsRepository ?? throw new ArgumentNullException(nameof(settingsRepository));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
 		_service = service ?? throw new ArgumentNullException(nameof(service));
 		_applicationClientFactory = applicationClientFactory ?? throw new ArgumentNullException(nameof(applicationClientFactory));
+		_compilationHistoryPollerFactory = compilationHistoryPollerFactory
+			?? throw new ArgumentNullException(nameof(compilationHistoryPollerFactory));
 	}
 
 	#endregion
@@ -1074,6 +1083,13 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 		// shown at least once on this reachable interactive path, so surface it explicitly here (RC-21).
 		WarnHeavyCompilation();
 		var settings = CloneEnvironmentSettings(environmentSettings);
+		// Built first, and from the CLONE. The container's poller closes over the environment the process
+		// was started with, which on this menu is rarely the selected one - and it is ONE poller for both
+		// readers: the command takes the baseline from it and the watcher counts rows against that
+		// baseline, so a baseline from one environment and rows from another is the same defect in a
+		// different place. Left on the container, the selected environment's build would show zero rows
+		// and the completion rule would report a successful build as a transport failure (exit 1).
+		ICompilationHistoryPoller historyPoller = _compilationHistoryPollerFactory(settings);
 		var serviceUrlBuilder = ActivatorUtilities.CreateInstance<ServiceUrlBuilder>(_serviceProvider, settings);
 		using IOwnedApplicationClient client = _applicationClientFactory.CreateOwnedClient(settings);
 		// The verdict reader and the availability probe are constructed against THIS environment, not
@@ -1087,8 +1103,10 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 			_serviceProvider, serviceUrlBuilder);
 		var reloadWatcher = ActivatorUtilities.CreateInstance<EnvironmentReloadWatcher>(_serviceProvider,
 			availabilityProbe);
+		var activityWatcher = ActivatorUtilities.CreateInstance<CompilationActivityWatcher>(_serviceProvider,
+			historyPoller);
 		var command = ActivatorUtilities.CreateInstance<CompileConfigurationCommand>(_serviceProvider,
-			client, settings, serviceUrlBuilder, reloadWatcher, resultReader);
+			client, settings, serviceUrlBuilder, historyPoller, activityWatcher, reloadWatcher, resultReader);
 		return command.Execute(BuildEnvUiCompileOptions(envName));
 	}
 

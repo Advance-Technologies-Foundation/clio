@@ -1214,6 +1214,15 @@ public class BindingsModule {
 		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(sp =>
 			envSettings => BuildEnvironmentScopedSysSettingsManager(sp, envSettings));
 
+		// The container-bound ICompilationHistoryPoller closes over the PROCESS-ACTIVE environment (see the
+		// IDataProvider registration in RegisterActiveEnvironmentServices). Any caller that compiles a
+		// DIFFERENT environment - env-manage-ui clones settings per menu selection - therefore has to build
+		// its own, or it reads compilation history from the wrong stand. Since the completion rule decides
+		// the exit code from those rows, reading the wrong stand's history does not degrade the output: it
+		// reports a successful build as a transport failure.
+		services.AddTransient<Func<EnvironmentSettings, ICompilationHistoryPoller>>(_ =>
+			BuildEnvironmentScopedCompilationHistoryPoller);
+
 		RegisterFluentValidators(services);
 		return settingsRepository;
 	}
@@ -1292,6 +1301,16 @@ public class BindingsModule {
 			sp.GetRequiredService<IFileSystem>(),
 			sp.GetRequiredService<ILogger>());
 	}
+
+	/// <summary>
+	/// Builds a compilation-history poller bound to <paramref name="envSettings"/> rather than to the
+	/// process-active environment.
+	/// </summary>
+	/// <param name="envSettings">The environment whose <c>CompilationHistory</c> is to be read.</param>
+	/// <returns>A poller reading that environment.</returns>
+	private static ICompilationHistoryPoller BuildEnvironmentScopedCompilationHistoryPoller(
+		EnvironmentSettings envSettings) =>
+		new CompilationHistoryPoller(BuildRemoteDataProvider(envSettings));
 
 	/// <summary>
 	/// True when the environment authenticates with a token rather than with a login and password: an
