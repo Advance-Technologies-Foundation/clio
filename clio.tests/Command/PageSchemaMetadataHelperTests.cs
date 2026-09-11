@@ -1,5 +1,6 @@
 namespace Clio.Tests.Command;
 
+using System.Net.Http;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -62,6 +63,30 @@ public sealed class PageSchemaMetadataHelperTests
 
 		// Assert
 		name.Should().Be("StoredCustomer", because: "optional package metadata must retain compatibility with restricted servers");
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("PackageService transport failure falls back to stored metadata; failure of both lookups leaves the optional name unknown.")]
+	public void QueryPackageName_ShouldDegradeGracefully_WhenTransportThrows(bool storedLookupFails) {
+		// Arrange
+		const string url = TestBase + "/ServiceModel/PackageService.svc/GetPackageProperties";
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetPackageProperties).Returns(url);
+		_applicationClient.ExecutePostRequest(url, Arg.Any<string>())
+			.Returns(_ => throw new HttpRequestException("Package metadata unavailable"));
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(_ => {
+			if (storedLookupFails) {
+				throw new HttpRequestException("Stored package metadata unavailable");
+			}
+			return """{"success":true,"rows":[{"Name":"StoredCustomer"}]}""";
+		});
+
+		// Act
+		string name = PageSchemaMetadataHelper.QueryPackageName(_applicationClient, _serviceUrlBuilder, SchemaUId);
+
+		// Assert
+		name.Should().Be(storedLookupFails ? null : "StoredCustomer",
+			because: "optional display metadata must tolerate transport failures without inventing a destination name");
 	}
 
 	[Test]

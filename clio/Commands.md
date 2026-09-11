@@ -352,7 +352,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="client-unit-schema-create"></a>
 - [`create-client-unit-schema`](docs/commands/create-client-unit-schema.md) - Create a new JavaScript (ClientUnit) schema on a remote Creatio environment, `client-unit-schema-create`
 <a id="create-entity-schema"></a>
-- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create a persistent or virtual entity schema in a remote Creatio package; columns accept repeated flags or a JSON array
+- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create a persistent, virtual, or same-name replacing entity schema in a remote Creatio package; columns accept repeated flags or a JSON array
 <a id="create-lookup"></a>
 - [`create-lookup`](docs/commands/create-lookup.md) - Create a lookup entity schema in a remote Creatio package
 <a id="create-schema"></a>
@@ -421,7 +421,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="get-version"></a>
 <a id="i"></a>
 <a id="ver"></a>
-- [`info`](docs/commands/info.md) - Show clio, cliogate, and .NET runtime versions, `get-version`, `i`, `ver`
+- [`info`](docs/commands/info.md) - Show clio, cliogate, bundled process-builder, installed knowledge, and .NET runtime versions, `get-version`, `i`, `ver`
 <a id="install-sql-schema"></a>
 <a id="sql-schema-install"></a>
 <a id="execute-sql-schema"></a>
