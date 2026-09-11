@@ -3,6 +3,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
 using Clio.Common;
+using Clio.Mcp.E2E.Support.Diagnostics;
 using Clio.Mcp.E2E.Support.Mcp;
 using FluentAssertions;
 
@@ -56,7 +57,8 @@ internal static class ClioCliCommandRunner {
 		McpE2ESettings settings,
 		IReadOnlyList<string> arguments,
 		string? workingDirectory = null,
-		CancellationToken cancellationToken = default) {
+		CancellationToken cancellationToken = default,
+		string? timingKey = null) {
 		ClioProcessDescriptor command = ClioExecutableResolver.Resolve(settings, arguments.ToArray());
 		ProcessStartInfo startInfo = new() {
 			FileName = command.Command,
@@ -76,6 +78,7 @@ internal static class ClioCliCommandRunner {
 		}
 
 		using Process process = new() { StartInfo = startInfo };
+		long startedAt = Stopwatch.GetTimestamp();
 		process.Start();
 		Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync(CancellationToken.None);
 		Task<string> stderrTask = process.StandardError.ReadToEndAsync(CancellationToken.None);
@@ -88,6 +91,10 @@ internal static class ClioCliCommandRunner {
 			}
 			throw;
 		}
+
+		E2ETimingProbe.RecordCliInvocation(
+			timingKey ?? (arguments.Count == 0 ? "(none)" : arguments[0]),
+			Stopwatch.GetElapsedTime(startedAt));
 
 		return new ClioCliCommandResult(
 			process.ExitCode,
