@@ -297,6 +297,20 @@ public class BindingsModule {
 				UseCookies = false,
 				AllowAutoRedirect = false
 			});
+		// Dedicated client for the compile-completion availability probe (#1422). It accepts any server
+		// certificate on purpose: every other request this feature makes - the compile POST and the verdict
+		// read - goes through creatio.client, which trusts any certificate (see the remarks on
+		// HealthCheckCommand.HttpMessageHandlerFactory). With the default client the probe would be the only
+		// part that validates, so on a self-signed stand it would fail forever, EnvironmentReachable would
+		// never be true, both completion rules would be disabled and an ordinary build would wait out the
+		// full timeout and exit 1. Redirects are not followed: a 302 to the login page already proves the
+		// application is answering, and following it only spends time the probe is sampled on.
+		services.AddHttpClient(Clio.Common.EnvironmentAvailabilityProbe.HttpClientName)
+			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
+				AllowAutoRedirect = false,
+				UseCookies = false,
+				ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+			});
 
 		ISettingsBootstrapService settingsBootstrapService = new SettingsBootstrapService(_fileSystem, applyBootstrapRepairs);
 		SettingsBootstrapResult bootstrapResult = settingsBootstrapService.GetResult();

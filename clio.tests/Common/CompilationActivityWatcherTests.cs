@@ -139,6 +139,36 @@ public class CompilationActivityWatcherTests {
 	}
 
 	[Test]
+	[Description("Stop gives up on a poll that cannot be cancelled instead of blocking on it. CompilationHistoryPoller.PollOnce is a synchronous repository call with no timeout and no token, so a stand that accepts the connection and never answers would otherwise hold Stop - and with it the command's own --timeout - open for as long as the runtime's socket takes, which is the #1422 hang arriving on the way out.")]
+	public void Watcher_ShouldStopWithinTheBound_WhenAPollNeverReturns() {
+		// Arrange
+		using ManualResetEventSlim pollEntered = new(false);
+		using ManualResetEventSlim releasePoll = new(false);
+		ICompilationHistoryPoller poller = Substitute.For<ICompilationHistoryPoller>();
+		poller.PollOnce(Arg.Any<DateTime>()).Returns(_ => {
+			pollEntered.Set();
+			releasePoll.Wait(WaitTimeoutMs);
+			return new List<CompilationHistory>();
+		});
+		CompilationActivityWatcher watcher = new(poller, new PollRetryPolicy()) {
+			StopJoinTimeoutOverride = TimeSpan.FromMilliseconds(200)
+		};
+		watcher.Start(DateTime.MinValue, _ => { });
+		pollEntered.Wait(WaitTimeoutMs).Should().BeTrue(
+			because: "the test only means anything once the poll is actually stuck inside the repository call");
+
+		// Act
+		Action act = watcher.Stop;
+
+		// Assert
+		act.ExecutionTime().Should().BeLessThan(TimeSpan.FromSeconds(2),
+			because: "an uncancellable poll must not extend the command past its own timeout");
+
+		// Cleanup: let the stuck poll finish so it does not outlive the test run.
+		releasePoll.Set();
+	}
+
+	[Test]
 	[Description("Stop is safe on a watcher that was never started, so a caller unwinding from an early failure does not have to track whether it got that far.")]
 	public void Watcher_ShouldTolerateStop_WhenItWasNeverStarted() {
 		// Arrange

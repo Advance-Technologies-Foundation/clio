@@ -106,9 +106,20 @@ public class CompilationCompletionDecider : ICompilationCompletionDecider {
 			return CompilationCompletionKind.ResponseReceived;
 		}
 
-		// 2. Confirmed: the environment built something, then went away and came back. ChannelHealthy is
-		//    required as well so the verdict read that follows is issued against an application that is
-		//    answering again, rather than into the middle of the reload.
+		// 2. Confirmed: the environment built something, then went away and came back. EnvironmentReachable
+		//    is required as well so the verdict read that follows is issued against an application that is
+		//    answering again, rather than into the middle of the reload. (There is no ChannelHealthy field
+		//    on the state; IPollRetryPolicy.IsChannelHealthy is a different, poller-side signal and is not
+		//    consulted here.)
+		//
+		//    NOTE the asymmetry with rule 3: this rule has NO quiet precondition, so an outage short enough
+		//    to look like a reload - an intermediary dropping the environment for ~15 s mid-build - ends the
+		//    wait while the build is still running, and the undated GetLastCompilationResult read that
+		//    follows can then return the PREVIOUS build's verdict. It is left ungated on purpose: the reload
+		//    is the only evidence that separates a finished build from a mid-build reset, and requiring
+		//    quiet on top of it would delay every ordinary build by the fallback window. Sizing the reload
+		//    watcher's outage arming is what keeps a blip from reading as a reload; if a false confirmation
+		//    is ever observed in the field, that arming is where to fix it, not here.
 		if (state.NewRecordCount > 0 && state.ReloadObserved && state.EnvironmentReachable) {
 			return CompilationCompletionKind.ConfirmedByReload;
 		}

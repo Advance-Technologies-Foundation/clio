@@ -43,13 +43,14 @@ public interface ICompilationResultReader {
 	/// a build that demonstrably ran should not be reported as a clio error because the verdict lookup
 	/// that follows it failed.
 	/// <para>
-	/// It is also the AVAILABILITY probe for the environment. A configuration build ends by reloading the
-	/// application, and this endpoint stops answering while that happens — measured on a live stand as a
-	/// 44-second outage across an application-pool recycle, during which the compilation-history channel
-	/// reported no failure at all. So this, and not the history poller, is where the reload is visible.
-	/// A caller probing for that passes a SHORT timeout: during the outage the request hangs until the
-	/// timeout rather than failing fast, so the default read timeout would sample once a minute and miss
-	/// the whole outage.
+	/// This endpoint is ALSO the one availability is measured on, though the sampling itself now belongs to
+	/// <see cref="IEnvironmentAvailabilityProbe"/> and no longer to this reader. A configuration build ends
+	/// by reloading the application, and this endpoint stops answering while that happens — measured on a
+	/// live stand as a 44-second outage across an application-pool recycle, during which the
+	/// compilation-history channel reported no failure at all. So this, and not the history poller, is where
+	/// the reload is visible. The probe samples it on a short, actually-enforced budget, because during the
+	/// outage the request hangs until its timeout rather than failing fast and the default read timeout
+	/// would sample about once a minute and miss the whole outage.
 	/// </para>
 	/// </remarks>
 	CreatioCompilationLogResponse TryRead(int? timeoutMs = null);

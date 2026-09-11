@@ -61,6 +61,12 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 	// Set once, when the reload is first seen, so the user is told what the pause in the output is.
 	private bool _reloadReported;
 
+	/// <summary>
+	/// Why the compile request failed, kept so the transport-failure message can name the actual cause
+	/// (401, DNS, TLS) instead of printing a generic checklist. <see langword="null"/> until one is seen.
+	/// </summary>
+	private Exception _requestFailure;
+
 	private const string OdataProjName = "Terrasoft.Configuration.ODataEntities.csproj";
 	private const string DevProjName = "Terrasoft.Configuration.Dev.csproj";
 
@@ -123,6 +129,7 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 		CompilationHistory baseline = TryGetBaseline();
 		_compileAll = options.All;
 		_reloadReported = false;
+		_requestFailure = null;
 		Stopwatch sw = new();
 		sw.Start();
 		_logger.WriteLine("=================================================================================");
@@ -249,6 +256,11 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 				if (completion != CompilationCompletionKind.KeepWaiting) {
 					if (completion == CompilationCompletionKind.ResponseReceived) {
 						responseBody = requestTask.Result;
+					} else if (completion == CompilationCompletionKind.TransportFailure) {
+						// Keep WHY the request failed. TransportFailure is only decided once the request has
+						// ended, so the fault is available here - and it is the whole diagnosis (401, DNS,
+						// TLS). Without it the user gets a generic checklist for a cause the command knows.
+						_requestFailure = requestTask.Exception?.GetBaseException();
 					}
 					return completion;
 				}
@@ -317,18 +329,19 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 		return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 	}
 
+	/// <summary>The bound actually applied, falling back to the declared one for a non-positive value.</summary>
+	private static int EffectiveTimeoutMs(CompileConfigurationOptions options) =>
+		options.TimeOut > 0 ? options.TimeOut : DeclaredTimeoutMs;
+
 	/// <summary>
 	/// Observes the fault of a request nobody is waiting for any more.
 	/// </summary>
 	/// <remarks>
 	/// The expected outcome on every successful build is a fault: the runtime reload resets the connection
 	/// before it answers. Leaving that unobserved would surface later as an UnobservedTaskException in an
-	/// unrelated part of the process.
+	/// unrelated part of the process. The fault is still REPORTED on the transport-failure path - see
+	/// <see cref="_requestFailure"/>; this method only makes sure the abandoned ones are observed.
 	/// </remarks>
-	/// <summary>The bound actually applied, falling back to the declared one for a non-positive value.</summary>
-	private static int EffectiveTimeoutMs(CompileConfigurationOptions options) =>
-		options.TimeOut > 0 ? options.TimeOut : DeclaredTimeoutMs;
-
 	private static void ObserveAbandonedRequest(Task<string> requestTask) =>
 		_ = requestTask.ContinueWith(static task => _ = task.Exception,
 			CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
@@ -361,6 +374,9 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 				Logger.WriteError(
 					"The compilation request failed and the environment never started building: no compilation "
 					+ "history was written after the request was sent.");
+				if (_requestFailure is not null) {
+					Logger.WriteError($"Request error: {_requestFailure.Message}");
+				}
 				Logger.WriteError($"Endpoint: {ServiceUri}");
 				Logger.WriteError("Check the environment URI, the IsNetCore flag, and the credentials.");
 				return;

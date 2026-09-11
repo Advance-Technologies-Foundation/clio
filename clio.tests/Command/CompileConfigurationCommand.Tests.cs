@@ -400,6 +400,27 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 	}
 
 	[Test]
+	[Description("The transport failure names the actual cause. ObserveAbandonedRequest consumes the request's exception, and nothing else reads it - so without keeping it the user is told to 'check the URI, the IsNetCore flag and the credentials' for a 401 the command already had in hand.")]
+	public void Execute_ShouldReportTheRequestError_WhenTheTransportFailed() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		_ownedClient.ExecutePostRequestAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromException<HttpResponseMessage>(
+				new HttpRequestException("Response status code does not indicate success: 401 (Unauthorized).")));
+		_activityWatcher.Snapshot.Returns(NoActivity);
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "nothing was compiled");
+		_logger.Received().WriteError(Arg.Is<string>(message =>
+			message.Contains("401 (Unauthorized)", StringComparison.Ordinal)));
+	}
+
+	[Test]
 	[Description("When the build ended but the verdict cannot be read back, the outcome comes from the observed compilation history instead of being turned into a clio error - a build that demonstrably ran must not be reported as failed because the lookup after it failed.")]
 	public void Execute_ShouldFallBackToObservedHistory_WhenTheVerdictCannotBeRead() {
 		// Arrange

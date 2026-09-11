@@ -133,12 +133,32 @@ internal sealed class EnvironmentAvailabilityProbeTests {
 			because: "the status line is the whole answer, so the probe must stay a cheap read");
 	}
 
+	[Test]
+	[Description("The probe resolves its OWN named client, never the default one. The default registration validates server certificates while every other request in this feature goes through creatio.client, which does not - so on a self-signed stand the default client would fail the probe permanently, turn EnvironmentReachable off and disable both completion rules.")]
+	public void IsReachable_ShouldUseTheDedicatedClientRegistration() {
+		// Arrange
+		using StubHttpMessageHandler handler = StubHttpMessageHandler.Returning(HttpStatusCode.OK);
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.LastCompilationResult).Returns(ProbeUrl);
+		IHttpClientFactory httpClientFactory = Substitute.For<IHttpClientFactory>();
+		httpClientFactory.CreateClient(Arg.Any<string>())
+			.Returns(_ => new HttpClient(handler, disposeHandler: false));
+		IEnvironmentAvailabilityProbe probe = new EnvironmentAvailabilityProbe(httpClientFactory, serviceUrlBuilder);
+
+		// Act
+		probe.IsReachable(TimeSpan.FromSeconds(5), CancellationToken.None);
+
+		// Assert
+		httpClientFactory.Received(1).CreateClient(EnvironmentAvailabilityProbe.HttpClientName);
+		httpClientFactory.DidNotReceive().CreateClient(string.Empty);
+	}
+
 	private static IEnvironmentAvailabilityProbe CreateProbe(HttpMessageHandler handler,
 		List<HttpClient> createdClients = null) {
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.LastCompilationResult).Returns(ProbeUrl);
 		IHttpClientFactory httpClientFactory = Substitute.For<IHttpClientFactory>();
-		httpClientFactory.CreateClient().Returns(_ => {
+		httpClientFactory.CreateClient(EnvironmentAvailabilityProbe.HttpClientName).Returns(_ => {
 			HttpClient client = new(handler, disposeHandler: false);
 			createdClients?.Add(client);
 			return client;

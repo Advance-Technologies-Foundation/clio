@@ -56,9 +56,13 @@ public interface ICompilationActivityWatcher {
 		Action<int, Exception> onPollFailed = null);
 
 	/// <summary>
-	/// Stops watching and waits for the background poll to end.
+	/// Stops watching and waits, for a bounded time, for the background poll to end.
 	/// </summary>
-	/// <remarks>Safe to call when the watcher was never started, and safe to call twice.</remarks>
+	/// <remarks>
+	/// Safe to call when the watcher was never started, and safe to call twice. The wait is bounded: a poll
+	/// already inside the repository call cannot be cancelled, and blocking on it would extend the command
+	/// past its own timeout.
+	/// </remarks>
 	void Stop();
 
 	/// <summary>Gets what has been observed so far. Safe to read while the watcher is running.</summary>
@@ -73,6 +77,18 @@ public class CompilationActivityWatcher : ICompilationActivityWatcher {
 
 	/// <summary>Cadence between poll rounds while the channel is healthy.</summary>
 	internal static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
+
+	/// <summary>
+	/// How long <see cref="Stop"/> waits for the poll thread before giving up on it.
+	/// </summary>
+	/// <remarks>
+	/// The wait has to be BOUNDED. <c>CompilationHistoryPoller.PollOnce</c> is a synchronous ATF.Repository
+	/// call with no timeout and no cancellation token, so a stand that accepts the connection and never
+	/// answers leaves the poll in flight for as long as the runtime's own socket timeout - and an unbounded
+	/// join would hold <c>Stop()</c>, and with it the command's <c>--timeout</c>, open behind it. That is
+	/// the hang #1422 is about, reintroduced on the way out.
+	/// </remarks>
+	internal static readonly TimeSpan StopJoinTimeout = TimeSpan.FromSeconds(10);
 
 	#endregion
 
@@ -128,6 +144,12 @@ public class CompilationActivityWatcher : ICompilationActivityWatcher {
 
 	#region Properties: Public
 
+	/// <summary>
+	/// Test seam shortening the bounded <see cref="Stop"/> join so the stuck-poll path is assertable without
+	/// waiting out <see cref="StopJoinTimeout"/>. <see langword="null"/> uses the production bound.
+	/// </summary>
+	internal TimeSpan? StopJoinTimeoutOverride { get; set; }
+
 	/// <inheritdoc/>
 	public CompilationActivitySnapshot Snapshot {
 		get {
@@ -175,9 +197,15 @@ public class CompilationActivityWatcher : ICompilationActivityWatcher {
 		_cancellation.Cancel();
 		// Join BEFORE disposing the token source: the poll loop reads the token, and disposing while it is
 		// still in flight is the ObjectDisposedException CompileConfigurationCommand was already fixed for
-		// once. The thread is bounded by the poll interval, so this cannot wait long.
-		_thread.Join();
-		_cancellation.Dispose();
+		// once. A round that is merely between polls ends within the poll interval; a round stuck inside
+		// PollOnce cannot be interrupted at all (see StopJoinTimeout), so the join is bounded and the
+		// source is disposed only when the thread has actually left it.
+		bool pollThreadEnded = _thread.Join(StopJoinTimeoutOverride ?? StopJoinTimeout);
+		if (pollThreadEnded) {
+			_cancellation.Dispose();
+		}
+		// Otherwise the token source is dropped undisposed on purpose: the stuck poll still holds the token,
+		// and the thread is a background thread, so it cannot keep the process alive.
 		_cancellation = null;
 		_thread = null;
 	}

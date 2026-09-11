@@ -37,6 +37,24 @@ public interface IEnvironmentAvailabilityProbe {
 /// <inheritdoc cref="IEnvironmentAvailabilityProbe"/>
 public class EnvironmentAvailabilityProbe : IEnvironmentAvailabilityProbe {
 
+	#region Constants: Internal
+
+	/// <summary>
+	/// Name of the dedicated <see cref="HttpClient"/> registration this probe resolves.
+	/// </summary>
+	/// <remarks>
+	/// It exists because the DEFAULT client validates server certificates, and this probe would then be the
+	/// only component of the feature that does: the compile POST and the verdict read both travel through
+	/// creatio.client, whose accept-all certificate behaviour is documented at
+	/// <c>HealthCheckCommand.HttpMessageHandlerFactory</c>. On a self-signed stand that asymmetry fails the
+	/// probe permanently, which turns <c>EnvironmentReachable</c> off, which disables both completion rules
+	/// - so an ordinary build would wait out the whole timeout and exit 1. The handler is transport parity
+	/// with the rest of the command, not a new relaxation.
+	/// </remarks>
+	internal const string HttpClientName = "environment-availability-probe";
+
+	#endregion
+
 	#region Fields: Private
 
 	private readonly IHttpClientFactory _httpClientFactory;
@@ -66,7 +84,7 @@ public class EnvironmentAvailabilityProbe : IEnvironmentAvailabilityProbe {
 	/// <inheritdoc/>
 	public bool IsReachable(TimeSpan timeout, CancellationToken cancellationToken) {
 		try {
-			using HttpClient client = _httpClientFactory.CreateClient();
+			using HttpClient client = _httpClientFactory.CreateClient(HttpClientName);
 			client.Timeout = timeout;
 			using HttpRequestMessage request = new(HttpMethod.Get,
 				_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.LastCompilationResult));
