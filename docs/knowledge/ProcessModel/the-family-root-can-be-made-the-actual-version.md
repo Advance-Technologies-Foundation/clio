@@ -12,6 +12,12 @@ Measured on a stand during ENG-94374 manual testing: a three-member family was s
 (root) → v2, exactly one member active at every hop, with the process-library view agreeing
 independently each time.
 
+Re-measured through clio's own `set-active-business-process-version` (`creatio_2`, CrtProcessBuilder
+1.6.2.4, 2026-09-11) on a purpose-built family: activate the version, then activate the root. The
+read-back names the root, and `describe-business-process` reports `isActiveVersion` true on the root and
+false on the version, with no warning. That second run is the one that covers clio's path as well as the
+platform's — the E2E fixture that would otherwise prove it is not run in CI.
+
 **Nothing refuses it, anywhere.** `SetActiveProcessVersionCommand` validates only that exactly one of
 name/uid is supplied. `ProcessVersionActivateHandler` in `CrtProcessBuilder` contains no rootness
 check at all. The restriction existed in **one sentence of the MCP tool description** and in no code.

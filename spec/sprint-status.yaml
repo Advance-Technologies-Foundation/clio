@@ -3550,8 +3550,10 @@ stories:
     test_plan: spec/test-plans/tp-process-versioning.md
     note: >-
       Manual-testing defect D9. Text only - there was no guard anywhere, in clio or in the package.
-      The measurement is in
-      docs/knowledge/ProcessModel/the-family-root-can-be-made-the-actual-version.md.
+      Re-measured through clio's own tool on a purpose-built family (creatio_2, CrtProcessBuilder
+      1.6.2.4, 2026-09-11): activate the version, then the root, and the root reads back as actual. That
+      covers clio's path, which the E2E fixture alone does not - it is not run in CI. The measurements
+      are in docs/knowledge/ProcessModel/the-family-root-can-be-made-the-actual-version.md.
     depends_on:
       - story-process-versioning-17
     blocks:

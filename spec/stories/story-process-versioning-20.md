@@ -39,6 +39,30 @@ that one sentence.
 - [x] **AC-02** — Given the `version-name` / `version-uid` argument descriptions, when they are read, then neither implies the root is excluded
 - [x] **AC-03** — Given a family whose active member is a version, when the root is activated over the real MCP path, then the call succeeds and describe reports the root active and the version not
 
+## Verification
+
+Measured on a live stand (`creatio_2`, CrtProcessBuilder 1.6.2.4, clio 8.1.0.125, 2026-09-11), over the
+real MCP path, on a disposable family built for it — the stock `InvoiceVisaProcess` family is not a
+legitimate target, because activation changes what the environment executes and a version cannot be
+deleted afterwards:
+
+```
+create                     root v0  active=true    (no version yet)
+snapshot version           v1 created inactive, the root stays actual
+activate the VERSION       root active=false   v1 active=true
+activate the ROOT          root active=true    v1 active=false     <- the claim
+```
+
+The read-back after the last step reports `Version 'UsrClioEng94374RootActivateProbe' is now the actual
+one`, and `describe-business-process` agrees on both members with no `versionReadWarning`. So the
+platform does not merely fail to forbid the root — it accepts it and reports it as actual like any other
+member, which is the half the E2E test alone could not establish: that fixture is not run in CI.
+
+The same run re-confirmed that creating a version activates nothing.
+
+**Residue:** two permanent schemas on `creatio_2` (`UsrClioEng94374RootActivateProbe` and its version).
+Versions cannot be deleted, which is why this was not run against stock content.
+
 ## Implementation Notes
 
 Text only — there was no guard to remove. The measurement that settles it is recorded in
