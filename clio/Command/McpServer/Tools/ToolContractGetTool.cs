@@ -4556,7 +4556,7 @@ internal static class ToolContractCatalog {
 						Field(BindingNameFieldName, StringType, "Optional binding name; defaults to the schema name."),
 						Field("install-type", NumberType, "Optional descriptor install type; defaults to 0."),
 						Field(ValuesFieldName, StringType, "Optional JSON object keyed by column name for the initial row."),
-						Field("localizations", StringType, "Optional JSON object keyed by culture then column name.")
+						Field("localizations", StringType, "Optional JSON object keyed by culture then column name. Localization-only columns are included in the descriptor without inventing base values. Input validation failures preserve existing binding files.")
 					],
 					Validators: [
 						new ToolContractValidator(
