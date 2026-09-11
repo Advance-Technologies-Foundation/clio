@@ -34,7 +34,7 @@ public sealed class AutoUpdatePolicy {
 public sealed class AutoUpdateSettings {
 	/// <summary>Gets or sets the clio update schedule.</summary>
 	[JsonProperty("clio")]
-	public AutoUpdatePolicy Clio { get; set; } = CreatePolicy(480);
+	public AutoUpdatePolicy Clio { get; set; } = CreatePolicy(480, false);
 
 	/// <summary>Gets or sets the knowledge update schedule.</summary>
 	[JsonProperty("knowledge")]
@@ -42,12 +42,10 @@ public sealed class AutoUpdateSettings {
 
 	/// <summary>Gets or sets the toolkit update schedule.</summary>
 	[JsonProperty("toolkit")]
-	public AutoUpdatePolicy Toolkit { get; set; } = CreatePolicy(60);
+	public AutoUpdatePolicy Toolkit { get; set; } = CreatePolicy(60, false);
 
-	[JsonIgnore]
-	internal bool WasLegacyScalar { get; set; }
-
-	private static AutoUpdatePolicy CreatePolicy(int frequencyMinutes) => new() {
+	private static AutoUpdatePolicy CreatePolicy(int frequencyMinutes, bool enabled = true) => new() {
+		Enabled = enabled,
 		FrequencyMinutes = frequencyMinutes
 	};
 }
@@ -61,7 +59,6 @@ internal sealed class AutoUpdateSettingsConverter : JsonConverter<AutoUpdateSett
 		AutoUpdateSettings settings = new();
 		if (token.Type == JTokenType.Boolean) {
 			settings.Clio.Enabled = token.Value<bool>();
-			settings.WasLegacyScalar = true;
 		}
 		else if (token.Type == JTokenType.Object) {
 			serializer.Populate(token.CreateReader(), settings);
