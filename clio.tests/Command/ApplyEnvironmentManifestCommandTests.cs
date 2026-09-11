@@ -80,7 +80,7 @@ public sealed class ApplyEnvironmentManifestCommandTests {
 			Substitute.For<FeatureCommand>(
 				Substitute.For<IApplicationClient>(), environmentSettings, provider,
 				Substitute.For<IServiceUrlBuilder>(), Substitute.For<IFeatureStateService>()),
-			new SysSettingsCommand(_sysSettingsManager, _logger, Substitute.For<IFileSystem>()),
+			new SysSettingsCommand(_sysSettingsManager, _logger, Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider()),
 			_setWebServiceUrlCommand,
 			provider,
 			environmentSettings) {
