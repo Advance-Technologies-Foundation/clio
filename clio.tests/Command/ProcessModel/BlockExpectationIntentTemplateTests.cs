@@ -18,6 +18,19 @@ namespace Clio.Tests.Command.ProcessModel;
 [Category("Unit")]
 public sealed class BlockExpectationIntentTemplateTests {
 
+	/// <summary>
+	/// A logger substitute that RECORDS what it was told, so the assertions below are made against the collected
+	/// warnings rather than through the mock's own verification API. Both read the same behaviour; only this form
+	/// is visible to the analyzers that count a test's assertions, and it reports the actual text on a failure
+	/// instead of "expected 1 call, received 0".
+	/// </summary>
+	private static ILogger RecordingLogger(List<string> warnings) {
+		ILogger logger = Substitute.For<ILogger>();
+		logger.When(instance => instance.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+		return logger;
+	}
+
 	[Test]
 	[Description("The create-path intent lists the elements whose descriptor email block names a template, beside the plain email-block list.")]
 	public void FromDescriptor_ShouldCarryTemplatedEmailElements() {
@@ -62,7 +75,8 @@ public sealed class BlockExpectationIntentTemplateTests {
 	[Description("ReportDescribed emits the template warning for an element whose read-back lacks the template it was sent, and nothing template-related for one whose template landed.")]
 	public void ReportDescribed_ShouldWarnOnUnlandedTemplate_AndStaySilentWhenItLanded() {
 		// Arrange
-		ILogger logger = Substitute.For<ILogger>();
+		List<string> warnings = [];
+		ILogger logger = RecordingLogger(warnings);
 		BlockExpectationIntent intent = BlockExpectationIntent.FromOperations("""
 			[{"op":"setElement","elementName":"Landed","elementUpdate":{"email":{"template":"Welcome"}}},
 			 {"op":"setElement","elementName":"Dropped","elementUpdate":{"email":{"template":"Welcome"}}}]
@@ -78,17 +92,20 @@ public sealed class BlockExpectationIntentTemplateTests {
 		BlockExpectationReporter.ReportDescribed(logger, described, intent);
 
 		// Assert
-		logger.Received(1).WriteWarning(Arg.Is<string>(text =>
-			text.Contains(EmailBlockExpectation.TemplateWarningMarker) && text.Contains("'Dropped'")));
-		logger.DidNotReceive().WriteWarning(Arg.Is<string>(text =>
-			text.Contains(EmailBlockExpectation.TemplateWarningMarker) && text.Contains("'Landed'")));
+		warnings.Should().ContainSingle(warning => warning.Contains(EmailBlockExpectation.TemplateWarningMarker),
+				because: "exactly one template warning is emitted, however many elements the batch templated")
+			.Which.Should().Contain("'Dropped'",
+				because: "the warning must name the element whose template did not read back")
+			.And.NotContain("'Landed'",
+				because: "an element whose template landed is not evidence of a discarding server and must not be accused");
 	}
 
 	[Test]
 	[Description("ReportDescribed does not double-report: an element whose whole email block is missing gets the block-dropped warning, not the template one as well.")]
 	public void ReportDescribed_ShouldNotAlsoWarnOnTemplate_WhenTheWholeBlockIsMissing() {
 		// Arrange
-		ILogger logger = Substitute.For<ILogger>();
+		List<string> warnings = [];
+		ILogger logger = RecordingLogger(warnings);
 		BlockExpectationIntent intent = BlockExpectationIntent.FromOperations("""
 			[{"op":"setElement","elementName":"Gone","elementUpdate":{"email":{"template":"Welcome"}}}]
 			""");
@@ -100,7 +117,9 @@ public sealed class BlockExpectationIntentTemplateTests {
 		BlockExpectationReporter.ReportDescribed(logger, described, intent);
 
 		// Assert
-		logger.Received(1).WriteWarning(Arg.Is<string>(text => text.Contains("does NOT carry the 'email' configuration")));
-		logger.DidNotReceive().WriteWarning(Arg.Is<string>(text => text.Contains(EmailBlockExpectation.TemplateWarningMarker)));
+		warnings.Should().ContainSingle(warning => warning.Contains("does NOT carry the 'email' configuration"),
+			because: "a dropped block is reported once, by the block-landed check that owns it");
+		warnings.Should().NotContain(warning => warning.Contains(EmailBlockExpectation.TemplateWarningMarker),
+			because: "the template check must not pile a second accusation onto an element whose whole block is already reported missing");
 	}
 }

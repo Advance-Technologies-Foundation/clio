@@ -47,6 +47,30 @@ public class EmailBlockExpectationTests {
 	}
 
 	[Test]
+	[Description("A later operation whose email block carries an EMPTY body, or only a bodyFormat, does NOT count as switching the element back to a custom message: the server refuses both payloads (a non-empty body is required, and a bodyFormat alone configures nothing), so neither can leave a custom element behind - and dropping the element from the template check would stop verifying a template on exactly the batch that failed.")]
+	public void TemplateElementsFromOperations_ShouldKeepAnElement_WhenALaterOperationCarriesAnEmptyBodyOrOnlyABodyFormat() {
+		// Arrange
+		const string emptyBody = """
+			[{"op":"setElement","elementName":"Tpl1","elementUpdate":{"email":{"template":"Welcome"}}},
+			 {"op":"setElement","elementName":"Tpl1","elementUpdate":{"email":{"body":"   "}}}]
+			""";
+		const string formatOnly = """
+			[{"op":"setElement","elementName":"Tpl1","elementUpdate":{"email":{"template":"Welcome"}}},
+			 {"op":"setElement","elementName":"Tpl1","elementUpdate":{"email":{"bodyFormat":"html"}}}]
+			""";
+
+		// Act
+		IReadOnlyList<string> afterEmptyBody = EmailBlockExpectation.TemplateElementsFromOperations(emptyBody);
+		IReadOnlyList<string> afterFormatOnly = EmailBlockExpectation.TemplateElementsFromOperations(formatOnly);
+
+		// Assert
+		afterEmptyBody.Should().BeEquivalentTo(["Tpl1"],
+			because: "an explicitly empty body is refused at build, so it never produces the custom-message element that would legitimately have no template");
+		afterFormatOnly.Should().BeEquivalentTo(["Tpl1"],
+			because: "a bodyFormat with no body is refused as configuring nothing, so it cannot clear the template either");
+	}
+
+	[Test]
 	[Description("The same duplicate-key payload on the modify path: the operations detectors return empty without throwing, for a duplicate on the operation object and for one nested in elementUpdate.email.")]
 	public void OperationsDetectors_ShouldReturnEmptyWithoutThrowing_WhenAnOperationCarriesADuplicateKey() {
 		// Arrange

@@ -74,7 +74,7 @@ public class BundledProcessBuilderPackageTests {
 	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1</c> at
 	/// <see cref="ExpectedArchiveVersion"/> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-95986-send-email-template-mode</c>, tag <c>crtprocessbuilder-1.6.2.2</c>), at the commit
+	/// <c>feature/ENG-95986-send-email-template-mode</c>, tag <c>crtprocessbuilder-1.6.2.3</c>), at the commit
 	/// recorded mechanically in
 	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
 	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
@@ -98,9 +98,9 @@ public class BundledProcessBuilderPackageTests {
 	/// hides a stale template in custom mode, the <c>templateEntity</c> texts name a record ID rather than a Read data
 	/// element's whole-record <c>ResultEntity</c>, which the server refuses; then the second review round: a stored
 	/// subject kept on a non-switching update, the mode inferred from a stored template on a mode-less element,
-	/// the custom-alone refusal, and the shared entity/parameter seams). The version is 1.6.2.2 — 1.6.2.1 was the
-	/// first review round's cut, superseded on the same branch before it shipped; the create/modify FLOOR stays at
-	/// 1.6.2.1, the first archive carrying the mode, which this one satisfies. 1.6.2.0 is
+	/// the custom-alone refusal, and the shared entity/parameter seams). The version is 1.6.2.3 — 1.6.2.1 and
+	/// 1.6.2.2 were the earlier review rounds' cuts, each superseded on the same branch before it shipped; the
+	/// create/modify FLOOR stays at 1.6.2.1, the first archive carrying the mode, which this one satisfies. 1.6.2.0 is
 	/// BURNED — it was cut from a commit below ENG-91853, so an archive numbered above 1.6.1.9 would have lacked the
 	/// flow labels 1.6.1.4–1.6.1.9 ship (the "newer stops meaning contains" trap of bundled-packages.md), and its tag
 	/// still names that commit; the .2 minor step over 1.6.1.x records that a new element behaviour the clio
@@ -179,14 +179,14 @@ public class BundledProcessBuilderPackageTests {
 	/// <para>
 	/// The entry-by-entry byte audit (every archive entry compared against
 	/// <c>git show &lt;ExpectedProducingCommit&gt;:&lt;path&gt;</c>; last measured on the 1.6.1.2 cut as 157 entries,
-	/// 156 byte-identical, the 157th being the restamped <c>descriptor.json</c>) was NOT re-run for the 1.6.2.2 cut.
+	/// 156 byte-identical, the 157th being the restamped <c>descriptor.json</c>) was NOT re-run for the 1.6.2.3 cut.
 	/// Its reproducibility rests on the export flags above, which are what made the earlier audit come out clean;
 	/// a reviewer can repeat the audit from the producing commit alone.
 	/// </para>
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"CB1987005CCF90A3B71686019DF5972F77520797B11D42249F60B39E2C54F34A";
+		"C636411EB04CEACC97A07B028E3758345E7AB1BA66257AED183DEA61F8150B70";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -214,7 +214,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.2.2";
+	private const string ExpectedArchiveVersion = "1.6.2.3";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -226,7 +226,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "16666227984aa9217cd205278dca3d3dc8b8852a";
+	private const string ExpectedProducingCommit = "a1263e5c1bb9a6dcb587177f1edd7465f765f657";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -252,7 +252,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789112778000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789128281000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.

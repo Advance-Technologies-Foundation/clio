@@ -359,19 +359,28 @@ public static class EmailBlockExpectation {
 			+ "or pick the template in the designer.";
 	}
 
-	// True when an email block moves the element to (or keeps it in) the custom message: a body, a bodyFormat, or
-	// an explicit messageSource:"custom". The server clears the template on that switch, so a template sent
-	// EARLIER in the same batch for this element is expected to be gone from the read-back.
+	// True when an email block moves the element to (or keeps it in) the custom message: a NON-EMPTY body, or an
+	// explicit messageSource:"custom". The server clears the template on that switch, so a template sent EARLIER
+	// in the same batch for this element is expected to be gone from the read-back.
+	//
+	// Deliberately narrower than "the block mentions a body". An EMPTY or whitespace body is refused at build
+	// ("requires a non-empty 'email.body'"), and a bodyFormat with no body is refused as well ("the 'email' block
+	// specifies no field to apply") - neither can leave a custom-message element behind, so neither is a reason to
+	// stop verifying that the template landed. Counting them would drop the element from the check on a batch the
+	// server in fact refuses outright, which is the one case where the check still has something to say.
 	private static bool SwitchesToCustom(JsonNode? email) {
 		if (email is not JsonObject block) {
 			return false;
 		}
-		if (block["body"] is JsonValue || block["bodyFormat"] is JsonValue) {
+		if (block["body"] is JsonValue body
+				&& body.TryGetValue(out string? bodyText)
+				&& !string.IsNullOrWhiteSpace(bodyText)) {
 			return true;
 		}
+		// No null-conditional on `token`: TryGetValue is [NotNullWhen(true)], so a true result already guarantees it.
 		return block["messageSource"] is JsonValue mode
 			&& mode.TryGetValue(out string? token)
-			&& string.Equals(token?.Trim(), "custom", StringComparison.OrdinalIgnoreCase);
+			&& string.Equals(token.Trim(), "custom", StringComparison.OrdinalIgnoreCase);
 	}
 
 	// True when an email block names a template — the field that a pre-template server discards.
