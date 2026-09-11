@@ -103,10 +103,46 @@ public class SolutionCreatorTests {
 
 	#region Methods: Private
 
+	[Test]
+	[Description("Rejects a well-formed XML file with the wrong root instead of silently skipping solution registration.")]
+	public void AddProjectToSolution_ShouldFail_WhenSolutionRootIsMissing() {
+		// Arrange
+		string solutionPath = Path.Combine(_tempDir, "Invalid.slnx");
+		File.WriteAllText(solutionPath, "<NotASolution />");
+
+		// Act
+		Action addProject = () => _solutionCreator.AddProjectToSolution(solutionPath,
+			[new SolutionProject("Acme", "Acme.csproj")]);
+
+		// Assert
+		addProject.Should().Throw<XmlException>(because: "a scaffold cannot succeed without registering its project")
+			.WithMessage("*Repair the solution*", because: "the caller needs an actionable diagnostic");
+		File.ReadAllText(solutionPath).Should().Be("<NotASolution />", because: "invalid input must be preserved for repair");
+	}
+
 	private static XmlNode LoadProjectNode(string solutionPath, string projectPath) {
 		XmlDocument doc = new();
 		doc.Load(solutionPath);
 		return doc.SelectSingleNode($"Solution/Project[@Path='{projectPath}']");
+	}
+
+	[Test]
+	[Description("Preserves solution folders and recognizes an existing project with alternate path separators on reruns.")]
+	public void AddProjectToSolution_ShouldReuseNestedProject_WhenPathSeparatorsDiffer() {
+		// Arrange
+		string solutionPath = Path.Combine(_tempDir, "UnitTests.slnx");
+		File.WriteAllText(solutionPath, "<Solution><Folder Name=\"/Tests/\"><Project Path=\"Acme/Acme.Tests.csproj\" /></Folder></Solution>");
+
+		// Act
+		_solutionCreator.AddProjectToSolution(solutionPath,
+			[new SolutionProject("Acme", @"Acme\Acme.Tests.csproj") { ForceBuild = true }]);
+
+		// Assert
+		XmlDocument document = new();
+		document.Load(solutionPath);
+		document.SelectNodes("//Project").Count.Should().Be(1, because: "an existing nested registration must not be duplicated");
+		document.SelectSingleNode("Solution/Folder/Project/Build").Should().NotBeNull(
+			because: "the existing project must retain its folder and receive requested build settings");
 	}
 
 	#endregion
