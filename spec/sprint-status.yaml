@@ -3612,8 +3612,9 @@ stories:
     test_plan: spec/test-plans/tp-process-versioning.md
     note: >-
       The message manual testing reported, raised separately by QA. ProcessBuildHandler never
-      honoured the saveAttempted precondition ProcessVersionSaveHandler took in 1.6.1.1. NOT
-      restamped - the version and the archive re-cut belong to story 23.
+      honoured the saveAttempted precondition ProcessVersionSaveHandler took in 1.6.1.1. Cut as
+      CrtProcessBuilder 1.6.2.3 and verified on a stand: a server-side pre-save refusal returns the
+      reason alone, and SysSchema answers count 0 for the probe afterwards.
     depends_on: []
     blocks:
       - story-process-versioning-23
@@ -3624,15 +3625,18 @@ stories:
     jira: "ENG-94374"
     repo: "clio"
     size: S
-    status: ready-for-dev
+    status: review
     file: spec/stories/story-process-versioning-23.md
     prd: spec/prd/prd-process-versioning.md
     adr: spec/adr/adr-process-versioning.md
     test_plan: spec/test-plans/tp-process-versioning.md
     note: >-
-      Blocked until story 22 is on crt-process-builder's main AND tagged: the archive is cut from a
-      commit and clio's provenance pin names it, so a cut from the feature branch pins a commit no
-      permanent ref holds. Floors stay at 1.6.1.0.
+      Done: cut at 1.6.2.3 from crt-process-builder d0af0fc, tagged crtprocessbuilder-1.6.2.3. The
+      feature branch is merged with a MERGE commit rather than squashed, so the producing commit stays
+      reachable - which is what made cutting before the merge safe. 1.6.2.3 rather than 1.6.1.10:
+      ENG-95986 is unmerged and has already cut 1.6.2.1/1.6.2.2, and a lower bundled version is
+      REFUSED by install-process-builder, not merely ignored. Security counts re-verified against the
+      new bytes and unmoved (7 operations, 5 gate call sites); floors stay at 1.6.1.0.
     depends_on:
       - story-process-versioning-22
     blocks: []

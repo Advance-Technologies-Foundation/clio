@@ -46,11 +46,36 @@ reason (1.6.1.1); `ProcessBuildHandler` never did.
 - [x] **AC-03** — Given a build that fails at or after the save attempt, when the response is read, then the rollback is still attempted and its outcome still reported
 - [x] **AC-04** — Given the reported scenario (a duplicate element name in the descriptor), when the round-trip test runs, then it asserts both AC-01 and AC-02
 
+## Verification
+
+Measured on a live stand (`creatio_2`, CrtProcessBuilder **1.6.2.3** cut from this branch, 2026-09-11),
+over the real MCP path. `create-business-process` with a valid graph whose conditional flow names a
+parameter the process does not declare:
+
+```
+The condition on the flow from 'Choose' to 'EndA' references 'Amont', which is not a parameter of
+this process. This process declares no parameters; add one in 'parameters[]', ...
+```
+
+The reason alone — no "may still exist", no instruction to delete anything. Two things make this the
+right path rather than a lucky one: the message is raised in `ConditionParameterNames`, whose text
+exists ONLY in the package, so the call reached the server handler instead of being turned away by
+clio's own `ProcessGraphValidator`; and it is raised after `CreateSchemaDraft` and before the save,
+which is exactly the window the old code reported a failed cleanup for.
+
+An ESQ over `SysSchema` filtered on the probe's name answers `count: 0` afterwards — so the sentence
+the old build appended was false about a schema that never existed.
+
+The OLD behaviour was not re-run on the stand: that means installing 1.6.1.9 back over a newer
+package, which `install-process-builder` refuses without `--force`, for a result the unit suite already
+pins. Before is code plus tests; after is a stand.
+
 ## Implementation Notes
 
 The wording of `DescribeRollback` is untouched: it was never wrong, it was being asked a question it
 could not be asked.
 
-**Not restamped.** Every restamp in that repository is paired with an archive re-cut taken from a
-commit that exists on `main`, because clio's provenance pin names the producing commit. The version
-and the rebundle belong to the merge — see story 23.
+**Restamped to 1.6.2.3 and cut**, once it was settled that the branch merges with a MERGE commit
+rather than a squash: the producing commit `d0af0fc` therefore stays reachable, which is the only
+thing that made cutting before the merge safe. Tagged `crtprocessbuilder-1.6.2.3`. Story 23 carries
+the clio side.
