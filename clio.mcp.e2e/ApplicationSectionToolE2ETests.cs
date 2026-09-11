@@ -171,7 +171,11 @@ public sealed class ApplicationSectionToolE2ETests {
 			settings.ClioProcessPath,
 			settings.ProcessEnvironmentVariables);
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
+		// A COLD session on purpose: this test asserts on behaviour that only appears while the first
+		// call is still slow — an unmet response deadline, or progress arriving during a long call.
+		// The fixture-wide session has its connection and login already warm, which lets the call
+		// finish before the condition under test can occur.
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 
 		try {
 			// Act
@@ -780,7 +784,11 @@ public sealed class ApplicationSectionToolE2ETests {
 		// inside the interval and this test observes zero notifications while the relay is working perfectly.
 		settings.ProcessEnvironmentVariables[McpProgressHeartbeat.IntervalOverrideEnvVar] = "0.05";
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
+		// A COLD session on purpose: this test asserts on behaviour that only appears while the first
+		// call is still slow — an unmet response deadline, or progress arriving during a long call.
+		// The fixture-wide session has its connection and login already warm, which lets the call
+		// finish before the condition under test can occur.
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		MessageCollectingProgress progress = new();
 
 		// Act — list-app-sections is read-only and always performs a backend round-trip, so the
@@ -952,7 +960,11 @@ public sealed class ApplicationSectionToolE2ETests {
 
 		string caption = $"E2E Deadline {Guid.NewGuid():N}"[..24];
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(12));
-		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
+		// A COLD session on purpose: this test asserts on behaviour that only appears while the first
+		// call is still slow — an unmet response deadline, or progress arriving during a long call.
+		// The fixture-wide session has its connection and login already warm, which lets the call
+		// finish before the condition under test can occur.
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		await SeededApplicationResolver.ResolveOrIgnoreAsync(
 			session, cancellationTokenSource.Token, environmentName!, ApplicationCode);
 		string? createdSectionCode = null;
