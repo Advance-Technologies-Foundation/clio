@@ -60,6 +60,8 @@ clio add-data-binding-row --package Custom --binding-name UsrLookupBinding --val
 
 ## Notes
 
+- `--workspace-path` is the workspace root containing `.clio/workspaceSettings.json`, not the package directory. Clio resolves `packages/<package-name>` beneath that root.
+
 - The binding must already exist locally
 - The row key is the primary column marked in descriptor.json
 - If that primary key is Guid-based and omitted or null in --values, add-data-binding-row generates it automatically

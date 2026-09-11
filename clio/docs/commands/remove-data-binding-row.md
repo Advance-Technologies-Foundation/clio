@@ -43,6 +43,8 @@ clio remove-data-binding-row --package Custom --binding-name SysSettings --works
 
 ## Notes
 
+- `--workspace-path` is the workspace root containing `.clio/workspaceSettings.json`, not the package directory. Clio resolves `packages/<package-name>` beneath that root.
+
 - The binding must already exist locally
 - The command fails if the supplied key does not exist
 - Localization rows that share the same primary key are removed together

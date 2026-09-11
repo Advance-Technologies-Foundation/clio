@@ -37,7 +37,8 @@ public class CreateDataBindingOptions : EnvironmentOptions {
 	[Option("localizations", Required = false, HelpText = "Localized values as JSON object keyed by culture and column name")]
 	public string? LocalizationsJson { get; set; }
 
-	[Option("workspace-path", Required = false, HelpText = "Workspace root path. Defaults to the current workspace")]
+	/// <summary>Gets or sets the workspace root containing the .clio/workspaceSettings.json marker.</summary>
+	[Option("workspace-path", Required = false, HelpText = "Workspace root containing .clio/workspaceSettings.json, not the package directory. Defaults to the current workspace")]
 	public string? WorkspacePath { get; set; }
 }
 
@@ -58,7 +59,8 @@ public class AddDataBindingRowOptions {
 	[Option("localizations", Required = false, HelpText = "Localized values as JSON object keyed by culture and column name")]
 	public string? LocalizationsJson { get; set; }
 
-	[Option("workspace-path", Required = false, HelpText = "Workspace root path. Defaults to the current workspace")]
+	/// <summary>Gets or sets the workspace root containing the .clio/workspaceSettings.json marker.</summary>
+	[Option("workspace-path", Required = false, HelpText = "Workspace root containing .clio/workspaceSettings.json, not the package directory. Defaults to the current workspace")]
 	public string? WorkspacePath { get; set; }
 }
 
@@ -76,7 +78,8 @@ public class RemoveDataBindingRowOptions {
 	[Option("key-value", Required = true, HelpText = "Primary-key value of the row to delete")]
 	public string KeyValue { get; set; } = string.Empty;
 
-	[Option("workspace-path", Required = false, HelpText = "Workspace root path. Defaults to the current workspace")]
+	/// <summary>Gets or sets the workspace root containing the .clio/workspaceSettings.json marker.</summary>
+	[Option("workspace-path", Required = false, HelpText = "Workspace root containing .clio/workspaceSettings.json, not the package directory. Defaults to the current workspace")]
 	public string? WorkspacePath { get; set; }
 }
 
@@ -398,7 +401,9 @@ internal sealed class DataBindingService(
 		string workspaceSettingsPath = fileSystem.Combine(rootPath, ".clio", "workspaceSettings.json");
 		if (!fileSystem.ExistsFile(workspaceSettingsPath)) {
 			throw new InvalidOperationException(
-				$"Workspace root was not detected at '{rootPath}'. Run the command from a workspace or supply --workspace-path.");
+				$"Workspace root was not detected at '{rootPath}': missing '{workspaceSettingsPath}'. " +
+				"Supply --workspace-path with the workspace root containing .clio/workspaceSettings.json, not the package directory. " +
+				"The package is resolved under packages/<package-name> beneath that root.");
 		}
 
 		return rootPath;

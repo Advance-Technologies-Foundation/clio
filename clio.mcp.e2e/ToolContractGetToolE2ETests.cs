@@ -678,6 +678,14 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			},
 			because: "the response should preserve the requested local binding tool order");
 
+		foreach (ToolContractDefinition contract in response.Tools) {
+			contract.InputSchema.Properties.Single(field => field.Name == "workspace-path").Description.Should()
+				.Contain(".clio/workspaceSettings.json", because: "the MCP contract must identify the workspace root")
+				.And.Contain("packages/<package-name>", because: "the contract must explain package resolution");
+			contract.Examples.Should().OnlyContain(example => example.Arguments["workspace-path"]!.ToString() == "<workspace-root>",
+				because: "serialized local binding examples must not suggest a package directory");
+		}
+
 		ToolContractDefinition createContract = response.Tools.Single(tool => tool.Name == CreateDataBindingTool.CreateDataBindingToolName);
 		createContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "environment-name" &&

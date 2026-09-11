@@ -89,6 +89,8 @@ clio create-data-binding -e dev --package Custom --schema UsrLookupBinding --val
 
 ## Notes
 
+- `--workspace-path` is the workspace root containing `.clio/workspaceSettings.json`, not the package directory. Clio resolves `packages/<package-name>` beneath that root.
+
 - This command writes LOCAL workspace artifact files (descriptor.json, data.json) under packages/<package>/Data/<binding-name>; it does not persist data to a remote Creatio database. To persist row data directly to the remote database instead, use create-data-binding-db
 - For the templated schema SysSettings, --environment and --uri are optional
 - For non-templated schemas, the command requires either --environment or --uri

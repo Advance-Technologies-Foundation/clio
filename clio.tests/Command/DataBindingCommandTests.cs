@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.IO.Abstractions.TestingHelpers;
 using System.Text.Json;
 using Clio.Command;
@@ -76,6 +77,30 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 		containerBuilder.AddTransient(_ => _logger);
 		containerBuilder.AddTransient(_ => _workspacePathBuilder);
 		containerBuilder.AddTransient(_ => serviceUrlBuilder);
+	}
+
+	[Test]
+	[Description("Rejects an explicitly supplied package directory with the missing workspace marker and root-path guidance before writing binding files.")]
+	public void Execute_ShouldExplainWorkspaceRoot_WhenPackageDirectoryIsSupplied() {
+		// Arrange
+		CreateDataBindingOptions options = new() {
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			WorkspacePath = WorkspacePath("packages", PackageName)
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "the package directory is not a workspace root");
+		_logger.ReceivedCalls().Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteError))
+			.Select(call => call.GetArguments()[0]?.ToString()).Should().Contain(message =>
+				message != null && message.Contains(WorkspacePath("packages", PackageName, ".clio", "workspaceSettings.json"))
+				&& message.Contains("not the package directory") && message.Contains("packages/<package-name>"),
+				because: "the diagnostic must identify the missing marker and explain the correct argument");
+		FileSystem.Directory.Exists(WorkspacePath("packages", PackageName, "Data")).Should().BeFalse(
+			because: "invalid workspace input must fail before any binding output is created");
 	}
 
 	[Test]
