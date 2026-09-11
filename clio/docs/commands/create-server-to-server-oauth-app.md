@@ -12,8 +12,7 @@ create-server-to-server-oauth-app - Create a server-to-server (client_credential
 
 Creates a server-to-server (`client_credentials`) OAuth app in Creatio through the platform
 `OAuthConfigService/AddClient` endpoint over REST, binding it to a system user. Supply
-`--system-user-id` (from [`resolve-oauth-system-user`](resolve-oauth-system-user.md) or
-[`create-oauth-technical-user`](create-oauth-technical-user.md)) or `--system-user` by name
+`--system-user-id` (from [`resolve-oauth-system-user`](resolve-oauth-system-user.md)) or `--system-user` by name
 (defaults to `Supervisor`).
 
 The returned client id and client secret are surfaced **only** in the structured command result. On

@@ -7,7 +7,7 @@ NAME
 DESCRIPTION
     Creates a server-to-server (client_credentials) OAuth app in Creatio through the platform
     OAuthConfigService/AddClient endpoint over REST, binding it to a system user. Supply
-    --system-user-id (from resolve-oauth-system-user or create-oauth-technical-user) or
+    --system-user-id (from resolve-oauth-system-user) or
     --system-user by name (defaults to Supervisor).
 
     The returned client id and client secret are surfaced ONLY in the structured command result.
@@ -25,8 +25,7 @@ OPTIONS
         Required. Registered Creatio environment.
 
     --system-user-id ID
-        System user id to bind the OAuth app to. Resolve it first with resolve-oauth-system-user
-        or create-oauth-technical-user.
+        System user id to bind the OAuth app to. Resolve it first with resolve-oauth-system-user.
 
     --system-user NAME
         System user name to bind the OAuth app to when --system-user-id is omitted.

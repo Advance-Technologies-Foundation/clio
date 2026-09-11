@@ -20,7 +20,7 @@ public sealed class CreateServerToServerOAuthAppOptions : RemoteCommandOptions
 	/// the system user resolved from <c>--system-user</c> (defaulting to <c>Supervisor</c>).
 	/// </summary>
 	[Option("system-user-id", Required = false,
-		HelpText = "System user id to bind the OAuth app to. Resolve it first with resolve-oauth-system-user or create-oauth-technical-user")]
+		HelpText = "System user id to bind the OAuth app to. Resolve it first with resolve-oauth-system-user")]
 	public string SystemUserId { get; set; }
 
 	/// <summary>
@@ -198,7 +198,7 @@ public class CreateServerToServerOAuthAppCommand : Command<CreateServerToServerO
 			});
 		if (!resolved.Found || string.IsNullOrWhiteSpace(resolved.SystemUserId)) {
 			throw new InvalidOperationException(
-				$"System user '{userName}' was not found. Pass --system-user-id explicitly or create one with create-oauth-technical-user.");
+				$"System user '{userName}' was not found. Pass --system-user-id explicitly or resolve an existing user with resolve-oauth-system-user.");
 		}
 		return resolved.SystemUserId;
 	}
