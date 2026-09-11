@@ -1585,7 +1585,7 @@ public sealed class DescribedParameter {
 	/// Provenance stamp, when the parameter carries one: a collection parameter mirrored from an element output is
 	/// tagged <c>&lt;elementName&gt;.&lt;parameterName&gt;</c> — the designer's own "create parameter from element"
 	/// stamp — so a caller can re-issue the mirror later (<c>setParameter</c> with the same pair, the designer's
-	/// <i>Regenerate</i>). Null when untagged; omitted when the server (a <c>CrtProcessBuilder</c> before 1.4.0.41)
+	/// <i>Regenerate</i>). Null when untagged; omitted when the server (an older <c>CrtProcessBuilder</c>)
 	/// does not report it.
 	/// </summary>
 	[JsonPropertyName("tag")]

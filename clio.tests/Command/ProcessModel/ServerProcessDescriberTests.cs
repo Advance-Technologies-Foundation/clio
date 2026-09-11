@@ -357,14 +357,26 @@ public sealed class ServerProcessDescriberTests {
 		collection.Tag.Should().Be("ReadContacts.ResultCompositeObjectList",
 			because: "the provenance stamp is what a caller re-mirrors from (the designer's Regenerate)");
 		collection.ItemProperties.Should().HaveCount(2, because: "the per-item shape is the contract a consumer binds to");
-		collection.ItemProperties[0].Name.Should().Be("Name");
-		collection.ItemProperties[0].Type.Should().Be("ShortText");
+		collection.ItemProperties[0].Name.Should().Be("Name",
+			because: "an item is named after the column it carries, which is how a consumer binds to it");
+		collection.ItemProperties[0].Type.Should().Be("ShortText",
+			because: "each item reports its own resolved type, so a caller can tell what the column holds");
 		collection.ItemProperties[0].Tag.Should().Be("a5cca792-47dd-428a-83fb-5c92bdd97ff8",
-			because: "each item keeps the column UId the platform's collection sync parses");
-		collection.ItemProperties[1].Name.Should().Be("Email");
+			because: "each item keeps the column UId the platform stamped when it shaped the source output");
+		collection.ItemProperties[1].Name.Should().Be("Email",
+			because: "every column of the shape is deserialized, in order, not just the first");
+		collection.ItemProperties[0].ItemProperties.Should().BeNull(
+			because: "an item carries no shape of its own, and an absent nested field must read as null rather than an empty shape");
 		DescribedParameter scalar = result.Value.Parameters[1];
 		scalar.Tag.Should().BeNull(because: "a parameter without provenance reports no tag");
 		scalar.ItemProperties.Should().BeNull(because: "a scalar has no item shape, and absence must not read as an empty shape");
+		JsonNode output = JsonNode.Parse(JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions));
+		output["parameters"]![0]!["itemProperties"]![0]!["tag"]!.GetValue<string>().Should().Be("a5cca792-47dd-428a-83fb-5c92bdd97ff8",
+			because: "the shape must survive re-serialization to the caller, not merely deserialization into the DTO");
+		output["parameters"]![1]!.AsObject().ContainsKey("tag").Should().BeFalse(
+			because: "an untagged parameter must OMIT the field rather than emit null, so an older server and an untagged parameter read alike");
+		output["parameters"]![1]!.AsObject().ContainsKey("itemProperties").Should().BeFalse(
+			because: "a shapeless parameter must omit the shape for the same reason");
 	}
 
 	[Test]
