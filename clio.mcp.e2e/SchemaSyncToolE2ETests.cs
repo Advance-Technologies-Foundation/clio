@@ -40,7 +40,8 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[Explicit("Publishes schemas; requires an exclusively owned local Creatio sandbox.")]
-	[Category("LocalOnly")]
+	// LocalOnly is a whole-fixture classification; this shared fixture also contains automatic tests.
+	// Keep this method explicit/manual and CI-guarded instead (pinned by McpFixturePolicyTests).
 	[Category("McpE2E.Manual")]
 	[Description("Date and Time aliases advertised by the batch contract persist and read back as DateTime on real Creatio.")]
 	[AllureTag(ToolName)]
