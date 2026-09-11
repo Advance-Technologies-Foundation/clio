@@ -154,10 +154,6 @@ internal static class DataBindingToolPathValidator {
 /// Arguments for the <c>create-data-binding</c> MCP tool.
 /// </summary>
 public sealed record CreateDataBindingArgs(
-	[property: JsonPropertyName("environment-name")]
-	[property: Description("Optional Creatio environment name used only when the schema is not covered by a built-in offline template")]
-	string? EnvironmentName,
-
 	[property: JsonPropertyName("package-name")]
 	[property: Description("Target package name inside the workspace")]
 	[property: Required]
@@ -187,7 +183,10 @@ public sealed record CreateDataBindingArgs(
 
 	[property: JsonPropertyName("localizations")]
 	[property: Description("Optional JSON object keyed by culture then column name")]
-	string? LocalizationsJson = null
+	string? LocalizationsJson = null,
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Optional Creatio environment name used only when the schema is not covered by a built-in offline template")]
+	string? EnvironmentName = null
 );
 
 /// <summary>

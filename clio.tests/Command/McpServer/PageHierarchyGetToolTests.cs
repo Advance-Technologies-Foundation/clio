@@ -27,15 +27,7 @@ public class PageHierarchyGetToolTests {
 		PageHierarchyGetTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		GetPageHierarchyResponse response = tool.GetHierarchy(new GetPageHierarchyArgs(
-			"UsrApplicants_FormPage",
-			MetadataOnly: true,
-			Offset: 2,
-			Limit: 5,
-			EnvironmentName: "workbuild103",
-			Uri: null,
-			Login: null,
-			Password: null));
+		GetPageHierarchyResponse response = tool.GetHierarchy(new GetPageHierarchyArgs("UsrApplicants_FormPage", MetadataOnly: true, Offset: 2, Limit: 5) { EnvironmentName = "workbuild103" });
 
 		// Assert
 		response.Success.Should().BeTrue(because: "the resolved command returns a successful canned response");
@@ -81,15 +73,7 @@ public class PageHierarchyGetToolTests {
 		PageHierarchyGetTool tool = new(new FakeGetPageHierarchyCommand(), ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		GetPageHierarchyResponse response = tool.GetHierarchy(new GetPageHierarchyArgs(
-			"UsrLeaf_FormPage",
-			MetadataOnly: null,
-			Offset: null,
-			Limit: null,
-			EnvironmentName: "workbuild103",
-			Uri: null,
-			Login: null,
-			Password: null));
+		GetPageHierarchyResponse response = tool.GetHierarchy(new GetPageHierarchyArgs("UsrLeaf_FormPage", MetadataOnly: null, Offset: null, Limit: null) { EnvironmentName = "workbuild103" });
 
 		// Assert
 		response.Success.Should().BeFalse(

@@ -56,5 +56,5 @@ public sealed record WatchCompilationArgs(
 
 	[property: JsonPropertyName("give-up-after-seconds")]
 	[property: Description("Optional seconds to wait for the compilation to settle before giving up (exit code 2). Default: 300 (5 minutes).")]
-	int? GiveUpAfterSeconds
+	int? GiveUpAfterSeconds = null
 );
