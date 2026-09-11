@@ -21,6 +21,13 @@
 # 2026-07-06) is a separate Jira ticket stacked on the same branch; tracked as its own row.
 
 stories:
+  - id: story-user-role-management-1
+    title: Complete agent-facing user and role administration
+    feature: user-role-management
+    status: review
+    file: spec/stories/story-user-role-management-1.md
+    adr: spec/adr/adr-user-role-management.md
+    issue: https://github.com/Advance-Technologies-Foundation/clio/issues/968
   - id: story-worker-runtime-policy
     title: "Preserve the MCP worker runtime roll-forward policy"
     feature: "mcp-worker-execution-boundary"
