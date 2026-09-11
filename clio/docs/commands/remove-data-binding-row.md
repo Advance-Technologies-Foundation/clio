@@ -27,7 +27,8 @@ including bindings that were created from built-in offline templates.
 ```bash
 --package              Target package name
 --binding-name         Binding folder name under package Data
---workspace-path       Workspace root path. Defaults to the current workspace
+--workspace-path       Workspace root containing .clio/workspaceSettings.json,
+not the package directory. Defaults to the current workspace
 --key-value            Primary-key value of the row to remove
 ```
 
@@ -43,6 +44,8 @@ clio remove-data-binding-row --package Custom --binding-name SysSettings --works
 
 ## Notes
 
+- --workspace-path is the workspace root containing .clio/workspaceSettings.json,
+not the package directory. Clio resolves packages/{package-name} beneath that root.
 - The binding must already exist locally
 - The command fails if the supplied key does not exist
 - Localization rows that share the same primary key are removed together
