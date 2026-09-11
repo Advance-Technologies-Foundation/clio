@@ -305,12 +305,17 @@ public class BindingsModule {
 		// never be true, both completion rules would be disabled and an ordinary build would wait out the
 		// full timeout and exit 1. Redirects are not followed: a 302 to the login page already proves the
 		// application is answering, and following it only spends time the probe is sampled on.
+		// S4830: accepting any certificate is the deliberate behaviour described above - the probe must
+		// reach exactly the stands creatio.client already reaches, including self-signed ones, or the
+		// feature reports a healthy stand as unreachable.
+#pragma warning disable S4830
 		services.AddHttpClient(Clio.Common.EnvironmentAvailabilityProbe.HttpClientName)
 			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
 				AllowAutoRedirect = false,
 				UseCookies = false,
 				ServerCertificateCustomValidationCallback = (_, _, _, _) => true
 			});
+#pragma warning restore S4830
 
 		ISettingsBootstrapService settingsBootstrapService = new SettingsBootstrapService(_fileSystem, applyBootstrapRepairs);
 		SettingsBootstrapResult bootstrapResult = settingsBootstrapService.GetResult();
