@@ -146,9 +146,15 @@ public class BundledProcessBuilderPackageTests {
 	/// <c>ApplyRecommendation</c> were each already validate-before-write internally, but ran in the write phase
 	/// AFTER the page had already been written; both are now split into a resolve half (validation, no schema
 	/// mutation) and a write half, so every guard in the method runs before any of it commits.</para>
+	/// <para>1.6.2.11 (this cut): a self-regression the atomicity split introduced, found by the same review pass.
+	/// The original <c>ApplyDataSources</c> caught two data sources sharing a name in one request because each
+	/// iteration added its parameter to <c>element.Parameters</c> immediately, so a later duplicate hit the
+	/// existing name-conflict check; splitting resolution from writing removed that side effect, so
+	/// <c>ResolveDataSources</c> now runs its own intra-request duplicate check, mirroring the one
+	/// <c>ResolveButtons</c> already runs for completing buttons.</para>
 	/// <para>
 	/// This cut DID run under <c>-SkipTests</c>. The package's suite is green on the producing commit
-	/// (1869 of 1870 with the CI filter) except for
+	/// (1870 of 1871 with the CI filter) except for
 	/// <c>CiContractGuardTests.FeatureToggling_LoadedIdentityMatchesThePlatformDemandAndTheTestKit</c>, which
 	/// fails on this machine because the local <c>.application/net-framework/core-bin</c> binds an older
 	/// <c>Creatio.FeatureToggling</c> than the test project references — a stale local dependency set, not a
@@ -229,7 +235,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"A8DFB69816D8CFC371F0CDAC734FC3533B33301E4B803F8CA418A959821204E3";
+		"E59F311546FFE2F2EFCD24BEE9FD2762B2A9C537BDE2681F23FF524080EF2988";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -257,7 +263,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.2.10";
+	private const string ExpectedArchiveVersion = "1.6.2.11";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -269,7 +275,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "1f0fc24fb960243b4ebc0eb611e234ca93f62e6c";
+	private const string ExpectedProducingCommit = "093edd213047e444308d3ad43090caa273dcb45e";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -295,7 +301,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789146942000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789148449000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
