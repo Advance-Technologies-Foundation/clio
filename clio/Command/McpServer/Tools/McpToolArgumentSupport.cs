@@ -205,11 +205,12 @@ internal static class McpToolArgumentSupport {
 	/// <returns>At most three alternatives, excluding the requested name regardless of casing.</returns>
 	public static IReadOnlyList<string> SuggestToolNames(string requestedName, IEnumerable<string> candidates) {
 		string rankingName = requestedName.Length > 64 ? requestedName[..64] : requestedName;
-		string? synonym = rankingName.StartsWith("set-", StringComparison.OrdinalIgnoreCase)
-			? "update-" + rankingName[4..]
-			: rankingName.StartsWith("update-", StringComparison.OrdinalIgnoreCase)
-				? "set-" + rankingName[7..]
-				: null;
+		string? synonym = null;
+		if (rankingName.StartsWith("set-", StringComparison.OrdinalIgnoreCase)) {
+			synonym = "update-" + rankingName[4..];
+		} else if (rankingName.StartsWith("update-", StringComparison.OrdinalIgnoreCase)) {
+			synonym = "set-" + rankingName[7..];
+		}
 		return candidates
 			.Where(name => !string.IsNullOrWhiteSpace(name)
 				&& !string.Equals(name, requestedName, StringComparison.OrdinalIgnoreCase))
