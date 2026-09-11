@@ -394,7 +394,18 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		}
 
 		foreach (string columnSpec in columnSpecs.Where(spec => !string.IsNullOrWhiteSpace(spec))) {
-			yield return ParseColumn(columnSpec);
+			if (columnSpec.TrimStart().StartsWith("[", StringComparison.Ordinal)) {
+				StructuredColumnSpec[] structuredColumns = JsonSerializer.Deserialize<StructuredColumnSpec[]>(
+					columnSpec, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+				if (structuredColumns.Length == 0) {
+					throw new InvalidOperationException("Structured column array must contain at least one column.");
+				}
+				foreach (StructuredColumnSpec column in structuredColumns) {
+					yield return BuildStructuredColumn(column, columnSpec);
+				}
+			} else {
+				yield return ParseColumn(columnSpec);
+			}
 		}
 	}
 
@@ -404,7 +415,13 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			new JsonSerializerOptions {
 				PropertyNameCaseInsensitive = true
 			}) ?? throw new InvalidOperationException("Structured column payload is empty.");
+		return BuildStructuredColumn(structuredColumn, columnSpec);
+	}
 
+	private static ParsedColumn BuildStructuredColumn(StructuredColumnSpec structuredColumn, string columnSpec) {
+		if (structuredColumn is null) {
+			throw new InvalidOperationException("Structured column array must not contain null entries.");
+		}
 		string name = structuredColumn.Name?.Trim();
 		string type = structuredColumn.Type?.Trim();
 		ValidateSupportedColumnValues(columnSpec, name, type);

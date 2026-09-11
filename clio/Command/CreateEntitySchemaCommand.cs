@@ -46,7 +46,8 @@ public class CreateEntitySchemaOptions : RemoteCommandOptions
 		HelpText = "Create a virtual entity schema without a physical database table")]
 	public bool IsVirtual { get; set; }
 
-	[Option("column", Required = false, HelpText = "Column spec <name>:<type>[:<title>[:<refSchema>]] or JSON with name/type/title/reference-schema-name/required/default-value-source/default-value. Repeat the option for multiple columns.")]
+	/// <summary>Gets or sets column specs, each containing a legacy definition, JSON object, or non-empty JSON array.</summary>
+	[Option("column", Required = false, HelpText = "Column spec <name>:<type>[:<title>[:<refSchema>]] or a JSON object/array with name/type/title/reference-schema-name/required/default-value-source/default-value. Repeat the option for multiple columns.")]
 	public IEnumerable<string> Columns { get; set; }
 
 	[Option("caption-culture", Required = false, HelpText = "Override the culture used for generated captions/labels (e.g. en-US, uk-UA). Precedence: this override > the connected user's profile culture > en-US. Supplying it skips the profile-culture lookup.")]

@@ -1209,9 +1209,9 @@ public class BindingsModule {
 		services.AddTransient<LocalHelpViewer>();
 		services.AddTransient<WikiHelpViewer>();
 		
-		// The per-environment manager gets the SAME dependency set as the DI-resolved one. A provider-only
-		// manager would silently skip the authenticated DataService probe, so every command reached through
-		// this factory would keep reporting a rejected read as an empty success (the defect issue #1222 fixes).
+		// The per-environment manager gets the SAME dependency set as the DI-resolved one - in particular
+		// the ClassifyingDataProvider wrapper, without which every command reached through this factory
+		// would keep reporting a rejected read as an empty success (the defect issue #1222 fixes).
 		// The client stays lazy, so building the factory result costs no HTTP call on its own.
 		//
 		// EVERY DEPENDENCY IS RESOLVED HERE, EAGERLY, AND THE RETURNED DELEGATE CAPTURES THE INSTANCES
@@ -1295,8 +1295,8 @@ public class BindingsModule {
 
 	/// <summary>
 	/// Builds a <see cref="SysSettingsManager"/> for one environment with the same dependency set the
-	/// DI-resolved manager gets, so a read rejected by authentication is reported as a failure rather
-	/// than as an empty success.
+	/// DI-resolved manager gets - including the <see cref="ClassifyingDataProvider"/> wrapper, so a read
+	/// rejected by authentication is reported as a failure rather than as an empty success.
 	/// </summary>
 	/// <remarks>
 	/// Takes the already-resolved collaborators instead of an <see cref="IServiceProvider"/> ON PURPOSE.
@@ -1330,7 +1330,7 @@ public class BindingsModule {
 		return new SysSettingsManager(
 			applicationClient,
 			new ServiceUrlBuilder(envSettings),
-			BuildRemoteDataProvider(envSettings),
+			new ClassifyingDataProvider(BuildRemoteDataProvider(envSettings)),
 			workingDirectoriesProvider,
 			clioFileSystem,
 			fileSystem,
@@ -1383,7 +1383,12 @@ public class BindingsModule {
 	private static void RegisterActiveEnvironmentServices(
 		IServiceCollection services, EnvironmentSettings activeSettings) {
 		services.AddSingleton(activeSettings);
-		services.AddTransient<IDataProvider>(_ => new LazyDataProvider(() => BuildRemoteDataProvider(activeSettings)));
+		// ClassifyingDataProvider is NOT optional decoration: without it an ATF response whose Success is
+		// false reaches the caller as an empty collection and the command reports success (issue #1222).
+		// The SAME wrapping is applied in BuildEnvironmentScopedSysSettingsManager - that per-environment
+		// path is a second construction site, and a provider left raw there is unprotected.
+		services.AddTransient<IDataProvider>(_ =>
+			new ClassifyingDataProvider(new LazyDataProvider(() => BuildRemoteDataProvider(activeSettings))));
 		// Bearer-first; AccessToken must never reach the "Supervisor" fallback below
 		// (multi-tenant safety, ENG-93208 B1).
 		// Keep the directly resolvable compatibility service separate from the adapter's transport.
