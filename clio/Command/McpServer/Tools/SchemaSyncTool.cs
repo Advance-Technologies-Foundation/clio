@@ -117,6 +117,9 @@ public sealed class SchemaSyncTool(
 		"name/data-value-type/reference-schema/is-required/caption are accepted), so a column read from " +
 		"get-app-info can be sent back without field translation — add an 'action' verb for modify/remove, " +
 		"or drop read/create-shape columns into a 'columns' array for an implicit add-batch. " +
+		"A column read with a default carries default-value-config — send it back as-is to re-apply the default, " +
+		"or set source: None to remove it; create-entity/create-lookup columns and update-operations also accept " +
+		"default-value-config (Const value = the stable lookup record GUID) or the legacy default-value-source + default-value shorthand. " +
 		"Long-running: streams notifications/progress (a per-operation stage marker before each op) while " +
 		"working — await completion and do not retry on a perceived timeout.")]
 	public async Task<SchemaSyncResponse> SchemaSync(

@@ -233,14 +233,12 @@ public static class EmailBlockExpectation {
 	private static string ElementNoun(int count) => BlockExpectationJson.ElementNoun(count);
 
 	/// <summary>
-	/// Reads an element name, tolerating a node that is not a string.
-	/// <para><c>GetValue&lt;string&gt;()</c> THROWS on <c>"name": 123</c>, and this check runs AFTER a successful
-	/// operation, inside the command's try — so a payload the server happily accepted would be reported to the
-	/// caller as a failed build. Both expectation checks run in the same block, email first, so a throw here would
-	/// take the approval one down with it. Same idiom <c>ApprovalBlockExpectation</c> uses.</para>
+	/// Reads an element name, tolerating a node that is not a string. Delegates to
+	/// <see cref="BlockExpectationJson.ReadText"/>, which owns the reasoning: this check runs AFTER a
+	/// successful operation, inside the command's try, so a throw on <c>"name": 123</c> would report a build
+	/// the server accepted as a failure - and take the sibling guards in the same block down with it.
 	/// </summary>
-	private static string? ReadName(JsonNode? node) =>
-		node is JsonValue value && value.TryGetValue(out string? text) ? text : null;
+	private static string? ReadName(JsonNode? node) => BlockExpectationJson.ReadText(node);
 
 	private static bool ContainsMacro(string body) =>
 		body.IndexOf("[[param:", StringComparison.OrdinalIgnoreCase) >= 0
