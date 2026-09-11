@@ -197,6 +197,7 @@ set-file-content-storage-connection-string:set-file-content-storage-connection-s
 set-fsm-config:set-fsm-config,fsmc,sfsmc
 set-pkg-version:set-pkg-version,spv
 set-syssetting:set-syssetting,get-syssetting,ss,sys-setting,syssetting
+download-sys-setting-file:download-sys-setting-file
 set-webservice-url:set-webservice-url,swu,webservice
 show-diff:show-diff,compare,diff
 show-local-envs:show-local-envs,localenvs

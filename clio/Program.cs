@@ -61,6 +61,7 @@ internal class Program {
 		typeof(AddItemOptions),
 		typeof(DeveloperModeOptions),
 		typeof(SysSettingsOptions),
+		typeof(DownloadSysSettingFileOptions),
 		typeof(FeatureOptions),
 		typeof(SetFileContentStorageConnectionStringOptions),
 		typeof(PingAppOptions),
@@ -567,6 +568,7 @@ internal class Program {
 			AddItemOptions opts => Resolve<AddItemCommand>(opts).Execute(opts),
 			DeveloperModeOptions opts => SetDeveloperMode(opts),
 			SysSettingsOptions opts => Resolve<SysSettingsCommand>(opts).Execute(opts),
+			DownloadSysSettingFileOptions opts => Resolve<DownloadSysSettingFileCommand>(opts).Execute(opts),
 			FeatureOptions opts => Resolve<FeatureCommand>(opts).Execute(opts),
 			SetFileContentStorageConnectionStringOptions opts =>
 				Resolve<SetFileContentStorageConnectionStringCommand>(opts).Execute(opts),

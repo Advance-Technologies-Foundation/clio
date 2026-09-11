@@ -106,6 +106,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="set-file-content-storage-connection-string"></a>
 <a id="set-fcs-connection-string"></a>
 - [`set-file-content-storage-connection-string`](docs/commands/set-file-content-storage-connection-string.md) - Set the connection string of a file content storage, `set-fcs-connection-string`
+<a id="download-sys-setting-file"></a>
+- [`download-sys-setting-file`](docs/commands/download-sys-setting-file.md) - Save a Binary system setting's exact bytes to a required destination filename.
+
 <a id="set-syssetting"></a>
 <a id="get-syssetting"></a>
 <a id="ss"></a>

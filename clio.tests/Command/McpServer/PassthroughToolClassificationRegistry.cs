@@ -294,6 +294,8 @@ internal static class PassthroughToolClassificationRegistry {
 			["describe-environment"] = PassthroughClassification.NotApplicable,
 			["download-configuration-by-build"] = PassthroughClassification.NotApplicable,
 			["download-configuration-by-environment"] = PassthroughClassification.NotApplicable,
+			// Environment-scoped BaseTool path; outside the original resident-tool passthrough audit.
+			[DownloadSysSettingFileTool.ToolName] = PassthroughClassification.NotApplicable,
 			["execute-esq"] = PassthroughClassification.NotApplicable,
 			["export-schema"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - already resolver-backed (class a), not part of the ENG-93347 passthrough audit
 			["experimental"] = PassthroughClassification.NotApplicable,
