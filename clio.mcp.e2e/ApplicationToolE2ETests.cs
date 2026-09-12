@@ -321,7 +321,16 @@ public sealed class ApplicationToolE2ETests {
 		}
 
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
-		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(10));
+		// Budget raised from 10 to 15 minutes because ActCreateAsync now retries a KNOWN transient
+		// platform answer (issue #1106) and this one CancellationTokenSource covers the whole test. The
+		// gate's window is additive, not free. Its OverallDeadline is WALL-CLOCK and counts the attempts
+		// themselves, so the real cost is bounded by 3 minutes rather than by attempt count: a fast
+		// create-app spends most of that on the fixed waits, a slow one on one or two extra full attempts.
+		// An exhausted token does NOT degrade gracefully - Task.Delay and
+		// CallToolAsync throw OperationCanceledException instead of the gate returning its last answer,
+		// losing both the documented "the test's own assertions still decide" property and the payload
+		// diagnostics. 15 minutes matches the sibling gated test above and leaves headroom over that ceiling.
+		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(15));
 		string suffix = Guid.NewGuid().ToString("N")[..8];
 		string createdApplicationCode = $"UsrCodex{suffix}";
 		string applicationName = $"Codex E2E {suffix}";
@@ -530,7 +539,16 @@ public sealed class ApplicationToolE2ETests {
 		}
 
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
-		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(10));
+		// Budget raised from 10 to 15 minutes because ActCreateAsync now retries a KNOWN transient
+		// platform answer (issue #1106) and this one CancellationTokenSource covers the whole test. The
+		// gate's window is additive, not free. Its OverallDeadline is WALL-CLOCK and counts the attempts
+		// themselves, so the real cost is bounded by 3 minutes rather than by attempt count: a fast
+		// create-app spends most of that on the fixed waits, a slow one on one or two extra full attempts.
+		// An exhausted token does NOT degrade gracefully - Task.Delay and
+		// CallToolAsync throw OperationCanceledException instead of the gate returning its last answer,
+		// losing both the documented "the test's own assertions still decide" property and the payload
+		// diagnostics. 15 minutes matches the sibling gated test above and leaves headroom over that ceiling.
+		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(15));
 		string suffix = Guid.NewGuid().ToString("N")[..8];
 		string createdApplicationCode = $"UsrWeb{suffix}";
 		string applicationName = $"Web Only E2E {suffix}";
@@ -586,7 +604,16 @@ public sealed class ApplicationToolE2ETests {
 		}
 
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
-		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(10));
+		// Budget raised from 10 to 15 minutes because ActCreateAsync now retries a KNOWN transient
+		// platform answer (issue #1106) and this one CancellationTokenSource covers the whole test. The
+		// gate's window is additive, not free. Its OverallDeadline is WALL-CLOCK and counts the attempts
+		// themselves, so the real cost is bounded by 3 minutes rather than by attempt count: a fast
+		// create-app spends most of that on the fixed waits, a slow one on one or two extra full attempts.
+		// An exhausted token does NOT degrade gracefully - Task.Delay and
+		// CallToolAsync throw OperationCanceledException instead of the gate returning its last answer,
+		// losing both the documented "the test's own assertions still decide" property and the payload
+		// diagnostics. 15 minutes matches the sibling gated test above and leaves headroom over that ceiling.
+		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(15));
 		string suffix = Guid.NewGuid().ToString("N")[..8];
 		string createdApplicationCode = $"UsrCodex{suffix}";
 		string applicationName = $"Codex E2E {suffix}";
@@ -865,7 +892,16 @@ public sealed class ApplicationToolE2ETests {
 		}
 
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
-		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(10));
+		// Budget raised from 10 to 15 minutes because ActCreateAsync now retries a KNOWN transient
+		// platform answer (issue #1106) and this one CancellationTokenSource covers the whole test. The
+		// gate's window is additive, not free. Its OverallDeadline is WALL-CLOCK and counts the attempts
+		// themselves, so the real cost is bounded by 3 minutes rather than by attempt count: a fast
+		// create-app spends most of that on the fixed waits, a slow one on one or two extra full attempts.
+		// An exhausted token does NOT degrade gracefully - Task.Delay and
+		// CallToolAsync throw OperationCanceledException instead of the gate returning its last answer,
+		// losing both the documented "the test's own assertions still decide" property and the payload
+		// diagnostics. 15 minutes matches the sibling gated test above and leaves headroom over that ceiling.
+		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(15));
 		string suffix = Guid.NewGuid().ToString("N")[..8];
 
 		// Act
@@ -1040,18 +1076,35 @@ public sealed class ApplicationToolE2ETests {
 		string? iconBackground,
 		string? optionalTemplateDataJson,
 		bool withMobilePages = true) {
-		CallToolResult callResult = await CallCreateAsync(
-			session,
-			cancellationToken,
-			environmentName,
-			name,
-			code,
-			description,
-			templateCode,
-			iconId,
-			iconBackground,
-			optionalTemplateDataJson,
-			withMobilePages);
+		// Wrapped in the transient-platform-condition retry gate (issue #1106). Every muted flake this
+		// helper produced answered with one of the three shapes the gate already classifies — the
+		// OData-rebuild window, an HTML/login-page redirect, or a rejected implicit login — and the gate
+		// existed but was wired into ONE unrelated test only. No re-authentication seam is supplied: this
+		// helper receives a session it does not own and so cannot replace it. A plain retry still recovers
+		// from a rejected login, by a different mechanism than the implicit one: Login() assigns a FRESH,
+		// EMPTY CookieContainer before it sends, so after a rejection the cookie field is non-null and
+		// InitAuthCookie's null check will NOT log in again - recovery comes from ReauthExecutor detecting
+		// the login page / 401 on the retried request and re-authenticating there. The sibling gated test
+		// above restarts the whole MCP session for this case; it can, because it owns the session it
+		// started. This helper does not, and the cheaper path is sufficient.
+		// A retried create-app resubmits the SAME name and code; that is safe for the same two reasons the
+		// progress-marker test documents — the platform rejects a genuine duplicate create outright, and
+		// the gate excludes the two "the create may already have happened" prefixes.
+		CallToolResult callResult = await TransientPlatformConditionRetryGate.InvokeWithRetryAsync(
+			attemptToken => CallCreateAsync(
+				session,
+				attemptToken,
+				environmentName,
+				name,
+				code,
+				description,
+				templateCode,
+				iconId,
+				iconBackground,
+				optionalTemplateDataJson,
+				withMobilePages),
+			reauthenticateAsync: null,
+			cancellationToken);
 		ApplicationContextResponseEnvelope result;
 		try {
 			result = ApplicationResultParser.ExtractInfo(callResult);

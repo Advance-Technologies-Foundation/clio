@@ -14,6 +14,9 @@ namespace Clio.Mcp.E2E;
 /// </summary>
 [TestFixture]
 [Category("Unit")]
+// The no-environment CI lane selects POSITIVELY on this category; "Unit" alone runs these only when the
+// project is executed unfiltered, which is how they would silently stop being exercised.
+[Category("McpE2E.NoEnvironment")]
 [Property("Module", "McpServer")]
 public sealed class TransientPlatformConditionRetryGateTests {
 	private static CallToolResult TextResult(string text) =>
@@ -268,5 +271,103 @@ public sealed class TransientPlatformConditionRetryGateTests {
 			because: "the message carries the LoginDiagnostics login-rejection prefix");
 		odataRebuildIsLoginRejection.Should().BeFalse(
 			because: "the OData rebuild window is a known transient condition but not specifically a login rejection, so it must not trigger re-authentication");
+	}
+
+	[Test]
+	[Description("Classifies the VERBATIM clio-login-decorated implicit login rejection recorded for the muted ApplicationCreate and ApplicationSectionCreate tests as a known transient platform condition.")]
+	public void IsKnownTransientPlatformCondition_ShouldReturnTrue_ForRecordedImplicitLoginRejection() {
+		// Arrange - the message shape LoginDiagnostics actually produced on the stand (issue #1106), kept
+		// verbatim so a change to the decoration that broke the classifier would fail here rather than
+		// silently unmute nothing.
+		CallToolResult result = TextResult(
+			"Unauthorized Supervisor for https://example.creatio.com [clio-login kind=implicit client=9390d9fa "
+			+ "client-request=1 process-request=1 in-flight-logins=0/0 in-flight-requests=1/1 "
+			+ "started-at=2026-08-19T13:13:53.9366930Z elapsed-ms=28 since-client-created-ms=63 "
+			+ "original-type=UnauthorizedAccessException]");
+
+		// Act
+		bool isTransient = TransientPlatformConditionRetryGate.IsKnownTransientPlatformCondition(result);
+		bool isLoginRejection = TransientPlatformConditionRetryGate.IsLoginRejection(result);
+
+		// Assert
+		isTransient.Should().BeTrue(
+			because: "the decorated rejection still carries the login-rejection prefix and its companion separator, and the trailing diagnostics block must not defeat the match");
+		isLoginRejection.Should().BeTrue(
+			because: "the caller distinguishes this condition from the others to decide whether to re-authenticate rather than merely wait");
+	}
+
+	[Test]
+	[Description("Classifies the VERBATIM runtime-entity-schema HTML answer recorded for the muted ApplicationSectionUpdate test as a known transient platform condition.")]
+	public void IsKnownTransientPlatformCondition_ShouldReturnTrue_ForRecordedSelectQueryHtmlAnswer() {
+		// Arrange - the ServiceResponseJsonGuard wording as it reaches the harness, redacted URL included
+		// (issue #1106). The envelope is the tools' own success:false shape rather than an MCP-level error,
+		// which is how this failure actually arrives.
+		CallToolResult result = SuccessfulTextResult(
+			"{\"success\":false,\"error\":\"SelectQuery returned an HTML page instead of JSON "
+			+ "(URL: [redacted-uri]). The request was most likely redirected to a login page, or the server "
+			+ "raised an unhandled error and answered with an HTML error page.\"}");
+
+		// Act
+		bool isTransient = TransientPlatformConditionRetryGate.IsKnownTransientPlatformCondition(result);
+
+		// Assert
+		isTransient.Should().BeTrue(
+			because: "the answer carries the guard's HTML-page wording and the tools' own success:false failure signal, so it must be retried even though the transport did not flag the call as an error");
+	}
+
+	[Test]
+	[Description("Does NOT classify the bare \"Select query failed.\" answer recorded for the muted ApplicationSectionUpdate test, pinning the deliberate limit of the gate's coverage.")]
+	public void IsKnownTransientPlatformCondition_ShouldReturnFalse_ForBareSelectQueryFailedAnswer() {
+		// Arrange - the SECOND shape that test produced (issue #1106). It is built from a SUCCESSFUL HTTP
+		// response carrying success:false and names no cause, so it is indistinguishable from a genuine
+		// query failure.
+		CallToolResult result = SuccessfulTextResult("{\"success\":false,\"error\":\"Select query failed.\"}");
+
+		// Act
+		bool isTransient = TransientPlatformConditionRetryGate.IsKnownTransientPlatformCondition(result);
+
+		// Assert
+		isTransient.Should().BeFalse(
+			because: "an opaque query failure carries none of the three transient signatures, and promoting it to one would retry every real regression in the suite instead of failing it");
+	}
+
+	[TestCase("in-progress", TestName = "IsKnownTransientPlatformCondition_ShouldReturnFalse_ForSectionAlreadyCreated(in-progress)")]
+	[TestCase("unknown", TestName = "IsKnownTransientPlatformCondition_ShouldReturnFalse_ForSectionAlreadyCreated(unknown)")]
+	[TestCase("true", TestName = "IsKnownTransientPlatformCondition_ShouldReturnFalse_ForSectionAlreadyCreated(true)")]
+	[Description("Excludes a create-app-section answer whose section-created field says the insert already landed or may still be landing, even when the SAME payload also carries a transient marker, so the exclusion is proven to fire rather than merely to be unreached.")]
+	public void IsKnownTransientPlatformCondition_ShouldReturnFalse_ForSectionAlreadyCreated(string sectionCreated) {
+		// Arrange - the in-progress envelope is produced by a response deadline, and a stand rebuilding its
+		// OData library is exactly what makes that deadline fire, so both signals really do arrive together.
+		// The section insert carries a client-generated id, so a retry would insert a SECOND section.
+		// Built with SuccessfulTextResult because a CLASSIFIED tool failure arrives that way - the transport
+		// does not flag it, the success:false in the body is the failure signal.
+		CallToolResult result = SuccessfulTextResult(
+			"{\"success\":false,\"error-class\":\"creatio-timeout\",\"section-created\":\"" + sectionCreated + "\","
+			+ "\"error\":\"Creatio is currently rebuilding the OData library.\"}");
+
+		// Act
+		bool isTransient = TransientPlatformConditionRetryGate.IsKnownTransientPlatformCondition(result);
+
+		// Assert
+		isTransient.Should().BeFalse(
+			because: "a section whose insert landed or may still be landing must never be retried, whatever else the payload says - its own retry guidance states that a retry would create a duplicate section. Only the verified-absent 'false' is safe, and it is covered by the counter-case below");
+	}
+
+	[Test]
+	[Description("Still retries a create-app-section answer that failed BEFORE the insert, so the section exclusion narrows the gate rather than disabling it for section creation.")]
+	public void IsKnownTransientPlatformCondition_ShouldReturnTrue_ForSectionFailureBeforeInsert() {
+		// Arrange - section-created false means the insert did not happen, so nothing was left behind and
+		// the call can be repeated safely. SuccessfulTextResult for the same reason as the exclusion case
+		// above: a classified tool failure does not set IsError.
+		CallToolResult result = SuccessfulTextResult(
+			"{\"success\":false,\"section-created\":\"false\","
+			+ "\"error\":\"Creatio is currently rebuilding the OData library.\"}");
+
+		// Act
+		bool isTransient = TransientPlatformConditionRetryGate.IsKnownTransientPlatformCondition(result);
+
+		// Assert
+		isTransient.Should().BeTrue(
+			because: "an answer that failed before the insert leaves no section behind, so the transient condition it reports is safe to retry");
 	}
 }

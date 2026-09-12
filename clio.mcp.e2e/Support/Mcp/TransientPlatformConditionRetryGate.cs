@@ -40,6 +40,13 @@ namespace Clio.Mcp.E2E.Support.Mcp;
 /// well have landed server-side; that is the whole reason the poll exists. Its failure prefix is the
 /// sibling of the already-created one and carries the same last-load error, which is exactly where a
 /// marker turns up (<see cref="ApplicationCreateTimeoutMarker"/>);</description></item>
+/// <item><description>a <c>create-app-section</c> whose insert already landed or may still be landing —
+/// any <c>section-created</c> value other than <c>false</c>. The section insert carries a
+/// client-generated id, so a tool-level retry inserts a SECOND section rather than recovering the first
+/// (<see cref="SectionAlreadyCreatedMarkers"/>). The sibling "insert landed, readback failed" shape needs
+/// no entry here: <c>ApplicationSectionCreateCommand</c> reports it as "Section 'X' was created but its
+/// metadata could not be loaded…", which the pre-existing <see cref="ApplicationAlreadyCreatedMarker"/>
+/// already matches verbatim;</description></item>
 /// <item><description><c>error-class=contention</c> — contention has its own dedicated handling
 /// elsewhere in the harness and is not one of the three platform conditions this gate exists for. Matched
 /// on the serialized envelope field rather than inferred from marker absence
@@ -158,6 +165,42 @@ internal static class TransientPlatformConditionRetryGate {
 	internal const string ContentionErrorClassMarker = "\"error-class\":\"contention\"";
 
 	/// <summary>
+	/// The serialized <c>section-created</c> envelope field values that say the section INSERT already
+	/// landed, or may still be landing, server-side — every value EXCEPT the one that proves it did not:
+	/// <list type="bullet">
+	/// <item><description><c>in-progress</c> — the MCP response deadline fired while the backend kept
+	/// creating (<c>ApplicationToolSupport.CreateSectionInProgressResponse</c>);</description></item>
+	/// <item><description><c>unknown</c> — verification itself failed, so the insert MAY have landed
+	/// (<c>ApplicationSectionCreateException.SectionCreated == null</c>, mapped at
+	/// <c>ApplicationToolSupport.CreateSectionContextErrorResponse</c>). Latent today, because none of the
+	/// messages that carry it also carries a transient marker — but that is a property of the current
+	/// wording, not a guarantee, and one reworded message would turn it into a duplicate insert;</description></item>
+	/// <item><description><c>true</c> — DEFENSIVE ONLY. No current call site emits it: the one path that
+	/// could, <c>RecoverFromInsertTimeout</c>, returns early on a visible section and so reaches
+	/// <c>BuildTimeoutFailure</c> with <c>false</c> or <c>null</c> exclusively. Excluded anyway because
+	/// the value's own meaning is "the row is there".</description></item>
+	/// </list>
+	/// <c>false</c> is deliberately NOT here: it is the verified-absent outcome, and excluding it would
+	/// disable the gate for the section-create failures that are actually safe to repeat.
+	/// </summary>
+	/// <remarks>
+	/// These are the <c>create-app-section</c> analogue of <see cref="ApplicationCreateTimeoutMarker"/> and
+	/// <see cref="ApplicationAlreadyCreatedMarker"/>, and they matter for the same reason: the section
+	/// insert carries a client-generated id and <c>TryVerifySectionExists</c> matches on THAT id, so a
+	/// retry at the tool-call level generates a NEW id and inserts a SECOND section with the same caption
+	/// rather than recovering the first. The in-progress envelope says so in its own retry guidance, in
+	/// those words: "Do NOT retry create-app-section (a retry would create a duplicate section)". Enforced
+	/// explicitly rather than left to fall through on marker absence, because the in-progress answer is
+	/// produced by a deadline that a stand under OData-rebuild load is exactly what causes — so the
+	/// transient marker and this field can and do arrive in one payload.
+	/// </remarks>
+	internal static readonly string[] SectionAlreadyCreatedMarkers = [
+		"\"section-created\":\"in-progress\"",
+		"\"section-created\":\"unknown\"",
+		"\"section-created\":\"true\""
+	];
+
+	/// <summary>
 	/// The failure-shape marker the MCP tools use in their JSON envelope (<c>{"success":false,"error":...}</c>).
 	/// Matched against the NORMALIZED payload (see <see cref="NormalizeEscapedQuotes"/>) because the
 	/// payload text is JSON-inside-JSON: the tool's own JSON body is itself carried as a string inside the
@@ -182,10 +225,11 @@ internal static class TransientPlatformConditionRetryGate {
 	private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(15);
 
 	/// <summary>
-	/// Hard upper bound for the whole retry loop, regardless of attempt count. Kept genuinely above the
-	/// ~120s retry window (see <see cref="MaxAttempts"/>) so the attempt cap — not this deadline — is the
-	/// one that normally ends the loop; the deadline exists only to bound a pathological case where
-	/// individual attempts themselves run long.
+	/// Hard upper bound for the whole retry loop, regardless of attempt count. It is WALL-CLOCK and counts
+	/// the attempts themselves, not just the waits, so which of the two bounds ends the loop depends on how
+	/// long one attempt takes: for a fast call the attempt cap ends it after the ~120s of waiting, while
+	/// for a ~95s <c>create-app-section</c> the deadline is reached after only one or two extra full
+	/// attempts. Callers sizing their own CancellationTokenSource should budget against THIS number.
 	/// </summary>
 	private static readonly TimeSpan OverallDeadline = TimeSpan.FromMinutes(3);
 
@@ -288,6 +332,16 @@ internal static class TransientPlatformConditionRetryGate {
 				break;
 			}
 
+			// One line per retry, on purpose. A retry that silently succeeds turns a REAL intermittent
+			// regression wearing one of the transient shapes into a slow pass, and the concurrency test's
+			// overlap degrades into a staggered one without any assertion noticing. Both are visible in the
+			// CI log as a rising retry count; neither is visible without this line.
+			TestContext.Out.WriteLine(
+				$"[transient-retry] attempt {attempt} of {MaxAttempts - 1}: matched '{DescribeMatchedMarker(last)}' "
+				+ $"after {elapsedTimer.Elapsed.TotalSeconds:F0}s; "
+				+ (IsLoginRejection(last) && reauthenticateAsync is not null
+					? "re-authenticating before the next attempt."
+					: $"waiting {RetryDelay.TotalSeconds:F0}s before the next attempt."));
 			if (IsLoginRejection(last) && reauthenticateAsync is not null) {
 				await reauthenticateAsync(cancellationToken);
 			} else {
@@ -303,6 +357,30 @@ internal static class TransientPlatformConditionRetryGate {
 	private static bool OverallDeadlineReached(TimeSpan elapsed) => elapsed >= OverallDeadline;
 
 	/// <summary>
+	/// Names which of the transient signatures matched, for the retry log line. Reports the SAME order
+	/// <see cref="IsKnownTransientPlatformCondition"/> evaluates, so the name always identifies the
+	/// signature that actually caused the retry rather than the first one that happens to be present.
+	/// </summary>
+	private static string DescribeMatchedMarker(CallToolResult? callResult) {
+		string normalized = NormalizeEscapedQuotes(DescribePayload(callResult));
+		if (normalized.Contains(ODataRebuildMarker, StringComparison.Ordinal)) {
+			return ODataRebuildMarker;
+		}
+
+		if (HasLoginRejectionSignature(normalized)) {
+			return "login rejection";
+		}
+
+		if (normalized.Contains(HtmlPageInsteadOfJsonMarker, StringComparison.Ordinal)) {
+			return HtmlPageInsteadOfJsonMarker;
+		}
+
+		return normalized.Contains(RedirectedToLoginPageMarker, StringComparison.Ordinal)
+			? RedirectedToLoginPageMarker
+			: "unclassified";
+	}
+
+	/// <summary>
 	/// The exclusions that are enforced explicitly, checked BEFORE any marker match because for each of
 	/// them a transient marker can legitimately appear in the very same payload:
 	/// <see cref="ApplicationAlreadyCreatedMarker"/> and <see cref="ApplicationCreateTimeoutMarker"/> (the
@@ -315,7 +393,9 @@ internal static class TransientPlatformConditionRetryGate {
 	private static bool IsExcludedRealOutcome(string normalizedPayload) =>
 		normalizedPayload.Contains(ApplicationAlreadyCreatedMarker, StringComparison.Ordinal)
 		|| normalizedPayload.Contains(ApplicationCreateTimeoutMarker, StringComparison.Ordinal)
-		|| normalizedPayload.Contains(ContentionErrorClassMarker, StringComparison.Ordinal);
+		|| normalizedPayload.Contains(ContentionErrorClassMarker, StringComparison.Ordinal)
+		|| Array.Exists(SectionAlreadyCreatedMarkers,
+			marker => normalizedPayload.Contains(marker, StringComparison.Ordinal));
 
 	/// <summary>
 	/// A failure signal is required before any marker match counts as a known transient platform
