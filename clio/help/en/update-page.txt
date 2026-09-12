@@ -165,12 +165,13 @@ DESCRIPTION
     --mode replace (default) saves the body verbatim. --mode append loads the
     current schema body from the server and merges your incoming fragment into it.
     A viewConfigDiff entry is replaced only when both operation and name match one
-    of yours - and, for a remove, whether it targets properties. Incoming wins and
-    keeps the existing entry's position; every other existing operation is preserved
-    verbatim, including a second operation on a component you already target. One
-    exception: if your fragment supersedes an identity the page carries TWICE, only
-    the first is replaced and the later one is dropped, since keeping it would
-    re-apply stale values after your replacement. Handlers dedupe by request.
+    of yours - and, for a remove or a set, whether it targets properties. Incoming
+    wins and keeps the existing entry's position; every other existing operation
+    is preserved verbatim, including a second operation on a component you already
+    target. One exception: if your fragment supersedes an identity the page
+    carries TWICE, only the first is replaced and the later one is dropped, since
+    keeping it would re-apply stale values after your replacement. Handlers
+    dedupe by request.
     SCHEMA_CONVERTERS and SCHEMA_VALIDATORS entries merge by type key and
     incoming wins. The merged web body is rejected when a custom
     validator reference lacks a matching SCHEMA_VALIDATORS declaration;
@@ -186,9 +187,43 @@ DESCRIPTION
       remove whose name the body also sets, or also element-removes unless an
       insert re-creates the element. Fold the values into the insert, or use set,
       which runs after it. Reordering the array changes nothing. The save
-      still succeeds; --dry-run reports it too.
+      still succeeds; --dry-run reports it too, against the body that would
+      actually be written - so in append mode it also catches a pair formed
+      between your fragment and the server's body.
       Advisory only: a parent schema inserting the same name can make the
       transform apply after all, and clio cannot see the replacing chain.
+
+    APPEND DRY RUN:
+    In append mode --dry-run resolves the current server body, computes the
+    merge and returns without saving, reporting the outcome as appendProjection:
+    currentOperationCount, incomingOperationCount, projectedOperationCount
+    (compare it against the number you expect), addedOperationCount,
+    and replacedOperations / replacedOperationCount (replaced in place - not a
+    loss). Three DISTINCT loss channels, each with its own fix; two of them warn:
+      - droppedOperations: entries from the SERVER body not carried over (the
+        further-duplicate exception above). WARNS, one entry per component.
+      - viewConfigDiffApplied=false: the current body has no
+        SCHEMA_VIEW_CONFIG_DIFF marker pair, so every count describes an array
+        the write discards. WARNS; use --mode replace.
+      - collapsedIncomingOperations: entries from YOUR OWN fragment that a later
+        entry in the same fragment supersedes, since only the last spelling of an
+        identity survives. Reported as DATA ONLY, no warning - the fragment is
+        yours to read, so warning about your own input would be noise. Counted so
+        the totals can be reconciled.
+    Named lists are capped; counts are exact.
+    Two consequences: an append whose real save could not merge now FAILS the
+    dry run with the same error instead of reporting success (that response
+    carries dryRun: true, so it stays distinguishable from a failed real save);
+    and --mode replace
+    is unaffected - it writes verbatim, so there is nothing to project and no
+    extra round-trip is made. The same projection is returned on a real append
+    save.
+    appendProjection speaks for viewConfigDiff only. The sibling *_DIFF arrays
+    append unconditionally and cannot lose an entry. Handlers are NOT covered:
+    they dedupe by request, and the merge drops every current handler whose
+    request appears in your fragment - so a current body carrying one request
+    twice keeps neither and your fragment contributes one. Check handlers by
+    hand when that shape is possible.
     Append requires the diff form: a full-config body (the SCHEMA_VIEW_MODEL_CONFIG
     / SCHEMA_MODEL_CONFIG markers, instead of the *_DIFF markers) cannot be merged
     and is rejected with an actionable hint — use --mode replace for such a body.

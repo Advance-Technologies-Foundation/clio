@@ -1,4 +1,4 @@
-﻿namespace Clio.Command {
+namespace Clio.Command {
 	using System;
 	using System.Collections.Generic;
 	using System.IO;
@@ -206,20 +206,39 @@
 			EditableSchemaContext context,
 			Dictionary<string, string> explicitResources,
 			out PageUpdateResponse response) {
-			if (string.Equals(options.Mode, AppendMode, StringComparison.OrdinalIgnoreCase)) {
+			// ENG-96262 / GH-1150: the merge below was already computed here and thrown away (`out _`), so a
+			// dry run reported `success` while naming nothing the write would change, and its body checks
+			// inspected the INCOMING fragment rather than the body that would be saved. Both now use the
+			// resolved result.
+			string projectedBody = options.Body;
+			PageAppendProjection projection = null;
+			if (IsAppendMode(options)) {
 				if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject currentSchema, out response)) return false;
-				if (!TryResolveBodyToWrite(currentSchema, options, out _, out _, out response)) return false;
+				if (!TryResolveBodyToWrite(currentSchema, options, out projectedBody, out projection, out response)) {
+					// The merge failure is newly reachable from a dry run, so the failure envelope has to say
+					// which call it came from. Without this it is byte-identical to a failed real save and the
+					// caller cannot tell whether anything was written.
+					response.DryRun = true;
+					response.SchemaName = options.SchemaName;
+					return false;
+				}
 			}
 			response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
+			response.AppendProjection = projection;
 			// A dry run is exactly the call that asks "is this body right before I write it?", and the
-			// inert-operation check is a pure function of one body, so it belongs here too. Honest limit: in
-			// append mode the projected merge result IS computed just above but deliberately discarded
-			// (`out _`), so this still sees only the INCOMING fragment - a pair formed by the server's insert
-			// plus your merge surfaces on the real save. Feeding the projected body in is ENG-96262's job,
-			// not a change to smuggle into a merge resolution.
+			// inert-operation check is a pure function of one body. It now reads the PROJECTED body, so a pair
+			// formed by the server's insert plus the caller's merge is caught here rather than on the save.
+			//
+			// PageInsertDowngradeDetector is deliberately NOT run: it cannot fire on this path. It warns when
+			// the prior body introduced a component with an `insert` that the final body drops for a
+			// transform, and an append never produces that shape - a current `insert X` is only ever replaced
+			// by an incoming entry of the SAME identity (another `insert X`), and every non-matching current
+			// entry is carried over. In replace mode there is no current body here to compare against at all.
+			// Calling it would be dead code implying coverage it cannot give.
 			response.Warnings = CombineWarnings(
 				BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources),
-				PageInertOperationDetector.Detect(options.Body));
+				BuildProjectedLossWarnings(projection),
+				PageInertOperationDetector.Detect(projectedBody));
 			return true;
 		}
 
@@ -231,7 +250,7 @@
 			out PageUpdateResponse response) {
 			if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
 			if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite,
-				out IReadOnlyList<string> mergeWarnings, out response)) return false;
+				out PageAppendProjection projection, out response)) return false;
 			IReadOnlyList<string> downgradeWarnings = PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
 			IReadOnlyList<string> inertWarnings = PageInertOperationDetector.Detect(bodyToWrite);
 			List<string> registeredKeys = UpdateSchemaBody(schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
@@ -239,10 +258,56 @@
 			if (captionError != null) { response = captionError; return false; }
 			if (!TrySaveSchema(schemaToSave, out response)) return false;
 			response = CreateSuccessResponse(options, dryRun: false, registeredKeys);
-			response.Warnings = CombineWarnings(mergeWarnings, downgradeWarnings, inertWarnings);
+			// The save reports the same projection: a caller who skipped the dry run has no other place to
+			// learn what the merge did.
+			response.AppendProjection = projection;
+			response.Warnings = CombineWarnings(
+				BuildProjectedLossWarnings(projection), downgradeWarnings, inertWarnings);
 			PopulatePostSaveChecksum(options, context, response);
 			AppendDesignerPresenceWarning(options, response);
 			return true;
+		}
+
+		/// <summary>
+		/// Whether the caller asked for the incoming body to be merged with the schema's current body
+		/// rather than written verbatim. One predicate, because three separate call sites now branch on it -
+		/// whether the merge runs, whether marker integrity is validated, and whether a dry run fetches the
+		/// server's body at all - and they have to stay in lockstep.
+		/// </summary>
+		private static bool IsAppendMode(PageUpdateOptions options) =>
+			string.Equals(options.Mode, AppendMode, StringComparison.OrdinalIgnoreCase);
+
+		/// <summary>
+		/// Turns the losses an append merge can inflict on the <c>viewConfigDiff</c> array into advisory
+		/// warnings: the per-identity superseded-drop sentences the merge itself produced, and the case
+		/// where the merged array never reaches the written body at all.
+		/// </summary>
+		/// <remarks>
+		/// Two channels warn, a third deliberately does not. A REPLACEMENT is not a loss - the operation
+		/// survives carrying the caller's values - and warning on it would fire on most appends. A
+		/// COLLAPSED INCOMING entry is a real loss but the fragment is the caller's own, they can read it,
+		/// and warning about their own input would be noise; it is reported as data in
+		/// <c>appendProjection.collapsedIncomingOperations</c> instead, which is what keeps the totals
+		/// reconcilable. The superseded-drop sentences are built by the merge rather than rebuilt here, so
+		/// the wording and the one-per-identity rule live in one place.
+		/// </remarks>
+		private static IReadOnlyList<string> BuildProjectedLossWarnings(PageAppendProjection projection) {
+			if (projection is null) {
+				return null;
+			}
+			List<string> warnings = null;
+			if (projection.SupersededDropWarnings is { Count: > 0 }) {
+				(warnings ??= []).AddRange(projection.SupersededDropWarnings);
+			}
+			if (!projection.ViewConfigDiffApplied) {
+				(warnings ??= []).Add(
+					"The page's current body has no SCHEMA_VIEW_CONFIG_DIFF marker pair, so the merged " +
+					"viewConfigDiff array cannot be written back and EVERY viewConfigDiff operation in the " +
+					"fragment is discarded - the counts in appendProjection describe an array the write throws " +
+					"away. Use --mode replace with a body that carries the marker pair. " +
+					"See docs://mcp/guides/page-modification.");
+			}
+			return warnings;
 		}
 
 		/// <summary>
@@ -391,15 +456,15 @@
 		}
 
 		private static bool TryResolveBodyToWrite(JObject schemaToSave, PageUpdateOptions options,
-			out string bodyToWrite, out IReadOnlyList<string> mergeWarnings, out PageUpdateResponse response) {
-			mergeWarnings = null;
+			out string bodyToWrite, out PageAppendProjection projection, out PageUpdateResponse response) {
+			projection = null;
 			bodyToWrite = options.Body;
 			response = null;
-			if (string.Equals(options.Mode, AppendMode, StringComparison.OrdinalIgnoreCase)) {
+			if (IsAppendMode(options)) {
 				string currentBody = schemaToSave["body"]?.ToString();
 				if (!string.IsNullOrWhiteSpace(currentBody)) {
 					try {
-						bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body, out mergeWarnings);
+						bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body, out projection);
 					} catch (Exception ex) {
 						// A full-config rejection (identified by its dedicated exception type, not by re-parsing the
 						// message) is already a complete, self-contained sentence — it names the offending body
@@ -416,7 +481,7 @@
 					}
 				}
 			}
-			if (!string.Equals(options.Mode, AppendMode, StringComparison.OrdinalIgnoreCase) ||
+			if (!IsAppendMode(options) ||
 				PageSchemaTypeExtensions.FromBody(bodyToWrite) == PageSchemaType.Mobile) {
 				return true;
 			}
@@ -991,7 +1056,7 @@
 			// body is valid JavaScript, so it would save, after which PageSchemaSectionReader can no longer
 			// extract sections and append-merge is dead on that page. ResolveSyntaxFailure already treats
 			// markers as the "is this still a recognizable page" test for the same reason.
-			bool isAppendMode = string.Equals(options.Mode, AppendMode, StringComparison.OrdinalIgnoreCase);
+			bool isAppendMode = IsAppendMode(options);
 			if (!isAppendMode) {
 				SchemaValidationResult integrityResult = SchemaValidationService.ValidateMarkerIntegrity(options.Body);
 				if (!integrityResult.IsValid) {

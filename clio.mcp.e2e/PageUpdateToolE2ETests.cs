@@ -14,6 +14,7 @@ using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
+using Newtonsoft.Json.Linq;
 
 namespace Clio.Mcp.E2E;
 
@@ -300,6 +301,150 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		warningsField.Description.Should().Contain("never retry on a warning",
 			because: "the save already succeeded; an agent that reads an advisory finding as a failure will re-save and can trip conflict detection");
 	}
+
+	[Test]
+	[Description("GitHub #1150: the update-page contract served over the real MCP transport states that an append dry run projects the merge and returns `appendProjection`, and declares that field in the output envelope. update-page is non-resident, so this curated string is the ENTIRE description an agent receives — the tool's [Description] attribute is never merged in.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page contract states that an append dry run projects the merge")]
+	[AllureDescription("Starts the real clio MCP server, fetches the update-page contract through get-tool-contract, and verifies the served 'dry-run' field states that append mode is not an offline check — it runs the real merge and returns appendProjection — and that the output envelope declares appendProjection with its projected count and dropped-operation fields. Guards against the contract rotting back to the bare 'Validate without saving', the claim the issue reported as useless: a dry run that names nothing the write would change. No environment-name is supplied: contract resolution must not touch an environment.")]
+	public async Task PageUpdateTool_Contract_Should_State_That_An_Append_DryRun_Projects_The_Merge() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult contractResult = await arrangeContext.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { ToolName }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+
+		// Assert
+		contractResult.IsError.Should().NotBeTrue(
+			because: "resolving a tool contract is a structured read, not an MCP transport error");
+		ToolContractDefinition pageUpdate = contracts.Tools!.Single(definition => definition.Name == ToolName);
+		ToolContractField dryRunField = pageUpdate.InputSchema.Properties.Single(field => field.Name == "dry-run");
+		dryRunField.Description.Should().Contain("appendProjection",
+			because: "an agent has to know a dry run answers what the write would change, or it will keep treating success as the whole answer — the #1150 report");
+		dryRunField.Description.Should().Contain("not an offline check",
+			because: "an append dry run now costs a schema fetch and can fail, and a caller planning around a free local validation must be told on the wire");
+		ToolContractField projectionField =
+			pageUpdate.OutputContract.Fields.Single(field => field.Name == "appendProjection");
+		projectionField.Description.Should().Contain("projectedOperationCount",
+			because: "the count the reporter compared against their expected total is the field that makes the projection actionable");
+		projectionField.Description.Should().Contain("droppedOperations",
+			because: "a loss from the server body must be named in the envelope, not left for the caller to derive from the counts");
+		projectionField.Description.Should().Contain("collapsedIncomingOperations",
+			because: "the caller-side loss channel must reach an agent end-to-end through the real MCP transport, per the AGENTS.md MCP e2e rule");
+		projectionField.Description.Should().Contain("viewConfigDiffApplied",
+			because: "the case where every count describes a discarded array is the one that makes a confident projection dangerous");
+	}
+
+	[Test]
+	[Description("GitHub #1150 behavioural coverage: an append dry-run over the real MCP transport returns a populated appendProjection for a seeded page and leaves the body untouched. Pins the wire serialization of the nested object (reflection-based; no JsonSerializerContext entry exists) and the no-write invariant that the unit suite can only assert against a substitute.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page append dry-run returns a projection and writes nothing")]
+	[AllureDescription("Reads the seeded page ClioMcp_BlankPageToSave with get-page, submits a one-operation append fragment through update-page with mode=append and dry-run=true, and verifies the structured response carries appendProjection with the seeded page's own operation count plus one, dryRun=true, and no error. Then re-reads the page and asserts the stored body is byte-identical, proving the dry run wrote nothing end-to-end rather than only against a mocked application client. Non-destructive by construction: a dry run never reaches TrySaveSchema, so this needs no AllowDestructiveMcpTests opt-in.")]
+	public async Task PageUpdateTool_Should_Return_AppendProjection_For_An_Append_DryRun_Without_Writing() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		const string savePage = "ClioMcp_BlankPageToSave";
+		string bodyBefore = await ReadRawBodyAsync(arrangeContext, environmentName, savePage);
+		int operationsBefore = CountViewConfigDiffOperations(bodyBefore);
+		string fragment = BuildAppendFragment(savePage);
+
+		// Act
+		CallToolResult updateResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = savePage,
+					["body"] = fragment,
+					["mode"] = "append",
+					["dry-run"] = true,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response =
+			EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(updateResult);
+
+		// Assert
+		updateResult.IsError.Should().NotBeTrue(
+			because: "an append dry run against a seeded diff-form page is a structured read, not a transport error");
+		response.Success.Should().BeTrue(
+			because: $"the fragment is a valid append against '{savePage}'. Error: {response.Error}");
+		response.DryRun.Should().BeTrue(because: "the caller asked for validation only");
+		response.AppendProjection.Should().NotBeNull(
+			because: "GH-1150: the whole point is that an append dry run reports what the write would change, and this is the only test proving the nested object survives MCP serialization");
+		response.AppendProjection.CurrentOperationCount.Should().Be(operationsBefore,
+			because: "the projection must describe the page's real stored body, which only a live fetch can supply");
+		response.AppendProjection.ProjectedOperationCount.Should().Be(operationsBefore + 1,
+			because: "the fragment adds one uniquely named operation, so the projected total is the current count plus one");
+		response.AppendProjection.AddedOperationCount.Should().Be(1,
+			because: "the fragment's single entry introduces a new identity rather than replacing one");
+		response.AppendProjection.ViewConfigDiffApplied.Should().BeTrue(
+			because: "a seeded diff-form page carries the marker pair, so the merged array would reach the written body");
+
+        // Assert the dry run wrote nothing, read back over the same transport
+		string bodyAfter = await ReadRawBodyAsync(arrangeContext, environmentName, savePage);
+		bodyAfter.Should().Be(bodyBefore,
+			because: "a dry run must never reach TrySaveSchema; a unit test can only assert this against a substitute, so the wire path needs its own proof");
+	}
+
+	/// <summary>Reads a page's raw stored body through <c>get-page</c> and returns its text.</summary>
+	private static async Task<string> ReadRawBodyAsync(
+			ArrangeContext arrangeContext, string environmentName, string schemaName) {
+		CallToolResult getResult = await arrangeContext.Session.CallToolAsync(
+			PageGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = schemaName,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageGetResponse getResponse = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(getResult);
+		getResponse.Success.Should().BeTrue(
+			because: $"the append projection can only be checked against a page get-page can read. Error: {getResponse.Error}");
+		getResponse.Files?.BodyFile.Should().NotBeNullOrWhiteSpace(
+			because: "get-page must materialize the raw body so the projection can be compared against it");
+		return await File.ReadAllTextAsync(getResponse.Files!.BodyFile);
+	}
+
+	/// <summary>
+	/// Counts the <c>viewConfigDiff</c> operations in a raw web body, so the expected projection is derived
+	/// from the seeded page rather than hardcoded against a fixture that can drift.
+	/// </summary>
+	private static int CountViewConfigDiffOperations(string body) {
+		Match match = Regex.Match(
+			body,
+			@"/\*\*SCHEMA_VIEW_CONFIG_DIFF\*/(?<content>[\s\S]*?)/\*\*SCHEMA_VIEW_CONFIG_DIFF\*/",
+			RegexOptions.CultureInvariant,
+			TimeSpan.FromSeconds(5));
+		match.Success.Should().BeTrue(
+			because: "the seeded page must be in diff form for an append to be meaningful");
+		return JArray.Parse(match.Groups["content"].Value.Trim()).Count;
+	}
+
+	/// <summary>Builds a minimal diff-form append fragment adding one uniquely named container.</summary>
+	private static string BuildAppendFragment(string schemaName) =>
+		"define(\"" + schemaName + "\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrClioE2EProjectionProbe\"," +
+		"\"parentName\":\"MainContainer\",\"propertyName\":\"items\",\"index\":0," +
+		"\"values\":{\"type\":\"crt.FlexContainer\",\"direction\":\"column\",\"items\":[]}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+		"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
 	[Test]
 	[Description("update-page fails fast at the AST lint gate when a custom converter uses the reserved `crt.*` prefix — the lint rule `converter-crt-prefix-reserved` is unique to the AST pass (the regex layer treats `crt.*` as a valid vendor prefix), so this body is what proves the lint pass surfaces through the real MCP transport.")]
