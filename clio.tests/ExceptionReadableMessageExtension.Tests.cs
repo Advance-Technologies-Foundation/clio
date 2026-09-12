@@ -323,6 +323,61 @@ public class ExceptionReadableMessageExtensionTestCase
 			because: "a secret-free line must not be altered, re-wrapped or truncated by the redaction wrapper");
 	}
 
+	[Test]
+	[Description(
+		"Issue #1505 follow-up: a local absolute path in clio's OWN prose must survive verbatim - the full "
+		+ "Redact turned `clio compress <missing dir>` into \"Could not find a part of the path "
+		+ "'[redacted-path]'.\", an error that names nothing.")]
+	public void GetReadableMessageException_ShouldKeepLocalPath_WhenMessageQuotesAnAbsolutePath() {
+		// Arrange
+		const string message = "Could not find a part of the path '/Users/x/y.json'.";
+		var exception = new InvalidOperationException(message);
+
+		// Act
+		string result = exception.GetReadableMessageException();
+
+		// Assert
+		result.Should().Be(message,
+			because: "a path on the operator's own terminal is the diagnosis, not a secret to hide from them");
+	}
+
+	[Test]
+	[Description(
+		"Issue #1505 follow-up: the operator's own environment URL and host:port must survive verbatim, so a "
+		+ "connectivity error still names the environment that could not be reached.")]
+	public void GetReadableMessageException_ShouldKeepEnvironmentUrl_WhenMessageQuotesAnEndpoint() {
+		// Arrange
+		const string message = "Cannot connect to http://ts1-core-dev04:88/site";
+		var exception = new InvalidOperationException(message);
+
+		// Act
+		string result = exception.GetReadableMessageException();
+
+		// Assert
+		result.Should().Be(message,
+			because: "a credential-free URL naming the operator's own stand must not be replaced by a placeholder");
+	}
+
+	[Test]
+	[Description(
+		"Issue #1505 follow-up: a credential embedded in a URL authority is still a credential - the userinfo "
+		+ "is removed while the host survives, so the line stays diagnosable.")]
+	public void GetReadableMessageException_ShouldRedactUriUserInfoOnly_WhenUrlCarriesCredentials() {
+		// Arrange
+		var exception = new InvalidOperationException("Request to https://user:pw@host.example.com/x failed");
+
+		// Act
+		string result = exception.GetReadableMessageException();
+
+		// Assert
+		result.Should().NotContain("user:pw",
+			because: "credentials embedded in a URL authority must never reach the console in the clear");
+		result.Should().Contain("host.example.com/x",
+			because: "the host and path must survive so the operator still knows which endpoint failed");
+		result.Should().Contain("[redacted]@",
+			because: "only the userinfo prefix is replaced, by the redactor's stable placeholder");
+	}
+
 	/// <summary>
 	/// Builds a real <see cref="HttpWebResponse"/> carrying the supplied status code without opening a
 	/// socket. On modern .NET <see cref="HttpWebResponse"/> has no usable public constructor and its

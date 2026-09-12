@@ -36,17 +36,19 @@ internal static class ExceptionReadableMessageExtension
 		// (ClioRunTool.RedactFailureContent) redacted the same text. So the composed non-debug line goes
 		// through the redactor once, here, for every arm.
 		//
-		// Scrub (= SensitiveErrorTextRedactor.Redact), NOT UntrustedText.ForConsole: ForConsole is the
-		// rendering for text that is ENTIRELY server-authored - it also flattens line breaks and clamps at
-		// 300 characters, which is right for a platform fault excerpt and wrong here, where most of what
-		// this renderer prints is clio's own multi-line prose for ~20 commands. Scrub replaces the known
-		// secret shapes and nothing else, so a message with no secrets comes back byte-identical. It is
-		// also exactly what the MCP path applies, which is the parity the issue asks for.
+		// ScrubCredentials, NOT Scrub and NOT ForConsole. The other two are the renderings for text a SERVER
+		// authored: ForConsole additionally flattens line breaks and clamps at 300 characters, and both
+		// scrub absolute paths, host:port endpoints and e-mail addresses. That is right for an excerpt
+		// bound for an MCP envelope, a log pasted into a ticket or a third-party model - and wrong here,
+		// where the reader is the person who typed the command and the path IS the diagnosis. Measured
+		// while this wrapper was still Scrub: `clio compress /Users/<user>/nope1505dir -d /tmp/x.gz`
+		// printed "Could not find a part of the path '[redacted-path]'." - an error naming nothing.
+		// ScrubCredentials runs the credential rules only (URI userinfo, JWT, Bearer, key=value secret
+		// pairs), so the server-echoed password above is still replaced and a secret-free line comes back
+		// byte-identical.
 		//
-		// The debug path above is untouched on purpose: --debug is the #1333 bridge back to the raw text,
-		// and it is the reason redacting an absolute path out of, say, a FileNotFoundException line here
-		// costs the operator nothing they cannot get back.
-		return UntrustedText.Scrub(exception switch
+		// The debug path above is untouched on purpose: --debug is the #1333 bridge back to the raw text.
+		return UntrustedText.ScrubCredentials(exception switch
 		{
 			AggregateException ex when ex.InnerException != null
 				=> ex.InnerException.GetReadableMessageException(debug),

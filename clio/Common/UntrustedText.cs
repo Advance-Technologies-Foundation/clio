@@ -49,4 +49,15 @@ public static class UntrustedText {
 	/// </summary>
 	/// <param name="text">The raw, possibly-sensitive text.</param>
 	public static string Scrub(string text) => SensitiveErrorTextRedactor.Redact(text);
+
+	/// <summary>
+	/// The CONSOLE rendering for text whose PROSE clio itself wrote: credential shapes only - embedded URI
+	/// userinfo, JWT and <c>Bearer</c> values, <c>key=value</c> secret pairs. Absolute paths, scheme-less
+	/// <c>host:port</c> endpoints, e-mail addresses and plain URLs are left intact, because on the
+	/// operator's own terminal they are the diagnosis rather than a leak (issue #1505). Use
+	/// <see cref="Scrub"/> instead for text a server authored, or for anything an MCP envelope, a log or a
+	/// third-party model will read.
+	/// </summary>
+	/// <param name="text">The raw text of a console line clio composed itself.</param>
+	public static string ScrubCredentials(string text) => SensitiveErrorTextRedactor.RedactCredentials(text);
 }

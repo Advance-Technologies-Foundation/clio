@@ -36,13 +36,25 @@ Since issue #1505 the rule covers that renderer's **non-carrier** arms too: a fa
 `IServerDetailCarrier` can still carry server prose (`SelectQueryHelper` /
 `DataServiceSelectResponse` throw a plain `InvalidOperationException("SelectQuery failed: " +
 errorInfo.message)`), and the arms returned it verbatim while the MCP path redacted the same text.
-The whole composed non-debug line now goes through `UntrustedText.Scrub` once. That variant, not
-`ForConsole`: these arms render mostly clio-authored, often multi-line prose for ~20 commands, and
-`ForConsole` additionally flattens line breaks and clamps at 300 characters — right for an excerpt
-that is entirely server-authored, wrong for a composed CLI line. `Scrub` replaces the known secret
-shapes only, so a secret-free message is byte-identical. The debug path stays `exception.ToString()`
-unredacted, which is what makes redacting an absolute path out of, for example, a
-`FileNotFoundException` line cost the operator nothing.
+The whole composed non-debug line now goes through `UntrustedText.ScrubCredentials` once.
+
+**Credentials only, and deliberately so.** That line is composed mostly of clio's OWN prose for ~20
+commands, and its only reader is the person who typed the command — for whom their own local path,
+their own environment URL, their own `host:port` and their own e-mail address are the diagnosis, not
+a leak. The first attempt used the full `Scrub`, and `clio compress /Users/<user>/nope1505dir -d
+/tmp/x.gz` printed `Could not find a part of the path '[redacted-path]'.` — an error that names
+nothing. `ForConsole` is wrong here for a second reason on top of that: it also flattens line breaks
+and clamps at 300 characters, which is right for a platform fault excerpt and wrong for a composed
+CLI line.
+
+So the third rendering exists: `UntrustedText.ScrubCredentials` →
+`SensitiveErrorTextRedactor.RedactCredentials`, which runs `UriRegex` (through a match evaluator that
+removes only `user:pass@` and keeps the host), `JwtRegex`, `BearerTokenRegex` and
+`CredentialPairRegex`, and does NOT run the path, `host:port` or e-mail rules. A secret-free message
+is byte-identical. The distinction is the SINK, not the text: the moment the same line is copied into
+an MCP envelope, a log an operator pastes into a ticket, or a third-party model's context, a path and
+a host ARE a leak and the full `Scrub`/`Fenced` rules apply. The debug path stays
+`exception.ToString()` unredacted.
 
 The single exception is a plain `Success == false` whose `ErrorMessage` is the platform's own
 validation prose ("Column 'Name' is required") — no fixed sentence can replace it without destroying
@@ -76,7 +88,8 @@ So a failure composed from server prose carries **both** renderings and each sin
 | Rendering | Produced by | Read by |
 | --- | --- | --- |
 | fenced | `UntrustedText.Fenced` → `SensitiveErrorTextRedactor.RedactUntrustedOrNull` | MCP envelope fields, `WriteDebug` (which MCP mode still captures) |
-| unfenced | `UntrustedText.ForConsole` → `SensitiveErrorTextRedactor.RedactForConsoleOrNull` | `ILogger.WriteError` lines that are not MCP-visible, `GetReadableMessageException` at default verbosity |
+| unfenced | `UntrustedText.ForConsole` → `SensitiveErrorTextRedactor.RedactForConsoleOrNull` | `ILogger.WriteError` lines that are not MCP-visible, a carrier's `ConsoleMessage` |
+| credentials only | `UntrustedText.ScrubCredentials` → `SensitiveErrorTextRedactor.RedactCredentials` | `GetReadableMessageException`'s non-carrier arms at default verbosity (issue #1505) |
 
 `ServerReportedFailureText.ConsoleCause` / `ComposeConsoleMessage` and
 `IConsoleRenderedFailure.ConsoleMessage` (implemented by `DataProviderFailureException`) are the seams.
