@@ -55,3 +55,19 @@ install a number is advice and must not.
 The regression guard is an inverse test: `FlowLabelSurfaces_ShouldNameNoPackageVersion` in
 `clio.tests/Common/BundledProcessBuilderPackageTests.cs` asserts these surfaces match no four-part
 version at all, because a number removed on purpose is otherwise free to come back looking helpful.
+
+**The counter-example is real, not hypothetical, and it is measured.** A reviewer left this as the one
+open question on the change: does any archive numbered ABOVE the capability floor actually lack the
+member? It does. Counted over the tags in the CrtProcessBuilder repository on 2026-09-10:
+
+```
+crtprocessbuilder-1.6.1.2   a115cc75   [DataMember(Name = "label")] declarations: 0
+crtprocessbuilder-1.6.1.4   9c86d9b0   [DataMember(Name = "label")] declarations: 3
+```
+
+1.6.1.2 is higher than the 1.6.0.8 the member first shipped in, and carries none of it - the 1.6.1.x
+line was cut from a branch that did not have the label work. The package's own default branch has 0 as
+well. So a reader on 1.6.1.2 satisfies "1.6.0.8 or newer" by arithmetic and still has the field
+discarded silently: the qualitative wording is not a stylistic improvement, it is the only wording that
+is TRUE. (Tags 1.6.1.0, 1.6.1.1 and 1.6.1.3 do not exist - one was replaced, one was burned by an
+aborted rebundle - so 1.6.1.2 is the whole population below 1.6.1.4.)

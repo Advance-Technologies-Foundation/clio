@@ -3739,7 +3739,7 @@ stories:
     feature: "eng-91853-gateways-and-flows"
     repo: "clio + workspace/ProcessBuilder + clio-knowledge"
     size: M
-    status: review
+    status: done
     pr: https://github.com/Advance-Technologies-Foundation/clio/pull/1414
     prs:
       - https://github.com/Advance-Technologies-Foundation/clio/pull/1414
