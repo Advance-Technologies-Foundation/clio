@@ -27,7 +27,7 @@ public class CallServiceCommandResponseContextTests : BaseCommandTests<CallServi
 		//The URL is built from the NORMALIZED path, which is also the path the response context is
 		//derived from - stubbing the raw option value would miss a case carrying a 0/ prefix.
 		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(url);
-		applicationClient.ExecutePostRequest(url, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		applicationClient.ExecuteNonReplayablePostRequest(url, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(response);
 		CallServiceCommand command = new(applicationClient, new EnvironmentSettings(), serviceUrlBuilder,
 			Substitute.For<IFileSystem>());

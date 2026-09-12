@@ -59,6 +59,10 @@ internal sealed class ApplicationClientLease(IApplicationClient client) : IOwned
 		CancellationToken cancellationToken = default) =>
 		Extended.ExecutePostRequestAsync(url, requestData, requestTimeout, maxAttempts, delaySec, cancellationToken);
 
+	public string ExecuteNonReplayablePostRequest(string url, string requestData,
+		int requestTimeout = Timeout.Infinite, int maxAttempts = 1, int delaySec = 1) =>
+		_client.ExecuteNonReplayablePostRequest(url, requestData, requestTimeout, maxAttempts, delaySec);
+
 	public string ExecutePatchRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int maxAttempts = 1, int delaySec = 1) =>
 		_client.ExecutePatchRequest(url, requestData, requestTimeout, maxAttempts, delaySec);

@@ -54,7 +54,7 @@ internal class ReauthExecutorTests {
 		string result = sut.Execute(() => {
 			callCount++;
 			return "{\"success\":true}";
-		}, ReauthExecutor.IsSessionExpiredResponse);
+		}, ReauthExecutor.IsSessionExpiredResponse, replayAllowed: true);
 
 		// Assert
 		result.Should().Be("{\"success\":true}",
@@ -75,7 +75,7 @@ internal class ReauthExecutorTests {
 		string[] responses = { LoginPageBody, "{\"ok\":true}" };
 
 		// Act
-		string result = sut.Execute(() => responses[callCount++], ReauthExecutor.IsSessionExpiredResponse);
+		string result = sut.Execute(() => responses[callCount++], ReauthExecutor.IsSessionExpiredResponse, replayAllowed: true);
 
 		// Assert
 		result.Should().Be("{\"ok\":true}",
@@ -93,7 +93,7 @@ internal class ReauthExecutorTests {
 		ReauthExecutor sut = CreateExecutor(() => throw new InvalidOperationException("login failed"));
 
 		// Act
-		Action act = () => sut.Execute(() => LoginPageBody, ReauthExecutor.IsSessionExpiredResponse);
+		Action act = () => sut.Execute(() => LoginPageBody, ReauthExecutor.IsSessionExpiredResponse, replayAllowed: true);
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(
@@ -110,7 +110,7 @@ internal class ReauthExecutorTests {
 
 		// Act — Execute observes the HTML kick-out, enters the reauth path, and the
 		// throwing Login propagates out without the bump statement executing.
-		Action act = () => sut.Execute(() => LoginPageBody, ReauthExecutor.IsSessionExpiredResponse);
+		Action act = () => sut.Execute(() => LoginPageBody, ReauthExecutor.IsSessionExpiredResponse, replayAllowed: true);
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(
@@ -131,7 +131,7 @@ internal class ReauthExecutorTests {
 		string[] responses = { LoginPageBody, "{}" };
 
 		// Act
-		sut.Execute(() => responses[callCount++], ReauthExecutor.IsSessionExpiredResponse);
+		sut.Execute(() => responses[callCount++], ReauthExecutor.IsSessionExpiredResponse, replayAllowed: true);
 
 		// Assert
 		sut.LoginVersion.Should().Be(versionBefore + 1,
@@ -161,11 +161,11 @@ internal class ReauthExecutorTests {
 		string Call() => Volatile.Read(ref serverAuthenticated) ? "{}" : LoginPageBody;
 
 		// Act
-		Task<string> a = Task.Run(() => sut.Execute(Call, ReauthExecutor.IsSessionExpiredResponse));
+		Task<string> a = Task.Run(() => sut.Execute(Call, ReauthExecutor.IsSessionExpiredResponse, replayAllowed: true));
 		aEnteredLogin.Wait(TimeSpan.FromSeconds(2));
 		// A is now parked inside Login() while holding the reauth lock with versionAtStart
 		// still equal to the executor's current version.
-		Task<string> b = Task.Run(() => sut.Execute(Call, ReauthExecutor.IsSessionExpiredResponse));
+		Task<string> b = Task.Run(() => sut.Execute(Call, ReauthExecutor.IsSessionExpiredResponse, replayAllowed: true));
 		// Flip the simulated server state to authenticated BEFORE releasing A, so that the
 		// retry call() returns JSON regardless of which thread reaches it first.
 		Volatile.Write(ref serverAuthenticated, true);
@@ -205,9 +205,9 @@ internal class ReauthExecutorTests {
 		}
 
 		// Act — three successive Execute calls, each starting with an invalidated session.
-		string r1 = sut.Execute(Call, ReauthExecutor.IsSessionExpiredResponse);
-		string r2 = sut.Execute(Call, ReauthExecutor.IsSessionExpiredResponse);
-		string r3 = sut.Execute(Call, ReauthExecutor.IsSessionExpiredResponse);
+		string r1 = sut.Execute(Call, ReauthExecutor.IsSessionExpiredResponse, replayAllowed: true);
+		string r2 = sut.Execute(Call, ReauthExecutor.IsSessionExpiredResponse, replayAllowed: true);
+		string r3 = sut.Execute(Call, ReauthExecutor.IsSessionExpiredResponse, replayAllowed: true);
 
 		// Assert
 		r1.Should().Be("{\"ok\":true}",
@@ -232,7 +232,7 @@ internal class ReauthExecutorTests {
 		string result = sut.Execute(() => {
 			callCount++;
 			return LoginPageBody;
-		}, ReauthExecutor.IsSessionExpiredResponse);
+		}, ReauthExecutor.IsSessionExpiredResponse, replayAllowed: true);
 
 		// Assert
 		result.Should().Be(LoginPageBody,
@@ -244,13 +244,59 @@ internal class ReauthExecutorTests {
 	}
 
 	[Test]
+	[Description("Execute re-authenticates but does NOT re-issue the call when replay is not allowed, and returns the original unauthorized response")]
+	public void Execute_ShouldReauthWithoutReplaying_WhenReplayIsNotAllowed() {
+		// Arrange
+		int loginCallCount = 0;
+		int callCount = 0;
+		ReauthExecutor sut = CreateExecutor(() => loginCallCount++);
+
+		// Act
+		string result = sut.Execute(() => {
+			callCount++;
+			return LoginPageBody;
+		}, ReauthExecutor.IsSessionExpiredResponse, replayAllowed: false);
+
+		// Assert
+		callCount.Should().Be(1,
+			because: "a write must be issued exactly once - the body-based predicate cannot prove the write did not commit, so a replay could commit it twice");
+		loginCallCount.Should().Be(1,
+			because: "the session is still refreshed so the caller's next request succeeds; only the replay is withheld");
+		result.Should().Be(LoginPageBody,
+			because: "without a replay there is no second response, so the original one must reach the caller for classification");
+	}
+
+	[Test]
+	[Description("Execute rethrows the JsonException without re-issuing the call when replay is not allowed")]
+	public void Execute_ShouldRethrowWithoutReplaying_WhenCallThrowsJsonExceptionAndReplayIsNotAllowed() {
+		// Arrange
+		int loginCallCount = 0;
+		int callCount = 0;
+		ReauthExecutor sut = CreateExecutor(() => loginCallCount++);
+
+		// Act
+		Action act = () => sut.Execute<string>(() => {
+			callCount++;
+			throw new JsonReaderException("'<' is an invalid start of a value.");
+		}, ReauthExecutor.IsSessionExpiredResponse, replayAllowed: false);
+
+		// Assert
+		act.Should().Throw<JsonReaderException>(
+			because: "the caller must see the failure rather than have a possibly-committed write repeated");
+		callCount.Should().Be(1,
+			because: "the non-replayable call must run exactly once even on the exception path");
+		loginCallCount.Should().Be(1,
+			because: "re-authentication still runs so the next request works; only the replay is withheld");
+	}
+
+	[Test]
 	[Description("Execute throws ArgumentNullException when the call delegate is null")]
 	public void Execute_ShouldThrowArgumentNullException_WhenCallIsNull() {
 		// Arrange
 		ReauthExecutor sut = CreateExecutor(() => { });
 
 		// Act
-		Action act = () => sut.Execute<string>(null, _ => false);
+		Action act = () => sut.Execute<string>(null, _ => false, replayAllowed: true);
 
 		// Assert
 		act.Should().Throw<ArgumentNullException>(
@@ -264,7 +310,7 @@ internal class ReauthExecutorTests {
 		ReauthExecutor sut = CreateExecutor(() => { });
 
 		// Act
-		Action act = () => sut.Execute(() => "x", null);
+		Action act = () => sut.Execute(() => "x", null, replayAllowed: true);
 
 		// Assert
 		act.Should().Throw<ArgumentNullException>(
@@ -286,7 +332,7 @@ internal class ReauthExecutorTests {
 				throw new JsonReaderException("'<' is an invalid start of a value.");
 			}
 			return "ok";
-		}, _ => false);
+		}, _ => false, replayAllowed: true);
 
 		// Assert
 		result.Should().Be("ok", because: "after reauth the retry must return the successful response");
@@ -302,7 +348,7 @@ internal class ReauthExecutorTests {
 		// Act — both calls throw JsonException
 		Action act = () => sut.Execute<string>(
 			() => throw new JsonReaderException("'<' is an invalid start of a value."),
-			_ => false);
+			_ => false, replayAllowed: true);
 
 		// Assert
 		act.Should().Throw<JsonReaderException>(
