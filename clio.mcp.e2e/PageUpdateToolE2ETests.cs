@@ -404,8 +404,11 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 				//Only reached when the gate let the probe body through, which is the failure this test
 				//exists to catch. The page is shared by the rest of the suite, so it is put back rather
 				//than left holding a body that throws on open.
+				//Through readbackDir, not baselineDir: update-page compares the body on the stand against
+				//the baseline in its output directory, and only readbackDir holds one taken AFTER the
+				//probe write landed. Restoring against the stale baseline would be refused as a conflict.
 				await TryRestorePageBodyAsync(arrangeContext, savePage, originalBody, environmentName,
-					baselineDir);
+					readbackDir);
 			}
 			TryDeleteDirectory(baselineDir);
 			TryDeleteDirectory(readbackDir);

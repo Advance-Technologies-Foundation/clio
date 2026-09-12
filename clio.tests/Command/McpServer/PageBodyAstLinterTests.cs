@@ -1109,7 +1109,7 @@ internal class PageBodyAstLinterTests {
 		// Assert
 		findings.Should().HaveCountLessThanOrEqualTo(
 			PageBodyAstLinter.MaxFindingsTotal + PageBodyAstLinter.MaxFindingsPerRule,
-			because: "the global ceiling bounds the report itself, and each capped rule may still append its one summary line");
+			because: "the ceiling bounds the warnings the report carries, and each capped rule may still append its one summary line");
 		RenderedLength(findings).Should().BeLessThan(128 * 1024,
 			because: "the serialized report is the thing that has to stay usable, whichever mix of rules a generated body happens to trip");
 	}
