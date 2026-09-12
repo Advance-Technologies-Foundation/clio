@@ -597,4 +597,38 @@ internal sealed class EntitySchemaDesignerSupportTests {
 		equivalent.Should().BeFalse(
 			because: "two non-blank, non-equivalent types must be reported as different so a real modify is not dropped");
 	}
+
+	[TestCase("  ")]
+	[TestCase("")]
+	[TestCase("\t")]
+	[Description("A blank caption for one culture is rejected during validation of the SCHEMA-CAPTION map, not silently dropped: SetLocalizableValue returns early on whitespace, so a value that reached the save would never be written and the readback would then report a misleading persistence failure (PR #1356 review).")]
+	public void NormalizeSchemaCaptionLocalizations_Should_Reject_A_Blank_Value(string blankCaption) {
+		// Arrange
+		Dictionary<string, string> localizations = new() {
+			["en-US"] = "Good",
+			["uk-UA"] = blankCaption
+		};
+
+		// Act
+		Action normalize = () => EntitySchemaDesignerSupport.NormalizeSchemaCaptionLocalizations(
+			localizations, "title-localizations");
+
+		// Assert
+		normalize.Should().Throw<EntitySchemaDesignerException>(
+			because: "a blank caption must fail validation rather than be skipped downstream and surface as a persistence failure")
+			.WithMessage("*must not contain empty values*");
+	}
+
+	[Test]
+	[Description("The same blank-value rejection applies to the CLI's raw --title-localizations JSON, so both surfaces of set-entity-schema-properties refuse it identically (PR #1356 review).")]
+	public void ParseLocalizationJson_Should_Reject_A_Blank_Value() {
+		// Act
+		Action parse = () => EntitySchemaDesignerSupport.ParseLocalizationJson(
+			"{\"en-US\":\"Good\",\"uk-UA\":\"  \"}", "title-localizations");
+
+		// Assert
+		parse.Should().Throw<EntitySchemaDesignerException>(
+			because: "the CLI surface must reject a blank caption exactly as the MCP map surface does")
+			.WithMessage("*must not contain empty values*");
+	}
 }
