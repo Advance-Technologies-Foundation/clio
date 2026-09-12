@@ -78,6 +78,7 @@ public sealed class InstalledToolkitVersionsTests {
 
 	[TestCase("cursor", "plugins/local/creatio-ai-app-development-toolkit/.cursor-plugin/plugin.json")]
 	[TestCase("copilot", "installed-plugins/creatio/creatio-ai-app-development-toolkit/plugin.json")]
+	[TestCase("copilot", "installed-plugins/creatio/creatio-ai-app-development-toolkit/.github/plugin/plugin.json")]
 	[TestCase("codex", "plugins/cache/creatio/creatio-ai-app-development-toolkit/1.10.0/.codex-plugin/plugin.json")]
 	[Description("Installed manifests supply the toolkit version independently of clio or cache directory names.")]
 	public void Read_ShouldReadManifestVersion_WhenAgentIsInstalled(string agent, string relative) {

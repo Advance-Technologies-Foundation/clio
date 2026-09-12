@@ -12,6 +12,7 @@ public sealed class InstalledToolkitVersions(IFileSystem fileSystem, IUserHomePr
 	: IInstalledToolkitVersions {
 	private const string Unknown = "unknown (metadata unavailable)";
 	private const string Missing = "not installed";
+	private const string PluginsDirectory = "plugins";
 	private const long MaximumMetadataBytes = 1024 * 1024;
 
 	/// <inheritdoc />
@@ -23,10 +24,10 @@ public sealed class InstalledToolkitVersions(IFileSystem fileSystem, IUserHomePr
 				result[agent] = agent switch {
 					"claude" => ReadClaude(home),
 					"codex" => ReadCodex(home),
-					"cursor" => ReadManifest(fileSystem.Combine(home, "plugins", "local", ToolkitDistribution.PluginName),
+					"cursor" => ReadManifest(fileSystem.Combine(home, PluginsDirectory, "local", ToolkitDistribution.PluginName),
 						[".cursor-plugin/plugin.json", ".claude-plugin/plugin.json", "plugin.json"]),
 					_ => ReadManifest(fileSystem.Combine(home, "installed-plugins", ToolkitDistribution.MarketplaceName,
-						ToolkitDistribution.PluginName), ["plugin.json", ".claude-plugin/plugin.json"])
+						ToolkitDistribution.PluginName), ["plugin.json", ".github/plugin/plugin.json", ".github/plugin.json", ".claude-plugin/plugin.json"])
 				};
 			}
 			catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
@@ -49,30 +50,28 @@ public sealed class InstalledToolkitVersions(IFileSystem fileSystem, IUserHomePr
 	}
 
 	private string ReadClaude(string home) {
-		string path = fileSystem.Combine(home, "plugins", "installed_plugins.json");
+		string path = fileSystem.Combine(home, PluginsDirectory, "installed_plugins.json");
 		if (!fileSystem.ExistsFile(path)) {
 			return Missing;
 		}
 		using JsonDocument document = ReadJson(path);
-		if (!document.RootElement.TryGetProperty("plugins", out JsonElement plugins)) {
+		if (!document.RootElement.TryGetProperty(PluginsDirectory, out JsonElement plugins)) {
 			return Unknown;
 		}
 		if (!plugins.TryGetProperty(ToolkitDistribution.PluginSource, out JsonElement entries)) {
 			return Missing;
 		}
 		List<string> versions = [];
-		foreach (JsonElement entry in entries.EnumerateArray()) {
-			if (StringProperty(entry, "scope") == "user") {
-				string installPath = StringProperty(entry, "installPath");
-				versions.Add(!string.IsNullOrWhiteSpace(installPath) && fileSystem.ExistsDirectory(installPath)
-					? VersionProperty(entry) : Unknown);
-			}
+		foreach (JsonElement entry in entries.EnumerateArray().Where(entry => StringProperty(entry, "scope") == "user")) {
+			string installPath = StringProperty(entry, "installPath");
+			versions.Add(!string.IsNullOrWhiteSpace(installPath) && fileSystem.ExistsDirectory(installPath)
+				? VersionProperty(entry) : Unknown);
 		}
 		return versions.Count == 0 ? Missing : string.Join(", ", versions.Distinct(StringComparer.Ordinal));
 	}
 
 	private string ReadCodex(string home) {
-		string root = fileSystem.Combine(home, "plugins", "cache", ToolkitDistribution.MarketplaceName,
+		string root = fileSystem.Combine(home, PluginsDirectory, "cache", ToolkitDistribution.MarketplaceName,
 			ToolkitDistribution.PluginName);
 		if (!fileSystem.ExistsDirectory(root)) {
 			return Missing;
