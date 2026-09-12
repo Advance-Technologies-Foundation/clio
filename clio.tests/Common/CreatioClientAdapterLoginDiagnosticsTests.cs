@@ -42,7 +42,7 @@ internal class CreatioClientAdapterLoginDiagnosticsTests {
 
 	private static IReauthExecutor CreatePassthroughExecutor() {
 		IReauthExecutor executor = Substitute.For<IReauthExecutor>();
-		executor.Execute(Arg.Any<Func<string>>(), Arg.Any<Func<string, bool>>())
+		executor.Execute(Arg.Any<Func<string>>(), Arg.Any<Func<string, bool>>(), Arg.Any<bool>())
 			.Returns(ci => ci.Arg<Func<string>>()());
 		return executor;
 	}

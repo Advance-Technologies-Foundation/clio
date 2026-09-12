@@ -1605,6 +1605,10 @@ public class BindingsModule {
 					// LoginDiagnostics holds per-adapter state (client correlation token, attempt
 					// counter); it is created by CreatioClientAdapter, not resolved from DI.
 					|| implementedInterface == typeof(ILoginDiagnostics)
+					// CreatioClientTransport wraps the adapter's own Lazy<CreatioClient>; like the two
+					// above it is per-adapter state created by CreatioClientAdapter, and its only
+					// constructor argument is that lazy client, which DI cannot supply.
+					|| implementedInterface == typeof(ICreatioClientTransport)
 					// Application-client implementations have ownership-sensitive constructors and
 					// are registered explicitly for the active environment. Auto-registration would
 					// either create an unbound adapter or introduce a circular ownership lease.

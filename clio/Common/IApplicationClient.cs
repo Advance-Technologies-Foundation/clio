@@ -30,6 +30,32 @@ public interface IApplicationClient {
 		int maxAttempts = 1, int delaySec = 1)
 		where T : BaseResponse, new();
 
+	/// <summary>
+	/// Executes an authenticated HTTP POST that the caller has declared to be a write, and that
+	/// automatic re-authentication must therefore never re-issue.
+	/// </summary>
+	/// <param name="url">The absolute request URL.</param>
+	/// <param name="requestData">The request body.</param>
+	/// <param name="requestTimeout">The request timeout in milliseconds.</param>
+	/// <param name="maxAttempts">The maximum number of attempts.</param>
+	/// <param name="delaySec">The delay between retry attempts in seconds.</param>
+	/// <returns>The raw response body.</returns>
+	/// <remarks>
+	/// POST is the only verb clio uses for both reads (DataService <c>SelectQuery</c>, long-running
+	/// configuration-service calls) and writes (record creation, arbitrary <c>call-service</c>
+	/// payloads), so the read/write decision cannot be made from the verb and has to be made by the
+	/// caller. A client whose expired-session recovery replayed the call would otherwise commit a
+	/// write twice whenever its legitimate response happened to contain a login-page marker
+	/// (GitHub #1313).
+	/// Defaulted rather than abstract for the same reason as <see cref="ExecutePutRequest"/>: this is
+	/// a stable public contract with implementations outside this repository, and an abstract member
+	/// here fails every one of them with CS0535. A transport with no replay behaviour of its own is
+	/// already correct with the default body.
+	/// </remarks>
+	string ExecuteNonReplayablePostRequest(string url, string requestData,
+		int requestTimeout = Timeout.Infinite, int maxAttempts = 1, int delaySec = 1) =>
+		ExecutePostRequest(url, requestData, requestTimeout, maxAttempts, delaySec);
+
 	string ExecutePatchRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int maxAttempts = 1, int delaySec = 1);
 

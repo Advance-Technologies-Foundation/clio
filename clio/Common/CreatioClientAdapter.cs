@@ -13,7 +13,7 @@ namespace Clio.Common;
 public class CreatioClientAdapter : IOwnedApplicationClient {
 	#region Fields: Private
 
-	private readonly Lazy<CreatioClient> _lazyClient;
+	private readonly ICreatioClientTransport _transport;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly JsonConverter _jsonConverter;
 	private readonly IReauthExecutor _reauthExecutor;
@@ -23,11 +23,20 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 	private bool _disposed;
 	private bool _listenerStarted;
 
-	private CreatioClient Client {
+	// Named Client rather than Transport so the ~20 call sites below keep reading as "the Creatio
+	// client": the seam replaced the concrete NuGet type, not the adapter's own structure.
+	// EnsureCreated is called INSIDE the lock on purpose. When this property still returned
+	// _lazyClient.Value, creation happened under the lock and was therefore mutually exclusive with
+	// Dispose. Returning the transport and letting it create the client on first use would move
+	// creation outside, so a caller that had already passed the disposed check could create a client
+	// after Dispose saw IsCreated == false - leaking its pooled HTTP transport for the process
+	// lifetime.
+	private ICreatioClientTransport Client {
 		get {
 			lock (_lifetimeSync) {
 				ObjectDisposedException.ThrowIf(_disposed, this);
-				return _lazyClient.Value;
+				_transport.EnsureCreated();
+				return _transport;
 			}
 		}
 	}
@@ -37,13 +46,23 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 	#region Constructors: Private
 
 	// The reauthExecutor parameter is null in production: the executor captures a closure
-	// over this adapter's own _lazyClient.Value.Login() and is therefore created here
+	// over this adapter's own transport Login() and is therefore created here
 	// rather than resolved from DI. Tests pass a non-null executor through the internal
 	// constructor below to exercise the adapter in isolation from CreatioClient.
 	private CreatioClientAdapter(Lazy<CreatioClient> lazyClient, IServiceUrlBuilder serviceUrlBuilder,
 		JsonConverter jsonConverter, IReauthExecutor reauthExecutor,
-		ILoginDiagnostics loginDiagnostics = null, bool ownsClient = false) {
-		_lazyClient = lazyClient;
+		ILoginDiagnostics loginDiagnostics = null, bool ownsClient = false)
+		// The transport is per-adapter state built over this adapter's own lazy client, exactly like
+		// the reauth executor and the diagnostics recorder below, so it is created here rather than
+		// resolved from DI - which also means every construction site (including the MCP per-tenant
+		// child container that builds its connections inline) gets it without a separate wiring step.
+		: this(new CreatioClientTransport(lazyClient), serviceUrlBuilder, jsonConverter, reauthExecutor,
+			loginDiagnostics, ownsClient) { }
+
+	private CreatioClientAdapter(ICreatioClientTransport transport, IServiceUrlBuilder serviceUrlBuilder,
+		JsonConverter jsonConverter, IReauthExecutor reauthExecutor,
+		ILoginDiagnostics loginDiagnostics, bool ownsClient) {
+		_transport = transport;
 		_ownsClient = ownsClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_jsonConverter = jsonConverter ?? new JsonConverter();
@@ -57,7 +76,7 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 		// method and both login paths really route through it.
 		_loginDiagnostics = loginDiagnostics ?? new LoginDiagnostics();
 		_reauthExecutor = reauthExecutor ?? new ReauthExecutor(
-			() => _loginDiagnostics.Track(() => _lazyClient.Value.Login(), LoginAttemptKind.Reauthentication));
+			() => _loginDiagnostics.Track(() => Client.Login(), LoginAttemptKind.Reauthentication));
 	}
 
 	#endregion
@@ -105,6 +124,15 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 		: this(lazyClient, null, null,
 			reauthExecutor ?? throw new ArgumentNullException(nameof(reauthExecutor)), ownsClient: true) { }
 
+	// Test-only constructor for the transport seam. Lets a test substitute the Creatio transport and
+	// assert the exact underlying call (verb, url, body, timeout, attempts) the adapter delegates to,
+	// and the number of times it is issued. The reauth executor MAY be null: leaving it to the default
+	// is the only way to exercise the real replay policy end to end (GitHub #1313).
+	internal CreatioClientAdapter(ICreatioClientTransport transport, IReauthExecutor reauthExecutor,
+		ILoginDiagnostics loginDiagnostics = null)
+		: this(transport ?? throw new ArgumentNullException(nameof(transport)), null, null, reauthExecutor,
+			loginDiagnostics, ownsClient: true) { }
+
 	// DI composition constructor: unlike the public Lazy overload (which preserves borrowed-client
 	// compatibility), this adapter is the sole owner of the lazily-created environment client.
 	internal CreatioClientAdapter(Lazy<CreatioClient> lazyClient, bool ownsClient)
@@ -149,9 +177,19 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 	// cannot silently lose either wrapper.
 	// Not generic: the session-expired predicate inspects the raw response body, so it only applies to
 	// the string-returning request methods — which is all of them that go through the reauth executor.
-	private string ExecuteRequest(Func<string> call) =>
+	// replayAllowed says whether an expired-session classification may re-issue this call. It is
+	// stated at every call site rather than defaulted: the classification is body-based, so it cannot
+	// tell a write the server rejected unauthenticated from a write that committed and whose
+	// legitimate response merely contains a login-page marker. Replaying the second kind commits it
+	// twice (GitHub #1313).
+	// The rule is NOT "every write passes false". It is: the verbs clio only ever uses for record
+	// writes (PUT, PATCH, DELETE) refuse replay, and so does a POST the caller declared a write. The
+	// remaining methods - POST, CallConfigurationService, the Upload* family - keep replaying because
+	// the adapter cannot classify them, and turning replay off there would remove the session recovery
+	// this executor exists for. A caller that knows better opts out at its own call site.
+	private string ExecuteRequest(Func<string> call, bool replayAllowed) =>
 		_reauthExecutor.Execute(() => _loginDiagnostics.TrackRequest(call),
-			ReauthExecutor.IsSessionExpiredResponse);
+			ReauthExecutor.IsSessionExpiredResponse, replayAllowed);
 
 	#endregion
 
@@ -171,7 +209,8 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 		// reauth executor — otherwise a stale-cookie response surfaces directly as raw HTML
 		// to the caller.
 		return ExecuteRequest(
-			() => Client.CallConfigurationService(serviceName, serviceMethod, requestData, requestTimeout));
+			() => Client.CallConfigurationService(serviceName, serviceMethod, requestData, requestTimeout),
+			replayAllowed: true);
 	}
 
 	public void DownloadFile(string url, string filePath, string requestData) {
@@ -194,13 +233,17 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 
 	public string ExecuteDeleteRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int maxAttempts = 1, int delaySec = 1) {
+		// DELETE has no read-shaped caller in clio: every site is an OData record deletion or a
+		// user-supplied call-service write, so replay is refused for the whole verb.
 		return ExecuteRequest(
-			() => Client.ExecuteDeleteRequest(url, requestData, requestTimeout, maxAttempts, delaySec));
+			() => Client.ExecuteDeleteRequest(url, requestData, requestTimeout, maxAttempts, delaySec),
+			replayAllowed: false);
 	}
 
 	public string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite, int maxAttempts = 1,
 		int delaySec = 1) {
-		return ExecuteRequest(() => Client.ExecuteGetRequest(url, requestTimeout, maxAttempts, delaySec));
+		return ExecuteRequest(() => Client.ExecuteGetRequest(url, requestTimeout, maxAttempts, delaySec),
+			replayAllowed: true);
 	}
 
 	/// <inheritdoc />
@@ -211,8 +254,21 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 
 	public string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int maxAttempts = 1, int delaySec = 1) {
+		// POST is the one verb the adapter cannot classify: clio issues DataService SelectQuery reads,
+		// long-running configuration-service calls AND record-creating writes through it. Replay stays
+		// on here - removing it would undo the session recovery this executor exists for - and a caller
+		// that knows its POST is a write asks for ExecuteNonReplayablePostRequest instead.
 		return ExecuteRequest(
-			() => Client.ExecutePostRequest(url, requestData, requestTimeout, maxAttempts, delaySec));
+			() => Client.ExecutePostRequest(url, requestData, requestTimeout, maxAttempts, delaySec),
+			replayAllowed: true);
+	}
+
+	/// <inheritdoc />
+	public string ExecuteNonReplayablePostRequest(string url, string requestData,
+		int requestTimeout = Timeout.Infinite, int maxAttempts = 1, int delaySec = 1) {
+		return ExecuteRequest(
+			() => Client.ExecutePostRequest(url, requestData, requestTimeout, maxAttempts, delaySec),
+			replayAllowed: false);
 	}
 
 	public T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite,
@@ -221,7 +277,8 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 		// Re-auth detection runs against the raw body so an expired session cannot reach
 		// the JSON deserializer (which would throw on the HTML login page).
 		string response = ExecuteRequest(
-			() => Client.ExecutePostRequest(url, requestData, requestTimeout, maxAttempts, delaySec));
+			() => Client.ExecutePostRequest(url, requestData, requestTimeout, maxAttempts, delaySec),
+			replayAllowed: true);
 		// If the retry also returned the session-expired HTML page, the JSON deserializer
 		// below would surface the same opaque "Invalid response format" symptom that
 		// triggered ENG-90393. Throw a clearer message so the caller (and the user) can
@@ -244,21 +301,25 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 
 	public string ExecutePatchRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int maxAttempts = 1, int delaySec = 1) {
+		// PATCH, like PUT below, only ever carries a record update in clio.
 		return ExecuteRequest(
-			() => Client.ExecutePatchRequest(url, requestData, requestTimeout, maxAttempts, delaySec));
+			() => Client.ExecutePatchRequest(url, requestData, requestTimeout, maxAttempts, delaySec),
+			replayAllowed: false);
 	}
 
 	public string ExecutePutRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int maxAttempts = 1, int delaySec = 1) {
 		return ExecuteRequest(
-			() => Client.ExecutePutRequest(url, requestData, requestTimeout, maxAttempts, delaySec));
+			() => Client.ExecutePutRequest(url, requestData, requestTimeout, maxAttempts, delaySec),
+			replayAllowed: false);
 	}
 
 	public void Listen(CancellationToken cancellationToken) {
-		CreatioClient client;
+		ICreatioClientTransport client;
 		lock (_lifetimeSync) {
 			ObjectDisposedException.ThrowIf(_disposed, this);
-			client = _lazyClient.Value;
+			_transport.EnsureCreated();
+			client = _transport;
 			_listenerStarted = true;
 		}
 		client.ConnectionStateChanged += (sender, state) => { ConnectionStateChanged?.Invoke(sender, state); };
@@ -306,22 +367,22 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 			// CreatioClient's SignalR listener can still re-enter Login while its cancellation is
 			// draining. Disposing the pooled HTTP transport here races that reconnect and crashes the
 			// process; listener clients therefore live until process/GC teardown after cancellation.
-			if (_ownsClient && !_listenerStarted && _lazyClient.IsValueCreated) {
-				_lazyClient.Value?.Dispose();
+			if (_ownsClient && !_listenerStarted && _transport.IsCreated) {
+				_transport.Dispose();
 			}
 		}
 	}
 
 	public string UploadAlmFile(string url, string filePath) {
-		return ExecuteRequest(() => Client.UploadAlmFile(url, filePath));
+		return ExecuteRequest(() => Client.UploadAlmFile(url, filePath), replayAllowed: true);
 	}
 
 	public string UploadAlmFileByChunk(string url, string filePath) {
-		return ExecuteRequest(() => Client.UploadAlmFileByChunk(url, filePath));
+		return ExecuteRequest(() => Client.UploadAlmFileByChunk(url, filePath), replayAllowed: true);
 	}
 
 	public string UploadFile(string url, string filePath) {
-		return ExecuteRequest(() => Client.UploadFile(url, filePath));
+		return ExecuteRequest(() => Client.UploadFile(url, filePath), replayAllowed: true);
 	}
 
 	/// <inheritdoc />

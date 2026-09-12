@@ -122,7 +122,10 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 					Error = zoneLessDateTime
 				};
 			}
-			string responseJson = client.ExecutePostRequest(url, row.GetRawText(), 30_000);
+			// Declared a write: automatic re-authentication must never re-issue this POST, or a
+			// false-positive expired-session classification of the OData echo creates the record
+			// twice (GitHub #1313).
+			string responseJson = client.ExecuteNonReplayablePostRequest(url, row.GetRawText(), 30_000);
 			return ParseCreated(responseJson, index);
 		} catch (Exception ex) {
 			// The request may have reached Creatio and been applied before the failure surfaced here, so the
