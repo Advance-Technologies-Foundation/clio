@@ -362,6 +362,9 @@ public class BindingsModule {
 		services.AddTransient<InstallerCommand>();
 		services.AddTransient<PinCertificateCommand>();
 		services.AddTransient<DeployIdentityCommand>();
+		services.AddTransient<UninstallIdentityCommand>();
+		services.AddTransient<IIdentityReferenceCleanup, IdentityReferenceCleanup>();
+		services.AddTransient<IIdentityServiceLifecycle, IdentityServiceLifecycle>();
 		services.AddTransient<IIdentityServiceArchiveResolver, IdentityServiceArchiveResolver>();
 		services.AddTransient<IIdentityServiceCreatioClient, IdentityServiceCreatioClient>();
 		services.AddTransient<IIdentityServiceRoleGrantService, IdentityServiceRoleGrantService>();
