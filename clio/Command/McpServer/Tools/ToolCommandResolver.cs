@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Security.Cryptography;
 using System.Text;
 using Clio;
@@ -40,12 +40,13 @@ public interface IToolCommandResolver {
 	TCommand ResolveWithoutEnvironment<TCommand>(EnvironmentOptions options);
 
 	/// <summary>
-	/// The cache key the MOST RECENT <see cref="Resolve{TCommand}"/> call on the CURRENT async-flow
-	/// cached its container under. The BaseTool execution path reads this immediately after resolving a
+	/// The cache key the MOST RECENT <see cref="Resolve{TCommand}"/> or
+	/// <see cref="ResolvePair{TFirst,TSecond}"/> call on the CURRENT async-flow cached its container
+	/// under (both go through the same container acquisition, so both publish this key). The BaseTool execution path reads this immediately after resolving a
 	/// command so it can lock / mark-in-use on the SAME key without recomputing it via
 	/// <see cref="GetTenantKey"/> (M2, ENG-93208 — eliminates the divergence window and the second
 	/// <c>settings.Fill</c> per invocation). Flow-local so concurrent tenants never read each other's
-	/// value; <see langword="null"/> before any <see cref="Resolve{TCommand}"/> call on the flow.
+	/// value; <see langword="null"/> before any resolution on the flow.
 	/// </summary>
 	string LastResolvedTenantKey { get; }
 

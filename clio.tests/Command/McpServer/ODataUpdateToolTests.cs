@@ -293,7 +293,7 @@ public sealed class ODataUpdateToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Exhausts the bounded retry when every pre-write attempt answers with an empty body, then fails unverified without writing (issue #1315 item 1).")]
+	[Description("Exhausts the bounded retry when every pre-write attempt answers with an empty body, then fails unverified without writing, spending only ONE probe attempt because the metadata leg already proved the target silent (issue #1315 item 1).")]
 	public void Update_Should_Exhaust_The_Bounded_Retry_And_Refuse_To_Write() {
 		// Arrange
 		IApplicationClient client = Substitute.For<IApplicationClient>();
@@ -311,6 +311,38 @@ public sealed class ODataUpdateToolTests {
 			because: "the caller has to be able to tell an unverifiable pre-write from a rejected field");
 		client.Received(ODataFieldValidation.TransientAttempts)
 			.ExecuteGetRequest(MetadataUrl, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		// because: the metadata leg already spent the full budget on a target that answered nothing, so a
+		// second full budget on the same dead target would push the refusal past the MCP client's ceiling
+		client.Received(ODataFieldValidation.ExhaustedTransportProbeAttempts).ExecuteGetRequest(
+			Arg.Is<string>(url => url.Contains("?$select=", StringComparison.Ordinal)),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the probe's full retry budget when the metadata leg ended with an ANSWER rather than silence: the transport is proven alive, so an empty probe body is still worth retrying (issue #1315 item 1).")]
+	public void Update_Should_Keep_The_Full_Probe_Budget_After_An_Answered_Metadata_Read() {
+		// Arrange - the metadata endpoint answers with JSON that is neither CSDL nor a recognized Creatio
+		// fault, so the type stays unresolved and the call degrades to the $select probe; that answer is
+		// proof the target is reachable, which an empty body is not.
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(call => call.ArgAt<string>(0).EndsWith("/$metadata", StringComparison.Ordinal)
+				? "{\"unrelated\":1}"
+				: string.Empty);
+		Fixture f = FixtureFor(client);
+
+		// Act
+		ODataWriteResponse response = Update(f, ODataUpdateToolTests.NameUpdate);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an empty probe body proves nothing about the field names, and unverified is never a write");
+		// because: a JSON answer is definitive - a second identical request cannot turn it into CSDL
+		client.Received(1).ExecuteGetRequest(MetadataUrl, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		// because: the transport answered the metadata read, so the probe keeps the full budget the
+		// flaky-stand class needs - the dead-target shortcut must not fire on a live target
 		client.Received(ODataFieldValidation.TransientAttempts).ExecuteGetRequest(
 			Arg.Is<string>(url => url.Contains("?$select=", StringComparison.Ordinal)),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
@@ -413,6 +445,9 @@ public sealed class ODataUpdateToolTests {
 
 	/// <summary>Fixture built around an already-configured client (the retry cases stub it per attempt).</summary>
 	private static Fixture FixtureFor(IApplicationClient client) => new(client);
+
+	/// <summary>The one-field payload the retry-budget tests write; its name exists on the CSDL fixture.</summary>
+	private const string NameUpdate = "{\"Name\":\"New\"}";
 
 	[Test]
 	[Category("Unit")]

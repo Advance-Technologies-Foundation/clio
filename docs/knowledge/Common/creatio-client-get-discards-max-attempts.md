@@ -1,6 +1,7 @@
 ---
 description: creatio.client 2.0.2's synchronous ExecuteGetRequest discards its maxAttempts argument and swallows transport exceptions into an empty string, so a caller asking for 3 attempts gets exactly one request and reads a transient failure as an empty body
 applies-to:
+  - Directory.Packages.props
   - clio/Common/CreatioClientAdapter.cs
   - clio/Common/IApplicationClient.cs
   - clio/Command/McpServer/Tools/ODataFieldValidation.cs
@@ -18,6 +19,9 @@ than as an exception. Established by
 `~/.dotnet/tools/ilspycmd -t Creatio.Client.CreatioClient ~/.nuget/packages/creatio.client/2.0.2/lib/netstandard2.0/Creatio.Client.dll`.
 The ASYNC `ExecuteGetRequestAsync` DOES forward `maxAttempts`; only the string-returning synchronous
 overload — the one `IApplicationClient` exposes and nearly every clio caller uses — does not.
+Neither overload calls `EnsureSuccessStatusCode` on this path (`ReadResponseBody` only reads the
+content), so a 4xx/5xx is NOT a transport failure here: its error page or envelope is returned as the
+body. Only a connection failure or a timeout produces the empty string.
 
 **Why it is this way** — the synchronous overload is a compatibility wrapper over the async pipeline
 and it flattens both the retry and the failure channel to keep the `string` return type total. The

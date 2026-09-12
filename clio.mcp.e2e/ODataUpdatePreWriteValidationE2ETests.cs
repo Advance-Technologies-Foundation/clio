@@ -84,6 +84,7 @@ public sealed class ODataUpdatePreWriteValidationE2ETests {
 		});
 
 		// Assert
+		AssertMachineReadableChannel(callResult);
 		ODataWriteResponse structured = EntitySchemaStructuredResultParser.Extract<ODataWriteResponse>(callResult);
 		callResult.IsError.Should().NotBeTrue(
 			because: "a payload the CSDL confirms is a normal tool result, not a protocol-level error");
@@ -204,6 +205,7 @@ public sealed class ODataUpdatePreWriteValidationE2ETests {
 	/// </summary>
 	/// <param name="callResult">Tool result returned by the MCP server.</param>
 	private static void AssertStructuredFailure(CallToolResult callResult) {
+		AssertMachineReadableChannel(callResult);
 		ODataWriteResponse structured = EntitySchemaStructuredResultParser.Extract<ODataWriteResponse>(callResult);
 		callResult.IsError.Should().NotBeTrue(
 			because: "a refused write is a structured tool result the agent can read, not a protocol-level failure");
@@ -211,5 +213,21 @@ public sealed class ODataUpdatePreWriteValidationE2ETests {
 			because: "the structured success flag is what an agent branches on; a false success here IS issue #1212");
 		structured.Error.Should().NotBeNullOrWhiteSpace(
 			because: "a structured failure must carry the reason on the same channel as the flag");
+	}
+
+	/// <summary>
+	/// Asserts the result actually carries the machine-readable envelope BEFORE it is parsed. The guard is
+	/// on <see cref="CallToolResult.Content"/>, not on <see cref="CallToolResult.StructuredContent"/>:
+	/// <c>odata-update</c> declares no structured output schema, so this server answers with
+	/// <c>StructuredContent == null</c> and the serialized <c>ODataWriteResponse</c> travels as JSON TEXT in
+	/// <c>Content</c> - which is the channel an MCP client parses for this tool. Without the guard, a result
+	/// carrying no payload at all would reach <c>Extract</c> and surface as "could not parse", which reads
+	/// like a shape mismatch rather than like the missing answer it would be.
+	/// </summary>
+	/// <param name="callResult">Tool result returned by the MCP server.</param>
+	private static void AssertMachineReadableChannel(CallToolResult callResult) {
+		callResult.Content.Should().NotBeNullOrEmpty(
+			because: "an agent branches on the serialized envelope, so a result that carried no payload channel "
+				+ "at all would leave it nothing to read - and this tool ships that envelope in Content");
 	}
 }

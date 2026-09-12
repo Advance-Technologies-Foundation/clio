@@ -41,8 +41,8 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(
@@ -76,8 +76,8 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://env/odata/Account");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
@@ -87,8 +87,12 @@ public sealed class ODataCreateToolTests {
 		tool.Create(new ODataCreateArgs { EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Name\":\"A\"}]") });
 
 		// Assert
-		resolver.Received(1).Resolve<IApplicationClient>(Arg.Is<EnvironmentOptions>(o => o.Environment == "dev"));
-		resolver.Received(1).Resolve<IServiceUrlBuilder>(Arg.Is<EnvironmentOptions>(o => o.Environment == "dev"));
+		// because: one paired resolution is the point - two separate ones re-read the settings and could
+		// pair one environment's authenticated session with another environment's url
+		resolver.Received(1).ResolvePair<IApplicationClient, IServiceUrlBuilder>(
+			Arg.Is<EnvironmentOptions>(o => o.Environment == "dev"));
+		resolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
+		resolver.DidNotReceive().Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>());
 	}
 
 	[Test]
@@ -135,8 +139,8 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"error\":{\"code\":\"\",\"message\":\"Column Name is required\"}}");
@@ -161,8 +165,8 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/AddressType");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"An error has occurred.\",\"ExceptionMessage\":\"Object reference not set to an instance of an object.\",\"ExceptionType\":\"System.NullReferenceException\"}");
@@ -187,8 +191,8 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/0/odata/UsrCustomerStatus");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"No HTTP resource was found that matches the request URI '.../0/odata/UsrCustomerStatus'.\",\"MessageDetail\":\"No type was found that matches the controller named 'UsrCustomerStatus'.\"}");
@@ -216,8 +220,8 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"Authorization has been denied for this request.\"}");
@@ -243,8 +247,8 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/EmailMessageData");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"@odata.context\":\"http://creatio/odata/$metadata#EmailMessageData/$entity\",\"Id\":\"22222222-2222-2222-2222-222222222222\",\"Message\":\"Hello there\"}");
@@ -269,8 +273,8 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/UsrIntegrationLog");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"@odata.context\":\"http://creatio/odata/$metadata#UsrIntegrationLog/$entity\","
@@ -298,8 +302,8 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Code\":-1,\"Exception\":\"Access to the entity is denied.\","
@@ -326,8 +330,8 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/UsrThing");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"@odata.context\":\"http://creatio/odata/$metadata#UsrThing/$entity\",\"Id\":\"33333333-3333-3333-3333-333333333333\",\"Code\":200,\"Message\":\"Created\"}");
@@ -352,8 +356,8 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://secret-host:88/prod-app/0/odata/UsrCustomerStatus");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"No HTTP resource was found that matches the request URI 'http://secret-host:88/prod-app/0/odata/UsrCustomerStatus'.\"}");
@@ -377,8 +381,8 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"\",\"MessageDetail\":\"\"}");
@@ -403,8 +407,8 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		// A ModelState validation body carries a member beyond Message/MessageDetail, so TryDetect does
 		// not recognize it; with no Id it falls through to the id-missing fallback branch.
@@ -430,8 +434,8 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/NumberKeyed");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Id\":42,\"Name\":\"Office\"}");
@@ -456,8 +460,8 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/AddressType");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Name\":\"Office\"}");
@@ -481,8 +485,8 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(
@@ -510,8 +514,8 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"error\":{\"code\":\"\",\"message\":\"bad row\"}}");
@@ -534,8 +538,8 @@ public sealed class ODataCreateToolTests {
 	private static ODataCreateTool BuildTool(IApplicationClient client) {
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
 		return new ODataCreateTool(resolver);
 	}
@@ -709,8 +713,8 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(metadataBody);
@@ -868,10 +872,12 @@ public sealed class ODataCreateToolTests {
 		});
 
 		// Assert
+		// because: Received(1) is what pins the single-attempt budget - OptionalMetadataAttempts lives in
+		// the retry ABOVE the transport, while the argument the transport itself gets is TransportAttempts
 		client.Received(1).ExecuteGetRequest(
 			"http://creatio/odata/$metadata",
 			ODataFieldValidation.OptionalMetadataTimeoutMs,
-			ODataFieldValidation.OptionalMetadataAttempts,
+			ODataFieldValidation.TransportAttempts,
 			Arg.Any<int>());
 	}
 }

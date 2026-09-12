@@ -33,9 +33,11 @@ internal static class ODataFieldValidation {
 	internal const int RequestTimeoutMs = 30_000;
 
 	/// <summary>
-	/// Attempts for the pre-write requests: the metadata/probe GET is read-only and idempotent,
-	/// so a bounded retry absorbs the flaky-stand class (an isolated 5xx or an empty body) without
-	/// ever re-sending a write.
+	/// Attempts for the pre-write requests: the metadata/probe GET is read-only and idempotent, so a
+	/// bounded retry absorbs the one flaky-stand outcome a second identical request can improve - an
+	/// EMPTY body - without ever re-sending a write. A 5xx is NOT in that class: the transport does not
+	/// call <c>EnsureSuccessStatusCode</c>, so an error status arrives here as its error PAGE or
+	/// envelope and is classified as a definitive answer, not retried.
 	/// </summary>
 	/// <remarks>
 	/// The retry runs HERE, around the fetch AND its classification, and the transport is called with
@@ -54,6 +56,24 @@ internal static class ODataFieldValidation {
 	/// retry cannot live there.
 	/// </summary>
 	internal const int TransportAttempts = 1;
+
+	/// <summary>
+	/// Attempts left to the $select probe when the metadata leg ALREADY exhausted
+	/// <see cref="TransientAttempts"/> on the empty-body outcome: one, then give up.
+	/// </summary>
+	/// <remarks>
+	/// An empty body is how this transport reports "the request did not come back" (see
+	/// <see cref="TransientAttempts"/>). Exhausting the metadata retry on that outcome is therefore
+	/// evidence the target is not answering at all, and running the probe's own full retry after it
+	/// would spend a second 3 x <see cref="RequestTimeoutMs"/> budget on the same dead target: the
+	/// pre-write path would take about 184 s before refusing, past the ~180 s ceiling MCP clients
+	/// impose, so the caller would see a client-side timeout instead of the tool's own refusal - the
+	/// refusal being the whole point of the check. One probe attempt holds the worst case at about
+	/// 122 s. When the metadata leg ended with an answer instead (CSDL, a Creatio fault, an HTML error
+	/// page, unrelated JSON) the transport is proven alive and the probe keeps the full
+	/// <see cref="TransientAttempts"/>.
+	/// </remarks>
+	internal const int ExhaustedTransportProbeAttempts = 1;
 
 	/// <summary>
 	/// Upper bound on the CSDL <c>BaseType</c> chain the inheritance walk follows. The document is
@@ -168,8 +188,12 @@ internal static class ODataFieldValidation {
 		}
 
 		// The metadata endpoint did not yield a usable type definition (unsupported, empty,
-		// non-XML, or a recognized error). Degrade to the $select probe for name validation.
-		return ValidateBySelectProbe(client, urlBuilder, entity, id, keys);
+		// non-XML, or a recognized error). Degrade to the $select probe for name validation. The probe
+		// inherits the retry budget the metadata leg EARNED: an exhausted empty-body retry means the
+		// target answered nothing at all, so the probe gets one attempt rather than a second full
+		// budget on the same dead target (see ExhaustedTransportProbeAttempts).
+		int probeAttempts = metadata.EmptyBody ? ExhaustedTransportProbeAttempts : TransientAttempts;
+		return ValidateBySelectProbe(client, urlBuilder, entity, id, keys, probeAttempts);
 	}
 
 	/// <summary>
@@ -209,7 +233,8 @@ internal static class ODataFieldValidation {
 		Dictionary<string, string> PropertyTypes,
 		string? ServerError,
 		string? UnverifiedDetail,
-		bool DepthExceeded = false);
+		bool DepthExceeded = false,
+		bool EmptyBody = false);
 
 	/// <summary>
 	/// GETs the SERVICE-ROOT <c>odata/$metadata</c> document and parses the CSDL for the entity's
@@ -230,9 +255,13 @@ internal static class ODataFieldValidation {
 		RetryWhileTransient(
 			attempts,
 			() => FetchMetadataOnce(client, urlBuilder, entity, timeoutMs),
-			metadata => metadata.UnverifiedDetail == EmptyMetadataDetail);
+			metadata => metadata.EmptyBody);
 
-	/// <summary>The classification of an empty metadata body - the one outcome a retry can improve.</summary>
+	/// <summary>
+	/// The caller-facing text of an empty metadata body - the one outcome a retry can improve. The retry
+	/// keys off <see cref="EntityMetadata.EmptyBody"/>, not off this string: a predicate that compared
+	/// the surfaced wording would stop retrying the moment the text was reworded, silently.
+	/// </summary>
 	private const string EmptyMetadataDetail = "the OData metadata response was empty.";
 
 	/// <summary>
@@ -269,7 +298,7 @@ internal static class ODataFieldValidation {
 		string url = urlBuilder.Build("odata/$metadata");
 		string body = client.ExecuteGetRequest(url, timeoutMs, TransportAttempts, TransientDelaySec);
 		if (string.IsNullOrWhiteSpace(body)) {
-			return new EntityMetadata(false, [], [], null, EmptyMetadataDetail);
+			return new EntityMetadata(false, [], [], null, EmptyMetadataDetail, EmptyBody: true);
 		}
 		if (body.TrimStart().StartsWith("<", StringComparison.Ordinal)) {
 			// The metadata endpoint answers with CSDL XML. A parse that yields the entity's type
@@ -450,7 +479,7 @@ internal static class ODataFieldValidation {
 		while (current.BaseType is not null
 			&& types.TryGetValue(ShortTypeName(current.BaseType), out CsdlType? baseType)
 			&& visited.Add(baseType.Name)) {
-			if (chain.Count > MaxInheritanceDepth) {
+			if (chain.Count >= MaxInheritanceDepth) {
 				return false;
 			}
 			chain.Add(baseType);
@@ -489,8 +518,9 @@ internal static class ODataFieldValidation {
 		IServiceUrlBuilder urlBuilder,
 		string entity,
 		string id,
-		IReadOnlyList<string> keys) {
-		ProbeResult batch = Probe(client, urlBuilder, entity, id, keys);
+		IReadOnlyList<string> keys,
+		int attempts) {
+		ProbeResult batch = Probe(client, urlBuilder, entity, id, keys, attempts);
 		if (batch.Succeeded) {
 			return null;
 		}
@@ -527,7 +557,7 @@ internal static class ODataFieldValidation {
 				partial = true;
 				break;
 			}
-			ProbeResult single = Probe(client, urlBuilder, entity, id, [key], FollowUpProbeTimeoutMs);
+			ProbeResult single = Probe(client, urlBuilder, entity, id, [key], attempts, FollowUpProbeTimeoutMs);
 			if (single.Succeeded) {
 				continue;
 			}
@@ -553,11 +583,12 @@ internal static class ODataFieldValidation {
 	/// a failure - empty, non-JSON, or JSON that is not the addressed record). The text signals are
 	/// redacted at construction.
 	/// </summary>
-	private sealed record ProbeResult(bool Succeeded, string? ServerError, string? UnverifiedDetail);
+	private sealed record ProbeResult(
+		bool Succeeded, string? ServerError, string? UnverifiedDetail, bool EmptyBody = false);
 
 	/// <summary>
-	/// GETs the addressed record with <c>$select=Id,<keys></c> (bounded retry: the probe is
-	/// read-only). Only the addressed record carrying every probed key confirms them; a recognized
+	/// GETs the addressed record with <c>$select=Id,<keys></c> (bounded retry over
+	/// <paramref name="attempts"/>: the probe is read-only). Only the addressed record carrying every probed key confirms them; a recognized
 	/// error shape is captured (redacted) as <see cref="ProbeResult.ServerError"/>; every other body -
 	/// empty, non-JSON, or JSON that is not that record - is captured (redacted) as
 	/// <see cref="ProbeResult.UnverifiedDetail"/>.
@@ -568,13 +599,18 @@ internal static class ODataFieldValidation {
 		string entity,
 		string id,
 		IReadOnlyList<string> keys,
+		int attempts,
 		int timeoutMs = RequestTimeoutMs) =>
 		RetryWhileTransient(
-			TransientAttempts,
+			attempts,
 			() => ProbeOnce(client, urlBuilder, entity, id, keys, timeoutMs),
-			probe => probe.UnverifiedDetail == EmptyProbeDetail);
+			probe => probe.EmptyBody);
 
-	/// <summary>The classification of an empty probe body - the one outcome a retry can improve.</summary>
+	/// <summary>
+	/// The caller-facing text of an empty probe body - the one outcome a retry can improve. The retry keys
+	/// off <see cref="ProbeResult.EmptyBody"/>, not off this string, for the reason
+	/// <see cref="EmptyMetadataDetail"/> states.
+	/// </summary>
 	private const string EmptyProbeDetail = "the probe response was empty.";
 
 	/// <summary>
@@ -607,7 +643,7 @@ internal static class ODataFieldValidation {
 			// answer a body-less 204 ack. Treating an empty probe body as "fields confirmed" would
 			// recreate the false success this validation exists to remove; both stay fail-closed after
 			// the bounded retry in Probe is exhausted.
-			return new ProbeResult(false, null, EmptyProbeDetail);
+			return new ProbeResult(false, null, EmptyProbeDetail, EmptyBody: true);
 		}
 		try {
 			using JsonDocument doc = JsonDocument.Parse(body);
@@ -779,7 +815,7 @@ internal static class ODataFieldValidation {
 			+ "credentials. No write was performed.";
 	}
 
-	/// <summary>Extracts the property name from the service's unknown-property fault, if any.</summary>	/// <summary>Extracts the property name from the service's unknown-property fault, if any.</summary>
+	/// <summary>Extracts the property name from the service's unknown-property fault, if any.</summary>
 	private static string? ExtractUnknownProperty(string serverError) {
 		Match match = UnknownPropertyPattern.Match(serverError);
 		return match.Success && !string.IsNullOrWhiteSpace(match.Groups[1].Value)
