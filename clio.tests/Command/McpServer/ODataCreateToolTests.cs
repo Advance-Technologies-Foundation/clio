@@ -651,6 +651,9 @@ public sealed class ODataCreateToolTests {
 			because: "an unknown side effect must tell the caller to verify instead of retrying");
 		response.Results[0].Error.Should().Contain("was not JSON",
 			because: "the diagnostic must point at the transport layer, not the request's OData/ESQ shape");
+		response.Results[0].Error.Should().Contain("HTTP 404 error page",
+			because: "the write transport neither throws nor exposes a status, so naming the status the page states "
+				+ "is the only way the caller learns which hop answered");
 		response.Unverified.Should().Be(1, because: "the batch must surface how many rows are unverified");
 	}
 

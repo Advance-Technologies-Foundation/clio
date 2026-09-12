@@ -92,7 +92,7 @@ public sealed class ODataWriteToolsLiveIntegrationTests {
 	private static ODataReadArgs ReadById(string id) => new() {
 		EnvironmentName = "live",
 		Entity = "Contact",
-		Select = ["Id", "Name"],
+		Select = JsonSerializer.SerializeToElement(new[] { "Id", "Name" }),
 		Filters = new ODataFilters {
 			All = [new ODataFilterCondition { Field = "Id", Op = "eq", Value = Obj($"\"{id}\"") }]
 		},
