@@ -16,6 +16,7 @@ using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
+using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using NUnit.Framework;
@@ -322,14 +323,8 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: true);
 
 		// Act
-		CallToolResult callResult = await CallSchemaSyncAsync(
-			context.Session,
-			context.EnvironmentName!,
-			context.PackageName!,
-			context.EntitySchemaName!,
-			context.LookupSchemaName!,
-			context.LookupColumnName,
-			context.CancellationTokenSource.Token);
+		SharedCompositeBatch batch = await GetOrRunCompositeBatchAsync(context);
+		CallToolResult callResult = batch.CallResult;
 		callResult.IsError.Should().NotBeTrue(
 			because: "sync-schemas should return a structured success payload for a valid sandbox package");
 		JsonElement response = ExtractSchemaSyncResponse(callResult);
@@ -339,27 +334,27 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: $"the composite batch should succeed on the reachable sandbox environment. Payload: {responsePayload}");
 		results.Should().HaveCount(4,
 			because: $"create-entity, create-lookup, seed-data, and update-entity should each produce one result. Payload: {responsePayload}");
-		JsonElement createLookupResult = FindResult(results, "create-lookup", context.LookupSchemaName!);
-		JsonElement seedResult = FindResult(results, "seed-data", context.LookupSchemaName!);
-		JsonElement updateResult = FindResult(results, "update-entity", context.EntitySchemaName!);
+		JsonElement createLookupResult = FindResult(results, "create-lookup", batch.LookupSchemaName);
+		JsonElement seedResult = FindResult(results, "seed-data", batch.LookupSchemaName);
+		JsonElement updateResult = FindResult(results, "update-entity", batch.EntitySchemaName);
 		string[] createLookupMessages = GetMessageValues(createLookupResult);
 		string[] seedMessages = GetMessageValues(seedResult);
 		string[] updateMessages = GetMessageValues(updateResult);
 		EntitySchemaPropertiesInfo lookupProperties = await GetSchemaPropertiesAsync(
 			context.Session,
-			context.EnvironmentName!,
-			context.PackageName!,
-			context.LookupSchemaName!,
+			batch.EnvironmentName,
+			batch.PackageName,
+			batch.LookupSchemaName,
 			context.CancellationTokenSource.Token);
 		LookupRegistrationSnapshot registrationSnapshot = LookupRegistrationProbe.Read(
-			context.EnvironmentName!,
-			context.PackageName!,
-			context.LookupSchemaName!);
+			batch.EnvironmentName,
+			batch.PackageName,
+			batch.LookupSchemaName);
 		EntitySchemaColumnPropertiesInfo columnProperties = await GetColumnPropertiesAsync(
 			context.Session,
-			context.EnvironmentName!,
-			context.PackageName!,
-			context.EntitySchemaName!,
+			batch.EnvironmentName,
+			batch.PackageName,
+			batch.EntitySchemaName,
 			context.LookupColumnName,
 			context.CancellationTokenSource.Token);
 
@@ -367,7 +362,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		results.Select(result => result.GetProperty("type").GetString()).Should().OnlyContain(type =>
 				!string.IsNullOrWhiteSpace(type),
 			because: "sync-schemas should expose the canonical type field on every result");
-		createLookupMessages.Should().Contain(message => message.Contains(context.LookupSchemaName!, StringComparison.Ordinal),
+		createLookupMessages.Should().Contain(message => message.Contains(batch.LookupSchemaName, StringComparison.Ordinal),
 			because: "create-lookup should keep its schema creation message on its own result");
 		createLookupMessages.Should().NotContain(message => message.Contains("Created row:", StringComparison.Ordinal),
 			because: "seed-data messages must not leak into the create-lookup result");
@@ -381,7 +376,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			because: "schema creation messages must not leak into the seed-data result");
 		seedMessages.Should().NotContain(message => message.Contains(context.LookupColumnName, StringComparison.Ordinal),
 			because: "update-entity messages must not leak into the seed-data result");
-		updateMessages.Should().Contain(message => message.Contains(context.EntitySchemaName!, StringComparison.Ordinal),
+		updateMessages.Should().Contain(message => message.Contains(batch.EntitySchemaName, StringComparison.Ordinal),
 			because: "update-entity should keep its column mutation message on its own result");
 		updateMessages.Should().Contain(message => message.Contains(context.LookupColumnName, StringComparison.Ordinal),
 			because: "update-entity should report the added lookup column");
@@ -415,43 +410,17 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 	[AllureName("sync-schemas streams per-operation stage markers")]
 	[AllureDescription("Runs sync-schemas with two operations through the real clio MCP server with an IProgress sink and asserts the client observed a per-operation stage marker naming the operation index and type — proving the tool-level progress path is wired end to end (ENG-93087). Batch success is asserted before the markers and the raw tool result is dumped, so an operation that failed on the environment is reported as that failure instead of as a missing marker.")]
 	public async Task SchemaSyncTool_Should_Stream_Per_Operation_Progress_Markers() {
-		// Arrange
+		// Arrange & Act — the composite batch this fixture already runs for its message-alignment test.
+		// The markers and the message alignment are two properties of ONE batch, so it is run once with a
+		// progress sink attached instead of twice. Its first two operations are still create-entity and
+		// create-lookup, in that order, which is what this test's marker expectations name.
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: true);
-		MessageCollectingProgress progress = new();
-
-		// Act — a two-operation batch; each operation must push a stage marker before it runs.
-		CallToolResult callResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = context.EnvironmentName!,
-					["package-name"] = context.PackageName!,
-					["operations"] = new object?[] {
-						new Dictionary<string, object?> {
-							["type"] = "create-entity",
-							["schema-name"] = context.EntitySchemaName!,
-							["title-localizations"] = BuildLocalizations("Schema Sync Entity"),
-							["columns"] = new object?[] {
-								new Dictionary<string, object?> {
-									["name"] = "UsrTitle",
-									["type"] = "Text",
-									["title-localizations"] = BuildLocalizations("Title")
-								}
-							}
-						},
-						new Dictionary<string, object?> {
-							["type"] = "create-lookup",
-							["schema-name"] = context.LookupSchemaName!,
-							["title-localizations"] = BuildLocalizations("Schema Sync Lookup")
-						}
-					}
-				}
-			},
-			progress,
-			context.CancellationTokenSource.Token);
+		SharedCompositeBatch batch = await GetOrRunCompositeBatchAsync(context);
+		CallToolResult callResult = batch.CallResult;
+		IReadOnlyList<string> progressMessages = batch.ProgressMessages;
 
 		// Diagnostic: surface the exact progress stream the client received (markers + heartbeats).
-		foreach (string progressMessage in progress.Messages) {
+		foreach (string progressMessage in progressMessages) {
 			TestContext.Out.WriteLine($"[progress] {progressMessage}");
 		}
 
@@ -473,13 +442,13 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		// operation that actually broke instead of reporting a missing marker as if the progress path were at fault.
 		response.GetProperty("success").GetBoolean().Should().BeTrue(
 			because: $"every operation in the batch must succeed before the per-operation markers can be judged — a failed operation aborts the batch and suppresses the markers of the operations after it. Payload: {responsePayload}");
-		progress.Messages.Should().Contain(
+		progressMessages.Should().Contain(
 			message => message.Contains("1/", StringComparison.Ordinal) && message.Contains("create-entity", StringComparison.Ordinal),
 			because: $"sync-schemas must stream a per-operation stage marker naming the operation index and type so the client can show which operation is running. Payload: {responsePayload}");
-		progress.Messages.Should().Contain(
+		progressMessages.Should().Contain(
 			message => message.Contains("2/", StringComparison.Ordinal) && message.Contains("create-lookup", StringComparison.Ordinal),
 			because: $"sync-schemas must also stream a marker for the second operation naming its index and type. Payload: {responsePayload}");
-		List<string> orderedMessages = progress.Messages.ToList();
+		List<string> orderedMessages = progressMessages.ToList();
 		int firstOperationMarkerIndex = orderedMessages.FindIndex(message => message.Contains("1/", StringComparison.Ordinal));
 		int secondOperationMarkerIndex = orderedMessages.FindIndex(message => message.Contains("2/", StringComparison.Ordinal));
 		firstOperationMarkerIndex.Should().BeLessThan(secondOperationMarkerIndex,
@@ -1322,6 +1291,53 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			cancellationToken: cancellationToken);
 	}
 
+	/// <summary>
+	/// Runs the fixture's composite sync-schemas batch (create-entity, create-lookup with seed rows,
+	/// update-entity) once, with a progress sink attached, and hands the same result and progress stream to
+	/// every test that asserts on it.
+	/// </summary>
+	/// <remarks>
+	/// The per-operation progress markers and the per-operation message alignment are two properties of one
+	/// and the same batch, but each was verified by its own run against the stand — about 100s together on a
+	/// slow agent. Attaching the sink to the composite call costs nothing and lets the marker test read the
+	/// stream the message test already produced. The marker test keeps its own expectations: the composite
+	/// batch's first two operations are still create-entity and create-lookup, in that order.
+	/// </remarks>
+	private static async Task<SharedCompositeBatch> GetOrRunCompositeBatchAsync(ArrangeContext context) {
+		if (_sharedCompositeBatch is not null) {
+			return _sharedCompositeBatch;
+		}
+		MessageCollectingProgress progress = new();
+		CallToolResult callResult = await CallSchemaSyncAsync(
+			context.Session,
+			context.EnvironmentName!,
+			context.PackageName!,
+			context.EntitySchemaName!,
+			context.LookupSchemaName!,
+			context.LookupColumnName,
+			context.CancellationTokenSource.Token,
+			progress);
+		_sharedCompositeBatch = new SharedCompositeBatch(
+			callResult,
+			[.. progress.Messages],
+			context.EnvironmentName!,
+			context.PackageName!,
+			context.EntitySchemaName!,
+			context.LookupSchemaName!);
+		return _sharedCompositeBatch;
+	}
+
+	private static SharedCompositeBatch? _sharedCompositeBatch;
+
+	/// <summary>One run of the fixture's composite sync-schemas batch, shared by the tests that assert on it.</summary>
+	private sealed record SharedCompositeBatch(
+		CallToolResult CallResult,
+		IReadOnlyList<string> ProgressMessages,
+		string EnvironmentName,
+		string PackageName,
+		string EntitySchemaName,
+		string LookupSchemaName);
+
 	private static async Task<CallToolResult> CallSchemaSyncAsync(
 		McpServerSession session,
 		string environmentName,
@@ -1329,7 +1345,8 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		string entitySchemaName,
 		string lookupSchemaName,
 		string lookupColumnName,
-		CancellationToken cancellationToken) {
+		CancellationToken cancellationToken,
+		IProgress<ProgressNotificationValue>? progress = null) {
 		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
 		reachableToolNames.Should().Contain(ToolName,
 			because: "sync-schemas must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
@@ -1387,6 +1404,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 					}
 				}
 			},
+			progress,
 			cancellationToken);
 	}
 
