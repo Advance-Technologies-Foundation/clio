@@ -8,7 +8,8 @@ namespace Clio.Mcp.E2E;
 /// but neither of them stops a developer who selects such a fixture by hand while
 /// <c>McpE2E__AllowDestructiveMcpTests=false</c>. The decision is a pure function so the invariant
 /// - a stand-touching arrange runs only under the explicit opt-in - is covered off-stand by
-/// <c>Clio.Tests.McpFixturePolicyTests</c> rather than only by the fixtures that never run in CI.
+/// <c>Clio.Tests.McpFixturePolicyTests</c> and <c>Clio.Tests.McpDestructiveArrangeGateTests</c> rather
+/// than only by the fixtures that never run in CI.
 /// </remarks>
 public static class DestructiveStandAuthorization {
 
