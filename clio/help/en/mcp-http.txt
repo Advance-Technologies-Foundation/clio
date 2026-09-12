@@ -254,7 +254,7 @@ ENVIRONMENT VARIABLES
         Setting at least one key enables per-request credential passthrough.
 
 FILES
-    <clio-home>/mcp-server.<pid>.lock
+    <user-home>/.clio/mcp-hosts/mcp-server.<pid>.lock
         The same presence marker mcp-server writes, created when this host
         starts listening and removed when it stops. While it exists and names a
         live process, other clio processes skip the background clio self-update

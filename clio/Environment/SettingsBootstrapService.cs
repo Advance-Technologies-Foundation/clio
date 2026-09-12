@@ -186,7 +186,7 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 		// A successful JToken.Parse can: it proves the bytes are well-formed JSON.
 		JToken parsedContent;
 		try {
-			parsedContent = JToken.Parse(fileContent);
+			parsedContent = ParseWithoutDateCoercion(fileContent);
 		}
 		catch (JsonException e) {
 			return BuildBroken(settingsFilePath, SettingsFileUnreadableCode,
@@ -245,6 +245,37 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 
 
 	/// <summary>
+	/// Parses the settings file into a token tree that keeps every JSON string a string.
+	/// </summary>
+	/// <remarks>
+	/// Json.NET's DEFAULT <c>DateParseHandling.DateTime</c> converts any string that looks like a
+	/// timestamp into a <c>DateTime</c> while parsing - before anything knows which member it belongs to.
+	/// Since the model is bound FROM this tree, a password, a login or a url that happens to look like
+	/// <c>2026-09-12T10:00:00+00:00</c> would come back re-formatted, and a pending migration would then
+	/// persist the re-formatted value: authentication starts failing and the file no longer contains what
+	/// the user put in it. The same applies to anything carried in an overflow bag, which clio never
+	/// interprets and must therefore hand back byte-for-byte. Members that really are timestamps
+	/// (<c>next-run</c>) are converted by their own property type, from the string, with their offset
+	/// intact.
+	/// </remarks>
+	/// <param name="fileContent">The raw settings file text.</param>
+	/// <returns>The parsed token tree.</returns>
+	private static JToken ParseWithoutDateCoercion(string fileContent) {
+		using StringReader stringReader = new(fileContent);
+		using JsonTextReader jsonReader = new(stringReader) {
+			DateParseHandling = DateParseHandling.None
+		};
+		JToken token = JToken.ReadFrom(jsonReader);
+		// A document with trailing content after the root value is malformed; Read() past the root tells
+		// us so, and JToken.Parse used to be what enforced it.
+		if (jsonReader.Read() && jsonReader.TokenType != JsonToken.None) {
+			throw new JsonReaderException(
+				"appsettings.json contains additional content after the root JSON value.");
+		}
+		return token;
+	}
+
+	/// <summary>
 	/// Binds the settings file ONE TOP-LEVEL MEMBER AT A TIME, so a member that fails takes only itself.
 	/// </summary>
 	/// <remarks>
@@ -288,6 +319,10 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 	/// <param name="bindFailurePaths">Collects the JSON path of every handled bind failure, in order.</param>
 	private static JsonSerializerSettings CreateTolerantSerializerSettings(List<string> bindFailurePaths) {
 		return new JsonSerializerSettings {
+			// Strings stay strings here too. The token tree was parsed without date coercion, but a
+			// serializer reading an overflow member out of it re-reads the token with ITS OWN setting, and
+			// the default would convert an ISO-looking credential into a DateTime on the way into the bag.
+			DateParseHandling = DateParseHandling.None,
 			Error = (_, args) => {
 				string path = args.ErrorContext.Path ?? string.Empty;
 				// Marking the error handled at this - the innermost - level stops it propagating, so the

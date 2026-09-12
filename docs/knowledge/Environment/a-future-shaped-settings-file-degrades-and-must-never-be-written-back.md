@@ -41,6 +41,14 @@ can read every environment in that file; it just cannot bind the newer `autoupda
 the whole file cost the user every environment for the rest of the session, and the message sent
 them to hand-edit a file that was correct.
 
+**Every read on this path parses with `DateParseHandling.None`** — the bootstrap's token tree, the
+serializer that binds from it, `LoadLatestSettings` on the write path, and
+`EnvironmentSettings.Clone`. Json.NET's default converts any ISO-looking STRING into a `DateTime`
+while parsing, before anything knows which member it belongs to; because clio re-serializes what it
+read, a password or login that looks like a timestamp would be written back in a different
+representation and stop authenticating, and an overflow-bag value clio never interprets would be
+rewritten too. A new read on this path that omits the setting reintroduces it silently.
+
 **What this does NOT cover** — the protection is one level deep and deliberately partial. A member a
 newer clio ADDS is not a mismatch at all (Json.NET ignores unknown members); it survives only because
 `Settings`, `EnvironmentSettings`, `AutoUpdateSettings` and `AutoUpdatePolicy` carry

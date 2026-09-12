@@ -629,4 +629,37 @@ public sealed class SettingsRepositoryFeatureTests {
 		Regex.Matches(persistedContent, Regex.Escape("\"$schema\"")).Count.Should().Be(1,
 			because: "a member the type declares but cannot set must be written once from the property, never a second time from the overflow bag");
 	}
+
+	[Test]
+	[Description("Keeps a value that merely LOOKS like a timestamp exactly as written, because clio re-serializes what it read and a re-formatted password stops authenticating.")]
+	public void UpdateSettings_ShouldPreserveStringsThatLookLikeTimestamps() {
+		// Arrange
+		// Json.NET's default DateParseHandling converts any ISO-looking string into a DateTime while
+		// PARSING - before anything knows which member it belongs to - so the value that comes back is a
+		// re-formatted one, and the next save writes that instead of what the user configured.
+		const string isoLookingSecret = "2026-09-12T10:00:00+00:00";
+		string original = """
+			{
+			  "ActiveEnvironmentKey": "dev",
+			  "SettingsVersion": 3,
+			  "future-section": { "token": "__ISO__" },
+			  "Environments": {
+			    "dev": { "Uri": "http://localhost", "Login": "Supervisor", "Password": "__ISO__" }
+			  }
+			}
+			""".Replace("__ISO__", isoLookingSecret);
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(original));
+		SettingsRepository sut = new(fileSystem);
+
+		// Act
+		sut.SetAutoupdate(true);
+		string persistedContent = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
+
+		// Assert
+		Regex.Matches(persistedContent, Regex.Escape(isoLookingSecret)).Count.Should().Be(2,
+			because: "both the credential and the unknown member must be written back byte-for-byte; a re-formatted password stops authenticating and clio never interprets an unknown member at all");
+		sut.GetEnvironment("dev").Password.Should().Be(isoLookingSecret,
+			because: "the value clio hands to an authentication call must be the value the file holds");
+	}
 }

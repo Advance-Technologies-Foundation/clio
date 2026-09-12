@@ -16,9 +16,11 @@ DESCRIPTION
     "next-run" at all, and is due the next time clio starts.
 
     The clio self-update is DEFERRED while an MCP host (mcp-server or mcp-http)
-    is resident in the same clio home, because replacing the binaries and
+    is resident for this user, because replacing the binaries and
     appsettings.json underneath a running host breaks it for the rest of its
-    session. The deferral prints one line:
+    session. The marker that says so lives in <user-home>/.clio/mcp-hosts, per
+    USER rather than per clio home, because the update replaces one per-user
+    tool installation whatever CLIO_HOME each process uses. The deferral prints one line:
 
         [INF] - clio self-update deferred: MCP host pid <N> (version <X>) is running
 

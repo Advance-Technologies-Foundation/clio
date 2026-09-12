@@ -349,7 +349,7 @@ curl -X POST http://localhost:8005/mcp \
 
 | Path | Purpose |
 |------|---------|
-| `<clio-home>/mcp-server.<pid>.lock` | The same presence marker [`mcp-server`](mcp-server.md) writes, created when the HTTP host starts listening and removed when it stops. While it exists and names a live process, other clio processes skip the background clio self-update rather than replacing this host's binaries mid-flight. |
+| `<user-home>/.clio/mcp-hosts/mcp-server.<pid>.lock` | The same presence marker [`mcp-server`](mcp-server.md) writes, created when the HTTP host starts listening and removed when it stops. While it exists and names a live process, other clio processes skip the background clio self-update rather than replacing this host's binaries mid-flight. |
 
 ## See Also
 

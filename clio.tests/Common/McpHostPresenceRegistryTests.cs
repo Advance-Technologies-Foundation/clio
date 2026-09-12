@@ -13,8 +13,21 @@ namespace Clio.Tests.Common;
 [Category("Unit")]
 [Property("Module", "Common")]
 public sealed class McpHostPresenceRegistryTests {
+	private const string UserHome = "/test-user-home";
+
+	private static string MarkerFolder =>
+		System.IO.Path.Combine(UserHome, ".clio", McpHostPresenceRegistry.MarkerFolderName);
+
 	private static string MarkerPath(int processId) =>
-		System.IO.Path.Combine(SettingsRepository.AppSettingsFolderPath, $"mcp-server.{processId}.lock");
+		System.IO.Path.Combine(MarkerFolder, $"mcp-server.{processId}.lock");
+
+	/// <summary>A home provider pinned to a fixed path, so markers never touch the real user profile.</summary>
+	private static Clio.Common.Skills.IUserHomeProvider HomeProvider(string userHome = UserHome) {
+		Clio.Common.Skills.IUserHomeProvider provider =
+			Substitute.For<Clio.Common.Skills.IUserHomeProvider>();
+		provider.GetClioDir().Returns(System.IO.Path.Combine(userHome, ".clio"));
+		return provider;
+	}
 
 	[Test]
 	[Description("Writes a marker naming the current process, its clio version and its start time, so another clio process can see the resident host.")]
@@ -22,7 +35,7 @@ public sealed class McpHostPresenceRegistryTests {
 		// Arrange
 		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
 		IProcessLivenessProbe probe = Substitute.For<IProcessLivenessProbe>();
-		McpHostPresenceRegistry registry = new(fileSystem, probe);
+		McpHostPresenceRegistry registry = new(fileSystem, probe, HomeProvider());
 
 		// Act
 		string markerFilePath = registry.Register();
@@ -45,7 +58,7 @@ public sealed class McpHostPresenceRegistryTests {
 		// Arrange
 		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
 		IProcessLivenessProbe probe = Substitute.For<IProcessLivenessProbe>();
-		McpHostPresenceRegistry registry = new(fileSystem, probe);
+		McpHostPresenceRegistry registry = new(fileSystem, probe, HomeProvider());
 		string markerFilePath = registry.Register();
 
 		// Act
@@ -65,7 +78,7 @@ public sealed class McpHostPresenceRegistryTests {
 			"{\"pid\":4242,\"clio-version\":\"8.1.0.120\",\"started-at-utc\":\"2026-09-12T10:00:00.0000000+00:00\"}"));
 		IProcessLivenessProbe probe = Substitute.For<IProcessLivenessProbe>();
 		probe.IsAlive(4242, Arg.Any<DateTimeOffset?>()).Returns(true);
-		McpHostPresenceRegistry registry = new(fileSystem, probe);
+		McpHostPresenceRegistry registry = new(fileSystem, probe, HomeProvider());
 
 		// Act
 		McpHostPresenceMarker marker = registry.FindLiveHost();
@@ -88,7 +101,7 @@ public sealed class McpHostPresenceRegistryTests {
 		fileSystem.AddFile(stalePath, new MockFileData("{\"pid\":4242,\"clio-version\":\"8.1.0.120\"}"));
 		IProcessLivenessProbe probe = Substitute.For<IProcessLivenessProbe>();
 		probe.IsAlive(4242, Arg.Any<DateTimeOffset?>()).Returns(false);
-		McpHostPresenceRegistry registry = new(fileSystem, probe);
+		McpHostPresenceRegistry registry = new(fileSystem, probe, HomeProvider());
 
 		// Act
 		McpHostPresenceMarker marker = registry.FindLiveHost();
@@ -105,9 +118,9 @@ public sealed class McpHostPresenceRegistryTests {
 	public void FindLiveHost_Should_Report_No_Host_When_No_Marker_Exists() {
 		// Arrange
 		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
-		fileSystem.AddDirectory(SettingsRepository.AppSettingsFolderPath);
+		fileSystem.AddDirectory(MarkerFolder);
 		IProcessLivenessProbe probe = Substitute.For<IProcessLivenessProbe>();
-		McpHostPresenceRegistry registry = new(fileSystem, probe);
+		McpHostPresenceRegistry registry = new(fileSystem, probe, HomeProvider());
 
 		// Act
 		McpHostPresenceMarker marker = registry.FindLiveHost();
@@ -124,10 +137,10 @@ public sealed class McpHostPresenceRegistryTests {
 		// Arrange
 		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
 		fileSystem.AddFile(
-			System.IO.Path.Combine(SettingsRepository.AppSettingsFolderPath, "mcp-server.not-a-pid.lock"),
+			System.IO.Path.Combine(MarkerFolder, "mcp-server.not-a-pid.lock"),
 			new MockFileData("{}"));
 		IProcessLivenessProbe probe = Substitute.For<IProcessLivenessProbe>();
-		McpHostPresenceRegistry registry = new(fileSystem, probe);
+		McpHostPresenceRegistry registry = new(fileSystem, probe, HomeProvider());
 
 		// Act
 		McpHostPresenceMarker marker = registry.FindLiveHost();
@@ -205,7 +218,7 @@ public sealed class McpHostPresenceRegistryTests {
 		string markerPath = MarkerPath(1);
 		fileSystem.AddFile(markerPath, new MockFileData(string.Empty));
 		IProcessLivenessProbe probe = Substitute.For<IProcessLivenessProbe>();
-		McpHostPresenceRegistry registry = new(fileSystem, probe);
+		McpHostPresenceRegistry registry = new(fileSystem, probe, HomeProvider());
 
 		// Act
 		McpHostPresenceMarker marker = registry.FindLiveHost();
@@ -226,7 +239,7 @@ public sealed class McpHostPresenceRegistryTests {
 		string markerPath = MarkerPath(4242);
 		fileSystem.AddFile(markerPath, new MockFileData("{\"pid\":4242,\"clio-version\":\"8.1.0.120\"}"));
 		IProcessLivenessProbe probe = Substitute.For<IProcessLivenessProbe>();
-		McpHostPresenceRegistry registry = new(fileSystem, probe);
+		McpHostPresenceRegistry registry = new(fileSystem, probe, HomeProvider());
 
 		// Act
 		McpHostPresenceMarker marker = registry.FindLiveHost();
@@ -247,7 +260,7 @@ public sealed class McpHostPresenceRegistryTests {
 		fileSystem.AddFile(markerPath,
 			new MockFileData(new string('x', McpHostPresenceRegistry.MaxMarkerBytes + 1)));
 		IProcessLivenessProbe probe = Substitute.For<IProcessLivenessProbe>();
-		McpHostPresenceRegistry registry = new(fileSystem, probe);
+		McpHostPresenceRegistry registry = new(fileSystem, probe, HomeProvider());
 
 		// Act
 		McpHostPresenceMarker marker = registry.FindLiveHost();
@@ -268,7 +281,7 @@ public sealed class McpHostPresenceRegistryTests {
 			"{\"pid\":4242,\"clio-version\":\"8.1.0.120\",\"started-at-utc\":\"2026-09-12T10:00:00.0000000+00:00\"}"));
 		IProcessLivenessProbe probe = Substitute.For<IProcessLivenessProbe>();
 		probe.IsAlive(4242, Arg.Any<DateTimeOffset?>()).Returns(true);
-		McpHostPresenceRegistry registry = new(fileSystem, probe);
+		McpHostPresenceRegistry registry = new(fileSystem, probe, HomeProvider());
 
 		// Act
 		McpHostPresenceMarker marker = registry.FindLiveHost();
@@ -278,5 +291,80 @@ public sealed class McpHostPresenceRegistryTests {
 			because: "the live host is what decides whether a self-update is safe, and it is listed after the unusable file");
 		marker!.ProcessId.Should().Be(4242,
 			because: "the scan must report the marker that names a live process");
+	}
+
+	[Test]
+	[Description("Keeps markers outside the clio home, so a host started with a custom CLIO_HOME is still visible to a clio started without one.")]
+	public void Register_Should_Write_The_Marker_Outside_The_Clio_Home() {
+		// Arrange
+		// The updater replaces ONE per-user tool installation however many clio homes exist, so a marker
+		// scoped to a clio home would leave a host invisible to the process able to overwrite it.
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		IProcessLivenessProbe probe = Substitute.For<IProcessLivenessProbe>();
+		McpHostPresenceRegistry registry = new(fileSystem, probe, HomeProvider());
+
+		// Act
+		string markerFilePath = registry.Register();
+
+		// Assert
+		markerFilePath.Should().StartWith(MarkerFolder,
+			because: "the marker belongs to the user, like the tool installation it guards");
+		markerFilePath.Should().NotContain(SettingsRepository.AppSettingsFolderPath,
+			because: "a CLIO_HOME-relative marker is invisible to a clio started with a different (or no) CLIO_HOME");
+	}
+
+	[Test]
+	[Description("A host writing under one settings folder is found by a registry reading under another, because both resolve the same per-user marker root.")]
+	public void FindLiveHost_Should_See_A_Host_Registered_From_A_Different_Settings_Folder() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		IProcessLivenessProbe writerProbe = Substitute.For<IProcessLivenessProbe>();
+		McpHostPresenceRegistry hostRegistry = new(fileSystem, writerProbe, HomeProvider());
+		string originalFolder = SettingsRepository.AppSettingsFolderPath;
+		string markerFilePath = hostRegistry.Register();
+		IProcessLivenessProbe readerProbe = Substitute.For<IProcessLivenessProbe>();
+		readerProbe.IsAlive(Environment.ProcessId, Arg.Any<DateTimeOffset?>()).Returns(true);
+		McpHostPresenceRegistry cliRegistry = new(fileSystem, readerProbe, HomeProvider());
+
+		// Act
+		McpHostPresenceMarker marker = cliRegistry.FindLiveHost();
+
+		// Assert
+		markerFilePath.Should().NotBeNull(
+			because: "the host must have written a marker for the scan to find");
+		marker.Should().NotBeNull(
+			because: "a host and a CLI that disagree about CLIO_HOME still share one tool installation, so they must share the marker root");
+		marker!.ProcessId.Should().Be(Environment.ProcessId,
+			because: "the marker names the process that wrote it");
+		SettingsRepository.AppSettingsFolderPath.Should().Be(originalFolder,
+			because: "the marker root must not depend on the settings folder at all");
+	}
+
+	[Test]
+	[Description("Skips a marker whose fields hold the wrong JSON type and keeps scanning, instead of failing the whole scan and reporting no host at all.")]
+	public void FindLiveHost_Should_Skip_A_Wrong_Typed_Marker_And_Find_The_Live_One() {
+		// Arrange
+		// Value<string>() on an object throws InvalidCastException, which is not a JsonException: it used
+		// to escape the scan entirely, so one mangled file hid every live host on the machine.
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		string malformedPath = MarkerPath(1);
+		fileSystem.AddFile(malformedPath, new MockFileData(
+			"{\"pid\":1,\"clio-version\":{},\"started-at-utc\":\"2026-09-12T10:00:00.0000000+00:00\"}"));
+		fileSystem.AddFile(MarkerPath(4242), new MockFileData(
+			"{\"pid\":4242,\"clio-version\":\"8.1.0.120\",\"started-at-utc\":\"2026-09-12T10:00:00.0000000+00:00\"}"));
+		IProcessLivenessProbe probe = Substitute.For<IProcessLivenessProbe>();
+		probe.IsAlive(4242, Arg.Any<DateTimeOffset?>()).Returns(true);
+		McpHostPresenceRegistry registry = new(fileSystem, probe, HomeProvider());
+
+		// Act
+		McpHostPresenceMarker marker = registry.FindLiveHost();
+
+		// Assert
+		marker.Should().NotBeNull(
+			because: "a live host must still be found when an unrelated marker file is malformed");
+		marker!.ProcessId.Should().Be(4242,
+			because: "the scan must report the marker that names a live process");
+		fileSystem.File.Exists(malformedPath).Should().BeFalse(
+			because: "a marker whose fields hold the wrong type can never name a live process and must not be re-read forever");
 	}
 }

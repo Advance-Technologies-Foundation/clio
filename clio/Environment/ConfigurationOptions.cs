@@ -59,7 +59,10 @@ namespace Clio
 		/// </remarks>
 		/// <returns>A copy carrying every member of the original.</returns>
 		public EnvironmentSettings Clone() =>
-			JsonConvert.DeserializeObject<EnvironmentSettings>(JsonConvert.SerializeObject(this))
+			JsonConvert.DeserializeObject<EnvironmentSettings>(JsonConvert.SerializeObject(this),
+				// Strings stay strings: a credential that looks like an ISO timestamp would otherwise come
+				// back through the overflow bag as a re-formatted DateTime.
+				new JsonSerializerSettings { DateParseHandling = DateParseHandling.None })
 			?? new EnvironmentSettings();
 
 		[YamlMember(Alias = "url")]
@@ -1201,7 +1204,12 @@ namespace Clio
 			}
 
 			expectedContent = _fileSystem.File.ReadAllText(AppSettingsFile);
-			return JsonConvert.DeserializeObject<Settings>(expectedContent)
+			// DateParseHandling.None for the same reason as in the bootstrap load: this model is about to
+			// be SERIALIZED BACK over the file, so any string Json.NET decides is a timestamp on the way in
+			// is rewritten in its own format on the way out - an ISO-looking password, or any such value a
+			// newer clio parked in an overflow bag, would be silently replaced.
+			return JsonConvert.DeserializeObject<Settings>(expectedContent,
+					new JsonSerializerSettings { DateParseHandling = DateParseHandling.None })
 				?? throw new Newtonsoft.Json.JsonSerializationException(
 					"appsettings.json did not contain a settings object.");
 		}

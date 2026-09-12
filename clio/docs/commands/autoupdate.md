@@ -66,8 +66,9 @@ autoupdate --enable
 - Due policies reuse the existing clio, knowledge, and toolkit update services
 - Manual update commands remain available and bypass the schedule
 - `next-run` is optional: a policy that has never run carries no `next-run`, which means it is due
-- The clio self-update is deferred while an MCP host (`mcp-server` or `mcp-http`) is resident in the
-  same clio home — replacing binaries under a running host breaks it for the rest of its session.
+- The clio self-update is deferred while an MCP host (`mcp-server` or `mcp-http`) is resident for this
+  user — replacing binaries under a running host breaks it for the rest of its session. The marker is
+  per user, not per clio home, because the update replaces one per-user tool installation.
   The deferral prints `clio self-update deferred: MCP host pid <N> (version <X>) is running` and
   leaves `next-run` untouched, so the update happens at the next start with no host running.
   Knowledge and toolkit updates are never deferred, and `clio update-cli` always updates now

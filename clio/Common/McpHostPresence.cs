@@ -107,6 +107,14 @@ public sealed class ProcessLivenessProbe : IProcessLivenessProbe {
 /// The marker exists so that a SEPARATE clio CLI process can see the resident host before it replaces
 /// clio's binaries and appsettings.json underneath it (issue #1462). Nothing in the host's own memory
 /// can answer that question, because the process that has to ask is a different one.
+/// <para>
+/// ACCEPTED RESIDUAL: a host that starts while a detached <c>dotnet tool update</c> is ALREADY
+/// downloading still has its binaries replaced under it. The marker is read before the update is
+/// launched, so it cannot see an update that is already in flight, and closing that window means
+/// coordinating with the lifetime of a process clio deliberately does not wait for. The exposure is
+/// one host start inside one update window; restarting that session is the remedy, and it is the same
+/// remedy the whole issue ends in.
+/// </para>
 /// </remarks>
 public interface IMcpHostPresenceRegistry {
 
@@ -130,20 +138,38 @@ public interface IMcpHostPresenceRegistry {
 // IFileSystem of its own, and an alias cannot win against a type in the enclosing namespace.
 public sealed class McpHostPresenceRegistry(
 	System.IO.Abstractions.IFileSystem fileSystem,
-	IProcessLivenessProbe processLivenessProbe)
+	IProcessLivenessProbe processLivenessProbe,
+	Clio.Common.Skills.IUserHomeProvider userHomeProvider)
 	: IMcpHostPresenceRegistry {
+	/// <summary>Folder name under the per-user clio directory that holds the presence markers.</summary>
+	internal const string MarkerFolderName = "mcp-hosts";
+
 	internal const string MarkerPrefix = "mcp-server.";
 	internal const string MarkerSuffix = ".lock";
 
 	/// <summary>Refuse to read anything larger than this; a marker is three short fields.</summary>
 	internal const int MaxMarkerBytes = 4096;
 
+	/// <summary>
+	/// Where markers live: <c>&lt;user home&gt;/.clio/mcp-hosts</c>, and deliberately NOT under the clio
+	/// home.
+	/// </summary>
+	/// <remarks>
+	/// The thing being protected is the <c>dotnet tool update clio -g</c> installation, and there is ONE
+	/// of those per user however many clio homes exist. A marker kept under a <c>CLIO_HOME</c>-relative
+	/// path would be invisible to a clio started without that variable - which would then replace the
+	/// binaries of the very host that wrote it. The scope of the marker has to match the scope of the
+	/// thing it guards.
+	/// </remarks>
+	private string MarkerFolder =>
+		System.IO.Path.Combine(userHomeProvider.GetClioDir(), MarkerFolderName);
+
 	/// <inheritdoc />
 	public string Register() {
 		int processId = Environment.ProcessId;
 		string markerFilePath = BuildMarkerPath(processId);
 		try {
-			string folder = SettingsRepository.AppSettingsFolderPath;
+			string folder = MarkerFolder;
 			if (!fileSystem.Directory.Exists(folder)) {
 				fileSystem.Directory.CreateDirectory(folder);
 			}
@@ -184,7 +210,7 @@ public sealed class McpHostPresenceRegistry(
 
 	/// <inheritdoc />
 	public McpHostPresenceMarker FindLiveHost() {
-		string folder = SettingsRepository.AppSettingsFolderPath;
+		string folder = MarkerFolder;
 		IEnumerable<string> markerFiles;
 		try {
 			if (!fileSystem.Directory.Exists(folder)) {
@@ -243,10 +269,19 @@ public sealed class McpHostPresenceRegistry(
 		string version;
 		DateTimeOffset startedAtUtc;
 		try {
-			JObject content = JObject.Parse(fileSystem.File.ReadAllText(markerFilePath));
-			version = content.Value<string>("clio-version") ?? "unknown";
-			if (!DateTimeOffset.TryParse(content.Value<string>("started-at-utc"),
-				CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out startedAtUtc)) {
+			// Parsed WITHOUT date coercion: Json.NET's default turns an ISO timestamp into a DateTime
+			// while parsing, and the started-at-utc field would then not be a JSON string any more - the
+			// type check below would refuse every marker clio itself wrote.
+			JObject content = ParseWithoutDateCoercion(fileSystem.File.ReadAllText(markerFilePath));
+			// Read through the token TYPE, never through Value<string>(): a field holding an object or an
+			// array makes that throw InvalidCastException, which is not a JsonException and would escape
+			// the whole scan - so one hand-mangled file would hide every OTHER live host and let the
+			// update run under it. A wrong-typed field means this marker is not one.
+			version = ReadStringField(content, "clio-version") ?? "unknown";
+			string startedAtText = ReadStringField(content, "started-at-utc");
+			if (startedAtText is null
+				|| !DateTimeOffset.TryParse(startedAtText, CultureInfo.InvariantCulture,
+					DateTimeStyles.RoundtripKind, out startedAtUtc)) {
 				return null;
 			}
 		}
@@ -255,6 +290,18 @@ public sealed class McpHostPresenceRegistry(
 		}
 		return new McpHostPresenceMarker(processId, version, startedAtUtc, markerFilePath);
 	}
+
+	private static JObject ParseWithoutDateCoercion(string content) {
+		using System.IO.StringReader stringReader = new(content);
+		using JsonTextReader jsonReader = new(stringReader) { DateParseHandling = DateParseHandling.None };
+		return JObject.Load(jsonReader);
+	}
+
+	/// <summary>Returns a field's value only when it really is a JSON string.</summary>
+	private static string ReadStringField(JObject content, string fieldName) =>
+		content[fieldName] is JValue { Type: JTokenType.String } value
+			? value.Value<string>()
+			: null;
 
 	internal static int ParseProcessIdFromFileName(string markerFilePath) {
 		string fileName = System.IO.Path.GetFileName(markerFilePath) ?? string.Empty;
@@ -269,8 +316,8 @@ public sealed class McpHostPresenceRegistry(
 			: 0;
 	}
 
-	private static string BuildMarkerPath(int processId) =>
-		System.IO.Path.Combine(SettingsRepository.AppSettingsFolderPath,
+	private string BuildMarkerPath(int processId) =>
+		System.IO.Path.Combine(MarkerFolder,
 			$"{MarkerPrefix}{processId.ToString(CultureInfo.InvariantCulture)}{MarkerSuffix}");
 
 	private static bool IsMarkerIoFailure(Exception exception) =>

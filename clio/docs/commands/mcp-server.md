@@ -214,7 +214,7 @@ get-guidance again with the selected name.
 
 | Path | Purpose |
 |------|---------|
-| `<clio-home>/mcp-server.<pid>.lock` | Presence marker written at startup and removed at shutdown (host only, never by an internal `--worker` child). While it exists and names a live process, other clio processes skip the background clio self-update, so this host's binaries and `appsettings.json` are not replaced underneath it. A marker left by a killed host is deleted by the next clio run that sees its process is gone. |
+| `<user-home>/.clio/mcp-hosts/mcp-server.<pid>.lock` | Presence marker written at startup and removed at shutdown (host only, never by an internal `--worker` child). While it exists and names a live process, other clio processes skip the background clio self-update, so this host's binaries and `appsettings.json` are not replaced underneath it. A marker left by a killed host is deleted by the next clio run that sees its process is gone. |
 
 ## Reporting Bugs
 
