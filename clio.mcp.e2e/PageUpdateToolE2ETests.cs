@@ -367,11 +367,13 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		const string savePage = "ClioMcp_BlankPageToSave";
 		string baselineDir = Directory.CreateTempSubdirectory("clio-e2e-lint-gate-before-").FullName;
 		string readbackDir = Directory.CreateTempSubdirectory("clio-e2e-lint-gate-after-").FullName;
+		string originalBody = null;
+		bool restoreNeeded = false;
 		try {
 			PageGetResponse baseline = await GetPageAsync(arrangeContext, savePage, environmentName, baselineDir);
 			baseline.Success.Should().BeTrue(
 				because: $"get-page must succeed for the seeded page '{savePage}' before the gate can be proven. Error: {baseline.Error}");
-			string originalBody = await File.ReadAllTextAsync(baseline.Files.BodyFile);
+			originalBody = await File.ReadAllTextAsync(baseline.Files.BodyFile);
 
 			// Act
 			PageUpdateResponse response = await UpdatePageAsync(
@@ -381,6 +383,8 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 				environmentName,
 				baselineDir);
 			PageGetResponse readback = await GetPageAsync(arrangeContext, savePage, environmentName, readbackDir);
+			string bodyAfter = readback.Success ? await File.ReadAllTextAsync(readback.Files.BodyFile) : null;
+			restoreNeeded = bodyAfter is not null && bodyAfter != originalBody;
 
 			// Assert
 			response.Success.Should().BeFalse(
@@ -391,12 +395,32 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 				because: "the rule id must reach the wire so the agent can map the refusal back to the authoring rule");
 			readback.Success.Should().BeTrue(
 				because: $"the page must still be readable after the refused write. Error: {readback.Error}");
-			string bodyAfter = await File.ReadAllTextAsync(readback.Files.BodyFile);
 			bodyAfter.Should().Be(originalBody,
 				because: "a refused write must leave the stand untouched — this is the assertion a dry-run scenario cannot make");
 		} finally {
+			if (restoreNeeded) {
+				//Only reached when the gate let the probe body through, which is the failure this test
+				//exists to catch. The page is shared by the rest of the suite, so it is put back rather
+				//than left holding a body that throws on open.
+				await TryRestorePageBodyAsync(arrangeContext, savePage, originalBody, environmentName,
+					baselineDir);
+			}
 			TryDeleteDirectory(baselineDir);
 			TryDeleteDirectory(readbackDir);
+		}
+	}
+
+	/// <summary>
+	/// Best-effort restore of a shared fixture page's body. A failure here is reported to the console
+	/// and swallowed: it must not replace the assertion failure that made the restore necessary.
+	/// </summary>
+	private static async Task TryRestorePageBodyAsync(ArrangeContext context, string schemaName,
+		string body, string environmentName, string outputDirectory) {
+		try {
+			await UpdatePageAsync(context, schemaName, body, environmentName, outputDirectory);
+		} catch (Exception restoreFailure) {
+			TestContext.Progress.WriteLine(
+				$"Failed to restore the body of '{schemaName}': {restoreFailure.Message}");
 		}
 	}
 

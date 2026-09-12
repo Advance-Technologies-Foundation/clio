@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -473,16 +473,66 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		baseline.Success.Should().BeTrue(
 			because: $"get-page must succeed for the seeded page '{SavePage}' before the gate can be proven. Error: {baseline.Error}");
 		string originalBody = await File.ReadAllTextAsync(baseline.Files.BodyFile);
+		bool restoreNeeded = false;
+		try {
+			// Act 2: the real save path — no dry-run — with a body only the AST lint pass rejects.
+			CallToolResult syncResult = await SyncBodyAsync(context, environmentName,
+				PageLintProbeBodies.ConditionallyDeclaredHelper(SavePage));
+			PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(syncResult);
 
-		// Act 2: the real save path — no dry-run — with a body only the AST lint pass rejects.
-		CallToolResult syncResult = await context.Session.CallToolAsync(
+			// Act 3: read the page back.
+			CallToolResult readbackResult = await context.Session.CallToolAsync(
+				PageGetTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = SavePage,
+						["environment-name"] = environmentName
+					}
+				},
+				context.CancellationTokenSource.Token);
+			PageGetResponse readback = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(readbackResult);
+			string bodyAfter = readback.Success ? await File.ReadAllTextAsync(readback.Files.BodyFile) : null;
+			restoreNeeded = bodyAfter is not null && bodyAfter != originalBody;
+
+			// Assert
+			response.Success.Should().BeFalse(
+				because: "the handler calls a helper whose only declaration sits in a branch that never runs, so the page would throw a TypeError on open");
+			response.Pages.Should().ContainSingle(
+				because: "one page was submitted");
+			response.Pages[0].Error.Should().Contain("Page body lint failed",
+				because: "the canonical lint prefix is what tells the agent this was a lint rejection rather than a syntax or transport failure");
+			response.Pages[0].Error.Should().Contain("undefined-section-call",
+				because: "the rule id must reach the wire so the agent can map the refusal back to the authoring rule");
+			readback.Success.Should().BeTrue(
+				because: $"the page must still be readable after the refused write. Error: {readback.Error}");
+			bodyAfter.Should().Be(originalBody,
+				because: "a refused write must leave the stand untouched — this is the assertion the dry-run scenario cannot make");
+		} finally {
+			if (restoreNeeded) {
+				//Only reached when the gate let the probe body through, which is the failure this test
+				//exists to catch. The page is shared by the rest of the suite, so it is put back rather
+				//than left holding a body that throws on open.
+				try {
+					await SyncBodyAsync(context, environmentName, originalBody);
+				} catch (Exception restoreFailure) {
+					TestContext.Progress.WriteLine(
+						$"Failed to restore the body of '{SavePage}': {restoreFailure.Message}");
+				}
+			}
+		}
+	}
+
+	/// <summary>Saves one body to <c>SavePage</c> through the real (non-dry-run) sync-pages path.</summary>
+	private static Task<CallToolResult> SyncBodyAsync(ArrangeContext context, string environmentName,
+		string body) =>
+		context.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
 					["pages"] = new[] {
 						new Dictionary<string, object?> {
 							["schema-name"] = SavePage,
-							["body"] = PageLintProbeBodies.ConditionallyDeclaredHelper(SavePage)
+							["body"] = body
 						}
 					},
 					["environment-name"] = environmentName,
@@ -490,35 +540,6 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 				}
 			},
 			context.CancellationTokenSource.Token);
-		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(syncResult);
-
-		// Act 3: read the page back.
-		CallToolResult readbackResult = await context.Session.CallToolAsync(
-			PageGetTool.ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["schema-name"] = SavePage,
-					["environment-name"] = environmentName
-				}
-			},
-			context.CancellationTokenSource.Token);
-		PageGetResponse readback = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(readbackResult);
-
-		// Assert
-		response.Success.Should().BeFalse(
-			because: "the handler calls a helper whose only declaration sits in a branch that never runs, so the page would throw a TypeError on open");
-		response.Pages.Should().ContainSingle(
-			because: "one page was submitted");
-		response.Pages[0].Error.Should().Contain("Page body lint failed",
-			because: "the canonical lint prefix is what tells the agent this was a lint rejection rather than a syntax or transport failure");
-		response.Pages[0].Error.Should().Contain("undefined-section-call",
-			because: "the rule id must reach the wire so the agent can map the refusal back to the authoring rule");
-		readback.Success.Should().BeTrue(
-			because: $"the page must still be readable after the refused write. Error: {readback.Error}");
-		string bodyAfter = await File.ReadAllTextAsync(readback.Files.BodyFile);
-		bodyAfter.Should().Be(originalBody,
-			because: "a refused write must leave the stand untouched — this is the assertion the dry-run scenario cannot make");
-	}
 
 	[Test]
 	[Description("Keeps JavaScript handlers out of JSON content validation failures.")]

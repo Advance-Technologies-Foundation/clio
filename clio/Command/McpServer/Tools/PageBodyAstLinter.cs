@@ -331,6 +331,11 @@ internal static class PageBodyAstLinter {
 	// every occurrence into a multi-megabyte string that no MCP client can use. Names past the cap
 	// are replaced by a single summary finding that states how many were left out, so the response
 	// stays bounded without pretending the rest do not exist.
+	//
+	// Must stay BELOW MaxFindingsPerRule. This cap is what makes the rule's own count of listed names
+	// agree with what the report shows: a name cleared here is always given a slot by the shared
+	// budget, so the summary's "N distinct name(s) are listed above" cannot overstate. Raising it past
+	// the per-rule cap would silently break that agreement.
 	internal const int MaxUndefinedSectionCallNames = 20;
 
 	// How many DISTINCT omitted names the summary keeps before its count saturates. The names are never
@@ -342,9 +347,12 @@ internal static class PageBodyAstLinter {
 	// in hundreds of kilobytes - unreadable, and the caller only ever fixes the first few before re-running.
 	internal const int MaxFindingsPerRule = 50;
 
-	// Ceiling on the whole report, across rules. AST depth bounds how deep the walk goes, not how WIDE the
-	// body is: a generated page can trip several rules thousands of times each, and per-rule caps alone
-	// still let the response grow with the number of rules that happen to fire.
+	// Ceiling on the WARNING part of the report, across rules. AST depth bounds how deep the walk goes,
+	// not how WIDE the body is: a generated page can trip several rules thousands of times each, and
+	// per-rule caps alone still let the response grow with the number of rules that happen to fire.
+	// Errors are deliberately exempt: an Error blocks the write, so dropping one to keep the report small
+	// turns a page the platform rejects into a page that saves clean. Errors stay bounded by the per-rule
+	// cap instead.
 	internal const int MaxFindingsTotal = 150;
 
 	/// <summary>
@@ -363,11 +371,14 @@ internal static class PageBodyAstLinter {
 
 		/// <summary>
 		/// Claims a slot for one finding of <paramref name="rule"/>, or counts it as suppressed.
+		/// A <see cref="LintSeverity.Error"/> only has to fit under its own rule's cap: the overall
+		/// ceiling exists to keep an advisory report readable, and applying it to an Error would let a
+		/// wide body full of warnings hide the finding that blocks the write.
 		/// </summary>
-		public bool TryReserve(string rule, LintSeverity severity, int line, int column){
+		private bool TryReserve(string rule, LintSeverity severity, int line, int column){
 			_reported.TryGetValue(rule, out int reported);
-			bool hasRoom = _findings.Count < MaxFindingsTotal && reported < MaxFindingsPerRule;
-			if (!hasRoom) {
+			bool fitsOverall = severity == LintSeverity.Error || _findings.Count < MaxFindingsTotal;
+			if (!fitsOverall || reported >= MaxFindingsPerRule) {
 				RecordSuppressed(rule, severity, line, column);
 				return false;
 			}
@@ -376,7 +387,7 @@ internal static class PageBodyAstLinter {
 		}
 
 		/// <summary>Adds a finding whose slot was already claimed with <see cref="TryReserve"/>.</summary>
-		public void AddReserved(string rule, LintSeverity severity, int line, int column, string message) =>
+		private void AddReserved(string rule, LintSeverity severity, int line, int column, string message) =>
 			_findings.Add(new PageBodyLintFinding(rule, severity, line, column, message));
 
 		/// <summary>
@@ -391,7 +402,7 @@ internal static class PageBodyAstLinter {
 		}
 
 		/// <summary>Counts one finding that will not be shown, and remembers where it sat.</summary>
-		public void RecordSuppressed(string rule, LintSeverity severity, int line, int column){
+		private void RecordSuppressed(string rule, LintSeverity severity, int line, int column){
 			if (_suppressed.TryGetValue(rule, out SuppressedRuleCount existing)) {
 				_suppressed[rule] = existing with {Count = existing.Count + 1, Line = line, Column = column};
 				return;
@@ -412,14 +423,21 @@ internal static class PageBodyAstLinter {
 				}
 				SuppressedRuleCount suppressed = _suppressed[rule];
 				_reported.TryGetValue(rule, out int reported);
+				//A rule that first fired after the report was already full has nothing "listed above",
+				//so saying "past the first 0" would send the reader looking for entries that are not there.
+				string message = reported > 0
+					? $"{suppressed.Count} further `{rule}` finding(s) past the first {reported} were "
+						+ "omitted from this report; fix the listed ones and re-run validate-page to see "
+						+ "the rest."
+					: $"{suppressed.Count} `{rule}` finding(s) were omitted from this report, which had "
+						+ "already reached its overall size limit; fix the listed findings and re-run "
+						+ "validate-page to see these.";
 				_findings.Add(new PageBodyLintFinding(
 					Rule: rule,
 					Severity: suppressed.Severity,
 					Line: suppressed.Line,
 					Column: suppressed.Column,
-					Message: $"{suppressed.Count} further `{rule}` finding(s) past the first {reported} were "
-						+ "omitted from this report; fix the listed ones and re-run validate-page to see "
-						+ "the rest."));
+					Message: message));
 			}
 		}
 
@@ -474,6 +492,7 @@ internal static class PageBodyAstLinter {
 		//Name -> definitely initialized before the enclosing function finished.
 		private readonly Dictionary<string, bool> _names = new(StringComparer.Ordinal);
 		private readonly LexicalScope _parent;
+		private HashSet<string> _nestedFunctionAssignments;
 
 		public LexicalScope(LexicalScope parent, bool isFunctionBoundary = false){
 			_parent = parent;
@@ -482,6 +501,17 @@ internal static class PageBodyAstLinter {
 
 		/// <summary>True when this scope belongs to a function, so leaving it crosses a call boundary.</summary>
 		public bool IsFunctionBoundary { get; }
+
+		/// <summary>
+		/// The names this function's body assigns from inside a nested function of its own. They are
+		/// collected up front, because whether such an assignment has run by the time a section calls the
+		/// name does not follow from where the assignment sits in the source.
+		/// </summary>
+		public IReadOnlyCollection<string> NestedFunctionAssignments => _nestedFunctionAssignments;
+
+		public void RecordNestedFunctionAssignments(HashSet<string> names){
+			_nestedFunctionAssignments = names;
+		}
 
 		public void Declare(string name, bool definitelyInitialized){
 			if (string.IsNullOrEmpty(name)) {
@@ -605,8 +635,8 @@ internal static class PageBodyAstLinter {
 		LexicalScope GlobalScope,
 		HashSet<Node> FactoryFunctions,
 		HashSet<Node> SectionProperties,
-		LintFindingBudget Sink,
-		UndefinedCallBudget NameBudget);
+		LintFindingBudget FindingBudget,
+		UndefinedCallBudget DistinctNameBudget);
 
 	private const string DefineGlobalName = "define";
 
@@ -623,22 +653,25 @@ internal static class PageBodyAstLinter {
 		foreach (string global in CallableRuntimeGlobals) {
 			globalScope.Declare(global, definitelyInitialized: true);
 		}
-		LexicalScope scriptScope = new(globalScope, isFunctionBoundary: true);
+		LexicalScope scriptScope = new(globalScope);
 		bool strict = HasUseStrictDirective(ast.Body);
 		DeclareHoistedNames(ast, scriptScope, depth: 0, strict, atStatementLevel: true,
 			unconditional: true);
-		DeclareBlockNames(ast.Body, scriptScope, depth: 0, unconditional: true);
+		DeclareBlockNames(ast.Body, scriptScope, depth: 0, assignmentsAlwaysRun: true);
 		HashSet<Node> factories = new(NodeReferenceComparer.Instance);
 		CollectFactoryFunctions(ast, factories, depth: 0);
 		HashSet<Node> sections = new(NodeReferenceComparer.Instance);
 		CollectSectionProperties(ast, factories, sections, depth: 0);
 		SectionScanState state = new(globalScope, factories, sections, budget, new UndefinedCallBudget());
-		ScanForUndefinedSectionCalls(ast, scriptScope, insideSection: false, depth: 0, strict, state);
-		if (state.NameBudget.OmittedOccurrenceCount > 0 && state.NameBudget.LastOmitted.HasValue) {
-			PageBodyLintFinding summary = BuildOmittedSummary(state.NameBudget.LastOmitted.Value,
-				state.NameBudget);
-			budget.AddReserved(summary.Rule, summary.Severity, summary.Line, summary.Column,
-				summary.Message);
+		ScanForUndefinedSectionCalls(ast, scriptScope, insideSection: false, depth: 0, strict,
+			unconditional: true, state);
+		if (state.DistinctNameBudget.OmittedOccurrenceCount > 0
+			&& state.DistinctNameBudget.LastOmitted.HasValue) {
+			OmittedCallLocation lastOmitted = state.DistinctNameBudget.LastOmitted.Value;
+			//Through the shared budget like every other finding, so the report's own accounting stays
+			//consistent. The summary is an Error, which the overall ceiling does not apply to.
+			budget.TryAdd(RuleUndefinedSectionCall, LintSeverity.Error, lastOmitted.Line,
+				lastOmitted.Column, () => BuildOmittedSummaryMessage(state.DistinctNameBudget));
 		}
 	}
 
@@ -670,11 +703,19 @@ internal static class PageBodyAstLinter {
 	///
 	/// When the body carries no `define(...)` factory at all - nothing upstream of the linter requires
 	/// one - the same return-anchored rule is applied to every function in the body, so the rule keeps
-	/// working on a bare module without falling back to the name-anywhere match.
+	/// working on a bare module without falling back to the name-anywhere match. The fallback is decided
+	/// for the WHOLE body: one `define(...)` anywhere is enough to scope discovery to factories only.
+	///
+	/// Only a `return` that is a direct statement of the function body is an anchor. A page schema
+	/// returned from inside an `if` or a `try` is therefore not discovered, the same silent gap as a
+	/// factory that returns a variable rather than an object literal.
 	/// </summary>
 	private static void CollectSectionProperties(Node node, HashSet<Node> factories,
 		HashSet<Node> sections, int depth) {
 		if (node is null || depth > MaxAstDepth) {
+			//Past the traversal cap the rule simply finds no sections there, so it reports nothing
+			//rather than reporting wrongly; the same body already gets a blocking
+			//`body-too-deeply-nested` finding from the main walk.
 			return;
 		}
 		if (node is IFunction function && (factories.Count == 0 || factories.Contains(node))) {
@@ -686,18 +727,56 @@ internal static class PageBodyAstLinter {
 	}
 
 	private static void CollectReturnedSectionProperties(IFunction function, HashSet<Node> sections) {
+		//An arrow with an expression body - `() => ({ handlers: [...] })` - returns its object literal
+		//without a `return` statement at all, and is a shape Page Designer emits.
+		if (function.Body is ObjectExpression conciseBody) {
+			AddSectionProperties(conciseBody, sections);
+			return;
+		}
 		if (function.Body is not BlockStatement body) {
 			return;
 		}
 		foreach (Statement statement in body.Body) {
-			if (statement is not ReturnStatement {Argument: ObjectExpression returned}) {
+			if (statement is not ReturnStatement {Argument: not null} returnStatement) {
 				continue;
 			}
-			foreach (Node element in returned.Properties) {
-				if (TryGetEntryProperty(element, out Property property, out string key)
-					&& Array.IndexOf(SectionPropertyNames, key) >= 0) {
-					sections.Add(property);
+			ObjectExpression returned = returnStatement.Argument as ObjectExpression
+				?? (returnStatement.Argument is Identifier returnedName
+					? FindObjectLiteralDeclaration(body, returnedName.Name)
+					: null);
+			if (returned is not null) {
+				AddSectionProperties(returned, sections);
+			}
+		}
+	}
+
+	/// <summary>
+	/// The object literal a direct `const`/`let`/`var` statement of this block assigned to
+	/// <paramref name="name"/> - the `const schema = { handlers: [...] }; return schema;` shape. A
+	/// declaration that gets its value any other way (a call result, a spread of another variable, an
+	/// assignment written separately from the declaration) is not followed: the rule then finds no
+	/// sections and stays silent, which is the same documented gap as a nested `return`.
+	/// </summary>
+	private static ObjectExpression FindObjectLiteralDeclaration(BlockStatement body, string name) {
+		foreach (Statement statement in body.Body) {
+			if (statement is not VariableDeclaration declaration) {
+				continue;
+			}
+			foreach (VariableDeclarator declarator in declaration.Declarations) {
+				if (declarator is {Id: Identifier {Name: var declared}, Init: ObjectExpression initializer}
+					&& string.Equals(declared, name, StringComparison.Ordinal)) {
+					return initializer;
 				}
+			}
+		}
+		return null;
+	}
+
+	private static void AddSectionProperties(ObjectExpression returned, HashSet<Node> sections) {
+		foreach (Node element in returned.Properties) {
+			if (TryGetEntryProperty(element, out Property property, out string key)
+				&& Array.IndexOf(SectionPropertyNames, key) >= 0) {
+				sections.Add(property);
 			}
 		}
 	}
@@ -726,21 +805,15 @@ internal static class PageBodyAstLinter {
 		enclosingStrict
 		|| (node is IFunction {Body: BlockStatement body} && HasUseStrictDirective(body.Body));
 
-	private static PageBodyLintFinding BuildOmittedSummary(
-		OmittedCallLocation lastOmitted, UndefinedCallBudget budget) {
+	private static string BuildOmittedSummaryMessage(UndefinedCallBudget budget) {
 		string floorPrefix = budget.OmittedNameCountIsFloor ? "at least " : string.Empty;
 		string namesPart = budget.OmittedNameCount > 0
 			? $"{floorPrefix}{budget.OmittedNameCount} "
 				+ $"further undeclared name(s) past the first {MaxUndefinedSectionCallNames}, and "
 			: string.Empty;
-		return new PageBodyLintFinding(
-			Rule: RuleUndefinedSectionCall,
-			Severity: LintSeverity.Error,
-			Line: lastOmitted.Line,
-			Column: lastOmitted.Column,
-			Message: $"{namesPart}{budget.OmittedOccurrenceCount} further call site(s) of undeclared "
-				+ $"identifiers were omitted from this report; {budget.ReportedNameCount} distinct name(s) "
-				+ "are listed above. Fix the listed ones and re-run validate-page to see the rest.");
+		return $"{namesPart}{budget.OmittedOccurrenceCount} further call site(s) of undeclared "
+			+ $"identifiers were omitted from this report; {budget.ReportedNameCount} distinct name(s) "
+			+ "are listed above. Fix the listed ones and re-run validate-page to see the rest.";
 	}
 
 	/// <summary>
@@ -784,6 +857,11 @@ internal static class PageBodyAstLinter {
 	/// conditional, which is what makes `if (false) { function helper(){} }` fail closed.
 	/// </summary>
 	private static bool IsUnconditionalChild(Node parent, Node child, bool parentUnconditional) {
+		if (parent is IFunction function && ReferenceEquals(child, function.Body)) {
+			//A function body opens its own sequence: it runs from the top whenever the function is
+			//called, wherever the function itself was written.
+			return true;
+		}
 		if (!parentUnconditional) {
 			return false;
 		}
@@ -845,7 +923,7 @@ internal static class PageBodyAstLinter {
 	/// function declarations that are direct statements of this block.
 	/// </summary>
 	private static void DeclareBlockNames(in NodeList<Statement> statements, LexicalScope scope,
-		int depth, bool unconditional) {
+		int depth, bool assignmentsAlwaysRun) {
 		bool afterReturn = false;
 		foreach (Statement statement in statements) {
 			if (afterReturn && statement is not FunctionDeclaration) {
@@ -864,14 +942,14 @@ internal static class PageBodyAstLinter {
 					} blockDeclaration:
 					foreach (VariableDeclarator declarator in blockDeclaration.Declarations) {
 						DeclareBindings(declarator.Id, scope, depth + 1,
-							definitelyInitialized: unconditional && declarator.Init is not null);
+							definitelyInitialized: declarator.Init is not null);
 					}
 					break;
 				case FunctionDeclaration {Id: not null} functionDeclaration:
-					scope.Declare(functionDeclaration.Id.Name, definitelyInitialized: unconditional);
+					scope.Declare(functionDeclaration.Id.Name, definitelyInitialized: true);
 					break;
 				case ClassDeclaration {Id: not null} classDeclaration:
-					scope.Declare(classDeclaration.Id.Name, definitelyInitialized: unconditional);
+					scope.Declare(classDeclaration.Id.Name, definitelyInitialized: true);
 					break;
 				case ExpressionStatement {
 						Expression: AssignmentExpression {
@@ -879,8 +957,9 @@ internal static class PageBodyAstLinter {
 						}
 					}:
 					//`let helper; helper = () => 1;` before the return DOES leave a callable binding,
-					//so the assignment - not the declaration - is what makes it usable.
-					if (unconditional) {
+					//so the assignment - not the declaration - is what makes it usable. The same
+					//assignment inside a branch that may not run proves nothing about the binding.
+					if (assignmentsAlwaysRun) {
 						scope.MarkInitialized(assigned.Name);
 					}
 					break;
@@ -927,7 +1006,7 @@ internal static class PageBodyAstLinter {
 	/// Opens the scope a node introduces, if any, and returns the scope its children see.
 	/// </summary>
 	private static LexicalScope OpenScope(Node node, LexicalScope scope, int depth, bool strict,
-		SectionScanState state) {
+		bool unconditional, SectionScanState state) {
 		switch (node) {
 			case IFunction function: {
 				//The AMD factory chains to the runtime globals, NOT to the script scope: a helper
@@ -943,20 +1022,37 @@ internal static class PageBodyAstLinter {
 				}
 				DeclareHoistedNames(function.Body, functionScope, depth + 1, strict,
 					atStatementLevel: true, unconditional: true);
+				HashSet<string> nestedAssignments = new(StringComparer.Ordinal);
+				CollectNestedFunctionAssignments(function.Body, nestedAssignments, depth + 1,
+					insideNestedFunction: false);
+				functionScope.RecordNestedFunctionAssignments(nestedAssignments);
 				return functionScope;
 			}
 			case BlockStatement block: {
 				LexicalScope blockScope = new(scope);
-				DeclareBlockNames(block.Body, blockScope, depth + 1, unconditional: true);
+				//Reaching a block's scope at all means the block runs, so what it DECLARES is bound
+				//either way; whether its assignments to OUTER bindings run is the part that depends
+				//on how this block was reached.
+				DeclareBlockNames(block.Body, blockScope, depth + 1, unconditional);
+				if (scope.IsFunctionBoundary && scope.NestedFunctionAssignments is not null) {
+					//This is the body block of the function that owns `scope`, so its `let`/`const`
+					//bindings are now in place and the assignments the function's nested functions make
+					//can be applied - all of them, before anything inside the body is resolved. Doing it
+					//at scan time instead made the verdict depend on where the nested function sits
+					//relative to the `return`.
+					foreach (string assigned in scope.NestedFunctionAssignments) {
+						blockScope.MarkInitialized(assigned);
+					}
+				}
 				return blockScope;
 			}
 			case SwitchStatement switchStatement: {
 				//Every case shares one block scope, so a `let` in case A is visible in case B.
 				LexicalScope switchScope = new(scope);
 				foreach (SwitchCase switchCase in switchStatement.Cases) {
-					//Which case runs is a runtime decision, so nothing a case declares is guaranteed.
+					//Which case runs is a runtime decision, so an assignment in one proves nothing.
 					DeclareBlockNames(switchCase.Consequent, switchScope, depth + 1,
-						unconditional: false);
+						assignmentsAlwaysRun: false);
 				}
 				return switchScope;
 			}
@@ -981,6 +1077,39 @@ internal static class PageBodyAstLinter {
 		}
 	}
 
+	/// <summary>
+	/// Collects the names a function body assigns from inside a NESTED function of its own -
+	/// `function init(){ helper = () =&gt; 1; }` in a factory that declares `let helper;`.
+	///
+	/// Such an assignment counts as initialization, with no attempt to decide whether the nested
+	/// function is ever called: a factory that assigns its helpers from an `init()` it calls before the
+	/// `return` is ordinary page code, and rejecting it would block a page that runs. The rule stays
+	/// fail-closed only where the language itself guarantees nothing ran - unreachable code and
+	/// branches that may not be taken - which is what the issue asks for.
+	///
+	/// Two consequences worth stating: a nested function that only assigns the name in a branch still
+	/// counts, and a nested function that SHADOWS the name (declaring its own `helper` before assigning
+	/// it) marks the outer binding too, because the walk records names rather than resolving them.
+	/// Both leave the rule silent on a page that may fail at runtime, which is the safe direction for a
+	/// finding that blocks the write.
+	/// </summary>
+	private static void CollectNestedFunctionAssignments(Node node, HashSet<string> names, int depth,
+		bool insideNestedFunction) {
+		if (node is null || depth > MaxAstDepth) {
+			return;
+		}
+		if (insideNestedFunction
+			&& node is AssignmentExpression {
+				Operator: Acornima.Operator.Assignment, Left: Identifier assigned
+			}) {
+			names.Add(assigned.Name);
+		}
+		foreach (Node child in node.ChildNodes) {
+			CollectNestedFunctionAssignments(child, names, depth + 1,
+				insideNestedFunction || child is IFunction);
+		}
+	}
+
 	private static LexicalScope OpenLoopScope(VariableDeclaration head, LexicalScope scope, int depth) {
 		LexicalScope loopScope = new(scope);
 		foreach (VariableDeclarator declarator in head.Declarations) {
@@ -997,12 +1126,13 @@ internal static class PageBodyAstLinter {
 		bool insideSection,
 		int depth,
 		bool strict,
+		bool unconditional,
 		SectionScanState state) {
 		if (node is null || depth > MaxAstDepth) {
 			return;
 		}
 		bool childStrict = IsStrictFunction(node, strict);
-		LexicalScope childScope = OpenScope(node, scope, depth, childStrict, state);
+		LexicalScope childScope = OpenScope(node, scope, depth, childStrict, unconditional, state);
 		bool childInsideSection = insideSection
 			|| (node is Property property && state.SectionProperties.Contains(property));
 		if (insideSection && node is CallExpression {Callee: Identifier identifier}) {
@@ -1010,7 +1140,7 @@ internal static class PageBodyAstLinter {
 		}
 		foreach (Node child in node.ChildNodes) {
 			ScanForUndefinedSectionCalls(child, childScope, childInsideSection, depth + 1, childStrict,
-				state);
+				IsUnconditionalChild(node, child, unconditional), state);
 		}
 	}
 
@@ -1025,15 +1155,12 @@ internal static class PageBodyAstLinter {
 		//of times, and building the long interpolated message for every occurrence only to drop
 		//it allocated tens of megabytes. An omitted occurrence keeps its location and nothing
 		//else, which is all the summary finding reads.
-		if (!state.NameBudget.ShouldReport(identifier.Name)
-			|| !state.Sink.TryReserve(RuleUndefinedSectionCall, LintSeverity.Error, line, column)) {
-			//Either this name is already listed, or the report as a whole is full. Both are counted
-			//by the rule's own summary, which reports distinct names rather than occurrences.
-			state.NameBudget.RecordOmitted(line, column);
+		if (!state.DistinctNameBudget.ShouldReport(identifier.Name)) {
+			state.DistinctNameBudget.RecordOmitted(line, column);
 			return;
 		}
-		state.Sink.AddReserved(RuleUndefinedSectionCall, LintSeverity.Error, line, column,
-			BuildUnusableSectionCallMessage(resolution, identifier.Name));
+		state.FindingBudget.TryAdd(RuleUndefinedSectionCall, LintSeverity.Error, line, column,
+			() => BuildUnusableSectionCallMessage(resolution, identifier.Name));
 	}
 
 	private static string BuildUnusableSectionCallMessage(BindingResolution resolution, string name) {

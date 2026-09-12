@@ -24,10 +24,27 @@ but dropping hand-written module-scope declarations, and a JavaScript parser acc
 because an unresolved identifier is a runtime lookup, not a syntax error. Name existence alone was
 not enough: a preloaded declaration whose value never lands throws just as the missing one does.
 
+**Where the returned schema is looked for** — three anchors, all decided before any call is
+resolved: an object literal returned by a `return` that is a DIRECT statement of the function body,
+an arrow whose expression body IS that object literal (`() => ({ handlers: [...] })`), and a
+`return <name>;` whose `<name>` a direct `const`/`let`/`var` statement of the same block initialized
+with an object literal. Anything else — a `return` nested inside an `if` or a `try`, a schema built
+by a call, a schema assembled by assignments written separately from the declaration — is not
+discovered, and the rule then reports nothing at all for that body.
+
+**Deliberate fail-open cases** — an assignment made from inside ANY nested function of the factory
+counts as initialization, whether or not that function is ever called, because a factory that
+assigns its helpers from an `init()` it calls before the `return` is ordinary page code. That walk
+records names rather than resolving them, so a nested function that SHADOWS the name still marks the
+outer binding. A `switch` shares one block scope across its cases, so a `let` initialized in one
+case counts as initialized for the others. All three leave the rule silent on a page that may throw,
+which is the safe direction for a finding that blocks the write.
+
 **What breaks if you ignore it** — `validate-page` and the write-path validators can report a body as
 valid and `sync-pages` can save it, while the first handler invocation throws `ReferenceError` or
-`TypeError` and the page cannot open. Two known gaps that follow from the anchoring: a factory that
-returns a VARIABLE (`return schema;`) rather than an object literal leaves the rule silent, and a
-helper stored on an object and called through a member expression is out of scope by design. Do not
-replace this with a text scanner or a full interpreter: the former misreads JavaScript grammar and
-the latter would execute untrusted page code.
+`TypeError` and the page cannot open. One known gap follows from the anchoring: a helper stored on an
+object and called through a member expression is out of scope by design. Do not replace this with a
+text scanner or a full interpreter: the former misreads JavaScript grammar and the latter would
+execute untrusted page code. And do not move the definite-initialization decision back into the call
+resolution walk: a verdict that depends on where the assigning helper sits relative to the `return`
+is one no author can act on.
