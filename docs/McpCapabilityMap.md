@@ -109,6 +109,7 @@ Typical examples:
 - `update-page`
 - `delete-app`
 - `clear-redis-db-by-credentials`
+- `execute-sql-script` — executes explicit SQL through ClioGate; exposes `view`, `destination-path`, and `silent` for result export. Table cells wrap at 40 characters per displayed line. Use JSON file output for complete arbitrary text. SQL can modify data, and output files can be overwritten, so the tool is destructive and non-idempotent.
 - `restart-by-credentials`
 
 ### 3. Pure local mode
