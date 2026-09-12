@@ -241,7 +241,7 @@ public class ClassifyingDataProviderTests {
 	}
 
 	[Test]
-	[Description("A thrown transport fault is rethrown UNCHANGED: wrapping it into an InvalidOperationException erased the type and made the 'Network error ...' arms of SysSettingsCommand.CategorizeError and SchemaNamePrefixTool unreachable.")]
+	[Description("A thrown transport fault is rethrown UNCHANGED: wrapping it into an InvalidOperationException erased the type and made the 'Network error ...' arms of SysSettingFailureClassifier.CategorizeError and SchemaNamePrefixTool unreachable.")]
 	public void GetItems_ShouldRethrowATransportFaultWithItsOriginalType() {
 		// Arrange
 		HttpRequestException original = new("Connection refused at http://localhost:40124");

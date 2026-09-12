@@ -25,7 +25,7 @@ namespace Clio.Common;
 /// <c>AuthenticationRejected</c> and fails fast instead of burning the readiness budget on further
 /// rejected logins), <c>GetCreatioInfoCommand</c> (<c>BaseProbeFailure.Authentication</c>),
 /// <c>SchemaNamePrefixTool</c> (the MCP-visible "Authentication error reading SchemaNamePrefix."
-/// result), and <c>SysSettingsCommand.CategorizeFailure</c>.
+/// result), and <c>SysSettingFailureClassifier.Categorize</c>.
 /// </para>
 /// <para>
 /// <b>Rejected alternative:</b> keeping the original as <see cref="Exception.InnerException"/> behind an

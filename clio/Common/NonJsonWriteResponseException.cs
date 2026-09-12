@@ -45,7 +45,7 @@ public enum NonJsonWriteResponseKind {
 /// Derives from <see cref="InvalidOperationException"/> - the same lineage as
 /// <see cref="DataProviderFailureException"/> - rather than from
 /// <see cref="System.Text.Json.JsonException"/>: a parser exception is a statement about a parser, and
-/// this one is a statement about the environment. <c>SysSettingsCommand.CategorizeFailure</c> has a
+/// this one is a statement about the environment. <c>SysSettingFailureClassifier.Categorize</c> has a
 /// dedicated arm ABOVE its <see cref="InvalidOperationException"/> arm, so this keeps the <c>Network</c>
 /// envelope the <see cref="System.Text.Json.JsonException"/> arm produces rather than degrading to
 /// <c>Unknown</c>.

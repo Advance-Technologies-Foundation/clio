@@ -7,6 +7,7 @@ applies-to:
   - clio/Common/ISysSettingsManager.cs
   - clio/BindingsModule.cs
   - clio/Command/SysSettingsCommand.cs
+  - clio/Command/SysSettingFailureClassifier.cs
   - clio/Package/PackageBuilder.cs
 ticket: "#1371"
 date: 2026-09-03
@@ -56,7 +57,7 @@ block and a gateway error page all produce the byte-identical Newtonsoft message
 
 A corollary for anything running the provider on a background thread: a **thrown** transport fault is
 rethrown UNCHANGED (wrapping it erased the type and made the `"Network error …"` arms of
-`SysSettingsCommand.CategorizeError` and `SchemaNamePrefixTool` unreachable), and only the
+`SysSettingFailureClassifier.CategorizeError` and `SchemaNamePrefixTool` unreachable), and only the
 `Success == false` response — which has no original exception — is wrapped.
 
 Three consequences worth knowing before writing code against this:
