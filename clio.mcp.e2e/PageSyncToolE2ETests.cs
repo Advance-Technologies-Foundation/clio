@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -11,6 +11,7 @@ using Allure.NUnit.Attributes;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
+using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -441,6 +442,82 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 			because: "the rule id must be visible in the wire response so the agent can map the failure back to the guidance doc that describes the anti-pattern");
 		response.Pages[0].Error.Should().Contain("NOT sent to Creatio",
 			because: "the operator must know the body did not reach the server without inspecting logs, mirroring the syntax-gate tail");
+	}
+
+	[Test]
+	[Description("A NON-dry-run sync-pages of a body whose handler calls a conditionally declared helper fails at the lint gate and leaves the page on the stand byte-identical — the existing lint scenario targets a page that does not exist, so it cannot show that a real save was prevented.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages blocks a real save on undefined-section-call and leaves the page unchanged")]
+	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave: captures the body with get-page, submits a marker-complete body whose returned handler calls a helper declared only inside an `if (false)` block, asserts the lint gate rejects the page, then re-reads the page and asserts the stored body is unchanged.")]
+	public async Task PageSyncTool_Should_Block_Real_Save_And_Leave_Page_Unchanged_When_HelperIsConditionallyDeclared() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping the real-save lint-gate test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext context = await ArrangeAsync();
+
+		// Act 1: capture the body the stand currently holds.
+		CallToolResult baselineResult = await context.Session.CallToolAsync(
+			PageGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = SavePage,
+					["environment-name"] = environmentName
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageGetResponse baseline = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(baselineResult);
+		baseline.Success.Should().BeTrue(
+			because: $"get-page must succeed for the seeded page '{SavePage}' before the gate can be proven. Error: {baseline.Error}");
+		string originalBody = await File.ReadAllTextAsync(baseline.Files.BodyFile);
+
+		// Act 2: the real save path — no dry-run — with a body only the AST lint pass rejects.
+		CallToolResult syncResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = SavePage,
+							["body"] = PageLintProbeBodies.ConditionallyDeclaredHelper(SavePage)
+						}
+					},
+					["environment-name"] = environmentName,
+					["skip-sampling"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(syncResult);
+
+		// Act 3: read the page back.
+		CallToolResult readbackResult = await context.Session.CallToolAsync(
+			PageGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = SavePage,
+					["environment-name"] = environmentName
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageGetResponse readback = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(readbackResult);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the handler calls a helper whose only declaration sits in a branch that never runs, so the page would throw a TypeError on open");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted");
+		response.Pages[0].Error.Should().Contain("Page body lint failed",
+			because: "the canonical lint prefix is what tells the agent this was a lint rejection rather than a syntax or transport failure");
+		response.Pages[0].Error.Should().Contain("undefined-section-call",
+			because: "the rule id must reach the wire so the agent can map the refusal back to the authoring rule");
+		readback.Success.Should().BeTrue(
+			because: $"the page must still be readable after the refused write. Error: {readback.Error}");
+		string bodyAfter = await File.ReadAllTextAsync(readback.Files.BodyFile);
+		bodyAfter.Should().Be(originalBody,
+			because: "a refused write must leave the stand untouched — this is the assertion the dry-run scenario cannot make");
 	}
 
 	[Test]
