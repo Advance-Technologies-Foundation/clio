@@ -1,14 +1,14 @@
 ﻿using System;
 using System.Linq;
 using System.Text.Json;
-using Clio.Command.McpServer;
+using Clio.Common;
 using FluentAssertions;
 using NUnit.Framework;
 
-namespace Clio.Tests.Command.McpServer;
+namespace Clio.Tests.Common;
 
 [TestFixture]
-[Property("Module", "McpServer")]
+[Property("Module", "Common")]
 public sealed class SensitiveErrorTextRedactorTests {
 
 	[Test]

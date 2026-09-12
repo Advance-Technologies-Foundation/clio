@@ -8,7 +8,9 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.McpServer.Tools;
+using Clio.Common;
 using Clio.UserEnvironment;
+using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command.McpServer.Knowledge;
 

@@ -1,6 +1,7 @@
 using System;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Knowledge;
+using Clio.Common;
 using FluentAssertions;
 using NUnit.Framework;
 
