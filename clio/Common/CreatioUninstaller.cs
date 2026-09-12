@@ -119,6 +119,7 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 	private readonly IAppPoolProfileCleaner _appPoolProfileCleaner;
 	private readonly IDbHubSynchronizationService _dbHubSynchronizationService;
 	private readonly IDeploymentTargetReservation _deploymentTargetReservation;
+	private readonly IIdentityServiceLifecycle _identityServiceLifecycle;
 
 	#endregion
 
@@ -136,11 +137,13 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 	/// <param name="appPoolProfileCleaner">Windows application-pool profile cleanup service.</param>
 	/// <param name="deploymentTargetReservation">Cross-process target-directory reservation.</param>
 	/// <param name="dbHubSynchronizationService">Optional dbHub source synchronization.</param>
+	/// <param name="identityServiceLifecycle">Guarded cleanup of the optional recorded identity component.</param>
 	public CreatioUninstaller(IFileSystem fileSystem, ISettingsRepository settingsRepository,
 		IIisScanner iisScanner, ILogger logger, Ik8Commands k8Commands, IMssql mssql, IPostgres postgres,
 		IStageEventEmitter stageEventEmitter, IAppPoolProfileCleaner appPoolProfileCleaner,
 		IDeploymentTargetReservation deploymentTargetReservation,
-		IDbHubSynchronizationService dbHubSynchronizationService = null){
+		IDbHubSynchronizationService dbHubSynchronizationService = null,
+		IIdentityServiceLifecycle identityServiceLifecycle = null){
 		_fileSystem = fileSystem;
 		_settingsRepository = settingsRepository;
 		_iisScanner = iisScanner;
@@ -151,6 +154,7 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 		_appPoolProfileCleaner = appPoolProfileCleaner;
 		_deploymentTargetReservation = deploymentTargetReservation;
 		_dbHubSynchronizationService = dbHubSynchronizationService;
+		_identityServiceLifecycle = identityServiceLifecycle;
 	}
 
 	#endregion
@@ -351,7 +355,7 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 	/// actual IIS application-pool name was captured. <c>unregister</c> is always the final stage.
 	/// </summary>
 	internal static IReadOnlyList<StageDescriptor> BuildUninstallManifest(bool includeProfileStage,
-		bool includeDbHubRemoval = false){
+		bool includeDbHubRemoval = false, bool includeIdentity = false){
 		List<StageDescriptor> stages = [
 			new StageDescriptor(StageIds.ReadConfig, "Read configuration", false),
 			new StageDescriptor(StageIds.StopIis, "Stop IIS site", false),
@@ -359,6 +363,9 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 			new StageDescriptor(StageIds.DropDb, "Drop database", false),
 			new StageDescriptor(StageIds.DeleteFiles, "Delete application files", false)
 		];
+		if (includeIdentity) {
+			stages.Insert(1, new StageDescriptor(StageIds.RemoveIdentity, "Remove attached IdentityService", false));
+		}
 		if (includeProfileStage) {
 			stages.Add(new StageDescriptor(StageIds.DeleteApppoolProfile, "Delete application-pool profile", true));
 		}
@@ -389,6 +396,18 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 		}
 
 		bool hasEnvironment = !string.IsNullOrWhiteSpace(environmentName);
+		IdentityRemovalPlan identityPlan = PrepareIdentityRemoval(environmentName);
+		using IDisposable identityReservation = identityPlan is null ? null : AcquireUninstallReservation(
+			() => _deploymentTargetReservation.Acquire(identityPlan.Attachment.EnvironmentPath));
+		if (identityPlan is not null) {
+			try {
+				_identityServiceLifecycle.Validate(identityPlan);
+			}
+			catch (Exception exception) when (exception is InvalidOperationException or ArgumentException
+				or System.IO.IOException or UnauthorizedAccessException) {
+				AbortUnresolvedTarget(exception.Message);
+			}
+		}
 		bool synchronizeDbHub = hasEnvironment
 			&& _dbHubSynchronizationService?.IsAutomaticSynchronizationEnabled() == true;
 		IReadOnlyList<UnregisteredSite> targetSites = ResolveSites(creatioDirectoryPath);
@@ -416,7 +435,7 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 			StringComparer.OrdinalIgnoreCase);
 
 		_stageEventEmitter.Begin(ClioStageEventContract.Operations.Uninstall,
-			BuildUninstallManifest(includeProfileStage, synchronizeDbHub), OnStageChanged);
+			BuildUninstallManifest(includeProfileStage, synchronizeDbHub, identityPlan is not null), OnStageChanged);
 
 		DbInfo dbInfo = null;
 		_stageEventEmitter.RunStage(StageIds.ReadConfig, () => {
@@ -431,6 +450,10 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 			dbInfo = info;
 			_logger.WriteInfo($"Found db: {info.DbName}, Server: {info.DbType}");
 		});
+
+		if (identityPlan is not null) {
+			_stageEventEmitter.RunStage(StageIds.RemoveIdentity, () => _identityServiceLifecycle.Remove(identityPlan));
+		}
 
 		_stageEventEmitter.RunStage(StageIds.StopIis,
 			() => {
@@ -662,6 +685,26 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 					StringComparison.OrdinalIgnoreCase)))
 			.OrderByDescending(candidate => candidate.siteBinding.name.Count(character => character == '/'))
 			.ToArray();
+	}
+
+	private IdentityRemovalPlan PrepareIdentityRemoval(string environmentName) {
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			return null;
+		}
+		EnvironmentSettings current = _settingsRepository.FindCurrentEnvironment(environmentName);
+		if (current?.IdentityService.IsEmpty == true) {
+			return null;
+		}
+		try {
+			return (_identityServiceLifecycle
+				?? throw new InvalidOperationException("Identity cleanup service is unavailable."))
+				.PrepareRemoval(environmentName);
+		}
+		catch (Exception exception) when (exception is InvalidOperationException or ArgumentException
+			or IOException or UnauthorizedAccessException) {
+			AbortUnresolvedTarget(exception.Message);
+			return null;
+		}
 	}
 
 	internal static bool SiteUsesDeploymentPath(UnregisteredSite site, string canonicalDeploymentPath) {

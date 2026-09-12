@@ -212,6 +212,7 @@ turn-farm-mode:turn-farm-mode,farm-mode,tfm
 turn-fsm:turn-fsm,fsm,tfsm
 uninstall-app-remote:uninstall-app-remote,uninstall
 uninstall-creatio:uninstall-creatio,uc
+uninstall-identity:uninstall-identity
 unlock-package:unlock-package,up
 unreg-web-app:unreg-web-app,unreg
 unregister:unregister

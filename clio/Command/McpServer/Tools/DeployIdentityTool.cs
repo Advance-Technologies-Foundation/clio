@@ -39,6 +39,9 @@ public sealed class DeployIdentityTool(
 				 Deploys IdentityService to IIS, connects the target Creatio environment, creates a fresh clio OAuth
 				 client bound to an existing Creatio user, and stores the returned client credentials in the local
 				 clio appsettings environment after validating discovery, token issuance, and a read-only CRM bearer request.
+				 The optional IdentityService attachment (path, IIS target, pool and URL) is recorded before
+				 deployment artifacts, including noApp and partial deployments, for later uninstall-identity
+				 or attached cleanup during uninstall-creatio. Overwrite reuses the recorded port when omitted.
 
 				 When zipFile is omitted, the command finds IdentityService.zip under the registered environment
 				 EnvironmentPath. When identitySitePort is omitted, the command selects the first free IIS port
