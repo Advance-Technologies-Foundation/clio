@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using Clio.Common.DataForge;
 using Clio.Common.EntitySchema;
@@ -287,6 +288,124 @@ public sealed class DataForgeContextServiceTests {
 				"Data Forge subsystem the probe describes");
 		result.Health.CorrelationId.Should().Be("corr-offline",
 			because: "the health probe result is still reported alongside the successful reads");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A Decimal(0.01) column reports a numeric data type instead of Text, the defect reported in ENG-93202.")]
+	public void MapColumns_Should_Report_Decimal_As_Numeric_Type() {
+		// Arrange — dataValueType 32 is Float2, the "Decimal (0.01)" the EntitySchema designer shows. It was
+		// absent from the mapper's private table, so it fell through to the "Text" fallback and consumers
+		// filtered UsrAmount > 1000 as a lexicographic string comparison.
+		RuntimeEntitySchemaResult schema = new(
+			Guid.NewGuid(), "UsrClioFilterTest", Guid.NewGuid(), null, null,
+			[new RuntimeEntitySchemaColumnResult(Guid.NewGuid(), "UsrAmount", "Amount", null, 32, false, false, null)]);
+
+		// Act
+		IReadOnlyList<DataForgeColumnResult> columns = DataForgeRuntimeSchemaMapper.MapColumns(schema);
+
+		// Assert
+		columns.Should().ContainSingle(because: "the schema declares exactly one non-inherited column");
+		columns[0].DataType.Should().NotBe("Text",
+			because: "reporting a Decimal column as Text is the defect ENG-93202 reported");
+		columns[0].DataType.Should().Be("Float2",
+			because: "the canonical registry names dataValueType 32 Float2, which the kind classifier "
+				+ "resolves as numeric and the write vocabulary accepts back");
+	}
+
+	[TestCase(31, "Float1")]
+	[TestCase(32, "Float2")]
+	[TestCase(33, "Float3")]
+	[TestCase(34, "Float4")]
+	[TestCase(40, "Float8")]
+	[TestCase(47, "Float0")]
+	[TestCase(48, "Money0")]
+	[TestCase(49, "Money1")]
+	[TestCase(50, "Money3")]
+	[Category("Unit")]
+	[Description("Every decimal and money scale reports its own type rather than the shared Text fallback.")]
+	public void MapColumns_Should_Report_Every_Numeric_Scale(int dataValueType, string expectedType) {
+		// Arrange — all nine scales were missing from the private table, so all nine read back as Text.
+		RuntimeEntitySchemaResult schema = new(
+			Guid.NewGuid(), "UsrClioFilterTest", Guid.NewGuid(), null, null,
+			[new RuntimeEntitySchemaColumnResult(Guid.NewGuid(), "UsrValue", "Value", null, dataValueType, false, false, null)]);
+
+		// Act
+		IReadOnlyList<DataForgeColumnResult> columns = DataForgeRuntimeSchemaMapper.MapColumns(schema);
+
+		// Assert
+		columns.Should().ContainSingle(
+			because: "the schema declares exactly one non-inherited column, so an empty result must fail with a message rather than throw on indexing");
+		columns[0].DataType.Should().Be(expectedType,
+			because: $"dataValueType {dataValueType} is a distinct numeric scale and must not collapse into Text");
+	}
+
+	[Test]
+	[Description("Columns whose types already resolved keep resolving, including the five that a designer-vocabulary fix would have degraded to raw ordinals.")]
+	[Category("Unit")]
+	public void MapColumns_Should_Preserve_Previously_Working_Types() {
+		// Arrange — Float(5), Date(8), Time(9), Enum(11) and HashText(23) are readable but NOT writable by
+		// clio, so mapping through the designer's write-scoped friendly vocabulary would have reported them
+		// as "5"/"8"/"9"/"11"/"23". The canonical registry covers all 49 codes, so they keep their names.
+		RuntimeEntitySchemaResult schema = new(
+			Guid.NewGuid(), "UsrClioFilterTest", Guid.NewGuid(), null, null,
+			[
+				new RuntimeEntitySchemaColumnResult(Guid.NewGuid(), "UsrSubject", "Subject", null, 1, true, false, null),
+				new RuntimeEntitySchemaColumnResult(Guid.NewGuid(), "UsrRate", "Rate", null, 5, false, false, null),
+				new RuntimeEntitySchemaColumnResult(Guid.NewGuid(), "UsrDueDate", "Due date", null, 8, false, false, null),
+				new RuntimeEntitySchemaColumnResult(Guid.NewGuid(), "UsrStartTime", "Start time", null, 9, false, false, null),
+				new RuntimeEntitySchemaColumnResult(Guid.NewGuid(), "UsrKind", "Kind", null, 11, false, false, null),
+				new RuntimeEntitySchemaColumnResult(Guid.NewGuid(), "UsrHash", "Hash", null, 23, false, false, null),
+				new RuntimeEntitySchemaColumnResult(Guid.NewGuid(), "UsrStage", "Stage", null, 10, false, false, "UsrStageLookup"),
+				new RuntimeEntitySchemaColumnResult(Guid.NewGuid(), "UsrIsActive", "Is active", null, 12, false, false, null)
+			]);
+
+		// Act
+		IReadOnlyList<DataForgeColumnResult> columns = DataForgeRuntimeSchemaMapper.MapColumns(schema);
+
+		// Assert
+		columns.Select(column => (column.Name, column.DataType)).Should().Equal([
+			("UsrDueDate", "Date"),
+			("UsrHash", "HashText"),
+			("UsrIsActive", "Boolean"),
+			("UsrKind", "Enum"),
+			("UsrRate", "Float"),
+			("UsrStage", "Lookup"),
+			("UsrStartTime", "Time"),
+			("UsrSubject", "Text")
+		], because: "the fix must widen coverage without regressing any type that already resolved, and the "
+			+ "projection stays ordered by column name (Equal, not BeEquivalentTo, so the ordering is asserted)");
+		DataForgeColumnResult stage = columns.Single(column => column.Name == "UsrStage");
+		stage.Caption.Should().Be("Stage",
+			because: "rewriting the projection must not drop the caption");
+		stage.ReferenceSchemaName.Should().Be("UsrStageLookup",
+			because: "the lookup target travels beside the data type and is the field an agent needs to follow "
+				+ "the relation; dropping this argument from the projection would otherwise go unnoticed");
+		columns.Single(column => column.Name == "UsrSubject").Required.Should().BeTrue(
+			because: "the required flag must survive the projection rewrite");
+		columns.Single(column => column.Name == "UsrRate").Required.Should().BeFalse(
+			because: "a non-required column must not acquire the flag");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An unmodelled data value type reports its ordinal rather than the plausible Text fallback that hid the original defect.")]
+	public void MapColumns_Should_Report_Ordinal_For_Unmodelled_Type() {
+		// Arrange
+		RuntimeEntitySchemaResult schema = new(
+			Guid.NewGuid(), "UsrClioFilterTest", Guid.NewGuid(), null, null,
+			[new RuntimeEntitySchemaColumnResult(Guid.NewGuid(), "UsrFuture", "Future", null, 999, false, false, null)]);
+
+		// Act
+		IReadOnlyList<DataForgeColumnResult> columns = DataForgeRuntimeSchemaMapper.MapColumns(schema);
+
+		// Assert
+		columns.Should().ContainSingle(
+			because: "the schema declares exactly one non-inherited column, so an empty result must fail with a message rather than throw on indexing");
+		columns[0].DataType.Should().NotBe("Text",
+			because: "a plausible fallback made the original wrong answer indistinguishable from a right one");
+		columns[0].DataType.Should().Be("999",
+			because: "a type clio does not model yet must name the ordinal so the gap is self-diagnosing");
 	}
 
 	private static IDataForgeMaintenanceClient CreateReadyMaintenanceClient() {

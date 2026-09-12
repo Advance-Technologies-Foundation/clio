@@ -96,7 +96,23 @@ internal static class EntitySchemaDesignerSupport
 			["time"] = DateTimeTypeName,
 			["encrypted"] = SecureTextTypeName,
 			["securetext"] = SecureTextTypeName,
-			["password"] = SecureTextTypeName
+			["password"] = SecureTextTypeName,
+			// Canonical read-surface spellings, so a type read off a column is accepted back (ENG-93202; the
+			// mirror of the readback gap fixed in issue #949). ONE entry per code suffices because
+			// TryResolveDataValueType normalizes case-insensitively AND strips non-alphanumerics, so it covers
+			// both the canonical Float2 and the display FLOAT2.
+			["float0"] = "decimal0",
+			["float1"] = "decimal1",
+			["float2"] = "decimal2",
+			["float3"] = "decimal3",
+			["float4"] = "decimal4",
+			["float8"] = "decimal8",
+			["money0"] = "currency0",
+			["money1"] = "currency1",
+			["money3"] = "currency3",
+			["phonetext"] = "phoneNumber",
+			["webtext"] = "webLink",
+			["emailtext"] = "email"
 		};
 
 	private static readonly HashSet<int> TextDataValueTypes = [
