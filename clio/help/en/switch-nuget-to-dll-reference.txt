@@ -23,7 +23,17 @@ NOTES
     When no props file could be created at all, the csproj is left unchanged and
     the command exits with code 1. A nuget package that contributes no assembly,
     such as an analyzer, keeps its PackageReference. An unusable props file left
-    by an older clio version, and its import, are removed on the next run.
+    by an older clio version, and its import, are removed on the next run; when
+    that repair leaves the csproj with no props import at all, the package
+    references an earlier conversion had commented out are restored, so the
+    project keeps its dependencies and build assets.
+    A target framework that ends up with no dependency also has the assemblies
+    its previous props file declared removed from Files/Libs/<moniker>, so a dll
+    materialized by an earlier run stops shipping in the Creatio package. A dll
+    placed in that folder by hand is left alone.
+    A package folder, or the .nuget helper folder of the package, that is a
+    symbolic link or a junction is refused: the command exits with code 1 without
+    writing or deleting anything through it.
 
 EXAMPLES
     clio switch-nuget-to-dll-reference MyPackage

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.IO.Abstractions.TestingHelpers;
 using Clio.Common;
 using FluentAssertions;
 using Clio.Workspaces;
@@ -193,6 +194,68 @@ public class PropsBuilder_Tests
 		_fileSystem.Received(0).WriteAllTextToFile(
 			Arg.Any<string>(),
 			Arg.Is<string>(c => c.Contains($"Include=\"{PackageName}\"")));
+	}
+
+	[Test]
+	[Description("Removes from Files/Libs/<moniker> exactly the assemblies the previous props file "
+		+ "declared when a later run leaves that moniker without dependencies, so a stale dll stops "
+		+ "shipping in the Creatio package while a hand-placed dll is left alone (issue 1311)")]
+	public void Build_RemovesPreviouslyMaterializedAssemblies_When_MonikerLosesItsLastDependency(){
+		//Arrange
+		string workspaceRoot = Path.Combine(Path.GetTempPath(), "clio-1311-props");
+		MockFileSystem mockFileSystem = new();
+		IFileSystem realFileSystem = new FileSystem(mockFileSystem);
+		IWorkspacePathBuilder pathBuilder = BuildPathBuilderFor(workspaceRoot);
+		PropsBuilder sut = new(realFileSystem, _logger, pathBuilder);
+		string net472BinDir = Path.Combine(workspaceRoot, NugetFolderPath, PackageName, "bin", "net472");
+		string netStandardBinDir = Path.Combine(workspaceRoot, NugetFolderPath, PackageName, "bin", "netstandard");
+		string net472LibsDir = Path.Combine(workspaceRoot, PackageFolderPath, PackageName, "Files", "Libs", "net472");
+		string materializedDll = Path.Combine(net472LibsDir, "Castle.Core.dll");
+		string handPlacedDll = Path.Combine(net472LibsDir, "Contoso.HandPlaced.dll");
+		foreach (string moniker in new[] {"net472", "netstandard"}) {
+			mockFileSystem.AddFile(
+				Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tpl", $"propItem-{moniker}.xml.tpl"),
+				new MockFileData(MockPropItemTemplate));
+		}
+		mockFileSystem.AddFile(
+			Path.Combine(workspaceRoot, PackageFolderPath, PackageName, PackageName + ".csproj"),
+			new MockFileData(MockCsProjWithNugetContent()));
+		mockFileSystem.AddFile(Path.Combine(net472BinDir, "Castle.Core.dll"), new MockFileData("dll"));
+		mockFileSystem.AddDirectory(netStandardBinDir);
+
+		//Act
+		sut.Build(PackageName);
+		bool materializedByFirstRun = mockFileSystem.File.Exists(materializedDll);
+		//A dll the developer put into Libs by hand and references through its own HintPath.
+		mockFileSystem.AddFile(handPlacedDll, new MockFileData("dll"));
+		//The dependency is dropped from the package, so the helper project builds nothing for net472.
+		mockFileSystem.File.Delete(Path.Combine(net472BinDir, "Castle.Core.dll"));
+		PropsBuildResult secondRun = sut.Build(PackageName);
+
+		//Assert
+		materializedByFirstRun.Should().BeTrue(
+			because: "the first run must copy the dependency into the package Libs folder");
+		secondRun.HasAnyProps.Should().BeFalse(
+			because: "neither moniker has a dependency left to reference");
+		mockFileSystem.File.Exists(materializedDll).Should().BeFalse(
+			because: "its import is gone, so the assembly must not stay in the deployed Creatio package");
+		mockFileSystem.File.Exists(handPlacedDll).Should().BeTrue(
+			because: "the folder also holds dlls this command never materialized");
+	}
+
+	//This one test needs real copy, clear and delete semantics, which a substituted IFileSystem
+	//cannot express, so it drives the production FileSystem over an in-memory one.
+	private static IWorkspacePathBuilder BuildPathBuilderFor(string workspaceRoot){
+		IWorkspacePathBuilder pathBuilder = Substitute.For<IWorkspacePathBuilder>();
+		pathBuilder.RootPath.Returns(workspaceRoot);
+		pathBuilder.NugetFolderPath.Returns(Path.Combine(workspaceRoot, NugetFolderPath));
+		pathBuilder.PackagesFolderPath.Returns(Path.Combine(workspaceRoot, PackageFolderPath));
+		pathBuilder.BuildPackageProjectPath(Arg.Is(PackageName))
+			.Returns(Path.Combine(workspaceRoot, PackageFolderPath, PackageName, PackageName + ".csproj"));
+		pathBuilder.BuildPackagePropsPath(Arg.Is(PackageName), Arg.Any<string>())
+			.Returns(ci => Path.Combine(workspaceRoot, PackageFolderPath, PackageName, "Files",
+				$"{PackageName}-{ci.ArgAt<string>(1)}.nuget.props"));
+		return pathBuilder;
 	}
 
 	private void MockCsProjAndTemplateReads(){
