@@ -39,7 +39,11 @@ public sealed class SysSettingsNonJsonWriteResponseE2ETests {
 	private const string PlantedCredential = "hunter2";
 
 	/// <summary>A right-to-left override, which reorders whatever a terminal or a transcript renders after it.</summary>
-	private const string PlantedBidiControl = "‮";
+	// The code point is written as an escape rather than as the raw character so the source file
+	// itself stays plain ASCII: an embedded U+202E reorders this file in every editor, diff and
+	// review UI that renders it, and Sonar rule S6389 flags it for exactly that reason. The
+	// resulting string value is identical, so the test still plants a real bidi override.
+	private const string PlantedBidiControl = "\u202E";
 
 	[Test]
 	[AllureTag(SysSettingUpdateTool.UpdateSysSettingToolName)]
