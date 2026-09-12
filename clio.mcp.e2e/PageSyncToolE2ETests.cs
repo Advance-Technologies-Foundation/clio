@@ -1330,10 +1330,11 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		string workspaceName = $"workspace-{Guid.NewGuid():N}";
 		string workspacePath = Path.Combine(rootDirectory, workspaceName);
 		CancellationTokenSource cancellationTokenSource = new(System.TimeSpan.FromMinutes(5));
-		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
-			settings,
-			["create-workspace", workspaceName, "--empty", "--directory", rootDirectory],
-			cancellationToken: cancellationTokenSource.Token);
+		// No create-workspace here. Every test in this fixture calls sync-pages with an explicit
+		// environment-name and page bodies; none reads WorkspacePath and none pushes or restores a
+		// workspace, so the clio CLI round trip that used to build one per test (25 invocations, about
+		// 43s of the run) produced a directory nothing then looked at.
+		Directory.CreateDirectory(workspacePath);
 		McpServerSession session = Session;
 		return new ArrangeContext(rootDirectory, workspacePath, session, cancellationTokenSource);
 	}
