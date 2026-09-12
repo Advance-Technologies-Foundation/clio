@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO.Abstractions.TestingHelpers;
 using Clio.Command;
 using Clio.Command.McpServer;
@@ -588,5 +588,48 @@ public class ToolCommandResolverTests {
 			because: "the access token must never leak into error text (FR-11)");
 		exception.Message.Should().Contain("Bearer",
 			because: "the error must name the real constraint (only Bearer is supported)");
+	}
+	[Test]
+	[Description("ResolvePair takes both services out of ONE environment snapshot: an environment repointed between the two would-be resolutions cannot pair one environment's client with another environment's URL builder.")]
+	[Category("Unit")]
+	public void ResolvePair_Should_Resolve_Both_Services_From_One_Environment_Snapshot() {
+		// Arrange - FindEnvironment answers a DIFFERENT uri on each call, which is what a repointed
+		// environment looks like to the resolver: ResolveSettingsAndKey re-reads the settings on every
+		// resolution, by design (ENG-94529).
+		System.IO.Abstractions.IFileSystem originalFileSystem = SettingsRepository.FileSystem;
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		SettingsRepository.FileSystem = fileSystem;
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		ISettingsBootstrapService settingsBootstrapService = Substitute.For<ISettingsBootstrapService>();
+		settingsBootstrapService.GetReport().Returns(new SettingsBootstrapReport(
+			"healthy", SettingsRepository.AppSettingsFile, "dev", "dev", 1, [], [], true, true));
+		settingsRepository.IsEnvironmentExists("dev").Returns(true);
+		settingsRepository.FindEnvironment("dev").Returns(
+			new EnvironmentSettings { Uri = "http://first.creatio", Login = "Supervisor", Password = "Supervisor" },
+			new EnvironmentSettings { Uri = "http://repointed.creatio", Login = "Supervisor", Password = "Supervisor" });
+		ToolCommandResolver resolver = CreateResolver(settingsRepository, settingsBootstrapService);
+		EnvironmentOptions options = new() { Environment = "dev" };
+
+		try {
+			// Act
+			(IApplicationClient _, IServiceUrlBuilder pairedUrlBuilder) =
+				resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(options);
+			// The control: two separate resolutions on the SAME repointed repository, which is what the
+			// keyed writes used to do. Without it, a single Received(1) would also hold for a resolver that
+			// simply never re-reads the settings, and the assertion would prove nothing about pairing.
+			IServiceUrlBuilder separatelyResolved = resolver.Resolve<IServiceUrlBuilder>(options);
+
+			// Assert
+			// ONE read belongs to the pair and ONE to the separate control resolution. Three reads would
+			// mean the pair itself straddled two snapshots, which is the defect under test.
+			settingsRepository.Received(2).FindEnvironment("dev");
+			pairedUrlBuilder.Build("odata/Contact").Should().StartWith("http://first.creatio",
+				because: "both services of the pair must come from the snapshot the single settings read selected");
+			separatelyResolved.Build("odata/Contact").Should().StartWith("http://repointed.creatio",
+				because: "a second, independent resolution re-reads the settings and lands on the repointed environment - the divergence ResolvePair exists to remove");
+		}
+		finally {
+			SettingsRepository.FileSystem = originalFileSystem;
+		}
 	}
 }

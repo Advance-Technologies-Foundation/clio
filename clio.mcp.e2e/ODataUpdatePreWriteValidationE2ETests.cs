@@ -3,6 +3,7 @@ using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Creatio;
+using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 
@@ -52,6 +53,7 @@ public sealed class ODataUpdatePreWriteValidationE2ETests {
 		});
 
 		// Assert
+		AssertStructuredFailure(callResult);
 		string surfacedText = SerializeSurfacedText(callResult);
 		surfacedText.Should().Contain(UnknownField,
 			because: "the caller can only fix the payload if the refusal names the offending field");
@@ -82,6 +84,11 @@ public sealed class ODataUpdatePreWriteValidationE2ETests {
 		});
 
 		// Assert
+		ODataWriteResponse structured = EntitySchemaStructuredResultParser.Extract<ODataWriteResponse>(callResult);
+		callResult.IsError.Should().NotBeTrue(
+			because: "a payload the CSDL confirms is a normal tool result, not a protocol-level error");
+		structured.Success.Should().BeTrue(
+			because: "the structured success flag is the field an agent branches on - the prose below is not");
 		IReadOnlyList<RecordedStubRequest> requests = await stand.GetRecordedRequestsAsync();
 		requests.Should().Contain(
 			request => request.Method == "GET" && request.Url.EndsWith("/odata/$metadata", StringComparison.Ordinal),
@@ -116,6 +123,7 @@ public sealed class ODataUpdatePreWriteValidationE2ETests {
 		});
 
 		// Assert
+		AssertStructuredFailure(callResult);
 		string surfacedText = SerializeSurfacedText(callResult);
 		surfacedText.Should().Contain("could not be verified",
 			because: "an outcome the tool could neither confirm nor refute must read as unverified, never as success");
@@ -161,6 +169,7 @@ public sealed class ODataUpdatePreWriteValidationE2ETests {
 		});
 
 		// Assert
+		AssertStructuredFailure(callResult);
 		string surfacedText = SerializeSurfacedText(callResult);
 		surfacedText.Should().Contain("could not be verified",
 			because: "the absence of a recognized error shape is not field verification - it must read as unverified");
@@ -184,4 +193,23 @@ public sealed class ODataUpdatePreWriteValidationE2ETests {
 	/// <returns>Serialized text of the whole result payload.</returns>
 	private static string SerializeSurfacedText(CallToolResult callResult) =>
 		JsonSerializer.Serialize(callResult.Content) + JsonSerializer.Serialize(callResult.StructuredContent);
+
+	/// <summary>
+	/// Asserts the STRUCTURED half of a refusal, which the prose assertions cannot reach: issue #1212 is a
+	/// false-SUCCESS defect, so a transport that serialized the right no-write explanation next to
+	/// <c>success:true</c> would satisfy every wording assertion in this fixture and still be the bug.
+	/// <c>IsError</c> stays false because a refused write is a normal tool RESULT (the pattern
+	/// <c>ODataReadToolE2ETests</c> asserts); the protocol-level error flag is reserved for a binding or
+	/// transport failure.
+	/// </summary>
+	/// <param name="callResult">Tool result returned by the MCP server.</param>
+	private static void AssertStructuredFailure(CallToolResult callResult) {
+		ODataWriteResponse structured = EntitySchemaStructuredResultParser.Extract<ODataWriteResponse>(callResult);
+		callResult.IsError.Should().NotBeTrue(
+			because: "a refused write is a structured tool result the agent can read, not a protocol-level failure");
+		structured.Success.Should().BeFalse(
+			because: "the structured success flag is what an agent branches on; a false success here IS issue #1212");
+		structured.Error.Should().NotBeNullOrWhiteSpace(
+			because: "a structured failure must carry the reason on the same channel as the flag");
+	}
 }

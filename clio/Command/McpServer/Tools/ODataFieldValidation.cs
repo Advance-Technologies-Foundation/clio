@@ -6,6 +6,7 @@ using System.Linq;
 using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Xml;
 using Clio.Common;
 
@@ -33,10 +34,35 @@ internal static class ODataFieldValidation {
 
 	/// <summary>
 	/// Attempts for the pre-write requests: the metadata/probe GET is read-only and idempotent,
-	/// so a bounded retry at the transport absorbs the flaky-stand class (an isolated 5xx or an
-	/// empty body) without ever re-sending a write.
+	/// so a bounded retry absorbs the flaky-stand class (an isolated 5xx or an empty body) without
+	/// ever re-sending a write.
 	/// </summary>
+	/// <remarks>
+	/// The retry runs HERE, around the fetch AND its classification, and the transport is called with
+	/// ONE attempt - not because a second layer would be redundant, but because the transport has no
+	/// retry to delegate to. Decompiling the pinned <c>creatio.client</c> 2.0.2 shows the synchronous
+	/// <c>ExecuteGetRequest</c> passing the literal <c>1</c> into its own send loop in place of the
+	/// <c>maxAttempts</c> argument, and swallowing <c>HttpRequestException</c> /
+	/// <c>TaskCanceledException</c> into <see cref="string.Empty"/>. So the argument never produced a
+	/// second request, and a transient transport failure reaches this class as an EMPTY BODY - a
+	/// classification outcome, which only a retry above the classification can see.
+	/// </remarks>
 	internal const int TransientAttempts = 3;
+
+	/// <summary>
+	/// Attempts passed to the transport itself: one. See <see cref="TransientAttempts"/> for why the
+	/// retry cannot live there.
+	/// </summary>
+	internal const int TransportAttempts = 1;
+
+	/// <summary>
+	/// Upper bound on the CSDL <c>BaseType</c> chain the inheritance walk follows. The document is
+	/// server-authored, so its depth is caller-influenced input: a registered HTTPS target can answer
+	/// with a very long ACYCLIC chain, which the cycle guard admits by definition. Creatio's own OData
+	/// hierarchy is two or three types deep, so a cap this high cannot be reached by a real service,
+	/// and exceeding it is treated as "the type could not be resolved" rather than followed.
+	/// </summary>
+	private const int MaxInheritanceDepth = 64;
 
 	/// <summary>Delay between <see cref="TransientAttempts"/> pre-write attempts, in seconds.</summary>
 	internal const int TransientDelaySec = 1;
@@ -131,6 +157,16 @@ internal static class ODataFieldValidation {
 			return null;
 		}
 
+		if (metadata.DepthExceeded) {
+			// NOT a degrade: the document DOES describe the entity, in a shape the walk refused to follow.
+			// Falling back to the $select probe here would answer a hostile or corrupt metadata document
+			// with a weaker oracle and could still end in a PATCH, so the call fails unverified instead -
+			// the same envelope an unverifiable probe produces, and no write.
+			return ODataWriteResponse.Failure(
+				$"The pre-write field check for {entity}({id}) returned a response that could not be verified: "
+				+ $"{metadata.UnverifiedDetail} No write was performed.");
+		}
+
 		// The metadata endpoint did not yield a usable type definition (unsupported, empty,
 		// non-XML, or a recognized error). Degrade to the $select probe for name validation.
 		return ValidateBySelectProbe(client, urlBuilder, entity, id, keys);
@@ -172,7 +208,8 @@ internal static class ODataFieldValidation {
 		HashSet<string> Properties,
 		Dictionary<string, string> PropertyTypes,
 		string? ServerError,
-		string? UnverifiedDetail);
+		string? UnverifiedDetail,
+		bool DepthExceeded = false);
 
 	/// <summary>
 	/// GETs the SERVICE-ROOT <c>odata/$metadata</c> document and parses the CSDL for the entity's
@@ -189,20 +226,66 @@ internal static class ODataFieldValidation {
 		IServiceUrlBuilder urlBuilder,
 		string entity,
 		int timeoutMs,
-		int attempts) {
+		int attempts) =>
+		RetryWhileTransient(
+			attempts,
+			() => FetchMetadataOnce(client, urlBuilder, entity, timeoutMs),
+			metadata => metadata.UnverifiedDetail == EmptyMetadataDetail);
+
+	/// <summary>The classification of an empty metadata body - the one outcome a retry can improve.</summary>
+	private const string EmptyMetadataDetail = "the OData metadata response was empty.";
+
+	/// <summary>
+	/// Runs <paramref name="fetchAndClassify"/> up to <paramref name="attempts"/> times, stopping at
+	/// the first outcome <paramref name="isTransient"/> rejects, and returns the last outcome when the
+	/// attempts are exhausted. The predicate reads the CLASSIFIED outcome, not the transport, because
+	/// the transport reports a failed pre-write GET as an empty body rather than as an exception (see
+	/// <see cref="TransientAttempts"/>); a parsed CSDL, a recognized Creatio error envelope, a JSON
+	/// body that is not the addressed record and an HTML error page are all definitive answers that a
+	/// second identical request cannot improve, so none of them is retried.
+	/// </summary>
+	private static TOutcome RetryWhileTransient<TOutcome>(
+		int attempts, Func<TOutcome> fetchAndClassify, Func<TOutcome, bool> isTransient) {
+		TOutcome outcome = fetchAndClassify();
+		for (int attempt = 1; attempt < attempts && isTransient(outcome); attempt++) {
+			// The pre-write path is synchronous end to end (IApplicationClient.ExecuteGetRequest is a
+			// blocking call), so the pause between attempts is a blocking sleep too. It only ever runs on
+			// the already-failed branch.
+			Thread.Sleep(TimeSpan.FromSeconds(TransientDelaySec));
+			outcome = fetchAndClassify();
+		}
+		return outcome;
+	}
+
+	/// <summary>
+	/// One metadata fetch and its classification. See <see cref="FetchMetadata"/> for the route and
+	/// the outcome encoding.
+	/// </summary>
+	private static EntityMetadata FetchMetadataOnce(
+		IApplicationClient client,
+		IServiceUrlBuilder urlBuilder,
+		string entity,
+		int timeoutMs) {
 		string url = urlBuilder.Build("odata/$metadata");
-		string body = client.ExecuteGetRequest(url, timeoutMs, attempts, TransientDelaySec);
+		string body = client.ExecuteGetRequest(url, timeoutMs, TransportAttempts, TransientDelaySec);
 		if (string.IsNullOrWhiteSpace(body)) {
-			return new EntityMetadata(false, [], [], null, "the OData metadata response was empty.");
+			return new EntityMetadata(false, [], [], null, EmptyMetadataDetail);
 		}
 		if (body.TrimStart().StartsWith("<", StringComparison.Ordinal)) {
 			// The metadata endpoint answers with CSDL XML. A parse that yields the entity's type
 			// definition resolves the validation; any other parse outcome leaves the fields
 			// unverified (the fallback probe then decides what it can).
 			try {
-				CsdlType? type = ParseCSDLEntity(body, entity);
+				CsdlType? type = ParseCSDLEntity(body, entity, out bool depthExceeded);
 				if (type is not null) {
 					return new EntityMetadata(true, type.Properties, type.PropertyTypes, null, null);
+				}
+				if (depthExceeded) {
+					return new EntityMetadata(false, [], [], null,
+						"the OData metadata declares an inheritance chain for the entity deeper than "
+						+ $"{MaxInheritanceDepth} types, which no Creatio type hierarchy has, so the declared "
+						+ "properties could not be established.",
+						DepthExceeded: true);
 				}
 				return new EntityMetadata(false, [], [], null,
 					"the OData metadata response did not contain a type definition for the entity.");
@@ -236,15 +319,25 @@ internal static class ODataFieldValidation {
 
 	/// <summary>
 	/// Parses the CSDL document and resolves the <paramref name="entity"/> type following
-	/// <c>BaseType</c> inheritance (cycle-guarded). Returns the resolved type, or <c>null</c> when
-	/// the document carries no <c>EntityType</c> matching the entity name.
+	/// <c>BaseType</c> inheritance (cycle- and depth-guarded). Returns the resolved type, or
+	/// <c>null</c> when the document carries no <c>EntityType</c> matching the entity name or when the
+	/// inheritance chain exceeds <see cref="MaxInheritanceDepth"/>.
 	/// </summary>
-	private static CsdlType? ParseCSDLEntity(string body, string entity) {
+	/// <param name="depthExceeded">
+	/// Set when the walk was abandoned on the depth cap. It distinguishes "this document does not
+	/// describe the entity" from "this document describes it in a shape that cannot be trusted", which
+	/// the caller answers differently: the first degrades to the probe, the second fails the call.
+	/// </param>
+	private static CsdlType? ParseCSDLEntity(string body, string entity, out bool depthExceeded) {
+		depthExceeded = false;
 		Dictionary<string, CsdlType> types = ParseCSDLTypes(body);
 		if (!TryResolveEntity(types, entity, out CsdlType? target)) {
 			return null;
 		}
-		CollectInherited(target, types, visited: []);
+		if (!CollectInherited(target, types)) {
+			depthExceeded = true;
+			return null;
+		}
 		return target;
 	}
 
@@ -332,31 +425,46 @@ internal static class ODataFieldValidation {
 	}
 
 	/// <summary>
-	/// Walks the <c>BaseType</c> chain (cycle-guarded) accumulating every property name in
-	/// <paramref name="type"/>'s resolved set.
+	/// Walks the <c>BaseType</c> chain (cycle- and depth-guarded) accumulating every property name in
+	/// <paramref name="type"/>'s resolved set. Returns <see langword="false"/> when the chain is longer
+	/// than <see cref="MaxInheritanceDepth"/>, in which case <paramref name="type"/> is left partially
+	/// collected and must not be used as the oracle.
 	/// </summary>
-	private static void CollectInherited(
-		CsdlType type,
-		Dictionary<string, CsdlType> types,
-		HashSet<string> visited) {
-		if (!visited.Add(type.Name)) {
-			return;
-		}
-		if (type.BaseType is null) {
-			return;
-		}
+	/// <remarks>
+	/// Iterative, and that is the point: the walk follows SERVER-AUTHORED <c>BaseType</c> links, so the
+	/// chain length is caller-influenced input. The cycle guard alone admits an arbitrarily long acyclic
+	/// chain, and a recursive walk over one would exhaust the stack - an uncatchable
+	/// <c>StackOverflowException</c> that takes the whole shared MCP process down, not just this call.
+	/// The chain is collected first and applied in reverse so a base type's properties still reach every
+	/// type below it, exactly as the recursive post-order did.
+	/// </remarks>
+	private static bool CollectInherited(CsdlType type, Dictionary<string, CsdlType> types) {
+		List<CsdlType> chain = [type];
+		HashSet<string> visited = new(StringComparer.Ordinal) { type.Name };
+		CsdlType current = type;
 		// The map is keyed by the EntityType's short Name, but per CSDL 4.0 a BaseType attribute is a
 		// FULLY-QUALIFIED type name ("Terrasoft.Configuration.OData.BaseEntity"). Looking the raw value up
 		// never matched, so the whole walk was a silent no-op and every field inherited from BaseEntity
 		// (Id, CreatedOn, ModifiedOn, CreatedById, ModifiedById, ...) was reported as non-existent.
-		if (types.TryGetValue(ShortTypeName(type.BaseType), out CsdlType? baseType)) {
-			CollectInherited(baseType, types, visited);
-			type.Properties.UnionWith(baseType.Properties);
+		while (current.BaseType is not null
+			&& types.TryGetValue(ShortTypeName(current.BaseType), out CsdlType? baseType)
+			&& visited.Add(baseType.Name)) {
+			if (chain.Count > MaxInheritanceDepth) {
+				return false;
+			}
+			chain.Add(baseType);
+			current = baseType;
+		}
+		for (int i = chain.Count - 1; i > 0; i--) {
+			CsdlType derived = chain[i - 1];
+			CsdlType baseType = chain[i];
+			derived.Properties.UnionWith(baseType.Properties);
 			foreach (KeyValuePair<string, string> inherited in baseType.PropertyTypes) {
 				// A redeclared property on the derived type wins; TryAdd keeps the derived declaration.
-				type.PropertyTypes.TryAdd(inherited.Key, inherited.Value);
+				derived.PropertyTypes.TryAdd(inherited.Key, inherited.Value);
 			}
 		}
+		return true;
 	}
 
 	/// <summary>Strips the CSDL namespace qualifier from a type reference.</summary>
@@ -459,7 +567,26 @@ internal static class ODataFieldValidation {
 		string entity,
 		string id,
 		IReadOnlyList<string> keys,
-		int timeoutMs = RequestTimeoutMs) {
+		int timeoutMs = RequestTimeoutMs) =>
+		RetryWhileTransient(
+			TransientAttempts,
+			() => ProbeOnce(client, urlBuilder, entity, id, keys, timeoutMs),
+			probe => probe.UnverifiedDetail == EmptyProbeDetail);
+
+	/// <summary>The classification of an empty probe body - the one outcome a retry can improve.</summary>
+	private const string EmptyProbeDetail = "the probe response was empty.";
+
+	/// <summary>
+	/// One <c>$select</c> probe and its classification. See <see cref="Probe"/> for the outcome
+	/// encoding.
+	/// </summary>
+	private static ProbeResult ProbeOnce(
+		IApplicationClient client,
+		IServiceUrlBuilder urlBuilder,
+		string entity,
+		string id,
+		IReadOnlyList<string> keys,
+		int timeoutMs) {
 		// NOT percent-encoded: the comma is $select's own list separator, and encoding it turns a
 		// three-field select into a request for one selector literally named "Id%2CCreatedOn%2CName",
 		// which a conforming server rejects as an unknown property - failing every probe on this path.
@@ -468,7 +595,7 @@ internal static class ODataFieldValidation {
 		string selectList = "Id," + string.Join(",", keys);
 		string path = $"{ODataKeyFormatter.KeyPath(entity, id)}?$select={selectList}";
 		string url = urlBuilder.Build(path);
-		string body = client.ExecuteGetRequest(url, timeoutMs, TransientAttempts, TransientDelaySec);
+		string body = client.ExecuteGetRequest(url, timeoutMs, TransportAttempts, TransientDelaySec);
 		if (string.IsNullOrWhiteSpace(body)) {
 			// An empty body is read as UNVERIFIED here - the opposite of the write path, where
 			// ODataKeyedWrite.ValidateWriteResponse treats an empty/whitespace body as success. The
@@ -478,8 +605,8 @@ internal static class ODataFieldValidation {
 			// a session redirect, a gateway that stripped the body) - whereas a PATCH can legitimately
 			// answer a body-less 204 ack. Treating an empty probe body as "fields confirmed" would
 			// recreate the false success this validation exists to remove; both stay fail-closed after
-			// the bounded retry above is exhausted.
-			return new ProbeResult(false, null, "the probe response was empty.");
+			// the bounded retry in Probe is exhausted.
+			return new ProbeResult(false, null, EmptyProbeDetail);
 		}
 		try {
 			using JsonDocument doc = JsonDocument.Parse(body);

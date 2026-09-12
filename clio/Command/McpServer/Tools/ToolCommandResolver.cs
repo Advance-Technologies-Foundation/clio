@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Security.Cryptography;
 using System.Text;
 using Clio;
@@ -20,6 +20,23 @@ public interface IToolCommandResolver {
 	/// <param name="options">Environment options that identify the execution target.</param>
 	/// <returns>A command instance configured for the requested target.</returns>
 	TCommand Resolve<TCommand>(EnvironmentOptions options);
+
+	/// <summary>
+	/// Resolves TWO services for the same target from ONE environment snapshot.
+	/// </summary>
+	/// <remarks>
+	/// Two <see cref="Resolve{TCommand}"/> calls are NOT equivalent: each one re-reads the settings
+	/// repository, so an environment repointed between them yields two containers for two different
+	/// targets. A caller that pairs an authenticated client with a URL builder (the keyed OData writes)
+	/// would then send environment A's session to environment B's url. This method reads the settings
+	/// once and takes both services out of the container that snapshot selected.
+	/// </remarks>
+	/// <typeparam name="TFirst">The first service type.</typeparam>
+	/// <typeparam name="TSecond">The second service type.</typeparam>
+	/// <param name="options">Environment options that identify the execution target.</param>
+	/// <returns>Both services, resolved from one container.</returns>
+	(TFirst First, TSecond Second) ResolvePair<TFirst, TSecond>(EnvironmentOptions options);
+
 	TCommand ResolveWithoutEnvironment<TCommand>(EnvironmentOptions options);
 
 	/// <summary>
@@ -114,7 +131,21 @@ public class ToolCommandResolver(
 	/// <inheritdoc />
 	public TCommand Resolve<TCommand>(EnvironmentOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
+		return AcquireContainer(options).GetRequiredService<TCommand>();
+	}
 
+	/// <inheritdoc />
+	public (TFirst First, TSecond Second) ResolvePair<TFirst, TSecond>(EnvironmentOptions options) {
+		ArgumentNullException.ThrowIfNull(options);
+		// ONE acquisition, both services: the branch selection, the settings read and the cache-key
+		// computation all happen exactly once, so the pair cannot straddle two environments.
+		IServiceProvider container = AcquireContainer(options);
+		return (container.GetRequiredService<TFirst>(), container.GetRequiredService<TSecond>());
+	}
+
+	// The single entry point both Resolve and ResolvePair use, so they can never disagree about which
+	// branch, which settings snapshot or which cache key a call belongs to.
+	private IServiceProvider AcquireContainer(EnvironmentOptions options) {
 		// Credential-passthrough branch (FR-03/FR-04/FR-12). A per-request CredentialContext, when
 		// present, is authoritative: build an EPHEMERAL EnvironmentSettings straight from the header
 		// credentials — no settings repo, no env-name match, no interactive Fill, nothing persisted.
@@ -140,14 +171,20 @@ public class ToolCommandResolver(
 					+ "are not accepted when credential passthrough is enabled over HTTP. Supply the target environment "
 					+ "and credentials via the X-Integration-Credentials header, not tool arguments.");
 			}
-			return ResolvePassthrough<TCommand>(credentialContext);
+			return AcquirePassthroughContainer(credentialContext);
 		}
 
+		return AcquireRegisteredContainer(options);
+	}
+
+	// The one place the registry / explicit-URI branch reads the settings and acquires its container,
+	// so every caller that needs more than one service off the same snapshot gets the SAME container
+	// rather than a second settings read.
+	private IServiceProvider AcquireRegisteredContainer(EnvironmentOptions options) {
 		(EnvironmentSettings settings, string cacheKey) = ResolveSettingsAndKey(options);
 		_lastResolvedTenantKey.Value = cacheKey;
-		IServiceProvider container = sessionContainerCache.Acquire(cacheKey,
+		return sessionContainerCache.Acquire(cacheKey,
 			() => new BindingsModule().Register(settings, NonInteractiveConsole.ForceInContainer));
-		return container.GetRequiredService<TCommand>();
 	}
 
 	/// <inheritdoc />
@@ -262,7 +299,7 @@ public class ToolCommandResolver(
 	// (AC-04) so a hostile url cannot be used as a credential-redirection lever, then the ephemeral
 	// settings are built and cached under a credential-discriminating key. This method is linear:
 	// EnsureAllowed precedes every settings/container/client construction by construction.
-	private TCommand ResolvePassthrough<TCommand>(CredentialContext context) {
+	private IServiceProvider AcquirePassthroughContainer(CredentialContext context) {
 		// AC-04 / FR-17: validate the caller-influenced target url BEFORE building any settings,
 		// container, or client. A rejection is caller-actionable (fix your input), so surface it as an
 		// EnvironmentResolutionException — consistent with the cookie / missing-auth / non-Bearer
@@ -309,9 +346,8 @@ public class ToolCommandResolver(
 		// EnvironmentScoped graph SHAPE is invariant across tenants and is validated once at mcp-http host
 		// startup (BindingsModule.ValidateEnvironmentScopedGraph), so re-validating the full ~455-registration
 		// graph on every near-continuous rotating-token cache miss is pure startup-grade cost.
-		IServiceProvider container = sessionContainerCache.Acquire(cacheKey,
+		return sessionContainerCache.Acquire(cacheKey,
 			() => new BindingsModule().Register(settings, NonInteractiveConsole.ForceInContainer, validateGraph: false));
-		return container.GetRequiredService<TCommand>();
 	}
 
 	/// <summary>

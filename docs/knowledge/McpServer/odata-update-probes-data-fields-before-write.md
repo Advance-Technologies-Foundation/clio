@@ -1,4 +1,4 @@
----
+﻿---
 description: Creatio's OData v4 endpoint accepts a PATCH naming properties the entity type does not have and answers an empty 204-like body without writing anything - odata-update pre-validates every data field NAME against the service-root $metadata CSDL, with a $select probe fallback
 applies-to:
   - clio/Command/McpServer/Tools/ODataUpdateTool.cs
@@ -33,9 +33,15 @@ separately rather than shipped non-deterministically here.
 
 `ODataUpdateTool` therefore runs `ODataFieldValidation.ValidateDataFields` before every
 PATCH. The PRIMARY validator is the service's own metadata: `GET odata/$metadata` is fetched
-(bounded: 30 s timeout, 3 attempts, 1 s delay) and parsed as CSDL, and the entity's property
-set comes from ONE deterministic GET, which replaces the earlier per-field binary `$select`
-probing. Only STRUCTURAL `Property` elements enter that set, following `BaseType` inheritance;
+(bounded: 30 s timeout per request, up to 3 attempts, 1 s apart) and parsed as CSDL, and the entity's
+property set comes from ONE deterministic GET, which replaces the earlier per-field binary `$select`
+probing. The attempts are counted in `ODataFieldValidation`, around the fetch AND its classification,
+and the transport is asked for a single attempt: the pinned transport discards its own `maxAttempts`
+and reports a transient failure as an empty body, so only a retry above the classification can see one
+(`../Common/creatio-client-get-discards-max-attempts.md`). Only STRUCTURAL `Property` elements enter
+that set, following a `BaseType` chain that is walked iteratively and capped at 64 types - the
+document is server-authored, so an acyclic chain long enough to exhaust the stack is caller-influenced
+input, and exceeding the cap fails the call as unverified instead of degrading to the probe;
 a `NavigationProperty` is deliberately excluded, because an OData relationship is written
 through bind semantics rather than by assigning the navigation name, and the contract points
 callers at the structural foreign key (`AccountId`, not `Account`). The fallback probe leaves a
