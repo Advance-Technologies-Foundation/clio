@@ -361,6 +361,72 @@ internal static partial class SensitiveErrorTextRedactor {
 		});
 	}
 
+	/// <summary>
+	/// The CONSOLE-facing variant of <see cref="Redact"/> for text whose PROSE clio itself wrote: it runs
+	/// the credential rules only - embedded URI userinfo, JWTs, <c>Bearer</c> values and
+	/// <c>key=value</c> secret pairs - and deliberately leaves absolute paths, scheme-less
+	/// <c>host:port</c> endpoints, e-mail addresses and plain URLs intact.
+	/// </summary>
+	/// <remarks>
+	/// Issue #1505. Wrapping <see cref="ExceptionReadableMessageExtension"/>'s non-carrier arms in the full
+	/// <see cref="Redact"/> also scrubbed the operator's OWN local paths and endpoints, which are not
+	/// secrets on their own terminal and are the entire content of the diagnosis. Measured:
+	/// <c>clio compress /Users/&lt;user&gt;/nope1505dir -d /tmp/x.gz</c> printed
+	/// <c>Could not find a part of the path '[redacted-path]'.</c> - an error that names nothing.
+	/// <para>
+	/// The full <see cref="Redact"/> stays the rule for text a SERVER authored and for anything copied into
+	/// an MCP envelope, a log an operator pastes into a ticket, or a third-party LLM's context: there a path
+	/// or a host IS a leak. This variant is only for a line whose sole reader is the person who typed the
+	/// command.
+	/// </para>
+	/// <para>
+	/// <see cref="UriRegex"/> is reused rather than duplicated, with a match evaluator that removes only the
+	/// <c>user:pass@</c> authority prefix and keeps the host - so <c>https://user:pw@host/x</c> loses the
+	/// credential and stays diagnosable. A matched URI whose authority carries no <c>@</c> is returned
+	/// untouched, host, port, path and query included.
+	/// </para>
+	/// </remarks>
+	/// <param name="text">The raw text of a console line clio composed itself.</param>
+	/// <returns>The text with credential shapes replaced; <see cref="string.Empty"/> for null/empty input.</returns>
+	public static string RedactCredentials(string? text) {
+		if (string.IsNullOrEmpty(text)) {
+			return string.Empty;
+		}
+		return ExecuteRegex(() => {
+			string result = UriRegex().Replace(text, StripUriUserInfo);
+			result = JwtRegex().Replace(result, RedactedValue);
+			result = BearerTokenRegex().Replace(result, RedactedValue);
+			return CredentialPairRegex().Replace(result, match => $"{match.Groups[1].Value}={RedactedValue}");
+		});
+	}
+
+	/// <summary>
+	/// Returns a matched URI unchanged unless its authority carries userinfo, in which case only the
+	/// <c>user:pass@</c> prefix is replaced and the host, port, path and query survive.
+	/// </summary>
+	/// <remarks>
+	/// The authority ends at the first <c>/</c>, <c>?</c> or <c>#</c>. Cutting at <c>/</c> alone was wrong
+	/// on a measured input: <c>https://host:88?u=john@acme.com</c> has no <c>/</c> at all, so the authority
+	/// ran into the query, the <c>@</c> of an e-mail was taken for userinfo, and the host was replaced
+	/// instead - leaving <c>https://[redacted]@acme.com</c>, which names the wrong endpoint.
+	/// <c>LastIndexOf</c> is searched inside those bounds because a password may itself contain <c>@</c>.
+	/// A raw <c>/</c> inside userinfo is not a valid URI (RFC 3986 requires it percent-encoded) and is not
+	/// handled: such a value ends the authority early and the pair is returned unchanged.
+	/// </remarks>
+	private static string StripUriUserInfo(Match match) {
+		string value = match.Value;
+		int authorityStart = value.IndexOf("://", StringComparison.Ordinal) + 3;
+		int authorityEnd = value.IndexOfAny(['/', '?', '#'], authorityStart);
+		if (authorityEnd < 0) {
+			authorityEnd = value.Length;
+		}
+		int at = value.LastIndexOf('@', authorityEnd - 1, authorityEnd - authorityStart);
+		if (at < 0) {
+			return value;
+		}
+		return string.Concat(value.AsSpan(0, authorityStart), RedactedValue, "@", value.AsSpan(at + 1));
+	}
+
 	internal static string ExecuteRegex(Func<string> operation) {
 		try {
 			return operation();

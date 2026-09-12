@@ -27,7 +27,28 @@ internal static class ExceptionReadableMessageExtension
 			return RenderServerDetailCarrier(carrier, exception, debug);
 		}
 		if (debug) return exception.ToString();
-		return exception switch
+		// Issue #1505: the non-carrier arms below render text whose CONTENT a server can influence -
+		// measured with `clio list-packages -e <env>` against a DataService answering HTTP 500 with
+		// {"success":false,"errorInfo":{"message":"Configuration service failed: backend echoed
+		// password=s3cr3t server=db.internal"}}: SelectQueryHelper throws
+		// InvalidOperationException("SelectQuery failed: <that prose>"), the IOE arm returned it verbatim,
+		// and the console printed the credential in the clear - while the MCP path
+		// (ClioRunTool.RedactFailureContent) redacted the same text. So the composed non-debug line goes
+		// through the redactor once, here, for every arm.
+		//
+		// ScrubCredentials, NOT Scrub and NOT ForConsole. The other two are the renderings for text a SERVER
+		// authored: ForConsole additionally flattens line breaks and clamps at 300 characters, and both
+		// scrub absolute paths, host:port endpoints and e-mail addresses. That is right for an excerpt
+		// bound for an MCP envelope, a log pasted into a ticket or a third-party model - and wrong here,
+		// where the reader is the person who typed the command and the path IS the diagnosis. Measured
+		// while this wrapper was still Scrub: `clio compress /Users/<user>/nope1505dir -d /tmp/x.gz`
+		// printed "Could not find a part of the path '[redacted-path]'." - an error naming nothing.
+		// ScrubCredentials runs the credential rules only (URI userinfo, JWT, Bearer, key=value secret
+		// pairs), so the server-echoed password above is still replaced and a secret-free line comes back
+		// byte-identical.
+		//
+		// The debug path above is untouched on purpose: --debug is the #1333 bridge back to the raw text.
+		return UntrustedText.ScrubCredentials(exception switch
 		{
 			AggregateException ex when ex.InnerException != null
 				=> ex.InnerException.GetReadableMessageException(debug),
@@ -43,7 +64,7 @@ internal static class ExceptionReadableMessageExtension
 				=> $"{exception.Message} ({DescribeWebException(nestedWebException)})",
 			InvalidOperationException ex => ex.InnerException?.Message ?? ex.Message,
 			_ => exception.Message
-		};
+		});
 	}
 
 	/// <summary>
