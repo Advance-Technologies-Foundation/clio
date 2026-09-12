@@ -60,14 +60,7 @@ namespace Clio.Command.SqlScriptCommand
 			
 			viewType = viewType.ToLowerInvariant();
 			if (viewType == "json") {
-				JToken jsonResult = JToken.Parse(serverResponse);
-				if (jsonResult.Type is not (JTokenType.Array or JTokenType.Integer)) {
-					throw new InvalidOperationException("SQL response must contain a JSON row array or an affected-row count.");
-				}
-				if (filePath != null) {
-					File.WriteAllText(filePath, serverResponse);
-				}
-				return serverResponse;
+				return GetJsonResult(serverResponse, filePath);
 			}
 			if (int.TryParse(serverResponse, out var count)) {
 				if (filePath != null) {
@@ -92,6 +85,17 @@ namespace Clio.Command.SqlScriptCommand
 				formatResult = serverResponse;
 			}
 			return formatResult;
+		}
+
+		private static string GetJsonResult(string serverResponse, string filePath) {
+			JToken jsonResult = JToken.Parse(serverResponse);
+			if (jsonResult.Type is not (JTokenType.Array or JTokenType.Integer)) {
+				throw new InvalidOperationException("SQL response must contain a JSON row array or an affected-row count.");
+			}
+			if (filePath != null) {
+				File.WriteAllText(filePath, serverResponse);
+			}
+			return serverResponse;
 		}
 
 		private static bool TryGetError(string json, out string errorMessage) {
