@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
+using System.Threading.Tasks;
 using Clio.Command.McpServer;
 using Clio.Common;
 using Clio.Package;
@@ -79,10 +81,17 @@ public interface IEntitySchemaDependencyResolver
 	/// Determines which packages could supply <paramref name="schemaName"/> to
 	/// <paramref name="targetPackageName"/>.
 	/// </summary>
+	/// <remarks>
+	/// The target package is identified by UId as well as by name because every caller is holding the UId
+	/// already - it is what the designer request was scoped to. Passing only the name would make the
+	/// dependency read resolve it again through the full installed-package list, one extra round-trip on a
+	/// path that is already failing.
+	/// </remarks>
 	/// <param name="schemaName">Entity schema name that was unavailable (for example <c>Opportunity</c>).</param>
+	/// <param name="targetPackageUId">Identifier of the package that is being edited.</param>
 	/// <param name="targetPackageName">Package that is being edited (for example <c>Custom</c>).</param>
 	/// <returns>The candidates found, and whether the searches behind them actually completed.</returns>
-	EntitySchemaDependencyResolution Resolve(string schemaName, string targetPackageName);
+	EntitySchemaDependencyResolution Resolve(string schemaName, Guid targetPackageUId, string targetPackageName);
 
 }
 
@@ -110,6 +119,16 @@ internal sealed class EntitySchemaDependencyResolver : IEntitySchemaDependencyRe
 	/// <summary>Upper bound on the failure text embedded in a log warning.</summary>
 	private const int MaxLoggedFailureLength = 300;
 
+	/// <summary>
+	/// Upper bound on the wait for the offloaded schema search, covering its own read bound PLUS the delay
+	/// before the thread pool schedules it at all - which no per-request timeout can cap.
+	/// </summary>
+	/// <remarks>
+	/// Settable only so a test can prove the guard without blocking for a minute; production never assigns
+	/// it. Same kind of seam as <c>ReauthExecutor.LoginVersion</c>.
+	/// </remarks>
+	internal int ContributorsWaitTimeoutMs { get; set; } = DiagnosticReadTimeoutMs * 2;
+
 	private readonly FindEntitySchemaCommand _findCommand;
 	private readonly IPackageDependencyManager _dependencyManager;
 	private readonly IApplicationClient _applicationClient;
@@ -127,14 +146,57 @@ internal sealed class EntitySchemaDependencyResolver : IEntitySchemaDependencyRe
 	}
 
 	/// <inheritdoc/>
-	public EntitySchemaDependencyResolution Resolve(string schemaName, string targetPackageName) {
+	public EntitySchemaDependencyResolution Resolve(string schemaName, Guid targetPackageUId,
+		string targetPackageName) {
 		try {
-			List<string> contributors = FindContributingPackages(schemaName, targetPackageName);
+			// The two independent reads run at the same time, so the diagnostic costs max(read1, read2)
+			// rather than read1 + read2. On an environment that accepts the connection and then stops
+			// answering that is the difference between one DiagnosticReadTimeoutMs wait and two, which is
+			// what pushed this path towards the MCP client's own ceiling and turned an enriched message into
+			// an opaque abort.
+			//
+			// The resolver stays SYNCHRONOUS and blocks once, here. Making it asynchronous would propagate
+			// async through LoadSchema and the whole MCP tool -> command -> manager chain above it, for a path
+			// that runs only when something has already failed; nothing in project-context.md or the analyzer
+			// configuration forbids blocking, and clio already does it (HostsCommand,
+			// CompileConfigurationCommand, InstallProcessBuilderCommand and ~90 other GetAwaiter().GetResult()
+			// sites).
+			//
+			// Exactly ONE read is offloaded, for two separate reasons. First, ReadExistingDependencies handles
+			// its own failures and never throws, so running it on the calling thread holds no pool thread.
+			// Second, awaiting a SINGLE task with GetAwaiter().GetResult() rethrows the original exception,
+			// while Task.WhenAll would not do: .Wait()/.Result on it wraps the fault in an AggregateException
+			// whose text buries the reason the environment gave, and GetAwaiter().GetResult() on it surfaces
+			// only the first fault - which would turn the dependency read's "degrade, do not throw" contract
+			// into a thrown failure whenever it lost the race.
+			//
+			// Two requests are therefore in flight on the shared IApplicationClient. That is a supported
+			// state: CreatioClientAdapter guards its Lazy<CreatioClient> with ExecutionAndPublication and a
+			// lifetime lock, ReauthExecutor exists precisely so "a parallel burst of failing requests triggers
+			// exactly one Login", and LoginDiagnostics counts RequestsInFlight with Interlocked. Two facts this
+			// method does not state - that the dependency read now runs even when nothing contributes the
+			// schema, and what a warning written on the offloaded thread depends on to reach an MCP response -
+			// are in
+			// docs/knowledge/Command/the-dependency-diagnosis-runs-two-reads-in-parallel-off-a-sync-method.md.
+			Task<List<string>> contributorsTask = Task.Run(
+				() => Measure(() => FindContributingPackages(schemaName, targetPackageName), "schema search"));
+			(HashSet<string> existingDependencies, bool dependenciesKnown, string? dependencyFailureReason) =
+				Measure(() => ReadExistingDependencies(targetPackageUId, targetPackageName), "dependency read");
+			// Bounded even though the read inside is bounded: the task has to be SCHEDULED before its own
+			// timeout starts running, and on a saturated thread pool the injection delay is unbounded. Twice
+			// the read's own budget leaves the read itself room to answer while still capping this wait.
+			// Waited through the handle rather than with Task.Wait(int) on purpose - Wait throws an
+			// AggregateException for a faulted task, and this path has to surface the exception the
+			// environment actually raised, which the GetAwaiter().GetResult() below does.
+			if (!((IAsyncResult)contributorsTask).AsyncWaitHandle.WaitOne(ContributorsWaitTimeoutMs)) {
+				throw new TimeoutException(
+					"The lookup of the packages that contribute the schema did not finish within "
+					+ $"{ContributorsWaitTimeoutMs} ms.");
+			}
+			List<string> contributors = contributorsTask.GetAwaiter().GetResult();
 			if (contributors.Count == 0) {
 				return EntitySchemaDependencyResolution.None;
 			}
-			(HashSet<string> existingDependencies, bool dependenciesKnown) =
-				ReadExistingDependencies(targetPackageName);
 			List<string> candidates = contributors
 				.Where(name => !existingDependencies.Contains(name))
 				.ToList();
@@ -143,19 +205,62 @@ internal sealed class EntitySchemaDependencyResolver : IEntitySchemaDependencyRe
 				// is NOT what the caller is looking at. Saying nothing is the correct answer here.
 				return EntitySchemaDependencyResolution.None;
 			}
-			HashSet<string> applicationPackages = ReadInstalledApplicationPackages();
+			// Read three keeps its original condition. Gating it on "more than one candidate" would save a
+			// round-trip on the single-candidate case but silently change the surfaced text: the message
+			// switches on ApplicationCandidateCount, so a lone candidate that IS an installed application is
+			// reported as ", installed applications first: X" today and would become ": X". It cannot DOUBLE
+			// the wait either - a stand can answer the schema search and then hang on this one, costing up to
+			// one more DiagnosticReadTimeoutMs, but it is never reached unless read one already answered.
+			HashSet<string> applicationPackages =
+				Measure(ReadInstalledApplicationPackages, "installed applications");
 			List<string> ranked = Rank(candidates, applicationPackages, out int applicationCandidateCount);
+			// The dependency read's failure is reported HERE and nowhere else. It is written now that a
+			// candidate list actually exists, because the warning describes that list ("may include packages
+			// that are already dependencies") and because it does reach an MCP client: BaseTool sets
+			// PreserveMessages and copies the captured lines into the tool result on both the success and the
+			// failure path. Written where the read fails, it would reach a caller whose lookup produced no
+			// list at all and describe one that was never built.
+			if (!dependenciesKnown) {
+				_logger.WriteWarning(
+					$"Could not read the current dependencies of package '{targetPackageName}': " +
+					$"{dependencyFailureReason}. " +
+					"The candidate list may include packages that are already dependencies.");
+			}
 			return new EntitySchemaDependencyResolution(ranked, applicationCandidateCount, true,
 				dependenciesKnown);
 		} catch (Exception ex) when (ex is not OutOfMemoryException) {
 			// Broad catch is intentional: FindSchemas can fail with HttpRequestException, JsonException,
 			// InvalidOperationException, or ArgumentException depending on the remote state. None of these
 			// should abort the caller - the enriched error message in LoadSchema takes over. The failure is
-			// carried in the result, not only logged: the log warning does not reach an MCP client, so a
-			// caller told only "no candidates" would read a search that never ran as a finding of fact.
+			// carried in the RESULT rather than only in this warning: the CLI prints the warning, but the
+			// message LoadSchema builds is the only thing an MCP agent acts on, so a caller told just "no
+			// candidates" would read a search that never ran as a finding of fact.
 			string reason = DescribeFailure(ex);
 			_logger.WriteWarning($"Dependency candidate lookup failed for schema '{schemaName}': {reason}");
 			return EntitySchemaDependencyResolution.LookupFailed(reason);
+		}
+	}
+
+	/// <summary>
+	/// Runs one diagnostic read and reports how long it took, at debug verbosity.
+	/// </summary>
+	/// <remarks>
+	/// Debug rather than info on purpose: these reads only ever run on a path that is already reporting a
+	/// failure, and an extra line on the normal CLI output would change what the caller sees for a change
+	/// meant to alter nothing but the timing. <c>ConsoleLogger.WriteDebug</c> drops the line unless the
+	/// process was started with <c>--debug</c>.
+	/// </remarks>
+	/// <typeparam name="T">Result type of the read.</typeparam>
+	/// <param name="read">The read to run.</param>
+	/// <param name="description">Short name of the read, used in the log line.</param>
+	/// <returns>Whatever <paramref name="read"/> returned.</returns>
+	private T Measure<T>(Func<T> read, string description) {
+		long startedAt = Stopwatch.GetTimestamp();
+		try {
+			return read();
+		} finally {
+			_logger.WriteDebug($"Dependency diagnostic {description} took "
+				+ $"{Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds:F0} ms.");
 		}
 	}
 
@@ -206,24 +311,25 @@ internal sealed class EntitySchemaDependencyResolver : IEntitySchemaDependencyRe
 	/// clio acts on by itself. Walking the whole chain would cost one GetPackageProperties request per
 	/// package on a path that is already a failure path.
 	/// </remarks>
+	/// <param name="targetPackageUId">Identifier of the package being edited, as the caller already holds it.</param>
 	/// <param name="targetPackageName">Package being edited.</param>
 	/// <returns>
-	/// The case-insensitive set of declared dependency names, and whether the read actually succeeded. A
-	/// failed read yields an empty set with <see langword="false"/> - the caller must not mistake that for
-	/// "this package declares no dependencies".
+	/// The case-insensitive set of declared dependency names, whether the read actually succeeded, and - when
+	/// it did not - the redacted reason. A failed read yields an empty set with <see langword="false"/>: the
+	/// caller must not mistake that for "this package declares no dependencies". The failure is RETURNED
+	/// rather than logged here, so the caller can report it only once a candidate list the warning can
+	/// describe actually exists.
 	/// </returns>
-	private (HashSet<string> Existing, bool ReadSucceeded) ReadExistingDependencies(string targetPackageName) {
+	private (HashSet<string> Existing, bool ReadSucceeded, string? FailureReason) ReadExistingDependencies(
+		Guid targetPackageUId, string targetPackageName) {
 		try {
-			return (_dependencyManager.GetDependencies(targetPackageName, DiagnosticReadTimeoutMs)
-				.ToHashSet(StringComparer.OrdinalIgnoreCase), true);
+			return (_dependencyManager
+				.GetDependencies(targetPackageUId, targetPackageName, DiagnosticReadTimeoutMs)
+				.ToHashSet(StringComparer.OrdinalIgnoreCase), true, null);
 		} catch (Exception ex) when (ex is not OutOfMemoryException) {
 			// Degrade to "nothing known to be a dependency": an unfiltered candidate list is still useful,
 			// while failing here would suppress the whole diagnosis.
-			_logger.WriteWarning(
-				$"Could not read the current dependencies of package '{targetPackageName}': " +
-				$"{DescribeFailure(ex)}. " +
-				"The candidate list may include packages that are already dependencies.");
-			return (new HashSet<string>(StringComparer.OrdinalIgnoreCase), false);
+			return (new HashSet<string>(StringComparer.OrdinalIgnoreCase), false, DescribeFailure(ex));
 		}
 	}
 

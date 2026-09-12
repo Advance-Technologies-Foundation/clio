@@ -83,13 +83,25 @@ internal sealed class PackageDependencyManager : BasePackageOperation, IPackageD
 	}
 
 	/// <inheritdoc cref="IPackageDependencyManager.GetDependencies(string)"/>
-	public IReadOnlyList<string> GetDependencies(string packageName) =>
-		GetDependencies(packageName, Timeout.Infinite);
-
-	/// <inheritdoc cref="IPackageDependencyManager.GetDependencies(string, int)"/>
-	public IReadOnlyList<string> GetDependencies(string packageName, int requestTimeoutMs) {
+	public IReadOnlyList<string> GetDependencies(string packageName) {
 		packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
-		(_, WorkspacePackageDto package) = LoadTargetPackage(packageName, requestTimeoutMs);
+		(_, WorkspacePackageDto package) = LoadTargetPackage(packageName);
+		return ToDependencyNames(package.DependsOnPackages);
+	}
+
+	/// <inheritdoc cref="IPackageDependencyManager.GetDependencies(Guid, string, int)"/>
+	public IReadOnlyList<string> GetDependencies(Guid packageUId, string packageName, int requestTimeoutMs) {
+		packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
+		// An empty UId is rejected rather than sent: GetPackageProperties answers it with a generic failure
+		// that names neither the caller's mistake nor the package, and this overload exists to enrich an
+		// error message - an unhelpful one inside it is worse than none.
+		if (packageUId == Guid.Empty) {
+			throw new ArgumentException("Package UId must not be empty.", nameof(packageUId));
+		}
+		// Straight to the properties read: the caller already resolved the package, so the GetPackages("{}")
+		// lookup LoadTargetPackage performs would re-derive a UId that is right here, at the cost of a second
+		// round-trip on a path that is already failing.
+		WorkspacePackageDto package = LoadPackageProperties(packageUId, packageName, requestTimeoutMs);
 		return ToDependencyNames(package.DependsOnPackages);
 	}
 
@@ -131,13 +143,12 @@ internal sealed class PackageDependencyManager : BasePackageOperation, IPackageD
 	/// <param name="packageName">Package to resolve.</param>
 	/// <returns>The installed package list (the add path needs it to resolve dependencies) and the properties.</returns>
 	/// <exception cref="InvalidOperationException">The package is not installed in the environment.</exception>
-	private (List<PackageInfo> Installed, WorkspacePackageDto Package) LoadTargetPackage(string packageName,
-		int requestTimeoutMs = Timeout.Infinite) {
+	private (List<PackageInfo> Installed, WorkspacePackageDto Package) LoadTargetPackage(string packageName) {
 		List<PackageInfo> installedPackages =
-			_applicationPackageListProvider.GetPackages("{}", requestTimeoutMs).ToList();
+			_applicationPackageListProvider.GetPackages("{}", Timeout.Infinite).ToList();
 		PackageInfo targetPackage = FindPackage(installedPackages, packageName)
 			?? throw new InvalidOperationException($"Package with name \"{packageName}\" not found in the environment.");
-		return (installedPackages, LoadPackageProperties(targetPackage.Descriptor.UId, packageName, requestTimeoutMs));
+		return (installedPackages, LoadPackageProperties(targetPackage.Descriptor.UId, packageName));
 	}
 
 	/// <summary>
