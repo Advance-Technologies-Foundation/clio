@@ -69,7 +69,7 @@ internal class ModifyEntitySchemaColumnCommandTests : BaseCommandTests<ModifyEnt
 		result.Should().Be(1, because: "unsupported actions must fail during command validation");
 		_columnManager.DidNotReceiveWithAnyArgs().ModifyColumn(default);
 		_logger.Received(1)
-			.WriteError(Arg.Is<string>(message => message.Contains("Action must be one of: add, modify, remove.")));
+			.WriteError(Arg.Is<string>(message => message.Contains("action must be one of: add, modify, remove.")));
 	}
 
 	[Test]

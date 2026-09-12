@@ -30,8 +30,9 @@ internal static class McpReadDeadlineGate {
 	/// off a legitimately long read of a large app and contradict that contract (ENG-93373).</item>
 	/// <item>Read-only tools (they do not mutate the Creatio environment) are the obvious case.</item>
 	/// <item>A tool that reads from Creatio but writes only to the LOCAL filesystem is included by name —
-	/// today that is only <c>get-page</c> (<c>ReadOnly=false</c> because it writes local
-	/// <c>.clio-pages</c> files, but a retry re-reads Creatio and overwrites the files, so it is safe).</item>
+	/// today <c>get-page</c> (<c>ReadOnly=false</c> because it writes local <c>.clio-pages</c> files) and
+	/// <c>get-theme</c> (<c>ReadOnly=false</c> because of its optional <c>output-file</c>). A retry
+	/// re-reads Creatio and rewrites the local files, so both are safe.</item>
 	/// </list>
 	/// The <c>Idempotent</c> hint is deliberately NOT part of the predicate: an idempotent NON-read write
 	/// (for example <c>install-gate</c>, <c>generate-source-code</c>, <c>add-package-dependency</c>) is
@@ -65,10 +66,12 @@ internal static class McpReadDeadlineGate {
 
 	// The single curated allowlist of tools that read from Creatio but are annotated ReadOnly=false only
 	// because they write to the LOCAL filesystem. A retry re-reads Creatio and overwrites the local files,
-	// so they are retry-safe despite ReadOnly=false. Today this is exactly get-page; keep the set tiny and
-	// explicit rather than widening the predicate to all idempotent tools (which would admit server writes).
+	// so they are retry-safe despite ReadOnly=false. Today this is exactly get-page and get-theme; keep the
+	// set tiny and explicit rather than widening the predicate to all idempotent tools (which would admit
+	// server writes).
 	private static bool IsCreatioReadWithLocalWrite(string toolName) =>
-		string.Equals(toolName, GetPageToolName, StringComparison.Ordinal);
+		string.Equals(toolName, GetPageToolName, StringComparison.Ordinal)
+		|| string.Equals(toolName, GetThemeToolName, StringComparison.Ordinal);
 
 	// The curated exclusion list of read-only tools that legitimately stream notifications/progress and run
 	// under the write-path heartbeat (McpProgressHeartbeat): their contract is "await completion, do not
@@ -80,6 +83,8 @@ internal static class McpReadDeadlineGate {
 	// Duplicated as a literal (not a reference to Tools.PageGetTool.ToolName) to keep this gate free of a
 	// dependency on the Tools namespace; the name is asserted against PageGetTool.ToolName in the gate tests.
 	private const string GetPageToolName = "get-page";
+
+	private const string GetThemeToolName = "get-theme";
 
 	// Duplicated as a literal (not a reference to Tools.ApplicationGetInfoTool.ApplicationGetInfoToolName)
 	// for the same reason; the name is asserted against ApplicationGetInfoToolName in the gate tests.

@@ -27,7 +27,7 @@ public sealed class CreateRelatedPageAddonTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Configure the RelatedPage add-on for an object (entity schema): which Freedom UI pages open by default and for adding records, optionally per audience and per type. " +
+	[Description("Configure the RelatedPage add-on for an object (entity schema): which Freedom UI pages open by default and for adding records, optionally per audience and per type.  Returns entitySchemaUId as the base/root entity identity resolved by Creatio, shared across replacing layers." +
 		"Per-page role-name 'All external users' binds the PORTAL (self-service) audience and 'All employees' the internal one. " +
 		"Writes the RelatedPage add-on via AddonSchemaDesignerService and rebuilds static content. " +
 		"The pages list fully REPLACES the object's current related-page configuration; an EMPTY pages list clears all bindings (reset to inline — the effective delete). " +

@@ -331,6 +331,44 @@ For every touched command, verify and update all relevant files:
 - Keep argument lists, defaults, required flags, examples, and notes aligned with current source behavior.
 - If docs are still accurate after review, explicitly state "docs reviewed, no update required" in the change summary/PR description.
 
+# Telemetry vocabulary maintenance policy
+
+clio enforces the product-telemetry vocabulary, but it does not store anything: the CAADT edge
+collector decides whether an accepted event is actually kept, and it holds its own hand-copied
+allow-lists in a separate repository on a separate release train
+(`metrics-installation/helm/caadt-telemetry`). A vocabulary change made only in clio is therefore
+not broken but INVISIBLE - the receiver answers HTTP 200 before the filter runs, and the filter
+drops a non-matching name as normal operation, so nothing errors on either side and the events
+simply never appear in ClickHouse.
+
+## Trigger conditions for mandatory collector review
+
+Review the collector allow-lists whenever any of the following changes:
+- `CanonicalEventNames` or `LegacyAppCreationEventNames` in `clio\clio\Common\Telemetry\TelemetryService.cs` - any event name added, renamed or removed
+- The attribute set on the wire: `TelemetryEventRequest` (`clio\clio\Common\Telemetry\TelemetryModels.cs`), `BuildLogEvent` or `TokenCounterFields` in `TelemetryService.cs` - any attribute key added, renamed or removed
+- The OTLP shape itself: which field carries the event name, or the VALUE TYPE of an attribute. A new int-valued counter is not the same case as a new string - it takes a different OTTL path through the collector's sanitizer.
+
+## Required collector targets
+
+The collector keeps FOUR hand-maintained copies of the two allow-lists and they must move together:
+- `helm\caadt-telemetry\prod\values-prod.yaml` - `filter/caadt_events` + `transform/caadt_attributes`
+- `helm\caadt-telemetry\stage\values-rnd.yaml` - the same two OTTL statements
+- `helm\caadt-telemetry\local\values-local.yaml` - the same two OTTL statements
+- `helm\caadt-telemetry\verify-caadt-clickhouse.sql` - the `EventName NOT IN` list in section B
+
+A new name also needs a probe that proves it lands, or the allow-list edit is unverified:
+`local\deploy-caadt-local.ps1` (TEST 13 sweeps every canonical name), `stage\deploy-caadt-rnd.ps1`,
+`prod\test-caadt-prod-ingest.ps1`.
+
+## Update rules
+
+- A clio-side vocabulary change is NOT complete until the matching collector pull request exists. Link it in the change summary/PR description, or state explicitly why the collector needs no change.
+- Widen the collector allow-lists BEFORE a clio release that emits the new name reaches users. The reverse order silently drops every new event until the collector catches up, and the gap is invisible in both products.
+- Run `pwsh ./check-vocabulary-sync.ps1` from `helm/caadt-telemetry` after editing the collector. It needs no cluster, no kube context and no ClickHouse, and exits non-zero on any disagreement between the four copies.
+- That gate cannot see clio. clio's list is a FIFTH copy in another repository, so a name misspelled identically in all four collector copies still passes - diff the collector lists against `TelemetryService.AllowedEventNames` by hand.
+- `LegacyAppCreationEventNames` is append-never, and so is the collector's copy of it: dropping a legacy name from the collector strands every older installed toolkit that still emits it.
+- `clio.tests\Command\McpServer\WorkflowTelemetryVocabularyTests.cs` guards the clio half only (enforced list vs announced contract). It passing says nothing about the collector.
+
 # C# inline documentation policy
 
 When adding or changing C# code, document public API using inline XML documentation comments (`///`).

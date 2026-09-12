@@ -255,6 +255,23 @@ namespace Clio.Command {
 			string packageUId) {
 			if (string.IsNullOrWhiteSpace(packageUId))
 				return null;
+			// PackageService resolves virtual packages from the platform cache as well as stored packages.
+			// A SysPackage query alone cannot name a destination before its first schema save.
+			try {
+				string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetPackageProperties);
+				string json = applicationClient.ExecutePostRequest(url, JsonConvert.SerializeObject(packageUId));
+				if (!string.IsNullOrWhiteSpace(json)) {
+					JObject response = JObject.Parse(json);
+					JToken nameToken = (response["package"] as JObject)?["name"];
+					string name = nameToken?.Type == JTokenType.String ? nameToken.Value<string>() : null;
+					if (ReadSuccessFlag(response) && !string.IsNullOrWhiteSpace(name)) {
+						return name;
+					}
+				}
+			} catch (Exception ex) when (ex is JsonException || IsTimeout(ex) || IsTransportFailure(ex)) {
+				// Optional display metadata must not prevent a page read on older/restricted servers.
+				// Retain the existing best-effort stored-package lookup below.
+			}
 			var query = new JObject {
 				[RootSchemaNameKey] = "SysPackage", [OperationTypeKey] = 0,
 				[FiltersKey] = BuildFilterGroup(("byUId", BuildEqFilter("UId", 0, packageUId))),
