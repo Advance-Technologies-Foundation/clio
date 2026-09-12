@@ -205,7 +205,7 @@ component-info
                                    stdout instead of JSON.
 
 --schema-type                      Component registry to query: 'web'
-                                   (default) or 'mobile'. Mobile ignores
+                                   (default) or 'mobile'. Both honor
                                    --version/--environment.
 ```
 
