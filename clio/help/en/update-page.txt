@@ -152,12 +152,20 @@ DESCRIPTION
     merge and returns without saving, reporting the outcome as appendProjection:
     currentOperationCount, incomingOperationCount, projectedOperationCount
     (compare it against the number you expect), addedOperationCount,
-    replacedOperations / replacedOperationCount (replaced in place - not a
-    loss), and droppedOperations / droppedOperationCount (the further-duplicate
-    exception above). A non-zero drop count also raises a warning naming each
-    operation. The named lists are capped; the counts are exact.
+    and replacedOperations / replacedOperationCount (replaced in place - not a
+    loss). Three DISTINCT loss channels, each with its own warning and its own
+    fix: droppedOperations (entries from the SERVER body not carried over - the
+    further-duplicate exception above); collapsedIncomingOperations (entries
+    from YOUR OWN fragment that a later entry in the same fragment supersedes,
+    since only the last spelling of an identity survives - the likeliest one to
+    hit); and viewConfigDiffApplied=false, meaning the current body has no
+    SCHEMA_VIEW_CONFIG_DIFF marker pair so every count describes an array the
+    write discards - use --mode replace. Named lists are capped; counts are
+    exact.
     Two consequences: an append whose real save could not merge now FAILS the
-    dry run with the same error instead of reporting success; and --mode replace
+    dry run with the same error instead of reporting success (that response
+    carries dryRun: true, so it stays distinguishable from a failed real save);
+    and --mode replace
     is unaffected - it writes verbatim, so there is nothing to project and no
     extra round-trip is made. The same projection is returned on a real append
     save.

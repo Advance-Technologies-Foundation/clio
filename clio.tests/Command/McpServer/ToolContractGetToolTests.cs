@@ -282,6 +282,12 @@ public sealed class ToolContractGetToolTests {
 			because: "the one remaining way an append loses an operation must be named, not left to be derived from the counts");
 		projectionField.Description.Should().Contain("NOT a loss",
 			because: "a replaced operation survives with the caller's values; conflating it with a drop would make every ordinary append look lossy");
+		projectionField.Description.Should().Contain("collapsedIncomingOperations",
+			because: "the caller-side loss channel is the likeliest one to hit and an agent cannot act on a field the contract never names");
+		projectionField.Description.Should().Contain("viewConfigDiffApplied",
+			because: "an agent must be able to tell that the counts describe an array the write discards");
+		projectionField.Description.Should().Contain("THREE DISTINCT LOSS CHANNELS",
+			because: "the first version of this contract claimed the dropped set was the only way an append loses an operation, which was false and is exactly what a reader carries forward");
 	}
 
 	[Test]

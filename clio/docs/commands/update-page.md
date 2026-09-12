@@ -223,16 +223,25 @@ without saving. It reports the outcome as `appendProjection`:
 | `projectedOperationCount` | operations the merged body would carry — **compare this against the number you expect** |
 | `addedOperationCount` | incoming entries that introduce a new identity |
 | `replacedOperations` / `replacedOperationCount` | existing entries your fragment replaces in place; not a loss, the operation survives with your values |
-| `droppedOperations` / `droppedOperationCount` | existing entries the merge would **not** carry over — the further-duplicate exception above |
+| `droppedOperations` / `droppedOperationCount` | entries from the **server** body the merge would not carry over — the further-duplicate exception above |
+| `collapsedIncomingOperations` / `collapsedIncomingOperationCount` | entries from **your own fragment** that a later entry in the same fragment supersedes |
+| `viewConfigDiffApplied` | `false` when the current body has no `SCHEMA_VIEW_CONFIG_DIFF` marker pair, so every count above describes an array the write discards |
 
-A non-zero `droppedOperationCount` also raises an advisory `warnings` entry naming each operation,
-so a loss is never something you have to compute from the counts yourself. The named lists are
-capped in length; the counts are always exact.
+Each of those three loss channels raises its own advisory `warnings` entry naming the operations, so
+a loss is never something you have to compute from the counts yourself. They are separate because the
+fix differs: a dropped server entry means folding both into one incoming operation; a collapsed
+incoming entry is your own fragment to correct; an unapplied section is not a merge problem at all and
+needs `--mode replace`. The named lists are capped in length; every count is always exact.
+
+`collapsedIncomingOperations` is the one most people will hit. Operations merge by
+`(operation, name, targets-properties)`, so a fragment that carries the same identity twice keeps only
+the last spelling — the earlier one is discarded with its values, and before this it went unreported.
 
 Two consequences worth knowing:
 
 - An append whose real save could not merge — a full-config current body, for instance — now **fails
-  the dry run** with the same error, instead of reporting `success` and failing on the write.
+  the dry run** with the same error, instead of reporting `success` and failing on the write. That
+  failure response carries `dryRun: true`, so it stays distinguishable from a failed real save.
 - `--mode replace` is unaffected. It writes the body verbatim, so there is nothing to project and no
   extra server round-trip is made; `appendProjection` is absent.
 

@@ -1,4 +1,4 @@
-﻿namespace Clio.Command;
+namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
@@ -247,6 +247,15 @@ internal static class PageBodyMerger {
 	private static string MergeWeb(string currentBody, string incomingBody, ProjectionCollector collector) {
 		// Precondition: Merge() has already rejected a full-config current or incoming body via the shared
 		// UsesUnsupportedFullConfigForm predicate, so this method only ever sees diff-form bodies.
+		//
+		// GH-1150: ReplaceSection below is a single-match Regex.Replace that requires a marker PAIR. With no
+		// pair it returns the body UNCHANGED and the merged array is silently discarded — behaviour Merge's
+		// own remarks document. Nothing upstream rejects such a current body either: ValidateMarkerIntegrity
+		// is skipped in append mode and only ever inspected the incoming fragment. So the projection has to
+		// be told, or it reports operations the write will not carry — a dry run confidently confirming a
+		// write that loses everything, which is worse than the bare success it replaced.
+		collector.RecordViewConfigDiffApplied(
+			PageSchemaSectionReader.TryRead(currentBody, out _, "SCHEMA_VIEW_CONFIG_DIFF"));
 		JArray mergedViewConfigDiff = MergeViewConfigDiffOperations(
 			ReadJsonArray(currentBody, "SCHEMA_VIEW_CONFIG_DIFF"),
 			ReadJsonArray(incomingBody, "SCHEMA_VIEW_CONFIG_DIFF"),
@@ -296,6 +305,9 @@ internal static class PageBodyMerger {
 		// Precondition: Merge() has already rejected a full-config current or incoming body via the shared
 		// UsesUnsupportedFullConfigForm predicate — including a present-but-non-object viewModelConfig /
 		// modelConfig on the current body (ENG-93090 RC-9) — so this method only ever sees diff-form bodies.
+		// Mobile assigns the property unconditionally below, creating it when absent, so the merged array
+		// always lands — there is no marker-pair precondition to miss as there is on the web path.
+		collector.RecordViewConfigDiffApplied(true);
 		JArray mergedViewConfigDiff = MergeViewConfigDiffOperations(
 			current["viewConfigDiff"] as JArray ?? new JArray(),
 			incoming["viewConfigDiff"] as JArray ?? new JArray(),
@@ -517,7 +529,15 @@ internal static class PageBodyMerger {
 		// occurrence's position.
 		var incomingByIdentity = new Dictionary<OperationIdentity, JToken>();
 		foreach (JToken item in incoming) {
-			if (TryGetOperationIdentity(item, out OperationIdentity identity)) {
+			if (!TryGetOperationIdentity(item, out OperationIdentity identity)) {
+				continue;
+			}
+			// GH-1150: an overwrite here IS a loss — the earlier spelling never reaches the merged array —
+			// and it is the CALLER'S OWN operation, not the server's. Counting it is what keeps the
+			// projection honest: before this it vanished with dropped=0 and no warning, while the response
+			// claimed the dropped set was the only way an append loses an operation.
+			if (!incomingByIdentity.TryAdd(identity, item)) {
+				collector.RecordCollapsedIncoming(identity);
 				incomingByIdentity[identity] = item;
 			}
 		}
@@ -553,7 +573,7 @@ internal static class PageBodyMerger {
 				collector.RecordAdded();
 			}
 		}
-		collector.RecordCounts(current.Count, incoming.Count, merged.Count);
+		collector.SetSectionCounts(current.Count, incoming.Count, merged.Count);
 		return merged;
 	}
 
@@ -723,10 +743,18 @@ internal static class PageBodyMerger {
 		string replacement = $"/**{marker}*/{newContent}/**{marker}*/";
 		return regex.Replace(body, _ => replacement, 1);
 	}
+
 	/// <summary>
 	/// Accumulates a <see cref="PageAppendProjection"/> while the real merge runs. Mutable and single-use;
 	/// one instance per <c>Merge</c> call, never shared.
 	/// </summary>
+	/// <remarks>
+	/// <see cref="SetSectionCounts"/> and <see cref="RecordViewConfigDiffApplied"/> ASSIGN, where the
+	/// <c>Record*</c> methods accumulate. Both are called exactly once per collector, because the collector
+	/// describes a single identity-merged section and only one of <c>MergeWeb</c> / <c>MergeMobile</c> runs
+	/// per merge. A second identity-merged section added later must not reuse this shape: the counts would
+	/// take the last call's values while the label lists accumulated across both.
+	/// </remarks>
 	private sealed class ProjectionCollector {
 
 		/// <summary>
@@ -738,6 +766,7 @@ internal static class PageBodyMerger {
 
 		private readonly List<string> _replaced = [];
 		private readonly List<string> _dropped = [];
+		private readonly List<string> _collapsedIncoming = [];
 		private int _added;
 		private int _currentCount;
 		private int _incomingCount;
@@ -745,6 +774,8 @@ internal static class PageBodyMerger {
 
 		private int _replacedCount;
 		private int _droppedCount;
+		private int _collapsedIncomingCount;
+		private bool _viewConfigDiffApplied = true;
 
 		public void RecordReplaced(OperationIdentity identity) {
 			_replacedCount++;
@@ -756,9 +787,24 @@ internal static class PageBodyMerger {
 			Append(_dropped, identity);
 		}
 
+		/// <summary>
+		/// One incoming entry superseded an earlier entry of the same identity in the SAME fragment, so the
+		/// earlier one never reaches the merged array.
+		/// </summary>
+		public void RecordCollapsedIncoming(OperationIdentity identity) {
+			_collapsedIncomingCount++;
+			Append(_collapsedIncoming, identity);
+		}
+
 		public void RecordAdded() => _added++;
 
-		public void RecordCounts(int currentCount, int incomingCount, int projectedCount) {
+		/// <summary>
+		/// Whether the merged <c>viewConfigDiff</c> array actually reaches the returned body. False when the
+		/// current web body carries no <c>SCHEMA_VIEW_CONFIG_DIFF</c> marker pair to write it back into.
+		/// </summary>
+		public void RecordViewConfigDiffApplied(bool applied) => _viewConfigDiffApplied = applied;
+
+		public void SetSectionCounts(int currentCount, int incomingCount, int projectedCount) {
 			_currentCount = currentCount;
 			_incomingCount = incomingCount;
 			_projectedCount = projectedCount;
@@ -773,7 +819,10 @@ internal static class PageBodyMerger {
 				ReplacedOperations = _replaced,
 				ReplacedOperationCount = _replacedCount,
 				DroppedOperations = _dropped,
-				DroppedOperationCount = _droppedCount
+				DroppedOperationCount = _droppedCount,
+				CollapsedIncomingOperations = _collapsedIncoming,
+				CollapsedIncomingOperationCount = _collapsedIncomingCount,
+				ViewConfigDiffApplied = _viewConfigDiffApplied
 			};
 
 		private static void Append(List<string> target, OperationIdentity identity) {

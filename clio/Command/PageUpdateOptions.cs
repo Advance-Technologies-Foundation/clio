@@ -186,16 +186,27 @@
 					// say what the write would change — and its body checks saw only the incoming fragment, never
 					// the body that would actually be saved. It now resolves the same body the save would write,
 					// through the same code path, and reports the projection.
-					if (!TryProjectDryRun(options, context, out string projectedBody, out string currentBody,
+					if (!TryProjectDryRun(options, context, out string projectedBody,
 						out PageAppendProjection projection, out response)) {
+						// AC5 makes the merge failure newly reachable from a dry run, so the failure envelope has
+						// to say which call it came from. Without this it is byte-identical to a failed real save
+						// and a caller cannot tell whether anything was written.
+						response.DryRun = true;
+						response.SchemaName = options.SchemaName;
 						return false;
 					}
 					response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
 					response.AppendProjection = projection;
+					// PageInsertDowngradeDetector is deliberately NOT run here: it cannot fire on this path.
+					// It warns when the prior body introduced a component with an `insert` that the final body
+					// drops in favour of a transform, and an append never produces that shape. A current
+					// `insert X` is only ever replaced by an incoming entry of the SAME identity (another
+					// `insert X`), and every non-matching current entry is carried over, so `insert X` present
+					// before implies `insert X` present after. In replace mode this branch has no current body
+					// to compare against at all. Calling it would be dead code implying coverage it cannot give.
 					response.Warnings = CombineWarnings(
 						BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources),
 						BuildProjectedLossWarnings(projection),
-						PageInsertDowngradeDetector.Detect(currentBody, projectedBody),
 						PageInertOperationDetector.Detect(projectedBody));
 					return true;
 				}
@@ -209,9 +220,8 @@
 				if (captionError != null) { response = captionError; return false; }
 				if (!TrySaveSchema(schemaToSave, out response)) return false;
 				response = CreateSuccessResponse(options, dryRun: false, registeredKeys);
+				// The save path warns too: a caller who skipped the dry run has no other place to learn of a loss.
 				response.AppendProjection = saveProjection;
-				// Same projection on the real save, for the same reason it exists on the dry run: it is the only
-				// place the caller learns a further same-identity entry was dropped rather than re-applied.
 				response.Warnings = CombineWarnings(
 					BuildProjectedLossWarnings(saveProjection), downgradeWarnings, inertWarnings);
 				PopulatePostSaveChecksum(options, context, response);
@@ -256,46 +266,77 @@
 				PageUpdateOptions options,
 				EditableSchemaContext context,
 				out string projectedBody,
-				out string currentBody,
 				out PageAppendProjection projection,
 				out PageUpdateResponse response) {
 			projectedBody = options.Body;
-			currentBody = null;
 			projection = null;
 			response = null;
 			if (!IsAppendMode(options)) return true;
 			if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaForProjection, out response)) {
 				return false;
 			}
-			currentBody = schemaForProjection["body"]?.ToString();
 			return TryResolveBodyToWrite(schemaForProjection, options, out projectedBody, out projection, out response);
 		}
 
 		/// <summary>
-		/// Turns the one lossy case an append merge still has into advisory warnings: a further current
-		/// entry of an identity the incoming fragment already superseded, dropped rather than re-applied
-		/// after the replacement.
+		/// Turns every way an append merge loses a <c>viewConfigDiff</c> operation into advisory warnings: a
+		/// superseded further entry from the server's body, an entry the caller's own fragment supersedes
+		/// twice, and the case where the whole merged array never reaches the written body.
 		/// </summary>
 		/// <remarks>
-		/// Only the DROPPED set warns. A replacement is not a loss — the operation survives carrying the
-		/// caller's values — and warning on it would fire on most appends and train the reader to skip the
-		/// list that does matter. The counts stay in <c>appendProjection</c> for anyone who wants them.
+		/// A REPLACEMENT is deliberately not warned about: the operation survives carrying the caller's
+		/// values, and warning on it would fire on most appends and train the reader to skip the lists that
+		/// do matter. Exact counts stay in <c>appendProjection</c> for anyone who wants them.
+		/// <para>
+		/// The channels are separate warnings on purpose, because the fix differs. A dropped server entry is
+		/// resolved by folding both entries into one incoming operation; a collapsed incoming entry is the
+		/// caller's own fragment to correct; an unapplied section is not a merge problem at all and needs
+		/// <c>--mode replace</c>.
+		/// </para>
 		/// </remarks>
 		private static IReadOnlyList<string> BuildProjectedLossWarnings(PageAppendProjection projection) {
-			if (projection is not { DroppedOperationCount: > 0 }) {
+			if (projection is null) {
 				return null;
 			}
-			IReadOnlyList<string> named = projection.DroppedOperations ?? [];
-			string tail = named.Count < projection.DroppedOperationCount
-				? $"{string.Join(", ", named)} (+{projection.DroppedOperationCount - named.Count} more)"
-				: string.Join(", ", named);
-			return [
-				$"Append drops {projection.DroppedOperationCount} existing viewConfigDiff operation(s) the " +
-				$"incoming fragment supersedes a second time: {tail}. Each is a FURTHER entry whose identity " +
-				"the fragment already replaced, so re-applying it would put stale values back after the " +
-				"replacement. If both entries set keys you need, fold them into one operation in the fragment. " +
-				"See docs://mcp/guides/page-modification."
-			];
+			List<string> warnings = null;
+			if (projection.DroppedOperationCount > 0) {
+				(warnings ??= []).Add(
+					$"Append drops {projection.DroppedOperationCount} existing viewConfigDiff operation(s) the " +
+					"incoming fragment supersedes a second time: " +
+					$"{NameLoss(projection.DroppedOperations, projection.DroppedOperationCount)}. Each is a FURTHER " +
+					"entry whose identity the fragment already replaced, so re-applying it would put stale values " +
+					"back after the replacement. If both entries set keys you need, fold them into one operation " +
+					"in the fragment. See docs://mcp/guides/page-modification.");
+			}
+			if (projection.CollapsedIncomingOperationCount > 0) {
+				(warnings ??= []).Add(
+					$"Your fragment carries {projection.CollapsedIncomingOperationCount} viewConfigDiff " +
+					"operation(s) that a later entry in the SAME fragment supersedes: " +
+					$"{NameLoss(projection.CollapsedIncomingOperations, projection.CollapsedIncomingOperationCount)}. " +
+					"Operations merge by (operation, name, targets-properties), so only the last spelling of an " +
+					"identity survives and the earlier one is discarded with its values. Fold them into a single " +
+					"operation. See docs://mcp/guides/page-modification.");
+			}
+			if (!projection.ViewConfigDiffApplied) {
+				(warnings ??= []).Add(
+					"The page's current body has no SCHEMA_VIEW_CONFIG_DIFF marker pair, so the merged " +
+					"viewConfigDiff array cannot be written back and EVERY viewConfigDiff operation in the " +
+					"fragment is discarded — the counts in appendProjection describe an array the write throws " +
+					"away. Use --mode replace with a body that carries the marker pair. " +
+					"See docs://mcp/guides/page-modification.");
+			}
+			return warnings;
+		}
+
+		/// <summary>
+		/// Renders a capped loss list, naming the remainder from the exact count so a truncation never reads
+		/// as the whole story.
+		/// </summary>
+		private static string NameLoss(IReadOnlyList<string> named, int exactCount) {
+			IReadOnlyList<string> names = named ?? [];
+			return names.Count < exactCount
+				? $"{string.Join(", ", names)} (+{exactCount - names.Count} more)"
+				: string.Join(", ", names);
 		}
 
 		/// <summary>
@@ -951,7 +992,7 @@
 		private static PageUpdateResponse ValidateWebInput(
 			PageUpdateOptions options,
 			Dictionary<string, string> explicitResources) {
-			bool isAppendMode = string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase);
+			bool isAppendMode = IsAppendMode(options);
 			if (!isAppendMode) {
 				SchemaValidationResult integrityResult = SchemaValidationService.ValidateMarkerIntegrity(options.Body);
 				if (!integrityResult.IsValid) {

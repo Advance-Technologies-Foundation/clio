@@ -1,4 +1,4 @@
-﻿namespace Clio.Command;
+namespace Clio.Command;
 
 using System.Collections.Generic;
 using System.Runtime.Serialization;
@@ -786,11 +786,15 @@ public sealed class PageAppendProjection {
 	public int ReplacedOperationCount { get; init; }
 
 	/// <summary>
-	/// Gets the current operations the merge would not carry over — the one remaining way an append
-	/// loses an operation: a FURTHER current entry of an identity the fragment already superseded,
-	/// dropped rather than re-applied after the replacement. Empty for the overwhelming majority of
-	/// appends. Capped in length; <see cref="DroppedOperationCount"/> is exact.
+	/// Gets the CURRENT operations the merge would not carry over: a FURTHER current entry of an identity
+	/// the fragment already superseded, dropped rather than re-applied after the replacement. Empty for the
+	/// overwhelming majority of appends. Capped in length; <see cref="DroppedOperationCount"/> is exact.
 	/// </summary>
+	/// <remarks>
+	/// Not the only way an append loses an operation — see <see cref="CollapsedIncomingOperations"/> for the
+	/// caller-side counterpart and <see cref="ViewConfigDiffApplied"/> for the case where the whole merged
+	/// array is discarded. This field is scoped to losses from the SERVER's body.
+	/// </remarks>
 	[DataMember(Name = "droppedOperations")]
 	[JsonProperty("droppedOperations", NullValueHandling = NullValueHandling.Ignore)]
 	[JsonPropertyName("droppedOperations")]
@@ -804,6 +808,47 @@ public sealed class PageAppendProjection {
 	[JsonProperty("droppedOperationCount")]
 	[JsonPropertyName("droppedOperationCount")]
 	public int DroppedOperationCount { get; init; }
+
+	/// <summary>
+	/// Gets the INCOMING operations the fragment supersedes with a later entry of the same identity, so the
+	/// earlier one never reaches the merged body. Capped in length;
+	/// <see cref="CollapsedIncomingOperationCount"/> is exact.
+	/// </summary>
+	/// <remarks>
+	/// The caller-side mirror of <see cref="DroppedOperations"/>, and the one people are most likely to hit:
+	/// these are the CALLER'S OWN operations, lost to their own fragment carrying one identity twice, not
+	/// anything the server did. Merging by identity means only the last spelling survives — deliberate, but
+	/// it is a loss and it used to be invisible (GitHub #1150).
+	/// </remarks>
+	[DataMember(Name = "collapsedIncomingOperations")]
+	[JsonProperty("collapsedIncomingOperations", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("collapsedIncomingOperations")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string> CollapsedIncomingOperations { get; init; }
+
+	/// <summary>
+	/// Gets the exact number of collapsed incoming operations, which may exceed
+	/// <see cref="CollapsedIncomingOperations"/>.
+	/// </summary>
+	[DataMember(Name = "collapsedIncomingOperationCount")]
+	[JsonProperty("collapsedIncomingOperationCount")]
+	[JsonPropertyName("collapsedIncomingOperationCount")]
+	public int CollapsedIncomingOperationCount { get; init; }
+
+	/// <summary>
+	/// Gets a value indicating whether the merged <c>viewConfigDiff</c> array actually reaches the body that
+	/// would be written. <c>false</c> means EVERY count above describes an array the write discards.
+	/// </summary>
+	/// <remarks>
+	/// Only a web body can be <c>false</c> here, and only when it carries no <c>SCHEMA_VIEW_CONFIG_DIFF</c>
+	/// marker pair for the merge to write back into: the write is a single-match regex replace over a marker
+	/// PAIR, and with no pair it returns the body untouched. Nothing upstream rejects such a body — marker
+	/// integrity validation is skipped in append mode and only ever inspected the incoming fragment.
+	/// </remarks>
+	[DataMember(Name = "viewConfigDiffApplied")]
+	[JsonProperty("viewConfigDiffApplied")]
+	[JsonPropertyName("viewConfigDiffApplied")]
+	public bool ViewConfigDiffApplied { get; init; }
 }
 
 /// <summary>
