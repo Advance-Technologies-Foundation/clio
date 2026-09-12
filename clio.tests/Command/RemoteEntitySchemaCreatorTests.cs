@@ -333,9 +333,13 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	[Description("Preserves virtual state inherited by a replacement schema when the caller omits the virtual option.")]
 	public void Create_ReplacementOfVirtualParent_PreservesInheritedVirtualState()
 	{
+		// Arrange
 		string saveBody = null;
 		bool saveDbStructureCalled = false;
 		SetupApplicationClient((url, body) => {
+			if (url.Contains("SelectQuery", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"rows\":[]}";
+			}
 			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
 			}
@@ -1627,6 +1631,52 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		JObject json = JObject.Parse(saveBody);
 		json["caption"]![0]!["cultureName"]!.Value<string>().Should().Be("en-US",
 			because: "with no override and no resolvable profile culture the caption must anchor to en-US, not the host uk-UA locale");
+	}
+
+	[Test]
+	[Description("Expands a JSON array alongside legacy columns and preserves each element's metadata and punctuation.")]
+	public void Create_ShouldSaveAllColumns_WhenInputContainsJsonArray() {
+		// Arrange
+		string saveBody = null;
+		SetupStandardSchemaClient(body => saveBody = body);
+		var options = new CreateEntitySchemaOptions {
+			Package = "UsrPkg", SchemaName = "UsrVehicle", Title = "Vehicle",
+			Columns = ["Active:Boolean", """ [{"name":"Notes","type":"ShortText","title":"A;B,C: D","default-value-source":"Const","default-value":"X;Y,Z"},{"name":"Amount","type":"Integer","required":true}]"""]
+		};
+		// Act
+		_creator.Create(options);
+		// Assert
+		JArray columns = (JArray)JObject.Parse(saveBody)["columns"]!;
+		columns.Select(column => column["name"]!.Value<string>()).Should().ContainInOrder(["Active", "Notes", "Amount"],
+			because: "array elements and legacy specs must all be saved in their original order");
+		JToken notes = columns.Single(column => column["name"]!.Value<string>() == "Notes");
+		notes["caption"]![0]!["value"]!.Value<string>().Should().Be("A;B,C: D",
+			because: "JSON punctuation belongs to the caption");
+		notes["defValue"]!["value"]!.Value<string>().Should().Be("X;Y,Z",
+			because: "array elements use the same default-value handling as single objects");
+		columns.Single(column => column["name"]!.Value<string>() == "Amount")["requirementType"]!.Value<int>()
+			.Should().Be((int)Terrasoft.Core.Entities.EntitySchemaColumnRequirementType.ApplicationLevel,
+				because: "required metadata must survive array expansion");
+	}
+
+	[TestCase("[]")]
+	[TestCase("[null]")]
+	[TestCase("[{\"name\":\"Notes\",\"type\":\"Text\"},{}]")]
+	[TestCase("[{\"name\":\"Notes\",\"type\":\"Text\"},42]")]
+	[TestCase("[{\"name\":\"Notes\",\"type\":\"Text\"}")]
+	[Description("Rejects empty, null, malformed, or invalid array entries before any schema can be saved.")]
+	public void Create_ShouldNotSaveSchema_WhenArrayIsInvalid(string array) {
+		// Arrange
+		bool saved = false;
+		SetupStandardSchemaClient(_ => saved = true);
+		var options = new CreateEntitySchemaOptions {
+			Package = "UsrPkg", SchemaName = "UsrVehicle", Title = "Vehicle", Columns = [array]
+		};
+		// Act
+		Action act = () => _creator.Create(options);
+		// Assert
+		act.Should().Throw<Exception>(because: "every supplied array element must be a valid column");
+		saved.Should().BeFalse(because: "invalid input must not persist a partial schema");
 	}
 
 	private void SetupStandardSchemaClient(Action<string> captureSaveBody)

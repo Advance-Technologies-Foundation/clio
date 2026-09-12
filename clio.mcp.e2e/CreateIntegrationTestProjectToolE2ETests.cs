@@ -1,3 +1,5 @@
+using Clio.Command.McpServer.Tools;
+using Clio.Common;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Mcp.E2E.Support.Configuration;
@@ -9,7 +11,7 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 [TestFixture, Category("McpE2E.NoEnvironment"), AllureNUnit]
-[AllureFeature("new-integration-test-project")]
+[AllureFeature(CreateIntegrationTestProjectTool.ToolName)]
 [NonParallelizable]
 public sealed class CreateIntegrationTestProjectToolE2ETests {
 	[Test]
@@ -29,7 +31,7 @@ public sealed class CreateIntegrationTestProjectToolE2ETests {
 
 			// Act
 			CallToolResult callResult = await session.CallToolAsync(
-				"new-integration-test-project",
+				CreateIntegrationTestProjectTool.ToolName,
 				new Dictionary<string, object?> {
 					["args"] = new Dictionary<string, object?> {
 						["package-name"] = "Acme",
@@ -40,6 +42,8 @@ public sealed class CreateIntegrationTestProjectToolE2ETests {
 			CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
 
 			// Assert
+			callResult.IsError.Should().NotBe(true, because: "valid scaffolding must not produce an MCP error");
+			execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Info, because: "the caller needs a visible success message");
 			execution.ExitCode.Should().Be(0, "because the real MCP tool should generate a valid local scaffold");
 			string projectDirectory = Path.Combine(workspace, "tests", "Acme.IntegrationTests");
 			File.Exists(Path.Combine(projectDirectory, "Acme.IntegrationTests.csproj")).Should().BeTrue(

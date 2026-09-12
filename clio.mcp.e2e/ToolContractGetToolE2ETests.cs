@@ -678,6 +678,14 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			},
 			because: "the response should preserve the requested local binding tool order");
 
+		foreach (ToolContractDefinition contract in response.Tools) {
+			contract.InputSchema.Properties.Single(field => field.Name == "workspace-path").Description.Should()
+				.Contain(".clio/workspaceSettings.json", because: "the MCP contract must identify the workspace root")
+				.And.Contain("packages/<package-name>", because: "the contract must explain package resolution");
+			contract.Examples.Should().OnlyContain(example => example.Arguments["workspace-path"]!.ToString() == "<workspace-root>",
+				because: "serialized local binding examples must not suggest a package directory");
+		}
+
 		ToolContractDefinition createContract = response.Tools.Single(tool => tool.Name == CreateDataBindingTool.CreateDataBindingToolName);
 		createContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "environment-name" &&
@@ -929,8 +937,10 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		response.Success.Should().BeTrue(
 			because: "the page business-rule mutation tool should be discoverable through tool-contract-get");
 		ToolContractDefinition contract = response.Tools!.Single();
-		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "page-schema-name", "rules"],
-			because: "page-business-rule creation requires environment package page and rule payload");
+		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "rules"],
+			because: "page-business-rule creation requires environment package and rule payload");
+		contract.InputSchema.Required.Should().NotContain("page-schema-name",
+			because: "the page schema may arrive under the accepted 'schema-name' alias, so a client validating against the advertised schema must not reject that call");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
 				validator.Field == "rules[*].actions[*].type" &&
@@ -1262,6 +1272,161 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		AllureApi.Step("Assert the baseParameters description omits known producer field names", () =>
 			baseParameters.Description.Should().NotContainAny(["$context", "scopes", "$initialEvent"],
 				because: "the served contract must not restore a fixed list of producer fields"));
+	}
+
+	[Test]
+	[Description("Verifies the live registry-derived contracts of the page/addon long-tail tools advertise no connection field as required and state the environment-name OR uri/login/password alternative instead (issue #965).")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract stops demanding every connection field at once")]
+	[AllureDescription("Starts the real clio MCP server without a Creatio environment, requests the contracts of list-page-templates, create-page, get-related-page-addon and create-related-page-addon, and verifies each one advertises only its genuine inputs as required while carrying the connection any-of.")]
+	public async Task ToolContractGet_ShouldNotRequireConnectionFields_ForPageAndAddonTools() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string[] connectionFields = ["environment-name", "uri", "login", "password"];
+		Dictionary<string, string[]> expectedRequired = new() {
+			[PageTemplatesListTool.ToolName] = [],
+			[PageCreateTool.ToolName] = ["schema-name", "template", "package-name"],
+			[GetRelatedPageAddonTool.ToolName] = ["entity-schema-name", "package-name"],
+			[CreateRelatedPageAddonTool.ToolName] = ["entity-schema-name", "package-name", "pages"]
+		};
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = expectedRequired.Keys.ToArray()
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "each of these long-tail tools must expose a registry-derived contract");
+		foreach ((string toolName, string[] required) in expectedRequired) {
+			ToolContractDefinition contract = response.Tools!.Single(definition => definition.Name == toolName);
+			(contract.InputSchema.Required ?? []).Should().BeEquivalentTo(required,
+				because: $"'{toolName}' accepts an environment-name-only payload, so its live contract must " +
+					"advertise only the inputs it genuinely cannot run without");
+			(contract.InputSchema.Required ?? []).Should().NotContain(connectionFields,
+				because: $"a strict client validating '{toolName}' against this contract would otherwise refuse " +
+					"to send the very payload the tool documentation advertises");
+			contract.InputSchema.AnyOf.Should().BeEquivalentTo(
+				new[] { new[] { "environment-name" }, new[] { "uri", "login", "password" } },
+				because: $"'{toolName}' must still tell the caller HOW to connect now that no single connection " +
+					"field is mandatory");
+		}
+	}
+
+	[Test]
+	[Description("Verifies the live contract of get-entity-schema-properties no longer demands package-name, so an agent planning from get-tool-contract can reach the merged all-packages column view its own description recommends (issue #965).")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract agrees with the emitted schema on optional package-name")]
+	[AllureDescription("Starts the real clio MCP server and requests the curated contract of get-entity-schema-properties, verifying package-name is advertised but not required — the exact disagreement with tools/list that issue #965 reports.")]
+	public async Task ToolContractGet_ShouldNotRequirePackageName_ForGetEntitySchemaProperties() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] { GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName }
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "get-entity-schema-properties has a curated contract and must resolve");
+		ToolContractDefinition contract = response.Tools!.Single();
+		(contract.InputSchema.Required ?? []).Should().BeEquivalentTo(
+			["environment-name", "schema-name"],
+			because: "supplying package-name switches the tool to a single package layer and reports zero own " +
+				"columns, so the contract must not force it on every caller");
+		contract.InputSchema.Properties.Select(field => field.Name).Should().Contain("package-name",
+			because: "the single-package-layer read stays available, it is simply no longer mandatory");
+	}
+
+	[Test]
+	[Description("Verifies the live registry-derived contract of reg-web-app carries no connection any-of, because there uri is the application being registered and a credential-only payload is rejected with exit code 1 (issue #965, PR #1396 review).")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract does not offer reg-web-app a credential-only branch")]
+	[AllureDescription("Starts the real clio MCP server and requests the registry-derived contract of reg-web-app, verifying it advertises environment-name and uri without claiming the two are alternatives.")]
+	public async Task ToolContractGet_ShouldOmitConnectionAlternative_ForRegWebApp() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] { "reg-web-app" }
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "reg-web-app is a registered tool and must expose a registry-derived contract");
+		ToolContractDefinition contract = response.Tools!.Single();
+		contract.InputSchema.Properties.Select(field => field.Name)
+			.Should().Contain(["environment-name", "uri"],
+				because: "this is the control case precisely BECAUSE it advertises both names the any-of " +
+					"heuristic keys on");
+		contract.InputSchema.AnyOf.Should().BeNull(
+			because: "a uri/login/password payload with no environment-name, active-environment or " +
+				"add-from-iis is refused by the tool itself, so advertising it as a complete alternative " +
+				"would send an agent into a guaranteed failure with credentials attached");
+	}
+
+	[Test]
+	[Description("Advertises the validate-page body-file alternative and its local-stdio boundary through the real MCP server.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureTag(PageValidateTool.ToolName)]
+	[AllureName("get-tool-contract advertises validate-page body-file")]
+	[AllureDescription("Requests the validate-page contract over a real stdio MCP session and verifies body-file is an alternative input tied to get-page files.bodyFile and unavailable over mcp-http.")]
+	public async Task GetToolContracts_ShouldAdvertiseValidatePageBodyFile_WhenRequested() {
+		// Arrange
+		await using var context = await AllureApi.Step(
+			"Arrange a real stdio MCP server session",
+			() => Task.FromResult(Arrange(TimeSpan.FromMinutes(3))));
+
+		// Act
+		ToolContractGetResponse response = await AllureApi.Step(
+			"Request the validate-page tool contract",
+			async () => await CallAsync(
+				context.Session,
+				context.CancellationTokenSource.Token,
+				new Dictionary<string, object?> {
+					["tool-names"] = new[] { PageValidateTool.ToolName }
+				}));
+
+		// Assert
+		AllureApi.Step("Assert contract lookup succeeded", () => response.Success.Should().BeTrue(
+			because: "validate-page must be discoverable through the executable MCP contract catalog"));
+		ToolContractDefinition contract = AllureApi.Step(
+			"Assert only validate-page was returned",
+			() => {
+				response.Tools.Should().ContainSingle(
+					because: "only validate-page was requested");
+				return response.Tools!.Single();
+			});
+		AllureApi.Step("Assert neither alternative is unconditionally required", () =>
+			contract.InputSchema.Required.Should().BeEmpty(
+				because: "body and body-file are alternatives"));
+		AllureApi.Step("Assert the one-of input rule", () =>
+			contract.InputSchema.AnyOf.Should().BeEquivalentTo(
+				[new[] { "body" }, new[] { "body-file" }],
+				because: "the live contract must match runtime alternative-input validation"));
+		ToolContractField bodyFile = AllureApi.Step(
+			"Assert body-file is present",
+			() => contract.InputSchema.Properties.Single(field => field.Name == "body-file"));
+		AllureApi.Step("Assert the get-page handoff is named", () =>
+			bodyFile.Description.Should().Contain("files.bodyFile",
+				because: "callers should pass the exact path returned by get-page"));
+		AllureApi.Step("Assert the transport boundary is named", () =>
+			bodyFile.Description.Should().Contain("Unavailable over mcp-http",
+				because: "remote callers must not mistake body-file for a server-side arbitrary-file API"));
+		AllureApi.Step("Assert a body-file example is included", () =>
+			contract.Examples.Should().Contain(example => example.Arguments.ContainsKey("body-file"),
+				because: "the live contract should demonstrate the file handoff"));
 	}
 
 	private static async Task<ToolContractGetResponse> CallAsync(

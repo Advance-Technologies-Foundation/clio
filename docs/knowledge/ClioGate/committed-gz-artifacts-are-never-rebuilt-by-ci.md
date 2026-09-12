@@ -5,7 +5,7 @@ applies-to:
   - clio/cliogate/cliogate.gz
   - clio/cliogate/cliogate_netcore.gz
   - build.ps1
-date: 2026-08-30
+date: 2026-09-11
 ---
 
 **What is true** — `clio/cliogate/cliogate.gz` and `cliogate_netcore.gz` are the artifacts a user
@@ -28,7 +28,9 @@ where three merged fixes (an S1168 pair, the `DescribeAmbiguity` refusal rewrite
 
 **How to check** — decompress both archives (`clio extract-pkg-zip <gz> -d <dir>`) and grep the
 payload for a symbol the change introduced, using an untouched sibling symbol as the sensitivity
-control. Rebuilding needs no version bump: `version.txt` and `descriptor.json` stay as they are
-unless the gate is being released.
+control. When shipping changed behavior, advance the package version and ModifiedOnUtc
+in `descriptor.json`, and keep the build script's package version and InfoCommand in sync.
+The assembly version in `version.txt` is independent; do not change it merely to match
+the package version (see `BundledPackages.cs`).
 
 Re-verified while rebuilding both runtime archives for the package-file path-confinement release.

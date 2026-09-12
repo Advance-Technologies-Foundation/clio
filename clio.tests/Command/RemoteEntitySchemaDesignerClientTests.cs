@@ -4,6 +4,7 @@ using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.Common.Responses;
+using Clio.Package;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -75,12 +76,12 @@ internal class RemoteEntitySchemaDesignerClientTests
 	}
 
 	[Test]
-	[Description("Surfaces the missing-dependency root cause and the add-package-dependency recovery when the server returns an HTML error page, so an agent reaches the one-call fix instead of burning workaround detours (ENG-91314).")]
-	public void GetSchemaDesignItem_ShouldSurfaceDependencyRecovery_WhenServerReturnsHtmlErrorPage() {
+	[Description("Reports an HTML designer response as a classified, authoritative error naming the method and endpoint, and asserts no cause it has no evidence for - in particular not the stale-database-table claim the previous text made on every HTML body (issue #722).")]
+	public void GetSchemaDesignItem_ShouldReportObservedFactsOnly_WhenServerReturnsHtmlErrorPage() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
 				Arg.Any<int>())
-			.Returns("<!DOCTYPE html><html><body>Server Error in '/' Application.</body></html>");
+			.Returns("<!DOCTYPE html><html><body>Server Error in '/' Application. secret-body-marker</body></html>");
 
 		// Act
 		Action act = () => _client.GetSchemaDesignItem(new GetSchemaDesignItemRequestDto {
@@ -92,24 +93,137 @@ internal class RemoteEntitySchemaDesignerClientTests
 		// Assert
 		// Asserted on the exact type, not on the InvalidOperationException base it derives from: the base
 		// assertion passes either way, so reverting the throw would silently drop the
-		// IAuthoritativeErrorMessage marker and let the MCP boundary unwrap this recovery guidance back to the
+		// IAuthoritativeErrorMessage marker and let the MCP boundary unwrap this classification back to the
 		// raw parser text (ENG-93365).
 		Clio.Package.NonJsonServiceResponseException exception =
 			act.Should().Throw<Clio.Package.NonJsonServiceResponseException>(
 					because: "an HTML error page is never a valid designer payload and must fail loudly as the classified non-JSON type")
 				.Which;
 		exception.Should().BeAssignableTo<IAuthoritativeErrorMessage>(
-			because: "the marker is what stops the MCP unwrap from replacing this guidance with the parser message");
+			because: "the marker is what stops the MCP unwrap from replacing this classification with the parser message");
 		exception.Should().BeAssignableTo<InvalidOperationException>(
 			because: "existing catch clauses on InvalidOperationException must keep working");
-		exception.Message.Should().Contain("add-package-dependency",
-			because: "the missing-dependency cause is the most common one and the message must point the caller at the one-call fix");
-		exception.Message.Should().Contain("MISSING A DEPENDENCY",
-			because: "the message must name the missing-dependency root cause that misdirected agents previously missed");
-		exception.Message.Should().Contain("find-entity-schema",
-			because: "the stale-table cause must remain documented as the secondary check");
-		exception.Message.Should().Contain("package-dependencies",
-			because: "the message must actively point MCP agents at the package-dependencies guidance article");
+		exception.Message.Should().Contain("GetSchemaDesignItem",
+			because: "the caller must be told which designer method produced the unusable body");
+		exception.Message.Should().Contain(
+			"http://local/ServiceModel/EntitySchemaDesignerService.svc/GetSchemaDesignItem",
+			because: "the endpoint URL is what lets the caller tell which of several requests failed");
+		exception.Message.Should().NotContain("secret-body-marker",
+			because: "an error or sign-in page can carry session tokens, so the HTML body must never be echoed");
+		exception.Message.Should().NotContain("stale database table",
+			because: "no check anywhere produces evidence for a stale table, so the message must not assert it (issue #722)");
+		exception.Message.Should().NotContain("previously deleted package",
+			because: "a deleted package is a cause this class cannot observe and must not claim");
+		exception.Message.Should().NotContain("MISSING A DEPENDENCY",
+			because: "this class has not looked up any package, so the missing-dependency diagnosis belongs to the caller that did");
+	}
+
+	[Test]
+	[Description("Classifies the Creatio sign-in response as an authentication failure with its own exception type, so a caller cannot attach a missing-dependency diagnosis to what is really an expired session (issue #722).")]
+	public void GetSchemaDesignItem_ShouldReportSessionExpiry_WhenServerReturnsLoginPage() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns("<!DOCTYPE html><html><body><form action=\"/Login/NuiLogin.aspx\">login-body-marker</form></body></html>");
+
+		// Act
+		Action act = () => _client.GetSchemaDesignItem(new GetSchemaDesignItemRequestDto {
+			Name = "Opportunity",
+			PackageUId = Guid.Parse("22222222-2222-2222-2222-222222222222"),
+			UseFullHierarchy = true
+		}, new RemoteCommandOptions());
+
+		// Assert
+		Clio.Package.SessionExpiredServiceResponseException exception =
+			act.Should().Throw<Clio.Package.SessionExpiredServiceResponseException>(
+					because: "the sign-in response is an authentication failure, and its own type is what lets callers skip it when enriching an error")
+				.Which;
+		exception.Should().BeAssignableTo<Clio.Package.NonJsonServiceResponseException>(
+			because: "a sign-in page is still a non-JSON service response, so existing catch clauses keep working");
+		exception.Message.Should().Contain("credentials",
+			because: "the recovery for an expired session is a credential check, not a package change");
+		exception.Message.Should().NotContain("login-body-marker",
+			because: "a sign-in page can carry session tokens, so its body must never be echoed");
+		exception.Message.Should().NotContain("add-package-dependency",
+			because: "this response says nothing about packages, so it must not steer the caller into changing one");
+		exception.Message.Should().Contain("do not read it as a missing dependency",
+			because: "the misreading this exception type exists to prevent must be stated where the caller sees it");
+	}
+
+	[Test]
+	[Description("Treats a bare markup fragment such as an IIS or proxy '<div>' body as markup, not as generic garbage whose body would be previewed back to the caller (issue #722).")]
+	public void GetSchemaDesignItem_ShouldTreatMarkupFragmentAsMarkup_WhenBodyIsNotAFullHtmlDocument() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns("<div>Request blocked. fragment-body-marker</div>");
+
+		// Act
+		Action act = () => _client.GetSchemaDesignItem(new GetSchemaDesignItemRequestDto {
+			Name = "Opportunity",
+			PackageUId = Guid.Parse("22222222-2222-2222-2222-222222222222"),
+			UseFullHierarchy = true
+		}, new RemoteCommandOptions());
+
+		// Assert
+		Clio.Package.NonJsonServiceResponseException exception =
+			act.Should().Throw<Clio.Package.NonJsonServiceResponseException>(
+					because: "a markup fragment is not a designer payload either and must fail as the classified type")
+				.Which;
+		exception.Message.Should().Contain("HTML/XML page instead of JSON",
+			because: "the narrow doctype/html/xml prefix test used to miss fragments and send them down the body-previewing branch");
+		exception.Message.Should().NotContain("fragment-body-marker",
+			because: "the markup branch must never echo the body, whatever shape the markup takes");
+	}
+
+	[Test]
+	[Description("Reports an empty designer response as its own case, so an accepted-but-silent request is not reported as unparseable content (issue #722).")]
+	public void GetSchemaDesignItem_ShouldReportEmptyBody_WhenServerReturnsNothing() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns("   ");
+
+		// Act
+		Action act = () => _client.GetSchemaDesignItem(new GetSchemaDesignItemRequestDto {
+			Name = "Opportunity",
+			PackageUId = Guid.Parse("22222222-2222-2222-2222-222222222222"),
+			UseFullHierarchy = true
+		}, new RemoteCommandOptions());
+
+		// Assert
+		act.Should().Throw<Clio.Package.NonJsonServiceResponseException>(
+				because: "an empty body is a distinct failure whose recovery is a retry, not a package change")
+			.WithMessage("*empty response*",
+				because: "the caller must be able to tell an empty body from an unparseable one");
+	}
+
+	[Test]
+	[Description("Caps and redacts the preview of a non-markup unparseable body instead of copying up to a kilobyte of raw response into the message, which is what the removed local Truncate path did (issue #722).")]
+	public void GetSchemaDesignItem_ShouldBoundAndRedactPreview_WhenBodyIsUnparseableAndNotMarkup() {
+		// Arrange — a bearer token followed by enough filler to exceed the guard's 200-character preview cap.
+		string body = "authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl "
+			+ new string('x', 600) + " trailing-body-marker";
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(body);
+
+		// Act
+		Action act = () => _client.GetSchemaDesignItem(new GetSchemaDesignItemRequestDto {
+			Name = "Opportunity",
+			PackageUId = Guid.Parse("22222222-2222-2222-2222-222222222222"),
+			UseFullHierarchy = true
+		}, new RemoteCommandOptions());
+
+		// Assert
+		Clio.Package.NonJsonServiceResponseException exception =
+			act.Should().Throw<Clio.Package.NonJsonServiceResponseException>(
+					because: "an unparseable non-markup body must still fail as the classified type")
+				.Which;
+		exception.Message.Should().NotContain("eyJzdWIiOiIxIn0",
+			because: "the shared guard redacts the preview, which the removed local Truncate path did not");
+		exception.Message.Should().NotContain("trailing-body-marker",
+			because: "the preview is capped at 200 characters, so the tail of a long body never reaches the message");
 	}
 
 	[Test]
@@ -306,6 +420,64 @@ internal class RemoteEntitySchemaDesignerClientTests
 		// Assert
 		isRunning.Should().BeNull(
 			because: "an HTML error page means the server has no such method, which must read as unknown rather than 'not running'");
+	}
+
+	[Test]
+	[Description("Reads a bare markup fragment on the OData build probe as unknown, so the widened markup test cannot turn a gateway error page into a parse failure (issue #722).")]
+	public void TryGetIsODataBuildRunning_ReturnsNull_WhenServerReturnsBareMarkupFragment() {
+		// Arrange
+		_serviceUrlBuilder.Build("ServiceModel/WorkspaceExplorerService.svc")
+			.Returns("http://local/ServiceModel/WorkspaceExplorerService.svc");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>())
+			.Returns("<div>Request blocked by the gateway.</div>");
+
+		// Act
+		bool? isRunning = _client.TryGetIsODataBuildRunning(new RemoteCommandOptions());
+
+		// Assert
+		isRunning.Should().BeNull(
+			because: "a bare markup fragment is not a service answer, and the widened markup test must classify it as unknown rather than let it reach the parser");
+	}
+
+	[Test]
+	[Description("Classifies the sign-in response on the non-throwing designer probe as an expired session, so an authentication failure can never be read as 'this schema is unavailable in this package' (issue #722).")]
+	public void TryGetSchemaDesignItem_ThrowsSessionExpired_WhenServerReturnsLoginPage() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>())
+			.Returns("<html><body><form action=\"/Login/NuiLogin.aspx\"></form></body></html>");
+
+		// Act
+		Action act = () => _client.TryGetSchemaDesignItem(new GetSchemaDesignItemRequestDto {
+			Name = "UsrVehicle",
+			PackageUId = Guid.Parse("22222222-2222-2222-2222-222222222222")
+		}, new RemoteCommandOptions());
+
+		// Assert
+		act.Should().Throw<SessionExpiredServiceResponseException>(
+				because: "returning null here is what let an authentication failure drive a package-dependency diagnosis")
+			.Which.Message.Should().NotContain("NuiLogin",
+				because: "a sign-in page can carry session tokens, so no part of the body may be echoed");
+	}
+
+	[Test]
+	[Description("Classifies a BOM-prefixed sign-in response the same way, because Creatio's WCF endpoints demonstrably emit a byte-order mark and char.IsWhiteSpace does not report one (issue #722).")]
+	public void TryGetSchemaDesignItem_ThrowsSessionExpired_WhenLoginPageIsPrefixedWithAByteOrderMark() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>())
+			.Returns("\uFEFF<html><body><form action=\"/Login/NuiLogin.aspx\"></form></body></html>");
+
+		// Act
+		Action act = () => _client.TryGetSchemaDesignItem(new GetSchemaDesignItemRequestDto {
+			Name = "UsrVehicle",
+			PackageUId = Guid.Parse("22222222-2222-2222-2222-222222222222")
+		}, new RemoteCommandOptions());
+
+		// Assert
+		act.Should().Throw<SessionExpiredServiceResponseException>(
+			because: "a byte-order mark must not hide the sign-in classification from the gate that runs before the markup test");
 	}
 
 	[Test]

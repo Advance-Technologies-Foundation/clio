@@ -164,8 +164,7 @@ public sealed class McpGuidanceForcingTests {
 
 	private static PageCreateArgs BuildPageCreateArgs() =>
 		new("UsrTestPage", "FormPage", "UsrPackage",
-			Caption: null, Description: null, EntitySchemaName: null,
-			EnvironmentName: "dev", Uri: null, Login: null, Password: null);
+			Caption: null, Description: null, EntitySchemaName: null) { EnvironmentName = "dev" };
 
 	private sealed class FakePageCreateCommand : PageCreateCommand {
 		private readonly bool _success;

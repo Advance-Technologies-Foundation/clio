@@ -109,6 +109,7 @@ Typical examples:
 - `update-page`
 - `delete-app`
 - `clear-redis-db-by-credentials`
+- `execute-sql-script` — executes explicit SQL through ClioGate; exposes `view`, `destination-path`, and `silent` for result export. Table cells wrap at 40 characters per displayed line. Use JSON file output for complete arbitrary text. SQL can modify data, and output files can be overwritten, so the tool is destructive and non-idempotent.
 - `restart-by-credentials`
 
 ### 3. Pure local mode
@@ -382,7 +383,7 @@ This area gives the AI a clean application-level view of the platform.
 - `add-custom-logging`
   Configure package-specific NLog file routing in a registered local Net8 or .NET Framework installation. Reads the package's generated `Constants.LoggerName`, validates and rollback-protects both NLog file updates, and restarts Creatio only when explicitly requested.
 - `add-package-dependency`
-  Add one or more package dependencies to a package via `PackageService.svc`. This is the recovery path when the schema designer or compiler fails for a package that extends objects owned by an app/package missing from its dependency list (classic symptom: `GetSchemaDesignItem returned an HTML error page` on a layered object). Idempotent — re-adding an existing dependency is a no-op. See `get-guidance name=package-dependencies`.
+  Add one or more package dependencies to a package via `PackageService.svc`. This is the recovery path when the schema designer or compiler fails for a package that extends objects owned by an app/package missing from its dependency list (symptom: `Schema '<NAME>' could not be opened in package '<PACKAGE>'` on a layered object, which names the ranked candidate packages to add). Idempotent — re-adding an existing dependency is a no-op. See `get-guidance name=package-dependencies`.
 - `remove-package-dependency`
   Remove one or more package dependencies from a package via `PackageService.svc` — the symmetric counterpart of `add-package-dependency`, used to roll back a dependency added only to unblock the schema designer. Matched by name (case-insensitive); idempotent — removing an absent dependency is a no-op.
 
@@ -791,6 +792,8 @@ These tools manage custom themes — one part of branding a Creatio app: build a
   Delete a theme by id; deleting an unknown id is an error.
 - `list-themes`
   List custom themes (id, caption, CSS class name, CSS file path). An empty list means no themes or no `CanCustomizeBranding` license.
+- `get-theme`
+  Read an existing theme's content (`theme.css`) and metadata by id — the returned caption, CSS class name, and CSS content feed `update-theme` verbatim, closing the read → edit → update round-trip. `output-file` writes the CSS to a confined local path instead of returning it (which is why the tool is `ReadOnly=false` while staying non-destructive).
 - `clear-themes-cache`
   Refresh the theme catalog cache; needed only when theme files change on the environment outside a clio install.
 - `check-theming-access`
@@ -802,6 +805,7 @@ What an external AI can practically do here:
 
 - build a theme without an environment (`build-theme`) with `advise-theme-palette` driving the palette, then commit it to a workspace package and push, or apply it directly with `create-theme`
 - apply a freshly created theme to the current user with `set-user-theme` so they only need to refresh the page (the auto-apply step in the theming guidance)
+- modify an existing theme without losing manual tweaks: read its current CSS with `get-theme`, edit it, and apply it back with `update-theme`
 - restyle, remove, and confirm themes on an environment
 - precheck theming permissions before authoring, and set the default via the `DefaultTheme` system setting (see the theming guidance)
 
@@ -1086,6 +1090,7 @@ All lifecycle tools now declare explicit safety metadata (`ReadOnly`, `Destructi
 - `clear-redis-db-by-credentials`
 - `clear-themes-cache`
 - `list-themes`
+- `get-theme`
 - `create-theme`
 - `update-theme`
 - `delete-theme`

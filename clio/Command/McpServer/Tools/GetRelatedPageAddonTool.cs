@@ -25,7 +25,7 @@ public sealed class GetRelatedPageAddonTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Read an object's current RelatedPage configuration: which Freedom UI pages are bound as the default and the add page, per audience (role) and per record type. " +
+	[Description("Read an object's current RelatedPage configuration: which Freedom UI pages are bound as the default and the add page, per audience (role) and per record type.  Returns entitySchemaUId as the base/root entity identity resolved by Creatio, shared across replacing layers." +
 		"Returns each entry's page-schema-uid + resolved page-schema-name, the role uid + resolved role-name (for the standard 'All employees' / 'All external users' audiences), the is-default / is-add / is-ssp-default flags, and any type-column-value, plus the top-level type-column-uid. " +
 		"Read-only — makes no changes. Use this BEFORE create-related-page-addon for a safe read-modify-write: create REPLACES the whole configuration, so read the current pages first, modify, then send the full set back (otherwise the omitted entries are lost). " +
 		"Prefer environment-name; keep direct connection args for emergency fallback only.")]
@@ -79,19 +79,19 @@ public sealed record GetRelatedPageAddonArgs(
 
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Registered clio environment name, e.g. 'local'. Preferred for normal MCP work.")]
-	string? EnvironmentName,
+	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("uri")]
 	[property: Description("Direct Creatio URL. Use only when bootstrap is broken or before the environment can be registered through reg-web-app.")]
-	string? Uri,
+	string? Uri = null,
 
 	[property: JsonPropertyName("login")]
 	[property: Description("Direct Creatio login paired with `uri`. Emergency fallback only.")]
-	string? Login,
+	string? Login = null,
 
 	[property: JsonPropertyName("password")]
 	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
-	string? Password,
+	string? Password = null,
 
 	[property: JsonPropertyName("schema-type")]
 	[property: Description("Which add-on to read: 'web' (RelatedPage, default) or 'mobile' (MobileRelatedPage — the object's default mobile edit page).")]

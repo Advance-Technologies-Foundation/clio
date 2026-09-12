@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command;
@@ -25,6 +26,53 @@ public sealed class PageGetToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = PageGetTool.ToolName;
 	private const string ApplicationCode = "AutoTestClioMcp";
 	private const string SavePage = "ClioMcp_BlankPageToSave";
+
+	[Test]
+	[Description("Reads a selected real page and verifies that its current leaf and named design destination survive the MCP envelope and persisted metadata.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-page distinguishes the current leaf from the design package")]
+	public async Task PageGetTool_ShouldNameDesignPackage_WhenReadingSelectedPage() {
+		// Arrange
+		string? schemaName = Environment.GetEnvironmentVariable("CLIO_E2E_PACKAGE_PAGE");
+		string? expectedName = Environment.GetEnvironmentVariable("CLIO_E2E_EXPECTED_DESIGN_PACKAGE");
+		if (string.IsNullOrWhiteSpace(schemaName) || string.IsNullOrWhiteSpace(expectedName)) {
+			Assert.Ignore("Set CLIO_E2E_PACKAGE_PAGE and independently discovered CLIO_E2E_EXPECTED_DESIGN_PACKAGE; run before and after its first replacing save.");
+		}
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		string directory = CreateFixtureDirectory("page-package-metadata");
+
+		// Act
+		CallToolResult result = await context.Session.Client.CallToolAsync(ClioRunTool.ToolName,
+			new Dictionary<string, object?> {
+				["command"] = ToolName,
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = schemaName,
+					["environment-name"] = context.EnvironmentName,
+					["output-directory"] = directory
+				}
+			}, cancellationToken: context.CancellationTokenSource.Token);
+		PageGetResponse response = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(result);
+
+		// Assert
+		AllureApi.Step("Assert a normal MCP result", () => result.IsError.Should().NotBeTrue(
+			because: "the selected page must be readable through real MCP"));
+		AllureApi.Step("Assert page read success", () => response.Success.Should().BeTrue(
+			because: $"package metadata must not prevent a page read: {response.Error}"));
+		AllureApi.Step("Assert page metadata exists", () => response.Page.Should().NotBeNull(
+			because: "the compact envelope must identify both packages"));
+		AllureApi.Step("Assert current leaf alias", () => response.Page.CurrentLeafPackageName.Should().Be(response.Page.PackageName,
+			because: "the new alias preserves the existing packageName contract"));
+		AllureApi.Step("Assert independently known destination", () => response.Page.DesignPackageName.Should().Be(expectedName,
+			because: "the destination must match independent platform metadata, not merely contain a leaf name"));
+		using JsonDocument metadata = JsonDocument.Parse(File.ReadAllText(response.Files.MetaFile));
+		JsonElement page = metadata.RootElement.GetProperty("page");
+		AllureApi.Step("Assert persisted current leaf", () => page.GetProperty("currentLeafPackageName").GetString().Should().Be(response.Page.PackageName,
+			because: "the on-disk alias must describe the same leaf as the MCP envelope"));
+		AllureApi.Step("Assert persisted destination", () => page.GetProperty("designPackageName").GetString().Should().Be(response.Page.DesignPackageName,
+			because: "the on-disk destination must retain the virtual package name"));
+	}
 
 	[Test]
 	[Description("Advertises get-page MCP tool in the server tool list so callers can discover it.")]
@@ -105,6 +153,74 @@ public sealed class PageGetToolE2ETests : McpContractFixtureBase {
 			because: $"update-page dry-run must accept the body get-page produced for '{SavePage}', confirming get-page output is valid update-page input. Error: {updateResponse.Error}");
 		updateResponse.Error.Should().BeNullOrWhiteSpace(
 			because: "a successful dry-run should not include an error payload");
+	}
+
+	[Test]
+	[Description("Fetches a real page to a custom output directory and validates the returned bodyFile without inlining its contents.")]
+	[AllureTag(ToolName)]
+	[AllureTag(PageValidateTool.ToolName)]
+	[AllureName("get-page bodyFile round-trips through validate-page")]
+	[AllureDescription("Uses a reachable Creatio environment to fetch the seeded page beneath an explicit output-directory, then passes the exact returned files.bodyFile path to validate-page over stdio MCP.")]
+	public async Task PageGetTool_ShouldSupportValidatePage_WhenCustomOutputDirectoryReturnsBodyFile() {
+		// Arrange
+		McpE2ESettings settings = AllureApi.Step("Arrange MCP settings", () => {
+			McpE2ESettings result = TestConfiguration.Load();
+			result.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+			return result;
+		});
+		await using ArrangeContext arrangeContext = await AllureApi.Step(
+			"Start a real stdio MCP session",
+			async () => await ArrangeAsync(settings, TimeSpan.FromMinutes(3)));
+		string outputDirectory = AllureApi.Step(
+			"Create a custom output directory",
+			() => CreateFixtureDirectory("get-page-validate-page-round-trip"));
+
+		// Act
+		CallToolResult getResult = await AllureApi.Step(
+			"Fetch the seeded page into the custom output directory",
+			async () => await arrangeContext.Session.Client.CallToolAsync(
+				ClioRunTool.ToolName,
+				new Dictionary<string, object?> {
+					["command"] = ToolName,
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = SavePage,
+						["environment-name"] = arrangeContext.EnvironmentName,
+						["output-directory"] = outputDirectory
+					}
+				},
+				cancellationToken: arrangeContext.CancellationTokenSource.Token));
+		PageGetResponse getResponse = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(getResult);
+		CallToolResult validateResult = await AllureApi.Step(
+			"Validate the exact returned bodyFile",
+			async () => await arrangeContext.Session.Client.CallToolAsync(
+				ClioRunTool.ToolName,
+				new Dictionary<string, object?> {
+					["command"] = PageValidateTool.ToolName,
+					["args"] = new Dictionary<string, object?> {
+						["body-file"] = getResponse.Files?.BodyFile
+					}
+				},
+				cancellationToken: arrangeContext.CancellationTokenSource.Token));
+		PageValidateResponse validateResponse =
+			EntitySchemaStructuredResultParser.Extract<PageValidateResponse>(validateResult);
+
+		// Assert
+		AllureApi.Step("Assert get-page returned a normal result", () => getResult.IsError.Should().NotBeTrue(
+			because: "the real page read must complete before validating its materialized body"));
+		AllureApi.Step("Assert get-page succeeded", () => getResponse.Success.Should().BeTrue(
+			because: $"get-page must fetch the seeded page from '{arrangeContext.EnvironmentName}'. Error: {getResponse.Error}"));
+		AllureApi.Step("Assert file metadata is present", () => getResponse.Files.Should().NotBeNull(
+			because: "the file-based validation handoff needs get-page file metadata"));
+		AllureApi.Step("Assert the custom output directory was honored", () => getResponse.Files!.BodyFile.Should().StartWith(outputDirectory,
+			because: "get-page must honor the explicit output-directory used by the reported workflow"));
+		AllureApi.Step("Assert bodyFile exists", () => File.Exists(getResponse.Files.BodyFile).Should().BeTrue(
+			because: "validate-page must receive a real file created by get-page"));
+		AllureApi.Step("Assert validate-page returned a normal result", () => validateResult.IsError.Should().NotBeTrue(
+			because: "the returned bodyFile should bind through the real MCP transport"));
+		AllureApi.Step("Assert the fetched page is valid", () => validateResponse.Valid.Should().BeTrue(
+			because: "validate-page must read and validate the exact body file get-page returned"));
+		AllureApi.Step("Assert validation has no errors", () => validateResponse.Validation.Errors.Should().BeNullOrEmpty(
+			because: "the seeded page body fetched from Creatio should pass client-side validation"));
 	}
 
 	[Test]

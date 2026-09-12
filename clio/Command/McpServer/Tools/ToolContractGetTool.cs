@@ -495,6 +495,7 @@ internal static class ToolContractCatalog {
 	private const string BindingNameFieldName = "binding-name";
 	private const string BooleanFalseLiteral = "false";
 	private const string BooleanType = "boolean";
+	private const string BodyFileFieldName = "body-file";
 	private const string ColumnNameFieldName = "column-name";
 	private const string ColumnsFieldName = "columns";
 	private const string CountFieldName = "count";
@@ -616,9 +617,17 @@ internal static class ToolContractCatalog {
 	private const string ReferenceSchemaNameFieldName = "reference-schema-name";
 	private const string RegisteredEnvironmentNameDescription = "Registered clio environment name.";
 	private const string RejectedStatus = "rejected";
+
+	// An alias the server actually honors, as opposed to RejectedStatus, which documents a spelling that is
+	// refused. Agents read this contract before calling, so an accepted alias must be discoverable here.
+	private const string AcceptedStatus = "accepted";
 	private const string SelectorCodeFieldName = "code";
 	private const string SelectorIdFieldName = "id";
 	private const string SchemaNameFieldName = "schema-name";
+	private const string PageSchemaNameWithAliasDescription =
+		"Target Freedom UI page schema name. Required, but the alias 'schema-name' is accepted in its place.";
+	private const string SchemaNameAliasDescription =
+		"Accepted alias for 'page-schema-name' \u2014 the spelling every other page tool uses. Supply one of the two.";
 	private const string ResourcesFieldName = "resources";
 	private const string SelectFieldName = "select";
 	private const string SkipSamplingFieldName = "skip-sampling";
@@ -653,7 +662,7 @@ internal static class ToolContractCatalog {
 	private const string EventNameFieldName = "event_name";
 	private const string TelemetryConsentFieldName = "telemetry_consent";
 	private const string ExampleOrderPageSchemaName = "UsrOrder_FormPage";
-	private const string ExampleWorkspacePath = "<workspace>/UsrTaskApp";
+	private const string ExampleWorkspacePath = "<workspace-root>";
 	private const string MakeReadOnlyActionTypeName = "make-read-only";
 	private const string MakeRequiredActionTypeName = "make-required";
 	private const string RuleNamesFieldName = "rule-names";
@@ -664,11 +673,13 @@ internal static class ToolContractCatalog {
 	private const string ExampleRightExpressionUId = "81b8b8ea-6ad4-4f0e-9d6b-2f70b9a2c202";
 	private const string ExampleActionUId = "c334b501-8a53-46fa-9b7e-7d41c3d4c303";
 	private const string ValidateFieldName = "validate";
+	private const string VersionFieldName = "version";
 	private const string ValueFieldName = "value";
 	private const string ValuesFieldName = "values";
 	private const string VerifyFieldName = "verify";
 	private const string BindingNameDescription = "Binding name.";
 	private const string WorkspacePathDescription = "Absolute local workspace path. Network-share paths are not supported.";
+	private const string DataBindingWorkspacePathDescription = "Absolute local workspace root containing .clio/workspaceSettings.json, not the package directory. The package is resolved under packages/<package-name> beneath that root. Network-share paths are not supported.";
 	private const string WorkspacePathFieldName = "workspace-path";
 	private const string DataForgePlatformRequirementDescription =
 		"Requires Creatio platform version 10.0.0 or later; CrtDataForge is included in supported platform versions.";
@@ -759,6 +770,7 @@ internal static class ToolContractCatalog {
 			[FindEmptyIisPortTool.FindEmptyIisPortToolName] = BuildFindEmptyIisPort(),
 			[InstallerCommandTool.DeployCreatioToolName] = BuildDeployCreatio(),
 			[DeployIdentityTool.DeployIdentityToolName] = BuildDeployIdentity(),
+			[UninstallIdentityTool.ToolName] = BuildUninstallIdentity(),
 			[RestoreWorkspaceTool.RestoreWorkspaceToolName] = BuildRestoreWorkspace(),
 			[PushWorkspaceTool.PushWorkspaceToolName] = BuildPushWorkspace(),
 			[ListCreatioBuildsTool.ListCreatioBuildsToolName] = BuildListCreatioBuilds()
@@ -833,6 +845,14 @@ internal static class ToolContractCatalog {
 
 	/// <summary>The one-line purpose is truncated to this many characters for the compact index.</summary>
 	private const int MaxPurposeLength = 120;
+
+	/// <summary>
+	/// The names that have a HANDWRITTEN contract, as opposed to one synthesized from the registered tool
+	/// schema by <see cref="McpToolRegistrySchemaContract"/>. Exposed so a test can tell the two apart:
+	/// only a handwritten contract can disagree with the emitted schema, because the synthesized one is
+	/// read straight out of it (issue #965).
+	/// </summary>
+	internal static IReadOnlyCollection<string> CuratedToolNames => (IReadOnlyCollection<string>)Contracts.Keys;
 
 	/// <summary>
 	/// Resolves clio MCP tool contracts. When <paramref name="toolNames"/> is omitted the response depends
@@ -2940,12 +2960,17 @@ internal static class ToolContractCatalog {
 			CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
 			"Creates a page-level Freedom UI business rule that changes visibility, editability, or required state of named page elements. Conditions key off page attributes: declared page attributes, data source columns (including ones not surfaced on the page, addressed as '<dataSource>.<column>'), page parameters ('PageParameters.<name>'), system values, and constants. Read get-guidance business-rules and this get-tool-contract entry before calling.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, PackageNameFieldName, PageSchemaNameFieldName, RulesFieldName],
+				[EnvironmentNameFieldName, PackageNameFieldName, RulesFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, "Target package name where the page BusinessRule add-on will be saved."),
-					Field(PageSchemaNameFieldName, StringType, "Target Freedom UI page schema name."),
+					Field(PageSchemaNameFieldName, StringType, PageSchemaNameWithAliasDescription),
+					Field(SchemaNameFieldName, StringType, SchemaNameAliasDescription),
 					Field(RulesFieldName, ArrayType, "Array of one or more page business-rule definitions saved together in a single batch (one configuration rebuild for the whole array; prefer one call over many). A failed rule does not abort the others. Each item is a rule with caption, one top-level condition group, and one or more page actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. EITHER side of a condition may be a page attribute (type AttributeValue), a constant (type Const), a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles), or a system setting (type SysSetting with sysSettingName set to the setting code, for example DisableEquipmentDelivery; the setting's value type is resolved from the environment, and Binary/SecureText settings are not supported). A common visibility pattern is hiding a control when a Boolean system setting is enabled: SysSetting equal a Const true. For role-based or current-user visibility (e.g. 'show field only for administrators / for the supervisor') put CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id, or compare CurrentUser/CurrentUserContact/CurrentUserAccount to a Const id — use this instead of a HandleViewModelInitRequest handler. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
+				],
+				AnyOf: [
+					new[] { PageSchemaNameFieldName },
+					[SchemaNameFieldName]
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
@@ -2953,7 +2978,10 @@ internal static class ToolContractCatalog {
 				]),
 			BusinessRuleBatchOutput(),
 			CommonErrorContract,
-			[],
+			[
+				Alias(ParameterScope, PageSchemaNameFieldName, SchemaNameFieldName, AcceptedStatus,
+					$"'{SchemaNameFieldName}' is accepted as an alias for '{PageSchemaNameFieldName}'; '{PageSchemaNameFieldName}' wins when both are supplied.")
+			],
 			[],
 			[
 				PageBusinessRuleExample(
@@ -3173,15 +3201,23 @@ internal static class ToolContractCatalog {
 			ReadPageBusinessRuleTool.ToolName,
 			"Reads ALL page-level Freedom UI business rules persisted for a page schema (full package hierarchy, so inherited rules are included). Call this BEFORE update-page-business-rules or delete-page-business-rules to obtain exact rule names and block uIds.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, PackageNameFieldName, PageSchemaNameFieldName],
+				[EnvironmentNameFieldName, PackageNameFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, PackageNameDescription),
-					Field(PageSchemaNameFieldName, StringType, "Target Freedom UI page schema name.")
+					Field(PageSchemaNameFieldName, StringType, PageSchemaNameWithAliasDescription),
+					Field(SchemaNameFieldName, StringType, SchemaNameAliasDescription)
+				],
+				AnyOf: [
+					new[] { PageSchemaNameFieldName },
+					[SchemaNameFieldName]
 				]),
 			BusinessRulesReadOutput(),
 			CommonErrorContract,
-			[],
+			[
+				Alias(ParameterScope, PageSchemaNameFieldName, SchemaNameFieldName, AcceptedStatus,
+					$"'{SchemaNameFieldName}' is accepted as an alias for '{PageSchemaNameFieldName}'; '{PageSchemaNameFieldName}' wins when both are supplied.")
+			],
 			[],
 			[
 				Example("Read all business rules persisted for a page schema", new Dictionary<string, object?> {
@@ -3347,12 +3383,17 @@ internal static class ToolContractCatalog {
 			UpdatePageBusinessRuleTool.ToolName,
 			"Updates page-level Freedom UI business rules matched by 'name' in ONE batch (single SaveSchema and one configuration rebuild). Full replacement, no partial patch. Rule items use the same contract as create-page-business-rules plus name/enabled/block uIds; read the rules first with read-page-business-rules.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, PackageNameFieldName, PageSchemaNameFieldName, RulesFieldName],
+				[EnvironmentNameFieldName, PackageNameFieldName, RulesFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, "Target package name where the layered rule diff is stored."),
-					Field(PageSchemaNameFieldName, StringType, "Target Freedom UI page schema name."),
+					Field(PageSchemaNameFieldName, StringType, PageSchemaNameWithAliasDescription),
+					Field(SchemaNameFieldName, StringType, SchemaNameAliasDescription),
 					Field(RulesFieldName, ArrayType, "Full replacement definitions for existing rules. Each item uses the same contract as create-page-business-rules plus: name (REQUIRED — case-insensitive match key from read), enabled (optional; omitted preserves the existing value), and optional block uIds on conditions/expressions/actions — pass the values from read to preserve unchanged-block identity so the platform stores a short diff; omitted blocks get fresh ids. An unknown name fails only that rule; the rest of the batch still saves.")
+				],
+				AnyOf: [
+					new[] { PageSchemaNameFieldName },
+					[SchemaNameFieldName]
 				],
 				Validators: [
 					.. BusinessRuleUpdateValidators(ReadPageBusinessRuleTool.ToolName),
@@ -3362,7 +3403,10 @@ internal static class ToolContractCatalog {
 			BusinessRuleBatchOutput(
 				"Per-rule outcomes in input order; each item has name (the match key), success, ruleName, and error."),
 			CommonErrorContract,
-			[],
+			[
+				Alias(ParameterScope, PageSchemaNameFieldName, SchemaNameFieldName, AcceptedStatus,
+					$"'{SchemaNameFieldName}' is accepted as an alias for '{PageSchemaNameFieldName}'; '{PageSchemaNameFieldName}' wins when both are supplied.")
+			],
 			[],
 			[
 				Example("Change a rule's constant threshold, passing the name and block uIds returned by read", new Dictionary<string, object?> {
@@ -3498,17 +3542,25 @@ internal static class ToolContractCatalog {
 			DeletePageBusinessRuleTool.ToolName,
 			"Deletes page-level Freedom UI business rules by internal rule name in ONE batch (one configuration rebuild). Rule names come from read-page-business-rules.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, PackageNameFieldName, PageSchemaNameFieldName, RuleNamesFieldName],
+				[EnvironmentNameFieldName, PackageNameFieldName, RuleNamesFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, PackageNameDescription),
-					Field(PageSchemaNameFieldName, StringType, "Target Freedom UI page schema name."),
+					Field(PageSchemaNameFieldName, StringType, PageSchemaNameWithAliasDescription),
+					Field(SchemaNameFieldName, StringType, SchemaNameAliasDescription),
 					Field(RuleNamesFieldName, ArrayType, "Internal rule names to delete (from read-page-business-rules), NOT captions. An unknown name fails only that entry; the remaining names still delete.")
+				],
+				AnyOf: [
+					new[] { PageSchemaNameFieldName },
+					[SchemaNameFieldName]
 				]),
 			BusinessRuleBatchOutput(
 				"Per-name outcomes in input order; each item has name, success, and error."),
 			CommonErrorContract,
-			[],
+			[
+				Alias(ParameterScope, PageSchemaNameFieldName, SchemaNameFieldName, AcceptedStatus,
+					$"'{SchemaNameFieldName}' is accepted as an alias for '{PageSchemaNameFieldName}'; '{PageSchemaNameFieldName}' wins when both are supplied.")
+			],
 			[],
 			[
 				Example("Delete a page rule by internal rule name", new Dictionary<string, object?> {
@@ -3928,7 +3980,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
-					Field(OperationsFieldName, ArrayType, "Ordered schema operations. Supported `type` values: create-lookup, create-entity, update-entity, seed-data. For create-entity, set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. A standalone `seed-data` operation inserts `seed-rows` into an existing schema (used by resume-plan when a create succeeded but its inline seeding failed). Column fields are unified with get-app-info and are the same for the create-entity/create-lookup `columns` array: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. Default values are accepted on create-entity/create-lookup `columns` items and on `update-operations` items: `default-value-config` with `source` Const (its `value` is the scalar — for a lookup column the STABLE RECORD GUID of the target record, which must exist at write time), Settings (`value-source` = setting code), SystemValue (`value-source` = system value GUID), or Sequence (`sequence-prefix` + `sequence-number-of-chars`); `source: None` removes an existing default. The legacy shorthand `default-value-source: Const|None` (+ `default-value` for Const) is also accepted. A column read from get-app-info reports its default as `default-value-config` — send it back as-is to re-apply, or set `source: None` to clear it. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied).")),
+					Field(OperationsFieldName, ArrayType, "Ordered schema operations. Supported `type` values: create-lookup, create-entity, update-entity, seed-data. For create-entity, set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. A standalone `seed-data` operation inserts `seed-rows` into an existing schema (used by resume-plan when a create succeeded but its inline seeding failed). Column fields are unified with get-app-info and are the same for the create-entity/create-lookup `columns` array: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. Default values are accepted on create-entity/create-lookup `columns` items and on `update-operations` items: `default-value-config` with `source` Const (its `value` is the scalar — for a lookup column the STABLE RECORD GUID of the target record, which must exist at write time), Settings (`value-source` = setting code), SystemValue (`value-source` = system value GUID), or Sequence (`sequence-prefix` + `sequence-number-of-chars`); `source: None` removes an existing default. The legacy shorthand `default-value-source: Const|None` (+ `default-value` for Const) is also accepted. A column read from get-app-info reports its default as `default-value-config` — send it back as-is to re-apply, or set `source: None` to clear it. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied). " + ColumnTypeVocabularyDescription + " Applies to column types in both columns and update-operations. Read columns back with get-entity-schema-properties after writing. For date-only Freedom UI fields, explicitly set pickerType: \"date\" on crt.DateTimePicker.")),
 				Validators: [
 					new ToolContractValidator(
 						"sync-schemas-operations-localizations",
@@ -4264,7 +4316,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field("page", ObjectType, "Page metadata carrying schema and package identity such as schemaName, schemaUId, packageName, packageUId, and parentSchemaName."),
+				Field("page", ObjectType, "Current hierarchy leaf: schemaName, schemaUId, packageName (also currentLeafPackageName), packageUId, parentSchemaName. The leaf may be read-only. Default writes resolve designPackageUId; designPackageName names that stored or virtual package when metadata is available. willCreateReplacingInDesignPackage means a new replacing schema is needed, not necessarily a new package. A failed design-package read can fall back to the leaf; update-page resolves its destination independently and fails closed."),
 				Field("files", ObjectType, "Paths of the files written to disk: `bodyFile` (body.js \u2014 the editable JavaScript source to read, edit and send back), `bundleFile` (bundle.json \u2014 the full merged view; minified JSON, parse it with a JSON tool rather than grep), `metaFile` (meta.json) and `fetchedAt`. The body and the bundle are NOT inlined in this envelope. These are paths on the MCP SERVER host: a client that does not share that filesystem (a remote mcp-http caller) cannot read them. The whole `.clio-pages/{schema-name}/` directory is deleted and rewritten on every get-page of that schema, so do not keep in-progress edits there."),
 				Field("editable", ObjectType, "OPTIONAL \u2014 omitted when the best-effort SysSchema checksum query returned no row or failed; treat its ABSENCE as 'baseline unavailable', never as 'no editable schema'. When present: editable (own) schema state captured at fetch time \u2014 `editableSchemaExists` plus the identity and change signal used as the conflict-detection baseline for a later update-page / sync-pages call."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
@@ -4543,11 +4595,11 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameFieldName, StringType, "Registered clio environment name. Required when schema-name is not SysSettings because the MCP tool does not expose a uri fallback."),
 						Field(PackageNameFieldName, StringType, PackageNameDescription),
 						Field(SchemaNameFieldName, StringType, "Entity schema name for the binding. The built-in offline template currently includes SysSettings."),
-						Field(WorkspacePathFieldName, StringType, WorkspacePathDescription),
+						Field(WorkspacePathFieldName, StringType, DataBindingWorkspacePathDescription),
 						Field(BindingNameFieldName, StringType, "Optional binding name; defaults to the schema name."),
 						Field("install-type", NumberType, "Optional descriptor install type; defaults to 0."),
 						Field(ValuesFieldName, StringType, "Optional JSON object keyed by column name for the initial row."),
-						Field("localizations", StringType, "Optional JSON object keyed by culture then column name.")
+						Field("localizations", StringType, "Optional JSON object keyed by culture then column name. Localization-only columns are included in the descriptor without inventing base values. Input validation failures preserve existing binding files.")
 					],
 					Validators: [
 						new ToolContractValidator(
@@ -4617,7 +4669,7 @@ internal static class ToolContractCatalog {
 					[
 						Field(PackageNameFieldName, StringType, PackageNameDescription),
 						Field(BindingNameFieldName, StringType, BindingNameDescription),
-						Field(WorkspacePathFieldName, StringType, WorkspacePathDescription),
+						Field(WorkspacePathFieldName, StringType, DataBindingWorkspacePathDescription),
 						Field(ValuesFieldName, StringType, "JSON object keyed by column name for the row to add or replace."),
 						Field("localizations", StringType, "Optional JSON object keyed by culture then column name.")
 					]),
@@ -4656,7 +4708,7 @@ internal static class ToolContractCatalog {
 				[
 						Field(PackageNameFieldName, StringType, PackageNameDescription),
 						Field(BindingNameFieldName, StringType, BindingNameDescription),
-						Field(WorkspacePathFieldName, StringType, WorkspacePathDescription),
+						Field(WorkspacePathFieldName, StringType, DataBindingWorkspacePathDescription),
 						Field(KeyValueFieldName, StringType, "Primary-key value of the row to remove.")
 					]),
 			CommandExecutionOutput(),
@@ -4684,10 +4736,25 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildGetEntitySchemaProperties() {
 		return new ToolContractDefinition(
 			GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
-			"Returns a structured summary of entity schema metadata for read-before-write inspection and read-back verification.",
+			"Returns a structured summary of entity schema metadata for read-before-write inspection and read-back verification. " +
+			"Omit package-name to read the merged/effective schema with columns from ALL packages (recommended for column " +
+			"discovery); supply it only to inspect a single package layer's slice, which reports that layer's own columns and " +
+			"treats everything else as inherited.",
+			// package-name is NOT required here: the emitted tool schema makes it optional and its own text
+			// recommends omitting it for column discovery. Spelling it as required in the curated contract is
+			// the exact divergence issue #965 reports — an agent that trusts get-tool-contract always sends a
+			// package name and never sees the merged view. Mirrors BuildGetEntitySchemaColumnProperties; the
+			// EnvironmentPackageSchemaFields helper cannot be reused because it hard-codes the terse
+			// "Target package name." text that hides the merged mode.
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, PackageNameFieldName, SchemaNameFieldName],
-				EnvironmentPackageSchemaFields(EntitySchemaNameDescription)),
+				[EnvironmentNameFieldName, SchemaNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(PackageNameFieldName, StringType,
+						"Optional target package name. Omit to read the merged/effective schema with columns from ALL " +
+						"packages (recommended for column discovery). Supply only to inspect a single package layer's slice."),
+					Field(SchemaNameFieldName, StringType, EntitySchemaNameDescription)
+				]),
 			StructuredResultOutput(
 				Field("name", StringType, "Schema name."),
 				Field("title", StringType, "Schema title."),
@@ -4697,7 +4764,11 @@ internal static class ToolContractCatalog {
 			EnvironmentPackageSchemaAliases(),
 			[],
 			[
-				Example("Read deployed schema properties", new Dictionary<string, object?> {
+				Example("Discover every column across all packages", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[SchemaNameFieldName] = ExamplePackageName
+				}),
+				Example("Read one package layer's own slice", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[PackageNameFieldName] = ExamplePackageName,
 					[SchemaNameFieldName] = ExamplePackageName
@@ -4725,7 +4796,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildGetEntitySchemaColumnProperties() {
 		return new ToolContractDefinition(
 			GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
-			"Returns detailed metadata for one deployed entity schema column. Omit package-name for merged runtime discovery across all packages; supply it for the original package-scoped designer read. Merged mode cannot expose track-changes, localizable-text, or do-not-control-integrity (returned as null), and source then describes parent-schema inheritance rather than package ownership. For a lookup column with a Const default, default-value-config is enriched with display-value (the referenced record's display value) or a record-resolution marker (no-access, not-found-or-no-access, display-column-unavailable) when it cannot be resolved.",
+			"Returns detailed metadata for one deployed entity schema column. Omit package-name for merged runtime discovery across all packages; supply it for the original package-scoped designer read. Merged mode cannot expose track-changes, localizable-text, or do-not-control-integrity (returned as null), and source then describes parent-schema inheritance rather than package ownership. For a lookup column with a Const default, default-value-config is enriched with display-value (the referenced record's display value) or a record-resolution marker (no-access, not-found-or-no-access, display-column-unavailable) when it cannot be resolved. SystemValue defaults on any supported column type include the native catalog caption in display-value while preserving canonical GUIDs. If unavailable, source-resolution is invalid-source, unsupported-type, not-found-for-type, caption-unavailable, or catalog-unavailable. This identifies the configured source, not its evaluated value.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, SchemaNameFieldName, ColumnNameFieldName],
 				[
@@ -4826,6 +4897,7 @@ internal static class ToolContractCatalog {
 			CommonErrorContract,
 			EnvironmentPackageSchemaAliases(
 				ColumnNameParameterAlias(),
+				ColumnNameReadbackAlias(),
 				ReferenceSchemaNameParameterAlias(),
 				DefaultValueParameterAlias(),
 				DefaultValueConfigParameterAlias(),
@@ -4900,7 +4972,7 @@ internal static class ToolContractCatalog {
 					Field("search", StringType, "Optional keyword filter applied in list mode and to not-found suggestions, e.g. 'tab'."),
 					Field("schema-type", StringType, "Component registry to query: 'web' (default) or 'mobile'. The mobile registry is separate (crt.Toggle, crt.BarcodeScanner, crt.Sort, ...) and excludes web-only types."),
 					Field(EnvironmentNameFieldName, StringType, "PREFERRED. Registered environment name; scopes the catalog to its real platform version. Mutually exclusive with 'version'."),
-					Field("version", StringType, "Explicit catalog version (3-part semver, e.g. '8.3.3'). Mutually exclusive with 'environment-name'."),
+					Field(VersionFieldName, StringType, "Explicit catalog version (3-part semver, e.g. '8.3.3'). Mutually exclusive with 'environment-name'."),
 					Field("uri", StringType, "Emergency fallback only: direct application URI. Prefer 'environment-name'."),
 					Field(LoginFieldName, StringType, "Emergency fallback only: login paired with 'uri'."),
 					Field(PasswordFieldName, StringType, "Emergency fallback only: password paired with 'uri'.")
@@ -4982,7 +5054,7 @@ internal static class ToolContractCatalog {
 					Field("search", StringType, "Optional keyword filter applied in list mode and to not-found suggestions, e.g. 'print'."),
 					Field("schema-type", StringType, "Request registry to query: 'web' (default) or 'mobile'. The mobile registry is separate and scoped to the requests available on Freedom UI mobile (parameters can differ from desktop). Use 'mobile' when wiring a request on a mobile page."),
 					Field(EnvironmentNameFieldName, StringType, "PREFERRED. Registered environment name; scopes the catalog to its real platform version. Mutually exclusive with 'version'."),
-					Field("version", StringType, "Explicit catalog version (3-part semver, e.g. '8.3.3'). Mutually exclusive with 'environment-name'."),
+					Field(VersionFieldName, StringType, "Explicit catalog version (3-part semver, e.g. '8.3.3'). Mutually exclusive with 'environment-name'."),
 					Field("uri", StringType, "Emergency fallback only: direct application URI. Prefer 'environment-name'."),
 					Field(LoginFieldName, StringType, "Emergency fallback only: login paired with 'uri'."),
 					Field(PasswordFieldName, StringType, "Emergency fallback only: password paired with 'uri'.")
@@ -4991,7 +5063,7 @@ internal static class ToolContractCatalog {
 					new ToolContractValidator(
 						"mutually-exclusive",
 						InvalidWorkflowShapeCode,
-						Fields: [EnvironmentNameFieldName, "version"],
+						Fields: [EnvironmentNameFieldName, VersionFieldName],
 						Context: "'environment-name' and 'version' are mutually exclusive — pass one or neither.")
 				]),
 			EnvelopeOutput(
@@ -5069,7 +5141,7 @@ internal static class ToolContractCatalog {
 				EnvironmentOrExplicitConnectionFields(
 					Field(SchemaNameFieldName, StringType, "Freedom UI page schema name."),
 					Field("body", StringType, "Full page body with all marker pairs. Reuse the CONTENTS of the file at `get-page.files.bodyFile` rather than the bundle written to `get-page.files.bundleFile`. Either `body` or `body-file` must be provided. WARNING: re-sending the full inherited body verbatim is wrong in BOTH modes, and they fail differently. In `append` a full-config body is rejected UP-FRONT, offline \u2014 that mode takes only the new viewConfigDiff/handlers operations in the diff form, and the rejection itself points at replace mode. In `replace` the body reaches the SERVER and can fail there with 'Object vs Array' when it re-applies merges already inherited from the parent hierarchy, so passing the `get-page.files.bodyFile` path straight through as `body-file` is mechanically accepted but IS the resend hazard, not a recommendation."),
-					Field("body-file", StringType, "Absolute path to a file containing the page body. Used when `body` is empty. Enables passing large bodies without inline JSON escaping."),
+					Field(BodyFileFieldName, StringType, "Absolute path to a file containing the page body. Used when `body` is empty. Enables passing large bodies without inline JSON escaping."),
 					Field(DryRunFieldName, BooleanType, "Validate without saving."),
 					Field(ValidateFieldName, BooleanType, "Run client-side content and run-process validation before saving. Set false only as an explicit escape hatch for a pre-existing page defect; JavaScript syntax, AST loadability, replace-mode marker integrity, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. It stays combinable with force=true - the two flags are orthogonal (one gates content checks, the other the baseline/conflict guard) - and the response then warns that both are relaxed."),
 					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit overrides). Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance."),
@@ -5150,15 +5222,21 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPageValidate() {
 		return new ToolContractDefinition(
 			PageValidateTool.ToolName,
-			"Client-side Freedom UI page body validation without saving to Creatio. " +
+			"Client-side Freedom UI page body validation without saving to Creatio. Pass body inline, or on local stdio pass body-file using files.bodyFile returned by get-page. " +
 			"For web pages (body starts with `define(`): checks marker integrity, JS syntax, JSON content, field bindings, column bindings, " +
 			"handler structure, and VendorPrefix.Name format for converters, validators, and handler request values. " +
 			"For mobile pages (plain JSON body starting with `{`): validates that disallowed constructs (validators, handlers, custom converters sections) are absent.",
 			new ToolInputSchemaContract(
-				["body"],
+				[],
 				[
-					Field("body", StringType, "Full JavaScript page body with markers (web) or plain JSON body (mobile). Auto-detected by leading character. Over MCP, read the file at `get-page.files.bodyFile` and pass its CONTENTS \u2014 validate-page takes the body INLINE only, it has no `body-file` parameter."),
-					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom titles, button captions, validator messages, explicit overrides). Applicable to web pages only. Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance.")
+					Field("body", StringType, "Optional inline JavaScript page body with markers (web) or plain JSON body (mobile). Auto-detected by leading character. Takes precedence when body-file is also provided."),
+					Field(BodyFileFieldName, StringType, $"Optional absolute local stdio path, normally the exact files.bodyFile returned by get-page. Unavailable over mcp-http. Used when body is empty; one of body or body-file is required. Files larger than {PageValidateTool.MaxBodyFileBytes} bytes are rejected."),
+					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom titles, button captions, validator messages, explicit overrides). Applicable to web pages only. Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance."),
+					Field(VersionFieldName, StringType, "Optional target platform version used to scope registry-driven chart-widget validation. Uses the latest catalog when omitted.")
+				],
+				AnyOf: [
+					new[] { "body" },
+					[BodyFileFieldName]
 				]),
 			EnvelopeOutput(
 				"valid",
@@ -5175,12 +5253,18 @@ internal static class ToolContractCatalog {
 				Example("Validate a web page body before saving", new Dictionary<string, object?> {
 					["body"] = "define(\"MyApp/MyPage\", /** ... */)"
 				}),
+				Example("Validate the body file returned by get-page", new Dictionary<string, object?> {
+					[BodyFileFieldName] = "C:\\workspace\\.clio-pages\\MyPage\\body.js"
+				}),
 				Example("Validate a web page body with resources", new Dictionary<string, object?> {
 					["body"] = "define(\"MyApp/MyPage\", /** ... */)",
 					[ResourcesFieldName] = "{\"UsrDetailsTab_caption\":\"Details\"}"
 				}),
 				Example("Validate a mobile page body", new Dictionary<string, object?> {
 					["body"] = "{\"type\": \"ep.MobileViewElement\", \"items\": []}"
+				}),
+				Example("Validate a large body straight from the file get-page wrote", new Dictionary<string, object?> {
+					[BodyFileFieldName] = "/abs/path/.clio-pages/UsrMyApp_FormPage/body.js"
 				})
 			],
 			Flow(
@@ -5276,7 +5360,13 @@ internal static class ToolContractCatalog {
 		];
 	}
 
-	private static IReadOnlyList<IReadOnlyList<string>> EnvironmentOrExplicitConnectionRequirements() {
+	/// <summary>
+	/// The connection alternative every environment-sensitive contract advertises: EITHER a registered
+	/// <c>environment-name</c> OR the explicit <c>uri</c>/<c>login</c>/<c>password</c> triple. Exposed to
+	/// <see cref="McpToolRegistrySchemaContract" /> so a registry-derived contract states the same
+	/// alternative as the 75 curated ones instead of inventing a second spelling of it (issue #965).
+	/// </summary>
+	internal static IReadOnlyList<IReadOnlyList<string>> EnvironmentOrExplicitConnectionRequirements() {
 		return [
 			[EnvironmentNameFieldName],
 			["uri", LoginFieldName, PasswordFieldName]
@@ -5314,6 +5404,17 @@ internal static class ToolContractCatalog {
 	private static ToolContractAlias ColumnNameParameterAlias() {
 		return Alias(ParameterScope, ColumnNameFieldName, "columnName", RejectedStatus,
 			$"Use '{ColumnNameFieldName}' instead of 'columnName'.");
+	}
+
+	// The 'name' spelling modify-entity-schema-column really HONORS for its column identity, published with the
+	// same AcceptedStatus the page business-rule tools use for their 'schema-name' alias (PR #1352 review). It was
+	// expressed only through the tool's any-of and the two field descriptions, so an agent scanning 'aliases' for
+	// the spellings it may send found the rejected ones and missed this one — honored aliases now live in exactly
+	// one place per tool, whichever way the tool enforces them.
+	private static ToolContractAlias ColumnNameReadbackAlias() {
+		return Alias(ParameterScope, ColumnNameFieldName, "name", AcceptedStatus,
+			$"'name' is accepted as an alias for '{ColumnNameFieldName}' — it is the spelling get-app-info reports "
+			+ "a column identity under, so a readback payload can be sent back unchanged. Supply exactly one of the two.");
 	}
 
 	private static ToolContractAlias BindingNameParameterAlias() {
@@ -5929,16 +6030,25 @@ internal static class ToolContractCatalog {
 			]);
 	}
 
+	private static ToolContractDefinition BuildUninstallIdentity() => new(
+		UninstallIdentityTool.ToolName,
+		"Removes only the IdentityService explicitly recorded in the environment's appsettings. Preserves CRM and its database. Clears matching references before deletion, protects shared pools and retains attachment on failure. No attachment is a no-op. skip-crm-cleanup is explicit recovery: CRM settings remain stale and a warning is reported.",
+		new ToolInputSchemaContract([EnvironmentNameFieldName], [
+			Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+			Field("skip-crm-cleanup", BooleanType, "Recovery only: leave CRM system settings unchanged and warn. Default false.")]),
+		CommandExecutionOutput(), CommonErrorContract, [], [], [],
+		Flow([UninstallIdentityTool.ToolName], "Confirm the recorded identity target and preserve the retained CRM."), [], []);
+
 	private static ToolContractDefinition BuildDeployIdentity() {
 		return new ToolContractDefinition(
 			DeployIdentityTool.DeployIdentityToolName,
-			"Deploys IdentityService to IIS for a registered local Creatio environment, connects Creatio through the platform sys-settings/REST path, creates a fresh clio OAuth client bound to an existing user by default, and stores the returned client credentials in local clio appsettings only after discovery, token issuance, and a read-only CRM bearer request succeed. With noApp, token and CRM checks are skipped. Never echo the generated client secret in logs or public messages.",
+			"Deploys IdentityService to IIS for a registered local Creatio environment, connects Creatio through the platform sys-settings/REST path, creates a fresh clio OAuth client bound to an existing user by default, and stores the returned client credentials in local clio appsettings only after discovery, token issuance, and a read-only CRM bearer request succeed. Records its resolved IdentityService attachment before artifacts, including noApp and partial deployments, for later standalone or combined removal. With noApp, token and CRM checks are skipped. Never echo the generated client secret in logs or public messages.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(ZipFileFieldName, StringType, "Optional path to a standalone IdentityService.zip or a Creatio distribution bundle containing IdentityService.zip. When omitted, deploy-identity finds IdentityService.zip under the registered EnvironmentPath."),
-					Field(IdentitySitePortFieldName, NumberType, "Optional HTTP port where IdentityService will listen. When omitted, deploy-identity selects the first free IIS port in range 40001-40100."),
+					Field(IdentitySitePortFieldName, NumberType, "Optional HTTP port where IdentityService will listen. When omitted, deploy-identity selects the first free IIS port in range 40001-40100. With overwrite and a recorded attachment, it reuses the recorded port."),
 					Field(IdentityArchivePathInBundleFieldName, StringType, "Nested IdentityService archive path when zipFile is a Creatio bundle, and the relative path preferred under EnvironmentPath when zipFile is omitted. Default: IdentityService.zip."),
 					Field(IdentitySiteNameFieldName, StringType, "Optional IIS site and app pool name. Defaults to <environment>-identity."),
 					Field(IdentityPathFieldName, StringType, "Optional target directory for IdentityService files. Filesystem reparse points are refused anywhere in the target path."),
@@ -6218,7 +6328,7 @@ internal static class ToolContractCatalog {
 			"Creates a new Creatio system setting and optionally assigns an initial All-Users default value. " +
 			"Allowed value-type-name values match Creatio internal names: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, " +
 			"Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup, Binary. " +
-			"Aliases: Currency = Money, Decimal = Float. Binary settings (a value stored as blob data, e.g. the logo) are write-only: assign the value via update-sys-setting with value-file-path; reading a Binary value back is not exposed through MCP. " +
+			"Aliases: Currency = Money, Decimal = Float. Binary settings store opaque bytes: assign the value via update-sys-setting with value-file-path; download exact bytes via clio-run command=download-sys-setting-file with a required absolute file-name. No MIME type or extension is inferred. " +
 			"For Lookup type, reference-schema-name is required.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, SysSettingCodeFieldName, "name", SysSettingValueTypeFieldName],
@@ -6226,7 +6336,7 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(SysSettingCodeFieldName, StringType, "Sys-setting code (unique)."),
 					Field("name", StringType, "Display name of the sys-setting."),
-					Field(SysSettingValueTypeFieldName, StringType, "Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup, Binary. Aliases: Currency = Money, Decimal = Float. Binary (blob data, e.g. the logo) is write-only via update-sys-setting value-file-path."),
+					Field(SysSettingValueTypeFieldName, StringType, "Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup, Binary. Aliases: Currency = Money, Decimal = Float. Binary stores opaque bytes: upload via update-sys-setting value-file-path and download via clio-run command=download-sys-setting-file with a required absolute file-name."),
 					Field(SysSettingValueFieldName, StringType, "Optional initial All-Users default value applied via update-sys-setting after creation."),
 					Field("description", StringType, "Optional description text."),
 					Field("is-cacheable", BooleanType, "Whether the setting is cacheable. Defaults to true."),

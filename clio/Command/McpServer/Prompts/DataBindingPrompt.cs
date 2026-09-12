@@ -17,7 +17,7 @@ public static class DataBindingPrompt {
 	public static string CreateDataBinding(
 		[Required] [Description("Target package name")] string packageName,
 		[Required] [Description("Entity schema name")] string schemaName,
-		[Required] [Description("Absolute workspace path")] string workspacePath,
+		[Required] [Description("Absolute workspace root containing .clio/workspaceSettings.json, not the package directory")] string workspacePath,
 		[Description("Optional binding folder name")] string? bindingName = null,
 		[Description("Optional descriptor install type")] int installType = 0,
 		[Description("Optional values JSON")] string? values = null,
@@ -28,6 +28,7 @@ public static class DataBindingPrompt {
 		 for schema `{schemaName}` in package `{packageName}`.
 		 For canonical workflow selection, call `{GuidanceGetTool.ToolName}` with `name` set to `data-bindings`
 		 before choosing this local artifact path.
+		 The workspace root must contain `.clio/workspaceSettings.json`; the package is resolved under `packages/{packageName}` beneath it.
 		 Pass `workspace-path` `{workspacePath}` exactly as provided.
 		 If `{schemaName}` is covered by the built-in offline template `SysSettings`, omit `environment-name`.
 		 Otherwise pass `environment-name` `{environmentName ?? "<required for non-templated schema>"}` exactly as provided.
@@ -48,7 +49,7 @@ public static class DataBindingPrompt {
 	public static string AddDataBindingRow(
 		[Required] [Description("Target package name")] string packageName,
 		[Required] [Description("Binding folder name")] string bindingName,
-		[Required] [Description("Absolute workspace path")] string workspacePath,
+		[Required] [Description("Absolute workspace root containing .clio/workspaceSettings.json, not the package directory")] string workspacePath,
 		[Required] [Description("Row values JSON")] string values,
 		[Description("Optional localizations JSON")] string? localizations = null) =>
 		$"""
@@ -56,6 +57,7 @@ public static class DataBindingPrompt {
 		 `{bindingName}` under package `{packageName}`.
 		 For canonical workflow selection and verification discipline, call `{GuidanceGetTool.ToolName}` with `name`
 		 set to `data-bindings` when the overall binding path is not already fixed.
+		 The workspace root must contain `.clio/workspaceSettings.json`; the package is resolved under `packages/{packageName}` beneath it.
 		 Pass `workspace-path` `{workspacePath}` exactly as provided and use `values` `{values}`.
 		 If that payload omits the GUID primary key column or sets it to null, the tool generates it automatically.
 		 For non-null lookup and image-reference columns, `values` should use an object like
@@ -72,13 +74,14 @@ public static class DataBindingPrompt {
 	public static string RemoveDataBindingRow(
 		[Required] [Description("Target package name")] string packageName,
 		[Required] [Description("Binding folder name")] string bindingName,
-		[Required] [Description("Absolute workspace path")] string workspacePath,
+		[Required] [Description("Absolute workspace root containing .clio/workspaceSettings.json, not the package directory")] string workspacePath,
 		[Required] [Description("Primary-key value")] string keyValue) =>
 		$"""
 		 Use clio mcp server `{RemoveDataBindingRowTool.RemoveDataBindingRowToolName}` to remove the row with primary key
 		 `{keyValue}` from binding `{bindingName}` under package `{packageName}`.
 		 For canonical workflow selection and verification discipline, call `{GuidanceGetTool.ToolName}` with `name`
 		 set to `data-bindings` when the overall binding path is not already fixed.
+		 The workspace root must contain `.clio/workspaceSettings.json`; the package is resolved under `packages/{packageName}` beneath it.
 		 Pass `workspace-path` `{workspacePath}` exactly as provided.
 		 """;
 }
