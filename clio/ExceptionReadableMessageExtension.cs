@@ -27,7 +27,26 @@ internal static class ExceptionReadableMessageExtension
 			return RenderServerDetailCarrier(carrier, exception, debug);
 		}
 		if (debug) return exception.ToString();
-		return exception switch
+		// Issue #1505: the non-carrier arms below render text whose CONTENT a server can influence -
+		// measured with `clio list-packages -e <env>` against a DataService answering HTTP 500 with
+		// {"success":false,"errorInfo":{"message":"Configuration service failed: backend echoed
+		// password=s3cr3t server=db.internal"}}: SelectQueryHelper throws
+		// InvalidOperationException("SelectQuery failed: <that prose>"), the IOE arm returned it verbatim,
+		// and the console printed the credential in the clear - while the MCP path
+		// (ClioRunTool.RedactFailureContent) redacted the same text. So the composed non-debug line goes
+		// through the redactor once, here, for every arm.
+		//
+		// Scrub (= SensitiveErrorTextRedactor.Redact), NOT UntrustedText.ForConsole: ForConsole is the
+		// rendering for text that is ENTIRELY server-authored - it also flattens line breaks and clamps at
+		// 300 characters, which is right for a platform fault excerpt and wrong here, where most of what
+		// this renderer prints is clio's own multi-line prose for ~20 commands. Scrub replaces the known
+		// secret shapes and nothing else, so a message with no secrets comes back byte-identical. It is
+		// also exactly what the MCP path applies, which is the parity the issue asks for.
+		//
+		// The debug path above is untouched on purpose: --debug is the #1333 bridge back to the raw text,
+		// and it is the reason redacting an absolute path out of, say, a FileNotFoundException line here
+		// costs the operator nothing they cannot get back.
+		return UntrustedText.Scrub(exception switch
 		{
 			AggregateException ex when ex.InnerException != null
 				=> ex.InnerException.GetReadableMessageException(debug),
@@ -43,7 +62,7 @@ internal static class ExceptionReadableMessageExtension
 				=> $"{exception.Message} ({DescribeWebException(nestedWebException)})",
 			InvalidOperationException ex => ex.InnerException?.Message ?? ex.Message,
 			_ => exception.Message
-		};
+		});
 	}
 
 	/// <summary>

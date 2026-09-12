@@ -32,6 +32,18 @@ same treatment, and it also renders a carrier's OWN message rather than an inner
 `InvalidOperationException` arm that preferred `InnerException.Message` was printing the raw parser
 fault instead of the composed diagnosis.
 
+Since issue #1505 the rule covers that renderer's **non-carrier** arms too: a failure with no
+`IServerDetailCarrier` can still carry server prose (`SelectQueryHelper` /
+`DataServiceSelectResponse` throw a plain `InvalidOperationException("SelectQuery failed: " +
+errorInfo.message)`), and the arms returned it verbatim while the MCP path redacted the same text.
+The whole composed non-debug line now goes through `UntrustedText.Scrub` once. That variant, not
+`ForConsole`: these arms render mostly clio-authored, often multi-line prose for ~20 commands, and
+`ForConsole` additionally flattens line breaks and clamps at 300 characters — right for an excerpt
+that is entirely server-authored, wrong for a composed CLI line. `Scrub` replaces the known secret
+shapes only, so a secret-free message is byte-identical. The debug path stays `exception.ToString()`
+unredacted, which is what makes redacting an absolute path out of, for example, a
+`FileNotFoundException` line cost the operator nothing.
+
 The single exception is a plain `Success == false` whose `ErrorMessage` is the platform's own
 validation prose ("Column 'Name' is required") — no fixed sentence can replace it without destroying
 the diagnosis. That one is kept, but passed through

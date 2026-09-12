@@ -215,6 +215,114 @@ public class ExceptionReadableMessageExtensionTestCase
 			because: "the wrapped WebException status must be reported even when the wrapper is an InvalidOperationException");
 	}
 
+	[Test]
+	[Description(
+		"Issue #1505: the SelectQuery failure path (SelectQueryHelper / DataServiceSelectResponse) throws a "
+		+ "plain InvalidOperationException carrying the server's errorInfo.message, so the credential the "
+		+ "server echoed must be redacted while clio's own 'SelectQuery failed:' prefix survives.")]
+	public void GetReadableMessageException_ShouldRedactServerCredentials_WhenSelectQueryFailureIsRendered() {
+		// Arrange
+		var exception = new InvalidOperationException(
+			"SelectQuery failed: Configuration service failed: backend echoed "
+			+ "password=s3cr3t server=db.internal");
+
+		// Act
+		string result = exception.GetReadableMessageException();
+
+		// Assert
+		result.Should().StartWith("SelectQuery failed: Configuration service failed:",
+			because: "clio's own diagnosis must survive redaction, otherwise the operator loses the reason");
+		result.Should().NotContain("s3cr3t",
+			because: "a credential the server echoed must never reach the console in the clear");
+		result.Should().NotContain("db.internal",
+			because: "the connection-string host the server echoed must be redacted like the password");
+		result.Should().Contain("password=[redacted]",
+			because: "the key is kept so the line still reads sensibly while the value is replaced");
+		result.Should().Contain("server=[redacted]",
+			because: "the same placeholder policy as the MCP path (ClioRunTool.RedactFailureContent) applies");
+	}
+
+	[Test]
+	[Description(
+		"Issue #1505: the InvalidOperationException arm prefers the inner message, so a bearer token in an "
+		+ "INNER exception must be redacted too - the arm that is actually taken is the one that has to scrub.")]
+	public void GetReadableMessageException_ShouldRedactBearerToken_WhenInvalidOperationExceptionWrapsInner() {
+		// Arrange
+		var inner = new Exception("Request rejected with Authorization: Bearer eyJhbGciOi.eyJzdWIiOi.c2lnbmF0dXJl");
+		var exception = new InvalidOperationException("SelectQuery failed", inner);
+
+		// Act
+		string result = exception.GetReadableMessageException();
+
+		// Assert
+		result.Should().NotContain("eyJhbGciOi",
+			because: "a JWT surfaced by an inner exception must not reach the console in the clear");
+		result.Should().Contain("[redacted]",
+			because: "the token has to be replaced by the redactor's stable placeholder");
+		result.Should().StartWith("Request rejected with",
+			because: "redaction must not change which arm is taken nor the surrounding prose");
+	}
+
+	[Test]
+	[Description(
+		"Issue #1505: redaction is applied to the COMPOSED line, so the WebException enrichment that CI reads "
+		+ "must still be appended while a credential inside the exception message is replaced.")]
+	public void GetReadableMessageException_ShouldKeepWebExceptionEnrichment_WhenMessageCarriesCredential() {
+		// Arrange
+		using HttpWebResponse response = CreateHttpWebResponse(HttpStatusCode.Unauthorized);
+		var exception = new WebException(
+			"The remote server rejected password=s3cr3t",
+			null,
+			WebExceptionStatus.ProtocolError,
+			response);
+
+		// Act
+		string result = exception.GetReadableMessageException();
+
+		// Assert
+		result.Should().NotContain("s3cr3t",
+			because: "the credential must be redacted even on the WebException arm");
+		result.Should().Contain("(WebException: ProtocolError (HTTP 401 Unauthorized))",
+			because: "the enrichment arm's structure must survive the redaction wrapper unchanged");
+	}
+
+	[Test]
+	[Description(
+		"Issue #1505: the debug path must stay exception.ToString() verbatim - --debug is the bridge back to "
+		+ "the raw server text, so redaction must not be applied there.")]
+	public void GetReadableMessageException_ShouldNotRedact_WhenDebugIsRequested() {
+		// Arrange
+		var exception = new InvalidOperationException(
+			"SelectQuery failed: backend echoed password=s3cr3t server=db.internal");
+
+		// Act
+		string result = exception.GetReadableMessageException(true);
+
+		// Assert
+		result.Should().Be(exception.ToString(),
+			because: "the debug render is unchanged by this issue and must remain the raw ToString()");
+		result.Should().Contain("password=s3cr3t",
+			because: "--debug deliberately keeps the raw text so an operator can diagnose the fault");
+	}
+
+	[Test]
+	[Description(
+		"Issue #1505: a message with no secret shapes must come back byte-identical - Scrub replaces known "
+		+ "secret shapes only, and does not flatten or clamp clio's own multi-line prose.")]
+	public void GetReadableMessageException_ShouldReturnMessageUnchanged_WhenNothingIsSensitive() {
+		// Arrange
+		string message = "Package 'MyPackage' was not found." + Environment.NewLine
+			+ "Run list-packages to see what is installed. " + new string('x', 400);
+		var exception = new InvalidOperationException(message);
+
+		// Act
+		string result = exception.GetReadableMessageException();
+
+		// Assert
+		result.Should().Be(message,
+			because: "a secret-free line must not be altered, re-wrapped or truncated by the redaction wrapper");
+	}
+
 	/// <summary>
 	/// Builds a real <see cref="HttpWebResponse"/> carrying the supplied status code without opening a
 	/// socket. On modern .NET <see cref="HttpWebResponse"/> has no usable public constructor and its
