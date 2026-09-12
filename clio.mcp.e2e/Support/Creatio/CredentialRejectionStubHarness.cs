@@ -28,9 +28,21 @@ internal static class CredentialRejectionStubHarness {
 	/// </summary>
 	public const string RejectedSchemaName = "SysSettings";
 
+	/// <summary>
+	/// Runs <paramref name="act"/> against the stub.
+	/// </summary>
+	/// <param name="environmentNamePrefix">Prefix for the registered environment name.</param>
+	/// <param name="act">The body to run against the session and the registered environment.</param>
+	/// <param name="nonJsonWriteEndpoints">
+	/// Issue #1378. When <see langword="true"/> the session is NOT rejected - every read is served
+	/// normally - and only the sys-settings write endpoints answer with a gateway page. That is the
+	/// follow-up shape the rejection mode cannot produce, because rejecting the session stops the write
+	/// before it is sent.
+	/// </param>
 	public static async Task RunAsync(
 		string environmentNamePrefix,
-		Func<McpServerSession, string, CancellationToken, Task> act) {
+		Func<McpServerSession, string, CancellationToken, Task> act,
+		bool nonJsonWriteEndpoints = false) {
 		string tempHome = Path.Combine(Path.GetTempPath(), $"clio-{environmentNamePrefix}-e2e-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(tempHome);
 		try {
@@ -55,7 +67,8 @@ internal static class CredentialRejectionStubHarness {
 					NetFrameworkServiceEnabled: false,
 					NetCoreUiMarkerEnabled: true,
 					NetFrameworkUiMarkerEnabled: false,
-					AuthRejectedSelectQuerySchemaName: RejectedSchemaName));
+					AuthRejectedSelectQuerySchemaName: nonJsonWriteEndpoints ? null : RejectedSchemaName,
+					NonJsonSysSettingsWriteEnabled: nonJsonWriteEndpoints));
 			using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 			await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 			string environmentName = $"{environmentNamePrefix}-{Guid.NewGuid():N}";

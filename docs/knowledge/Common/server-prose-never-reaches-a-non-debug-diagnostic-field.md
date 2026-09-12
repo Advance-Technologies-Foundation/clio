@@ -6,11 +6,12 @@ applies-to:
   - clio/Common/ISysSettingsManager.cs
   - clio/Common/SessionRejectedException.cs
   - clio/Common/DataProviderFailureException.cs
+  - clio/Common/NonJsonWriteResponseException.cs
   - clio/Command/SysSettingsCommand.cs
   - clio/Command/McpServer/SensitiveErrorTextRedactor.cs
   - clio/ExceptionReadableMessageExtension.cs
   - clio/Common/ServerReportedFailureText.cs
-ticket: GH-1333
+ticket: GH-1333, GH-1378
 date: 2026-09-03
 ---
 
@@ -71,6 +72,13 @@ So a failure composed from server prose carries **both** renderings and each sin
 `Exception.Message` deliberately stays the fenced form, so every existing consumer is unchanged and only
 a console-only sink reads the other one. Dropping the fence does **not** drop the neutralization: the
 console rendering is still scrubbed, flattened and length-capped.
+
+`NonJsonWriteResponseException` (issue #1378) is the third carrier and does **not** implement
+`IConsoleRenderedFailure`: its `Message` holds no server text at all, so there is no agent fence for a
+terminal to drop. It does implement `IAuthoritativeErrorMessage` — without that marker
+`SurfacedExceptionMessage.Resolve` walks past it to the inner parser fault, and `System.Text.Json`
+quotes the offending JSON path and value in its own message, so server-chosen bytes reach an MCP
+envelope unfenced and uncapped. A carrier whose message is authoritative must say so.
 
 `SysSettingsCommand.WriteAndForwardFailureLine` is the one path that keeps the fence while writing to the
 console, because the same line is forwarded to `McpLogNotifier` — it *is* MCP-visible. What changed there

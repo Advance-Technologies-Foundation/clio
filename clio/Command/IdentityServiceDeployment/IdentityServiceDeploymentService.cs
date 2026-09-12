@@ -809,6 +809,12 @@ public sealed class IdentityServiceDeploymentService : IIdentityServiceDeploymen
 		if (normalizedMode is not "db-first" and not "rest") {
 			throw new NotSupportedException($"Unsupported configuration mode '{mode}'.");
 		}
+		//FAIL-CLOSED on the first unusable answer, by design (issue #1378). These three writes are
+		//sequential and each throws on a rejected session or on an answer that is not the expected
+		//DataService response, so the first such failure aborts the remaining two and the throw carries the
+		//diagnosis. That is deliberate: a half-configured OAuth client - a URL written but no client id or
+		//secret - is worse than none, and the `false` aggregation below covers only the case the
+		//environment actually REFUSED a value, where all three attempts are still worth making.
 		bool urlUpdated = _sysSettingsManager.UpdateSysSetting("OAuth20IdentityServerUrl", identityUrl, "Text");
 		bool clientUpdated = _sysSettingsManager.UpdateSysSetting("OAuth20IdentityServerClientId", DesignerClientId, "Text");
 		bool secretUpdated = _sysSettingsManager.UpdateSysSetting(

@@ -232,32 +232,18 @@ internal static class ServiceResponseJsonGuard
 		+ "route, the environment health (healthcheck) and the Creatio server log for that endpoint.";
 
 	/// <summary>
-	/// Returns whether the body starts with markup (an HTML page, an XML/SOAP fault, or a doctype),
-	/// skipping any leading whitespace and byte-order marks in any order so neither hides it. A single
-	/// chained trim would not do: a BOM followed by whitespace (<c>BOM + "  &lt;html&gt;"</c>) leaves the
-	/// post-BOM whitespace behind, misclassifying an HTML login page as a generic unparseable body and
-	/// previewing it.
+	/// Returns whether the body starts with markup (an HTML page, an XML/SOAP fault, or a doctype).
 	/// </summary>
+	/// <remarks>
+	/// Issue #1378 moved the implementation to <see cref="TextUtilities.LooksLikeMarkup"/>: the
+	/// sys-settings write path in <c>Clio.Common</c> needs the same predicate, and importing
+	/// <c>Clio.Package</c> from <c>Clio.Common</c> inverts the layering. This forwarder stays so the
+	/// existing callers in <c>Clio.Package</c> and <c>Clio.Command</c> are unchanged.
+	/// </remarks>
 	/// <param name="responseBody">Raw response body, which may be <see langword="null"/> or empty.</param>
 	/// <returns><see langword="true"/> when the body opens with markup.</returns>
-	internal static bool LooksLikeMarkup(string? responseBody)
-	{
-		// Null-safe because callers outside Deserialize (RemoteEntitySchemaDesignerClient.TryPostToUrl) reach
-		// this with whatever the application client returned, without a preceding emptiness gate.
-		if (string.IsNullOrEmpty(responseBody))
-		{
-			return false;
-		}
-
-		int index = 0;
-		while (index < responseBody.Length
-			&& (char.IsWhiteSpace(responseBody[index]) || responseBody[index] == ByteOrderMark))
-		{
-			index++;
-		}
-
-		return index < responseBody.Length && responseBody[index] == '<';
-	}
+	internal static bool LooksLikeMarkup(string? responseBody) =>
+		TextUtilities.LooksLikeMarkup(responseBody);
 
 	/// <summary>
 	/// Produces a bounded, redacted single-line preview of the body. Redaction runs here rather than at

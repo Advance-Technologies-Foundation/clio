@@ -77,6 +77,14 @@ Three consequences worth knowing before writing code against this:
   thread lambda and observes it on the main thread. Any new background consumer of `IDataProvider` needs
   the same two guards.
 
+- **The WRITE path is not this provider, and since issue #1378 it no longer degrades to it.**
+  `SysSettingsManager`'s `InsertSysSettingRequest` / `PostSysSettingsValues` calls go through
+  `IApplicationClient` and therefore still HOLD the response body. `ThrowIfSessionRejected` already
+  turned a proven login page into an authentication verdict there; every OTHER non-JSON answer — a
+  proxy, a WAF, a 404 page — is now diagnosed by the manager itself as `NonJsonWriteResponseException`
+  rather than escaping as a parser fault. So the write path's verdict is at least as informed as the
+  read path's `NonJsonPage`, never worse.
+
 **What breaks if you ignore it** — a command that reads through `IDataProvider` on a bypassed or raw
 provider reports **success with an empty result** on expired or rejected credentials: `get-syssetting`
 exits 0 with no value, `get-schema-name-prefix` returns `success: true` with an empty prefix, and

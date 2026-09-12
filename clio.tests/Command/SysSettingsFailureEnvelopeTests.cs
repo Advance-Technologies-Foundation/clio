@@ -394,4 +394,64 @@ public sealed class SysSettingsFailureEnvelopeTests {
 			.Which.Should().Contain(reported.CorrelationId,
 				because: "the log line and the envelope carry the SAME ID");
 	}
+
+	[Test]
+	[Description("Issue #1378: the diagnosed non-JSON write failure lands in the same Network envelope the bare JsonException produced, so no agent branching on error-category and no MCP assertion changes.")]
+	public void CategorizeFailure_Should_Report_Network_For_A_Diagnosed_NonJson_Response() {
+		// Arrange
+		NonJsonWriteResponseException exception = new("Failed reading sys-setting: the environment answered "
+			+ "with an HTML/XML page where a DataService JSON response was expected.",
+			NonJsonWriteResponseKind.NotJson, serverDetail: "<html>404</html>");
+
+		// Act
+		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(exception, Operation, CorrelationId);
+
+		// Assert
+		failure.Category.Should().Be(SysSettingErrorCategories.Network,
+			because: "a gateway or proxy page means the request never reached Creatio - it is not a provider that reported an unsuccessful response");
+		failure.Error.Should().Be($"Creatio returned a non-JSON response {Operation}.",
+			because: "the envelope must stay byte-identical to the one the JsonException arm produced, so the change is invisible to every consumer");
+		failure.Cause.Should().Contain("not JSON",
+			because: "the fixed local cause names what happened without quoting the page");
+		failure.Cause.Should().NotContain("<html>",
+			because: "issue #1333: the excerpt lives on ServerDetail and reaches only the debug channel");
+		failure.CorrelationId.Should().Be(CorrelationId,
+			because: "the ID is the bridge to the debug line carrying the server excerpt");
+	}
+
+	[Test]
+	[Description("Issue #1378: NonJsonWriteResponseException derives from InvalidOperationException, so its arm must sit above the provider-failure and unknown arms rather than be captured by them.")]
+	public void CategorizeFailure_Should_Not_Report_A_NonJson_Response_As_ProviderFailure() {
+		// Arrange
+		NonJsonWriteResponseException exception = new("Failed creating sys-setting: non-JSON.",
+			NonJsonWriteResponseKind.NotJson);
+
+		// Act
+		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(exception, Operation, CorrelationId);
+
+		// Assert
+		failure.Category.Should().Be(SysSettingErrorCategories.Network,
+			because: "the arm has to WIN over the DataProviderFailureException and InvalidOperationException arms it "
+			+ "sits above - ProviderFailure would claim the data provider returned an unsuccessful response whose "
+			+ "message is the diagnosis (a gateway page is not that), and Unknown would undo the whole point of the type");
+	}
+
+	[Test]
+	[Description("Issue #1378: a valid-JSON-wrong-shape answer keeps the Network category but must not repeat the not-JSON cause, which names a proxy or WAF page that demonstrably is not what answered.")]
+	public void CategorizeFailure_Should_Report_Its_Own_Cause_For_An_Unexpected_Response_Shape() {
+		// Arrange
+		NonJsonWriteResponseException exception = new("Failed reading sys-setting: unexpected shape.",
+			NonJsonWriteResponseKind.UnexpectedShape, serverDetail: "{\"id\":null}");
+
+		// Act
+		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(exception, Operation, CorrelationId);
+
+		// Assert
+		failure.Category.Should().Be(SysSettingErrorCategories.Network,
+			because: "the request still did not reach the service it was meant for, so the category an agent branches on is unchanged");
+		failure.Cause.Should().NotContain("not JSON",
+			because: "the body WAS JSON - repeating the not-JSON cause sends the operator to inspect a gateway that is working correctly");
+		failure.Cause.Should().Contain("does not match the DataService response",
+			because: "the cause has to name what is actually wrong with the answer - the shape, not the media type");
+	}
 }

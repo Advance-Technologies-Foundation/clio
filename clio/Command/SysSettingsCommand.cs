@@ -207,7 +207,16 @@ namespace Clio.Command
 		/// </summary>
 		/// <param name="opts">The setting code, value and value-type-name.</param>
 		/// <param name="settings">Unused; kept for the call shape the other command methods share.</param>
-		/// <returns><see langword="false"/> when the environment did not apply the value.</returns>
+		/// <returns>
+		/// <see langword="false"/> when the write was REFUSED - clio rejected the value, or the platform
+		/// answered with an unsuccessful save result. A missing or unusable acknowledgement is not a
+		/// refusal and throws instead (issue #1378).
+		/// </returns>
+		/// <exception cref="ArgumentException">A Binary value names a file that does not exist.</exception>
+		/// <exception cref="Clio.Common.SessionRejectedException">Creatio rejected the session.</exception>
+		/// <exception cref="Clio.Common.NonJsonWriteResponseException">
+		/// The environment answered the write with something other than the expected DataService response.
+		/// </exception>
 		public bool UpdateSysSetting(SysSettingsOptions opts, EnvironmentSettings settings = null) {
 			// For a Binary setting, a value that points at an existing file is read and Base64-encoded
 			// locally (the blob upload path, e.g. the logo); an inline Base64 string is passed through as-is.
@@ -594,7 +603,23 @@ namespace Clio.Command
 			if (args.Value is null) {
 				return new SysSettingCreateResult(true, args.Code, args.ValueTypeName);
 			}
-			bool updated = _sysSettingsManager.UpdateSysSetting(args.Code, args.Value, args.ValueTypeName);
+			bool updated;
+			try {
+				updated = _sysSettingsManager.UpdateSysSetting(args.Code, args.Value, args.ValueTypeName);
+			} catch (NonJsonWriteResponseException nonJsonEx) {
+				//PR review. The insert ALREADY SUCCEEDED - the setting exists on the environment - so this
+				//failure must keep the partial-success shape the refused-value case has always had.
+				//Letting it fly to the catch in TryCreateSysSetting reported success:false labelled
+				//"creating sys-setting" for a setting that was in fact created, which sends the caller to
+				//retry a create that will now collide.
+				//SessionRejectedException is deliberately NOT routed here. A rejected session is not a
+				//property of this one write: every following call fails the same way, and the credential
+				//diagnosis is the only thing that leads to a fix - reporting it as "created, value not
+				//applied" would bury it under a warning and let an agent carry on against an environment
+				//that is refusing it. A non-JSON page is the opposite: it says nothing about the session,
+				//and the insert it followed demonstrably worked.
+				return DescribePartialCreate(args, nonJsonEx);
+			}
 			if (!updated) {
 				//Partial success, so there is no Error - but the ID and the line that carries it are ONE
 				//operation here too (PR #1374 review). The manager's own "SysSettings with code: {code} is
@@ -602,18 +627,44 @@ namespace Clio.Command
 				//handed the caller something to grep that resolved to nothing - the exact failure
 				//CategorizeAndLog exists to prevent, and worse on the MCP path, where an agent cannot tell
 				//"the line is below my verbosity" from "the line does not exist".
-				string correlationId = _correlationIds.New();
-				_logger.WriteError(
-					$"Sys-setting '{args.Code}' was created, but the initial value could not be applied. "
-					+ $"(correlation-id: {correlationId})");
-				return new SysSettingCreateResult(true, args.Code, args.ValueTypeName, null,
-					Error: null,
-					Warning: "Sys-setting was created, but the initial value could not be applied.",
-					CorrelationId: correlationId);
+				return DescribePartialCreate(args, failure: null);
 			}
 			string assignedValue = _sysSettingsManager.GetAllUsersDefaultByCode(args.Code);
 			string maskedAssignedValue = ApplySecureTextMask(args.ValueTypeName, assignedValue);
 			return new SysSettingCreateResult(true, args.Code, args.ValueTypeName, maskedAssignedValue);
+		}
+
+		/// <summary>
+		/// Reports a create that landed but whose initial value did not, as a partial success carrying one
+		/// correlation ID shared by the log line and the envelope.
+		/// </summary>
+		/// <remarks>
+		/// Partial success, so there is no Error - but the ID and the line that carries it are ONE
+		/// operation here too (PR #1374 review). The manager's own "SysSettings with code: {code} is not
+		/// updated." lines carry no correlation ID and never have, so minting a bare token here handed the
+		/// caller something to grep that resolved to nothing - the exact failure CategorizeAndLog exists to
+		/// prevent, and worse on the MCP path, where an agent cannot tell "the line is below my verbosity"
+		/// from "the line does not exist".
+		/// </remarks>
+		/// <param name="args">The create arguments, for the setting's code and value-type-name.</param>
+		/// <param name="failure">
+		/// The diagnosed write failure, or <see langword="null"/> when the environment simply refused the
+		/// value. When supplied, its server excerpt is written on the debug channel beside the same ID, so
+		/// the partial success is traceable exactly like an outright failure.
+		/// </param>
+		private SysSettingCreateResult DescribePartialCreate(CreateSysSettingArgs args,
+			Exception failure) {
+			string correlationId = _correlationIds.New();
+			_logger.WriteError(
+				$"Sys-setting '{args.Code}' was created, but the initial value could not be applied. "
+				+ $"(correlation-id: {correlationId})");
+			if (failure is not null) {
+				WriteServerDetailAtDebugVerbosity(_logger, failure, correlationId);
+			}
+			return new SysSettingCreateResult(true, args.Code, args.ValueTypeName, null,
+				Error: null,
+				Warning: "Sys-setting was created, but the initial value could not be applied.",
+				CorrelationId: correlationId);
 		}
 
 		/// <summary>
@@ -678,10 +729,35 @@ namespace Clio.Command
 				//inner represents it - but a credential failure among them still has to be reported as one.
 				AggregateException aggregate when IsAuthenticationFailure(aggregate)
 					=> Authentication(operationLabel, correlationId),
-				//A gateway/WAF page reaching JsonSerializer.Deserialize raises JsonException, which had no arm:
-				//the operator was told "Failed creating sys-setting." with no cause, on the very half of the
-				//write path the removed preflight probe used to diagnose. ThrowIfSessionRejected only fires
-				//when the body PROVES a rejected session, so every other non-JSON answer lands here.
+				//Issue #1378: the DIAGNOSED form of the arm below, raised by ISysSettingsManager's write
+				//endpoints, which hold the raw body and so can say what arrived and keep a neutralized
+				//excerpt on ServerDetail. It produces the IDENTICAL envelope - same Error, same Network
+				//category, same cause and recovery - so no agent branching on error-category and no MCP
+				//assertion changes; what improves is the debug line and the exception's own message.
+				//Placed ABOVE the DataProviderFailureException and InvalidOperationException arms, which it
+				//would otherwise be captured by: NonJsonWriteResponseException derives from
+				//InvalidOperationException, and being reported as ProviderFailure would claim the data
+				//provider returned an unsuccessful response - which a gateway page is not.
+				//The wrong-SHAPE half keeps the same category - the request still did not reach the service
+				//it was meant for - but must not repeat the not-JSON cause, which names a proxy or WAF page
+				//that demonstrably is not what answered.
+				NonJsonWriteResponseException {
+					Kind: NonJsonWriteResponseKind.UnexpectedShape
+				} => new SysSettingFailure(
+					$"Creatio returned a response of an unexpected shape {operationLabel}.",
+					SysSettingErrorCategories.Network, SysSettingFailureTexts.UnexpectedResponseShapeCause,
+					SysSettingFailureTexts.UnexpectedResponseShapeRecovery, correlationId),
+				NonJsonWriteResponseException => new SysSettingFailure(
+					$"Creatio returned a non-JSON response {operationLabel}.",
+					SysSettingErrorCategories.Network, SysSettingFailureTexts.NonJsonResponseCause,
+					SysSettingFailureTexts.NonJsonResponseRecovery, correlationId),
+				//KEPT, and still reachable (PR review). Since issue #1378 the sys-settings write endpoints
+				//raise the diagnosed NonJsonWriteResponseException above, but the parser fault can also come
+				//from INSIDE the client: Creatio.Client throws JsonException itself rather than returning
+				//the body when the server answers an upload or a re-authenticated call with its login page -
+				//the shape CreatioClientAdapterReauthTests and ReauthExecutorTests pin. That fault never
+				//reaches clio's own deserialize, so the arm above cannot classify it, and without this one
+				//it would fall through to Unknown ("no cause could be determined").
 				JsonException => new SysSettingFailure(
 					$"Creatio returned a non-JSON response {operationLabel}.",
 					SysSettingErrorCategories.Network, SysSettingFailureTexts.NonJsonResponseCause,

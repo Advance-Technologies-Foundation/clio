@@ -89,6 +89,23 @@ public interface ISysSettingsManager
 	/// </summary>
 	(string Value, string ValueTypeName) GetAllUsersDefaultWithType(string code);
 
+	/// <summary>
+	/// Creates a sys-setting definition on the environment through the DataService
+	/// <c>InsertSysSettingRequest</c> endpoint.
+	/// </summary>
+	/// <param name="name">Display name of the setting.</param>
+	/// <param name="code">The unique code identifier of the system setting.</param>
+	/// <param name="valueTypeName">Creatio value-type-name (Text, Boolean, Integer, Lookup, ...).</param>
+	/// <param name="cached">Whether the platform may cache the value.</param>
+	/// <param name="description">Optional description stored with the definition.</param>
+	/// <param name="valueForCurrentUser">Whether the setting is personal rather than shared.</param>
+	/// <param name="referenceSchemaUId">Reference entity schema for a Lookup setting; ignored otherwise.</param>
+	/// <returns>The platform's parsed response, never <see langword="null"/>.</returns>
+	/// <exception cref="SessionRejectedException">The response body proves Creatio rejected the session.</exception>
+	/// <exception cref="NonJsonWriteResponseException">
+	/// The endpoint answered with something that is not a usable DataService JSON response - an HTML
+	/// login/gateway page, an empty body, or text no parser accepts (issue #1378).
+	/// </exception>
 	SysSettingsManager.InsertSysSettingResponse InsertSysSetting(string name, string code, string valueTypeName,
 		bool cached = true, string description = "", bool valueForCurrentUser = false,
 		Guid? referenceSchemaUId = null);
@@ -104,6 +121,28 @@ public interface ISysSettingsManager
 	/// <param name="code">The unique code identifier of the system setting.</param>
 	(string ValueTypeName, string? ReferenceSchemaName)? GetSysSettingTypeByCode(string code);
 
+	/// <summary>
+	/// Writes the All-Users value of a sys-setting through the DataService
+	/// <c>PostSysSettingsValues</c> endpoint.
+	/// </summary>
+	/// <param name="code">The unique code identifier of the system setting.</param>
+	/// <param name="value">The value to write; converted according to the resolved value-type-name.</param>
+	/// <param name="valueTypeName">
+	/// Fallback value-type-name, used only when the setting's own type cannot be resolved.
+	/// </param>
+	/// <returns>
+	/// <see langword="true"/> when the environment acknowledged the write. <see langword="false"/> means
+	/// the request was REFUSED - clio rejected the value (an invalid code, an unparseable number or date,
+	/// an oversized Binary payload) or the platform answered with an unsuccessful save result. It does NOT
+	/// cover a missing or unusable acknowledgement: since issue #1378 that raises
+	/// <see cref="NonJsonWriteResponseException"/> instead, because reporting it as a refusal claimed the
+	/// setting did not exist or the value did not match its type, which such a body does not support.
+	/// </returns>
+	/// <exception cref="SessionRejectedException">A response body proves Creatio rejected the session.</exception>
+	/// <exception cref="NonJsonWriteResponseException">
+	/// The write endpoint, or the lookup-value resolution it performs first, answered with something that
+	/// is not a usable DataService JSON response.
+	/// </exception>
 	bool UpdateSysSetting(string code, object value, string valueTypeName = "Text");
 
 	/// <summary>
@@ -137,8 +176,16 @@ public interface ISysSettingsManager
 public class SysSettingsManager : ISysSettingsManager
 {
 	/// <summary>
-	/// Cap on the raw response quoted back in an authentication diagnostic. A rejected session answers
-	/// with a whole HTML login page, so an uncapped quote would flood every log sink it reaches.
+	/// Cap on the neutralized response excerpt any write-path failure carries on its
+	/// <see cref="IServerDetailCarrier.ServerDetail"/> - a rejected session (issue #1333) and, since
+	/// issue #1378, an answer that is not the expected DataService response. Both classes answer with a
+	/// whole page, so an uncapped excerpt would flood every sink it reaches.
+	/// <para>
+	/// It bounds DISPLAY only. <see cref="TextUtilities.SanitizeForDisplay"/> may overshoot it by up to
+	/// two characters rather than split a surrogate pair, and appends an ellipsis, so a produced excerpt
+	/// can be slightly longer than this number. It is never a classification budget - the classifier
+	/// bounds its own input, because a marker past this offset must still be recognised.
+	/// </para>
 	/// </summary>
 	private const int MaxRejectedResponseDetailLength = 300;
 
@@ -287,8 +334,12 @@ public class SysSettingsManager : ISysSettingsManager
 
 		string selectQueryUrl = _serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery");
 		string responseJson = _creatioClient.ExecutePostRequest(selectQueryUrl, requestBody.ToString(NewtonsoftJson.Formatting.None));
-		ThrowIfSessionRejected(responseJson, "resolving a lookup value");
-		JObject json = JObject.Parse(responseJson);
+		//Issue #1378: same treatment as the two write endpoints, because this call is REACHED from the
+		//write path (a Lookup value given as a display name) and holds the raw body just as they do. The
+		//parser here is Newtonsoft, so its failure is a JsonReaderException that does not derive from
+		//System.Text.Json.JsonException - it matched no arm of SysSettingsCommand.CategorizeFailure and
+		//was reported as an uncategorised Unknown with "no cause could be determined".
+		JObject json = ParseLookupResponse(responseJson, "resolving a lookup value");
 		JArray rows = json["rows"] as JArray;
 		if (rows is null || rows.Count == 0) {
 			return Guid.Empty;
@@ -420,6 +471,190 @@ public class SysSettingsManager : ISysSettingsManager
 			+ "and retry.",
 			cappedResponse);
 	}
+
+	/// <summary>
+	/// Reads a RAW write-endpoint body into <typeparamref name="TResponse"/>, turning every answer that is
+	/// not the DataService response this operation expects into a diagnosed
+	/// <see cref="NonJsonWriteResponseException"/>.
+	/// </summary>
+	/// <remarks>
+	/// Issue #1378. <see cref="ThrowIfSessionRejected"/> fires only when the body PROVES a rejected
+	/// session, so a proxy page, a WAF interstitial and a 404 error page all fell straight through to
+	/// <see cref="JsonSerializer"/>. The bare <see cref="JsonException"/> that raised names a byte offset
+	/// and nothing else - so the write path, which HOLDS the body, reported strictly less than the read
+	/// path's <c>NonJsonPage</c> verdict, which has only the provider's error text and still names both
+	/// causes and keeps the excerpt.
+	/// <para>
+	/// SYNTAX IS SEPARATED FROM SHAPE by parsing with <see cref="JsonDocument"/> first.
+	/// <see cref="JsonSerializer"/> raises the SAME <see cref="JsonException"/> for a body that is not
+	/// JSON and for valid JSON that does not fit the contract (a <c>null</c> where the record needs a
+	/// <see cref="Guid"/>, a <c>saveResult</c> that is not a map). Diagnosing the second as "a proxy,
+	/// gateway or WAF page" sends the operator to inspect a gateway that is working correctly, so the two
+	/// carry different fixed sentences and different <see cref="NonJsonWriteResponseKind"/> values.
+	/// </para>
+	/// <para>
+	/// The <see langword="null"/> document is the write-path counterpart of
+	/// <c>ClassifyingDataProvider.EnsureSuccess</c>'s no-response check: a literal <c>null</c> body parses
+	/// successfully into <see langword="null"/>, and <c>CreateSysSettingIfNotExists</c>'s switch then
+	/// raised a <see cref="System.Runtime.CompilerServices.SwitchExpressionException"/> - every arm
+	/// pattern-matches on a property, so none of them matches <see langword="null"/>.
+	/// </para>
+	/// <para>
+	/// NOT <c>Clio.Package.ServiceResponseJsonGuard.Deserialize</c>, which does the same parse: its
+	/// message embeds the endpoint URL and a bounded preview of the body, and it has nowhere to put a
+	/// <see cref="NonJsonWriteResponseException.ServerDetail"/>. Issue #1333 requires the opposite policy
+	/// here - no server-authored text in the message at all, the excerpt on the debug-only channel - so
+	/// the two cannot share a composition. What IS shared is the predicate,
+	/// <see cref="TextUtilities.LooksLikeMarkup"/>.
+	/// </para>
+	/// <para>
+	/// What the message may say is fixed by issue #1333: a login/proxy/WAF page is text a third party
+	/// chose, so NONE of it is embedded - the same rule, and the same
+	/// <c>Scrub</c>-then-<c>SanitizeForDisplay</c> order, that <see cref="ThrowIfSessionRejected"/> applies
+	/// to its own excerpt. Redaction runs BEFORE the cap because the redactor matches a token as a whole
+	/// unit and capping first can split one and leave the visible half in the clear.
+	/// </para>
+	/// </remarks>
+	/// <typeparam name="TResponse">The DataService response contract to read the body into.</typeparam>
+	/// <param name="rawResponse">The response body exactly as the platform returned it.</param>
+	/// <param name="operationLabel">The sys-settings operation, used in the diagnostic.</param>
+	/// <returns>The deserialized response, never <see langword="null"/>.</returns>
+	/// <exception cref="SessionRejectedException">The body proves Creatio rejected the session.</exception>
+	/// <exception cref="NonJsonWriteResponseException">The body is not the expected DataService response.</exception>
+	private TResponse DeserializeWriteResponse<TResponse>(string rawResponse, string operationLabel)
+		where TResponse : class {
+		ThrowIfSessionRejected(rawResponse, operationLabel);
+		if (string.IsNullOrWhiteSpace(rawResponse)) {
+			throw BuildNotJsonFailure(rawResponse, operationLabel, EmptyBodyClause, innerException: null);
+		}
+		try {
+			using JsonDocument document = JsonDocument.Parse(rawResponse);
+			if (document.RootElement.ValueKind == JsonValueKind.Null) {
+				throw BuildNotJsonFailure(rawResponse, operationLabel, NullBodyClause, innerException: null);
+			}
+		} catch (JsonException syntaxFailure) {
+			throw BuildNotJsonFailure(rawResponse, operationLabel, DescribeUnparseableBody(rawResponse),
+				syntaxFailure);
+		}
+		try {
+			//Reached only for a document that already parsed, so any JsonException here is a CONTRACT
+			//mismatch, not a syntax error.
+			return JsonSerializer.Deserialize<TResponse>(rawResponse, _jsonSerializerOptions)
+				?? throw BuildNotJsonFailure(rawResponse, operationLabel, NullBodyClause,
+					innerException: null);
+		} catch (JsonException shapeFailure) {
+			throw BuildUnexpectedShapeFailure(rawResponse, operationLabel, shapeFailure);
+		}
+	}
+
+	/// <summary>
+	/// The Newtonsoft counterpart of <see cref="DeserializeWriteResponse{TResponse}"/>, for the SelectQuery
+	/// body the lookup-value resolution parses as a dynamic <see cref="JObject"/>.
+	/// </summary>
+	/// <remarks>
+	/// A separate method rather than a shared generic, because <c>JObject.Parse</c> raises Newtonsoft's
+	/// <c>JsonReaderException</c>, which does NOT derive from <see cref="JsonException"/> - a single
+	/// <c>catch (JsonException)</c> would let it escape. It makes the same syntax/shape distinction, and
+	/// gives a <c>null</c> document the same verdict as its sibling: parsing to
+	/// <c>JTokenType.Null</c> is the <see cref="NullBodyClause"/> case, and a valid array or scalar where
+	/// an object is required is the shape case.
+	/// </remarks>
+	/// <param name="rawResponse">The response body exactly as the platform returned it.</param>
+	/// <param name="operationLabel">The sys-settings operation, used in the diagnostic.</param>
+	/// <returns>The parsed response object, never <see langword="null"/>.</returns>
+	/// <exception cref="SessionRejectedException">The body proves Creatio rejected the session.</exception>
+	/// <exception cref="NonJsonWriteResponseException">The body is not the expected DataService response.</exception>
+	private static JObject ParseLookupResponse(string rawResponse, string operationLabel) {
+		ThrowIfSessionRejected(rawResponse, operationLabel);
+		if (string.IsNullOrWhiteSpace(rawResponse)) {
+			throw BuildNotJsonFailure(rawResponse, operationLabel, EmptyBodyClause, innerException: null);
+		}
+		NewtonsoftJson.Linq.JToken token;
+		try {
+			token = NewtonsoftJson.Linq.JToken.Parse(rawResponse);
+		} catch (NewtonsoftJson.JsonException parseException) {
+			throw BuildNotJsonFailure(rawResponse, operationLabel, DescribeUnparseableBody(rawResponse),
+				parseException);
+		}
+		if (token.Type == NewtonsoftJson.Linq.JTokenType.Null) {
+			throw BuildNotJsonFailure(rawResponse, operationLabel, NullBodyClause, innerException: null);
+		}
+		return token as JObject
+			?? throw BuildUnexpectedShapeFailure(rawResponse, operationLabel, innerException: null);
+	}
+
+	/// <summary>The clause naming what the environment answered with, when the body was empty.</summary>
+	private const string EmptyBodyClause = "an empty body";
+
+	/// <summary>The clause for a body that parses but carries no response object (a literal <c>null</c>).</summary>
+	private const string NullBodyClause = "a JSON document carrying no response object";
+
+	/// <summary>
+	/// Names the SHAPE of an unparseable body without quoting it. Markup is called out separately because
+	/// it is the diagnosis-bearing case - a login redirect, a proxy page or a gateway error page - while a
+	/// truncated or garbage body says only that the answer never was a DataService response.
+	/// </summary>
+	/// <param name="rawResponse">The raw, non-empty response body.</param>
+	private static string DescribeUnparseableBody(string rawResponse) =>
+		TextUtilities.LooksLikeMarkup(rawResponse)
+			? "an HTML/XML page"
+			: "a body that is not valid JSON";
+
+	/// <summary>
+	/// Composes the not-JSON diagnostic: a FIXED local sentence naming the operation, what arrived and
+	/// BOTH causes it can have, with the neutralized excerpt kept off the message and on
+	/// <see cref="NonJsonWriteResponseException.ServerDetail"/>.
+	/// </summary>
+	/// <remarks>
+	/// Names both causes for the same reason <c>ClassifyingDataProvider.NonJsonPageMessage</c> does: the
+	/// body did not prove a rejected session, so claiming one would send the operator to repair working
+	/// credentials whenever the real problem was a proxy, a gateway or a wrong path.
+	/// <para>
+	/// It does NOT tell the reader to rerun with <c>--debug</c> for the excerpt (PR review): only a
+	/// handler that mints a correlation ID and writes <c>ServerDetail</c> can honour that, and half the
+	/// callers of these endpoints - <c>UnlockPackageCommand</c>, <c>ApplyEnvironmentManifestCommand</c>,
+	/// <c>SetBackgroundImageCommand</c>, <c>IdentityServiceDeploymentService</c> - do neither, so the
+	/// advice would be false there. It lives in <c>SysSettingsFailureTexts.NonJsonResponseRecovery</c>,
+	/// on the path where it is true.
+	/// </para>
+	/// </remarks>
+	/// <param name="rawResponse">The response body exactly as the platform returned it.</param>
+	/// <param name="operationLabel">The sys-settings operation, used in the diagnostic.</param>
+	/// <param name="whatArrivedClause">What the environment answered with, in local prose.</param>
+	/// <param name="innerException">The parser failure, when there was one.</param>
+	private static NonJsonWriteResponseException BuildNotJsonFailure(string rawResponse,
+		string operationLabel, string whatArrivedClause, Exception innerException) =>
+		new($"Failed {operationLabel}: the environment answered with {whatArrivedClause} where a "
+			+ "DataService JSON response was expected - either the session was rejected (expired password "
+			+ "/ login redirect) or the URL does not reach Creatio (proxy, gateway, wrong path).",
+			NonJsonWriteResponseKind.NotJson,
+			BuildServerDetail(rawResponse),
+			innerException);
+
+	/// <summary>
+	/// Composes the wrong-shape diagnostic: the body IS valid JSON, so nothing here may suggest a gateway
+	/// intercepted the request.
+	/// </summary>
+	/// <param name="rawResponse">The response body exactly as the platform returned it.</param>
+	/// <param name="operationLabel">The sys-settings operation, used in the diagnostic.</param>
+	/// <param name="innerException">The deserializer failure, when there was one.</param>
+	private static NonJsonWriteResponseException BuildUnexpectedShapeFailure(string rawResponse,
+		string operationLabel, Exception innerException) =>
+		new($"Failed {operationLabel}: the environment answered with JSON of an unexpected shape - it "
+			+ "parsed, but it does not match the DataService response this operation expects. The request "
+			+ "reached something that answers JSON; the endpoint, the Creatio version or the service "
+			+ "behind the URL may not be the expected one.",
+			NonJsonWriteResponseKind.UnexpectedShape,
+			BuildServerDetail(rawResponse),
+			innerException);
+
+	/// <summary>
+	/// The neutralized, capped excerpt that rides on the exception for debug verbosity only - redacted
+	/// BEFORE the cap, so a token straddling the boundary cannot be split into a still-visible prefix.
+	/// </summary>
+	/// <param name="rawResponse">The response body exactly as the platform returned it.</param>
+	private static string BuildServerDetail(string rawResponse) =>
+		TextUtilities.SanitizeForDisplay(UntrustedText.Scrub(rawResponse), MaxRejectedResponseDetailLength);
 
 	#region Methods: Public
 
@@ -597,8 +832,7 @@ public class SysSettingsManager : ISysSettingsManager
 		const string endpoint = "DataService/json/SyncReply/InsertSysSettingRequest";
 		string url = _serviceUrlBuilder.Build(endpoint);
 		string response = _creatioClient.ExecutePostRequest(url, json);
-		ThrowIfSessionRejected(response, "creating sys-setting");
-		return JsonSerializer.Deserialize<InsertSysSettingResponse>(response, _jsonSerializerOptions);
+		return DeserializeWriteResponse<InsertSysSettingResponse>(response, "creating sys-setting");
 	}
 
 	public bool UpdateSysSetting(string code, object value, string valueTypeName = "Text"){
@@ -712,40 +946,41 @@ public class SysSettingsManager : ISysSettingsManager
 		}, _jsonSerializerOptions);
 		string postSysSettingsValuesUrl
 			= _serviceUrlBuilder.Build("DataService/json/SyncReply/PostSysSettingsValues");
-		try {
-
-			string result = _creatioClient.ExecutePostRequest(postSysSettingsValuesUrl, requestData);
-			ThrowIfSessionRejected(result, "updating sys-setting");
-			if (string.IsNullOrWhiteSpace(result)) {
-				_logger.WriteError($"SysSettings with code: {code} is not updated. Empty response received.");
-				return false;
-			}
-			UpdateSysSettingResponse response =
-				JsonSerializer.Deserialize<UpdateSysSettingResponse>(result, _jsonSerializerOptions);
-			if (response?.SaveResult is not null
-				&& response.SaveResult.TryGetValue(code, out bool perCodeOk)
-				&& perCodeOk) {
-				return true;
-			}
-			//Issue #1333: ResponseStatus.Message is server-authored prose. It is the platform's own
-			//validation text ("Column 'Name' is required"), so it cannot be replaced by a fixed sentence
-			//without destroying the diagnosis - but it is scrubbed, flattened and capped before it is
-			//printed, so a token, an address or an instruction-shaped sentence cannot ride out on this
-			//line.
-			//CONSOLE rendering, not the fenced one (PR #1374 review): this is _logger.WriteError for
-			//`clio set-syssetting`, so its only reader is a person at a terminal. The fenced form is for
-			//a field a model reads; printing "[untrusted-source-text begin] Column 'Name' is required.
-			//[untrusted-source-text end]" for an ordinary platform validation failure has no audience
-			//here and reads as clio malfunctioning.
-			string errMsg = UntrustedText.ForConsole(response?.ResponseStatus?.Message);
-			_logger.WriteError(
-				$"SysSettings with code: {code} is not updated. " +
-				(errMsg is null ? "Platform reported a failed update." : errMsg));
-			return false;
-		} catch (JsonException) {
-			_logger.WriteError($"SysSettings with code: {code} is not updated. Invalid response format.");
-			return false;
+		string result = _creatioClient.ExecutePostRequest(postSysSettingsValuesUrl, requestData);
+		//Issue #1378: the deserialize is wrapped, and the empty-body check folded in, so every answer
+		//that is not a DataService JSON response leaves here as a diagnosed NonJsonWriteResponseException
+		//rather than as a bare JsonException or a `false` that says the setting was refused.
+		//It ESCAPES rather than being caught and turned into `false`, exactly like the
+		//SessionRejectedException raised from the same spot already did: the two command entry points
+		//(TryUpdateSysSetting) catch every exception and route it through CategorizeFailure, which mints
+		//the correlation ID and writes ServerDetail at debug verbosity. Returning `false` instead would
+		//report RefusedUpdateCause - "the setting may not exist, or the value did not match its type" -
+		//for a gateway page, and the excerpt would have no sink at all. The bool contract is unchanged
+		//for what it actually describes: a refusal, or a value clio itself rejects.
+		UpdateSysSettingResponse response =
+			DeserializeWriteResponse<UpdateSysSettingResponse>(result, "updating sys-setting");
+		//NOT null-conditional: DeserializeWriteResponse guarantees a non-null response - a body that
+		//parses to null is itself one of the answers it diagnoses.
+		if (response.SaveResult is not null
+			&& response.SaveResult.TryGetValue(code, out bool perCodeOk)
+			&& perCodeOk) {
+			return true;
 		}
+		//Issue #1333: ResponseStatus.Message is server-authored prose. It is the platform's own
+		//validation text ("Column 'Name' is required"), so it cannot be replaced by a fixed sentence
+		//without destroying the diagnosis - but it is scrubbed, flattened and capped before it is
+		//printed, so a token, an address or an instruction-shaped sentence cannot ride out on this
+		//line.
+		//CONSOLE rendering, not the fenced one (PR #1374 review): this is _logger.WriteError for
+		//`clio set-syssetting`, so its only reader is a person at a terminal. The fenced form is for
+		//a field a model reads; printing "[untrusted-source-text begin] Column 'Name' is required.
+		//[untrusted-source-text end]" for an ordinary platform validation failure has no audience
+		//here and reads as clio malfunctioning.
+		string errMsg = UntrustedText.ForConsole(response.ResponseStatus?.Message);
+		_logger.WriteError(
+			$"SysSettings with code: {code} is not updated. " +
+			(errMsg is null ? "Platform reported a failed update." : errMsg));
+		return false;
 	}
 	
 	public void CreateSysSettingIfNotExists(string optsCode, string code, string optsType){
