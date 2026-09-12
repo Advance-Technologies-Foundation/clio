@@ -1,4 +1,5 @@
 using Clio.Common;
+using Clio.Common.Skills;
 using Clio.Command.McpServer.Knowledge;
 using System.Collections.Generic;
 using Clio.Project.NuGet;
@@ -55,6 +56,7 @@ namespace Clio.Command
 		private readonly ILogger _logger;
 		private readonly IBundledPackageCatalog _bundledPackageCatalog;
 		private readonly IInstalledKnowledgeVersions _knowledgeVersions;
+		private readonly IInstalledToolkitVersions _toolkitVersions;
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="InfoCommand"/> class.
@@ -64,14 +66,16 @@ namespace Clio.Command
 		/// Catalog answering what bundled-package version this clio distribution carries.
 		/// </param>
 		/// <param name="knowledgeVersions">Reader for locally installed knowledge bundle versions.</param>
+		/// <param name="toolkitVersions">Reader for locally installed toolkit versions per agent.</param>
 		public InfoCommand(ILogger logger, IBundledPackageCatalog bundledPackageCatalog,
-			IInstalledKnowledgeVersions knowledgeVersions)
+			IInstalledKnowledgeVersions knowledgeVersions, IInstalledToolkitVersions toolkitVersions)
         {
 			logger.CheckArgumentNull(nameof(logger));
 			bundledPackageCatalog.CheckArgumentNull(nameof(bundledPackageCatalog));
 			_logger = logger;
 			_bundledPackageCatalog = bundledPackageCatalog;
 			_knowledgeVersions = knowledgeVersions ?? throw new ArgumentNullException(nameof(knowledgeVersions));
+			_toolkitVersions = toolkitVersions ?? throw new ArgumentNullException(nameof(toolkitVersions));
 		}
 
 		// Reported from the archive rather than from a constant, so this line describes the bytes an install
@@ -123,6 +127,10 @@ namespace Clio.Command
 				// both read it from the archive.
 				_logger.WriteInfo($"process-builder:   {GetBundledProcessBuilderVersion()}");
 				WriteKnowledgeVersions();
+				foreach (KeyValuePair<string, string> toolkit in _toolkitVersions.Read()) {
+					_logger.WriteInfo($"toolkit ({TextUtilities.SanitizeForDisplay(toolkit.Key, maxLength: 128)}):   "
+						+ TextUtilities.SanitizeForDisplay(toolkit.Value, maxLength: 128));
+				}
 				_logger.WriteInfo($"dotnet:   {Environment.Version.ToString()}");
 				_logger.WriteInfo($"settings file path: {SettingsRepository.AppSettingsFile}");
 				return 0;

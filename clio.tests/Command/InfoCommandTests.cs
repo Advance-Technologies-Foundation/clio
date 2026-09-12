@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Clio.Command.McpServer.Knowledge;
 using Clio.Common;
+using Clio.Common.Skills;
 using Clio.Project.NuGet;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,6 +29,7 @@ public class InfoCommandTests : BaseCommandTests<InfoCommandOptions> {
 	private readonly ILogger _logger = Substitute.For<ILogger>();
 	private InfoCommand _sut;
 	private readonly IInstalledKnowledgeVersions _knowledgeVersions = Substitute.For<IInstalledKnowledgeVersions>();
+	private readonly IInstalledToolkitVersions _toolkitVersions = Substitute.For<IInstalledToolkitVersions>();
 
 	#endregion
 
@@ -38,6 +40,7 @@ public class InfoCommandTests : BaseCommandTests<InfoCommandOptions> {
 		containerBuilder.AddSingleton(_bundledPackageCatalog);
 		containerBuilder.AddSingleton(_logger);
 		containerBuilder.AddSingleton(_knowledgeVersions);
+		containerBuilder.AddSingleton(_toolkitVersions);
 	}
 
 	#endregion
@@ -48,6 +51,7 @@ public class InfoCommandTests : BaseCommandTests<InfoCommandOptions> {
 	public void SetUp() {
 		_sut = Container.GetRequiredService<InfoCommand>();
 		_knowledgeVersions.Read().Returns(new Dictionary<string, string>());
+		_toolkitVersions.Read().Returns(new Dictionary<string, string>());
 	}
 
 	[TearDown]
@@ -55,6 +59,7 @@ public class InfoCommandTests : BaseCommandTests<InfoCommandOptions> {
 		_bundledPackageCatalog.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 		_knowledgeVersions.ClearReceivedCalls();
+		_toolkitVersions.ClearReceivedCalls();
 	}
 
 	[Test]
@@ -152,8 +157,26 @@ public class InfoCommandTests : BaseCommandTests<InfoCommandOptions> {
 			.Contain("knowledge:   not installed or unavailable", because: "absence must not look like a current remote version");
 	}
 
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("Default and all output show per-agent toolkit versions and sanitize metadata.")]
+	public void Execute_ShouldReportToolkitVersions_WhenInstalled(bool all) {
+		// Arrange
+		_toolkitVersions.Read().Returns(new Dictionary<string, string> {
+			["codex"] = "1.10.0", ["claude"] = "1.9.0\nforged", ["cursor"] = "not installed"
+		});
+		// Act
+		int result = _sut.Execute(new InfoCommandOptions { All = all });
+		// Assert
+		result.Should().Be(0, because: "toolkit inspection is informational");
+		_logger.ReceivedCalls().Select(call => call.GetArguments()[0]).Should()
+			.Contain("toolkit (codex):   1.10.0", because: "the installed agent version must be visible")
+			.And.Contain("toolkit (cursor):   not installed", because: "missing installations must be explicit")
+			.And.NotContain("toolkit (claude):   1.9.0\nforged", because: "metadata cannot forge console lines");
+	}
+
 	[Test]
-	[Description("A component-specific version query does not inspect knowledge state.")]
+	[Description("A component-specific version query does not inspect knowledge or toolkit state.")]
 	public void Execute_ShouldSkipKnowledge_WhenOnlyClioIsRequested() {
 		// Arrange
 		InfoCommandOptions options = new() { Clio = true };
@@ -164,6 +187,7 @@ public class InfoCommandTests : BaseCommandTests<InfoCommandOptions> {
 		// Assert
 		result.Should().Be(0, because: "the existing component-specific output stays supported");
 		_knowledgeVersions.ReceivedCalls().Should().BeEmpty(because: "a clio-only query needs no knowledge I/O");
+		_toolkitVersions.ReceivedCalls().Should().BeEmpty(because: "a clio-only query needs no toolkit I/O");
 	}
 
 }
