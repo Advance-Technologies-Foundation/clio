@@ -1,9 +1,12 @@
+using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Clio.Mcp.E2E.Support;
 using FluentAssertions;
+using NUnit.Framework;
 
-namespace Clio.Mcp.E2E.Support;
+namespace Clio.Tests;
 
 /// <summary>
 /// Pins the two teardown guarantees the DB-first data-binding fixtures rely on: a cleanup command can never
@@ -11,8 +14,8 @@ namespace Clio.Mcp.E2E.Support;
 /// arrange step already created.
 /// </summary>
 [TestFixture]
-[Category("McpE2E.NoEnvironment")]
-public sealed class FixtureCleanupOwnershipTests {
+[Category("Unit")]
+public sealed class McpFixtureCleanupOwnershipTests {
 	[Test]
 	[Description("A cleanup command that never returns is cancelled by its own bounded token instead of hanging the E2E worker.")]
 	public async Task BoundedCleanup_Should_Cancel_A_Hung_Cleanup_Command() {
@@ -57,14 +60,17 @@ public sealed class FixtureCleanupOwnershipTests {
 	[Test]
 	[Description("A non-zero exit code is reported, and a successful cleanup produces no diagnostics at all.")]
 	public async Task BoundedCleanup_Should_Report_Only_A_Failing_Exit_Code() {
+		// Arrange
+		TimeSpan timeout = TimeSpan.FromSeconds(5);
+
 		// Act
 		string? failed = await BoundedCleanup.RunAsync(
 			_ => Task.FromResult(1),
-			TimeSpan.FromSeconds(5),
+			timeout,
 			"Deleting the fixture package");
 		string? succeeded = await BoundedCleanup.RunAsync(
 			_ => Task.FromResult(0),
-			TimeSpan.FromSeconds(5),
+			timeout,
 			"Deleting the fixture package");
 
 		// Assert

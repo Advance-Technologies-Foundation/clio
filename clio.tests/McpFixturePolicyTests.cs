@@ -1,9 +1,10 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using Clio.Mcp.E2E;
+using Clio.Mcp.E2E.Support;
 using Clio.Tests.Command;
 using Clio.Tests.Command.ProcessModel;
 using Clio.Tests.Common;
@@ -31,7 +32,6 @@ public sealed class McpFixturePolicyTests {
 	/// </summary>
 	private static readonly string RepositoryRoot =
 		Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
-
 
 	[Test]
 	[Description("Verifies that every fixture containing Sandbox tests is class-level NonParallelizable.")]
@@ -241,32 +241,74 @@ public sealed class McpFixturePolicyTests {
 	}
 
 	[Test]
-	[Description("Proves the DB-first data-binding arrange consults the destructive opt-in before it resolves the environment or runs any clio command, so a hand-selected fixture cannot mutate the stand while the opt-in is false.")]
-	public void DataBindingDbArrange_ShouldCheckDestructiveOptIn_BeforeItRunsAnyCommand() {
+	[Description("Proves the DB-first data-binding arrange wires the real destructive-opt-in decision and NUnit's ignore into the gate, so the injectable seam cannot be wired to something that always authorizes.")]
+	public void DataBindingDbArrange_ShouldWireTheRealAuthorizationDecision() {
+		// Arrange
+		MethodInfo? productionSteps = typeof(DataBindingDbFixtureBase)
+			.GetMethod("ProductionArrangeSteps", BindingFlags.Static | BindingFlags.NonPublic);
+		productionSteps.Should().NotBeNull(
+			because: "the arrange step reaches the stand only through the gate's seam; a rename must fail here rather than leave this guard pinning nothing");
+
+		// Act
+		DestructiveArrangeSteps steps = (DestructiveArrangeSteps)productionSteps!.Invoke(null, null)!;
+
+		// Assert
+		steps.IsAuthorized.Method.Should().BeSameAs(
+			typeof(DestructiveStandAuthorization).GetMethod(nameof(DestructiveStandAuthorization.IsAuthorized)),
+			because: "the seam must carry the real decision; wiring it to a delegate that always returns true would let a hand-selected fixture mutate the stand with the opt-in off");
+		Assert.Throws<IgnoreException>(() => steps.Deny("denied"),
+			"the deny hook must still end the run the way NUnit skips a test, not return and let the caller continue");
+		//The resolvers are deliberately not invoked here: one builds clio, the other pings the stand.
+	}
+
+	[Test]
+	[Description("Keeps the DB-first data-binding arrange free of any stand-touching call of its own, so everything it does to a Creatio stand goes through the destructive-opt-in gate whose ordering McpDestructiveArrangeGateTests proves.")]
+	public void DataBindingDbArrange_ShouldDelegateEveryStandTouchToTheGate() {
 		// Arrange
 		string fixtureSourcePath = Path.Combine(
 			RepositoryRoot, "clio.mcp.e2e", "DataBindingDbFixtureBase.cs");
 		File.Exists(fixtureSourcePath).Should().BeTrue(
 			because: $"this guard reads the arrange step from {fixtureSourcePath}; a moved file must fail here rather than pass on a missing source");
-		string source = File.ReadAllText(fixtureSourcePath);
 
 		// Act
-		int authorizationIndex = source.IndexOf(
-			nameof(DestructiveStandAuthorization) + "." + nameof(DestructiveStandAuthorization.IsAuthorized),
-			StringComparison.Ordinal);
-		int[] standTouchingIndexes = [
-			source.IndexOf("ResolveReachableEnvironmentAsync(settings)", StringComparison.Ordinal),
-			source.IndexOf("ClioCliCommandRunner.RunAndAssertSuccessAsync", StringComparison.Ordinal),
-			source.IndexOf("ResolveFreshClioProcessPath", StringComparison.Ordinal)
+		string arrangeBody = ReadMethodBodyWithoutComments(fixtureSourcePath,
+			"private protected async Task<DataBindingDbArrangeContext> ArrangeAsync(bool requireEnvironment) {");
+		string[] standTouchingCalls = [
+			"ResolveReachableEnvironmentAsync",
+			"ResolveFreshClioProcessPath",
+			"ClioCliCommandRunner."
 		];
 
 		// Assert
-		authorizationIndex.Should().BeGreaterThan(-1,
-			because: "the arrange step must consult DestructiveStandAuthorization.IsAuthorized; without it a hand-selected fixture pushes a package and publishes a schema on the configured stand with the opt-in off");
-		standTouchingIndexes.Should().OnlyContain(index => index > -1,
-			because: "this guard pins the order against the calls that actually reach the stand; if they were renamed the guard would silently pin nothing");
-		standTouchingIndexes.Should().OnlyContain(index => index > authorizationIndex,
-			because: "the opt-in has to be checked before the environment is resolved and before the first clio process is spawned, otherwise the guard runs after the damage");
+		arrangeBody.Should().Contain("DestructiveArrangeGate.RunAsync(",
+			because: "the arrange step must hand its work to the gate; without that call the gate's own tests guard a seam nobody uses");
+		standTouchingCalls.Should().OnlyContain(call => !arrangeBody.Contains(call, StringComparison.Ordinal),
+			because: "a stand-touching call made by the arrange step itself would bypass the opt-in, and unlike the previous guard this one reads the method body with its comments stripped, so a comment can no longer satisfy it");
+	}
+
+	/// <summary>
+	/// Returns the body of the method whose declaration line is <paramref name="declaration"/>, with
+	/// <c>//</c> comment lines removed, so a guard over it cannot be satisfied by prose.
+	/// </summary>
+	private static string ReadMethodBodyWithoutComments(string sourcePath, string declaration) {
+		string[] lines = File.ReadAllLines(sourcePath);
+		int declarationIndex = Array.FindIndex(lines, line => line.Trim() == declaration);
+		declarationIndex.Should().BeGreaterThan(-1,
+			because: $"the guard locates the method by its declaration '{declaration}'; a changed signature must fail here rather than scan nothing");
+
+		List<string> body = [];
+		int depth = 0;
+		for (int index = declarationIndex; index < lines.Length; index++) {
+			string line = lines[index];
+			depth += line.Count(character => character == '{') - line.Count(character => character == '}');
+			if (index > declarationIndex && !line.TrimStart().StartsWith("//", StringComparison.Ordinal)) {
+				body.Add(line);
+			}
+			if (index > declarationIndex && depth == 0) {
+				break;
+			}
+		}
+		return string.Join(Environment.NewLine, body);
 	}
 
 	private static bool HasCategory(IEnumerable<CategoryAttribute> attributes, string category) =>
