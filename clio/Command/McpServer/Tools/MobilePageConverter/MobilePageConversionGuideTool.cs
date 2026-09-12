@@ -194,7 +194,7 @@ public sealed class MobilePageConversionGuideTool {
 
 		// Read-only probe: is this page a section, and what would registering it for mobile take?
 		// Best-effort — never blocks the guide if the environment can't be queried.
-		bool isFormPage = IsFormPage(args.SchemaName, pageResponse.Page?.ParentSchemaName);
+		bool isFormPage = IsFormPage(args.SchemaName, pageResponse.Page?.ParentSchemaName, templateRule);
 		SectionRegistrationInfo sectionRegistration = MobileSectionRegistrationProbe.Probe(
 			_commandResolver, args.EnvironmentName, args.Uri, args.Login, args.Password,
 			pageResponse.Page?.SchemaUId, isFormPage);
@@ -428,25 +428,36 @@ public sealed class MobilePageConversionGuideTool {
 	/// <summary>
 	/// Resolves the effective web template of the source page — the schema whose chrome must be subtracted
 	/// and whose mobile counterpart is recommended. Normally this is the page's direct parent
-	/// (<c>ParentSchemaName</c>). For a REPLACING schema layered over a same-named base, the direct parent
-	/// equals the page's own name (Creatio keeps the same <c>Name</c> across a replacement stack); trusting it
-	/// would load the page as its own template baseline and subtract the whole layout against itself. In that
-	/// case (or when the parent is missing) this climbs the inheritance chain (<see cref="PageBundleInfo.Schemas"/>,
+	/// (<c>ParentSchemaName</c>), when that parent itself matches a known template rule. For a REPLACING schema
+	/// layered over a same-named base, the direct parent equals the page's own name (Creatio keeps the same
+	/// <c>Name</c> across a replacement stack); trusting it would load the page as its own template baseline and
+	/// subtract the whole layout against itself. The same problem occurs one level higher when the direct parent
+	/// is itself an INTERMEDIATE template that carries no template rule of its own (e.g.
+	/// <c>PageWithTabsAndProgressBarTemplate</c>, which adds its own chrome — a DCM stage progress bar — on top of
+	/// <c>PageWithTabsFreedomTemplate</c> but has no mobile mapping): trusting it as the baseline would subtract
+	/// that intermediate template's own additions as if they were chrome the mobile template already covers, even
+	/// though the mobile side never saw them. In any of these cases (missing parent, self-referential parent, or
+	/// a parent with no matching rule) this climbs the inheritance chain (<see cref="PageBundleInfo.Schemas"/>,
 	/// ordered HEAD→ROOT), skips every same-named replacing layer, and returns the first ancestor that matches a
 	/// known template rule (e.g. <c>PageWithTabsFreedomTemplate</c>) — falling back to the first differently-named
-	/// ancestor, then to the raw parent name. Pages whose parent already differs from their own name are returned
-	/// verbatim, so non-replacing pages behave exactly as before.
+	/// ancestor, then to the raw parent name. A page whose direct parent already matches a rule is returned
+	/// verbatim, so the common (non-replacing, non-layered) case behaves exactly as before.
 	/// </summary>
 	internal static string ResolveEffectiveTemplateName(
 		PageMetadataInfo page, PageBundleInfo bundle, WebToMobilePageConversionRules rules) {
 		string own = page?.SchemaName;
 		string parent = page?.ParentSchemaName;
-		// Fast path: a normal (non-replacing) page — the parent is a distinct template/base. Unchanged behavior.
+		// Fast path: the direct parent is distinct from the page's own name AND already matches a known template
+		// rule — trust it verbatim, unchanged behavior for the common case. A parent that does NOT match a rule
+		// falls through to the climb below instead of being trusted blindly (that used to short-circuit here,
+		// which is what silently swallowed an intermediate template's own chrome as if it were baseline).
 		if (!string.IsNullOrWhiteSpace(parent)
-			&& !string.Equals(parent, own, StringComparison.OrdinalIgnoreCase)) {
+			&& !string.Equals(parent, own, StringComparison.OrdinalIgnoreCase)
+			&& ResolveTemplateRule(rules, parent) is not null) {
 			return parent;
 		}
-		// Replacing / self-referential (or missing parent): climb the chain past same-named layers.
+		// Replacing / self-referential parent, missing parent, or an unmapped intermediate template: climb the
+		// chain past same-named replacing layers AND past unmapped intermediate templates alike.
 		if (bundle?.Schemas is { Count: > 0 }) {
 			string firstDistinct = null;
 			foreach (PageSchemaChainEntry entry in bundle.Schemas) {
@@ -598,13 +609,20 @@ public sealed class MobilePageConversionGuideTool {
 	}
 
 	/// <summary>
-	/// Best-effort guess of whether the source page is an edit/form page (vs a list/section page),
-	/// from the schema-name suffix or its parent template. Used only to tailor the read-only section
-	/// registration advice (the default mobile edit page is a manual step).
+	/// Whether the source page is an edit/form page (vs a list/section page). Used only to tailor the
+	/// read-only section-registration advice (the default mobile edit page is a manual step).
+	/// The schema-name suffix is checked first (a page literally named <c>*FormPage</c> is a form
+	/// regardless of what its template rule says); otherwise the resolved <paramref name="templateRule"/>'s
+	/// <see cref="TemplateMappingRule.IsFormPage"/> is authoritative when the page's effective template
+	/// matched a cataloged rule. The hardcoded template-name check is a best-effort fallback for when no
+	/// rule matched at all (an uncataloged custom template, or the rules file failed to load).
 	/// </summary>
-	internal static bool IsFormPage(string schemaName, string parentTemplate) {
+	internal static bool IsFormPage(string schemaName, string parentTemplate, TemplateMappingRule templateRule) {
 		if (!string.IsNullOrWhiteSpace(schemaName) && schemaName.EndsWith("FormPage", StringComparison.OrdinalIgnoreCase)) {
 			return true;
+		}
+		if (templateRule is not null) {
+			return templateRule.IsFormPage;
 		}
 		return parentTemplate is "PageWithTabsFreedomTemplate" or "BasePageFreedomTemplate" or "BasePageTemplate";
 	}

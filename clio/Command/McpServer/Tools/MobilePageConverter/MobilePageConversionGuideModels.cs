@@ -182,6 +182,15 @@ public sealed class ElementMapEntry {
 	public CaptionResource CaptionResource { get; init; }
 
 	/// <summary>
+	/// True for an <c>insert</c> DECLARED by the template rule's <c>declaredElements</c> (no web counterpart, so
+	/// <see cref="WebName"/> is null). Converter bookkeeping only — it lets the empty-container pass treat the
+	/// declared container like a converted one (removed when nothing lands in it), which a synthesized tab-body
+	/// layer must never be. Not part of the guide contract; the entry's <c>reason</c> says where it came from.
+	/// </summary>
+	[JsonIgnore]
+	public bool DeclaredByRule { get; init; }
+
+	/// <summary>
 	/// The prebuilt, ready-to-paste mobile component <c>values</c>. For an <c>insert</c> it carries the
 	/// component <c>type</c> and EVERY source property the mobile component supports (per the mobile
 	/// registry) — copied verbatim, with only mobile-unsupported properties pruned; paste it as the inserted

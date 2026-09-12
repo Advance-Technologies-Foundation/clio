@@ -23,8 +23,28 @@
       ]
     },
     {
+      "web": "ListPageV2Template",
+      "mobile": "BaseMobileListTemplate",
+      "containers": [
+        { "web": "MainContainer", "mobile": "MainContainer" },
+        { "web": "LeftFilterContainer", "mobile": "HeaderContainer" },
+        { "web": "RightFilterContainer", "mobile": "HeaderContainer" }
+      ],
+      "components": [
+        { "web": "DataTable", "mobile": "List", "note": "Primary list component." },
+        {
+          "web": "FolderTree",
+          "mobile": "FolderTreeActions",
+          "mobileType": "crt.FolderTreeActions",
+          "carryProperties": ["sourceSchemaName", "rootSchemaName"],
+          "note": "Folder tree. The mobile template (BaseMobileListTemplate) already provides the FolderTreeActions element; carry the web folder-schema binding (sourceSchemaName + rootSchemaName) onto it by merge-by-name so the mobile folder tree resolves the section entity. Without this the web crt.FolderTree node (inherited template chrome) is pruned and rootSchemaName is lost."
+        }
+      ]
+    },
+    {
       "web": "PageWithTabsFreedomTemplate",
       "mobile": "MobilePageWithTabsFreedomTemplate",
+      "isFormPage": true,
       "note": "Tabbed record page (Tabs + Feed + Attachments). Preferred target for web tabbed record pages.",
       "containers": [
         { "web": "Tabs", "mobile": "Tabs" },
@@ -43,8 +63,32 @@
       ]
     },
     {
+      "web": "PageWithRightAreaAndTabsFreedomTemplate",
+      "mobile": "BaseMobilePageTemplate",
+      "isFormPage": true,
+      "declaredElements": [
+        {
+          "name": "RightPanelTab",
+          "type": "crt.TabContainer",
+          "parentName": "Tabs",
+          "propertyName": "items",
+          "index": 1,
+          "values": { "iconPosition": "only-text" },
+          "captionResource": { "key": "RightPanelTab_caption", "value": "Details" }
+        }
+      ],
+      "containers": [
+        { "web": "MainContainer", "mobile": "MainContainer" },
+        { "web": "CardContentWrapper", "mobile": "MainContainer" },
+        { "web": "Tabs", "mobile": "Tabs" },
+        { "web": "GeneralInfoTab", "mobile": "GeneralInfoTab" },
+        { "web": "RightAreaProfileContainer", "mobile": "RightPanelTab" }
+      ]
+    },
+    {
       "web": "BasePageFreedomTemplate",
       "mobile": "BaseMobilePageTemplate",
+      "isFormPage": true,
       "note": "Base record page (non-tabbed). Web BasePageFreedomTemplate maps to the mobile base record page.",
       "containers": [
         { "web": "MainContainer", "mobile": "MainContainer" },
@@ -62,6 +106,7 @@
     {
       "web": "BasePageTemplate",
       "mobile": "BaseMobilePageTemplate",
+      "isFormPage": true,
       "note": "Base page template; maps to the mobile base record page. Universal fallback container is MainContainer.",
       "containers": [
         { "web": "MainContainer", "mobile": "MainContainer" }
@@ -130,6 +175,15 @@
             "visible": "{{ source.visible }}",
             "clicked": "{{ source.clicked }}"
           }
+        }
+      ]
+    },
+    {
+      "filters": [{ "type": "crt.TabPanel", "values": { "name": "Tabs" } }],
+      "viewConfigTemplates": [
+        {
+          "preserveSourceProperties": true,
+          "value": { "type": "crt.TabPanel", "scrollable": true, "bodyBackgroundColor": "transparent" }
         }
       ]
     }

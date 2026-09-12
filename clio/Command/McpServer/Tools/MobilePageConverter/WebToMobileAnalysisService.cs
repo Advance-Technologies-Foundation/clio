@@ -135,6 +135,33 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, JsonObject> mobileLayoutConfigs =
 			mobileTemplateLayoutConfigs ?? new Dictionary<string, JsonObject>(StringComparer.OrdinalIgnoreCase);
 
+		// Containers the template rule DECLARES on top of the mobile template (declaredElements). They are folded
+		// into the probed template maps so every pass sees them as template elements: a `containers` pair may
+		// name one as its mobile side (its content then walks in by merge-by-name), the hosting-parent and
+		// positional passes can classify it, and a retarget into it is not "missing". Folded ONLY when the template
+		// was actually probed: with no probe the name maps are empty, which is what switches the template-presence
+		// gates (RetargetTargetMissing / ParentProvidedByTemplate) off — seeding them with the declared names alone
+		// would switch those gates on over an otherwise empty map and drop every retarget into a real template
+		// element as absent. The probe state is captured BEFORE the fold so the created-twin gate below reads it.
+		bool templateProbeAvailable = mobileTemplateTypesByName is { Count: > 0 };
+		// The declarations are ADMITTED before the fold. One that cannot be applied is skipped here, and every pair
+		// naming it as its mobile side is removed with it (so the web content falls back to the default placement
+		// instead of merging onto, or being created under, a name that will not exist on the mobile page): a
+		// duplicate name, a type the mobile registry does not know, a parent that is neither on the probed template
+		// nor created by this conversion, or a name the source page already uses for an element of its own. Every
+		// skip is reported as one guide constraint; an incomplete entry (no name, type or parent) is not, because
+		// it cannot even be named.
+		DeclaredElementSelection declaredSelection = SelectDeclaredElements(templateRule, mobileTypes,
+			bundle.ViewConfig, map, templateComponentNames, mobileTypesByName, templateProbeAvailable);
+		IReadOnlyList<DeclaredElementRule> declaredElements = declaredSelection.Accepted;
+		IReadOnlyList<string> skippedDeclaredElements = declaredSelection.Skipped;
+		map = declaredSelection.ContainerNameMap;
+		if (templateProbeAvailable && declaredElements.Count > 0) {
+			mobileTypesByName = WithDeclaredElements(mobileTypesByName, declaredElements, e => e.Type);
+			mobileContainerParents = WithDeclaredElements(mobileContainerParents, declaredElements, e => e.ParentName);
+			mobileLayoutConfigs = WithDeclaredElementLayouts(mobileLayoutConfigs, declaredElements);
+		}
+
 		// 0. Filter out the web template's own components at read time. The merged tree carries the
 		//    chrome the source page inherits from its web template (e.g. PageWithTabsFreedomTemplate:
 		//    MainHeader / TitleContainer / BackButton / PageTitle / …) — the mobile template already
@@ -217,6 +244,7 @@ public static class WebToMobileAnalysisService {
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns,
 			positionalParentByAnchor, positionalAnchorByWebAnchor,
 			mobileTypesByName, webBaselineNodes, webTemplateResources,
+			templateProbeAvailable, declaredElements,
 			actionTargets, unresolvedTargets);
 
 		// Removes components an excludedComponents rule bans from a host (type-agnostic — which
@@ -418,6 +446,7 @@ public static class WebToMobileAnalysisService {
 				exclusionSearchTruncated: excludedDiagnostics.DepthBudgetTruncated,
 				discardedExclusionFilters: excludedDiagnostics.DiscardedFilterCount,
 				skippedOverrideRules: componentPropertyOverrides.SkippedRulesWithoutFilters,
+				skippedDeclaredElements: skippedDeclaredElements,
 				retargetParentsOnTemplate: elementMap
 					.Where(e => e.ParentExistsOnTemplate == true && !string.IsNullOrEmpty(e.ParentName))
 					.Select(e => e.ParentName)
@@ -1837,6 +1866,7 @@ public static class WebToMobileAnalysisService {
 		bool exclusionSearchTruncated = false, int discardedExclusionFilters = 0,
 		int skippedOverrideRules = 0, bool hasExcludedComponents = false,
 		IReadOnlyList<string> retargetParentsOnTemplate = null,
+		IReadOnlyList<string> skippedDeclaredElements = null,
 		IReadOnlyList<UnresolvedTargetRequest> unresolvedTargetRequests = null) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
@@ -1946,6 +1976,13 @@ public static class WebToMobileAnalysisService {
 				"paste mobileValues verbatim — do NOT reparent, reorder or re-place anything yourself, and do NOT " +
 				"add an Area of your own. The synthesized containers have no web counterpart, so they carry no " +
 				"webName; tabs provided by the mobile template (merge) get no layers and must stay untouched.");
+		}
+		if (skippedDeclaredElements is { Count: > 0 }) {
+			constraints.Add(
+				"The template rule declares element(s) (declaredElements) that could NOT be applied, so they were skipped "
+				+ "and the containers pairs targeting them fell back to the default placement: "
+				+ string.Join("; ", skippedDeclaredElements)
+				+ ". Fix the rule's declaredElements entry (or rename the page element).");
 		}
 
 		// One constraint per report group the rules declared, in the wording the RULE carries — so a new
@@ -2070,6 +2107,7 @@ public static class WebToMobileAnalysisService {
 		JObject WebBaselineResources,
 		IReadOnlySet<string> ScopeContainerNames,
 		IReadOnlySet<string> ContentContainerTypes,
+		bool TemplateProbeAvailable,
 		IReadOnlyDictionary<string, ActionTargetResolution> ActionTargets,
 		List<UnresolvedTargetRequest> UnresolvedTargetRequests);
 
@@ -2113,6 +2151,8 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> mobileTypesByName,
 		IReadOnlyDictionary<string, JObject> webBaselineNodes,
 		JObject webBaselineResources,
+		bool templateProbeAvailable,
+		IReadOnlyList<DeclaredElementRule> declaredElements,
 		IReadOnlyDictionary<string, ActionTargetResolution> actionTargets,
 		List<UnresolvedTargetRequest> unresolvedTargetRequests) {
 		var ctx = new ElementMapContext(map,
@@ -2128,9 +2168,260 @@ public static class WebToMobileAnalysisService {
 			webBaselineResources,
 			CollectScopeContainerNames(rules),
 			ContentContainerTypesOf(rules),
+			templateProbeAvailable,
 			actionTargets, unresolvedTargetRequests);
 		WalkElements(ctx, tree, mobileParentName: null);
+		EmitDeclaredElements(ctx, declaredElements);
 		return ctx.Out;
+	}
+
+	/// <summary>
+	/// The outcome of admitting a template rule's <c>declaredElements</c>: the entries the conversion applies, the
+	/// one-line reasons for every entry it skipped (in the wording the guide constraint carries) and the
+	/// <c>containers</c> map with the pairs that targeted a skipped name removed.
+	/// </summary>
+	private sealed record DeclaredElementSelection(
+		IReadOnlyList<DeclaredElementRule> Accepted,
+		IReadOnlyList<string> Skipped,
+		IReadOnlyDictionary<string, string> ContainerNameMap);
+
+	/// <summary>
+	/// Admits the rule's <c>declaredElements</c>. An entry is skipped, with a reason, when: it repeats a name an
+	/// earlier entry declared (the earlier one stands); the PROBED mobile template already has an element under
+	/// this name (the template element wins — the rule declares only what the template lacks, it never redefines
+	/// what the template has; decided only when the template was probed, for the same reason as the parent check
+	/// below) — this is the same precedence <see cref="WithDeclaredElements"/> documents for its own maps, enforced
+	/// here so a real template element is never shadowed by a stale or mistaken declaration at emission time; its
+	/// type is not a registered mobile component (nothing downstream would catch the typo — the guide would tell
+	/// the caller to insert a component that does not exist); its parent is neither an element of the PROBED mobile
+	/// template, nor another admitted declaration, nor an element this conversion creates (a <c>containers</c>
+	/// pair's mobile side, or a page-authored element converted under its own name) — decided only when the
+	/// template was probed, since without the probe the template's names are unknown and every other
+	/// template-presence gate is off too; or the source page already uses its name for an element of its own (a
+	/// same-named web element that a pair maps onto the declared one is not a conflict: the pair says the two are
+	/// one element, and the web one is walked as a twin). A skipped parent cascades: a declaration whose parent was
+	/// skipped is skipped with it. An entry missing its name, type or parent is dropped silently, as before — it
+	/// cannot be named in a report.
+	/// </summary>
+	private static DeclaredElementSelection SelectDeclaredElements(TemplateMappingRule rule,
+		IReadOnlySet<string> mobileTypes, JsonArray pageViewConfig, IReadOnlyDictionary<string, string> containerNameMap,
+		IReadOnlySet<string> webTemplateComponentNames, IReadOnlyDictionary<string, string> probedTypesByName,
+		bool templateProbeAvailable) {
+		var accepted = new List<DeclaredElementRule>();
+		var skipped = new List<string>();
+		// Names removed outright (not the duplicate case, whose first declaration stands): their pairs go too.
+		var removedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		HashSet<string> pageNames = pageViewConfig is null
+			? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+			: CollectComponentNames(pageViewConfig);
+		foreach (DeclaredElementRule declared in rule?.DeclaredElements ?? []) {
+			if (declared is null
+				|| string.IsNullOrWhiteSpace(declared.Name)
+				|| string.IsNullOrWhiteSpace(declared.Type)
+				|| string.IsNullOrWhiteSpace(declared.ParentName)) {
+				continue;
+			}
+			if (!seen.Add(declared.Name)) {
+				skipped.Add($"{declared.Name}: declared more than once (the earlier declaration stands)");
+				continue;
+			}
+			if (templateProbeAvailable && probedTypesByName.ContainsKey(declared.Name)) {
+				skipped.Add($"{declared.Name}: the probed mobile template already has an element with this name "
+					+ "(the template element wins; the rule declares only what the template lacks)");
+				removedNames.Add(declared.Name);
+				continue;
+			}
+			if (!mobileTypes.Contains(declared.Type)) {
+				skipped.Add($"{declared.Name}: type '{declared.Type}' is not a registered mobile component");
+				removedNames.Add(declared.Name);
+				continue;
+			}
+			bool pairedOntoItself = containerNameMap.TryGetValue(declared.Name, out string mappedTo)
+				&& string.Equals(mappedTo, declared.Name, StringComparison.OrdinalIgnoreCase);
+			if (pageNames.Contains(declared.Name) && !pairedOntoItself) {
+				skipped.Add($"{declared.Name}: the source page already uses this name for an element of its own");
+				removedNames.Add(declared.Name);
+				continue;
+			}
+			accepted.Add(declared);
+		}
+		if (templateProbeAvailable) {
+			// Page-authored elements convert under their own names; a web-template element does not (it is pruned
+			// as chrome or merged through its pair), and a paired element exists under its MOBILE name only.
+			List<string> ownNamedPageElements = pageNames
+				.Where(n => !containerNameMap.ContainsKey(n)
+					&& !(webTemplateComponentNames?.Contains(n) ?? false))
+				.ToList();
+			bool changed = true;
+			while (changed) {
+				changed = false;
+				var known = new HashSet<string>(probedTypesByName.Keys, StringComparer.OrdinalIgnoreCase);
+				known.UnionWith(ownNamedPageElements);
+				known.UnionWith(accepted.Select(a => a.Name));
+				known.UnionWith(containerNameMap.Values.Where(v => !removedNames.Contains(v)));
+				for (int i = accepted.Count - 1; i >= 0; i--) {
+					DeclaredElementRule declared = accepted[i];
+					if (known.Contains(declared.ParentName)
+						&& !string.Equals(declared.ParentName, declared.Name, StringComparison.OrdinalIgnoreCase)) {
+						continue;
+					}
+					skipped.Add($"{declared.Name}: parent '{declared.ParentName}' is neither a mobile template element nor "
+						+ "an element this conversion creates");
+					removedNames.Add(declared.Name);
+					accepted.RemoveAt(i);
+					changed = true;
+				}
+			}
+		}
+		IReadOnlyDictionary<string, string> map = removedNames.Count == 0
+			? containerNameMap
+			: containerNameMap.Where(kv => !removedNames.Contains(kv.Value))
+				.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+		return new DeclaredElementSelection(accepted, skipped, map);
+	}
+
+	/// <summary>
+	/// Copies a probed name → value map and adds one entry per declared element (the value taken by
+	/// <paramref name="valueOf"/>: its type, or its parent). A template element of the same name wins — the rule
+	/// declares what the template LACKS, it never redefines what the template has.
+	/// </summary>
+	private static IReadOnlyDictionary<string, string> WithDeclaredElements(
+		IReadOnlyDictionary<string, string> probed, IReadOnlyList<DeclaredElementRule> extras,
+		Func<DeclaredElementRule, string> valueOf) {
+		var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		foreach (KeyValuePair<string, string> kv in probed ?? new Dictionary<string, string>()) {
+			result[kv.Key] = kv.Value;
+		}
+		foreach (DeclaredElementRule extra in extras) {
+			result.TryAdd(extra.Name, valueOf(extra));
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Copies the probed name → layoutConfig map and adds the placement a declared element carries in its
+	/// values, so a positional (<c>:top</c> / <c>:bottom</c>) rule anchored on the declared container finds the
+	/// anchor row it needs. A declared container without a layoutConfig adds nothing.
+	/// </summary>
+	private static IReadOnlyDictionary<string, JsonObject> WithDeclaredElementLayouts(
+		IReadOnlyDictionary<string, JsonObject> probed, IReadOnlyList<DeclaredElementRule> extras) {
+		var result = new Dictionary<string, JsonObject>(StringComparer.OrdinalIgnoreCase);
+		foreach (KeyValuePair<string, JsonObject> kv in probed ?? new Dictionary<string, JsonObject>()) {
+			result[kv.Key] = kv.Value;
+		}
+		foreach (DeclaredElementRule extra in extras) {
+			if (extra.Values is not null
+				&& extra.Values.TryGetValue("layoutConfig", out JsonElement layout)
+				&& layout.ValueKind == JsonValueKind.Object
+				&& JsonNode.Parse(layout.GetRawText()) is JsonObject placement) {
+				result.TryAdd(extra.Name, placement);
+			}
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Emits the rule's declared elements — any mobile component or container, nothing here is
+	/// type-specific — as <c>insert</c> entries (no web counterpart; name conflicts with the page were already
+	/// removed by <see cref="SelectDeclaredElements"/>). Each entry is placed RIGHT AFTER its parent's own entry
+	/// when the parent is an element the conversion itself creates (e.g. the web tab strip converted because the
+	/// mobile template has none), so applying the map in order always creates the parent first; a parent the
+	/// template provides needs no such ordering and the entry goes to the front of the map, ahead of the content
+	/// that walks into it. Content mapped onto a declared element by a <c>containers</c> pair is walked as its
+	/// children (merge-by-name), so the entry must precede that content — both placements satisfy that.
+	/// <paramref name="extras"/> is reordered PARENT-FIRST (see <see cref="OrderDeclaredElementsParentFirst"/>)
+	/// before emission, so a declaration whose parent is another declaration of the same rule is emitted correctly
+	/// regardless of which one the rules file lists first.
+	/// </summary>
+	private static void EmitDeclaredElements(ElementMapContext ctx, IReadOnlyList<DeclaredElementRule> extras) {
+		extras = OrderDeclaredElementsParentFirst(extras);
+		int frontInsertAt = 0;
+		foreach (DeclaredElementRule extra in extras) {
+			var values = new JsonObject { ["type"] = extra.Type };
+			foreach (KeyValuePair<string, JsonElement> pair in extra.Values ?? new Dictionary<string, JsonElement>()) {
+				if (string.Equals(pair.Key, "type", StringComparison.OrdinalIgnoreCase)
+					|| string.Equals(pair.Key, ItemsPropertyName, StringComparison.OrdinalIgnoreCase)) {
+					continue; // the type is authoritative above; a child collection is declared by InitializeContainerChildSlots
+				}
+				values[pair.Key] = JsonNode.Parse(pair.Value.GetRawText());
+			}
+			CaptionResource caption = null;
+			if (extra.CaptionResource is { } cap && !string.IsNullOrWhiteSpace(cap.Key)) {
+				caption = new CaptionResource { Key = cap.Key, SourceValue = cap.Value };
+				string captionProperty = string.IsNullOrWhiteSpace(cap.Property) ? "caption" : cap.Property;
+				values[captionProperty] = $"#ResourceString({cap.Key})#";
+			}
+			// The web elements a containers pair maps onto this declaration, if any — a declared element may just as
+			// well be a leaf or a container nothing is mapped into, and the reason must not claim content it has none of.
+			List<string> receivingPairs = ctx.Map
+				.Where(kv => string.Equals(kv.Value, extra.Name, StringComparison.OrdinalIgnoreCase))
+				.Select(kv => kv.Key)
+				.OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
+				.ToList();
+			var entry = new ElementMapEntry {
+				Operation = "insert",
+				MobileName = extra.Name,
+				MobileType = extra.Type,
+				ParentName = extra.ParentName,
+				PropertyName = string.IsNullOrWhiteSpace(extra.PropertyName) ? ItemsPropertyName : extra.PropertyName,
+				Index = extra.Index,
+				CaptionResource = caption,
+				MobileValues = values,
+				DeclaredByRule = true,
+				Reason = $"declared by the template rule (declaredElements; no web counterpart) — a {extra.Type} the mobile "
+					+ $"template lacks, inserted into {extra.ParentName}"
+					+ (receivingPairs.Count > 0
+						? $"; the containers pair(s) {string.Join(", ", receivingPairs)} name it as their mobile side, so "
+							+ "their web content walks into it"
+						: "; no containers pair targets it, so it carries only its declared values")
+			};
+			int parentAt = ctx.Out.FindIndex(e =>
+				string.Equals(e.Operation, "insert", StringComparison.Ordinal)
+				&& string.Equals(e.MobileName, extra.ParentName, StringComparison.OrdinalIgnoreCase));
+			if (parentAt >= 0) {
+				ctx.Out.Insert(parentAt + 1, entry);
+			} else {
+				ctx.Out.Insert(frontInsertAt++, entry);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Reorders <paramref name="extras"/> so a declaration whose <c>parentName</c> is another declaration's
+	/// <c>name</c> (in the SAME rule) always comes after that parent, regardless of which one the rules file lists
+	/// first — <see cref="EmitDeclaredElements"/> processes the list in order and looks up the parent's entry
+	/// among what it has ALREADY emitted, so a forward reference (a child declared before its declared-element
+	/// parent) would otherwise find no parent entry yet and be misclassified as parented by the template. A
+	/// declaration whose parent is NOT another declaration of this rule (the common case — the template, a
+	/// converter-created element, or a page element) is left in its original relative position; a mutual/cyclic
+	/// parent reference (a rules-file error outside this method's remit) is broken deterministically by emitting
+	/// each name at most once, in first-encountered order, rather than looping forever.
+	/// </summary>
+	private static IReadOnlyList<DeclaredElementRule> OrderDeclaredElementsParentFirst(
+		IReadOnlyList<DeclaredElementRule> extras) {
+		if (extras.Count < 2) {
+			return extras;
+		}
+		Dictionary<string, DeclaredElementRule> byName = extras
+			.GroupBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
+			.ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+		var ordered = new List<DeclaredElementRule>(extras.Count);
+		var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		void Visit(DeclaredElementRule extra) {
+			if (!visited.Add(extra.Name)) {
+				return; // already emitted earlier in this pass, or a cycle unwinding back onto itself — stop either way
+			}
+			if (byName.TryGetValue(extra.ParentName, out DeclaredElementRule parent)
+				&& !string.Equals(parent.Name, extra.Name, StringComparison.OrdinalIgnoreCase)) {
+				Visit(parent);
+			}
+			ordered.Add(extra);
+		}
+		foreach (DeclaredElementRule extra in extras) {
+			Visit(extra);
+		}
+		return ordered;
 	}
 
 	private static void WalkElements(ElementMapContext ctx, JArray nodes, string mobileParentName,
@@ -2263,7 +2554,22 @@ public static class WebToMobileAnalysisService {
 
 			// 1. merge — element is a template twin (provided by the mobile template). Recurse so its
 			//    children get their own entries (parent = the template element).
-			if (ctx.Map.TryGetValue(name, out string twinMobileName)) {
+			//    EXCEPT a container pair whose mobile side the PROBED mobile template does NOT have (and no
+			//    declaredElements entry declares): the web element is then CONVERTED under the mobile name — kept
+			//    through chrome pruning by the pair, inserted like page content below, children walked into it —
+			//    instead of becoming a merge onto an element that does not exist. This is how a web tab strip the
+			//    base mobile record template lacks (Tabs -> Tabs on PageWithRightAreaAndTabsFreedomTemplate) reaches
+			//    the mobile page. Decided ONLY when the template was probed; with no probe the pair stays a merge,
+			//    exactly as before, so an unreadable template never silently turns twins into inserts.
+			//    Container or leaf alike: a template tab whose content grid was pruned as chrome arrives here with no
+			//    children and takes the leaf path, and it must still be created rather than merged onto nothing.
+			string createdTwinName = ctx.Map.TryGetValue(name, out string mappedMobileName)
+				&& ctx.TemplateProbeAvailable
+				&& !ctx.MobileTypesByName.ContainsKey(mappedMobileName)
+					? mappedMobileName
+					: null;
+			string mobileInsertName = createdTwinName ?? name;
+			if (createdTwinName is null && ctx.Map.TryGetValue(name, out string twinMobileName)) {
 				// The twin's type is the MOBILE element's type when the mobile template is readable: a containers
 				// entry may pair elements of different types (GeneralInfoTab, a crt.TabContainer, merges onto
 				// GeneralTabContainer, a crt.GridContainer), and reporting the web type there would name a type
@@ -2432,10 +2738,10 @@ public static class WebToMobileAnalysisService {
 					containerIndex = null;
 					containerRetargeted = true;
 				}
-				JsonNode containerValues = BuildMobileValues(ctx, node, name, type, containerCaption,
+				JsonNode containerValues = BuildMobileValues(ctx, node, mobileInsertName, type, containerCaption,
 					containerParent, containerProperty, sourceAncestors);
 				ctx.Out.Add(new ElementMapEntry {
-					WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = type,
+					WebName = name, WebType = Nz(type), Operation = "insert", MobileName = mobileInsertName, MobileType = type,
 					ParentName = containerParent, PropertyName = containerProperty,
 					Index = containerIndex,
 					CaptionResource = containerCaption,
@@ -2443,20 +2749,23 @@ public static class WebToMobileAnalysisService {
 					ParentExistsOnTemplate = containerRetargeted && ParentProvidedByTemplate(ctx, containerParent)
 						? true : (bool?)null,
 					PositionalAnchor = isPositional && !containerRetargeted ? place.Anchor : null,
-					Reason = containerRetargeted
-						? $"container; retargeted by a conversion template into {containerParent}.{containerProperty}"
-						: isPositional
-							? $"container; placed {(place.Index.HasValue ? "above" : "below")} the mobile {place.Anchor} (in {place.Parent})"
-							: containerHostingNote is { Length: > 0 }
-								? $"container; mobile-supported; {containerHostingNote}"
-								: "container; mobile-supported"
+					Reason = createdTwinName is not null
+						? $"container; a containers pair maps it onto '{createdTwinName}', which the mobile template does not "
+							+ "provide — created from the web element instead of merged (its children are walked into it)"
+						: containerRetargeted
+							? $"container; retargeted by a conversion template into {containerParent}.{containerProperty}"
+							: isPositional
+								? $"container; placed {(place.Index.HasValue ? "above" : "below")} the mobile {place.Anchor} (in {place.Parent})"
+								: containerHostingNote is { Length: > 0 }
+									? $"container; mobile-supported; {containerHostingNote}"
+									: "container; mobile-supported"
 				});
 				IReadOnlyList<string> containerChildAncestors = Append(sourceAncestors, name);
 				if (items is not null) {
-					WalkElements(ctx, items, name, sourceAncestors: containerChildAncestors,
-						hostableParentName: CanHostChildrenOfType(ctx, type) ? name : hostableParentName);
+					WalkElements(ctx, items, mobileInsertName, sourceAncestors: containerChildAncestors,
+						hostableParentName: CanHostChildrenOfType(ctx, type) ? mobileInsertName : hostableParentName);
 				}
-				RecurseChildArrays(ctx, node, name, type, containerChildAncestors);
+				RecurseChildArrays(ctx, node, mobileInsertName, type, containerChildAncestors);
 				continue;
 			}
 
@@ -2530,9 +2839,12 @@ public static class WebToMobileAnalysisService {
 				leafIndex = null;
 				leafRetargeted = true;
 			}
-			JsonNode leafValues = BuildMobileValues(ctx, node, name, leafMobileType, leafCaption,
+			JsonNode leafValues = BuildMobileValues(ctx, node, mobileInsertName, leafMobileType, leafCaption,
 				leafParent, leafProperty, sourceAncestors);
-			string leafReason = leafRetargeted
+			string leafReason = createdTwinName is not null
+				? $"a containers pair maps it onto '{createdTwinName}', which the mobile template does not provide — created "
+					+ "from the web element instead of merged (it arrived without children, so it is placed like a leaf)"
+				: leafRetargeted
 				? $"field/leaf; retargeted by a conversion template into {leafParent}.{leafProperty}"
 				: isPositional
 					? $"field/leaf; placed {(place.Index.HasValue ? "above" : "below")} the mobile {place.Anchor} (in {place.Parent})"
@@ -2540,7 +2852,7 @@ public static class WebToMobileAnalysisService {
 						? $"field/leaf; mobile-supported; {leafHostingNote}"
 						: "field/leaf; mobile-supported";
 			ctx.Out.Add(new ElementMapEntry {
-				WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = leafMobileType,
+				WebName = name, WebType = Nz(type), Operation = "insert", MobileName = mobileInsertName, MobileType = leafMobileType,
 				ParentName = leafParent, PropertyName = leafProperty,
 				Index = leafIndex,
 				CaptionResource = leafCaption,
@@ -2555,7 +2867,7 @@ public static class WebToMobileAnalysisService {
 			// was RETARGETED by a template, its subtree is descended IN SCOPE MODE so nested actions flatten to the
 			// same target (convert-or-drop) — the single placement rule shared with the non-converting-scope path,
 			// rather than nesting them under the moved element.
-			RecurseChildArrays(ctx, node, name, leafMobileType, Append(sourceAncestors, name),
+			RecurseChildArrays(ctx, node, mobileInsertName, leafMobileType, Append(sourceAncestors, name),
 				inNonConvertingScope: leafRetargeted);
 		}
 	}
@@ -4518,8 +4830,22 @@ public static class WebToMobileAnalysisService {
 				if (!IsEmptyRemovalCandidate(entry, removable) || occupied.Contains(entry.MobileName)) {
 					continue;
 				}
-				elementMap[i] = Drop(entry.WebName, entry.WebType, EmptyContainerDropReason);
-				removed.Add(entry.WebName);
+				// A DeclaredByRule entry has no web counterpart (WebName is documented-null); folding its
+				// MobileName into the WebName slot via ?? would misreport a mobile-only element as a dropped
+				// WEB element. Route it into MobileType/MobileName instead so the guide keeps the documented
+				// contract.
+				elementMap[i] = entry.DeclaredByRule
+					? new ElementMapEntry {
+						MobileName = entry.MobileName,
+						MobileType = Nz(entry.MobileType),
+						Operation = "drop",
+						Reason = EmptyContainerDropReason
+							+ " (declared by the template rule's declaredElements; nothing was mapped into it)",
+					}
+					: Drop(entry.WebName, entry.WebType ?? entry.MobileType, EmptyContainerDropReason);
+				if (entry.WebName is { Length: > 0 }) {
+					removed.Add(entry.WebName);
+				}
 				removedMobileNames.Add(entry.MobileName);
 				anyRemovedThisRound = true;
 			}
@@ -4534,7 +4860,10 @@ public static class WebToMobileAnalysisService {
 	/// </summary>
 	private static bool IsEmptyRemovalCandidate(ElementMapEntry entry, HashSet<string> removableTypes) =>
 		string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
-		&& entry.WebName is { Length: > 0 }
+		// A converted web element, or a container the RULE declared (declaredElements) — both are receivers the
+		// converter created and both go when nothing lands in them. A synthesized tab-body layer carries neither
+		// and is never a candidate (it exists only where content already survived).
+		&& (entry.WebName is { Length: > 0 } || entry.DeclaredByRule)
 		&& entry.MobileName is { Length: > 0 }
 		&& entry.MobileType is { Length: > 0 }
 		&& removableTypes.Contains(entry.MobileType)
@@ -4557,8 +4886,11 @@ public static class WebToMobileAnalysisService {
 	/// Idempotent and a no-op when no indexed inserts exist, so the caller runs it unconditionally.
 	/// </summary>
 	private static void CompactPositionalIndexes(List<ElementMapEntry> elementMap) {
+		// A declared element (declaredElements) carries an ABSOLUTE index the rule chose — it is not a
+		// positional sibling and must not be rebased with them (AssignConvertedTabIndexes steers around it).
 		IEnumerable<IGrouping<string, ElementMapEntry>> indexedByParent = elementMap
 			.Where(e => string.Equals(e.Operation, "insert", StringComparison.Ordinal)
+				&& !e.DeclaredByRule
 				&& e.Index is not null && e.ParentName is { Length: > 0 })
 			.GroupBy(e => e.ParentName, StringComparer.OrdinalIgnoreCase);
 		foreach (IGrouping<string, ElementMapEntry> group in indexedByParent) {
@@ -4919,14 +5251,31 @@ public static class WebToMobileAnalysisService {
 	/// </para>
 	/// </summary>
 	private static void AssignConvertedTabIndexes(List<ElementMapEntry> elementMap) {
-		int next = FirstConvertedTabIndex;
+		// A Tabs strip the CONVERTER created (the mobile template had none, so the web strip was converted) owns
+		// no template general tab at position 0: its first converted tab IS the first tab, so numbering starts
+		// at 0. Positions a declared tab (declaredElements) claims for itself are skipped, so the declared
+		// index and the converted order never collide — the declared tab keeps its own index untouched.
+		bool tabsCreatedByConverter = elementMap.Any(e =>
+			string.Equals(e.Operation, "insert", StringComparison.Ordinal)
+			&& string.Equals(e.MobileName, MobileTabsElementName, StringComparison.OrdinalIgnoreCase));
+		var declaredIndexes = new HashSet<int>(elementMap
+			.Where(e => e.DeclaredByRule && e.Index is not null
+				&& string.Equals(e.Operation, "insert", StringComparison.Ordinal)
+				&& string.Equals(e.ParentName, MobileTabsElementName, StringComparison.OrdinalIgnoreCase))
+			.Select(e => e.Index.Value));
+		int next = tabsCreatedByConverter ? 0 : FirstConvertedTabIndex;
 		foreach (ElementMapEntry entry in elementMap) {
 			if (string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
+				&& !entry.DeclaredByRule
 				&& string.Equals(entry.ParentName, MobileTabsElementName, StringComparison.OrdinalIgnoreCase)
 				&& string.Equals(entry.MobileType, MobileTabComponentType, StringComparison.OrdinalIgnoreCase)) {
+				while (declaredIndexes.Contains(next)) {
+					next++;
+				}
 				entry.Index = next++;
-				entry.Reason = entry.Reason
-					+ "; explicit index keeps it before the template's Feed/Attachments tabs (they stay last)";
+				entry.Reason = entry.Reason + (tabsCreatedByConverter
+					? "; explicit index keeps the web tab order under the converter-created Tabs"
+					: "; explicit index keeps it before the template's Feed/Attachments tabs (they stay last)");
 			}
 		}
 	}

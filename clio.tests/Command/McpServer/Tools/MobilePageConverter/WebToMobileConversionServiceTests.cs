@@ -450,6 +450,52 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A schema name ending in FormPage is a form page regardless of the resolved template rule.")]
+	public void IsFormPage_SchemaNameSuffix_TakesPrecedenceOverTemplateRule() {
+		// Arrange
+		var listRule = new TemplateMappingRule { Web = "ListPageV3Template", IsFormPage = false };
+
+		// Act
+		bool result = MobilePageConversionGuideTool.IsFormPage("UsrApp_FormPage", "ListPageV3Template", listRule);
+
+		// Assert
+		result.Should().BeTrue(because: "a page literally named *FormPage is a form page regardless of its template rule");
+	}
+
+	[Test]
+	[Description("A cataloged template rule's IsFormPage flag is authoritative when the schema name carries no FormPage suffix, including a template the old hardcoded allowlist never named.")]
+	public void IsFormPage_UsesTemplateRuleFlag_WhenSchemaNameSuffixAbsent() {
+		// Arrange
+		var rightAreaRule = new TemplateMappingRule { Web = "PageWithRightAreaAndTabsFreedomTemplate", IsFormPage = true };
+		var listRule = new TemplateMappingRule { Web = "ListPageV3Template", IsFormPage = false };
+
+		// Act
+		bool rightAreaResult = MobilePageConversionGuideTool.IsFormPage(
+			"UsrApp_Details", "PageWithRightAreaAndTabsFreedomTemplate", rightAreaRule);
+		bool listResult = MobilePageConversionGuideTool.IsFormPage("UsrApp_Details", "ListPageV3Template", listRule);
+
+		// Assert
+		rightAreaResult.Should().BeTrue(
+			because: "the catalog flag recognizes this template as a form page even though the hardcoded "
+				+ "fallback list never named it");
+		listResult.Should().BeFalse(because: "the catalog flag says this template is not a form page");
+	}
+
+	[Test]
+	[Description("With no matched template rule (uncataloged custom template, or rules unavailable), IsFormPage falls back to the hardcoded template-name allowlist.")]
+	public void IsFormPage_FallsBackToHardcodedTemplateNames_WhenNoRuleMatched() {
+		// Arrange & Act
+		bool knownRootResult = MobilePageConversionGuideTool.IsFormPage(
+			"UsrApp_Details", "BasePageFreedomTemplate", templateRule: null);
+		bool unknownResult = MobilePageConversionGuideTool.IsFormPage(
+			"UsrApp_Details", "SomeCustomUncatalogedTemplate", templateRule: null);
+
+		// Assert
+		knownRootResult.Should().BeTrue(because: "the fallback allowlist still recognizes the hardcoded root template names");
+		unknownResult.Should().BeFalse(because: "an uncataloged template with no FormPage suffix matches neither the fallback allowlist nor a rule");
+	}
+
+	[Test]
 	[Description("Container detection uses the registry container flag; an unknown type falls back to a name-suffix heuristic.")]
 	public void Analyze_ContainerDetection_UsesRegistryFlagThenNameSuffix() {
 		PageBundleInfo bundle = Bundle("""
@@ -2661,6 +2707,500 @@ public sealed class WebToMobileConversionServiceTests {
 		guide.ElementMap.Should().Contain(e => e.WebName == "UsrName");
 	}
 
+	// ── Template-probe fixtures shared by the declared-elements region below ────────────────────────
+
+	/// <summary>Mobile component types from the pinned live registry snapshot, so the fixture states what the platform supports.</summary>
+	private static IReadOnlySet<string> LiveMobileComponentTypes() {
+		string path = Path.Combine(
+			TestContext.CurrentContext.TestDirectory, "Command", "McpServer", "Fixtures",
+			"MobileComponentRegistry.live-snapshot.json");
+		JsonObject registry = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+		var types = new HashSet<string>(
+			registry["components"]!.AsArray()
+				.Select(c => c!["componentType"]?.ToString())
+				.Where(t => !string.IsNullOrWhiteSpace(t))!,
+			StringComparer.OrdinalIgnoreCase);
+		types.Should().Contain(["crt.TabPanel", "crt.TabContainer", "crt.Input", "crt.Label"],
+			because: "the fixture's whole point is a converted tab strip with fields and a label inside; an unsupported type would drop for an unrelated reason");
+		return types;
+	}
+
+	/// <summary>BaseMobilePageTemplate as merged on a live environment: Scaffold → MainContainer → AreaProfileContainer, no Tabs.</summary>
+	private static JsonArray BaseMobilePageTemplateTree() => JsonNode.Parse("""
+		[
+		  { "name": "Scaffold", "type": "crt.Scaffold", "items": [
+		    { "name": "MainContainer", "type": "crt.GridContainer", "items": [
+		      { "name": "AreaProfileContainer", "type": "crt.GridContainer", "color": "primary", "items": [] }
+		    ] }
+		  ] }
+		]
+		""")!.AsArray();
+
+	// ── Template-rule declaredElements and the created-twin rule that makes them useful ────────────
+	//
+	// A web record page on PageWithRightAreaAndTabsFreedomTemplate converted to BaseMobilePageTemplate,
+	// a mobile template with NO tab strip. The bundled rule maps Tabs -> Tabs and GeneralInfoTab ->
+	// GeneralInfoTab, names the mobile template does not have, so the web strip and its general tab
+	// are CONVERTED (inserted) rather than merged onto nothing; and it declares one declared tab,
+	// RightPanelTab, that the right profile area maps onto so the right-panel content becomes a tab of
+	// its own.
+	// The shapes are hand-written from the live templates (own-body operations and merged trees
+	// captured with get-page on a live environment on 2026-09-07) rather than a full snapshot: the
+	// behaviour under test is the element-map decision per named container, which these minimal
+	// trees pin exactly.
+
+	private const string DeclaredElementsWebTemplate = "PageWithRightAreaAndTabsFreedomTemplate";
+	private const string DeclaredElementsExtraTab = "RightPanelTab";
+	private const string DeclaredElementsExtraTabCaptionKey = "RightPanelTab_caption";
+	private const string DeclaredElementsGeneralField = "UsrName";
+	private const string DeclaredElementsRightWidget = "UsrRightLabel";
+	private const string DeclaredElementsPageTab = "UsrExtraTab";
+	private const string DeclaredElementsPageTabField = "UsrExtraField";
+
+	[Test]
+	[Description("A containers pair whose mobile side the PROBED mobile template lacks (Tabs -> Tabs on BaseMobilePageTemplate) converts the web element instead of merging onto nothing: the web crt.TabPanel is inserted into MainContainer, its general tab is inserted under it at index 0, and the general-tab field lands in that tab's synthesized Area; the bundled crt.TabPanel 'Tabs' viewConfigTemplate rule stamps the created strip scrollable and transparent.")]
+	public void Analyze_ShouldConvertWebTabStrip_WhenMobileTemplateHasNoTabs() {
+		// Arrange
+		JArray page = DeclaredElementsPage(withRightWidget: true, withPageTab: false);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page);
+
+		// Assert
+		ElementMapEntry tabs = DeclaredElement(guide, "Tabs");
+		tabs.Operation.Should().Be("insert",
+			because: "the mobile template has no Tabs, so the pair cannot be a merge — the web strip is created");
+		tabs.MobileType.Should().Be("crt.TabPanel", because: "the created element keeps the web component type");
+		tabs.ParentName.Should().Be("MainContainer",
+			because: "the web strip sits in CardContentWrapper, which the rule maps onto MainContainer");
+		tabs.Reason.Should().Contain("created from the web element",
+			because: "the reason must say why a mapped container is an insert and not a merge");
+		tabs.MobileValues!["scrollable"]!.GetValue<bool>().Should().BeTrue(
+			because: "the bundled crt.TabPanel 'Tabs' viewConfigTemplate rule must stamp the created strip so it scrolls on mobile");
+		tabs.MobileValues!["bodyBackgroundColor"]!.GetValue<string>().Should().Be("transparent",
+			because: "the same bundled rule must stamp a transparent body so the strip does not paint over the Area cards its tabs wrap");
+
+		ElementMapEntry generalTab = DeclaredElement(guide, "GeneralInfoTab");
+		generalTab.Operation.Should().Be("insert", because: "the general tab is created the same way, under the created strip");
+		generalTab.ParentName.Should().Be("Tabs", because: "a tab belongs to the strip it was declared in");
+		generalTab.Index.Should().Be(0,
+			because: "a converter-created strip has no template general tab at position 0, so numbering starts at 0");
+
+		TabAreaLayerGroup generalBody = guide.TabAreaLayers.Should()
+			.ContainSingle(g => g.TabName == "GeneralInfoTab", because: "a created tab gets the designer's two-layer body like any converted tab")
+			.Subject;
+		generalBody.MovedChildren.Should().Contain(DeclaredElementsGeneralField,
+			because: "the template grid is pruned as chrome and the page's field is hoisted into the tab, then stacked in its Area");
+	}
+
+	[Test]
+	[Description("The declared tab is inserted as if the mobile template had it: right after its created parent Tabs in the element map (parent before child), at its declared index, carrying the caption token and its resource; the right profile area maps onto it as a merge twin so the right-panel widget walks into the tab and its synthesized Area; a page-authored tab is indexed AFTER the declared one, never onto the same position.")]
+	public void Analyze_ShouldDeclareExtraTab_AndWalkRightPanelContentIntoIt() {
+		// Arrange
+		JArray page = DeclaredElementsPage(withRightWidget: true, withPageTab: true);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page);
+
+		// Assert
+		ElementMapEntry extra = DeclaredElement(guide, DeclaredElementsExtraTab);
+		extra.Operation.Should().Be("insert", because: "a declared container is created on the mobile page");
+		extra.WebName.Should().BeNull(because: "a declared container has no web counterpart");
+		extra.MobileType.Should().Be("crt.TabContainer", because: "the type comes from the declaredElements entry");
+		extra.ParentName.Should().Be("Tabs", because: "the rule declares the tab inside the converted strip");
+		extra.Index.Should().Be(1, because: "the rule declares index 1, right after General information");
+		extra.CaptionResource.Should().NotBeNull(because: "the rule declares a caption resource");
+		string declaredCaption = WebToMobilePageConversionRulesCatalog.LoadBundled().Templates
+			.Single(t => t.Web == DeclaredElementsWebTemplate).DeclaredElements.Single().CaptionResource.Value;
+		extra.CaptionResource.Key.Should().Be(DeclaredElementsExtraTabCaptionKey, because: "the caption key is the declared one");
+		extra.CaptionResource.SourceValue.Should().Be(declaredCaption, because: "the caption text is the declared one");
+		extra.MobileValues!["caption"]!.GetValue<string>().Should().Be($"#ResourceString({DeclaredElementsExtraTabCaptionKey})#",
+			because: "the element references its caption through the resource token, like every converted caption");
+		extra.MobileValues!["iconPosition"]!.GetValue<string>().Should().Be("only-text",
+			because: "the declared values are carried verbatim");
+		extra.Reason.Should().Contain("RightAreaProfileContainer",
+			because: "the reason names the web element whose pair walks content into the declared tab, not a generic claim");
+
+		int tabsAt = DeclaredElementIndexOf(guide, "Tabs");
+		int extraAt = DeclaredElementIndexOf(guide, DeclaredElementsExtraTab);
+		int widgetAt = DeclaredElementIndexOf(guide, DeclaredElementsRightWidget);
+		extraAt.Should().BeGreaterThan(tabsAt,
+			because: "the declared tab's parent is created by the conversion, so the parent entry must come first");
+		extraAt.Should().BeLessThan(widgetAt,
+			because: "the content mapped into the declared tab is emitted after it, so applying the map in order never inserts into a missing parent");
+
+		ElementMapEntry rightArea = DeclaredElement(guide, "RightAreaProfileContainer");
+		rightArea.Operation.Should().Be("merge",
+			because: "the declared tab is folded into the template probe, so the pair is an ordinary twin: the web card is not recreated");
+		rightArea.MobileName.Should().Be(DeclaredElementsExtraTab, because: "the pair names the declared tab as its mobile side");
+
+		TabAreaLayerGroup extraBody = guide.TabAreaLayers.Should()
+			.ContainSingle(g => g.TabName == DeclaredElementsExtraTab, because: "the declared tab is an inserted crt.TabContainer, so it gets the two-layer body")
+			.Subject;
+		extraBody.MovedChildren.Should().Contain(DeclaredElementsRightWidget,
+			because: "the right-panel widget walked into the declared tab and is stacked in its Area");
+
+		DeclaredElement(guide, DeclaredElementsPageTab).Index.Should().Be(2,
+			because: "converted tabs skip the position the declared tab claims, so the page tab follows it");
+		guide.ResourceStrings.Should().ContainKey(DeclaredElementsExtraTabCaptionKey).WhoseValue.Should().Be(declaredCaption,
+			because: "the caller registers the declared caption from resourceStrings, the same way as every converted caption");
+	}
+
+	[Test]
+	[Description("A declared element that receives no surviving content is removed like any other converter-created container — an empty declared tab must never reach the mobile page — and it gets no synthesized body.")]
+	public void Analyze_ShouldDropDeclaredExtraTab_WhenNoRightPanelContentSurvives() {
+		// Arrange
+		JArray page = DeclaredElementsPage(withRightWidget: false, withPageTab: false);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page);
+
+		// Assert
+		ElementMapEntry extra = DeclaredElement(guide, DeclaredElementsExtraTab);
+		extra.Operation.Should().Be("drop", because: "nothing was mapped into the declared tab");
+		extra.Reason.Should().Contain("declaredElements", because: "the drop reason says the removed container was a declared one");
+		extra.WebName.Should().BeNull(
+			because: "a declaredElements entry has no web counterpart, and the drop must not fold its mobile name into webName");
+		extra.MobileName.Should().Be(DeclaredElementsExtraTab,
+			because: "the removed declared element is identified by its mobile name, the only name it ever had");
+		extra.MobileType.Should().Be("crt.TabContainer",
+			because: "the type of a declared drop belongs on mobileType, not webType, for the same reason as the name");
+		guide.TabAreaLayers.Should().NotContain(g => g.TabName == DeclaredElementsExtraTab,
+			because: "a dropped tab never gets body layers synthesized");
+	}
+
+	[Test]
+	[Description("With NO mobile template probe the created-twin rule stays off: a containers pair is a merge exactly as before, so an unreadable template never silently turns template twins into inserts.")]
+	public void Analyze_ShouldKeepPairAsMerge_WhenMobileTemplateWasNotProbed() {
+		// Arrange
+		JArray page = DeclaredElementsPage(withRightWidget: true, withPageTab: false);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, mobileTemplateProbed: false);
+
+		// Assert
+		DeclaredElement(guide, "Tabs").Operation.Should().Be("merge",
+			because: "without the probe the converter cannot know the template lacks Tabs, so the pre-existing merge behaviour is kept");
+	}
+
+	[Test]
+	[Description("A declared element whose name the source page ALREADY uses for an element of its own is NOT declared (the two would collide on the mobile page); the page element converts as itself and the guide reports the conflict as a constraint.")]
+	public void Analyze_ShouldSkipDeclaredElement_WhenPageOwnsTheName() {
+		// Arrange
+		JArray page = DeclaredElementsPage(withRightWidget: true, withPageTab: false);
+		JObject generalGrid = (JObject)page.SelectToken("$..[?(@.name == 'GridContainer_hq3ajyu')]")!;
+		((JArray)generalGrid["items"]!).Add(new JObject {
+			["name"] = DeclaredElementsExtraTab, ["type"] = "crt.Label", ["caption"] = "Collides"
+		});
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page);
+
+		// Assert
+		IReadOnlyList<ElementMapEntry> named = guide.ElementMap.Where(e =>
+			string.Equals(e.MobileName, DeclaredElementsExtraTab, StringComparison.OrdinalIgnoreCase)).ToList();
+		named.Should().ContainSingle(because: "only the page's own element may carry that name on the mobile page; "
+			+ "the pair targeting the declared name is removed too, so no twin merges onto the page's element");
+		named[0].WebName.Should().Be(DeclaredElementsExtraTab, because: "the surviving entry is the page-authored element, not the declared container");
+		named[0].DeclaredByRule.Should().BeFalse(because: "the declared container was skipped");
+		DeclaredElement(guide, DeclaredElementsRightWidget).ParentName.Should().Be("MainContainer",
+			because: "with its pair removed the right area is pruned as chrome and its widget falls back to the default placement");
+		guide.Constraints.Should().Contain(c => c.Contains(DeclaredElementsExtraTab) && c.Contains("already uses this name"),
+			because: "the skipped declaration is reported with its reason so the rule or the page can be renamed");
+	}
+
+	[Test]
+	[Description("A declared LEAF component (a crt.Label with its text on `caption`) that no containers pair targets is applied as declared — type, parent, values and caption resource all from the entry — is not removed as empty (a label is not a removable layout container) and its reason says that nothing is mapped into it rather than claiming paired content.")]
+	public void Analyze_ShouldDeclareLeafComponent_ThatNoPairTargets() {
+		// Arrange
+		JArray page = DeclaredElementsPage(withRightWidget: true, withPageTab: false);
+		TemplateMappingRule rule = DeclaredElementsRuleWith(new JsonArray(
+			new JsonObject { ["name"] = DeclaredElementsExtraTab, ["type"] = "crt.TabContainer", ["parentName"] = "Tabs", ["index"] = 1 },
+			new JsonObject {
+				["name"] = "UsrHint", ["type"] = "crt.Label", ["parentName"] = "MainContainer",
+				["values"] = new JsonObject { ["labelType"] = "caption" },
+				["captionResource"] = new JsonObject { ["key"] = "UsrHint_caption", ["value"] = "Hint" }
+			}));
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule);
+
+		// Assert
+		ElementMapEntry hint = DeclaredElement(guide, "UsrHint");
+		hint.Operation.Should().Be("insert", because: "a declared leaf is created on the mobile page and never dropped as empty");
+		hint.MobileType.Should().Be("crt.Label", because: "the type comes from the declaration");
+		hint.ParentName.Should().Be("MainContainer", because: "the parent comes from the declaration");
+		hint.MobileValues!["labelType"]!.GetValue<string>().Should().Be("caption", because: "the declared values are carried verbatim");
+		hint.MobileValues!["caption"]!.GetValue<string>().Should().Be("#ResourceString(UsrHint_caption)#",
+			because: "the caption resource token is placed on the declared property");
+		guide.ResourceStrings.Should().ContainKey("UsrHint_caption").WhoseValue.Should().Be("Hint",
+			because: "the declared caption is registered like every other resource");
+		hint.Reason.Should().Contain("no containers pair targets it",
+			because: "the reason states the fact instead of claiming paired content the leaf does not have");
+		guide.TabAreaLayers.Should().NotContain(g => g.TabName == "UsrHint",
+			because: "only a declared tab gets a synthesized body; a leaf gets nothing type-specific");
+	}
+
+	[Test]
+	[Description("A declared element whose type is not a registered mobile component is skipped with a reason (a rules-file typo must never tell the caller to insert a component that does not exist), and the containers pair targeting it is removed so the paired content falls back to the default placement instead of being created under the declared name.")]
+	public void Analyze_ShouldSkipDeclaredElement_WhenTypeIsNotARegisteredMobileComponent() {
+		// Arrange
+		JArray page = DeclaredElementsPage(withRightWidget: true, withPageTab: false);
+		TemplateMappingRule rule = DeclaredElementsRuleWith(new JsonArray(new JsonObject {
+			["name"] = DeclaredElementsExtraTab, ["type"] = "crt.NoSuchTab", ["parentName"] = "Tabs", ["index"] = 1
+		}));
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule);
+
+		// Assert
+		guide.ElementMap.Should().NotContain(e => e.DeclaredByRule,
+			because: "the only declaration has an unknown type, so nothing is declared");
+		guide.ElementMap.Should().NotContain(e =>
+				string.Equals(e.MobileName, DeclaredElementsExtraTab, StringComparison.OrdinalIgnoreCase),
+			because: "the pair targeting the skipped name is removed, so no twin merges onto it and no created twin is made under it");
+		DeclaredElement(guide, DeclaredElementsRightWidget).ParentName.Should().Be("MainContainer",
+			because: "with its pair removed the right area is pruned as chrome and its widget falls back to the default placement");
+		guide.Constraints.Should().Contain(c => c.Contains(DeclaredElementsExtraTab) && c.Contains("crt.NoSuchTab") && c.Contains("not a registered mobile component"),
+			because: "the skip names the element and the offending type so the rules file can be fixed");
+	}
+
+	[Test]
+	[Description("A declared element whose name is already an element of the PROBED mobile template is skipped with a reason — the template element wins, per the precedence WithDeclaredElements documents for its own maps, now also enforced at admission so the emitted map never conflicts with a real template element. An unrelated, valid declaration in the same rule is unaffected.")]
+	public void Analyze_ShouldSkipDeclaredElement_WhenNameCollidesWithAProbedTemplateElement() {
+		// Arrange — BaseMobilePageTemplateTree() already has an "AreaProfileContainer" element; declare a bogus
+		// one under the same name (a plausible rules-file mistake: reusing a template name instead of a fresh
+		// one) ALONGSIDE the bundled, valid RightPanelTab declaration, so the test proves the collision check is
+		// scoped to the offending entry and does not disturb a sibling declaration.
+		JArray page = DeclaredElementsPage(withRightWidget: true, withPageTab: false);
+		TemplateMappingRule rule = DeclaredElementsRuleWith(new JsonArray(
+			new JsonObject {
+				["name"] = DeclaredElementsExtraTab, ["type"] = "crt.TabContainer", ["parentName"] = "Tabs",
+				["propertyName"] = "items", ["index"] = 1,
+				["values"] = new JsonObject { ["iconPosition"] = "only-text" },
+				["captionResource"] = new JsonObject { ["key"] = "RightPanelTab_caption", ["value"] = "Details" }
+			},
+			new JsonObject { ["name"] = "AreaProfileContainer", ["type"] = "crt.TabContainer", ["parentName"] = "Tabs", ["index"] = 2 }));
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule);
+
+		// Assert
+		guide.ElementMap.Where(e => e.DeclaredByRule).Select(e => e.MobileName).Should().BeEquivalentTo([DeclaredElementsExtraTab],
+			because: "only the declaration that does not collide with a template element is applied");
+		guide.ElementMap.Should().NotContain(e => e.Operation == "insert" && e.MobileName == "AreaProfileContainer",
+			because: "the template already provides this element; the declaration must never emit a conflicting insert for it");
+		guide.Constraints.Should().Contain(c => c.Contains("AreaProfileContainer") && c.Contains("template element wins"),
+			because: "the skip names the element and explains the template already owns that name");
+	}
+
+	[Test]
+	[Description("A declared element whose parent is neither on the probed mobile template nor created by the conversion (no pair, no page element, no other declaration) is skipped with a reason instead of being emitted with a dangling parent; a declaration whose parent is the skipped one is skipped with it.")]
+	public void Analyze_ShouldSkipDeclaredElement_WhenParentExistsNowhere() {
+		// Arrange
+		JArray page = DeclaredElementsPage(withRightWidget: true, withPageTab: false);
+		TemplateMappingRule rule = DeclaredElementsRuleWith(new JsonArray(
+			new JsonObject { ["name"] = "Orphan", ["type"] = "crt.GridContainer", ["parentName"] = "NoSuchParent" },
+			new JsonObject { ["name"] = "OrphanChild", ["type"] = "crt.Label", ["parentName"] = "Orphan", ["values"] = new JsonObject { ["caption"] = "x" } },
+			new JsonObject { ["name"] = DeclaredElementsExtraTab, ["type"] = "crt.TabContainer", ["parentName"] = "Tabs", ["index"] = 1 }));
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule);
+
+		// Assert
+		guide.ElementMap.Where(e => e.DeclaredByRule).Select(e => e.MobileName).Should().BeEquivalentTo([DeclaredElementsExtraTab],
+			because: "only the declaration whose parent (the converter-created Tabs) exists is applied");
+		guide.Constraints.Should().ContainSingle(c => c.Contains("declaredElements") && c.Contains("skipped"),
+			because: "every skip is reported in one constraint").Which.Should()
+			.Contain("Orphan: parent 'NoSuchParent'", because: "the orphan names its missing parent").And
+			.Contain("OrphanChild: parent 'Orphan'", because: "a child of a skipped declaration is skipped with it");
+	}
+
+	[Test]
+	[Description("A declared name repeated inside declaredElements is applied once: the earlier declaration stands, the repeat is skipped with a reason, and the pair targeting the name still walks its content into the surviving declaration.")]
+	public void Analyze_ShouldApplyDeclaredElementOnce_WhenDeclaredTwice() {
+		// Arrange
+		JArray page = DeclaredElementsPage(withRightWidget: true, withPageTab: false);
+		TemplateMappingRule rule = DeclaredElementsRuleWith(new JsonArray(
+			new JsonObject { ["name"] = DeclaredElementsExtraTab, ["type"] = "crt.TabContainer", ["parentName"] = "Tabs", ["index"] = 1 },
+			new JsonObject { ["name"] = DeclaredElementsExtraTab, ["type"] = "crt.GridContainer", ["parentName"] = "MainContainer" }));
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule);
+
+		// Assert
+		ElementMapEntry declared = guide.ElementMap.Should().ContainSingle(e => e.DeclaredByRule,
+			because: "a name is declared once however many times the rule repeats it").Subject;
+		declared.MobileType.Should().Be("crt.TabContainer", because: "the earlier declaration stands");
+		DeclaredElement(guide, "RightAreaProfileContainer").MobileName.Should().Be(DeclaredElementsExtraTab,
+			because: "the pair still targets the surviving declaration");
+		guide.Constraints.Should().Contain(c => c.Contains(DeclaredElementsExtraTab) && c.Contains("declared more than once"),
+			because: "the repeat is reported so the rules file can be fixed");
+	}
+
+	[Test]
+	[Description("A declared element listed BEFORE the declared-element parent it references in the same rule's declaredElements array is still emitted AFTER its parent in the element map — order-independent, so applying the map sequentially always creates the parent container before inserting the child into it.")]
+	public void Analyze_ShouldEmitDeclaredElementAfterItsDeclaredParent_RegardlessOfArrayOrder() {
+		// Arrange — "ChildLabel"'s parent (RightPanelTab) is declared SECOND in the JSON array, after the child.
+		// ChildLabel is a LEAF type (crt.Label, not a removable container type) so it is never a candidate for the
+		// unrelated empty-container removal pass, isolating the ordering behavior this test targets.
+		JArray page = DeclaredElementsPage(withRightWidget: true, withPageTab: false);
+		TemplateMappingRule rule = DeclaredElementsRuleWith(new JsonArray(
+			new JsonObject {
+				["name"] = "ChildLabel", ["type"] = "crt.Label", ["parentName"] = DeclaredElementsExtraTab,
+				["values"] = new JsonObject { ["caption"] = "Child" }
+			},
+			new JsonObject {
+				["name"] = DeclaredElementsExtraTab, ["type"] = "crt.TabContainer", ["parentName"] = "Tabs",
+				["propertyName"] = "items", ["index"] = 1,
+				["values"] = new JsonObject { ["iconPosition"] = "only-text" },
+				["captionResource"] = new JsonObject { ["key"] = "RightPanelTab_caption", ["value"] = "Details" }
+			}));
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule);
+
+		// Assert
+		guide.ElementMap.Where(e => e.DeclaredByRule).Select(e => e.MobileName).Should().BeEquivalentTo(
+			[DeclaredElementsExtraTab, "ChildLabel"], because: "both declarations are valid and admitted regardless of their JSON order");
+		DeclaredElementIndexOf(guide, DeclaredElementsExtraTab).Should().BeLessThan(DeclaredElementIndexOf(guide, "ChildLabel"),
+			because: "applying the map in order must create the parent container before inserting the child into it, regardless of which one the rules file lists first");
+	}
+
+	[Test]
+	[Description("Two declared elements that name each other as parent (a rules-file mistake no legitimate rule would contain) do not hang or overflow the stack when the parent-first reordering pass walks them — the cycle is broken deterministically and both entries still surface instead of one silently disappearing.")]
+	public void Analyze_ShouldNotHang_WhenDeclaredElementsHaveACyclicParentReference() {
+		// Arrange — CycleA's parent is CycleB and vice versa.
+		JArray page = DeclaredElementsPage(withRightWidget: false, withPageTab: false);
+		TemplateMappingRule rule = DeclaredElementsRuleWith(new JsonArray(
+			new JsonObject { ["name"] = "CycleA", ["type"] = "crt.Label", ["parentName"] = "CycleB", ["values"] = new JsonObject { ["caption"] = "A" } },
+			new JsonObject { ["name"] = "CycleB", ["type"] = "crt.Label", ["parentName"] = "CycleA", ["values"] = new JsonObject { ["caption"] = "B" } }));
+
+		// Act — completing at all (no stack overflow / infinite loop) is the primary claim of this test.
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule);
+
+		// Assert
+		guide.ElementMap.Where(e => e.DeclaredByRule).Select(e => e.MobileName).Should().BeEquivalentTo(["CycleA", "CycleB"],
+			because: "the cycle is broken deterministically rather than dropping either declaration silently");
+	}
+
+	/// <summary>The web template's content subtree as merged on a live environment (header chrome omitted: it is pruned either way).</summary>
+	private static JArray DeclaredElementsWebTemplateTree() => JArray.Parse("""
+		[
+		  { "name": "MainContainer", "type": "crt.FlexContainer", "direction": "column", "items": [
+		    { "name": "CardContentWrapper", "type": "crt.GridContainer", "columns": ["minmax(64px, 1fr)", "298px"], "items": [
+		      { "name": "CardContentContainer", "type": "crt.FlexContainer", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 }, "items": [
+		        { "name": "Tabs", "type": "crt.TabPanel", "layoutConfig": { "basis": "100%" }, "items": [
+		          { "name": "GeneralInfoTab", "type": "crt.TabContainer", "caption": "#ResourceString(GeneralInfoTab_caption)#", "items": [
+		            { "name": "GridContainer_hq3ajyu", "type": "crt.GridContainer", "columns": ["minmax(64px, 1fr)", "minmax(64px, 1fr)"], "items": [] }
+		          ] }
+		        ] }
+		      ] },
+		      { "name": "RightModulesContainer", "type": "crt.FlexContainer", "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 }, "items": [
+		        { "name": "RightAreaProfileContainer", "type": "crt.GridContainer", "color": "primary", "items": [] }
+		      ] }
+		    ] }
+		  ] }
+		]
+		""");
+
+	/// <summary>The merged page: the template tree plus the page's own delta.</summary>
+	private static JArray DeclaredElementsPage(bool withRightWidget, bool withPageTab) {
+		JArray tree = DeclaredElementsWebTemplateTree();
+		var generalGrid = (JObject)tree.SelectToken("$..[?(@.name == 'GridContainer_hq3ajyu')]")!;
+		((JArray)generalGrid["items"]!).Add(new JObject {
+			["name"] = DeclaredElementsGeneralField, ["type"] = "crt.Input", ["label"] = "#ResourceString(UsrName_label)#",
+			["layoutConfig"] = new JObject { ["column"] = 1, ["row"] = 1, ["colSpan"] = 1, ["rowSpan"] = 1 }
+		});
+		if (withRightWidget) {
+			var rightArea = (JObject)tree.SelectToken("$..[?(@.name == 'RightAreaProfileContainer')]")!;
+			((JArray)rightArea["items"]!).Add(new JObject {
+				["name"] = DeclaredElementsRightWidget, ["type"] = "crt.Label", ["caption"] = "#ResourceString(UsrRightLabel_caption)#"
+			});
+		}
+		if (withPageTab) {
+			var tabs = (JObject)tree.SelectToken("$..[?(@.name == 'Tabs')]")!;
+			((JArray)tabs["items"]!).Add(new JObject {
+				["name"] = DeclaredElementsPageTab, ["type"] = "crt.TabContainer", ["caption"] = "#ResourceString(UsrExtraTab_caption)#",
+				["items"] = new JArray(new JObject {
+					["name"] = DeclaredElementsPageTabField, ["type"] = "crt.Input", ["label"] = "#ResourceString(UsrExtraField_label)#"
+				})
+			});
+		}
+		return tree;
+	}
+
+	private static MobilePageConversionGuide AnalyzeDeclaredElements(JArray page, bool mobileTemplateProbed = true,
+		TemplateMappingRule templateRule = null) {
+		var bundle = new PageBundleInfo {
+			ViewConfig = JsonNode.Parse(page.ToString())!.AsArray(),
+			ViewModelConfig = new JsonObject(),
+			ModelConfig = new JsonObject(),
+			Resources = new PageResourceInfo {
+				Strings = new JsonObject {
+					["GeneralInfoTab_caption"] = new JsonObject { ["en-US"] = "General information" },
+					["UsrName_label"] = new JsonObject { ["en-US"] = "Name" },
+					["UsrRightLabel_caption"] = new JsonObject { ["en-US"] = "Right widget" },
+					["UsrExtraTab_caption"] = new JsonObject { ["en-US"] = "Extra" },
+					["UsrExtraField_label"] = new JsonObject { ["en-US"] = "Extra field" }
+				}
+			}
+		};
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+		templateRule ??= DeclaredElementsBundledRule();
+		JsonArray webTemplate = JsonNode.Parse(DeclaredElementsWebTemplateTree().ToString())!.AsArray();
+		Dictionary<string, JObject> webBaselineNodes = WebToMobileAnalysisService.CollectComponentNodesByName(webTemplate);
+		JsonArray mobileTemplate = BaseMobilePageTemplateTree();
+
+		return WebToMobileAnalysisService.Analyze(
+			bundle, LiveMobileComponentTypes(), new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+			webByType: new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
+			mobileByType: null, rules, templateRule,
+			sourcePage: "UsrRightArea_FormPage", sourceTemplate: DeclaredElementsWebTemplate,
+			suggestedTarget: "UsrRightArea_MobileFormPage",
+			containerNameMap: MobilePageConversionGuideTool.BuildContainerNameMap(templateRule),
+			componentNameMap: MobilePageConversionGuideTool.BuildComponentNameMap(templateRule),
+			positionalPlacements: MobilePageConversionGuideTool.BuildPositionalPlacements(templateRule),
+			templateComponentNames: new HashSet<string>(webBaselineNodes.Keys, StringComparer.OrdinalIgnoreCase),
+			mobileContainerParents: mobileTemplateProbed
+				? WebToMobileAnalysisService.CollectParentByName(mobileTemplate)
+				: null,
+			mobileTemplateTypesByName: mobileTemplateProbed
+				? WebToMobileAnalysisService.CollectComponentTypesByName(mobileTemplate)
+				: null,
+			webTemplateBaselineNodes: webBaselineNodes);
+	}
+
+	private static TemplateMappingRule DeclaredElementsBundledRule() => WebToMobilePageConversionRulesCatalog.LoadBundled().Templates
+		.Single(t => string.Equals(t.Web, DeclaredElementsWebTemplate, StringComparison.OrdinalIgnoreCase));
+
+	/// <summary>
+	/// The bundled right-area rule with its <c>declaredElements</c> replaced — through the JSON contract, so the
+	/// test states the declaration exactly as a rules file would.
+	/// </summary>
+	private static TemplateMappingRule DeclaredElementsRuleWith(JsonArray declaredElements) {
+		JsonObject rule = JsonSerializer.SerializeToNode(DeclaredElementsBundledRule())!.AsObject();
+		rule["declaredElements"] = declaredElements;
+		return rule.Deserialize<TemplateMappingRule>()!;
+	}
+
+	/// <summary>
+	/// The entry that IS the named element: a web element by its web name, or a declared element (no web name)
+	/// by its mobile name. A merge twin that only TARGETS the name (e.g. RightAreaProfileContainer -> RightPanelTab)
+	/// is a different element and is deliberately not matched.
+	/// </summary>
+	private static bool IsDeclaredOrWebElement(ElementMapEntry e, string name) =>
+		string.Equals(e.WebName, name, StringComparison.OrdinalIgnoreCase)
+		|| (e.WebName is null && string.Equals(e.MobileName, name, StringComparison.OrdinalIgnoreCase));
+
+	private static ElementMapEntry DeclaredElement(MobilePageConversionGuide guide, string name) =>
+		guide.ElementMap.Should().ContainSingle(e => IsDeclaredOrWebElement(e, name),
+			because: $"'{name}' must have exactly one element-map entry")
+			.Subject;
+
+	private static int DeclaredElementIndexOf(MobilePageConversionGuide guide, string name) =>
+		guide.ElementMap.ToList().FindIndex(e => IsDeclaredOrWebElement(e, name));
+
 	[Test]
 	[Description("With no template baseline the tree is untouched (backward-compatible): a would-be-chrome element is still surfaced.")]
 	public void Analyze_NoTemplateBaseline_LeavesTreeUnchanged() {
@@ -2752,6 +3292,30 @@ public sealed class WebToMobileConversionServiceTests {
 			Chain("Foo_FormPage", "Bar_BaseFormPage", "BazTemplate"),
 			Rules);
 		result.Should().Be("Bar_BaseFormPage");
+	}
+
+	[Test]
+	[Description("Direct parent is NOT a replacing schema (its name differs from the page's own) but is itself an unmapped " +
+		"INTERMEDIATE template that adds its own chrome (e.g. a DCM stage progress bar) on top of a mapped ancestor: " +
+		"climb past the unmapped parent to the rule-matching template instead of trusting the direct parent blindly — " +
+		"reproduces the production case of a page inheriting through PageWithTabsAndProgressBarTemplate.")]
+	public void ResolveEffectiveTemplateName_ParentIsUnmappedIntermediateTemplate_ClimbsPastIt() {
+		string result = MobilePageConversionGuideTool.ResolveEffectiveTemplateName(
+			Page("UsrPage_dlzi7uh", "PageWithTabsAndProgressBarTemplate"),
+			Chain("UsrPage_dlzi7uh", "PageWithTabsAndProgressBarTemplate", "PageWithTabsFreedomTemplate", "BasePageFreedomTemplate"),
+			Rules);
+		result.Should().Be("PageWithTabsFreedomTemplate");
+	}
+
+	[Test]
+	[Description("Direct parent is an unmapped intermediate template AND no ancestor anywhere matches a rule: falls back " +
+		"to the first differently-named ancestor (the direct parent itself), same as the no-rule-match replacing case.")]
+	public void ResolveEffectiveTemplateName_ParentIsUnmappedIntermediateTemplate_NoRuleAnywhere_ReturnsDirectParent() {
+		string result = MobilePageConversionGuideTool.ResolveEffectiveTemplateName(
+			Page("UsrPage_dlzi7uh", "SomeUnmappedIntermediateTemplate"),
+			Chain("UsrPage_dlzi7uh", "SomeUnmappedIntermediateTemplate", "SomeUnmappedRootTemplate"),
+			Rules);
+		result.Should().Be("SomeUnmappedIntermediateTemplate");
 	}
 
 	[Test]
@@ -6431,6 +6995,44 @@ public sealed class WebToMobileConversionServiceTests {
 		twin.Reason.Should().NotContain("no title").And.NotContain("NO ROW",
 			because: "nothing was synthesized for a merge, so neither row note may fire and send the caller "
 				+ "looking for a row the converter never claimed to build");
+	}
+
+	[Test]
+	[Description("ENG-94838 refinement notes that ListPageV2Template (unlike V3) has NO ListContainer: DataTable sits directly "
+		+ "in SectionContentWrapper. SectionContentWrapper carries no containers pair, so it is pruned as unmapped web-template "
+		+ "chrome exactly like V3's ListContainer would be if unpaired — DataTable is still found and merged by name because "
+		+ "its identity comes from the components map, not from its immediate parent's container mapping.")]
+	public void Analyze_ListPageV2Template_MergesDataTable_EvenThoughItHasNoListContainerWrapper() {
+		// Arrange — V2's real shape: no ListContainer, DataTable is a direct child of SectionContentWrapper.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "SectionContentWrapper", "type": "crt.FlexContainer", "items": [
+				{ "name": "DataTable", "type": "crt.DataGrid", "items": "$DataTable",
+				  "columns": [
+					{ "id": "c1", "code": "PDS_LeadName", "dataValueType": 28 },
+					{ "id": "c2", "code": "PDS_Status", "dataValueType": 28 } ] } ] } ]
+			""");
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+		TemplateMappingRule templateRule = rules.Templates.Single(t => string.Equals(t.Web, "ListPageV2Template", StringComparison.OrdinalIgnoreCase));
+
+		// Act — the SHIPPED V2 rule and maps; SectionContentWrapper is deliberately absent from its containers list.
+		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
+			bundle, MobileTypes, WebTypes,
+			Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)), mobileByType: null,
+			rules, templateRule: null,
+			sourcePage: "UsrApp_ListPage", sourceTemplate: "ListPageV2Template",
+			suggestedTarget: "UsrApp_MobileListPage",
+			containerNameMap: MobilePageConversionGuideTool.BuildContainerNameMap(templateRule),
+			templateComponentNames: Names("SectionContentWrapper", "DataTable"),
+			componentNameMap: MobilePageConversionGuideTool.BuildComponentNameMap(templateRule));
+
+		// Assert
+		guide.ElementMap.Should().NotContain(e => e.WebName == "SectionContentWrapper",
+			because: "the wrapper has no containers pair on the V2 rule, so it is pruned as inherited web-template chrome, same as any other unpaired baseline container");
+		ElementMapEntry twin = guide.ElementMap.Should().ContainSingle(e => e.WebName == "DataTable",
+			because: "DataTable is resolved by the components map regardless of which container wraps it on the web side").Subject;
+		twin.Operation.Should().Be("merge",
+			because: "the mobile template already provides the List element the same way it does for ListPageV3Template");
+		twin.MobileName.Should().Be("List", because: "the V2 components rule targets the same mobile element name as V3");
 	}
 
 	[Test]
