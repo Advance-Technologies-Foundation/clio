@@ -770,6 +770,7 @@ internal static class ToolContractCatalog {
 			[FindEmptyIisPortTool.FindEmptyIisPortToolName] = BuildFindEmptyIisPort(),
 			[InstallerCommandTool.DeployCreatioToolName] = BuildDeployCreatio(),
 			[DeployIdentityTool.DeployIdentityToolName] = BuildDeployIdentity(),
+			[UninstallIdentityTool.ToolName] = BuildUninstallIdentity(),
 			[RestoreWorkspaceTool.RestoreWorkspaceToolName] = BuildRestoreWorkspace(),
 			[PushWorkspaceTool.PushWorkspaceToolName] = BuildPushWorkspace(),
 			[ListCreatioBuildsTool.ListCreatioBuildsToolName] = BuildListCreatioBuilds()
@@ -6027,16 +6028,25 @@ internal static class ToolContractCatalog {
 			]);
 	}
 
+	private static ToolContractDefinition BuildUninstallIdentity() => new(
+		UninstallIdentityTool.ToolName,
+		"Removes only the IdentityService explicitly recorded in the environment's appsettings. Preserves CRM and its database. Clears matching references before deletion, protects shared pools and retains attachment on failure. No attachment is a no-op. skip-crm-cleanup is explicit recovery: CRM settings remain stale and a warning is reported.",
+		new ToolInputSchemaContract([EnvironmentNameFieldName], [
+			Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+			Field("skip-crm-cleanup", BooleanType, "Recovery only: leave CRM system settings unchanged and warn. Default false.")]),
+		CommandExecutionOutput(), CommonErrorContract, [], [], [],
+		Flow([UninstallIdentityTool.ToolName], "Confirm the recorded identity target and preserve the retained CRM."), [], []);
+
 	private static ToolContractDefinition BuildDeployIdentity() {
 		return new ToolContractDefinition(
 			DeployIdentityTool.DeployIdentityToolName,
-			"Deploys IdentityService to IIS for a registered local Creatio environment, connects Creatio through the platform sys-settings/REST path, creates a fresh clio OAuth client bound to an existing user by default, and stores the returned client credentials in local clio appsettings only after discovery, token issuance, and a read-only CRM bearer request succeed. With noApp, token and CRM checks are skipped. Never echo the generated client secret in logs or public messages.",
+			"Deploys IdentityService to IIS for a registered local Creatio environment, connects Creatio through the platform sys-settings/REST path, creates a fresh clio OAuth client bound to an existing user by default, and stores the returned client credentials in local clio appsettings only after discovery, token issuance, and a read-only CRM bearer request succeed. Records its resolved IdentityService attachment before artifacts, including noApp and partial deployments, for later standalone or combined removal. With noApp, token and CRM checks are skipped. Never echo the generated client secret in logs or public messages.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(ZipFileFieldName, StringType, "Optional path to a standalone IdentityService.zip or a Creatio distribution bundle containing IdentityService.zip. When omitted, deploy-identity finds IdentityService.zip under the registered EnvironmentPath."),
-					Field(IdentitySitePortFieldName, NumberType, "Optional HTTP port where IdentityService will listen. When omitted, deploy-identity selects the first free IIS port in range 40001-40100."),
+					Field(IdentitySitePortFieldName, NumberType, "Optional HTTP port where IdentityService will listen. When omitted, deploy-identity selects the first free IIS port in range 40001-40100. With overwrite and a recorded attachment, it reuses the recorded port."),
 					Field(IdentityArchivePathInBundleFieldName, StringType, "Nested IdentityService archive path when zipFile is a Creatio bundle, and the relative path preferred under EnvironmentPath when zipFile is omitted. Default: IdentityService.zip."),
 					Field(IdentitySiteNameFieldName, StringType, "Optional IIS site and app pool name. Defaults to <environment>-identity."),
 					Field(IdentityPathFieldName, StringType, "Optional target directory for IdentityService files. Filesystem reparse points are refused anywhere in the target path."),

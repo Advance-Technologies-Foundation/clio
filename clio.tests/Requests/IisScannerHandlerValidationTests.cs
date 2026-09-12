@@ -48,6 +48,23 @@ internal class IisScannerHandlerValidationTests : BaseClioModuleTests {
 			}));
 	}
 
+	[TestCase("<appcmd><VDIR VDIR.NAME=\"site/assets\" physicalPath=\"/srv/assets\" /></appcmd>", true)]
+	[TestCase("<appcmd><VDIR VDIR.NAME=\"site/assets\" /></appcmd>", false)]
+	[TestCase("<appcmd><ERROR message=\"denied\" /></appcmd>", false)]
+	[Description("Virtual directory discovery preserves non-root mappings and rejects incomplete inventories.")]
+	public void TryFindAllVirtualDirectories_ShouldValidateAllMappings(string xml, bool expected) {
+		// Arrange
+		MockAppCmd("list vdir /xml", xml);
+		// Act
+		bool result = _scanner.TryFindAllVirtualDirectories(out IReadOnlyList<IisVirtualDirectory> directories);
+		// Assert
+		result.Should().Be(expected, because: "only a complete inventory authorizes filesystem cleanup");
+		if (expected) {
+			directories.Should().ContainSingle(item => item.Name == "site/assets" && item.PhysicalPath == "/srv/assets",
+				because: "non-root mappings must remain visible to shared-directory validation");
+		}
+	}
+
 	[TestCase("work", false, true)]
 	[TestCase("work/child", false, false)]
 	[TestCase("work/child", true, true)]

@@ -30,6 +30,11 @@ public sealed record UnregisteredSite(SiteBinding siteBinding, IList<Uri> Uris, 
 
 public sealed record RegisteredSite(SiteBinding siteBinding, IList<Uri> Uris, SiteType siteType) { }
 
+/// <summary>A physical directory mapping, including non-root IIS virtual directories.</summary>
+/// <param name="Name">Full IIS virtual-directory name.</param>
+/// <param name="PhysicalPath">Configured physical directory.</param>
+public sealed record IisVirtualDirectory(string Name, string PhysicalPath);
+
 /// <summary>Describes whether an application-pool mutation completed, was safely preserved, or failed.</summary>
 public enum IisAppPoolMutationResult {
 	Completed,
@@ -50,6 +55,9 @@ public interface IIisScanner {
 	/// <param name="targets">Every IIS site and nested application when discovery succeeds.</param>
 	/// <returns><see langword="true"/> only when AppCmd returned complete, valid metadata.</returns>
 	bool TryFindAllIisTargets(out IReadOnlyList<UnregisteredSite> targets);
+
+	/// <summary>Reads every root and non-root virtual-directory mapping; false means validation is incomplete.</summary>
+	bool TryFindAllVirtualDirectories(out IReadOnlyList<IisVirtualDirectory> directories);
 
 	/// <summary>Finds every application pool assigned to the selected targets.</summary>
 	/// <param name="targetNames">Root-site or nested-application names selected for removal.</param>
@@ -465,6 +473,31 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 			site.Attribute("bindings")!.Value, physicalPath.Trim(), appPoolName.Trim());
 		target = new UnregisteredSite(binding, ConvertBindingToUri(binding.binding), DetectSiteType(binding.path));
 		return true;
+	}
+
+	/// <inheritdoc />
+	public bool TryFindAllVirtualDirectories(out IReadOnlyList<IisVirtualDirectory> directories) {
+		directories = [];
+		if (!_platformDetector.IsWindows()) {
+			return true;
+		}
+		if (!TryReadAppCmd("list vdir /xml", out string xml)) {
+			return false;
+		}
+		try {
+			XElement root = XElement.Parse(xml);
+			if (!HasExpectedAppCmdShape(root, "VDIR") || root.Elements().Any(item =>
+				string.IsNullOrWhiteSpace(item.Attribute("VDIR.NAME")?.Value)
+				|| string.IsNullOrWhiteSpace(item.Attribute("physicalPath")?.Value))) {
+				return false;
+			}
+			directories = root.Elements().Select(item => new IisVirtualDirectory(
+				item.Attribute("VDIR.NAME")!.Value, item.Attribute("physicalPath")!.Value)).ToArray();
+			return true;
+		}
+		catch (Exception exception) when (exception is System.Xml.XmlException or ArgumentException) {
+			return false;
+		}
 	}
 
 	/// <inheritdoc />

@@ -47,6 +47,10 @@ public class UninstallCreatioTool(
 				 and before unregistering; an offline or failed dbHub verification is also a
 				 non-fatal warning with success-with-warnings completion.
 				 A shared application pool and its profile are preserved.
+				 A nonempty IdentityService attachment in appsettings is prevalidated and removed before
+				 CRM IIS, database or file deletion. Its recorded path and IIS target authorize removal;
+				 OAuth credentials alone never identify a local identity. Conflicting or shared recorded
+				 attachments abort before destructive stages. Identity cleanup never drops a database.
 				 The registered EnvironmentPath is the authoritative target identity. A complete,
 				 unfiltered IIS inventory is required before every safely validated site or application
 				 with the same physical directory identity is stopped and removed, including classic /0
