@@ -88,6 +88,10 @@ public static class WebToMobileAnalysisService {
 	/// <param name="mobileTemplateUnavailable">True when a mobile template was known but its bundle could not
 	/// be read (no active environment, read failure) - the data-section diffs fall back to a single root merge
 	/// and an explicit constraint warns that template-owned arrays may be replaced wholesale.</param>
+	/// <param name="mobileTypeDefinitions">The mobile registry envelope's <c>references.typeDefinitions</c>.
+	/// Without it every input the producer types by CLASS rather than by a literal container reads as
+	/// indeterminate, and a nested element slot (<c>crt.List.itemLayout</c>) is walked out as a child-element
+	/// array instead of being carried and coerced (ENG-91859).</param>
 	/// <param name="actionTargetsProbe">Read-only probe of whether each action's NAVIGATION TARGET exists on
 	/// mobile (ENG-94839), surfaced as <c>requestConversions.unresolvedTargetRequests</c>. Null - or a probe
 	/// that could not reach the environment - leaves every target unknown and changes no conversion decision:
@@ -118,6 +122,8 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null,
 		bool webTemplateUnavailable = false,
 		JObject webTemplateResources = null,
+		IReadOnlyDictionary<string, JsonElement> mobileTypeDefinitions = null,
+		IReadOnlyDictionary<string, MobileTemplateSlotElement> mobileTemplateSlotElements = null,
 		MobileActionTargetProbeResult actionTargetsProbe = null) {
 		ArgumentNullException.ThrowIfNull(bundle);
 		ArgumentNullException.ThrowIfNull(mobileTypes);
@@ -200,6 +206,9 @@ public static class WebToMobileAnalysisService {
 		// Web anchor -> MOBILE anchor, so an insert the rule routed can be tagged with the anchor it was placed
 		// around. The anchor-row pass groups by that tag instead of by parent container.
 		IReadOnlyDictionary<string, string> positionalAnchorByWebAnchor = ResolvePositionalAnchors(positionalPlacements);
+		// Shape coercions that DISCARDED content (an Object-declared slot fed a multi-element array) are
+		// recorded here rather than dropped silently — the guide reports them as a constraint.
+		var shapeTruncations = new List<string>();
 		// The probe's verdicts reach the binding processor, which is the only place that knows whether a
 		// binding actually made it into the mobile body — so the report is what the conversion DID, never an
 		// after-the-fact guess reconciled against the element map.
@@ -213,11 +222,12 @@ public static class WebToMobileAnalysisService {
 			?? new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase);
 		List<UnresolvedTargetRequest> unresolvedTargets = [];
 		List<ElementMapEntry> elementMap = BuildElementMap(
-			tree, map, componentMap, mobileTypes, mobileByType, webByType, rules, attrToColumn, resources,
+			tree, map, componentMap, mobileTypes, mobileByType, mobileTypeDefinitions, webByType, rules,
+			attrToColumn, resources,
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns,
 			positionalParentByAnchor, positionalAnchorByWebAnchor,
-			mobileTypesByName, webBaselineNodes, webTemplateResources,
-			actionTargets, unresolvedTargets);
+			mobileTypesByName, mobileTemplateSlotElements, webBaselineNodes, webTemplateResources,
+			shapeTruncations, actionTargets, unresolvedTargets);
 
 		// Removes components an excludedComponents rule bans from a host (type-agnostic — which
 		// type/host/property is banned comes entirely from the rules), in the two shapes a banned component
@@ -292,7 +302,7 @@ public static class WebToMobileAnalysisService {
 		// insert entries other inserts can target as parent (the synthesized tab-body/Area layers): running before
 		// it would leave those layers unseeded. The mobile registry is passed so a single-object slot the registry
 		// declares (itemLayout) is never declared as an array.
-		InitializeContainerChildSlots(elementMap, mobileByType);
+		InitializeContainerChildSlots(elementMap, mobileByType, mobileTypeDefinitions);
 
 
 		// Property normalization: every mobile standard the RULES declare is stamped onto the elements the
@@ -423,6 +433,7 @@ public static class WebToMobileAnalysisService {
 					.Select(e => e.ParentName)
 					.Distinct(StringComparer.OrdinalIgnoreCase)
 					.ToList(),
+				shapeTruncations: shapeTruncations,
 				unresolvedTargetRequests: requestConversions?.UnresolvedTargetRequests),
 			NextSteps = BuildNextSteps(
 				hasDataSections: modelConfig is not null || viewModelConfig is not null,
@@ -466,7 +477,11 @@ public static class WebToMobileAnalysisService {
 			}
 			if (string.Equals(entry.Operation, "merge", StringComparison.OrdinalIgnoreCase)
 				|| string.Equals(entry.Operation, "insert", StringComparison.OrdinalIgnoreCase)) {
-				survivors[entry.WebName] = string.IsNullOrWhiteSpace(entry.MobileName) ? entry.WebName : entry.MobileName;
+				// FIRST entry wins. A structural twin emits a SECOND entry under the same web name for the row it
+				// merges onto the template's own element (EmitStructuralTwinSlotEntries, always after the parent):
+				// retargeting "hide DataTable" onto that row would hide a row and leave the list on the page.
+				survivors.TryAdd(entry.WebName,
+					string.IsNullOrWhiteSpace(entry.MobileName) ? entry.WebName : entry.MobileName);
 			}
 		}
 
@@ -824,6 +839,60 @@ public static class WebToMobileAnalysisService {
 		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		CollectComponentTypesByName(viewConfig, map);
 		return map;
+	}
+
+	/// <summary>A named element the mobile template already provides inside a single-object child slot.</summary>
+	public sealed record MobileTemplateSlotElement(string Name, string Type);
+
+	/// <summary>
+	/// Maps <c>&lt;owner&gt;/&lt;slot&gt;</c> to the named element the mobile template puts in that slot, e.g.
+	/// <c>List/itemLayout</c> -> (<c>ListItem</c>, <c>crt.ListItem</c>).
+	/// </summary>
+	/// <remarks>
+	/// <see cref="CollectComponentTypesByName"/> flattens the same nodes and so cannot answer WHICH slot of
+	/// WHICH owner an element occupies — and that is exactly what a structural twin needs: the row it renders
+	/// has to be addressed as the template's own named element, not merged into the parent's values. Keyed on a
+	/// composite string rather than a tuple so one case-insensitive comparer covers both halves; build the key
+	/// with <see cref="SlotElementKey"/>.
+	/// </remarks>
+	public static Dictionary<string, MobileTemplateSlotElement> CollectSlotElementsByOwner(JsonArray viewConfig) {
+		var map = new Dictionary<string, MobileTemplateSlotElement>(StringComparer.OrdinalIgnoreCase);
+		CollectSlotElementsByOwner(viewConfig, map);
+		return map;
+	}
+
+	/// <summary>The composite key <see cref="CollectSlotElementsByOwner"/> stores an owner's slot under.</summary>
+	public static string SlotElementKey(string owner, string slot) => owner + "/" + slot;
+
+	private static void CollectSlotElementsByOwner(JsonArray nodes,
+		Dictionary<string, MobileTemplateSlotElement> map) {
+		if (nodes is null) {
+			return;
+		}
+		foreach (JsonNode node in nodes) {
+			if (node is not JsonObject obj) {
+				continue;
+			}
+			string owner = StringProp(obj, "name");
+			foreach (KeyValuePair<string, JsonNode> pair in obj) {
+				if (string.Equals(pair.Key, "items", StringComparison.OrdinalIgnoreCase)
+					|| pair.Value is not JsonObject single || !IsComponentObject(single)) {
+					continue;
+				}
+				string childName = StringProp(single, "name");
+				if (string.IsNullOrWhiteSpace(owner) || string.IsNullOrWhiteSpace(childName)) {
+					continue;
+				}
+				string key = SlotElementKey(owner, pair.Key);
+				if (!map.ContainsKey(key)) {
+					map[key] = new MobileTemplateSlotElement(childName, StringProp(single, "type"));
+				}
+			}
+			if (obj.TryGetPropertyValue("items", out JsonNode itemsNode) && itemsNode is JsonArray items) {
+				CollectSlotElementsByOwner(items, map);
+			}
+			CollectSlotElementsByOwner(ChildComponentSlots(obj), map);
+		}
 	}
 
 	private static void CollectComponentTypesByName(JsonArray nodes, Dictionary<string, string> map) {
@@ -1837,6 +1906,7 @@ public static class WebToMobileAnalysisService {
 		bool exclusionSearchTruncated = false, int discardedExclusionFilters = 0,
 		int skippedOverrideRules = 0, bool hasExcludedComponents = false,
 		IReadOnlyList<string> retargetParentsOnTemplate = null,
+		IReadOnlyList<string> shapeTruncations = null,
 		IReadOnlyList<UnresolvedTargetRequest> unresolvedTargetRequests = null) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
@@ -1844,6 +1914,21 @@ public static class WebToMobileAnalysisService {
 			"No handlers, no validators, no custom converters in a mobile body. Re-implement conditional visibility / required / read-only / set-value logic as entity-level business rules (create-entity-business-rule). Reference only OOTB converters inline in binding expressions.",
 			"Use only mobile-registered component types (get-component-info schema-type \"mobile\")."
 		};
+		if (shapeTruncations is { Count: > 0 }) {
+			// A registry declaration, not a page defect: the mobile catalog types the slot as a single object
+			// while the page (and every OOTB mobile template) writes a collection into it. Coercion keeps the
+			// FIRST entry, so the caller has to be told which content did not survive — silently shipping a
+			// one-field row that the source page authored with seven is the failure this line exists for.
+			constraints.Add(
+				"CONTENT WAS DISCARDED BY A REGISTRY SHAPE COERCION: "
+				+ string.Join("; ", shapeTruncations)
+				+ ". The mobile registry declares each of these properties as a SINGLE object, the source "
+				+ "carried a multi-entry array, and only the FIRST entry was kept. Verify the affected "
+				+ "element against the source page before you save — e.g. a crt.ListItem whose body should "
+				+ "list several fields will arrive with one. If the mobile component genuinely accepts a "
+				+ "collection here, the registry declaration is wrong (report it) and the remaining entries "
+				+ "must be restored by hand.");
+		}
 		AddUnresolvedTargetConstraints(constraints, unresolvedTargetRequests);
 		if (retargetParentsOnTemplate is { Count: > 0 }) {
 			constraints.Add(
@@ -2004,7 +2089,7 @@ public static class WebToMobileAnalysisService {
 		var steps = new List<string> {
 			"Read get-guidance with name \"freedom-page-web-to-mobile-conversion\".",
 			"Create the target mobile page from recommendedMobileTemplate with create-page (it provides the Scaffold root).",
-			"Build the mobile body by iterating elementMap (one entry per source element) — do NOT infer merge-vs-insert from containerMap: operation=merge → reuse the template element mobileName (no insert), and when the entry carries mobileValues emit a MERGE operation on that element with them verbatim — a merge is the only way some values reach the page at all (an anchor whose row had to move to make room for content placed above it arrives exactly this way, and skipping it silently reproduces the misplacement); operation=insert → insert mobileType into parentName/propertyName and, if captionResource is present, register key=sourceValue via update-page resources; operation=relocate-children → do not recreate the container; its children are placed in parentName (each child entry carries that parentName); operation=drop → skip it. Fill each component's values from the matching mobileContracts entry (call get-component-info schema-type \"mobile\" only when more detail is needed).",
+			"Build the mobile body by iterating elementMap IN ORDER and applying EVERY entry — usually one entry per source element, but a STRUCTURAL twin (a web element converting into a DIFFERENT mobile component, e.g. crt.DataGrid → crt.List) emits TWO entries under the SAME webName: FIRST the element that replaced the web one (the list), THEN the named element the mobile template provides in its single-object slot carrying the row (the crt.ListItem). Both are real operations — do NOT key, group or dedupe elementMap by webName, and do NOT stop at the first entry for a name: dropping the second one is exactly how a converted list arrives blank. Do NOT infer merge-vs-insert from containerMap: operation=merge → reuse the template element mobileName (no insert), and when the entry carries mobileValues emit a MERGE operation on that element with them verbatim — a merge is the only way some values reach the page at all (an anchor whose row had to move to make room for content placed above it arrives exactly this way, and skipping it silently reproduces the misplacement); operation=insert → insert mobileType into parentName/propertyName and, if captionResource is present, register key=sourceValue via update-page resources; operation=relocate-children → do not recreate the container; its children are placed in parentName (each child entry carries that parentName); operation=drop → skip it. Fill each component's values from the matching mobileContracts entry (call get-component-info schema-type \"mobile\" only when more detail is needed).",
 			"For every insert, paste elementMap[].mobileValues as the component's values VERBATIM — it already carries the type and EVERY source property the mobile component supports (including the field caption). Never drop a supported property. Then add ONLY the value binding (control, or value for lookups), which is left out on purpose. validate-page is the backstop: it rejects an insert that drops a required property (e.g. a field caption, or a lookup-path attribute's type) and update-page refuses to save."
 		};
 		if (hasDataSections) {
@@ -2035,7 +2120,12 @@ public static class WebToMobileAnalysisService {
 
 	// ── Instance-level element map ────────────────────────────────────────────────────────────
 
-	/// <summary>Carries the read-only inputs of the element-map pass so the recursion stays terse.</summary>
+	/// <summary>
+	/// Carries the read-only inputs of the element-map pass so the recursion stays terse. Three members
+	/// are deliberately mutable sinks the caller owns: <c>Out</c>, <c>UnresolvedTargetRequests</c>, and
+	/// <c>ShapeTruncations</c>, which <see cref="CoerceToDeclaredShape"/> writes into so a discarded
+	/// array element can be surfaced as a guide constraint instead of vanishing.
+	/// </summary>
 	/// <param name="ActionTargets">
 	/// Per distinct action target, what the probe found — keyed by
 	/// <see cref="MobileActionTargetProbe.TargetKey"/>. An ABSENT key means "not considered": the rules
@@ -2051,6 +2141,7 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, ComponentMappingRule> ComponentMap,
 		IReadOnlySet<string> MobileTypes,
 		IReadOnlyDictionary<string, ComponentRegistryEntry> MobileByType,
+		IReadOnlyDictionary<string, JsonElement> MobileTypeDefinitions,
 		IReadOnlyDictionary<string, ComponentRegistryEntry> WebByType,
 		WebToMobilePageConversionRules Rules,
 		IReadOnlyDictionary<string, string> AttrToColumn,
@@ -2066,10 +2157,12 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> PositionalParentByAnchor,
 		IReadOnlyDictionary<string, string> PositionalAnchorByWebAnchor,
 		IReadOnlyDictionary<string, string> MobileTypesByName,
+		IReadOnlyDictionary<string, MobileTemplateSlotElement> MobileTemplateSlotElements,
 		IReadOnlyDictionary<string, JObject> WebBaselineNodes,
 		JObject WebBaselineResources,
 		IReadOnlySet<string> ScopeContainerNames,
 		IReadOnlySet<string> ContentContainerTypes,
+		List<string> ShapeTruncations,
 		IReadOnlyDictionary<string, ActionTargetResolution> ActionTargets,
 		List<UnresolvedTargetRequest> UnresolvedTargetRequests);
 
@@ -2089,15 +2182,22 @@ public static class WebToMobileAnalysisService {
 			StringComparer.OrdinalIgnoreCase);
 
 	/// <summary>
-	/// Produces one <see cref="ElementMapEntry"/> per named element of the resolved tree, deciding
+	/// Produces an <see cref="ElementMapEntry"/> per named element of the resolved tree, deciding
 	/// merge / insert / drop / relocate-children. Pure: reads only the supplied bundle-derived data.
 	/// </summary>
+	/// <remarks>
+	/// Not a bijection: a STRUCTURAL twin emits TWO entries under the same <c>webName</c> — the parent entry
+	/// for the element that replaced the web one, immediately followed by one row entry per template-provided
+	/// slot element (<see cref="EmitStructuralTwinSlotEntries"/>). The parent is always emitted FIRST, and
+	/// downstream passes that keep "the entry for a web name" rely on that order.
+	/// </remarks>
 	private static List<ElementMapEntry> BuildElementMap(
 		JArray tree,
 		IReadOnlyDictionary<string, string> map,
 		IReadOnlyDictionary<string, ComponentMappingRule> componentMap,
 		IReadOnlySet<string> mobileTypes,
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType,
+		IReadOnlyDictionary<string, JsonElement> mobileTypeDefinitions,
 		IReadOnlyDictionary<string, ComponentRegistryEntry> webByType,
 		WebToMobilePageConversionRules rules,
 		IReadOnlyDictionary<string, string> attrToColumn,
@@ -2111,23 +2211,29 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> positionalParentByAnchor,
 		IReadOnlyDictionary<string, string> positionalAnchorByWebAnchor,
 		IReadOnlyDictionary<string, string> mobileTypesByName,
+		IReadOnlyDictionary<string, MobileTemplateSlotElement> mobileTemplateSlotElements,
 		IReadOnlyDictionary<string, JObject> webBaselineNodes,
 		JObject webBaselineResources,
+		List<string> shapeTruncations,
 		IReadOnlyDictionary<string, ActionTargetResolution> actionTargets,
 		List<UnresolvedTargetRequest> unresolvedTargetRequests) {
 		var ctx = new ElementMapContext(map,
 			componentMap ?? new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase),
 			mobileTypes, mobileByType ?? new Dictionary<string, ComponentRegistryEntry>(),
+			mobileTypeDefinitions ?? new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase),
 			webByType ?? new Dictionary<string, ComponentRegistryEntry>(),
 			rules, attrToColumn, resources, RelocateTargetFor(map), [],
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns,
 			positionalParentByAnchor ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
 			positionalAnchorByWebAnchor ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
 			mobileTypesByName ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+			mobileTemplateSlotElements
+				?? new Dictionary<string, MobileTemplateSlotElement>(StringComparer.OrdinalIgnoreCase),
 			webBaselineNodes ?? new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase),
 			webBaselineResources,
 			CollectScopeContainerNames(rules),
 			ContentContainerTypesOf(rules),
+			shapeTruncations ?? [],
 			actionTargets, unresolvedTargetRequests);
 		WalkElements(ctx, tree, mobileParentName: null);
 		return ctx.Out;
@@ -2302,34 +2408,47 @@ public static class WebToMobileAnalysisService {
 
 			// 1b. component twin — a content component the template maps web→mobile by NAME (e.g. the list
 			//     template's grid "DataTable" → mobile "List"). It is NOT template chrome: it is kept and
-			//     configured by merge-by-name. HOW to convert it (e.g. a grid's columns → the list row) is
-			//     type-driven — it lives in the general components rule and is surfaced in
-			//     componentSuggestions[<type>]; clio hardcodes no component-specific transform here.
+			//     configured by merge-by-name. HOW to convert it is type-driven and lives in the rules file's
+			//     general components entry, never hardcoded here.
 			if (ctx.ComponentMap.TryGetValue(name, out ComponentMappingRule compRule)) {
-				// The mobile type is normally the web type when it survives on mobile as-is; a rule that maps
-				// to a DIFFERENT mobile type (web crt.FolderTree → mobile crt.FolderTreeActions) declares it
-				// explicitly so carried values can be shape-coerced against the right registry contract.
+				// The mobile type is the type of the element the TEMPLATE actually provides. An explicit rule
+				// mapping wins (web crt.FolderTree → mobile crt.FolderTreeActions declares it, so carried values
+				// are shape-coerced against the right contract); otherwise it is read off the mobile template
+				// probe, which is authoritative whenever it ran. Only when the probe could not tell does the web
+				// type stand in, and then only if it exists on mobile at all.
+				// The web type must never be the FIRST answer: it asks whether the component exists SOMEWHERE on
+				// mobile, not whether it is what sits under compRule.Mobile —
+				// and it silently inverted when the mobile catalog grew to cover the Flutter runtime
+				// (ENG-91859): crt.DataGrid became a known mobile type, so DataTable → List began to look like a
+				// same-component twin and carried DataGrid-shaped values (columns, features, bulkActions, …) onto
+				// an element that is a crt.List and declares none of them. The list then rendered with no row.
+				// The last resort asks the RULES whether this element converts structurally, not the probe
+				// whether it answered. Gating on the probe looks right and is not: it reports "available" with
+				// an empty map both for a page with no known mobile template and for one whose bundle carried
+				// no viewConfig, and — the case that settles it — a same-component rename (AttachmentList →
+				// AttachmentFileList, crt.FileList on both sides) legitimately needs this fallback with an
+				// empty probe. What separates the two is the rules file: a web type it converts to a DIFFERENT
+				// mobile type is a structural twin BY DECLARATION, and its own type is never the answer.
+				string templateTarget = ResolveTemplateTargetType(ctx.Rules, node, sourceAncestors);
+				bool webTypeStandsIn = ctx.MobileTypes.Contains(type ?? "")
+					&& (string.IsNullOrEmpty(templateTarget)
+						|| string.Equals(templateTarget, type, StringComparison.OrdinalIgnoreCase));
 				string twinMobileType = !string.IsNullOrWhiteSpace(compRule.MobileType)
 					? compRule.MobileType
-					: (ctx.MobileTypes.Contains(type ?? "") ? type : null);
-				// Deterministic merge payload carried onto the template-provided element:
-				//  • an explicit carryProperties whitelist → just those keys (e.g. the folder tree binding);
-				//  • otherwise, when the twin is the SAME component on both sides (twinMobileType == web type,
-				//    e.g. crt.FileList → crt.FileList) → carry the page's DELTA over the web-template baseline
-				//    (only what the page changed; an unchanged property is left to the mobile template's default);
-				//  • a structural twin whose web type has no mobile equivalent (crt.DataGrid → crt.List), OR a
-				//    same-component twin with no baseline node → no payload; it stays an advisory merge and the
-				//    how-to is left to componentSuggestions.
-				// The payload never carries the component `type` (a merge targets an element the template already
-				// owns) nor placement (layoutConfig — owned by the template). The page's caption IS carried (it
-				// overrides the template label; CollectResourceStrings adds its resource to the schema).
-				JsonNode twinValues = BuildTwinMergeValues(ctx, node, compRule, twinMobileType, type);
+					: ctx.MobileTypesByName.TryGetValue(compRule.Mobile, out string templateTwinType)
+						&& !string.IsNullOrWhiteSpace(templateTwinType)
+							? templateTwinType
+							: (webTypeStandsIn ? type : null);
+				// Payload and reason depend on the twin's kind; see BuildTwinMergeValues.
+				JsonNode twinValues = BuildTwinMergeValues(ctx, node, compRule, twinMobileType, type,
+					sourceAncestors);
 				ctx.Out.Add(new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "merge", MobileName = compRule.Mobile,
 					MobileType = twinMobileType,
 					MobileValues = twinValues,
 					Reason = ComponentTwinReason(name, type, compRule, twinValues is not null)
 				});
+				EmitStructuralTwinSlotEntries(ctx, node, compRule, twinMobileType, type, sourceAncestors);
 				if (items is not null) {
 					WalkElements(ctx, items, compRule.Mobile, sourceAncestors: Append(sourceAncestors, name));
 				}
@@ -2739,8 +2858,12 @@ public static class WebToMobileAnalysisService {
 	/// single <c>object</c> (e.g. <c>crt.List.itemLayout</c>, whose web array wrapper is coerced to an object) is a
 	/// nested CONFIG, not a collection to walk, so it is excluded even when its elements are <c>crt.*</c>-typed —
 	/// and, because the registry-shape check comes first, that exclusion holds even in the registry-degraded case
-	/// where the resolve check alone would already keep it carried. NOTE: only <c>crt.*</c> is recognised — an array
-	/// containing a custom <c>usr.*</c> component is not descended into (it is carried verbatim, as before).
+	/// where the resolve check alone would already keep it carried. "Declares as a single object" includes a slot
+	/// typed by a NAMED type: <see cref="ResolveExpectedShape"/> resolves the descriptor's <c>type</c> through the
+	/// component's own and the document-level <c>references.typeDefinitions</c>, so a slot declared as
+	/// <c>ViewElementConfig</c> (or any named type that resolves to an object) is excluded exactly like a literal
+	/// <c>"object"</c>. NOTE: only <c>crt.*</c> is recognised — an array containing a custom <c>usr.*</c>
+	/// component is not descended into (it is carried verbatim, as before).
 	/// </summary>
 	private static bool IsChildElementArray(ElementMapContext ctx, string mobileType, string propName, JToken value,
 		IReadOnlyList<string> childAncestors) {
@@ -2750,7 +2873,7 @@ public static class WebToMobileAnalysisService {
 		// A registry-declared single-object slot (itemLayout, …) is carried and shape-coerced, never walked.
 		if (!string.IsNullOrEmpty(mobileType)
 			&& ctx.MobileByType.TryGetValue(mobileType, out ComponentRegistryEntry entry) && entry is not null
-			&& ResolveExpectedShape(entry, propName) == JsonValueKind.Object) {
+			&& ResolveExpectedShape(entry, propName, ctx.MobileTypeDefinitions) == JsonValueKind.Object) {
 			return false;
 		}
 		foreach (JToken element in array) {
@@ -2786,15 +2909,16 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// The reason line for a template-mapped component twin: the rule's business <c>note</c> (what the
-	/// element is) plus a pointer to the type-driven conversion detail in <c>componentSuggestions</c>. clio
-	/// keeps no component-specific transform — the "how" (e.g. a grid's columns → the list row) is defined
-	/// by the general components rule and surfaced there for the model to apply.
+	/// element is) plus, when nothing was prebuilt, a pointer to the type-driven conversion detail in
+	/// <c>componentSuggestions</c>. clio keeps no component-specific transform: the "how" (e.g. a grid's
+	/// columns → the list row) is declared by the rules file's general components entry, and is either rendered
+	/// into the payload or left for the model to apply.
 	/// </summary>
 	private static string ComponentTwinReason(string name, string type, ComponentMappingRule rule, bool hasPrebuiltPayload) {
 		string basis = !string.IsNullOrWhiteSpace(rule.Note) ? rule.Note : $"web '{name}' maps to mobile '{rule.Mobile}'";
-		// Whenever a prebuilt mobileValues payload was produced — a carryProperties whitelist OR a
-		// same-component carry-all — tell the caller to paste it (a merge is otherwise advisory). A structural
-		// twin with no payload keeps the advisory, type-driven wording (e.g. DataTable → List).
+		// Whenever a prebuilt mobileValues payload was produced — a carryProperties whitelist, a same-component
+		// carry-all, or a structural twin's rules-declared structure — tell the caller to paste it. A twin with
+		// no payload keeps the advisory, type-driven wording.
 		if (hasPrebuiltPayload) {
 			string what = rule.CarryProperties is { Count: > 0 } ? $" ({string.Join(", ", rule.CarryProperties)})" : "";
 			return $"{basis} — template-provided element — merge the prebuilt mobileValues{what} onto " +
@@ -2813,17 +2937,152 @@ public static class WebToMobileAnalysisService {
 	/// (<paramref name="webType"/> survives on mobile as <paramref name="twinMobileType"/>, e.g.
 	/// crt.FileList → crt.FileList), the page's DELTA over the web-template baseline is carried
 	/// (<see cref="BuildDeltaTwinMergeValues"/>) — a name twin of one component is just the same element renamed
-	/// between the web and mobile templates. A twin whose web type has no mobile equivalent (a structural
-	/// conversion, e.g. crt.DataGrid → crt.List) gets no payload and stays advisory.
+	/// between the web and mobile templates. A twin whose target element is a DIFFERENT component (a
+	/// structural conversion, e.g. crt.DataGrid → crt.List) carries NOTHING here: the structure the rules file
+	/// declares for the target type is emitted as its own entry (<see cref="EmitStructuralTwinSlotEntries"/>)
+	/// against the template's named element — the test is the target
+	/// element's own type, never whether the web type exists somewhere on mobile.
 	/// </summary>
-	private static JsonNode BuildTwinMergeValues(ElementMapContext ctx, JObject node, ComponentMappingRule rule, string twinMobileType, string webType) {
+	private static JsonNode BuildTwinMergeValues(ElementMapContext ctx, JObject node, ComponentMappingRule rule,
+		string twinMobileType, string webType, IReadOnlyList<string> sourceAncestors) {
 		if (rule.CarryProperties is { Count: > 0 }) {
 			return BuildCarriedTwinValues(ctx, node, rule, twinMobileType);
 		}
 		bool sameComponent = !string.IsNullOrEmpty(webType)
 			&& string.Equals(twinMobileType, webType, StringComparison.OrdinalIgnoreCase);
-		return sameComponent ? BuildDeltaTwinMergeValues(ctx, node, node["name"]?.ToString(), twinMobileType, rule.Mobile) : null;
+		// A structural twin carries NOTHING on the parent: the structure the rules file declares for it is a
+		// separate named element on the template, emitted by EmitStructuralTwinSlotEntries.
+		return sameComponent
+			? BuildDeltaTwinMergeValues(ctx, node, node["name"]?.ToString(), twinMobileType, rule.Mobile)
+			: null;
 	}
+
+	/// <summary>
+	/// Emits one merge entry per structure the rules file declares for a STRUCTURAL twin — the target element
+	/// is a different component from the web one (crt.DataGrid -> crt.List), and what the rules declare for it
+	/// is a SEPARATE NAMED ELEMENT the mobile template already provides in a single-object slot: the list's
+	/// <c>crt.ListItem</c> row under <c>itemLayout</c>.
+	/// </summary>
+	/// <remarks>
+	/// The row must NOT ride on the parent's merge values. <c>crt.List</c> is not a container and
+	/// <c>itemLayout</c> is an input, so the differ discards a merge property whose slot already holds a named
+	/// element — every OOTB mobile list template fills it with a <c>ListItem</c> — and the row silently never
+	/// arrives. The shipped guidance states the same rule and prescribes this shape: configure the row by
+	/// merge-by-name ON the ListItem element.
+	/// <para>
+	/// The template's own element name is read from the probe, never assumed: a template is free to call its
+	/// row something else, and addressing a name the template does not have is the same silent no-op one level
+	/// over. When the probe knows no element for the slot the twin degrades to advisory rather than guessing —
+	/// there is nothing to merge by name onto.
+	/// </para>
+	/// <para>
+	/// ONLY nested named ELEMENTS survive here, and that makes the merge path deliberately narrower than the
+	/// insert path. The loop below emits a property only when its rendered value is a <c>JObject</c> carrying
+	/// a <c>type</c>, so the same rules template's scalar bindings — the grid → list template's
+	/// <c>"items": "{{ source.items }}"</c> — reach the guide on <c>insert</c> and are DISCARDED on
+	/// <c>merge</c>. That is correct rather than a gap: a list page's mobile template already binds its own
+	/// datasource on the <c>List</c> it provides, so re-declaring <c>items</c> would overwrite the template's
+	/// binding with the web page's. Anything a merge twin genuinely needs on the PARENT belongs in the rule's
+	/// <c>carryProperties</c> (which returns early above), not in a conversion template.
+	/// </para>
+	/// </remarks>
+	private static void EmitStructuralTwinSlotEntries(ElementMapContext ctx, JObject node,
+		ComponentMappingRule rule, string twinMobileType, string webType,
+		IReadOnlyList<string> sourceAncestors) {
+		if (string.IsNullOrWhiteSpace(twinMobileType) || rule.CarryProperties is { Count: > 0 }) {
+			return;
+		}
+		if (!string.IsNullOrEmpty(webType)
+			&& string.Equals(twinMobileType, webType, StringComparison.OrdinalIgnoreCase)) {
+			return;
+		}
+		IReadOnlyList<ViewConfigTemplateRule> templates =
+			MatchingConversionTemplates(ctx, node, twinMobileType, sourceAncestors);
+		if (templates.Count == 0) {
+			return;
+		}
+		// Seeded with the target type so the shape guard inside RenderOne reshapes against the component the
+		// structure is landing on. It is dropped again below: a merge targets an element that declares its own.
+		var rendered = new JObject { ["type"] = twinMobileType };
+		var roots = new TemplateRoots(
+			new JObject { ["name"] = rule.Mobile, ["parentName"] = rule.Mobile, ["propertyName"] = ItemsPropertyName },
+			node);
+		foreach (ViewConfigTemplateRule template in templates) {
+			RenderOne(ctx, template, rendered, roots);
+		}
+		rendered.Remove("type");
+		foreach (JProperty prop in rendered.Properties()) {
+			if (prop.Value is not JObject structure
+				|| structure["type"] is null
+				|| IsIdentityOnly(structure)) {
+				continue;
+			}
+			if (!ctx.MobileTemplateSlotElements.TryGetValue(
+					SlotElementKey(rule.Mobile, prop.Name), out MobileTemplateSlotElement slotElement)
+				|| slotElement is null
+				|| string.IsNullOrWhiteSpace(slotElement.Name)) {
+				continue;
+			}
+			JsonNode values = SlotMergeValues(structure);
+			if (values is null) {
+				continue;
+			}
+			// Emitted AFTER the parent twin and under the same web name: ConvertPageBusinessRules keeps the
+			// first entry for a web name, so the rule target stays the list rather than this row.
+			ctx.Out.Add(new ElementMapEntry {
+				WebName = node["name"]?.ToString(), WebType = Nz(webType), Operation = "merge",
+				MobileName = slotElement.Name, MobileType = Nz(!string.IsNullOrWhiteSpace(slotElement.Type)
+						? slotElement.Type
+						: structure["type"]?.ToString()),
+				MobileValues = values,
+				Reason = $"row of '{rule.Mobile}' \u2014 template-provided element \u2014 merge the prebuilt "
+					+ $"mobileValues onto '{slotElement.Name}' by name (do not insert it, and never put "
+					+ $"'{prop.Name}' inside the merge of '{rule.Mobile}')"
+			});
+		}
+	}
+
+	/// <summary>
+	/// The rendered structure as a merge payload: its identity is dropped, because a merge targets an element
+	/// the template already named and typed. Null when nothing but identity was rendered.
+	/// </summary>
+	private static JsonNode SlotMergeValues(JObject structure) {
+		var values = new JObject();
+		foreach (JProperty prop in structure.Properties()) {
+			if (!IdentityProps.Contains(prop.Name)) {
+				values[prop.Name] = prop.Value.DeepClone();
+			}
+		}
+		if (values.Count == 0) {
+			return null;
+		}
+		try {
+			return JsonNode.Parse(values.ToString(Newtonsoft.Json.Formatting.None));
+		} catch (System.Text.Json.JsonException) {
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// True when a rendered structure carries nothing but its own identity — every value the template meant to
+	/// fill resolved to nothing, so what is left describes no content.
+	/// </summary>
+	/// <remarks>
+	/// A grid whose <c>columns</c> is a binding string, or whose first column declares no <c>code</c>, renders a
+	/// row with no <c>title</c> and an empty <c>body</c>: the positional paths resolve to nothing and
+	/// <c>$each</c> over an empty collection yields <c>[]</c>. Shipping that reports a prebuilt row and pastes a
+	/// list of blank rows, so it degrades to the advisory merge instead and sends the caller to
+	/// <c>componentSuggestions</c>.
+	/// </remarks>
+	private static bool IsIdentityOnly(JObject structure) =>
+		structure.Properties().All(p =>
+			IdentityProps.Contains(p.Name)
+			|| p.Value.Type is JTokenType.Null
+			|| (p.Value is JArray empty && empty.Count == 0));
+
+	/// <summary>Keys that identify an element rather than describe its content.</summary>
+	private static readonly HashSet<string> IdentityProps =
+		new(StringComparer.OrdinalIgnoreCase) { "name", "type" };
 
 	/// <summary>
 	/// Merge payload for a SAME-component twin (an explicit name-mapped one, e.g. AttachmentList →
@@ -3335,7 +3594,6 @@ public static class WebToMobileAnalysisService {
 			if (values[prop.Name] is JObject shipped) {
 				DropValuesContradictingDeclaredScalars(ctx, type, shipped);
 			}
-			return;
 		}
 	}
 
@@ -3716,23 +3974,34 @@ public static class WebToMobileAnalysisService {
 	/// <paramref name="propName"/> on <paramref name="mobileType"/>. Some web nodes carry a property in a
 	/// different container shape than mobile expects — e.g. crt.List <c>itemLayout</c> is a single object
 	/// on mobile, but the web node carries a one-element array. The expected shape comes from the input
-	/// descriptor's <c>type</c> (<c>"array"</c>/<c>"object"</c>); when the type is <c>"unknown"</c> (or
-	/// absent) it is inferred from the descriptor's <c>default</c> value kind. No property names are
-	/// hardcoded — the rule is registry-driven. Returns the value unchanged when there is no descriptor,
-	/// the expected shape is indeterminate, or it already matches.
+	/// descriptor's <c>type</c> — either a literal (<c>"array"</c>/<c>"object"</c>) or a NAMED type
+	/// (a <c>references.typeDefinitions</c> key, resolved one hop by <see cref="ShapeFromNamedType"/>);
+	/// when the type is <c>"unknown"</c> (or absent) it is inferred from the descriptor's <c>default</c>
+	/// value kind. No property names are hardcoded — the rule is registry-driven. Returns the value
+	/// unchanged when there is no descriptor, the expected shape is indeterminate, or it already matches.
 	/// </summary>
+	/// <remarks>
+	/// Unwrapping an Object-declared slot is LOSSY when the array holds more than one object — a
+	/// <c>crt.ListItem.body</c> declared by class rather than as an array would reduce a seven-field row to
+	/// one field. That case is recorded in <see cref="ElementMapContext.ShapeTruncations"/> so
+	/// <see cref="BuildConstraints"/> reports it; it is never dropped silently (ENG-91859).
+	/// </remarks>
 	private static JToken CoerceToDeclaredShape(ElementMapContext ctx, string mobileType, string propName, JToken value) {
 		if (value is null || string.IsNullOrEmpty(mobileType)
 			|| !ctx.MobileByType.TryGetValue(mobileType, out ComponentRegistryEntry entry) || entry is null) {
 			return value;
 		}
-		JsonValueKind? expected = ResolveExpectedShape(entry, propName);
+		JsonValueKind? expected = ResolveExpectedShape(entry, propName, ctx.MobileTypeDefinitions);
 		if (expected is null) {
 			return value;
 		}
 		if (expected == JsonValueKind.Object && value is JArray arr) {
 			// The mobile slot is a single map: unwrap the first object element (drop array wrapper).
 			JToken first = arr.FirstOrDefault(t => t is JObject);
+			int objectCount = arr.Count(t => t is JObject);
+			if (first is not null && objectCount > 1) {
+				RecordShapeTruncation(ctx, mobileType, propName, objectCount);
+			}
 			return first ?? value;
 		}
 		if (expected == JsonValueKind.Array && value is JObject) {
@@ -3743,31 +4012,128 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Resolves the container shape (Object/Array) a mobile registry entry declares for an input — from the
-	/// input descriptor's <c>type</c>, falling back to the kind of its <c>default</c> when the type is
-	/// <c>"unknown"</c>. Checks both the wrapped <c>inputs</c> shape and the legacy <c>properties</c> shape.
-	/// Returns null when the property is absent or its shape cannot be determined.
+	/// Records one lossy Object-coercion (<c>type.prop</c> → how many objects the source array held) so the
+	/// guide can flag it. De-duplicated per type+property: the same declaration truncates identically on every
+	/// element of the page, and one constraint line per declaration is the actionable unit.
 	/// </summary>
-	private static JsonValueKind? ResolveExpectedShape(ComponentRegistryEntry entry, string propName) {
+	private static void RecordShapeTruncation(ElementMapContext ctx, string mobileType, string propName,
+		int discardedFrom) {
+		string line = $"{mobileType}.{propName} ({discardedFrom} entries → 1)";
+		if (!ctx.ShapeTruncations.Contains(line, StringComparer.OrdinalIgnoreCase)) {
+			ctx.ShapeTruncations.Add(line);
+		}
+	}
+
+	/// <summary>Resolves a NAMED type (a <c>references.typeDefinitions</c> key) to a container kind.</summary>
+	/// <remarks>
+	/// <c>ViewElementConfig</c> is answered without a lookup: it is the envelope every nested view element is an
+	/// instance of, the producer emits it as a sentinel rather than registering a schema for it, and a slot typed
+	/// by it always holds one element rather than a collection. Everything else earns its answer from its own
+	/// definition — <c>fields</c> means an object, and a definition that aliases a container resolves to that
+	/// container, one hop only so a self-referential alias cannot loop.
+	/// </remarks>
+	private static JsonValueKind? ShapeFromNamedType(string type,
+		IReadOnlyDictionary<string, JsonElement> typeDefinitions) {
+		if (string.IsNullOrWhiteSpace(type)) {
+			return null;
+		}
+		if (string.Equals(type, ViewElementConfigTypeName, StringComparison.OrdinalIgnoreCase)) {
+			return JsonValueKind.Object;
+		}
+		if (typeDefinitions is null
+			|| !typeDefinitions.TryGetValue(type, out JsonElement definition)
+			|| definition.ValueKind != JsonValueKind.Object) {
+			return null;
+		}
+		// An explicit container `type` is read FIRST: it states the container outright, while `fields` only
+		// implies one. They disagree solely in a malformed definition, and there the explicit statement is the
+		// safer read — checking `fields` first would answer Object for a schema that says it is an array.
+		if (definition.TryGetProperty("type", out JsonElement aliased)
+			&& aliased.ValueKind == JsonValueKind.String) {
+			string alias = aliased.GetString();
+			if (string.Equals(alias, "array", StringComparison.OrdinalIgnoreCase)) {
+				return JsonValueKind.Array;
+			}
+			if (string.Equals(alias, "object", StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(alias, "map", StringComparison.OrdinalIgnoreCase)) {
+				return JsonValueKind.Object;
+			}
+		}
+		return definition.TryGetProperty("fields", out JsonElement fields)
+			&& fields.ValueKind == JsonValueKind.Object
+				? JsonValueKind.Object
+				: null;
+	}
+
+	/// <summary>
+	/// The producer's sentinel for "a nested view element", emitted instead of a registered schema because
+	/// every component config is one.
+	/// </summary>
+	private const string ViewElementConfigTypeName = "ViewElementConfig";
+
+	/// <summary>
+	/// The container shape (Object/Array) a mobile registry entry declares for an input — from the input
+	/// descriptor's <c>type</c> (a literal, or a named type resolved through the entry's OWN
+	/// <c>references.typeDefinitions</c> first and <paramref name="globalTypeDefinitions"/> second), falling
+	/// back to the kind of its <c>default</c>. Checks both the wrapped <c>inputs</c> shape and the legacy
+	/// <c>properties</c> shape. Null when the property is absent or its shape cannot be determined.
+	/// </summary>
+	private static JsonValueKind? ResolveExpectedShape(ComponentRegistryEntry entry, string propName,
+		IReadOnlyDictionary<string, JsonElement> globalTypeDefinitions) {
+		IReadOnlyDictionary<string, JsonElement> typeDefinitions =
+			MergeTypeDefinitions(globalTypeDefinitions, entry.References?.TypeDefinitions);
 		if (entry.Inputs is not null) {
 			foreach (KeyValuePair<string, JsonElement> input in entry.Inputs) {
 				if (string.Equals(input.Key, propName, StringComparison.OrdinalIgnoreCase)) {
-					return ShapeFromDescriptor(input.Value);
+					return ShapeFromDescriptor(input.Value, typeDefinitions);
 				}
 			}
 		}
 		if (entry.Properties is not null) {
 			foreach (KeyValuePair<string, ComponentPropertyDefinition> prop in entry.Properties) {
 				if (string.Equals(prop.Key, propName, StringComparison.OrdinalIgnoreCase)) {
-					return ShapeFromTypeAndDefault(prop.Value.Type, prop.Value.Default);
+					return ShapeFromTypeAndDefault(prop.Value.Type, prop.Value.Default, typeDefinitions);
 				}
 			}
 		}
 		return null;
 	}
 
+	/// <summary>
+	/// The named-type bag to resolve a descriptor's <c>type</c> against: the document-level
+	/// <c>references.typeDefinitions</c> overlaid by the component's OWN bag, per-component winning.
+	/// </summary>
+	/// <remarks>
+	/// The producer registers some named types per component rather than globally, so reading only the global
+	/// bag resolves such a type to null — indeterminate — and the caller falls into its degraded branch. This
+	/// mirrors <c>ChartWidgetValidation.MergeChartTypeDefinitions</c>, which is the established precedent in
+	/// this tool family. Returns the global bag unchanged when the component carries none, so the common case
+	/// allocates nothing.
+	/// </remarks>
+	private static IReadOnlyDictionary<string, JsonElement> MergeTypeDefinitions(
+		IReadOnlyDictionary<string, JsonElement> global,
+		IReadOnlyDictionary<string, JsonElement> perComponent) {
+		if (perComponent is null || perComponent.Count == 0) {
+			return global;
+		}
+		if (global is null || global.Count == 0) {
+			return perComponent;
+		}
+		// Indexer assignment, not the copy constructor: the two bags arrive straight off the deserializer with
+		// their own (case-sensitive) comparers, so a case-only collision must overwrite rather than throw.
+		var merged = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+		foreach (KeyValuePair<string, JsonElement> pair in global) {
+			merged[pair.Key] = pair.Value;
+		}
+		foreach (KeyValuePair<string, JsonElement> pair in perComponent) {
+			merged[pair.Key] = pair.Value;
+		}
+		return merged;
+	}
+
 	/// <summary>Reads <c>type</c>/<c>default</c> from a wrapped-registry input descriptor JSON element.</summary>
-	private static JsonValueKind? ShapeFromDescriptor(JsonElement descriptor) {
+	private static JsonValueKind? ShapeFromDescriptor(JsonElement descriptor,
+		IReadOnlyDictionary<string, JsonElement> typeDefinitions) {
 		if (descriptor.ValueKind != JsonValueKind.Object) {
 			return null;
 		}
@@ -3775,21 +4141,34 @@ public static class WebToMobileAnalysisService {
 			? t.GetString()
 			: null;
 		JsonElement? def = descriptor.TryGetProperty("default", out JsonElement d) ? d : (JsonElement?)null;
-		return ShapeFromTypeAndDefault(type, def);
+		return ShapeFromTypeAndDefault(type, def, typeDefinitions);
 	}
 
 	/// <summary>
 	/// Maps a declared <c>type</c> string (and a fallback <c>default</c> value) to an expected container kind.
-	/// A concrete <c>"array"</c>/<c>"object"</c>/<c>"map"</c> type wins; an <c>"unknown"</c>/absent type is
-	/// resolved from the <c>default</c> value kind (object/array). Returns null when indeterminate.
+	/// A concrete <c>"array"</c>/<c>"object"</c>/<c>"map"</c> type wins; a NAMED type is resolved through
+	/// <paramref name="typeDefinitions"/> (see <see cref="ShapeFromNamedType"/>); an <c>"unknown"</c>/absent
+	/// type falls back to the <c>default</c> value kind. Returns null when indeterminate.
 	/// </summary>
-	private static JsonValueKind? ShapeFromTypeAndDefault(string type, JsonElement? def) {
+	/// <remarks>
+	/// The named-type hop is what keeps a runtime-derived registry legible. A producer that describes a nested
+	/// element slot by its CLASS (<c>crt.List.itemLayout</c> as <c>ViewElementConfig</c>) instead of the literal
+	/// <c>"object"</c> is not being vaguer, it is being more precise — but a resolver reading only the literals
+	/// answers "indeterminate", and every caller then takes its degraded branch: the row is walked out into a
+	/// child-element array the component never declares and the list renders empty (ENG-91859, reproducing
+	/// ENG-95046). Enums and scalar aliases stay indeterminate on purpose.
+	/// </remarks>
+	private static JsonValueKind? ShapeFromTypeAndDefault(string type, JsonElement? def,
+		IReadOnlyDictionary<string, JsonElement> typeDefinitions) {
 		if (string.Equals(type, "array", StringComparison.OrdinalIgnoreCase)) {
 			return JsonValueKind.Array;
 		}
 		if (string.Equals(type, "object", StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(type, "map", StringComparison.OrdinalIgnoreCase)) {
 			return JsonValueKind.Object;
+		}
+		if (ShapeFromNamedType(type, typeDefinitions) is { } named) {
+			return named;
 		}
 		if (def is { } d) {
 			if (d.ValueKind == JsonValueKind.Object) {
@@ -5125,7 +5504,8 @@ public static class WebToMobileAnalysisService {
 	/// </para>
 	/// </summary>
 	private static void InitializeContainerChildSlots(List<ElementMapEntry> elementMap,
-		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType) {
+		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType,
+		IReadOnlyDictionary<string, JsonElement> typeDefinitions) {
 		// occupiedSlots keys purely on MobileName, not on entry identity. MobileName is NOT unique across the
 		// element map: `containers` is a MANY-TO-ONE map by design (CardContentWrapper and GeneralInfoTab both
 		// merge onto GeneralTabContainer), so two entries can share one mobile name. This stays safe because the
@@ -5173,7 +5553,7 @@ public static class WebToMobileAnalysisService {
 			foreach (string slot in slots
 				.OrderBy(s => string.Equals(s, ItemsPropertyName, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
 				.ThenBy(s => s, StringComparer.OrdinalIgnoreCase)) {
-				if (DeclaresObjectShapedSlot(mobileByType, entry.MobileType, slot)) {
+				if (DeclaresObjectShapedSlot(mobileByType, typeDefinitions, entry.MobileType, slot)) {
 					continue;
 				}
 				values[slot] ??= new JsonArray();
@@ -5189,12 +5569,13 @@ public static class WebToMobileAnalysisService {
 	/// array is a child-element array at all, so the walk and the seeding can never disagree about a slot's shape.
 	/// </summary>
 	private static bool DeclaresObjectShapedSlot(
-		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType, string mobileType, string slot) =>
+		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType,
+		IReadOnlyDictionary<string, JsonElement> typeDefinitions, string mobileType, string slot) =>
 		mobileByType is not null
 		&& !string.IsNullOrEmpty(mobileType)
 		&& mobileByType.TryGetValue(mobileType, out ComponentRegistryEntry entry)
 		&& entry is not null
-		&& ResolveExpectedShape(entry, slot) == JsonValueKind.Object;
+		&& ResolveExpectedShape(entry, slot, typeDefinitions) == JsonValueKind.Object;
 
 	/// <summary>
 	/// Stacks one retargeted element into its single-column parent at the given row. An element the

@@ -201,6 +201,10 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 	// generic category is preserved through the upcast.
 	private readonly ILogger _logger;
 	private readonly string _cdnBaseUrl;
+	// The Uri-normalised form of _cdnBaseUrl, which is the form a cached entry's SourceUrl was written in
+	// (BuildCdnUrl records Uri.AbsoluteUri). Comparing the raw configured string would reject a valid entry
+	// over a default port or host casing the Uri class normalised away.
+	private readonly string _normalisedCdnBaseUrl;
 	private readonly RegistryFlavor _flavor;
 	private readonly Func<TimeSpan, CancellationToken, Task> _delayAsync;
 
@@ -265,6 +269,11 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 		if (!_cdnBaseUrl.EndsWith('/')) {
 			_cdnBaseUrl += "/";
 		}
+		// Never throws on a malformed override: an unparseable base is left verbatim and simply fails the
+		// cache-source comparison the same way any other mismatch does. BuildCdnUrl owns reporting it.
+		_normalisedCdnBaseUrl = Uri.TryCreate(_cdnBaseUrl, UriKind.Absolute, out Uri? parsedBase)
+			? parsedBase.AbsoluteUri
+			: _cdnBaseUrl;
 	}
 
 	/// <inheritdoc />
@@ -285,7 +294,7 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 		// (stale-while-revalidate); the background refresh closes the freshness gap without
 		// blocking the AI call.
 		ComponentRegistryCacheReadResult? cached = await _cacheStore
-			.TryReadAsync(requestedVersion, cancellationToken)
+			.TryReadAsync(requestedVersion, _normalisedCdnBaseUrl, cancellationToken)
 			.ConfigureAwait(false);
 		if (cached is { IsFresh: true }) {
 			_logger.LogInformation(
@@ -312,7 +321,7 @@ public class ComponentRegistryClient : IComponentRegistryClient {
 		// specific version but with a previously cached "latest" sitting on disk.
 		if (!string.Equals(requestedVersion, LatestVersion, StringComparison.OrdinalIgnoreCase)) {
 			ComponentRegistryCacheReadResult? cachedLatest = await _cacheStore
-				.TryReadAsync(LatestVersion, cancellationToken)
+				.TryReadAsync(LatestVersion, _normalisedCdnBaseUrl, cancellationToken)
 				.ConfigureAwait(false);
 			if (cachedLatest is not null) {
 				_logger.LogInformation(

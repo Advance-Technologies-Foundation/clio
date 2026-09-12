@@ -20,8 +20,17 @@ namespace Clio.Command.McpServer.Tools;
 public interface IComponentRegistryCacheStore {
 	/// <summary>Reads a cached payload (fresh or stale) when one exists.</summary>
 	/// <param name="version">Resolved platform version, or <c>"latest"</c>.</param>
+	/// <param name="expectedCdnBaseUrl">
+	/// The CDN base URL the CALLER would fetch from now. When supplied, an entry whose recorded
+	/// <c>SourceUrl</c> did not come from that same base is reported as a miss. The cache is keyed on
+	/// the version alone, so pointing <c>CLIO_COMPONENT_REGISTRY_CDN_BASE_URL</c> at a staging prefix
+	/// otherwise writes the staging payload into the very <c>latest.json</c> slot a later run with
+	/// the variable unset reads back as production — for the whole TTL and with no signal. Pass
+	/// <see langword="null"/> to accept any recorded source (diagnostics, cache inspection).
+	/// </param>
 	/// <param name="cancellationToken">Cancellation token.</param>
-	Task<ComponentRegistryCacheReadResult?> TryReadAsync(string version, CancellationToken cancellationToken = default);
+	Task<ComponentRegistryCacheReadResult?> TryReadAsync(string version, string? expectedCdnBaseUrl = null,
+		CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Atomically writes a payload and its provenance sidecar to the cache directory.
@@ -77,7 +86,8 @@ public sealed class ComponentRegistryCacheStore : IComponentRegistryCacheStore {
 	}
 
 	/// <inheritdoc />
-	public async Task<ComponentRegistryCacheReadResult?> TryReadAsync(string version, CancellationToken cancellationToken = default) {
+	public async Task<ComponentRegistryCacheReadResult?> TryReadAsync(string version,
+		string? expectedCdnBaseUrl = null, CancellationToken cancellationToken = default) {
 		(string jsonPath, string metaPath) = GetPaths(version);
 		if (!_fileSystem.File.Exists(jsonPath) || !_fileSystem.File.Exists(metaPath)) {
 			return null;
@@ -97,6 +107,13 @@ public sealed class ComponentRegistryCacheStore : IComponentRegistryCacheStore {
 
 		if (metadata is null) {
 			DeleteSilently(jsonPath, metaPath);
+			return null;
+		}
+
+		// A different base URL is a DIFFERENT catalog under the same version key. Report a miss rather
+		// than serve it (and rather than delete it: the caller's own write overwrites the slot moments
+		// later, and a transient override must not wipe a production entry it cannot restore).
+		if (!IsFromCdnBase(metadata.SourceUrl, expectedCdnBaseUrl)) {
 			return null;
 		}
 
@@ -153,6 +170,33 @@ public sealed class ComponentRegistryCacheStore : IComponentRegistryCacheStore {
 		// Atomically rename payload first so a reader never sees stale meta + new payload.
 		_fileSystem.File.Move(tmpJsonPath, jsonPath, overwrite: true);
 		_fileSystem.File.Move(tmpMetaPath, metaPath, overwrite: true);
+	}
+
+	/// <summary>
+	/// True when a cache entry recorded as fetched from <paramref name="recordedSourceUrl"/> may be served to
+	/// a caller whose effective CDN base is <paramref name="expectedCdnBaseUrl"/>. Compares the recorded URL's
+	/// BASE for equality, not as a prefix: a staging prefix is typically nested under the production one
+	/// (<c>…/api/mcp/latest-mobile-preview/</c> under <c>…/api/mcp/</c>), so a prefix test would accept exactly
+	/// the payload this guard exists to refuse. A registry URL is always
+	/// <c>{base}{version}/{registry file}</c> (see <c>ComponentRegistryClient.BuildCdnUrl</c>), so the base is
+	/// the recorded URL minus its last two path segments. An entry with no recorded SourceUrl is refused
+	/// rather than trusted — "which base produced this" must be answerable, and the cost of a miss is one
+	/// CDN fetch. A null or empty expectation accepts anything (diagnostics, cache inspection).
+	/// </summary>
+	internal static bool IsFromCdnBase(string? recordedSourceUrl, string? expectedCdnBaseUrl) {
+		if (string.IsNullOrEmpty(expectedCdnBaseUrl)) {
+			return true;
+		}
+		if (string.IsNullOrEmpty(recordedSourceUrl)) {
+			return false;
+		}
+		int fileSeparator = recordedSourceUrl.LastIndexOf('/');
+		int baseEnd = fileSeparator <= 0 ? -1 : recordedSourceUrl.LastIndexOf('/', fileSeparator - 1);
+		if (baseEnd < 0) {
+			return false;
+		}
+		return string.Equals(recordedSourceUrl[..(baseEnd + 1)], expectedCdnBaseUrl,
+			StringComparison.OrdinalIgnoreCase);
 	}
 
 	private (string Json, string Meta) GetPaths(string version) {

@@ -265,6 +265,144 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			$"excludedComponents invariant asserted against seeded page '{convertedSchemaName}'.");
 	}
 
+	[Test]
+	[Description("Non-vacuous structural-twin guard (ENG-91859): converts real seeded pages until one turns a web grid into a mobile crt.List, then asserts that list carries its own prebuilt row and NONE of the source grid's own properties. When the mobile catalog grew to describe the Flutter runtime, crt.DataGrid became a known mobile type, so a DataTable -> List conversion began to look like a same-component twin and merged DataGrid-shaped values (columns, features, bulkActions) onto an element that is a crt.List and declares none of them - and the list then rendered with no row. WebToMobileConversionServiceTests pins the resolution hermetically; what this adds is the same verdict travelling through the real clio mcp-server process. A conversion failure fails the test; a seed set with no grid-to-list conversion IGNORES with an explicit reason instead of passing silently.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide keeps a structural grid-to-list conversion free of grid-shaped values")]
+	[AllureDescription("Iterates the seeded application's pages through the real clio MCP server and, on the first page whose element map converts a web grid into a mobile crt.List, asserts the list insert carries the prebuilt crt.ListItem row and none of the web grid's own keys - the twin-merge classification that inverted when the mobile component catalog grew.")]
+	public async Task MobilePageConversionGuideTool_Should_Not_Carry_GridShaped_Values_Onto_A_Converted_List() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterFeatureOrIgnoreAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		IReadOnlyList<string> candidates = await ResolveSeededTabbedPageCandidatesOrIgnoreAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+
+		// Act - convert candidates until one actually produces a grid -> list conversion. A conversion
+		// FAILURE fails the test right here: it is a runtime regression, never a seed gap, and deferring it
+		// would let a later candidate mask it behind a green run.
+		bool gridToListExercised = false;
+		string convertedSchemaName = string.Empty;
+		foreach (string schemaName in candidates) {
+			CallToolResult callResult = await context.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = schemaName,
+						["environment-name"] = environmentName
+					}
+				},
+				context.CancellationTokenSource.Token);
+			(callResult.IsError == true).Should().BeFalse(
+				because: $"get-mobile-page-conversion-guide must succeed on every seeded page, and '{schemaName}' "
+					+ "returned a transport-level error - a runtime regression, not missing seed data");
+			MobilePageConversionGuideResponse response =
+				EntitySchemaStructuredResultParser.Extract<MobilePageConversionGuideResponse>(callResult);
+			response.Success.Should().BeTrue(
+				because: $"get-mobile-page-conversion-guide must succeed on every seeded page, and '{schemaName}' "
+					+ $"failed with: {response.Error} - a runtime regression, not missing seed data");
+			MobilePageConversionGuide guide = response.Guide!;
+			// Only a STRUCTURAL conversion exercises the classification: the web element must be a different
+			// component from the mobile one. A page whose crt.List came from a crt.List would satisfy the
+			// assertions by construction and report a vacuous run as a real one.
+			// MERGE is the shape that matters most and the one an insert-only filter misses: on a list page
+			// the mobile template already provides the List, so the grid converts by merge-by-name onto it,
+			// and the twin payload this guards travels in exactly that merge.
+			List<ElementMapEntry> structuralLists = guide.ElementMap.Where(e =>
+					(string.Equals(e.Operation, "insert", StringComparison.OrdinalIgnoreCase)
+						|| string.Equals(e.Operation, "merge", StringComparison.OrdinalIgnoreCase))
+					&& string.Equals(e.MobileType, "crt.List", StringComparison.OrdinalIgnoreCase)
+					&& !string.IsNullOrWhiteSpace(e.WebType)
+					&& !string.Equals(e.WebType, "crt.List", StringComparison.OrdinalIgnoreCase))
+				.ToList();
+			// A structural list that carries NOTHING is the pre-fix behaviour, and it is also the legitimate
+			// outcome for a degenerate grid (columns bound as a string). Treating it as "exercised" is what made
+			// this test vacuous: it would report a green run on the very regression it exists for. Keep looking.
+			List<ElementMapEntry> carryingTheRow = guide.ElementMap
+				.Where(e => string.Equals(e.MobileType, "crt.ListItem", StringComparison.OrdinalIgnoreCase)
+					&& string.Equals(e.Operation, "merge", StringComparison.OrdinalIgnoreCase)
+					&& e.MobileValues is not null)
+				.ToList();
+			if (structuralLists.Count == 0 || carryingTheRow.Count == 0) {
+				continue;
+			}
+			AssertStructuralTwinCarriesNoGridShapedValues(structuralLists);
+			AssertStructuralTwinRowIsItsOwnEntry(guide, carryingTheRow);
+			AssertConvertedListsCarryTheirRow(guide);
+			gridToListExercised = true;
+			convertedSchemaName = schemaName;
+			break;
+		}
+
+		// Assert
+		if (!gridToListExercised) {
+			Assert.Ignore(
+				$"None of the {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
+				+ "converts a web grid into a mobile crt.List whose template provides a row element, so the structural-twin classification could not be exercised "
+				+ "end to end. This skip is not a coverage gap for the classification itself: it is pinned hermetically by "
+				+ "WebToMobileConversionServiceTests, which runs on every build. What is NOT covered while this skips is the "
+				+ "same verdict reaching the caller through the real clio mcp-server process. To close it, the stand "
+				+ "provisioning has to add a seeded list page carrying a crt.DataTable - the seed application is pushed as "
+				+ "prebuilt archives and no repository change can add a page to it.");
+		}
+		TestContext.Out.WriteLine(
+			$"structural grid-to-list invariant asserted against seeded page '{convertedSchemaName}'.");
+	}
+
+	/// <summary>
+	/// A structural twin (the web element is a DIFFERENT component from the mobile one) must carry none of the
+	/// web grid's own inputs onto the list: the list declares none of them, and the regression this test exists
+	/// for was exactly that payload — the grid's keys arrived on a crt.List and the list rendered with no row.
+	/// </summary>
+	private static void AssertStructuralTwinCarriesNoGridShapedValues(IReadOnlyList<ElementMapEntry> lists) {
+		foreach (ElementMapEntry list in lists.Where(e => e.MobileValues is not null)) {
+			IEnumerable<string> keys = list.MobileValues!.AsObject().Select(p => p.Key);
+			keys.Should().NotIntersectWith(GridOnlyInputs,
+				because: $"'{list.WebName}' is a {list.WebType} converting into a {list.MobileType}, which declares "
+					+ "none of the grid's own inputs - carrying them is the inverted twin classification itself");
+		}
+	}
+
+	/// <summary>Inputs declared by the web grid and by no mobile list.</summary>
+	private static readonly string[] GridOnlyInputs = [
+		"columns", "features", "bulkActions", "rowActions", "primaryDisplayColumnName"
+	];
+
+	/// <summary>
+	/// The row of a converted grid arrives as its OWN merge entry on the template's crt.ListItem element, and
+	/// the parent crt.List carries nothing. Both halves matter: crt.List is not a container and itemLayout is
+	/// an input, so a row placed in the parent's merge values is discarded by the differ (the slot already holds
+	/// the template's named element) and the list renders empty with nothing reporting it.
+	/// </summary>
+	private static void AssertStructuralTwinRowIsItsOwnEntry(
+		MobilePageConversionGuide guide, IReadOnlyList<ElementMapEntry> rows) {
+		foreach (ElementMapEntry row in rows) {
+			row.MobileName.Should().NotBeNullOrWhiteSpace(
+				because: "a merge is addressed by name, so the row entry has to name the template's own element");
+			JsonObject values = row.MobileValues!.AsObject();
+			values.Should().NotContainKey("name",
+				because: "a merge targets an element the template already named");
+			// Conditional for the same reason the sibling assertion is: a grid whose first column has no `code`
+			// legitimately renders a row with no title, and asserting it unconditionally is what made that
+			// helper fail against a seeded page.
+			if (values["title"] is { } title) {
+				title.GetValueKind().Should().Be(JsonValueKind.String,
+					because: "a title is a plain binding string; the { value: ... } shape is for body entries and "
+						+ "renders an empty Title column");
+			}
+		}
+		guide.ElementMap
+			.Where(e => string.Equals(e.MobileType, "crt.List", StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(e.Operation, "merge", StringComparison.OrdinalIgnoreCase)
+				&& e.MobileValues is not null)
+			.Should().OnlyContain(e => !e.MobileValues!.AsObject().ContainsKey("itemLayout"),
+				because: "itemLayout inside a merge of the parent List is a silent no-op - the shipped guidance "
+					+ "says so and every OOTB mobile list template already fills that slot with a named ListItem");
+	}
+
+
 	/// <summary>
 	/// The entry-graph invariant of the excludedComponents pass, re-derived independently of the product
 	/// code: a SURVIVING insert of a banned <c>type</c> must have NO ancestor-entry chain (via

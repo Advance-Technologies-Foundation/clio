@@ -276,8 +276,17 @@ public class BindingsModule {
 		// configured once here so callers never mutate HttpClient.Timeout after construction
 		// (avoids `InvalidOperationException` on reused instances and races on a shared
 		// mutable property — see code-review #1 on PR #599).
+		// The response-size cap mirrors the sysenums client below for the same defence-in-depth reason:
+		// CacheAndReturnStreamAsync buffers the whole body with ReadAsByteArrayAsync, so an unbounded
+		// response is an unbounded allocation. The registry payload is a few hundred KB today and
+		// ENG-91859 roughly triples it, while the base URL is operator-overridable
+		// (CLIO_COMPONENT_REGISTRY_CDN_BASE_URL) — a multi-megabyte body is itself the signal that
+		// something is wrong.
 		services.AddHttpClient(ComponentRegistryClient.HttpClientName)
-			.ConfigureHttpClient(client => client.Timeout = ComponentRegistryClient.CdnFetchTimeout);
+			.ConfigureHttpClient(client => {
+				client.Timeout = ComponentRegistryClient.CdnFetchTimeout;
+				client.MaxResponseContentBufferSize = 10 * 1024 * 1024;
+			});
 		// Named HttpClient for background telemetry uploads — same registration-time-only
 		// timeout rule as the component-registry client above.
 		services.AddHttpClient(TelemetryFlushService.HttpClientName)

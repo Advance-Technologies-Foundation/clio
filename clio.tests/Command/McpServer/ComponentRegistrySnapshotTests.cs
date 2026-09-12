@@ -45,6 +45,9 @@ public sealed class ComponentRegistrySnapshotTests {
 		ComponentCatalogState state = ComponentInfoCatalog.LoadFromStream(stream);
 
 		// Assert — root-level envelope.
+		EnvelopeUnmappedKeys(snapshotPath).Should().BeEmpty(
+			because: "a new key at the ROOT of the payload lands on the envelope's own bucket, which no "
+				+ "caller reads and, until this assertion, no test inspected either");
 		state.GlobalReferences.Should().NotBeNull(
 			because: "the live payload now ships a top-level 'references' block (baseInputs + global typeDefinitions)");
 		UnmappedKeys(state.GlobalReferences!.UnmappedExtensions).Should().BeEmpty(
@@ -185,8 +188,37 @@ public sealed class ComponentRegistrySnapshotTests {
 					because: $"any new key under mobile '{entry.ComponentType}'.references.* must be mapped");
 			}
 		}
-		state.Entries.Should().NotBeEmpty(
-			because: "the live mobile catalog must list at least one component");
+		EnvelopeUnmappedKeys(snapshotPath).Should().BeEmpty(
+			because: "the mobile producer stamps provenance at the ROOT of the payload, so that is where "
+				+ "an unmapped key appears first");
+		// Symmetric with the web guard's GlobalReferences pair, with the asymmetry stated rather than
+		// hidden: the pinned mobile fixture ships NO root 'references' block today (35 components, no
+		// references), so a bare NotBeNull would fail for a reason that is not a defect. The invariant that
+		// actually holds in both states is that the raw payload and the mapped POCO agree — a 'references'
+		// key present in the JSON MUST arrive as state.GlobalReferences, and its own unmapped bucket must be
+		// empty. It is vacuous until the ENG-91859 producer publishes the block, and has teeth on the very
+		// first refresh of this fixture afterwards, with no test edit needed.
+		bool payloadDeclaresReferences = RootHasReferencesBlock(snapshotPath);
+		if (payloadDeclaresReferences) {
+			state.GlobalReferences.Should().NotBeNull(
+				because: "the payload ships a root 'references' block, so it must land on the mapped POCO "
+					+ "rather than being silently ignored");
+			UnmappedKeys(state.GlobalReferences!.UnmappedExtensions).Should().BeEmpty(
+				because: "any new key under mobile root.references.* must be mapped or explicitly allowlisted");
+		} else {
+			state.GlobalReferences.Should().BeNull(
+				because: "the pinned mobile fixture carries no root 'references' block, so the two "
+					+ "assertions above are VACUOUS today — this branch records that fact instead of "
+					+ "letting a reader mistake the guard for coverage. When the ENG-91859 producer starts "
+					+ "publishing references, refreshing the fixture flips execution to the branch above");
+		}
+		// A floor, not NotBeEmpty: the web guard has carried one since ENG-91571 and this one did not,
+		// so the fixture could rot from the live 46 down to a handful and stay green. 30 sits below the
+		// 35 it pins today, which is itself behind the live catalog: raise it when the fixture is
+		// refreshed at cutover.
+		state.Entries.Count.Should().BeGreaterThan(30,
+			because: "a fixture that quietly shrank would leave every per-entry assertion above passing "
+				+ "vacuously, which is the asymmetry this guard had against the web one");
 	}
 
 	[Test]
@@ -218,6 +250,102 @@ public sealed class ComponentRegistrySnapshotTests {
 			UnmappedKeys(composite.UnmappedExtensions).Should().BeEmpty(
 				because: $"every key on composite '{composite.Caption}' must be mapped, not dropped to an UnmappedExtensions bucket");
 		}
+	}
+
+	/// <summary>
+	/// The envelope's OWN <c>UnmappedExtensions</c> bucket, which no other assertion can reach.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="ComponentInfoCatalog"/> deserialises the envelope, keeps
+	/// <c>Components</c> / <c>References</c> / <c>Composites</c> and drops the envelope object, and
+	/// <see cref="ComponentCatalogState"/> has no field for the bucket. So a new ROOT-LEVEL producer key
+	/// reached neither a caller nor a test, while the doc comment on the bucket claimed this guard covered
+	/// it. Root level is where the next key lands: the mobile producer stamps provenance there.
+	/// </remarks>
+	private static IEnumerable<string> EnvelopeUnmappedKeys(string snapshotPath) {
+		using FileStream stream = File.OpenRead(snapshotPath);
+		ComponentRegistryEnvelope? envelope = JsonSerializer.Deserialize<ComponentRegistryEnvelope>(
+			stream,
+			new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+		envelope.Should().NotBeNull(because: $"'{snapshotPath}' must deserialise as a wrapped envelope");
+		return UnmappedKeys(envelope!.UnmappedExtensions);
+	}
+
+	[Test]
+	[Description("ENG-91859: the pinned mobile fixture must declare crt.ListItem.body as an ARRAY, not by a named class. crt.ListItem.body is the row's field list and every page schema writes a collection into it (list_item_preprocessor.dart folds the array into the single Dart field before deserialisation), but CoerceToDeclaredShape now resolves a named type to a container shape - so a body declared by class resolves to Object and the object branch keeps the FIRST entry and drops the rest, turning a seven-field row into one field on every converted list, silently. The fixture does not contain crt.ListItem today, so the array assertion is EXPLICITLY GATED on the type being present and the no-type branch asserts the only thing that is true today - that the fixture is still the pre-cutover pin - rather than skipping, because a skip reads as a pass. The guard therefore starts checking the declaration on the first fixture refresh after the ENG-91859 producer publishes, with no test edit needed.")]
+	public void Mobile_Registry_Snapshot_Should_Declare_ListItem_Body_As_An_Array() {
+		// Arrange
+		string snapshotPath = Path.Combine(
+			TestContext.CurrentContext.TestDirectory,
+			"Command/McpServer/Fixtures/MobileComponentRegistry.live-snapshot.json");
+		File.Exists(snapshotPath).Should().BeTrue(
+			because: $"the live mobile fixture must be present at '{snapshotPath}' for this guard to be meaningful");
+		using FileStream stream = File.OpenRead(snapshotPath);
+		ComponentCatalogState state = ComponentInfoCatalog.LoadFromStream(stream);
+
+		// Act
+		bool present = state.Lookup.TryGetValue("crt.ListItem", out ComponentRegistryEntry? listItem);
+
+		// Assert
+		if (!present) {
+			// Deliberately NOT Assert.Ignore: a skip reads as a pass and this branch must still be able to
+			// fail. VACUOUS TODAY BY FIXTURE CONTENT: the pinned fixture is the pre-cutover 35-component
+			// pin and holds no crt.ListItem, so there is no declaration to check and nothing clio-side can
+			// fail if the producer types body by class. What this branch DOES guard is the transition - the
+			// moment the fixture is refreshed to the Flutter-derived catalog (95 components as the
+			// generator stood on 2026-09-09) the count crosses this floor, and if crt.ListItem is still
+			// absent from a catalog that size, THAT is the signal to investigate the producer rather than
+			// leave the array declaration unchecked forever.
+			state.Entries.Count.Should().BeLessThan(40,
+				because: "crt.ListItem is absent, which is only explicable while the fixture is the "
+					+ "pre-cutover pin; a refreshed, Flutter-derived catalog that still omits the row "
+					+ "component means the producer lost it, and this test must not go on silently "
+					+ "checking nothing");
+			return;
+		}
+		BodyShapeOf(listItem!).Should().Be("array",
+			because: "crt.ListItem.body carries the row's field LIST; declared as an object (or by a named "
+				+ "type that resolves to one) CoerceToDeclaredShape keeps only its first entry, so a "
+				+ "multi-column row silently arrives with one field");
+	}
+
+	/// <summary>
+	/// The literal <c>type</c> the entry declares for <c>body</c>, lowercased, from either the wrapped
+	/// <c>inputs</c> shape or the legacy <c>properties</c> shape. Null when the property is absent — which
+	/// fails the assertion above, deliberately: a row component with no body declaration is as broken for the
+	/// converter as one declared with the wrong container.
+	/// </summary>
+	private static string? BodyShapeOf(ComponentRegistryEntry entry) {
+		if (entry.Inputs is not null) {
+			foreach (KeyValuePair<string, JsonElement> input in entry.Inputs) {
+				if (string.Equals(input.Key, "body", System.StringComparison.OrdinalIgnoreCase)
+					&& input.Value.ValueKind == JsonValueKind.Object
+					&& input.Value.TryGetProperty("type", out JsonElement declared)
+					&& declared.ValueKind == JsonValueKind.String) {
+					return declared.GetString()?.ToLowerInvariant();
+				}
+			}
+		}
+		if (entry.Properties is not null) {
+			foreach (KeyValuePair<string, ComponentPropertyDefinition> prop in entry.Properties) {
+				if (string.Equals(prop.Key, "body", System.StringComparison.OrdinalIgnoreCase)) {
+					return prop.Value.Type?.ToLowerInvariant();
+				}
+			}
+		}
+		return null;
+	}
+
+	/// <summary>
+	/// True when the raw payload declares a root <c>references</c> block. Read off the JSON rather than the
+	/// POCO on purpose: the point is to compare the two, so reading only the POCO would answer with itself.
+	/// </summary>
+	private static bool RootHasReferencesBlock(string snapshotPath) {
+		using FileStream stream = File.OpenRead(snapshotPath);
+		using JsonDocument document = JsonDocument.Parse(stream);
+		return document.RootElement.ValueKind == JsonValueKind.Object
+			&& document.RootElement.TryGetProperty("references", out JsonElement references)
+			&& references.ValueKind == JsonValueKind.Object;
 	}
 
 	private static IEnumerable<string> UnmappedKeys(IDictionary<string, JsonElement>? bucket) =>
