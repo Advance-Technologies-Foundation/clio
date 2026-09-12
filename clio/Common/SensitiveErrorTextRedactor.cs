@@ -76,10 +76,99 @@ internal static partial class SensitiveErrorTextRedactor {
 	// The value alternation takes the QUOTED forms first: the bare class excludes a quote character, so
 	// without them a quoted secret (password="s3cr3t") matches nothing at all and reaches the reader
 	// verbatim — the pattern has to fail closed on the whole pair, not on the quote.
+	//
+	// THE KEY WORDS are declared once and interpolated into this rule and into the JSON property rule
+	// below, so a key added here is covered in both spellings at the same time. Drift between the two
+	// would be silent: the pair form would be scrubbed and the JSON form would ship in the clear, which
+	// is the exact defect issue #1497 reports.
+	//
+	// They are split into TWO sets, because the JSON rule must not take all of them: a secret is a
+	// secret in any spelling, while a connection-string PART is only a secret when it is written as part
+	// of a connection string.
+	private const string CredentialSecretKeys =
+		@"password|pwd|pass|secret|token|api[_-]?key|client[_-]?secret|access[_-]?key|connection ?string|"
+		+ @"authorization|auth|bearer|set-cookie|cookie|asp\.net_sessionid|aspxauth|bpmcsrf|jsessionid|"
+		+ @"phpsessid|session[_-]?id|[xc]srf[_-]?token";
+
+	// The connection-string parts, as this rule sees them in
+	// "Data Source=db.internal;Initial Catalog=x;UID=sa". Kept OUT of the JSON key set except for the
+	// four a JSON body genuinely carries (server / host / hostname / database): "uid" is also how Creatio
+	// spells the identifier property "UId" on every schema, package and descriptor payload, so a JSON
+	// rule carrying it would replace an ordinary identifier with a credential placeholder on practically
+	// every diagnostic body. "user id", "data source" and "initial catalog" are excluded with it - they
+	// do not occur as JSON property names in this product, so including them would buy nothing and risk
+	// the same collision.
+	private const string ConnectionStringPartKeys =
+		@"data ?source|server|hostname|host|initial ?catalog|database|uid|user ?id";
+
 	[GeneratedRegex(
-		@"\b(password|pwd|pass|secret|token|api[_-]?key|client[_-]?secret|access[_-]?key|connection ?string|data ?source|server|host|hostname|initial ?catalog|database|uid|user ?id|authorization|auth|bearer|set-cookie|cookie|asp\.net_sessionid|aspxauth|bpmcsrf|jsessionid|phpsessid|session[_-]?id|[xc]srf[_-]?token)\b\s*[=:]\s*(?:""[^""]*""|'[^']*'|[^\s,;""']+)",
+		$@"\b({CredentialSecretKeys}|{ConnectionStringPartKeys})\b\s*[=:]\s*(?:""[^""]*""|'[^']*'|[^\s,;""']+)",
 		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
 	private static partial Regex CredentialPairRegex();
+
+	// The SAME key words as they are spelled in a JSON property name - the SECRET set, plus the four
+	// connection-string parts a JSON body genuinely carries. "uid", "user id", "data source" and
+	// "initial catalog" are deliberately NOT here; the reason is on ConnectionStringPartKeys and it is a
+	// real collision, not a theoretical one, so do not "fix" the drift by pasting the two sets together.
+	//
+	// The compound wrapper accepts separator-joined forms - "access_token", "db.password",
+	// "x-csrf-token", "token_type" - and nothing else. That is the word-boundary rule
+	// CredentialPairRegex already applies ('.' and '-' are word boundaries), widened by '_', which is a
+	// WORD character and therefore NOT matched by the pair rule - an asymmetry accepted here because an
+	// OAuth envelope is JSON and spells its keys that way. A trailing segment is accepted as well, so
+	// "token_type" and "server-version" are redacted where the pair form leaves them alone; that
+	// over-redaction is accepted, because this class prefers over-redacting to leaking. camelCase and
+	// glued forms stay OUT, which is what keeps "passwordHint" and "tokenCount" untouched in JSON
+	// exactly as "passwordHint=x" is untouched in key=value form.
+	private const string JsonCredentialKeyPattern =
+		$@"(?:[A-Za-z0-9]+[_.\-])*(?:{CredentialSecretKeys}|server|hostname|host|database)(?:[_.\-][A-Za-z0-9]+)*";
+
+	// The three spellings one JSON quote can take in text this rule runs over: a literal quote, the
+	// hand-written \" escape, and the \u0022 escape that System.Text.Json's DEFAULT encoder emits for a
+	// nested serialized body. Measured, not assumed:
+	// JsonSerializer.Serialize(new { body = "{\"password\":\"s3cr3t\"}" }) produces the \u0022 form, so a
+	// rule that knew only the backslash-quote spelling would redact nothing at all on a real envelope.
+	// The spelling is captured as <q> and the replacement writes the SAME spelling back, so one document
+	// never ends up with two spellings mixed into it.
+	private const string JsonQuoteSpellings = @"\\u0022|\\""|""";
+
+	// The value's content class. A plain quote and a backslash are excluded, and a backslash escape is
+	// consumed as one unit, so an escaped quote inside a PLAIN value ("a\"b") is taken with the value
+	// instead of ending it. The leading lookahead is what stops the class at the closing spelling.
+	private const string JsonStringContent = @"(?:(?!\k<q>)(?:[^""\\]|\\.))*";
+
+	// The non-string JSON values a credential can be written as. Without them a secret written unquoted
+	// (or a null/boolean flag under a secret key) would slip past the string alternative untouched.
+	private const string JsonLiteralValue = @"null|true|false|-?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?";
+
+	// A credential written as a JSON PROPERTY - "password":"s3cr3t" - which CredentialPairRegex cannot
+	// reach at all: it requires \b(key)\b\s*[=:], and the key's own CLOSING quote sits between the key
+	// and the colon, so the pair never matches. Measured on the shipped rules before this change:
+	// Redact("{\"password\":\"s3cr3t\"}") returned that input verbatim (issue #1497, found while
+	// finishing #1384). A JSON body is how a Creatio service answer, an environment-registration echo or
+	// a serialized DTO carries a credential, and Redact also runs over already-serialized tool envelopes
+	// (ClioRunTool.RedactFailureContent).
+	//
+	// The pair is rewritten in its JSON shape - "key":"[redacted]" - not in the key=value shape the pair
+	// rule uses, so the surrounding payload stays parseable JSON instead of losing a quote.
+	//
+	// ACCEPTED LIMITS, all deliberate and none of them demonstrated on a production path (see the review
+	// on PR #1504): an object or array value is NOT matched, because a regex cannot balance brackets; a
+	// value sliced by an input cap before its closing quote is NOT matched; MIXED spellings inside one
+	// document are NOT matched, because the closing quote is a backreference to the opening one; and at
+	// the two ESCAPED spellings an inner escaped quote ends the value early, so its tail is not redacted
+	// (System.Text.Json writes that inner quote as \\ plus the spelling, and the escape unit above
+	// consumes only the first two backslashes). In every one of these cases the property is left exactly
+	// as it was found, so the document still parses. This redactor is a last line of defence, not the
+	// only one.
+	//
+	// NO \uXXXX guard here, unlike UriRegex/HostPortRegex/EmailRegex. Those carry one because they can
+	// begin a match on the "u" INSIDE a \u0022 escape and swallow the backslash. This rule begins on a
+	// complete quote spelling instead, so it cannot start mid-escape.
+	[GeneratedRegex(
+		$@"(?<q>{JsonQuoteSpellings})(?<key>{JsonCredentialKeyPattern})\k<q>\s*:\s*(?:\k<q>{JsonStringContent}\k<q>|{JsonLiteralValue})",
+		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
+	private static partial Regex JsonCredentialPropertyRegex();
 
 	// "Bearer <token>" as it appears in an Authorization header value (not necessarily behind a
 	// key=value pair). The token segment is replaced wholesale.
@@ -128,7 +217,51 @@ internal static partial class SensitiveErrorTextRedactor {
 	// update-page inline-placeholder e2e tests). The lookbehind refuses a match that begins anywhere inside
 	// a "\uXXXX" escape - including on the "u" itself, which is where the corrupting match actually started
 	// - while a match that begins right AFTER the complete escape (the address) is still redacted.
-	[GeneratedRegex(@"(?<!\\u?[0-9A-Fa-f]{0,3})[A-Za-z0-9._%+\-]+@[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}",
+	//
+	// THE HOST IS AN ORDERED ALTERNATION of three shapes (issue #1380). The dotted shape alone required at
+	// least one dot, so an address on a SINGLE-label host was not matched at all - "admin@localhost",
+	// "svc@creatio-app", "user@INTRANET", "user@[10.0.0.5]". On-prem Creatio deployments are the population
+	// whose authentication failures most often name such an address, so the rule missed exactly where it is
+	// most needed. Order is load-bearing: the dotted branch is tried BEFORE the single-label one, so
+	// "user@host.example.com" is consumed whole instead of stopping after "user@host" and leaving a
+	// half-redacted ".example.com" tail in the clear.
+	//   1. \[[^\]\s]{1,45}\] - anything bracketed, matched together with its brackets so no stray "]" is
+	//      left behind. Brackets immediately after "@" are the authority-literal syntax and nothing else, so
+	//      the class is deliberately loose rather than IP-shaped: it also covers the zone index .NET writes
+	//      into socket errors ("user@[fe80::1%eth0]") and the RFC 5321 tagged form ("user@[IPv6:fe80::1]"),
+	//      both of which an IP-only class left in the clear. The length bound keeps the branch from
+	//      scanning a whole line after an unmatched "[".
+	//   2. the pre-existing dotted host, whose FINAL label must be alphabetic and at least two characters
+	//      (PR #1374 review): with a purely alphanumeric last label, "clio@8.0.1" and the "kit@1.2.3" tail
+	//      of "@creatio/ui-kit@1.2.3" matched, so package-and-version - load-bearing diagnostic content in
+	//      this product - was silently replaced by a placeholder indistinguishable from a real credential
+	//      redaction. Unchanged here; widening must not reopen it.
+	//   3. a single label: starts with a LETTER, is at least two characters long, and may carry digits or
+	//      hyphens after the first character. The letter start is what keeps rule 2's narrowing intact -
+	//      "@8.0.1", "@20" and "@1.2.3" cannot enter this branch at all. A trailing DIGIT is allowed,
+	//      because on-prem host names routinely end in one ("user@WEB01", "svc@dev04").
+	// Branch 3's trailing (?![A-Za-z0-9\-]) only forbids stopping part-way through a label. It deliberately
+	// does NOT also forbid a following ".<label>". An earlier revision did, on the theory that it prevented
+	// a partial match; it does not - for "user@host.example.c" branch 2 backtracks to "user@host.example"
+	// and the ".c" is left over either way. What the extra arm actually did was turn a single-label host
+	// followed by a short or numeric label into a TOTAL leak: "user@localhost.c", "user@node1.k8s" and
+	// "admin@host.i18n" fail branch 2 (last label too short / not alphabetic) and were then refused by
+	// branch 3 as well, so they shipped in the clear. Without it they become "[redacted].c" / "[redacted]
+	// .k8s". The price is that a four-part version behind a letter-led head ("x@v4.1.1") is cut to
+	// "[redacted].1.1", which this class's policy accepts: over-redacting is acceptable, leaking is not.
+	// SHAPES THIS BRANCH NOW EATS, all accepted for the same reason - none of them can be told apart from a
+	// UPN on a single-label host, which is exactly what must be redacted:
+	//   "Contact@Account"-style identifiers, GitHub Actions refs ("checkout@v5", "setup-dotnet@v4", which
+	//   live in .github/workflows and never reach this redactor), branch references
+	//   ("ProcessBuilder@feature"), and npm dist-tags ("uuid@latest" - the npm prose around it still tells
+	//   the operator what happened when it reads "uuid@[redacted]"). A case-sensitive carve-out for
+	//   "latest" was tried and removed: it let "svc@latest" leak while redacting "svc@LATEST", and an
+	//   on-prem host may well be named either.
+	// "git@github.com:org/repo.git" was already matched by branch 2 and still becomes
+	// "[redacted]:org/repo.git"; a digest specifier ("image@sha256:...") stops at the ":" the same way.
+	// Also unchanged by this widening: "Prop@odata.mediaReadLink"-style OData annotations were already
+	// eaten by the dotted branch before issue #1380 and still are.
+	[GeneratedRegex(@"(?<!\\u?[0-9A-Fa-f]{0,3})[A-Za-z0-9._%+\-]+@(?:\[[^\]\s]{1,45}\]|[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}|[A-Za-z][A-Za-z0-9\-]*[A-Za-z0-9](?![A-Za-z0-9\-]))",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex EmailRegex();
 
@@ -334,6 +467,12 @@ internal static partial class SensitiveErrorTextRedactor {
 	/// values replaced by stable placeholders. Safe to call on already-clean messages (no match → returned
 	/// unchanged) and on <see langword="null"/>/empty input (returns <see cref="string.Empty"/>).
 	/// </summary>
+	/// <remarks>
+	/// A credential is recognized in BOTH spellings: the <c>key=value</c> / <c>key: value</c> pair
+	/// (<c>CredentialPairRegex</c>) and the JSON property <c>"key":"value"</c> in its plain, its
+	/// backslash-escaped and its <c>\u0022</c>-escaped form (issue #1497). The JSON rule runs FIRST in the
+	/// chain; the ordering is load-bearing and the reason is stated at the call site inside this method.
+	/// </remarks>
 	/// <param name="text">The raw, possibly-sensitive error text.</param>
 	/// <returns>The redacted text, safe to surface to the MCP client.</returns>
 	public static string Redact(string? text) {
@@ -341,9 +480,23 @@ internal static partial class SensitiveErrorTextRedactor {
 			return string.Empty;
 		}
 		return ExecuteRegex(() => {
-			// URIs first: a scheme://user:pass@host authority must be removed whole before the narrower
+			// JSON-shaped credential properties FIRST - before EVERY other rule, not merely before
+			// CredentialPairRegex. BearerTokenRegex (fifth in this chain) and CredentialPairRegex (last)
+			// both take a bare value class that does not exclude a backslash, so on an escaped spelling
+			// they eat the value's CLOSING escape and leave a lone backslash behind, which is not a valid
+			// JSON escape - the caller then loses the whole tool response rather than one field. Measured,
+			// not reasoned - moving this rule after them turns both cases of
+			// Redact_ShouldKeepEscapedJsonParseable_WhenTheValueAlsoMatchesALaterRule red:
+			//   \"authorization\":\"Bearer abc\"  -> BearerTokenRegex consumes "abc\" (its class stops
+			//                                         at the quote but takes the backslash with it)
+			//   \"cookie\":\"BPMCSRF=abc\"        -> CredentialPairRegex does the same to the pair
+			// and the lone backslash left behind is not a valid JSON escape. Nothing is lost by going
+			// first: a secret-keyed value is replaced wholesale either way, so the URI/host/path rules
+			// have nothing left to find inside it.
+			string result = JsonCredentialPropertyRegex().Replace(text, RedactJsonCredentialProperty);
+			// URIs next: a scheme://user:pass@host authority must be removed whole before the narrower
 			// path/credential passes run, so its embedded host/credentials never survive.
-			string result = UriRegex().Replace(text, RedactedUri);
+			result = UriRegex().Replace(result, RedactedUri);
 			// Tokens next, before host:port — a JWT/Bearer value can contain dots/segments that would
 			// otherwise be partially nibbled by later passes; scrub them whole first.
 			result = JwtRegex().Replace(result, RedactedValue);
@@ -358,6 +511,15 @@ internal static partial class SensitiveErrorTextRedactor {
 			result = CredentialPairRegex().Replace(result, match => $"{match.Groups[1].Value}={RedactedValue}");
 			return result;
 		});
+	}
+
+	/// <summary>
+	/// Rewrites a credential-keyed JSON property as <c>"key":"[redacted]"</c> in the SAME quote spelling
+	/// the match was written in, so a document written with one spelling never gains a second one.
+	/// </summary>
+	private static string RedactJsonCredentialProperty(Match match) {
+		string quote = match.Groups["q"].Value;
+		return $"{quote}{match.Groups["key"].Value}{quote}:{quote}{RedactedValue}{quote}";
 	}
 
 	internal static string ExecuteRegex(Func<string> operation) {

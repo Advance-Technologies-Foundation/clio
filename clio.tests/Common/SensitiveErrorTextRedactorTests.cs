@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text.Json;
 using Clio.Common;
@@ -717,6 +719,8 @@ public sealed class SensitiveErrorTextRedactorTests {
 	[TestCase("Request to \"https://prod.creatio.com/0/rest/x\" failed", "prod.creatio.com", TestName = "SerializedJson_QuotedUri")]
 	[TestCase("Could not connect to \"db.internal:1433\" - timeout", "db.internal:1433", TestName = "SerializedJson_QuotedHostPort")]
 	[TestCase("the inline literal \"name@firm.com\" instead of x", "name@firm.com", TestName = "SerializedJson_QuotedEmail")]
+	[TestCase("the inline literal \"admin@localhost\" instead of x", "admin@localhost", TestName = "SerializedJson_QuotedSingleLabelEmail")]
+	[TestCase("the inline literal \"user@[10.0.0.5]\" instead of x", "user@[10.0.0.5]", TestName = "SerializedJson_QuotedBracketedIpEmail")]
 	[Description("Every rule that can begin a match on the 'u' of a \u0022 escape carries the same guard: a quoted URL and a quoted host:port are as routine in clio error text as an address, and eating the escape leaves a dangling backslash that stops the whole tool response from parsing (PR #1372 review).")]
 	public void Redact_ShouldKeepSerializedJsonParseable_ForEveryQuotedSecretShape(string inner, string secret) {
 		// Arrange - the exact shape ClioRunTool.RedactFailureContent scrubs.
@@ -812,5 +816,396 @@ public sealed class SensitiveErrorTextRedactorTests {
 			index = text.IndexOf(token, index + token.Length, StringComparison.OrdinalIgnoreCase);
 		}
 		return count;
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An address on a SINGLE-label host is redacted: an on-prem Creatio deployment is the population whose authentication failures most often name one, and requiring a dotted host missed exactly there (issue #1380).")]
+	[TestCase("admin@localhost", TestName = "SingleLabel_Localhost")]
+	[TestCase("svc@creatio-app", TestName = "SingleLabel_Hyphenated")]
+	[TestCase("user@INTRANET", TestName = "SingleLabel_UppercaseUpn")]
+	[TestCase("svc@WEB01", TestName = "SingleLabel_TrailingDigit")]
+	[TestCase("svc@beta", TestName = "SingleLabel_PlausibleHostNamedLikeADistTag")]
+	[TestCase("svc@latest", TestName = "SingleLabel_PlausibleHostNamedLikeTheNpmDistTag")]
+	[TestCase("uuid@latest", TestName = "SingleLabel_NpmDistTagIsTheAcceptedLoss")]
+	public void Redact_ShouldRedactAnAddressOnASingleLabelHost(string address) {
+		// Arrange
+		string message = $"Authentication failed for {address} on this environment.";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(message);
+
+		// Assert
+		redacted.Should().Be("Authentication failed for [redacted] on this environment.",
+			because: "an identity naming a single-label on-prem host is still an identity and must not reach "
+				+ "an MCP envelope or a pasted log, and redaction stays surgical around it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An address whose host is a bracketed IP literal is redacted together with its brackets, so no stray ']' is left behind for the reader (issue #1380).")]
+	[TestCase("user@[10.0.0.5]", TestName = "BracketedIp_V4")]
+	[TestCase("user@[::1]", TestName = "BracketedIp_V6Loopback")]
+	[TestCase("svc@[fe80::1]", TestName = "BracketedIp_V6LinkLocal")]
+	[TestCase("user@[fe80::1%eth0]", TestName = "BracketedIp_V6ZoneIndex")]
+	[TestCase("user@[IPv6:fe80::1]", TestName = "BracketedIp_Rfc5321TaggedForm")]
+	public void Redact_ShouldRedactAnAddressOnABracketedIpLiteral(string address) {
+		// Arrange
+		string message = $"Login rejected for {address} after 3 attempts.";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(message);
+
+		// Assert
+		redacted.Should().NotContain(address,
+			because: "the literal names an internal endpoint as directly as a DNS host does");
+		redacted.Should().Be("Login rejected for [redacted] after 3 attempts.",
+			because: "the brackets belong to the match - leaving a dangling ']' would give the reader an "
+				+ "unbalanced fragment, and everything else the operator acts on survives around the placeholder");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("EmailRegex runs BEFORE HostPortRegex, so an address with a trailing port leaves no partially redacted fragment - the whole address goes and only the port number remains, on a dotted host, a single-label host and a bracketed IP alike (issue #1380).")]
+	[TestCase("user@host.example.com:8080", "user@host.example.com", "8080", TestName = "WithPort_DottedHost")]
+	[TestCase("user@localhost:8080", "user@localhost", "8080", TestName = "WithPort_SingleLabelHost")]
+	[TestCase("user@[10.0.0.5]:1433", "user@[10.0.0.5]", "1433", TestName = "WithPort_BracketedIp")]
+	public void Redact_ShouldLeaveNoPartiallyRedactedFragment_WhenAnAddressCarriesAPort(
+		string endpoint, string address, string port) {
+		// Arrange
+		string message = $"Could not connect as {endpoint} - timeout.";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(message);
+
+		// Assert
+		redacted.Should().NotContain(address,
+			because: "the address itself is what must disappear, whichever rule claims the trailing port");
+		redacted.Should().Be($"Could not connect as [redacted]:{port} - timeout.",
+			because: "the result must be one placeholder plus the port - no half-redacted host, no leftover local part");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Shapes that carry an '@' but are not addresses survive the widened host rule: an npm scope has no local part at all, a mention and a git reflog reference are not hosts, and a version tail is still blocked by the 'final label alphabetic' narrowing from PR #1374.")]
+	[TestCase("@angular/core", TestName = "Survives_NpmScopeNoLocalPart")]
+	[TestCase("@creatio/ui-kit", TestName = "Survives_CreatioScopeNoLocalPart")]
+	[TestCase("@claude", TestName = "Survives_Mention")]
+	[TestCase("HEAD@{1}", TestName = "Survives_GitReflog")]
+	[TestCase("clio@8.0.1", TestName = "Survives_VersionSpecifier")]
+	[TestCase("node@20.11.1", TestName = "Survives_NodeVersionSpecifier")]
+	[TestCase("@creatio/ui-kit@1.2.3", TestName = "Survives_ScopedVersionSpecifier")]
+	public void Redact_ShouldNotRedactANonAddressAtShape(string shape) {
+		// Arrange
+		string message = $"Restore step reported {shape} during the run.";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(message);
+
+		// Assert
+		redacted.Should().Contain(shape,
+			because: "the placeholder is indistinguishable from a real credential removal, so a non-identity must never get one");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A host whose LAST label is too short or not alphabetic for the dotted rule still loses everything up to that label, instead of shipping whole: the single-label branch must not refuse the match just because a dot follows it (review of the first #1380 revision).")]
+	[TestCase("user@host.example.c", "[redacted].c", TestName = "DotTail_DottedHeadShortLastLabel")]
+	[TestCase("user@localhost.c", "[redacted].c", TestName = "DotTail_SingleLabelHeadShortLastLabel")]
+	[TestCase("user@node1.k8s", "[redacted].k8s", TestName = "DotTail_SingleLabelHeadNumericLeadLastLabel")]
+	[TestCase("admin@host.i18n", "[redacted].i18n", TestName = "DotTail_SingleLabelHeadAlphanumericLastLabel")]
+	public void Redact_ShouldNotLeaveTheWholeHost_WhenTheLastLabelFailsTheDottedRule(string address, string expected) {
+		// Arrange
+		string message = $"Validation failed for {address} on column 'Name'.";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(message);
+
+		// Assert
+		redacted.Should().Be($"Validation failed for {expected} on column 'Name'.",
+			because: "refusing the match outright published the whole address, which this class's policy "
+				+ "rejects - over-redacting is acceptable, leaking is not");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("RedactAll applies the widened rule to every entry, so a batch of lines carrying one of each new host shape comes back with no address left (issue #1380).")]
+	public void RedactAll_ShouldRedactEveryNewHostShape() {
+		// Arrange
+		string[] lines = [
+			"Authentication failed for admin@localhost.",
+			"Authentication failed for svc@creatio-app.",
+			"Authentication failed for user@INTRANET.",
+			"Authentication failed for user@[10.0.0.5].",
+			"Authentication failed for john.doe@acme.com."
+		];
+
+		// Act
+		List<string> redacted = SensitiveErrorTextRedactor.RedactAll(lines);
+
+		// Assert
+		redacted.Should().HaveCount(lines.Length,
+			because: "RedactAll preserves input order and arity so a caller can zip the results back");
+		redacted.Should().OnlyContain(line => !line.Contains('@'),
+			because: "every entry carried exactly one address and no other '@' shape");
+		redacted.Should().OnlyContain(line => line.Contains("[redacted]"),
+			because: "each line must show the placeholder where its address stood");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The widened host alternation must not backtrack its way into the 1 s MatchTimeout: a timeout on this failure-reporting path replaces the ENTIRE text with the bare '[redacted]' sentinel, so the operator loses the whole diagnostic rather than one token.")]
+	[TestCase(true, TestName = "Adversarial_LongLocalPartAndManyLabels")]
+	[TestCase(false, TestName = "Adversarial_LongRunWithNoAtSign")]
+	public void Redact_ShouldNotHitTheRegexTimeout_OnAnAdversarialBody(bool withAtSign) {
+		// Arrange - the two shapes the e-mail rule backtracks worst on: a huge local part in front of a
+		// host made of many labels whose last one can never satisfy the dotted rule, and a long run with
+		// no '@' at all, where every position is a candidate start for the local-part class.
+		string text = withAtSign
+			? new string('a', 5_000) + "@" + string.Join(".", Enumerable.Repeat("a1", 1_600))
+			: new string('a', 10_000);
+
+		// Act
+		Stopwatch stopwatch = Stopwatch.StartNew();
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+		stopwatch.Stop();
+
+		// Assert
+		redacted.Should().NotBe("[redacted]",
+			because: "that exact value is ExecuteRegex's timeout sentinel - seeing it means the chain timed "
+				+ "out and the whole message was thrown away");
+		stopwatch.ElapsedMilliseconds.Should().BeLessThan(500,
+			because: "the bound is half the MatchTimeout and generous enough for a loaded CI agent, so a "
+				+ "failure here means real backtracking growth, not a slow machine");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts a credential written as a plain JSON property - the shape CredentialPairRegex cannot reach, because the key's closing quote sits where that rule needs its '=' or ':' - and leaves the payload parseable JSON.")]
+	public void Redact_ShouldRedactPlainJsonCredentialProperty() {
+		// Arrange
+		const string text = """{"environment":"dev","password":"s3cr3t"}""";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().NotContain("s3cr3t",
+			because: "a credential written as a JSON property is the shape a service answer actually uses");
+		redacted.Should().Be("""{"environment":"dev","password":"[redacted]"}""",
+			because: "the pair is rewritten in its JSON shape, so the document stays parseable and the "
+				+ "non-secret sibling property survives untouched");
+		FluentActions.Invoking(() => JsonDocument.Parse(redacted)).Should().NotThrow(
+			because: "the redacted envelope is parsed by the MCP caller, not merely printed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts a credential inside a nested serialized JSON string written with the backslash-quote spelling, where the plain rule finds no literal quote after the key.")]
+	public void Redact_ShouldRedactBackslashEscapedJsonCredentialProperty() {
+		// Arrange - a hand-written escaped body, the spelling a caller produces when it concatenates JSON.
+		const string text = """{"body":"{\"password\":\"s3cr3t\"}"}""";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().NotContain("s3cr3t",
+			because: "one level of escaping must not hide the credential from the rule");
+		FluentActions.Invoking(() => JsonDocument.Parse(redacted)).Should().NotThrow(
+			because: "the replacement writes the SAME escaped spelling back, so the escapes stay balanced");
+		JsonDocument.Parse(redacted).RootElement.GetProperty("body").GetString().Should()
+			.Be("""{"password":"[redacted]"}""",
+				because: "the inner document must still parse once the outer string is decoded");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts a credential inside a nested serialized JSON string written with the \\u0022 spelling - what System.Text.Json's DEFAULT encoder actually emits, generated here rather than hand-typed so the test also proves the claim.")]
+	public void Redact_ShouldRedactUnicodeEscapedJsonCredentialProperty() {
+		// Arrange - generated, not hand-written: this is the exact shape a serialized tool envelope carries.
+		string text = JsonSerializer.Serialize(new { body = """{"password":"s3cr3t"}""" });
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		text.Should().Contain("\\u0022",
+			because: "the rule's third quote spelling exists because this is what System.Text.Json emits");
+		redacted.Should().NotContain("s3cr3t",
+			because: "the spelling a real envelope uses must be the one the rule covers");
+		JsonDocument.Parse(redacted).RootElement.GetProperty("body").GetString().Should()
+			.Be("""{"password":"[redacted]"}""",
+				because: "the inner document must survive the replacement as valid JSON");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase("null")]
+	[TestCase("true")]
+	[TestCase("false")]
+	[TestCase("42")]
+	[TestCase("-1.5e3")]
+	[Description("Redacts a non-string JSON value (null/true/false/number) so a secret written without quotes does not slip past the string-only alternative.")]
+	public void Redact_ShouldRedactBareJsonLiteralValue(string literal) {
+		// Arrange
+		string text = $$"""{"token":{{literal}}}""";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().Be("""{"token":"[redacted]"}""",
+			because: "an unquoted value under a secret key is still a secret, and the result must be JSON");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Leaves a non-secret JSON property untouched, so ordinary diagnostic content is not replaced by a placeholder indistinguishable from a real credential redaction.")]
+	public void Redact_ShouldLeaveNonSecretJsonProperty_Untouched() {
+		// Arrange
+		const string text = """{"packageName":"CrtBase","stage":"install"}""";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().Be(text,
+			because: "over-redacting ordinary diagnostic content costs the agent the reason it needs");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("'UId' is how Creatio spells the identifier property on every schema, package and descriptor payload, so the JSON key set must NOT carry the connection-string key 'uid' - otherwise practically every diagnostic body loses its identifier to a credential placeholder.")]
+	public void Redact_ShouldLeaveTheCreatioUIdProperty_Untouched() {
+		// Arrange
+		const string text = """{"UId":"a1b2c3d4-0000-0000-0000-000000000001","Name":"CrtBase"}""";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().Be(text,
+			because: "'UId' is an identifier in this product, not a connection-string user id");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase("passwordHint")]
+	[TestCase("tokenCount")]
+	[TestCase("Authorized")]
+	[Description("A key that merely CONTAINS a secret word as a glued prefix/suffix is left alone, matching the word-boundary behaviour CredentialPairRegex already has for 'passwordHint=x'.")]
+	public void Redact_ShouldLeaveGluedJsonKey_Untouched(string key) {
+		// Arrange
+		string text = $$"""{"{{key}}":"plain"}""";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().Be(text,
+			because: "a glued key is not a credential key in either spelling");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase("access_token")]
+	[TestCase("x-csrf-token")]
+	[TestCase("db.password")]
+	[Description("A separator-joined compound key IS redacted: '.' and '-' are word boundaries the pair rule already honours, and '_' is widened deliberately because an OAuth envelope spells its keys that way.")]
+	public void Redact_ShouldRedactSeparatorJoinedJsonKey(string key) {
+		// Arrange
+		string text = $$"""{"{{key}}":"s3cr3t"}""";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().Be($$"""{"{{key}}":"[redacted]"}""",
+			because: "a separator-joined credential key is the normal spelling in an OAuth envelope");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase("server")]
+	[TestCase("host")]
+	[TestCase("database")]
+	[Description("A connection-string host/database key is redacted in JSON form too: the key=value rule already scrubs it, and leaving \"server\":\"db.internal\" in the clear would make the two spellings disagree.")]
+	public void Redact_ShouldRedactConnectionPartJsonKey(string key) {
+		// Arrange
+		string text = $$"""{"{{key}}":"db.internal"}""";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().Be($$"""{"{{key}}":"[redacted]"}""",
+			because: "the JSON spelling of a connection-string part must not disagree with the pair form");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ORDERING: the JSON rule must run before BearerTokenRegex and CredentialPairRegex, whose bare value class does not exclude a backslash and would otherwise eat the value's CLOSING escape and leave an unparseable document.")]
+	[TestCase("authorization", "Bearer abc", TestName = "Ordering_BeforeBearerTokenRegex")]
+	[TestCase("cookie", "BPMCSRF=abc", TestName = "Ordering_BeforeCredentialPairRegex")]
+	public void Redact_ShouldKeepEscapedJsonParseable_WhenTheValueAlsoMatchesALaterRule(string key, string secret) {
+		// Arrange - the two measured cases, both in the backslash-quote spelling, which is where a later
+		// rule's bare class reaches the value's closing escape: BearerTokenRegex on "Bearer abc" and
+		// CredentialPairRegex on the "BPMCSRF=abc" pair inside the cookie value.
+		string text = $$"""{"body":"{\"{{key}}\":\"{{secret}}\"}"}""";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().NotContain("abc",
+			because: "the secret itself must be gone whichever rule reaches it");
+		FluentActions.Invoking(() => JsonDocument.Parse(redacted)).Should().NotThrow(
+			because: "a later rule eating the value's closing escape leaves a lone backslash, which is not "
+				+ "a valid JSON escape - the caller then loses the whole response, not one field");
+		JsonDocument.Parse(redacted).RootElement.GetProperty("body").GetString().Should()
+			.Be($$"""{"{{key}}":"[redacted]"}""",
+				because: "the value must be replaced whole, in its JSON shape, before any sub-token rule "
+					+ "can nibble at it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redaction is idempotent for every JSON spelling: running it over an already-redacted envelope changes nothing, so a value cannot be re-wrapped into an unparseable shape.")]
+	public void Redact_ShouldBeIdempotent_ForJsonCredentialProperties() {
+		// Arrange
+		List<string> payloads = [
+			"""{"password":"s3cr3t"}""",
+			"""{"body":"{\"password\":\"s3cr3t\"}"}""",
+			JsonSerializer.Serialize(new { body = """{"password":"s3cr3t"}""" }),
+			"""{"token":42}"""
+		];
+
+		// Act
+		List<string> once = payloads.Select(SensitiveErrorTextRedactor.Redact).ToList();
+		List<string> twice = once.Select(SensitiveErrorTextRedactor.Redact).ToList();
+
+		// Assert
+		twice.Should().Equal(once,
+			because: "a transcript redacted twice must not drift from one redacted once");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A plain JSON value containing an ESCAPED quote must be replaced whole: a value class that stops at the inner escape leaves the tail of the secret in the clear AND costs the document a quote.")]
+	public void Redact_ShouldRedactPlainJsonValue_ContainingAnEscapedQuote() {
+		// Arrange
+		const string text = """{"password":"a\"tail","stage":"install"}""";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().NotContain("tail",
+			because: "the inner escape is part of the value, not its terminator");
+		redacted.Should().Be("""{"password":"[redacted]","stage":"install"}""",
+			because: "the whole value is replaced and the following property survives");
+		FluentActions.Invoking(() => JsonDocument.Parse(redacted)).Should().NotThrow(
+			because: "the document must still parse for the caller");
 	}
 }
