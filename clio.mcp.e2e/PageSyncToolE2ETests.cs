@@ -11,6 +11,7 @@ using Allure.NUnit.Attributes;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
+using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -442,6 +443,116 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		response.Pages[0].Error.Should().Contain("NOT sent to Creatio",
 			because: "the operator must know the body did not reach the server without inspecting logs, mirroring the syntax-gate tail");
 	}
+
+	[Test]
+	[Description("A NON-dry-run sync-pages of a body whose handler calls a conditionally declared helper fails at the lint gate and leaves the page on the stand byte-identical — the existing lint scenario targets a page that does not exist, so it cannot show that a real save was prevented.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages blocks a real save on undefined-section-call and leaves the page unchanged")]
+	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave: captures the body with get-page, submits a marker-complete body whose returned handler calls a helper declared only inside an `if (false)` block, asserts the lint gate rejects the page, then re-reads the page and asserts the stored body is unchanged.")]
+	public async Task PageSyncTool_Should_Block_Real_Save_And_Leave_Page_Unchanged_When_HelperIsConditionallyDeclared() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping the real-save lint-gate test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext context = await ArrangeAsync();
+
+		// Act 1: capture the body the stand currently holds.
+		CallToolResult baselineResult = await context.Session.CallToolAsync(
+			PageGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = SavePage,
+					["environment-name"] = environmentName
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageGetResponse baseline = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(baselineResult);
+		baseline.Success.Should().BeTrue(
+			because: $"get-page must succeed for the seeded page '{SavePage}' before the gate can be proven. Error: {baseline.Error}");
+		string originalBody = await File.ReadAllTextAsync(baseline.Files.BodyFile);
+		bool restoreNeeded = false;
+		try {
+			// Act 2: the real save path — no dry-run — with a body only the AST lint pass rejects.
+			CallToolResult syncResult = await SyncBodyAsync(context, environmentName,
+				PageLintProbeBodies.ConditionallyDeclaredHelper(SavePage));
+			PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(syncResult);
+
+			// Act 3: read the page back.
+			CallToolResult readbackResult = await context.Session.CallToolAsync(
+				PageGetTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = SavePage,
+						["environment-name"] = environmentName
+					}
+				},
+				context.CancellationTokenSource.Token);
+			PageGetResponse readback = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(readbackResult);
+			string bodyAfter = readback.Success ? await File.ReadAllTextAsync(readback.Files.BodyFile) : null;
+			//A readback that did not come back cannot show the page is intact, and the write it was
+			//supposed to check may well have landed - so that case restores too.
+			restoreNeeded = bodyAfter is null || bodyAfter != originalBody;
+
+			// Assert
+			response.Success.Should().BeFalse(
+				because: "the handler calls a helper whose only declaration sits in a branch that never runs, so the page would throw a TypeError on open");
+			response.Pages.Should().ContainSingle(
+				because: "one page was submitted");
+			response.Pages[0].Error.Should().Contain("Page body lint failed",
+				because: "the canonical lint prefix is what tells the agent this was a lint rejection rather than a syntax or transport failure");
+			response.Pages[0].Error.Should().Contain("undefined-section-call",
+				because: "the rule id must reach the wire so the agent can map the refusal back to the authoring rule");
+			readback.Success.Should().BeTrue(
+				because: $"the page must still be readable after the refused write. Error: {readback.Error}");
+			bodyAfter.Should().Be(originalBody,
+				because: "a refused write must leave the stand untouched — this is the assertion the dry-run scenario cannot make");
+		} finally {
+			if (restoreNeeded) {
+				//Only reached when the gate let the probe body through, which is the failure this test
+				//exists to catch. The page is shared by the rest of the suite, so it is put back rather
+				//than left holding a body that throws on open.
+				try {
+					CallToolResult restoreResult =
+						await SyncBodyAsync(context, environmentName, originalBody);
+					PageSyncResponse restored =
+						EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(restoreResult);
+					if (!restored.Success) {
+						//A refused save comes back in the envelope rather than as an exception, so
+						//without this the shared fixture page would be left holding a body that throws
+						//on open, silently.
+						TestContext.Progress.WriteLine(
+							$"Failed to restore the body of '{SavePage}': "
+							+ string.Join("; ", restored.Pages.Select(page => page.Error)));
+					}
+				} catch (Exception restoreFailure) {
+					TestContext.Progress.WriteLine(
+						$"Failed to restore the body of '{SavePage}': {restoreFailure.Message}");
+				}
+			}
+		}
+	}
+
+	/// <summary>Saves one body to <c>SavePage</c> through the real (non-dry-run) sync-pages path.</summary>
+	private static Task<CallToolResult> SyncBodyAsync(ArrangeContext context, string environmentName,
+		string body) =>
+		context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = SavePage,
+							["body"] = body
+						}
+					},
+					["environment-name"] = environmentName,
+					["skip-sampling"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
 
 	[Test]
 	[Description("Keeps JavaScript handlers out of JSON content validation failures.")]

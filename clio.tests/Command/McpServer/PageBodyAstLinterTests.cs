@@ -28,6 +28,10 @@ internal class PageBodyAstLinterTests {
 	private static IReadOnlyList<PageBodyLintFinding> LintBody(string body) =>
 		PageBodyAstLinter.Lint(ParseOrThrow(body));
 
+	// What the caller actually receives: every finding rendered through the canonical wire format.
+	private static int RenderedLength(IEnumerable<PageBodyLintFinding> findings) =>
+		string.Join("; ", findings.Select(PageBodyAstLinter.FormatFinding)).Length;
+
 	#endregion
 
 	#region Tests: clean bodies (no findings)
@@ -1046,8 +1050,68 @@ internal class PageBodyAstLinterTests {
 			.Where(f => f.Rule == PageBodyAstLinter.RuleConverterCrtPrefixReserved).ToList();
 		reported.Should().HaveCount(PageBodyAstLinter.MaxFindingsPerRule + 1,
 			because: "every offending key carries the same fix, so past the cap they collapse into one counted line");
-		reported[^1].Message.Should().Contain($"{keyCount - PageBodyAstLinter.MaxFindingsPerRule} further converter key(s)",
-			because: "the caller must still learn how many were suppressed");
+		reported[^1].Message.Should().Contain(
+			$"{keyCount - PageBodyAstLinter.MaxFindingsPerRule} further "
+				+ $"`{PageBodyAstLinter.RuleConverterCrtPrefixReserved}` finding(s)",
+			because: "the caller must still learn how many were suppressed; the wording is now the shared per-rule summary every bounded rule emits");
+	}
+
+	[Test]
+	[Description("A converter carrying thousands of `fetch(...)` calls stays bounded in BOTH finding count and rendered length — AST depth caps how deep the walk goes, not how wide one converter is, and the warning list is what the caller actually reads")]
+	public void Lint_ShouldBoundWarnings_WhenOneConverterFiresTheSameRuleThousandsOfTimes() {
+		// Arrange
+		int callCount = PageBodyAstLinter.MaxFindingsPerRule + 2000;
+		var calls = new StringBuilder();
+		for (int index = 0; index < callCount; index++) {
+			calls.Append($"fetch(\"/api/lookup?id={index}\"); ");
+		}
+		string body =
+			"define(\"X\", [], function() { return { handlers: [], converters: { " +
+			$"\"usr.Lookup\": function(v) {{ {calls}return v; }} " +
+			"}, validators: {} }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		List<PageBodyLintFinding> reported = findings
+			.Where(f => f.Rule == PageBodyAstLinter.RuleConverterFetchCall).ToList();
+		reported.Should().HaveCount(PageBodyAstLinter.MaxFindingsPerRule + 1,
+			because: "the shared budget caps the rule and adds exactly one counted summary, instead of one warning per call site");
+		reported[^1].Message.Should().Contain(
+			$"{callCount - PageBodyAstLinter.MaxFindingsPerRule} further "
+				+ $"`{PageBodyAstLinter.RuleConverterFetchCall}` finding(s)",
+			because: "a partial report has to say how much it left out");
+		RenderedLength(findings).Should().BeLessThan(64 * 1024,
+			because: "the rendered warning list is what reaches the MCP client, and an unbounded one measured in megabytes is unusable");
+	}
+
+	[Test]
+	[Description("The whole report is bounded across rules, not only per rule: a body that trips several rules thousands of times each still returns a report the caller can read")]
+	public void Lint_ShouldBoundTheWholeReport_WhenSeveralRulesFireThousandsOfTimes() {
+		// Arrange
+		var converters = new StringBuilder();
+		var handlers = new StringBuilder();
+		for (int index = 0; index < 2000; index++) {
+			converters.Append($"\"crt.Converter{index}\": function(v) {{ return fetch(\"/api/{index}\"); }}, ");
+			handlers.Append(
+				"{ request: \"crt.HandleViewModelAttributeChangeRequest\", " +
+				"handler: async (request, next) => { request.$context.set(\"Field\", 1); " +
+				"return next?.handle(request); } }, ");
+		}
+		string body =
+			"define(\"X\", [], function() { return { " +
+			$"handlers: [{handlers}], converters: {{ {converters}}}, validators: {{}} }}; }});";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().HaveCountLessThanOrEqualTo(
+			PageBodyAstLinter.MaxFindingsTotal + PageBodyAstLinter.MaxFindingsPerRule,
+			because: "the ceiling bounds the warnings the report carries, and each capped rule may still append its one summary line");
+		RenderedLength(findings).Should().BeLessThan(128 * 1024,
+			because: "the serialized report is the thing that has to stay usable, whichever mix of rules a generated body happens to trip");
 	}
 
 	[TestCase("innerWidth", TestName = "Window value property")]
@@ -1109,6 +1173,319 @@ internal class PageBodyAstLinterTests {
 			.Should().BeEquivalentTo(PageBodyAstLinter.KnownRuntimeGlobals,
 				because: "a catalog entry that lands in neither partition would be rejected as undeclared");
 	}
+
+	#endregion
+
+	#region Tests: definite initialization, factory isolation, return-anchored sections
+
+	[TestCase("if (false) { function helper() { return 1; } }", TestName = "non-executed block function")]
+	[TestCase("if (false) { var helper = function() { return 1; }; }", TestName = "non-executed conditional var")]
+	[TestCase("if (someFlag) { var helper = function() { return 1; }; }", TestName = "runtime-conditional var")]
+	[Description("A factory-scope binding whose only initializer sits in a branch that is not guaranteed to run is reported: the name hoists, the value never lands, and the handler throws a TypeError at runtime")]
+	public void Lint_ShouldEmitError_WhenFactoryHelperIsOnlyInitializedConditionally(string declaration) {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { " + declaration + " " +
+			"return { handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { helper(); return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().ContainSingle(f =>
+			f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall && f.Severity == LintSeverity.Error,
+			because: "declaring the name is not proof the handler can call it — the binding is still `undefined` when the section runs");
+		findings.Single(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall).Message.Should()
+			.Contain("declared but not guaranteed to hold a value",
+				because: "\"not declared\" would be false here and would send the author looking for a helper that is already in the body");
+	}
+
+	[TestCase("if (true) { function helper() { return 1; } }", TestName = "executed block function")]
+	[TestCase("if (true) { var helper = function() { return 1; }; }", TestName = "executed conditional var")]
+	[TestCase("if (false) { } else { var helper = function() { return 1; }; }", TestName = "executed else branch")]
+	[Description("The paired executed branch stays accepted: `if (true)` really does run its block, so the same shapes that fail closed under `if (false)` must not block a page that works")]
+	public void Lint_ShouldNotEmitError_WhenFactoryHelperIsInitializedOnAnExecutedBranch(string declaration) {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { " + declaration + " " +
+			"return { handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { helper(); return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
+			because: "the branch the language folds to `true` always runs, so the binding really does hold the helper");
+	}
+
+	[Test]
+	[Description("A factory-scope `let helper;` whose only assignment sits after the factory's return is reported — the declaration is preloaded but the assignment is unreachable, so the handler throws a TypeError")]
+	public void Lint_ShouldEmitError_WhenTheOnlyAssignmentFollowsTheReturn() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { let helper; " +
+			"return { handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { helper(); return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; helper = function() { return 1; }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().ContainSingle(f =>
+			f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall && f.Message.Contains("helper"),
+			because: "name existence is not definite initialization — the only assignment never runs");
+	}
+
+	[Test]
+	[Description("The same `let helper;` assigned BEFORE the factory's return is accepted — the assignment, not the declaration, is what makes the binding callable, and blocking it would reject a page that runs")]
+	public void Lint_ShouldNotEmitError_WhenTheBindingIsAssignedBeforeTheReturn() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { let helper; helper = function() { return 1; }; " +
+			"return { handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { helper(); return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
+			because: "an unconditional assignment before the return leaves a callable binding");
+	}
+
+	[Test]
+	[Description("A helper declared OUTSIDE the `define(...)` factory does not satisfy a handler call — the factory scope chains to the runtime globals only, because Page Designer can keep the handler entry while dropping the outer declaration")]
+	public void Lint_ShouldEmitError_WhenHelperIsDeclaredOutsideTheFactory() {
+		// Arrange
+		string body =
+			"function outerHelper() { return 1; } " +
+			"define(\"X\", [], function() { " +
+			"return { handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { outerHelper(); return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().ContainSingle(f =>
+			f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall && f.Message.Contains("outerHelper"),
+			because: "a script-level declaration outside the AMD factory is exactly the module-scope helper Page Designer drops, which is the failure mode this rule exists for");
+	}
+
+	[Test]
+	[Description("The paired local declaration stays accepted: the same helper declared INSIDE the factory is visible to the handler, so factory isolation did not start rejecting working pages")]
+	public void Lint_ShouldNotEmitError_WhenTheSameHelperIsDeclaredInsideTheFactory() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { function outerHelper() { return 1; } " +
+			"return { handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { outerHelper(); return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
+			because: "the factory's own declarations are what its handlers close over");
+	}
+
+	[Test]
+	[Description("A nested property that merely happens to be named `handlers` is ordinary metadata, not a page-schema section: section discovery is anchored to the direct properties of the object the factory returns, so a call inside that metadata must not block the write")]
+	public void Lint_ShouldNotEmitError_WhenASameNamedPropertyIsNestedMetadata() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { " +
+			"var meta = { handlers: { run: () => applicationCallback() } }; " +
+			"return { viewConfigDiff: [meta], handlers: [], converters: {}, validators: {} }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
+			because: "a property named `handlers` anywhere in the tree is not the returned page schema, and flagging it blocks a valid page");
+	}
+
+	[Test]
+	[Description("Return-anchored discovery still covers the real section: the returned `handlers` array of the same body is scanned, so narrowing the rule did not turn it off")]
+	public void Lint_ShouldStillEmitError_WhenTheReturnedSectionCallsAnUndeclaredHelper() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { " +
+			"var meta = { handlers: { run: () => applicationCallback() } }; " +
+			"return { viewConfigDiff: [meta], handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { missingModuleHelper(); return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().ContainSingle(f =>
+			f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall && f.Message.Contains("missingModuleHelper"),
+			because: "the returned object's own `handlers` property is the page schema the rule guards");
+	}
+
+	[Test]
+	[Description("A body with no `define(...)` wrapper is still covered: nothing upstream of the linter requires an AMD factory, so return-anchored discovery falls back to every function's returned object literal")]
+	public void Lint_ShouldEmitError_WhenABodyWithoutDefineReturnsABrokenSection() {
+		// Arrange
+		string body =
+			"var schema = (function() { return { handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { missingModuleHelper(); return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; })();";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().ContainSingle(f =>
+			f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall && f.Message.Contains("missingModuleHelper"),
+			because: "a define-less body must not silently skip the rule that blocks a handler calling a helper that is not there");
+	}
+
+	[TestCase("if (someFlag) { helper = function() { return 1; }; }", TestName = "assignment in a runtime-conditional block")]
+	[TestCase("while (someFlag) { helper = function() { return 1; }; }", TestName = "assignment in a loop body")]
+	[TestCase("try { helper = riskyFactory(); } catch (error) { }", TestName = "assignment in a try block")]
+	[Description("An assignment that only runs when a branch is taken does not initialize the binding: the block runs conditionally, so the handler can still find `undefined` and throw a TypeError")]
+	public void Lint_ShouldEmitError_WhenTheOnlyAssignmentIsConditional(string assignment) {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { let helper; " + assignment + " " +
+			"return { handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { helper(); return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().Contain(f =>
+				f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall && f.Severity == LintSeverity.Error,
+			because: "reaching the assignment at all depends on a runtime decision, so it proves nothing about the binding the handler reads");
+	}
+
+	[Test]
+	[Description("The verdict does not depend on where the assigning helper sits in the source: a hoisted `init()` declared after the factory's return still counts as initializing the binding it assigns")]
+	public void Lint_ShouldNotEmitError_WhenTheAssigningFunctionIsDeclaredAfterTheReturn() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { let helper; init(); " +
+			"return { handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { helper(); return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; " +
+			"function init() { helper = function() { return 1; }; } });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall,
+			because: "the same body with `function init()` written before the return was already accepted, and a blocking rule whose answer depends on statement order is not one an author can act on");
+	}
+
+	[Test]
+	[Description("An arrow factory with an expression body — `() => ({ handlers: [...] })` — is a discovered page schema, so a handler in it that calls an undeclared helper is still reported")]
+	public void Lint_ShouldEmitError_WhenAnArrowFactoryReturnsTheSchemaAsItsExpressionBody() {
+		// Arrange
+		string body =
+			"define(\"X\", [], () => ({ handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { missingModuleHelper(); return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }));";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().ContainSingle(f =>
+				f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall && f.Message.Contains("missingModuleHelper"),
+			because: "an arrow with no `return` statement returns its object literal all the same, and skipping the shape would leave the rule silent on a page that fails at runtime");
+	}
+
+	[Test]
+	[Description("A factory that returns a variable holding the schema object literal is discovered too, so `const schema = { handlers: [...] }; return schema;` is covered like the inline form")]
+	public void Lint_ShouldEmitError_WhenTheFactoryReturnsANamedSchemaObject() {
+		// Arrange
+		string body =
+			"define(\"X\", [], function() { " +
+			"const schema = { handlers: [{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { missingModuleHelper(); return next?.handle(request); } }], " +
+			"converters: {}, validators: {} }; return schema; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().ContainSingle(f =>
+				f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall && f.Message.Contains("missingModuleHelper"),
+			because: "naming the returned object is an ordinary authoring style and must not turn the blocking rule off");
+	}
+
+	[Test]
+	[Description("The overall ceiling bounds warnings only: a body whose warnings fill the report still returns every blocking Error, because dropping one would let a page the platform rejects save clean")]
+	public void Lint_ShouldKeepErrors_WhenWarningsFillTheWholeReport() {
+		// Arrange
+		var handlers = new StringBuilder();
+		var converters = new StringBuilder();
+		var dataSources = new StringBuilder();
+		for (int index = 0; index < 60; index++) {
+			handlers.Append(
+				"{ request: \"crt.HandleViewModelAttributeChangeRequest\", " +
+				"handler: async (request, next) => { request.$context.set(\"Field\", 1); " +
+				"return next?.handle(request); } }, ");
+			handlers.Append(
+				"{ request: \"crt.HandleViewModelInitRequest\", " +
+				"handler: async (request, next) => { request.$context.executeRequest({}); " +
+				"return next?.handle(request); } }, ");
+			converters.Append($"\"plain{index}\": function(v) {{ return fetch(\"/api/{index}\"); }}, ");
+			dataSources.Append($"{{ entitySchemaName: \"Contact\", filters: [{index}] }}, ");
+		}
+		string body =
+			"define(\"X\", [], function() { return { " +
+			"handlers: [" + handlers +
+			"{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { missingModuleHelper(); return next?.handle(request); } }], " +
+			"converters: { " + converters + "\"crt.Reserved\": function(v) { return v; } }, " +
+			"validators: {}, viewModelConfig: [" + dataSources + "] }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Count(f => f.Severity == LintSeverity.Warning).Should().BeLessThanOrEqualTo(
+			PageBodyAstLinter.MaxFindingsTotal + WarningRuleCount,
+			because: "the overall ceiling still bounds the advisory part of the report, plus at most one counted summary per capped rule");
+		findings.Should().Contain(f => f.Rule == PageBodyAstLinter.RuleConverterCrtPrefixReserved,
+			because: "an Error that blocks the write must not be crowded out by warnings the caller does not have to act on");
+		findings.Should().Contain(f =>
+				f.Rule == PageBodyAstLinter.RuleUndefinedSectionCall && f.Message.Contains("missingModuleHelper"),
+			because: "this rule runs after the main walk, so an exhausted report used to swallow it entirely and save a page whose handler throws");
+	}
+
+	[Test]
+	[Description("The distinct-name cap for undefined-section-call stays below the per-rule finding cap: that relation is what keeps the rule's own summary from claiming names the report never listed")]
+	public void UndefinedSectionCallNameCap_ShouldStayBelowThePerRuleFindingCap() {
+		// Arrange
+		int nameCap = PageBodyAstLinter.MaxUndefinedSectionCallNames;
+
+		// Act
+		int perRuleCap = PageBodyAstLinter.MaxFindingsPerRule;
+
+		// Assert
+		nameCap.Should().BeLessThan(perRuleCap,
+			because: "a name cleared for reporting must always get a slot; raising this cap past the per-rule one would let blocking Errors be suppressed while the rule's own summary - which counts only the names it refused itself - stayed silent about them");
+	}
+
+	// How many distinct Warning rules the linter ships; each capped rule may append one counted summary.
+	private const int WarningRuleCount = 4;
 
 	#endregion
 
