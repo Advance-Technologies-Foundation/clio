@@ -125,6 +125,22 @@ public sealed class ODataUpdateToolTests {
 			Resolver = Substitute.For<IToolCommandResolver>();
 			Resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(Client);
 			Resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(UrlBuilder);
+			Resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+				.Returns((Client, UrlBuilder));
+			Tool = new ODataUpdateTool(Resolver);
+		}
+
+		/// <summary>
+		/// Fixture around an ALREADY configured client, for the cases whose stub answers differ per
+		/// attempt rather than per URL (the bounded-retry tests).
+		/// </summary>
+		public Fixture(IApplicationClient client) {
+			Client = client;
+			UrlBuilder = Substitute.For<IServiceUrlBuilder>();
+			UrlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
+			Resolver = Substitute.For<IToolCommandResolver>();
+			Resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+				.Returns((Client, UrlBuilder));
 			Tool = new ODataUpdateTool(Resolver);
 		}
 
@@ -243,7 +259,7 @@ public sealed class ODataUpdateToolTests {
 		// Assert
 		response.Success.Should().BeTrue(because: response.Error);
 		f.Client.Received(1).ExecuteGetRequest(MetadataUrl, ODataFieldValidation.RequestTimeoutMs,
-			ODataFieldValidation.TransientAttempts, ODataFieldValidation.TransientDelaySec);
+			ODataFieldValidation.TransportAttempts, ODataFieldValidation.TransientDelaySec);
 		f.Client.DidNotReceive().ExecuteGetRequest(
 			Arg.Is<string>(url => url.Contains("?$select=", StringComparison.Ordinal)),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>()
@@ -251,6 +267,187 @@ public sealed class ODataUpdateToolTests {
 		);
 		f.Client.Received(1).ExecutePatchRequest(KeyUrl, """{"Name":"New"}""", 30000);
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Retries the pre-write metadata read when the transport answers with an empty body, and writes once the retry returns the CSDL (issue #1315 item 1).")]
+	public void Update_Should_Retry_The_Metadata_Read_After_An_Empty_Body() {
+		// Arrange - an empty body is how the pinned creatio.client reports a transient transport failure:
+		// its synchronous ExecuteGetRequest swallows HttpRequestException / TaskCanceledException into
+		// string.Empty and passes the literal 1 into its own send loop, so the transport can never retry.
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty, CsdL());
+		client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
+		Fixture f = FixtureFor(client);
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the second attempt returned the CSDL, so the payload is verified and the write proceeds");
+		client.Received(2).ExecuteGetRequest(MetadataUrl, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		client.Received(1).ExecutePatchRequest(KeyUrl, """{"Name":"New"}""", 30000);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Exhausts the bounded retry when every pre-write attempt answers with an empty body, then fails unverified without writing, spending only ONE probe attempt because the metadata leg already proved the target silent (issue #1315 item 1).")]
+	public void Update_Should_Exhaust_The_Bounded_Retry_And_Refuse_To_Write() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		Fixture f = FixtureFor(client);
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an outcome the tool could neither confirm nor refute must never be reported as a write");
+		response.Error!.Should().Contain("could not be verified",
+			because: "the caller has to be able to tell an unverifiable pre-write from a rejected field");
+		client.Received(ODataFieldValidation.TransientAttempts)
+			.ExecuteGetRequest(MetadataUrl, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		// because: the metadata leg already spent the full budget on a target that answered nothing, so a
+		// second full budget on the same dead target would push the refusal past the MCP client's ceiling
+		client.Received(ODataFieldValidation.ExhaustedTransportProbeAttempts).ExecuteGetRequest(
+			Arg.Is<string>(url => url.Contains("?$select=", StringComparison.Ordinal)),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the probe's full retry budget when the metadata leg ended with an ANSWER rather than silence: the transport is proven alive, so an empty probe body is still worth retrying (issue #1315 item 1).")]
+	public void Update_Should_Keep_The_Full_Probe_Budget_After_An_Answered_Metadata_Read() {
+		// Arrange - the metadata endpoint answers with JSON that is neither CSDL nor a recognized Creatio
+		// fault, so the type stays unresolved and the call degrades to the $select probe; that answer is
+		// proof the target is reachable, which an empty body is not.
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(call => call.ArgAt<string>(0).EndsWith("/$metadata", StringComparison.Ordinal)
+				? "{\"unrelated\":1}"
+				: string.Empty);
+		Fixture f = FixtureFor(client);
+
+		// Act
+		ODataWriteResponse response = Update(f, ODataUpdateToolTests.NameUpdate);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an empty probe body proves nothing about the field names, and unverified is never a write");
+		// because: a JSON answer is definitive - a second identical request cannot turn it into CSDL
+		client.Received(1).ExecuteGetRequest(MetadataUrl, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		// because: the transport answered the metadata read, so the probe keeps the full budget the
+		// flaky-stand class needs - the dead-target shortcut must not fire on a live target
+		client.Received(ODataFieldValidation.TransientAttempts).ExecuteGetRequest(
+			Arg.Is<string>(url => url.Contains("?$select=", StringComparison.Ordinal)),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Does not retry a definitive pre-write answer: a CSDL that resolves the type is read once (issue #1315 item 1).")]
+	public void Update_Should_Not_Retry_A_Definitive_Metadata_Answer() {
+		// Arrange
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		// Assert
+		response.Success.Should().BeTrue(because: response.Error);
+		f.Client.Received(1).ExecuteGetRequest(MetadataUrl, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Abandons a CSDL whose BaseType chain is longer than the supported inheritance depth, fails the payload as unverified and writes nothing instead of walking the chain (issue #1315 item 4).")]
+	public void Update_Should_Refuse_A_Metadata_Inheritance_Chain_Deeper_Than_The_Cap() {
+		// Arrange - the chain is server-authored and acyclic, so the cycle guard admits it; only a depth
+		// bound stops the walk. A recursive walk over a chain long enough to exhaust the stack would take
+		// the whole shared MCP process down with an uncatchable StackOverflowException, which no test can
+		// observe from inside the process - so this asserts the cap fires, not the crash it prevents.
+		Fixture f = new(DeeplyInheritedCsdl(200),
+			_ => throw new InvalidOperationException("the probe must not run: the metadata answer is terminal"));
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a type the walk refused to resolve leaves the field names unverified, and unverified is not a write");
+		response.Error!.Should().Contain("could not be verified",
+			because: "the caller must read this as an unverifiable pre-write, the same as any other one");
+		response.Error!.Should().Contain("No write was performed",
+			because: "the caller has to learn the record is untouched so it can safely retry");
+		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A BaseType chain within the supported depth is still walked end to end: a property declared only on the deepest base type is accepted (issue #1315 item 4).")]
+	public void Update_Should_Still_Walk_A_Chain_Within_The_Depth_Cap() {
+		// Arrange
+		Fixture f = new(DeeplyInheritedCsdl(5), _ => throw new InvalidOperationException("probe must not run"));
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"RootOnly":"x"}""");
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "RootOnly is declared on the last type of the chain, so bounding the walk must not shorten it");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, """{"RootOnly":"x"}""", 30000);
+	}
+
+	/// <summary>
+	/// CSDL whose Contact derives through a chain of <paramref name="depth"/> generated base types. The
+	/// LAST type of the chain declares RootOnly, so a walk that stops early is visible as a rejected field
+	/// rather than as a silently shorter property set.
+	/// </summary>
+	private static string DeeplyInheritedCsdl(int depth) {
+		System.Text.StringBuilder types = new();
+		for (int i = 0; i < depth; i++) {
+			string baseType = i + 1 < depth
+				? $" BaseType=\"Terrasoft.Configuration.OData.Base{i + 1}\""
+				: string.Empty;
+			string rootOnly = i + 1 < depth ? string.Empty : "<Property Name=\"RootOnly\" Type=\"Edm.String\" />";
+			types.Append($"""
+				      <EntityType Name="Base{i}"{baseType}>
+				        <Key><PropertyRef Name="Id" /></Key>
+				        <Property Name="Id" Type="Edm.Guid" Nullable="false" />
+				        {rootOnly}
+				      </EntityType>
+
+				""");
+		}
+		return $"""
+			<?xml version="1.0" encoding="utf-8" standalone="no"?>
+			<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+			  <edmx:DataServices>
+			    <Schema Namespace="Terrasoft.Configuration.OData" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+			      <EntityType Name="Contact" BaseType="Terrasoft.Configuration.OData.Base0">
+			        <Key><PropertyRef Name="Id" /></Key>
+			        <Property Name="Id" Type="Edm.Guid" Nullable="false" />
+			        <Property Name="Name" Type="Edm.String" />
+			      </EntityType>
+			{types}    </Schema>
+			  </edmx:DataServices>
+			</edmx:Edmx>
+			""";
+	}
+
+	/// <summary>Fixture built around an already-configured client (the retry cases stub it per attempt).</summary>
+	private static Fixture FixtureFor(IApplicationClient client) => new(client);
+
+	/// <summary>The one-field payload the retry-budget tests write; its name exists on the CSDL fixture.</summary>
+	private const string NameUpdate = "{\"Name\":\"New\"}";
 
 	[Test]
 	[Category("Unit")]
@@ -607,10 +804,10 @@ public sealed class ODataUpdateToolTests {
 		// Color is reported.
 		f.Client.Received(1).ExecuteGetRequest(
 			$"{KeyUrl}?$select=Id,Name,JobTitle,Color",
-			ODataFieldValidation.RequestTimeoutMs, ODataFieldValidation.TransientAttempts, ODataFieldValidation.TransientDelaySec);
+			ODataFieldValidation.RequestTimeoutMs, ODataFieldValidation.TransportAttempts, ODataFieldValidation.TransientDelaySec);
 		f.Client.Received(2).ExecuteGetRequest(
 			Arg.Is<string>(url => url.Contains("?$select=", StringComparison.Ordinal)),
-			ODataFieldValidation.FollowUpProbeTimeoutMs, ODataFieldValidation.TransientAttempts, ODataFieldValidation.TransientDelaySec);
+			ODataFieldValidation.FollowUpProbeTimeoutMs, ODataFieldValidation.TransportAttempts, ODataFieldValidation.TransientDelaySec);
 		f.Client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(null, null, 0);
 	}
 
@@ -633,8 +830,8 @@ public sealed class ODataUpdateToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Sends the bounded retry parameters (30s timeout, 3 attempts, 1s delay) for the pre-write requests.")]
-	public void Update_Should_Use_Bounded_Retry_For_PreWrite_Requests() {
+	[Description("Calls the transport with ONE attempt and the 30s pre-write timeout: the retry lives above the body classification (see the retry tests), because the pinned transport discards its own maxAttempts argument.")]
+	public void Update_Should_Call_The_Transport_With_A_Single_Attempt() {
 		// Arrange
 		Fixture f = CsdLFixture();
 		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
@@ -646,8 +843,10 @@ public sealed class ODataUpdateToolTests {
 		// Assert
 		response.Success.Should().BeTrue(because: response.Error);
 		f.Client.Received(1).ExecuteGetRequest(MetadataUrl, ODataFieldValidation.RequestTimeoutMs,
-			ODataFieldValidation.TransientAttempts, ODataFieldValidation.TransientDelaySec)
-			// because: the retry budget must stay bounded so a dead metadata endpoint cannot hang the tool
+			ODataFieldValidation.TransportAttempts, ODataFieldValidation.TransientDelaySec)
+			// because: the per-request budget must stay bounded so a dead metadata endpoint cannot hang the
+			// tool, and asking the transport for more than one attempt would only inflate that budget - it
+			// cannot produce a second request
 		;
 	}
 
@@ -904,6 +1103,8 @@ public sealed class ODataUpdateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
 			.Returns(firstRoot, repointedRoot);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, firstRoot));
 		ODataUpdateTool tool = new(resolver);
 
 		// Act
@@ -917,7 +1118,9 @@ public sealed class ODataUpdateToolTests {
 
 		// Assert
 		response.Success.Should().BeTrue();
-		resolver.Received(1).Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>());
+		resolver.Received(1).ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>());
+		resolver.DidNotReceive().Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>());
+		resolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
 		repointedRoot.DidNotReceiveWithAnyArgs().Build(null);
 		client.Received(1).ExecuteGetRequest(MetadataUrl, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		client.Received(1).ExecutePatchRequest(KeyUrl, """{"Name":"New"}""", 30000);

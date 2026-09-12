@@ -33,9 +33,23 @@ separately rather than shipped non-deterministically here.
 
 `ODataUpdateTool` therefore runs `ODataFieldValidation.ValidateDataFields` before every
 PATCH. The PRIMARY validator is the service's own metadata: `GET odata/$metadata` is fetched
-(bounded: 30 s timeout, 3 attempts, 1 s delay) and parsed as CSDL, and the entity's property
-set comes from ONE deterministic GET, which replaces the earlier per-field binary `$select`
-probing. Only STRUCTURAL `Property` elements enter that set, following `BaseType` inheritance;
+(bounded: 30 s timeout per request, up to 3 attempts, 1 s apart) and parsed as CSDL, and the entity's
+property set comes from ONE deterministic GET, which replaces the earlier per-field binary `$select`
+probing. The attempts are counted in `ODataFieldValidation`, around the fetch AND its classification,
+and the transport is asked for a single attempt: the pinned transport discards its own `maxAttempts`
+and reports a transient failure as an empty body, so only a retry above the classification can see one
+(`../Common/creatio-client-get-discards-max-attempts.md`). Only the EMPTY-body outcome is retried; a
+non-2xx status is not, because the transport never calls `EnsureSuccessStatusCode` and an error status
+therefore arrives as its error page or envelope - a definitive answer a second identical request cannot
+improve. The two legs share one wall-time budget: when the metadata leg EXHAUSTS its retry on the
+empty-body outcome the target is proven silent, so the `$select` fallback then runs with a SINGLE
+attempt instead of a second full budget (worst case about 122 s rather than about 184 s, which is past
+the roughly 180 s ceiling MCP clients impose - a tool that refuses a write after the client has already
+timed out has refused nothing the caller can see). When the metadata leg ended with an answer instead,
+the transport is alive and the probe keeps the full three attempts. Only STRUCTURAL `Property` elements enter
+that set, following a `BaseType` chain that is walked iteratively and capped at 64 types - the
+document is server-authored, so an acyclic chain long enough to exhaust the stack is caller-influenced
+input, and exceeding the cap fails the call as unverified instead of degrading to the probe;
 a `NavigationProperty` is deliberately excluded, because an OData relationship is written
 through bind semantics rather than by assigning the navigation name, and the contract points
 callers at the structural foreign key (`AccountId`, not `Account`). The fallback probe leaves a
@@ -94,7 +108,8 @@ the record's JSON or an error and never legitimately returns empty, so an empty 
 request did not reach the OData pipeline intact (proxy page, session redirect, gateway that stripped
 the body); a PATCH, by contrast, can legitimately answer a body-less 204. Treating an empty probe
 body as "fields confirmed" would recreate the false success this validation removes; both stay
-fail-closed after the bounded retry.
+fail-closed after the bounded retry - whose size on the probe leg depends on what the metadata leg
+already learned about the target, as described above.
 
 **How the route and the no-write are proved** — the service-root `$metadata` route and the
 absence of the PATCH are pinned end-to-end, not just in-process:

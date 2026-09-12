@@ -71,8 +71,11 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 		IServiceUrlBuilder urlBuilder;
 		try {
 			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
-			client = commandResolver.Resolve<IApplicationClient>(options);
-			urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
+			// ONE resolution for both, for the reason ODataKeyedWrite.ResolveTarget states: every
+			// resolution re-reads the settings, so an environment repointed between two of them would pair
+			// this client's authenticated session with the other environment's url - and odata-create uses
+			// the pair for a metadata read AND the POSTs that follow it.
+			(client, urlBuilder) = commandResolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(options);
 		} catch (Exception ex) {
 			return ODataCreateBatchResponse.RequestError(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
