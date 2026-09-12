@@ -978,4 +978,234 @@ public sealed class SensitiveErrorTextRedactorTests {
 			because: "the bound is half the MatchTimeout and generous enough for a loaded CI agent, so a "
 				+ "failure here means real backtracking growth, not a slow machine");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts a credential written as a plain JSON property - the shape CredentialPairRegex cannot reach, because the key's closing quote sits where that rule needs its '=' or ':' - and leaves the payload parseable JSON.")]
+	public void Redact_ShouldRedactPlainJsonCredentialProperty() {
+		// Arrange
+		const string text = """{"environment":"dev","password":"s3cr3t"}""";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().NotContain("s3cr3t",
+			because: "a credential written as a JSON property is the shape a service answer actually uses");
+		redacted.Should().Be("""{"environment":"dev","password":"[redacted]"}""",
+			because: "the pair is rewritten in its JSON shape, so the document stays parseable and the "
+				+ "non-secret sibling property survives untouched");
+		FluentActions.Invoking(() => JsonDocument.Parse(redacted)).Should().NotThrow(
+			because: "the redacted envelope is parsed by the MCP caller, not merely printed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts a credential inside a nested serialized JSON string written with the backslash-quote spelling, where the plain rule finds no literal quote after the key.")]
+	public void Redact_ShouldRedactBackslashEscapedJsonCredentialProperty() {
+		// Arrange - a hand-written escaped body, the spelling a caller produces when it concatenates JSON.
+		const string text = """{"body":"{\"password\":\"s3cr3t\"}"}""";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().NotContain("s3cr3t",
+			because: "one level of escaping must not hide the credential from the rule");
+		FluentActions.Invoking(() => JsonDocument.Parse(redacted)).Should().NotThrow(
+			because: "the replacement writes the SAME escaped spelling back, so the escapes stay balanced");
+		JsonDocument.Parse(redacted).RootElement.GetProperty("body").GetString().Should()
+			.Be("""{"password":"[redacted]"}""",
+				because: "the inner document must still parse once the outer string is decoded");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts a credential inside a nested serialized JSON string written with the \\u0022 spelling - what System.Text.Json's DEFAULT encoder actually emits, generated here rather than hand-typed so the test also proves the claim.")]
+	public void Redact_ShouldRedactUnicodeEscapedJsonCredentialProperty() {
+		// Arrange - generated, not hand-written: this is the exact shape a serialized tool envelope carries.
+		string text = JsonSerializer.Serialize(new { body = """{"password":"s3cr3t"}""" });
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		text.Should().Contain("\\u0022",
+			because: "the rule's third quote spelling exists because this is what System.Text.Json emits");
+		redacted.Should().NotContain("s3cr3t",
+			because: "the spelling a real envelope uses must be the one the rule covers");
+		JsonDocument.Parse(redacted).RootElement.GetProperty("body").GetString().Should()
+			.Be("""{"password":"[redacted]"}""",
+				because: "the inner document must survive the replacement as valid JSON");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase("null")]
+	[TestCase("true")]
+	[TestCase("false")]
+	[TestCase("42")]
+	[TestCase("-1.5e3")]
+	[Description("Redacts a non-string JSON value (null/true/false/number) so a secret written without quotes does not slip past the string-only alternative.")]
+	public void Redact_ShouldRedactBareJsonLiteralValue(string literal) {
+		// Arrange
+		string text = $$"""{"token":{{literal}}}""";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().Be("""{"token":"[redacted]"}""",
+			because: "an unquoted value under a secret key is still a secret, and the result must be JSON");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Leaves a non-secret JSON property untouched, so ordinary diagnostic content is not replaced by a placeholder indistinguishable from a real credential redaction.")]
+	public void Redact_ShouldLeaveNonSecretJsonProperty_Untouched() {
+		// Arrange
+		const string text = """{"packageName":"CrtBase","stage":"install"}""";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().Be(text,
+			because: "over-redacting ordinary diagnostic content costs the agent the reason it needs");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("'UId' is how Creatio spells the identifier property on every schema, package and descriptor payload, so the JSON key set must NOT carry the connection-string key 'uid' - otherwise practically every diagnostic body loses its identifier to a credential placeholder.")]
+	public void Redact_ShouldLeaveTheCreatioUIdProperty_Untouched() {
+		// Arrange
+		const string text = """{"UId":"a1b2c3d4-0000-0000-0000-000000000001","Name":"CrtBase"}""";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().Be(text,
+			because: "'UId' is an identifier in this product, not a connection-string user id");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase("passwordHint")]
+	[TestCase("tokenCount")]
+	[TestCase("Authorized")]
+	[Description("A key that merely CONTAINS a secret word as a glued prefix/suffix is left alone, matching the word-boundary behaviour CredentialPairRegex already has for 'passwordHint=x'.")]
+	public void Redact_ShouldLeaveGluedJsonKey_Untouched(string key) {
+		// Arrange
+		string text = $$"""{"{{key}}":"plain"}""";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().Be(text,
+			because: "a glued key is not a credential key in either spelling");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase("access_token")]
+	[TestCase("x-csrf-token")]
+	[TestCase("db.password")]
+	[Description("A separator-joined compound key IS redacted: '.' and '-' are word boundaries the pair rule already honours, and '_' is widened deliberately because an OAuth envelope spells its keys that way.")]
+	public void Redact_ShouldRedactSeparatorJoinedJsonKey(string key) {
+		// Arrange
+		string text = $$"""{"{{key}}":"s3cr3t"}""";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().Be($$"""{"{{key}}":"[redacted]"}""",
+			because: "a separator-joined credential key is the normal spelling in an OAuth envelope");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase("server")]
+	[TestCase("host")]
+	[TestCase("database")]
+	[Description("A connection-string host/database key is redacted in JSON form too: the key=value rule already scrubs it, and leaving \"server\":\"db.internal\" in the clear would make the two spellings disagree.")]
+	public void Redact_ShouldRedactConnectionPartJsonKey(string key) {
+		// Arrange
+		string text = $$"""{"{{key}}":"db.internal"}""";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().Be($$"""{"{{key}}":"[redacted]"}""",
+			because: "the JSON spelling of a connection-string part must not disagree with the pair form");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ORDERING: the JSON rule must run before BearerTokenRegex and CredentialPairRegex, whose bare value class does not exclude a backslash and would otherwise eat the value's CLOSING escape and leave an unparseable document.")]
+	[TestCase("authorization", "Bearer abc", TestName = "Ordering_BeforeBearerTokenRegex")]
+	[TestCase("cookie", "BPMCSRF=abc", TestName = "Ordering_BeforeCredentialPairRegex")]
+	public void Redact_ShouldKeepEscapedJsonParseable_WhenTheValueAlsoMatchesALaterRule(string key, string secret) {
+		// Arrange - the two measured cases, both in the backslash-quote spelling, which is where a later
+		// rule's bare class reaches the value's closing escape: BearerTokenRegex on "Bearer abc" and
+		// CredentialPairRegex on the "BPMCSRF=abc" pair inside the cookie value.
+		string text = $$"""{"body":"{\"{{key}}\":\"{{secret}}\"}"}""";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().NotContain("abc",
+			because: "the secret itself must be gone whichever rule reaches it");
+		FluentActions.Invoking(() => JsonDocument.Parse(redacted)).Should().NotThrow(
+			because: "a later rule eating the value's closing escape leaves a lone backslash, which is not "
+				+ "a valid JSON escape - the caller then loses the whole response, not one field");
+		JsonDocument.Parse(redacted).RootElement.GetProperty("body").GetString().Should()
+			.Be($$"""{"{{key}}":"[redacted]"}""",
+				because: "the value must be replaced whole, in its JSON shape, before any sub-token rule "
+					+ "can nibble at it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redaction is idempotent for every JSON spelling: running it over an already-redacted envelope changes nothing, so a value cannot be re-wrapped into an unparseable shape.")]
+	public void Redact_ShouldBeIdempotent_ForJsonCredentialProperties() {
+		// Arrange
+		List<string> payloads = [
+			"""{"password":"s3cr3t"}""",
+			"""{"body":"{\"password\":\"s3cr3t\"}"}""",
+			JsonSerializer.Serialize(new { body = """{"password":"s3cr3t"}""" }),
+			"""{"token":42}"""
+		];
+
+		// Act
+		List<string> once = payloads.Select(SensitiveErrorTextRedactor.Redact).ToList();
+		List<string> twice = once.Select(SensitiveErrorTextRedactor.Redact).ToList();
+
+		// Assert
+		twice.Should().Equal(once,
+			because: "a transcript redacted twice must not drift from one redacted once");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A plain JSON value containing an ESCAPED quote must be replaced whole: a value class that stops at the inner escape leaves the tail of the secret in the clear AND costs the document a quote.")]
+	public void Redact_ShouldRedactPlainJsonValue_ContainingAnEscapedQuote() {
+		// Arrange
+		const string text = """{"password":"a\"tail","stage":"install"}""";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().NotContain("tail",
+			because: "the inner escape is part of the value, not its terminator");
+		redacted.Should().Be("""{"password":"[redacted]","stage":"install"}""",
+			because: "the whole value is replaced and the following property survives");
+		FluentActions.Invoking(() => JsonDocument.Parse(redacted)).Should().NotThrow(
+			because: "the document must still parse for the caller");
+	}
 }
