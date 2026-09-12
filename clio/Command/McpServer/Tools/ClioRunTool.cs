@@ -273,7 +273,14 @@ public sealed class ClioRunExecutor(
 		callContext.Params = childParams;
 		callContext.MatchedPrimitive = tool;
 		try {
-			if (McpToolErrorFilter.TryCreateArgumentDeserializationError(
+			// Only the checks that read an argument's JSON value kind run here. The trial
+			// deserialization that produces the precise per-argument diagnostic moved into the catch
+			// below, because it binds the same JSON the SDK is about to bind: on the success path this
+			// dispatch deserialized every nested argument twice, roughly doubling binding CPU and
+			// large-object allocation for a big composite payload. A failed bind throws out of
+			// InvokeAsync before the tool body runs, so the caller still gets the same message and the
+			// tool still does not execute.
+			if (McpToolErrorFilter.TryCreateArgumentShapeError(
 				callContext,
 				out CallToolResult? argumentErrorResult)) {
 				return argumentErrorResult;
@@ -286,6 +293,20 @@ public sealed class ClioRunExecutor(
 			throw;
 		}
 		catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
+			// An argument the SDK could not bind throws from InvokeAsync (before the tool body runs), and
+			// only here is the trial deserialization worth paying for: it reproduces the failure and turns
+			// it into the same precise invalid-parameter-type diagnostic this dispatch returned when the
+			// trial ran up front. The cost moved rather than vanished - a call that FAILS to bind now binds
+			// twice (the SDK's failed attempt plus this trial) instead of once - which is the deliberate
+			// trade: the extra pass is spent only on a call that is already failing. The call self-gates -
+			// well-formed arguments deserialize, it returns false, and a JsonException raised by the tool
+			// BODY falls through to the generic redacted message below exactly as before.
+			// Deliberately NOT gated on the exception type: an SDK that
+			// starts wrapping its binding failure would silently revert the diagnostic to that generic text.
+			// The trial is a DIAGNOSTIC, never a second failure mode - see TryDiagnoseBindingFailure.
+			if (TryDiagnoseBindingFailure(callContext) is { } bindingErrorResult) {
+				return bindingErrorResult;
+			}
 			// Without this catch the exception escapes to the outer McpToolErrorFilter, which the agent
 			// sees as a generic "An error occurred invoking '<tool>'" with no detail — so it cannot
 			// self-correct. Surface the real (inner-most) message as a structured Error result instead
@@ -298,6 +319,31 @@ public sealed class ClioRunExecutor(
 		finally {
 			callContext.Params = originalParams;
 			callContext.MatchedPrimitive = originalPrimitive;
+		}
+	}
+
+	/// <summary>
+	/// Reproduces a binding failure the SDK threw out of <c>InvokeAsync</c> as the precise
+	/// <c>invalid-parameter-type</c> diagnostic, or <see langword="null"/> when the arguments bind
+	/// cleanly (the failure came from the tool body) or the trial itself could not run.
+	/// </summary>
+	/// <remarks>
+	/// The trial is a diagnostic, never a second failure mode. Its own exception is turned into "no
+	/// diagnostic available" rather than propagated, so the caller still receives the tool's real
+	/// failure redacted by the dispatch: a raw reflection or converter error escaping from here would
+	/// both bypass <c>SensitiveErrorTextRedactor</c> and replace the failure the agent needs to see.
+	/// </remarks>
+	private static CallToolResult? TryDiagnoseBindingFailure(
+		RequestContext<CallToolRequestParams> callContext) {
+		try {
+			return McpToolErrorFilter.TryCreateArgumentDeserializationError(
+				callContext, out CallToolResult? bindingErrorResult)
+				? bindingErrorResult
+				: null;
+		}
+		catch (Exception diagnosticFailure) when (!McpExceptionPolicy.IsUnrecoverable(diagnosticFailure)) {
+			//Handled by producing no diagnostic: the caller falls through to the original exception.
+			return null;
 		}
 	}
 

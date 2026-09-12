@@ -812,8 +812,38 @@ public static class McpToolErrorFilter
 			+ "so there is no doubt which value wins.";
 	}
 
+	/// <summary>
+	/// The full argument preflight: the structural checks below PLUS a trial deserialization of every
+	/// supplied argument, which is what produces the precise per-argument <c>invalid-parameter-type</c>
+	/// text. The trial binds the argument a second time, so on a path where the SDK is about to bind the
+	/// same JSON anyway this belongs on the FAILURE path only — see
+	/// <see cref="TryCreateArgumentShapeError"/> and <c>ClioRunTool</c>'s dispatch.
+	/// </summary>
 	internal static bool TryCreateArgumentDeserializationError(
 		RequestContext<CallToolRequestParams> context,
+		out CallToolResult? result) =>
+		TryCreateArgumentError(context, includeBindingTrial: true, out result);
+
+	/// <summary>
+	/// The allocation-free half of the preflight: the checks that read only an argument's
+	/// <see cref="JsonElement.ValueKind"/> and the parameter's declared type, and never deserialize.
+	/// </summary>
+	/// <remarks>
+	/// These two cannot move to the failure path, for opposite reasons. An explicit JSON null for a
+	/// required non-nullable parameter does NOT fail SDK binding — it binds to null and the tool body
+	/// runs — so only a check ahead of invocation keeps the direct and <c>clio-run</c> paths agreeing.
+	/// A JSON-encoded object DOES fail binding, but the point of that diagnostic is to name the shape
+	/// BEFORE the generic deserialization text can be produced, and running it here keeps its precedence
+	/// over the trial-deserialization message unchanged.
+	/// </remarks>
+	internal static bool TryCreateArgumentShapeError(
+		RequestContext<CallToolRequestParams> context,
+		out CallToolResult? result) =>
+		TryCreateArgumentError(context, includeBindingTrial: false, out result);
+
+	private static bool TryCreateArgumentError(
+		RequestContext<CallToolRequestParams> context,
+		bool includeBindingTrial,
 		out CallToolResult? result) {
 		result = null;
 		if (context.Params?.Arguments is not { } arguments) {
@@ -825,6 +855,15 @@ public static class McpToolErrorFilter
 		}
 
 		foreach (ParameterInfo parameter in method.GetParameters()) {
+			// Shared definition - see McpToolArgumentSupport.IsBindableToolParameter (ENG-95885). The SDK
+			// injects CancellationToken, IServiceProvider, RequestContext<> and its own server types from the
+			// request context, never from the arguments object, so a caller key that merely collides with such
+			// a parameter's name is not an argument for it. Without this guard the checks below would judge
+			// that key against the framework type and answer a well-formed call with a false
+			// invalid-parameter-type, hiding whatever the real failure was.
+			if (!McpToolArgumentSupport.IsBindableToolParameter(parameter)) {
+				continue;
+			}
 			string argumentName = GetArgumentName(parameter);
 			if (!arguments.TryGetValue(argumentName, out JsonElement argumentValue)) {
 				continue;
@@ -849,6 +888,9 @@ public static class McpToolErrorFilter
 			if (TryCreateJsonEncodedObjectError(
 				context.Params.Name, argumentName, parameter.ParameterType, argumentValue, out result)) {
 				return true;
+			}
+			if (!includeBindingTrial) {
+				continue;
 			}
 			try {
 				argumentValue.Deserialize(parameter.ParameterType, SerializerOptions);
