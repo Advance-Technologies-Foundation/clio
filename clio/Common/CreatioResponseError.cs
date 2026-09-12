@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 
@@ -38,6 +39,31 @@ internal enum CreatioResponseContext {
 	/// the bare-<c>Message</c> routing shape a reliable error signal here.
 	/// </summary>
 	ODataPayload
+
+}
+
+/// <summary>
+/// How a recognized Creatio OData error body should be ACTED ON by the caller. The kind is derived
+/// from the server's text but carries none of it, so a caller may put the kind (and the fixed
+/// sentence chosen for it) into an MCP transcript without reproducing server prose.
+/// </summary>
+internal enum ODataErrorKind {
+
+	/// <summary>A recognized error whose family could not be narrowed any further.</summary>
+	ServerError,
+
+	/// <summary>
+	/// The ASP.NET routing miss that identifies an entity set with no OData controller - typically the
+	/// asynchronous rebuild after create-entity-schema/create-lookup.
+	/// </summary>
+	UnregisteredEntity,
+
+	/// <summary>
+	/// The OData "query not valid" family: an unknown property, a column that is not on the schema, or
+	/// a $filter/$orderby/$select/$expand the server could not parse. The request shape is at fault, so
+	/// retrying it unchanged cannot succeed.
+	/// </summary>
+	InvalidQuery
 
 }
 
@@ -115,16 +141,37 @@ internal static class CreatioResponseError {
 	/// instructions, opaque tokens, tenant data or embedded line breaks. This text lands in an MCP
 	/// transcript that a model reads as trusted content, so no server prose is copied into it.
 	/// </remarks>
-	internal static string DescribeServerReportedReadError(bool includeUnregisteredEntityHint = false) {
-		const string classification =
+	internal static string DescribeServerReportedReadError(
+			ODataErrorKind kind = ODataErrorKind.ServerError,
+			string callerInputDetail = null) {
+		const string genericClassification =
 			"Creatio reported an error for this OData read. The server's own wording is not reproduced "
 			+ "here, because a service or proxy response is not trusted text in an MCP transcript; check "
 			+ "the environment's own logs for the server-side cause, then verify the entity name, the "
-			+ "filter and the credentials.";
-		//The hint is locally authored, so it is the one piece of detail that may be added.
-		return includeUnregisteredEntityHint
-			? $"{classification} {UnregisteredEntityHint}"
-			: classification;
+			+ "filter and the credentials. The correlation-id on this response matches it to clio's own "
+			+ "log lines.";
+		//The invalid-query family is worth its own sentence: the request shape is at fault, so the caller
+		//must change the query rather than retry it or go looking in the environment's logs.
+		const string invalidQueryClassification =
+			"Creatio rejected this OData query as invalid: a property, a column or a query option in the "
+			+ "request could not be resolved. The server's own wording is not reproduced here, because a "
+			+ "service or proxy response is not trusted text in an MCP transcript; the correlation-id on "
+			+ "this response matches it to clio's own log lines. If the member was added moments ago, "
+			+ "wait for the OData rebuild and retry ONCE before changing anything - the same rejection is "
+			+ "how a column or entity that exists but is not published yet reports itself, and editing "
+			+ "the schema again in response makes it worse. Otherwise the query is at fault: correct the "
+			+ "field, select, expand or order-by names, because an unchanged retry cannot succeed.";
+		string classification = kind == ODataErrorKind.InvalidQuery
+			? invalidQueryClassification
+			: genericClassification;
+		//Both additions are locally authored - the fixed hint, and a restatement of the CALLER's own
+		//inputs - so they are the only detail that may be added to the sentence.
+		if (kind == ODataErrorKind.UnregisteredEntity) {
+			classification = $"{classification} {UnregisteredEntityHint}";
+		}
+		return string.IsNullOrWhiteSpace(callerInputDetail)
+			? classification
+			: $"{classification} {callerInputDetail}";
 	}
 
 	/// <summary>
@@ -137,14 +184,113 @@ internal static class CreatioResponseError {
 	/// <see cref="TryDetect"/>, whose message carries server-controlled prose.
 	/// </remarks>
 	internal static bool TryClassify(JsonElement root, CreatioResponseContext context,
-			out bool isUnregisteredEntity) {
-		isUnregisteredEntity = false;
+			out ODataErrorKind kind, out string serverDetailForDebugChannel) {
+		kind = ODataErrorKind.ServerError;
+		serverDetailForDebugChannel = null;
 		if (!TryDetect(root, context, out string detected)) {
 			return false;
 		}
-		isUnregisteredEntity = detected.Contains(UnregisteredEntityHint, StringComparison.Ordinal);
+		//The whole message chain, not just the headline. Creatio answers an unresolvable column with
+		//error.message "An error has occurred." and puts the only useful sentence - "Column by path X not
+		//found in schema Y" - two levels down under innererror/internalexception, so classifying on the
+		//headline alone reported a query-shape failure as an unexplained server error.
+		string detail = CollectServerDetail(root, detected);
+		serverDetailForDebugChannel = detail;
+		if (detected.Contains(UnregisteredEntityHint, StringComparison.Ordinal)) {
+			kind = ODataErrorKind.UnregisteredEntity;
+		} else if (LooksLikeInvalidQuery(detail)) {
+			kind = ODataErrorKind.InvalidQuery;
+		}
 		return true;
 	}
+
+	/// <summary>
+	/// Nested error members Creatio uses to carry the cause of an OData failure, in the exact casing the
+	/// observed bodies use - <see cref="JsonElement.TryGetProperty(string, out JsonElement)"/> is
+	/// case-sensitive, and a PascalCase spelling nobody has measured would be dead code that still reads
+	/// as coverage.
+	/// </summary>
+	private static readonly string[] InnerErrorMemberNames = ["innererror", "internalexception"];
+
+	/// <summary>
+	/// How far the innererror chain is walked. The deepest chain measured on a real stand is two levels
+	/// (<c>error.innererror.internalexception</c>); one spare level absorbs a build that adds a wrapper,
+	/// and the bound is what stops a crafted body from costing an unbounded walk.
+	/// </summary>
+	private const int MaxInnerErrorDepth = 3;
+
+	/// <summary>
+	/// Joins the detected headline with every nested <c>message</c> under the OData <c>error</c> object.
+	/// </summary>
+	/// <remarks>
+	/// The result is server-authored prose. It exists ONLY to choose a kind and to be written to the
+	/// debug channel after <see cref="UntrustedText.Fenced"/>; it must never be embedded in an
+	/// <c>error</c>, <c>cause</c> or any other field a caller reads by default.
+	/// </remarks>
+	private static string CollectServerDetail(JsonElement root, string detected) {
+		//TryDetect returned true, so `detected` is one of the composed non-empty messages.
+		List<string> parts = [detected];
+		if (root.ValueKind == JsonValueKind.Object
+			&& root.TryGetProperty("error", out JsonElement error)
+			&& error.ValueKind == JsonValueKind.Object) {
+			AppendInnerMessages(error, parts, 0);
+		}
+		return string.Join(" | ", parts.Distinct(StringComparer.Ordinal));
+	}
+
+	private static void AppendInnerMessages(JsonElement node, ICollection<string> parts, int depth) {
+		if (depth >= MaxInnerErrorDepth) {
+			return;
+		}
+		foreach (string memberName in InnerErrorMemberNames) {
+			if (!node.TryGetProperty(memberName, out JsonElement inner) || inner.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			string message = First(inner, "message", MessagePropertyName);
+			if (!string.IsNullOrWhiteSpace(message)) {
+				parts.Add(message);
+			}
+			AppendInnerMessages(inner, parts, depth + 1);
+		}
+	}
+
+	/// <summary>
+	/// Wordings that identify the OData "query not valid" family. Matching is on the SERVER text, but
+	/// only a boolean leaves this class - no fragment of the text is returned to a caller.
+	/// </summary>
+	/// <remarks>
+	/// Deliberately only the wordings MEASURED on a real stand. A looser second rule was tried and
+	/// removed: "the text names a query option AND contains a failure word" claims any server message
+	/// that merely echoes the request URI - an expired-session body carrying
+	/// <c>...?$filter=...</c> and the word "invalid" became <c>invalid-query</c>, which tells the agent
+	/// to go and correct field names that were never wrong. A missed classification degrades to
+	/// <c>server-reported-error</c>, which is the honest answer; a wrong one sends the agent to edit a
+	/// correct query, or worse, the schema.
+	/// </remarks>
+	private static readonly string[] InvalidQuerySignals = [
+		"The query specified in the URI is not valid",
+		"Could not find a property named",
+		"not found in schema"
+	];
+
+	private static bool LooksLikeInvalidQuery(string detail) =>
+		!string.IsNullOrWhiteSpace(detail)
+		&& InvalidQuerySignals.Any(signal => detail.Contains(signal, StringComparison.OrdinalIgnoreCase));
+
+	/// <summary>
+	/// The fixed diagnostic for a read whose response body was absent altogether.
+	/// </summary>
+	/// <remarks>
+	/// Distinct from <see cref="DescribeNonJsonReadResponse"/> on purpose: the shared GET transport
+	/// (<c>IApplicationClient.ExecuteGetRequest</c>) catches <c>HttpRequestException</c> and
+	/// <c>TaskCanceledException</c> and returns an empty string, so "no body" is the shape a connection
+	/// failure, a DNS failure and a timeout all arrive in - a transport problem, not a malformed payload.
+	/// </remarks>
+	internal static string DescribeEmptyReadResponse() =>
+		"Creatio returned no response body for this OData read. The shared GET transport reports a "
+		+ "connection failure, a DNS failure and a timeout all as an empty body, so this is a transport or "
+		+ "session problem rather than a query-shape problem; verify the environment is reachable and the "
+		+ "session is valid, then retry.";
 
 	internal static string DescribeNonJsonReadResponse() =>
 		"Creatio did not return a JSON OData response. This points to an IIS, proxy, routing, or session "

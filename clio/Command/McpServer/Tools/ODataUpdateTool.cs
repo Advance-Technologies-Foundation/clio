@@ -22,7 +22,9 @@ namespace Clio.Command.McpServer.Tools;
 /// the service accepted the PATCH, not that every value survived it.
 /// </summary>
 [McpServerToolType]
-public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
+public sealed class ODataUpdateTool(
+	IToolCommandResolver commandResolver,
+	IOperationCorrelationIdProvider correlationIds) {
 
 	internal const string ToolName = "odata-update";
 
@@ -47,12 +49,20 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 		"re-read important values with odata-read after a critical write. " +
 		"This tool never performs a keyless mass update. " +
 		"This is a destructive operation: it requires confirm=true to proceed. " +
+		McpToolDescriptions.CorrelationIdOnEveryResponse +
 		"Use odata-read to find the record by its fields and obtain its Id. " +
 		"Call get-tool-contract for odata-update to see usage examples and discovery workflow hints.")]
 	public ODataWriteResponse Update(
 		[Description("Parameters: entity, id, data, environment-name (all required).")]
 		[Required]
 		ODataUpdateArgs args) {
+		//Minted once and stamped on the single exit, so every response carries the correlation-id
+		//core-rules promises - refusals and validation failures included.
+		string correlationId = correlationIds.New();
+		return UpdateCore(args) with { CorrelationId = correlationId };
+	}
+
+	private ODataWriteResponse UpdateCore(ODataUpdateArgs args) {
 		try {
 			ODataWriteResponse invalidTarget = ODataKeyedWrite.ValidateTarget(args.Entity, args.Id, "update");
 			if (invalidTarget is not null) {

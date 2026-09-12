@@ -685,6 +685,31 @@ internal static class ToolContractCatalog {
 		"Requires Creatio platform version 10.0.0 or later; CrtDataForge is included in supported platform versions.";
 	private const string WithMobilePagesFieldName = "with-mobile-pages";
 
+	/// <summary>Response member every odata-* tool stamps, on success and on failure alike.</summary>
+	private const string CorrelationIdFieldName = "correlation-id";
+
+	/// <summary>
+	/// The odata-read variant. Only this tool withholds the server's wording from <c>error</c> and routes
+	/// it to the debug channel, so only this tool may promise it.
+	/// </summary>
+	private const string ODataReadCorrelationIdDescription =
+		"Identifier for this call, present on success and on failure, matching this response to clio's own "
+		+ "log lines. The server's error wording is never reproduced in 'error'; it is written to clio's "
+		+ "debug log, which needs clio running in-process with --debug and a log sink, so an MCP worker "
+		+ "process produces no such line.";
+
+	/// <summary>
+	/// The odata-create/update/delete variant. These tools inject no logger and write no debug line, and
+	/// <c>ODataKeyedWrite.ValidateWriteResponse</c> puts the REDACTED server message into <c>error</c>,
+	/// so the read tool's promise would be false here twice over.
+	/// </summary>
+	private const string ODataWriteCorrelationIdDescription =
+		"Identifier for this call, present on success and on failure, matching this response to clio's own "
+		+ "log lines. Unlike odata-read, this tool's 'error' MAY carry Creatio's own message (with URIs, "
+		+ "paths and tokens removed) and there is no separate debug line to look the id up in.";
+
+	private const string ODataReadErrorCodeFieldName = "error-code";
+
 		private static readonly ToolErrorContract CommonErrorContract = new([
 			new ToolErrorCodeContract("tool-not-found", "Requested tool name is not registered by clio MCP."),
 			new ToolErrorCodeContract(MissingRequiredParameterCode, "A required parameter is missing."),
@@ -692,6 +717,29 @@ internal static class ToolContractCatalog {
 			new ToolErrorCodeContract("invalid-parameter-type", "A parameter value type does not match the tool contract."),
 			new ToolErrorCodeContract(InvalidLocalizationMapCode, "A localization map is malformed or missing en-US."),
 		new ToolErrorCodeContract(InvalidWorkflowShapeCode, "The request shape is structurally invalid for the target tool.")
+	]);
+
+	/// <summary>
+	/// The odata-read failure classification, published so an agent can branch on a code instead of
+	/// pattern-matching an English sentence. Derived from the <c>ODataReadErrorCodes</c> constants so the
+	/// contract cannot name a code the tool never emits.
+	/// </summary>
+	private static readonly ToolErrorContract ODataReadErrorContract = new([
+		..CommonErrorContract.Codes,
+		new ToolErrorCodeContract(ODataReadErrorCodes.Argument,
+			"The request failed local validation and nothing was sent to Creatio."),
+		new ToolErrorCodeContract(ODataReadErrorCodes.EntityNotFound,
+			"The entity set could not be reached: an IIS 404 page, or the routing miss for an OData controller that is not registered or is still rebuilding. Distinguish the two by the message, which carries the wait-and-retry hint only for the rebuild case."),
+		new ToolErrorCodeContract(ODataReadErrorCodes.InvalidQuery,
+			"Creatio rejected the query shape - an unknown property, or a column absent from the schema. The message lists the names THIS request sent and flags a filter field that looks like a raw lookup column. One exception before you change anything: a member added moments ago reports itself exactly this way while the OData model rebuilds, so wait and retry ONCE first - re-running a schema write in response makes it worse. Otherwise an unchanged retry cannot succeed."),
+		new ToolErrorCodeContract(ODataReadErrorCodes.ServerReportedError,
+			"Creatio reported an error that could not be narrowed further. The server's wording is not reproduced; the correlation-id ties this response to the debug line that carries it."),
+		new ToolErrorCodeContract(ODataReadErrorCodes.NonJsonResponse,
+			"The body was not a JSON OData response for the requested entity set - a proxy or IIS page, a session redirect, or a payload for a different set."),
+		new ToolErrorCodeContract(ODataReadErrorCodes.IncompleteResponse,
+			"The response was the requested payload but omitted something the request asked for, such as @odata.count for count=true."),
+		new ToolErrorCodeContract(ODataReadErrorCodes.Transport,
+			"No usable response body came back, or the call failed before it was sent. The shared GET transport reports a connection failure, a DNS failure and a timeout all as an empty body.")
 	]);
 
 	private static readonly IReadOnlyDictionary<string, ToolContractDefinition> Contracts =
@@ -2204,7 +2252,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildODataRead() {
 		return new ToolContractDefinition(
 			ODataReadTool.ToolName,
-			"Reads Creatio records through OData v4. Use this to query records, page through ordered results, request a verified total count, resolve lookup primary values, verify records by Id, or inspect selected fields. Unknown arguments and malformed structured filters fail before any Creatio request; raw filter strings are not supported.",
+			"Reads Creatio records through OData v4. Use this to query records, page through ordered results, request a verified total count, resolve lookup primary values, verify records by Id, or inspect selected fields. Unknown arguments and malformed structured filters fail before any Creatio request; raw filter strings are not supported. Every response carries a correlation-id, and every failure carries a machine-readable error-code - branch on the code, not on the wording of error. The server's own error text is never reproduced in error, and reaches clio's debug log only when clio runs in-process with --debug and a log sink (an MCP worker process carries neither); the correlation-id is what ties this response to the debug line that records it. On error-code invalid-query the message lists the filter, select, expand and order-by names THIS request sent, and names the navigation path to use when a filter field looks like a raw lookup column (AccountId -> Account/Id).",
 			new ToolInputSchemaContract(
 				[EntityFieldName, EnvironmentNameFieldName],
 				[
@@ -2223,6 +2271,8 @@ internal static class ToolContractCatalog {
 						Context: "top must be between 1 and 100; omitting it uses the default of 25, and an out-of-range value (including 0 or negative) is rejected with success:false."),
 					new ToolContractValidator("skip-range", "invalid-skip", "skip",
 						Context: "skip must be zero or greater; use order-by with skip for stable paging."),
+					new ToolContractValidator("member-path", "argument", "select",
+						Context: "select, expand and order-by are held to the same rule as a filter field: every name must be a plain OData member path (letters, digits, underscore and '/'), and order-by additionally accepts a trailing asc or desc. Nested query options such as Account($select=Id) are rejected before any Creatio request."),
 					new ToolContractValidator("structured-filter", "invalid-filter", "filters",
 						Context: "When filters is present it must be a non-null object containing at least one condition in all or any. Every condition requires a simple field or navigation path and exactly one of value or in; unknown group/condition members, embedded OData grammar, and unsupported op values are rejected before any Creatio request.")
 				]),
@@ -2236,9 +2286,12 @@ internal static class ToolContractCatalog {
 				Field(CountFieldName, NumberType, "Number of records returned in this page."),
 				Field("total-count", NumberType, "Total records matching the filter before top/skip paging; present when count=true."),
 				Field(ValueFieldName, ArrayType, "OData value array or single entity response."),
-				Field("next-link", StringType, "OData next-link URL when more records are available; use skip with a stable order-by to request subsequent pages through this tool.")
+				Field("next-link", StringType, "OData next-link URL when more records are available; use skip with a stable order-by to request subsequent pages through this tool."),
+				Field(ODataReadErrorCodeFieldName, StringType,
+					"Machine-readable failure classification when success is false; absent on success. Branch on this rather than on the wording of 'error'."),
+				Field(CorrelationIdFieldName, StringType, ODataReadCorrelationIdDescription)
 			),
-			CommonErrorContract,
+			ODataReadErrorContract,
 			[
 				Alias(ParameterScope, FiltersFieldName, "filter", RejectedStatus,
 					"Raw filter strings are not supported. Use the structured 'filters' object shown in this contract."),
@@ -2316,7 +2369,15 @@ internal static class ToolContractCatalog {
 					"Alternative discovery path: use find-entity-schema to locate the schema by name, then get-entity-schema-properties to inspect its columns, then query.")
 			],
 			[],
-			OdataUnregisteredEntityAntiPatterns(includeEsqEscapeRoute: true));
+			[
+				..OdataUnregisteredEntityAntiPatterns(includeEsqEscapeRoute: true),
+				new ToolAntiPattern(
+					"Filtering on a raw foreign-key column such as AccountId or SysSettingsId, then treating the resulting failure as 'the entity has no such data'.",
+					"OData does not expose a lookup's key column as a property - the reference is reachable only through the navigation path, so filter on Account/Id or SysSettings/Id instead. When clio can classify the rejection it answers error-code invalid-query and its message names the offending field and the navigation path to use; when it cannot, the code is server-reported-error and NO field is named, so check the filter yourself rather than reading the silence as 'the field is fine'."),
+				new ToolAntiPattern(
+					"Pattern-matching the wording of 'error' to decide what to do next, or re-sending an unchanged query after a failure.",
+					"Branch on error-code instead: invalid-query means the request shape is wrong and an unchanged retry cannot succeed, entity-not-found may be a rebuild worth one retry, transport is worth a retry once the environment is reachable. The server's own wording is deliberately never in 'error'; quote the correlation-id to whoever can read the environment's logs.")
+			]);
 	}
 
 	private static ToolContractDefinition BuildGetEmailTemplate() {
@@ -2476,7 +2537,8 @@ internal static class ToolContractCatalog {
 				[SuccessFalseSignal],
 				Field(SuccessFieldName, BooleanType, "Whether the OData update succeeded."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
-				Field("id", StringType, "GUID of the updated record.")
+				Field("id", StringType, "GUID of the updated record."),
+				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription)
 			),
 			CommonErrorContract,
 			[],
@@ -2523,7 +2585,8 @@ internal static class ToolContractCatalog {
 				[SuccessFalseSignal],
 				Field(SuccessFieldName, BooleanType, "Whether the OData delete succeeded."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
-				Field("id", StringType, "GUID of the deleted record.")
+				Field("id", StringType, "GUID of the deleted record."),
+				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription)
 			),
 			CommonErrorContract,
 			[],
@@ -6234,7 +6297,8 @@ internal static class ToolContractCatalog {
 					+ "record-created is null, retry-guidance. A null record-created means Creatio failed the call "
 					+ "but may already have written the row - verify with odata-read before re-sending, a retry "
 					+ "duplicates it."),
-				Field("error", StringType, "Request-level error that prevented any row from being attempted.")
+				Field("error", StringType, "Request-level error that prevented any row from being attempted."),
+				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription)
 			]);
 	}
 

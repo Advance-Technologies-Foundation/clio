@@ -68,7 +68,7 @@ public sealed class ClioRunDispatchTests {
 	private static McpServerTool BuildODataReadTool(IToolCommandResolver commandResolver) =>
 		McpServerTool.Create(
 			typeof(ODataReadTool).GetMethod(nameof(ODataReadTool.Read))!,
-			target: new ODataReadTool(commandResolver),
+			target: new ODataReadTool(commandResolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>()),
 			new McpServerToolCreateOptions { SerializerOptions = JsonSerializerOptions.Default });
 
 	[Test]

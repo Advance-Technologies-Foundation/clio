@@ -14,7 +14,10 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool for querying Creatio records via OData v4.
 /// </summary>
 [McpServerToolType]
-public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
+public sealed class ODataReadTool(
+	IToolCommandResolver commandResolver,
+	IOperationCorrelationIdProvider correlationIds,
+	ILogger logger) {
 
 	internal const string ToolName = "odata-read";
 
@@ -26,6 +29,9 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 
 	/// <summary>Number of records returned when <c>top</c> is omitted.</summary>
 	internal const int DefaultTop = 25;
+
+	/// <summary>The lookup-column suffix the navigation-path hint keys on.</summary>
+	private const string IdSuffix = "Id";
 
 	private const string ValidArgumentsHint =
 		"Valid: entity, environment-name, filters, select, expand, order-by, top, skip, count. " +
@@ -72,27 +78,42 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 		"top must be between 1 and 100 (default 25); an out-of-range top (including 0 or negative) is rejected, never silently widened. " +
 		"skip must be zero or greater; use order-by with skip for stable paging. " +
 		"Unknown arguments and malformed filter conditions fail before any Creatio request; raw filter strings are not supported. " +
+		McpToolDescriptions.CorrelationIdOnEveryResponse +
+		"A failure also carries a machine-readable error-code: argument, entity-not-found, invalid-query, server-reported-error, non-json-response, incomplete-response, or transport. " +
+		"error-code invalid-query usually means the request shape is at fault, and the message lists the field, select, expand and order-by names YOU sent; when a filter field looks like a raw lookup column (a name ending in Id) it names the navigation path to use instead, for example AccountId -> Account/Id. " +
+		"The one exception is a member added moments ago: the same rejection is how a column or entity that exists but is not published to OData yet reports itself, so wait for the rebuild and retry once before changing the query - and never re-run a schema write in response. " +
+		"Creatio's own error wording is never reproduced in error; it is written to clio's debug log, which requires clio to be running in-process with --debug and a log sink, so in an MCP worker there is no such line and the correlation-id serves to match this response to clio's own logs. " +
 		"Call get-tool-contract for odata-read to see usage examples and discovery workflow hints.")]
 	public ODataReadResponse Read(
 		[Description("Parameters: entity, environment-name (required); filters, select, expand, order-by, top, skip, count (optional).")]
 		[Required]
 		ODataReadArgs args) {
+		//One place mints the id and one place stamps it, so no failure path can return a response
+		//without the correlation-id core-rules promises on EVERY response.
+		string correlationId = correlationIds.New();
+		return ReadCore(args, correlationId) with { CorrelationId = correlationId };
+	}
+
+	private ODataReadResponse ReadCore(ODataReadArgs args, string correlationId) {
 		try {
 			string? argumentError = ValidateArguments(args);
 			if (argumentError is not null) {
-				return ODataReadResponse.Failure(argumentError);
+				return ODataReadResponse.Failure(argumentError, ODataReadErrorCodes.Argument);
 			}
 			if (string.IsNullOrWhiteSpace(args.Entity)) {
-				return ODataReadResponse.Failure("entity is required.");
+				return ODataReadResponse.Failure("entity is required.", ODataReadErrorCodes.Argument);
 			}
 			if (!ODataKeyFormatter.IsValidEntityName(args.Entity)) {
-				return ODataReadResponse.Failure("entity must be a valid OData entity set name (letters, digits, underscore).");
+				return ODataReadResponse.Failure(
+					"entity must be a valid OData entity set name (letters, digits, underscore).",
+					ODataReadErrorCodes.Argument);
 			}
 			if (args.Top is { } requestedTop && (requestedTop < MinTop || requestedTop > MaxTop)) {
 				// An out-of-range top must NOT silently fall through to the default (which would
 				// return a page when the caller asked for 0, or be misread as "all" on negatives).
 				return ODataReadResponse.Failure(
-					$"top must be between {MinTop} and {MaxTop} (got {requestedTop}). Omit top to use the default of {DefaultTop}.");
+					$"top must be between {MinTop} and {MaxTop} (got {requestedTop}). Omit top to use the default of {DefaultTop}.",
+					ODataReadErrorCodes.Argument);
 			}
 
 			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
@@ -104,10 +125,28 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			string url = urlBuilder.Build(path);
 
 			string responseJson = client.ExecuteGetRequest(url, 30_000);
-			return ParseODataResponse(responseJson, args.Entity.Trim(), args.Count);
+			return ParseODataResponse(responseJson, args, correlationId);
 		} catch (Exception ex) {
-			return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
+			//The transport swallows connection failures into an empty body, so what reaches here is
+			//mostly environment resolution and client construction - still a transport-class failure
+			//from the caller's point of view, and never a query-shape one.
+			return ODataReadResponse.Failure(
+				SensitiveErrorTextRedactor.Redact(ex.Message), ODataReadErrorCodes.Transport);
 		}
+	}
+
+	/// <summary>
+	/// Writes the server's own error text to the ONE channel allowed to carry it - <c>WriteDebug</c>,
+	/// which the console drops unless --debug was passed - fenced as observed data, and tagged with the
+	/// correlation ID that also appears on the failure envelope. That ID is the only bridge between the
+	/// locally authored sentence a caller reads and the server excerpt an operator can look up.
+	/// </summary>
+	private void WriteServerDetailToDebugChannel(string correlationId, string serverDetail) {
+		string? safeDetail = UntrustedText.Fenced(serverDetail);
+		if (safeDetail is null) {
+			return;
+		}
+		logger.WriteDebug($"(correlation-id: {correlationId}) odata-read server detail: {safeDetail}");
 	}
 
 	private static string? ValidateArguments(ODataReadArgs args) {
@@ -126,6 +165,12 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 		}
 		if (args.Skip is < 0) {
 			return $"skip must be zero or greater (got {args.Skip}).";
+		}
+		string? projectionError = ValidateMemberList("select", args.Select)
+			?? ValidateMemberList("expand", args.Expand)
+			?? ValidateOrderBy(args.OrderBy);
+		if (projectionError is not null) {
+			return projectionError;
 		}
 		if (args.FiltersProvided && args.Filters is null) {
 			return "filters must be a structured object containing at least one condition in all or any; null is not supported.";
@@ -153,6 +198,53 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			string? conditionError = ValidateCondition(path, condition);
 			if (conditionError is not null) {
 				return conditionError;
+			}
+		}
+		return null;
+	}
+
+	/// <summary>
+	/// Applies the filter-field rule to <c>select</c> and <c>expand</c>: every element must be a plain
+	/// OData member path.
+	/// </summary>
+	/// <remarks>
+	/// These were the only caller-supplied names that reached the query string unchecked, and since
+	/// GH-1407 they are also echoed back in an invalid-query failure. Rejecting them here means one rule
+	/// covers every name the tool names back, and an embedded query option or grammar fragment fails
+	/// locally - with error-code argument - instead of being pasted into a URL for the server to reject
+	/// with a message the caller is not allowed to read.
+	/// </remarks>
+	private static string? ValidateMemberList(string argumentName, IReadOnlyList<string>? members) {
+		if (members is null) {
+			return null;
+		}
+		for (int index = 0; index < members.Count; index++) {
+			if (!ODataKeyFormatter.IsValidMemberPath(members[index])) {
+				return $"{argumentName}[{index}] must be an OData member path containing only letters, digits, "
+					+ "underscores, and '/' separators; nested query options are not supported.";
+			}
+		}
+		return null;
+	}
+
+	/// <summary>Accepted sort directions in an <c>order-by</c> clause.</summary>
+	private static readonly HashSet<string> SortDirections = new(StringComparer.OrdinalIgnoreCase) { "asc", "desc" };
+
+	/// <summary>
+	/// Validates <c>order-by</c> as a comma-separated list of <c>&lt;member path&gt; [asc|desc]</c>.
+	/// </summary>
+	private static string? ValidateOrderBy(string? orderBy) {
+		if (string.IsNullOrWhiteSpace(orderBy)) {
+			return null;
+		}
+		foreach (string clause in orderBy.Split(',')) {
+			string[] parts = clause.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+			bool isWellFormed = parts.Length is 1 or 2
+				&& ODataKeyFormatter.IsValidMemberPath(parts[0])
+				&& (parts.Length == 1 || SortDirections.Contains(parts[1]));
+			if (!isWellFormed) {
+				return "order-by must be a comma-separated list of '<field> [asc|desc]' clauses, where each "
+					+ "field is an OData member path containing only letters, digits, underscores, and '/' separators.";
 			}
 		}
 		return null;
@@ -307,16 +399,19 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 		return $"?{string.Join("&", parts)}";
 	}
 
-	private static ODataReadResponse ParseODataResponse(string json, string entityName, bool countRequested) {
+	private ODataReadResponse ParseODataResponse(string json, ODataReadArgs args, string correlationId) {
+		string entityName = args.Entity.Trim();
+		bool countRequested = args.Count;
 		// ExecuteGetRequest may return null (the interface permits it; reauth and proxy failures do produce
 		// it). The absence of a body has to be classified HERE: the IIS-404 probe below dereferences the
 		// string, so a null would raise an NRE that escapes the body-suppression invariant and reaches
 		// Read()'s outer catch as an opaque message. An empty body already resolved to this same failure.
 		if (string.IsNullOrWhiteSpace(json)) {
-			return ODataReadResponse.Failure(CreatioResponseError.DescribeNonJsonReadResponse());
+			return ODataReadResponse.Failure(
+				CreatioResponseError.DescribeEmptyReadResponse(), ODataReadErrorCodes.Transport);
 		}
 		if (CreatioResponseError.TryDescribeMissingEntitySet(json, entityName, out string missingEntitySetError)) {
-			return ODataReadResponse.Failure(missingEntitySetError);
+			return ODataReadResponse.Failure(missingEntitySetError, ODataReadErrorCodes.EntityNotFound);
 		}
 
 		try {
@@ -334,9 +429,11 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			//removes known secret shapes, but arbitrary instructions, opaque tokens, tenant data and
 			//line breaks survive it, and this transcript is read as trusted content by a model.
 			if (!hasMatchingIdentity && CreatioResponseError.TryClassify(root,
-					CreatioResponseContext.ODataPayload, out bool isUnregisteredEntity)) {
+					CreatioResponseContext.ODataPayload, out ODataErrorKind kind, out string serverDetail)) {
+				WriteServerDetailToDebugChannel(correlationId, serverDetail);
 				return ODataReadResponse.Failure(
-					CreatioResponseError.DescribeServerReportedReadError(isUnregisteredEntity));
+					CreatioResponseError.DescribeServerReportedReadError(kind, DescribeCallerQuery(args, kind)),
+					ErrorCodeFor(kind));
 			}
 
 			//A collection response carries `value` as an ARRAY. Accepting any `value` meant a proxy or
@@ -346,7 +443,8 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 				return valueEl.ValueKind == JsonValueKind.Array
 					&& IsCollectionResponse(root, entityName)
 					? ParseCollectionResponse(root, valueEl, countRequested)
-					: ODataReadResponse.Failure(CreatioResponseError.DescribeNonJsonReadResponse());
+					: ODataReadResponse.Failure(
+						CreatioResponseError.DescribeNonJsonReadResponse(), ODataReadErrorCodes.NonJsonResponse);
 			}
 
 			//Single-entity response (no value wrapper). Only OData identifies itself as one: the
@@ -354,7 +452,8 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			//was a successful record - {"detail":"private response marker"} included.
 			return IsSingleEntityResponse(root, entityName)
 				? new ODataReadResponse(true, null, 1, root.Clone(), null)
-				: ODataReadResponse.Failure(CreatioResponseError.DescribeNonJsonReadResponse());
+				: ODataReadResponse.Failure(
+					CreatioResponseError.DescribeNonJsonReadResponse(), ODataReadErrorCodes.NonJsonResponse);
 		} catch (Exception) {
 			// EVERY parse failure gets the same fixed diagnostic, carrying no fragment of the body. Testing
 			// the first character was not enough: a malformed body that still starts with '{' or '[' — a
@@ -362,7 +461,8 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			// proxy content into the MCP transcript. The redactor strips known secret shapes, not tenant
 			// data it has never seen, so the body cannot be quoted at all. The exception message is
 			// dropped with it: a parse position is of no use to a caller who cannot see the body anyway.
-			return ODataReadResponse.Failure(CreatioResponseError.DescribeNonJsonReadResponse());
+			return ODataReadResponse.Failure(
+				CreatioResponseError.DescribeNonJsonReadResponse(), ODataReadErrorCodes.NonJsonResponse);
 		}
 	}
 
@@ -494,6 +594,104 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 		root.ValueKind == JsonValueKind.Object
 		&& MatchesTopLevelContext(root, entityName, singleEntity: true);
 
+	/// <summary>Maps a classified server error onto this tool's machine-readable error-code.</summary>
+	private static string ErrorCodeFor(ODataErrorKind kind) => kind switch {
+		//A routing miss IS a missing entity set - the same condition the IIS 404 page reports - so the
+		//two paths must not hand the caller two different codes for one cause.
+		ODataErrorKind.UnregisteredEntity => ODataReadErrorCodes.EntityNotFound,
+		ODataErrorKind.InvalidQuery => ODataReadErrorCodes.InvalidQuery,
+		_ => ODataReadErrorCodes.ServerReportedError
+	};
+
+	/// <summary>
+	/// Restates the CALLER's own query members - the filter fields, select, expand and order-by names
+	/// that arrived in this request - and adds the lookup-column hint when one of the filter fields
+	/// looks like a raw foreign-key column.
+	/// </summary>
+	/// <remarks>
+	/// Every character here comes from the request, never from the response, which is what makes it
+	/// legal to print: reproducing the server's own wording would put third-party prose into an MCP
+	/// transcript. It is also what makes it USEFUL - the server's text is withheld, so without this the
+	/// caller cannot tell which of several names the server rejected. Filter FIELDS have additionally
+	/// passed <c>ODataKeyFormatter.IsValidMemberPath</c> (letters, digits, underscore and '/') before
+	/// reaching here; select, expand and order-by are echoed exactly as the caller sent them, which is
+	/// safe for the same reason it is useful - they are the caller's own text going back to the caller.
+	/// </remarks>
+	private static string? DescribeCallerQuery(ODataReadArgs args, ODataErrorKind kind) {
+		//ONLY a classified query-shape failure earns any of this. On an unregistered entity set the query
+		//was never the problem, and on an unclassified server fault - a measured
+		//{"Message":"An error has occurred.","ExceptionMessage":"Object reference ..."} body, say - the
+		//query is very probably correct: listing its members reads as an accusation, and a field that
+		//"looks like" a lookup column may be an ordinary persisted column (TaxId, ExternalId) the caller
+		//would then rewrite as Tax/Id over a failure that had nothing to do with it.
+		if (kind != ODataErrorKind.InvalidQuery) {
+			return null;
+		}
+		IReadOnlyList<string> filterFields = CollectFilterFields(args);
+		List<string> sentParts = [];
+		if (filterFields.Count > 0) {
+			sentParts.Add($"filter fields: {string.Join(", ", filterFields)}");
+		}
+		if (args.Select is { Length: > 0 } select) {
+			sentParts.Add($"select: {string.Join(", ", select)}");
+		}
+		if (args.Expand is { Length: > 0 } expand) {
+			sentParts.Add($"expand: {string.Join(", ", expand)}");
+		}
+		if (!string.IsNullOrWhiteSpace(args.OrderBy)) {
+			sentParts.Add($"order-by: {args.OrderBy!.Trim()}");
+		}
+		List<string> described = [];
+		if (sentParts.Count > 0) {
+			described.Add($"Names this request sent - {string.Join("; ", sentParts)}.");
+		}
+		string? lookupHint = BuildLookupColumnHint(filterFields);
+		if (lookupHint is not null) {
+			described.Add(lookupHint);
+		}
+		return described.Count > 0 ? string.Join(" ", described) : null;
+	}
+
+	/// <summary>
+	/// The hint for the commonest cause of a rejected filter: a raw foreign-key column such as
+	/// <c>SysSettingsId</c>, which OData does not expose as a property - the reference is reachable only
+	/// through the navigation path <c>SysSettings/Id</c>.
+	/// </summary>
+	private static string? BuildLookupColumnHint(IReadOnlyList<string> filterFields) {
+		List<string> suspects = filterFields
+			//IsIdish, not a bare EndsWith("Id"): the suffix has to sit on a word boundary, or Paid, Void
+			//and Grid each earn a hint telling the caller to filter on "Pa/Id". The length test excludes
+			//the primary key itself, which is not a lookup - "Id" is not LONGER than "Id".
+			.Where(field => field.Length > IdSuffix.Length
+				&& ODataKeyFormatter.IsIdish(field)
+				//A path that already traverses a navigation property is the correct shape already.
+				&& field.IndexOf('/', StringComparison.Ordinal) < 0)
+			.Distinct(StringComparer.Ordinal)
+			.ToList();
+		if (suspects.Count == 0) {
+			return null;
+		}
+		string rewrites = string.Join(", ", suspects.Select(field => $"'{field}' -> '{field[..^IdSuffix.Length]}/Id'"));
+		return $"{string.Join(", ", suspects.Select(field => $"'{field}'"))} "
+			+ (suspects.Count == 1 ? "looks" : "look")
+			+ " like a lookup column; OData exposes lookups as navigation paths, so filter on the "
+			+ $"navigation path instead: {rewrites}.";
+	}
+
+	/// <summary>Collects the field names of every condition the caller supplied, in request order.</summary>
+	private static IReadOnlyList<string> CollectFilterFields(ODataReadArgs args) {
+		if (args.Filters is null) {
+			return [];
+		}
+		return new[] { args.Filters.All, args.Filters.Any }
+			.Where(group => group is not null)
+			.SelectMany(group => group!)
+			.Where(condition => condition is not null && !string.IsNullOrWhiteSpace(condition.Field))
+			.Select(condition => condition!.Field.Trim())
+			.Distinct(StringComparer.Ordinal)
+			.ToList();
+	}
+
 	private static ODataReadResponse ParseCollectionResponse(
 		JsonElement root,
 		JsonElement valueElement,
@@ -505,7 +703,8 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			: null;
 		if (countRequested && !totalCount.HasValue) {
 			return ODataReadResponse.Failure(
-				"Creatio did not return @odata.count for count=true; total count cannot be verified.");
+				"Creatio did not return @odata.count for count=true; total count cannot be verified.",
+				ODataReadErrorCodes.IncompleteResponse);
 		}
 		string? nextLink = root.TryGetProperty("@odata.nextLink", out JsonElement nextLinkElement)
 			&& nextLinkElement.ValueKind == JsonValueKind.String
@@ -627,11 +826,70 @@ public sealed record ODataReadResponse(
 	[property: JsonPropertyName("total-count")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	[property: Description("Total number of records matching the filter before top/skip paging, present when count=true.")]
-	long? TotalCount = null) {
+	long? TotalCount = null,
 
-	/// <summary>Creates a failure response.</summary>
-	public static ODataReadResponse Failure(string message) =>
-		new(false, message, null, null);
+	[property: JsonPropertyName("error-code")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[property: Description("Machine-readable failure classification when success is false: argument, entity-not-found, invalid-query, server-reported-error, non-json-response, incomplete-response, or transport. Null on success.")]
+	string? ErrorCode = null,
+
+	[property: JsonPropertyName("correlation-id")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[property: Description("Identifier for this read, present on success and on failure. The same id tags the debug line carrying the server's own error text.")]
+	string? CorrelationId = null) {
+
+	/// <summary>Creates a failure response carrying its machine-readable classification.</summary>
+	/// <param name="message">The locally authored failure text; never server prose.</param>
+	/// <param name="errorCode">One of <see cref="ODataReadErrorCodes"/>.</param>
+	/// <remarks>
+	/// The code is a REQUIRED argument rather than a defaulted one on purpose: every failure path has to
+	/// name its classification, and a default would let a new path ship with success:false and no code -
+	/// exactly the shape issue #1407 reports.
+	/// </remarks>
+	public static ODataReadResponse Failure(string message, string errorCode) =>
+		new(false, message, null, null, ErrorCode: errorCode);
+}
+
+/// <summary>
+/// The machine-readable <c>error-code</c> values <see cref="ODataReadTool"/> reports. They are part of
+/// the tool's published contract (<c>get-tool-contract</c> for odata-read lists the same set), so a
+/// value may be added but must not be renamed or repurposed.
+/// </summary>
+internal static class ODataReadErrorCodes {
+
+	/// <summary>The request was rejected by local validation; nothing was sent to Creatio.</summary>
+	internal const string Argument = "argument";
+
+	/// <summary>
+	/// The entity set could not be reached: an IIS 404 page, or the ASP.NET routing miss that follows an
+	/// entity whose OData controller is not registered or is still rebuilding.
+	/// </summary>
+	internal const string EntityNotFound = "entity-not-found";
+
+	/// <summary>
+	/// Creatio rejected the query shape - an unknown property, a column absent from the schema, or an
+	/// unparsable query option. Retrying the same query cannot succeed.
+	/// </summary>
+	internal const string InvalidQuery = "invalid-query";
+
+	/// <summary>Creatio reported an error that could not be narrowed to a more specific code.</summary>
+	internal const string ServerReportedError = "server-reported-error";
+
+	/// <summary>The body was not a JSON OData response for the requested entity set.</summary>
+	internal const string NonJsonResponse = "non-json-response";
+
+	/// <summary>
+	/// The response parsed as the requested payload but omitted something the request asked for, such as
+	/// <c>@odata.count</c> for count=true.
+	/// </summary>
+	internal const string IncompleteResponse = "incomplete-response";
+
+	/// <summary>
+	/// The request did not produce a usable response body at all, or failed before it was sent. The
+	/// shared GET transport reports a connection failure, a DNS failure and a timeout all as an empty
+	/// body, so they arrive here rather than as an exception.
+	/// </summary>
+	internal const string Transport = "transport";
 }
 
 /// <summary>
