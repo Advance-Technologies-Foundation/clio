@@ -169,18 +169,7 @@ public sealed class IdentityServiceLifecycle(ISettingsRepository settingsReposit
 		}
 		IdentityServiceAttachment attachment = plan.Attachment;
 		UnregisteredSite selected = null;
-		if (!iisScanner.TryFindAllVirtualDirectories(out IReadOnlyList<IisVirtualDirectory> directories)) {
-			throw new InvalidOperationException("The IIS virtual-directory inventory could not be validated.");
-		}
-		string rootName = attachment.IisTarget.TrimEnd('/') + "/";
-		foreach (IisVirtualDirectory directory in directories) {
-			bool isRoot = SameName(directory.Name, rootName);
-			if ((isRoot && !SamePath(directory.PhysicalPath, attachment.EnvironmentPath))
-				|| (!isRoot && (directory.Name.StartsWith(rootName, StringComparison.OrdinalIgnoreCase)
-					|| Overlaps(directory.PhysicalPath, attachment.EnvironmentPath)))) {
-				throw new InvalidOperationException("An unrelated IIS virtual directory uses the identity target or folder. Cleanup was stopped.");
-			}
-		}
+		ValidateVirtualDirectories(attachment);
 		foreach (UnregisteredSite target in targets) {
 			if (SameName(target.siteBinding.name, attachment.IisTarget)) {
 				if (selected is not null || !SamePath(target.siteBinding.path, attachment.EnvironmentPath)
@@ -195,6 +184,21 @@ public sealed class IdentityServiceLifecycle(ISettingsRepository settingsReposit
 			}
 		}
 		return selected;
+	}
+
+	private void ValidateVirtualDirectories(IdentityServiceAttachment attachment) {
+		if (!iisScanner.TryFindAllVirtualDirectories(out IReadOnlyList<IisVirtualDirectory> directories)) {
+			throw new InvalidOperationException("The IIS virtual-directory inventory could not be validated.");
+		}
+		string rootName = attachment.IisTarget.TrimEnd('/') + "/";
+		foreach (IisVirtualDirectory directory in directories) {
+			bool isRoot = SameName(directory.Name, rootName);
+			if ((isRoot && !SamePath(directory.PhysicalPath, attachment.EnvironmentPath))
+				|| (!isRoot && (directory.Name.StartsWith(rootName, StringComparison.OrdinalIgnoreCase)
+					|| Overlaps(directory.PhysicalPath, attachment.EnvironmentPath)))) {
+				throw new InvalidOperationException("An unrelated IIS virtual directory uses the identity target or folder. Cleanup was stopped.");
+			}
+		}
 	}
 
 	private void ValidatePath(string path) {
@@ -224,9 +228,19 @@ public sealed class IdentityServiceLifecycle(ISettingsRepository settingsReposit
 		if (string.IsNullOrWhiteSpace(first) || string.IsNullOrWhiteSpace(second)) {
 			return false;
 		}
-		string left = DirectoryPathIdentity.Normalize(first, expandEnvironmentVariables: true).TrimEnd(Path.DirectorySeparatorChar);
-		string right = DirectoryPathIdentity.Normalize(second, expandEnvironmentVariables: true).TrimEnd(Path.DirectorySeparatorChar);
+		string left = NormalizeOverlapPath(first);
+		string right = NormalizeOverlapPath(second);
 		return SameName(left, right) || left.StartsWith(right + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
 			|| right.StartsWith(left + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static string NormalizeOverlapPath(string path) {
+		try {
+			return DirectoryPathIdentity.Normalize(path, expandEnvironmentVariables: true).TrimEnd(Path.DirectorySeparatorChar);
+		}
+		catch (Exception exception) when (exception is InvalidOperationException or ArgumentException or IOException or UnauthorizedAccessException) {
+			// An unresolved alias may still share the deletion tree; it cannot be treated as disjoint.
+			throw new InvalidOperationException($"Cannot validate configured directory '{path}'. Restore access or correct/remove the stale configuration before retrying identity cleanup.", exception);
+		}
 	}
 }

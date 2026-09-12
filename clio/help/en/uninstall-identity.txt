@@ -1,5 +1,5 @@
 COMMAND TYPE
-    Environment Management commands
+    Deployment & Infrastructure commands
 
 NAME
     uninstall-identity - Remove recorded local IdentityService and preserve Creatio
@@ -20,6 +20,7 @@ DESCRIPTION
     the recorded artifacts, then empties the attachment and matching clio credentials.
     Preserves Creatio, its database, OAuth application records and environment entry.
     Shared pools are preserved. Unsafe or shared identity targets are refused.
+    Unresolvable IIS paths must be restored or their stale mappings corrected before retrying.
     An empty attachment succeeds without deleting anything; legacy deployments must
     have their verified location recorded first. Failed cleanup retains retry metadata.
     Enable with: clio experimental --name deploy-identity --enable

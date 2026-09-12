@@ -23,7 +23,7 @@
 stories:
   - id: story-identity-uninstall-1
     title: Optional local IdentityService attachment and removal
-    status: review
+    status: done
     issue: 1433
   - id: story-cliogate-sql-log-1
     title: Persist full SQL requests and execution results in ClioGate

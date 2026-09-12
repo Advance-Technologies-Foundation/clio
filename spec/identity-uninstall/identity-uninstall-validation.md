@@ -7,7 +7,7 @@ Validated on Windows, 2026-09-12, against freshly fetched master
 
 - Focused identity/settings/IIS/combined/manifest tests: 403 passed.
 - `dotnet test clio.tests/clio.tests.csproj -c Debug --filter "Category=Unit"`:
-  12,736 passed, zero failures, 25 existing platform/explicit skips.
+  12,738 passed, zero failures, 25 existing platform/explicit skips.
 - `dotnet test clio.mcp.e2e/clio.mcp.e2e.csproj -f net10.0 --no-build --filter
   "FullyQualifiedName~UninstallIdentityToolE2ETests|FullyQualifiedName~DeployIdentityToolE2ETests"`:
   six passed, zero skipped. Real stdio MCP discovery, worker invocation, empty and invalid attachments.
@@ -46,7 +46,12 @@ The full agentic fan-out covered intent, simplicity, quality, bugs, security, pe
 Accepted findings were fixed: one empty predicate, terminal failure on post-reservation revalidation,
 virtual-directory sharing checks, removal of duplicate adjacent scans, and the three missing
 deployment/order/persisted-retry tests. Narrow security and testing rechecks found no remaining findings.
-Claude agreed with the design; the final implementation review is recorded in the pull request.
+Claude agreed with the design and found no P1 blockers in the final implementation review.
+His P2 availability concern about unresolvable foreign IIS paths was independently assessed by
+the security reviewer: ignoring them cannot prove exclusive ownership. Cleanup remains fail-closed,
+with actionable remediation text and regression coverage for foreign sites and virtual directories.
+The final parallel review found no remaining correctness, security, intent, simplicity, quality,
+performance or testing findings. Sonar findings were corrected without changing removal order.
 
 KISS check: the environment owns one optional attachment. Deployment records it; removal validates
 and consumes it. Existing settings updates, reservations, IIS protection and CRM stages are reused.

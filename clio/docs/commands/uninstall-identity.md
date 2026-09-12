@@ -21,6 +21,8 @@ not infer ownership from credentials, a naming convention, or database connectio
 It validates the recorded scope against current IIS configuration before removing the
 target. Shared pools are preserved. Incomplete attachments, overlapping CRM folders,
 replaced IIS targets and references from other registered environments prevent removal.
+If any configured IIS path cannot be resolved, restore access or correct/remove the
+stale mapping before retrying. An unresolved path cannot prove that identity files are unshared.
 
 Before stopping IdentityService, the command clears matching Creatio identity system
 settings while authentication is still available. It then removes the IIS target,

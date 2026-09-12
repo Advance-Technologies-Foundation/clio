@@ -492,7 +492,7 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 				return false;
 			}
 			directories = root.Elements().Select(item => new IisVirtualDirectory(
-				item.Attribute("VDIR.NAME")!.Value, item.Attribute("physicalPath")!.Value)).ToArray();
+				item.Attribute("VDIR.NAME").Value, item.Attribute("physicalPath").Value)).ToArray();
 			return true;
 		}
 		catch (Exception exception) when (exception is System.Xml.XmlException or ArgumentException) {

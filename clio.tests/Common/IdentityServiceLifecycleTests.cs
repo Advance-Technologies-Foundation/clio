@@ -101,6 +101,32 @@ public sealed class IdentityServiceLifecycleTests {
 	}
 
 	[TestCase(false), TestCase(true)]
+	[Platform("Win")]
+	[Description("Unresolvable foreign IIS mappings cannot prove exclusive ownership and must block deletion.")]
+	public void PrepareRemoval_ShouldPreserveArtifacts_WhenForeignPathCannotBeResolved(bool virtualDirectory) {
+		// Arrange
+		string invalidPath = Path.Combine(Path.GetTempPath(), "NUL");
+		if (virtualDirectory) {
+			_iis.TryFindAllVirtualDirectories(out Arg.Any<IReadOnlyList<IisVirtualDirectory>>()).Returns(call => {
+				call[0] = new[] { new IisVirtualDirectory("other/assets", invalidPath) };
+				return true;
+			});
+		}
+		else {
+			_targets.Add(_targets[0] with { siteBinding = _targets[0].siteBinding with { name = "other", path = invalidPath } });
+		}
+		// Act
+		Action act = () => _sut.PrepareRemoval("crm");
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "unresolved physical identity does not prove a foreign mapping is disjoint")
+			.WithMessage("*Restore access or correct/remove*", because: "the refusal must describe how to resolve stale configuration");
+		_iis.ReceivedCalls().Should().NotContain(call => call.GetMethodInfo().Name == nameof(IIisScanner.TryStopIisTarget)
+			|| call.GetMethodInfo().Name == nameof(IIisScanner.TryDeleteIisTarget), because: "prevalidation must finish before destructive IIS calls");
+		_files.Directory.Exists(_attachment.EnvironmentPath).Should().BeTrue(because: "uncertain ownership must preserve files");
+		_environment.IdentityService.Should().Be(_attachment, because: "repairing the foreign mapping must leave cleanup retryable");
+	}
+
+	[TestCase(false), TestCase(true)]
 	[Description("Identity removal preserves CRM files, preserves shared pools, and empties the attachment.")]
 	public void Remove_ShouldDeleteOnlyIdentity_WhenTargetIsVerified(bool sharedPool) {
 		// Arrange

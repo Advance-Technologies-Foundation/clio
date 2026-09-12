@@ -1,6 +1,6 @@
 # Optional local identity lifecycle
 
-Status: review
+Status: done
 Issue: #1433
 
 Implement the accepted identity-uninstall ADR as one cohesive change: settings/schema,
@@ -12,5 +12,6 @@ Definition of done:
 - [x] Standalone and combined cleanup satisfy the approved acceptance criteria.
 - [x] Unit, integration, MCP E2E and disposable IIS verification pass.
 - [x] Ring compatibility tests/harness and NativeAOT publish pass.
-- [ ] Documentation/guidance and required reviews are complete.
-- [ ] PR merged and task worktree cleanup verified.
+- [x] Documentation/guidance and required reviews are complete.
+
+Merge and local worktree cleanup are tracked by the linked GitHub issue and pull request.
