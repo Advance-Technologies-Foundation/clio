@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -382,8 +382,8 @@ internal static partial class SensitiveErrorTextRedactor {
 	/// <para>
 	/// <see cref="UriRegex"/> is reused rather than duplicated, with a match evaluator that removes only the
 	/// <c>user:pass@</c> authority prefix and keeps the host - so <c>https://user:pw@host/x</c> loses the
-	/// credential and stays diagnosable. A matched URI that cannot be parsed but whose authority carries an
-	/// <c>@</c> is replaced whole: this path must fail closed on an embedded credential.
+	/// credential and stays diagnosable. A matched URI whose authority carries no <c>@</c> is returned
+	/// untouched, host, port, path and query included.
 	/// </para>
 	/// </remarks>
 	/// <param name="text">The raw text of a console line clio composed itself.</param>
@@ -402,18 +402,29 @@ internal static partial class SensitiveErrorTextRedactor {
 
 	/// <summary>
 	/// Returns a matched URI unchanged unless its authority carries userinfo, in which case only the
-	/// <c>user:pass@</c> prefix is replaced and the host, port and path survive.
+	/// <c>user:pass@</c> prefix is replaced and the host, port, path and query survive.
 	/// </summary>
+	/// <remarks>
+	/// The authority ends at the first <c>/</c>, <c>?</c> or <c>#</c>. Cutting at <c>/</c> alone was wrong
+	/// on a measured input: <c>https://host:88?u=john@acme.com</c> has no <c>/</c> at all, so the authority
+	/// ran into the query, the <c>@</c> of an e-mail was taken for userinfo, and the host was replaced
+	/// instead - leaving <c>https://[redacted]@acme.com</c>, which names the wrong endpoint.
+	/// <c>LastIndexOf</c> is searched inside those bounds because a password may itself contain <c>@</c>.
+	/// A raw <c>/</c> inside userinfo is not a valid URI (RFC 3986 requires it percent-encoded) and is not
+	/// handled: such a value ends the authority early and the pair is returned unchanged.
+	/// </remarks>
 	private static string StripUriUserInfo(Match match) {
 		string value = match.Value;
 		int authorityStart = value.IndexOf("://", StringComparison.Ordinal) + 3;
-		int authorityEnd = value.IndexOf('/', authorityStart);
-		string authority = authorityEnd < 0 ? value[authorityStart..] : value[authorityStart..authorityEnd];
-		int at = authority.LastIndexOf('@');
+		int authorityEnd = value.IndexOfAny(['/', '?', '#'], authorityStart);
+		if (authorityEnd < 0) {
+			authorityEnd = value.Length;
+		}
+		int at = value.LastIndexOf('@', authorityEnd - 1, authorityEnd - authorityStart);
 		if (at < 0) {
 			return value;
 		}
-		return string.Concat(value.AsSpan(0, authorityStart), RedactedValue, "@", value.AsSpan(authorityStart + at + 1));
+		return string.Concat(value.AsSpan(0, authorityStart), RedactedValue, "@", value.AsSpan(at + 1));
 	}
 
 	internal static string ExecuteRegex(Func<string> operation) {

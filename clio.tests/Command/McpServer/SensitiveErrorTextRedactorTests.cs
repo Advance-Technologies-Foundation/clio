@@ -804,6 +804,69 @@ public sealed class SensitiveErrorTextRedactorTests {
 			because: "no cut is needed, so no ellipsis may appear");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("RedactCredentials keeps a URI without userinfo byte-identical, host, port, path and query included (#1505).")]
+	[TestCase("Cannot connect to http://ts1-core-dev04:88/sae_m_seeenu_16009960_0914/0/DataService")]
+	[TestCase("Probe https://ts1-core-dev04:88?u=john@acme.com answered 404")]
+	[TestCase("Endpoint https://host.example.com has no path")]
+	public void RedactCredentials_ShouldLeaveAUriWithoutUserInfo_Untouched(string text) {
+		// Act
+		string result = SensitiveErrorTextRedactor.RedactCredentials(text);
+
+		// Assert
+		result.Should().Be(text,
+			because: "the console variant redacts credentials only; the operator's own endpoint is the diagnosis, not a leak - and an '@' inside the query must not be mistaken for userinfo");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("RedactCredentials removes only the userinfo of a URI and keeps the host - including a password that contains '@' (#1505).")]
+	[TestCase("Request to https://user:pw@host.example.com/x failed", "Request to https://[redacted]@host.example.com/x failed")]
+	[TestCase("Request to https://user:p@ss@host.example.com/x failed", "Request to https://[redacted]@host.example.com/x failed")]
+	[TestCase("Request to https://user@host.example.com/x failed", "Request to https://[redacted]@host.example.com/x failed")]
+	public void RedactCredentials_ShouldStripUriUserInfo_AndKeepTheHost(string text, string expected) {
+		// Act
+		string result = SensitiveErrorTextRedactor.RedactCredentials(text);
+
+		// Assert
+		result.Should().Be(expected,
+			because: "the authority ends at the first '/', '?' or '#', and the last '@' inside the authority is the userinfo delimiter, so a password containing '@' is still removed whole");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("RedactCredentials leaves local paths, host:port pairs and e-mail addresses alone - only the console's own reader sees them (#1505).")]
+	public void RedactCredentials_ShouldLeaveLocalPathsHostPortsAndEmails_Untouched() {
+		// Arrange
+		const string text = "Could not find a part of the path '/Users/x/y.json'. Connection refused (localhost:1616). Contact john.doe@acme.com.";
+
+		// Act
+		string result = SensitiveErrorTextRedactor.RedactCredentials(text);
+
+		// Assert
+		result.Should().Be(text,
+			because: "the path, host:port and e-mail rules are deliberately not part of the console variant");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("RedactCredentials is idempotent: the AggregateException arm of the CLI renderer scrubs twice (#1505).")]
+	public void RedactCredentials_ShouldBeIdempotent() {
+		// Arrange
+		const string text = "SelectQuery failed: password=s3cr3t token Bearer eyJabc.def.ghi at https://user:pw@host/x";
+
+		// Act
+		string once = SensitiveErrorTextRedactor.RedactCredentials(text);
+		string twice = SensitiveErrorTextRedactor.RedactCredentials(once);
+
+		// Assert
+		once.Should().NotContain("s3cr3t").And.NotContain("eyJabc").And.NotContain("user:pw",
+			because: "the credential pair, the bearer token and the URI userinfo are the console variant's whole job");
+		twice.Should().Be(once,
+			because: "a second pass must find nothing new to replace");
+	}
+
 	private static int CountOccurrences(string text, string token) {
 		int count = 0;
 		int index = text.IndexOf(token, StringComparison.OrdinalIgnoreCase);

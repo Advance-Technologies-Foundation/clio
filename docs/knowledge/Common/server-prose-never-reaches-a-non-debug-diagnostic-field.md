@@ -9,6 +9,7 @@ applies-to:
   - clio/Command/SysSettingsCommand.cs
   - clio/Command/McpServer/SensitiveErrorTextRedactor.cs
   - clio/ExceptionReadableMessageExtension.cs
+  - clio/Common/UntrustedText.cs
   - clio/Common/ServerReportedFailureText.cs
 ticket: GH-1333
 date: 2026-09-03
@@ -39,9 +40,11 @@ errorInfo.message)`), and the arms returned it verbatim while the MCP path redac
 The whole composed non-debug line now goes through `UntrustedText.ScrubCredentials` once.
 
 **Credentials only, and deliberately so.** That line is composed mostly of clio's OWN prose for ~20
-commands, and its only reader is the person who typed the command — for whom their own local path,
+commands, and its primary reader is the person who typed the command — for whom their own local path,
 their own environment URL, their own `host:port` and their own e-mail address are the diagnosis, not
-a leak. The first attempt used the full `Scrub`, and `clio compress /Users/<user>/nope1505dir -d
+a leak. (The same `WriteError` buffer can reach `CommandExecutionResult.Messages` on the trusted
+stdio MCP path; full fidelity there is by design, and the passthrough path applies the full `Redact`
+separately.) The first attempt used the full `Scrub`, and `clio compress /Users/<user>/nope1505dir -d
 /tmp/x.gz` printed `Could not find a part of the path '[redacted-path]'.` — an error that names
 nothing. `ForConsole` is wrong here for a second reason on top of that: it also flattens line breaks
 and clamps at 300 characters, which is right for a platform fault excerpt and wrong for a composed
