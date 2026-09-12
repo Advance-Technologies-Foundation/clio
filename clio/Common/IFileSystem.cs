@@ -64,6 +64,26 @@ namespace Clio.Common
 		IFileSystemInfo CreateFileSymLink(string path, string pathToTarget);
 
 		/// <summary>
+		/// Tells whether any segment from <paramref name="confinementRoot"/> down to
+		/// <paramref name="path"/> is a symbolic link, a junction, or any other reparse point.
+		/// </summary>
+		/// <param name="confinementRoot">Folder the path must stay inside. It is probed as well.</param>
+		/// <param name="path">Path about to be written, cleared or deleted. It need not exist yet.</param>
+		/// <returns>
+		/// True when a link stands anywhere on that ancestry, or when the walk cannot reach the root.
+		/// False when every segment is a real file or directory, and when the path is not under the root
+		/// at all - that case is not this root's to confine.
+		/// </returns>
+		/// <remarks>
+		/// A canonical string-prefix confinement check is lexical: it still follows a link that already
+		/// exists on disk, so a caller that has to keep writes and deletes inside a folder has to reject
+		/// the links themselves. Only the segments below the root are walked: a workspace legitimately
+		/// sits under a linked path - on macOS the temp directory is reached through /var -> /private/var -
+		/// and walking on to the filesystem root would refuse every such workspace.
+		/// </remarks>
+		bool HasLinkWithin(string confinementRoot, string path);
+
+		/// <summary>
 		/// Checks if a file exists at the given file path. If the file exists and the delete flag is set to true, the file is deleted.
 		/// If the file exists and the delete flag is set to false, an exception is thrown.
 		/// </summary>

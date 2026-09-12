@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Xml;
 using System.Xml.Linq;
 using Clio.Workspaces;
 
@@ -81,6 +82,10 @@ public interface IPropsBuilder
 	/// ┃ ┗ 📂netstandard                      <br/>
 	/// ┣ 📜PKG_NAME-net472.nuget.props        <br/>
 	/// ┣ 📜PKG_NAME-netstandard.nuget.props   <br/>
+	/// A moniker that has no dependency to reference gets no props file, and the assemblies the
+	/// previous props file declared are removed from its Files/Libs/&lt;moniker&gt; folder, so an
+	/// assembly materialized by an earlier run stops shipping in the package. Dlls placed there by
+	/// hand are left alone.
 	/// </remarks>
 	PropsBuildResult Build(string packageName);
 
@@ -151,12 +156,74 @@ public class PropsBuilder : IPropsBuilder
 		ItemType propsFileItem = moniker == Moniker.net472
 			? ItemType.Net472PropsFilePath
 			: ItemType.NetStdPropsFilePath;
+		ItemType libsFolderItem = moniker == Moniker.net472
+			? ItemType.Net472PackageLibsPath
+			: ItemType.NetStdPackageLibsPath;
+		string propsFilePath = GetPathTo(propsFileItem, packageName);
+		string libsFolderPath = GetPathTo(libsFolderItem, packageName);
+		//Both are written, cleared or deleted below. A canonical prefix check cannot see a link that
+		//already exists on the way to them, so the segments are probed before anything is touched.
+		if (!IsConfinedToPackagesFolder(propsFilePath) || !IsConfinedToPackagesFolder(libsFolderPath)) {
+			return false;
+		}
 		string binDir = GetPathTo(binDirItem, packageName);
 		IEnumerable<string> dlls = GetDependencyDlls(binDir, packageName);
 
 		string propsContent = Process(dlls, packageName, moniker, materializedAssemblies);
-		string propsFilePath = GetPathTo(propsFileItem, packageName);
+		if (string.IsNullOrWhiteSpace(propsContent)) {
+			RemovePreviouslyMaterializedAssemblies(propsFilePath, libsFolderPath);
+		}
 		return SavePropsFile(propsFilePath, propsContent, moniker);
+	}
+
+	/// <summary>
+	/// Reports whether the path stays inside the packages folder without passing through a link.
+	/// </summary>
+	private bool IsConfinedToPackagesFolder(string path){
+		if (!_fileSystem.HasLinkWithin(_workspacePathBuilder.PackagesFolderPath, path)) {
+			return true;
+		}
+		_logger.WriteError($"The {path} path resolves through a symbolic link or a junction, "
+			+ "so no props file was written for it");
+		return false;
+	}
+
+	/// <summary>
+	/// Deletes from the package Libs folder exactly the assemblies the previous run's props file
+	/// declared, and nothing else.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="Process"/> only clears Files/Libs/&lt;moniker&gt; when it materializes something
+	/// there, so a moniker that ends up with no dependency at all kept the previous run's dlls while
+	/// its import was removed, and the stale assembly still shipped in the deployed Creatio package.
+	/// The folder is not this tool's to empty - a developer also puts dlls there by hand and references
+	/// them by HintPath - so only the names the generated props file declares are removed. No props
+	/// file means nothing was ever materialized for this moniker, and nothing is touched.
+	/// </remarks>
+	private void RemovePreviouslyMaterializedAssemblies(string propsFilePath, string libsFolderPath){
+		if (!_fileSystem.ExistsFile(propsFilePath) || !_fileSystem.ExistsDirectory(libsFolderPath)) {
+			return;
+		}
+		XDocument previousProps;
+		try {
+			previousProps = XDocument.Parse(_fileSystem.ReadAllText(propsFilePath));
+		} catch (XmlException) {
+			_logger.WriteWarning($"Could not read {propsFilePath}, so no assembly was removed "
+				+ $"from {libsFolderPath}");
+			return;
+		}
+		IEnumerable<string> ownedAssemblies = previousProps
+			.Descendants(ReferenceTag)
+			.Select(reference => reference.Attribute(IncludeTag)?.Value)
+			.Where(assemblyName => !string.IsNullOrWhiteSpace(assemblyName))
+			.Distinct(StringComparer.OrdinalIgnoreCase);
+		foreach (string assemblyName in ownedAssemblies) {
+			string assemblyPath = Path.Combine(libsFolderPath, assemblyName + ".dll");
+			if (_fileSystem.DeleteFileIfExists(assemblyPath)) {
+				_logger.WriteLine($"Removed {assemblyPath}, because {assemblyName} is no longer "
+					+ "a dependency of this package");
+			}
+		}
 	}
 
 	/// <summary>
