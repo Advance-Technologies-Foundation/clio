@@ -39,7 +39,7 @@ namespace Clio.Mcp.E2E;
 // The clio-side exception->Success=false mapping is unit-tested in DataForgeToolTests.cs. Because the
 // reads skip on any non-wired stand, the positive (Success=true) assertions run only in a DataForge-
 // wired lane, NOT the default CI lane; table similarity search additionally depends on ENG-87092.
-public sealed class DataForgeToolE2ETests {
+public sealed class DataForgeToolE2ETests : McpContractFixtureBase {
 	private const string StatusToolName = DataForgeTool.DataForgeStatusToolName;
 	private const string FindTablesToolName = DataForgeTool.DataForgeFindTablesToolName;
 	private const string FindLookupsToolName = DataForgeTool.DataForgeFindLookupsToolName;
@@ -490,7 +490,7 @@ public sealed class DataForgeToolE2ETests {
 	/// multiplied across the three reads. The skip-vs-fail decision is taken after the read by
 	/// <see cref="AssertServiceServedReadOrSkipByStateAsync"/> from the observed service state (ENG-92557).
 	/// </summary>
-	private static async Task EnsureSimilarityIndexReadyAsync(McpE2ESettings settings, ArrangeContext arrangeContext) {
+	private async Task EnsureSimilarityIndexReadyAsync(McpE2ESettings settings, ArrangeContext arrangeContext) {
 		if (!settings.DataForge.InitializeAndWait) {
 			return;
 		}
@@ -596,12 +596,12 @@ public sealed class DataForgeToolE2ETests {
 		}
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync(
+	private async Task<ArrangeContext> ArrangeAsync(
 		McpE2ESettings settings,
 		TimeSpan timeout,
 		bool requireReachableEnvironment) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		string? environmentName = requireReachableEnvironment
 			? await ResolveReachableEnvironmentAsync(settings)
 			: settings.Sandbox.EnvironmentName;
@@ -613,13 +613,13 @@ public sealed class DataForgeToolE2ETests {
 			settings,
 			"Configure McpE2E:Sandbox:EnvironmentName to run Data Forge MCP E2E tests.");
 
-	private sealed record ArrangeContext(
+	private new sealed record ArrangeContext(
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource,
 		string? EnvironmentName) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 }

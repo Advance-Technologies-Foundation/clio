@@ -18,7 +18,7 @@ namespace Clio.Mcp.E2E;
 [TestFixture]
 [AllureNUnit]
 [NonParallelizable]
-public sealed class ApplicationSectionMaintenanceToolE2ETests {
+public sealed class ApplicationSectionMaintenanceToolE2ETests : McpContractFixtureBase {
 	private const string SectionListToolName = ApplicationSectionGetListTool.ApplicationSectionGetListToolName;
 	private const string SectionDeleteToolName = ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName;
 	private const string SectionCreateToolName = ApplicationSectionCreateTool.ApplicationSectionCreateToolName;
@@ -310,19 +310,10 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 	/// <param name="settings">Settings for the child process.</param>
 	/// <param name="cancellationToken">Bounds the start.</param>
 	/// <returns>The shared session.</returns>
-	private static async Task<McpServerSession> GetOrStartSharedSessionAsync(
+	private Task<McpServerSession> GetOrStartSharedSessionAsync(
 		McpE2ESettings settings,
 		CancellationToken cancellationToken) =>
-		_sharedSession ??= await McpServerSession.StartAsync(settings, cancellationToken);
+		Task.FromResult(Session);
 
-	private static McpServerSession? _sharedSession;
-
-	[OneTimeTearDown]
-	public static async Task StopSharedSessionAsync() {
-		if (_sharedSession is not null) {
-			await _sharedSession.DisposeAsync();
-			_sharedSession = null;
-		}
-	}
 
 }

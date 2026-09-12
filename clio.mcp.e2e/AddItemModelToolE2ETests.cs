@@ -19,7 +19,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature("add-item-model")]
 [NonParallelizable]
-public sealed class AddItemModelToolE2ETests {
+public sealed class AddItemModelToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = AddItemModelTool.AddItemModelToolName;
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
@@ -63,14 +63,14 @@ public sealed class AddItemModelToolE2ETests {
 				because: "model generation should create at least one model class file in addition to the shared helper");
 	}
 
-	private static async Task<AddItemModelArrangeContext> ArrangeSuccessAsync(McpE2ESettings settings) {
+	private async Task<AddItemModelArrangeContext> ArrangeSuccessAsync(McpE2ESettings settings) {
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(10));
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await ClioCliCommandRunner.EnsureCliogateInstalledAsync(settings, environmentName, cancellationTokenSource.Token);
 		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-add-item-model-e2e-{Guid.NewGuid():N}");
 		string outputFolderPath = Path.Combine(rootDirectory, "Models");
 		Directory.CreateDirectory(rootDirectory);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		return new AddItemModelArrangeContext(rootDirectory, outputFolderPath, environmentName, session, cancellationTokenSource);
 	}
 
@@ -136,12 +136,12 @@ public sealed class AddItemModelToolE2ETests {
 		string EnvironmentName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
 			if (Directory.Exists(RootDirectory)) {
 				Directory.Delete(RootDirectory, recursive: true);
 			}
+			return ValueTask.CompletedTask;
 		}
 	}
 

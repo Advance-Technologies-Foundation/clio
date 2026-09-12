@@ -28,7 +28,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(RequestInfoTool.ToolName)]
 [NonParallelizable]
-public sealed class RequestInfoToolVersionResolutionSandboxE2ETests {
+public sealed class RequestInfoToolVersionResolutionSandboxE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = RequestInfoTool.ToolName;
 
@@ -80,7 +80,7 @@ public sealed class RequestInfoToolVersionResolutionSandboxE2ETests {
 		return EntitySchemaStructuredResultParser.Extract<RequestInfoResponse>(callResult);
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync() {
+	private async Task<ArrangeContext> ArrangeAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string? environmentName = settings.Sandbox.EnvironmentName;
@@ -91,17 +91,17 @@ public sealed class RequestInfoToolVersionResolutionSandboxE2ETests {
 			Assert.Ignore($"get-request-info version-resolution MCP E2E requires a reachable configured sandbox environment. '{environmentName}' was not reachable.");
 		}
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		return new ArrangeContext(session, cancellationTokenSource, environmentName);
 	}
 
-	private sealed record ArrangeContext(
+	private new sealed record ArrangeContext(
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource,
 		string? EnvironmentName) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 }

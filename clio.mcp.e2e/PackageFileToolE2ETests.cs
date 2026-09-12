@@ -18,7 +18,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(PackageFileTool.ListPackageFilesToolName)]
 [NonParallelizable]
-public sealed class PackageFileToolE2ETests {
+public sealed class PackageFileToolE2ETests : McpContractFixtureBase {
 	private const string CompiledPackageName = "IntegrationV2";
 	private const string CompiledSourcePath = "cs/EmailClient.cs";
 
@@ -33,9 +33,7 @@ public sealed class PackageFileToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await AllureApi.Step(
-			"Arrange the real clio MCP server session",
-			async () => await McpServerSession.StartAsync(settings, cancellationTokenSource.Token));
+		McpServerSession session = Session;
 		string environmentName = await AllureApi.Step(
 			"Arrange a reachable registered Creatio sandbox",
 			async () => await ResolveReachableEnvironmentAsync(settings));
@@ -114,9 +112,7 @@ public sealed class PackageFileToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await AllureApi.Step(
-			"Arrange the real clio MCP server session for invalid input",
-			async () => await McpServerSession.StartAsync(settings, cancellationTokenSource.Token));
+		McpServerSession session = Session;
 		string environmentName = await AllureApi.Step(
 			"Arrange a reachable registered Creatio sandbox for invalid input",
 			async () => await ResolveReachableEnvironmentAsync(settings));

@@ -20,8 +20,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("show-passing-infrastructure")]
-public sealed class ShowPassingInfrastructureToolE2ETests
-{
+public sealed class ShowPassingInfrastructureToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName;
 
 	[Test]
@@ -57,13 +56,13 @@ public sealed class ShowPassingInfrastructureToolE2ETests
 		AssertRecommendationShape(actResult.Execution.RecommendedByEngine.Mssql);
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync()
+	private async Task<ArrangeContext> ArrangeAsync()
 	{
 		return await AllureApi.Step("Arrange show-passing-infrastructure MCP session", async () =>
 		{
 			McpE2ESettings settings = TestConfiguration.Load();
 			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			McpServerSession session = Session;
 			return new ArrangeContext(session, cancellationTokenSource);
 		});
 	}
@@ -150,14 +149,14 @@ public sealed class ShowPassingInfrastructureToolE2ETests
 			because: "deploy-creatio recommendations should only expose an optional local redis-server-name argument");
 	}
 
-	private sealed record ArrangeContext(
+	private new sealed record ArrangeContext(
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable
 	{
-		public async ValueTask DisposeAsync()
+		public ValueTask DisposeAsync()
 		{
-			await Session.DisposeAsync();
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 

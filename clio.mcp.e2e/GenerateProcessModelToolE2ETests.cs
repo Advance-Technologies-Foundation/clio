@@ -18,7 +18,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature("generate-process-model")]
 [NonParallelizable]
-public sealed class GenerateProcessModelToolE2ETests {
+public sealed class GenerateProcessModelToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = GenerateProcessModelTool.GenerateProcessModelToolName;
 
 	[Category("McpE2E.Sandbox")]
@@ -59,7 +59,7 @@ public sealed class GenerateProcessModelToolE2ETests {
 			because: "the generated file should define a class named after the requested process code");
 	}
 
-	private static async Task<GenerateProcessModelArrangeContext> ArrangeSuccessAsync(McpE2ESettings settings) {
+	private async Task<GenerateProcessModelArrangeContext> ArrangeSuccessAsync(McpE2ESettings settings) {
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		string? processCode = settings.Sandbox.ProcessCode;
 		if (string.IsNullOrWhiteSpace(environmentName) || string.IsNullOrWhiteSpace(processCode)) {
@@ -77,7 +77,7 @@ public sealed class GenerateProcessModelToolE2ETests {
 		string generatedFilePath = Path.Combine(process.WorkingDirectory, destinationPath);
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
 		Directory.CreateDirectory(rootDirectory);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		return new GenerateProcessModelArrangeContext(
 			rootDirectory,
 			destinationPath,
@@ -89,7 +89,7 @@ public sealed class GenerateProcessModelToolE2ETests {
 			cancellationTokenSource);
 	}
 
-	private static async Task<GenerateProcessModelArrangeContext> ArrangeFailureAsync(McpE2ESettings settings) {
+	private async Task<GenerateProcessModelArrangeContext> ArrangeFailureAsync(McpE2ESettings settings) {
 		ClioProcessDescriptor process = ClioExecutableResolver.Resolve(settings);
 		string rootDirectory = Path.Combine(process.WorkingDirectory, $"gpm-invalid-e2e-{Guid.NewGuid():N}");
 		string destinationPath = Path.Combine(Path.GetFileName(rootDirectory), "generated", "missing-process-model.cs");
@@ -97,7 +97,7 @@ public sealed class GenerateProcessModelToolE2ETests {
 		string generatedFilePath = Path.Combine(process.WorkingDirectory, destinationPath);
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
 		Directory.CreateDirectory(rootDirectory);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		return new GenerateProcessModelArrangeContext(
 			rootDirectory,
 			destinationPath,
@@ -147,12 +147,12 @@ public sealed class GenerateProcessModelToolE2ETests {
 		string EnvironmentName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
 			if (Directory.Exists(RootDirectory)) {
 				Directory.Delete(RootDirectory, recursive: true);
 			}
+			return ValueTask.CompletedTask;
 		}
 	}
 

@@ -19,7 +19,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(SchemaNamePrefixTool.GetSchemaNamePrefixToolName)]
 [NonParallelizable]
-public sealed class SchemaNamePrefixToolE2ETests {
+public sealed class SchemaNamePrefixToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = SchemaNamePrefixTool.GetSchemaNamePrefixToolName;
 
@@ -214,12 +214,12 @@ public sealed class SchemaNamePrefixToolE2ETests {
 			arrangeContext.CancellationTokenSource.Token);
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync(
+	private async Task<ArrangeContext> ArrangeAsync(
 		McpE2ESettings settings,
 		TimeSpan timeout,
 		bool requireReachableEnvironment) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		string? environmentName = requireReachableEnvironment
 			? await ResolveReachableEnvironmentAsync(settings)
 			: settings.Sandbox.EnvironmentName;
@@ -231,13 +231,13 @@ public sealed class SchemaNamePrefixToolE2ETests {
 			settings,
 			"Configure McpE2E:Sandbox:EnvironmentName to run SchemaNamePrefix MCP E2E tests.");
 
-	private sealed record ArrangeContext(
+	private new sealed record ArrangeContext(
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource,
 		string? EnvironmentName) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 }
