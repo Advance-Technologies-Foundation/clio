@@ -39,6 +39,17 @@ references an analyzer or tooling-only NuGet package — no props file is writte
 no `<Import>` is added, because MSBuild fails the whole project when it imports a file with
 no root element. A warning names the skipped props file.
 
+A dependency that the csproj already declares is left out of the props file, and that check
+honours the `Condition` of the `<Reference>` and of any enclosing `<Choose>`/`<When>`. A
+`<Reference>` restricted to one target framework therefore no longer suppresses the dependency for
+the others — the shape clio's own package template uses for `System.Text.Json`,
+`Microsoft.Extensions.Http` and `Microsoft.Extensions.DependencyInjection`, which are a `net472`
+`<Reference>` plus a `netstandard2.0` `<PackageReference>`. Only a condition that is a single
+`$(TargetFramework)` comparison is interpreted; a condition that mentions the property inside
+something more complex (`And`, `Or`, a negation, a property function) is treated as not applying, so
+the dependency is kept in the props file — a duplicate reference is an MSBuild warning, a missing
+one is a compile error.
+
 A NuGet package that contributes no assembly at all — an analyzer, for example — keeps its
 `PackageReference` in the csproj instead of being commented out. A package is considered
 materialized when a copied assembly is named after it, which also covers packages whose assembly

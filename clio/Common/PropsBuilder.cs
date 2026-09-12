@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using Clio.Workspaces;
 
@@ -119,7 +120,10 @@ public class PropsBuilder : IPropsBuilder
 
 	#region Constants: Private
 
+	private const string ConditionTag = "Condition";
 	private const string IncludeTag = "Include";
+	private const string Net472TargetFramework = "net472";
+	private const string NetStandardTargetFramework = "netstandard2.0";
 	private const string ProjExtension = ".csproj";
 	private const string PropsExtension = ".props";
 	private const string ReferenceTag = "Reference";
@@ -127,6 +131,19 @@ public class PropsBuilder : IPropsBuilder
 	#endregion
 
 	#region Fields: Private
+
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+
+	//Matches a whole condition that is a single $(TargetFramework) comparison, in either
+	//operand order: '$(TargetFramework)' == 'net472' and 'net472' != '$(TargetFramework)'
+	private static readonly Regex SimpleTargetFrameworkConditionRegex = new(
+		@"^\s*(?:'\$\(TargetFramework\)'\s*(?<operator>==|!=)\s*'(?<framework>[^']*)'"
+		+ @"|'(?<framework2>[^']*)'\s*(?<operator2>==|!=)\s*'\$\(TargetFramework\)')\s*$",
+		RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout);
+
+	//Any mention of the property, used to tell "no opinion" from "an expression we cannot evaluate"
+	private static readonly Regex TargetFrameworkMentionRegex = new(
+		@"\$\(TargetFramework[^)]*\)", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout);
 
 	private readonly IFileSystem _fileSystem;
 	private readonly ILogger _logger;
@@ -194,6 +211,52 @@ public class PropsBuilder : IPropsBuilder
 		_fileSystem.WriteAllTextToFile(propsFilePath, propsContent);
 		return true;
 	}
+	/// <summary>
+	/// Decides whether a csproj element applies to the target framework being built.
+	/// </summary>
+	/// <param name="element">Element to inspect, usually a Reference.</param>
+	/// <param name="targetFramework">Target framework being built: net472 or netstandard2.0.</param>
+	/// <remarks>
+	/// A Reference restricted to one target framework - directly, or through an enclosing
+	/// Choose/When - says nothing about the others. Treating it as "already referenced"
+	/// everywhere drops the dependency from the props file of every other target framework,
+	/// and the package then fails to compile for them.
+	/// Only a condition that is a single $(TargetFramework) comparison is interpreted. A
+	/// condition that mentions the property inside something more complex - And, Or, a negation,
+	/// a property function - is treated as NOT applying, so the dll is written into the props
+	/// file. That direction is deliberate: a duplicate reference is an MSBuild warning, while a
+	/// missing one is a compile error. A condition that does not mention $(TargetFramework) at
+	/// all is assumed to apply, as before.
+	/// </remarks>
+	private static bool AppliesToTargetFramework(XElement element, string targetFramework){
+		for (XElement current = element; current is not null; current = current.Parent) {
+			string condition = current.Attribute(ConditionTag)?.Value;
+			if (string.IsNullOrWhiteSpace(condition)) {
+				continue;
+			}
+			Match match = SimpleTargetFrameworkConditionRegex.Match(condition);
+			if (!match.Success) {
+				if (TargetFrameworkMentionRegex.IsMatch(condition)) {
+					//The condition depends on the target framework in a way clio cannot evaluate
+					return false;
+				}
+				continue;
+			}
+			string comparisonOperator = match.Groups["operator"].Success
+				? match.Groups["operator"].Value
+				: match.Groups["operator2"].Value;
+			string framework = match.Groups["framework"].Success
+				? match.Groups["framework"].Value
+				: match.Groups["framework2"].Value;
+			bool negated = comparisonOperator == "!=";
+			bool matchesFramework = string.Equals(framework, targetFramework, StringComparison.OrdinalIgnoreCase);
+			if (matchesFramework == negated) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	private string GetPathTo(ItemType itemType, string packageName){
 		return itemType switch {
 			ItemType.NugetFolder => FilePathGetter(_workspacePathBuilder.NugetFolderPath),
@@ -247,8 +310,10 @@ public class PropsBuilder : IPropsBuilder
 		_fileSystem.CreateOrOverwriteExistsDirectoryIfNeeded(destinationFolder, true);
 		foreach (string dll in enumerableDlls) {
 			string dllName = Path.GetFileNameWithoutExtension(dll);
+			string targetFramework = moniker == Moniker.net472 ? Net472TargetFramework : NetStandardTargetFramework;
 			bool isReferenced = csproj
 				.Descendants(ReferenceTag)
+				.Where(e => AppliesToTargetFramework(e, targetFramework))
 				.Any(e => e.Attribute(IncludeTag)?.Value == dllName);
 
 			if (isReferenced) {
