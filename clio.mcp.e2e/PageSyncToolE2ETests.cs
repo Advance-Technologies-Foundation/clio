@@ -492,7 +492,9 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 				context.CancellationTokenSource.Token);
 			PageGetResponse readback = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(readbackResult);
 			string bodyAfter = readback.Success ? await File.ReadAllTextAsync(readback.Files.BodyFile) : null;
-			restoreNeeded = bodyAfter is not null && bodyAfter != originalBody;
+			//A readback that did not come back cannot show the page is intact, and the write it was
+			//supposed to check may well have landed - so that case restores too.
+			restoreNeeded = bodyAfter is null || bodyAfter != originalBody;
 
 			// Assert
 			response.Success.Should().BeFalse(
@@ -513,7 +515,18 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 				//exists to catch. The page is shared by the rest of the suite, so it is put back rather
 				//than left holding a body that throws on open.
 				try {
-					await SyncBodyAsync(context, environmentName, originalBody);
+					CallToolResult restoreResult =
+						await SyncBodyAsync(context, environmentName, originalBody);
+					PageSyncResponse restored =
+						EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(restoreResult);
+					if (!restored.Success) {
+						//A refused save comes back in the envelope rather than as an exception, so
+						//without this the shared fixture page would be left holding a body that throws
+						//on open, silently.
+						TestContext.Progress.WriteLine(
+							$"Failed to restore the body of '{SavePage}': "
+							+ string.Join("; ", restored.Pages.Select(page => page.Error)));
+					}
 				} catch (Exception restoreFailure) {
 					TestContext.Progress.WriteLine(
 						$"Failed to restore the body of '{SavePage}': {restoreFailure.Message}");

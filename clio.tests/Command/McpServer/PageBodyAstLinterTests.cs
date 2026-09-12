@@ -1470,6 +1470,20 @@ internal class PageBodyAstLinterTests {
 			because: "this rule runs after the main walk, so an exhausted report used to swallow it entirely and save a page whose handler throws");
 	}
 
+	[Test]
+	[Description("The distinct-name cap for undefined-section-call stays below the per-rule finding cap: that relation is what keeps the rule's own summary from claiming names the report never listed")]
+	public void UndefinedSectionCallNameCap_ShouldStayBelowThePerRuleFindingCap() {
+		// Arrange
+		int nameCap = PageBodyAstLinter.MaxUndefinedSectionCallNames;
+
+		// Act
+		int perRuleCap = PageBodyAstLinter.MaxFindingsPerRule;
+
+		// Assert
+		nameCap.Should().BeLessThan(perRuleCap,
+			because: "a name cleared for reporting must always get a slot; raising this cap past the per-rule one would let blocking Errors be suppressed while the rule's own summary - which counts only the names it refused itself - stayed silent about them");
+	}
+
 	// How many distinct Warning rules the linter ships; each capped rule may append one counted summary.
 	private const int WarningRuleCount = 4;
 

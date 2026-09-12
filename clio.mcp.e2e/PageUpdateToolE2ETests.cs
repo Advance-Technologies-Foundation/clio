@@ -384,7 +384,9 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 				baselineDir);
 			PageGetResponse readback = await GetPageAsync(arrangeContext, savePage, environmentName, readbackDir);
 			string bodyAfter = readback.Success ? await File.ReadAllTextAsync(readback.Files.BodyFile) : null;
-			restoreNeeded = bodyAfter is not null && bodyAfter != originalBody;
+			//A readback that did not come back cannot show the page is intact, and the write it was
+			//supposed to check may well have landed - so that case restores too.
+			restoreNeeded = bodyAfter is null || bodyAfter != originalBody;
 
 			// Assert
 			response.Success.Should().BeFalse(
@@ -417,7 +419,14 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	private static async Task TryRestorePageBodyAsync(ArrangeContext context, string schemaName,
 		string body, string environmentName, string outputDirectory) {
 		try {
-			await UpdatePageAsync(context, schemaName, body, environmentName, outputDirectory);
+			PageUpdateResponse restored =
+				await UpdatePageAsync(context, schemaName, body, environmentName, outputDirectory);
+			if (!restored.Success) {
+				//A refused save comes back in the envelope rather than as an exception, so without this
+				//the shared fixture page would be left holding a body that throws on open, silently.
+				TestContext.Progress.WriteLine(
+					$"Failed to restore the body of '{schemaName}': {restored.Error}");
+			}
 		} catch (Exception restoreFailure) {
 			TestContext.Progress.WriteLine(
 				$"Failed to restore the body of '{schemaName}': {restoreFailure.Message}");

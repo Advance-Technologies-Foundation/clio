@@ -32,6 +32,14 @@ with an object literal. Anything else — a `return` nested inside an `if` or a 
 by a call, a schema assembled by assignments written separately from the declaration — is not
 discovered, and the rule then reports nothing at all for that body.
 
+**Known false positives, accepted for now** — the rule is fail-CLOSED against its catalog of runtime
+globals, so a bare call to a name the catalog does not list is a blocking Error even when the page
+runs: a host library reached without declaring it as an AMD dependency (`$`, `_`, `moment`), and a
+sloppy-mode implicit global (`helper = fn;` with no `var`/`let`/`const`, which really does create a
+global in a non-strict AMD body). Both are reported as "not declared in the enclosing scopes". The
+fix on the authoring side is one line (declare the dependency, or the binding), so the catalog was
+left as it is rather than widened on speculation; widen it when a real page hits this.
+
 **Deliberate fail-open cases** — an assignment made from inside ANY nested function of the factory
 counts as initialization, whether or not that function is ever called, because a factory that
 assigns its helpers from an `init()` it calls before the `return` is ordinary page code. That walk
@@ -39,6 +47,14 @@ records names rather than resolving them, so a nested function that SHADOWS the 
 outer binding. A `switch` shares one block scope across its cases, so a `let` initialized in one
 case counts as initialized for the others. All three leave the rule silent on a page that may throw,
 which is the safe direction for a finding that blocks the write.
+
+**Cost profile** — the nested-function assignment scan runs once per function scope over that
+function's whole subtree, so a body with deeply nested functions costs O(depth x nodes) and retains
+one name set per live scope. Ordinary and even generated page bodies are flat enough for this not to
+matter; a body built specifically out of hundreds of nested functions each assigning hundreds of
+names is the shape that would not be. If such a body ever appears, bound the collected set the way
+`MaxTrackedOmittedNames` bounds the omitted-name sample - and make saturation fail OPEN, because a
+name that stops being tracked turns into a blocking Error on a page that works.
 
 **What breaks if you ignore it** — `validate-page` and the write-path validators can report a body as
 valid and `sync-pages` can save it, while the first handler invocation throws `ReferenceError` or
