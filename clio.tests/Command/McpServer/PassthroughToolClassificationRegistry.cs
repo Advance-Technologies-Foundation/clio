@@ -303,6 +303,8 @@ internal static class PassthroughToolClassificationRegistry {
 			["find-entity-schema"] = PassthroughClassification.NotApplicable,
 			["finish-hotfix"] = PassthroughClassification.NotApplicable,
 			["generate-process-model"] = PassthroughClassification.NotApplicable,
+			// Uses the existing environment-scoped BaseTool resolver; outside the original passthrough audit.
+			[ExecuteSqlScriptTool.ToolName] = PassthroughClassification.NotApplicable,
 			["generate-source-code"] = PassthroughClassification.NotApplicable,
 			["get-browser-session"] = PassthroughClassification.NotApplicable,
 			["get-classic-list-columns"] = PassthroughClassification.NotApplicable,
