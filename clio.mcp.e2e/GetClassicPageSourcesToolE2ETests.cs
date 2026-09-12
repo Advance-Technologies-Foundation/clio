@@ -296,15 +296,21 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(5));
 		string outputDirectory = CreateFixtureDirectory("classic-page-sources");
 		string outputFile = Path.Combine(outputDirectory, "manifest.json");
-		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["schema-name"] = MultiLayerPage,
-					["environment-name"] = arrangeContext.EnvironmentName,
-					["output-file"] = outputFile
-				}
-			},
+		// Behind the retry gate, and cached only on success: one shared collection now carries five
+		// tests, so a single transient platform condition would otherwise fail all five at once and be
+		// replayed from the cache instead of retried.
+		CallToolResult callResult = await TransientPlatformConditionRetryGate.InvokeWithRetryAsync(
+			async token => await arrangeContext.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = MultiLayerPage,
+						["environment-name"] = arrangeContext.EnvironmentName,
+						["output-file"] = outputFile
+					}
+				},
+				token),
+			reauthenticateAsync: null,
 			arrangeContext.CancellationTokenSource.Token);
 		GetClassicPageSourcesResponse response =
 			EntitySchemaStructuredResultParser.Extract<GetClassicPageSourcesResponse>(callResult);
@@ -313,7 +319,13 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 		string manifestJson = response.Success && response.ManifestPath is not null && File.Exists(response.ManifestPath)
 			? await File.ReadAllTextAsync(response.ManifestPath)
 			: string.Empty;
-		_sharedPageSources = new SharedPageSources(callResult.IsError, response, manifestJson, outputFile);
+		SharedPageSources collected = new(callResult.IsError, response, manifestJson, outputFile);
+		if (!response.Success) {
+			// Not cached: a failure replayed to the other four tests reports one bad round trip as five
+			// broken assertions, and hides the fact that a retry would have succeeded.
+			return collected;
+		}
+		_sharedPageSources = collected;
 		return _sharedPageSources;
 	}
 

@@ -113,11 +113,13 @@ internal static class E2ETimingProbe {
 	/// </summary>
 	public static void WriteReportToProcessStandardOutput() {
 		string report = Environment.NewLine + BuildReport();
-		using (Stream standardOutput = Console.OpenStandardOutput()) {
-			byte[] payload = Encoding.UTF8.GetBytes(report);
-			standardOutput.Write(payload, 0, payload.Length);
-			standardOutput.Flush();
-		}
+		// Deliberately NOT disposed: this stream wraps the test host's own stdout handle, which the
+		// host keeps using after this teardown runs — `dotnet test` still has its run summary and the
+		// TeamCity service messages to write. Closing it here would send all of that to a dead handle.
+		Stream standardOutput = Console.OpenStandardOutput();
+		byte[] payload = Encoding.UTF8.GetBytes(report);
+		standardOutput.Write(payload, 0, payload.Length);
+		standardOutput.Flush();
 		// stdout of the test host is not always relayed by `dotnet test`; the file next to the test
 		// assembly is the channel that always survives and can be published as a build artifact.
 		try {

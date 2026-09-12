@@ -22,6 +22,7 @@ namespace Clio.Mcp.E2E;
 public sealed class ApplicationSectionUpdateToolE2ETests {
 	private const string SectionUpdateToolName = ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName;
 	private const string SectionCreateToolName = ApplicationSectionCreateTool.ApplicationSectionCreateToolName;
+	private const string SectionDeleteToolName = ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName;
 	private const string ApplicationCode = "AutoTestClioMcp";
 
 	[Category("McpE2E.Sandbox")]
@@ -202,9 +203,9 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
 		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
 		string? createdSectionCode = null;
-		// The stand is deployed fresh for every build and torn down with it, so the created section is not
-		// deleted here: the cleanup cost about 18s, and every assertion that reads the application's section
-		// list checks membership of its own section — none reads a total count.
+		// The created section is removed once, in one-time teardown: the stand is disposable per build, but
+		// a section left in the shared application adds pages that MobilePageConversionGuideSandboxE2ETests
+		// then has to convert.
 		// Act 1: create a section with the initial caption
 		CallToolResult createResult = await session.CallToolAsync(
 			SectionCreateToolName,
@@ -228,6 +229,8 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 			because: "the readback must expose the created section code so update-app-section can target it");
 
 		createdSectionCode = createResponse.Section.Code;
+		_createdSectionCode = createdSectionCode;
+		_createdSectionEnvironmentName = environmentName;
 
 		// Act 2: update the section's caption and description
 		CallToolResult updateResult = await session.CallToolAsync(
@@ -407,11 +410,52 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 
 	private static McpServerSession? _sharedSession;
 
+	private static string? _createdSectionCode;
+	private static string? _createdSectionEnvironmentName;
+
 	[OneTimeTearDown]
 	public static async Task StopSharedSessionAsync() {
-		if (_sharedSession is not null) {
-			await _sharedSession.DisposeAsync();
-			_sharedSession = null;
+		try {
+			await RemoveCreatedSectionAsync();
+		} finally {
+			if (_sharedSession is not null) {
+				await _sharedSession.DisposeAsync();
+				_sharedSession = null;
+			}
+		}
+	}
+
+	/// <summary>
+	/// Removes the section this fixture created — once, not per test.
+	/// </summary>
+	/// <remarks>
+	/// The stand is disposable per build, so the removal is not owed to the stand. It is owed to
+	/// <c>MobilePageConversionGuideSandboxE2ETests</c>, which enumerates every page of the shared
+	/// <c>AutoTestClioMcp</c> application and requires each eligible one to convert: a section left behind
+	/// adds a Form and a List page to that set.
+	/// </remarks>
+	private static async Task RemoveCreatedSectionAsync() {
+		if (string.IsNullOrWhiteSpace(_createdSectionCode) || _sharedSession is null) {
+			return;
+		}
+		string sectionCode = _createdSectionCode;
+		_createdSectionCode = null;
+		try {
+			using CancellationTokenSource cleanupCts = new(TimeSpan.FromMinutes(1));
+			await _sharedSession.CallToolAsync(
+				SectionDeleteToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = _createdSectionEnvironmentName,
+						["application-code"] = ApplicationCode,
+						["section-code"] = sectionCode
+					}
+				},
+				cleanupCts.Token);
+		} catch (Exception exception) {
+			// Best effort: the stand goes away with the build, so a failed removal must not fail a green
+			// fixture. It only matters to the fixtures that read this application's pages.
+			TestContext.Out.WriteLine($"[cleanup] failed to remove section '{sectionCode}': {exception.Message}");
 		}
 	}
 

@@ -506,7 +506,11 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		const string localizedColumnName = LocalizedTextColumnName;
 
 		// Act
-		CommandExecutionEnvelope addResult = await ActSharedBatchAddColumnsAsync(arrangeContext);
+		// Deliberately NOT the shared batch. This is the fixture's only witness that a SECOND
+		// update-entity-schema succeeds against a schema an earlier batch already changed and
+		// recompiled, and its "the add emitted progress" assertion only means something while the
+		// envelope belongs to one operation rather than six.
+		CommandExecutionEnvelope addResult = await ActBatchAddLocalizedTextColumnAsync(arrangeContext, localizedColumnName);
 		CommandExecutionEnvelope modifyResult =
 			await ActModifyLocalizedTextColumnWithStructuredSettingsDefaultAsync(arrangeContext, localizedColumnName);
 		EntitySchemaColumnPropertiesInfo columnProperties =
@@ -1602,14 +1606,37 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	/// schema four times — about 25s apiece — to add columns that never interact. The batch is the tool's
 	/// own supported shape, so nothing about the operation under test changes; each test still reads back
 	/// and asserts only its own column. The trade-off is deliberate: a column type that fails to add now
-	/// fails all four tests at once rather than one, which is the cost of paying for the compile once.
+	/// fails all three tests at once rather than one, which is the cost of paying for the compile once.
+	/// The localized-text column stays outside this batch on purpose — see its test.
 	/// </remarks>
-	private static async Task<CommandExecutionEnvelope> ActSharedBatchAddColumnsAsync(
+	private static async Task<CommandExecutionEnvelope> ActBatchAddLocalizedTextColumnAsync(
+		EntitySchemaArrangeContext arrangeContext,
+		string columnName) {
+		return await AllureApi.Step("Act by invoking update-entity-schema through MCP for a localized text column", async () => {
+			CallToolResult callResult = await CallUpdateEntitySchemaAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				arrangeContext.CancellationTokenSource.Token,
+				[
+					new Dictionary<string, object?> {
+						["action"] = "add",
+						["column-name"] = columnName,
+						["type"] = "Text",
+						["title-localizations"] = BuildLocalizations("Status")
+					}
+				]);
+			return McpCommandExecutionParser.Extract(callResult);
+		});
+	}
+
+	private async Task<CommandExecutionEnvelope> ActSharedBatchAddColumnsAsync(
 		EntitySchemaArrangeContext arrangeContext) {
 		if (_sharedBatchAddResult is not null) {
 			return _sharedBatchAddResult;
 		}
-		_sharedBatchAddResult = await AllureApi.Step(
+		CommandExecutionEnvelope batchResult = await AllureApi.Step(
 			"Act by invoking update-entity-schema through MCP for the fixture's shared column batch", async () => {
 			CallToolResult callResult = await CallUpdateEntitySchemaAsync(
 				arrangeContext.Session,
@@ -1644,12 +1671,6 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 					},
 					new Dictionary<string, object?> {
 						["action"] = "add",
-						["column-name"] = LocalizedTextColumnName,
-						["type"] = "Text",
-						["title-localizations"] = BuildLocalizations("Status")
-					},
-					new Dictionary<string, object?> {
-						["action"] = "add",
 						["column-name"] = BatchUsageColumnName,
 						["type"] = "ShortText",
 						["title-localizations"] = BuildLocalizations("Batch usage column"),
@@ -1658,10 +1679,16 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 				]);
 			return McpCommandExecutionParser.Extract(callResult);
 		});
+		if (batchResult.ExitCode != 0) {
+			// Not cached: replaying one bad round trip to the other callers reports it as several broken
+			// tests and hides that a rerun of the batch would have succeeded.
+			return batchResult;
+		}
+		_sharedBatchAddResult = batchResult;
 		return _sharedBatchAddResult;
 	}
 
-	private static CommandExecutionEnvelope? _sharedBatchAddResult;
+	private CommandExecutionEnvelope? _sharedBatchAddResult;
 
 	private const string BinaryColumnName = "UsrPayload";
 	private const string ImageColumnName = "UsrPreview";

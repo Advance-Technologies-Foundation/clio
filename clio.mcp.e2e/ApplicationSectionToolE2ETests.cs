@@ -22,6 +22,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [NonParallelizable]
 public sealed class ApplicationSectionToolE2ETests {
+	private const string SectionDeleteToolName = ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName;
 	private const string SectionCreateToolName = ApplicationSectionCreateTool.ApplicationSectionCreateToolName;
 	private const string ApplicationCode = "AutoTestClioMcp";
 
@@ -516,9 +517,7 @@ public sealed class ApplicationSectionToolE2ETests {
 		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
 		await SeededApplicationResolver.ResolveOrIgnoreAsync(
 			session, cancellationTokenSource.Token, environmentName!, ApplicationCode);
-		// The stand is deployed fresh for every build and torn down with it, so the created section is not
-		// deleted here: the cleanup cost about 18s per test, and every assertion that reads the application's
-		// section list checks membership of its own section — none reads a total count.
+		// Created sections are removed once per fixture, not per test — see RemoveCreatedSectionsAsync.
 		// Act
 		CallToolResult callResult = await session.CallToolAsync(
 			SectionCreateToolName,
@@ -544,6 +543,7 @@ public sealed class ApplicationSectionToolE2ETests {
 			because: "a successful create-app-section must include the created section metadata in the readback");
 		response.Section!.EntitySchemaName.Should().Be(platformEntitySchemaName,
 			because: "the readback must preserve the platform entity schema name provided in the create request");
+		RecordCreatedSection(response.Section.Code, environmentName);
 	}
 
 	[Category("McpE2E.Sandbox")]
@@ -733,9 +733,7 @@ public sealed class ApplicationSectionToolE2ETests {
 		await SeededApplicationResolver.ResolveOrIgnoreAsync(
 			session, cancellationTokenSource.Token, environmentName!, ApplicationCode);
 		List<string> createdSectionCodes = new();
-		// The stand is deployed fresh for every build and torn down with it, so the created section is not
-		// deleted here: the cleanup cost about 18s per test, and every assertion that reads the application's
-		// section list checks membership of its own section — none reads a total count.
+		// Created sections are removed once per fixture, not per test — see RemoveCreatedSectionsAsync.
 		// Act — fire every create-app-section call concurrently against the SAME application, on one
 		// long-lived MCP server, exactly reproducing the parallel batch that produced the contention.
 		Task<CallToolResult>[] calls = captions
@@ -766,6 +764,7 @@ public sealed class ApplicationSectionToolE2ETests {
 				because: $"every serialized concurrent create-app-section must ultimately succeed. Error: {response.Error}");
 			if (!string.IsNullOrWhiteSpace(response.Section?.Code)) {
 				createdSectionCodes.Add(response.Section!.Code);
+					RecordCreatedSection(response.Section.Code, environmentName);
 			}
 		}
 
@@ -826,9 +825,7 @@ public sealed class ApplicationSectionToolE2ETests {
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		await SeededApplicationResolver.ResolveOrIgnoreAsync(
 			session, cancellationTokenSource.Token, environmentName!, ApplicationCode);
-		// The stand is deployed fresh for every build and torn down with it, so the created section is not
-		// deleted here: the cleanup cost about 18s per test, and every assertion that reads the application's
-		// section list checks membership of its own section — none reads a total count.
+		// Created sections are removed once per fixture, not per test — see RemoveCreatedSectionsAsync.
 		// Act — the call answers within seconds; the section is created afterwards, or not at all.
 		CallToolResult createResult = await session.CallToolAsync(
 			SectionCreateToolName,
@@ -867,6 +864,7 @@ public sealed class ApplicationSectionToolE2ETests {
 
 		createdSection.Should().NotBeNull(
 			because: $"the in-progress envelope promised the section was still being created server-side, so after {DetachedWorkPollAttempts * DetachedWorkPollInterval.TotalSeconds:0}s of the polling that envelope itself prescribes it must exist — a section that never appears makes the guidance unfollowable (clio#1421)");
+		RecordCreatedSection(createdSection?.Code, environmentName);
 		createdSection!.Code.Should().NotBeNullOrWhiteSpace(
 			because: "the section the detached work created must be fully readable, not a partial record");
 	}
@@ -897,6 +895,59 @@ public sealed class ApplicationSectionToolE2ETests {
 		_sharedSession ??= await McpServerSession.StartAsync(settings, cancellationToken);
 
 	private static McpServerSession? _sharedSession;
+
+	/// <summary>
+	/// Every section code this fixture created, removed once in one-time teardown.
+	/// </summary>
+	/// <remarks>
+	/// The stand is disposable per build, so nothing here has to be cleaned up for the stand's sake — the
+	/// per-test cleanup this replaced cost about 18s a time and was pure waste. It is done once per fixture
+	/// for a different reason: sections left in the shared <c>AutoTestClioMcp</c> application each add a
+	/// Form and a List page, and <c>MobilePageConversionGuideSandboxE2ETests</c> enumerates EVERY page of
+	/// that application and requires each eligible one to convert. Letting them accumulate across fixtures
+	/// would hand that fixture a growing set of pages to convert — more time and a wider failure surface,
+	/// which is the opposite of what this change is for.
+	/// </remarks>
+	private static readonly List<string> CreatedSectionCodes = [];
+
+	private static void RecordCreatedSection(string? sectionCode, string environmentName) {
+		if (string.IsNullOrWhiteSpace(sectionCode)) {
+			return;
+		}
+		_createdSectionEnvironmentName = environmentName;
+		CreatedSectionCodes.Add(sectionCode);
+	}
+
+	[OneTimeTearDown]
+	public static async Task RemoveCreatedSectionsAsync() {
+		if (CreatedSectionCodes.Count == 0 || _sharedSession is null || _createdSectionEnvironmentName is null) {
+			return;
+		}
+		string[] codes = [.. CreatedSectionCodes];
+		CreatedSectionCodes.Clear();
+		foreach (string code in codes) {
+			try {
+				using CancellationTokenSource cleanupCts = new(TimeSpan.FromMinutes(1));
+				await _sharedSession.CallToolAsync(
+					SectionDeleteToolName,
+					new Dictionary<string, object?> {
+						["args"] = new Dictionary<string, object?> {
+							["environment-name"] = _createdSectionEnvironmentName,
+							["application-code"] = ApplicationCode,
+							["section-code"] = code
+						}
+					},
+					cleanupCts.Token);
+			} catch (Exception exception) {
+				// Best effort: the stand goes away with the build, so a failed removal must not fail a
+				// green fixture. It only matters to the fixtures that read this application's pages.
+				TestContext.Out.WriteLine($"[cleanup] failed to remove section '{code}': {exception.Message}");
+			}
+		}
+	}
+
+	private static string? _createdSectionEnvironmentName;
+
 
 	[OneTimeTearDown]
 	public static async Task StopSharedSessionAsync() {
@@ -959,6 +1010,7 @@ public sealed class ApplicationSectionToolE2ETests {
 			cancellationTokenSource.Token);
 		ApplicationSectionContextResponseEnvelope response = ApplicationResultParser.ExtractSectionCreate(callResult);
 		cancellationTokenSource.Dispose();
+		RecordCreatedSection(response.Section?.Code, environmentName);
 		_customEntitySection = new SharedCustomEntitySection(callResult, response, [.. progress.Messages]);
 		return _customEntitySection;
 	}

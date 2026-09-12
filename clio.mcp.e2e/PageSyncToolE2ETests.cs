@@ -504,8 +504,12 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run sync-pages validation E2E.");
 		}
-		if (await ReachableSandboxEnvironment.ResolveAsync(settings) is null) {
-			Assert.Ignore($"sync-pages validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
+		// The resolver may fall back to another registered stand, so its ANSWER is the environment
+		// the test must use. Discarding it and keeping the configured name sent the call to a stand
+		// already known to be unreachable, turning a skip into a failure.
+		environmentName = await ReachableSandboxEnvironment.ResolveAsync(settings);
+		if (environmentName is null) {
+			Assert.Ignore($"sync-pages validation E2E requires a reachable sandbox environment. '{settings.Sandbox.EnvironmentName}' was not reachable.");
 		}
 
 		await using ArrangeContext context = await ArrangeAsync();
@@ -1215,8 +1219,12 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run sync-pages semantic validation E2E.");
 		}
-		if (await ReachableSandboxEnvironment.ResolveAsync(settings) is null) {
-			Assert.Ignore($"sync-pages semantic validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
+		// The resolver may fall back to another registered stand, so its ANSWER is the environment
+		// the test must use. Discarding it and keeping the configured name sent the call to a stand
+		// already known to be unreachable, turning a skip into a failure.
+		environmentName = await ReachableSandboxEnvironment.ResolveAsync(settings);
+		if (environmentName is null) {
+			Assert.Ignore($"sync-pages semantic validation E2E requires a reachable sandbox environment. '{settings.Sandbox.EnvironmentName}' was not reachable.");
 		}
 
 		await using ArrangeContext context = await ArrangeAsync();
@@ -1274,8 +1282,12 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run sync-pages semantic validation E2E.");
 		}
-		if (await ReachableSandboxEnvironment.ResolveAsync(settings) is null) {
-			Assert.Ignore($"sync-pages semantic validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
+		// The resolver may fall back to another registered stand, so its ANSWER is the environment
+		// the test must use. Discarding it and keeping the configured name sent the call to a stand
+		// already known to be unreachable, turning a skip into a failure.
+		environmentName = await ReachableSandboxEnvironment.ResolveAsync(settings);
+		if (environmentName is null) {
+			Assert.Ignore($"sync-pages semantic validation E2E requires a reachable sandbox environment. '{settings.Sandbox.EnvironmentName}' was not reachable.");
 		}
 
 		await using ArrangeContext context = await ArrangeAsync();

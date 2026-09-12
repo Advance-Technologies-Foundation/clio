@@ -1303,7 +1303,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 	/// stream the message test already produced. The marker test keeps its own expectations: the composite
 	/// batch's first two operations are still create-entity and create-lookup, in that order.
 	/// </remarks>
-	private static async Task<SharedCompositeBatch> GetOrRunCompositeBatchAsync(ArrangeContext context) {
+	private async Task<SharedCompositeBatch> GetOrRunCompositeBatchAsync(ArrangeContext context) {
 		if (_sharedCompositeBatch is not null) {
 			return _sharedCompositeBatch;
 		}
@@ -1317,6 +1317,20 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			context.LookupColumnName,
 			context.CancellationTokenSource.Token,
 			progress);
+		// Waited for, not snapshotted. Progress delivery and call completion are independent SDK
+		// continuations, so a marker can land microseconds after the result — and the collector of this
+		// batch is the message-alignment test, which does not read progress at all. Freezing the list the
+		// instant the call returned would drop a late "2/4 create-lookup" permanently and fail the marker
+		// test with no regression behind it. An elapsed wait is not an error here: the condition is
+		// re-checked by the caller's own assertions, which report the real gap.
+		try {
+			await progress.WaitForMessagesAsync(
+				messages => messages.Any(m => m.Contains("1/", StringComparison.Ordinal))
+					&& messages.Any(m => m.Contains("2/", StringComparison.Ordinal)),
+				TimeSpan.FromSeconds(10),
+				context.CancellationTokenSource.Token);
+		} catch (OperationCanceledException) {
+		}
 		_sharedCompositeBatch = new SharedCompositeBatch(
 			callResult,
 			[.. progress.Messages],
@@ -1327,7 +1341,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		return _sharedCompositeBatch;
 	}
 
-	private static SharedCompositeBatch? _sharedCompositeBatch;
+	private SharedCompositeBatch? _sharedCompositeBatch;
 
 	/// <summary>One run of the fixture's composite sync-schemas batch, shared by the tests that assert on it.</summary>
 	private sealed record SharedCompositeBatch(

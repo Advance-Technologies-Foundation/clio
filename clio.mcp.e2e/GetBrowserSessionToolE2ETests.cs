@@ -130,7 +130,9 @@ public sealed class GetBrowserSessionToolE2ETests : McpContractFixtureBase {
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
 		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
 			settings,
-			"Configure McpE2E:Sandbox:EnvironmentName to run get-browser-session MCP E2E tests.");
+			$"get-browser-session MCP E2E requires a reachable environment. Configure McpE2E:Sandbox:EnvironmentName; "
+			+ $"configured sandbox environment '{settings.Sandbox.EnvironmentName}' was not reachable, and fallback "
+			+ $"environment '{ReachableSandboxEnvironment.FallbackEnvironmentName}' was also unavailable.");
 
 	private new sealed record ArrangeContext(
 		McpServerSession Session,

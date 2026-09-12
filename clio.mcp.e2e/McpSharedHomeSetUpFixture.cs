@@ -74,8 +74,14 @@ public sealed class McpSharedHomeSetUpFixture {
 
 	[OneTimeTearDown]
 	public async Task RestoreSharedClioHomeAsync() {
-		await McpContractFixtureBase.ReleaseProcessWideSessionAsync();
-		RestoreSharedClioHome();
+		// finally, not a plain sequence: releasing the shared session kills a process tree, and a child
+		// that already exited makes that throw. RestoreSharedClioHome deletes the settings file holding
+		// the stand password in clear text, so it must run even then.
+		try {
+			await McpContractFixtureBase.ReleaseProcessWideSessionAsync();
+		} finally {
+			RestoreSharedClioHome();
+		}
 	}
 
 	private void RestoreSharedClioHome() {
