@@ -4,6 +4,7 @@ using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -36,10 +37,10 @@ public sealed class ODataWriteToolsLiveIntegrationTests {
 	[Test]
 	public void Create_Read_Update_Delete_RoundTrip() {
 		IToolCommandResolver resolver = BuildResolver();
-		ODataCreateTool create = new(resolver);
-		ODataReadTool read = new(resolver);
-		ODataUpdateTool update = new(resolver);
-		ODataDeleteTool delete = new(resolver);
+		ODataCreateTool create = new(resolver, new OperationCorrelationIdProvider());
+		ODataReadTool read = new(resolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		ODataUpdateTool update = new(resolver, new OperationCorrelationIdProvider());
+		ODataDeleteTool delete = new(resolver, new OperationCorrelationIdProvider());
 		string name = $"clio-crud-it-{Guid.NewGuid():N}";
 		string? id = null;
 

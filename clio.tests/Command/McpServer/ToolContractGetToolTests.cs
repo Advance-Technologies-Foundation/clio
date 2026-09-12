@@ -801,6 +801,63 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The published odata-read contract names every error-code the tool can emit, so an agent can branch on the code instead of matching the English sentence.")]
+	public void ToolContractGet_Should_Publish_Every_ODataRead_Error_Code() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		string[] emittedCodes = typeof(ODataReadErrorCodes)
+			.GetFields(BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Public | BindingFlags.FlattenHierarchy)
+			.Where(field => field.IsLiteral && field.FieldType == typeof(string))
+			.Select(field => (string)field.GetRawConstantValue()!)
+			.ToArray();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([ODataReadTool.ToolName]));
+		ToolContractDefinition contract = result.Tools!.Single();
+
+		// Assert
+		emittedCodes.Should().NotBeEmpty(
+			because: "the reflection that drives this assertion must actually find the codes, or the test would pass vacuously");
+		contract.ErrorContract.Codes.Select(code => code.Code).Should().Contain(emittedCodes,
+			because: "issue #1407 reports that the contract advertised structured codes the tool never emitted; the published set must cover every code the tool can return");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The published odata-read contract advertises the correlation-id and error-code response members core-rules and this tool promise on every call.")]
+	public void ToolContractGet_Should_Publish_ODataRead_Diagnostic_Members() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([ODataReadTool.ToolName]));
+		ToolContractDefinition contract = result.Tools!.Single();
+
+		// Assert
+		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain(["correlation-id", "error-code"],
+			because: "a member an agent is told to branch on has to be discoverable in the contract, which is the only description a non-resident tool ever shows");
+		contract.Description.Should().Contain("correlation-id",
+			because: "the curated description wins over the [Description] attribute, so the promise has to be stated here as well");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The odata-read contract warns against filtering on a raw foreign-key column and names the navigation path to use instead.")]
+	public void ToolContractGet_Should_Warn_About_Raw_Lookup_Column_Filters() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([ODataReadTool.ToolName]));
+		ToolContractDefinition contract = result.Tools!.Single();
+
+		// Assert
+		contract.AntiPatterns!.Should().Contain(pattern => pattern.Why.Contains("navigation path", StringComparison.Ordinal),
+			because: "filtering on AccountId instead of Account/Id is the failure issue #1407 reports, and the contract is where an agent can learn it before paying for the round trip");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[TestCase("odata-read")]
 	[TestCase("odata-create")]
 	[Description("Both odata-read and odata-create contracts carry the shared unregistered-entity anti-pattern derived from the same hint constant, so an agent gets consistent contract-level steering for the routing-error failure both tools can hit.")]

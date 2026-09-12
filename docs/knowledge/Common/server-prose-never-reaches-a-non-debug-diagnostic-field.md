@@ -10,6 +10,7 @@ applies-to:
   - clio/Command/McpServer/SensitiveErrorTextRedactor.cs
   - clio/ExceptionReadableMessageExtension.cs
   - clio/Common/ServerReportedFailureText.cs
+  - clio/Command/McpServer/Tools/ODataReadTool.cs
 ticket: GH-1333
 date: 2026-09-03
 ---

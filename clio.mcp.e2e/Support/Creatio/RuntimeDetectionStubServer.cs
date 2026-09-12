@@ -452,6 +452,43 @@ http.createServer((request, response) => {
       response.end("<!DOCTYPE html><html><head><title>404 - File or directory not found.</title></head><body>{{ODataNonJsonBodyMarker}}</body></html>");
       return;
     }
+    if (request.method === "GET" && config.ODataInvalidQueryEntity && url.includes("/odata/" + config.ODataInvalidQueryEntity)) {
+      // GH-1407: the two shapes Creatio answers an unresolvable filter member with, observed on a real
+      // .NET Framework stand. A raw foreign-key column hides the cause two levels down under
+      // innererror/internalexception and puts "An error has occurred." in the headline; an unknown
+      // property names itself in the headline. Both are served with HTTP 200.
+      if (url.indexOf("SysSettingsId") >= 0) {
+        sendJson(response, 200, {
+          error: {
+            code: "",
+            message: "An error has occurred.",
+            innererror: {
+              message: "The 'ObjectContent`1' type failed to serialize the response body for content type 'application/json'.",
+              type: "",
+              stacktrace: "",
+              internalexception: {
+                message: "Column by path SysSettingsId not found in schema " + config.ODataInvalidQueryEntity + ".",
+                type: "",
+                stacktrace: ""
+              }
+            }
+          }
+        });
+        return;
+      }
+      sendJson(response, 200, {
+        error: {
+          code: "",
+          message: "The query specified in the URI is not valid. Could not find a property named 'Nope' on type 'Terrasoft.Configuration.OData." + config.ODataInvalidQueryEntity + "'.",
+          innererror: {
+            message: "Could not find a property named 'Nope' on type 'Terrasoft.Configuration.OData." + config.ODataInvalidQueryEntity + "'.",
+            type: "",
+            stacktrace: ""
+          }
+        }
+      });
+      return;
+    }
     if ((request.method === "GET" || request.method === "POST") && config.ODataRoutingErrorEntity && (url.includes("/odata/" + config.ODataRoutingErrorEntity + "?") || url.endsWith("/odata/" + config.ODataRoutingErrorEntity))) {
       // ASP.NET Web API 404 routing error shape for an unregistered/uncompiled OData controller.
       // Creatio returns this with HTTP 200 in the analyzed session, masking the failure as data.
@@ -508,6 +545,7 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	string? ThemeCssContent = null,
 	string? HtmlSelectQuerySchemaName = null,
 	string? ODataNonJsonEntity = null,
+	string? ODataInvalidQueryEntity = null,
 	string? ODataEntity = null,
 	string? ODataPreWriteMode = null,
 	string? AuthRejectedSelectQuerySchemaName = null,

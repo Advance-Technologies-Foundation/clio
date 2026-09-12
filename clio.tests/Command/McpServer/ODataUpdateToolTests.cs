@@ -125,7 +125,7 @@ public sealed class ODataUpdateToolTests {
 			Resolver = Substitute.For<IToolCommandResolver>();
 			Resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(Client);
 			Resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(UrlBuilder);
-			Tool = new ODataUpdateTool(Resolver);
+			Tool = new ODataUpdateTool(Resolver, new OperationCorrelationIdProvider());
 		}
 
 		public IApplicationClient Client { get; }
@@ -878,7 +878,7 @@ public sealed class ODataUpdateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
 			.Returns(firstRoot, repointedRoot);
-		ODataUpdateTool tool = new(resolver);
+		ODataUpdateTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		// Act
 		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
@@ -1123,4 +1123,27 @@ public sealed class ODataUpdateToolTests {
 		f.Client.DidNotReceiveWithAnyArgs()
 			.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
 	}
+
+	[TestCase(true, TestName = "Update_Should_Carry_A_Correlation_Id_On_Success")]
+	[TestCase(false, TestName = "Update_Should_Carry_A_Correlation_Id_On_A_Refusal")]
+	[Category("Unit")]
+	[Description("Every odata-update response carries the correlation-id core-rules promises, including the unconfirmed refusal that never reaches the environment.")]
+	public void Update_Should_Carry_A_Correlation_Id(bool confirm) {
+		// Arrange
+		Fixture fixture = CsdLFixture();
+
+		// Act
+		ODataWriteResponse response = fixture.Tool.Update(new ODataUpdateArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Id = "11111111-1111-1111-1111-111111111111",
+			Data = JsonDocument.Parse("{\"Name\":\"Jane\"}").RootElement.Clone(),
+			Confirm = confirm
+		});
+
+		// Assert
+		response.CorrelationId.Should().NotBeNullOrWhiteSpace(
+			because: "the id is minted before the work and stamped on the single exit, so a refusal that never reaches Creatio is traceable too");
+	}
+
 }
