@@ -427,8 +427,9 @@ internal static class ODataFieldValidation {
 	/// <summary>
 	/// Walks the <c>BaseType</c> chain (cycle- and depth-guarded) accumulating every property name in
 	/// <paramref name="type"/>'s resolved set. Returns <see langword="false"/> when the chain is longer
-	/// than <see cref="MaxInheritanceDepth"/>, in which case <paramref name="type"/> is left partially
-	/// collected and must not be used as the oracle.
+	/// than <see cref="MaxInheritanceDepth"/>, in which case <paramref name="type"/> keeps only its OWN
+	/// declared properties (nothing is merged before the chain is known to be complete) and must not be
+	/// used as the oracle.
 	/// </summary>
 	/// <remarks>
 	/// Iterative, and that is the point: the walk follows SERVER-AUTHORED <c>BaseType</c> links, so the

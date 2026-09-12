@@ -1,4 +1,4 @@
-﻿---
+---
 description: Creatio's OData v4 endpoint accepts a PATCH naming properties the entity type does not have and answers an empty 204-like body without writing anything - odata-update pre-validates every data field NAME against the service-root $metadata CSDL, with a $select probe fallback
 applies-to:
   - clio/Command/McpServer/Tools/ODataUpdateTool.cs
