@@ -127,6 +127,118 @@ public sealed class CreateAppCommandTests : BaseCommandTests<CreateAppOptions>
 	}
 
 	[Test]
+	[Description("Leaves the optional template data unset when neither --entity-schema-name nor --app-section-description is supplied.")]
+	public void Execute_Should_Not_Send_OptionalTemplateData_When_Template_Options_Are_Absent()
+	{
+		// Arrange
+		CreateAppOptions options = new() {
+			Environment = "dev",
+			Name = "My App",
+			Code = "UsrMyApp",
+			TemplateCode = "AppFreedomUIv2"
+		};
+		_service.CreateApplication("dev", Arg.Any<ApplicationCreateRequest>())
+			.Returns(new ApplicationInfoResult("pkg-uid", "UsrMyApp", []));
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "a create call without the new template options should still succeed");
+		_service.Received(1).CreateApplication(
+			"dev",
+			Arg.Is<ApplicationCreateRequest>(r => r.OptionalTemplateData == null));
+	}
+
+	[Test]
+	[Description("Sends entitySchemaName together with useExistingEntitySchema=true when --entity-schema-name is supplied.")]
+	public void Execute_Should_Imply_UseExistingEntitySchema_When_EntitySchemaName_Is_Supplied()
+	{
+		// Arrange
+		CreateAppOptions options = new() {
+			Environment = "dev",
+			Name = "My App",
+			Code = "UsrMyApp",
+			TemplateCode = "AppFreedomUIv2",
+			EntitySchemaName = "UsrExistingEntity"
+		};
+		_service.CreateApplication("dev", Arg.Any<ApplicationCreateRequest>())
+			.Returns(new ApplicationInfoResult("pkg-uid", "UsrMyApp", []));
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "binding the primary section to an existing entity is a supported create call");
+		_service.Received(1).CreateApplication(
+			"dev",
+			Arg.Is<ApplicationCreateRequest>(r =>
+				r.OptionalTemplateData != null &&
+				r.OptionalTemplateData.EntitySchemaName == "UsrExistingEntity" &&
+				r.OptionalTemplateData.UseExistingEntitySchema == true &&
+				r.OptionalTemplateData.AppSectionDescription == null));
+	}
+
+	[Test]
+	[Description("Sends only the section description, without implying useExistingEntitySchema, when --app-section-description is supplied alone.")]
+	public void Execute_Should_Send_Only_SectionDescription_When_EntitySchemaName_Is_Absent()
+	{
+		// Arrange
+		CreateAppOptions options = new() {
+			Environment = "dev",
+			Name = "My App",
+			Code = "UsrMyApp",
+			TemplateCode = "AppFreedomUIv2",
+			AppSectionDescription = "Orders of the current account"
+		};
+		_service.CreateApplication("dev", Arg.Any<ApplicationCreateRequest>())
+			.Returns(new ApplicationInfoResult("pkg-uid", "UsrMyApp", []));
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "a section description alone is a valid create call");
+		_service.Received(1).CreateApplication(
+			"dev",
+			Arg.Is<ApplicationCreateRequest>(r =>
+				r.OptionalTemplateData != null &&
+				r.OptionalTemplateData.AppSectionDescription == "Orders of the current account" &&
+				r.OptionalTemplateData.EntitySchemaName == null &&
+				r.OptionalTemplateData.UseExistingEntitySchema == null));
+	}
+
+	[Test]
+	[Description("Sends the entity schema name, the implied useExistingEntitySchema flag and the section description together when both template options are supplied.")]
+	public void Execute_Should_Send_Both_Template_Options_When_Both_Are_Supplied()
+	{
+		// Arrange
+		CreateAppOptions options = new() {
+			Environment = "dev",
+			Name = "My App",
+			Code = "UsrMyApp",
+			TemplateCode = "AppFreedomUIv2",
+			EntitySchemaName = "UsrExistingEntity",
+			AppSectionDescription = "Reuses the existing entity"
+		};
+		_service.CreateApplication("dev", Arg.Any<ApplicationCreateRequest>())
+			.Returns(new ApplicationInfoResult("pkg-uid", "UsrMyApp", []));
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "combining an existing entity with a section description is a valid create call");
+		_service.Received(1).CreateApplication(
+			"dev",
+			Arg.Is<ApplicationCreateRequest>(r =>
+				r.OptionalTemplateData != null &&
+				r.OptionalTemplateData.EntitySchemaName == "UsrExistingEntity" &&
+				r.OptionalTemplateData.UseExistingEntitySchema == true &&
+				r.OptionalTemplateData.AppSectionDescription == "Reuses the existing entity"));
+	}
+
+	[Test]
 	[Description("Returns failure exit code and logs an error when with-mobile-pages receives an unsupported value.")]
 	public void Execute_Should_Return_Failure_When_WithMobilePages_Value_Is_Invalid()
 	{
