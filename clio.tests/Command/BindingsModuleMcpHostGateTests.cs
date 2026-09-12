@@ -3,6 +3,8 @@ using System.IO.Abstractions.TestingHelpers;
 using Clio;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Knowledge;
+using Clio.Command.McpServer.Tools;
+using Clio.Common;
 using Clio.Tests.Infrastructure;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,13 +13,41 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 /// <summary>
-/// Covers the ENG-92563 Lever 1 gate: <see cref="BindingsModule.Register"/> only registers the MCP
-/// stdio host (and the <see cref="McpServerCommand"/> that depends on the McpServer singleton) when
-/// the caller explicitly opts in via <c>registerMcpHost:true</c>.
+/// Covers what <see cref="BindingsModule.Register"/> does and does not put in the graph: the ENG-92563
+/// Lever 1 gate (the MCP stdio host, and the <see cref="McpServerCommand"/> that depends on the
+/// McpServer singleton, are registered only when the caller opts in via <c>registerMcpHost:true</c>),
+/// the knowledge-bundle version fallback for source builds, and - since clio#1421 - the rule that a
+/// registered factory must outlive the scope it was resolved from.
 /// </summary>
 [TestFixture]
 [Property("Module", "Command")]
 public class BindingsModuleMcpHostGateTests {
+	[TestCase(false)]
+	[TestCase(true)]
+	[Category("Unit")]
+	[Description("Knowledge installation uses the full enabled runtime catalog in CLI and MCP containers.")]
+	public void Register_ShouldAdvertiseEnabledKnowledgeTools_WhenHostModeChanges(bool registerMcpHost) {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		using ServiceProvider provider = (ServiceProvider)new BindingsModule(fileSystem)
+			.Register(profile: BindingsModuleRegistrationProfile.Bootstrap, registerMcpHost: registerMcpHost);
+
+		// Act
+		KnowledgeBundleClientCapabilities capabilities = provider.GetRequiredService<KnowledgeBundleClientCapabilities>();
+
+		// Assert
+		capabilities.Tools.Should().BeEquivalentTo(provider.GetRequiredService<IMcpToolInvokerRegistry>().ToolNames,
+			because: "knowledge requirements must use the same enabled catalog as runtime invocation");
+		capabilities.Tools.Should().Contain(new[] {
+			ManageUserTool.InspectToolName, ManageUserTool.ToolName,
+			ManageRoleTool.InspectToolName, ManageRoleTool.ToolName,
+			ManageAccessTool.InspectToolName, ManageAccessTool.ToolName,
+			ManageLicenseTool.InspectToolName, ManageLicenseTool.ToolName
+		}, because: "the administration requirements must be recognized, including long-tail tools");
+		capabilities.Tools.Should().NotContain("missing-tool", because: "unknown tools must remain unsupported");
+		capabilities.Tools.Should().NotContain("deploy-identity", because: "disabled tools are not runtime capabilities");
+	}
+
 	[TestCase("0.0.0")]
 	[TestCase("0.0.0.0")]
 	[Category("Unit")]
@@ -105,5 +135,36 @@ public class BindingsModuleMcpHostGateTests {
 			because: "AddMcpServer registers the McpServer singleton when the host is requested");
 		provider.GetRequiredService<McpServerCommand>().Should().NotBeNull(
 			because: "the mcp-server command must resolve from the container that hosts the MCP server");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The per-environment ISysSettingsManager factory still builds a manager after the scope it was resolved from has been disposed, because the long-running MCP tools invoke it from work that deliberately outlives their response.")]
+	public void SysSettingsManagerFactory_ShouldStillBuildAManager_WhenTheResolvingScopeIsAlreadyDisposed() {
+		// Arrange — resolve the factory the way a tool does, from a REQUEST SCOPE, then end that scope.
+		// The MCP SDK gives every request its own scope (McpServerOptions.ScopeRequests defaults to true)
+		// and disposes it as soon as the tool's response is returned, while create-app-section and the
+		// other long-running tools keep working past their response deadline. A factory that closed over
+		// the provider therefore threw ObjectDisposedException on the first call in that continuation, and
+		// the caller — already holding a "still in progress, keep polling" envelope — was never told
+		// (issue #1421).
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		IServiceProvider provider = new BindingsModule(fileSystem)
+			.Register(profile: BindingsModuleRegistrationProfile.Bootstrap, registerMcpHost: false);
+		Func<EnvironmentSettings, ISysSettingsManager> factory;
+		using (IServiceScope scope = provider.CreateScope()) {
+			factory = scope.ServiceProvider.GetRequiredService<Func<EnvironmentSettings, ISysSettingsManager>>();
+		}
+
+		// Act — the delegate is invoked only now, when the scope that produced it no longer exists.
+		Func<ISysSettingsManager> invokeAfterDisposal = () => factory(new EnvironmentSettings {
+			Uri = "http://localhost", Login = "Supervisor", Password = "Supervisor"
+		});
+
+		// Assert
+		invokeAfterDisposal.Should().NotThrow(
+			because: "work detached past the response deadline resolves this factory after its request scope is gone, so the factory must not depend on that scope");
+		invokeAfterDisposal().Should().NotBeNull(
+			because: "the detached continuation needs a usable manager, not merely the absence of an exception");
 	}
 }

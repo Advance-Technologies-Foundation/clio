@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.IO.Abstractions.TestingHelpers;
 using System.Text.Json;
 using Clio.Command;
@@ -76,6 +77,100 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 		containerBuilder.AddTransient(_ => _logger);
 		containerBuilder.AddTransient(_ => _workspacePathBuilder);
 		containerBuilder.AddTransient(_ => serviceUrlBuilder);
+	}
+
+	[Test]
+	[Description("Rejects an explicitly supplied package directory with the missing workspace marker and root-path guidance before writing binding files.")]
+	public void Execute_ShouldExplainWorkspaceRoot_WhenPackageDirectoryIsSupplied() {
+		// Arrange
+		CreateDataBindingOptions options = new() {
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			WorkspacePath = WorkspacePath("packages", PackageName)
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "the package directory is not a workspace root");
+		_logger.ReceivedCalls().Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteError))
+			.Select(call => call.GetArguments()[0]?.ToString()).Should().Contain(message =>
+				message != null && message.Contains(WorkspacePath("packages", PackageName, ".clio", "workspaceSettings.json"))
+				&& message.Contains("not the package directory") && message.Contains("packages/<package-name>"),
+				because: "the diagnostic must identify the missing marker and explain the correct argument");
+		FileSystem.Directory.Exists(WorkspacePath("packages", PackageName, "Data")).Should().BeFalse(
+			because: "invalid workspace input must fail before any binding output is created");
+	}
+
+	[Test]
+	[Description("Includes columns requested only by localizations without inventing base-row values, and shares the generated primary key across cultures.")]
+	public void Execute_ShouldIncludeLocalizationOnlyColumns_WhenValuesOmitThem() {
+		// Arrange
+		CreateDataBindingOptions options = new() {
+			PackageName = PackageName, SchemaName = BindingName,
+			ValuesJson = """{"Code":"UsrLocalizedSetting"}""",
+			LocalizationsJson = """{"en-US":{"Name":"Setting"},"de-DE":{"Description":"Beschreibung","name":"Einstellung"}}"""
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "localization columns do not require duplicate base values");
+		string bindingPath = WorkspacePath("packages", PackageName, "Data", BindingName);
+		using JsonDocument descriptor = JsonDocument.Parse(FileSystem.File.ReadAllText(Path.Combine(bindingPath, "descriptor.json")));
+		JsonElement[] columns = descriptor.RootElement.GetProperty("Descriptor").GetProperty("Columns").EnumerateArray().ToArray();
+		columns.Select(column => column.GetProperty("ColumnName").GetString()).Should().BeEquivalentTo(
+			new[] { "Id", "Code", "Name", "Description" }, because: "the projection is the union of values and all cultures plus the key");
+		string keyUid = columns.Single(column => column.GetProperty("IsKey").GetBoolean()).GetProperty("ColumnUId").GetString()!;
+		using JsonDocument data = JsonDocument.Parse(FileSystem.File.ReadAllText(Path.Combine(bindingPath, "data.json")));
+		JsonElement[] baseRow = data.RootElement.GetProperty("PackageData")[0].GetProperty("Row").EnumerateArray().ToArray();
+		baseRow.Should().HaveCount(2, because: "localization-only columns must not introduce null or empty base values");
+		string key = baseRow.Single(value => value.GetProperty("SchemaColumnUId").GetString() == keyUid).GetProperty("Value").GetString()!;
+		foreach (string culture in new[] { "en-US", "de-DE" }) {
+			using JsonDocument localized = JsonDocument.Parse(FileSystem.File.ReadAllText(Path.Combine(bindingPath, "Localization", $"data.{culture}.json")));
+			localized.RootElement.GetProperty("PackageData")[0].GetProperty("Row")[0].GetProperty("Value").GetString()
+				.Should().Be(key, because: "each culture must reference the generated base-row identity");
+		}
+	}
+
+	[TestCase("{", "{}")]
+	[TestCase("{}", "{")]
+	[TestCase("{\"Unknown\":1}", "{}")]
+	[TestCase("{\"Code\":\"Changed\"}", "{\"en-US\":{\"Name\":\"Valid first culture\"},\"de-DE\":{\"Unknown\":\"Invalid\"}}")]
+	[TestCase("{\"Code\":\"Changed\"}", "{\"en-US\":{\"IsPersonal\":true}}")]
+	[Description("Rejects invalid values or localizations without creating a partial binding or modifying any existing binding files.")]
+	public void Execute_ShouldPreserveArtifacts_WhenInputValidationFails(string values, string localizations) {
+		// Arrange
+		CreateDataBindingOptions options = new() {
+			PackageName = PackageName, SchemaName = BindingName,
+			ValuesJson = values, LocalizationsJson = localizations
+		};
+		string bindingPath = WorkspacePath("packages", PackageName, "Data", BindingName);
+
+		// Act
+		int newResult = _command.Execute(options);
+
+		// Assert
+		newResult.Should().Be(1, because: "invalid input must be rejected");
+		FileSystem.Directory.Exists(bindingPath).Should().BeFalse(because: "validation must finish before creating the binding directory");
+
+		// Arrange
+		FileSystem.AddFile(Path.Combine(bindingPath, "descriptor.json"), new MockFileData("""{"Descriptor":{"UId":"dd30882b-d0c4-448c-a885-e19cd9d723de","Schema":{"Name":"SysSettings"}}}"""));
+		FileSystem.AddFile(Path.Combine(bindingPath, "data.json"), new MockFileData("original data"));
+		FileSystem.AddFile(Path.Combine(bindingPath, "filter.json"), new MockFileData("original filter"));
+		FileSystem.AddFile(Path.Combine(bindingPath, "Localization", "data.fr-FR.json"), new MockFileData("original localization"));
+		Dictionary<string, string> original = FileSystem.Directory.GetFiles(bindingPath, "*", SearchOption.AllDirectories)
+			.ToDictionary(path => path, path => FileSystem.File.ReadAllText(path));
+
+		// Act
+		int existingResult = _command.Execute(options);
+
+		// Assert
+		existingResult.Should().Be(1, because: "regeneration must reject the same invalid input");
+		FileSystem.Directory.GetFiles(bindingPath, "*", SearchOption.AllDirectories).ToDictionary(path => path, path => FileSystem.File.ReadAllText(path))
+			.Should().BeEquivalentTo(original, because: "failed regeneration must preserve every file and its exact content");
 	}
 
 	[Test]
@@ -237,6 +332,11 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 		string dataJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", "UsrLookupBinding", "data.json"));
 		dataJson.Should().Contain("\"DisplayValue\": \"Provided status\"",
 			because: "lookup columns should preserve the caller-supplied display value");
+		string descriptorJson = FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", "UsrLookupBinding", "descriptor.json"));
+		descriptorJson.Should().NotContain("ReferenceSchemaName",
+			because: "the platform descriptor reader rejects generator-only lookup hints");
+		dataJson.Should().Contain("b659d704-3955-e011-981f-00155d043204",
+			because: "excluding the lookup hint must preserve the referenced row identity");
 	}
 
 	[Test]

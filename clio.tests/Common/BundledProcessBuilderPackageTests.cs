@@ -74,7 +74,8 @@ public class BundledProcessBuilderPackageTests {
 	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1</c> at
 	/// <see cref="ExpectedArchiveVersion"/> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-95891-formula-expressions</c>), at the commit recorded mechanically in
+	/// <c>feature/ENG-91853-flow-labels</c>, tag <c>crtprocessbuilder-1.6.1.4</c>), at the commit
+	/// recorded mechanically in
 	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
 	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
 	/// by hand. Many numbers below the current one are burned rather than reused — some because two branches drew
@@ -132,13 +133,15 @@ public class BundledProcessBuilderPackageTests {
 	/// the pin names the commit BEFORE the version moved — by design, and unavoidably, because the script does
 	/// not commit. Today's pins show it plainly: <see cref="ExpectedProducingCommit"/> resolves to a descriptor
 	/// reading a version one restamp behind the archive beside it.
-	/// <para>So reproducing the bytes is not a checkout, and not two steps either: check out the pin, re-run
-	/// <c>set-pkg-version</c> with the pinned version, then hand-set <c>ModifiedOnUtc</c> to
-	/// <see cref="ExpectedDescriptorModifiedOnUtc"/>, then pack. The third step is not optional —
-	/// <c>SetPackageVersionCommand</c> writes <c>DateTime.Now</c> and takes no timestamp argument, so re-running
-	/// it stamps the present and the descriptor bytes differ every time. That pin exists for exactly this. Even
-	/// then the hash matches only on a host that renders the same line endings and the same path separator, which
-	/// is why the line-ending note above is not a footnote.</para>
+	/// <para>So reproducing the bytes is not a checkout, and not two steps either: EXPORT the pinned commit
+	/// with <c>git -c core.autocrlf=false -c core.eol=lf archive --format=zip</c>, re-run
+	/// <c>set-pkg-version</c> with the pinned version, hand-set <c>ModifiedOnUtc</c> to
+	/// <see cref="ExpectedDescriptorModifiedOnUtc"/>, overlay that one file onto the export, then pack it. The
+	/// timestamp step is not optional — <c>SetPackageVersionCommand</c> writes <c>DateTime.Now</c> and takes no
+	/// timestamp argument, so re-running it stamps the present and the descriptor bytes differ every time. That
+	/// pin exists for exactly this. The two <c>-c</c> flags are not optional either: they are what removes the
+	/// host from the recipe, and dropping them reproduces the old machine-dependent hash. What remains
+	/// host-dependent is the PATH SEPARATOR the archive records per entry, so cut and verify on Windows.</para>
 	/// <para>What the pin establishes is which SOURCES the
 	/// archive was built from — which is the question that actually matters, since the descriptor is the one
 	/// file the rebundle rewrites and the one whose expected content is pinned separately. Committing the
@@ -148,21 +151,32 @@ public class BundledProcessBuilderPackageTests {
 	/// commit at all.</para>
 	/// </para>
 	/// <para>
-	/// It has since been wrong a THIRD way, which no amount of checking the date would have caught: the bytes
-	/// did not correspond to ANY commit. Nine sources differed from a real checkout of the referenced commit by
-	/// LINE ENDINGS alone — the archive carried LF where a checkout produces CRLF — because it was cut from
-	/// freshly written files before they had round-tripped through git, and this host normalises on checkout
-	/// (<c>core.autocrlf=true</c>). Identical content, different bytes, unreproducible hash. So the reference
-	/// is only verifiable if the archive is packed from a CLEAN checkout: pack from a tree carrying
-	/// just-written files and the pin records bytes nobody can reproduce, which leaves this constant detecting
-	/// change while establishing nothing about provenance. That entry-by-entry audit was run for the 1.3.1.1
-	/// cut and is what caught the line-ending case; it was NOT re-run for the archive pinned below.
-	/// Two statements about the same bytes, one reassuring and one not, is exactly the shape this file exists
-	/// to prevent, so read the summary above as authoritative on what was and was not checked for THIS cut.
+	/// It was wrong a THIRD way twice, and that class is now CLOSED at the source rather than watched for. The
+	/// bytes did not correspond to ANY commit: nine sources (and, at the 1.6.1.0 cut, thirteen) differed from a
+	/// real checkout of the referenced commit by LINE ENDINGS alone — the archive carried LF where a checkout
+	/// produces CRLF — because the archive was packed from freshly written files before they had round-tripped
+	/// through git, on a host that normalises on checkout (<c>core.autocrlf=true</c>). Identical content,
+	/// different bytes, unreproducible hash: this constant went on detecting change while establishing nothing
+	/// about provenance, which is the one job it exists for.
+	/// <para>
+	/// The fix is structural, so no future cut has to remember it. <c>rebundle-process-builder.ps1</c> no longer
+	/// packs the working tree at all: it exports the producing commit with <c>core.autocrlf=false</c> and
+	/// <c>core.eol=lf</c>, overlays the single tooling-owned <c>descriptor.json</c>, and packs THAT. The
+	/// clean-tree gate provably could not catch the old defect — a tree can be clean, correct and CRLF at once —
+	/// and this removes the operator's editor and git configuration from the hash instead of gating on them.
+	/// </para>
+	/// <para>
+	/// Measured for the archive pinned below, entry by entry against
+	/// <c>git show &lt;ExpectedProducingCommit&gt;:&lt;path&gt;</c>: 157 entries, 156 byte-IDENTICAL to the
+	/// commit blob, 0 line-ending-only differences, 0 content differences. The 157th is
+	/// <c>descriptor.json</c>, which by contract cannot match the pre-restamp commit and is pinned separately by
+	/// <see cref="ExpectedArchiveVersion"/> and <see cref="ExpectedDescriptorModifiedOnUtc"/>. That audit was
+	/// re-run for THIS cut rather than inherited from an earlier one.
+	/// </para>
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"97989ECF2E01791BEA51074E4FF4810564DB9EBF5E5C5F4346ED8BCB6F1D7208";
+		"ECF7618DC827655E3578603BA249CBC8618B72F89890CD1E9610E45CAFDDF649";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -190,7 +204,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.0.6";
+	private const string ExpectedArchiveVersion = "1.6.1.9";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -202,7 +216,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "016dd616d94bb7a006d2346030640dd8ad1955cc";
+	private const string ExpectedProducingCommit = "ee5188ef404dfae299a373f1d67adfa9bb13df3b";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -228,7 +242,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788857907000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789033773000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -256,33 +270,55 @@ public class BundledProcessBuilderPackageTests {
 	/// sources.
 	/// </summary>
 	/// <remarks>
-	/// Three, NOT four, and the difference is worth writing down because it is the first thing anyone
+	/// Five, NOT six, and the difference is worth writing down because it is the first thing anyone
 	/// recomputing this number gets wrong: it is not one gate per gated operation. Of the
 	/// <see cref="ExpectedOperationContractCount"/> operations, one is ungated
-	/// (<see cref="UngatedOperations"/>) and the remaining four are gated at three places, because
+	/// (<see cref="UngatedOperations"/>) and the remaining six are gated at five places, because
 	/// <c>ProcessDesigner.Execute</c> is a SHARED boundary for the two read operations — it applies the guard
-	/// once and both <c>ListUserTasks</c> and <c>DescribeProcess</c> pass through it. Build and modify do not
-	/// use it (they own their own rollback and session-release error handling), so they gate in their own
-	/// handlers. Hence: 2 write handlers + 1 shared read boundary.
+	/// once and both <c>ListUserTasks</c> and <c>DescribeProcess</c> pass through it. The four write
+	/// operations do not use it (they own their own rollback and session-release error handling), so they
+	/// gate in their own handlers. Hence: 4 write handlers + 1 shared read boundary = 5, covering 6 gated
+	/// operations.
 	/// <para>
 	/// EXACT rather than a floor, but do NOT read more into that than it gives. A floor equal to the current
-	/// count already catches a dropped gate — remove one of the three and two remain — so exactness adds only
+	/// count already catches a dropped gate — remove one of the five and four remain — so exactness adds only
 	/// the detection of an ADDED call site, which is never a regression. Its real value is that the number is
-	/// now stated with its arithmetic: a reader who assumes one gate per operation concludes a floor of 3 sits
-	/// two below the truth and that a dropped gate would pass it, which is how this pin came to be reported as
-	/// broken when it was not.
+	/// now stated with its arithmetic: a reader who assumes one gate per operation concludes a floor of 6 sits
+	/// one above the truth and that a correct archive would fail it, which is how this pin came to be reported
+	/// as broken when it was not. The arithmetic and the number are edited TOGETHER or not at all: a
+	/// derivation that no longer totals the pin gives a maintainer facing a red test a documented reason to
+	/// LOWER it, which would then accept an archive with operations de-gated.
 	/// <para>
 	/// What NEITHER form catches is a gate MOVED rather than removed — the total survives by definition. Do
 	/// NOT try to close that here. It needs each gate bound to the operation it protects, and a text scan over
 	/// an archive cannot do it honestly: proximity matching would accept a call that never executes and would
 	/// break on reformatting. The property is already asserted where the code lives and can be substituted, by
-	/// four tests in the ProcessBuilder repository that make <c>IProcessDesignGuard</c> deny and require the
-	/// operation to fail without doing its work — <c>BuildProcess_ShouldFailAndNotMutate_WhenGuardDenies</c>,
-	/// <c>ModifyProcess_ShouldFailAndNotMutate_WhenGuardDenies</c>,
+	/// guard-deny tests in the ProcessBuilder repository that make <c>IProcessDesignGuard</c> deny and require
+	/// the operation to fail without doing its work — ONE PER GATED OPERATION, which is what a reader checks
+	/// this count against:
+	/// <c>BuildProcess_ShouldFailAndNotMutate_WhenGuardDenies</c> (ProcessBuildHandlerTests),
+	/// <c>ModifyProcess_ShouldFailAndNotMutate_WhenGuardDenies</c> (ProcessModifyHandlerTests),
+	/// <c>ModifyProcessAsNewVersion_ShouldRefuseBeforeAnyRepositoryCall_WhenTheCallerLacksTheOperation</c>
+	/// (ProcessVersionSaveHandlerTests),
+	/// <c>SetActiveProcessVersion_ShouldRefuseBeforeAnyRepositoryCall_WhenTheCallerLacksTheOperation</c>
+	/// (ProcessVersionActivateHandlerTests),
 	/// <c>ListUserTasks_ShouldRefuseAndNotQueryCatalog_WhenGuardDenies</c> and
-	/// <c>DescribeProcess_ShouldRefuseAndNotQueryDescriber_WhenGuardDenies</c> — plus
-	/// <c>ProcessDesignGuardTests</c> for the gate itself. Those are strictly stronger than any byte scan:
-	/// they prove the guard is on the execution path, not merely present in the text.
+	/// <c>DescribeProcess_ShouldRefuseAndNotQueryDescriber_WhenGuardDenies</c> (both
+	/// ProcessDesignerOrchestratorTests, the shared boundary) — plus <c>ProcessDesignGuardTests</c> for the
+	/// gate itself. Those are strictly stronger than any byte scan: they prove the guard is on the execution
+	/// path, not merely present in the text. Six named deny tests for six gated operations, five call sites
+	/// because two of them share a boundary. The two version entries carry the package repository's own
+	/// naming rather than this file's, because a name invented here would be an enumeration of tests that do
+	/// not exist — which is worse than none.
+	/// <para>
+	/// Adding a gated operation WITHOUT adding its deny test leaves the pin satisfied by two gates landing on
+	/// a path the new operation never takes, and a count of five cannot tell the two apart. For the two
+	/// version operations that was checked rather than assumed: the shipped sources carry the gate in each
+	/// one's OWN handler — <c>ProcessVersionSaveHandler</c> and <c>ProcessVersionActivateHandler</c>, not the
+	/// shared <c>ProcessDesigner.Execute</c> boundary — and both deny tests additionally assert the schema
+	/// repository received no calls at all, so an unauthorized caller cannot even learn whether the process
+	/// exists.
+	/// </para>
 	/// </para>
 	/// <para>
 	/// What is left for THIS file is the coarse failure the other repository's CI cannot see: an archive
@@ -292,7 +328,7 @@ public class BundledProcessBuilderPackageTests {
 	/// counts, and neither should be able to drift on its own.
 	/// </para>
 	/// </remarks>
-	private const int ExpectedAuthorizationGateCallSites = 3;
+	private const int ExpectedAuthorizationGateCallSites = 5;
 
 	/// <summary>
 	/// Exact number of <c>[OperationContract]</c> methods the shipped service may expose.
@@ -304,7 +340,7 @@ public class BundledProcessBuilderPackageTests {
 	/// argued exception, so a second one must not be able to arrive unnoticed. Raise this together with the
 	/// allowlist, in the same commit, or not at all.
 	/// </remarks>
-	private const int ExpectedOperationContractCount = 5;
+	private const int ExpectedOperationContractCount = 7;
 
 	/// <summary>
 	/// The operations allowed to ship WITHOUT the authorization gate.
@@ -316,6 +352,27 @@ public class BundledProcessBuilderPackageTests {
 	/// standard of argument.
 	/// </remarks>
 	private static readonly string[] UngatedOperations = ["Ping"];
+
+	/// <summary>
+	/// Every type expected to declare a <c>[RequiresPackage]</c> against the bundled package.
+	/// </summary>
+	/// <remarks>
+	/// Named rather than counted, because the number alone consumed slack silently: the self-check was
+	/// written as a floor of 5 and this branch added the 6th and 7th declarations without moving it, so the
+	/// scan tolerated losing exactly the two versioned literals that make
+	/// <c>BundledArchive_ShouldCarryAtLeastEveryDeclaredRequirement</c> enforce the floor the two new tools
+	/// need. Comparing the declaring SET makes adding or removing a gate an explicit edit here and names the
+	/// type that drifted, which a count cannot.
+	/// </remarks>
+	private static readonly Type[] ProcessBuilderGatedTypes = [
+		typeof(Clio.Command.CreateBusinessProcessOptions),
+		typeof(Clio.Command.ModifyBusinessProcessOptions),
+		typeof(Clio.Command.ModifyProcessAsNewVersionOptions),
+		typeof(Clio.Command.SetActiveProcessVersionOptions),
+		typeof(Clio.Command.DescribeProcessOptions),
+		typeof(Clio.Command.ListUserTasksOptions),
+		typeof(Clio.Command.McpServer.Tools.ProcessDesigner.ValidateProcessGraphArgs)
+	];
 
 	/// <summary>
 	/// The connection-type half of the gate, as the shipped guard expresses it. Pinned separately because the
@@ -383,6 +440,32 @@ public class BundledProcessBuilderPackageTests {
 		return Encoding.UTF8.GetString(buffer.ToArray());
 	}
 
+	// True when <paramref name="typeName"/>'s OWN declaration carries the `label` DataMember. The
+	// archive ships SOURCE and every contract type sits in its own `#region Class: <Name>` block, so the
+	// region is that type's extent - which is what turns a name appearing on three contracts into an
+	// answer about ONE of them.
+	//
+	// Two ways this could quietly become the whole-blob check it replaced, both closed here. The region
+	// name is matched WITH its line terminator, so a later `#region Class: <Name>V2` cannot be found by
+	// a prefix search for <Name>. And an UNTERMINATED region answers false rather than widening: taking
+	// the rest of the archive as the window would let a member on any later type satisfy the probe,
+	// which is exactly the vacuity this helper exists to remove. `DescribeProcessFlow` is the last
+	// region in its file, so that is not a hypothetical shape.
+	private static bool DeclaresLabelOn(string archive, string typeName) {
+		int start = archive.IndexOf($"#region Class: {typeName}\r", StringComparison.Ordinal);
+		if (start < 0) {
+			start = archive.IndexOf($"#region Class: {typeName}\n", StringComparison.Ordinal);
+		}
+
+		if (start < 0) {
+			return false;
+		}
+
+		int end = archive.IndexOf("#endregion", start, StringComparison.Ordinal);
+		return end >= 0
+			&& archive[start..end].Contains("[DataMember(Name = \"label\")]", StringComparison.Ordinal);
+	}
+
 	/// <summary>
 	/// Reads the shipped version the way production does — through the real
 	/// <see cref="BundledPackageCatalog"/> over the real archive in this test project's build output.
@@ -440,8 +523,8 @@ public class BundledProcessBuilderPackageTests {
 	/// </summary>
 	/// <remarks>
 	/// A plain substring count over archive text cannot tell a live call from a commented-out one, and for the
-	/// authorization gate that gap is the whole guard: comment out all three
-	/// <c>_guard.EnsureCanManageProcessDesign()</c> calls and the count stays at three, the operation count is
+	/// authorization gate that gap is the whole guard: comment out all five
+	/// <c>_guard.EnsureCanManageProcessDesign()</c> calls and the count stays at five, the operation count is
 	/// unchanged, and both gate literals still match — because the guard CLASS is untouched — so an archive
 	/// with zero live gates passes every pin in this fixture. Line-level rather than token-level on purpose:
 	/// this is a text scan over sources it cannot parse, so it recognises the one form that actually occurs
@@ -548,11 +631,11 @@ public class BundledProcessBuilderPackageTests {
 				+ "let a portal user holding CanManageProcessDesign write a process carrying a script task");
 		callSites.Should().Be(ExpectedAuthorizationGateCallSites,
 			because: "the gate sits BELOW the service boundary, in the domain handlers, so it is these call "
-				+ "sites and not a per-[WebInvoke] attribute that authorize a request. Two write handlers plus "
-				+ "the one shared read boundary in ProcessDesigner.Execute cover all four gated operations — "
-				+ "see ExpectedAuthorizationGateCallSites for why that is three and not four. An archive "
-				+ "rebuilt from a pre-gate prototype installs fine and answers the install command's own probe "
-				+ "BETTER than a gated one would, so this is the only place the property is checked");
+				+ "sites and not a per-[WebInvoke] attribute that authorize a request. Four write handlers plus "
+				+ "the one shared read boundary in ProcessDesigner.Execute cover all six gated operations — "
+				+ $"see {nameof(ExpectedAuthorizationGateCallSites)} for why that is five and not six. An "
+				+ "archive rebuilt from a pre-gate prototype installs fine and answers the install command's "
+				+ "own probe BETTER than a gated one would, so this is the only place the property is checked");
 	}
 
 	[Test]
@@ -681,9 +764,15 @@ public class BundledProcessBuilderPackageTests {
 		// [RequiresPackage(…, "9.9.9.9")] on a bool option is a SUPPORTED declaration form that the checker
 		// enforces at runtime, so a class-only scan would stay green while shipping a gate no install can
 		// satisfy. RequiresPackageAttribute.IsDefinedOn walks both levels for the same reason.
+		List<Type> declaringTypes = [];
 		List<RequiresPackageAttribute> declared = [];
 		foreach (Type type in typeof(BundledPackages).Assembly.GetTypes()) {
-			declared.AddRange(GetProcessBuilderRequirements(type));
+			List<RequiresPackageAttribute> onType = [.. GetProcessBuilderRequirements(type)];
+			if (onType.Count == 0) {
+				continue;
+			}
+			declaringTypes.Add(type);
+			declared.AddRange(onType);
 		}
 		List<RequiresPackageAttribute> versioned =
 			declared.FindAll(r => !string.IsNullOrEmpty(r.Version));
@@ -691,21 +780,32 @@ public class BundledProcessBuilderPackageTests {
 		// Assert
 		// The scan has to be falsifiable before its verdict means anything. Most ways it could break — wrong
 		// assembly, wrong attribute type, the inherit flag — yield an EMPTY list and a green test, which is
-		// indistinguishable from "no literals declared", and asserting the five presence-only declarations
-		// are visible tells those two apart. It does NOT cover the property-level arm: all five declarations
-		// in the assembly are class-level today, so this count survives deleting the GetProperties() walk
-		// entirely. That arm is falsified by GetProcessBuilderRequirements_ShouldSeeAPropertyLevelDeclaration
-		// instead, on a fixture-local type, which is the only way to test it before the first real
-		// property-level literal ships — the very moment it has to already work.
-		declared.Should().HaveCountGreaterThanOrEqualTo(5,
-			because: "the five process-designer gates must be visible to this scan; if it finds fewer, the "
-				+ "reflection is broken and the version loop below is silently inspecting nothing");
-		// The loop EXECUTES today: two of the five carry a version literal (create 1.4.0.44, modify 1.6.0.1 -
-		// they diverged when modify's page-change reconciliation promise needed a newer archive than create's). It was
-		// vacuous when written, deliberately — the invariant had to be in place before the first literal
-		// appeared, because the commit that adds one is exactly when it must already work. It replaces the old
-		// pin (descriptor version == a constant), which needed hand-synchronising on every rebundle and
-		// asserted a coincidence, not a rule.
+		// indistinguishable from "no gates declared". A floor could not tell those apart once it carried
+		// slack: it was written as 5, this branch took the declarations to 7, and the two it then tolerated
+		// losing were exactly the versioned literals that make the loop below enforce anything. The declaring
+		// SET has no slack to consume and names the type that drifted. It does NOT cover the property-level
+		// arm: all seven declarations in the assembly are class-level today, so this survives deleting the
+		// GetProperties() walk entirely. That arm is falsified by
+		// GetProcessBuilderRequirements_ShouldSeeAPropertyLevelDeclaration instead, on a fixture-local type,
+		// which is the only way to test it before the first real property-level literal ships — the very
+		// moment it has to already work.
+		declaringTypes.Should().BeEquivalentTo(ProcessBuilderGatedTypes,
+			because: $"every gate must be visible to this scan and no other type may carry one. Add or remove "
+				+ $"a gate and {nameof(ProcessBuilderGatedTypes)} moves in the same commit, so a lost "
+				+ "declaration cannot pass as slack and a new one cannot arrive unreviewed");
+		// The loop EXECUTES today: four of the seven carry a version literal, and they do NOT agree with each
+		// other — create at 1.4.0.44, modify at 1.6.0.1 (they diverged when modify's page-change
+		// reconciliation promise needed a newer archive than create's), and both versioning options at the
+		// version their own operations first ship in. That spread is the reason the assertion counts literals
+		// rather than pinning a value: no single number describes the set. It was vacuous when written,
+		// deliberately — the invariant had to be in place before the first literal appeared, because the
+		// commit that adds one is exactly when it must already work. It replaces the old pin (descriptor
+		// version == a constant), which needed hand-synchronising on every rebundle and asserted a
+		// coincidence, not a rule.
+		versioned.Should().HaveCount(4,
+			because: "the version loop is the only automated coupling stopping an archive below the floor the "
+				+ "two version tools demand from shipping, so a literal silently becoming presence-only must "
+				+ "redden here rather than leave the loop iterating over fewer gates than exist");
 		foreach (string declaredVersion in versioned.ConvertAll(r => r.Version)) {
 			PackageVersion.TryParseVersion(declaredVersion, out PackageVersion required).Should().BeTrue(
 				because: $"RequiredPackageChecker parses '{declaredVersion}' through System.Version, so an "
@@ -893,13 +993,39 @@ public class BundledProcessBuilderPackageTests {
 				+ "nothing linking the two. Renaming this DataMember, or dropping it so the member serialises "
 				+ "as 'Success', makes the verifier return false for a healthy install — and no test on either "
 				+ "side would fail");
+		archive.Should().Contain("\'\\uFFFE\'",
+			because: "the character filter is hand-mirrored in FlowLabelExpectation.IsUnstorable, and THIS is "
+				+ "the only thing in this fixture that can catch the two halves diverging. The SHA pin cannot: "
+				+ "it detects a CHANGED archive, not a stale one, and its own remark says so. Without this "
+				+ "probe an archive cut before the filter was widened satisfies every other pin here while "
+				+ "clio predicts a stored label the server never stores - which makes clio report DIFFERENT "
+				+ "text on a write that landed exactly as sent, in a message whose two quoted strings look "
+				+ "identical because the offending character is invisible");
+		// A field NAME alone cannot be a probe, and this line used to be one. `label` lives on THREE
+		// contracts in this archive - the create flow descriptor, the modify operation descriptor and the
+		// describe projection - so a containment check over the whole blob is satisfied by any ONE of them
+		// while the other two are absent. docs/agent-instructions/bundled-packages.md rejects exactly that
+		// shape: "only a FIELD ON A NAMED TYPE settles it". All three are asserted because clio's warning
+		// needs all three to be true - two write paths that STORE the label and a read side that REPORTS
+		// it - and an archive carrying only the describe member would satisfy a bare name check while the
+		// write path silently drops the field and clio blames the caller for an archive it just installed.
+		DeclaresLabelOn(archive, "ProcessFlowDescriptor").Should().BeTrue(
+			because: "the CREATE path stores the label from this descriptor; without the member a build "
+				+ "answers success and stores nothing");
+		DeclaresLabelOn(archive, "ProcessOperationDescriptor").Should().BeTrue(
+			because: "the MODIFY path stores it from this one, and relabelling an existing flow is the case "
+				+ "clio's post-write warning exists for - 84.9% of shipped conditional flows already carry a "
+				+ "human's wording, so a silent drop here overwrites nothing and reports success");
+		DeclaresLabelOn(archive, "DescribeProcessFlow").Should().BeTrue(
+			because: "the READ side reports it, and the read-back IS the guard - without this member every "
+				+ "label reads as absent and clio reports a correct write as a dropped label");
 		archive.Should().Contain("BodyStyle = WebMessageBodyStyle.Wrapped",
 			because: "the wrapper name clio looks for (PingResult) is a FUNCTION of this setting; flipping it to "
 				+ "Bare removes the envelope and the verdict inverts silently");
 	}
 
 	[Test]
-	[Description("The collector must see a PROPERTY-level declaration. Every CrtProcessBuilder gate in the assembly happens to be class-level today, so the requirement scan's own self-check (five declarations visible) is satisfied without the property walk ever running — deleting that walk leaves the suite green. This fixture-local type is the red test the walk did not have, and it stays meaningful after the first real property-level literal ships.")]
+	[Description("The collector must see a PROPERTY-level declaration. Every CrtProcessBuilder gate in the assembly happens to be class-level today, so the requirement scan's own self-check (the declaring set) is satisfied without the property walk ever running — deleting that walk leaves the suite green. This fixture-local type is the red test the walk did not have, and it stays meaningful after the first real property-level literal ships.")]
 	public void GetProcessBuilderRequirements_ShouldSeeAPropertyLevelDeclaration() {
 		// Arrange & Act
 		List<RequiresPackageAttribute> declared =
@@ -949,9 +1075,15 @@ public class BundledProcessBuilderPackageTests {
 				GetToolDescription(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.CreateBusinessProcessTool)),
 			["modify-business-process description"] =
 				GetToolDescription(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.ModifyBusinessProcessTool)),
+			["modify-business-process-as-new-version description"] =
+				GetToolDescription(
+					typeof(Clio.Command.McpServer.Tools.ProcessDesigner.ModifyProcessAsNewVersionTool)),
+			["set-active-business-process-version description"] =
+				GetToolDescription(
+					typeof(Clio.Command.McpServer.Tools.ProcessDesigner.SetActiveProcessVersionTool)),
 			["modify-business-process prompt"] =
 				Clio.Command.McpServer.Prompts.ProcessDesigner.ModifyBusinessProcessPrompt.PromptByProcess(
-					"env-placeholder", "process-placeholder")
+					"env-placeholder", "process-placeholder"),
 		};
 		var literalPattern = new System.Text.RegularExpressions.Regex(@"CrtProcessBuilder (\d+\.\d+\.\d+\.\d+)");
 
@@ -960,23 +1092,151 @@ public class BundledProcessBuilderPackageTests {
 		// Act & Assert
 		foreach (KeyValuePair<string, string> surface in surfaces) {
 			System.Text.RegularExpressions.MatchCollection matches = literalPattern.Matches(surface.Value);
+			// Back to the SHAPED pattern. This briefly read the wide net instead, to accommodate four
+			// surfaces added here that stated the version in another shape - and that traded a guard on
+			// five surfaces for a convenience on four, because any stray four-part number then satisfied
+			// it and deleting a "CrtProcessBuilder X.Y.Z.W" sentence stopped turning this red. Those four
+			// surfaces no longer name a version at all - the flow-label texts now describe their cause as a
+			// CAPABILITY, since convergence puts every reader above any floor a message could name - so
+			// they are out of this registry and guarded by their own inverse test below.
 			matches.Should().NotBeEmpty(
-				because: $"the {surface.Key} documents the version the lookup/performer route ships from — if the "
-					+ "sentence was removed on purpose, remove the surface from this test in the same commit");
+				because: $"the {surface.Key} documents the version a route ships from or the remedy to install — "
+					+ "if the sentence was removed on purpose, remove the surface from this test in the same "
+					+ "commit");
+			System.Text.RegularExpressions.MatchCollection anyMatches =
+				anyVersionPattern.Matches(surface.Value);
 			foreach (System.Text.RegularExpressions.Match match in matches) {
 				AssertInstallableFromThisDistribution(match.Groups[1].Value, surface.Key);
 			}
 			// The wide net behind the shaped one: ANY four-part version on these surfaces is the package
 			// version (nothing else four-part belongs in them), so a mention that drifts into a different
 			// shape — 'CrtProcessBuilder >= X', 'pre-X', a bare number — cannot hide beside a matching literal.
-			foreach (System.Text.RegularExpressions.Match match in anyVersionPattern.Matches(surface.Value)) {
+			foreach (System.Text.RegularExpressions.Match match in anyMatches) {
 				AssertInstallableFromThisDistribution(match.Value, surface.Key);
 			}
 		}
 	}
 
 	[Test]
-	[Description("The ENFORCED floor sentence must equal the literal the command actually gates on. These surfaces carry two kinds of version sentence and only one may lag: a CAPABILITY floor ('the route ships from CrtProcessBuilder 1.3.1.1') records when something first shipped and freezes there, while 'this clio requires X' states what [RequiresPackage] refuses below. The sibling pin was relaxed from equality to <= for the capability floors, which was right, and that relaxation left this sentence checked by nothing: rewriting it to 1.2.0.1 keeps the whole suite green while telling every agent to update to a version the gate does not enforce.")]
+	[Description("The archive probe answers about ONE named type. `label` is declared on three contracts "
+		+ "in this same archive, so a probe that answered from anywhere in the blob would report a member "
+		+ "present on a type that had lost it - the bare-name check this helper replaced. All three "
+		+ "production call sites assert TRUE, so none of them can see this direction; DescribeProcessConnection "
+		+ "is a real region in the shipped archive that carries no label, which anchors the test on the "
+		+ "artifact rather than on a fabricated string.")]
+	public void DeclaresLabelOn_ShouldBeFalse_ForATypeThatDoesNotDeclareIt() {
+		// Arrange
+		string archive = ReadBundledArchiveAsText();
+
+		// Act
+		bool onAnotherContract = DeclaresLabelOn(archive, "DescribeProcessConnection");
+		bool onAnAbsentType = DeclaresLabelOn(archive, "NoSuchContractInThisArchive");
+
+		// Assert
+		onAnotherContract.Should().BeFalse(
+			because: "the member sits on three OTHER contracts in this archive, so answering true here "
+				+ "would mean the probe reads the whole blob and settles nothing about a named type");
+		onAnAbsentType.Should().BeFalse(
+			because: "a type the archive does not contain declares nothing, and a probe that cannot find "
+				+ "its type must fail closed rather than widen its window");
+	}
+
+	[Test]
+	[Description("The flow-label surfaces must name NO package version. A number cannot be the diagnosis "
+		+ "here: every write command and describe carries [RequiresPackage] for this package, and "
+		+ "RequiredPackageChecker throws on a convergence refusal for any environment below the archive clio "
+		+ "SHIPS - so a reader who can see one of these texts is already above any floor it could quote, and "
+		+ "the remedy would be one they have satisfied. The reachable cause is a CAPABILITY gap - a cut from "
+		+ "a line that never carried the member - which is why these read like the sibling guards ('predates "
+		+ "the sendEmail element'). This is the INVERSE of the literal pin above and exists because the "
+		+ "number was removed on purpose: without it, re-adding a helpful-looking version turns nothing red.")]
+	public void FlowLabelSurfaces_ShouldNameNoPackageVersion() {
+		// Arrange
+		var surfaces = new Dictionary<string, string> {
+			["describe-business-process description"] =
+				GetToolDescription(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.DescribeProcessTool)),
+			["describe-business-process prompt"] =
+				Clio.Command.McpServer.Prompts.ProcessDesigner.DescribeProcessPrompt.DescribeProcessGuidance(
+					"process-placeholder", "env-placeholder"),
+			["flow-label dropped warning"] =
+				Clio.Command.ProcessModel.FlowLabelExpectation.BuildWarning([
+					new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabelMiss(
+						new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabel("A", "B", "Yes"), string.Empty)
+				]),
+			["flow-label unverified warning"] =
+				Clio.Command.ProcessModel.FlowLabelExpectation.BuildUnverifiedWarning(
+					[new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabel("A", "B", "Yes")], "reason-placeholder"),
+			// BuildWarning has THREE branches and the entry above renders only the absent one, so a version
+			// re-added to either of the others would have passed. BuildUidAddressedWarning is a fourth
+			// caller-facing string entirely, emitted from BlockExpectationReporter.
+			["flow-label different-text warning"] =
+				Clio.Command.ProcessModel.FlowLabelExpectation.BuildWarning([
+					new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabelMiss(
+						new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabel("A", "B", "Yes"), "No")
+				]),
+			["flow-label failed-clear warning"] =
+				Clio.Command.ProcessModel.FlowLabelExpectation.BuildWarning([
+					new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabelMiss(
+						new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabel("A", "B", string.Empty), "Old")
+				]),
+			["flow-label uid-addressed caveat"] =
+				Clio.Command.ProcessModel.FlowLabelExpectation.BuildUidAddressedWarning(
+					[new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabel("A", "B", "Yes")])
+		};
+		var anyVersion = new System.Text.RegularExpressions.Regex(@"\d+\.\d+\.\d+\.\d+");
+
+		// Act & Assert
+		foreach (KeyValuePair<string, string> surface in surfaces) {
+			surface.Value.Should().NotBeNullOrEmpty(
+				because: $"the {surface.Key} has to render something, or this test passes on an empty string");
+			anyVersion.Matches(surface.Value).Should().BeEmpty(
+				because: $"the {surface.Key} states its cause as a capability, not a version - a four-part "
+					+ "number there is advice the reader has already satisfied, and it hides the real cause "
+					+ "instead of naming it");
+		}
+	}
+
+	/// <summary>
+	/// The two wordings a shipped surface uses to state an ENFORCED floor.
+	/// </summary>
+	/// <remarks>
+	/// Two patterns rather than one canonical phrasing, because the sentences say different things and both
+	/// are true. Create and modify gate on an input contract that CHANGED, so they name the version clio
+	/// refuses below ("this clio requires X") beside a capability floor that legitimately lags it. The two
+	/// version tools gate on an operation that did not EXIST earlier, so their capability floor and their
+	/// enforced floor are the same number and the sentence says so once ("CrtProcessBuilder X or newer …
+	/// refused up front"). Rewriting the second into the first wording would make the prose claim a
+	/// distinction the gate does not have. What may not happen is a floor sentence outside the reflection
+	/// altogether — which is where all four of the version surfaces sat.
+	/// </remarks>
+	private static readonly System.Text.RegularExpressions.Regex[] EnforcedFloorSentencePatterns = [
+		new(@"this clio requires (\d+\.\d+\.\d+\.\d+)"),
+		new(@"CrtProcessBuilder (\d+\.\d+\.\d+\.\d+) or newer")
+	];
+
+	/// <summary>
+	/// One row of <c>docs/McpCapabilityMap.md</c>, isolated so it can be bound to its OWN options type.
+	/// </summary>
+	/// <remarks>
+	/// The map carries two different enforced floors now, so a whole-file surface keyed on one options type
+	/// cannot express it: every sentence in the file would be compared against modify's literal. Located by
+	/// the tool's wire name at the start of a bullet, and failing loudly when the row is gone, because a pin
+	/// that silently stops reading its surface is the failure this fixture exists to prevent.
+	/// </remarks>
+	private static string ReadCapabilityMapRow(string toolName) {
+		string map = ReadRepositoryText(Path.Combine("docs", "McpCapabilityMap.md"));
+		string marker = $"- `{toolName}` (";
+		int start = map.IndexOf(marker, StringComparison.Ordinal);
+		start.Should().BeGreaterThanOrEqualTo(0,
+			because: $"docs/McpCapabilityMap.md must still carry a row for '{toolName}' - the row IS the "
+				+ "agent-facing surface this pin covers, and a renamed or deleted one must fail here rather "
+				+ "than quietly leave the tool unguarded");
+		int end = map.IndexOf("\n- `", start + marker.Length, StringComparison.Ordinal);
+		return end < 0 ? map[start..] : map[start..end];
+	}
+
+	[Test]
+	[Description("The ENFORCED floor sentence must equal the literal the command actually gates on. These surfaces carry two kinds of version sentence and only one may lag: a CAPABILITY floor ('the route ships from CrtProcessBuilder 1.3.1.1') records when something first shipped and freezes there, while an enforced floor states what [RequiresPackage] refuses below. The sibling pin was relaxed from equality to <= for the capability floors, which was right, and that relaxation left the enforced sentences checked by nothing: rewriting one to 1.2.0.1 keeps the whole suite green while telling every agent to update to a version the gate does not enforce. Each text surface is bound to its OWN options type, because the two version tools enforce a different floor from modify's and a registry keyed one-file-to-one-type cannot say that.")]
 	public void EnforcedFloorSentences_ShouldEqualTheRequiresPackageLiteral() {
 		// Arrange — the enforced floor as the ATTRIBUTE states it, by reflection rather than retyped here.
 		var surfaces = new Dictionary<string, (string Text, Type OptionsType)> {
@@ -986,17 +1246,29 @@ public class BundledProcessBuilderPackageTests {
 			["modify-business-process description"] = (
 				GetToolDescription(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.ModifyBusinessProcessTool)),
 				typeof(Clio.Command.ModifyBusinessProcessOptions)),
-			// The capability map states the same sentence to the same audience and is NOT reflected over, so it
-			// drifted to 1.4.0.37 against an enforced .44 and shipped green - found in review, not here. It is a
-			// repository file, so the pin reads it: a prose surface that promises a gate belongs to the gate's
-			// test, not to a script nothing runs. Keyed on modify's options type because the sentence in it
-			// describes the modify path's mapped expression.
-			["McpCapabilityMap.md"] = (
-				ReadRepositoryText(Path.Combine("docs", "McpCapabilityMap.md")),
-				typeof(Clio.Command.ModifyBusinessProcessOptions))
+			["modify-business-process-as-new-version description"] = (
+				GetToolDescription(
+					typeof(Clio.Command.McpServer.Tools.ProcessDesigner.ModifyProcessAsNewVersionTool)),
+				typeof(Clio.Command.ModifyProcessAsNewVersionOptions)),
+			["set-active-business-process-version description"] = (
+				GetToolDescription(
+					typeof(Clio.Command.McpServer.Tools.ProcessDesigner.SetActiveProcessVersionTool)),
+				typeof(Clio.Command.SetActiveProcessVersionOptions)),
+			// The capability map states the same sentences to the same audience and was NOT reflected over, so
+			// it drifted to 1.4.0.37 against an enforced .44 and shipped green - found in review, not here. It
+			// is a repository file, so the pin reads it: a prose surface that promises a gate belongs to the
+			// gate's test, not to a script nothing runs. Read per ROW, because the map now carries two
+			// different enforced floors and each row describes one tool's gate.
+			["McpCapabilityMap.md modify-business-process row"] = (
+				ReadCapabilityMapRow("modify-business-process"),
+				typeof(Clio.Command.ModifyBusinessProcessOptions)),
+			["McpCapabilityMap.md modify-business-process-as-new-version row"] = (
+				ReadCapabilityMapRow("modify-business-process-as-new-version"),
+				typeof(Clio.Command.ModifyProcessAsNewVersionOptions)),
+			["McpCapabilityMap.md set-active-business-process-version row"] = (
+				ReadCapabilityMapRow("set-active-business-process-version"),
+				typeof(Clio.Command.SetActiveProcessVersionOptions))
 		};
-		var sentencePattern = new System.Text.RegularExpressions.Regex(
-			@"this clio requires (\d+\.\d+\.\d+\.\d+)");
 
 		// Act & Assert
 		foreach (KeyValuePair<string, (string Text, Type OptionsType)> surface in surfaces) {
@@ -1008,16 +1280,43 @@ public class BundledProcessBuilderPackageTests {
 			enforced.Should().NotBeNullOrWhiteSpace(
 				because: $"the {surface.Key} names an enforced floor, so its options type must carry a versioned "
 					+ "[RequiresPackage] - otherwise the sentence promises a gate that does not exist");
-			System.Text.RegularExpressions.MatchCollection matches = sentencePattern.Matches(surface.Value.Text);
+			List<System.Text.RegularExpressions.Match> matches = EnforcedFloorSentencePatterns
+				.SelectMany(pattern => pattern.Matches(surface.Value.Text))
+				.ToList();
 			matches.Should().NotBeEmpty(
-				because: $"the {surface.Key} is expected to state the enforced floor; if that sentence was "
-					+ "removed on purpose, remove the surface from this test in the same commit");
+				because: $"the {surface.Key} is expected to state the enforced floor in one of the two shipped "
+					+ "wordings; if that sentence was removed on purpose, remove the surface from this test in "
+					+ "the same commit");
 			foreach (System.Text.RegularExpressions.Match match in matches) {
 				match.Groups[1].Value.Should().Be(enforced,
 					because: $"the {surface.Key} tells the agent this clio requires {match.Groups[1].Value} while "
 						+ $"[RequiresPackage] refuses below {enforced} - reading the wrong one, a caller either "
 						+ "updates to a version that changes nothing or skips an update it needs");
 			}
+		}
+	}
+
+	[Test]
+	[Description("No CrtProcessBuilder version literal in docs/McpCapabilityMap.md may name a version NEWER than the archive clio bundles. The map is the same class of agent-facing prose as the tool descriptions and had no automated guard in EITHER direction: the sibling pin checks the descriptions against the bundled archive and never read this file, so a map claiming a version no clio-installable archive reaches hands an agent an unperformable remedy. Only the shaped CrtProcessBuilder literals are read, not every four-part number, because the same file legitimately names cliogate versions that are unrelated to this archive.")]
+	public void CapabilityMapVersionLiterals_ShouldNotExceedTheBundledArchiveVersion() {
+		// Arrange
+		string map = ReadRepositoryText(Path.Combine("docs", "McpCapabilityMap.md"));
+		// The backtick is optional because the map writes the package name both ways in running prose.
+		var literalPattern = new System.Text.RegularExpressions.Regex(
+			@"CrtProcessBuilder`? (\d+\.\d+\.\d+\.\d+)");
+
+		// Act
+		List<string> literals = literalPattern.Matches(map)
+			.Select(match => match.Groups[1].Value)
+			.Distinct()
+			.ToList();
+
+		// Assert
+		literals.Should().NotBeEmpty(
+			because: "the map documents the package versions its process-designer rows depend on; finding none "
+				+ "means the pattern stopped matching the file and this pin is inspecting nothing");
+		foreach (string literal in literals) {
+			AssertInstallableFromThisDistribution(literal, "McpCapabilityMap.md");
 		}
 	}
 

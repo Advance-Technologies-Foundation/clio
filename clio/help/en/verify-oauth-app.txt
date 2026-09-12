@@ -10,27 +10,28 @@ DESCRIPTION
     Creatio DataService smoke request with that token.
 
     It reports tokenAcquired, dataServiceStatus (the HTTP status of the smoke request), and ok
-    (token acquired AND dataServiceStatus 200). The access token text is never returned or logged.
+    (token acquired, HTTP 200, and successful DataService JSON response). The access token text is never returned or logged.
 
 SYNOPSIS
-    clio verify-oauth-app -e ENVIRONMENT --client-id ID --client-secret SECRET [OPTIONS]
+    clio verify-oauth-app -e ENVIRONMENT [OPTIONS]
 
 OPTIONS
     -e, --environment NAME
         Required. Registered Creatio environment.
 
     --client-id ID
-        Required. OAuth client id to verify.
+        Optional. OAuth client id override; supply together with --client-secret. Defaults to registered credentials.
 
     --client-secret SECRET
-        Required. OAuth client secret to verify. Never returned or logged.
+        Optional. OAuth client secret override; supply together with --client-id. Never returned or logged.
 
     --identity-server-url URL
-        Explicit IdentityService base URL. When omitted, it is read from the
+        Explicit IdentityService base URL. Defaults to registered AuthAppUri, then the
         OAuth20IdentityServerUrl system setting, then derived from the Creatio host.
 
 EXAMPLES
     # Verify an OAuth app, deriving the IdentityService URL.
+    clio verify-oauth-app -e DEV
     clio verify-oauth-app -e c-dev --client-id my-client --client-secret my-secret
 
     # Verify against an explicit IdentityService URL.
@@ -38,7 +39,10 @@ EXAMPLES
         --identity-server-url https://c-dev-is.creatio.com
 
 NOTES
-    This command is experimental and hidden by default. Enable it before use:
-        clio experimental --name deploy-identity --enable
+    Available by default in CLI and MCP. No Creatio server filesystem or database access is required.
 
     This command is read-only; it does not modify Creatio. The access token is never logged.
+
+    Verification reads existing credentials and does not change settings or create an OAuth app.
+    A nonempty bearer token and a successful DataService JSON response are required; HTTP 200 alone is insufficient.
+    The CRM request uses only the newly issued token, without falling back to username/password. Exit code is 0 on success and 1 on failure.

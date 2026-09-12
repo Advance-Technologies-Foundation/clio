@@ -34,7 +34,7 @@ public sealed class GenerateProcessModelTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Generates a C# process model file for a process from the specified Creatio environment.")]
+	[Description("Generates a C# process model file for a process from the specified Creatio environment. The process is identified by its code (schema Name) or its display caption. A caption is shared by every version of a process, so it resolves to the ACTIVE version — the one the runtime executes — while a caption matching several distinct processes, or one whose active version cannot be established, is refused with the candidate codes.")]
 	public CommandExecutionResult GenerateProcessModel(
 		[Description("generate-process-model parameters")]
 		[Required]
@@ -60,24 +60,24 @@ public sealed class GenerateProcessModelTool(
 /// </summary>
 public sealed record GenerateProcessModelArgs(
 	[property: JsonPropertyName("code")]
-	[property: Description("Process code as it appears in the Creatio process designer")]
+	[property: Description("Process code (schema Name) or display caption as it appears in the Creatio process designer")]
 	[property: Required]
 	string Code,
-
-	[property: JsonPropertyName("destination-path")]
-	[property: Description("Optional destination folder or explicit .cs file path for the generated process model. Preserves current command behavior when omitted.")]
-	string? DestinationPath,
-
-	[property: JsonPropertyName("namespace")]
-	[property: Description("Optional namespace for the generated process model class")]
-	string? Namespace,
-
-	[property: JsonPropertyName("culture")]
-	[property: Description("Optional culture used to resolve localized descriptions")]
-	string? Culture,
 
 	[property: JsonPropertyName("environment-name")]
 	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
-	string EnvironmentName
+	string EnvironmentName,
+
+	[property: JsonPropertyName("destination-path")]
+	[property: Description("Optional destination folder or explicit .cs file path for the generated process model. Preserves current command behavior when omitted.")]
+	string? DestinationPath = null,
+
+	[property: JsonPropertyName("namespace")]
+	[property: Description("Optional namespace for the generated process model class")]
+	string? Namespace = null,
+
+	[property: JsonPropertyName("culture")]
+	[property: Description("Optional culture used to resolve localized descriptions")]
+	string? Culture = null
 );

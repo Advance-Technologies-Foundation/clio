@@ -651,8 +651,15 @@ public sealed class CreatePageBusinessRuleTool(
 		ExecuteWithCleanLog(new EnvironmentOptions { Environment = args.EnvironmentName }, () => CreateRules(args));
 
 	private object CreateRules(CreatePageBusinessRulesArgs args) {
-		if (args.Rules is not { Count: > 0 }) {
-			return BusinessRuleBatchResponse.RequestError("rules is required and must contain at least one rule.");
+		// The request-shape check runs BEFORE the environment is resolved and names EVERY missing field in one
+		// message (PR #1352 review): the executor resolves the environment first, so an unknown environment
+		// name would answer ahead of the identity fields and hide which ones the caller forgot — and checking
+		// only the collection field cost the caller one failed call per field (issue #1305, point 3).
+		string? requestShapeError = BusinessRuleBatchValidation.MissingRequestFieldsError(
+			args.EnvironmentName, args.PackageName, args.EffectivePageSchemaName, "page-schema-name",
+			"rules", args.Rules?.Count ?? 0);
+		if (requestShapeError is not null) {
+			return BusinessRuleBatchResponse.RequestError(requestShapeError);
 		}
 
 		return BusinessRuleToolExecutor.Execute<IPageBusinessRuleService>(
@@ -660,7 +667,7 @@ public sealed class CreatePageBusinessRuleTool(
 			args.EnvironmentName,
 			service => BusinessRuleBatchResponse.From(service.Create(new BusinessRulesBatchRequest(
 				args.PackageName,
-				args.PageSchemaName,
+				args.EffectivePageSchemaName,
 				// A null array element must not collapse the whole batch: keep it as a null entry so the
 				// service isolates it as a single failed item instead of throwing during the projection.
 				args.Rules.Select(rule => rule?.ToBusinessRule()!).ToList()))),
@@ -673,10 +680,33 @@ public sealed class CreatePageBusinessRuleTool(
 }
 
 /// <summary>
+/// The page a page-level business-rule tool targets, shared by every such tool's MCP arguments so the
+/// canonical <c>page-schema-name</c> field and its <c>schema-name</c> alias are declared - and resolved -
+/// in exactly one place. A per-tool copy is what let the alias be accepted by some page tools and silently
+/// ignored by others.
+/// </summary>
+public abstract record PageBusinessRuleTargetArgs {
+
+	[JsonPropertyName("page-schema-name")]
+	[Description("Target Freedom UI page schema name. Alias: 'schema-name'.")]
+	public string? PageSchemaName { get; init; }
+
+	[JsonPropertyName("schema-name")]
+	[Description("Alias for page-schema-name; page-schema-name wins when both are supplied.")]
+	public string? SchemaNameAlias { get; init; }
+
+	/// <summary>
+	/// The page schema name to act on: the canonical <c>page-schema-name</c> when supplied,
+	/// otherwise the <c>schema-name</c> alias.
+	/// </summary>
+	internal string? EffectivePageSchemaName =>
+		string.IsNullOrWhiteSpace(PageSchemaName) ? SchemaNameAlias : PageSchemaName;
+}
+
+/// <summary>
 /// MCP argument wrapper for batch page-level business-rule creation.
 /// </summary>
-public sealed record CreatePageBusinessRulesArgs
-{
+public sealed record CreatePageBusinessRulesArgs : PageBusinessRuleTargetArgs {
 	/// <summary>
 	/// Gets the registered Creatio environment name.
 	/// </summary>
@@ -692,14 +722,6 @@ public sealed record CreatePageBusinessRulesArgs
 	[Description("Target package name on the Creatio environment.")]
 	[Required]
 	public string PackageName { get; init; } = null!;
-
-	/// <summary>
-	/// Gets the target Freedom UI page schema name.
-	/// </summary>
-	[JsonPropertyName("page-schema-name")]
-	[Description("Target Freedom UI page schema name.")]
-	[Required]
-	public string PageSchemaName { get; init; } = null!;
 
 	/// <summary>
 	/// Gets the structured page business-rule definitions to create in one batch.
@@ -831,16 +853,26 @@ public sealed class ReadPageBusinessRuleTool(
 		[Description("environment-name, package-name, page-schema-name (all required).")]
 		[Required]
 		ReadPageBusinessRulesArgs args) =>
-		ExecuteWithCleanLog(new EnvironmentOptions { Environment = args.EnvironmentName },
-			() => BusinessRuleToolExecutor.Execute<IPageBusinessRuleService>(
-				commandResolver,
-				args.EnvironmentName,
-				service => BusinessRulesReadResponse.From(service.Read(
-					new BusinessRulesReadRequest(args.PackageName, args.PageSchemaName))),
-				BusinessRulesReadResponse.RequestError));
+		ExecuteWithCleanLog(new EnvironmentOptions { Environment = args.EnvironmentName }, () => {
+			// The missing-field check runs BEFORE the environment is resolved: an unknown environment name
+			// would otherwise answer first and hide which identity fields the caller forgot, costing a
+			// round trip per field (issue #1305, point 3). The same aggregate the other three page tools use,
+			// so all four report one message and none of them omits `environment-name` (PR #1352 review).
+			string? missingFieldsError = BusinessRuleBatchValidation.MissingRequestFieldsError(
+				args.EnvironmentName, args.PackageName, args.EffectivePageSchemaName, "page-schema-name",
+				null, 0);
+			return missingFieldsError is not null
+				? BusinessRulesReadResponse.RequestError(missingFieldsError)
+				: BusinessRuleToolExecutor.Execute<IPageBusinessRuleService>(
+					commandResolver,
+					args.EnvironmentName,
+					service => BusinessRulesReadResponse.From(service.Read(
+						new BusinessRulesReadRequest(args.PackageName, args.EffectivePageSchemaName))),
+					BusinessRulesReadResponse.RequestError);
+		});
 }
 
-public sealed record ReadPageBusinessRulesArgs {
+public sealed record ReadPageBusinessRulesArgs : PageBusinessRuleTargetArgs {
 
 	[JsonPropertyName("environment-name")]
 	[Description(McpToolDescriptions.EnvironmentName)]
@@ -852,10 +884,6 @@ public sealed record ReadPageBusinessRulesArgs {
 	[Required]
 	public string PackageName { get; init; } = null!;
 
-	[JsonPropertyName("page-schema-name")]
-	[Description("Target Freedom UI page schema name.")]
-	[Required]
-	public string PageSchemaName { get; init; } = null!;
 }
 
 [McpServerToolType]
@@ -954,8 +982,15 @@ public sealed class UpdatePageBusinessRuleTool(
 		ExecuteWithCleanLog(new EnvironmentOptions { Environment = args.EnvironmentName }, () => UpdateRules(args));
 
 	private object UpdateRules(UpdatePageBusinessRulesArgs args) {
-		if (args.Rules is not { Count: > 0 }) {
-			return BusinessRuleBatchResponse.RequestError("rules is required and must contain at least one rule.");
+		// The request-shape check runs BEFORE the environment is resolved and names EVERY missing field in one
+		// message (PR #1352 review): the executor resolves the environment first, so an unknown environment
+		// name would answer ahead of the identity fields and hide which ones the caller forgot — and checking
+		// only the collection field cost the caller one failed call per field (issue #1305, point 3).
+		string? requestShapeError = BusinessRuleBatchValidation.MissingRequestFieldsError(
+			args.EnvironmentName, args.PackageName, args.EffectivePageSchemaName, "page-schema-name",
+			"rules", args.Rules?.Count ?? 0);
+		if (requestShapeError is not null) {
+			return BusinessRuleBatchResponse.RequestError(requestShapeError);
 		}
 
 		return BusinessRuleToolExecutor.Execute<IPageBusinessRuleService>(
@@ -963,13 +998,13 @@ public sealed class UpdatePageBusinessRuleTool(
 			args.EnvironmentName,
 			service => BusinessRuleBatchResponse.From(service.Update(new BusinessRulesBatchRequest(
 				args.PackageName,
-				args.PageSchemaName,
+				args.EffectivePageSchemaName,
 				args.Rules.Select(rule => rule?.ToBusinessRule()!).ToList()))),
 			BusinessRuleBatchResponse.RequestError);
 	}
 }
 
-public sealed record UpdatePageBusinessRulesArgs {
+public sealed record UpdatePageBusinessRulesArgs : PageBusinessRuleTargetArgs {
 
 	[JsonPropertyName("environment-name")]
 	[Description(McpToolDescriptions.EnvironmentName)]
@@ -980,11 +1015,6 @@ public sealed record UpdatePageBusinessRulesArgs {
 	[Description("Target package name on the Creatio environment where the layered rule diff is stored.")]
 	[Required]
 	public string PackageName { get; init; } = null!;
-
-	[JsonPropertyName("page-schema-name")]
-	[Description("Target Freedom UI page schema name.")]
-	[Required]
-	public string PageSchemaName { get; init; } = null!;
 
 	[JsonPropertyName("rules")]
 	[Description("Full replacement definitions for existing rules, matched by 'name'. Include block uIds from read-page-business-rules to preserve unchanged-block identity.")]
@@ -1087,9 +1117,15 @@ public sealed class DeletePageBusinessRuleTool(
 		ExecuteWithCleanLog(new EnvironmentOptions { Environment = args.EnvironmentName }, () => DeleteRules(args));
 
 	private object DeleteRules(DeletePageBusinessRulesArgs args) {
-		if (args.RuleNames is not { Count: > 0 }) {
-			return BusinessRuleBatchResponse.RequestError(
-				"rule-names is required and must contain at least one rule name.");
+		// The request-shape check runs BEFORE the environment is resolved and names EVERY missing field in one
+		// message (PR #1352 review): the executor resolves the environment first, so an unknown environment
+		// name would answer ahead of the identity fields and hide which ones the caller forgot — and checking
+		// only the collection field cost the caller one failed call per field (issue #1305, point 3).
+		string? requestShapeError = BusinessRuleBatchValidation.MissingRequestFieldsError(
+			args.EnvironmentName, args.PackageName, args.EffectivePageSchemaName, "page-schema-name",
+			"rule-names", args.RuleNames?.Count ?? 0);
+		if (requestShapeError is not null) {
+			return BusinessRuleBatchResponse.RequestError(requestShapeError);
 		}
 
 		return BusinessRuleToolExecutor.Execute<IPageBusinessRuleService>(
@@ -1097,13 +1133,13 @@ public sealed class DeletePageBusinessRuleTool(
 			args.EnvironmentName,
 			service => BusinessRuleBatchResponse.From(service.Delete(new BusinessRulesDeleteRequest(
 				args.PackageName,
-				args.PageSchemaName,
+				args.EffectivePageSchemaName,
 				args.RuleNames))),
 			BusinessRuleBatchResponse.RequestError);
 	}
 }
 
-public sealed record DeletePageBusinessRulesArgs {
+public sealed record DeletePageBusinessRulesArgs : PageBusinessRuleTargetArgs {
 
 	[JsonPropertyName("environment-name")]
 	[Description(McpToolDescriptions.EnvironmentName)]
@@ -1114,11 +1150,6 @@ public sealed record DeletePageBusinessRulesArgs {
 	[Description("Target package name on the Creatio environment.")]
 	[Required]
 	public string PackageName { get; init; } = null!;
-
-	[JsonPropertyName("page-schema-name")]
-	[Description("Target Freedom UI page schema name.")]
-	[Required]
-	public string PageSchemaName { get; init; } = null!;
 
 	[JsonPropertyName("rule-names")]
 	[Description("Internal rule names to delete (from read-page-business-rules), not captions.")]

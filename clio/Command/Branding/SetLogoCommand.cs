@@ -304,7 +304,11 @@ public class SetLogoCommand : RemoteCommand<SetLogoOptions> {
 	}
 
 	private bool ReadCompanionIsOn(BrandingCompanion companion, string environment) {
-		var current = _sysSettingsCommand.TryGetSysSetting(
+		// PR #1373 review: the QUIET overload. A failure here is a normal, expected outcome - the companion
+		// setting is simply absent for this user - and this method reports nothing, so the reporting overload
+		// left the operator a red [ERR] line and a correlation ID that appears in no result while `set-logo`
+		// went on to succeed.
+		var current = _sysSettingsCommand.TryGetSysSettingQuietly(
 			new GetSysSettingArgs(environment ?? string.Empty, companion.Code));
 		return current.Success && bool.TryParse(current.Value, out var parsed) && parsed;
 	}

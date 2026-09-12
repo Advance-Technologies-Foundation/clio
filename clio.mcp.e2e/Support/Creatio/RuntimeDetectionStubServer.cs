@@ -64,6 +64,23 @@ internal sealed class RuntimeDetectionStubServer : IAsyncDisposable {
 	public const string SelectQueryHtmlBodyMarker = "select-query-secret-marker";
 
 	/// <summary>
+	/// Marker embedded in every HTML body the stub returns from <c>GetSchemaDesignItem</c> when
+	/// <see cref="RuntimeDetectionStubServerConfiguration.DesignerHtmlMode"/> is set. Tests assert it is
+	/// absent from the surfaced error, so a designer error page leaking into an agent transcript is caught
+	/// (issue #722).
+	/// </summary>
+	public const string DesignerHtmlBodyMarker = "designer-html-secret-marker";
+
+	/// <summary>ASP.NET server-error page: the shape a <c>SchemaIsNotAvailableException</c> arrives in.</summary>
+	public const string DesignerHtmlServerError = "server-error";
+
+	/// <summary>Rendered sign-in page: an expired session, which is an authentication failure, not a package problem.</summary>
+	public const string DesignerHtmlLoginPage = "login-page";
+
+	/// <summary>Bare markup fragment, the IIS/WAF/proxy shape the old doctype-prefixed test did not classify as markup.</summary>
+	public const string DesignerHtmlFragment = "fragment";
+
+	/// <summary>
 	/// Marker embedded in the HTML body the stub returns for any odata request (GET/POST/PATCH/DELETE)
 	/// against <see cref="RuntimeDetectionStubServerConfiguration.ODataNonJsonEntity"/>. Mirrors the
 	/// IIS-served 404/401 pages observed in ENG-95971: the request reaches the stub but never reaches a
@@ -190,6 +207,14 @@ http.createServer((request, response) => {
       return;
     }
     recordedRequests.push({ method: request.method, url: url });
+    if (config.PackageSynchronizationResponse && url.endsWith("/WorkspaceExplorerService.svc/GetIsFileDesignMode")) {
+      sendJson(response, 200, { success: true, value: true });
+      return;
+    }
+    if (config.PackageSynchronizationResponse && (url.endsWith("/AppInstallerService.svc/LoadPackagesToDB") || url.endsWith("/AppInstallerService.svc/LoadPackagesToFileSystem"))) {
+      sendJson(response, 200, JSON.parse(config.PackageSynchronizationResponse));
+      return;
+    }
     if (request.method === "POST" && url === "/ServiceModel/AuthService.svc/Login") {
       sendJson(
         response,
@@ -223,20 +248,88 @@ http.createServer((request, response) => {
       sendText(response, config.NetFrameworkUiMarkerEnabled ? 200 : 404, config.NetFrameworkUiMarkerEnabled ? "OK" : "Not Found");
       return;
     }
+    if (config.DesignerHtmlMode && request.method === "POST"
+      && url.endsWith("/ServiceModel/EntitySchemaDesignerService.svc/GetSchemaDesignItem")) {
+      // Issue #722: the designer answers a schema the target package cannot reach with an HTML page. Three
+      // shapes are served, because clio must classify them differently: a server-error page, a sign-in page
+      // (an expired session, which says nothing about packages), and a bare markup fragment.
+      response.writeHead(200, { "Content-Type": "text/html" });
+      if (config.DesignerHtmlMode === "{{DesignerHtmlLoginPage}}") {
+        response.end("<!DOCTYPE html><html><head><title>Creatio</title></head><body>"
+          + "<form action=\"/Login/NuiLogin.aspx\">{{DesignerHtmlBodyMarker}}</form></body></html>");
+        return;
+      }
+      if (config.DesignerHtmlMode === "{{DesignerHtmlFragment}}") {
+        response.end("<div>Request blocked by the gateway. {{DesignerHtmlBodyMarker}}</div>");
+        return;
+      }
+      response.end("<!DOCTYPE html><html><head><title>Runtime Error</title></head><body>"
+        + "Server Error in '/' Application. {{DesignerHtmlBodyMarker}}</body></html>");
+      return;
+    }
+    if (config.DesignerPackageName && !config.AuthRejectedSelectQuerySchemaName && !config.HtmlSelectQuerySchemaName
+      && request.method === "POST"
+      && (url === "/DataService/json/SyncReply/SelectQuery" || url === "/0/DataService/json/SyncReply/SelectQuery")) {
+      // The designer scenario needs three reads answered with real rows: the package the request is scoped
+      // to, the packages that contribute the schema, and the installed applications used to rank them.
+      if (body.includes('"SysPackage"')) {
+        sendJson(response, 200, { success: true, rows: [
+          { Id: "1", Name: config.DesignerPackageName, UId: "aaaaaaaa-0000-0000-0000-000000000001", Maintainer: "Customer", Version: "1.0.0" },
+          { Id: "2", Name: "StubOwnerApp", UId: "aaaaaaaa-0000-0000-0000-000000000002", Maintainer: "Creatio", Version: "1.0.0" },
+          { Id: "3", Name: "StubCoreOwner", UId: "aaaaaaaa-0000-0000-0000-000000000003", Maintainer: "Creatio", Version: "1.0.0" }
+        ] });
+        return;
+      }
+      if (body.includes('"SysSchema"')) {
+        sendJson(response, 200, { success: true, rows: [
+          { Name: config.DesignerSchemaName, UId: "bbbbbbbb-0000-0000-0000-000000000001", PackageName: "StubOwnerApp", PackageMaintainer: "Creatio", ParentSchemaName: null },
+          { Name: config.DesignerSchemaName, UId: "bbbbbbbb-0000-0000-0000-000000000002", PackageName: "StubCoreOwner", PackageMaintainer: "Creatio", ParentSchemaName: null }
+        ] });
+        return;
+      }
+      if (body.includes('"SysInstalledApp"')) {
+        sendJson(response, 200, { success: true, rows: [{ Id: "9", Code: "StubOwnerApp", Name: "Stub Owner App" }] });
+        return;
+      }
+    }
+    if (config.DesignerPackageName && request.method === "POST"
+      && url.endsWith("/ServiceModel/PackageService.svc/GetPackageProperties")) {
+      sendJson(response, 200, { success: true, package: {
+        uId: "aaaaaaaa-0000-0000-0000-000000000001",
+        name: config.DesignerPackageName,
+        dependsOnPackages: []
+      } });
+      return;
+    }
+    // The WRITE endpoints answer the same rejected session with the same login page, and that path keeps
+    // the raw body - so clio can prove the rejection there (AuthenticationFailureClassifier
+    // .IsAuthenticationFailureResponse) rather than only naming it as one of two possibilities. Gated on
+    // the same switch so an environment registration that does not opt in is unaffected.
+    if (request.method === "POST"
+      && config.AuthRejectedSelectQuerySchemaName
+      && (url === "/DataService/json/SyncReply/InsertSysSettingRequest"
+        || url === "/0/DataService/json/SyncReply/InsertSysSettingRequest"
+        || url === "/DataService/json/SyncReply/PostSysSettingsValues"
+        || url === "/0/DataService/json/SyncReply/PostSysSettingsValues")) {
+      response.writeHead(200, { "Content-Type": "text/html" });
+      response.end("<!DOCTYPE html><html><head><title>Creatio</title></head><body><form action=\"/Login/NuiLogin.aspx\"></form></body></html>");
+      return;
+    }
     if (request.method === "POST"
       && (url === "/DataService/json/SyncReply/SelectQuery" || url === "/0/DataService/json/SyncReply/SelectQuery")
       && config.AuthRejectedSelectQuerySchemaName
       && body.includes('"' + config.AuthRejectedSelectQuerySchemaName + '"')) {
-      // Issue #1222: an expired password makes Creatio answer the authenticated SelectQuery with a
-      // DataService fault envelope (ErrorCode 5) under HTTP 200. The repository provider collapses that
-      // to an empty successful collection, which is the false-success this PR removes. Keyed on the
-      // queried schema so the runtime-detection probe (SysAdminUnit) still gets valid JSON and
-      // environment registration is unaffected.
-      sendJson(response, 200, {
-        responseStatus: { ErrorCode: "5", Message: "Your password has expired.", Errors: [] },
-        rows: [],
-        success: false
-      });
+      // Issue #1222 / #1371: an expired password makes Creatio serve its LOGIN PAGE - HTML, under
+      // HTTP 200 - in answer to the authenticated SelectQuery. ATF.Repository's RemoteDataProvider
+      // deserializes that with Newtonsoft, catches the parser failure, and returns
+      // Success = false + empty Items; AppDataContext then drops the flag, which is the false empty
+      // success ClassifyingDataProvider removes.
+      // A DataService fault envelope (ErrorCode 5 with rows: []) is deliberately NOT used here: the
+      // provider parses it without error and reports Success = true, so no barrier downstream of the
+      // provider can see the rejection at all. Keyed on the queried schema so the runtime-detection
+      // probe (SysAdminUnit) still gets valid JSON and environment registration is unaffected.
+      response.writeHead(200, { "Content-Type": "text/html" });
+      response.end("<!DOCTYPE html><html><head><title>Creatio</title></head><body><form action=\"/Login/NuiLogin.aspx\"></form></body></html>");
       return;
     }
     if (request.method === "POST"
@@ -264,6 +357,30 @@ http.createServer((request, response) => {
         return;
       }
       sendText(response, 404, "Not Found");
+      return;
+    }
+    if (request.method === "POST" && url === "/ServiceModel/ApplicationInfoService.svc/GetApplicationInfo") {
+      // PRIMARY source of the [RequiresCreatioVersion] dispatch gate: applicationInfo.sysValues.coreVersion.
+      if (config.CoreVersion) {
+        sendJson(response, 200, { applicationInfo: { sysValues: { coreVersion: config.CoreVersion } } });
+        return;
+      }
+      sendText(response, 404, "Not Found");
+      return;
+    }
+    if (request.method === "POST" && url === "/ServiceModel/ThemeService.svc/GetAvailableThemes") {
+      // Already the catalog JSON, so it is written verbatim rather than re-encoded.
+      if (config.ThemeCatalogJson) {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(config.ThemeCatalogJson);
+        return;
+      }
+      sendText(response, 404, "Not Found");
+      return;
+    }
+    if (request.method === "GET" && config.ThemeCssPath && url === config.ThemeCssPath) {
+      response.writeHead(200, { "Content-Type": "text/css" });
+      response.end(config.ThemeCssContent || "");
       return;
     }
     if (config.ODataPreWriteMode && config.ODataEntity) {
@@ -359,6 +476,24 @@ http.createServer((request, response) => {
 	}
 }
 
+/// <param name="CoreVersion">
+/// When set, <c>ApplicationInfoService.svc/GetApplicationInfo</c> answers with this
+/// <c>applicationInfo.sysValues.coreVersion</c> — the PRIMARY source the <c>[RequiresCreatioVersion]</c>
+/// dispatch gate probes. Required by any test whose tool declares a version floor; leave it null to keep
+/// the endpoint a 404 for tests that do not.
+/// </param>
+/// <param name="ThemeCatalogJson">
+/// When set, <c>ThemeService.svc/GetAvailableThemes</c> answers with this raw JSON body verbatim (the
+/// <c>{ success, values: [...] }</c> catalog shape), so a theme-reading tool can resolve a theme by id with
+/// no live branded environment.
+/// </param>
+/// <param name="ThemeCssPath">
+/// When set, a GET whose full request target (path AND query, e.g.
+/// <c>/Terrasoft.Configuration/.../theme.css?hash=abc</c>) equals this value is answered with
+/// <paramref name="ThemeCssContent"/> as <c>text/css</c>. Must equal the <c>cssFilePath</c> published by
+/// <paramref name="ThemeCatalogJson"/>, prefixed with '/', because that is the value the tool builds the URL from.
+/// </param>
+/// <param name="ThemeCssContent">The body served at <paramref name="ThemeCssPath"/>; null or empty serves an empty file.</param>
 internal sealed record RuntimeDetectionStubServerConfiguration(
 	bool NetCoreHealthEnabled,
 	bool NetFrameworkHealthEnabled,
@@ -367,11 +502,19 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	bool NetCoreUiMarkerEnabled = false,
 	bool NetFrameworkUiMarkerEnabled = false,
 	string? ODataRoutingErrorEntity = null,
+	string? CoreVersion = null,
+	string? ThemeCatalogJson = null,
+	string? ThemeCssPath = null,
+	string? ThemeCssContent = null,
 	string? HtmlSelectQuerySchemaName = null,
 	string? ODataNonJsonEntity = null,
 	string? ODataEntity = null,
 	string? ODataPreWriteMode = null,
-	string? AuthRejectedSelectQuerySchemaName = null);
+	string? AuthRejectedSelectQuerySchemaName = null,
+	string? DesignerHtmlMode = null,
+	string? DesignerPackageName = null,
+	string? DesignerSchemaName = null,
+	string? PackageSynchronizationResponse = null);
 
 /// <summary>
 /// One request served by <see cref="RuntimeDetectionStubServer"/>, as reported by

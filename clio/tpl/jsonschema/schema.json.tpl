@@ -121,7 +121,7 @@
 			"additionalProperties": false,
 			"required": ["enabled", "frequency-minutes"],
 			"properties": {
-				"enabled": { "type": "boolean", "default": true },
+				"enabled": { "type": "boolean" },
 				"frequency-minutes": { "type": "integer", "minimum": 1 },
 				"next-run": { "type": "string", "format": "date-time" }
 			}
@@ -133,7 +133,7 @@
 			"properties": {
 				"clio": {
 					"allOf": [{ "$ref": "#/definitions/autoupdatepolicy" }],
-					"default": { "enabled": true, "frequency-minutes": 480 }
+					"default": { "enabled": false, "frequency-minutes": 480 }
 				},
 				"knowledge": {
 					"allOf": [{ "$ref": "#/definitions/autoupdatepolicy" }],
@@ -141,7 +141,7 @@
 				},
 				"toolkit": {
 					"allOf": [{ "$ref": "#/definitions/autoupdatepolicy" }],
-					"default": { "enabled": true, "frequency-minutes": 60 }
+					"default": { "enabled": false, "frequency-minutes": 60 }
 				}
 			}
 		},

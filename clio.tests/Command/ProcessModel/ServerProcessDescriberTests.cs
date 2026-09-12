@@ -1,13 +1,20 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using ATF.Repository.Mock;
 using ATF.Repository.Providers;
 using Clio.Command;
 using Clio.Command.ProcessModel;
 using Clio.Common;
+using Clio.CreatioModel;
 using ErrorOr;
 using FluentAssertions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.ProcessModel;
@@ -24,13 +31,25 @@ public sealed class ServerProcessDescriberTests {
 
 	private const string DescribeUrl = "http://sandbox/0/rest/ProcessDesignService/DescribeProcess";
 
-	private static ServerProcessDescriber CreateDescriber(IApplicationClient client) {
+	private const string RootUId = "332eac25-1443-4e4e-a972-6c0e66cb9243";
+	private const string ChildUId = "b5e5162a-254a-430f-8978-4738c6ebf76b";
+	/// <summary>A second family, so a caption shared by two DISTINCT processes can be expressed.</summary>
+	private const string OtherFamilyUId = "7c1d4f6e-9b02-4a55-8d31-1f0a5e2c7b48";
+
+	private const string PackageUId = "864d1545-a641-46c3-b866-e57bd6d39579";
+
+	/// <summary>
+	/// The version reader defaults to one that establishes nothing, so every pre-existing describe assertion
+	/// keeps running against the shape a failed version read is required not to disturb.
+	/// </summary>
+	private static ServerProcessDescriber CreateDescriber(IApplicationClient client,
+		IProcessVersionLibReader versionLibReader = null, IDataProvider dataProvider = null) {
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.DescribeProcess).Returns(DescribeUrl);
 		return new ServerProcessDescriber(client,
-			Substitute.For<IDataProvider>(), urlBuilder);
+			dataProvider ?? Substitute.For<IDataProvider>(), urlBuilder,
+			versionLibReader ?? ReaderReturning(new ProcessVersionFacts { Warning = "not read in this test" }));
 	}
-
 
 	[Test]
 	[Category("Unit")]
@@ -93,11 +112,180 @@ public sealed class ServerProcessDescriberTests {
 				+ "non-nullable bool, WhenWritingNull could not omit it and the payload fabricated an answer");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("A flow's label round-trips by its WIRE NAME, and this is the only place the JSON member is exercised at all: FlowLabelExpectationTests builds DescribedFlow with an object initialiser, so a renamed or dropped [JsonPropertyName] there changes nothing. The consequence of getting it wrong is not a missing field, it is a WRONG WARNING - the post-write guard reads Label typed, finds null on every flow, and tells the caller their labels did not land and their CrtProcessBuilder is out of date, on a build that worked perfectly. DescribedFlow also carries a [JsonExtensionData] bag, so the value still reaches the caller's output through AdditionalData and the describe result looks entirely correct while the guard is crying wolf.")]
+	public void Describe_ShouldRoundTripAFlowLabel() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[],"
+			+ "\"flows\":[{\"source\":\"task1\",\"target\":\"end1\",\"kind\":\"conditional\","
+			+ "\"condition\":\"[#Amount#] > 100\",\"label\":\"Above the threshold\"}],"
+			+ "\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Flows[0].Label.Should().Be("Above the threshold",
+			because: "the TYPED property is what the post-write guard reads by name; a value that only survives "
+				+ "in the extension-data bag leaves the guard reporting a dropped label on a build that worked");
+		result.Value.Flows[0].Condition.Should().Be("[#Amount#] > 100",
+			because: "both fields come off the same flow, so asserting the label alone would pass on a describe "
+				+ "that dropped everything else");
+		JsonNode output = JsonNode.Parse(reserialized);
+		output["flows"]![0]!["label"]!.GetValue<string>().Should().Be("Above the threshold",
+			because: "the outbound half is separate, and this field is what the shipped guidance tells an agent "
+				+ "to read before overwriting a human's label");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A flow the server reports WITHOUT a label must not gain an explicit null on the way out. The server omits the member for an unlabelled flow - measured on a 1.6.0.8 stand - and clio mirrors that omission rather than fabricating a value. Note what this does NOT buy, because an earlier revision of the property's docblock claimed it did: absence still cannot distinguish 'this flow has no label' from 'this package predates the field', since both produce the same bytes. What it does buy is that clio does not ASSERT the first of those. Nothing tells them apart, the installed version included - clio normally refuses a package older than the one it ships, so a high number is no evidence the member is present - which is why the guidance now says to treat an all-absent read as uninformative rather than to go and check a number.")]
+	public void Describe_ShouldNotInventAFlowLabel_WhenTheServerOmitsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[],"
+			+ "\"flows\":[{\"source\":\"task1\",\"target\":\"end1\",\"kind\":\"sequence\"}],"
+			+ "\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Flows[0].Label.Should().BeNull(
+			because: "the server said nothing about a label, and clio must not turn that into a claim");
+		result.Value.Flows[0].Source.Should().Be("task1",
+			because: "the rest of the flow still round-trips; asserting the absence alone would pass on a "
+				+ "describe that dropped everything");
+		JsonNode output = JsonNode.Parse(reserialized);
+		output["flows"]![0]!.AsObject().ContainsKey("label").Should().BeFalse(
+			because: "an absent label is OMITTED, matching what the server itself does for an unlabelled flow - "
+				+ "emitting null here would only move the ambiguity into clio's own output");
+	}
+
+	/// <summary>
+	/// Caption-resolution candidates, keyed by the view's column names as ATF replays them. The family key
+	/// is per-row and REQUIRED: sharing one across every row makes distinct processes look like one family,
+	/// which is what let the ambiguity test pass while feeding two members of the same family.
+	/// </summary>
+	private static IDataProvider CaptionCandidates(
+		params (string Name, string Caption, bool? IsActive, string Family)[] rows) {
+		DataProviderMock provider = new();
+		provider.MockItems("VwProcessLib").Returns(rows
+			.Select(row => new Dictionary<string, object> {
+				["Id"] = Guid.NewGuid(),
+				["UId"] = Guid.NewGuid(),
+				["Name"] = row.Name,
+				["Caption"] = row.Caption,
+				["IsActiveVersion"] = row.IsActive,
+				["VersionParentUId"] = Guid.Parse(row.Family),
+				["PackageUId"] = Guid.Parse(PackageUId),
+				["Enabled"] = true
+			})
+			.ToList());
+		return provider;
+	}
+
+	/// <summary>
+	/// A reader answering the same facts through EITHER entry point, so a test that does not care which one
+	/// the describer chose cannot break when the caption arm starts reusing the row it already fetched.
+	/// </summary>
+	private static IProcessVersionLibReader ReaderReturning(ProcessVersionFacts facts) {
+		IProcessVersionLibReader reader = Substitute.For<IProcessVersionLibReader>();
+		reader.Read(Arg.Any<string>()).Returns(facts);
+		reader.Read(Arg.Any<VwProcessLib>()).Returns(facts);
+		return reader;
+	}
+
+	/// <summary>One caption candidate whose UId is FIXED, so it can be matched against a described graph.</summary>
+	private static IDataProvider CaptionCandidateWithUId(string uid, string name, string caption, bool? isActive,
+		string family) {
+		DataProviderMock provider = new();
+		provider.MockItems("VwProcessLib").Returns([
+			new Dictionary<string, object> {
+				["Id"] = Guid.Parse(uid),
+				["UId"] = Guid.Parse(uid),
+				["Name"] = name,
+				["Caption"] = caption,
+				["Version"] = 1,
+				["IsActiveVersion"] = isActive,
+				["VersionParentUId"] = Guid.Parse(family),
+				["PackageUId"] = Guid.Parse(PackageUId),
+				["Enabled"] = true
+			}
+		]);
+		return provider;
+	}
+
+	private static ProcessVersionFamilyMember Member(string uid, string name, int version, bool isActive,
+		bool isRoot) =>
+		new() {
+			SchemaUId = uid,
+			Name = name,
+			Caption = "Invoice approval",
+			Version = version,
+			IsActiveVersion = isActive,
+			IsRoot = isRoot,
+			PackageUId = PackageUId,
+			Enabled = true
+		};
+
+	/// <summary>A minimal successful graph, so a version assertion is not buried in element JSON.</summary>
+	private static string GraphResponse(string schemaUId, string extraRootFields = "") =>
+		"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\",\"schemaUId\":\"" + schemaUId
+		+ "\"" + extraRootFields + ",\"elements\":[],\"flows\":[],\"parameters\":[]}}";
 	private static IApplicationClient ClientReturning(string response) {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		client.ExecutePostRequest(DescribeUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(response);
 		return client;
+	}
+
+	[Test]
+	[Description("A best-effort read spends ONE attempt at half the timeout. It is a VERIFICATION of a "
+		+ "write that already committed, and the caller treats a failure as a caveat rather than an error, "
+		+ "so the full budget - three attempts at ten seconds - would stall the common success path for "
+		+ "about half a minute to establish something that then gets reported as unverified anyway. The "
+		+ "population that pays all of it is the one these guards target: an environment whose "
+		+ "DescribeProcess route is failing. Asserted here because every other stub in this fixture passes "
+		+ "Arg.Any<int>() in both positions, so deleting the whole budget leaves the suite green.")]
+	public void Describe_ShouldSpendTheShortBudget_WhenBestEffort() {
+		// Arrange
+		IApplicationClient client = ClientReturning(GraphResponse(RootUId));
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		describer.Describe(new ProcessIdentity("UsrProc", null, null), null,
+			includeVersionFacts: false, bestEffort: true);
+
+		// Assert
+		client.Received(1).ExecutePostRequest(DescribeUrl, Arg.Any<string>(), 5_000, 1, 1);
+		client.DidNotReceive().ExecutePostRequest(DescribeUrl, Arg.Any<string>(), 10_000, 3, 1);
+	}
+
+	[Test]
+	[Description("An ORDINARY read keeps the full retry budget. Here the description is the caller's "
+		+ "answer rather than a caveat on something already done, so a transient failure has to be retried "
+		+ "instead of reported. Asserted separately because a version that always took the short budget "
+		+ "would satisfy the best-effort test above.")]
+	public void Describe_ShouldSpendTheFullBudget_WhenNotBestEffort() {
+		// Arrange
+		IApplicationClient client = ClientReturning(GraphResponse(RootUId));
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		client.Received(1).ExecutePostRequest(DescribeUrl, Arg.Any<string>(), 10_000, 3, 1);
+		client.DidNotReceive().ExecutePostRequest(DescribeUrl, Arg.Any<string>(), 5_000, 1, 1);
 	}
 
 	[Test]
@@ -1147,4 +1335,363 @@ public sealed class ServerProcessDescriberTests {
 
 	// The describer wraps the identity under a "request" property (ProcessDesignService BodyStyle=Wrapped).
 	private static JsonNode Wrapped(string body) => JsonNode.Parse(body)["request"];
+	[Test]
+	[Description("Describes an unversioned process as version 0, active, with a one-member root family and no warning.")]
+	public void Describe_ShouldReportVersionZeroAndRootOnlyFamily_WhenProcessHasNoVersions() {
+		// Arrange
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts {
+			Version = 0,
+			IsActiveVersion = true,
+			ActiveVersionSchemaUId = RootUId,
+			ActiveVersionName = "UsrProc",
+			VersionRootSchemaUId = RootUId,
+			Versions = [Member(RootUId, "UsrProc", 0, isActive: true, isRoot: true)],
+			ActiveVersionSource = "process-library-view"
+		});
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(RootUId)), reader);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.Value.Version.Should().Be(0,
+			because: "a process with no versions is version 0 — a fact the caller can act on, not an absence");
+		result.Value.IsActiveVersion.Should().BeTrue(
+			because: "the only member of a family is the version the runtime executes");
+		result.Value.Versions.Should().ContainSingle(v => v.IsRoot,
+			because: "the family of an unversioned process is its root alone");
+		result.Value.VersionReadWarning.Should().BeNull(
+			because: "nothing failed, and the warning is what distinguishes this from an unestablished read");
+		result.Value.VersionsTruncatedAt.Should().BeNull(because: "a one-member family was not cut");
+		result.Value.VersionRootSchemaUId.Should().Be(RootUId,
+			because: "an unversioned process is its own family root, which is the identity a version would hang off");
+		result.Value.ActiveVersionSource.Should().Be("process-library-view",
+			because: "even the trivial answer says which authority produced it, since the runtime consults another");
+	}
+
+	[Test]
+	[Description("Reports the described family root as inactive and names the version the runtime actually runs.")]
+	public void Describe_ShouldNameTheActiveVersion_WhenDescribingTheFamilyRoot() {
+		// Arrange
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts {
+			Version = 0,
+			IsActiveVersion = false,
+			ActiveVersionSchemaUId = ChildUId,
+			ActiveVersionName = "InvoiceVisaProcessInvoice1",
+			VersionRootSchemaUId = RootUId,
+			Versions = [
+				Member(RootUId, "InvoiceVisaProcess", 0, isActive: false, isRoot: true),
+				Member(ChildUId, "InvoiceVisaProcessInvoice1", 1, isActive: true, isRoot: false)
+			],
+			ActiveVersionSource = "process-library-view"
+		});
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(RootUId)), reader);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(
+			new ProcessIdentity("InvoiceVisaProcess", null, null), null);
+
+		// Assert
+		result.Value.IsActiveVersion.Should().BeFalse(
+			because: "resolving a versioned process by name returns the root, which is not what runs");
+		result.Value.ActiveVersionName.Should().Be("InvoiceVisaProcessInvoice1",
+			because: "the caller needs the name of the running version to re-describe it without a second lookup");
+		result.Value.ActiveVersionSchemaUId.Should().Be(ChildUId,
+			because: "the version's UId identifies it unambiguously, unlike the caption the family shares");
+		result.Value.ActiveVersionSource.Should().Be("process-library-view",
+			because: "the output states which authority ranked the family, since the runtime consults another");
+		reader.Received(1).Read(RootUId);
+		reader.DidNotReceive().Read("InvoiceVisaProcess");
+	}
+
+	[Test]
+	[Description("Reports the described version as the active one when a family's active version is addressed by its UId.")]
+	public void Describe_ShouldReportActiveVersion_WhenDescribingItByUId() {
+		// Arrange
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts {
+			Version = 1,
+			IsActiveVersion = true,
+			ActiveVersionSchemaUId = ChildUId,
+			ActiveVersionName = "InvoiceVisaProcessInvoice1",
+			VersionRootSchemaUId = RootUId,
+			Versions = [
+				Member(RootUId, "InvoiceVisaProcess", 0, isActive: false, isRoot: true),
+				Member(ChildUId, "InvoiceVisaProcessInvoice1", 1, isActive: true, isRoot: false)
+			],
+			ActiveVersionSource = "process-library-view"
+		});
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(ChildUId)), reader);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity(null, ChildUId, null), null);
+
+		// Assert
+		result.Value.IsActiveVersion.Should().BeTrue(
+			because: "addressing a version by its own UId reads that version, and this one is the family's active member");
+		result.Value.Version.Should().Be(1,
+			because: "the version read must describe the addressed schema, not the family root it descends from");
+		result.Value.VersionRootSchemaUId.Should().Be(RootUId,
+			because: "a version still reports its family root, which is how a caller reaches the rest of the family");
+		reader.Received(1).Read(ChildUId);
+	}
+
+	[Test]
+	[Description("Returns the graph with the warning alone when the version read failed, establishing no version values.")]
+	public void Describe_ShouldReturnGraphWithWarningOnly_WhenTheVersionReadFailed() {
+		// Arrange
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts {
+			Warning = "reading the process library failed: simulated transport failure, so the version facts were not established"
+		});
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(RootUId)), reader);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(
+			because: "a failed version read must never turn a successful describe into an error");
+		result.Value.Name.Should().Be("UsrProc", because: "the graph the caller asked for is still returned");
+		result.Value.VersionReadWarning.Should().Contain("simulated transport failure",
+			because: "the caller is told why the facts are absent, not merely that they are");
+		result.Value.Version.Should().BeNull(because: "a failed read establishes nothing — least of all version 0");
+		result.Value.IsActiveVersion.Should().BeNull(
+			because: "reporting an unknown flag as false would name the wrong schema as the one that runs");
+		result.Value.Versions.Should().BeNull(
+			because: "an empty list would read as 'checked, no versions', which is a different claim");
+	}
+
+	[Test]
+	[Description("Discards a server-supplied version value when the version read failed: the process library is the authority (ADR choice 5).")]
+	public void Describe_ShouldDiscardServerVersionValues_WhenTheVersionReadFailed() {
+		// Arrange — a newer CrtProcessBuilder already reporting version fields; the wire result binds them to
+		// the same properties the overlay owns, so an unassigned failure path would leave them standing.
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts { Warning = "not established" });
+		ServerProcessDescriber describer = CreateDescriber(
+			ClientReturning(GraphResponse(RootUId, ",\"version\":7,\"isActiveVersion\":true")), reader);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.Value.Version.Should().BeNull(
+			because: "a version the process library did not confirm may not be published beside a warning saying nothing was established");
+		result.Value.IsActiveVersion.Should().BeNull(
+			because: "the same applies to the flag that decides whether the caller trusts this graph");
+	}
+
+	[Test]
+	[Description("Reports where the published family list was cut when the reader truncated a long family.")]
+	public void Describe_ShouldReportWhereTheFamilyWasCut_WhenTheReaderTruncatedIt() {
+		// Arrange
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts {
+			Version = 0,
+			IsActiveVersion = false,
+			VersionRootSchemaUId = RootUId,
+			Versions = Enumerable.Range(0, 50)
+				.Select(i => Member(RootUId, $"UsrProc{i}", i, isActive: false, isRoot: i == 0))
+				.ToList(),
+			FamilyTruncated = true
+		});
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(RootUId)), reader);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.Value.VersionsTruncatedAt.Should().Be(50,
+			because: "a partial list must say so, and it says so with the length it actually published");
+		result.Value.Versions.Should().HaveCount(result.Value.VersionsTruncatedAt.Value,
+			because: "the reported cut point can never disagree with the list it describes");
+	}
+
+	[Test]
+	[Description("Leaves the unparsable-response failure exactly as it was and attempts no version read.")]
+	public void Describe_ShouldFailUnchangedAndSkipTheVersionRead_WhenTheResponseCannotBeParsed() {
+		// Arrange
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts { Version = 3 });
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning("not json at all"), reader);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeTrue(because: "an unparsable response was and remains a describe failure");
+		result.FirstError.Description.Should().StartWith("could not parse server response",
+			because: "the existing error text is a contract callers and tests already match on");
+		reader.DidNotReceive().Read(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Describing by caption resolves a version family to the active version and asks the server for THAT schema name.")]
+	public void Describe_ShouldPostTheActiveVersionName_WhenTheCaptionMatchesAVersionFamily() {
+		// Arrange — one process, three schemas: a caption belongs to the whole family.
+		IApplicationClient client = ClientReturning(GraphResponse(ChildUId));
+		ServerProcessDescriber describer = CreateDescriber(client, dataProvider: CaptionCandidates(
+			("InvoiceVisaProcess", "Invoice approval", false, RootUId),
+			("InvoiceVisaProcessInvoice1", "Invoice approval", true, RootUId),
+			("InvoiceVisaProcessInvoice2", "Invoice approval", false, RootUId)));
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(
+			new ProcessIdentity(null, null, "Invoice approval"), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(
+			because: "a caption matching one family is resolvable — exactly one of its members runs");
+		client.Received(1).ExecutePostRequest(DescribeUrl,
+			Arg.Is<string>(body => Wrapped(body)["name"].GetValue<string>() == "InvoiceVisaProcessInvoice1"),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Describing by a caption two different processes share is refused with the candidate codes instead of answering for one of them.")]
+	public void Describe_ShouldRefuseWithCandidates_WhenTwoProcessesShareTheCaption() {
+		// Arrange
+		IApplicationClient client = ClientReturning(GraphResponse(RootUId));
+		ServerProcessDescriber describer = CreateDescriber(client, dataProvider: CaptionCandidates(
+			("UsrProcess_first", "Business process 1", true, RootUId),
+			("UsrProcess_second", "Business process 1", true, OtherFamilyUId)));
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(
+			new ProcessIdentity(null, null, "Business process 1"), null);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "two processes that each run are genuinely ambiguous, and picking one silently is the defect this replaces");
+		result.FirstError.Description.Should().Contain("UsrProcess_second",
+			because: "the caller resolves the ambiguity by code, so every candidate is named");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
+	}
+
+	[Test]
+	[Description("A caption that matches nothing keeps the not-found message describe has always returned.")]
+	public void Describe_ShouldKeepTheNotFoundMessage_WhenNoProcessHasTheCaption() {
+		// Arrange
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(RootUId)),
+			dataProvider: CaptionCandidates());
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(
+			new ProcessIdentity(null, null, "Nothing has this caption"), null);
+
+		// Assert
+		result.IsError.Should().BeTrue(because: "an unresolvable caption is still a failure");
+		result.FirstError.Description.Should().Be("process not found (caption 'Nothing has this caption')",
+			because: "routing through the shared resolver must not restate an error message callers already match on");
+	}
+
+	[Test]
+	[Description("The caption arm hands the reader the row it already fetched instead of a UId string, so the identity lookup is not paid twice on the identity this feature exists to fix and the one agents are steered toward.")]
+	public void Describe_ShouldReuseTheResolvedRow_WhenTheCaptionResolvedTheDescribedSchema() {
+		// Arrange
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts {
+			Version = 1,
+			IsActiveVersion = true,
+			ActiveVersionSchemaUId = ChildUId,
+			ActiveVersionName = "InvoiceVisaProcessInvoice1",
+			VersionRootSchemaUId = RootUId,
+			ActiveVersionSource = "process-library-view"
+		});
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(ChildUId)), reader,
+			CaptionCandidateWithUId(ChildUId, "InvoiceVisaProcessInvoice1", "Invoice approval", true, RootUId));
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(
+			new ProcessIdentity(null, null, "Invoice approval"), null);
+
+		// Assert
+		result.Value.IsActiveVersion.Should().BeTrue(
+			because: "reusing the row must not change the facts the caller is given");
+		reader.Received(1).Read(Arg.Is<VwProcessLib>(row => row.UId == Guid.Parse(ChildUId)));
+		reader.DidNotReceive().Read(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("The resolved row is reused only for the schema it identifies: describe is asked by NAME, so a server that answered for a different schema than the caption resolved to must not have the old row's version facts reported against it.")]
+	public void Describe_ShouldReReadByUId_WhenTheServerDescribedADifferentSchema() {
+		// Arrange — the caption resolved ChildUId, the server answered about RootUId.
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts { Version = 0 });
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(RootUId)), reader,
+			CaptionCandidateWithUId(ChildUId, "InvoiceVisaProcessInvoice1", "Invoice approval", true, RootUId));
+
+		// Act
+		describer.Describe(new ProcessIdentity(null, null, "Invoice approval"), null);
+
+		// Assert
+		reader.Received(1).Read(RootUId);
+		reader.DidNotReceive().Read(Arg.Any<VwProcessLib>());
+	}
+
+	[Test]
+	[Description("A read-back caller that consumes elements[] alone can opt out of the version overlay, and then no DataService read happens at all — on a write path those two round-trips were paid and the facts discarded.")]
+	public void Describe_ShouldSkipTheVersionRead_WhenTheCallerDidNotAskForTheFacts() {
+		// Arrange
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts { Version = 7 });
+		ServerProcessDescriber describer = CreateDescriber(ClientReturning(GraphResponse(RootUId)), reader);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null),
+			null, includeVersionFacts: false);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the graph is still the answer the caller asked for");
+		reader.DidNotReceive().Read(Arg.Any<string>());
+		reader.DidNotReceive().Read(Arg.Any<VwProcessLib>());
+		result.Value.Version.Should().BeNull(
+			because: "every version member is still ASSIGNED on this path, so a newer server that already "
+				+ "reports a version key cannot leave one standing that clio never established");
+		result.Value.VersionReadWarning.Should().Contain("not requested",
+			because: "an absent value with no warning is the one combination the contract forbids, and the "
+				+ "reason it is absent here is that nobody asked");
+	}
+
+	[Test]
+	[Description("A caption matching more candidates than can be ranked is refused rather than ranked out of a silently partial set. The family read on this same view is capped for the stated response-size and latency reason, and this read carries the same risk on the same deadline-bounded surface.")]
+	public void Describe_ShouldRefuse_WhenTheCaptionMatchesMoreCandidatesThanCanBeRanked() {
+		// Arrange — one more than the cap, which is what the fetch takes so an overflow is detectable.
+		IApplicationClient client = ClientReturning(GraphResponse(RootUId));
+		(string, string, bool?, string)[] candidates = Enumerable.Range(0, ProcessVersionLibReader.FamilyCap + 1)
+			.Select(i => ($"UsrProcess_{i}", "Crowded caption", (bool?)(i == 0), RootUId))
+			.ToArray();
+		ServerProcessDescriber describer = CreateDescriber(client,
+			dataProvider: CaptionCandidates(candidates));
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(
+			new ProcessIdentity(null, null, "Crowded caption"), null);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "above the cap the resolver cannot prove the candidates are one family, so answering "
+				+ "would be a guess and truncating would be a silent one");
+		result.FirstError.Description.Should().Contain("more candidates than can be ranked",
+			because: "the refusal has to say it ran out of room rather than that the caption is ambiguous");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
+	}
+
+	[Test]
+	[Description("A caption query that throws yields a ResolveId failure carrying the exception message. ResolveCaption replaced a catch (Exception) with the shared narrower ladder, and nothing exercised its failure arm in either direction.")]
+	public void Describe_ShouldFailWithTheMessage_WhenTheCaptionQueryThrows() {
+		// Arrange
+		IApplicationClient client = ClientReturning(GraphResponse(RootUId));
+		IDataProvider provider = Substitute.For<IDataProvider>();
+		provider.GetItems(null).ThrowsForAnyArgs(new WebException("simulated caption transport failure"));
+		ServerProcessDescriber describer = CreateDescriber(client, dataProvider: provider);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(
+			new ProcessIdentity(null, null, "Invoice approval"), null);
+
+		// Assert
+		result.IsError.Should().BeTrue(
+			because: "the caption could not be resolved, so there is no schema to describe");
+		result.FirstError.Code.Should().Be("ResolveId",
+			because: "the caption arm keeps its own error vocabulary rather than leaking the reader's");
+		result.FirstError.Description.Should().Contain("simulated caption transport failure",
+			because: "an escaped exception inside the MCP server is what the shared ladder exists to prevent, "
+				+ "and the caller still has to learn why the caption did not resolve");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
+	}
+
 }
