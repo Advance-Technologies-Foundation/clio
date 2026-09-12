@@ -58,8 +58,8 @@ namespace Clio.Package
 
 		#region Methods: Private
 
-		private IApplicationClient CreateApplicationClient() =>
-			_applicationClientFactory.CreateClient(_environmentSettings);
+		private IOwnedApplicationClient CreateApplicationClient() =>
+			_applicationClientFactory.CreateOwnedClient(_environmentSettings);
 
 		private void CallGate(ServiceUrlBuilder.KnownRoute route, string paramName, string[] packages) {
 			string url = _serviceUrlBuilder.Build(route);
@@ -67,7 +67,8 @@ namespace Clio.Package
 			string body = JsonSerializer.Serialize(
 				new Dictionary<string, object> { [paramName] = payload },
 				JsonOptions);
-			string response = CreateApplicationClient().ExecutePostRequest(url, body);
+			using IOwnedApplicationClient client = CreateApplicationClient();
+			string response = client.ExecutePostRequest(url, body);
 			if (string.IsNullOrEmpty(response)) {
 				throw new InvalidOperationException(
 					$"ClioGate {route} returned an empty response. " +

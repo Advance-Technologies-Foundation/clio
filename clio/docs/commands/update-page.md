@@ -16,6 +16,23 @@ The update-page command validates and saves the raw JavaScript body of a
 Freedom UI page schema. Pass the full body string directly, typically
 after reading raw.body from get-page.
 
+> **CLI vs MCP.** The CLI `get-page` verb returns `raw.body` inline, so a CLI caller copies
+> that value. The MCP `get-page` tool returns no `raw` property — it writes the body to disk
+> and reports the path in `files.bodyFile`. MCP callers pass that path straight through as
+> `body-file`, or send the file contents as `body`.
+
+The MCP `update-page` tool also accepts `validate: false` as an explicit escape
+hatch when a full replacement body contains a pre-existing defect that is
+unrelated to the requested edit. This skips client-side content and run-process
+validation. It does NOT skip the structural floor: JavaScript syntax, AST
+loadability, replace-mode marker integrity, the mobile JSON-object structure
+check, and the page baseline/conflict guard all still run - a body that fails
+any of them is one the tool could no longer read back, so it is never saved.
+It can be combined with `force: true` - the flags are orthogonal, one gating
+content checks and the other the baseline/conflict guard - and the response then
+carries a warning that both guards are down. `sync-pages` accepts the same pair
+through its per-page `force` flag. The CLI command has no equivalent flag.
+
 After a successful non-dry-run save, update-page also attempts a
 best-effort live Designer Presence notification so active Creatio designers
 can be warned that the page was saved outside their session. This live push
@@ -52,6 +69,10 @@ name instead of trying to edit a non-existent local `insert`.
   `usr.HandleSomeRequest`). Call `clio get-guidance --name page-schema-handlers` for details.
 - **SCHEMA_VALIDATORS keys** (object form) must follow `VendorPrefix.ValidatorName` format
   (e.g., `usr.RequiredValidator`). Call `clio get-guidance --name page-schema-validators` for details.
+- **Handler, converter, and validator calls** must resolve to a declaration in the page factory scope,
+  a callback parameter, or a known JavaScript/Creatio global. An undefined direct helper call is rejected
+  before the body is sent to Creatio; Page Designer can remove module-scope declarations while preserving
+  handler entries, leaving a runtime `ReferenceError` otherwise.
 - **Mobile page rules.** These run only on the MCP `update-page` / `sync-pages` / `validate-page` tools.
   The CLI `update-page` verb does **not** run them — it validates a mobile body only for disallowed
   sections — so a body rejected through MCP still saves from the command line.
@@ -113,6 +134,14 @@ name instead of trying to edit a non-existent local `insert`.
   `--resources`. Binding expressions (any `$`-prefixed value) and non-string values (e.g.
   `placeholder: false`) are not literals and pass. Call `clio get-guidance --name page-schema-resources`
   for the full rule.
+  A **component's own data descriptor is exempt**: a `data` object that carries the platform's
+  `typeName` marker, on a node declaring a component `type`, is component metadata (uId, schemaType,
+  typeName and the caption the platform stamped on it) rather than page-authored text, so a literal
+  anywhere inside it is accepted — at any depth, not only at the entry root. This is what a Timeline
+  composer (`crt.EmailComposer` / `crt.FeedComposer`) ships as `data.caption: "Email"` / `"Feed"`.
+  Do NOT delete such a caption to satisfy the rule: the platform never restores it and the composer
+  stays permanently unlabelled. An author-writable input that merely happens to be named `data`
+  (e.g. `crt.FilterBuilderSource`) carries no `typeName` and stays fully validated.
 - **Inserted widget/metric titles must resolve.** A `title`/`caption`/`tooltip`/`placeholder` on a
   freshly inserted (`operation:"insert"`) widget/container bound as 
   `#ResourceString(<Key>)#` is **rejected** when `<Key>` will not resolve — i.e. it is not passed in
@@ -155,8 +184,12 @@ After a successful save with a baseline in play, the response carries `newChecks
 Successful saves may also return `warnings`. Every entry is informational only — the
 schema save already succeeded, so never retry on a warning. Today they cover the live
 Designer Presence push, a component whose `insert` the submitted body replaced with a
-`merge`/`move`/`remove`, and an operation the differ will drop because another operation
-for the same component name cancels it (see "Write modes").
+`merge`/`move`/`remove`, an operation the differ will drop because another operation
+for the same component name cancels it (see "Write modes"), and — on `append` — an
+existing operation the merge could not preserve because your fragment superseded an
+identity the page carried more than once. That last one names the component and tells you
+to re-read with `get-page`, because it is the one case where appending removes something
+you did not send.
 
 Baseline sources: both the CLI verb and the MCP `update-page` tool arm this check
 automatically from the baseline that a previous `get-page` stores in
@@ -179,7 +212,7 @@ can report a conflict against a page that has not actually changed. This edge fa
 schema body from the server and merges your incoming fragment into it.
 
 A `viewConfigDiff` entry is replaced only when **both** `operation` and `name` match one of
-yours — and, for a `remove`, whether it targets `properties`. Incoming wins, and the replacement
+yours — and, for a `remove` or a `set`, whether it targets `properties`. Incoming wins, and the replacement
 keeps the existing entry's position. Every other existing operation is preserved verbatim and in
 place, including a second operation on a component you already target (a `move` and a `merge` for
 one name are both valid and both survive the merge — though "survive" means kept in the body, not
@@ -190,6 +223,9 @@ only the first occurrence is replaced and the later one is dropped — keeping i
 stale values *after* your replacement. When those two entries set disjoint keys, the later entry's
 keys go with it. Handlers dedupe by `request`.
 
+`SCHEMA_CONVERTERS` and `SCHEMA_VALIDATORS` entries merge by type key, and incoming wins. The final merged web body is rejected when a custom validator reference has no matching
+`SCHEMA_VALIDATORS` declaration. Built-in `crt.*` validators need no local declaration.
+
 **Preserved is not the same as applied**, and this part is not about append at all — it is how the
 platform differ resolves any final body, so a hand-authored `--mode replace` body produces it too.
 Operations are applied in whole **groups** in a fixed order (merges, then removes/inserts/moves,
@@ -198,9 +234,11 @@ Operations are applied in whole **groups** in a fixed order (merges, then remove
 silently dropped; likewise a `move` for a name the same body also element-`remove`s, which the
 differ filters out before applying anything. The same applies wherever one operation's group runs
 after another's for one name: a `merge` beside an element `remove` or a `set` (the remove deletes,
-or the set replaces wholesale, what the merge just patched), and a property `remove` beside an
+or the set replaces wholesale, what the merge just patched); a property `remove` beside an
 element `remove` (the element is gone before property removals run — unless an `insert` re-creates
-it, which makes the property removal effective again). The save still succeeds and the
+it, which makes the property removal effective again); and a property `remove` beside a `set` (the
+property group runs first, then the set rebuilds the element from its own `values`, so the strip
+contributes nothing). The save still succeeds and the
 response carries an advisory `warnings` entry naming the component and the dead operation. Fix it by folding the transform's values into the
 `insert` itself, or by using `set`, which runs after the insert — not by reordering the array, which
 changes nothing.
@@ -224,18 +262,27 @@ without saving. It reports the outcome as `appendProjection`:
 | `addedOperationCount` | incoming entries that introduce a new identity |
 | `replacedOperations` / `replacedOperationCount` | existing entries your fragment replaces in place; not a loss, the operation survives with your values |
 | `droppedOperations` / `droppedOperationCount` | entries from the **server** body the merge would not carry over — the further-duplicate exception above |
-| `collapsedIncomingOperations` / `collapsedIncomingOperationCount` | entries from **your own fragment** that a later entry in the same fragment supersedes |
+| `collapsedIncomingOperations` / `collapsedIncomingOperationCount` | entries from **your own fragment** that a later entry in the same fragment supersedes — reported as data, never warned about |
 | `viewConfigDiffApplied` | `false` when the current body has no `SCHEMA_VIEW_CONFIG_DIFF` marker pair, so every count above describes an array the write discards |
 
-Each of those three loss channels raises its own advisory `warnings` entry naming the operations, so
-a loss is never something you have to compute from the counts yourself. They are separate because the
-fix differs: a dropped server entry means folding both into one incoming operation; a collapsed
-incoming entry is your own fragment to correct; an unapplied section is not a merge problem at all and
-needs `--mode replace`. The named lists are capped in length; every count is always exact.
+Three distinct loss channels, kept separate because the fix differs for each. **Two of them warn.**
+
+- A **dropped server entry** raises one advisory `warnings` entry per affected component, naming it
+  and telling you to re-read with `get-page`. Fix it by folding both entries into one incoming
+  operation.
+- An **unapplied section** (`viewConfigDiffApplied: false`) warns too, and is the one that makes a
+  clean-looking projection dangerous: every count above it describes an array the write throws away.
+  It is not a merge problem at all — use `--mode replace` with a body that carries the marker pair.
+- A **collapsed incoming entry** is reported as data only, with no warning. It is a real loss, but the
+  fragment is yours and you can read it, so a warning about your own input would be noise. It is
+  counted because without it the totals cannot be reconciled and the loss stays invisible.
+
+The named lists are capped in length; every count is always exact.
 
 `collapsedIncomingOperations` is the one most people will hit. Operations merge by
 `(operation, name, targets-properties)`, so a fragment that carries the same identity twice keeps only
-the last spelling — the earlier one is discarded with its values, and before this it went unreported.
+the last spelling — the earlier one is discarded with its values, and before this it went unreported
+anywhere.
 
 Two consequences worth knowing:
 

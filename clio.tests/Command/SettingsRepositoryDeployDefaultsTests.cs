@@ -21,8 +21,8 @@ public sealed class SettingsRepositoryDeployDefaultsTests {
 	}
 
 	[Test]
-	[Description("GetDeployCreatioDefaults returns an empty, non-null instance when no defaults are configured.")]
-	public void GetDeployCreatioDefaults_ShouldReturnEmptyInstance_WhenNoneConfigured() {
+	[Description("GetDeployCreatioDefaults returns the migrated built-in site-port range when no deployment defaults were previously configured.")]
+	public void GetDeployCreatioDefaults_ShouldReturnBuiltInSitePortRange_WhenNoneConfigured() {
 		// Arrange
 		SettingsRepository sut = new(_fileSystem);
 
@@ -30,8 +30,9 @@ public sealed class SettingsRepositoryDeployDefaultsTests {
 		DeployCreatioDefaults result = sut.GetDeployCreatioDefaults();
 
 		// Assert
-		result.Should().NotBeNull(because: "the accessor must never return null so callers can inspect IsEmpty safely");
-		result.IsEmpty.Should().BeTrue(because: "no deploy-creatio defaults are configured in the base settings file");
+		result.Should().NotBeNull(because: "the accessor must never return null so callers can use deployment defaults safely");
+		result.SitePortRange.Should().Equal(new[] { 40100, 40199 },
+			because: "loading legacy settings should persist and expose the built-in automatic IIS port range");
 	}
 
 	[Test]
@@ -44,6 +45,7 @@ public sealed class SettingsRepositoryDeployDefaultsTests {
 			RedisServerName = "local-redis",
 			SiteName = "lcap-local",
 			SitePort = 40018,
+			SitePortRange = [41000, 41010],
 			DeploymentMethod = "iis"
 		};
 
@@ -57,6 +59,8 @@ public sealed class SettingsRepositoryDeployDefaultsTests {
 		result.RedisServerName.Should().Be("local-redis", because: "the configured redis server name must persist across repository instances");
 		result.SiteName.Should().Be("lcap-local", because: "the configured site name must persist across repository instances");
 		result.SitePort.Should().Be(40018, because: "the configured site port must persist across repository instances");
+		result.SitePortRange.Should().Equal(new[] { 41000, 41010 },
+			because: "the configured site-port range must persist across repository instances");
 		result.DeploymentMethod.Should().Be("iis", because: "the configured deployment method must persist across repository instances");
 	}
 

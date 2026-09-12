@@ -273,6 +273,34 @@ public sealed class ValidatePageToolTests {
 	}
 
 	[Test]
+	[Description("Web path: rejects a syntactically valid AMD body whose handler calls an undeclared module-scope helper, so the Page Designer loss is caught before save")]
+	public async System.Threading.Tasks.Task ValidatePage_WhenHandlerCallsUndeclaredHelper_ReturnsInvalid() {
+		// Arrange
+		PageValidateTool tool = CreateTool();
+		string amdBody =
+			"define(\"UsrPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{ return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", " +
+			"handler: async (request, next) => { await missingModuleHelper(request); return next?.handle(request); } }]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(new PageValidateArgs(amdBody, null));
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "a missing module-scope helper causes a runtime ReferenceError even though the JavaScript is syntactically valid");
+		response.Validation.ContentOk.Should().BeFalse(
+			because: "undefined handler calls are blocking content findings before update-page or sync-pages can save the body");
+		response.Validation.Errors.Should().Contain(e => e.Contains("undefined-section-call") && e.Contains("missingModuleHelper"),
+			because: "the MCP response must expose both the stable rule id and the missing helper name");
+	}
+
+	[Test]
 	[Description("Web path: scopes the registry-driven chart-widget validation to the explicit version argument.")]
 	public async System.Threading.Tasks.Task ValidatePage_WhenVersionProvided_ScopesChartCatalogToThatVersion() {
 		// Arrange

@@ -17,6 +17,13 @@ public sealed class SchemaCreateTool(
 	internal const string ToolName = "create-schema";
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Create a new C# source-code schema on a remote Creatio environment. The schema is saved directly to the server — no local workspace files are created. Prefer `environment-name`; keep direct connection args only for bootstrap flows.")]
 	public SourceCodeSchemaCreateResponse CreateSchema(
 		[Description("Parameters: schema-name, package-name (required); caption, description (optional); environment-name preferred; uri/login/password emergency fallback only.")]

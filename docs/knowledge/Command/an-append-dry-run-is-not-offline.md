@@ -30,6 +30,10 @@ real merge (`TryResolveBodyToWrite`). So an append dry run:
 - returns `appendProjection` — the counts, the replaced labels, and **three separate loss channels**
   (`droppedOperations` from the server body, `collapsedIncomingOperations` from the caller's own
   fragment, and `viewConfigDiffApplied: false` when the merged array cannot be written back at all).
+  Two of the three warn. The collapsed-incoming channel deliberately does NOT: the fragment is the
+  caller's own and they can read it, so a warning about their own input would be noise — the same rule
+  the superseded-drop warning was set with. It is still counted, because without it the reported totals
+  cannot be reconciled and a real loss stays invisible.
 
 `appendProjection` covers `viewConfigDiff` only; the XML docs on `PageAppendProjection` carry the
 reasoning. The uncovered sibling is handlers — `MergeHandlersRaw` can drop a duplicated current

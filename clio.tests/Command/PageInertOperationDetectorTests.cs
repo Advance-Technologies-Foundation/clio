@@ -175,6 +175,22 @@ public class PageInertOperationDetectorTests {
 		]
 		""";
 
+	private const string SetAndPropertyRemove =
+		"""
+		[
+			{ "operation": "remove", "name": "UsrName", "properties": ["tooltip"] },
+			{ "operation": "set", "name": "UsrName", "parentName": "Other", "values": { "tooltip": "Resurrected" } }
+		]
+		""";
+
+	private const string SetAndMove =
+		"""
+		[
+			{ "operation": "set", "name": "UsrName", "parentName": "Other", "values": { "type": "crt.Input" } },
+			{ "operation": "move", "name": "UsrName", "parentName": "Third", "propertyName": "items", "index": 0 }
+		]
+		""";
+
 	private const string InsertAndBothRemoves =
 		"""
 		[
@@ -332,6 +348,34 @@ public class PageInertOperationDetectorTests {
 			because: "element removals are applied in the group before property removals, so the property removal targets an element that no longer exists");
 	}
 
+	[Test]
+	[Description("Detect warns when a property remove sits beside a set for one name — set rebuilds the element after the property group has run")]
+	public void Detect_ShouldWarn_WhenPropertyRemoveSitsBesideSetForSameName() {
+		// Arrange
+		string body = WebBody(SetAndPropertyRemove);
+
+		// Act
+		IReadOnlyList<string> warnings = PageInertOperationDetector.Detect(body);
+
+		// Assert
+		warnings.Should().ContainSingle(w => w.Contains("UsrName") && w.Contains("property 'remove'"),
+			because: "property removals are applied in the group BEFORE set, and set then discards the element and rebuilds it from its own values, so a stripped key either comes back with the set or was never going to survive it — the same mechanism as the merge-beside-set rule");
+	}
+
+	[Test]
+	[Description("Detect stays silent when a move sits beside a set for one name — the set overrides the move rather than discarding it")]
+	public void Detect_ShouldNotWarn_WhenMoveSitsBesideSetForSameName() {
+		// Arrange
+		string body = WebBody(SetAndMove);
+
+		// Act
+		IReadOnlyList<string> warnings = PageInertOperationDetector.Detect(body);
+
+		// Assert
+		warnings.Should().BeEmpty(
+			because: "Set re-inserts under its OWN parentName, so when the two disagree the set's placement simply wins — the move is overridden, not discarded, which is a different thing from an operation that never runs");
+	}
+
 	// ----- the division of labour between the two detectors -----------------------------------------
 
 	[Test]
@@ -384,7 +428,7 @@ public class PageInertOperationDetectorTests {
 
 		// Assert
 		warnings.Should().BeEmpty(
-			because: "Set removes first and copies the removed item's index and propertyName back onto its own config before inserting, so the insert establishes the existence and position the set reuses — reporting it would be a style opinion dressed as a proof");
+			because: "Set removes first and copies the removed item's index and propertyName back onto its own config, so the insert's placement survives as an override rather than being discarded — note it carries only those two, since parentName comes from the set, and a set with no parentName re-inserts at the ROOT; the insert is still not inert, which is what this rule turns on");
 	}
 
 	[Test]

@@ -35,7 +35,7 @@ namespace Clio.Workspaces
 
 	#region Class: WorkspaceInstaller
 
-	public class WorkspaceInstaller : IWorkspaceInstaller
+	public class WorkspaceInstaller : IWorkspaceInstaller, IDisposable
 	{
 
 		#region Constants: Private
@@ -61,7 +61,7 @@ namespace Clio.Workspaces
 		private readonly IOSPlatformChecker _osPlatformChecker;
 		private readonly ILogger _logger;
 		private readonly IWorkspacePackageFilter _workspacePackageFilter;
-		private readonly Lazy<IApplicationClient> _applicationClientLazy;
+		private readonly Lazy<IOwnedApplicationClient> _applicationClientLazy;
 
 		#endregion
 
@@ -100,7 +100,7 @@ namespace Clio.Workspaces
 			_osPlatformChecker = osPlatformChecker;
 			_logger = logger;
 			_workspacePackageFilter = workspacePackageFilter;
-			_applicationClientLazy = new Lazy<IApplicationClient>(CreateClient);
+			_applicationClientLazy = new Lazy<IOwnedApplicationClient>(CreateClient);
 		}
 
 		#endregion
@@ -115,7 +115,7 @@ namespace Clio.Workspaces
 
 		#region Methods: Private
 
-		private IApplicationClient CreateClient() => _applicationClientFactory.CreateClient(_environmentSettings);
+		private IOwnedApplicationClient CreateClient() => _applicationClientFactory.CreateOwnedClient(_environmentSettings);
 
 		private void ResetSchemaChangeStateServiceUrlByPackage(string packageName) =>
 			ApplicationClient.ExecutePostRequest(ResetSchemaChangeStateServiceUrl,
@@ -218,6 +218,23 @@ namespace Clio.Workspaces
 				_fileSystem.CopyFile(applicationZip, resultApplicationFilePath, overwrite);
 			});
 			return resultApplicationFilePath;
+		}
+
+		/// <summary>Releases the factory-owned Creatio transport when it was created.</summary>
+		public void Dispose() {
+			Dispose(true);
+			GC.SuppressFinalize(this);
+		}
+
+		/// <summary>Releases the factory-owned Creatio transport when disposal was requested.</summary>
+		/// <param name="disposing">Whether managed resources should be released.</param>
+		protected virtual void Dispose(bool disposing) {
+			if (!disposing) {
+				return;
+			}
+			if (_applicationClientLazy.IsValueCreated) {
+				_applicationClientLazy.Value.Dispose();
+			}
 		}
 		
 		// [Obsolete("This method does not account for included and filtered packages. Use PublishToFolder with package list instead.")]

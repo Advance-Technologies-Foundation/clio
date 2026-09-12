@@ -131,7 +131,8 @@ public class VerifyOAuthAppCommand : Command<VerifyOAuthAppOptions>
 			// 0/ prefix (.NET Framework) vs no-prefix (.NET Core) is applied consistently with every
 			// other Creatio call rather than hand-rolled in the probe.
 			string selectQueryUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select);
-			dataServiceStatus = _identityServerProbe.RunBearerDataServiceSmokeTest(selectQueryUrl, accessToken);
+			dataServiceStatus = _identityServerProbe.RunBearerDataServiceSmokeTest(
+				_environmentSettings, selectQueryUrl, accessToken);
 		}
 
 		bool ok = tokenAcquired && dataServiceStatus == HttpOk;

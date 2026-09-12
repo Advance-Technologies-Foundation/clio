@@ -1,5 +1,5 @@
 ---
-description: IApplicationClient.ExecutePostRequest defaults requestTimeout to Timeout.Infinite, so a Common-layer client that omits the argument can hang forever; CreatioRequestOptions supplies the bounded 100s default instead
+description: IApplicationClient synchronous request methods default requestTimeout to Timeout.Infinite, so a Common-layer sync client that omits the argument can hang forever; the async methods and CreatioRequestOptions default to 100 seconds
 applies-to:
   - clio/Common/IApplicationClient.cs
   - clio/Common/CreatioRequestOptions.cs
@@ -7,9 +7,10 @@ applies-to:
 date: 2026-08-19
 ---
 
-**What is true** — every request method on `IApplicationClient` except
-`CallConfigurationService` declares `int requestTimeout = Timeout.Infinite`. Passing no timeout is
-therefore not "use a sensible default", it is "wait forever". Common-layer service clients get a
+**What is true** — the legacy synchronous request methods on `IApplicationClient` except
+`CallConfigurationService` declare `int requestTimeout = Timeout.Infinite`. Passing no timeout to
+one of those methods is therefore not "use a sensible default", it is "wait forever". The newer
+asynchronous request methods default to 100 seconds. Common-layer synchronous service clients get a
 bound only because `CreatioServiceClient.PostAndDeserialize` requires a
 `CreatioRequestOptions`, whose defaults (`TimeOut = 100_000`, `MaxAttempts = 3`,
 `RetryDelay = 1`) mirror `RemoteCommandOptions`. A caller constructing a bare

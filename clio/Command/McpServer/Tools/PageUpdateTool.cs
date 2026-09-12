@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
@@ -39,6 +39,30 @@ public sealed class PageUpdateTool(
 	// Prefix shared by every offline validation-failure response so the wording stays consistent.
 	private const string ValidationFailedPrefix = "Validation failed: ";
 
+	/// <summary>
+	/// Advisory emitted when <c>validate=false</c> and <c>force=true</c> are combined. The two flags are
+	/// ORTHOGONAL - one gates content checks, the other the baseline/conflict guard - so the pair is
+	/// allowed: refusing it would dead-end the caller who genuinely has to overwrite an external change on
+	/// a page that carries a pre-existing defect, and sync-pages already supports the same combination via
+	/// its per-page force flag. The caller is told both guards are down rather than being blocked.
+	/// </summary>
+	internal const string ForceValidateAdvisory =
+		"Both the content-validation chain (validate=false) and the baseline/conflict guard (force=true) are disabled for this save; only the structural floor and the baseline refresh still apply.";
+
+	// The issue behind the escape hatch was discoverability: an agent that trips a content rule on a
+	// PRE-EXISTING defect had no way to learn `validate=false` exists short of reading the tool
+	// description or the curated contract. Every failure the flag would actually have skipped names it.
+	// Only content failures carry the hint - the structural floor (markers, JS syntax, mobile JSON shape)
+	// is not bypassable, so advertising the flag there would be a false lead.
+	private static PageUpdateResponse WithEscapeHatchHint(PageUpdateResponse failure) {
+		if (failure?.Error == null ||
+			failure.Error.Contains(PageUpdateCommand.ValidationEscapeHatchHint, StringComparison.Ordinal)) {
+			return failure;
+		}
+		failure.Error += PageUpdateCommand.ValidationEscapeHatchHint;
+		return failure;
+	}
+
 	// Prefix for the up-front append/full-config rejection. Exposed as a shared constant so the unit and
 	// e2e tests assert against it instead of a duplicated string literal (ENG-93090 RC-5).
 	internal const string AppendFullConfigRejectionPrefix = "Append merge cannot use this body: ";
@@ -49,10 +73,22 @@ public sealed class PageUpdateTool(
 		" See docs://mcp/guides/page-modification for the append diff-form contract.";
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
+	// One of the two sampling callers (PageBodySamplingService): a relay that is not full-duplex degrades the
+	// semantic review to skipped SILENTLY. SharedFileResource is .clio-pages — the IPageBaselineGuard
+	// conflict baseline under .clio-pages/{schema}/meta.json, which two clio processes could otherwise race.
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.Sampling,
+		SharedFileResource = McpToolSharedFileResource.ClioPages)]
 	[Description("Update a Freedom UI page schema body. environment-name preferred; uri/login/password fallback only. " +
+		"In append mode, SCHEMA_CONVERTERS and SCHEMA_VALIDATORS are merged by type key with incoming entries winning; the final merged body is rejected if it contains a custom validator reference without a matching SCHEMA_VALIDATORS declaration. " +
+		"Set validate=false only as an explicit escape hatch for a pre-existing page defect; it skips client-side content and run-process validation, while JavaScript syntax, AST loadability, replace-mode marker integrity, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. It stays combinable with force=true - the two flags are orthogonal (one gates content checks, the other the baseline/conflict guard) - and the response then warns that both are relaxed. " +
 		"On a successful non-dry-run save it also best-effort notifies active Creatio designers (Designer Presence); the save still succeeds if that notification is skipped (carried as a warning). " +
 		"CONFLICT DETECTION: if get-page stored a checksum baseline for the same environment and the schema changed outside this session, the save is blocked with `conflict: true` + `conflictDetails` — do NOT retry the same body; re-run get-page, re-apply your change, retry, and set force=true only after the user confirms overwriting. " +
-		"BEFORE editing the body call get-guidance `page-modification` and follow its pre-edit checklist — it routes visibility/required/value-set and lookup-filter work to business rules (not handlers/validators), display-only transforms to converters, run-process buttons (`crt.RunBusinessProcessRequest`, resolve parameter CODEs with get-process-signature first), and localizable strings to `page-schema-resources`. " +
+		"BEFORE editing the body call get-guidance `page-modification` and follow its pre-edit checklist — it routes visibility/required/value-set and lookup-filter work to business rules (not handlers/validators), display-only transforms to converters, run-process buttons (`crt.RunBusinessProcessRequest`, resolve parameter CODEs with get-process-signature first; a `processRunType=ForTheSelectedPage` button also REQUIRES `recordIdProcessParameterName` — the parameter that receives the current record — or update-page rejects it), and localizable strings to `page-schema-resources`. " +
 		SchemaValidationService.CustomCssPolicySummary + " " +
 		"MOBILE: a viewConfigDiff insert/set must carry its component `type` INSIDE `values` — the differ builds the element from `values` alone, so a type on the operation object is discarded and the save persists an element that never renders; this is rejected. A `merge` whose `values` authors child elements on `Scaffold`'s `actions`/`leading`/`items` is also rejected — every shipped form template populates those slots, so the differ strips the property out of the merge and nothing is created even though the write succeeds; author each child with its own `insert` into a page container. clio cannot see the target (it validates against an empty base), so a bare Scaffold whose slots really are empty is refused too. The same authoring in any other slot only warns, because there the target may legitimately lack the slot and the merge then creates it. A `crt.Button` inserted into `Scaffold`/`actions` is warned about: it saves but does not appear on the mobile designer canvas — place buttons in a page container's `items` with a `layoutConfig`. See get-guidance `mobile-page-modification`. " +
 		"INSERTED-FIELD CONTRACT: " + SchemaValidationService.InsertedFieldContractSummary)]
@@ -73,7 +109,8 @@ public sealed class PageUpdateTool(
 				cancellationToken);
 		if (earlyFailure != null)
 			return earlyFailure;
-		(string metaFilePath, bool baselineArmed) = pageBaselineGuard.TryArm(options, args.OutputDirectory);
+		(string metaFilePath, bool baselineArmed, string baselineWarning) =
+			pageBaselineGuard.TryArm(options, args.OutputDirectory);
 		PageUpdateResponse response = ExecuteWithCleanLog(options, () => {
 			PageUpdateCommand resolvedCommand;
 			try {
@@ -86,12 +123,24 @@ public sealed class PageUpdateTool(
 				TryVerifyPage(args, inner);
 			return inner;
 		});
-		if (baselineArmed && response.Success && !options.DryRun)
-			pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response);
+		// The command layer marks a content-rule failure but does not word the hint - `validate` is
+		// MCP-only, so the CLI-reachable command must not tell its users to re-run with a flag their
+		// parser does not accept. This is the MCP side of that split.
+		if (response.ContentValidationFailure)
+			response = WithEscapeHatchHint(response);
+		// A failed baseline refresh must never fail a save that already landed on the server, so both the
+		// discovery and the refresh diagnostics travel on the response's warning channel (ENG-95262 AC-02).
+		// Runs on the hinted response: the hint changes only the error wording, never Success, so it cannot
+		// alter whether the refresh is due.
+		string refreshWarning = baselineArmed && response.Success && !options.DryRun
+			? pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response)
+			: null;
 		response.SamplingReview = samplingReview;
 		IReadOnlyList<string> mergedWarnings = MergeWarnings(
-			MergeWarnings(validationWarnings, response.Warnings),
-			lintWarnings);
+			MergeWarnings(
+				MergeWarnings(validationWarnings, response.Warnings),
+				lintWarnings),
+			BaselineWarnings(baselineWarning, refreshWarning));
 		response.Warnings = mergedWarnings.Count > 0 ? mergedWarnings : null;
 		return response;
 	}
@@ -119,17 +168,24 @@ public sealed class PageUpdateTool(
 		}
 		PageUpdateResponse syntaxFailure = TryValidateBodySyntax(options, out Script parsedAst);
 		if (syntaxFailure != null) {
-			return (ResolveSyntaxFailure(options, syntaxFailure), null, null, null);
+			return (ResolveSyntaxFailure(options, syntaxFailure, args.Validate ?? true), null, null, null);
 		}
-		string? requestedVersion = await ResolvePlatformVersionAsync(options, cancellationToken).ConfigureAwait(false);
-		(PageUpdateResponse validationFailure, IReadOnlyList<string> validationWarnings) = ValidateBody(options, requestedVersion);
-		if (validationFailure != null)
-			return (validationFailure, null, null, null);
-		(PageUpdateResponse runProcessFailure, IReadOnlyList<string> runProcessWarnings) =
-			ValidateRunProcessButtons(options);
-		if (runProcessFailure != null)
-			return (runProcessFailure, null, null, null);
-		validationWarnings = MergeWarnings(validationWarnings, runProcessWarnings);
+		// Both guards off is allowed but never silent - the caller sees in the response that this save ran
+		// with neither the content chain nor the baseline/conflict guard.
+		IReadOnlyList<string> validationWarnings =
+			args.Validate == false && args.Force == true ? [ForceValidateAdvisory] : null;
+		if (options.Validate) {
+			string? requestedVersion = await ResolvePlatformVersionAsync(options, cancellationToken).ConfigureAwait(false);
+			(PageUpdateResponse validationFailure, IReadOnlyList<string> bodyValidationWarnings) = ValidateBody(options, requestedVersion);
+			if (validationFailure != null)
+				return (WithEscapeHatchHint(validationFailure), null, null, null);
+			(PageUpdateResponse runProcessFailure, IReadOnlyList<string> runProcessWarnings) =
+				ValidateRunProcessButtons(options);
+			if (runProcessFailure != null)
+				return (WithEscapeHatchHint(runProcessFailure), null, null, null);
+			validationWarnings = MergeWarnings(
+				validationWarnings, MergeWarnings(bodyValidationWarnings, runProcessWarnings));
+		}
 		(PageUpdateResponse lintFailure, IReadOnlyList<string> lintWarnings) = RunAstLintPass(parsedAst);
 		if (lintFailure != null)
 			return (lintFailure, null, null, null);
@@ -200,7 +256,10 @@ public sealed class PageUpdateTool(
 	// EnvironmentResolutionException throw (the unknown-environment / missing-settings guard runs
 	// before any network call); the resolved command is discarded, so a body that cannot parse
 	// triggers no Creatio I/O even in dry-run.
-	internal PageUpdateResponse ResolveSyntaxFailure(PageUpdateOptions options, PageUpdateResponse syntaxFailure) {
+	internal PageUpdateResponse ResolveSyntaxFailure(PageUpdateOptions options, PageUpdateResponse syntaxFailure, bool validate = true) {
+		if (!validate) {
+			return syntaxFailure;
+		}
 		// 1. Argument-payload validation — pure offline, independent of body parsing or markers.
 		string argumentError = PageUpdateCommand.ValidateArgumentPayloads(options.Resources, options.OptionalProperties);
 		if (argumentError != null) {
@@ -212,10 +271,10 @@ public sealed class PageUpdateTool(
 		SchemaValidationResult runProcessStructure =
 			SchemaValidationService.ValidateRunProcessButtonStructure(options.Body);
 		if (!runProcessStructure.IsValid) {
-			return new PageUpdateResponse {
+			return WithEscapeHatchHint(new PageUpdateResponse {
 				Success = false,
 				Error = ValidationFailedPrefix + string.Join("; ", runProcessStructure.Errors)
-			};
+			});
 		}
 		// 3. Offline content chain — only when the body is still a recognizable page (markers present
 		//    and paired). If marker integrity fails the body is not a usable page and the generic JS
@@ -288,6 +347,20 @@ public sealed class PageUpdateTool(
 		return (null, warnings);
 	}
 
+	// Collects the non-empty baseline diagnostics (discovery + post-save refresh) into the shape the
+	// warning merge expects. They are warnings and not errors on purpose: the Creatio save has already
+	// succeeded by the time either can fail, so failing the response would misreport a landed write.
+	private static IReadOnlyList<string> BaselineWarnings(string discoveryWarning, string refreshWarning) {
+		List<string> warnings = [];
+		if (!string.IsNullOrWhiteSpace(discoveryWarning)) {
+			warnings.Add(discoveryWarning);
+		}
+		if (!string.IsNullOrWhiteSpace(refreshWarning)) {
+			warnings.Add(refreshWarning);
+		}
+		return warnings;
+	}
+
 	private static IReadOnlyList<string> MergeWarnings(IReadOnlyList<string> first, IReadOnlyList<string> second) {
 		var combined = new List<string>();
 		if (first != null) {
@@ -321,8 +394,8 @@ public sealed class PageUpdateTool(
 			if (settings is null) {
 				return null;
 			}
-			PlatformVersionResolution resolution = await resolverFactory.Create(settings)
-				.ResolveAsync(cancellationToken).ConfigureAwait(false);
+			using IOwnedPlatformVersionResolver resolver = resolverFactory.CreateOwned(settings);
+			PlatformVersionResolution resolution = await resolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
 			return resolution?.ResolvedVersion;
 		} catch (OperationCanceledException) {
 			throw;
@@ -429,6 +502,7 @@ public sealed class PageUpdateTool(
 			Resources = args.Resources,
 			OptionalProperties = args.OptionalProperties,
 			Mode = args.Mode,
+			Validate = args.Validate ?? true,
 			TargetPackageUId = args.TargetPackageUId,
 			TargetSchemaUId = args.TargetSchemaUId,
 			Environment = args.EnvironmentName,
@@ -636,7 +710,7 @@ public sealed record PageUpdateArgs(
 	string SchemaName,
 
 	[property: JsonPropertyName("body")]
-	[property: Description("Full JavaScript page body with markers, passed as a RAW STRING (not a JSON object/dict) — the schema source text with its /**MARKER*/ pairs. Pass either `body` (inline string) or `body-file` (path); one is required. WARNING: do NOT send the full get-page `raw.body` back verbatim — that re-applies existing merges and fails server-side with 'Object vs Array'. Send ONLY the new viewConfigDiff/handlers operations plus the required marker envelope. APPEND mode additionally requires the diff form (SCHEMA_VIEW_MODEL_CONFIG_DIFF / SCHEMA_MODEL_CONFIG_DIFF); a full-config body is rejected up-front — use mode='replace' for a full-config body.")]
+	[property: Description("Full JavaScript page body with markers, passed as a RAW STRING (not a JSON object/dict) — the schema source text with its /**MARKER*/ pairs. Pass either `body` (inline string) or `body-file` (path); one is required. WARNING: re-sending the full inherited body from `get-page.files.bodyFile` back verbatim is wrong in BOTH modes, and the two modes fail differently. In `append` a full-config body is rejected UP-FRONT, offline, and the rejection points at replace mode; that mode requires the diff form (SCHEMA_VIEW_MODEL_CONFIG_DIFF / SCHEMA_MODEL_CONFIG_DIFF) and only the new viewConfigDiff/handlers operations plus the required marker envelope. In `replace` the body REACHES THE SERVER and can fail there with 'Object vs Array' when it re-applies merges already inherited from the parent hierarchy — this is the mode the server error actually fires in.")]
 	string? Body,
 
 	[property: JsonPropertyName("resources")]
@@ -673,7 +747,7 @@ public sealed record PageUpdateArgs(
 	[property: Description("Absolute path to a file containing the page body. Used when `body` is empty. Enables passing large bodies without inline JSON escaping.")]
 	string? BodyFile = null,
 	[property: JsonPropertyName("mode")]
-	[property: Description("Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming body fragment with the schema's current body on the server — viewConfigDiff entries are replaced only when BOTH `operation` and `name` match — and, for a `remove`, whether it targets `properties` — with incoming winning in place. Every existing operation the fragment does not collide with is preserved, including a second operation on the same component. The one exception: a FURTHER existing entry of an identity the fragment already superseded is dropped rather than re-applied after the replacement. Handlers dedupe by `request`. Use 'append' when adding a component without clobbering existing customizations. Append requires the diff form; a full-config body (SCHEMA_VIEW_MODEL_CONFIG / SCHEMA_MODEL_CONFIG, or mobile viewModelConfig / modelConfig) is rejected up-front — use 'replace' for those. Separately, at APPLY time (not append-specific — a 'replace' body produces it too): the differ applies whole operation GROUPS in a fixed order (merges, then removes/inserts/moves, `set` last), never in viewConfigDiff array order, so a `merge`, `move`, or element `remove` beside an `insert` for one `name` — or a `move` whose name the same body also element-removes — resolves against a base without that component and is silently dropped. The same holds for any two operations whose groups run in sequence for one name: a `merge` beside an element `remove` or a `set`, and a property `remove` beside an element `remove`. The response carries an advisory `warnings` entry naming the component; fold the transform's values into the `insert`, or use `set`.")]
+	[property: Description("Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming body fragment with the schema's current body on the server — viewConfigDiff entries are replaced only when BOTH `operation` and `name` match — and, for a `remove` or a `set`, whether it targets `properties` — with incoming winning in place. Every existing operation the fragment does not collide with is preserved, including a second operation on the same component. The one exception: a FURTHER existing entry of an identity the fragment already superseded is dropped rather than re-applied after the replacement. Handlers dedupe by `request`. SCHEMA_CONVERTERS and SCHEMA_VALIDATORS entries merge by type key and incoming wins, and the final merged web body is rejected when a custom validator reference has no matching SCHEMA_VALIDATORS declaration. Use 'append' when adding a component without clobbering existing customizations. Append requires the diff form; a full-config body (SCHEMA_VIEW_MODEL_CONFIG / SCHEMA_MODEL_CONFIG, or mobile viewModelConfig / modelConfig) is rejected up-front — use 'replace' for those. Separately, at APPLY time (not append-specific — a 'replace' body produces it too): the differ applies whole operation GROUPS in a fixed order (merges, then removes/inserts/moves, `set` last), never in viewConfigDiff array order, so a `merge`, `move`, or element `remove` beside an `insert` for one `name` — or a `move` whose name the same body also element-removes — resolves against a base without that component and is silently dropped. The same holds for any two operations whose groups run in sequence for one name: a `merge` beside an element `remove` or a `set`, and a property `remove` beside an element `remove` or beside a `set`. The response carries an advisory `warnings` entry naming the component; fold the transform's values into the `insert`, or use `set`.")]
 	string? Mode = null,
 	[property: JsonPropertyName("target-package-uid")]
 	[property: Description("Explicit target package UId for the replacing schema. Overrides automatic design-package resolution. Required when multiple apps replace the same platform page and automatic resolution would land the edit in the wrong app's design package.")]
@@ -686,5 +760,8 @@ public sealed record PageUpdateArgs(
 	bool? Force = null,
 	[property: JsonPropertyName("output-directory")]
 	[property: Description("Optional. Directory that anchors the .clio-pages baseline lookup — pass the same value that was passed to get-page when it differs from the auto-detected workspace root. Used only for conflict-baseline discovery; does not change where the page is saved.")]
-	string? OutputDirectory = null
+	string? OutputDirectory = null,
+	[property: JsonPropertyName("validate")]
+	[property: Description("Run client-side content and run-process validation before saving. Default: true. Set false only as an explicit escape hatch for a pre-existing page defect; JavaScript syntax, AST loadability, replace-mode marker integrity, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. It stays combinable with force=true - the two flags are orthogonal (one gates content checks, the other the baseline/conflict guard) - and the response then warns that both are relaxed.")]
+	bool? Validate = null
 );

@@ -3,8 +3,9 @@ description: a viewConfigDiff legitimately carries several operations for one co
 applies-to:
   - clio/Command/PageBodyMerger.cs
   - clio/Command/PageInsertDowngradeDetector.cs
+  - clio/Command/PageInertOperationDetector.cs
   - clio/Command/JsonDiffApplier.cs
-ticket: GH-1132
+ticket: ENG-96237
 date: 2026-08-31
 ---
 
@@ -12,11 +13,14 @@ date: 2026-08-31
 appear several times, each with a different `operation`: a `move` that places it and a `merge` that
 patches it are both valid and both required. `PageBodyMerger.MergeViewConfigDiffOperations` therefore
 identifies an operation by `(operation, name, targets-properties)` — both strings compared `Ordinal`,
-the third flag distinguishing a `remove` carrying a `properties` array from an element `remove` — and
-never deduplicates current-body entries against each other *on its own*. Only an incoming entry with
-a matching identity replaces a current one, and it replaces the FIRST occurrence in place; a later
-current entry of that same superseded identity is then dropped, because keeping it would re-apply
-stale values after the replacement. An entry the merger cannot identify (a missing, empty, or
+the third flag distinguishing a `properties`-carrying `remove` **or `set`** from its element form (both
+verbs change apply behaviour on that array — `remove` at grouping time, `set` inside its own pass via the
+`Remove` it calls) — and never deduplicates current-body entries against each other *on its own*. Only an
+incoming entry with a matching identity replaces a current one, and it replaces the FIRST occurrence in
+place; a later current entry of that same superseded identity is then dropped, because keeping it would
+re-apply stale values after the replacement. That drop is the one loss the merge cannot avoid, so it is
+**reported** — `Merge`'s reporting overload returns a warning naming the component, and `update-page`
+surfaces it in `response.warnings`. An entry the merger cannot identify (a missing, empty, or
 non-string `name`, or a non-object element) is preserved at its original index rather than moved.
 
 **Why it is this way** — clio's own clone of the platform differ, `JsonDiffApplier`, groups operations
@@ -35,6 +39,12 @@ operation is **inert** at apply time. Do not read the merger as making both oper
 The mechanism, the full set of affected shapes, and the advisory warning `update-page` emits for them
 are recorded in
 `docs/knowledge/Command/a-transform-beside-an-insert-for-one-name-is-inert.md`.
+
+**Running its tests** — `clio/Command/PageBodyMerger.cs` maps to `Module=Command`, but ~30 of its
+`PageBodyMerger_*` tests live in the `Module=McpServer` fixture `clio.tests/Command/McpServer/PageToolsTests.cs`,
+so the smart-regression filter for a merger-only change runs none of them. Always run
+`--filter "Category=Unit&(Module=Command|Module=McpServer)"` when you touch this file, not the
+`Module=Command` filter the policy table would suggest.
 
 **What breaks if you ignore it** — the pre-#1132 merger flattened `current.Concat(incoming)` into a
 single `name`-keyed dictionary. A page whose body held a `move` and a `merge` for one component lost

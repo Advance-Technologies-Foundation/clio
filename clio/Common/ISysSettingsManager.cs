@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Security.Authentication;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using ATF.Repository;
@@ -132,6 +133,53 @@ public interface ISysSettingsManager
 
 public class SysSettingsManager : ISysSettingsManager
 {
+	private const string AuthenticatedReadinessQuery =
+		"{\"rootSchemaName\":\"SysSettings\",\"operationType\":0," +
+		"\"columns\":{\"items\":{\"Id\":{\"expression\":{\"expressionType\":0," +
+		"\"columnPath\":\"Id\"}}}},\"rowCount\":1}";
+
+	/// <summary>
+	/// Depth cap for the recursive walk over the probe response. The body is server-controlled, so an
+	/// unbounded walk over a pathologically nested payload would raise an uncatchable
+	/// <see cref="StackOverflowException"/>. DataService fault envelopes nest a handful of levels at most.
+	/// </summary>
+	private const int MaxAuthProbeJsonDepth = 20;
+
+	/// <summary>
+	/// Finite timeout for the authentication preflight, in milliseconds. The probe now runs before every
+	/// create/update and before every ambiguous empty read, and the default overload uses
+	/// <see cref="Timeout.Infinite"/> - so a half-open endpoint would hang the command forever before its
+	/// real operation ever started. One SelectQuery that returns a single Id is a small read; a minute is
+	/// generous for it and still terminates.
+	/// </summary>
+	private const int AuthProbeRequestTimeoutMilliseconds = 60_000;
+
+	/// <summary>
+	/// Attempts for the authentication preflight. Exactly one: the probe reads nothing and changes nothing,
+	/// but a retry loop in front of every write multiplies the stall a half-open endpoint can cause.
+	/// </summary>
+	private const int AuthProbeMaxAttempts = 1;
+
+	/// <summary>Delay between preflight attempts, in seconds. Unused at one attempt; passed for clarity.</summary>
+	private const int AuthProbeRetryDelaySeconds = 1;
+
+	/// <summary>Cap on the server-controlled detail embedded in an authentication exception message.</summary>
+	private const int MaxAuthenticationDetailLength = 300;
+
+	/// <summary>
+	/// Creatio's authentication-rejection messages, matched by <b>equality</b> rather than substring — the
+	/// same contract <see cref="ReauthExecutor.IsSessionExpiredResponse" /> deliberately uses. A business-rule
+	/// error whose text merely embeds one of these phrases (for example
+	/// <c>"User authentication failed validation for field X"</c>) is not a credential failure and must not
+	/// block the operation.
+	/// </summary>
+	private static readonly HashSet<string> AuthenticationFailureMessages =
+		new(StringComparer.OrdinalIgnoreCase) {
+			"Authentication failed.",
+			"Authentication failed",
+			"Your password has expired.",
+			"Your password has expired"
+		};
 
 	#region Fields: Private
 
@@ -142,6 +190,12 @@ public class SysSettingsManager : ISysSettingsManager
 	private readonly IFileSystem _filesystem;
 	private readonly IAbstractionsFileSystem _abstractionsFileSystem;
 	private readonly ILogger _logger;
+
+	/// <summary>
+	/// Set once the authenticated DataService probe has been confirmed for this instance. The manager is
+	/// resolved per command invocation, so a confirmed session stays valid for its whole lifetime.
+	/// </summary>
+	private volatile bool _authProbeSucceeded;
 
 	private readonly JsonSerializerOptions _jsonSerializerOptions = new() {
 		WriteIndented = false,
@@ -170,10 +224,6 @@ public class SysSettingsManager : ISysSettingsManager
 		_filesystem = filesystem;
 		_abstractionsFileSystem = abstractionsFileSystem;
 		_logger = logger;
-	}
-
-	public SysSettingsManager(IDataProvider providerMock) {
-		_dataProvider = providerMock;
 	}
 
 	#endregion
@@ -360,6 +410,11 @@ public class SysSettingsManager : ISysSettingsManager
 		if (!string.IsNullOrEmpty(providerValue)) {
 			return providerValue;
 		}
+		//An empty provider value is also what a rejected read looks like, so the credentials must be
+		//verified before that emptiness is handed back as a legitimate answer. Without this, legacy
+		//get-syssetting exited 0 with no value and get-schema-name-prefix reported success:true with
+		//an empty prefix on expired credentials.
+		EnsureAuthenticatedDataServiceResponse("reading sys-setting");
 		SysSettings sysSetting = GetSysSettingByCodeWithValues(code);
 		if (sysSetting?.SysSettingsValues is null || sysSetting.SysSettingsValues.Count == 0) {
 			return providerValue ?? string.Empty;
@@ -392,6 +447,7 @@ public class SysSettingsManager : ISysSettingsManager
 
 	/// <inheritdoc cref="ISysSettingsManager.GetAllUsersDefaultWithType" />
 	public (string Value, string ValueTypeName) GetAllUsersDefaultWithType(string code) {
+		EnsureAuthenticatedDataServiceResponse("reading sys-setting");
 		SysSettings sysSetting = GetSysSettingByCodeWithValues(code);
 		if (sysSetting is null) {
 			return (string.Empty, null);
@@ -437,6 +493,7 @@ public class SysSettingsManager : ISysSettingsManager
 		string json = sysSetting.ToString();
 		const string endpoint = "DataService/json/SyncReply/InsertSysSettingRequest";
 		string url = _serviceUrlBuilder.Build(endpoint);
+		EnsureAuthenticatedDataServiceResponse("creating sys-setting");
 		string response = _creatioClient.ExecutePostRequest(url, json);
 		return JsonSerializer.Deserialize<InsertSysSettingResponse>(response, _jsonSerializerOptions);
 	}
@@ -546,6 +603,7 @@ public class SysSettingsManager : ISysSettingsManager
 				$"SysSettings with code: {code} is not updated. Unsupported value-type-name '{optionsType}'.");
 			return false;
 		}
+		EnsureAuthenticatedDataServiceResponse("updating sys-setting");
 		string requestData = JsonSerializer.Serialize(new Dictionary<string, object> {
 			["isPersonal"] = false,
 			["sysSettingsValues"] = new Dictionary<string, object> { [code] = payloadValue }
@@ -622,6 +680,11 @@ public class SysSettingsManager : ISysSettingsManager
 		var sysSettings = includeBinary
 			? models.ToList()
 			: models.Where(s => s.ValueTypeName != "Binary").ToList();
+		// RemoteDataProvider represents an authentication failure as an empty model collection. Probe only
+		// after that signal so provider-backed unit tests and legitimate non-empty reads stay side-effect free.
+		if (sysSettings.Count == 0) {
+			EnsureAuthenticatedDataServiceResponse("listing sys-settings");
+		}
 
 		var sysSettingsValues = AppDataContextFactory.GetAppDataContext(_dataProvider)
 			.Models<SysSettingsValue>()
@@ -634,6 +697,190 @@ public class SysSettingsManager : ISysSettingsManager
 		}
 		return sysSettings;
 	}
+
+	/// <summary>
+	/// Probes the authenticated DataService surface used by the repository provider before a sys-settings
+	/// operation. The provider exposes authentication failures as an unsuccessful empty collection, so a
+	/// raw response must be inspected before a provider result is trusted.
+	/// </summary>
+	/// <param name="operationLabel">The sys-settings operation used in the diagnostic.</param>
+	/// <exception cref="AuthenticationException">Thrown when Creatio rejects the credentials.</exception>
+	private void EnsureAuthenticatedDataServiceResponse(string operationLabel) {
+		// The probe answers one question — "are these credentials accepted?" — and the answer cannot change
+		// within the lifetime of a manager instance (SysSettingsManager is resolved per command invocation).
+		// Re-probing on every helper call would add one DataService round-trip per read; GetFileSecurityPolicy
+		// alone performs three sequential reads, so the flag removes 2/3 of that avoidable latency.
+		if (_authProbeSucceeded) {
+			return;
+		}
+		string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select);
+		string response;
+		try {
+			response = _creatioClient.ExecutePostRequest(url, AuthenticatedReadinessQuery,
+				AuthProbeRequestTimeoutMilliseconds, AuthProbeMaxAttempts, AuthProbeRetryDelaySeconds);
+		} catch (Exception exception) when (IsAuthenticationException(exception)) {
+			throw new AuthenticationException(
+				$"Authentication failed while {operationLabel}. Verify the environment credentials and retry.",
+				exception);
+		}
+		if (string.IsNullOrWhiteSpace(response)) {
+			//A DataService SelectQuery that was accepted always answers with a JSON envelope. An
+			//empty body is an indeterminate transport or session failure, so treating it as proof of
+			//authentication brought back the silent empty-success result and let every later write
+			//skip the probe through the cached flag.
+			throw new AuthenticationException(
+				$"Failed {operationLabel}: the environment returned an empty DataService response, which does "
+				+ "not confirm the credentials were accepted. Verify the environment credentials and retry.");
+		}
+		if (ReauthExecutor.IsSessionExpiredResponse(response)) {
+			throw new AuthenticationException(
+				$"Authentication failed while {operationLabel}: Creatio returned a login redirect. " +
+				"Verify the environment credentials (for an expired password, repair the registered profile) and retry.");
+		}
+		try {
+			using JsonDocument document = JsonDocument.Parse(response);
+			if (ContainsAuthenticationFailure(document.RootElement)) {
+				string detail = FindStringProperty(document.RootElement, "message") ?? "Creatio rejected the credentials.";
+				throw new AuthenticationException(
+					$"Authentication failed while {operationLabel}: {SanitizeAuthenticationDetail(detail)} " +
+					"Verify the environment credentials and retry.");
+			}
+			//The rejection scan is bounded, and a payload deeper than the bound is unexamined rather than
+			//clean - so it must not become permanent proof either.
+			if (ExceedsProbeDepth(document.RootElement)) {
+				throw new InvalidOperationException(
+					$"Failed {operationLabel}: the environment returned a DataService response nested deeper than "
+					+ $"{MaxAuthProbeJsonDepth} levels, which this preflight cannot examine, so the credentials "
+					+ "were not confirmed.");
+			}
+			//Proof of authentication has to be POSITIVE. "No rejection marker found" is also true of {}, [],
+			//null, {"success":false} and a gateway's {"error":"502"} - and each of those used to set
+			//_authProbeSucceeded permanently, so every later operation skipped the probe and an
+			//authentication-collapsed empty provider read was returned as a valid empty result again. Only a
+			//DataService envelope proves the request was authenticated AND executed, which is the same rule
+			//ServerReadinessWaiter applies to this proxy/gateway failure mode.
+			if (!ServerReadinessWaiter.IsGenuineAuthenticatedJsonAnswer(response)
+				|| !IsCoherentDataServiceEnvelope(document.RootElement)) {
+				throw new InvalidOperationException(
+					$"Failed {operationLabel}: the environment answered with JSON that is not a DataService "
+					+ "response envelope, so the credentials were not confirmed. Verify the environment URL "
+					+ "points at Creatio rather than at a proxy or gateway, and retry.");
+			}
+			_authProbeSucceeded = true;
+		} catch (JsonException) {
+			throw new InvalidOperationException(
+				$"Failed {operationLabel}: the environment returned a non-JSON response instead of a DataService response.");
+		}
+	}
+
+	/// <summary>
+	/// True when the probe answer is a COMPLETE DataService envelope rather than a single marker property.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="ServerReadinessWaiter.IsGenuineAuthenticatedJsonAnswer"/> accepts any one contract marker,
+	/// which is the right rule for a readiness poll but too weak for proof of authentication: a bare
+	/// <c>{"success":false}</c> or <c>{"success":true}</c> from a proxy qualified, and that answer then cached
+	/// <c>_authProbeSucceeded</c> for the rest of the manager's life, so every later read or write skipped the
+	/// probe. A real answer carries the payload the operation produced (<c>rows</c>, <c>rowsAffected</c>,
+	/// <c>saveResult</c>); a real refusal carries the error envelope beside the flag. Neither shape can be
+	/// produced by an intermediary that only knows the word <c>success</c>. The stricter rule stays local
+	/// because the readiness poll has its own, looser contract.
+	/// </remarks>
+	private static bool IsCoherentDataServiceEnvelope(JsonElement root) {
+		if (root.ValueKind != JsonValueKind.Object) {
+			return false;
+		}
+		string[] payloadMarkers = ["rows", "rowsAffected", "saveResult", "errorInfo", "responseStatus"];
+		return payloadMarkers.Any(marker => root.TryGetProperty(marker, out JsonElement _));
+	}
+
+	/// <summary>
+	/// True when the payload nests deeper than the rejection scan examines. The scan answers "no failure"
+	/// on overflow, so without this check an over-deep payload would be cached as proof of authentication.
+	/// </summary>
+	private static bool ExceedsProbeDepth(JsonElement element, int depth = 0) {
+		if (depth > MaxAuthProbeJsonDepth) {
+			return true;
+		}
+		return element.ValueKind switch {
+			JsonValueKind.Object => element.EnumerateObject().Any(property => ExceedsProbeDepth(property.Value, depth + 1)),
+			JsonValueKind.Array => element.EnumerateArray().Any(item => ExceedsProbeDepth(item, depth + 1)),
+			var _ => false
+		};
+	}
+
+	private static bool ContainsAuthenticationFailure(JsonElement element, int depth = 0) {
+		if (depth > MaxAuthProbeJsonDepth) {
+			return false;
+		}
+		return element.ValueKind switch {
+			JsonValueKind.Object => element.EnumerateObject().Any(property => IsAuthenticationFailureProperty(property, depth + 1)),
+			JsonValueKind.Array => element.EnumerateArray().Any(item => ContainsAuthenticationFailure(item, depth + 1)),
+			_ => false
+		};
+	}
+
+	private static bool IsAuthenticationFailureProperty(JsonProperty property, int depth) =>
+		IsAuthenticationErrorCode(property)
+		|| IsAuthenticationFailureMessage(property)
+		|| ContainsAuthenticationFailure(property.Value, depth);
+
+	private static bool IsAuthenticationErrorCode(JsonProperty property) =>
+		string.Equals(property.Name, "ErrorCode", StringComparison.OrdinalIgnoreCase)
+		&& string.Equals(property.Value.ToString(), "5", StringComparison.OrdinalIgnoreCase);
+
+	private static bool IsAuthenticationFailureMessage(JsonProperty property) {
+		if (!string.Equals(property.Name, "Message", StringComparison.OrdinalIgnoreCase)
+			|| property.Value.ValueKind != JsonValueKind.String) {
+			return false;
+		}
+		string message = property.Value.GetString();
+		return message is not null && AuthenticationFailureMessages.Contains(message.Trim());
+	}
+
+	private static string FindStringProperty(JsonElement element, string propertyName, int depth = 0) {
+		if (depth > MaxAuthProbeJsonDepth) {
+			return null;
+		}
+		if (element.ValueKind == JsonValueKind.Object) {
+			foreach (JsonProperty property in element.EnumerateObject()) {
+				if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase)
+					&& property.Value.ValueKind == JsonValueKind.String) {
+					return property.Value.GetString();
+				}
+				string nested = FindStringProperty(property.Value, propertyName, depth + 1);
+				if (nested is not null) {
+					return nested;
+				}
+			}
+		}
+		return element.ValueKind == JsonValueKind.Array
+			? element.EnumerateArray().Select(item => FindStringProperty(item, propertyName, depth + 1))
+				.FirstOrDefault(value => value is not null)
+			: null;
+	}
+
+	/// <summary>
+	/// Normalizes a server-controlled detail before it is embedded in an exception message: every control
+	/// character is dropped (not just CR/LF, so NUL, TAB and escape sequences cannot corrupt terminal output
+	/// or a log pipeline) and the result is capped so a pathological multi-megabyte payload cannot be
+	/// amplified into every downstream log sink.
+	/// </summary>
+	private static string SanitizeAuthenticationDetail(string detail) {
+		string cleaned = new string(detail.Where(character => !char.IsControl(character)).ToArray()).Trim();
+		return cleaned.Length > MaxAuthenticationDetailLength
+			? cleaned[..MaxAuthenticationDetailLength] + "…"
+			: cleaned;
+	}
+
+	/// <summary>
+	/// Delegates to the one shared classifier. This used to be a second, prose-only implementation whose
+	/// bare Contains("401") ran BEFORE the command layer's typed-status-first version on the real preflight
+	/// path - so a refused connection to port 40124, or a correlation id containing 401, was wrapped as an
+	/// AuthenticationException and the corrected classifier never saw the original exception.
+	/// </summary>
+	private static bool IsAuthenticationException(Exception exception) =>
+		AuthenticationFailureClassifier.IsAuthenticationFailure(exception);
 
 	// Platform-fixed FileSecurityMode lookup ids (constants in Terrasoft.Web.FileSecurity.FileSecurityModeProvider).
 	private static readonly Guid FileSecurityModeDisabledId = new("9801C625-FAFB-4ED3-9383-C3C942A5C1E3");

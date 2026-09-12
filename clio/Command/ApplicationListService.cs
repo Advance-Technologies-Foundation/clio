@@ -91,7 +91,7 @@ public sealed class ApplicationListService(
 		string? appId,
 		string? appCode)
 	{
-		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
+		using IOwnedApplicationClient client = applicationClientFactory.CreateOwnedEnvironmentClient(environmentSettings);
 		IServiceUrlBuilder serviceUrlBuilder = serviceUrlBuilderFactory.Create(environmentSettings);
 		string responseJson = client.ExecutePostRequest(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select),

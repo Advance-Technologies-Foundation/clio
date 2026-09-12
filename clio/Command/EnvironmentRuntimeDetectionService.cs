@@ -102,13 +102,16 @@ internal sealed class EnvironmentRuntimeDetectionService(
 		ProbeAttempt healthProbe = ExecuteHttpGetProbe(healthUrl);
 		ProbeAttempt serviceProbe = canAuthenticate
 			? ExecuteProbe(
-				() => ExecuteAuthenticatedServiceProbe(
-					applicationClientFactory.CreateEnvironmentClient(probeSettings),
-					serviceUrl),
+				() => ExecuteOwnedAuthenticatedServiceProbe(probeSettings, serviceUrl),
 				ValidateSelectQueryResponse)
 			: new ProbeAttempt(false, "skipped because credentials are missing");
 		ProbeAttempt uiMarkerProbe = ExecuteHttpGetProbe(uiMarkerUrl);
 		return new RuntimeProbeResult(isNetCore, healthUrl, healthProbe, serviceUrl, serviceProbe, uiMarkerUrl, uiMarkerProbe);
+	}
+
+	private string ExecuteOwnedAuthenticatedServiceProbe(EnvironmentSettings settings, string serviceUrl) {
+		using IOwnedApplicationClient client = applicationClientFactory.CreateOwnedEnvironmentClient(settings);
+		return ExecuteAuthenticatedServiceProbe(client, serviceUrl);
 	}
 
 	private static EnvironmentSettings Clone(EnvironmentSettings source, bool isNetCore) =>

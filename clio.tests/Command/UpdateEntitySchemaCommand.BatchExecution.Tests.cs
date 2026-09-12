@@ -128,7 +128,8 @@ internal sealed class UpdateEntitySchemaCommandBatchExecutionTests : BaseClioMod
 			because: $"valid batch updates should succeed when all operations target the same remote schema. Latest logger message: {errorMessage}");
 		_designerClient.Received(1).SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
 		_designerClient.Received(1).SaveSchemaDbStructure(Arg.Any<Guid>(), Arg.Any<RemoteCommandOptions>());
-		_designerClient.Received(1).GetRuntimeEntitySchema(Arg.Any<Guid>(), Arg.Any<RemoteCommandOptions>());
+		_designerClient.DidNotReceive().GetRuntimeEntitySchema(Arg.Any<Guid>(), Arg.Any<RemoteCommandOptions>());
+		// because: publishing already refreshes the schema manager; a separate runtime-availability probe is not taken on the normal path
 		_savedSchema.Should().NotBeNull(
 			because: "the batch should persist the mutated schema once after applying all operations");
 		EntitySchemaColumnDto savedColumn = _savedSchema!.Columns!.Single(column => column.Name == "Status");

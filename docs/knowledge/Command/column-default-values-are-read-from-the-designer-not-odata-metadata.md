@@ -8,9 +8,13 @@ date: 2026-08-19
 
 **What is true** — clio reads entity schema design items, column default values among them, through
 the designer service (`GetSchemaDesignItem` and its siblings under
-`clio/Command/EntitySchemaDesigner/`). No clio OData code requests `$metadata` - grep the tree, there
-is not one occurrence in C#. The recurring suggestion to switch defaults onto OData `$metadata`,
-because other teams read schema that way, was evaluated and rejected.
+`clio/Command/EntitySchemaDesigner/`). Nothing on the designer read path requests OData `$metadata`.
+The recurring suggestion to switch defaults onto OData `$metadata`, because other teams read schema
+that way, was evaluated and rejected.
+
+(`clio/Command/McpServer/Tools/ODataFieldValidation.cs` does request `$metadata`, for a different
+question: whether the field names in an `odata-update` payload exist on the type. That is a name
+check, not a default-value read, and it does not change anything below.)
 
 **Why it is this way** — in CSDL a `DefaultValue` is a facet on a structural property. A lookup column
 is a navigation property, so its default cannot appear there at all, and what does appear for a

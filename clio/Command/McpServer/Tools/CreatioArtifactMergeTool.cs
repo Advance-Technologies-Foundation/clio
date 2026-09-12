@@ -22,6 +22,13 @@ public sealed class CreatioArtifactMergeTool(ICreatioArtifactMergeService mergeS
 	/// <param name="args">Inline artifact path, stage contents, and optional descriptor evidence.</param>
 	/// <param name="cancellationToken">Cancels waiting for bounded resolver capacity.</param>
 	/// <returns>A domain-status result. Only resolved or conflict-marker outcomes contain content.</returns>
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Preview-only semantic three-way merge for supported Creatio EntitySchema, ClientUnit, " +
 	             "ServiceSchema, Addon, descriptor, properties, resource, and data-binding artifacts. " +

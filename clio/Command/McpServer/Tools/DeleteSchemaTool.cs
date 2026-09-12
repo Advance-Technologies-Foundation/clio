@@ -13,6 +13,13 @@ public class DeleteSchemaTool(
 
 	internal const string DeleteSchemaToolName = "delete-schema";
 	[McpServerTool(Name = DeleteSchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Deletes a schema from a Creatio environment.
 

@@ -21,6 +21,11 @@ namespace Clio.Tests.Command.McpServer.Tools.MobilePageConverter;
 [Property("Module", "McpServer")]
 public sealed class WebToMobilePageConversionRulesCatalogTests {
 
+	/// <summary>True when the rule's filters select the given mobile component type.</summary>
+	private static bool Targets(ComponentPropertyOverrideRule rule, string type) =>
+		rule.Filters.Any(f => string.Equals(f.Type, type, StringComparison.OrdinalIgnoreCase));
+
+
 	private static Stream JsonStream(string json) => new MemoryStream(Encoding.UTF8.GetBytes(json));
 
 	[Test]
@@ -136,7 +141,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 
 		// Assert
 		ComponentPropertyOverrideRule metric = rules.ComponentPropertyOverrides
-			.Single(o => o.Type == "crt.IndicatorWidget");
+			.Single(o => Targets(o, "crt.IndicatorWidget"));
 		metric.MergeNestedObjects.Should().BeTrue(
 			because: "the rule targets nested leaves — replacing config wholesale would destroy the aggregation subtree");
 		JsonElement config = metric.Values["config"];
@@ -155,12 +160,16 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
 		// Assert
-		rules.ComponentPropertyOverrides.Should().OnlyContain(
-			o => !string.IsNullOrWhiteSpace(o.Type) && o.Values.Count > 0,
-			because: "a rule without a type or values cannot stamp anything");
-		rules.ComponentPropertyOverrides.Select(o => o.Type).Should().OnlyHaveUniqueItems(
-			because: "the pass indexes by type and silently LAST-WINS, so a duplicate would ship a rule that "
-				+ "never fires — cheap to catch here for the bundled file");
+		rules.ComponentPropertyOverrides.Should().OnlyContain(o => o.Values.Count > 0,
+			because: "a rule without values cannot stamp anything");
+		rules.ComponentPropertyOverrides.Should().OnlyContain(o => o.Filters != null && o.Filters.Count > 0,
+			because: "filters are the rule's ONLY selector — an ABSENT list makes the pass skip the rule "
+				+ "outright, and an EMPTY one would stamp onto every insert of every type; no standard wants "
+				+ "either, so the bundled file must always name what it targets");
+		rules.ComponentPropertyOverrides
+			.SelectMany(o => o.Filters ?? [])
+			.Should().OnlyContain(f => !string.IsNullOrWhiteSpace(f.Type),
+				because: "a bundled filter that names no type would widen its standard across component types");
 	}
 
 	[Test]
@@ -171,7 +180,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 
 		// Assert
 		rules.ComponentPropertyOverrides
-			.Where(o => o.Type is "crt.GridContainer" or "crt.FlexContainer")
+			.Where(o => Targets(o, "crt.GridContainer") || Targets(o, "crt.FlexContainer"))
 			.Should().HaveCount(2)
 			.And.OnlyContain(o => !o.MergeNestedObjects,
 				because: "the spacing rules promise the web gap is discarded wholesale");
@@ -190,7 +199,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("Bundled tabbed template carries container-name correspondence: CardContentWrapper->GeneralTabContainer for general non-tab content, SideAreaProfileContainer->AreaProfileContainer for the profile island (its children go INSIDE the profile Area card, never directly into the general tab's grid), and positional CardContentWrapper:top/:bottom -> Tabs:top/:bottom entries.")]
+	[Description("Bundled tabbed template carries container-name correspondence: the two type-aligned general-tab pairs GeneralInfoTab->GeneralInfoTab and GeneralInfoTabContainer->GeneralTabContainer (ENG-94951), CardContentWrapper->GeneralTabContainer for general non-tab content, SideAreaProfileContainer->AreaProfileContainer for the profile island (its children go INSIDE the profile Area card, never directly into the general tab's grid), and positional CardContentWrapper:top/:bottom -> Tabs:top/:bottom entries.")]
 	public void LoadBundled_TemplatesCarryContainerCorrespondence() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
@@ -203,6 +212,12 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		tabbed.Containers.Should().Contain(c => c.Web == "SideAreaProfileContainer" && c.Mobile == "AreaProfileContainer",
 			because: "the web profile island merges into the template's profile Area card — its children " +
 				"land inside AreaProfileContainer, not directly in GeneralTabContainer, so the Area is never left empty");
+		tabbed.Containers.Should().Contain(c => c.Web == "GeneralInfoTab" && c.Mobile == "GeneralInfoTab",
+			because: "without it the general-information tab is subtracted as inherited chrome and its content is "
+				+ "hoisted straight into the crt.TabPanel, which renders only tabs — the whole tab is lost (ENG-94951)");
+		tabbed.Containers.Should().Contain(c => c.Web == "GeneralInfoTabContainer" && c.Mobile == "GeneralTabContainer",
+			because: "the tab's content grid is the second half of the pair: a page that KEEPS the template's grid "
+				+ "must reuse the mobile one rather than have the grid subtracted as inherited chrome");
 		tabbed.Containers.Should().Contain(c => c.Web == "CardContentWrapper:top" && c.Mobile == "Tabs:top");
 		tabbed.Containers.Should().Contain(c => c.Web == "CardContentWrapper:bottom" && c.Mobile == "Tabs:bottom");
 	}

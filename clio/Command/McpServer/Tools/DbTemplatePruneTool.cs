@@ -27,6 +27,13 @@ public sealed class DbTemplatePruneTool {
 	/// <summary>Inventories clio-managed templates on one configured PostgreSQL server.</summary>
 	[McpServerTool(Name = ListDbTemplatesToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Lists clio-managed PostgreSQL template databases on a named configured server. Returns structured source, database name, creation date, and metadata version. Call this before prune-db-templates; an empty successful list is distinct from a configuration or database-access failure.")]
 	public DbTemplateInventoryResult ListDbTemplates(
 		[Description("Template inventory parameters")] [Required] ListDbTemplatesArgs args) =>
@@ -35,6 +42,13 @@ public sealed class DbTemplatePruneTool {
 	/// <summary>Deletes only explicitly named, freshly revalidated clio-managed templates.</summary>
 	[McpServerTool(Name = PruneDbTemplatesToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Deletes only the explicitly named clio-managed PostgreSQL templates on a configured server. Call list-db-templates first, pass a non-empty databaseNames list, and obtain user approval through clio-run-destructive. The tool revalidates every name, skips templates with active sessions, never infers all, never force-disconnects, and returns every requested outcome.")]
 	public DbTemplatePruneResult PruneDbTemplates(
 		[Description("Explicit template deletion parameters")] [Required] PruneDbTemplatesArgs args) =>

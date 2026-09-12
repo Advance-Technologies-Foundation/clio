@@ -114,7 +114,7 @@ public sealed class ApplicationSectionDeleteService(
 		EnvironmentSettings environmentSettings,
 		ApplicationSectionDeleteRequest request,
 		Func<InstalledAppSummary> findApplication) {
-		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
+		using IOwnedApplicationClient client = applicationClientFactory.CreateOwnedEnvironmentClient(environmentSettings);
 		logger.WriteInfo($"Resolving application '{request.ApplicationCode}'...");
 		InstalledAppSummary appSummary = findApplication();
 		string applicationId = appSummary.Id;

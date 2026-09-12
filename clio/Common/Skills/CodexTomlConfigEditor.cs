@@ -11,6 +11,7 @@ namespace Clio.Common.Skills;
 /// table-block helpers in the toolkit's <c>install.py</c>.
 /// </summary>
 public sealed partial class CodexTomlConfigEditor(IFileSystem fileSystem) : ICodexTomlConfigEditor {
+	private const int RegexTimeoutMilliseconds = 1_000;
 	private readonly IFileSystem _fileSystem = fileSystem;
 
 	// TOML standard table headers: `[name]` and `[[name]]`. Names are dotted
@@ -23,7 +24,9 @@ public sealed partial class CodexTomlConfigEditor(IFileSystem fileSystem) : ICod
 		"(?:[A-Za-z0-9_\\-]+|\"(?:[^\"\\\\]|\\\\.)*\"|'[^']*')" +
 		"(?:\\.(?:[A-Za-z0-9_\\-]+|\"(?:[^\"\\\\]|\\\\.)*\"|'[^']*'))*" +
 		"\\]{1,2})" +
-		"\\s*(?:#.*)?$")]
+		"\\s*(?:#.*)?$",
+		RegexOptions.None,
+		RegexTimeoutMilliseconds)]
 	private static partial Regex TableHeaderRegex();
 
 	/// <inheritdoc />

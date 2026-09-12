@@ -18,12 +18,15 @@ namespace Clio.Tests.Command;
 public sealed class ApplicationCreateServiceTests {
 	private ISettingsRepository _settingsRepository = null!;
 	private IApplicationClientFactory _applicationClientFactory = null!;
-	private IApplicationClient _applicationClient = null!;
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Structure", "NUnit1032:An IDisposable field/property should be Disposed in a TearDown method",
+		Justification = "The system under test owns and disposes the factory-returned substitute.")]
+	private IOwnedApplicationClient _applicationClient = null!;
 	private IServiceUrlBuilder _serviceUrlBuilder = null!;
 	private IApplicationInfoService _applicationInfoService = null!;
 	private ISysSettingsManager _sysSettingsManager = null!;
 	private ICaptionCultureResolver _captionCultureResolver = null!;
 	private IRetryDelay _retryDelay = null!;
+	private IODataBuildGate _oDataBuildGate = null!;
 	private ILogger _logger = null!;
 	private ApplicationCreateService _sut = null!;
 	private EnvironmentSettings _environment = null!;
@@ -34,7 +37,7 @@ public sealed class ApplicationCreateServiceTests {
 		// Arrange
 		_settingsRepository = Substitute.For<ISettingsRepository>();
 		_applicationClientFactory = Substitute.For<IApplicationClientFactory>();
-		_applicationClient = Substitute.For<IApplicationClient>();
+		_applicationClient = Substitute.For<IOwnedApplicationClient>();
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_applicationInfoService = Substitute.For<IApplicationInfoService>();
 		_sysSettingsManager = Substitute.For<ISysSettingsManager>();
@@ -67,6 +70,7 @@ public sealed class ApplicationCreateServiceTests {
 		_captionCultureResolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>()).Returns("en-US");
 		_captionCultureResolver.Resolve(Arg.Any<EnvironmentSettings>(), Arg.Any<string?>()).Returns("en-US");
 		_retryDelay = Substitute.For<IRetryDelay>();
+		_oDataBuildGate = Substitute.For<IODataBuildGate>();
 		_sut = new ApplicationCreateService(
 			_settingsRepository,
 			_applicationClientFactory,
@@ -75,7 +79,8 @@ public sealed class ApplicationCreateServiceTests {
 			_ => _sysSettingsManager,
 			_logger,
 			_captionCultureResolver,
-			_retryDelay);
+			_retryDelay,
+			_oDataBuildGate);
 	}
 
 	[Test]
@@ -118,6 +123,24 @@ public sealed class ApplicationCreateServiceTests {
 		_applicationInfoService.Received(1)
 			.GetApplicationInfo("sandbox", "33333333-3333-3333-3333-333333333333", "UsrCodexApp");
 		_retryDelay.DidNotReceiveWithAnyArgs().Wait(default);
+	}
+
+	[Test]
+	[Description("Waits for an in-flight OData build before sending the CreateApp request.")]
+	public void CreateApplication_Should_Wait_For_OData_Build_Before_CreateApp() {
+		// Arrange
+		ConfigureCreateSuccessForCode("UsrCodexApp");
+		_applicationInfoService.GetApplicationInfo("sandbox", "33333333-3333-3333-3333-333333333333", "UsrCodexApp")
+			.Returns(new ApplicationInfoResult("pkg-uid", "PrimaryPkg", []));
+
+		// Act
+		_sut.CreateApplication("sandbox", _fullRequest);
+
+		// Assert
+		_oDataBuildGate.Received(2).WaitUntilIdle(
+			_applicationClient,
+			_environment,
+			"UsrCodexApp");
 	}
 
 	[Test]

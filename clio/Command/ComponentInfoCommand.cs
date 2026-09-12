@@ -130,7 +130,7 @@ public sealed class ComponentInfoCommand {
 		ComponentRegistryEntry entry,
 		string? resolvedTargetVersion,
 		string? resolvedFrom,
-		string? documentation,
+		ComponentDocumentationOutcome documentation,
 		RegistryGlobalReferences globalReferences,
 		string? resolvedFromReason) =>
 		ComponentInfoTool.CreateDetailResponse(
@@ -157,7 +157,7 @@ public sealed class ComponentInfoCommand {
 
 		if (hasEnvironment) {
 			EnvironmentSettings settings = ResolveEnvironmentSettings(options);
-			IPlatformVersionResolver resolver = _resolverFactory.Create(settings);
+			using IOwnedPlatformVersionResolver resolver = _resolverFactory.CreateOwned(settings);
 			return resolver.ResolveAsync(cancellationToken);
 		}
 
@@ -207,7 +207,7 @@ public sealed class ComponentInfoCommand {
 				return ComponentInfoResponseFactory.CreateCompositeNotFoundResponse(
 					state.Composites, composite!, IsMobile(options.SchemaType), state.ResolvedVersion, resolvedFrom, resolvedFromReason);
 			}
-			string? compositeDocs = await ComponentDocumentationLoader
+			ComponentDocumentationOutcome compositeDocs = await ComponentDocumentationLoader
 				.LoadAsync(_docsClient, definition.Docs, state.ResolvedVersion, cancellationToken)
 				.ConfigureAwait(false);
 			return ComponentInfoResponseFactory.CreateCompositeDetailResponse(
@@ -235,7 +235,7 @@ public sealed class ComponentInfoCommand {
 		}
 
 		if (state.Lookup.TryGetValue(componentType!, out ComponentRegistryEntry entry)) {
-			string? documentation = await ComponentDocumentationLoader
+			ComponentDocumentationOutcome documentation = await ComponentDocumentationLoader
 				.LoadAsync(_docsClient, entry, state.ResolvedVersion, cancellationToken)
 				.ConfigureAwait(false);
 			return BuildDetail(entry, state.ResolvedVersion, resolvedFrom, documentation, state.GlobalReferences, resolvedFromReason);

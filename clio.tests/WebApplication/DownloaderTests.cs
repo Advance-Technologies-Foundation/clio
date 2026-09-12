@@ -19,7 +19,9 @@ public class DownloaderTests : BaseClioModuleTests
 	#region Fields: Private
 
 	private readonly ILogger _loggerMock = Substitute.For<ILogger>();
-	private readonly IApplicationClient _applicationClientMock = Substitute.For<IApplicationClient>();
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Structure", "NUnit1032:An IDisposable field/property should be Disposed in a TearDown method",
+		Justification = "The system under test owns and disposes the factory-returned substitute.")]
+	private readonly IOwnedApplicationClient _applicationClientMock = Substitute.For<IOwnedApplicationClient>();
 
 	private readonly IApplicationClientFactory _applicationClientFactoryMock
 		= Substitute.For<IApplicationClientFactory>();
@@ -35,6 +37,25 @@ public class DownloaderTests : BaseClioModuleTests
 	}
 
 	#endregion
+
+	[Test]
+	[Description("Disposes a newly created owned client when login fails before the lazy value can be published.")]
+	public void DownloadPackageDll_ShouldDisposeClient_WhenLoginFails() {
+		// Arrange
+		Downloader sut = (Downloader)Container.GetRequiredService<IDownloader>();
+		IOwnedApplicationClient rejectedClient = Substitute.For<IOwnedApplicationClient>();
+		_applicationClientFactoryMock.CreateClient(Arg.Any<EnvironmentSettings>())
+			.Returns(rejectedClient);
+		rejectedClient.When(client => client.Login())
+			.Do(_ => throw new UnauthorizedAccessException("rejected"));
+		DownloadInfo downloadInfo = new("https://example.invalid", "Package.dll", "destination", "{}");
+
+		// Act
+		sut.DownloadPackageDll(downloadInfo, Path.GetTempPath());
+
+		// Assert
+		rejectedClient.Received(1).Dispose();
+	}
 
 	[Test]
 	public void DownloadPackageDll_CopiesDownloadedFile(){

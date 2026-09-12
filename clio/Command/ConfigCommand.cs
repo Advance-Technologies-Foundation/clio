@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Common;
 using Clio.UserEnvironment;
@@ -45,6 +47,13 @@ public class ConfigOptions {
 	[Option("deploy-site-port", Required = false,
 		HelpText = "Default site port for deploy-creatio.")]
 	public int? DeploySitePort { get; set; }
+
+	/// <summary>
+	/// Gets or sets the inclusive automatic IIS site-port range applied when no fixed site port is configured.
+	/// </summary>
+	[Option("deploy-site-port-range", Required = false, Separator = ',',
+		HelpText = "Inclusive automatic IIS site-port range for deploy-creatio, for example 40100,40199.")]
+	public IEnumerable<int> DeploySitePortRange { get; set; }
 
 	/// <summary>
 	/// Gets or sets the default deployment method (<c>auto</c>, <c>iis</c>, or <c>dotnet</c>) applied when
@@ -114,8 +123,8 @@ public class ConfigCommand : Command<ConfigOptions> {
 	/// <inheritdoc/>
 	public override int Execute(ConfigOptions options) {
 		if (options.Reset) {
-			_settingsRepository.SetDeployCreatioDefaults(null);
-			_logger.WriteInfo("Deploy-creatio defaults were cleared.");
+			_settingsRepository.SetDeployCreatioDefaults(DeployCreatioDefaults.CreateWithDefaultSitePortRange());
+			_logger.WriteInfo("Custom deploy-creatio defaults were cleared and built-in defaults were restored.");
 			return 0;
 		}
 
@@ -131,7 +140,9 @@ public class ConfigCommand : Command<ConfigOptions> {
 			return 0;
 		}
 
-		if (!TryValidateDeploymentMethod(options.DeployDeployment) || !TryValidateSitePort(options.DeploySitePort)) {
+		if (!TryValidateDeploymentMethod(options.DeployDeployment)
+			|| !TryValidateSitePort(options.DeploySitePort)
+			|| !TryValidateSitePortRange(options.DeploySitePortRange)) {
 			return 1;
 		}
 
@@ -165,7 +176,10 @@ public class ConfigCommand : Command<ConfigOptions> {
 		|| !string.IsNullOrWhiteSpace(options.DeployRedisServerName)
 		|| !string.IsNullOrWhiteSpace(options.DeploySiteName)
 		|| options.DeploySitePort.HasValue
+		|| HasSitePortRange(options.DeploySitePortRange)
 		|| !string.IsNullOrWhiteSpace(options.DeployDeployment);
+
+	private static bool HasSitePortRange(IEnumerable<int> sitePortRange) => sitePortRange?.Any() == true;
 
 	private static bool HasKnowledgeFeedbackSetArguments(ConfigOptions options) =>
 		!string.IsNullOrWhiteSpace(options.KnowledgeFeedbackMode)
@@ -197,6 +211,22 @@ public class ConfigCommand : Command<ConfigOptions> {
 		return isValid;
 	}
 
+	private bool TryValidateSitePortRange(IEnumerable<int> sitePortRange) {
+		if (!HasSitePortRange(sitePortRange)) {
+			return true;
+		}
+		int[] range = sitePortRange.ToArray();
+		bool isValid = range.Length == 2
+			&& range[0] is >= MinSitePort and <= MaxSitePort
+			&& range[1] is >= MinSitePort and <= MaxSitePort
+			&& range[0] <= range[1];
+		if (!isValid) {
+			_logger.WriteError(
+				$"Invalid site port range. Specify exactly two ports satisfying {MinSitePort} <= start <= end <= {MaxSitePort}.");
+		}
+		return isValid;
+	}
+
 	private static void ApplySetArguments(DeployCreatioDefaults defaults, ConfigOptions options) {
 		if (!string.IsNullOrWhiteSpace(options.DeployDbServerName)) {
 			defaults.DbServerName = options.DeployDbServerName.Trim();
@@ -206,6 +236,12 @@ public class ConfigCommand : Command<ConfigOptions> {
 		}
 		if (!string.IsNullOrWhiteSpace(options.DeploySiteName)) {
 			defaults.SiteName = options.DeploySiteName.Trim();
+		}
+		if (HasSitePortRange(options.DeploySitePortRange)) {
+			defaults.SitePortRange = options.DeploySitePortRange.ToArray();
+			if (!options.DeploySitePort.HasValue) {
+				defaults.SitePort = null;
+			}
 		}
 		if (options.DeploySitePort.HasValue) {
 			defaults.SitePort = options.DeploySitePort.Value;
@@ -228,6 +264,9 @@ public class ConfigCommand : Command<ConfigOptions> {
 			table.Rows.Add(["redis-server-name", defaults.RedisServerName ?? string.Empty]);
 			table.Rows.Add(["site-name", defaults.SiteName ?? string.Empty]);
 			table.Rows.Add(["site-port", defaults.SitePort?.ToString() ?? string.Empty]);
+			table.Rows.Add(["site-port-range", defaults.SitePortRange is { Length: > 0 }
+				? $"[{string.Join(", ", defaults.SitePortRange)}]"
+				: string.Empty]);
 			table.Rows.Add(["deployment", defaults.DeploymentMethod ?? string.Empty]);
 			_logger.PrintTable(table);
 		}

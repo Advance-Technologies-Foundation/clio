@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using ATF.Repository.Providers;
+using Clio.Command;
 using Clio.Command.ProcessModel;
 using Clio.Common;
 using ErrorOr;
@@ -28,6 +29,68 @@ public sealed class ServerProcessDescriberTests {
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.DescribeProcess).Returns(DescribeUrl);
 		return new ServerProcessDescriber(client,
 			Substitute.For<IDataProvider>(), urlBuilder);
+	}
+
+
+	[Test]
+	[Category("Unit")]
+	[Description("branchesOnActivityResult round-trips by its WIRE NAME, and the OUTBOUND assertion is the one that pins it. Two independent string literals have to agree - [DataMember(Name = \"branchesOnActivityResult\")] on the server contract and [JsonPropertyName] here. The inbound half does NOT depend on the attribute: ServerProcessDescriber.JsonOptions sets PropertyNameCaseInsensitive, and the JSON key differs from the C# property only in its first letter, so deserialization binds them with the attribute deleted outright. Serialization has no such fallback, which is why the third assertion - reading the key back out of the re-serialized JSON - is what reddens. Worth pinning at all because the field is a bool: a mismatched or dropped attribute yields false for EVERY flow, silently and in the reassuring direction, so a branch whose condition the platform ignores reads back as one it evaluates. A mis-SPELLED attribute value, as opposed to a missing one, would also escape the inbound assertion.")]
+	public void Describe_ShouldRoundTripBranchesOnActivityResult() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[],"
+			+ "\"flows\":[{\"source\":\"task1\",\"target\":\"end1\",\"kind\":\"conditional\","
+			+ "\"condition\":\"[#Amount#] > 100\",\"branchesOnActivityResult\":true}],"
+			+ "\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Flows[0].BranchesOnActivityResult.Should().BeTrue(
+			because: "the server said this branch is decided by the activity's RESULT, so the condition text "
+				+ "below it will never be evaluated - a caller that does not learn this reasons about a branch "
+				+ "that cannot run");
+		result.Value.Flows[0].Condition.Should().Be("[#Amount#] > 100",
+			because: "both fields come off the same flow, so asserting the flag alone would pass on a describe "
+				+ "that dropped the condition");
+		JsonNode output = JsonNode.Parse(reserialized);
+		output["flows"]![0]!["branchesOnActivityResult"]!.GetValue<bool>().Should().BeTrue(
+			because: "the outbound half is separate: without the property the field vanishes on the way OUT, "
+				+ "and a bool that vanishes reads as false rather than as missing");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A server that never SENDS branchesOnActivityResult must not have a false invented for it. describe is allowed on an environment whose package predates the field - its [RequiresPackage] is presence-only, with no version literal - so this is the ordinary case on an older stand, not an edge case. While the property was a non-nullable bool it deserialized to default(bool) and WhenWritingNull could not omit a value type, so the payload asserted 'this branch is decided by its condition' for every flow on a server that said nothing at all, in the reassuring direction. The sibling test above pins the value when the server DOES send it; this one pins the absence, and the two together are what make the field trustworthy.")]
+	public void Describe_ShouldNotInventBranchesOnActivityResult_WhenTheServerOmitsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[],"
+			+ "\"flows\":[{\"source\":\"task1\",\"target\":\"end1\",\"kind\":\"conditional\","
+			+ "\"condition\":\"[#Amount#] > 100\"}],"
+			+ "\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Flows[0].BranchesOnActivityResult.Should().BeNull(
+			because: "the server said nothing about it, and 'nothing' is not 'false' - a caller must be able "
+				+ "to tell an old package from a branch whose condition really is evaluated");
+		result.Value.Flows[0].Condition.Should().Be("[#Amount#] > 100",
+			because: "the rest of the flow still round-trips; asserting the absence alone would pass on a "
+				+ "describe that dropped everything");
+		JsonNode output = JsonNode.Parse(reserialized);
+		output["flows"]![0]!.AsObject().ContainsKey("branchesOnActivityResult").Should().BeFalse(
+			because: "an absent value must be OMITTED rather than emitted as false; while the property was a "
+				+ "non-nullable bool, WhenWritingNull could not omit it and the payload fabricated an answer");
 	}
 
 	private static IApplicationClient ClientReturning(string response) {
@@ -82,6 +145,53 @@ public sealed class ServerProcessDescriberTests {
 			because: "the parameter's direction must be read from the server, not dropped by the clio DTO");
 		parameter.IsResult.Should().BeTrue(
 			because: "isResult marks an element output usable as a mapping source and must be deserialized");
+	}
+
+	[Test]
+	[Description("Deserializes a Lookup ConstValue's valueDisplay - the referenced record's NAME - into the DescribedParameter DTO, beside the unchanged bare-Guid value, so a caller can show a word without a second read.")]
+	public void Describe_ShouldReadParameterValueDisplay_WhenServerReportsIt() {
+		// Arrange - a Lookup constant the server resolved a name for (ENG-96325); value stays the bare record id
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\","
+			+ "\"parameters\":[{\"name\":\"ActivityCategory\",\"uid\":\"p1\",\"type\":\"Lookup\",\"source\":\"ConstValue\","
+			+ "\"value\":\"03df85bf-6b19-4dea-8463-d5d49b80bb28\",\"valueDisplay\":\"Call\"}]}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedParameter parameter = result.Value.Elements[0].Parameters[0];
+		parameter.Value.Should().Be("03df85bf-6b19-4dea-8463-d5d49b80bb28",
+			because: "the runtime encoding is the bare record Guid and the display name must not replace it");
+		parameter.ValueDisplay.Should().Be("Call",
+			because: "valueDisplay is what the designer renders; dropping it in the clio DTO reinstates the Guid the "
+				+ "fix removed, and only the manual e2e suite would notice");
+	}
+
+	[Test]
+	[Description("Leaves valueDisplay unset (null) when the server omits it - an older package, or a record whose name did not resolve - so the absent field serializes away instead of becoming an empty string.")]
+	public void Describe_ShouldLeaveValueDisplayNull_WhenServerOmitsIt() {
+		// Arrange - a pre-1.4.0.40 package: the Lookup constant is reported without a display name
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\","
+			+ "\"parameters\":[{\"name\":\"ActivityCategory\",\"uid\":\"p1\",\"type\":\"Lookup\",\"source\":\"ConstValue\","
+			+ "\"value\":\"03df85bf-6b19-4dea-8463-d5d49b80bb28\"}]}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "an older package omitting the field is not an error");
+		result.Value.Elements[0].Parameters[0].ValueDisplay.Should().BeNull(
+			because: "an omitted display name must stay null so it serializes away, rather than surfacing as an empty "
+				+ "label a caller would render");
 	}
 
 	[Test]
@@ -158,6 +268,263 @@ public sealed class ServerProcessDescriberTests {
 			because: "the element-level background-mode flag must be deserialized, not dropped by the clio DTO");
 		result.Value.Elements[1].UseBackgroundMode.Should().BeNull(
 			because: "an omitted flag stays null so it serializes away (WhenWritingNull) for an older server");
+	}
+
+	[Test]
+	[Description("Deserializes an EDIT-mode Open edit page element: the editing mode and the record it opens. Every other openEditPage fixture pins add mode with a null record, so the half of the contract that opens an EXISTING record - AC7's second mode and the whole of AC9 - executed in no unit test and rested entirely on stand-gated E2E that Assert.Ignores without a sandbox.")]
+	public void Describe_ShouldReadOpenEditPageEditMode_WhenServerReportsARecord() {
+		// Arrange - an edit-mode element whose record comes from a process parameter
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"OpenPage1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"openeditpage\",\"userTaskName\":\"OpenEditPageUserTask\","
+			+ "\"openEditPage\":{\"page\":\"AccountPageV2\",\"object\":\"Account\",\"editMode\":\"edit\","
+			+ "\"defaultValues\":null,"
+			+ "\"recordId\":{\"processParameter\":\"AccountIdParameter\"},"
+			+ "\"completionMode\":\"onSave\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedOpenEditPage block = result.Value.Elements[0].OpenEditPage;
+		block.EditMode.Should().Be("edit",
+			because: "the mode decides which payload the caller must supply on a re-apply, and 'edit' is the mode "
+				+ "no other fixture exercises");
+		block.RecordId.Should().NotBeNull(
+			because: "an edit-mode element without its record is the state the write path refuses, so a read that "
+				+ "dropped it would describe an element that cannot be re-applied");
+		block.RecordId!.Value.GetProperty("processParameter").GetString().Should().Be("AccountIdParameter",
+			because: "the record source is decoded back into the named shape the write path accepts, which is what "
+				+ "makes the described block re-appliable rather than merely readable");
+		block.DefaultValues.Should().BeNull(because: "edit mode carries no pre-filled values of its own");
+	}
+
+	[Test]
+	[Description("Deserializes an element that stores BOTH pre-filled values and a record - the asymmetry the describe contract explicitly promises to report, because the runtime applies stored values in either editing mode. No other fixture produces this shape, so a read that silently dropped one side would have hidden live configuration undetected.")]
+	public void Describe_ShouldReadOpenEditPageValuesAndRecord_WhenTheSchemaCarriesBoth() {
+		// Arrange - the shape the write path refuses but the schema can hold, which the read must surface whole
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"OpenPage1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"openeditpage\",\"userTaskName\":\"OpenEditPageUserTask\","
+			+ "\"openEditPage\":{\"page\":\"AccountPageV2\",\"object\":\"Account\",\"editMode\":\"edit\","
+			+ "\"defaultValues\":[{\"column\":\"Address\",\"value\":\"Kyiv\"}],"
+			+ "\"recordId\":{\"processParameter\":\"AccountIdParameter\"},"
+			+ "\"completionMode\":\"onSave\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		DescribedOpenEditPage block = result.Value.Elements[0].OpenEditPage;
+		block.DefaultValues.Should().ContainSingle(
+			because: "the runtime applies stored values in either mode, so hiding them on an edit-mode element "
+				+ "would hide configuration that actually runs");
+		block.RecordId.Should().NotBeNull(
+			because: "both halves are reported together - that is the documented asymmetry, and dropping either "
+				+ "one is the failure this pins");
+	}
+
+	[Test]
+	[Description("Deserializes an Open edit page element's configuration (page, object, record type, editing mode, pre-filled values, recommendation, hint, completion mode) into the DescribedOpenEditPage DTO, so the block is surfaced typed rather than falling into the element's extension bag unnoticed.")]
+	public void Describe_ShouldReadOpenEditPageConfiguration_WhenServerReportsIt() {
+		// Arrange - the shape a CrtProcessBuilder that supports the element returns for a configured add-mode element
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"OpenPage1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"openeditpage\",\"userTaskName\":\"OpenEditPageUserTask\","
+			+ "\"openEditPage\":{\"page\":\"AccountPageV2\",\"pageSchemaUId\":\"f5edc79d-8d39-4e51-a255-57ccf3f1349e\",\"object\":\"Account\","
+			+ "\"pageTypeUId\":null,\"editMode\":\"add\","
+			+ "\"defaultValues\":[{\"column\":\"Address\",\"value\":\"Kyiv\"}],"
+			+ "\"recordId\":null,\"recommendation\":\"Fill in the account details\",\"hint\":\"Confirm the address\","
+			+ "\"completionMode\":\"onSave\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedOpenEditPage block = result.Value.Elements[0].OpenEditPage;
+		block.Should().NotBeNull(
+			because: "the openEditPage block must be deserialized into its own DTO, not silently absorbed by the "
+				+ "element's [JsonExtensionData] bag where no caller would find it typed");
+		block.Page.Should().Be("AccountPageV2", because: "the page name is what a caller feeds back as 'page'");
+		block.PageSchemaUId.Should().Be("f5edc79d-8d39-4e51-a255-57ccf3f1349e",
+			because: "the UId is the escape hatch when a name does not resolve");
+		block.Object.Should().Be("Account",
+			because: "the object is derived from the page server-side, so the read-back is the only place a caller "
+				+ "sees which object the step edits");
+		block.PageTypeUId.Should().BeNull(
+			because: "an untyped object stores no record type, and null is what distinguishes it from a typed one");
+		block.EditMode.Should().Be("add", because: "the editing mode decides which payload the block carries");
+		block.DefaultValues.Should().ContainSingle(
+			because: "the pre-filled values must survive the read-back to be re-appliable");
+		block.RecordId.Should().BeNull(because: "add mode opens no existing record");
+		block.Recommendation.Should().Be("Fill in the account details",
+			because: "the recommendation shown on the page round-trips");
+		block.Hint.Should().Be("Confirm the address", because: "the hint round-trips");
+		block.CompletionMode.Should().Be("onSave",
+			because: "the completion mode is derived from the stored flag, never from a designer caption");
+	}
+
+	[Test]
+	[Description("Deserializes an Open edit page element's results-by-column block, keeping BOTH the resolved column name and its stored UId - the UId is what tells a caller 'the column no longer resolves here' apart from 'no column is set'.")]
+	public void Describe_ShouldReadOpenEditPageResultsByColumn_WhenServerReportsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"OpenPage1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"openeditpage\","
+			+ "\"openEditPage\":{\"page\":\"AccountPageV2\",\"editMode\":\"add\","
+			+ "\"resultsByColumn\":{\"enabled\":true,\"column\":\"Owner\","
+			+ "\"columnUId\":\"3c8c0b2f-3f0e-4a4a-9b1a-6f0f5a2b1c2d\"}}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		DescribedOpenEditPageResultsByColumn results = result.Value.Elements[0].OpenEditPage.ResultsByColumn;
+		results.Should().NotBeNull(
+			because: "the block must be deserialized into its own DTO rather than absorbed by the openEditPage block's "
+				+ "extension bag, where a caller could not read it typed");
+		results.Enabled.Should().BeTrue(because: "the flag is what makes the step produce results at all");
+		results.Column.Should().Be("Owner",
+			because: "the NAME is what a caller feeds back, so it has to survive the read");
+		results.ColumnUId.Should().Be("3c8c0b2f-3f0e-4a4a-9b1a-6f0f5a2b1c2d",
+			because: "the UId distinguishes an unresolvable column from an unset one - with only the name, both look "
+				+ "identical");
+	}
+
+	[Test]
+	[Description("Deserializes an Open edit page element's Log activity block, including each scheduling interval as a value plus the unit the server decoded from its stored period, so a caller can read what a step schedules without translating the platform's integer enum.")]
+	public void Describe_ShouldReadOpenEditPageLogActivity_WhenServerReportsIt() {
+		// Arrange - one interval per field, each with a different unit, so a mixed-up mapping cannot pass
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"OpenPage1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"openeditpage\","
+			+ "\"openEditPage\":{\"page\":\"AccountPageV2\",\"editMode\":\"add\","
+			+ "\"logActivity\":{\"enabled\":true,"
+			+ "\"startIn\":{\"value\":2,\"unit\":\"hours\",\"period\":1},"
+			+ "\"duration\":{\"value\":20,\"unit\":\"minutes\",\"period\":0},"
+			+ "\"remindIn\":{\"value\":3,\"unit\":\"days\",\"period\":2},"
+			+ "\"showInCalendar\":false}}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		DescribedOpenEditPageLogActivity activity = result.Value.Elements[0].OpenEditPage.LogActivity;
+		activity.Should().NotBeNull(
+			because: "the block must be deserialized into its own DTO, not absorbed by the openEditPage block's "
+				+ "[JsonExtensionData] bag where no caller would find it typed");
+		activity.Enabled.Should().BeTrue(because: "the gate decides whether any of the rest takes effect");
+		activity.StartIn.Value.Should().Be(2);
+		activity.StartIn.Unit.Should().Be("hours",
+			because: "the unit is the half a caller cannot infer - 2 is two hours or two days depending on it");
+		activity.StartIn.Period.Should().Be(1, because: "the raw period travels alongside the decoded token");
+		activity.Duration.Unit.Should().Be("minutes", because: "each interval decodes independently");
+		activity.RemindIn.Unit.Should().Be("days",
+			because: "a mapping that confused the three fields would show up here");
+		activity.ShowInCalendar.Should().BeFalse(because: "the calendar flag round-trips as reported");
+	}
+
+	[Test]
+	[Description("Leaves the Log activity block null when the server omits it, so an element that stores none of those fields is not read back as one that schedules an activity - the designer's panel shows values for all of them from schema defaults, so this distinction is the only reliable one.")]
+	public void Describe_ShouldLeaveOpenEditPageLogActivityNull_WhenServerOmitsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"OpenPage1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"openeditpage\","
+			+ "\"openEditPage\":{\"page\":\"AccountPageV2\",\"editMode\":\"add\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.Value.Elements[0].OpenEditPage.LogActivity.Should().BeNull(
+			because: "an absent block means the element stores none of it, and inventing one would report scheduling "
+				+ "the process does not carry");
+	}
+
+	[Test]
+	[Description("Deserializes an Open edit page element's performer block (kind, contact, role with its display name, and the show-page flag) into its own DTO, so a caller can see who a step is assigned to instead of finding the assignment only in the element's untyped extension bag.")]
+	public void Describe_ShouldReadOpenEditPagePerformer_WhenServerReportsIt() {
+		// Arrange - a role performer, the one kind that carries both a formula and a readable display value
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"OpenPage1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"openeditpage\",\"userTaskName\":\"OpenEditPageUserTask\","
+			+ "\"openEditPage\":{\"page\":\"AccountPageV2\",\"pageSchemaUId\":\"f5edc79d-8d39-4e51-a255-57ccf3f1349e\",\"object\":\"Account\","
+			+ "\"editMode\":\"add\","
+			+ "\"performer\":{\"type\":\"role\",\"contact\":null,"
+			+ "\"role\":\"[#Lookup.a1c9dfe4-0d1e-4f0f-b6b6-b0f0a1d0e0a1.2b0d3ad9-7a27-46a3-9483-ed70c2687211#]\","
+			+ "\"roleDisplay\":\"All employees\",\"showPage\":true},"
+			+ "\"completionMode\":\"onSave\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		DescribedPerformer performer = result.Value.Elements[0].OpenEditPage.Performer;
+		performer.Should().NotBeNull(
+			because: "the performer must be deserialized into its own DTO, not silently absorbed by the openEditPage "
+				+ "block's [JsonExtensionData] bag where no caller would find it typed");
+		performer.Type.Should().Be("role", because: "the kind is what decides which of contact/role carries the value");
+		performer.Role.Should().Contain("2b0d3ad9-7a27-46a3-9483-ed70c2687211",
+			because: "the stored macro round-trips so the block can be re-submitted verbatim");
+		performer.RoleDisplay.Should().Be("All employees",
+			because: "the display name is the only human-readable half of a role assignment");
+		performer.ShowPage.Should().BeTrue(because: "the show-page flag round-trips as reported");
+	}
+
+	[Test]
+	[Description("Leaves the performer null when the server reports an Open edit page element without one, so an unassigned step - the designer's own initial state - is not read back as assigned.")]
+	public void Describe_ShouldLeaveOpenEditPagePerformerNull_WhenServerOmitsIt() {
+		// Arrange - a configured element with no assignment at all
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"OpenPage1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"openeditpage\","
+			+ "\"openEditPage\":{\"page\":\"AccountPageV2\",\"editMode\":\"add\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.Value.Elements[0].OpenEditPage.Performer.Should().BeNull(
+			because: "an absent performer means UNASSIGNED, and inventing one here would report an assignment the "
+				+ "process does not carry");
+	}
+
+	[Test]
+	[Description("Leaves the openEditPage block null when the server does not report it, so an older CrtProcessBuilder - or any other element kind - reads back without inventing a configuration.")]
+	public void Describe_ShouldLeaveOpenEditPageNull_WhenServerOmitsIt() {
+		// Arrange - a plain user task, the shape any element other than an Open edit page one returns
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\"}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.Value.Elements[0].OpenEditPage.Should().BeNull(
+			because: "an absent block must stay null so it serializes away for an older server, and so a caller "
+				+ "cannot read 'configured' out of an element that is not");
 	}
 
 	[Test]
@@ -249,6 +616,96 @@ public sealed class ServerProcessDescriberTests {
 		// Assert
 		result.Value.Elements[0].Performer.Should().BeNull(
 			because: "no reported block means no assignment; inventing an empty one would read as configured");
+	}
+
+	[Test]
+	[Description("Deserializes ALL TWENTY members of an Approval element's approval block from the server response into the DescribedApproval DTO. This block has no clio-side default and no partial mapping to fall back on: a member the DTO does not declare, or one whose [JsonPropertyName] drifts from the server's [DataMember], is dropped SILENTLY on re-serialize — so every name is asserted individually rather than by spot check.")]
+	public void Describe_ShouldReadEveryApprovalMember_WhenServerReportsThem() {
+		// Arrange — every member the server's ApprovalDescriptor can report, with distinguishable values
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"Approval1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"approval\",\"userTaskName\":\"ApprovalUserTask\","
+			+ "\"approval\":{\"purpose\":\"Approve the order\",\"object\":\"Order\",\"objectUId\":\"1bbf2c48-6bef-4c65-a4f9-e6f27a7dd6cc\","
+			+ "\"recordId\":\"[#Lookup.1bbf2c48-6bef-4c65-a4f9-e6f27a7dd6cc.22222222-3333-4444-5555-666666666666#]\",\"recordIdDisplay\":\"Order #42\","
+			+ "\"approverType\":\"user\",\"approverEmployee\":\"[#Lookup.30da1e63-2ae1-4b62-9d5b-f9e14a0ec3a1.33333333-4444-5555-6666-777777777777#]\",\"approverEmployeeDisplay\":\"Anna Best\","
+			+ "\"approverRole\":\"[#Lookup.1f424900-3d1a-4ffe-badd-a76e62ed952b.44444444-5555-6666-7777-888888888888#]\",\"approverRoleDisplay\":\"All employees\","
+			+ "\"allowDelegation\":true,\"notifyApprover\":true,"
+			+ "\"approverEmailTemplate\":\"[#Lookup.aaaaaaaa-0000-0000-0000-00000000000a.55555555-6666-7777-8888-999999999999#]\",\"approverEmailTemplateDisplay\":\"Approval requested\","
+			+ "\"notifyAuthor\":true,\"authorEmailTemplate\":\"[#Lookup.aaaaaaaa-0000-0000-0000-00000000000a.66666666-7777-8888-9999-aaaaaaaaaaaa#]\",\"authorEmailTemplateDisplay\":\"Approval result\","
+			+ "\"recipient\":\"ops@example.com\",\"ignoreEmailErrors\":false,"
+			+ "\"approvalSchemaUId\":\"9800f45d-7d2e-44c7-85e5-053c06c8c2d4\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedApproval approval = result.Value.Elements[0].Approval;
+		approval.Should().NotBeNull(because: "the approval block must be deserialized, not dropped by the clio DTO");
+		approval.Purpose.Should().Be("Approve the order", because: "purpose maps to the DTO");
+		approval.Object.Should().Be("Order", because: "the resubmittable object NAME maps to the DTO");
+		approval.ObjectUId.Should().Be("1bbf2c48-6bef-4c65-a4f9-e6f27a7dd6cc",
+			because: "objectUId is the stored identity behind that name");
+		approval.RecordId.Should().Contain("22222222-3333-4444-5555-666666666666",
+			because: "the record under approval maps to the DTO as its stored macro");
+		approval.RecordIdDisplay.Should().Be("Order #42",
+			because: "the Display companion is what makes the macro readable, and it drops just as silently");
+		approval.ApproverType.Should().Be("user", because: "the approver type token maps to the DTO");
+		approval.ApproverEmployee.Should().Contain("33333333-4444-5555-6666-777777777777",
+			because: "the employee behind a user/manager approver maps to the DTO");
+		approval.ApproverEmployeeDisplay.Should().Be("Anna Best", because: "its Display companion maps too");
+		approval.ApproverRole.Should().Contain("44444444-5555-6666-7777-888888888888",
+			because: "the role behind a role approver maps to the DTO");
+		approval.ApproverRoleDisplay.Should().Be("All employees", because: "its Display companion maps too");
+		approval.AllowDelegation.Should().BeTrue(because: "the delegation flag maps to the DTO");
+		approval.NotifyApprover.Should().BeTrue(because: "the approver-notification flag maps to the DTO");
+		approval.ApproverEmailTemplate.Should().Contain("55555555-6666-7777-8888-999999999999",
+			because: "that notification's template maps to the DTO");
+		approval.ApproverEmailTemplateDisplay.Should().Be("Approval requested",
+			because: "its Display companion maps too");
+		approval.NotifyAuthor.Should().BeTrue(because: "the author-notification flag maps to the DTO");
+		approval.AuthorEmailTemplate.Should().Contain("66666666-7777-8888-9999-aaaaaaaaaaaa",
+			because: "the author notification's template maps to the DTO");
+		approval.AuthorEmailTemplateDisplay.Should().Be("Approval result",
+			because: "its Display companion maps too");
+		approval.Recipient.Should().Be("ops@example.com",
+			because: "the author notification's recipient is the field 'Author' cannot work out on its own");
+		approval.IgnoreEmailErrors.Should().BeFalse(
+			because: "the flag maps as WRITTEN — false has to survive, or it would read as 'not written'");
+		approval.ApprovalSchemaUId.Should().Be("9800f45d-7d2e-44c7-85e5-053c06c8c2d4",
+			because: "the derived visa schema is reported for traceability and must not be dropped either");
+	}
+
+	[Test]
+	[Description("Leaves every approval member the server omits at null rather than defaulting it, so a partly reported block cannot read as a verified 'off' — the flags in particular, where false and absent mean different things on this element.")]
+	public void Describe_ShouldLeaveOmittedApprovalMembersNull_WhenServerReportsAPartialBlock() {
+		// Arrange — a server that reports the block with only the two fields it has written
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"Approval1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"approval\",\"userTaskName\":\"ApprovalUserTask\","
+			+ "\"approval\":{\"object\":\"Order\",\"approverType\":\"manager\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedApproval approval = result.Value.Elements[0].Approval;
+		approval.Should().NotBeNull(because: "a partial block is still a block");
+		approval.Object.Should().Be("Order", because: "what the server DID report has to arrive");
+		approval.NotifyApprover.Should().BeNull(
+			because: "absent must not become false: on this element 'not written' and 'switched off' are "
+				+ "different states, and only a nullable flag can tell them apart");
+		approval.NotifyAuthor.Should().BeNull(because: "the same holds for the author notification");
+		approval.IgnoreEmailErrors.Should().BeNull(
+			because: "this one is the sharpest case — the schema default is TRUE, so a false here would assert "
+				+ "the opposite of what the element actually does");
+		approval.AllowDelegation.Should().BeNull(because: "the same holds for the delegation flag");
+		approval.Recipient.Should().BeNull(because: "an unreported recipient is unknown, not empty");
 	}
 
 	[Test]
@@ -597,12 +1054,10 @@ public sealed class ServerProcessDescriberTests {
 			+ "\"flows\":[],\"parameters\":[]}}");
 		ServerProcessDescriber describer = CreateDescriber(client);
 
-		// Act — re-serialize with the SAME options DescribeProcessCommand uses for its output (WriteIndented +
-		// WhenWritingNull), so this asserts what a caller actually reads rather than a default-options shape.
-		JsonSerializerOptions commandOutputOptions = new() {
-			WriteIndented = true,
-			DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-		};
+		// Act — re-serialize with the command's OWN options object, not a copy of it. A hand copy made this
+		// assertion insensitive to the thing it names: deleting DefaultIgnoreCondition from
+		// DescribeProcessCommand left this test green while the caller started receiving explicit nulls.
+		JsonSerializerOptions commandOutputOptions = DescribeProcessCommand.OutputOptions;
 		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
 		string reserialized = JsonSerializer.Serialize(result.Value, commandOutputOptions);
 
@@ -627,6 +1082,67 @@ public sealed class ServerProcessDescriberTests {
 			because: "the element block must survive verbatim, nesting included, not be flattened or stringified");
 		output["elements"]![0]!["email"]!["futureEmailFact"]!.GetValue<string>().Should().Be("kept",
 			because: "the email block's unknown field has to reach the output too, not just the in-memory bag");
+	}
+
+	[Test]
+	[Description("A conditional flow's condition survives deserialization AND the re-serialize the caller actually reads. DescribedFlow has no [JsonExtensionData] overflow bag, so a server field with no property here is dropped silently - the field is mandatory, not polish.")]
+	public void Describe_ShouldRoundTripAConditionalFlowCondition() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[],"
+			+ "\"flows\":[{\"source\":\"task1\",\"target\":\"end1\",\"kind\":\"conditional\","
+			+ "\"condition\":\"[#Amount#] > 100\"}],"
+			+ "\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		// The command's OWN options object. Built by hand this assertion was insensitive to the setting it
+		// names: removing DefaultIgnoreCondition from DescribeProcessCommand left it green while every plain
+		// flow began shipping an explicit "condition": null to the caller.
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Flows[0].Kind.Should().Be("conditional",
+			because: "the flow kind tells a caller a branch from a plain connection");
+		result.Value.Flows[0].Condition.Should().Be("[#Amount#] > 100",
+			because: "the condition text is the ticket's read-back criterion and must be deserialized verbatim");
+		JsonNode output = JsonNode.Parse(reserialized);
+		output["flows"]![0]!["condition"]!.GetValue<string>().Should().Be("[#Amount#] > 100",
+			because: "deserializing is only half of it - DescribedFlow has no extension-data bag, so without the "
+				+ "property the field would vanish on the way OUT, which is what the caller actually reads");
+	}
+
+	[Test]
+	[Description("A plain sequence flow reports no condition, and the absent value is omitted from the output rather than emitted as an explicit null the caller has to interpret.")]
+	public void Describe_ShouldOmitConditionOnAPlainSequenceFlow() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[],"
+			+ "\"flows\":[{\"source\":\"s\",\"target\":\"e\",\"kind\":\"sequence\","
+			+ "\"condition\":null}],"
+			+ "\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		// The command's OWN options object, not a copy: built by hand this assertion was insensitive to the
+		// very setting it names - deleting DefaultIgnoreCondition from DescribeProcessCommand left it green
+		// while every plain flow began shipping an explicit "condition": null to the caller.
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Flows[0].Condition.Should().BeNull(
+			because: "the server maps its stored literal \"null\" to a real null (ProcessDescriber.ReadFlowCondition) "
+				+ "but does NOT omit the key: DescribeProcessFlow.Condition carries [DataMember(Name = "
+				+ "\"condition\")] with no EmitDefaultValue = false, so the wire carries an explicit "
+				+ "\"condition\": null - which is what this payload now sends, rather than the absent key an "
+				+ "earlier version of it guessed at");
+		JsonNode.Parse(reserialized)["flows"]![0]!.AsObject().ContainsKey("condition").Should().BeFalse(
+			because: "an absent condition is omitted under WhenWritingNull, so a caller never has to tell a null "
+				+ "condition from a missing one");
 	}
 
 	// The describer wraps the identity under a "request" property (ProcessDesignService BodyStyle=Wrapped).

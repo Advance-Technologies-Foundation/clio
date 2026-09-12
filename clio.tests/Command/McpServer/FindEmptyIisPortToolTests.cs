@@ -86,7 +86,7 @@ public sealed class FindEmptyIisPortToolTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Prompt guidance for find-empty-iis-port tells the agent to run assertion and passing-infrastructure discovery before choosing a deploy-creatio sitePort.")]
+	[Description("Prompt guidance presents find-empty-iis-port as an optional explicit sitePort override after infrastructure discovery.")]
 	public void FindEmptyIisPortPrompt_Should_Mention_Preflight_Sequence()
 	{
 		// Arrange
@@ -101,5 +101,7 @@ public sealed class FindEmptyIisPortToolTests
 			because: "the prompt should direct the agent to pick passing DB and Redis targets before the port");
 		prompt.Should().Contain("deploy-creatio",
 			because: "the prompt should explain that the discovered port is intended for deploy-creatio");
+		prompt.Should().Contain("only when",
+			because: "the prompt should make the explicit sitePort override optional");
 	}
 }

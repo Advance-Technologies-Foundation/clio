@@ -176,4 +176,40 @@ internal sealed class ApplicationClientFactoryTests {
 			.Which.Message.Should().Contain("Cookie",
 				because: "cookie-based authentication is dropped from v1 and must fail with a clear message");
 	}
+
+	[TestCase(null, "password")]
+	[TestCase("login", null)]
+	[TestCase(" ", "password")]
+	[Description("The dedicated forms client rejects incomplete credentials before any transport is created.")]
+	public void CreateFormsEnvironmentClient_ShouldRejectIncompleteCredentials(string login, string password) {
+		// Arrange
+		ApplicationClientFactory sut = CreateFactory();
+		EnvironmentSettings settings = new() { Uri = "https://creatio.test", Login = login, Password = password };
+
+		// Act
+		Action act = () => sut.CreateFormsEnvironmentClient(settings);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.Which.Message.Should().Contain("login and password",
+				because: "forms authentication must fail closed before CreatioClient can attempt an empty login");
+	}
+
+	[TestCase(null)]
+	[TestCase("")]
+	[TestCase(" ")]
+	[Description("The dedicated bearer client rejects a blank token before any transport is created.")]
+	public void CreateBearerEnvironmentClient_ShouldRejectBlankToken(string token) {
+		// Arrange
+		ApplicationClientFactory sut = CreateFactory();
+		EnvironmentSettings settings = new() { Uri = "https://creatio.test", IsNetCore = true };
+
+		// Act
+		Action act = () => sut.CreateBearerEnvironmentClient(settings, token);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.Which.Message.Should().Contain("access token",
+				because: "a missing bearer token must not fall through to implicit forms authentication");
+	}
 }

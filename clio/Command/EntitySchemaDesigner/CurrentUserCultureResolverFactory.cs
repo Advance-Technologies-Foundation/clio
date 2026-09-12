@@ -16,6 +16,23 @@ public interface ICurrentUserCultureResolverFactory
 	ICurrentUserCultureResolver Create(EnvironmentSettings settings);
 }
 
+/// <summary>Ownership-aware access to resolvers created by a compatible factory.</summary>
+public static class CurrentUserCultureResolverFactoryExtensions {
+	/// <summary>Creates a resolver whose lifetime is scoped to the caller.</summary>
+	public static IOwnedCurrentUserCultureResolver CreateOwned(
+		this ICurrentUserCultureResolverFactory factory, EnvironmentSettings settings) {
+		ICurrentUserCultureResolver resolver = factory.Create(settings);
+		return resolver as IOwnedCurrentUserCultureResolver ?? new BorrowedCultureResolverLease(resolver);
+	}
+
+	private readonly struct BorrowedCultureResolverLease(ICurrentUserCultureResolver resolver)
+		: IOwnedCurrentUserCultureResolver {
+		public System.Threading.Tasks.Task<CultureResolution> ResolveAsync(
+			System.Threading.CancellationToken cancellationToken = default) => resolver.ResolveAsync(cancellationToken);
+		public void Dispose() { }
+	}
+}
+
 /// <summary>
 /// Default implementation. Mirrors <c>PlatformVersionResolverFactory</c>: it reuses the
 /// per-environment <see cref="IApplicationClientFactory.CreateEnvironmentClient"/> and the shared
@@ -48,14 +65,19 @@ public sealed class CurrentUserCultureResolverFactory : ICurrentUserCultureResol
 	public ICurrentUserCultureResolver Create(EnvironmentSettings settings)
 	{
 		ArgumentNullException.ThrowIfNull(settings);
-		IApplicationClient applicationClient = _applicationClientFactory.CreateEnvironmentClient(settings);
-		// The logger is created per call rather than stored as a typed instance field — that would
-		// mismatch the factory's enclosing type (Sonar S6672), and the factory does no logging itself.
-		return new CurrentUserCultureResolver(
-			applicationClient,
-			settings,
-			_serviceUrlBuilderFactory,
-			_cache,
-			_loggerFactory.CreateLogger<CurrentUserCultureResolver>());
+		IOwnedApplicationClient applicationClient = _applicationClientFactory.CreateOwnedEnvironmentClient(settings);
+		try {
+			// The logger is created per call rather than stored as a typed instance field — that would
+			// mismatch the factory's enclosing type (Sonar S6672), and the factory does no logging itself.
+			return new CurrentUserCultureResolver(
+				applicationClient,
+				settings,
+				_serviceUrlBuilderFactory,
+				_cache,
+				_loggerFactory.CreateLogger<CurrentUserCultureResolver>());
+		} catch {
+			applicationClient.Dispose();
+			throw;
+		}
 	}
 }

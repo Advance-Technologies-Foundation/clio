@@ -60,9 +60,8 @@ $lockRoot = "F:\Projects\Issue-Workspaces\.locks"
 [IO.Directory]::CreateDirectory($lockRoot) > $null
 $hasher = [Security.Cryptography.SHA256]::Create()
 try {
-    $endpointHash = [BitConverter]::ToString(
-        $hasher.ComputeHash([Text.Encoding]::UTF8.GetBytes($registeredUrl.ToLowerInvariant())))
-        .Replace("-", "").ToLowerInvariant()
+    $endpointHash = ([BitConverter]::ToString(
+        $hasher.ComputeHash([Text.Encoding]::UTF8.GetBytes($registeredUrl.ToLowerInvariant())))).Replace("-", "").ToLowerInvariant()
 }
 finally {
     $hasher.Dispose()

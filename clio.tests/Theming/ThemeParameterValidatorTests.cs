@@ -15,7 +15,8 @@ using NUnit.Framework;
 [Property("Module", "Theming")]
 public sealed class ThemeParameterValidatorTests {
 
-	private static readonly Regex CssClassNamePattern = new("^[A-Za-z][A-Za-z0-9_-]*$");
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+	private static readonly Regex CssClassNamePattern = new("^[A-Za-z][A-Za-z0-9_-]*$", RegexOptions.None, RegexTimeout);
 
 	[Test]
 	[Description("DeriveCssClassNameFromCaption lowercases a multi-word caption and joins words with single hyphens.")]

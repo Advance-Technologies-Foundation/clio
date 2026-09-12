@@ -18,7 +18,9 @@ internal sealed class EntitySchemaCaptionCultureResolverTests
 {
 	private ICurrentUserCultureResolverFactory _cultureResolverFactory = null!;
 	private ISettingsRepository _settingsRepository = null!;
-	private ICurrentUserCultureResolver _cultureResolver = null!;
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Structure", "NUnit1032:An IDisposable field/property should be Disposed in a TearDown method",
+		Justification = "The system under test owns and disposes the factory-returned substitute.")]
+	private IOwnedCurrentUserCultureResolver _cultureResolver = null!;
 	private ILogger _logger = null!;
 	private IEntitySchemaCaptionCultureResolver _resolver = null!;
 
@@ -26,7 +28,7 @@ internal sealed class EntitySchemaCaptionCultureResolverTests
 	public void Setup() {
 		_cultureResolverFactory = Substitute.For<ICurrentUserCultureResolverFactory>();
 		_settingsRepository = Substitute.For<ISettingsRepository>();
-		_cultureResolver = Substitute.For<ICurrentUserCultureResolver>();
+		_cultureResolver = Substitute.For<IOwnedCurrentUserCultureResolver>();
 		_logger = Substitute.For<ILogger>();
 		_settingsRepository.GetEnvironment(Arg.Any<EnvironmentOptions>()).Returns(new EnvironmentSettings());
 		_cultureResolverFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(_cultureResolver);

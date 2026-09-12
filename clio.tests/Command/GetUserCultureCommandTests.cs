@@ -18,7 +18,9 @@ namespace Clio.Tests.Command;
 public sealed class GetUserCultureCommandTests : BaseCommandTests<GetUserCultureCommandOptions>
 {
 	private ICurrentUserCultureResolverFactory _resolverFactory;
-	private ICurrentUserCultureResolver _resolver;
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Structure", "NUnit1032:An IDisposable field/property should be Disposed in a TearDown method",
+		Justification = "The system under test owns and disposes the factory-returned substitute.")]
+	private IOwnedCurrentUserCultureResolver _resolver;
 	private ISettingsRepository _settingsRepository;
 	private ILogger _logger;
 	private GetUserCultureCommand _command;
@@ -26,7 +28,7 @@ public sealed class GetUserCultureCommandTests : BaseCommandTests<GetUserCulture
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder)
 	{
 		base.AdditionalRegistrations(containerBuilder);
-		_resolver = Substitute.For<ICurrentUserCultureResolver>();
+		_resolver = Substitute.For<IOwnedCurrentUserCultureResolver>();
 		_resolverFactory = Substitute.For<ICurrentUserCultureResolverFactory>();
 		_resolverFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(_resolver);
 		_settingsRepository = Substitute.For<ISettingsRepository>();

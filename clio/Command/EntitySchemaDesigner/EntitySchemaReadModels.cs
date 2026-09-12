@@ -62,6 +62,13 @@ public sealed record EntitySchemaPropertiesInfo(
 /// <summary>
 /// Represents a structured snapshot of remote entity schema column properties.
 /// </summary>
+/// <remarks>
+/// When <c>package-name</c> is omitted, the result describes the merged runtime schema across all packages.
+/// The runtime endpoint does not expose <c>track-changes</c>, <c>do-not-control-integrity</c>, or
+/// <c>localizable-text</c>, so those values are <c>null</c> in merged mode rather than an incorrect
+/// <c>false</c>. In merged mode <c>source</c> describes parent-entity-schema inheritance, not package ownership.
+/// Supply a package to read the three unavailable values and package-layer ownership authoritatively.
+/// </remarks>
 public sealed record EntitySchemaColumnPropertiesInfo(
 	[property: JsonPropertyName("schema-name")] string SchemaName,
 	[property: JsonPropertyName("package-name")] string PackageName,
@@ -73,15 +80,15 @@ public sealed record EntitySchemaColumnPropertiesInfo(
 	[property: JsonPropertyName("required")] bool Required,
 	[property: JsonPropertyName("indexed")] bool Indexed,
 	[property: JsonPropertyName("cloneable")] bool Cloneable,
-	[property: JsonPropertyName("track-changes")] bool TrackChanges,
+	[property: JsonPropertyName("track-changes")] bool? TrackChanges,
 	[property: JsonPropertyName("default-value-source")] string? DefaultValueSource,
 	[property: JsonPropertyName("default-value")] string? DefaultValue,
 	[property: JsonPropertyName("reference-schema-name")] string? ReferenceSchemaName,
 	[property: JsonPropertyName("simple-lookup")] bool SimpleLookup,
 	[property: JsonPropertyName("cascade")] bool Cascade,
-	[property: JsonPropertyName("do-not-control-integrity")] bool DoNotControlIntegrity,
+	[property: JsonPropertyName("do-not-control-integrity")] bool? DoNotControlIntegrity,
 	[property: JsonPropertyName("multiline-text")] bool MultilineText,
-	[property: JsonPropertyName("localizable-text")] bool LocalizableText,
+	[property: JsonPropertyName("localizable-text")] bool? LocalizableText,
 	[property: JsonPropertyName("accent-insensitive")] bool AccentInsensitive,
 	[property: JsonPropertyName("masked")] bool Masked,
 	[property: JsonPropertyName("format-validated")] bool FormatValidated,

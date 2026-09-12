@@ -38,6 +38,7 @@ namespace Clio.Mcp.E2E;
 public sealed class InstallProcessBuilderContractToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = InstallProcessBuilderTool.InstallProcessBuilderToolName;
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
 	/// <summary>
 	/// The five process-designer MCP tools whose refusals name <c>install-process-builder</c> as the fix.
@@ -175,7 +176,7 @@ public sealed class InstallProcessBuilderContractToolE2ETests : McpContractFixtu
 				+ "text of the tool that sent it here");
 		// Whitespace-normalised, because `.` does not match a newline and the contract text is re-wrapped
 		// freely; a purely cosmetic re-wrap must not turn this red.
-		string normalizedDescription = Regex.Replace(contract.Description, @"\s+", " ");
+		string normalizedDescription = Regex.Replace(contract.Description, @"\s+", " ", RegexOptions.None, RegexTimeout);
 		normalizedDescription.Should().MatchRegex(@"(?i)\brefuses\b[^.]*\bnewer\b",
 			because: "a case where this tool does NOT install must be in the contract, or an agent meets "
 				+ "the refusal as a surprise. Within one sentence, so 'it never refuses ... a newer version' "

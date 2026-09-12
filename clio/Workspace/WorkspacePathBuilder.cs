@@ -1,4 +1,4 @@
-namespace Clio.Workspaces
+﻿namespace Clio.Workspaces
 {
 	using System;
 	using System.IO;
@@ -133,6 +133,10 @@ namespace Clio.Workspaces
 
 		public string BuildPackagePath(string packageName) => Path.Combine(PackagesFolderPath, packageName);
 		public string BuildPackageProjectPath(string packageName) => Path.Combine(PackagesFolderPath, packageName, "Files", packageName+".csproj");
+		public string BuildPackagePropsPath(string packageName, string moniker) =>
+			Path.Combine(PackagesFolderPath, packageName, "Files", BuildPackagePropsFileName(packageName, moniker));
+		public static string BuildPackagePropsFileName(string packageName, string moniker) =>
+			$"{packageName}-{moniker}.nuget.props";
 		public string BuildFrameworkCreatioSdkPath(Version nugetVersion) =>
 			Path.Combine(NugetFolderPath, "creatiosdk", nugetVersion.ToString(), "lib",
 				"net40");

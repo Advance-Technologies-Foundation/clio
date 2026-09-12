@@ -4,6 +4,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
+using Acornima;
+using Acornima.Ast;
 using Newtonsoft.Json.Linq;
 
 /// <summary>
@@ -14,16 +16,30 @@ using Newtonsoft.Json.Linq;
 /// </summary>
 internal static class PageBodyMerger {
 
-	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
-
 	/// <summary>
-	/// The one operation verb the differ routes into a DIFFERENT GROUP based on shape: a <c>remove</c>
-	/// carrying a <c>properties</c> array goes to a different group, and a different apply pass, than an
-	/// element <c>remove</c>. (A <c>set</c> also branches on <c>properties</c>, but inside its own apply
-	/// pass rather than at grouping time, so it needs no identity discriminator.) Ordinal, matching the
-	/// differ switch.
+	/// The two operation verbs whose APPLY BEHAVIOUR depends on whether the entry carries a
+	/// <c>properties</c> array, so for them that array is part of the merge identity.
 	/// </summary>
-	private const string RemoveOperationName = "remove";
+	/// <remarks>
+	/// <c>remove</c> splits at grouping time: <see cref="JsonDiffApplier"/> routes a property removal and
+	/// an element removal into different groups, applied in different passes.
+	/// <para>
+	/// <c>set</c> splits INSIDE its own pass, which is easy to miss and was missed once: <c>Set</c> calls
+	/// <c>Remove</c>, and <c>Remove</c> either strips the named keys in place (properties form) or detaches
+	/// the element and returns its position so the following <c>Insert</c> can restore it (element form).
+	/// The two do materially different things, so two <c>set</c> entries for one name that differ only by
+	/// <c>properties</c> must not collide — conflating them destroys one, which is the defect class #1132
+	/// exists to eliminate.
+	/// </para>
+	/// Both compared Ordinal, matching the differ's own exact-case switch.
+	/// </remarks>
+	private const string RemoveOperationName = PageViewConfigDiffVerbs.Remove;
+
+	/// <inheritdoc cref="RemoveOperationName"/>
+	private const string SetOperationName = PageViewConfigDiffVerbs.Set;
+
+
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
 
 	/// <summary>
 	/// Which side of the append merge a body belongs to, so the full-config rejection message can name the
@@ -196,21 +212,19 @@ internal static class PageBodyMerger {
 	/// section to an older page, first manually insert the empty marker pair into the body, then call
 	/// <c>Merge</c> with the desired content.
 	/// </remarks>
-	public static string Merge(string currentBody, string incomingBody) =>
-		Merge(currentBody, incomingBody, out _);
-
-	/// <summary>
-	/// Overload that additionally reports what the merge did to the <c>viewConfigDiff</c> array, so a
-	/// caller can show the outcome BEFORE committing to it (GitHub #1150: <c>--dry-run</c> returned
-	/// <c>success</c> without saying what the write would change). The projection is a by-product of the
-	/// one real merge, never a second computation: a separate predictor would be free to drift from the
-	/// identity rules below, and the whole point is to report what will actually happen.
-	/// </summary>
+	/// <param name="currentBody">The schema body currently stored on the server.</param>
+	/// <param name="incomingBody">The fragment the caller wants merged into it.</param>
 	/// <param name="projection">
-	/// Counts, replaced entries, and dropped entries for the <c>viewConfigDiff</c> section. Never
+	/// What the merge did to the <c>viewConfigDiff</c> array: the counts, the replaced and dropped labels,
+	/// the entries the caller's OWN fragment superseded, whether the merged array actually reaches the
+	/// returned body, and the ready-made superseded-drop warnings. A by-product of the ONE real merge,
+	/// never a second computation — a separate predictor would be free to drift from the identity rules
+	/// below, and the point is to report what will actually happen (GitHub #1150). Never
 	/// <see langword="null"/> on a successful merge.
 	/// </param>
+	/// <returns>The merged body.</returns>
 	public static string Merge(string currentBody, string incomingBody, out PageAppendProjection projection) {
+		var collector = new ProjectionCollector();
 		if (string.IsNullOrWhiteSpace(currentBody)) {
 			throw new InvalidOperationException("Current body is empty — cannot perform append merge.");
 		}
@@ -233,7 +247,6 @@ internal static class PageBodyMerger {
 		if (UsesUnsupportedFullConfigForm(currentBody, PageBodyRole.Current, out string currentFullConfigMessage)) {
 			throw new FullConfigAppendNotSupportedException(currentFullConfigMessage);
 		}
-		var collector = new ProjectionCollector();
 		string merged = PageSchemaTypeExtensions.FromBody(currentBody) == PageSchemaType.Mobile
 			? MergeMobile(currentBody, incomingBody, collector)
 			: MergeWeb(currentBody, incomingBody, collector);
@@ -242,12 +255,22 @@ internal static class PageBodyMerger {
 	}
 
 	/// <summary>
+	/// Merges an incoming page body fragment into the schema's current body, discarding the report of
+	/// the one operation class the merge cannot preserve.
+	/// </summary>
+	/// <remarks>
+	/// For callers with no channel to surface a warning. Prefer the overload taking
+	/// <c>out <see cref="PageAppendProjection"/></c> wherever the caller CAN report: a dropped superseded
+	/// duplicate is exactly the silent loss GH-1132 exists to eliminate, and GH-1150 added two more losses
+	/// it reports, so discarding the report should be a deliberate choice rather than the default one.
+	/// </remarks>
+	public static string Merge(string currentBody, string incomingBody) =>
+		Merge(currentBody, incomingBody, out _);
+
+	/// <summary>
 	/// Merges two web (AMD) page bodies using marker-based section replacement.
 	/// </summary>
 	private static string MergeWeb(string currentBody, string incomingBody, ProjectionCollector collector) {
-		// Precondition: Merge() has already rejected a full-config current or incoming body via the shared
-		// UsesUnsupportedFullConfigForm predicate, so this method only ever sees diff-form bodies.
-		//
 		// GH-1150: ReplaceSection below is a single-match Regex.Replace that requires a marker PAIR. With no
 		// pair it returns the body UNCHANGED and the merged array is silently discarded — behaviour Merge's
 		// own remarks document. Nothing upstream rejects such a current body either: ValidateMarkerIntegrity
@@ -256,6 +279,8 @@ internal static class PageBodyMerger {
 		// write that loses everything, which is worse than the bare success it replaced.
 		collector.RecordViewConfigDiffApplied(
 			PageSchemaSectionReader.TryRead(currentBody, out _, "SCHEMA_VIEW_CONFIG_DIFF"));
+		// Precondition: Merge() has already rejected a full-config current or incoming body via the shared
+		// UsesUnsupportedFullConfigForm predicate, so this method only ever sees diff-form bodies.
 		JArray mergedViewConfigDiff = MergeViewConfigDiffOperations(
 			ReadJsonArray(currentBody, "SCHEMA_VIEW_CONFIG_DIFF"),
 			ReadJsonArray(incomingBody, "SCHEMA_VIEW_CONFIG_DIFF"),
@@ -269,9 +294,12 @@ internal static class PageBodyMerger {
 		string mergedHandlers = MergeHandlersRaw(
 			ReadRawSection(currentBody, "SCHEMA_HANDLERS") ?? "[]",
 			ReadRawSection(incomingBody, "SCHEMA_HANDLERS") ?? "[]");
-		string mergedConverters = MergeConvertersRaw(
+		string mergedConverters = MergeKeyedObjectRaw(
 			ReadRawSection(currentBody, "SCHEMA_CONVERTERS") ?? "{}",
 			ReadRawSection(incomingBody, "SCHEMA_CONVERTERS") ?? "{}");
+		string mergedValidators = MergeKeyedObjectRaw(
+			ReadRawSection(currentBody, "SCHEMA_VALIDATORS") ?? "{}",
+			ReadRawSection(incomingBody, "SCHEMA_VALIDATORS") ?? "{}");
 
 		string result = currentBody;
 		result = ReplaceSection(result, "SCHEMA_VIEW_CONFIG_DIFF", mergedViewConfigDiff.ToString(Newtonsoft.Json.Formatting.Indented));
@@ -279,6 +307,7 @@ internal static class PageBodyMerger {
 		result = ReplaceSection(result, "SCHEMA_MODEL_CONFIG_DIFF", mergedModelConfigDiff.ToString(Newtonsoft.Json.Formatting.Indented));
 		result = ReplaceSection(result, "SCHEMA_HANDLERS", mergedHandlers);
 		result = ReplaceSection(result, "SCHEMA_CONVERTERS", mergedConverters);
+		result = ReplaceSection(result, "SCHEMA_VALIDATORS", mergedValidators);
 		return result;
 	}
 
@@ -327,11 +356,11 @@ internal static class PageBodyMerger {
 	}
 
 	/// <summary>
-	/// Merges two JavaScript converter object strings by key — incoming keys win over current keys
+	/// Merges two JavaScript object strings by key — incoming keys win over current keys
 	/// with the same name. Preserves non-JSON function bodies by using raw text extraction rather
 	/// than JSON parsing.
 	/// </summary>
-	private static string MergeConvertersRaw(string current, string incoming) {
+	private static string MergeKeyedObjectRaw(string current, string incoming) {
 		string currentTrim = current.Trim();
 		string incomingTrim = incoming.Trim();
 		if (currentTrim == "{}" || string.IsNullOrEmpty(currentTrim)) {
@@ -340,13 +369,13 @@ internal static class PageBodyMerger {
 		if (incomingTrim == "{}" || string.IsNullOrEmpty(incomingTrim)) {
 			return currentTrim;
 		}
-		string currentInner = StripObjectBraces(currentTrim);
-		string incomingInner = StripObjectBraces(incomingTrim);
-		List<(string Key, string Entry)> currentEntries = ParseConverterEntries(currentInner);
-		List<(string Key, string Entry)> incomingEntries = ParseConverterEntries(incomingInner);
-		var incomingKeys = new HashSet<string>(incomingEntries.Select(e => e.Key), StringComparer.Ordinal);
+		List<(string Key, string Entry)> currentEntries = ParseObjectEntries(currentTrim);
+		List<(string Key, string Entry)> incomingEntries = ParseObjectEntries(incomingTrim);
+		var incomingKeys = new HashSet<string>(
+			incomingEntries.Where(e => e.Key != null).Select(e => e.Key),
+			StringComparer.Ordinal);
 		var kept = currentEntries
-			.Where(e => !incomingKeys.Contains(e.Key))
+			.Where(e => e.Key == null || !incomingKeys.Contains(e.Key))
 			.Select(e => e.Entry)
 			.Concat(incomingEntries.Select(e => e.Entry))
 			.ToList();
@@ -354,161 +383,34 @@ internal static class PageBodyMerger {
 	}
 
 	/// <summary>
-	/// Parses a JavaScript object body (without outer braces) into a list of top-level key–value
-	/// entry pairs. Each entry preserves the raw text of "key": value so the function body is
-	/// never mangled. Stops at top-level commas — depth tracking covers nested {}, [], and ().
+	/// Parses a JavaScript object into top-level key-entry pairs using Acornima source ranges.
+	/// Each entry preserves its raw source, including functions, comments, regular expressions,
+	/// and template literals.
 	/// </summary>
-	/// <remarks>
-	/// Limitation: JavaScript regex literals (<c>/pattern/flags</c>) are not tracked as string
-	/// delimiters. A regex body containing an unbalanced <c>{</c>, <c>[</c>, or a bare <c>,</c>
-	/// at depth 0 could cause a premature entry split. In practice, converter functions are simple
-	/// formatters that do not use regex literals, so this edge case is not expected to occur.
-	/// </remarks>
-	private static List<(string Key, string Entry)> ParseConverterEntries(string inner) {
+	private static List<(string Key, string Entry)> ParseObjectEntries(string objectSource) {
 		var entries = new List<(string Key, string Entry)>();
-		int i = 0;
-		while (i < inner.Length) {
-			i = SkipSeparators(inner, i);
-			if (i >= inner.Length) break;
-			if (IsKeyQuote(inner[i])) {
-				i = ReadQuotedEntry(inner, i, entries);
-			} else if (IsIdentifierStart(inner[i])) {
-				i = SkipUnquotedEntry(inner, i);
-			} else {
-				i++;
+		string wrappedSource = $"({objectSource})";
+		Script script = new Parser().ParseScript(wrappedSource);
+		if (script.ChildNodes.FirstOrDefault() is not ExpressionStatement {
+			Expression: ObjectExpression objectExpression
+		}) {
+			throw new InvalidOperationException("Expected a JavaScript object expression.");
+		}
+		foreach (Node element in objectExpression.Properties) {
+			string key = element is Property { Computed: false } property
+				? property.Key switch {
+					Identifier identifier => identifier.Name,
+					Literal { Value: string literalKey } => literalKey,
+					_ => null
+				}
+				: null;
+			string entry = wrappedSource.Substring(element.Start, element.End - element.Start).Trim();
+			if (!string.IsNullOrWhiteSpace(entry)) {
+				entries.Add((key, entry));
 			}
 		}
 		return entries;
 	}
-
-	/// <summary>
-	/// Reads one quoted key–value entry, appends it to <paramref name="entries"/>, and returns
-	/// the position after the trailing comma (if present).
-	/// </summary>
-	private static int ReadQuotedEntry(string inner, int i, List<(string Key, string Entry)> entries) {
-		int entryStart = i;
-		i = ReadKey(inner, i, out string key);
-		i = SkipColonAndWhitespace(inner, i);
-		i = ScanValueEnd(inner, i);
-		string entry = inner.Substring(entryStart, i - entryStart).Trim();
-		if (!string.IsNullOrWhiteSpace(entry))
-			entries.Add((key, entry));
-		if (i < inner.Length && inner[i] == ',') i++;
-		return i;
-	}
-
-	/// <summary>
-	/// Skips an unquoted entry (e.g. ES6 method shorthand) without recording it. Consumes the
-	/// entire entry — key + colon + value — so that string literals inside the function body are
-	/// never mistaken for the next key. Use quoted keys per the converter guidance.
-	/// </summary>
-	private static int SkipUnquotedEntry(string inner, int i) {
-		i = SkipUnquotedKey(inner, i);
-		if (i < inner.Length && inner[i] == ':') {
-			i = SkipColonAndWhitespace(inner, i);
-			i = ScanValueEnd(inner, i);
-		}
-		if (i < inner.Length && inner[i] == ',') i++;
-		return i;
-	}
-
-	/// <summary>
-	/// Advances past an unquoted key name using bracket-depth tracking so that a <c>:</c> inside a
-	/// complex default argument (e.g. <c>(v = {key: val})</c>) is not treated as the key separator.
-	/// </summary>
-	private static int SkipUnquotedKey(string inner, int i) {
-		int keyDepth = 0;
-		while (i < inner.Length) {
-			char kc = inner[i];
-			if (IsOpenBracket(kc)) { keyDepth++; i++; continue; }
-			if (IsCloseBracket(kc)) {
-				if (keyDepth <= 0) break;
-				keyDepth--;
-				i++;
-				continue;
-			}
-			if (keyDepth == 0 && (kc == ':' || kc == ',')) break;
-			i++;
-		}
-		return i;
-	}
-
-	private static bool IsKeyQuote(char ch) => ch is '"' or '\'';
-	private static bool IsIdentifierStart(char ch) => char.IsLetterOrDigit(ch) || ch == '_' || ch == '$';
-
-	private static int SkipSeparators(string s, int i) {
-		while (i < s.Length && (char.IsWhiteSpace(s[i]) || s[i] == ','))
-			i++;
-		return i;
-	}
-
-	private static int ReadKey(string s, int i, out string key) {
-		char openQuote = s[i];
-		i++; // skip opening quote
-		int start = i;
-		while (i < s.Length && s[i] != openQuote) {
-			if (s[i] == '\\') i++;
-			i++;
-		}
-		key = s.Substring(start, i - start);
-		if (i < s.Length) i++; // skip closing quote
-		return i;
-	}
-
-	private static int SkipColonAndWhitespace(string s, int i) {
-		while (i < s.Length && (char.IsWhiteSpace(s[i]) || s[i] == ':'))
-			i++;
-		return i;
-	}
-
-	/// <summary>
-	/// Advances <paramref name="i"/> past the current converter value, stopping at a top-level
-	/// comma or end-of-string. Tracks string literals and bracket depth to avoid false splits.
-	/// </summary>
-	/// <remarks>
-	/// Known limitations:
-	/// <list type="bullet">
-	/// <item>JavaScript regex literals (<c>/pattern/flags</c>) are not tracked as string delimiters.
-	/// A regex body containing an unbalanced bracket or a bare comma at depth 0 could cause a
-	/// premature entry split. Converter functions in practice do not use unbalanced regex literals.</item>
-	/// <item>Template literal interpolations (<c>`outer ${inner}`</c>) are not depth-tracked.
-	/// <see cref="AdvanceInString"/> uses a single <c>strChar</c> so a <c>}</c> that closes a
-	/// <c>${…}</c> interpolation is treated as the end of the template string, potentially causing
-	/// false depth changes for any brackets that follow. Async converters that return a template
-	/// literal (e.g. <c>`+${digits}`</c>) are not affected as long as the interpolation does not
-	/// contain an unmatched bracket.</item>
-	/// </list>
-	/// </remarks>
-	private static int ScanValueEnd(string s, int i) {
-		int depth = 0;
-		bool inStr = false;
-		char strChar = '"';
-		while (i < s.Length) {
-			char ch = s[i];
-			if (inStr) { i = AdvanceInString(i, ch, strChar, ref inStr); continue; }
-			if (IsStringDelimiter(ch)) { inStr = true; strChar = ch; i++; continue; }
-			if (IsOpenBracket(ch)) { depth++; i++; continue; }
-			if (IsCloseBracket(ch)) {
-				if (depth <= 0) break;
-				depth--;
-				i++;
-				continue;
-			}
-			if (depth == 0 && ch == ',') break;
-			i++;
-		}
-		return i;
-	}
-
-	private static int AdvanceInString(int i, char ch, char strChar, ref bool inStr) {
-		if (ch == '\\') return i + 2;
-		if (ch == strChar) inStr = false;
-		return i + 1;
-	}
-
-	private static bool IsStringDelimiter(char ch) => ch is '"' or '\'' or '`';
-	private static bool IsOpenBracket(char ch) => ch is '(' or '{' or '[';
-	private static bool IsCloseBracket(char ch) => ch is ')' or '}' or ']';
 
 	/// <summary>
 	/// Merges two <c>viewConfigDiff</c> operation arrays. What collides is an
@@ -525,24 +427,47 @@ internal static class PageBodyMerger {
 	/// <c>docs/knowledge/Command/viewconfigdiff-carries-multiple-operations-per-component-name.md</c>.
 	/// </remarks>
 	private static JArray MergeViewConfigDiffOperations(JArray current, JArray incoming, ProjectionCollector collector) {
-		// Last spelling wins within one fragment; the emit pass below still places it at the first
-		// occurrence's position.
+		Dictionary<OperationIdentity, JToken> incomingByIdentity = IndexIncomingByIdentity(incoming, collector);
+		var replaced = new HashSet<OperationIdentity>();
+		var merged = new JArray();
+		AppendCurrentEntries(current, incomingByIdentity, replaced, merged, collector);
+		AppendUnmatchedIncomingEntries(incoming, incomingByIdentity, replaced, merged, collector);
+		collector.SetSectionCounts(current.Count, incoming.Count, merged.Count);
+		return merged;
+	}
+
+	/// <summary>
+	/// Indexes the incoming fragment by operation identity. Last spelling wins within one fragment; the
+	/// emit pass still places it at the first occurrence's position.
+	/// </summary>
+	private static Dictionary<OperationIdentity, JToken> IndexIncomingByIdentity(
+			JArray incoming, ProjectionCollector collector) {
 		var incomingByIdentity = new Dictionary<OperationIdentity, JToken>();
 		foreach (JToken item in incoming) {
 			if (!TryGetOperationIdentity(item, out OperationIdentity identity)) {
 				continue;
 			}
-			// GH-1150: an overwrite here IS a loss — the earlier spelling never reaches the merged array —
-			// and it is the CALLER'S OWN operation, not the server's. Counting it is what keeps the
-			// projection honest: before this it vanished with dropped=0 and no warning, while the response
-			// claimed the dropped set was the only way an append loses an operation.
+			// GH-1150: an overwrite here IS a loss — the earlier spelling never reaches the merged array. It
+			// is COUNTED but deliberately NOT warned about: the fragment is the caller's own, they can read
+			// it, and warning about their own input would be noise (the rule set with the superseded-drop
+			// warning, which reports the SERVER's body instead). Counting it is what keeps the projection
+			// honest, because otherwise the reported totals cannot be reconciled and a real loss is invisible.
 			if (!incomingByIdentity.TryAdd(identity, item)) {
 				collector.RecordCollapsedIncoming(identity);
 				incomingByIdentity[identity] = item;
 			}
 		}
-		var replaced = new HashSet<OperationIdentity>();
-		var merged = new JArray();
+		return incomingByIdentity;
+	}
+
+	/// <summary>
+	/// Emits the current body in place, substituting the incoming entry wherever an identity collides,
+	/// and reporting the one entry the merge cannot preserve.
+	/// </summary>
+	private static void AppendCurrentEntries(JArray current,
+		Dictionary<OperationIdentity, JToken> incomingByIdentity, HashSet<OperationIdentity> replaced,
+		JArray merged, ProjectionCollector collector) {
+		var warned = new HashSet<OperationIdentity>();
 		foreach (JToken item in current) {
 			if (!TryGetOperationIdentity(item, out OperationIdentity identity) ||
 				!incomingByIdentity.TryGetValue(identity, out JToken replacement)) {
@@ -557,11 +482,25 @@ internal static class PageBodyMerger {
 			if (replaced.Add(identity)) {
 				merged.Add(replacement);
 				collector.RecordReplaced(identity);
-			} else {
-				collector.RecordDropped(identity);
+				continue;
+			}
+			collector.RecordDropped(identity);
+			// The one loss the merge cannot avoid, so it is REPORTED rather than silent (#1132 AC4).
+			// One warning per IDENTITY, not per dropped entry: three carried occurrences would otherwise
+			// emit two byte-identical sentences, and CombineWarnings does not dedupe.
+			if (warned.Add(identity)) {
+				collector.RecordSupersededDropWarning(BuildSupersededDropMessage(identity));
 			}
 		}
-		// Ordered pass over `incoming` so an unidentified entry keeps the position the caller gave it.
+	}
+
+	/// <summary>
+	/// Appends the incoming entries that did not replace anything, in the order the caller gave them, so
+	/// an unidentified entry keeps its position.
+	/// </summary>
+	private static void AppendUnmatchedIncomingEntries(JArray incoming,
+		Dictionary<OperationIdentity, JToken> incomingByIdentity, HashSet<OperationIdentity> replaced,
+		JArray merged, ProjectionCollector collector) {
 		var emitted = new HashSet<OperationIdentity>();
 		foreach (JToken item in incoming) {
 			if (!TryGetOperationIdentity(item, out OperationIdentity identity)) {
@@ -573,8 +512,6 @@ internal static class PageBodyMerger {
 				collector.RecordAdded();
 			}
 		}
-		collector.SetSectionCounts(current.Count, incoming.Count, merged.Count);
-		return merged;
 	}
 
 	/// <summary>
@@ -585,10 +522,38 @@ internal static class PageBodyMerger {
 	/// <param name="Operation">The operation verb, or the empty string when the entry carries none.</param>
 	/// <param name="Name">The target component name.</param>
 	/// <param name="TargetsProperties">
-	/// A <c>remove</c> carrying a <c>properties</c> array. <see cref="JsonDiffApplier"/> routes those into
-	/// a different group than an element <c>remove</c>, so the two must not collide.
+	/// A <c>remove</c> or <c>set</c> carrying a <c>properties</c> array — the two verbs whose apply
+	/// behaviour that array changes (see <see cref="RemoveOperationName"/>). Without this component the
+	/// property form and the element form of one verb would share an identity and one would be destroyed.
 	/// </param>
 	private readonly record struct OperationIdentity(string Operation, string Name, bool TargetsProperties);
+
+	/// <summary>
+	/// Actionable warning for a current entry dropped because the incoming fragment superseded an identity
+	/// the current body carried more than once.
+	/// </summary>
+	/// <remarks>
+	/// Only the FIRST occurrence is replaced; a later one cannot also be kept, because the differ applies a
+	/// group in array order and the stale values would then re-apply after the caller's replacement. The
+	/// message names what to do about it, since the caller cannot see the server body they just overwrote.
+	/// </remarks>
+	private static string BuildSupersededDropMessage(OperationIdentity identity) {
+		string verb = string.IsNullOrEmpty(identity.Operation) ? "(no operation)" : identity.Operation;
+		return $"Component '{identity.Name}' carried more than one '{verb}' operation in the page's own body, " +
+			"and the appended fragment supersedes that operation. Only the first occurrence was replaced; every " +
+			"later one was dropped, because keeping it would re-apply its values AFTER your replacement. If they " +
+			"set different keys, the dropped entries' keys are gone from the saved page. Re-read the page with " +
+			"get-page and re-apply anything missing. See docs://mcp/guides/page-modification.";
+	}
+
+	/// <summary>
+	/// Whether a <c>properties</c> array changes how the differ applies this verb — true for
+	/// <c>remove</c> and <c>set</c>, false for every other verb, where <c>properties</c> is inert and must
+	/// therefore not split the identity.
+	/// </summary>
+	private static bool SplitsOnProperties(string operation) =>
+		string.Equals(operation, RemoveOperationName, StringComparison.Ordinal)
+		|| string.Equals(operation, SetOperationName, StringComparison.Ordinal);
 
 	/// <summary>
 	/// Computes an entry's <see cref="OperationIdentity"/>. Returns <see langword="false"/> for a
@@ -616,8 +581,7 @@ internal static class PageBodyMerger {
 		string operation = operationItem["operation"] is JValue { Type: JTokenType.String } operationValue
 			? operationValue.Value<string>()
 			: string.Empty;
-		bool targetsProperties = string.Equals(operation, RemoveOperationName, StringComparison.Ordinal)
-			&& operationItem["properties"] is JArray;
+		bool targetsProperties = SplitsOnProperties(operation) && operationItem["properties"] is JArray;
 		identity = new OperationIdentity(operation, name, targetsProperties);
 		return true;
 	}
@@ -661,13 +625,6 @@ internal static class PageBodyMerger {
 		string trimmed = value.Trim();
 		if (trimmed.StartsWith('[')) trimmed = trimmed.Substring(1);
 		if (trimmed.EndsWith(']')) trimmed = trimmed.Substring(0, trimmed.Length - 1);
-		return trimmed.Trim();
-	}
-
-	private static string StripObjectBraces(string value) {
-		string trimmed = value.Trim();
-		if (trimmed.StartsWith('{')) trimmed = trimmed.Substring(1);
-		if (trimmed.EndsWith('}')) trimmed = trimmed.Substring(0, trimmed.Length - 1);
 		return trimmed.Trim();
 	}
 
@@ -743,7 +700,6 @@ internal static class PageBodyMerger {
 		string replacement = $"/**{marker}*/{newContent}/**{marker}*/";
 		return regex.Replace(body, _ => replacement, 1);
 	}
-
 	/// <summary>
 	/// Accumulates a <see cref="PageAppendProjection"/> while the real merge runs. Mutable and single-use;
 	/// one instance per <c>Merge</c> call, never shared.
@@ -758,20 +714,20 @@ internal static class PageBodyMerger {
 	private sealed class ProjectionCollector {
 
 		/// <summary>
-		/// Ceiling on NAMED entries per list, so a pathological fragment cannot bury the response. The
-		/// COUNTS are always exact and unbounded, so a truncated list never understates the scale — the
-		/// consumer reports the remainder from the count.
+		/// Ceiling on NAMED entries per list, so a pathological body cannot bury the response. The COUNTS
+		/// are always exact and unbounded, so a truncated list never understates the scale — the consumer
+		/// reports the remainder from the count.
 		/// </summary>
 		private const int MaxNamedOperations = 25;
 
 		private readonly List<string> _replaced = [];
 		private readonly List<string> _dropped = [];
 		private readonly List<string> _collapsedIncoming = [];
+		private readonly List<string> _supersededDropWarnings = [];
 		private int _added;
 		private int _currentCount;
 		private int _incomingCount;
 		private int _projectedCount;
-
 		private int _replacedCount;
 		private int _droppedCount;
 		private int _collapsedIncomingCount;
@@ -789,12 +745,20 @@ internal static class PageBodyMerger {
 
 		/// <summary>
 		/// One incoming entry superseded an earlier entry of the same identity in the SAME fragment, so the
-		/// earlier one never reaches the merged array.
+		/// earlier one never reaches the merged array. Counted, never warned about — see the rationale at
+		/// the call site in <c>IndexIncomingByIdentity</c>.
 		/// </summary>
 		public void RecordCollapsedIncoming(OperationIdentity identity) {
 			_collapsedIncomingCount++;
 			Append(_collapsedIncoming, identity);
 		}
+
+		/// <summary>
+		/// One ready-made, actionable sentence per IDENTITY whose further current entries were dropped.
+		/// Built by the merge (not from the label lists) so the wording and the one-per-identity rule stay
+		/// in one place; <c>CombineWarnings</c> does not dedupe.
+		/// </summary>
+		public void RecordSupersededDropWarning(string message) => _supersededDropWarnings.Add(message);
 
 		public void RecordAdded() => _added++;
 
@@ -822,7 +786,8 @@ internal static class PageBodyMerger {
 				DroppedOperationCount = _droppedCount,
 				CollapsedIncomingOperations = _collapsedIncoming,
 				CollapsedIncomingOperationCount = _collapsedIncomingCount,
-				ViewConfigDiffApplied = _viewConfigDiffApplied
+				ViewConfigDiffApplied = _viewConfigDiffApplied,
+				SupersededDropWarnings = _supersededDropWarnings
 			};
 
 		private static void Append(List<string> target, OperationIdentity identity) {
@@ -833,7 +798,7 @@ internal static class PageBodyMerger {
 		}
 
 		/// <summary>
-		/// Renders an identity as a short label. The three discriminators are all spelled out, because two
+		/// Renders an identity as a short label. All three discriminators are spelled out, because two
 		/// entries that differ only in <c>TargetsProperties</c> would otherwise read as one repeated line.
 		/// An absent verb is named rather than blanked — it is a real, distinct identity in the merge.
 		/// </summary>

@@ -46,6 +46,13 @@ public sealed class ShowWebAppListTool(ShowAppListCommand command, ISettingsRepo
 	/// </remarks>
 	[McpServerTool(Name = ShowWebAppListToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.None,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Shows the list of registered web applications and their settings as structured JSON, "
 		+ "read from appsettings.json at call time. Sensitive values such as passwords are masked. "
 		+ "Returns {environments, settingsFilePath, warnings}.")]

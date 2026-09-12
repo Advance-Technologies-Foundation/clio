@@ -70,6 +70,16 @@ public sealed record RuntimeEntitySchemaResult(
 /// <param name="IsInherited">Whether the runtime column is inherited from a parent schema.</param>
 /// <param name="ReferenceSchemaName">Optional lookup reference schema name.</param>
 /// <param name="IsIndexed">Whether the runtime column is indexed in the database.</param>
+/// <param name="IsValueCloneable">Whether the runtime column value can be cloned.</param>
+/// <param name="DefaultValue">Runtime default-value metadata when configured.</param>
+/// <param name="IsSimpleLookup">Whether the runtime column is a simple lookup.</param>
+/// <param name="IsCascade">Whether the runtime lookup uses cascade deletion.</param>
+/// <param name="IsMultilineText">Whether the runtime text column is multiline.</param>
+/// <param name="IsAccentInsensitive">Whether text comparisons are accent insensitive.</param>
+/// <param name="IsMasked">Whether the runtime column value is masked.</param>
+/// <param name="IsFormatValidated">Whether the runtime column validates its format.</param>
+/// <param name="UseSeconds">Whether the runtime date/time column includes seconds.</param>
+/// <param name="UsageType">Creatio runtime column usage-type identifier.</param>
 public sealed record RuntimeEntitySchemaColumnResult(
 	Guid UId,
 	string Name,
@@ -79,8 +89,33 @@ public sealed record RuntimeEntitySchemaColumnResult(
 	bool IsRequired,
 	bool IsInherited,
 	string? ReferenceSchemaName,
-	bool IsIndexed = false
+	bool IsIndexed = false,
+	bool IsValueCloneable = false,
+	RuntimeEntitySchemaDefaultValueResult? DefaultValue = null,
+	bool IsSimpleLookup = false,
+	bool IsCascade = false,
+	bool IsMultilineText = false,
+	bool IsAccentInsensitive = false,
+	bool IsMasked = false,
+	bool IsFormatValidated = false,
+	bool UseSeconds = false,
+	int UsageType = 0
 );
+
+/// <summary>
+/// Runtime default-value metadata exposed for an entity schema column.
+/// </summary>
+/// <param name="ValueSourceType">Creatio default-value source identifier.</param>
+/// <param name="Value">Scalar default value when the source uses one.</param>
+/// <param name="ValueSource">Settings or system-value source identifier.</param>
+/// <param name="SequencePrefix">Static prefix for sequence defaults.</param>
+/// <param name="SequenceNumberOfChars">Number of numeric characters in a sequence default.</param>
+public sealed record RuntimeEntitySchemaDefaultValueResult(
+	int ValueSourceType,
+	JsonElement Value,
+	string? ValueSource,
+	string? SequencePrefix,
+	int SequenceNumberOfChars);
 
 internal sealed class RuntimeEntitySchemaReader(
 	IApplicationClient applicationClient,
@@ -118,7 +153,17 @@ internal sealed class RuntimeEntitySchemaReader(
 				column.IsRequired,
 				column.IsInherited,
 				column.ReferenceSchemaName,
-				column.IsIndexed))
+				column.IsIndexed,
+				column.IsValueCloneable,
+				MapDefaultValue(column.DefValue),
+				column.IsSimpleLookup,
+				column.IsCascade,
+				column.IsMultilineText,
+				column.IsAccentInsensitive,
+				column.IsValueMasked || column.IsMasked,
+				column.IsFormatValidated,
+				column.UseSeconds,
+				column.UsageType))
 			.OrderBy(column => column.Name, StringComparer.OrdinalIgnoreCase)
 			.ToList() ?? [];
 
@@ -140,6 +185,18 @@ internal sealed class RuntimeEntitySchemaReader(
 			AdministratedByOperations: schema.AdministratedByOperations,
 			AdministratedByColumns: schema.AdministratedByColumns,
 			AdministratedByRecords: schema.AdministratedByRecords);
+	}
+
+	private static RuntimeEntitySchemaDefaultValueResult? MapDefaultValue(
+		RuntimeEntitySchemaDefaultValueDto? defaultValue) {
+		return defaultValue is null
+			? null
+			: new RuntimeEntitySchemaDefaultValueResult(
+				defaultValue.ValueSourceType,
+				defaultValue.Value,
+				defaultValue.ValueSource,
+				defaultValue.SequencePrefix,
+				defaultValue.SequenceNumberOfChars);
 	}
 
 	private static string? ResolvePrimaryDisplayColumnName(
@@ -246,5 +303,23 @@ internal sealed class RuntimeEntitySchemaReader(
 		bool IsRequired,
 		bool IsInherited,
 		bool IsIndexed,
-		string? ReferenceSchemaName);
+		string? ReferenceSchemaName,
+		bool IsValueCloneable = false,
+		RuntimeEntitySchemaDefaultValueDto? DefValue = null,
+		bool IsSimpleLookup = false,
+		bool IsCascade = false,
+		bool IsMultilineText = false,
+		bool IsAccentInsensitive = false,
+		bool IsValueMasked = false,
+		bool IsMasked = false,
+		bool IsFormatValidated = false,
+		bool UseSeconds = false,
+		int UsageType = 0);
+
+	private sealed record RuntimeEntitySchemaDefaultValueDto(
+		int ValueSourceType,
+		JsonElement Value,
+		string? ValueSource,
+		string? SequencePrefix,
+		int SequenceNumberOfChars);
 }

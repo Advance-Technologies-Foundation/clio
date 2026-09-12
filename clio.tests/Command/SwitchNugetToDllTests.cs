@@ -53,6 +53,7 @@ public class SwitchNugetToDllTests
 			Packages = new[] {"test-package"}
 		});
 
+		_nugetMaterializer.IsPackageNameWithinPackagesFolder(Arg.Is(packageName)).Returns(true);
 		_nugetMaterializer.Materialize(Arg.Is(packageName)).Returns(expectedResult);
 
 		//Act
@@ -78,6 +79,7 @@ public class SwitchNugetToDllTests
 		SetWorkspace(true, _workspace);
 
 		_fileSystem.ExistsFile(csProjFilePath).Returns(false);
+		_nugetMaterializer.IsPackageNameWithinPackagesFolder(Arg.Is(packageName)).Returns(true);
 
 		_workspacePathBuilder.BuildPackageProjectPath(Arg.Is(packageName))
 			.Returns(csProjFilePath);
@@ -92,6 +94,61 @@ public class SwitchNugetToDllTests
 		//Assert
 		actual.Should().Be(1);
 		_logger.Received(1).WriteLine($"{toDllOptions.PackageName} does not contain C# projects... exiting");
+	}
+
+	[Test]
+	public void Command_ShouldExit_WhenPackageIsNotDeclaredByWorkspace(){
+		//Arrange
+		_toDllCommand = new SwitchNugetToDllCommand(_workspace, _workspacePathBuilder, _logger, _fileSystem,
+			_nugetMaterializer);
+		SwitchNugetToDllOptions toDllOptions = new() {
+			PackageName = "../Victim"
+		};
+		SetWorkspace(true, _workspace);
+		_workspace.WorkspaceSettings.Returns(new WorkspaceSettings {
+			Packages = new[] {"test-package"}
+		});
+
+		//Act
+		int actual = _toDllCommand.Execute(toDllOptions);
+
+		//Assert
+		actual.Should().Be(1);
+		_logger.Received(1).WriteLine("../Victim is not a package of this workspace... exiting");
+	}
+
+	[Test]
+	public void Command_ShouldExit_BeforeProbing_WhenDeclaredPackageNameIsUnsafe(){
+		//Arrange
+		//A malformed workspace can declare a name that escapes the packages folder. Exact membership
+		//then passes, so the containment check is the only thing standing between the name and the
+		//path derivation plus the filesystem read that follows it.
+		const string unsafePackageName = @"..\..\Victim";
+		//The fixture's substitutes are shared by every test in it, so the "was never called"
+		//assertions below need substitutes only this test has touched.
+		IWorkspace workspace = Substitute.For<IWorkspace>();
+		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		INugetMaterializer nugetMaterializer = Substitute.For<INugetMaterializer>();
+		SwitchNugetToDllCommand command = new(workspace, workspacePathBuilder, _logger, fileSystem,
+			nugetMaterializer);
+		SwitchNugetToDllOptions toDllOptions = new() {
+			PackageName = unsafePackageName
+		};
+		SetWorkspace(true, workspace);
+		workspace.WorkspaceSettings.Returns(new WorkspaceSettings {
+			Packages = new[] {unsafePackageName}
+		});
+		nugetMaterializer.IsPackageNameWithinPackagesFolder(Arg.Is(unsafePackageName)).Returns(false);
+
+		//Act
+		int actual = command.Execute(toDllOptions);
+
+		//Assert
+		actual.Should().Be(1);
+		workspacePathBuilder.DidNotReceive().BuildPackageProjectPath(Arg.Any<string>());
+		fileSystem.DidNotReceive().ExistsFile(Arg.Any<string>());
+		nugetMaterializer.DidNotReceive().Materialize(Arg.Any<string>());
 	}
 
 	[Test]

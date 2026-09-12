@@ -430,6 +430,124 @@ public class PageBodyMergerTests {
 	}
 
 	[Test]
+	[Description("GitHub #1132 AC4: the one entry the merge cannot preserve is REPORTED, not dropped silently — a further current entry of an identity the fragment supersedes yields an actionable warning")]
+	public void Merge_ShouldReportADrop_WhenTheFragmentSupersedesAnIdentityCarriedTwice() {
+		// Arrange — the page carries `merge B` twice with DISJOINT keys, so the dropped entry takes a key
+		// with it. This is the exact shape the issue's "if the merge cannot preserve them" clause covers.
+		const string current = """
+			[
+				{"operation":"merge","name":"B","values":{"title":"kept"}},
+				{"operation":"merge","name":"B","values":{"visible":false}}
+			]
+			""";
+		const string incoming = """[{"operation":"merge","name":"B","values":{"title":"new"}}]""";
+
+		// Act
+		string merged = PageBodyMerger.Merge(WebBody(current), WebBody(incoming), out PageAppendProjection projection);
+
+		// Assert
+		projection.SupersededDropWarnings.Should().ContainSingle(
+			because: "exactly one current entry was dropped, so exactly one warning must reach the caller — silence here is the #1132 defect narrowed, not eliminated");
+		projection.SupersededDropWarnings[0].Should().Contain("'B'",
+			because: "the caller cannot act on a warning that does not name the component");
+		projection.SupersededDropWarnings[0].Should().Contain("get-page",
+			because: "the warning must say how to recover, not merely that something happened");
+		merged.Should().Contain("\"title\": \"new\"",
+			because: "the incoming value still wins — reporting the loss must not change the merge result");
+	}
+
+	[Test]
+	[Description("The reporting overload returns an empty list, never null, when the merge preserves everything")]
+	public void Merge_ShouldReportNoDrops_WhenEveryCurrentOperationSurvives() {
+		// Arrange
+		const string current = """[{"operation":"move","name":"Panel","parentName":"Tab","index":0}]""";
+		const string incoming = """[{"operation":"insert","name":"UsrNew","values":{"type":"crt.Button"}}]""";
+
+		// Act
+		PageBodyMerger.Merge(WebBody(current), WebBody(incoming), out PageAppendProjection projection);
+
+		// Assert
+		projection.SupersededDropWarnings.Should().NotBeNull(because: "callers must be able to enumerate without a null check");
+		projection.SupersededDropWarnings.Should().BeEmpty(because: "an append that preserves every existing operation has nothing to warn about");
+	}
+
+	[Test]
+	[Description("A clean in-place replacement drops nothing, so it must emit NO warning — this is the case that catches a drop message escaping onto the replace branch")]
+	public void Merge_ShouldReportNoDrops_WhenTheFragmentReplacesASingleCurrentEntry() {
+		// Arrange — one current entry, one incoming entry, same identity. The replace branch runs and the
+		// drop branch must not. Deliberately distinct from the no-collision case: this exercises the
+		// `replaced.Add(identity)` TRUE path, which the other test never reaches.
+		const string current = """[{"operation":"merge","name":"B","values":{"title":"old"}}]""";
+		const string incoming = """[{"operation":"merge","name":"B","values":{"title":"new"}}]""";
+
+		// Act
+		string merged = PageBodyMerger.Merge(WebBody(current), WebBody(incoming), out PageAppendProjection projection);
+
+		// Assert
+		projection.SupersededDropWarnings.Should().BeEmpty(
+			because: "nothing was dropped — one entry was replaced in place. A warning here would be a false positive, and without this case a drop message escaping onto the replace branch would leave the whole suite green");
+		merged.Should().Contain("\"title\": \"new\"",
+			because: "the replacement still happened");
+	}
+
+	[Test]
+	[Description("Three current entries of one superseded identity yield ONE warning, not two — CombineWarnings does not dedupe, so the merger must")]
+	public void Merge_ShouldReportOneWarningPerIdentity_WhenTheCurrentBodyCarriesItThreeTimes() {
+		// Arrange
+		const string current = """
+			[
+				{"operation":"merge","name":"B","values":{"a":1}},
+				{"operation":"merge","name":"B","values":{"b":2}},
+				{"operation":"merge","name":"B","values":{"c":3}}
+			]
+			""";
+		const string incoming = """[{"operation":"merge","name":"B","values":{"a":9}}]""";
+
+		// Act
+		PageBodyMerger.Merge(WebBody(current), WebBody(incoming), out PageAppendProjection projection);
+
+		// Assert
+		projection.SupersededDropWarnings.Should().ContainSingle(
+			because: "two entries were dropped but they share one identity; emitting the same sentence twice is noise the caller cannot act on differently");
+	}
+
+	[Test]
+	[Description("A set targeting properties and a set targeting the element are distinct operations: Set calls Remove, which strips keys in place for the properties form and detaches the element for the bare form")]
+	public void Merge_ShouldKeepBothSets_WhenOneTargetsPropertiesAndOneTargetsTheElement() {
+		// Arrange
+		const string current = """[{"operation":"set","name":"Panel","values":{"type":"crt.Input"}}]""";
+		const string incoming = """[{"operation":"set","name":"Panel","properties":["caption"],"values":{"type":"crt.Input"}}]""";
+
+		// Act
+		JArray merged = MergeWebViewConfigDiff(current, incoming);
+
+		// Assert
+		merged.Should().HaveCount(2,
+			because: "Set calls Remove (JsonDiffApplier.cs:656), and Remove branches on `properties is JArray` (:700): the properties form strips the named keys in place, the element form detaches the element and returns its index so the following Insert can restore it. Collapsing the two destroys one of them — the same silent-loss class #1132 exists to eliminate");
+		merged[0]["properties"].Should().BeNull(
+			because: "the current element-form set must survive at its original position");
+		merged[1]["properties"].Should().NotBeNull(
+			because: "the incoming property-form set is added as a separate operation");
+	}
+
+	[Test]
+	[Description("Two property-form sets for one component still collide on identity, so the incoming one replaces the current one in place")]
+	public void Merge_ShouldReplaceInPlace_WhenBothSetsTargetProperties() {
+		// Arrange
+		const string current = """[{"operation":"set","name":"Header","properties":["caption"],"values":{"type":"crt.Input"}}]""";
+		const string incoming = """[{"operation":"set","name":"Header","properties":["tooltip"],"values":{"type":"crt.Input"}}]""";
+
+		// Act
+		JArray merged = MergeWebViewConfigDiff(current, incoming);
+
+		// Assert
+		merged.Should().HaveCount(1,
+			because: "both entries are property-form sets for one component, so they share an identity and the incoming one wins");
+		merged[0]["properties"]!.Single().ToString().Should().Be("tooltip",
+			because: "incoming wins a genuine same-identity collision");
+	}
+
+	[Test]
 	[Description("A non-string 'name' yields no identity, so the entry is preserved in place and never conflated with the string spelling of the same value")]
 	public void Merge_ShouldKeepBothEntries_WhenOneNameIsNumericAndOneIsAString() {
 		// Arrange

@@ -227,7 +227,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="up"></a>
 - [`unlock-package`](docs/commands/unlock-package.md) - Unlock a package in Creatio, `up`
 <a id="autoupdate"></a>
-- [`autoupdate`](docs/commands/autoupdate.md) - Enable or disable automatic updates on startup
+- [`autoupdate`](docs/commands/autoupdate.md) - Enable or disable automatic clio updates on startup
 <a id="experimental"></a>
 <a id="exp"></a>
 - [`experimental`](docs/commands/experimental.md) - List and toggle clio experimental feature flags, `exp`
@@ -279,11 +279,11 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="pkg-to-db"></a>
 <a id="2db"></a>
 <a id="todb"></a>
-- [`pkg-to-db`](docs/commands/pkg-to-db.md) - Load packages into Creatio database storage, `2db`, `todb`
+- [`pkg-to-db`](docs/commands/pkg-to-db.md) - Load file-system package definitions into the configuration database (no package data), `2db`, `todb`
 <a id="pkg-to-file-system"></a>
 <a id="2fs"></a>
 <a id="tofs"></a>
-- [`pkg-to-file-system`](docs/commands/pkg-to-file-system.md) - Load packages into Creatio file system storage, `2fs`, `tofs`
+- [`pkg-to-file-system`](docs/commands/pkg-to-file-system.md) - Export configuration-database packages to the file system (no package data), `2fs`, `tofs`
 <a id="publish-app"></a>
 <a id="ph"></a>
 <a id="publish-hub"></a>
@@ -384,7 +384,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="client-unit-schema-get"></a>
 - [`get-client-unit-schema`](docs/commands/get-client-unit-schema.md) - Read body and metadata of a client unit (JavaScript) schema on a remote Creatio environment, `client-unit-schema-get`
 <a id="get-entity-schema-column-properties"></a>
-- [`get-entity-schema-column-properties`](docs/commands/get-entity-schema-column-properties.md) - Get column properties from a remote Creatio entity schema
+- [`get-entity-schema-column-properties`](docs/commands/get-entity-schema-column-properties.md) - Get one column's properties (omit `--package` for merged discovery across all packages)
 <a id="find-entity-schema"></a>
 - [`find-entity-schema`](docs/commands/find-entity-schema.md) - Find entity schemas in a Creatio environment by name, pattern, or UId
 <a id="get-entity-schema-properties"></a>
@@ -445,6 +445,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="get-page"></a>
 <a id="page-get"></a>
 - [`get-page`](docs/commands/get-page.md) - Get a Freedom UI page bundle and raw schema body, `page-get`
+<a id="get-process-page-facts"></a>
+<a id="page-facts"></a>
+- [`get-process-page-facts`](docs/commands/get-process-page-facts.md) - Read the completing-button candidates and page-scoped data sources a Pre-configured page process element needs, `page-facts`
 <a id="get-page-hierarchy"></a>
 <a id="page-hierarchy-get"></a>
 - [`get-page-hierarchy`](docs/commands/get-page-hierarchy.md) - Get the full Freedom UI page replacing-schema chain (root first) with each schema's raw body in one round-trip, `page-hierarchy-get`
@@ -524,7 +527,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="dc"></a>
 <a id="ic"></a>
 <a id="install-creatio"></a>
-- [`deploy-creatio`](docs/commands/deploy-creatio.md) - Install Creatio with collision-safe IIS port reservation and local infrastructure defaults, `dc`, `ic`, `install-creatio`
+- [`deploy-creatio`](docs/commands/deploy-creatio.md) - Install Creatio with automatic collision-safe IIS port selection and local infrastructure defaults, `dc`, `ic`, `install-creatio`
 <a id="deploy-identity"></a>
 - [`deploy-identity`](docs/commands/deploy-identity.md) - Deploy IdentityService to IIS and connect it to a Creatio environment
 <a id="get-identity-service-config"></a>
@@ -740,7 +743,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="register"></a>
 - [`register`](docs/commands/register.md) - Register clio shell integrations
 <a id="config"></a>
-- [`config`](docs/commands/config.md) - View and set clio configuration defaults (e.g. deploy-creatio defaults used by the Explorer context menu)
+- [`config`](docs/commands/config.md) - View and set clio configuration defaults, including the deploy-creatio IIS port range
 <a id="pin-certificate"></a>
 - [`pin-certificate`](docs/commands/pin-certificate.md) - Select the preferred local IIS certificate for HTTPS deployments
 <a id="set-app-icon"></a>

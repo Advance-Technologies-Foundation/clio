@@ -14,7 +14,7 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class GetUserCultureToolTests {
 	private static GetUserCultureTool CreateTool(CultureResolution resolution) {
-		ICurrentUserCultureResolver resolver = Substitute.For<ICurrentUserCultureResolver>();
+		IOwnedCurrentUserCultureResolver resolver = Substitute.For<IOwnedCurrentUserCultureResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(resolution));
 		ICurrentUserCultureResolverFactory factory = Substitute.For<ICurrentUserCultureResolverFactory>();
 		factory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);

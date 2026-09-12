@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -22,6 +23,7 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class RequestRegistrySnapshotTests {
 	private const string SnapshotRelativePath = "Command/McpServer/Fixtures/RequestRegistry.live-snapshot.json";
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
 	/// <summary>
 	/// Refreshing the snapshot: from the repo root, run
@@ -643,7 +645,7 @@ public sealed class RequestRegistrySnapshotTests {
 	/// must not inherit a regression in the production tokenizer.
 	/// </summary>
 	private static IEnumerable<string> PascalCaseIdentifiers(string typeReference) =>
-		Regex.Matches(typeReference, "[A-Za-z_][A-Za-z0-9_]*")
+		Regex.Matches(typeReference, "[A-Za-z_][A-Za-z0-9_]*", RegexOptions.None, RegexTimeout)
 			.Select(match => match.Value)
 			.Where(token => char.IsUpper(token[0]));
 

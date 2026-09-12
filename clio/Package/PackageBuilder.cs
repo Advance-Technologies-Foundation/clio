@@ -1,7 +1,9 @@
 namespace Clio.Package
 {
 	using System;
+	using System.Net.Http;
 	using System.Threading;
+	using System.Threading.Tasks;
 	using System.Collections.Generic;
 	using Clio.Common;
 	using Clio.CreatioModel;
@@ -67,7 +69,7 @@ namespace Clio.Package
 
 		private static string CreateRequestData(string packageName) => "{ \"packageName\":\"" + packageName + "\" }";
 
-		private IApplicationClient CreateClient() => _applicationClientFactory.CreateClient(_environmentSettings);
+		private IOwnedApplicationClient CreateClient() => _applicationClientFactory.CreateOwnedClient(_environmentSettings);
 
 		private string GetSafePackageName(string packageName) =>
 			packageName
@@ -75,7 +77,6 @@ namespace Clio.Package
 				.Replace(",", "\",\"");
 
 		private void Compilation(IEnumerable<string> packagesNames, bool force) {
-			IApplicationClient applicationClient = CreateClient();
 			string compilationName = force ? "rebuild" : "build";
 			string fullBuildPackageUrl = _serviceUrlBuilder.Build(
 				force
@@ -88,8 +89,9 @@ namespace Clio.Package
 				string requestData = CreateRequestData(safePackageName);
 
 				if (_compilationHistoryPoller is not null) {
-					CompileWithPolling(applicationClient, fullBuildPackageUrl, requestData);
+					CompileWithPolling(fullBuildPackageUrl, requestData);
 				} else {
+					using IOwnedApplicationClient applicationClient = CreateClient();
 					applicationClient.ExecutePostRequest(fullBuildPackageUrl, requestData);
 				}
 
@@ -98,26 +100,11 @@ namespace Clio.Package
 		}
 
 		// In Creatio 8.3.3+, RebuildPackage no longer sends back an HTTP response —
-		// the server compiles in the background and drops the connection. We fire the
-		// request in a daemon thread and use the same CompilationHistoryPoller pattern
-		// as CompileConfigurationCommand to detect completion via OData.
-		private void CompileWithPolling(IApplicationClient client, string url, string requestData) {
+		// the server compiles in the background and drops the connection. Use a cancellable
+		// asynchronous request while the CompilationHistoryPoller detects completion via OData.
+		private void CompileWithPolling(string url, string requestData) {
 			CompilationHistory baseline = _compilationHistoryPoller.GetBaseline();
 			DateTime baselineCreatedOn = baseline?.CreatedOn ?? DateTime.MinValue;
-
-			Exception httpException = null;
-			bool httpDone = false;
-
-			Thread httpThread = new(() => {
-				try {
-					client.ExecutePostRequest(url, requestData);
-				} catch (Exception ex) {
-					httpException = ex;
-				} finally {
-					httpDone = true;
-				}
-			}) { IsBackground = true };
-			httpThread.Start();
 
 			DateTime timeoutAt = DateTime.UtcNow.AddMinutes(CompilationTimeoutMinutes);
 			DateTime? lastActivityAt = null;
@@ -125,6 +112,7 @@ namespace Clio.Package
 			string errorDetails = null;
 
 			using CancellationTokenSource cts = new();
+			Task httpTask = SendCompilationRequestAsync(cts.Token);
 			Thread pollThread = new(() => {
 				_compilationHistoryPoller.Poll(baselineCreatedOn, cts.Token, record => {
 					lastActivityAt = DateTime.UtcNow;
@@ -137,12 +125,10 @@ namespace Clio.Package
 			pollThread.Start();
 
 			while (DateTime.UtcNow < timeoutAt) {
-				if (httpDone) {
+				if (httpTask.IsCompleted) {
 					cts.Cancel();
 					pollThread.Join();
-					if (httpException is not null) {
-						throw httpException;
-					}
+					httpTask.GetAwaiter().GetResult();
 					return;
 				}
 
@@ -150,6 +136,7 @@ namespace Clio.Package
 					(DateTime.UtcNow - lastActivityAt.Value).TotalSeconds >= CompilationSettleSeconds) {
 					cts.Cancel();
 					pollThread.Join();
+					ObserveCancelledRequest(httpTask, cts);
 					if (hasErrors) {
 						throw new Exception($"Package compilation failed: {errorDetails}");
 					}
@@ -161,7 +148,24 @@ namespace Clio.Package
 
 			cts.Cancel();
 			pollThread.Join();
+			ObserveCancelledRequest(httpTask, cts);
 			throw new TimeoutException($"Package compilation did not complete within {CompilationTimeoutMinutes} minutes.");
+
+			async Task SendCompilationRequestAsync(CancellationToken cancellationToken) {
+				using IOwnedApplicationClient client = CreateClient();
+				using HttpResponseMessage _ = await client.ExecutePostRequestAsync(
+					url, requestData, Timeout.Infinite, cancellationToken: cancellationToken).ConfigureAwait(false);
+			}
+		}
+
+		private static void ObserveCancelledRequest(Task request, CancellationTokenSource cancellation) {
+			try {
+				request.GetAwaiter().GetResult();
+			} catch (OperationCanceledException) when (cancellation.IsCancellationRequested) {
+				// Expected when compilation history settles before the 8.3.3+ HTTP response arrives.
+			} catch (HttpRequestException) when (cancellation.IsCancellationRequested) {
+				// The server may close the connection while the settled request is being cancelled.
+			}
 		}
 
 		#endregion

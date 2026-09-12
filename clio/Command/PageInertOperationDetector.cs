@@ -23,14 +23,27 @@ using Newtonsoft.Json.Linq;
 /// the replacing chain. A parent schema inserting the same name puts the component in the base, which
 /// for the three conditional rules can make the transform apply after all; and an ancestor's
 /// <c>alias</c> carrying <c>excludeOperations</c> can legitimately neutralise an operation. Neither is
-/// visible here, so it advises rather than blocks. Known blind spot, in the same fail-quiet direction:
-/// an <c>insert</c> naming its element inside <c>values</c> rather than on the operation object still
-/// creates the component, but has no name to group on here.
+/// visible here, so it advises rather than blocks. Three further blind spots, all in the same
+/// fail-quiet direction: an <c>insert</c> naming its element inside <c>values</c> rather than on the
+/// operation object still creates the component but has no name to group on here; a NUMERIC
+/// <c>name</c> is skipped here while the differ stringifies it, so <c>remove name:123</c> and
+/// <c>move name:"123"</c> do interact at apply time; and a rule suppressed by <c>RescuedBy</c> assumes
+/// the rescuing operation resolves, which an <c>insert</c> whose <c>parentName</c> is absent from the
+/// base does not. A fourth is structural: apply groups are tracked as a SET per name, so MULTIPLICITY
+/// inside one group is invisible here — two <c>set</c> entries for one name leave the first fully
+/// inert, and two <c>move</c> entries duplicate the component. Both are real, neither is a PAIR of
+/// different groups, and GH-1240's scope is pairs; they need their own rule shape.
 /// </para>
 /// Operation verbs are compared <see cref="StringComparer.Ordinal"/> and are never case-folded. This is
-/// load-bearing, not an oversight: the differ switches on the raw verb with no <c>default</c> branch, so
-/// a mis-cased <c>"Merge"</c> lands in no group and is discarded whole. Treating it as a live
+/// load-bearing, not an oversight: the differ switches on the raw verb and its <c>default</c> arm is
+/// empty, so a mis-cased <c>"Merge"</c> lands in no group and is discarded whole. Treating it as a live
 /// <c>merge</c> here would report a pair that does not exist.
+/// <para>
+/// The mechanism, the validation against the platform differ's own source, and what breaks if this is
+/// ignored are recorded in
+/// <c>docs/knowledge/Command/a-transform-beside-an-insert-for-one-name-is-inert.md</c>. Kept there
+/// rather than restated here, so the differ's behaviour has one owner instead of three.
+/// </para>
 /// <para>
 /// The detector needs no knowledge of which mode produced the body — it inspects the resolved final
 /// body, so it covers <c>replace</c> and <c>append</c> identically, and applies to <c>sync-pages</c>
@@ -57,8 +70,8 @@ internal static class PageInertOperationDetector {
 
 	/// <summary>
 	/// The group a verb lands in, transcribed from <c>JsonDiffApplier.GetSplittedOperations</c>.
-	/// <see cref="Dropped"/> is that switch's MISSING <c>default</c> branch: an unknown or mis-cased verb
-	/// matches no case, lands in no group, and is discarded whole with no exception.
+	/// <see cref="Dropped"/> stands for the switch's EMPTY <c>default</c> arm: an unknown or mis-cased
+	/// verb matches no case, lands in no group, and is discarded whole with no exception.
 	/// </summary>
 	private enum ApplyGroup {
 
@@ -90,7 +103,7 @@ internal static class PageInertOperationDetector {
 	/// <summary>
 	/// Every co-occurrence of two apply groups for ONE name where the differ discards one of them.
 	/// <para>
-	/// The first four rows hold UNCONDITIONALLY — the discard follows from group order alone, whether or
+	/// The first five rows hold UNCONDITIONALLY — the discard follows from group order alone, whether or
 	/// not the component exists in the base. The last three involve this body's own <c>insert</c> and are
 	/// conditional on the component NOT coming from a parent schema, which this detector cannot see;
 	/// their messages state that case rather than asserting the author is wrong. Unconditional rows come
@@ -116,6 +129,10 @@ internal static class PageInertOperationDetector {
 		new(ApplyGroup.ElementRemove, ApplyGroup.Merge, BuildMergeBesideElementRemoveMessage),
 		// The set group runs last and replaces the element wholesale with its own values.
 		new(ApplyGroup.Set, ApplyGroup.Merge, BuildMergeBesideSetMessage),
+		// Property removals run in the group BEFORE set, and set then discards the element and rebuilds
+		// it from its own values: a stripped key either comes back with the set or was never going to
+		// survive it. Same mechanism as the row above, and unconditional for the same reason.
+		new(ApplyGroup.Set, ApplyGroup.PropertyRemove, BuildPropertyRemoveBesideSetMessage),
 		// Element removals run in the position pipeline, property removals in the group after it, so the
 		// property removal targets an element that is already gone — UNLESS an insert re-creates it in
 		// that same pipeline, which is what RescuedBy encodes.
@@ -155,32 +172,8 @@ internal static class PageInertOperationDetector {
 			return warnings;
 		}
 		int suppressed = 0;
-		var reportedForName = new HashSet<ApplyGroup>();
 		foreach (string name in namesInOrder) {
-			HashSet<ApplyGroup> groups = groupsByName[name];
-			if (groups.Count < 2) {
-				continue;
-			}
-			reportedForName.Clear();
-			foreach (InertRule rule in InertRules) {
-				if (!groups.Contains(rule.Live) || !groups.Contains(rule.Discarded)) {
-					continue;
-				}
-				if (rule.RescuedBy is { } rescuer && groups.Contains(rescuer)) {
-					continue;
-				}
-				// One finding per dropped operation, not per rule: several rules can name the same dead
-				// operation for different reasons, and repeating it says nothing new. Rules are ordered
-				// strongest-reason-first, so the first match is the one worth reporting.
-				if (!reportedForName.Add(rule.Discarded)) {
-					continue;
-				}
-				if (warnings.Count < MaxReportedFindings) {
-					warnings.Add(rule.Message(name));
-				} else {
-					suppressed++;
-				}
-			}
+			suppressed += CollectFindingsForName(name, groupsByName[name], warnings);
 		}
 		if (suppressed > 0) {
 			warnings.Add(BuildSuppressedMessage(suppressed));
@@ -189,16 +182,61 @@ internal static class PageInertOperationDetector {
 	}
 
 	/// <summary>
+	/// Appends a finding for every rule that fires on one component, honouring the global cap.
+	/// </summary>
+	/// <returns>How many findings the cap suppressed, so the caller can report the remainder.</returns>
+	private static int CollectFindingsForName(string name, HashSet<ApplyGroup> groups, List<string> warnings) {
+		if (groups.Count < 2) {
+			return 0;
+		}
+		int suppressed = 0;
+		// One finding per dropped operation, not per rule: several rules can name the same dead operation
+		// for different reasons, and repeating it says nothing new. Rules are ordered
+		// strongest-reason-first, so the first match is the one worth reporting.
+		var reported = new HashSet<ApplyGroup>();
+		foreach (InertRule rule in InertRules) {
+			if (!Fires(rule, groups) || !reported.Add(rule.Discarded)) {
+				continue;
+			}
+			if (warnings.Count < MaxReportedFindings) {
+				warnings.Add(rule.Message(name));
+			} else {
+				suppressed++;
+			}
+		}
+		return suppressed;
+	}
+
+	/// <summary>
+	/// Whether both of a rule's groups are present for the component and no rescuing group cancels it.
+	/// </summary>
+	private static bool Fires(in InertRule rule, HashSet<ApplyGroup> groups) {
+		if (!groups.Contains(rule.Live) || !groups.Contains(rule.Discarded)) {
+			return false;
+		}
+		return rule.RescuedBy is not { } rescuer || !groups.Contains(rescuer);
+	}
+
+	/// <summary>
 	/// Maps a verb to its apply group, transcribed from <c>JsonDiffApplier.GetSplittedOperations</c>.
 	/// The <c>remove</c> split on a <c>properties</c> ARRAY is the differ's own discriminator: a
 	/// <c>properties</c> value that is not an array is an element removal, not a property removal.
 	/// </summary>
+	/// <remarks>
+	/// Only <c>remove</c> splits here, and that is NOT the same rule as <c>PageBodyMerger</c>'s identity
+	/// discriminator, which covers <c>remove</c> AND <c>set</c>. The two encode different facts about the
+	/// differ: GROUPING routes every <c>set</c> into one group whatever its <c>properties</c>, while APPLY
+	/// makes a <c>set</c> carrying <c>properties</c> behave differently from a bare one. Sharing one
+	/// predicate between them would reintroduce exactly the <c>set</c> identity collision the merger's
+	/// discriminator exists to prevent. The verb NAMES are shared
+	/// (<see cref="PageViewConfigDiffVerbs"/>); the split rules are deliberately not.
+	/// </remarks>
 	private static ApplyGroup Classify(string verb, JToken properties) => verb switch {
-		"merge" => ApplyGroup.Merge,
-		"set" => ApplyGroup.Set,
-		"insert" => ApplyGroup.Insert,
-		"move" => ApplyGroup.Move,
-		"remove" => properties is JArray ? ApplyGroup.PropertyRemove : ApplyGroup.ElementRemove,
+		PageViewConfigDiffVerbs.Merge => ApplyGroup.Merge,
+		PageViewConfigDiffVerbs.Set => ApplyGroup.Set,
+		PageViewConfigDiffVerbs.Insert => ApplyGroup.Insert,
+		PageViewConfigDiffVerbs.Move => ApplyGroup.Move,
+		PageViewConfigDiffVerbs.Remove => properties is JArray ? ApplyGroup.PropertyRemove : ApplyGroup.ElementRemove,
 		_ => ApplyGroup.Dropped
 	};
 
@@ -225,6 +263,13 @@ internal static class PageInertOperationDetector {
 		"overwritten and never reach runtime. Fold the merge's values into the set's 'values'." +
 		GuidePointer;
 
+	private static string BuildPropertyRemoveBesideSetMessage(string name) =>
+		$"Component '{name}' carries both a 'set' and a property 'remove' (one with a 'properties' " +
+		"array) in the submitted body. Property removals are applied in the group before 'set', and " +
+		"'set' then discards the element and rebuilds it from its own 'values' — so a stripped key " +
+		"either comes back with the set or was never going to survive it. The property removal does " +
+		"nothing at all. Drop it, or omit that key from the set's 'values'." + GuidePointer;
+
 	private static string BuildPropertyRemoveBesideElementRemoveMessage(string name) =>
 		$"Component '{name}' carries both an element 'remove' and a property 'remove' (one with a " +
 		"'properties' array) in the submitted body. Element removals are applied in the group before " +
@@ -236,8 +281,8 @@ internal static class PageInertOperationDetector {
 		$"Component '{name}' carries both an 'insert' and a 'merge' in the submitted body. The differ " +
 		"applies whole operation groups in a fixed order — merges run BEFORE inserts, never in array " +
 		"order — so the merge resolves against a base that does not contain the component yet and is " +
-		"silently dropped. Fold the merge's values into the insert's own 'values', or use 'set', the " +
-		"only verb applied after inserts. If a parent schema inserts this name too, the merge patches " +
+		"silently dropped. Fold the merge's values into the insert's own 'values', or use 'set', which " +
+		"is applied after inserts. If a parent schema inserts this name too, the merge patches " +
 		"the parent's element and this body's insert then adds a second component with the same name." +
 		GuidePointer;
 

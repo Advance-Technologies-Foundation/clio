@@ -1,5 +1,6 @@
 namespace Clio.Command;
 
+using System;
 using System.Collections.Generic;
 using System.Runtime.Serialization;
 using System.Text.Json.Nodes;
@@ -122,19 +123,21 @@ public sealed class PageGetResponse {
 	public PageMetadataInfo Page { get; init; }
 
 	/// <summary>
-	/// Gets or sets the merged bundle.
+	/// Gets or sets the merged bundle. CLI-only — the MCP tool writes it to <c>bundle.json</c> instead.
 	/// </summary>
 	[JsonProperty("bundle", NullValueHandling = NullValueHandling.Ignore)]
 	[JsonPropertyName("bundle")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[CliOnlyEnvelopeProperty]
 	public PageBundleInfo Bundle { get; init; }
 
 	/// <summary>
-	/// Gets or sets the raw editable payload.
+	/// Gets or sets the raw editable payload. CLI-only — the MCP tool writes it to <c>body.js</c> instead.
 	/// </summary>
 	[JsonProperty("raw", NullValueHandling = NullValueHandling.Ignore)]
 	[JsonPropertyName("raw")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[CliOnlyEnvelopeProperty]
 	public PageRawInfo Raw { get; init; }
 
 	/// <summary>
@@ -180,6 +183,17 @@ public sealed class PageGetResponse {
 	[JsonPropertyName("error")]
 	public string Error { get; init; }
 }
+
+/// <summary>
+/// Marks a serialized response property that the CLI envelope carries but the MCP tool NEVER sets, so the
+/// published MCP tool contract must not describe it. Issue #1185 was exactly this split going undeclared: the
+/// contract promised <c>raw.body</c> that the MCP envelope never returns. Declaring it on the property makes
+/// the split machine-checkable - the contract oracle derives the expected field set from the type and skips
+/// what is marked here, so a NEW property added to the response is required in the contract by default, and
+/// only a deliberate CLI-only addition carries this attribute.
+/// </summary>
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class CliOnlyEnvelopePropertyAttribute : Attribute { }
 
 /// <summary>
 /// Describes the editable (own) schema state at fetch time: whether a replacing schema already
@@ -320,6 +334,18 @@ public sealed class PageMetadataInfo {
 	[JsonPropertyName("schema-type")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public string SchemaType { get; init; }
+
+	/// <summary>
+	/// Gets or sets the RAW numeric <c>ClientUnitSchemaType</c> the hierarchy service reported, before the
+	/// web/mobile/unknown collapse — null when the service omitted it. The label above folds "present but neither
+	/// web nor mobile" (a Classic page, a module) and "absent" into one <c>unknown</c>, and a consumer that must
+	/// tell those apart (the process-page-facts guard) needs the difference: a PRESENT non-web value is a positive
+	/// identification, an absent one is not.
+	/// </summary>
+	[JsonProperty("schema-type-value", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("schema-type-value")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public int? SchemaTypeValue { get; init; }
 }
 
 /// <summary>
@@ -718,15 +744,22 @@ public sealed class PageSamplingReview {
 /// the one real merge in <c>PageBodyMerger</c>, never by a second predictor that could drift from the
 /// merge's identity rules.
 /// <para>
+/// THREE distinct loss channels, because the fix differs for each: <see cref="DroppedOperations"/>
+/// (the server body's), <see cref="CollapsedIncomingOperations"/> (the caller's own fragment), and
+/// <see cref="ViewConfigDiffApplied"/> (the merged array never reaches the body at all). Do not read
+/// any one of them as the whole story — an earlier version of this type claimed the dropped set was
+/// the only way an append loses an operation, and that was false.
+/// </para>
+/// <para>
 /// Scoped to <c>viewConfigDiff</c> deliberately: it is the only section merged by operation identity,
-/// and the only one this projection speaks for. The sibling <c>*_DIFF</c> arrays append unconditionally,
-/// so they cannot lose a current entry and have nothing to report. Handlers and converters are a
-/// different case and NOT covered here — say so rather than implying otherwise: converters key on
-/// property name and replace, but <c>MergeHandlersRaw</c> drops EVERY current handler whose
-/// <c>request</c> appears in the fragment, so a current body carrying that request twice keeps neither
-/// and the fragment contributes one. That is the same shape of quiet loss this projection exists to
-/// report, in a section it does not read. Widening it means giving the raw handler-text merge a
-/// structured identity first; until then, reporting zeros for handlers would read as coverage.
+/// and the only one this projection speaks for. The sibling <c>*_DIFF</c> arrays append
+/// unconditionally, so they cannot lose a current entry. Handlers are a different case and NOT covered
+/// — say so rather than implying otherwise: converters key on property name and replace, but
+/// <c>MergeHandlersRaw</c> drops EVERY current handler whose <c>request</c> appears in the fragment, so
+/// a current body carrying that request twice keeps neither and the fragment contributes one. That is
+/// the same shape of quiet loss this projection exists to report, in a section it does not read.
+/// Widening it means giving the raw handler-text merge a structured identity first; until then,
+/// reporting zeros for handlers would read as coverage.
 /// </para>
 /// </remarks>
 [DataContract]
@@ -750,8 +783,9 @@ public sealed class PageAppendProjection {
 
 	/// <summary>
 	/// Gets the number of <c>viewConfigDiff</c> operations the merged body carries. NOT necessarily
-	/// current + incoming: an incoming entry that replaces a current one adds nothing to the total, and
-	/// a dropped entry subtracts from it. This is the number to compare against the one you expect.
+	/// current + incoming: an incoming entry that replaces a current one adds nothing to the total, a
+	/// dropped or collapsed entry subtracts from it, and an entry with no usable identity is carried
+	/// without being counted as added. This is the number to compare against the one you expect.
 	/// </summary>
 	[DataMember(Name = "projectedOperationCount")]
 	[JsonProperty("projectedOperationCount")]
@@ -768,7 +802,7 @@ public sealed class PageAppendProjection {
 
 	/// <summary>
 	/// Gets the current operations the incoming fragment replaces in place, as <c>verb name</c> labels.
-	/// Not a loss — the operation survives carrying the caller's values instead of the server's. Capped
+	/// NOT a loss — the operation survives carrying the caller's values instead of the server's. Capped
 	/// in length; <see cref="ReplacedOperationCount"/> is exact.
 	/// </summary>
 	[DataMember(Name = "replacedOperations")]
@@ -787,14 +821,10 @@ public sealed class PageAppendProjection {
 
 	/// <summary>
 	/// Gets the CURRENT operations the merge would not carry over: a FURTHER current entry of an identity
-	/// the fragment already superseded, dropped rather than re-applied after the replacement. Empty for the
-	/// overwhelming majority of appends. Capped in length; <see cref="DroppedOperationCount"/> is exact.
+	/// the fragment already superseded, dropped rather than re-applied after the replacement. Empty for
+	/// the overwhelming majority of appends. Capped in length; <see cref="DroppedOperationCount"/> is
+	/// exact, and <see cref="SupersededDropWarnings"/> carries the actionable sentence per identity.
 	/// </summary>
-	/// <remarks>
-	/// Not the only way an append loses an operation — see <see cref="CollapsedIncomingOperations"/> for the
-	/// caller-side counterpart and <see cref="ViewConfigDiffApplied"/> for the case where the whole merged
-	/// array is discarded. This field is scoped to losses from the SERVER's body.
-	/// </remarks>
 	[DataMember(Name = "droppedOperations")]
 	[JsonProperty("droppedOperations", NullValueHandling = NullValueHandling.Ignore)]
 	[JsonPropertyName("droppedOperations")]
@@ -810,15 +840,16 @@ public sealed class PageAppendProjection {
 	public int DroppedOperationCount { get; init; }
 
 	/// <summary>
-	/// Gets the INCOMING operations the fragment supersedes with a later entry of the same identity, so the
-	/// earlier one never reaches the merged body. Capped in length;
+	/// Gets the INCOMING operations the fragment supersedes with a later entry of the same identity, so
+	/// the earlier one never reaches the merged body. Capped in length;
 	/// <see cref="CollapsedIncomingOperationCount"/> is exact.
 	/// </summary>
 	/// <remarks>
-	/// The caller-side mirror of <see cref="DroppedOperations"/>, and the one people are most likely to hit:
-	/// these are the CALLER'S OWN operations, lost to their own fragment carrying one identity twice, not
-	/// anything the server did. Merging by identity means only the last spelling survives — deliberate, but
-	/// it is a loss and it used to be invisible (GitHub #1150).
+	/// The caller-side mirror of <see cref="DroppedOperations"/>, and the one people are most likely to
+	/// hit: these are the CALLER'S OWN operations, lost to their own fragment carrying one identity
+	/// twice. Reported here but deliberately NOT warned about — the fragment is the caller's own and they
+	/// can read it, so a warning would be noise. It is counted because without it the totals above cannot
+	/// be reconciled and a real loss stays invisible (GitHub #1150).
 	/// </remarks>
 	[DataMember(Name = "collapsedIncomingOperations")]
 	[JsonProperty("collapsedIncomingOperations", NullValueHandling = NullValueHandling.Ignore)]
@@ -836,19 +867,35 @@ public sealed class PageAppendProjection {
 	public int CollapsedIncomingOperationCount { get; init; }
 
 	/// <summary>
-	/// Gets a value indicating whether the merged <c>viewConfigDiff</c> array actually reaches the body that
-	/// would be written. <c>false</c> means EVERY count above describes an array the write discards.
+	/// Gets a value indicating whether the merged <c>viewConfigDiff</c> array actually reaches the body
+	/// that would be written. <c>false</c> means EVERY count above describes an array the write discards.
 	/// </summary>
 	/// <remarks>
-	/// Only a web body can be <c>false</c> here, and only when it carries no <c>SCHEMA_VIEW_CONFIG_DIFF</c>
-	/// marker pair for the merge to write back into: the write is a single-match regex replace over a marker
-	/// PAIR, and with no pair it returns the body untouched. Nothing upstream rejects such a body — marker
-	/// integrity validation is skipped in append mode and only ever inspected the incoming fragment.
+	/// Only a web body can be <c>false</c> here, and only when it carries no
+	/// <c>SCHEMA_VIEW_CONFIG_DIFF</c> marker pair for the merge to write back into: the write is a
+	/// single-match regex replace over a marker PAIR, and with no pair it returns the body untouched.
+	/// Nothing upstream rejects such a body — marker-integrity validation is skipped in append mode and
+	/// only ever inspected the incoming fragment.
 	/// </remarks>
 	[DataMember(Name = "viewConfigDiffApplied")]
 	[JsonProperty("viewConfigDiffApplied")]
 	[JsonPropertyName("viewConfigDiffApplied")]
 	public bool ViewConfigDiffApplied { get; init; }
+
+	/// <summary>
+	/// Gets one ready-made, actionable sentence per IDENTITY whose further current entries were dropped
+	/// (GH-1132 AC4). One per identity, not per entry: three carried occurrences would otherwise emit two
+	/// byte-identical sentences, and <c>CombineWarnings</c> does not dedupe.
+	/// </summary>
+	/// <remarks>
+	/// Deliberately NOT serialized. These are the sentences the command copies into the response's
+	/// top-level <c>warnings</c>; emitting them inside <c>appendProjection</c> as well would report the
+	/// same loss twice in one response. The structured, machine-readable view of the same facts is
+	/// <see cref="DroppedOperations"/> and <see cref="DroppedOperationCount"/>.
+	/// </remarks>
+	[Newtonsoft.Json.JsonIgnore]
+	[System.Text.Json.Serialization.JsonIgnore]
+	public IReadOnlyList<string> SupersededDropWarnings { get; init; }
 }
 
 /// <summary>
@@ -915,15 +962,27 @@ public sealed class PageUpdateResponse {
 	public IReadOnlyList<string> Warnings { get; set; }
 
 	/// <summary>
-	/// Gets or sets what the append merge did to the page's <c>viewConfigDiff</c> array. Populated only
-	/// for <c>mode: append</c> — <c>null</c> for <c>replace</c>, which writes the body verbatim and so
-	/// has nothing to project. On a dry run this is the whole point of the call: it reports the outcome
-	/// before the write (GitHub #1150).
+	/// Gets or sets what the append merge did to the page's <c>viewConfigDiff</c> array. Populated for
+	/// <c>mode: append</c> whenever a merge actually ran — <c>null</c> for <c>replace</c>, which writes
+	/// the body verbatim, and <c>null</c> when the stored body is empty, because then the fragment is
+	/// written as is and there is no merge to project. On a dry run this is the whole point of the call:
+	/// it reports the outcome before the write (GitHub #1150).
 	/// </summary>
 	[JsonProperty("appendProjection", NullValueHandling = NullValueHandling.Ignore)]
 	[JsonPropertyName("appendProjection")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public PageAppendProjection AppendProjection { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether this failure came from the SKIPPABLE half of the
+	/// validation chain (content rules), as opposed to the structural floor. It is transport-only: the
+	/// MCP adapter reads it to decide whether to advertise <c>validate=false</c>, which is an MCP-only
+	/// flag the CLI parser does not expose. Never serialized — a CLI user must not be told about a flag
+	/// they cannot set.
+	/// </summary>
+	[Newtonsoft.Json.JsonIgnore]
+	[System.Text.Json.Serialization.JsonIgnore]
+	public bool ContentValidationFailure { get; set; }
 
 	[JsonProperty("page", NullValueHandling = NullValueHandling.Ignore)]
 	[JsonPropertyName("page")]

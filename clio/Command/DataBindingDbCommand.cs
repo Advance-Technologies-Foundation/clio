@@ -473,6 +473,9 @@ internal sealed class DataBindingDbService(
 	IServiceUrlBuilder serviceUrlBuilder,
 	IPackageDataBindingWriter bindingWriter) : IDataBindingDbService {
 
+	/// <summary>Creatio runtime <c>dataValueType</c> of a native Color column.</summary>
+	private const int ColorRuntimeDataValueType = 18;
+
 	public DataBindingResult CreateBinding(CreateDataBindingDbOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		ValidateEnvironment(options);
@@ -802,7 +805,7 @@ internal sealed class DataBindingDbService(
 				expressionType = 2,
 				parameter = new {
 					dataValueType,
-					value = kv.Value?.ToString() ?? ""
+					value = BuildRowParameterValue(kv.Key, kv.Value, dataValueType)
 				}
 			};
 		}
@@ -834,7 +837,7 @@ internal sealed class DataBindingDbService(
 				expressionType = 2,
 				parameter = new {
 					dataValueType,
-					value = kv.Value?.ToString() ?? ""
+					value = BuildRowParameterValue(kv.Key, kv.Value, dataValueType)
 				}
 			};
 		}
@@ -848,6 +851,39 @@ internal sealed class DataBindingDbService(
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Insert),
 			JsonSerializer.Serialize(body));
 		DataServiceResponse.ThrowIfUnsuccessful(response, "InsertQuery");
+	}
+
+	/// <summary>
+	/// Shapes a row value for an Insert/Update query parameter, applying the Color rules at the DataService boundary.
+	/// </summary>
+	/// <remarks>
+	/// Every other column is written the way it always was - the JSON node stringified, null collapsed to an
+	/// empty string. Color cannot use that rule: the parameter keeps <c>dataValueType</c> 18, so a number
+	/// would be POSTed as "123", an object as its JSON text, and a null as "", none of which is a valid
+	/// "#RRGGBB" literal. The local-file converter already refuses those shapes; this is the same rule for
+	/// the DB-first create and upsert paths.
+	/// </remarks>
+	private static string? BuildRowParameterValue(string columnName, JsonNode? value, int dataValueType) =>
+		dataValueType == ColorRuntimeDataValueType
+			? ConvertColorValue(columnName, value)
+			: value?.ToString() ?? "";
+
+	/// <summary>
+	/// Returns the hex literal of a Color value, preserving null, and rejects any other wire shape.
+	/// </summary>
+	private static string? ConvertColorValue(string columnName, JsonNode? value) {
+		if (value is null) {
+			//Preserved as null rather than "": an empty string is not a Color, and writing one turns an
+			//explicit "no color" into malformed data on the column.
+			return null;
+		}
+
+		if (value is JsonValue jsonValue && jsonValue.TryGetValue(out string? hexLiteral)) {
+			return hexLiteral;
+		}
+
+		throw new InvalidOperationException(
+			$"Column '{columnName}' value '{value.ToJsonString()}' is not valid for data type 'Color'.");
 	}
 
 	/// <summary>
@@ -921,18 +957,26 @@ internal sealed class DataBindingDbService(
 			return;
 		}
 
-		HashSet<string> requestedColumnNames = rows
-			.SelectMany(row => row.Keys)
-			.Where(name => !string.IsNullOrWhiteSpace(name))
-			.ToHashSet(StringComparer.OrdinalIgnoreCase);
-		foreach (string requestedColumnName in requestedColumnNames) {
-			DataBindingSchemaColumn? column = schema.SchemaColumns
-				.FirstOrDefault(col => string.Equals(col.Name, requestedColumnName, StringComparison.OrdinalIgnoreCase));
-			if (column is null) {
-				continue;
-			}
+		foreach (Dictionary<string, JsonNode?> row in rows) {
+			foreach (KeyValuePair<string, JsonNode?> requested in row) {
+				if (string.IsNullOrWhiteSpace(requested.Key)) {
+					continue;
+				}
 
-			PackageDataBindingWriter.ResolveBindingDataTypeValueUId(column);
+				DataBindingSchemaColumn? column = schema.SchemaColumns
+					.FirstOrDefault(col => string.Equals(col.Name, requested.Key, StringComparison.OrdinalIgnoreCase));
+				if (column is null) {
+					continue;
+				}
+
+				PackageDataBindingWriter.ResolveBindingDataTypeValueUId(column);
+				if (column.DataValueType == ColorRuntimeDataValueType) {
+					//Checked here as well as at the write parameter so the whole request is rejected before
+					//the first POST: validating only inside InsertEntityRow would leave earlier rows of the
+					//same create already inserted on the stand when a later one carries a malformed Color.
+					ConvertColorValue(requested.Key, requested.Value);
+				}
+			}
 		}
 	}
 

@@ -42,7 +42,9 @@ public sealed class ApplicationCreateToolPassthroughTests {
 
 	private ISettingsRepository _settingsRepository;
 	private IApplicationClientFactory _applicationClientFactory;
-	private IApplicationClient _applicationClient;
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Structure", "NUnit1032:An IDisposable field/property should be Disposed in a TearDown method",
+		Justification = "The system under test owns and disposes the factory-returned substitute.")]
+	private IOwnedApplicationClient _applicationClient;
 	private IServiceUrlBuilder _serviceUrlBuilder;
 	private IApplicationInfoService _applicationInfoService;
 	private ISysSettingsManager _sysSettingsManager;
@@ -55,7 +57,7 @@ public sealed class ApplicationCreateToolPassthroughTests {
 	public void SetUp() {
 		_settingsRepository = Substitute.For<ISettingsRepository>();
 		_applicationClientFactory = Substitute.For<IApplicationClientFactory>();
-		_applicationClient = Substitute.For<IApplicationClient>();
+		_applicationClient = Substitute.For<IOwnedApplicationClient>();
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_applicationInfoService = Substitute.For<IApplicationInfoService>();
 		_sysSettingsManager = Substitute.For<ISysSettingsManager>();
@@ -83,7 +85,8 @@ public sealed class ApplicationCreateToolPassthroughTests {
 			_ => _sysSettingsManager,
 			new NullLogger(),
 			_captionCultureResolver,
-			Substitute.For<IRetryDelay>());
+			Substitute.For<IRetryDelay>(),
+			Substitute.For<IODataBuildGate>());
 		_tool = new ApplicationCreateTool(
 			Substitute.For<ILogger>(), _commandResolver, createService, _enrichmentService);
 	}

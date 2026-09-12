@@ -2,7 +2,6 @@
 description: a failing ClioGate endpoint answers with an IIS/Creatio HTML error page, so JsonSerializer.Deserialize throws "'<' is an invalid start of a value" - every gate call must wrap that into an actionable message
 applies-to:
   - clio/Package/PackageUnlocker.cs
-  - clio/Common/ServiceUrlBuilder.cs
   - clio/Command/ShowPackageFileContentCommand.cs
 date: 2026-08-30
 ---

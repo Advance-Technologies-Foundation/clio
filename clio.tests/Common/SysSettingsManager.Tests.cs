@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text.Json;
@@ -55,6 +55,14 @@ public class SysSettingsManagerTests
 	public void GetSysSettingValueByCode_Returns_CorrectBooleanValue(string value){
 		const string sysSettingCode = "nonExistingCode";
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		// The authenticated DataService probe runs before the insert. It is configured first so the
+		// route-specific stub below still wins for the insert itself.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"rows\":[],\"success\":true}");
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"rows\":[],\"success\":true}");
 		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
 		IDataProvider dataProvider = Substitute.For<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
@@ -79,6 +87,14 @@ public class SysSettingsManagerTests
 		string stringDateTimeValue = dtValue.ToString(CultureInfo.InvariantCulture);
 		const string sysSettingCode = "nonExistingCode";
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		// The authenticated DataService probe runs before the insert. It is configured first so the
+		// route-specific stub below still wins for the insert itself.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"rows\":[],\"success\":true}");
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"rows\":[],\"success\":true}");
 		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
 		IDataProvider dataProvider = Substitute.For<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
@@ -97,6 +113,14 @@ public class SysSettingsManagerTests
 	public void GetSysSettingValueByCode_Returns_CorrectGuidValue(string value){
 		const string sysSettingCode = "nonExistingCode";
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		// The authenticated DataService probe runs before the insert. It is configured first so the
+		// route-specific stub below still wins for the insert itself.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"rows\":[],\"success\":true}");
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"rows\":[],\"success\":true}");
 		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
 		IDataProvider dataProvider = Substitute.For<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
@@ -165,6 +189,14 @@ public class SysSettingsManagerTests
 	public void GetSysSettingValueByCode_Throws(string value){
 		const string sysSettingCode = "nonExistingCode";
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		// The authenticated DataService probe runs before the insert. It is configured first so the
+		// route-specific stub below still wins for the insert itself.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"rows\":[],\"success\":true}");
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"rows\":[],\"success\":true}");
 		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
 		IDataProvider dataProvider = Substitute.For<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
@@ -212,6 +244,14 @@ public class SysSettingsManagerTests
 	public void CreatioCanCreateSetting(string valueTypeName){
 		const string sysSettingCode = "nonExistingCode";
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		// The authenticated DataService probe runs before the insert. It is configured first so the
+		// route-specific stub below still wins for the insert itself.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"rows\":[],\"success\":true}");
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"rows\":[],\"success\":true}");
 		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
 		IDataProvider dataProvider = _container.GetRequiredService<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
@@ -227,6 +267,20 @@ public class SysSettingsManagerTests
 
 		applicationClient
 			.ExecutePostRequest(Arg.Is(expectedUrl), Arg.Is<string>(s => EvalValueTypeName(s, valueTypeName)))
+			.Returns(
+				"""
+					{
+						"id": "acf40078-ba48-4285-9f3b-44ebafa28cac",
+						"rowsAffected": 1,
+						"nextPrcElReady": false,
+						"success": true
+					}
+				"""
+			);
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient
+			.ExecutePostRequest(Arg.Is(expectedUrl), Arg.Is<string>(s => EvalValueTypeName(s, valueTypeName)), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(
 				"""
 					{
@@ -253,6 +307,14 @@ public class SysSettingsManagerTests
 	public void CreatioCannotCanCreateSetting(){
 		const string sysSettingCode = "nonExistingCode";
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		// The authenticated DataService probe runs before the insert. It is configured first so the
+		// route-specific stub below still wins for the insert itself.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"rows\":[],\"success\":true}");
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"rows\":[],\"success\":true}");
 		IServiceUrlBuilder urlBuilder = _container.GetRequiredService<IServiceUrlBuilder>();
 		IDataProvider dataProvider = _container.GetRequiredService<IDataProvider>();
 		IWorkingDirectoriesProvider workingDirectoriesProvider = _container.GetRequiredService<IWorkingDirectoriesProvider>();
@@ -267,6 +329,24 @@ public class SysSettingsManagerTests
 		string expectedUrl = EnvironmentSettings.Uri + segment;
 		applicationClient
 			.ExecutePostRequest(Arg.Is(expectedUrl), Arg.Any<string>())
+			.Returns(
+				"""
+					{
+				               "responseStatus": {
+				                 "ErrorCode": "DbOperationException",
+				                 "Message": "Violation of PRIMARY KEY constraint 'PKO0XjBowul8kHVr5gXrx2yS4A0Lc'. Cannot insert duplicate key in object 'dbo.SysSettings'. The duplicate key value is (c7363e33-f8cc-4059-9761-a7c379088489).\r\nThe statement has been terminated.",
+				                 "Errors": []
+				               },
+				               "rowsAffected": -1,
+				               "nextPrcElReady": false,
+				               "success": false
+				             }
+				"""
+			);
+		//The probe uses the timeout-bearing overload. NSubstitute matches per overload, so without
+		//this twin the two-argument stub above leaves the probe returning null.
+		applicationClient
+			.ExecutePostRequest(Arg.Is(expectedUrl), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(
 				"""
 					{

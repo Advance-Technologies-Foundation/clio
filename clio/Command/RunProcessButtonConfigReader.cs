@@ -9,12 +9,15 @@ using System.Text.Json;
 /// One <c>crt.RunBusinessProcessRequest</c> button configuration parsed from a page body.
 /// <see cref="ParameterCodes"/> are the process parameter CODES referenced by the button
 /// (keys of <c>processParameters</c> / <c>parameterMappings</c> plus <c>recordIdProcessParameterName</c>).
+/// <see cref="RecordIdProcessParameterName"/> is that one binding on its own (null/empty when absent),
+/// so a structural check can require it for a run type that must pass the current record.
 /// </summary>
 internal sealed record RunProcessButtonConfig(
 	string ButtonName,
 	string ProcessName,
 	string ProcessRunType,
-	IReadOnlyList<string> ParameterCodes);
+	IReadOnlyList<string> ParameterCodes,
+	string RecordIdProcessParameterName = null);
 
 /// <summary>
 /// Extracts <c>crt.RunBusinessProcessRequest</c> button configurations from a Freedom UI page body —
@@ -136,6 +139,7 @@ internal static class RunProcessButtonConfigReader {
 	private static RunProcessButtonConfig BuildConfig(JsonElement requestObject, string buttonName) {
 		string processName = null;
 		string processRunType = null;
+		string recordIdProcessParameterName = null;
 		var parameterCodes = new List<string>();
 		if (requestObject.TryGetProperty("params", out JsonElement paramsElement)
 			&& paramsElement.ValueKind == JsonValueKind.Object) {
@@ -153,11 +157,13 @@ internal static class RunProcessButtonConfigReader {
 				&& recordIdElement.ValueKind == JsonValueKind.String) {
 				string code = recordIdElement.GetString();
 				if (!string.IsNullOrWhiteSpace(code)) {
+					recordIdProcessParameterName = code;
 					parameterCodes.Add(code);
 				}
 			}
 		}
-		return new RunProcessButtonConfig(buttonName, processName, processRunType, parameterCodes);
+		return new RunProcessButtonConfig(
+			buttonName, processName, processRunType, parameterCodes, recordIdProcessParameterName);
 	}
 
 	private static void CollectObjectKeys(JsonElement paramsElement, string propertyName, List<string> codes) {

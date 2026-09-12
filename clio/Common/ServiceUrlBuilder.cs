@@ -245,7 +245,17 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>
 		///     ClioGate route that imports a previously exported schema payload into a package.
 		/// </summary>
-		ImportSchema = 65
+		ImportSchema = 65,
+
+		/// <summary>
+		///     Uploads a binary image through the native Image API.
+		/// </summary>
+		ImageApiUpload = 66,
+
+		/// <summary>
+		///     Reads one package-scoped entity schema design item.
+		/// </summary>
+		GetEntitySchemaDesignItem = 67
 
 	}
 
@@ -324,6 +334,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.LicenseGetLicOperationStatuses, "ServiceModel/LicenseService.svc/GetLicOperationStatuses"},
 		{KnownRoute.RightsGetRecordRights, "/rest/RightsService/GetRecordRights"},
 		{KnownRoute.RightsApplyChanges, "/rest/RightsService/ApplyChanges"},
+		{KnownRoute.ImageApiUpload, "/ImageAPIService/upload"},
+		{KnownRoute.GetEntitySchemaDesignItem, "ServiceModel/EntitySchemaDesignerService.svc/GetSchemaDesignItem"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

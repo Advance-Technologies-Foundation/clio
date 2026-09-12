@@ -1,4 +1,4 @@
-COMMAND TYPE
+﻿COMMAND TYPE
     Development commands
 
 NAME
@@ -11,6 +11,20 @@ DESCRIPTION
     The update-page command validates and saves the raw JavaScript body of a
     Freedom UI page schema. Pass the full body string directly, typically
     after reading raw.body from get-page.
+    CLI vs MCP: the CLI get-page verb returns raw.body inline, so the CLI
+    caller copies that. The MCP get-page tool returns no raw property - it
+    writes the body to disk and reports the path in files.bodyFile. MCP
+    callers pass that path straight through as --body-file, or send the
+    file contents as --body.
+
+    The MCP update-page tool also accepts validate=false as an explicit escape
+    hatch when a full replacement body contains a pre-existing defect unrelated
+    to the requested edit. This skips client-side content and run-process
+    validation. It does NOT skip the structural floor: JavaScript syntax, AST
+    loadability, replace-mode marker integrity, the mobile JSON-object structure
+    check, and the page baseline/conflict guard all still run. It can be combined
+    with force=true - the flags are orthogonal - and the response then warns that
+    both guards are down. The CLI command has no equivalent flag.
 
     After a successful non-dry-run save, update-page also attempts a
     best-effort live Designer Presence notification so active Creatio
@@ -41,6 +55,13 @@ DESCRIPTION
       crt.HandleViewModelInitRequest, usr.HandleSomeRequest).
     - SCHEMA_VALIDATORS keys (object form) must follow VendorPrefix.Name
       format (e.g., usr.RequiredValidator).
+    - Direct calls from handlers, converters, and validators must resolve to
+      a declaration in the page factory scope, a callback parameter, or a known
+      JavaScript/Creatio global (MCP update-page / sync-pages / validate-page
+      only -- the CLI verb below does NOT run this check). Undefined helper
+      calls are rejected before the body is sent to Creatio because Page
+      Designer can remove module-scope declarations while preserving handler
+      entries, causing ReferenceError.
     MOBILE RULES (MCP update-page / sync-pages / validate-page only --
     the CLI verb below does NOT run them; it checks a mobile body only
     for disallowed sections):
@@ -87,6 +108,14 @@ DESCRIPTION
       viewConfigDiff must be a localizable-string binding, not an inline
       literal. Bind via #ResourceString(<Key>)# and register the key's
       default-language value with --resources. Inline literals are rejected.
+      A component's own data descriptor is exempt: a "data" object carrying the
+      platform's "typeName" marker, on any node that declares a component type
+      and at any depth, is component metadata (uId, schemaType, typeName and
+      the caption the platform stamped on it), not page-authored text, so a
+      literal anywhere inside it is accepted. An input merely named "data"
+      (crt.FilterBuilderSource) has no typeName and stays validated. Do not
+      delete such a caption to satisfy the rule - the platform never restores
+      it.
     - Inserted widget/metric titles must resolve. A title/caption/tooltip/
       placeholder on a freshly inserted (operation:"insert") widget bound as
       $Resources.Strings.<Key> or #ResourceString(<Key>)# is rejected when <Key>
@@ -124,12 +153,17 @@ DESCRIPTION
     --mode replace (default) saves the body verbatim. --mode append loads the
     current schema body from the server and merges your incoming fragment into it.
     A viewConfigDiff entry is replaced only when both operation and name match one
-    of yours - and, for a remove, whether it targets properties. Incoming wins and
-    keeps the existing entry's position; every other existing operation is preserved
-    verbatim, including a second operation on a component you already target. One
-    exception: if your fragment supersedes an identity the page carries TWICE, only
-    the first is replaced and the later one is dropped, since keeping it would
-    re-apply stale values after your replacement. Handlers dedupe by request.
+    of yours - and, for a remove or a set, whether it targets properties. Incoming
+    wins and keeps the existing entry's position; every other existing operation
+    is preserved verbatim, including a second operation on a component you already
+    target. One exception: if your fragment supersedes an identity the page
+    carries TWICE, only the first is replaced and the later one is dropped, since
+    keeping it would re-apply stale values after your replacement. Handlers
+    dedupe by request.
+    SCHEMA_CONVERTERS and SCHEMA_VALIDATORS entries merge by type key and
+    incoming wins. The merged web body is rejected when a custom
+    validator reference lacks a matching SCHEMA_VALIDATORS declaration;
+    built-in crt.* validators need no local entry.
     Preserved is not the same as applied, and this is not specific to append - it
     is how the platform differ resolves any final body, so a hand-authored
     --mode replace body produces it too. Operations run in whole GROUPS in a fixed
@@ -138,8 +172,8 @@ DESCRIPTION
       same name. It resolves against a base that lacks the component and is
       dropped. Same for a move whose name the body also element-removes; a
       merge whose name the body also element-removes or sets; and a property
-      remove whose name the body also element-removes, unless an insert
-      re-creates the element. Fold the values into the insert, or use set,
+      remove whose name the body also sets, or also element-removes unless an
+      insert re-creates the element. Fold the values into the insert, or use set,
       which runs after it. Reordering the array changes nothing. The save
       still succeeds; --dry-run reports it too, against the body that would
       actually be written - so in append mode it also catches a pair formed
@@ -153,15 +187,18 @@ DESCRIPTION
     currentOperationCount, incomingOperationCount, projectedOperationCount
     (compare it against the number you expect), addedOperationCount,
     and replacedOperations / replacedOperationCount (replaced in place - not a
-    loss). Three DISTINCT loss channels, each with its own warning and its own
-    fix: droppedOperations (entries from the SERVER body not carried over - the
-    further-duplicate exception above); collapsedIncomingOperations (entries
-    from YOUR OWN fragment that a later entry in the same fragment supersedes,
-    since only the last spelling of an identity survives - the likeliest one to
-    hit); and viewConfigDiffApplied=false, meaning the current body has no
-    SCHEMA_VIEW_CONFIG_DIFF marker pair so every count describes an array the
-    write discards - use --mode replace. Named lists are capped; counts are
-    exact.
+    loss). Three DISTINCT loss channels, each with its own fix; two of them warn:
+      - droppedOperations: entries from the SERVER body not carried over (the
+        further-duplicate exception above). WARNS, one entry per component.
+      - viewConfigDiffApplied=false: the current body has no
+        SCHEMA_VIEW_CONFIG_DIFF marker pair, so every count describes an array
+        the write discards. WARNS; use --mode replace.
+      - collapsedIncomingOperations: entries from YOUR OWN fragment that a later
+        entry in the same fragment supersedes, since only the last spelling of an
+        identity survives. Reported as DATA ONLY, no warning - the fragment is
+        yours to read, so warning about your own input would be noise. Counted so
+        the totals can be reconciled.
+    Named lists are capped; counts are exact.
     Two consequences: an append whose real save could not merge now FAILS the
     dry run with the same error instead of reporting success (that response
     carries dryRun: true, so it stays distinguishable from a failed real save);

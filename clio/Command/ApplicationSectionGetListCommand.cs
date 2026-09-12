@@ -114,7 +114,7 @@ public sealed class ApplicationSectionGetListService(
 		EnvironmentSettings environmentSettings,
 		ApplicationSectionGetListRequest request,
 		Func<InstalledAppSummary> findApplication) {
-		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
+		using IOwnedApplicationClient client = applicationClientFactory.CreateOwnedEnvironmentClient(environmentSettings);
 		logger.WriteInfo($"Resolving application '{request.ApplicationCode}'...");
 		InstalledAppSummary appSummary = findApplication();
 		logger.WriteInfo($"Loading sections...");

@@ -9,6 +9,7 @@ SYNOPSIS
     config --show
     config --deploy-db-server-name <name> [--deploy-redis-server-name <name>]
            [--deploy-site-name <name>] [--deploy-site-port <port>]
+		   [--deploy-site-port-range <start,end>]
            [--deploy-deployment <auto|iis|dotnet>]
     config --knowledge-feedback-mode <ask|auto|off>
            [--knowledge-feedback-destination <repository-url>]
@@ -52,6 +53,12 @@ OPTIONS
                                        prompts for the site name.
 
     --deploy-site-port <port>          Default site port for deploy-creatio.
+									   Takes precedence over site-port-range.
+
+	--deploy-site-port-range <start,end>
+									   Inclusive automatic IIS port range. Setting it
+									   clears the configured fixed site port. Fresh and
+									   upgraded settings default to 40100,40199.
 
     --deploy-deployment <method>       Default deployment method for
                                        deploy-creatio: auto|iis|dotnet.
@@ -66,7 +73,7 @@ OPTIONS
                                       full for comprehensive internal reports;
                                       sanitized for public-safe reports.
 
-    --reset                            Clear the stored deploy-creatio defaults.
+    --reset                            Clear custom deploy-creatio defaults and restore built-ins.
 
     --show                             Show the current configuration defaults.
                                        This is also the default when no other
@@ -77,7 +84,7 @@ EXAMPLES
     config
 
     # Configure local deployment defaults for the Explorer right-click action
-    config --deploy-db-server-name my-local-postgres --deploy-site-port 40018 --deploy-deployment iis
+	config --deploy-db-server-name my-local-postgres --deploy-site-port-range 40100,40199 --deploy-deployment iis
 
     # Add a default local Redis server name
     config --deploy-redis-server-name local-redis
@@ -99,7 +106,9 @@ BEHAVIOR
       tables for deploy-creatio defaults and knowledge-feedback policy.
     - With one or more --deploy-* arguments, updates only the supplied values,
       persists them, and prints the resulting defaults.
-    - With --reset, removes the stored deploy-creatio defaults entirely.
+	- A configured fixed site port takes precedence over the range. Setting
+	  --deploy-site-port-range clears that fixed port so automatic selection is active.
+    - With --reset, removes custom deploy-creatio defaults and restores site-port-range [40100, 40199].
     - --reset takes precedence over any --deploy-* arguments in the same call.
     - Non-resident MCP tools get-knowledge-feedback-policy and
       configure-knowledge-feedback-policy expose the same policy through clio-run.

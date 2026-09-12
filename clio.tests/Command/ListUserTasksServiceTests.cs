@@ -38,7 +38,7 @@ public sealed class ListUserTasksServiceTests {
 	[Description("Posts an empty wrapped body to the resolved ListUserTasks route and projects the returned tasks (name + uid).")]
 	public void GetUserTasks_ShouldPostToListRoute_AndProjectTasks_OnSuccess() {
 		// Arrange
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
 		client.ExecutePostRequest(ListUrl, Arg.Any<string>()).Returns(
 			"{\"ListUserTasksResult\":{\"success\":true,\"userTasks\":[{\"name\":\"ActivityUserTask\",\"uid\":\"b5c726f2-af5b-4381-bac6-913074144308\"},{\"name\":\"ReadDataUserTask\",\"uid\":\"cb455b6f-78ff-4b1e-b241-c2bbc0b37e9f\"}]}}");
 		ListUserTasksService service = CreateService(client);
@@ -56,7 +56,7 @@ public sealed class ListUserTasksServiceTests {
 	[Test]
 	[Description("Surfaces the server's errorMessage when the ListUserTasks result reports success=false.")]
 	public void GetUserTasks_ShouldThrowWithServerMessage_WhenSuccessFalse() {
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
 		client.ExecutePostRequest(ListUrl, Arg.Any<string>()).Returns(
 			"{\"ListUserTasksResult\":{\"success\":false,\"errorMessage\":\"You don't have permission.\"}}");
 		ListUserTasksService service = CreateService(client);
@@ -70,7 +70,7 @@ public sealed class ListUserTasksServiceTests {
 	[Test]
 	[Description("Throws a clear error when the response envelope has no ListUserTasksResult payload.")]
 	public void GetUserTasks_ShouldThrow_WhenResponseShapeUnexpected() {
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
 		client.ExecutePostRequest(ListUrl, Arg.Any<string>()).Returns("{}");
 		ListUserTasksService service = CreateService(client);
 
@@ -83,7 +83,7 @@ public sealed class ListUserTasksServiceTests {
 	[Test]
 	[Description("Returns an empty list (not null) when the environment exposes no user tasks.")]
 	public void GetUserTasks_ShouldReturnEmpty_WhenNoTasks() {
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
 		client.ExecutePostRequest(ListUrl, Arg.Any<string>()).Returns(
 			"{\"ListUserTasksResult\":{\"success\":true,\"userTasks\":[]}}");
 		ListUserTasksService service = CreateService(client);
@@ -94,7 +94,7 @@ public sealed class ListUserTasksServiceTests {
 	[Test]
 	[Description("Throws (without calling the server) when the target environment is not registered.")]
 	public void GetUserTasks_ShouldThrow_WhenEnvironmentNotFound() {
-		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
 		ISettingsRepository settings = Substitute.For<ISettingsRepository>();
 		settings.FindEnvironment(Env).Returns((EnvironmentSettings)null);
 		var service = new ListUserTasksService(settings,

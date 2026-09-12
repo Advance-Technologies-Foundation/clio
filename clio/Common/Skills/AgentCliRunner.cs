@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Clio.UserEnvironment;
 
 namespace Clio.Common.Skills;
 
@@ -26,7 +27,10 @@ public sealed class AgentCliRunner(IProcessExecutor processExecutor, IFileSystem
 
 		(string program, string arguments) = BuildCommand(resolved, args ?? []);
 		ProcessExecutionResult result = _processExecutor
-			.ExecuteAndCaptureAsync(new ProcessExecutionOptions(program, arguments))
+			.ExecuteAndCaptureAsync(new ProcessExecutionOptions(program, arguments) {
+				ResolveProgramPath = true,
+				WorkingDirectory = Path.GetFullPath(SettingsRepository.AppSettingsFolderPath)
+			})
 			.GetAwaiter()
 			.GetResult();
 
@@ -59,6 +63,7 @@ public sealed class AgentCliRunner(IProcessExecutor processExecutor, IFileSystem
 		string[] pathDirectories = pathVariable.Split(Path.PathSeparator,
 			StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 		foreach (string directory in pathDirectories) {
+			if (!Path.IsPathFullyQualified(directory)) continue;
 			foreach (string candidate in CandidateFileNames(cliName)) {
 				string fullPath = _fileSystem.Combine(directory, candidate);
 				if (_fileSystem.ExistsFile(fullPath)) {

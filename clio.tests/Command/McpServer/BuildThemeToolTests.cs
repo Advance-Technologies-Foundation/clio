@@ -267,7 +267,7 @@ public sealed class BuildThemeToolTests
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		EnvironmentSettings env = new() { Uri = "http://env" };
 		commandResolver.Resolve<EnvironmentSettings>(Arg.Is<EnvironmentOptions>(o => o.Environment == "dev")).Returns(env);
-		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(new PlatformVersionResolution("10.0.1", VersionResolutionSource.Environment)));
 		_resolverFactory.Create(env).Returns(resolver);
@@ -292,7 +292,7 @@ public sealed class BuildThemeToolTests
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		EnvironmentSettings env = new() { Uri = "http://env" };
 		commandResolver.Resolve<EnvironmentSettings>(Arg.Is<EnvironmentOptions>(o => o.Environment == "dev")).Returns(env);
-		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(new PlatformVersionResolution("latest", VersionResolutionSource.LatestFallback)));
 		_resolverFactory.Create(env).Returns(resolver);
@@ -446,7 +446,7 @@ public sealed class BuildThemeToolTests
 		EnvironmentSettings headerSettings = new() { Uri = "https://header-tenant.creatio.com" };
 		commandResolver.Resolve<EnvironmentSettings>(Arg.Is<EnvironmentOptions>(o => string.IsNullOrEmpty(o.Environment)))
 			.Returns(headerSettings);
-		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(new PlatformVersionResolution("10.1.0", VersionResolutionSource.Environment)));
 		_resolverFactory.Create(headerSettings).Returns(resolver);

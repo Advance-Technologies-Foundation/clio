@@ -388,6 +388,41 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Returns valid: true when an inserted crt.EmailComposer carries the platform-authored data.caption literal — a component's data descriptor is component metadata, not page-authored user-visible text, so the localizable-text rule must NOT reject it (issue #1298). Proves the descriptor exemption reaches through the real MCP transport.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts platform-authored data.caption on a Timeline composer")]
+	[AllureDescription("Sends a page body whose inserted crt.EmailComposer carries the descriptor the Freedom UI designer writes (uId, schemaType, typeName, caption: \"Email\") and verifies validate-page accepts it — otherwise every page containing a Timeline composer would be unsaveable through clio.")]
+	public async Task PageValidateTool_Should_Accept_Platform_Authored_Composer_Data_Caption() {
+		// Arrange
+		string bodyWithComposerDescriptor = ValidPageBody.Replace(
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+				"{\"operation\":\"insert\",\"name\":\"EmailComposer\",\"parentName\":\"MessageComposer\"," +
+				"\"propertyName\":\"items\",\"values\":{\"type\":\"crt.EmailComposer\"," +
+				"\"classes\":[\"view-element\"],\"data\":{\"uId\":\"f80b7f5b-ad11-09ed-189a-6190abb76340\"," +
+				"\"schemaType\":\"Email\",\"typeName\":\"crt.EmailComposer\",\"caption\":\"Email\"}," +
+				"\"recordId\":\"$Id\",\"visible\":true}}" +
+				"]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithComposerDescriptor);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "values.data is the composer's own descriptor, written and round-tripped unchanged by the platform (issue #1298)");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeTrue(
+			because: "no content-level validator, including the localizable-text rule, should reject a platform-authored component descriptor");
+		response.Validation.Errors.Should().BeNullOrEmpty(
+			because: "a page carrying a Timeline composer must stay saveable through clio");
+	}
+
+	[Test]
 	[Description("Returns valid: false when viewConfigDiff sets a user-visible text property (placeholder) to an inline string literal instead of a localizable-string binding — proves the localizable-text hard reject fires through the real MCP transport.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page rejects inline placeholder literal")]
@@ -531,6 +566,32 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 		response.Validation.Errors!.Should().Contain(
 			e => e.Contains("JavaScript syntax error", System.StringComparison.OrdinalIgnoreCase),
 			because: "the canonical syntax-gate prefix is what existing tooling and operator habits key on");
+	}
+
+	[Test]
+	[Description("validate-page rejects a syntactically valid handler that calls an undeclared module-scope helper, reproducing the Page Designer loss that leaves a page unopenable at runtime.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects an undefined module-scope helper call")]
+	[AllureDescription("Sends an AMD body whose init handler calls missingModuleHelper without declaring it in the factory and verifies that the AST validation error reaches the real MCP transport.")]
+	public async Task PageValidateTool_Should_Reject_Undeclared_Handler_Helper() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string body = ValidPageBody.Replace(
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"handlers: /**SCHEMA_HANDLERS*/[{ request: 'crt.HandleViewModelInitRequest', handler: async (request, next) => { await missingModuleHelper(request); return next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			body);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "a missing helper produces a runtime ReferenceError even when the page body passes JavaScript syntax parsing");
+		response.Validation.Errors.Should().Contain(
+			e => e.Contains("undefined-section-call", StringComparison.OrdinalIgnoreCase) && e.Contains("missingModuleHelper", StringComparison.Ordinal),
+			because: "the real MCP response must expose the stable lint rule and the missing helper name before a write is attempted");
 	}
 
 	[Test]
@@ -759,7 +820,8 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 			  "viewConfigDiff": [
 			    { "operation": "insert", "name": "RunProcessButton", "type": "crt.Button",
 			      "parentName": "MainContainer", "propertyName": "items",
-			      "values": { "clicked": { "request": "crt.RunBusinessProcessRequest" } } }
+			      "values": { "clicked": { "request": "crt.RunBusinessProcessRequest",
+			                               "params": { "processName": "UsrSomeProcess", "processRunType": "RegardlessOfThePage" } } } }
 			  ],
 			  "viewModelConfigDiff": [],
 			  "modelConfigDiff": []
@@ -779,6 +841,41 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 		response.Validation.Errors!.Should().Contain(
 			e => e.Contains("RunProcessButton") && e.Contains("values"),
 			because: "validate-page must name the element and point at 'values' so the agent fixes the insert before writing");
+	}
+
+	[Test]
+	[Description("ENG-95822: validate-page (the pre-flight the agent runs before update-page) rejects a ForTheSelectedPage run-process button that omits recordIdProcessParameterName — the record is never handed to the process. Proves the offline structural gate now reaches validate-page too, so a green pre-flight cannot misread as 'the button is wired'.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects a ForTheSelectedPage run-process button without recordIdProcessParameterName")]
+	[AllureDescription("Sends a mobile body with a crt.RunBusinessProcessRequest button that sets processName + processRunType=ForTheSelectedPage but omits recordIdProcessParameterName, and verifies validate-page returns valid=false with an error naming the button and the missing key.")]
+	public async Task PageValidateTool_Should_Reject_ForTheSelectedPage_RunProcess_Button_Without_RecordId() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBody = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "RunProcessButton",
+			      "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "type": "crt.Button",
+			                  "clicked": { "request": "crt.RunBusinessProcessRequest",
+			                               "params": { "processName": "UsrCarRentalOrder_StartProcess", "processRunType": "ForTheSelectedPage" } } } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBody);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "a ForTheSelectedPage button that hands no record to the process must fail the pre-flight (ENG-95822)");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().Contain(
+			e => e.Contains("RunProcessButton") && e.Contains("recordIdProcessParameterName"),
+			because: "validate-page must name the button and the missing record-binding key so the agent fixes it before writing");
 	}
 
 	[Test]
@@ -1024,7 +1121,8 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 			    { "operation": "insert", "name": "RunProcessButton",
 			      "parentName": "MainContainer", "propertyName": "items",
 			      "values": { "type": "crt.Button",
-			                  "clicked": { "request": "crt.RunBusinessProcessRequest" } } }
+			                  "clicked": { "request": "crt.RunBusinessProcessRequest",
+			                               "params": { "processName": "UsrSomeProcess", "processRunType": "RegardlessOfThePage" } } } }
 			  ],
 			  "viewModelConfigDiff": [],
 			  "modelConfigDiff": []

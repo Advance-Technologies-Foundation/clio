@@ -76,7 +76,7 @@ public class PushWorkspaceCommand : Command<PushWorkspaceCommandOptions>{
 			return;
 		}
 
-		IApplicationClient applicationClient = _applicationClientFactory.CreateClient(_environmentSettings);
+		using IOwnedApplicationClient applicationClient = _applicationClientFactory.CreateOwnedClient(_environmentSettings);
 		string runProcessUri = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RunProcess);
 		ProcessStartArgs runProcessArgs = new() {
 			SchemaName = callbackProcess,

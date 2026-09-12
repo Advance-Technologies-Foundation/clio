@@ -135,7 +135,7 @@ public sealed class ApplicationSectionUpdateService(
 		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(profileCultureForCaption, request.Caption, "caption");
 		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(profileCultureForCaption, request.Description, "description");
 
-		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
+		using IOwnedApplicationClient client = applicationClientFactory.CreateOwnedEnvironmentClient(environmentSettings);
 		ApplicationInfoResult applicationInfo = loadApplicationInfo();
 		string applicationId = applicationInfo.ApplicationId
 			?? throw new InvalidOperationException("Application id was not returned by get-app-info.");

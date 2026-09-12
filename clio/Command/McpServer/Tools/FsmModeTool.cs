@@ -31,6 +31,13 @@ public sealed class FsmModeTool(
 	/// Gets the current FSM mode from the Creatio GetApplicationInfo endpoint.
 	/// </summary>
 	[McpServerTool(Name = GetFsmModeToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Detects whether a registered Creatio environment is currently in FSM mode on or off. Use `set-fsm-mode` to activate or deactivate FSM mode when needed.")]
 	public FsmModeStatusResult GetFsmMode(
 		[Description(McpToolDescriptions.EnvironmentName)] [Required] string environmentName)
@@ -42,7 +49,14 @@ public sealed class FsmModeTool(
 	/// Turns FSM mode on or off for a registered environment.
 	/// </summary>
 	[McpServerTool(Name = SetFsmModeToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Turns FSM mode on or off for a registered Creatio environment. After changing FSM mode, run `compile-creatio` without `package-name` to perform a full compilation (`clio cc -e ENV_NAME --all`).")]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
+	[Description("Turns FSM mode on or off for a registered Creatio environment. The two directions fail differently: `on` writes the configuration first and then exports the packages, so a non-zero exit code can mean FSM is already enabled while the export did not happen - re-check with `get-fsm-mode` and finish with `pkg-to-file-system` instead of calling this tool again; `off` imports the packages first and only then writes the configuration, so a non-zero exit code means the configuration was NOT changed and the environment is still in FSM mode. An environment that already reports FSM as off is not an error for `off`. After changing FSM mode, run `compile-creatio` without `package-name` to perform a full compilation (`clio cc -e ENV_NAME --all`).")]
 	public CommandExecutionResult SetFsmMode(
 		[Description("FSM mode parameters")] [Required] SetFsmModeArgs args)
 	{

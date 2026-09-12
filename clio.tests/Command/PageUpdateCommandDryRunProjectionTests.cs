@@ -142,16 +142,18 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 			because: "one further current entry of the superseded identity is not carried over");
 		response.Warnings.Should().NotBeNull(
 			because: "the reporter asked to be told during a dry run that an existing operation would go");
-		response.Warnings.Should().Contain(warning => warning.Contains("Append drops 1 existing"),
-			because: "the warning must state the loss in the server-body channel, not merely count it");
-		response.Warnings.Should().Contain(warning => warning.Contains("merge UsrPanel"),
-			because: "the warning must name the operation so the caller knows what to fold");
+		response.Warnings.Should().Contain(warning => warning.Contains("'UsrPanel'"),
+			because: "the caller cannot act on a warning that does not name the component");
+		response.Warnings.Should().Contain(warning => warning.Contains("get-page"),
+			because: "the warning must say how to recover, not merely that something happened");
+		response.AppendProjection.DroppedOperations.Should().Contain("merge UsrPanel",
+			because: "the structured label is the machine-readable view of the same loss the sentence describes");
 		AssertNothingWasSaved();
 	}
 
 	[Test]
-	[Description("GH-1150 review: a dry run warns when the caller's own fragment supersedes one of its own operations.")]
-	public void TryUpdatePage_WhenFragmentSupersedesItsOwnOperation_WarnsOnTheCallerSideChannel() {
+	[Description("GH-1150 review: a dry run COUNTS an operation the caller's own fragment supersedes, without warning about it.")]
+	public void TryUpdatePage_WhenFragmentSupersedesItsOwnOperation_CountsItWithoutWarning() {
 		// Arrange — the caller's own loss, distinct from a server-body drop, and reported separately because
 		// the fix is theirs to make.
 		StubCurrentBody(WebBody("[]"));
@@ -171,8 +173,8 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 			because: "the fragment names one identity twice, so its earlier entry never reaches the body");
 		response.AppendProjection.DroppedOperationCount.Should().Be(0,
 			because: "keeping the channels separate is what tells the caller whose fragment to correct");
-		response.Warnings.Should().Contain(warning => warning.Contains("Your fragment carries 1"),
-			because: "the warning must address the caller's own body rather than blaming the server's");
+		response.Warnings.Should().BeNull(
+			because: "the collapse is reported as DATA only: the fragment is the caller's own and they can read it, so a warning about their own input would be noise (the rule the superseded-drop warning was set with). Nothing else about this input warns, so the list is absent entirely");
 		AssertNothingWasSaved();
 	}
 
@@ -262,8 +264,8 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 	}
 
 	[Test]
-	[Description("A dry run whose loss exceeds the naming cap states the remainder rather than truncating silently.")]
-	public void TryUpdatePage_WhenAppendDryRunDropsMoreThanTheNamingCap_WarningStatesTheRemainder() {
+	[Description("A dry run whose loss exceeds the naming cap keeps the count exact and truncates only the labels.")]
+	public void TryUpdatePage_WhenAppendDryRunDropsMoreThanTheNamingCap_KeepsTheCountExact() {
 		// Arrange — 30 components each carrying the same identity twice in the CURRENT body, with a fragment
 		// that supersedes all 30: 30 drops against a 25-entry naming cap.
 		List<string> currentEntries = [];
@@ -282,11 +284,11 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 		// Assert
 		result.Should().BeTrue(because: "a large advisory loss is still advisory");
 		response.AppendProjection.DroppedOperationCount.Should().Be(30,
-			because: "the count is exact even though the named list is capped");
-		response.Warnings.Should().Contain(warning => warning.Contains("(+5 more)"),
-			because: "a truncated list must name its remainder or it reads as the whole story");
-		response.Warnings.Should().Contain(warning => warning.Contains("Append drops 30 existing"),
-			because: "the exact scale belongs in the sentence the caller reads, not only in the projection");
+			because: "the count is exact and unbounded even though the named list is capped");
+		response.AppendProjection.DroppedOperations.Should().HaveCount(25,
+			because: "only the labels are capped, so a pathological body cannot bury the response while the count still reports the true scale");
+		response.Warnings.Should().HaveCount(30,
+			because: "the merge emits one actionable sentence per dropped IDENTITY, and all 30 identities are distinct here");
 		AssertNothingWasSaved();
 	}
 

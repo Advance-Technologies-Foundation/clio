@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
@@ -18,13 +19,21 @@ public class CreateUiProjectTool(
 
 	internal const string CreateUiProjectToolName = "new-ui-project";
 	private const string WorkspaceMarkerRelativePath = ".clio/workspaceSettings.json";
-	private static readonly Regex PackageNamePattern = new("^[A-Za-z0-9_]+$", RegexOptions.Compiled);
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+	private static readonly Regex PackageNamePattern = new("^[A-Za-z0-9_]+$", RegexOptions.Compiled, RegexTimeout);
 
 	/// <summary>
 	/// Creates a new Angular (Freedom UI remote module) project inside the supplied clio workspace.
 	/// </summary>
 	[McpServerTool(Name = CreateUiProjectToolName, ReadOnly = false, Destructive = false, Idempotent = false,
 		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
 				 Creates a new Angular (Freedom UI remote module) project inside an existing clio workspace.
 
@@ -82,7 +91,7 @@ public class CreateUiProjectTool(
 		// at resolution time, so without this any agent invoking the tool from an arbitrary cwd would
 		// scaffold packages/projects under the wrong (or non-workspace) folder. The process-wide cwd
 		// mutation runs under the single global CwdLock (H1). Lock ordering is per-tenant → CwdLock:
-		// ExecuteUnderTenantLock takes the tenant lock first (CreateUiProject is environment-less, so the
+		// ExecuteUnderTenantLock takes the tenant lock first (CreateUiProject writes only local files, so the
 		// shared-fallback key — the same key the inner InternalExecute reacquires reentrantly), then we
 		// take CwdLock inside; no path takes CwdLock and then a per-tenant lock, so there is no deadlock.
 		return ExecuteUnderTenantLock(options, () => {

@@ -37,10 +37,9 @@
 			"type": "string",
 			"description": "Default environment key"
 		},
-		"Autoupdate": {
-			"type": "boolean",
-			"description": "Auto update clio",
-			"default": false
+		"autoupdate": {
+			"$ref": "#/definitions/autoupdatesettings",
+			"description": "Independent best-effort update schedules for clio, knowledge, and the Creatio toolkit"
 		},
 		"dbConnectionStringKeys": {
 			"type": "object",
@@ -72,6 +71,10 @@
 		"defaultRedis": {
 			"type": "string",
 			"description": "Default local Redis server key from redis section when multiple servers are enabled"
+		},
+		"deploy-creatio-defaults": {
+			"$ref": "#/definitions/deploycreatiodefaults",
+			"description": "Defaults used when deploy-creatio command-line options are omitted"
 		},
 		"telemetry": {
 			"$ref": "#/definitions/telemetrysettings",
@@ -109,10 +112,80 @@
 	"description": "Clio environment description file",
 	"required": [
 		"ActiveEnvironmentKey",
-		"Autoupdate",
+		"autoupdate",
 		"Environments"
 	],
 	"definitions": {
+		"autoupdatepolicy": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["enabled", "frequency-minutes"],
+			"properties": {
+				"enabled": { "type": "boolean", "default": true },
+				"frequency-minutes": { "type": "integer", "minimum": 1 },
+				"next-run": { "type": "string", "format": "date-time" }
+			}
+		},
+		"autoupdatesettings": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["clio", "knowledge", "toolkit"],
+			"properties": {
+				"clio": {
+					"allOf": [{ "$ref": "#/definitions/autoupdatepolicy" }],
+					"default": { "enabled": true, "frequency-minutes": 480 }
+				},
+				"knowledge": {
+					"allOf": [{ "$ref": "#/definitions/autoupdatepolicy" }],
+					"default": { "enabled": true, "frequency-minutes": 60 }
+				},
+				"toolkit": {
+					"allOf": [{ "$ref": "#/definitions/autoupdatepolicy" }],
+					"default": { "enabled": true, "frequency-minutes": 60 }
+				}
+			}
+		},
+		"deploycreatiodefaults": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"db-server-name": {
+					"type": "string",
+					"description": "Default local database server key from the db section"
+				},
+				"redis-server-name": {
+					"type": "string",
+					"description": "Default local Redis server key from the redis section"
+				},
+				"site-name": {
+					"type": "string",
+					"description": "Default deployed IIS site and registered environment name"
+				},
+				"site-port": {
+					"type": "integer",
+					"minimum": 1,
+					"maximum": 65535,
+					"description": "Fixed IIS site port; takes precedence over site-port-range"
+				},
+				"site-port-range": {
+					"type": "array",
+					"minItems": 2,
+					"maxItems": 2,
+					"items": {
+						"type": "integer",
+						"minimum": 1,
+						"maximum": 65535
+					},
+					"description": "Inclusive start and end ports scanned when no explicit or fixed site port is set",
+					"default": [40100, 40199]
+				},
+				"deployment": {
+					"type": "string",
+					"enum": ["auto", "iis", "dotnet"],
+					"description": "Default deployment method"
+				}
+			}
+		},
 		"knowledgefeedbacksettings": {
 			"type": "object",
 			"additionalProperties": false,

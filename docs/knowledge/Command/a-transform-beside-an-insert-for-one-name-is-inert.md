@@ -14,9 +14,10 @@ them in a fixed order — `Merge`, then `Remove`/`Insert`/`Move`, then `RemovePr
 an operation with no diagnostic: group ordering; `FilterMoveOperation`, which opens the position
 pipeline by dropping every `move` whose `name` matches any element `remove` in the same body; and
 source resolution, where an operation whose target name is absent resolves to nothing and is skipped
-while `ApplyOperations` throws away the unsuccessful list each group returns. `set` is the only verb
-applied after inserts. Since GH-1240 `PageInertOperationDetector` reports seven provable pairs as
-advisory warnings on `update-page` — and on `sync-pages`, which shares `TryUpdatePage` and forwards
+while `ApplyOperations` throws away the unsuccessful list each group returns. Two groups run after
+inserts, `RemoveProperties` and `Set` — so a property `remove` beside an `insert` for one name does
+take effect, while a `merge`, `move` or element `remove` there does not. Since GH-1240
+`PageInertOperationDetector` reports eight provable pairs as advisory warnings on `update-page` — and on `sync-pages`, which shares `TryUpdatePage` and forwards
 `PageUpdateResponse.Warnings` into its per-page `validation.warnings`. The operation is still inert;
 the warning only says so.
 
@@ -25,11 +26,15 @@ differ, so the group order is the server's, and reordering the groups would dive
 that actually renders the page. The signal is advisory rather than blocking because the detector reads
 ONE schema body: a parent schema in the replacing chain may insert the same name, which puts the
 component in the base and makes the transform apply after all, and an ancestor's `alias` carrying
-`excludeOperations` can legitimately neutralise an operation. Two shapes that look like they belong in
-the table are absent because the applier disproves them: `insert` + `set` (`Set` removes first and
-reuses the removed item's `index`/`propertyName`, so only the insert's `values` are overwritten) and
-`merge` + property `remove` (only the intersection of the merge's `values` keys with the named
-properties is lost).
+`excludeOperations` can legitimately neutralise an operation. Three shapes that look like they belong
+in the table are absent because the applier disproves them: `insert` + `set` (`Set` removes first and
+reuses the removed item's `index` and `propertyName`, so the insert's position survives as an override
+— though only those two, since `parentName` comes from the set, and a set with no `parentName`
+re-inserts at the ROOT); `merge` + property `remove` (only the intersection of the merge's `values`
+keys with the named properties is lost); and `set` + `move` (the set re-inserts under its own
+`parentName`, overriding the move rather than discarding it). Note the neighbouring `set` + property
+`remove` IS reported: the property group runs before `set`, which then rebuilds the element from its
+own `values`, so the strip contributes nothing.
 
 **What breaks if you ignore it** — you author `insert` then `merge` for one component, the save
 returns success, and the merged values are silently absent at runtime; or you append a `move` to a

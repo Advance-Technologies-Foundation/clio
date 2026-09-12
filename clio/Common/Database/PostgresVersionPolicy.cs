@@ -13,6 +13,8 @@ public static class PostgresVersionPolicy
 	/// </summary>
 	public const int MinimumSupportedMajorVersion = 16;
 
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+
 	/// <summary>
 	/// Tries to parse PostgreSQL major version from <c>SELECT version()</c> result.
 	/// </summary>
@@ -27,7 +29,7 @@ public static class PostgresVersionPolicy
 			return false;
 		}
 
-		Match match = Regex.Match(versionText, @"(?i)\bpostgresql\s+(\d+)");
+		Match match = Regex.Match(versionText, @"(?i)\bpostgresql\s+(\d+)", RegexOptions.None, RegexTimeout);
 		if (!match.Success || match.Groups.Count < 2)
 		{
 			return false;

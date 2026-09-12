@@ -1,4 +1,4 @@
-﻿namespace Clio.Command {
+namespace Clio.Command {
 	using System;
 	using System.Collections.Generic;
 	using System.IO;
@@ -39,6 +39,15 @@
 		public bool DryRun { get; set; }
 
 		/// <summary>
+		/// Gets or sets a value indicating whether the MCP page-body validation chain should run.
+		/// </summary>
+		/// <remarks>
+		/// The MCP adapter owns this escape hatch; the CLI command does not expose it as an option.
+		/// JavaScript syntax and AST loadability checks remain mandatory when validation is disabled.
+		/// </remarks>
+		public bool Validate { get; set; } = true;
+
+		/// <summary>
 		/// Gets or sets the explicit resource captions used for <c>#ResourceString(key)#</c> macros.
 		/// </summary>
 		[Option("resources", Required = false, HelpText = "JSON object of resource key-value pairs for #ResourceString(key)# macros")]
@@ -52,9 +61,10 @@
 
 		/// <summary>
 		/// Gets or sets the write mode. <c>replace</c> (default) saves the provided body verbatim.
-		/// <c>append</c> merges the provided body fragment with the current schema body on the server.
+		/// <c>append</c> merges the provided body fragment with the current schema body on the server,
+		/// including converters and validators by type key with incoming entries winning.
 		/// </summary>
-		[Option("mode", Required = false, HelpText = "Write mode: 'replace' (default) or 'append' (merge with existing body)")]
+		[Option("mode", Required = false, HelpText = "Write mode: 'replace' (default) or 'append' (merge diffs, handlers, converters, and validators with the existing body)")]
 		public string? Mode { get; set; }
 
 		/// <summary>
@@ -121,6 +131,7 @@
 		private const string LocalizableStringsKey = "localizableStrings";
 		private const string ChecksumColumnName = "Checksum";
 		private const string ModifiedOnColumnName = "ModifiedOn";
+		private const string AppendMode = "append";
 
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
@@ -181,162 +192,122 @@
 				if (!TryCheckForExternalModification(options, context, out response)) return false;
 				PageUpdateResponse validationError = ValidateInput(options, context.SchemaType, explicitResources);
 				if (validationError != null) { response = validationError; return false; }
-				if (options.DryRun) {
-					// GH-1150: a dry run used to return HERE, before the merge, so in append mode it could not
-					// say what the write would change — and its body checks saw only the incoming fragment, never
-					// the body that would actually be saved. It now resolves the same body the save would write,
-					// through the same code path, and reports the projection.
-					if (!TryProjectDryRun(options, context, out string projectedBody,
-						out PageAppendProjection projection, out response)) {
-						// AC5 makes the merge failure newly reachable from a dry run, so the failure envelope has
-						// to say which call it came from. Without this it is byte-identical to a failed real save
-						// and a caller cannot tell whether anything was written.
-						response.DryRun = true;
-						response.SchemaName = options.SchemaName;
-						return false;
-					}
-					response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
-					response.AppendProjection = projection;
-					// PageInsertDowngradeDetector is deliberately NOT run here: it cannot fire on this path.
-					// It warns when the prior body introduced a component with an `insert` that the final body
-					// drops in favour of a transform, and an append never produces that shape. A current
-					// `insert X` is only ever replaced by an incoming entry of the SAME identity (another
-					// `insert X`), and every non-matching current entry is carried over, so `insert X` present
-					// before implies `insert X` present after. In replace mode this branch has no current body
-					// to compare against at all. Calling it would be dead code implying coverage it cannot give.
-					response.Warnings = CombineWarnings(
-						BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources),
-						BuildProjectedLossWarnings(projection),
-						PageInertOperationDetector.Detect(projectedBody));
-					return true;
-				}
-				if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
-				if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite,
-					out PageAppendProjection saveProjection, out response)) return false;
-				IReadOnlyList<string> downgradeWarnings = PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
-				IReadOnlyList<string> inertWarnings = PageInertOperationDetector.Detect(bodyToWrite);
-				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
-				PageUpdateResponse captionError = ValidateInsertedWidgetCaptionsResolve(schemaToSave, bodyToWrite, context.SchemaType);
-				if (captionError != null) { response = captionError; return false; }
-				if (!TrySaveSchema(schemaToSave, out response)) return false;
-				response = CreateSuccessResponse(options, dryRun: false, registeredKeys);
-				// The save path warns too: a caller who skipped the dry run has no other place to learn of a loss.
-				response.AppendProjection = saveProjection;
-				response.Warnings = CombineWarnings(
-					BuildProjectedLossWarnings(saveProjection), downgradeWarnings, inertWarnings);
-				PopulatePostSaveChecksum(options, context, response);
-				AppendDesignerPresenceWarning(options, response);
-				return true;
+				return options.DryRun
+					? TryCompleteDryRun(options, context, explicitResources, out response)
+					: TrySaveValidatedPage(options, context, explicitResources, parsedOptionalProperties, out response);
 			} catch (Exception ex) {
 				response = new PageUpdateResponse { Success = false, Error = ex.Message };
 				return false;
 			}
 		}
 
-		/// <summary>
-		/// Whether the caller asked for the incoming body to be merged with the schema's current body
-		/// rather than written verbatim.
-		/// </summary>
-		private static bool IsAppendMode(PageUpdateOptions options) =>
-			string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase);
-
-		/// <summary>
-		/// Resolves, for a dry run, the body the equivalent real save would write, plus the projection
-		/// describing how the append merge got there.
-		/// </summary>
-		/// <remarks>
-		/// Append is the ONLY mode whose written body differs from the submitted one, so it is the only
-		/// mode that needs the server's body to answer "what will this write do?". A <c>replace</c> dry run
-		/// therefore keeps its previous shape exactly — no extra schema fetch, no new way to fail — which
-		/// matters because <c>sync-pages</c> pins <c>replace</c> and runs at volume.
-		/// <para>
-		/// The fetch and the merge both run through the same helpers the real save uses
-		/// (<see cref="TryLoadSchemaForSave"/>, <see cref="TryResolveBodyToWrite"/>). Both are read-only:
-		/// the schema is loaded and a DTO is built in memory, and nothing is written until
-		/// <c>TrySaveSchema</c>, which a dry run never reaches. Reusing them is the point — a dry run that
-		/// predicted the merge with its own logic could disagree with the save, which is worse than not
-		/// predicting it at all.
-		/// </para>
-		/// A consequence worth stating: an append whose real save would fail to merge now fails the DRY RUN
-		/// too, with the identical error, instead of reporting success and failing later. That is the fix,
-		/// not a regression.
-		/// </remarks>
-		/// <returns><c>true</c> when the projection succeeded; <c>false</c> with a failure response.</returns>
-		private bool TryProjectDryRun(
-				PageUpdateOptions options,
-				EditableSchemaContext context,
-				out string projectedBody,
-				out PageAppendProjection projection,
-				out PageUpdateResponse response) {
-			projectedBody = options.Body;
-			projection = null;
-			response = null;
-			if (!IsAppendMode(options)) return true;
-			if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaForProjection, out response)) {
-				return false;
+		private bool TryCompleteDryRun(
+			PageUpdateOptions options,
+			EditableSchemaContext context,
+			Dictionary<string, string> explicitResources,
+			out PageUpdateResponse response) {
+			// ENG-96262 / GH-1150: the merge below was already computed here and thrown away (`out _`), so a
+			// dry run reported `success` while naming nothing the write would change, and its body checks
+			// inspected the INCOMING fragment rather than the body that would be saved. Both now use the
+			// resolved result.
+			string projectedBody = options.Body;
+			PageAppendProjection projection = null;
+			if (IsAppendMode(options)) {
+				if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject currentSchema, out response)) return false;
+				if (!TryResolveBodyToWrite(currentSchema, options, out projectedBody, out projection, out response)) {
+					// The merge failure is newly reachable from a dry run, so the failure envelope has to say
+					// which call it came from. Without this it is byte-identical to a failed real save and the
+					// caller cannot tell whether anything was written.
+					response.DryRun = true;
+					response.SchemaName = options.SchemaName;
+					return false;
+				}
 			}
-			return TryResolveBodyToWrite(schemaForProjection, options, out projectedBody, out projection, out response);
+			response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
+			response.AppendProjection = projection;
+			// A dry run is exactly the call that asks "is this body right before I write it?", and the
+			// inert-operation check is a pure function of one body. It now reads the PROJECTED body, so a pair
+			// formed by the server's insert plus the caller's merge is caught here rather than on the save.
+			//
+			// PageInsertDowngradeDetector is deliberately NOT run: it cannot fire on this path. It warns when
+			// the prior body introduced a component with an `insert` that the final body drops for a
+			// transform, and an append never produces that shape - a current `insert X` is only ever replaced
+			// by an incoming entry of the SAME identity (another `insert X`), and every non-matching current
+			// entry is carried over. In replace mode there is no current body here to compare against at all.
+			// Calling it would be dead code implying coverage it cannot give.
+			response.Warnings = CombineWarnings(
+				BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources),
+				BuildProjectedLossWarnings(projection),
+				PageInertOperationDetector.Detect(projectedBody));
+			return true;
+		}
+
+		private bool TrySaveValidatedPage(
+			PageUpdateOptions options,
+			EditableSchemaContext context,
+			Dictionary<string, string> explicitResources,
+			JArray parsedOptionalProperties,
+			out PageUpdateResponse response) {
+			if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
+			if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite,
+				out PageAppendProjection projection, out response)) return false;
+			IReadOnlyList<string> downgradeWarnings = PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
+			IReadOnlyList<string> inertWarnings = PageInertOperationDetector.Detect(bodyToWrite);
+			List<string> registeredKeys = UpdateSchemaBody(schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
+			PageUpdateResponse captionError = ValidateInsertedWidgetCaptionsResolve(options, schemaToSave, bodyToWrite, context.SchemaType);
+			if (captionError != null) { response = captionError; return false; }
+			if (!TrySaveSchema(schemaToSave, out response)) return false;
+			response = CreateSuccessResponse(options, dryRun: false, registeredKeys);
+			// The save reports the same projection: a caller who skipped the dry run has no other place to
+			// learn what the merge did.
+			response.AppendProjection = projection;
+			response.Warnings = CombineWarnings(
+				BuildProjectedLossWarnings(projection), downgradeWarnings, inertWarnings);
+			PopulatePostSaveChecksum(options, context, response);
+			AppendDesignerPresenceWarning(options, response);
+			return true;
 		}
 
 		/// <summary>
-		/// Turns every way an append merge loses a <c>viewConfigDiff</c> operation into advisory warnings: a
-		/// superseded further entry from the server's body, an entry the caller's own fragment supersedes
-		/// twice, and the case where the whole merged array never reaches the written body.
+		/// Whether the caller asked for the incoming body to be merged with the schema's current body
+		/// rather than written verbatim. One predicate, because three separate call sites now branch on it -
+		/// whether the merge runs, whether marker integrity is validated, and whether a dry run fetches the
+		/// server's body at all - and they have to stay in lockstep.
+		/// </summary>
+		private static bool IsAppendMode(PageUpdateOptions options) =>
+			string.Equals(options.Mode, AppendMode, StringComparison.OrdinalIgnoreCase);
+
+		/// <summary>
+		/// Turns the losses an append merge can inflict on the <c>viewConfigDiff</c> array into advisory
+		/// warnings: the per-identity superseded-drop sentences the merge itself produced, and the case
+		/// where the merged array never reaches the written body at all.
 		/// </summary>
 		/// <remarks>
-		/// A REPLACEMENT is deliberately not warned about: the operation survives carrying the caller's
-		/// values, and warning on it would fire on most appends and train the reader to skip the lists that
-		/// do matter. Exact counts stay in <c>appendProjection</c> for anyone who wants them.
-		/// <para>
-		/// The channels are separate warnings on purpose, because the fix differs. A dropped server entry is
-		/// resolved by folding both entries into one incoming operation; a collapsed incoming entry is the
-		/// caller's own fragment to correct; an unapplied section is not a merge problem at all and needs
-		/// <c>--mode replace</c>.
-		/// </para>
+		/// Two channels warn, a third deliberately does not. A REPLACEMENT is not a loss - the operation
+		/// survives carrying the caller's values - and warning on it would fire on most appends. A
+		/// COLLAPSED INCOMING entry is a real loss but the fragment is the caller's own, they can read it,
+		/// and warning about their own input would be noise; it is reported as data in
+		/// <c>appendProjection.collapsedIncomingOperations</c> instead, which is what keeps the totals
+		/// reconcilable. The superseded-drop sentences are built by the merge rather than rebuilt here, so
+		/// the wording and the one-per-identity rule live in one place.
 		/// </remarks>
 		private static IReadOnlyList<string> BuildProjectedLossWarnings(PageAppendProjection projection) {
 			if (projection is null) {
 				return null;
 			}
 			List<string> warnings = null;
-			if (projection.DroppedOperationCount > 0) {
-				(warnings ??= []).Add(
-					$"Append drops {projection.DroppedOperationCount} existing viewConfigDiff operation(s) the " +
-					"incoming fragment supersedes a second time: " +
-					$"{NameLoss(projection.DroppedOperations, projection.DroppedOperationCount)}. Each is a FURTHER " +
-					"entry whose identity the fragment already replaced, so re-applying it would put stale values " +
-					"back after the replacement. If both entries set keys you need, fold them into one operation " +
-					"in the fragment. See docs://mcp/guides/page-modification.");
-			}
-			if (projection.CollapsedIncomingOperationCount > 0) {
-				(warnings ??= []).Add(
-					$"Your fragment carries {projection.CollapsedIncomingOperationCount} viewConfigDiff " +
-					"operation(s) that a later entry in the SAME fragment supersedes: " +
-					$"{NameLoss(projection.CollapsedIncomingOperations, projection.CollapsedIncomingOperationCount)}. " +
-					"Operations merge by (operation, name, targets-properties), so only the last spelling of an " +
-					"identity survives and the earlier one is discarded with its values. Fold them into a single " +
-					"operation. See docs://mcp/guides/page-modification.");
+			if (projection.SupersededDropWarnings is { Count: > 0 }) {
+				(warnings ??= []).AddRange(projection.SupersededDropWarnings);
 			}
 			if (!projection.ViewConfigDiffApplied) {
 				(warnings ??= []).Add(
 					"The page's current body has no SCHEMA_VIEW_CONFIG_DIFF marker pair, so the merged " +
 					"viewConfigDiff array cannot be written back and EVERY viewConfigDiff operation in the " +
-					"fragment is discarded — the counts in appendProjection describe an array the write throws " +
+					"fragment is discarded - the counts in appendProjection describe an array the write throws " +
 					"away. Use --mode replace with a body that carries the marker pair. " +
 					"See docs://mcp/guides/page-modification.");
 			}
 			return warnings;
-		}
-
-		/// <summary>
-		/// Renders a capped loss list, naming the remainder from the exact count so a truncation never reads
-		/// as the whole story.
-		/// </summary>
-		private static string NameLoss(IReadOnlyList<string> named, int exactCount) {
-			IReadOnlyList<string> names = named ?? [];
-			return names.Count < exactCount
-				? $"{string.Join(", ", names)} (+{exactCount - names.Count} more)"
-				: string.Join(", ", names);
 		}
 
 		/// <summary>
@@ -485,30 +456,46 @@
 		}
 
 		private static bool TryResolveBodyToWrite(JObject schemaToSave, PageUpdateOptions options,
-				out string bodyToWrite, out PageAppendProjection projection, out PageUpdateResponse response) {
-			bodyToWrite = options.Body;
+			out string bodyToWrite, out PageAppendProjection projection, out PageUpdateResponse response) {
 			projection = null;
+			bodyToWrite = options.Body;
 			response = null;
-			if (!IsAppendMode(options)) return true;
-			string currentBody = schemaToSave["body"]?.ToString();
-			if (string.IsNullOrWhiteSpace(currentBody)) return true;
-			try {
-				bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body, out projection);
-				return true;
-			} catch (Exception ex) {
-				// A full-config rejection (identified by its dedicated exception type, not by re-parsing the
-				// message) is already a complete, self-contained sentence — it names the offending body
-				// (incoming vs the server's) and points at replace mode — so it needs neither the "Append merge
-				// failed:" prefix (which double-states the verb) nor the generic marker-pairs hint (a full-config
-				// body HAS valid markers, it is just the wrong form). Keep both only for genuine marker-shape
-				// merge failures, and phrase the hint role-agnostically so it never blames the incoming body for
-				// a server-side blocker (ENG-94422).
-				string error = ex is PageBodyMerger.FullConfigAppendNotSupportedException
-					? $"{ex.Message} [hint: see docs://mcp/guides/page-modification for the append diff-form contract.]"
-					: $"Append merge failed: {ex.Message} [hint: the body must contain valid marker pairs with new viewConfigDiff/handlers operations. See docs://mcp/guides/page-modification.]";
-				response = new PageUpdateResponse { Success = false, Error = error };
-				return false;
+			if (IsAppendMode(options)) {
+				string currentBody = schemaToSave["body"]?.ToString();
+				if (!string.IsNullOrWhiteSpace(currentBody)) {
+					try {
+						bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body, out projection);
+					} catch (Exception ex) {
+						// A full-config rejection (identified by its dedicated exception type, not by re-parsing the
+						// message) is already a complete, self-contained sentence — it names the offending body
+						// (incoming vs the server's) and points at replace mode — so it needs neither the "Append merge
+						// failed:" prefix (which double-states the verb) nor the generic marker-pairs hint (a full-config
+						// body HAS valid markers, it is just the wrong form). Keep both only for genuine marker-shape
+						// merge failures, and phrase the hint role-agnostically so it never blames the incoming body for
+						// a server-side blocker (ENG-94422).
+						string error = ex is PageBodyMerger.FullConfigAppendNotSupportedException
+							? $"{ex.Message} [hint: see docs://mcp/guides/page-modification for the append diff-form contract.]"
+							: $"Append merge failed: {ex.Message} [hint: the body must contain valid marker pairs with new viewConfigDiff/handlers operations. See docs://mcp/guides/page-modification.]";
+						response = new PageUpdateResponse { Success = false, Error = error };
+						return false;
+					}
+				}
 			}
+			if (!IsAppendMode(options) ||
+				PageSchemaTypeExtensions.FromBody(bodyToWrite) == PageSchemaType.Mobile) {
+				return true;
+			}
+			if (!options.Validate) {
+				return true;
+			}
+			SchemaValidationResult validatorReferences =
+				SchemaValidationService.ValidateCustomValidatorReferences(bodyToWrite);
+			if (validatorReferences.IsValid) {
+				return true;
+			}
+			response = ContentValidationFailure(
+				$"Body contains unresolved custom validator references: {string.Join("; ", validatorReferences.Errors)}");
+			return false;
 		}
 
 		/// <summary>
@@ -521,13 +508,30 @@
 			// Mirror the MCP tool: auto-discover the on-disk baseline so a CLI save (e.g. an AI agent
 			// running `clio update-page --body-file .clio-pages/<schema>/body.js`) is blocked when the
 			// schema was modified out-of-band, instead of silently overwriting the external edit.
-			(string metaFilePath, bool baselineArmed) = _pageBaselineGuard.TryArm(options, outputDirectory: null);
+			(string metaFilePath, bool baselineArmed, string baselineWarning) =
+				_pageBaselineGuard.TryArm(options, outputDirectory: null);
 			bool success = TryUpdatePage(options, out PageUpdateResponse response);
 			if (baselineArmed && success && !options.DryRun) {
-				_pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response);
+				// A failed refresh cannot fail a save that already landed on the server, so it surfaces as a
+				// warning on the response instead (ENG-95262 AC-02).
+				AppendBaselineWarning(response, _pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response));
 			}
+			AppendBaselineWarning(response, baselineWarning);
 			_logger.WriteInfo(JsonConvert.SerializeObject(response));
 			return success ? 0 : 1;
+		}
+
+		// Surfaces a baseline discovery/refresh diagnostic on the response envelope. The baseline path is
+		// best-effort by contract, so its failures are warnings, never errors — but they must be visible:
+		// a silently lost refresh leaves the stored checksum behind the server and the next save can then
+		// report a conflict that never happened.
+		private static void AppendBaselineWarning(PageUpdateResponse response, string warning) {
+			if (response is null || string.IsNullOrWhiteSpace(warning)) {
+				return;
+			}
+			List<string> warnings = response.Warnings?.ToList() ?? [];
+			warnings.Add(warning);
+			response.Warnings = warnings;
 		}
 
 		/// <summary>
@@ -537,6 +541,12 @@
 		/// This exists because the success path has more than one warning producer: assigning
 		/// <c>response.Warnings</c> per source would let the last one silently discard the others.
 		/// <see cref="AppendDesignerPresenceWarning"/> appends afterwards and is unaffected.
+		/// <para>
+		/// Returns <c>null</c> rather than an empty list on purpose: <c>PageUpdateResponse.Warnings</c> is
+		/// serialized with null-omission, so an empty list would emit <c>"warnings":[]</c> on a clean save.
+		/// The detectors feeding this return empty-never-null, which is the opposite convention — the
+		/// conversion happens here, once, and a consumer of the response must null-guard.
+		/// </para>
 		/// </remarks>
 		private static IReadOnlyList<string> CombineWarnings(params IReadOnlyList<string>[] sources) {
 			List<string> combined = null;
@@ -722,7 +732,12 @@
 		}
 
 		private static PageUpdateResponse ValidateInsertedWidgetCaptionsResolve(
-				JObject schemaToSave, string body, PageSchemaType schemaType) {
+				PageUpdateOptions options, JObject schemaToSave, string body, PageSchemaType schemaType) {
+			// validate=false is the explicit escape hatch for a pre-existing page defect: skip the
+			// client-side content checks here rather than at the call site, so TryUpdatePage stays flat.
+			if (!options.Validate) {
+				return null;
+			}
 			if (schemaType == PageSchemaType.Mobile) {
 				return null;
 			}
@@ -874,7 +889,8 @@
 			}
 			if (serverError.Contains("requires an element of type 'Object'", StringComparison.OrdinalIgnoreCase) &&
 				serverError.Contains("type 'Array'", StringComparison.OrdinalIgnoreCase)) {
-				return serverError + " [hint: this typically happens when re-sending the full get-page raw.body — " +
+				return serverError + " [hint: this typically happens when re-sending the full get-page body verbatim in " +
+					"mode='replace' — the mode in which the body reaches the server; " +
 					"backend re-applies existing merges that now conflict with parent hierarchy. " +
 					"Send only NEW viewConfigDiff/handlers operations (the new component insert + matching handler), " +
 					"not the entire inherited body. See docs://mcp/guides/page-modification for the minimal-diff pattern.]";
@@ -917,7 +933,7 @@
 			if (string.IsNullOrWhiteSpace(options.Body)) {
 				return new PageUpdateResponse {
 					Success = false,
-					Error = "body is required and must not be empty. Reuse get-page raw.body instead of bundle or viewConfig fragments."
+					Error = "body is required and must not be empty. Reuse the get-page body (CLI: raw.body; MCP: the contents of the file at files.bodyFile) instead of bundle or viewConfig fragments."
 				};
 			}
 			return null;
@@ -946,6 +962,28 @@
 
 		/// <summary>The canonical error for a malformed <c>resources</c> payload.</summary>
 		internal const string InvalidResourcesError = "resources must be a valid JSON object string";
+		internal const string MobileValidationFailedPrefix = "Mobile page validation failed: ";
+
+		/// <summary>
+		/// Text appended to every CONTENT-validation failure so the caller learns about the escape hatch at
+		/// the point of failure rather than only from the tool description or the curated contract. Only the
+		/// skippable half of the chain carries it - a structural-floor failure is not bypassable and must not
+		/// advertise a flag that will not help.
+		/// </summary>
+		internal const string ValidationEscapeHatchHint =
+			" If this defect pre-exists on the page and is unrelated to your edit, re-run with validate=false.";
+
+		/// <summary>
+		/// Builds a failure for a rule in the SKIPPABLE half of the chain. The hint itself is NOT appended
+		/// here: <see cref="PageUpdateCommand"/> is the CLI-reachable command and <c>Validate</c> carries no
+		/// <c>[Option]</c>, so a CLI user would be told to re-run with a flag their parser does not accept.
+		/// The response is only MARKED, and the MCP adapter appends the hint for the callers that can act on it.
+		/// </summary>
+		private static PageUpdateResponse ContentValidationFailure(string error) => new() {
+			Success = false,
+			Error = error,
+			ContentValidationFailure = true
+		};
 
 		/// <summary>
 		/// Validates the <c>resources</c> and <c>optional-properties</c> argument payloads WITHOUT
@@ -969,6 +1007,17 @@
 			return null;
 		}
 
+		/// <summary>
+		/// Runs the input validation chain. The chain has two halves and <c>validate=false</c> only skips
+		/// the second one:
+		/// <list type="bullet">
+		/// <item>the STRUCTURAL floor - marker integrity (replace mode) and JavaScript syntax on web,
+		/// JSON-parses-to-an-object on mobile - always runs, because a body that fails it produces a page
+		/// the tool itself can no longer read back;</item>
+		/// <item>the CONTENT rules - handler structure, field bindings, insert self-consistency, validator
+		/// placement, mobile AMD/shape rules - run only when <see cref="Validate"/> is true.</item>
+		/// </list>
+		/// </summary>
 		private static PageUpdateResponse ValidateInput(
 			PageUpdateOptions options,
 			PageSchemaType schemaType,
@@ -979,12 +1028,23 @@
 		}
 
 		private static PageUpdateResponse ValidateMobileInput(PageUpdateOptions options) {
-			SchemaValidationResult mobileResult = SchemaValidationService.ValidateMobileBody(options.Body);
-			if (!mobileResult.IsValid) {
+			// Structural floor - runs even behind validate=false. It is the mobile counterpart of the web
+			// syntax gate: a body that is not a JSON object is not a page, and nothing downstream re-checks
+			// it (UpdateSchemaBody's only parse, CollectMobileViewModelPaths, is fail-soft).
+			SchemaValidationResult structureResult = SchemaValidationService.ValidateMobileBodyStructure(options.Body);
+			if (!structureResult.IsValid) {
 				return new PageUpdateResponse {
 					Success = false,
-					Error = "Mobile page validation failed: " + string.Join("; ", mobileResult.Errors)
+					Error = MobileValidationFailedPrefix + string.Join("; ", structureResult.Errors)
 				};
+			}
+			if (!options.Validate) {
+				return null;
+			}
+			SchemaValidationResult mobileResult = SchemaValidationService.ValidateMobileBody(options.Body);
+			if (!mobileResult.IsValid) {
+				return ContentValidationFailure(
+					MobileValidationFailedPrefix + string.Join("; ", mobileResult.Errors));
 			}
 			return null;
 		}
@@ -992,6 +1052,10 @@
 		private static PageUpdateResponse ValidateWebInput(
 			PageUpdateOptions options,
 			Dictionary<string, string> explicitResources) {
+			// Structural floor - marker integrity and JS syntax run even behind validate=false. A markerless
+			// body is valid JavaScript, so it would save, after which PageSchemaSectionReader can no longer
+			// extract sections and append-merge is dead on that page. ResolveSyntaxFailure already treats
+			// markers as the "is this still a recognizable page" test for the same reason.
 			bool isAppendMode = IsAppendMode(options);
 			if (!isAppendMode) {
 				SchemaValidationResult integrityResult = SchemaValidationService.ValidateMarkerIntegrity(options.Body);
@@ -1009,33 +1073,25 @@
 					Error = $"Body contains invalid JavaScript syntax: {string.Join("; ", syntaxResult.Errors)}"
 				};
 			}
+			// Content rules - the half the escape hatch skips.
+			if (!options.Validate) {
+				return null;
+			}
 			SchemaValidationResult handlerResult = SchemaValidationService.ValidateHandlerStructure(options.Body);
 			if (!handlerResult.IsValid) {
-				return new PageUpdateResponse {
-					Success = false,
-					Error = $"Body contains invalid handlers: {string.Join("; ", handlerResult.Errors)}"
-				};
+				return ContentValidationFailure($"Body contains invalid handlers: {string.Join("; ", handlerResult.Errors)}");
 			}
 			SchemaValidationResult semanticResult = SchemaValidationService.ValidateStandardFieldBindings(options.Body, explicitResources);
 			if (!semanticResult.IsValid) {
-				return new PageUpdateResponse {
-					Success = false,
-					Error = $"Body contains invalid form field bindings: {string.Join("; ", semanticResult.Errors)}"
-				};
+				return ContentValidationFailure($"Body contains invalid form field bindings: {string.Join("; ", semanticResult.Errors)}");
 			}
 			SchemaValidationResult insertSelfConsistencyResult = SchemaValidationService.ValidateInsertedFieldSelfConsistency(options.Body, explicitResources);
 			if (!insertSelfConsistencyResult.IsValid) {
-				return new PageUpdateResponse {
-					Success = false,
-					Error = $"Body contains inserted field controls without required bindings or resources: {string.Join("; ", insertSelfConsistencyResult.Errors)}"
-				};
+				return ContentValidationFailure($"Body contains inserted field controls without required bindings or resources: {string.Join("; ", insertSelfConsistencyResult.Errors)}");
 			}
 			SchemaValidationResult validatorPlacementResult = SchemaValidationService.ValidateValidatorBindingPlacement(options.Body);
 			if (!validatorPlacementResult.IsValid) {
-				return new PageUpdateResponse {
-					Success = false,
-					Error = $"Body contains invalid validator bindings: {string.Join("; ", validatorPlacementResult.Errors)}"
-				};
+				return ContentValidationFailure($"Body contains invalid validator bindings: {string.Join("; ", validatorPlacementResult.Errors)}");
 			}
 			return null;
 		}

@@ -43,7 +43,8 @@ internal sealed class VerifyOAuthAppCommandTests : BaseCommandTests<VerifyOAuthA
 	public void Verify_ShouldReportOk_WhenTokenAcquiredAndDataServiceReturns200() {
 		// Arrange
 		_identityServerProbe.AcquireClientCredentialsToken(Arg.Any<string>(), "cid", "secret").Returns(Token);
-		_identityServerProbe.RunBearerDataServiceSmokeTest(SelectUrl, Token).Returns(200);
+		_identityServerProbe.RunBearerDataServiceSmokeTest(Arg.Any<EnvironmentSettings>(), SelectUrl, Token)
+			.Returns(200);
 		VerifyOAuthAppOptions options = new() { ClientId = "cid", ClientSecret = "secret" };
 
 		// Act
@@ -75,7 +76,8 @@ internal sealed class VerifyOAuthAppCommandTests : BaseCommandTests<VerifyOAuthA
 			because: "the smoke test must be skipped when no token is available");
 		result.Ok.Should().BeFalse(
 			because: "verification cannot succeed without a token");
-		_identityServerProbe.DidNotReceive().RunBearerDataServiceSmokeTest(Arg.Any<string>(), Arg.Any<string>());
+		_identityServerProbe.DidNotReceive().RunBearerDataServiceSmokeTest(
+			Arg.Any<EnvironmentSettings>(), Arg.Any<string>(), Arg.Any<string>());
 	}
 
 	[Test]
@@ -83,7 +85,8 @@ internal sealed class VerifyOAuthAppCommandTests : BaseCommandTests<VerifyOAuthA
 	public void Verify_ShouldUseExplicitIdentityUrl_WhenOverrideSupplied() {
 		// Arrange
 		_identityServerProbe.AcquireClientCredentialsToken("https://explicit-is.example.com", "cid", "secret").Returns(Token);
-		_identityServerProbe.RunBearerDataServiceSmokeTest(SelectUrl, Token).Returns(200);
+		_identityServerProbe.RunBearerDataServiceSmokeTest(Arg.Any<EnvironmentSettings>(), SelectUrl, Token)
+			.Returns(200);
 		VerifyOAuthAppOptions options = new() {
 			ClientId = "cid",
 			ClientSecret = "secret",
@@ -117,7 +120,8 @@ internal sealed class VerifyOAuthAppCommandTests : BaseCommandTests<VerifyOAuthA
 	public void Execute_ShouldReturnZeroAndNeverLogToken_WhenVerified() {
 		// Arrange
 		_identityServerProbe.AcquireClientCredentialsToken(Arg.Any<string>(), "cid", "secret").Returns(Token);
-		_identityServerProbe.RunBearerDataServiceSmokeTest(SelectUrl, Token).Returns(200);
+		_identityServerProbe.RunBearerDataServiceSmokeTest(Arg.Any<EnvironmentSettings>(), SelectUrl, Token)
+			.Returns(200);
 		VerifyOAuthAppOptions options = new() { ClientId = "cid", ClientSecret = "secret" };
 
 		// Act

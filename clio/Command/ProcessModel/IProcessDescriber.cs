@@ -256,6 +256,31 @@ public sealed class DescribedElement {
 	public DescribedEmail Email { get; set; }
 
 	/// <summary>
+	/// For an Open edit page element (<c>OpenEditPageUserTask</c>): its configuration decoded back into the
+	/// descriptor vocabulary. <c>null</c> for other element kinds, for an element that stores no page (placed but
+	/// never configured), and when the server is an older <c>CrtProcessBuilder</c> that does not report it.
+	/// Round-trips into a <c>create</c>/<c>modify</c> <c>openEditPage</c> block, with one asymmetry: the write path
+	/// refuses pre-filled values together with a record, while this read reports BOTH when the schema carries them —
+	/// the runtime applies stored values in either editing mode, so hiding one would hide live configuration. Drop
+	/// the one that does not belong to the reported <c>editMode</c> before re-applying. One field is also reshaped
+	/// rather than dropped: <c>completionMode</c> is reported FLAT and is written NESTED, so re-apply it as
+	/// <c>completion:{mode:…}</c>. Feeding the flat key back leaves the element on its stored mode while its filter
+	/// stays — the mismatched pair the write contract warns about.
+	/// </summary>
+	[JsonPropertyName("openEditPage")]
+	public DescribedOpenEditPage OpenEditPage { get; set; }
+
+	/// For a Pre-configured page element (<c>PreconfiguredPageUserTask</c>): the referenced page and the element's
+	/// configuration, decoded back into the descriptor vocabulary. <c>null</c> for other element kinds, when the
+	/// element references no page yet, and when the server (an older <c>CrtProcessBuilder</c>) does not report it.
+	/// <para>The block MUST be declared here even though nothing in clio reads its fields: the describe output is
+	/// re-serialized from this model, so a member the model does not declare is dropped on the way to the caller.
+	/// That is how the block reached nobody before this property existed.</para>
+	/// </summary>
+	[JsonPropertyName("preconfiguredPage")]
+	public DescribedPreconfiguredPage PreconfiguredPage { get; set; }
+
+	/// <summary>
 	/// The element's BOUND host-entity connections ("Connected to") — which records the Activity it creates is
 	/// attached to. <c>null</c> when the element has none, and also when the server is an older
 	/// <c>CrtProcessBuilder</c> that does not report them.
@@ -296,10 +321,333 @@ public sealed class DescribedElement {
 	public bool? WritesConnectionsAtRuntime { get; set; }
 
 	/// <summary>
+	/// For an Approval element (<c>ApprovalUserTask</c>): its configuration decoded back into the descriptor
+	/// vocabulary. <c>null</c> for other element kinds and when the server (an older <c>CrtProcessBuilder</c>) does
+	/// not report it.
+	/// <para>Unlike <see cref="Email"/> this reports what is WRITTEN, not the effective value, so an unconfigured
+	/// Approval reports no block at all. <c>ignoreEmailErrors</c> is the one field where that costs the server real
+	/// work: <c>ApprovalUserTask</c> DECLARES a schema-level default of <c>true</c>, the platform copies it onto
+	/// every element, and it arrives carrying <c>Source = ConstValue</c> — indistinguishable from a written value
+	/// unless the reader also compares which schema last modified it. A server that skips that check reports
+	/// <c>ignoreEmailErrors: true</c> on an element nobody configured (and, because one reported field is enough to
+	/// count as configured, reports a block for it at all). So on a current server absence means "not written",
+	/// never "off" — and the element still USES the platform default at run time, which is why the designer's card
+	/// shows the box ticked while this reports nothing. Clearing a notification likewise resets its template to no
+	/// source, which makes a CLEARED template indistinguishable from one that was never set.</para>
+	/// <para>Every VALUE reported here is one a write accepts — an employee macro, a template's lookup macro, a
+	/// record id — but the SHAPE is not the write shape and the block does NOT re-apply verbatim. This reports flat
+	/// (<c>approverType</c> + <c>approverEmployee</c>; a boolean <c>notifyApprover</c> with
+	/// <c>approverEmailTemplate</c> beside it; <c>recordId</c> as a string), while <c>create</c>/<c>modify</c> take
+	/// nested (<c>approver: {type, employee}</c>, <c>notifyApprover: {emailTemplate}</c>, <c>recordId</c> as an
+	/// object). Flat-with-<c>Display</c>-companions is the house convention every element follows — <c>sender</c> /
+	/// <c>senderDisplay</c> on email is the same — so the shape is right; it just has to be TRANSLATED before it is
+	/// sent back. Feeding a described block in unchanged binds nothing:
+	/// <c>DataContractJsonSerializer</c> drops the flat members and the operation still answers success, which is
+	/// why <c>ApprovalBlockExpectation</c> raises a warning of its own for a describe-shaped request.</para>
+	/// <para>The APPROVER is reported as <see cref="DescribedApproval.ApproverType"/> plus only the companion field
+	/// that type uses. A stored value belonging to the OTHER branch — which an element the designer never re-saved
+	/// can still carry — is deliberately not reported, and an unrecognized type code reports no approver at all
+	/// rather than a token a write would refuse. The element's outcome stays in <see cref="Parameters"/> as the
+	/// <c>ResultParameter</c> output.</para>
+	/// </summary>
+	[JsonPropertyName("approval")]
+	public DescribedApproval Approval { get; set; }
+
+	/// <summary>
 	/// Captures every other field the server reports on an element so the description round-trips losslessly:
 	/// a newer <c>CrtProcessBuilder</c> reporting a block this build does not declare reaches the command output
 	/// verbatim instead of being discarded without a trace.
 	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// The configuration of an Approval element, read back from its parameters in the same vocabulary the
+/// <c>approval</c> block accepts.
+/// </summary>
+public sealed class DescribedApproval {
+	/// <summary>"Approval purpose" — the text shown to the approver.</summary>
+	[JsonPropertyName("purpose")]
+	public string Purpose { get; set; }
+
+	/// <summary>"Approval object" — the resolved object NAME, the field to resubmit as <c>object</c>.</summary>
+	[JsonPropertyName("object")]
+	public string Object { get; set; }
+
+	/// <summary>The approval object's entity schema UId as stored. Reported for traceability only.</summary>
+	[JsonPropertyName("objectUId")]
+	public string ObjectUId { get; set; }
+
+	/// <summary>
+	/// "Record Id" — the stored value as a STRING, which is not the shape the write contract takes: there
+	/// <c>recordId</c> is an OBJECT naming one of <c>recordId</c> / <c>processParameter</c> /
+	/// <c>sourceElement</c>+<c>sourceElementParameter</c>. A fixed record comes back as its <c>[#Lookup…#]</c>
+	/// macro, which that object's own <c>recordId</c> member accepts verbatim; every other source comes back as
+	/// its raw macro and has to be translated back into the member it came from.
+	/// </summary>
+	[JsonPropertyName("recordId")]
+	public string RecordId { get; set; }
+
+	/// <summary>The fixed record's display value, when the platform stored one. Read-only.</summary>
+	[JsonPropertyName("recordIdDisplay")]
+	public string RecordIdDisplay { get; set; }
+
+	/// <summary>"Approver" — <c>user</c>, <c>manager</c> or <c>role</c>; null when the element has no approver.</summary>
+	[JsonPropertyName("approverType")]
+	public string ApproverType { get; set; }
+
+	/// <summary>The employee, as stored. Reported for the <c>user</c> and <c>manager</c> types only.</summary>
+	[JsonPropertyName("approverEmployee")]
+	public string ApproverEmployee { get; set; }
+
+	/// <summary>The employee's display value, when the platform stored one. Read-only.</summary>
+	[JsonPropertyName("approverEmployeeDisplay")]
+	public string ApproverEmployeeDisplay { get; set; }
+
+	/// <summary>The approving role, as stored. Reported for the <c>role</c> type only.</summary>
+	[JsonPropertyName("approverRole")]
+	public string ApproverRole { get; set; }
+
+	/// <summary>The role's display value, when the platform stored one. Read-only.</summary>
+	[JsonPropertyName("approverRoleDisplay")]
+	public string ApproverRoleDisplay { get; set; }
+
+	/// <summary>"Approval may be delegated".</summary>
+	[JsonPropertyName("allowDelegation")]
+	public bool? AllowDelegation { get; set; }
+
+	/// <summary>"Notify that approval is required".</summary>
+	[JsonPropertyName("notifyApprover")]
+	public bool? NotifyApprover { get; set; }
+
+	/// <summary>The approver notification's "Email template" — the stored lookup macro.</summary>
+	[JsonPropertyName("approverEmailTemplate")]
+	public string ApproverEmailTemplate { get; set; }
+
+	/// <summary>The approver template's display value, when the platform stored one. Read-only.</summary>
+	[JsonPropertyName("approverEmailTemplateDisplay")]
+	public string ApproverEmailTemplateDisplay { get; set; }
+
+	/// <summary>"Notify about the approval result".</summary>
+	[JsonPropertyName("notifyAuthor")]
+	public bool? NotifyAuthor { get; set; }
+
+	/// <summary>The author notification's "Email template" — the stored lookup macro.</summary>
+	[JsonPropertyName("authorEmailTemplate")]
+	public string AuthorEmailTemplate { get; set; }
+
+	/// <summary>The author template's display value, when the platform stored one. Read-only.</summary>
+	[JsonPropertyName("authorEmailTemplateDisplay")]
+	public string AuthorEmailTemplateDisplay { get; set; }
+
+	/// <summary>"Recipient" — the result notification's address.</summary>
+	[JsonPropertyName("recipient")]
+	public string Recipient { get; set; }
+
+	/// <summary>"Ignore errors on sending" — reported only when the element actually carries the value.</summary>
+	[JsonPropertyName("ignoreEmailErrors")]
+	public bool? IgnoreEmailErrors { get; set; }
+
+	/// <summary>
+	/// The visa schema DERIVED for the approval object. Reported for traceability; it is never accepted as input.
+	/// The platform's <c>SysApproval</c> fallback appears here when the object has no registered visa.
+	/// </summary>
+	[JsonPropertyName("approvalSchemaUId")]
+	public string ApprovalSchemaUId { get; set; }
+
+	/// <summary>Captures any field a newer server reports that this build does not declare.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// The configuration of an Open edit page element, read back from its parameters.
+/// <para>Declared rather than left to <c>AdditionalData</c> so the block is typed and documented at the tool
+/// surface. (The Modify data <c>changeData</c> block is still undeclared and reaches callers through the extension
+/// bag — worth aligning, but out of this story's scope.)</para>
+/// </summary>
+public sealed class DescribedOpenEditPage {
+	/// <summary>The page schema NAME the element opens; null when the stored page UId does not resolve here.</summary>
+	[JsonPropertyName("page")]
+	public string Page { get; set; }
+
+	/// <summary>The page schema UId as stored.</summary>
+	[JsonPropertyName("pageSchemaUId")]
+	public string PageSchemaUId { get; set; }
+
+	/// <summary>The target object (entity) name, which the designer derives from the page.</summary>
+	[JsonPropertyName("object")]
+	public string Object { get; set; }
+
+	/// <summary>
+	/// The RECORD TYPE the page opens for, when the object is typed (<c>Activity</c> → Task / Call / Email).
+	/// <c>null</c> for an untyped object. NOT a Classic-vs-Freedom marker. Feeding it back as <c>recordType</c> is
+	/// OPTIONAL and asserts the registration you expect: the designer offers one entry per page, so the type
+	/// FOLLOWS the page and omitting it is never ambiguous. A value that disagrees with the page's registered type
+	/// is refused naming the registered one.
+	/// </summary>
+	[JsonPropertyName("pageTypeUId")]
+	public string PageTypeUId { get; set; }
+
+	/// <summary>Editing mode — <c>add</c> or <c>edit</c>; null on an element that stores no mode.</summary>
+	[JsonPropertyName("editMode")]
+	public string EditMode { get; set; }
+
+	/// <summary>
+	/// The values pre-filled on the new record (<c>add</c> mode), decoded the same way a Modify data element's
+	/// assignments are. Reported whenever STORED — see the asymmetry noted on
+	/// <see cref="DescribedElement.OpenEditPage"/>.
+	/// </summary>
+	[JsonPropertyName("defaultValues")]
+	public List<JsonElement> DefaultValues { get; set; }
+
+	/// <summary>Which record the page opens (<c>edit</c> mode), decoded back into its named source where provable.</summary>
+	[JsonPropertyName("recordId")]
+	public JsonElement? RecordId { get; set; }
+
+	/// <summary>The recommendation shown on the opened page, when stored as a constant.</summary>
+	[JsonPropertyName("recommendation")]
+	public string Recommendation { get; set; }
+
+	/// <summary>The hint shown behind the page's information button, when stored as a constant.</summary>
+	[JsonPropertyName("hint")]
+	public string Hint { get; set; }
+
+	/// <summary>
+	/// "Create a list of results by column" — the step's outcome as one result per value of a lookup column.
+	/// <c>null</c> when the element stores none of it.
+	/// </summary>
+	[JsonPropertyName("resultsByColumn")]
+	public DescribedOpenEditPageResultsByColumn ResultsByColumn { get; set; }
+
+	/// <summary>
+	/// "Log activity" and its scheduling fields. <c>null</c> when the element stores none of them — which is not the
+	/// same as the designer showing them empty: the panel populates every one of these from schema defaults, so
+	/// <c>null</c> means "nothing written", never "shown as blank".
+	/// </summary>
+	[JsonPropertyName("logActivity")]
+	public DescribedOpenEditPageLogActivity LogActivity { get; set; }
+
+	/// <summary>
+	/// Who performs the step, and whether the page opens automatically. <c>null</c> on an element that carries no
+	/// performer assignment — the designer's own initial state, not an error.
+	/// <para><c>null</c> does NOT mean the step runs for nobody: the platform resolves an empty performer to the
+	/// CURRENT USER's contact at run time, which is why the designer's card shows "User" and the current user for an
+	/// element whose schema stores neither. Report it as "not assigned explicitly", not as a gap to fill.</para>
+	/// </summary>
+	[JsonPropertyName("performer")]
+	public DescribedPerformer Performer { get; set; }
+
+	/// <summary>
+	/// Completion mode — <c>onSave</c> or <c>onConditions</c>. Derived from the stored flag, never from a designer
+	/// caption: the captions for these two options differ between environments behind a platform feature switch.
+	/// </summary>
+	[JsonPropertyName("completionMode")]
+	public string CompletionMode { get; set; }
+
+	/// <summary>Forward-compatibility bag, so a newer server reporting more fields does not lose them.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// The "Create a list of results by column" configuration of an Open edit page element.
+/// <para>Reading it back is the only way to see the result list a step offers. Note the limitation this reflects:
+/// clio cannot yet build the CONDITIONAL flows that route those results, so a clio-built process carries the list
+/// without branching on it until a human wires the flows in the designer.</para>
+/// </summary>
+public sealed class DescribedOpenEditPageResultsByColumn {
+	/// <summary>Whether the results list is generated; <c>null</c> when the flag is not stored on the element.</summary>
+	[JsonPropertyName("enabled")]
+	public bool? Enabled { get; set; }
+
+	/// <summary>
+	/// The chosen column's NAME — what a caller feeds back as <c>column</c>. <c>null</c> when no column is stored, or
+	/// when its UId no longer resolves on this environment (check <see cref="ColumnUId"/> to tell those apart).
+	/// </summary>
+	[JsonPropertyName("column")]
+	public string Column { get; set; }
+
+	/// <summary>The column's UId as stored, so an unresolvable one stays visible rather than reading as "no column".</summary>
+	[JsonPropertyName("columnUId")]
+	public string ColumnUId { get; set; }
+
+	/// <summary>Forward-compatibility bag, so a newer server reporting more fields does not lose them.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// The "Log activity" configuration of an Open edit page element: whether the step creates an Activity record, and
+/// the scheduling fields the designer reveals under that checkbox.
+/// </summary>
+public sealed class DescribedOpenEditPageLogActivity {
+	/// <summary>
+	/// Whether the step logs an activity (<c>CreateActivity</c>). <c>null</c> when the element stores no flag of
+	/// its own — which does NOT mean it logs nothing. The platform materializes the user-task schema's own default
+	/// onto a new element, and that default is VERSION-DEPENDENT: measured ON (with a 5-minute duration) on a
+	/// 10.1.628 core, while the 7.8.0 schema ships it off. So never narrate a <c>null</c> as "this step logs no
+	/// activity"; report that the element carries no explicit flag and the environment's schema default decides.
+	/// </summary>
+	[JsonPropertyName("enabled")]
+	public bool? Enabled { get; set; }
+
+	/// <summary>"Start in" — the delay before the activity starts.</summary>
+	[JsonPropertyName("startIn")]
+	public DescribedActivityInterval StartIn { get; set; }
+
+	/// <summary>"Planned duration".</summary>
+	[JsonPropertyName("duration")]
+	public DescribedActivityInterval Duration { get; set; }
+
+	/// <summary>"Remind in" — the reminder offset.</summary>
+	[JsonPropertyName("remindIn")]
+	public DescribedActivityInterval RemindIn { get; set; }
+
+	/// <summary>"Show in calendar" — whether the activity appears in the scheduler.</summary>
+	[JsonPropertyName("showInCalendar")]
+	public bool? ShowInCalendar { get; set; }
+
+	/// <summary>
+	/// "Priority" as its lookup NAME — what a caller feeds back. <c>null</c> when no priority is stored or the
+	/// stored id no longer resolves; <see cref="PriorityId"/> tells those two apart.
+	/// </summary>
+	[JsonPropertyName("priority")]
+	public string Priority { get; set; }
+
+	/// <summary>The stored priority record id, so an unresolvable one stays visible.</summary>
+	[JsonPropertyName("priorityId")]
+	public string PriorityId { get; set; }
+
+	/// <summary>Forward-compatibility bag, so a newer server reporting more fields does not lose them.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// One scheduling interval: the stored number together with the unit its separate period parameter selects.
+/// <para>The pair travels as one value on purpose. The platform stores the number and the unit in INDEPENDENT
+/// parameters, so a number read without its unit means nothing — 30 is thirty minutes or thirty days depending on a
+/// second parameter entirely.</para>
+/// </summary>
+public sealed class DescribedActivityInterval {
+	/// <summary>The stored amount.</summary>
+	[JsonPropertyName("value")]
+	public int? Value { get; set; }
+
+	/// <summary>
+	/// The unit token — <c>minutes</c>, <c>hours</c>, <c>days</c>, <c>weeks</c> or <c>months</c>. <c>null</c> when no
+	/// period is stored (the runtime then uses the schema default) or the stored one is outside those five.
+	/// </summary>
+	[JsonPropertyName("unit")]
+	public string Unit { get; set; }
+
+	/// <summary>The raw stored period integer, so an unrecognized value stays visible rather than swallowed.</summary>
+	[JsonPropertyName("period")]
+	public int? Period { get; set; }
+
+	/// <summary>Forward-compatibility bag.</summary>
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement> AdditionalData { get; set; }
 }
@@ -385,8 +733,180 @@ public sealed class DescribedEmail {
 }
 
 /// <summary>
+/// The configuration of a Pre-configured page element, read back from its parameters. Mirrors the server's
+/// <c>DescribePreconfiguredPageInfo</c> field for field.
+/// </summary>
+public sealed class DescribedPreconfiguredPage {
+	/// <summary>
+	/// The referenced page's client-unit schema name, or the raw UId when the page no longer resolves — describe
+	/// never fails over a dangling reference, it reports what the element actually stores.
+	/// </summary>
+	[JsonPropertyName("page")]
+	public string Page { get; set; }
+
+	/// <summary>
+	/// The page's UI generation: <c>freedom</c> or <c>classic</c>; null when the page could not be read at all.
+	/// It decides which fields the element can carry — completing buttons are Freedom-only, the connected-object
+	/// pair is Classic-only.
+	/// </summary>
+	[JsonPropertyName("pageUiType")]
+	public string PageUiType { get; set; }
+
+	/// <summary>"Who performs the task?"; null when the element carries no performer.</summary>
+	[JsonPropertyName("performer")]
+	public DescribedPreconfiguredPagePerformer Performer { get; set; }
+
+	/// <summary>
+	/// The completing buttons, in stored order. Read it together with <see cref="PageUiType"/>: on
+	/// <c>freedom</c> an EMPTY list means none are selected — an element that can never finish at run time; on
+	/// <c>classic</c> the member is <c>null</c> (NOT APPLICABLE — such a page completes through its own
+	/// page-designer buttons, whose model this contract does not carry, so do not report it as broken); on a null
+	/// page type an empty list means nothing, because the page could not be read.
+	/// </summary>
+	[JsonPropertyName("buttons")]
+	public List<DescribedPreconfiguredPageButton> Buttons { get; set; }
+
+	/// <summary>"Recommendations for filling in the page" — a single line; null when unset.</summary>
+	[JsonPropertyName("recommendation")]
+	public string Recommendation { get; set; }
+
+	/// <summary>
+	/// The page's data sources, each with the ELEMENT PARAMETER holding the id of the record the page saved.
+	/// Empty when the element has none; null from a server that does not report them yet.
+	/// <para>The parameter named here is the handle a mapping uses to pass the saved record to a later element —
+	/// and it does NOT appear in the element's own parameter list, because the server reports element parameters
+	/// only when they are a result, an output, or carry a stored value, and a data-source parameter is none of
+	/// those until run time. This is the only place it surfaces.</para>
+	/// </summary>
+	[JsonPropertyName("dataSources")]
+	public List<DescribedPreconfiguredPageDataSource> DataSources { get; set; }
+
+	/// <summary>
+	/// CLASSIC UI pages only: the "Connected object" entity schema name. Null for a Freedom UI page, which carries
+	/// its object in its own data sources instead.
+	/// </summary>
+	[JsonPropertyName("connectedObject")]
+	public string ConnectedObject { get; set; }
+
+	/// <summary>CLASSIC UI pages only: the "Record of connected object" value. Null for a Freedom UI page.</summary>
+	[JsonPropertyName("connectedObjectRecord")]
+	public string ConnectedObjectRecord { get; set; }
+
+	/// <summary>
+	/// Whether the element's page parameters still match the referenced page. <c>null</c> means the page could not
+	/// be read, which is deliberately NOT the same as <c>false</c>. Read-only: describe reports drift and never
+	/// fixes it — any <c>setElement</c> touching the element re-synchronizes it.
+	/// </summary>
+	[JsonPropertyName("inSync")]
+	public bool? InSync { get; set; }
+
+	/// <summary>
+	/// Page parameters that are NOT on the element and never will be under that name — the name is already taken
+	/// by a parameter the element itself owns. Empty in the ordinary case. <c>null</c> means UNKNOWN, from either
+	/// of two causes: the page's parameters could not be read (in which case <see cref="InSync"/> is null too —
+	/// they are always null together), or the server is an older CrtProcessBuilder that does not report them.
+	/// <para>Read it alongside <see cref="InSync"/>, never instead of it. A shadowed parameter is a stable end
+	/// state rather than drift, so <c>inSync</c> stays <c>true</c> — it means "nothing left to synchronize", NOT
+	/// "the element carries every page parameter". Mapping to one of these names silently targets the element's
+	/// own parameter instead of the page's.</para>
+	/// </summary>
+	[JsonPropertyName("shadowedPageParameters")]
+	public List<string> ShadowedPageParameters { get; set; }
+
+	/// <summary>
+	/// Captures every field a newer server reports that this build does not declare, so it reaches the printed
+	/// JSON instead of being dropped — the failure mode that silenced this whole block twice before it existed.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }}
+
+/// <summary>The performer of a Pre-configured page element ("Who performs the task?").</summary>
+public sealed class DescribedPreconfiguredPagePerformer {
+	/// <summary>Performer kind: <c>user</c>, <c>manager</c>, or <c>role</c>.</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; set; }
+
+	/// <summary>For user/manager: the contact formula on the <c>OwnerId</c> parameter; null when unset.</summary>
+	[JsonPropertyName("contact")]
+	public string Contact { get; set; }
+
+	/// <summary>For role: the role lookup value on the <c>RoleId</c> parameter; null when unset.</summary>
+	[JsonPropertyName("role")]
+	public string Role { get; set; }
+
+	/// <summary>
+	/// "Show page automatically" — reported ONLY for a <c>user</c> performer, because the runtime ignores it when
+	/// the task runs for anyone else. Null on a role/manager performer means "not applicable". Null on a
+	/// <c>user</c> performer means ENABLED — the task schema's default applies, and a designer-built element
+	/// stores no value of its own — so do NOT write <c>showPage: true</c> back to "fix" it.
+	/// </summary>
+	[JsonPropertyName("showPage")]
+	public bool? ShowPage { get; set; }
+
+	/// <summary>
+	/// Captures every field a newer server reports that this build does not declare, so it reaches the printed
+	/// JSON instead of being dropped — the failure mode that silenced this whole block twice before it existed.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }}
+
+/// <summary>One page data source of a Pre-configured page element, with the parameter carrying its record id.</summary>
+public sealed class DescribedPreconfiguredPageDataSource {
+	/// <summary>The data source's name on the page (for example <c>PDS</c>).</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; set; }
+
+	/// <summary>The entity the data source reads and writes; the raw UId when the schema no longer resolves.</summary>
+	[JsonPropertyName("entitySchemaName")]
+	public string EntitySchemaName { get; set; }
+
+	/// <summary>
+	/// The element parameter holding the record id — <c>DataSource_&lt;name&gt;_&lt;primary column&gt;</c>. Use it
+	/// as a mapping source to pass the saved record downstream, or set it to pre-open the page on an existing one.
+	/// </summary>
+	[JsonPropertyName("parameter")]
+	public string Parameter { get; set; }
+
+	/// <summary>
+	/// Captures every field a newer server reports that this build does not declare, so it reaches the printed
+	/// JSON instead of being dropped — the failure mode that silenced this whole block twice before it existed.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }}
+
+/// <summary>One completing button of a Pre-configured page element.</summary>
+public sealed class DescribedPreconfiguredPageButton {
+	/// <summary>The button's view-element name on the page.</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; set; }
+
+	/// <summary>The button's caption as stored on the element.</summary>
+	[JsonPropertyName("caption")]
+	public string Caption { get; set; }
+
+	/// <summary>The page event that completes the step — <c>clicked</c>.</summary>
+	[JsonPropertyName("event")]
+	public string Event { get; set; }
+
+	/// <summary>Whether pressing it validates the page first. Absent on the element reads as the card default (true).</summary>
+	[JsonPropertyName("validate")]
+	public bool? Validate { get; set; }
+
+	/// <summary>
+	/// Captures every field a newer server reports that this build does not declare, so it reaches the printed
+	/// JSON instead of being dropped — the failure mode that silenced this whole block twice before it existed.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }}
+
+/// <summary>
 /// The performer of a user-task element ("Who performs the task?"), read back from its performer-assignment
-/// options: top-level on a described Perform task, inside the <c>email</c> block on a described Send email element.
+/// options: top-level on a described Perform task, inside the <c>email</c> block on a described Send email element,
+/// and inside the <c>openEditPage</c> block on a described Open edit page element.
+/// <para>One JSON shape, one type. Rules that differ BETWEEN elements — Send email offers the block only in manual
+/// send mode, Open edit page offers it unconditionally — are write-side availability rules and live in the tool
+/// descriptions and on each element's own property doc, not here. A second class per element would be two hand-
+/// synchronised declarations of the same five fields, which is exactly how they drift.</para>
 /// </summary>
 public sealed class DescribedPerformer {
 	/// <summary>Performer kind: <c>user</c>, <c>manager</c>, or <c>role</c>.</summary>
@@ -408,6 +928,14 @@ public sealed class DescribedPerformer {
 	/// <summary>The "open the execution page automatically" flag; null when not set on the element.</summary>
 	[JsonPropertyName("showPage")]
 	public bool? ShowPage { get; set; }
+	/// <summary>
+	/// Forward-compatibility bag, so a newer server reporting more performer fields does not lose them. Added when
+	/// the Open edit page element started reporting through this type: the duplicate it replaced carried one, and
+	/// dropping it would have silently narrowed what a newer server can report.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+
 }
 
 /// <summary>
@@ -423,8 +951,8 @@ public sealed class DescribedPerformer {
 /// <para>Every member is declared here on purpose, but that is NOT a substitute for an overflow bag: a field the
 /// server reports and this type does not declare is still discarded without a trace, which is the same silent-loss
 /// failure the connections feature exists to remove. Unlike <see cref="DescribeProcessResult"/>,
-/// <see cref="DescribedElement"/> and <see cref="DescribedEmail"/>, this type has no
-/// <c>[JsonExtensionData]</c> yet — an accepted gap on the connections ticket's own surface, not something these
+/// <see cref="DescribedElement"/>, <see cref="DescribedEmail"/> and <see cref="DescribedFlow"/>, this type
+/// has no <c>[JsonExtensionData]</c> yet — an accepted gap on the connections ticket's own surface, not something these
 /// remarks endorse. Add one here when that ticket is next touched.</para>
 /// </remarks>
 public sealed class DescribedConnection {
@@ -597,17 +1125,70 @@ public sealed class DescribedFilterElementRef {
 
 /// <summary>A sequence flow between two nodes.</summary>
 public sealed class DescribedFlow {
-	/// <summary>Source node UId.</summary>
+	/// <summary>Source node NAME — not its UId, despite what an earlier revision of this comment said.</summary>
 	[JsonPropertyName("source")]
 	public string Source { get; set; }
 
-	/// <summary>Target node UId.</summary>
+	/// <summary>Target node NAME — not its UId, despite what an earlier revision of this comment said.</summary>
 	[JsonPropertyName("target")]
 	public string Target { get; set; }
 
 	/// <summary>Flow kind: <c>sequence</c>, <c>conditional</c>, or <c>default</c>.</summary>
 	[JsonPropertyName("kind")]
 	public string Kind { get; set; }
+
+	/// <summary>
+	/// The boolean expression deciding whether a branch is taken, exactly as stored.
+	/// <para>Reported whenever the flow carries condition TEXT - including on a flow whose <c>kind</c> is NOT
+	/// conditional, which an earlier version of this comment denied. Such text is dropped at generation time and
+	/// never evaluated, and <c>kind</c> is what says so; it is still reported because the parameter-delete and
+	/// element-retarget guards both SCAN it and refuse on it, so hiding it would leave a caller refused over
+	/// something no read API shows. <c>null</c> when there is no text, and on a conditional flow whose branch is
+	/// chosen by an activity result the text is STILL reported, because the delete guard scans it - read
+	/// <c>branchesOnActivityResult</c> to learn that the flow ignores its expression entirely.</para>
+	/// </summary>
+	/// <remarks>
+	/// This field is NOT optional polish, though the original reason for saying so is gone:
+	/// <see cref="DescribedFlow"/> had no <c>[JsonExtensionData]</c> overflow bag when this property was
+	/// added, so a server field with no property here was dropped silently on clio's re-serialize and the
+	/// caller never learned the condition existed. It has one now (added with the
+	/// <see cref="BranchesOnActivityResult"/> nullability fix), so an undeclared field survives - but a
+	/// TYPED property is still what this needs, because callers and the delete guard read it by name and a
+	/// <c>JsonElement</c> in a dictionary is not that. The bagless failure mode still applies to the
+	/// described FILTER types, and is recorded in
+	/// <c>docs/knowledge/ProcessModel/described-filter-types-have-no-json-overflow-bag.md</c>.
+	/// </remarks>
+	[JsonPropertyName("condition")]
+	public string Condition { get; set; }
+
+	/// <summary>
+	/// <c>true</c> when this flow's branch is decided by the RESULT of the preceding activity - which buttons it
+	/// was completed with - and NOT by <see cref="Condition"/>.
+	/// <para>The two are indistinguishable without it, and the difference is total: the platform reads the result
+	/// map FIRST and only falls back to the expression when it is empty, so on such a flow the condition text is
+	/// stored, reported, and never evaluated. <c>setFlowCondition</c> refuses to write one; before this field a
+	/// caller verifying their change read the OLD text and took it as proof the change landed.</para>
+	/// <para>NULLABLE on purpose, and it is the same reassuring-direction argument the field itself exists
+	/// for. <c>describe</c> is allowed on an environment whose package predates this field - its
+	/// <c>[RequiresPackage]</c> is presence-only, with no version literal - and such a server simply never
+	/// sends it. A non-nullable <c>bool</c> would leave <c>default(bool)</c>, which
+	/// <c>WhenWritingNull</c> cannot omit, so the payload would assert <c>false</c> for every flow on a
+	/// server that said nothing: a caller reading it would conclude the condition IS evaluated. Absent
+	/// stays absent instead, and a caller that finds no key knows to check the package version.</para>
+	/// </summary>
+	[JsonPropertyName("branchesOnActivityResult")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? BranchesOnActivityResult { get; set; }
+
+	/// <summary>
+	/// Every other field the server returns on a flow, so a description round-trips losslessly - the same bag
+	/// the graph root, nodes and parameters already carry. Added with the nullability fix above: without it a
+	/// newer <c>CrtProcessBuilder</c> reporting a new flow field needs a matching clio property AND a clio
+	/// release before the caller can see it, and until then it is dropped with no trace. <c>condition</c> and
+	/// <c>branchesOnActivityResult</c> keep their typed properties because guards and callers read them by name.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
 }
 
 /// <summary>A parameter read back from the schema, with its value source decoded.</summary>
@@ -659,6 +1240,17 @@ public sealed class DescribedParameter {
 	/// <summary>The source value/expression (for a formula source this is the <c>[#...#]</c> expression).</summary>
 	[JsonPropertyName("value")]
 	public string Value { get; set; }
+
+	/// <summary>
+	/// What the designer SHOWS for <see cref="Value"/> — for a Lookup constant the referenced record's name (for
+	/// example <c>Call</c> beside the bare id in <see cref="Value"/>), for a mapping the source parameter's caption.
+	/// Read-only: <see cref="Value"/> alone is what round-trips back into <c>addMapping</c> / <c>setParameter</c>,
+	/// and the display name is re-derived on every write. Null when the parameter carries no display value — for a
+	/// Lookup that means the environment could not name the record, NOT that the value is wrong (the designer then
+	/// resolves the name itself). Omitted when the server (an older <c>CrtProcessBuilder</c>) does not report it.
+	/// </summary>
+	[JsonPropertyName("valueDisplay")]
+	public string ValueDisplay { get; set; }
 }
 
 #endregion

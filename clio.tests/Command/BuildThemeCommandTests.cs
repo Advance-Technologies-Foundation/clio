@@ -329,7 +329,7 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 		const string trip = "https://tenant.example:8443/app?password=hunter2";
 		EnvironmentSettings environment = new() { Uri = trip };
 		_settingsRepository.FindEnvironment(Arg.Any<string>()).Returns(environment);
-		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(new PlatformVersionResolution("10.0.1", VersionResolutionSource.Environment)));
 		_resolverFactory.Create(environment).Returns(resolver);
@@ -585,7 +585,7 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 		// Arrange
 		EnvironmentSettings env = new() { Uri = "http://env" };
 		_settingsRepository.FindEnvironment("dev").Returns(env);
-		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(new PlatformVersionResolution("10.0.1", VersionResolutionSource.Environment)));
 		_resolverFactory.Create(env).Returns(resolver);
@@ -605,7 +605,7 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 		// Arrange
 		EnvironmentSettings env = new() { Uri = "http://env" };
 		_settingsRepository.FindEnvironment("dev").Returns(env);
-		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(new PlatformVersionResolution("latest", VersionResolutionSource.LatestFallback)));
 		_resolverFactory.Create(env).Returns(resolver);
@@ -777,7 +777,7 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 	public void TryBuildTheme_ShouldResolveVersionViaResolverFactory_WhenResolvedSettingsSupplied() {
 		// Arrange
 		EnvironmentSettings resolvedSettings = new() { Uri = "https://header-tenant.creatio.com" };
-		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(new PlatformVersionResolution("10.1.0", VersionResolutionSource.Environment)));
 		_resolverFactory.Create(resolvedSettings).Returns(resolver);

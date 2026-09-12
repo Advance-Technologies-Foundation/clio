@@ -3,6 +3,7 @@ using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
 using Clio.UserEnvironment;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -30,8 +31,8 @@ public sealed class ToolCommandResolverCacheKeyTests {
 		EnvironmentSettings second = new() { Uri = Url, AccessToken = TokenTwo };
 
 		// Act
-		string keyOne = ToolCommandResolver.BuildCacheKey(options, first);
-		string keyTwo = ToolCommandResolver.BuildCacheKey(options, second);
+		string keyOne = CreateCacheKeyBuilder().BuildCacheKey(options, first);
+		string keyTwo = CreateCacheKeyBuilder().BuildCacheKey(options, second);
 
 		// Assert
 		keyOne.Should().NotBe(keyTwo,
@@ -46,7 +47,7 @@ public sealed class ToolCommandResolverCacheKeyTests {
 		EnvironmentSettings settings = new() { Uri = Url, AccessToken = TokenOne };
 
 		// Act
-		string key = ToolCommandResolver.BuildCacheKey(options, settings);
+		string key = CreateCacheKeyBuilder().BuildCacheKey(options, settings);
 
 		// Assert
 		key.Should().NotContain(TokenOne,
@@ -103,4 +104,15 @@ public sealed class ToolCommandResolverCacheKeyTests {
 		frameworkKey.Should().NotBe(coreKey,
 			because: "the same credentials cannot share an environment-bound container across route families");
 	}
+
+	// BuildCacheKey became an INSTANCE method when session-target normalisation was injected
+	// (ENG-95262 story 7, AC-00). Only the normaliser participates in the key, so the remaining
+	// constructor dependencies are substitutes.
+	private static ToolCommandResolver CreateCacheKeyBuilder() =>
+		new(Substitute.For<ISettingsRepository>(),
+			Substitute.For<ISettingsBootstrapService>(),
+			Substitute.For<ICredentialContextAccessor>(),
+			Substitute.For<ITargetUrlValidator>(),
+			Substitute.For<ISessionContainerCache>(),
+			new SessionTargetNormalizer());
 }
