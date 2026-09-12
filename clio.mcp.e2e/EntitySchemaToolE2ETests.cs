@@ -438,12 +438,12 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	public async Task UpdateEntitySchema_Should_Add_BinaryLike_Columns_And_Read_Back_Friendly_Types() {
 		// Arrange
 		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
-		const string binaryColumnName = "UsrPayload";
-		const string imageColumnName = "UsrPreview";
-		const string fileColumnName = "UsrDocument";
+		const string binaryColumnName = BinaryColumnName;
+		const string imageColumnName = ImageColumnName;
+		const string fileColumnName = FileColumnName;
 
 		// Act
-		CommandExecutionEnvelope updateResult = await ActBatchAddBinaryLikeColumnsAsync(arrangeContext, binaryColumnName, imageColumnName, fileColumnName);
+		CommandExecutionEnvelope updateResult = await ActSharedBatchAddColumnsAsync(arrangeContext);
 		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
 		EntitySchemaColumnPropertiesInfo binaryColumnProperties = await ActGetColumnPropertiesAsync(arrangeContext, binaryColumnName);
 		EntitySchemaColumnPropertiesInfo imageColumnProperties = await ActGetColumnPropertiesAsync(arrangeContext, imageColumnName);
@@ -472,10 +472,10 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	public async Task UpdateEntitySchema_Should_Add_ImageLookup_Column_Referencing_SysImage() {
 		// Arrange
 		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
-		const string imageLookupColumnName = "UsrPhoto";
+		const string imageLookupColumnName = ImageLookupColumnName;
 
 		// Act
-		CommandExecutionEnvelope updateResult = await ActBatchAddImageLookupColumnAsync(arrangeContext, imageLookupColumnName);
+		CommandExecutionEnvelope updateResult = await ActSharedBatchAddColumnsAsync(arrangeContext);
 		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
 		EntitySchemaColumnPropertiesInfo imageLookupColumnProperties = await ActGetColumnPropertiesAsync(arrangeContext, imageLookupColumnName);
 
@@ -503,9 +503,13 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	public async Task UpdateEntitySchema_Should_Keep_Localized_Column_Valid_For_Later_DefaultValueConfig_Modify() {
 		// Arrange
 		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
-		const string localizedColumnName = "UsrStatus";
+		const string localizedColumnName = LocalizedTextColumnName;
 
 		// Act
+		// Deliberately NOT the shared batch. This is the fixture's only witness that a SECOND
+		// update-entity-schema succeeds against a schema an earlier batch already changed and
+		// recompiled, and its "the add emitted progress" assertion only means something while the
+		// envelope belongs to one operation rather than six.
 		CommandExecutionEnvelope addResult = await ActBatchAddLocalizedTextColumnAsync(arrangeContext, localizedColumnName);
 		CommandExecutionEnvelope modifyResult =
 			await ActModifyLocalizedTextColumnWithStructuredSettingsDefaultAsync(arrangeContext, localizedColumnName);
@@ -729,10 +733,10 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	public async Task UpdateEntitySchema_Should_Apply_UsageType_Through_Mcp() {
 		// Arrange
 		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
-		const string batchUsageColumnName = "UsrBatchUsage";
+		const string batchUsageColumnName = BatchUsageColumnName;
 
 		// Act
-		CommandExecutionEnvelope batchResult = await ActBatchAddColumnWithUsageTypeAsync(arrangeContext, batchUsageColumnName, "Advanced");
+		CommandExecutionEnvelope batchResult = await ActSharedBatchAddColumnsAsync(arrangeContext);
 		EntitySchemaColumnPropertiesInfo columnProperties = await ActGetColumnPropertiesAsync(arrangeContext, batchUsageColumnName);
 
 		// Assert
@@ -1593,103 +1597,18 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		});
 	}
 
-	private static async Task<CommandExecutionEnvelope> ActBatchAddColumnWithUsageTypeAsync(
-		EntitySchemaArrangeContext arrangeContext,
-		string columnName,
-		string usageType) {
-		return await AllureApi.Step("Act by invoking update-entity-schema through MCP to add a column with a usage-type", async () => {
-			CallToolResult callResult = await CallUpdateEntitySchemaAsync(
-				arrangeContext.Session,
-				arrangeContext.EnvironmentName,
-				arrangeContext.PackageName,
-				arrangeContext.SchemaName,
-				arrangeContext.CancellationTokenSource.Token,
-				[
-					new Dictionary<string, object?> {
-						["action"] = "add",
-						["column-name"] = columnName,
-						["type"] = "ShortText",
-						["title-localizations"] = BuildLocalizations("Batch usage column"),
-						["usage-type"] = usageType
-					}
-				]);
-			return McpCommandExecutionParser.Extract(callResult);
-		});
-	}
-
-	private static async Task<EntitySchemaColumnPropertiesInfo> ActGetColumnPropertiesAsync(
-		EntitySchemaArrangeContext arrangeContext,
-		string? columnName = null) {
-		return await AllureApi.Step("Act by invoking get-entity-schema-column-properties through MCP", async () => {
-			CallToolResult callResult = await CallGetColumnPropertiesAsync(
-				arrangeContext.Session,
-				arrangeContext.EnvironmentName,
-				arrangeContext.PackageName,
-				arrangeContext.SchemaName,
-				columnName ?? arrangeContext.AddedColumnName,
-				arrangeContext.CancellationTokenSource.Token);
-			return EntitySchemaStructuredResultParser.Extract<EntitySchemaColumnPropertiesInfo>(callResult);
-		});
-	}
-
-	private static async Task<CommandExecutionEnvelope> ActBatchAddBinaryLikeColumnsAsync(
-		EntitySchemaArrangeContext arrangeContext,
-		string binaryColumnName,
-		string imageColumnName,
-		string fileColumnName) {
-		return await AllureApi.Step("Act by invoking update-entity-schema through MCP for binary-like columns", async () => {
-			CallToolResult callResult = await CallUpdateEntitySchemaAsync(
-				arrangeContext.Session,
-				arrangeContext.EnvironmentName,
-				arrangeContext.PackageName,
-				arrangeContext.SchemaName,
-				arrangeContext.CancellationTokenSource.Token,
-				[
-					new Dictionary<string, object?> {
-						["action"] = "add",
-						["column-name"] = binaryColumnName,
-						["type"] = "Binary",
-						["title-localizations"] = BuildLocalizations("Payload")
-					},
-					new Dictionary<string, object?> {
-						["action"] = "add",
-						["column-name"] = imageColumnName,
-						["type"] = "Image",
-						["title-localizations"] = BuildLocalizations("Preview")
-					},
-					new Dictionary<string, object?> {
-						["action"] = "add",
-						["column-name"] = fileColumnName,
-						["type"] = "File",
-						["title-localizations"] = BuildLocalizations("Document")
-					}
-				]);
-			return McpCommandExecutionParser.Extract(callResult);
-		});
-	}
-
-	private static async Task<CommandExecutionEnvelope> ActBatchAddImageLookupColumnAsync(
-		EntitySchemaArrangeContext arrangeContext,
-		string imageLookupColumnName) {
-		return await AllureApi.Step("Act by invoking update-entity-schema through MCP for an ImageLookup column", async () => {
-			CallToolResult callResult = await CallUpdateEntitySchemaAsync(
-				arrangeContext.Session,
-				arrangeContext.EnvironmentName,
-				arrangeContext.PackageName,
-				arrangeContext.SchemaName,
-				arrangeContext.CancellationTokenSource.Token,
-				[
-					new Dictionary<string, object?> {
-						["action"] = "add",
-						["column-name"] = imageLookupColumnName,
-						["type"] = "ImageLookup",
-						["title-localizations"] = BuildLocalizations("Photo")
-					}
-				]);
-			return McpCommandExecutionParser.Extract(callResult);
-		});
-	}
-
+	/// <summary>
+	/// Adds every plain "add a column and read it back" fixture column in ONE update-entity-schema batch,
+	/// once per fixture, and hands the same envelope to each test that asserts on one of them.
+	/// </summary>
+	/// <remarks>
+	/// Four tests each ran their own batch against the one shared schema, so the stand compiled the same
+	/// schema four times — about 25s apiece — to add columns that never interact. The batch is the tool's
+	/// own supported shape, so nothing about the operation under test changes; each test still reads back
+	/// and asserts only its own column. The trade-off is deliberate: a column type that fails to add now
+	/// fails all three tests at once rather than one, which is the cost of paying for the compile once.
+	/// The localized-text column stays outside this batch on purpose — see its test.
+	/// </remarks>
 	private static async Task<CommandExecutionEnvelope> ActBatchAddLocalizedTextColumnAsync(
 		EntitySchemaArrangeContext arrangeContext,
 		string columnName) {
@@ -1709,6 +1628,87 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 					}
 				]);
 			return McpCommandExecutionParser.Extract(callResult);
+		});
+	}
+
+	private async Task<CommandExecutionEnvelope> ActSharedBatchAddColumnsAsync(
+		EntitySchemaArrangeContext arrangeContext) {
+		if (_sharedBatchAddResult is not null) {
+			return _sharedBatchAddResult;
+		}
+		CommandExecutionEnvelope batchResult = await AllureApi.Step(
+			"Act by invoking update-entity-schema through MCP for the fixture's shared column batch", async () => {
+			CallToolResult callResult = await CallUpdateEntitySchemaAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				arrangeContext.CancellationTokenSource.Token,
+				[
+					new Dictionary<string, object?> {
+						["action"] = "add",
+						["column-name"] = BinaryColumnName,
+						["type"] = "Binary",
+						["title-localizations"] = BuildLocalizations("Payload")
+					},
+					new Dictionary<string, object?> {
+						["action"] = "add",
+						["column-name"] = ImageColumnName,
+						["type"] = "Image",
+						["title-localizations"] = BuildLocalizations("Preview")
+					},
+					new Dictionary<string, object?> {
+						["action"] = "add",
+						["column-name"] = FileColumnName,
+						["type"] = "File",
+						["title-localizations"] = BuildLocalizations("Document")
+					},
+					new Dictionary<string, object?> {
+						["action"] = "add",
+						["column-name"] = ImageLookupColumnName,
+						["type"] = "ImageLookup",
+						["title-localizations"] = BuildLocalizations("Photo")
+					},
+					new Dictionary<string, object?> {
+						["action"] = "add",
+						["column-name"] = BatchUsageColumnName,
+						["type"] = "ShortText",
+						["title-localizations"] = BuildLocalizations("Batch usage column"),
+						["usage-type"] = "Advanced"
+					}
+				]);
+			return McpCommandExecutionParser.Extract(callResult);
+		});
+		if (batchResult.ExitCode != 0) {
+			// Not cached: replaying one bad round trip to the other callers reports it as several broken
+			// tests and hides that a rerun of the batch would have succeeded.
+			return batchResult;
+		}
+		_sharedBatchAddResult = batchResult;
+		return _sharedBatchAddResult;
+	}
+
+	private CommandExecutionEnvelope? _sharedBatchAddResult;
+
+	private const string BinaryColumnName = "UsrPayload";
+	private const string ImageColumnName = "UsrPreview";
+	private const string FileColumnName = "UsrDocument";
+	private const string ImageLookupColumnName = "UsrPhoto";
+	private const string LocalizedTextColumnName = "UsrStatus";
+	private const string BatchUsageColumnName = "UsrBatchUsage";
+
+	private static async Task<EntitySchemaColumnPropertiesInfo> ActGetColumnPropertiesAsync(
+		EntitySchemaArrangeContext arrangeContext,
+		string? columnName = null) {
+		return await AllureApi.Step("Act by invoking get-entity-schema-column-properties through MCP", async () => {
+			CallToolResult callResult = await CallGetColumnPropertiesAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				columnName ?? arrangeContext.AddedColumnName,
+				arrangeContext.CancellationTokenSource.Token);
+			return EntitySchemaStructuredResultParser.Extract<EntitySchemaColumnPropertiesInfo>(callResult);
 		});
 	}
 

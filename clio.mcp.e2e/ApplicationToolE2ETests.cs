@@ -530,24 +530,9 @@ public sealed class ApplicationToolE2ETests {
 		}
 
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
-		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(10));
-		string suffix = Guid.NewGuid().ToString("N")[..8];
-		string createdApplicationCode = $"UsrWeb{suffix}";
-		string applicationName = $"Web Only E2E {suffix}";
 
 		// Act
-		ApplicationInfoActResult actResult = await ActCreateAsync(
-			arrangeContext.Session,
-			arrangeContext.CancellationTokenSource.Token,
-			arrangeContext.EnvironmentName,
-			applicationName,
-			createdApplicationCode,
-			description: null,
-			ApplicationTemplateCode,
-			ApplicationIconId,
-			ApplicationIconBackground,
-			optionalTemplateDataJson: null,
-			withMobilePages: false);
+		ApplicationInfoActResult actResult = await GetOrCreateWebOnlyAutoIconApplicationAsync(settings);
 
 		// Assert
 		actResult.CallResult.IsError.Should().NotBeTrue(
@@ -865,21 +850,9 @@ public sealed class ApplicationToolE2ETests {
 		}
 
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
-		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(10));
-		string suffix = Guid.NewGuid().ToString("N")[..8];
 
 		// Act
-		ApplicationInfoActResult actResult = await ActCreateAsync(
-			arrangeContext.Session,
-			arrangeContext.CancellationTokenSource.Token,
-			arrangeContext.EnvironmentName,
-			name: $"Codex Auto Icon {suffix}",
-			code: $"UsrAutoIcon{suffix}",
-			description: null,
-			templateCode: ApplicationTemplateCode,
-			iconId: "auto",
-			iconBackground: ApplicationIconBackground,
-			optionalTemplateDataJson: null);
+		ApplicationInfoActResult actResult = await GetOrCreateWebOnlyAutoIconApplicationAsync(settings);
 		// Diagnostic: dump the create payload before anything asserts on it, so a create that failed on the
 		// environment is visible in the run output even when the assertion below is the first thing to notice.
 		TestContext.Out.WriteLine($"[create payload] {DescribeCallResult(actResult.CallResult)}");
@@ -904,39 +877,44 @@ public sealed class ApplicationToolE2ETests {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
 		return new ApplicationArrangeContext(environmentName, session, cancellationTokenSource);
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
-		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
-			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
-			return configuredEnvironmentName;
-		}
+	/// <summary>
+	/// Returns this fixture's single MCP server process, starting it on first use.
+	/// </summary>
+	/// <remarks>
+	/// Every test here used to start its own child server: 16 process lifecycles for one fixture, each
+	/// costing roughly 1.8 s to start and 0.5 s to tear down, none of which TeamCity bills to a test.
+	/// The tests share a read/create workload against one environment and none of them mutates server
+	/// state at startup, so one process serves them all. The fixture is <c>[NonParallelizable]</c>, so
+	/// the lazy start needs no lock. Started lazily rather than in <c>[OneTimeSetUp]</c> on purpose: an
+	/// <c>Assert.Ignore</c> raised from one-time setup skips the WHOLE fixture, which would hide the
+	/// tests that need no reachable stand.
+	/// </remarks>
+	/// <param name="settings">Settings for the child process.</param>
+	/// <param name="cancellationToken">Bounds the start.</param>
+	/// <returns>The shared session.</returns>
+	private static async Task<McpServerSession> GetOrStartSharedSessionAsync(
+		McpE2ESettings settings,
+		CancellationToken cancellationToken) =>
+		_sharedSession ??= await McpServerSession.StartAsync(settings, cancellationToken);
 
-		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
-			return fallbackEnvironmentName;
-		}
+	private static McpServerSession? _sharedSession;
 
-		Assert.Ignore(
-			$"application MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
-		return string.Empty;
+	[OneTimeTearDown]
+	public static async Task StopSharedSessionAsync() {
+		if (_sharedSession is not null) {
+			await _sharedSession.DisposeAsync();
+			_sharedSession = null;
+		}
 	}
 
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		using CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
-		try {
-			ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-				settings,
-				["ping-app", "-e", environmentName],
-				cancellationToken: cts.Token);
-			return result.ExitCode == 0;
-		} catch (OperationCanceledException) {
-			return false;
-		}
-	}
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
+			settings,
+			$"application MCP E2E requires a reachable environment. Configured sandbox environment '{settings.Sandbox.EnvironmentName}' was not reachable, and fallback environment '{ReachableSandboxEnvironment.FallbackEnvironmentName}' was also unavailable.");
 
 	private static async Task<ApplicationListActResult> ActListAsync(
 		McpServerSession session,
@@ -1040,18 +1018,27 @@ public sealed class ApplicationToolE2ETests {
 		string? iconBackground,
 		string? optionalTemplateDataJson,
 		bool withMobilePages = true) {
-		CallToolResult callResult = await CallCreateAsync(
-			session,
-			cancellationToken,
-			environmentName,
-			name,
-			code,
-			description,
-			templateCode,
-			iconId,
-			iconBackground,
-			optionalTemplateDataJson,
-			withMobilePages);
+		// create-app is answered with "Creatio is currently rebuilding the OData library" whenever an
+		// earlier test's schema publish is still finishing on the shared stand — a condition that outlives
+		// the command that started it and therefore cannot be serialized away (see
+		// docs/knowledge/Tests/the-parallel-pool-cannot-disturb-the-shared-stand.md). The gate is the
+		// repository's existing answer to exactly that window, and it deliberately refuses to retry a
+		// create that may already have happened, so a real failure still fails.
+		CallToolResult callResult = await TransientPlatformConditionRetryGate.InvokeWithRetryAsync(
+			async attemptToken => await CallCreateAsync(
+				session,
+				attemptToken,
+				environmentName,
+				name,
+				code,
+				description,
+				templateCode,
+				iconId,
+				iconBackground,
+				optionalTemplateDataJson,
+				withMobilePages),
+			reauthenticateAsync: null,
+			cancellationToken);
 		ApplicationContextResponseEnvelope result;
 		try {
 			result = ApplicationResultParser.ExtractInfo(callResult);
@@ -1387,14 +1374,18 @@ public sealed class ApplicationToolE2ETests {
 		});
 	}
 
-
 	private sealed record ApplicationArrangeContext(
 		string EnvironmentName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		/// <summary>
+		/// Releases only what this test owns. The session is the fixture's, shared by every test here and
+		/// disposed once in <c>[OneTimeTearDown]</c>; disposing it per test is what made the fixture pay
+		/// 16 process lifecycles.
+		/// </summary>
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 
@@ -1405,4 +1396,52 @@ public sealed class ApplicationToolE2ETests {
 	private sealed record ApplicationInfoActResult(
 		CallToolResult CallResult,
 		ApplicationContextResponseEnvelope Result);
+
+	/// <summary>
+	/// Creates — once for this fixture — one application with <c>icon-id='auto'</c> and
+	/// <c>with-mobile-pages=false</c>, and returns that single create's result to every test that asserts
+	/// on it.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// The auto-icon test and the web-only test each used to create an application of their own. A
+	/// create-app is a real Creatio compile — roughly 40 s each on CI — and the two options are
+	/// orthogonal: resolving an icon has nothing to do with suppressing mobile pages, so one create
+	/// carrying both exercises both paths without weakening either assertion. The tests stay separate,
+	/// so a failure still names which property broke.
+	/// </para>
+	/// <para>
+	/// Lazy rather than <c>[OneTimeSetUp]</c>: the destructive-tests gate and the sandbox check are
+	/// per-test <c>Assert.Ignore</c>s, and an ignore raised from one-time setup would skip the whole
+	/// fixture. The fixture is <c>[NonParallelizable]</c>, so the lazy create needs no lock.
+	/// </para>
+	/// </remarks>
+	/// <param name="settings">Settings for the MCP session.</param>
+	/// <returns>The shared create-app result.</returns>
+	private static async Task<ApplicationInfoActResult> GetOrCreateWebOnlyAutoIconApplicationAsync(
+		McpE2ESettings settings) {
+		if (_webOnlyAutoIconApplication is not null) {
+			return _webOnlyAutoIconApplication;
+		}
+		ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(10));
+		await using (arrangeContext) {
+			string suffix = Guid.NewGuid().ToString("N")[..8];
+			_webOnlyAutoIconApplication = await ActCreateAsync(
+				arrangeContext.Session,
+				arrangeContext.CancellationTokenSource.Token,
+				arrangeContext.EnvironmentName,
+				name: $"Codex Auto Icon Web Only {suffix}",
+				code: $"UsrAutoIconWeb{suffix}",
+				description: null,
+				templateCode: ApplicationTemplateCode,
+				iconId: "auto",
+				iconBackground: ApplicationIconBackground,
+				optionalTemplateDataJson: null,
+				withMobilePages: false);
+		}
+		return _webOnlyAutoIconApplication;
+	}
+
+	private static ApplicationInfoActResult? _webOnlyAutoIconApplication;
+
 }

@@ -38,7 +38,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
 
 		// Act
 		CallToolResult callResult = await session.CallToolAsync(
@@ -75,7 +75,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
 
 		// Act
 		CallToolResult callResult = await session.CallToolAsync(
@@ -112,7 +112,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
 
 		// Act
 		CallToolResult callResult = await session.CallToolAsync(
@@ -149,7 +149,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
 
 		// Act
 		CallToolResult callResult = await session.CallToolAsync(
@@ -201,86 +201,71 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 		string updatedCaption = $"E2E UpdAfter {Guid.NewGuid():N}"[..24];
 		const string updatedDescription = "E2E update lifecycle";
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
 		string? createdSectionCode = null;
-		try {
-			// Act 1: create a section with the initial caption
-			CallToolResult createResult = await session.CallToolAsync(
-				SectionCreateToolName,
-				new Dictionary<string, object?> {
-					["args"] = new Dictionary<string, object?> {
-						["environment-name"] = environmentName,
-						["application-code"] = ApplicationCode,
-						["caption"] = initialCaption
-					}
-				},
-				cancellationTokenSource.Token);
-			ApplicationSectionContextResponseEnvelope createResponse = ApplicationResultParser.ExtractSectionCreate(createResult);
-
-			createResult.IsError.Should().NotBeTrue(
-				because: $"create-app-section should not throw an MCP-level error. Actual: {DescribeCallResult(createResult)}");
-			createResponse.Success.Should().BeTrue(
-				because: $"create-app-section must succeed before the update lifecycle can be verified. Error: {createResponse.Error}");
-			createResponse.Section.Should().NotBeNull(
-				because: "create-app-section readback must include the created section metadata");
-			createResponse.Section!.Code.Should().NotBeNullOrWhiteSpace(
-				because: "the readback must expose the created section code so update-app-section can target it");
-
-			createdSectionCode = createResponse.Section.Code;
-
-			// Act 2: update the section's caption and description
-			CallToolResult updateResult = await session.CallToolAsync(
-				SectionUpdateToolName,
-				new Dictionary<string, object?> {
-					["args"] = new Dictionary<string, object?> {
-						["environment-name"] = environmentName,
-						["application-code"] = ApplicationCode,
-						["section-code"] = createdSectionCode,
-						["caption"] = updatedCaption,
-						["description"] = updatedDescription
-					}
-				},
-				cancellationTokenSource.Token);
-			ApplicationSectionUpdateContextResponseEnvelope updateResponse = ApplicationResultParser.ExtractSectionUpdate(updateResult);
-
-			// Assert
-			updateResult.IsError.Should().NotBeTrue(
-				because: $"update-app-section should not throw an MCP-level error. Actual: {DescribeCallResult(updateResult)}");
-			updateResponse.Success.Should().BeTrue(
-				because: $"update-app-section must succeed for the freshly created section. Error: {updateResponse.Error}");
-			updateResponse.PreviousSection.Should().NotBeNull(
-				because: "update-app-section must include the pre-update section snapshot so callers can diff before-and-after");
-			updateResponse.PreviousSection!.Code.Should().Be(createdSectionCode,
-				because: "the previous-section snapshot must identify the same section that was updated");
-			updateResponse.PreviousSection.Caption.Should().Be(initialCaption,
-				because: "the previous-section snapshot must preserve the caption that existed before update-app-section was invoked");
-			updateResponse.Section.Should().NotBeNull(
-				because: "update-app-section must include the post-update section state for the caller to confirm the new values landed");
-			updateResponse.Section!.Code.Should().Be(createdSectionCode,
-				because: "the post-update section must report the same code as the previous-section snapshot");
-			updateResponse.Section.Caption.Should().Be(updatedCaption,
-				because: "the post-update section must reflect the new caption that update-app-section was asked to apply");
-			updateResponse.Section.Description.Should().Be(updatedDescription,
-				because: "the post-update section must reflect the new description that update-app-section was asked to apply");
-		} finally {
-			if (!string.IsNullOrWhiteSpace(createdSectionCode)) {
-				try {
-					using CancellationTokenSource cleanupCts = new(TimeSpan.FromMinutes(1));
-					await session.CallToolAsync(
-						SectionDeleteToolName,
-						new Dictionary<string, object?> {
-							["args"] = new Dictionary<string, object?> {
-								["environment-name"] = environmentName,
-								["application-code"] = ApplicationCode,
-								["section-code"] = createdSectionCode
-							}
-						},
-						cleanupCts.Token);
-				} catch (Exception ex) {
-					await Console.Error.WriteLineAsync($"[cleanup] delete-app-section '{createdSectionCode}' failed: {ex.Message}");
+		// The created section is removed once, in one-time teardown: the stand is disposable per build, but
+		// a section left in the shared application adds pages that MobilePageConversionGuideSandboxE2ETests
+		// then has to convert.
+		// Act 1: create a section with the initial caption
+		CallToolResult createResult = await session.CallToolAsync(
+			SectionCreateToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["application-code"] = ApplicationCode,
+					["caption"] = initialCaption
 				}
-			}
-		}
+			},
+			cancellationTokenSource.Token);
+		ApplicationSectionContextResponseEnvelope createResponse = ApplicationResultParser.ExtractSectionCreate(createResult);
+
+		createResult.IsError.Should().NotBeTrue(
+			because: $"create-app-section should not throw an MCP-level error. Actual: {DescribeCallResult(createResult)}");
+		createResponse.Success.Should().BeTrue(
+			because: $"create-app-section must succeed before the update lifecycle can be verified. Error: {createResponse.Error}");
+		createResponse.Section.Should().NotBeNull(
+			because: "create-app-section readback must include the created section metadata");
+		createResponse.Section!.Code.Should().NotBeNullOrWhiteSpace(
+			because: "the readback must expose the created section code so update-app-section can target it");
+
+		createdSectionCode = createResponse.Section.Code;
+		_createdSectionCode = createdSectionCode;
+		_createdSectionEnvironmentName = environmentName;
+
+		// Act 2: update the section's caption and description
+		CallToolResult updateResult = await session.CallToolAsync(
+			SectionUpdateToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["application-code"] = ApplicationCode,
+					["section-code"] = createdSectionCode,
+					["caption"] = updatedCaption,
+					["description"] = updatedDescription
+				}
+			},
+			cancellationTokenSource.Token);
+		ApplicationSectionUpdateContextResponseEnvelope updateResponse = ApplicationResultParser.ExtractSectionUpdate(updateResult);
+
+		// Assert
+		updateResult.IsError.Should().NotBeTrue(
+			because: $"update-app-section should not throw an MCP-level error. Actual: {DescribeCallResult(updateResult)}");
+		updateResponse.Success.Should().BeTrue(
+			because: $"update-app-section must succeed for the freshly created section. Error: {updateResponse.Error}");
+		updateResponse.PreviousSection.Should().NotBeNull(
+			because: "update-app-section must include the pre-update section snapshot so callers can diff before-and-after");
+		updateResponse.PreviousSection!.Code.Should().Be(createdSectionCode,
+			because: "the previous-section snapshot must identify the same section that was updated");
+		updateResponse.PreviousSection.Caption.Should().Be(initialCaption,
+			because: "the previous-section snapshot must preserve the caption that existed before update-app-section was invoked");
+		updateResponse.Section.Should().NotBeNull(
+			because: "update-app-section must include the post-update section state for the caller to confirm the new values landed");
+		updateResponse.Section!.Code.Should().Be(createdSectionCode,
+			because: "the post-update section must report the same code as the previous-section snapshot");
+		updateResponse.Section.Caption.Should().Be(updatedCaption,
+			because: "the post-update section must reflect the new caption that update-app-section was asked to apply");
+		updateResponse.Section.Description.Should().Be(updatedDescription,
+			because: "the post-update section must reflect the new description that update-app-section was asked to apply");
 	}
 
 	[Category("McpE2E.NoEnvironment")]
@@ -385,35 +370,10 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 		}
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
-		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
-			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
-			return configuredEnvironmentName;
-		}
-
-		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
-			return fallbackEnvironmentName;
-		}
-
-		Assert.Ignore(
-			$"application section MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
-		return string.Empty;
-	}
-
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		using CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
-		try {
-			ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-				settings,
-				["ping-app", "-e", environmentName],
-				cancellationToken: cts.Token);
-			return result.ExitCode == 0;
-		} catch (OperationCanceledException) {
-			return false;
-		}
-	}
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
+			settings,
+			$"application section MCP E2E requires a reachable environment. Configured sandbox environment '{settings.Sandbox.EnvironmentName}' was not reachable, and fallback environment '{ReachableSandboxEnvironment.FallbackEnvironmentName}' was also unavailable.");
 
 	private static string DescribeCallResult(CallToolResult callResult) {
 		return JsonSerializer.Serialize(new {
@@ -422,4 +382,81 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 			callResult.Content
 		});
 	}
+
+	/// <summary>
+	/// Returns this fixture's single MCP server process, starting it on first use.
+	/// </summary>
+	/// <remarks>
+	/// Each test used to start its own child server. TeamCity bills only test bodies, so those process
+	/// lifecycles — roughly 1.8 s to start and 0.5 s to tear down apiece — were invisible while still
+	/// being paid on every run. The tests here share one read/create workload against one environment
+	/// and none of them mutates server state at startup, so a single process serves them all. The
+	/// fixture is <c>[NonParallelizable]</c>, so the lazy start needs no lock. It is lazy rather than
+	/// <c>[OneTimeSetUp]</c> on purpose: an <c>Assert.Ignore</c> raised from one-time setup skips the
+	/// WHOLE fixture, which would hide the tests that need no reachable stand.
+	/// <para>
+	/// A test that needs its OWN session — different client capabilities, or a deliberate restart — must
+	/// keep calling <see cref="McpServerSession.StartAsync(McpE2ESettings, CancellationToken)"/> directly
+	/// and dispose what it started.
+	/// </para>
+	/// </remarks>
+	/// <param name="settings">Settings for the child process.</param>
+	/// <param name="cancellationToken">Bounds the start.</param>
+	/// <returns>The shared session.</returns>
+	private static async Task<McpServerSession> GetOrStartSharedSessionAsync(
+		McpE2ESettings settings,
+		CancellationToken cancellationToken) =>
+		_sharedSession ??= await McpServerSession.StartAsync(settings, cancellationToken);
+
+	private static McpServerSession? _sharedSession;
+
+	private static string? _createdSectionCode;
+	private static string? _createdSectionEnvironmentName;
+
+	[OneTimeTearDown]
+	public static async Task StopSharedSessionAsync() {
+		try {
+			await RemoveCreatedSectionAsync();
+		} finally {
+			if (_sharedSession is not null) {
+				await _sharedSession.DisposeAsync();
+				_sharedSession = null;
+			}
+		}
+	}
+
+	/// <summary>
+	/// Removes the section this fixture created — once, not per test.
+	/// </summary>
+	/// <remarks>
+	/// The stand is disposable per build, so the removal is not owed to the stand. It is owed to
+	/// <c>MobilePageConversionGuideSandboxE2ETests</c>, which enumerates every page of the shared
+	/// <c>AutoTestClioMcp</c> application and requires each eligible one to convert: a section left behind
+	/// adds a Form and a List page to that set.
+	/// </remarks>
+	private static async Task RemoveCreatedSectionAsync() {
+		if (string.IsNullOrWhiteSpace(_createdSectionCode) || _sharedSession is null) {
+			return;
+		}
+		string sectionCode = _createdSectionCode;
+		_createdSectionCode = null;
+		try {
+			using CancellationTokenSource cleanupCts = new(TimeSpan.FromMinutes(1));
+			await _sharedSession.CallToolAsync(
+				SectionDeleteToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = _createdSectionEnvironmentName,
+						["application-code"] = ApplicationCode,
+						["section-code"] = sectionCode
+					}
+				},
+				cleanupCts.Token);
+		} catch (Exception exception) {
+			// Best effort: the stand goes away with the build, so a failed removal must not fail a green
+			// fixture. It only matters to the fixtures that read this application's pages.
+			TestContext.Out.WriteLine($"[cleanup] failed to remove section '{sectionCode}': {exception.Message}");
+		}
+	}
+
 }

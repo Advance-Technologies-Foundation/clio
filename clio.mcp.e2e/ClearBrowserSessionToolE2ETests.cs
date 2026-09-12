@@ -100,25 +100,12 @@ public sealed class ClearBrowserSessionToolE2ETests : McpContractFixtureBase {
 		return new ArrangeContext(session, cancellationTokenSource, environmentName);
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
-		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (string.IsNullOrWhiteSpace(configuredEnvironmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run clear-browser-session MCP E2E tests.");
-		}
-
-		if (!await CanReachEnvironmentAsync(settings, configuredEnvironmentName!)) {
-			Assert.Ignore($"clear-browser-session MCP E2E requires a reachable sandbox environment. '{configuredEnvironmentName}' was not reachable.");
-		}
-
-		return configuredEnvironmentName!;
-	}
-
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
 			settings,
-			["ping-app", "-e", environmentName]);
-		return result.ExitCode == 0;
-	}
+			$"clear-browser-session MCP E2E requires a reachable environment. Configure McpE2E:Sandbox:EnvironmentName; "
+			+ $"configured sandbox environment '{settings.Sandbox.EnvironmentName}' was not reachable, and fallback "
+			+ $"environment '{ReachableSandboxEnvironment.FallbackEnvironmentName}' was also unavailable.");
 
 	private new sealed record ArrangeContext(
 		McpServerSession Session,

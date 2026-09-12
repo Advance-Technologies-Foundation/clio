@@ -1,5 +1,6 @@
 ﻿using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Mcp.E2E.Support.Configuration;
+using Clio.Mcp.E2E.Support.Diagnostics;
 using Clio.Mcp.E2E.Support.Mcp;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -72,7 +73,20 @@ public sealed class McpSharedHomeSetUpFixture {
 	}
 
 	[OneTimeTearDown]
-	public void RestoreSharedClioHome() {
+	public async Task RestoreSharedClioHomeAsync() {
+		// finally, not a plain sequence: releasing the shared session kills a process tree, and a child
+		// that already exited makes that throw. RestoreSharedClioHome deletes the settings file holding
+		// the stand password in clear text, so it must run even then.
+		try {
+			await McpContractFixtureBase.ReleaseProcessWideSessionAsync();
+		} finally {
+			RestoreSharedClioHome();
+		}
+	}
+
+	private void RestoreSharedClioHome() {
+		// Runs last in the assembly, so every fixture's arrange cost has already been recorded.
+		E2ETimingProbe.WriteReportToProcessStandardOutput();
 		TestConfiguration.ClearSharedClioHome();
 		DeleteSensitiveSettingsFile();
 		if (!string.IsNullOrWhiteSpace(_sharedClioHome) && Directory.Exists(_sharedClioHome)) {

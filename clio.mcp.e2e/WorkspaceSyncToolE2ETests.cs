@@ -21,7 +21,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature("workspace-sync")]
 [NonParallelizable]
-public sealed class WorkspaceSyncToolE2ETests {
+public sealed class WorkspaceSyncToolE2ETests : McpContractFixtureBase {
 	private const string PushToolName = PushWorkspaceTool.PushWorkspaceToolName;
 	private const string RestoreToolName = RestoreWorkspaceTool.RestoreWorkspaceToolName;
 	private const string PackageListToolName = GetPkgListTool.GetPkgListToolName;
@@ -153,7 +153,7 @@ public sealed class WorkspaceSyncToolE2ETests {
 		AssertGateDidNotRefuse(restoreResult, "cliogate");
 	}
 
-	private static async Task<WorkspaceSyncArrangeContext> ArrangeInvalidEnvironmentAsync(string toolPrefix) {
+	private async Task<WorkspaceSyncArrangeContext> ArrangeInvalidEnvironmentAsync(string toolPrefix) {
 		return await AllureApi.Step("Arrange workspace-sync invalid-environment MCP session", async () => {
 			string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-{toolPrefix}-mcp-e2e-{Guid.NewGuid():N}");
 			string workspacePath = Path.Combine(rootDirectory, "workspace");
@@ -164,7 +164,7 @@ public sealed class WorkspaceSyncToolE2ETests {
 			McpE2ESettings settings = TestConfiguration.Load();
 			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			McpServerSession session = Session;
 			return new WorkspaceSyncArrangeContext(
 				settings,
 				rootDirectory,
@@ -181,7 +181,7 @@ public sealed class WorkspaceSyncToolE2ETests {
 		});
 	}
 
-	private static async Task<WorkspaceSyncArrangeContext> ArrangeSandboxWorkspaceAsync(bool includePackage = true) {
+	private async Task<WorkspaceSyncArrangeContext> ArrangeSandboxWorkspaceAsync(bool includePackage = true) {
 		return await AllureApi.Step("Arrange workspace-sync sandbox lifecycle", async () => {
 			McpE2ESettings settings = TestConfiguration.Load();
 			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -211,7 +211,7 @@ public sealed class WorkspaceSyncToolE2ETests {
 				packageMetadata = ReadPackageMetadata(workspacePath, packageName);
 			}
 
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			McpServerSession session = Session;
 			return new WorkspaceSyncArrangeContext(
 				settings,
 				rootDirectory,
@@ -243,7 +243,7 @@ public sealed class WorkspaceSyncToolE2ETests {
 			string testRootDirectory = Path.Combine(Path.GetTempPath(), $"clio-workspace-restore-e2e-{Guid.NewGuid():N}");
 			string testWorkspacePath = Path.Combine(testRootDirectory, Path.GetFileName(_sharedWorkspacePath!));
 			CopyDirectory(_sharedWorkspacePath!, testWorkspacePath);
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			McpServerSession session = Session;
 			return new WorkspaceSyncArrangeContext(
 				settings,
 				testRootDirectory,
@@ -573,8 +573,7 @@ public sealed class WorkspaceSyncToolE2ETests {
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource,
 		bool OwnsRootDirectory) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
 
 			// Restore-test contexts reuse the shared fixture workspace (see EnsureSharedRestoreWorkspaceAsync),
@@ -582,6 +581,7 @@ public sealed class WorkspaceSyncToolE2ETests {
 			if (OwnsRootDirectory && Directory.Exists(RootDirectory)) {
 				Directory.Delete(RootDirectory, recursive: true);
 			}
+			return ValueTask.CompletedTask;
 		}
 	}
 

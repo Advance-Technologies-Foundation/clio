@@ -19,7 +19,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature("add-item-model")]
 [NonParallelizable]
-public sealed class AddItemModelToolE2ETests {
+public sealed class AddItemModelToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = AddItemModelTool.AddItemModelToolName;
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
@@ -63,40 +63,21 @@ public sealed class AddItemModelToolE2ETests {
 				because: "model generation should create at least one model class file in addition to the shared helper");
 	}
 
-	private static async Task<AddItemModelArrangeContext> ArrangeSuccessAsync(McpE2ESettings settings) {
+	private async Task<AddItemModelArrangeContext> ArrangeSuccessAsync(McpE2ESettings settings) {
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(10));
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await ClioCliCommandRunner.EnsureCliogateInstalledAsync(settings, environmentName, cancellationTokenSource.Token);
 		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-add-item-model-e2e-{Guid.NewGuid():N}");
 		string outputFolderPath = Path.Combine(rootDirectory, "Models");
 		Directory.CreateDirectory(rootDirectory);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		return new AddItemModelArrangeContext(rootDirectory, outputFolderPath, environmentName, session, cancellationTokenSource);
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
-		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
-			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
-			return configuredEnvironmentName;
-		}
-
-		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
-			return fallbackEnvironmentName;
-		}
-
-		Assert.Ignore(
-			$"add-item-model MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
-		return string.Empty;
-	}
-
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
 			settings,
-			["ping-app", "-e", environmentName]);
-		return result.ExitCode == 0;
-	}
+			$"add-item-model MCP E2E requires a reachable environment. Configured sandbox environment '{settings.Sandbox.EnvironmentName}' was not reachable, and fallback environment '{ReachableSandboxEnvironment.FallbackEnvironmentName}' was also unavailable.");
 
 	private static async Task<AddItemModelActResult> ActAsync(
 		McpServerSession session,
@@ -155,12 +136,12 @@ public sealed class AddItemModelToolE2ETests {
 		string EnvironmentName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
 			if (Directory.Exists(RootDirectory)) {
 				Directory.Delete(RootDirectory, recursive: true);
 			}
+			return ValueTask.CompletedTask;
 		}
 	}
 

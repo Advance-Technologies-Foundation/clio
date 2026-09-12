@@ -34,44 +34,31 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 	// A base-product classic page present on every stand and replaced across many packages (multi-layer).
 	private const string MultiLayerPage = "ContactPageV2";
 
+	private SharedPageSources? _sharedPageSources;
+
 	[Test]
 	[Description("Assembles a real multi-layer classic page's sources via clio-run and writes an engine-consumable manifest to disk.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-classic-page-sources assembles and writes an engine-consumable manifest")]
 	[AllureDescription("Uses the real clio MCP server to invoke the long-tail get-classic-page-sources tool through clio-run for ContactPageV2, then verifies the manifest was written to disk with a base->top schemas chain in the shape the migration engine folds.")]
 	public async Task GetPageSources_Should_Assemble_And_Write_EngineConsumable_Manifest() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
-		string outputDirectory = CreateFixtureDirectory("classic-page-sources");
-		string outputFile = Path.Combine(outputDirectory, "manifest.json");
-
-		// Act
-		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["schema-name"] = MultiLayerPage,
-					["environment-name"] = arrangeContext.EnvironmentName,
-					["output-file"] = outputFile
-				}
-			},
-			arrangeContext.CancellationTokenSource.Token);
-		GetClassicPageSourcesResponse response =
-			EntitySchemaStructuredResultParser.Extract<GetClassicPageSourcesResponse>(callResult);
+		// Arrange & Act — every assertion in this fixture that reads a SUCCESSFUL ContactPageV2 manifest
+		// shares one collection. The five callers passed identical arguments to the same read-only tool and
+		// differed only in what they asserted, so each repetition cost a full ~25s round trip for nothing.
+		SharedPageSources shared = await GetOrCollectSharedPageSourcesAsync();
+		GetClassicPageSourcesResponse response = shared.Response;
 
 		// Assert — the tool reported success and a manifest path
-		callResult.IsError.Should().NotBeTrue(
+		shared.IsError.Should().NotBeTrue(
 			because: "the routed MCP call must return a structured payload");
 		response.Success.Should().BeTrue(
 			because: $"the page sources must assemble for the multi-layer page '{MultiLayerPage}'. Error: {response.Error}");
-		response.ManifestPath.Should().Be(outputFile,
+		response.ManifestPath.Should().Be(shared.OutputFile,
 			because: "an explicit absolute output-file must be echoed as the manifest location");
 
 		// Assert — the manifest on disk is in the engine's contract shape (bodies live here, not in the response)
 		File.Exists(response.ManifestPath).Should().BeTrue(because: "the manifest must be written to disk");
-		using JsonDocument manifest = JsonDocument.Parse(await File.ReadAllTextAsync(response.ManifestPath));
+		using JsonDocument manifest = JsonDocument.Parse(shared.ManifestJson);
 		manifest.RootElement.TryGetProperty("schemas", out JsonElement schemas).Should().BeTrue(
 			because: "the manifest must carry the replacing-schema layer chain");
 		schemas.ValueKind.Should().Be(JsonValueKind.Array,
@@ -90,26 +77,11 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 	[AllureName("get-classic-page-sources resolves the section from SysModule metadata")]
 	[AllureDescription("Collects the ContactPageV2 sources on a real stand and verifies the section chain was gathered through the SysModule binding (not only the naming convention) and that the response carries no warnings — a broken metadata query would degrade to the conventions and surface a warning instead.")]
 	public async Task GetPageSources_Should_Resolve_Section_Through_SysModule_Metadata() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
-		string outputDirectory = CreateFixtureDirectory("classic-page-sources-section");
-		string outputFile = Path.Combine(outputDirectory, "manifest.json");
-
-		// Act
-		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["schema-name"] = MultiLayerPage,
-					["environment-name"] = arrangeContext.EnvironmentName,
-					["output-file"] = outputFile
-				}
-			},
-			arrangeContext.CancellationTokenSource.Token);
-		GetClassicPageSourcesResponse response =
-			EntitySchemaStructuredResultParser.Extract<GetClassicPageSourcesResponse>(callResult);
+		// Arrange & Act — every assertion in this fixture that reads a SUCCESSFUL ContactPageV2 manifest
+		// shares one collection. The five callers passed identical arguments to the same read-only tool and
+		// differed only in what they asserted, so each repetition cost a full ~25s round trip for nothing.
+		SharedPageSources shared = await GetOrCollectSharedPageSourcesAsync();
+		GetClassicPageSourcesResponse response = shared.Response;
 
 		// Assert — the section resolved, so the caller gets no incompleteness warning
 		response.Success.Should().BeTrue(
@@ -127,7 +99,7 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 				"conventions and report the reason here");
 
 		// Assert — the manifest carries the section bodies the engine folds into the Freedom List page
-		using JsonDocument manifest = JsonDocument.Parse(await File.ReadAllTextAsync(response.ManifestPath));
+		using JsonDocument manifest = JsonDocument.Parse(shared.ManifestJson);
 		manifest.RootElement.TryGetProperty("section", out JsonElement section).Should().BeTrue(
 			because: "a resolved section must reach the manifest, not just the response counter");
 		section.GetArrayLength().Should().Be(response.SectionLayerCount,
@@ -140,33 +112,18 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 	[AllureName("get-classic-page-sources reports a detail count consistent with its manifest and no truncation")]
 	[AllureDescription("Live witness that the response counter and the manifest agree and that no cap/truncation warning is reported. Deliberately product-agnostic — the detail count of a given page differs per installed product (Studio ContactPageV2 gathers 9, a Sales product far more), so this asserts CONSISTENCY and the absence of truncation rather than any specific number. It does NOT by itself prove the caps are gone: on a narrow (Studio) stand the page stays under the retired caps, so that claim rests on the unit regression tests (250/250/120/30).")]
 	public async Task GetPageSources_Should_Report_DetailCount_ConsistentWithManifest_AndNoTruncation() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(5));
-		string outputDirectory = CreateFixtureDirectory("classic-page-sources-uncapped");
-		string outputFile = Path.Combine(outputDirectory, "manifest.json");
-
-		// Act
-		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["schema-name"] = MultiLayerPage,
-					["environment-name"] = arrangeContext.EnvironmentName,
-					["output-file"] = outputFile
-				}
-			},
-			arrangeContext.CancellationTokenSource.Token);
-		GetClassicPageSourcesResponse response =
-			EntitySchemaStructuredResultParser.Extract<GetClassicPageSourcesResponse>(callResult);
+		// Arrange & Act — every assertion in this fixture that reads a SUCCESSFUL ContactPageV2 manifest
+		// shares one collection. The five callers passed identical arguments to the same read-only tool and
+		// differed only in what they asserted, so each repetition cost a full ~25s round trip for nothing.
+		SharedPageSources shared = await GetOrCollectSharedPageSourcesAsync();
+		GetClassicPageSourcesResponse response = shared.Response;
 
 		// Assert — the whole unit was collected. The count itself is product-dependent (Studio gathers far fewer
 		// details for the same page than a Sales product), so the invariant asserted here is that the response
 		// counter and the manifest agree EXACTLY: a cap would have shortened one without the other noticing.
 		response.Success.Should().BeTrue(
 			because: $"the page sources must assemble for '{MultiLayerPage}'. Error: {response.Error}");
-		using JsonDocument manifest = JsonDocument.Parse(await File.ReadAllTextAsync(response.ManifestPath));
+		using JsonDocument manifest = JsonDocument.Parse(shared.ManifestJson);
 		int manifestDetailCount = manifest.RootElement.TryGetProperty("detailSchemas", out JsonElement detailSchemas)
 			? detailSchemas.EnumerateObject().Count()
 			: 0; // the block is omitted (never null-filled) when the page resolved no details on this product
@@ -188,26 +145,11 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 	[AllureName("get-classic-page-sources populates childPageSchemas from SysModuleEdit")]
 	[AllureDescription("Collects the ContactPageV2 sources on a real stand and verifies the child pages each detail's entity registers in SysModuleEdit reached the manifest. Before ENG-94401 child pages were resolved by scanning detail bodies for a getEditPageName token, which matches nothing on a stock product (0 of 845 page-detail pairs), so childPageSchemas was structurally always empty and a migration plan silently omitted every child page.")]
 	public async Task GetPageSources_Should_Populate_ChildPageSchemas_From_SysModuleEdit() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(5));
-		string outputDirectory = CreateFixtureDirectory("classic-page-sources-child-pages");
-		string outputFile = Path.Combine(outputDirectory, "manifest.json");
-
-		// Act
-		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["schema-name"] = MultiLayerPage,
-					["environment-name"] = arrangeContext.EnvironmentName,
-					["output-file"] = outputFile
-				}
-			},
-			arrangeContext.CancellationTokenSource.Token);
-		GetClassicPageSourcesResponse response =
-			EntitySchemaStructuredResultParser.Extract<GetClassicPageSourcesResponse>(callResult);
+		// Arrange & Act — every assertion in this fixture that reads a SUCCESSFUL ContactPageV2 manifest
+		// shares one collection. The five callers passed identical arguments to the same read-only tool and
+		// differed only in what they asserted, so each repetition cost a full ~25s round trip for nothing.
+		SharedPageSources shared = await GetOrCollectSharedPageSourcesAsync();
+		GetClassicPageSourcesResponse response = shared.Response;
 
 		// Assert — the page has details, and their entities' registered pages were resolved
 		response.Success.Should().BeTrue(
@@ -219,7 +161,7 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 				"route regressed back to the body scan that matches nothing on a stock product");
 
 		// Assert — the child pages are real nested manifests on disk, not just a counter
-		using JsonDocument manifest = JsonDocument.Parse(await File.ReadAllTextAsync(response.ManifestPath));
+		using JsonDocument manifest = JsonDocument.Parse(shared.ManifestJson);
 		manifest.RootElement.TryGetProperty("childPageSchemas", out JsonElement childPages).Should().BeTrue(
 			because: "resolved child pages must reach the manifest the engine folds, not only the response counter");
 		childPages.EnumerateObject().Count().Should().Be(response.ChildPageCount,
@@ -311,26 +253,11 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 	[AllureName("get-classic-page-sources echoes the stand's own enumVocabulary")]
 	[AllureDescription("Collects ContactPageV2 sources on a real stand and verifies enumVocabulary was measured from the stand's own sysenums.js — not merely present, but carrying plausible member counts for ViewItemType/ContentType/DataValueType — so the engine's enum-drift guard receives a genuine, stand-specific input on every real run rather than a hardcoded copy of its own pinned tables.")]
 	public async Task GetPageSources_Should_Echo_EnumVocabulary_From_Stand() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
-		string outputDirectory = CreateFixtureDirectory("classic-page-sources-enum-vocabulary");
-		string outputFile = Path.Combine(outputDirectory, "manifest.json");
-
-		// Act
-		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["schema-name"] = MultiLayerPage,
-					["environment-name"] = arrangeContext.EnvironmentName,
-					["output-file"] = outputFile
-				}
-			},
-			arrangeContext.CancellationTokenSource.Token);
-		GetClassicPageSourcesResponse response =
-			EntitySchemaStructuredResultParser.Extract<GetClassicPageSourcesResponse>(callResult);
+		// Arrange & Act — every assertion in this fixture that reads a SUCCESSFUL ContactPageV2 manifest
+		// shares one collection. The five callers passed identical arguments to the same read-only tool and
+		// differed only in what they asserted, so each repetition cost a full ~25s round trip for nothing.
+		SharedPageSources shared = await GetOrCollectSharedPageSourcesAsync();
+		GetClassicPageSourcesResponse response = shared.Response;
 
 		// Assert — the stand served its own sysenums.js and all three DRIFT_TABLES enums were measured from it
 		response.Success.Should().BeTrue(
@@ -340,7 +267,7 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 				"(ViewItemType/ContentType/DataValueType); a lower count means the fetch or parse degraded and must " +
 				"be visible here rather than silently passing as success");
 
-		using JsonDocument manifest = JsonDocument.Parse(await File.ReadAllTextAsync(response.ManifestPath));
+		using JsonDocument manifest = JsonDocument.Parse(shared.ManifestJson);
 		manifest.RootElement.TryGetProperty("enumVocabulary", out JsonElement enumVocabulary).Should().BeTrue(
 			because: "the stand-measured enum tables must reach the manifest the engine folds, not only the response counter");
 		foreach (string enumName in new[] { "ViewItemType", "ContentType", "DataValueType" }) {
@@ -355,42 +282,71 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 		}
 	}
 
+	/// <summary>
+	/// Collects ContactPageV2 once per fixture and hands every successful-path test the same response and the
+	/// same manifest text. The tool is read-only and its result does not depend on the caller, so repeating the
+	/// call per test bought nothing and cost a full round trip against the stand each time.
+	/// </summary>
+	private async Task<SharedPageSources> GetOrCollectSharedPageSourcesAsync() {
+		if (_sharedPageSources is not null) {
+			return _sharedPageSources;
+		}
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(5));
+		string outputDirectory = CreateFixtureDirectory("classic-page-sources");
+		string outputFile = Path.Combine(outputDirectory, "manifest.json");
+		// Behind the retry gate, and cached only on success: one shared collection now carries five
+		// tests, so a single transient platform condition would otherwise fail all five at once and be
+		// replayed from the cache instead of retried.
+		CallToolResult callResult = await TransientPlatformConditionRetryGate.InvokeWithRetryAsync(
+			async token => await arrangeContext.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = MultiLayerPage,
+						["environment-name"] = arrangeContext.EnvironmentName,
+						["output-file"] = outputFile
+					}
+				},
+				token),
+			reauthenticateAsync: null,
+			arrangeContext.CancellationTokenSource.Token);
+		GetClassicPageSourcesResponse response =
+			EntitySchemaStructuredResultParser.Extract<GetClassicPageSourcesResponse>(callResult);
+		// The manifest is read here, while the fixture directory is known to exist, and handed on as text: a
+		// JsonDocument cannot be shared across tests because each test disposes the one it parses.
+		string manifestJson = response.Success && response.ManifestPath is not null && File.Exists(response.ManifestPath)
+			? await File.ReadAllTextAsync(response.ManifestPath)
+			: string.Empty;
+		SharedPageSources collected = new(callResult.IsError, response, manifestJson, outputFile);
+		if (!response.Success) {
+			// Not cached: a failure replayed to the other four tests reports one bad round trip as five
+			// broken assertions, and hides the fact that a retry would have succeeded.
+			return collected;
+		}
+		_sharedPageSources = collected;
+		return _sharedPageSources;
+	}
+
+	/// <summary>One collection of ContactPageV2 sources, reused by every successful-path test in this fixture.</summary>
+	private sealed record SharedPageSources(
+		bool? IsError,
+		GetClassicPageSourcesResponse Response,
+		string ManifestJson,
+		string OutputFile);
+
 	private async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		return new ArrangeContext(Session, cancellationTokenSource, environmentName);
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
-		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
-			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
-			return configuredEnvironmentName;
-		}
-
-		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
-			return fallbackEnvironmentName;
-		}
-
-		Assert.Ignore(
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
+			settings,
 			$"get-classic-page-sources MCP E2E requires a reachable environment. Configured sandbox environment " +
-			$"'{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
-		return string.Empty;
-	}
-
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		using CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
-		try {
-			ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-				settings,
-				["ping-app", "-e", environmentName],
-				cancellationToken: cts.Token);
-			return result.ExitCode == 0;
-		} catch (OperationCanceledException) {
-			return false;
-		}
-	}
+			$"'{settings.Sandbox.EnvironmentName}' was not reachable, and fallback environment '{ReachableSandboxEnvironment.FallbackEnvironmentName}' was also unavailable.");
 
 	private new sealed record ArrangeContext(
 		McpServerSession Session,

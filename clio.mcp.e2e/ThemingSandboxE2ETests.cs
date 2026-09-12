@@ -471,8 +471,7 @@ public sealed class ThemingSandboxE2ETests : McpContractFixtureBase {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run the theming sandbox E2E tests.");
 		}
-		ClioCliCommandResult ping = await ClioCliCommandRunner.RunAsync(settings, ["ping-app", "-e", environmentName!]);
-		if (ping.ExitCode != 0) {
+		if (!await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName!)) {
 			Assert.Ignore($"The theming sandbox E2E tests require a reachable sandbox environment; '{environmentName}' was not reachable.");
 		}
 		return environmentName!;

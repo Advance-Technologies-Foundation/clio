@@ -504,8 +504,12 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run sync-pages validation E2E.");
 		}
-		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
-			Assert.Ignore($"sync-pages validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
+		// The resolver may fall back to another registered stand, so its ANSWER is the environment
+		// the test must use. Discarding it and keeping the configured name sent the call to a stand
+		// already known to be unreachable, turning a skip into a failure.
+		environmentName = await ReachableSandboxEnvironment.ResolveAsync(settings);
+		if (environmentName is null) {
+			Assert.Ignore($"sync-pages validation E2E requires a reachable sandbox environment. '{settings.Sandbox.EnvironmentName}' was not reachable.");
 		}
 
 		await using ArrangeContext context = await ArrangeAsync();
@@ -824,22 +828,10 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		}
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
-		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
-			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
-			return configuredEnvironmentName;
-		}
-
-		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
-			return fallbackEnvironmentName;
-		}
-
-		Assert.Ignore(
-			$"sync-pages MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
-		return string.Empty;
-	}
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
+			settings,
+			$"sync-pages MCP E2E requires a reachable environment. Configured sandbox environment '{settings.Sandbox.EnvironmentName}' was not reachable, and fallback environment '{ReachableSandboxEnvironment.FallbackEnvironmentName}' was also unavailable.");
 
 	[Test]
 	[Description("ENG-91317: sync-pages surfaces a per-page conflict for a stale-baseline page after an out-of-band modification, and the per-page force flag overwrites it deliberately (restoring the seed body).")]
@@ -1227,8 +1219,12 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run sync-pages semantic validation E2E.");
 		}
-		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
-			Assert.Ignore($"sync-pages semantic validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
+		// The resolver may fall back to another registered stand, so its ANSWER is the environment
+		// the test must use. Discarding it and keeping the configured name sent the call to a stand
+		// already known to be unreachable, turning a skip into a failure.
+		environmentName = await ReachableSandboxEnvironment.ResolveAsync(settings);
+		if (environmentName is null) {
+			Assert.Ignore($"sync-pages semantic validation E2E requires a reachable sandbox environment. '{settings.Sandbox.EnvironmentName}' was not reachable.");
 		}
 
 		await using ArrangeContext context = await ArrangeAsync();
@@ -1286,8 +1282,12 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run sync-pages semantic validation E2E.");
 		}
-		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
-			Assert.Ignore($"sync-pages semantic validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
+		// The resolver may fall back to another registered stand, so its ANSWER is the environment
+		// the test must use. Discarding it and keeping the configured name sent the call to a stand
+		// already known to be unreachable, turning a skip into a failure.
+		environmentName = await ReachableSandboxEnvironment.ResolveAsync(settings);
+		if (environmentName is null) {
+			Assert.Ignore($"sync-pages semantic validation E2E requires a reachable sandbox environment. '{settings.Sandbox.EnvironmentName}' was not reachable.");
 		}
 
 		await using ArrangeContext context = await ArrangeAsync();
@@ -1334,13 +1334,6 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 				because: "the failure should identify both the wrong param and the required param name");
 	}
 
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-			settings,
-			["ping-app", "-e", environmentName]);
-		return result.ExitCode == 0;
-	}
-
 	private async Task<ArrangeContext> ArrangeAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -1349,10 +1342,11 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		string workspaceName = $"workspace-{Guid.NewGuid():N}";
 		string workspacePath = Path.Combine(rootDirectory, workspaceName);
 		CancellationTokenSource cancellationTokenSource = new(System.TimeSpan.FromMinutes(5));
-		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
-			settings,
-			["create-workspace", workspaceName, "--empty", "--directory", rootDirectory],
-			cancellationToken: cancellationTokenSource.Token);
+		// No create-workspace here. Every test in this fixture calls sync-pages with an explicit
+		// environment-name and page bodies; none reads WorkspacePath and none pushes or restores a
+		// workspace, so the clio CLI round trip that used to build one per test (25 invocations, about
+		// 43s of the run) produced a directory nothing then looked at.
+		Directory.CreateDirectory(workspacePath);
 		McpServerSession session = Session;
 		return new ArrangeContext(rootDirectory, workspacePath, session, cancellationTokenSource);
 	}
