@@ -184,6 +184,21 @@ public sealed class McpToolInvokerRegistryTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Classifies get-theme (ReadOnly=false because of its optional output-file write) as retry-safe: it is admitted by name because it reads from Creatio and a retry re-reads + rewrites (ENG-93373).")]
+	public void IsRetrySafe_ShouldBeTrue_WhenToolIsGetTheme() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+
+		// Act
+		bool retrySafe = registry.IsRetrySafe(GetThemeTool.ToolName);
+
+		// Assert
+		retrySafe.Should().BeTrue(
+			because: "get-theme reads from Creatio (its ReadOnly=false only reflects the optional local file write), so it is retry-safe");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Excludes an idempotent, non-destructive SERVER write (add-package-dependency) from retry-safe classification so the read deadline never bounds a server write (ENG-93373).")]
 	public void IsRetrySafe_ShouldBeFalse_WhenToolIsIdempotentServerWrite() {
 		// Arrange

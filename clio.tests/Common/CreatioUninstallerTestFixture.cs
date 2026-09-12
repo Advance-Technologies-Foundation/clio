@@ -42,6 +42,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 	private readonly ISettingsRepository _settingsRepositoryMock = Substitute.For<ISettingsRepository>();
 	private ICreatioUninstaller _sut;
 	private readonly IIisScanner _iisScannerMock = Substitute.For<IIisScanner>();
+	private readonly IIdentityServiceLifecycle _identityLifecycle = Substitute.For<IIdentityServiceLifecycle>();
 	private readonly ILogger _loggerMock = Substitute.For<ILogger>();
 	private readonly Ik8Commands _k8CommandsMock = Substitute.For<Ik8Commands>();
 	private readonly IMssql _mssqlMock = Substitute.For<IMssql>();
@@ -108,6 +109,66 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		FileSystem.AddFile(csPath, new MockFileData(csContent));
 	}
 
+	[TestCase(false), TestCase(true)]
+	[Description("Combined uninstall removes recorded identity before CRM database deletion and stops all CRM cleanup on identity failure.")]
+	public void UninstallByEnvironmentName_ShouldRemoveIdentityFirst_WhenAttached(bool failIdentity) {
+		// Arrange
+		AddPostgresConnectionStringFile();
+		MockStartedSite();
+		EnvironmentSettings.IdentityService = new IdentityServiceAttachment {
+			EnvironmentPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")),
+			IisTarget = "identity", ApplicationPool = "identity", Uri = "http://localhost:40401"
+		};
+		IdentityRemovalPlan plan = new(EnvironmentName, InstalledCreatioPath, EnvironmentSettings.IdentityService);
+		_identityLifecycle.PrepareRemoval(EnvironmentName).Returns(plan);
+		bool identityRemoved = false;
+		_identityLifecycle.When(service => service.Remove(plan)).Do(_ => {
+			if (failIdentity) { throw new InvalidOperationException("Identity cleanup failed"); }
+			identityRemoved = true;
+		});
+		_postgresMock.ClearReceivedCalls();
+		_postgresMock.DropDb(Arg.Any<string>()).Returns(_ => identityRemoved);
+		_iisScannerMock.TryStopIisTarget(EnvironmentName, InstalledCreatioPath, null).Returns(_ => identityRemoved);
+		List<ClioStageEvent> events = CaptureStageEvents();
+		// Act
+		Action act = () => _sut.UninstallByEnvironmentName(EnvironmentName);
+		// Assert
+		if (failIdentity) {
+			act.Should().Throw<InvalidOperationException>(because: "identity failure must stop before any CRM mutation");
+			_postgresMock.ReceivedCalls().Should().NotContain(call => call.GetMethodInfo().Name == nameof(IPostgres.DropDb),
+				because: "CRM database must survive an incomplete identity cleanup");
+			FileSystem.Directory.Exists(InstalledCreatioPath).Should().BeTrue(because: "CRM files must remain available for retry");
+			_iisScannerMock.ReceivedCalls().Should().NotContain(call => call.GetMethodInfo().Name == nameof(IIisScanner.TryStopIisTarget)
+				|| call.GetMethodInfo().Name == nameof(IIisScanner.TryDeleteIisTarget), because: "CRM IIS must not be stopped before identity cleanup succeeds");
+		} else {
+			act.Should().NotThrow(because: "identity completes before the single CRM database drop");
+			_postgresMock.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(IPostgres.DropDb)).Should().Be(1,
+				because: "identity shares the CRM database and must not cause a second drop");
+		}
+		events.First().Stages!.Select(stage => stage.StageId).Take(3).Should().Equal(
+			[StageIds.ReadConfig, StageIds.RemoveIdentity, StageIds.StopIis], because: "the published manifest must put identity before CRM mutations");
+	}
+
+	[Test]
+	[Description("Post-reservation identity revalidation failure emits a terminal failure before CRM mutation.")]
+	public void Uninstall_ShouldEmitFailure_WhenIdentityChangesAfterReservation() {
+		// Arrange
+		AddPostgresConnectionStringFile();
+		IdentityServiceAttachment attachment = new() { EnvironmentPath = Path.Combine(Path.GetTempPath(), "identity-race") };
+		EnvironmentSettings.IdentityService = attachment;
+		IdentityRemovalPlan plan = new(EnvironmentName, InstalledCreatioPath, attachment);
+		_identityLifecycle.PrepareRemoval(EnvironmentName).Returns(plan);
+		_identityLifecycle.When(service => service.Validate(plan)).Do(_ => throw new InvalidOperationException("changed identity"));
+		List<ClioStageEvent> events = CaptureStageEvents();
+		// Act
+		Action act = () => _sut.UninstallByEnvironmentName(EnvironmentName);
+		// Assert
+		act.Should().Throw<CreatioUninstallAbortedException>(because: "changed scope must prevent destructive work");
+		events.Last().RunCompleted!.Outcome.Should().Be(ClioStageEventContract.RunOutcomes.Failure,
+			because: "Ring must receive a terminal failure even before the normal manifest begins");
+		FileSystem.Directory.Exists(InstalledCreatioPath).Should().BeTrue(because: "CRM must survive a failed identity preflight");
+	}
+
 	// Writes a Postgres ConnectionStrings.config whose database name is caller-controlled, so a test that
 	// configures the shared postgres substitute to throw can scope the throw to a unique db name and never
 	// contaminate the other tests that share the same substitute instance.
@@ -133,6 +194,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		base.AdditionalRegistrations(containerBuilder);
 		containerBuilder.AddSingleton<ISettingsRepository>(_settingsRepositoryMock);
 		containerBuilder.AddSingleton<IIisScanner>(_iisScannerMock);
+		containerBuilder.AddSingleton<IIdentityServiceLifecycle>(_identityLifecycle);
 		containerBuilder.AddSingleton<ILogger>(_loggerMock);
 		containerBuilder.AddSingleton<Ik8Commands>(_k8CommandsMock);
 		containerBuilder.AddSingleton<IMssql>(_mssqlMock);
@@ -171,6 +233,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		_loggerMock.ClearReceivedCalls();
 		_settingsRepositoryMock.ClearReceivedCalls();
 		_iisScannerMock.ClearReceivedCalls();
+		_identityLifecycle.ClearReceivedCalls();
 		_mssqlMock.ClearReceivedCalls();
 		_postgresMock.ClearReceivedCalls();
 		_postgresMock.DropDb(Arg.Any<string>()).Returns(true);

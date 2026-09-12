@@ -94,3 +94,8 @@ NOTES
     manage the MOBILE related-page add-on (MobileRelatedPage) instead - the page the Creatio Mobile app opens
     for a record. The two add-ons are independent: a write to one (including an empty reset) is neither read
     nor written against the other, so it never affects the other surface's page configuration.
+
+RESPONSE IDENTITY
+    entitySchemaUId is the base/root entity UId resolved by Creatio for the add-on,
+    shared across replacing layers. It is not a temporary designer or replacing-row UId.
+    A missing or invalid target identity fails before saving.

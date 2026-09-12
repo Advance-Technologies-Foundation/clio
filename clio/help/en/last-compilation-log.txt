@@ -15,6 +15,10 @@ OPTIONS
     --raw
         Print the unformatted JSON response
 
+TIMEOUT
+    The read is bounded at 60 seconds. It used to be unbounded, which meant an environment that
+    accepted the connection and then said nothing held the command for the life of the process.
+
 EXAMPLES
     clio last-compilation-log -e dev
         Print the last compilation log from the dev environment

@@ -2,6 +2,17 @@
 
 Use `clio help` for the terminal overview and `clio <command> --help` for command details.
 
+## User and Role Administration
+
+<a id="manage-user"></a>
+- [`manage-user`](docs/commands/manage-user.md) - Inspect and manage Creatio user administration.
+<a id="manage-role"></a>
+- [`manage-role`](docs/commands/manage-role.md) - Inspect and manage Creatio role administration.
+<a id="manage-access"></a>
+- [`manage-access`](docs/commands/manage-access.md) - Inspect and manage Creatio access administration.
+<a id="manage-license"></a>
+- [`manage-license`](docs/commands/manage-license.md) - Inspect and manage Creatio license administration.
+
 ## Application Management
 
 <a id="clear-local-env"></a>
@@ -95,6 +106,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="set-file-content-storage-connection-string"></a>
 <a id="set-fcs-connection-string"></a>
 - [`set-file-content-storage-connection-string`](docs/commands/set-file-content-storage-connection-string.md) - Set the connection string of a file content storage, `set-fcs-connection-string`
+<a id="download-sys-setting-file"></a>
+- [`download-sys-setting-file`](docs/commands/download-sys-setting-file.md) - Save a Binary system setting's exact bytes to a required destination filename.
+
 <a id="set-syssetting"></a>
 <a id="get-syssetting"></a>
 <a id="ss"></a>
@@ -338,7 +352,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="client-unit-schema-create"></a>
 - [`create-client-unit-schema`](docs/commands/create-client-unit-schema.md) - Create a new JavaScript (ClientUnit) schema on a remote Creatio environment, `client-unit-schema-create`
 <a id="create-entity-schema"></a>
-- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create a persistent or virtual entity schema in a remote Creatio package; columns accept repeated flags or a JSON array
+- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create a persistent, virtual, or same-name replacing entity schema in a remote Creatio package; columns accept repeated flags or a JSON array
 <a id="create-lookup"></a>
 - [`create-lookup`](docs/commands/create-lookup.md) - Create a lookup entity schema in a remote Creatio package
 <a id="create-schema"></a>
@@ -363,7 +377,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`download-configuration`](docs/commands/download-configuration.md) - Download configuration libraries from Creatio, `dconf`
 <a id="execute-sql-script"></a>
 <a id="sql"></a>
-- [`execute-sql-script`](docs/commands/execute-sql-script.md) - Execute a SQL script in Creatio, `sql`
+- [`execute-sql-script`](docs/commands/execute-sql-script.md) - Execute a SQL script in Creatio; table display uses 40 characters per cell line, with JSON/CSV/XLSX file exports for full content (also available through MCP), `sql`
 <a id="export-component-registry"></a>
 <a id="export-registry"></a>
 - [`export-component-registry`](docs/commands/export-component-registry.md) - Write the full Freedom UI component registry for a resolved platform version to a file, `export-registry`
@@ -407,7 +421,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="get-version"></a>
 <a id="i"></a>
 <a id="ver"></a>
-- [`info`](docs/commands/info.md) - Show clio, cliogate, and .NET runtime versions, `get-version`, `i`, `ver`
+- [`info`](docs/commands/info.md) - Show clio, cliogate, bundled process-builder, installed knowledge, toolkit per agent, and .NET runtime versions, `get-version`, `i`, `ver`
 <a id="install-sql-schema"></a>
 <a id="sql-schema-install"></a>
 <a id="execute-sql-schema"></a>
@@ -444,7 +458,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`open-settings`](docs/commands/open-settings.md) - Open the clio settings file, `conf`, `configuration`, `os`, `settings`
 <a id="get-page"></a>
 <a id="page-get"></a>
-- [`get-page`](docs/commands/get-page.md) - Get a Freedom UI page bundle and raw schema body, `page-get`
+- [`get-page`](docs/commands/get-page.md) - Get a Freedom UI page bundle, editable body, and current-leaf/design-package metadata, `page-get`
 <a id="get-process-page-facts"></a>
 <a id="page-facts"></a>
 - [`get-process-page-facts`](docs/commands/get-process-page-facts.md) - Read the completing-button candidates and page-scoped data sources a Pre-configured page process element needs, `page-facts`
@@ -605,6 +619,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="uninstall-creatio"></a>
 <a id="uc"></a>
 - [`uninstall-creatio`](docs/commands/uninstall-creatio.md) - Uninstall by registered EnvironmentPath with all-site and shared-pool-safe IIS cleanup, `uc`
+<a id="uninstall-identity"></a>
+- [`uninstall-identity`](docs/commands/uninstall-identity.md) - Remove the recorded local IdentityService while preserving Creatio and its database
 <a id="upload-license"></a>
 <a id="license"></a>
 <a id="load-license"></a>
@@ -622,6 +638,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`create-theme`](docs/commands/create-theme.md) - Create a custom Creatio theme on an environment (Creatio 10.0.0+)
 <a id="delete-theme"></a>
 - [`delete-theme`](docs/commands/delete-theme.md) - Delete a custom Creatio theme from an environment (Creatio 10.0.0+)
+<a id="get-theme"></a>
+- [`get-theme`](docs/commands/get-theme.md) - Read the content (theme.css) and metadata of a custom Creatio theme (Creatio 10.0.0+)
 <a id="list-themes"></a>
 <a id="get-themes"></a>
 - [`list-themes`](docs/commands/list-themes.md) - List the custom Creatio themes available on an environment (Creatio 10.0.0+), `get-themes`
@@ -758,3 +776,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`set-app-version`](docs/commands/set-app-version.md) - Set application version, `appversion`
 <a id="unregister"></a>
 - [`unregister`](docs/commands/unregister.md) - Remove clio shell integrations
+
+### Related-page response identity
+
+`get-related-page-addon` and `create-related-page-addon` report `entitySchemaUId` as
+the base/root entity UId resolved by Creatio for the add-on, shared across replacing
+layers. A temporary designer schema or an individual replacing row is not that identity.

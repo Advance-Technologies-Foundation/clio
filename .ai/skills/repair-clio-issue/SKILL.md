@@ -13,6 +13,8 @@ Confirm that the original issue is open, assigned to the current GitHub user, ha
 
 ## Establish each repair branch
 
+Honor the investigation's related-issue grouping decision. Before grouped repair, verify each included issue is still open, solely assigned to the current user, linked to the shared Development branch, classified by the metadata gate, and in `Fixing`. On ownership conflict, stop and report it. Use the coordinator's existing branch and worktree for the group; do not run separate branch creation for its additional issues. Keep grouped issues' stages aligned and verified as work moves through QA or waits for human input.
+
 For the original Clio issue, continue on its existing `<login>/issue-<number>` branch and isolated worktree.
 
 For a downstream issue:
@@ -33,6 +35,8 @@ Verify the original Clio issue's `Mitigation stage = Fixing` through the `clio-i
 4. Follow all repository-specific validation, review, and delivery policies.
 
 After the first meaningful commit, run the affected repository's mandatory pre-PR review gate, then open a draft pull request immediately. Do not create an empty or placeholder commit solely to open a PR. Link the PR to its own issue and reference the original Clio issue. A cross-repository closing reference must be fully qualified as `Advance-Technologies-Foundation/clio#<number>` and may be used only when that one PR completely resolves the original; otherwise preserve the original as the coordination issue.
+
+For a grouped PR, explain the shared cause and map validation to each included issue's acceptance criteria. Add a separate closing reference for every issue the PR fully resolves and verify each Development PR link. Use non-closing references for related issues outside the repair. If new evidence splits the repair boundary, revise the grouping, issue comments, and PR references before delivery; never leave a closing reference for an issue with unmet criteria.
 
 ## Validate and review
 

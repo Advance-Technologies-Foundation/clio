@@ -181,6 +181,16 @@ public sealed class TelemetryService : ITelemetryService
 	/// <see cref="LegacyAppCreationEventNames"/> and <see cref="CanonicalEventNames"/> so the contract
 	/// can tell an agent which half to use.
 	/// </summary>
+	/// <remarks>
+	/// Single source of truth INSIDE clio. The CAADT edge collector keeps its own copy of this
+	/// vocabulary, in another repository on another release train
+	/// (<c>metrics-installation/helm/caadt-telemetry</c>), and it is the collector - not clio - that
+	/// decides whether an accepted event is actually stored. Editing this list alone makes the new
+	/// events VANISH rather than fail: the receiver answers 200 before the filter runs, and the
+	/// filter drops a non-matching name as normal operation, so neither side reports anything.
+	/// Widen the collector first - see the telemetry vocabulary maintenance policy in
+	/// <c>AGENTS.md</c> for the four files it has to change and the drift gate that checks them.
+	/// </remarks>
 	internal static readonly IReadOnlyList<string> AllowedEventNames =
 		[..LegacyAppCreationEventNames, ..CanonicalEventNames];
 

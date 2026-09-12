@@ -43,3 +43,8 @@ NOTES
     Aliases: related-page-addon-get, get-related-pages.
 
     Pairs with create-related-page-addon: read -> modify -> create (which replaces the full set).
+
+RESPONSE IDENTITY
+    entitySchemaUId is the base/root entity UId resolved by Creatio for the add-on,
+    shared across replacing layers. It is not a temporary designer or replacing-row UId.
+    A missing or invalid target identity fails before saving.

@@ -3,6 +3,7 @@ namespace Clio.Tests.Command;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Clio.Command;
 using Clio.Command.AddonSchemaDesigner;
@@ -47,7 +48,7 @@ public sealed class RelatedPageAddonServiceTests {
 			.Returns(callInfo => PageHierarchy(PageUIdForName(callInfo.Arg<string>())));
 		_serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
 		_addonSchemaDesignerClient.GetSchema(Arg.Any<AddonGetRequestDto>())
-			.Returns(new AddonSchemaDto { MetaData = """{"Pages":[],"TypeColumnUId":null}""" });
+			.Returns(new AddonSchemaDto { AdditionalData = TargetData(), MetaData = """{"Pages":[],"TypeColumnUId":null}""" });
 		_addonSchemaDesignerClient
 			.When(client => client.SaveSchema(Arg.Any<AddonSchemaDto>()))
 			.Do(callInfo => _savedSchema = callInfo.Arg<AddonSchemaDto>());
@@ -89,7 +90,88 @@ public sealed class RelatedPageAddonServiceTests {
 
 	private void StubAddonMetadata(string metaData) =>
 		_addonSchemaDesignerClient.GetSchema(Arg.Any<AddonGetRequestDto>())
-			.Returns(new AddonSchemaDto { MetaData = metaData });
+			.Returns(new AddonSchemaDto { AdditionalData = TargetData(), MetaData = metaData });
+
+	private static Dictionary<string, JsonElement> TargetData() => new() {
+		["targetSchemaUId"] = JsonSerializer.SerializeToElement(EntityUId)
+	};
+
+	[TestCase(RelatedPageSchemaType.Web)]
+	[TestCase(RelatedPageSchemaType.Mobile)]
+	[Description("Reports the add-on target across changing designer IDs and preserves its wire metadata on save.")]
+	public void GetAndCreate_ShouldReturnPersistedTarget_WhenDesignerCreatesTemporarySchemas(RelatedPageSchemaType type) {
+		// Arrange
+		StubSelectQueue(Rows(PackageUId), Rows(PackageUId), Rows(PackageUId));
+		var payload = TargetData();
+		payload["futureField"] = JsonSerializer.SerializeToElement(new { enabled = true });
+		_addonSchemaDesignerClient.GetSchema(Arg.Any<AddonGetRequestDto>())
+			.Returns(new AddonSchemaDto { AdditionalData = payload, MetaData = "{}" });
+		_entitySchemaDesignerClient.GetSchemaDesignItem(Arg.Any<GetSchemaDesignItemRequestDto>(), Arg.Any<RemoteCommandOptions>())
+			.Returns(_ => new Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> {
+				Success = true, Schema = new EntityDesignSchemaDto {
+					UId = Guid.NewGuid(), Name = "UsrDeliveryItem",
+					ParentSchema = new EntityDesignSchemaDto { UId = Guid.Parse(EntityUId) }
+				}
+			});
+
+		// Act
+		var first = _service.Get(new RelatedPageAddonReadRequest("Custom", "UsrDeliveryItem", type));
+		var created = _service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", [], null, type));
+		var last = _service.Get(new RelatedPageAddonReadRequest("Custom", "UsrDeliveryItem", type));
+
+		// Assert
+		new[] { first.EntitySchemaUId, created.EntitySchemaUId, last.EntitySchemaUId }.Should().OnlyContain(
+			id => id == EntityUId, because: "the stable add-on target is the entity identity, not the temporary design item");
+		_savedSchema.AdditionalData.Should().BeSameAs(payload, because: "reading the identity must not rewrite the save payload");
+		_savedSchema.AdditionalData["futureField"].GetProperty("enabled").GetBoolean().Should().BeTrue(
+			because: "unknown platform fields must survive the save");
+	}
+
+	[TestCase(null)]
+	[TestCase("null")]
+	[TestCase("42")]
+	[TestCase("{}")]
+	[TestCase("\"invalid\"")]
+	[TestCase("\"00000000-0000-0000-0000-000000000000\"")]
+	[Description("Rejects absent or malformed target identity consistently before any save or refresh.")]
+	public void GetAndCreate_ShouldRejectInvalidTarget_WhenAddonResponseHasNoUsableIdentity(string json) {
+		// Arrange
+		StubSelectQueue(Rows(PackageUId), Rows(PackageUId));
+		_addonSchemaDesignerClient.GetSchema(Arg.Any<AddonGetRequestDto>()).Returns(new AddonSchemaDto {
+			AdditionalData = json == null ? null : new Dictionary<string, JsonElement> {
+				["targetSchemaUId"] = JsonSerializer.Deserialize<JsonElement>(json)
+			}, MetaData = "{}"
+		});
+
+		// Act
+		Action read = () => _service.Get(new RelatedPageAddonReadRequest("Custom", "UsrDeliveryItem"));
+		Action write = () => _service.Create(Request());
+
+		// Assert
+		read.Should().Throw<InvalidOperationException>().WithMessage("*targetSchemaUId*", because: "a read cannot report an invented identity");
+		write.Should().Throw<InvalidOperationException>().WithMessage("*targetSchemaUId*", because: "identity must be validated before saving");
+		_addonSchemaDesignerClient.ReceivedCalls().Should().OnlyContain(
+			call => call.GetMethodInfo().Name == nameof(IAddonSchemaDesignerClient.GetSchema),
+			because: "invalid identity must prevent both the durable save and the subsequent refreshes");
+	}
+
+	[Test]
+	[Description("Reads case-insensitive extension keys and normalizes the returned GUID without changing the payload.")]
+	public void Get_ShouldNormalizeTargetIdentity_WhenWireCasingAndGuidFormatDiffer() {
+		// Arrange
+		StubSelectQueue(Rows(PackageUId));
+		_addonSchemaDesignerClient.GetSchema(Arg.Any<AddonGetRequestDto>()).Returns(new AddonSchemaDto {
+			AdditionalData = new Dictionary<string, JsonElement> {
+				["TargetSchemaUId"] = JsonSerializer.SerializeToElement(Guid.Parse(EntityUId).ToString("B").ToUpperInvariant())
+			}, MetaData = "{}"
+		});
+
+		// Act
+		var result = _service.Get(new RelatedPageAddonReadRequest("Custom", "UsrDeliveryItem"));
+
+		// Assert
+		result.EntitySchemaUId.Should().Be(EntityUId, because: "the public GUID format stays canonical regardless of wire casing");
+	}
 
 	private static RelatedPageAddonRequest Request(params RelatedPageSpec[] pages) =>
 		new("Custom", "UsrDeliveryItem", pages, null);
@@ -613,6 +695,7 @@ public sealed class RelatedPageAddonServiceTests {
 		// Arrange — GetSchema returns a pre-existing config (a stale page and a stale type column).
 		_addonSchemaDesignerClient.GetSchema(Arg.Any<AddonGetRequestDto>())
 			.Returns(new AddonSchemaDto {
+				AdditionalData = TargetData(),
 				MetaData = """{"Pages":[{"UId":"old","PageSchemaUId":"99999999-9999-9999-9999-999999999999","IsDefault":true}],"TypeColumnUId":"88888888-8888-8888-8888-888888888888"}"""
 			});
 		StubSelectQueue(Rows(PackageUId), Rows(PageAUId));
