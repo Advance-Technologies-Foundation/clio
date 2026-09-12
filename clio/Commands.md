@@ -774,3 +774,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`set-app-version`](docs/commands/set-app-version.md) - Set application version, `appversion`
 <a id="unregister"></a>
 - [`unregister`](docs/commands/unregister.md) - Remove clio shell integrations
+
+### Related-page response identity
+
+`get-related-page-addon` and `create-related-page-addon` report `entitySchemaUId` as
+the base/root entity UId resolved by Creatio for the add-on, shared across replacing
+layers. A temporary designer schema or an individual replacing row is not that identity.
