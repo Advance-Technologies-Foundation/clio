@@ -30,6 +30,9 @@ public sealed class ODataReadTool(
 	/// <summary>Number of records returned when <c>top</c> is omitted.</summary>
 	internal const int DefaultTop = 25;
 
+	/// <summary>The lookup-column suffix the navigation-path hint keys on.</summary>
+	private const string IdSuffix = "Id";
+
 	private const string ValidArgumentsHint =
 		"Valid: entity, environment-name, filters, select, expand, order-by, top, skip, count. " +
 		"Raw filter strings are not supported; use the structured filters object.";
@@ -75,9 +78,11 @@ public sealed class ODataReadTool(
 		"top must be between 1 and 100 (default 25); an out-of-range top (including 0 or negative) is rejected, never silently widened. " +
 		"skip must be zero or greater; use order-by with skip for stable paging. " +
 		"Unknown arguments and malformed filter conditions fail before any Creatio request; raw filter strings are not supported. " +
-		"Every response - success or failure - carries a correlation-id; the same id appears on the debug line that records the server's own error text (run clio with --debug to see it). " +
+		McpToolDescriptions.CorrelationIdOnEveryResponse +
 		"A failure also carries a machine-readable error-code: argument, entity-not-found, invalid-query, server-reported-error, non-json-response, incomplete-response, or transport. " +
-		"error-code invalid-query means the request shape is at fault and retrying it unchanged cannot succeed; the message lists the field, select, expand and order-by names YOU sent, and when a filter field looks like a raw lookup column (a name ending in Id) it names the navigation path to use instead, for example AccountId -> Account/Id. " +
+		"error-code invalid-query usually means the request shape is at fault, and the message lists the field, select, expand and order-by names YOU sent; when a filter field looks like a raw lookup column (a name ending in Id) it names the navigation path to use instead, for example AccountId -> Account/Id. " +
+		"The one exception is a member added moments ago: the same rejection is how a column or entity that exists but is not published to OData yet reports itself, so wait for the rebuild and retry once before changing the query - and never re-run a schema write in response. " +
+		"Creatio's own error wording is never reproduced in error; it is written to clio's debug log, which requires clio to be running in-process with --debug and a log sink, so in an MCP worker there is no such line and the correlation-id serves to match this response to clio's own logs. " +
 		"Call get-tool-contract for odata-read to see usage examples and discovery workflow hints.")]
 	public ODataReadResponse Read(
 		[Description("Parameters: entity, environment-name (required); filters, select, expand, order-by, top, skip, count (optional).")]
@@ -161,6 +166,12 @@ public sealed class ODataReadTool(
 		if (args.Skip is < 0) {
 			return $"skip must be zero or greater (got {args.Skip}).";
 		}
+		string? projectionError = ValidateMemberList("select", args.Select)
+			?? ValidateMemberList("expand", args.Expand)
+			?? ValidateOrderBy(args.OrderBy);
+		if (projectionError is not null) {
+			return projectionError;
+		}
 		if (args.FiltersProvided && args.Filters is null) {
 			return "filters must be a structured object containing at least one condition in all or any; null is not supported.";
 		}
@@ -187,6 +198,53 @@ public sealed class ODataReadTool(
 			string? conditionError = ValidateCondition(path, condition);
 			if (conditionError is not null) {
 				return conditionError;
+			}
+		}
+		return null;
+	}
+
+	/// <summary>
+	/// Applies the filter-field rule to <c>select</c> and <c>expand</c>: every element must be a plain
+	/// OData member path.
+	/// </summary>
+	/// <remarks>
+	/// These were the only caller-supplied names that reached the query string unchecked, and since
+	/// GH-1407 they are also echoed back in an invalid-query failure. Rejecting them here means one rule
+	/// covers every name the tool names back, and an embedded query option or grammar fragment fails
+	/// locally - with error-code argument - instead of being pasted into a URL for the server to reject
+	/// with a message the caller is not allowed to read.
+	/// </remarks>
+	private static string? ValidateMemberList(string argumentName, IReadOnlyList<string>? members) {
+		if (members is null) {
+			return null;
+		}
+		for (int index = 0; index < members.Count; index++) {
+			if (!ODataKeyFormatter.IsValidMemberPath(members[index])) {
+				return $"{argumentName}[{index}] must be an OData member path containing only letters, digits, "
+					+ "underscores, and '/' separators; nested query options are not supported.";
+			}
+		}
+		return null;
+	}
+
+	/// <summary>Accepted sort directions in an <c>order-by</c> clause.</summary>
+	private static readonly HashSet<string> SortDirections = new(StringComparer.OrdinalIgnoreCase) { "asc", "desc" };
+
+	/// <summary>
+	/// Validates <c>order-by</c> as a comma-separated list of <c>&lt;member path&gt; [asc|desc]</c>.
+	/// </summary>
+	private static string? ValidateOrderBy(string? orderBy) {
+		if (string.IsNullOrWhiteSpace(orderBy)) {
+			return null;
+		}
+		foreach (string clause in orderBy.Split(',')) {
+			string[] parts = clause.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+			bool isWellFormed = parts.Length is 1 or 2
+				&& ODataKeyFormatter.IsValidMemberPath(parts[0])
+				&& (parts.Length == 1 || SortDirections.Contains(parts[1]));
+			if (!isWellFormed) {
+				return "order-by must be a comma-separated list of '<field> [asc|desc]' clauses, where each "
+					+ "field is an OData member path containing only letters, digits, underscores, and '/' separators.";
 			}
 		}
 		return null;
@@ -560,8 +618,13 @@ public sealed class ODataReadTool(
 	/// safe for the same reason it is useful - they are the caller's own text going back to the caller.
 	/// </remarks>
 	private static string? DescribeCallerQuery(ODataReadArgs args, ODataErrorKind kind) {
-		if (kind == ODataErrorKind.UnregisteredEntity) {
-			//The entity set, not the query, is what failed; listing the query members would misdirect.
+		//ONLY a classified query-shape failure earns any of this. On an unregistered entity set the query
+		//was never the problem, and on an unclassified server fault - a measured
+		//{"Message":"An error has occurred.","ExceptionMessage":"Object reference ..."} body, say - the
+		//query is very probably correct: listing its members reads as an accusation, and a field that
+		//"looks like" a lookup column may be an ordinary persisted column (TaxId, ExternalId) the caller
+		//would then rewrite as Tax/Id over a failure that had nothing to do with it.
+		if (kind != ODataErrorKind.InvalidQuery) {
 			return null;
 		}
 		IReadOnlyList<string> filterFields = CollectFilterFields(args);
@@ -596,9 +659,11 @@ public sealed class ODataReadTool(
 	/// </summary>
 	private static string? BuildLookupColumnHint(IReadOnlyList<string> filterFields) {
 		List<string> suspects = filterFields
+			//IsIdish, not a bare EndsWith("Id"): the suffix has to sit on a word boundary, or Paid, Void
+			//and Grid each earn a hint telling the caller to filter on "Pa/Id". The length test excludes
+			//the primary key itself, which is not a lookup - "Id" is not LONGER than "Id".
 			.Where(field => field.Length > IdSuffix.Length
-				&& field.EndsWith(IdSuffix, StringComparison.Ordinal)
-				&& !string.Equals(field, IdSuffix, StringComparison.Ordinal)
+				&& ODataKeyFormatter.IsIdish(field)
 				//A path that already traverses a navigation property is the correct shape already.
 				&& field.IndexOf('/', StringComparison.Ordinal) < 0)
 			.Distinct(StringComparer.Ordinal)
@@ -612,8 +677,6 @@ public sealed class ODataReadTool(
 			+ " like a lookup column; OData exposes lookups as navigation paths, so filter on the "
 			+ $"navigation path instead: {rewrites}.";
 	}
-
-	private const string IdSuffix = "Id";
 
 	/// <summary>Collects the field names of every condition the caller supplied, in request order.</summary>
 	private static IReadOnlyList<string> CollectFilterFields(ODataReadArgs args) {

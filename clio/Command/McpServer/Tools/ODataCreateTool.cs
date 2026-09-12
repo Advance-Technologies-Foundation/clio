@@ -52,7 +52,8 @@ public sealed class ODataCreateTool(
 		"re-sending such a row DUPLICATES it. On null, read the entity back and re-send only if absent — the " +
 		"row's 'retry-guidance' says so too, and the batch's 'unverified' count is how many rows are in that " +
 		"state. " +
-		"Every response - success or failure - carries a correlation-id. " +
+		"A response this tool returns - success or failure - carries a correlation-id, which matches this call to clio's own log lines; " +
+		"an exception that escapes the batch is answered by the MCP error envelope instead and carries none. " +
 		"Call get-tool-contract for odata-create to see usage examples and discovery workflow hints.")]
 	public ODataCreateBatchResponse Create(
 		[Description("Parameters: entity, rows, environment-name (all required); stop-on-error (optional).")]

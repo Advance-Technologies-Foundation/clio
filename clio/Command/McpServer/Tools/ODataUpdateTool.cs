@@ -49,7 +49,7 @@ public sealed class ODataUpdateTool(
 		"re-read important values with odata-read after a critical write. " +
 		"This tool never performs a keyless mass update. " +
 		"This is a destructive operation: it requires confirm=true to proceed. " +
-		"Every response - success or failure - carries a correlation-id. " +
+		McpToolDescriptions.CorrelationIdOnEveryResponse +
 		"Use odata-read to find the record by its fields and obtain its Id. " +
 		"Call get-tool-contract for odata-update to see usage examples and discovery workflow hints.")]
 	public ODataWriteResponse Update(

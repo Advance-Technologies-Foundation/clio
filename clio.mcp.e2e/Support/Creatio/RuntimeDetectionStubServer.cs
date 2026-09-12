@@ -457,6 +457,8 @@ http.createServer((request, response) => {
       // .NET Framework stand. A raw foreign-key column hides the cause two levels down under
       // innererror/internalexception and puts "An error has occurred." in the headline; an unknown
       // property names itself in the headline. Both are served with HTTP 200.
+      // The literals are the two fixture filters in ODataReadRoutingErrorE2ETests: the raw foreign-key
+      // column SysSettingsId, and the unknown property 'Nope'. Change them together with that fixture.
       if (url.indexOf("SysSettingsId") >= 0) {
         sendJson(response, 200, {
           error: {

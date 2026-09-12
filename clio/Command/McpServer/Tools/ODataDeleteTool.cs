@@ -30,7 +30,7 @@ public sealed class ODataDeleteTool(
 		"Delete a single Creatio record via OData v4 (DELETE). " +
 		"Requires the record's GUID id; this tool never performs a keyless mass delete. " +
 		"This is a destructive operation: it requires confirm=true to proceed. " +
-		"Every response - success or failure - carries a correlation-id. " +
+		McpToolDescriptions.CorrelationIdOnEveryResponse +
 		"Use odata-read to find the record by its fields and obtain its Id. " +
 		"Call get-tool-contract for odata-delete to see usage examples and discovery workflow hints.")]
 	public ODataWriteResponse Delete(

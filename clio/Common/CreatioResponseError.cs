@@ -148,15 +148,19 @@ internal static class CreatioResponseError {
 			"Creatio reported an error for this OData read. The server's own wording is not reproduced "
 			+ "here, because a service or proxy response is not trusted text in an MCP transcript; check "
 			+ "the environment's own logs for the server-side cause, then verify the entity name, the "
-			+ "filter and the credentials.";
+			+ "filter and the credentials. The correlation-id on this response matches it to clio's own "
+			+ "log lines.";
 		//The invalid-query family is worth its own sentence: the request shape is at fault, so the caller
 		//must change the query rather than retry it or go looking in the environment's logs.
 		const string invalidQueryClassification =
 			"Creatio rejected this OData query as invalid: a property, a column or a query option in the "
 			+ "request could not be resolved. The server's own wording is not reproduced here, because a "
-			+ "service or proxy response is not trusted text in an MCP transcript (the correlation-id on "
-			+ "this response appears on the debug line carrying the server detail). Retrying the same "
-			+ "query cannot succeed - correct the field, select, expand or order-by names first.";
+			+ "service or proxy response is not trusted text in an MCP transcript; the correlation-id on "
+			+ "this response matches it to clio's own log lines. If the member was added moments ago, "
+			+ "wait for the OData rebuild and retry ONCE before changing anything - the same rejection is "
+			+ "how a column or entity that exists but is not published yet reports itself, and editing "
+			+ "the schema again in response makes it worse. Otherwise the query is at fault: correct the "
+			+ "field, select, expand or order-by names, because an unchanged retry cannot succeed.";
 		string classification = kind == ODataErrorKind.InvalidQuery
 			? invalidQueryClassification
 			: genericClassification;
@@ -200,11 +204,20 @@ internal static class CreatioResponseError {
 		return true;
 	}
 
-	/// <summary>Nested error members Creatio uses to carry the cause of an OData failure.</summary>
-	private static readonly string[] InnerErrorMemberNames = ["innererror", "InnerError", "internalexception", "InternalException"];
+	/// <summary>
+	/// Nested error members Creatio uses to carry the cause of an OData failure, in the exact casing the
+	/// observed bodies use - <see cref="JsonElement.TryGetProperty(string, out JsonElement)"/> is
+	/// case-sensitive, and a PascalCase spelling nobody has measured would be dead code that still reads
+	/// as coverage.
+	/// </summary>
+	private static readonly string[] InnerErrorMemberNames = ["innererror", "internalexception"];
 
-	/// <summary>How far the innererror chain is walked; the observed chains are two levels deep.</summary>
-	private const int MaxInnerErrorDepth = 6;
+	/// <summary>
+	/// How far the innererror chain is walked. The deepest chain measured on a real stand is two levels
+	/// (<c>error.innererror.internalexception</c>); one spare level absorbs a build that adds a wrapper,
+	/// and the bound is what stops a crafted body from costing an unbounded walk.
+	/// </summary>
+	private const int MaxInnerErrorDepth = 3;
 
 	/// <summary>
 	/// Joins the detected headline with every nested <c>message</c> under the OData <c>error</c> object.
@@ -215,10 +228,8 @@ internal static class CreatioResponseError {
 	/// <c>error</c>, <c>cause</c> or any other field a caller reads by default.
 	/// </remarks>
 	private static string CollectServerDetail(JsonElement root, string detected) {
-		List<string> parts = [];
-		if (!string.IsNullOrWhiteSpace(detected)) {
-			parts.Add(detected);
-		}
+		//TryDetect returned true, so `detected` is one of the composed non-empty messages.
+		List<string> parts = [detected];
 		if (root.ValueKind == JsonValueKind.Object
 			&& root.TryGetProperty("error", out JsonElement error)
 			&& error.ValueKind == JsonValueKind.Object) {
@@ -247,31 +258,24 @@ internal static class CreatioResponseError {
 	/// Wordings that identify the OData "query not valid" family. Matching is on the SERVER text, but
 	/// only a boolean leaves this class - no fragment of the text is returned to a caller.
 	/// </summary>
+	/// <remarks>
+	/// Deliberately only the wordings MEASURED on a real stand. A looser second rule was tried and
+	/// removed: "the text names a query option AND contains a failure word" claims any server message
+	/// that merely echoes the request URI - an expired-session body carrying
+	/// <c>...?$filter=...</c> and the word "invalid" became <c>invalid-query</c>, which tells the agent
+	/// to go and correct field names that were never wrong. A missed classification degrades to
+	/// <c>server-reported-error</c>, which is the honest answer; a wrong one sends the agent to edit a
+	/// correct query, or worse, the schema.
+	/// </remarks>
 	private static readonly string[] InvalidQuerySignals = [
 		"The query specified in the URI is not valid",
 		"Could not find a property named",
-		"not found in schema",
-		"Syntax error at position"
+		"not found in schema"
 	];
 
-	/// <summary>Query options whose name in a failure text points at a query-shape problem.</summary>
-	private static readonly string[] QueryOptionNames = ["$filter", "$orderby", "$select", "$expand"];
-
-	/// <summary>Wordings that turn a query-option mention into a parse/validation failure.</summary>
-	private static readonly string[] QueryOptionFailureWordings = ["not supported", "invalid", "syntax error", "cannot be", "not valid"];
-
-	private static bool LooksLikeInvalidQuery(string detail) {
-		if (string.IsNullOrWhiteSpace(detail)) {
-			return false;
-		}
-		if (InvalidQuerySignals.Any(signal => detail.Contains(signal, StringComparison.OrdinalIgnoreCase))) {
-			return true;
-		}
-		//A query option named in the text is only a query-shape signal together with a failure wording:
-		//an unrelated server fault can echo the request URI, query options and all.
-		return QueryOptionNames.Any(option => detail.Contains(option, StringComparison.OrdinalIgnoreCase))
-			&& QueryOptionFailureWordings.Any(wording => detail.Contains(wording, StringComparison.OrdinalIgnoreCase));
-	}
+	private static bool LooksLikeInvalidQuery(string detail) =>
+		!string.IsNullOrWhiteSpace(detail)
+		&& InvalidQuerySignals.Any(signal => detail.Contains(signal, StringComparison.OrdinalIgnoreCase));
 
 	/// <summary>
 	/// The fixed diagnostic for a read whose response body was absent altogether.

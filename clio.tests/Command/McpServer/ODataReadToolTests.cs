@@ -1660,4 +1660,63 @@ public sealed class ODataReadToolTests {
 		response.ErrorCode.Should().Be("incomplete-response",
 			because: "the server reported no error here - the payload simply lacked a member the request asked for, and conflating the two sends the caller to the environment's logs for nothing");
 	}
+	[TestCase("select", TestName = "Read_Should_Reject_A_Select_Member_That_Is_Not_A_Member_Path")]
+	[TestCase("expand", TestName = "Read_Should_Reject_An_Expand_Member_That_Is_Not_A_Member_Path")]
+	[TestCase("order-by", TestName = "Read_Should_Reject_An_OrderBy_Clause_That_Is_Not_A_Member_Path")]
+	[Category("Unit")]
+	[Description("select, expand and order-by are held to the same member-path rule as filter fields, so a grammar fragment fails locally instead of reaching the query string.")]
+	public void Read_Should_Validate_The_Projection_Arguments(string argument) {
+		// Arrange
+		ODataReadTool tool = BuildToolReturning("{}", out IApplicationClient applicationClient);
+		ODataReadArgs args = argument switch {
+			"select" => new ODataReadArgs { EnvironmentName = "dev", Entity = "Contact", Select = ["Id", "Name eq 'x'"] },
+			"expand" => new ODataReadArgs { EnvironmentName = "dev", Entity = "Contact", Expand = ["Account($select=Id)"] },
+			_ => new ODataReadArgs { EnvironmentName = "dev", Entity = "Contact", OrderBy = "Name sideways" }
+		};
+
+		// Act
+		ODataReadResponse response = tool.Read(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: $"'{argument}' reached the query string unchecked, and since GH-1407 its contents are also echoed back to the caller");
+		response.ErrorCode.Should().Be("argument",
+			because: "the request was refused locally, which a caller must be able to tell apart from a server-side refusal");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "a malformed member path must never be pasted into a URL for the server to reject");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An unclassified server fault names none of the caller's query members and offers no lookup hint, because the query is probably not what failed.")]
+	public void Read_Should_Not_Describe_The_Caller_Query_On_An_Unclassified_Server_Error() {
+		// Arrange
+		ODataReadTool tool = BuildToolReturning("{\"Code\":-1,\"Exception\":\"boom\"}", out IApplicationClient _);
+
+		// Act
+		ODataReadResponse response = tool.Read(FilteredOn("AccountId", "Contact"));
+
+		// Assert
+		response.ErrorCode.Should().Be("server-reported-error",
+			because: "nothing in this body identifies a query-shape problem, and guessing one would be worse than saying so");
+		response.Error.Should().NotContain("looks like a lookup column",
+			because: "AccountId may be exactly the right filter here - a hint over an unrelated server fault sends the caller to rewrite a correct query");
+		response.Error.Should().NotContain("Names this request sent",
+			because: "listing the caller's own members over a failure the query did not cause reads as an accusation and starts a hunt in the wrong place");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A filter field whose name merely ends in the letters 'id' is not treated as a lookup column.")]
+	public void Read_Should_Not_Treat_A_Word_Ending_In_Id_As_A_Lookup_Column() {
+		// Arrange
+		ODataReadTool tool = BuildToolReturning(UnknownPropertyBody, out IApplicationClient _);
+
+		// Act
+		ODataReadResponse response = tool.Read(FilteredOn("Paid", "Invoice"));
+
+		// Assert
+		response.Error.Should().NotContain("Pa/Id",
+			because: "the Id suffix has to sit on a word boundary, or Paid, Void and Grid each earn a hint pointing at a navigation property that does not exist");
+	}
 }
