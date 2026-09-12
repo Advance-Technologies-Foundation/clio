@@ -200,15 +200,60 @@ automatically from the baseline that a previous `get-page` stores in
 `.clio-pages/{schema-name}/meta.json` (matching environment required) — so AI-agent CLI
 flows that read a page with `get-page` and then save it with `update-page` are protected
 without extra flags. `--expected-checksum` overrides the on-disk baseline when passed
-explicitly. After a successful save the on-disk baseline is refreshed automatically, so
-consecutive updates in the same session do not false-conflict. A small race window
-between the check and the save remains (last write wins).
+explicitly. Over MCP the same baseline is supplied as the `checksum` argument — pass the
+`editable.checksum` that `get-page` returned for the body you edited. Doing so makes the
+comparison run against what you actually fetched, instead of against a `.clio-pages`
+baseline that may be stale or anchored to a different directory and would then report a
+conflict that never happened. After a successful save with an armed baseline the on-disk
+baseline is refreshed automatically, so consecutive updates in the same session do not
+false-conflict. A small race window between the check and the save remains (last write
+wins). A save redirected with `--target-package-uid` / `--target-schema-uid` is the
+exception on both counts: nothing is armed from `.clio-pages` and nothing is written back
+to it (see below).
 
 If you pass `--expected-checksum` while an on-disk baseline is also present, the explicit
-value wins and the auto-armed baseline is ignored — so supplying a stale checksum by hand
-can report a conflict against a page that has not actually changed. This edge fails safe
-(it blocks the save rather than overwriting), but if you mix the two, keep
-`--expected-checksum` current or omit it and let the on-disk baseline drive the check.
+value wins the CHECKSUM comparison and the auto-armed baseline's checksum is ignored — so
+supplying a stale checksum by hand can report a conflict against a page that has not
+actually changed. This edge fails safe (it blocks the save rather than overwriting), but if
+you mix the two, keep `--expected-checksum` current or omit it and let the on-disk baseline
+drive the check. On a pinned save neither of the on-disk baseline's identity fields is
+armed. The *schema UId* is not, because the checksum comparison already runs against the
+schema the save resolved to: a pin that matches means the caller read exactly that content,
+so a stale on-disk UId must not veto it. A genuine identity change is still refused — its
+checksum differs, and the conflict comes back as `checksum-mismatch` rather than
+`schema-uid-mismatch`. The *schema-absent* marker is not armed either, because a pinned
+checksum asserts that an editable schema existed, and a stale `editableSchemaExists: false`
+would otherwise veto a pin that matches the server exactly. `schema-deleted-externally`
+still fires on a pinned, non-redirected save: there the resolution says a replacing schema
+must be CREATED while the caller pinned a checksum for an existing one. The unpinned path is
+unchanged — checksum, schema UId and absent marker are all armed from disk.
+
+Two scope limits worth knowing before you rely on the pin:
+
+- **`sync-pages` does not accept a checksum** — a standing scope limit of this change, not a
+  defect on this page. It is the canonical page write path and `update-page` is documented as the
+  fallback, but `PageSyncPageInput` has no `checksum` member, so every `sync-pages` write
+  compares against the `.clio-pages` baseline and has `--force` as its only escape. The
+  remedy on this page is `update-page`-only.
+- **A redirected save is not conflict-checked at all.** When `update-page` is called with
+  `--target-package-uid` or `--target-schema-uid`, the write goes to a schema other than the
+  automatically resolved editable one, while both baseline sources describe that resolved
+  schema: `get-page` has no target arguments, so the `.clio-pages` baseline — and any
+  `checksum` copied out of a `get-page` response — is about the schema clio would have
+  written without the redirect. The guard therefore reads no baseline, arms nothing, and
+  discards a pinned checksum if one was passed; the response carries a warning that
+  external-modification detection did not run for this save, and the save proceeds
+  unchecked. It is a warning and not `conflict: true`, so there is no "re-run get-page and
+  retry" loop and no reason to reach for `--force`. Because nothing is armed, the post-save
+  refresh leaves `meta.json` alone as well: writing the redirected schema's UId and checksum
+  into a baseline keyed by schema name corrupted the non-redirected schema's baseline and
+  produced a false `schema-uid-mismatch` on the next ordinary save.
+
+A `checksum-mismatch` response returns the server's current value as
+`conflictDetails.actualChecksum`. Re-sending that value as `--expected-checksum` /
+`checksum` is **not** a resolution — it silently discards the out-of-band change exactly
+like `--force`, and needs the same explicit confirmation from the user. Re-run `get-page`
+and re-apply your edit on the fresh body instead.
 
 ## Write modes
 
@@ -319,6 +364,18 @@ checksum differs
 
 --force                            Skip the external-modification check and
 deliberately overwrite out-of-band changes
+
+--target-package-uid               Explicit target package UId for the replacing
+schema (overrides automatic design-package
+resolution). A redirected save runs without
+external-modification detection — the baseline
+describes the automatically resolved schema, not
+the target — and the response says so in its
+warnings
+
+--target-schema-uid                Explicit schema UId to save into (bypasses
+hierarchy resolution). Same effect on conflict
+detection as --target-package-uid
 
 --uri                    -u       Application uri
 

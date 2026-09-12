@@ -47,7 +47,9 @@ internal sealed class EntitySchemaCaptionCultureResolver : IEntitySchemaCaptionC
 		if (!string.IsNullOrWhiteSpace(captionCultureOverride)) {
 			string overrideCulture = captionCultureOverride.Trim();
 			try {
-				return CultureInfo.GetCultureInfo(overrideCulture).Name;
+				// predefinedOnly: true - the single-argument overload manufactures a fallback culture for a
+				// well-formed but invented tag on ICU, so 'xx-YY' would be accepted and written.
+				return CultureInfo.GetCultureInfo(overrideCulture, predefinedOnly: true).Name;
 			} catch (CultureNotFoundException) {
 				throw new EntitySchemaDesignerException(
 					$"--caption-culture '{overrideCulture}' is not a valid culture name (e.g. en-US, uk-UA).");

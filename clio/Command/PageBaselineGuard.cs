@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
@@ -25,14 +27,27 @@ public interface IPageBaselineGuard {
 	/// <param name="options">The pending write request. Mutated in place when a baseline is armed.</param>
 	/// <param name="outputDirectory">Optional anchor override (MCP <c>output-directory</c>); <c>null</c> for the CLI.</param>
 	/// <returns>
-	/// The resolved <c>meta.json</c> path (may be <c>null</c> when resolution itself failed), whether
-	/// the check is armed, and a diagnostic <c>Warning</c> the caller must surface on its response
+	/// The resolved <c>meta.json</c> path (may be <c>null</c> when resolution itself failed),
+	/// <c>RefreshBaseline</c> — whether the on-disk baseline must be moved forward AFTER a successful save,
+	/// which is NOT the same question as whether the conflict check runs (it runs whenever
+	/// <see cref="PageUpdateOptions.ExpectedChecksum"/> is set, pinned or armed) — and a diagnostic
+	/// <c>Warning</c> the caller must surface on its response
 	/// envelope (<c>null</c> on the normal path). When a caller already pinned
 	/// <see cref="PageUpdateOptions.ExpectedChecksum"/>
-	/// explicitly (CLI <c>--expected-checksum</c>), that manual checksum wins the comparison and is left
-	/// untouched — but if a matching on-disk baseline exists, the method still reports armed so the
+	/// explicitly (CLI <c>--expected-checksum</c> or MCP <c>checksum</c>), that manual checksum wins the
+	/// comparison and is left untouched, and NEITHER the baseline's schema UId nor its schema-absent marker
+	/// is armed from disk — the comparison already runs against the resolved target schema, so a matching
+	/// pin proves the caller read that schema and a stale on-disk identity must not veto it — but if a
+	/// matching on-disk baseline exists, <c>RefreshBaseline</c> is still <see langword="true"/> so the
 	/// post-save refresh moves that baseline forward to the new checksum, instead of leaving it pinned at
 	/// the overwritten value (which would raise a false conflict on the next unpinned save).
+	/// When <see cref="PageUpdateOptions.TargetPackageUId"/> or <see cref="PageUpdateOptions.TargetSchemaUId"/>
+	/// redirects the write, nothing on disk describes the schema being written, so no baseline is read and
+	/// the disk-derived identity halves are cleared. A <c>--target-schema-uid</c> redirect KEEPS a
+	/// caller-supplied checksum — it names the target outright, so the pin describes exactly the schema the
+	/// write lands on — while a <c>--target-package-uid</c> redirect clears it, because the hierarchy
+	/// resolver may land on a different or newly created replacing schema. Either way the method reports
+	/// <c>RefreshBaseline: false</c> with a warning.
 	/// <para>
 	/// The warning exists because "no check" is a legitimate outcome AND a failure mode, and the two used
 	/// to be indistinguishable. A missing baseline stays silent; an unreadable one, or an anchor that
@@ -40,7 +55,7 @@ public interface IPageBaselineGuard {
 	/// and never an exception: a discovery failure must not fail a write the caller is entitled to make.
 	/// </para>
 	/// </returns>
-	(string MetaFilePath, bool Armed, string Warning) TryArm(PageUpdateOptions options, string outputDirectory);
+	(string MetaFilePath, bool RefreshBaseline, string Warning) TryArm(PageUpdateOptions options, string outputDirectory);
 
 	/// <summary>
 	/// After a successful, non-dry-run save with an armed baseline: persists the fresh post-save
@@ -62,6 +77,16 @@ public interface IPageBaselineGuard {
 /// <inheritdoc />
 public sealed class PageBaselineGuard : IPageBaselineGuard {
 
+	/// <summary>
+	/// Single source of truth for the advice appended to every uncorroborated / divergent pinned-checksum
+	/// warning. The three exits that emit it carried a character-for-character copy each, and the tests
+	/// assert on it with <c>Contain(...)</c> against a space-joined string - so rewording one copy would
+	/// have gone unnoticed.
+	/// </summary>
+	internal const string PinnedChecksumMergeAdvice =
+		"If it was copied out of a conflict response rather than from a fresh get-page, this save "
+		+ "overwrites the change that caused the conflict - re-read the page and merge before saving.";
+
 	private readonly IFileSystem _fileSystem;
 	private readonly IInterprocessFileGate _fileGate;
 
@@ -81,11 +106,36 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 	}
 
 	/// <inheritdoc />
-	public (string MetaFilePath, bool Armed, string Warning) TryArm(PageUpdateOptions options, string outputDirectory) {
-		// A caller-pinned --expected-checksum (CLI) is honored verbatim: it wins the comparison and is
-		// never overwritten from disk. For MCP callers ExpectedChecksum is always null here, so the
-		// on-disk baseline drives the check exactly as before.
+	public (string MetaFilePath, bool RefreshBaseline, string Warning) TryArm(PageUpdateOptions options, string outputDirectory) {
+		// A caller-pinned checksum (CLI --expected-checksum, MCP `checksum`) is honored verbatim: it wins
+		// the comparison and is never overwritten from disk. The schema-absent marker is still armed from
+		// the on-disk baseline on the unpinned path only, and the baseline's schema UId likewise - see the
+		// arming block below for why a pin makes the disk-derived UId the weaker witness (issue #1320).
+		// Normalize the pin ONCE, here, at the choke point every caller reaches - not at an individual
+		// mapper. The arming predicate below is whitespace-tolerant (IsNullOrWhiteSpace) while the
+		// comparison downstream is a strict Ordinal one (PageUpdateOptions.cs:437), so a padded value arms
+		// the check and then fails it, reporting a ChecksumMismatch that never happened. The MCP mapper
+		// trims its own argument, but the CLI `--expected-checksum` is bound verbatim by CommandLineParser
+		// and is never trimmed, so a value passed with a trailing newline - the natural shape when it is
+		// piped from a file or from a shell substitution that keeps it - produced exactly the false
+		// conflict this change set exists to remove. Whitespace-only collapses
+		// to null so it stays equivalent to "not supplied" rather than arming the guard with nothing to
+		// compare.
+		options.ExpectedChecksum = string.IsNullOrWhiteSpace(options.ExpectedChecksum)
+			? null
+			: options.ExpectedChecksum.Trim();
 		bool callerPinnedChecksum = !string.IsNullOrWhiteSpace(options.ExpectedChecksum);
+		// A REDIRECT makes the baseline inapplicable, so nothing here is armed and nothing is even read.
+		// The baseline is keyed by schema name alone and `get-page` has no redirect option, so both the
+		// on-disk baseline and any checksum copied out of a get-page response describe the schema the
+		// hierarchy resolver picks automatically - never the one --target-package-uid/--target-schema-uid
+		// sends the write to. Arming from it produced a false schema-uid-mismatch or
+		// schema-deleted-externally, and reporting armed let RefreshOrDrop stamp the REDIRECTED schema's
+		// identity into the schema-name-keyed baseline, so the next ordinary save was refused too.
+		if (!string.IsNullOrWhiteSpace(options.TargetPackageUId)
+			|| !string.IsNullOrWhiteSpace(options.TargetSchemaUId)) {
+			return ArmForRedirectedWrite(options, callerPinnedChecksum);
+		}
 		string metaFilePath;
 		string resolveWarning;
 		try {
@@ -104,30 +154,178 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 					out resolveWarning);
 			}
 		} catch (Exception ex) {
-			// A malformed anchor/body-file path must not break the write — degrade to no check, but say so:
-			// silently skipping the check is exactly the invisible failure AC-02 removes.
-			return (null, false,
-				$"External-modification detection is DISARMED for '{options.SchemaName}': the .clio-pages baseline "
-				+ $"location could not be resolved ({ex.Message}).");
+			// A malformed anchor/body-file path must not break the write — degrade to no LOCAL check, but say
+			// so: silently skipping the check is exactly the invisible failure AC-02 removes. "DISARMED" is
+			// only true when nothing governs the comparison. On a pinned save it is affirmatively FALSE:
+			// TryCheckForExternalModification gates on ExpectedChecksum alone and never consults the returned flag, so
+			// detection runs, driven entirely by a client-supplied baseline that nothing local can
+			// corroborate. Telling the caller it is off would be the more dangerous of the two errors.
+			// REDACTED: this reaches the MCP response and usually a third-party model, and the message of a
+			// path-resolution failure routinely carries an absolute path including the user name. The same
+			// redactor is applied to the sibling persisted-resource-key warning in this change set.
+			string failureDetail = SensitiveErrorTextRedactor.Redact(ex.Message);
+			return (null, false, callerPinnedChecksum
+				? $"The checksum pinned for '{options.SchemaName}' governs this save but could not be corroborated "
+					+ $"locally: the .clio-pages baseline location could not be resolved ({failureDetail}). "
+					+ PinnedChecksumMergeAdvice
+				: $"External-modification detection is DISARMED for '{options.SchemaName}': the .clio-pages "
+					+ $"baseline location could not be resolved ({failureDetail}).");
 		}
 		PageBaselineInfo baseline = PageBaselineStore.TryReadBaseline(
 			_fileSystem, _fileGate, metaFilePath, out string readWarning);
-		string warning = readWarning ?? resolveWarning;
+		// ACCUMULATE, never `??=` into one slot. The discovery warnings and the pinned-save trace describe
+		// DIFFERENT facts and co-occur on exactly the path where the pin is least trustworthy:
+		// TryReadBaseline sets readWarning only when .clio-pages/meta.json exists but cannot be read or
+		// deserialized, and on that path it also returns a null baseline - so a single slot filled by the
+		// corrupt-meta warning silently swallowed the trace saying an uncorroborated pin is driving the
+		// save. ResolveMetaFilePath's malformed-body-file warning collided the same way.
+		List<string> warnings = new();
+		AddWarning(warnings, readWarning);
+		// The resolve warning embeds the raw body-file path, so it is redacted for the same reason as the
+		// failure detail above: it travels to the MCP caller verbatim.
+		AddWarning(warnings, SensitiveErrorTextRedactor.Redact(resolveWarning));
 		if (baseline is null || !PageBaselineStore.MatchesEnvironment(baseline, options.Environment, options.Uri)) {
-			return (metaFilePath, false, warning);
+			if (callerPinnedChecksum) {
+				// The pin still GOVERNS the save on this path: TryCheckForExternalModification gates on
+				// ExpectedChecksum alone and never consults the returned flag. So a pinned overwrite used to reach the
+				// server with no trace at all whenever no local baseline matched - and the two commonest
+				// causes are documented-normal, not exotic: an explicit output-directory anchor, and an
+				// --uri/--login invocation that cannot satisfy MatchesEnvironment. "Uncorroborated" is a
+				// weaker statement than "divergent", so the wording differs from the block below, but
+				// staying silent is exactly the invisible bypass this guard exists to expose.
+				AddWarning(warnings,
+					$"The checksum pinned for '{options.SchemaName}' governs this save but could not be "
+					+ "corroborated locally: no .clio-pages baseline was found for this anchor and environment. "
+					+ PinnedChecksumMergeAdvice);
+			}
+			return (metaFilePath, false, JoinWarnings(warnings));
 		}
+		// The schema-identity half of the baseline is armed on the UNPINNED path only. A caller-pinned
+		// checksum asserts "an editable schema existed and had this checksum", so a stale on-disk
+		// `editableSchemaExists: false` must not veto it - arming it there produced a false
+		// schema-created-externally on a save whose pin matched the server, and, when the schema had since
+		// been deleted, skipped the checksum comparison altogether (IsCreateReplacing short-circuits before
+		// it). The disk-derived schema UId is the weaker witness for the same reason: the comparison runs
+		// against the checksum of the RESOLVED target schema, so a matching pin already proves the caller
+		// read exactly that schema, while a stale on-disk UId would refuse it as schema-uid-mismatch. A
+		// genuine identity change is still refused - the content differs, so the checksum comparison
+		// reports checksum-mismatch instead (issue #1320).
+		options.ExpectedSchemaAbsent = !baseline.EditableSchemaExists && !callerPinnedChecksum;
 		if (callerPinnedChecksum) {
-			// Explicit checksum wins the comparison, so we do NOT arm the check from disk. But the matching
-			// on-disk baseline must still move forward after the save: report armed (without touching
-			// options.ExpectedChecksum) so RefreshOrDrop persists the post-save checksum. Otherwise the next
-			// unpinned save auto-arms from a now-superseded checksum and raises a false conflict.
-			return (metaFilePath, true, warning);
+			// The explicit checksum wins the comparison, so it is left untouched. The matching on-disk
+			// baseline must still move forward after the save: report armed so RefreshOrDrop persists the
+			// post-save checksum. Otherwise the next unpinned save auto-arms from a now-superseded
+			// checksum and raises a false conflict.
+			AppendPinnedBaselineDivergenceWarnings(warnings, options, baseline);
+			return (metaFilePath, true, JoinWarnings(warnings));
 		}
 		options.ExpectedChecksum = baseline.Checksum;
 		options.ExpectedSchemaUId = baseline.EditableSchemaUId;
-		options.ExpectedSchemaAbsent = !baseline.EditableSchemaExists;
-		return (metaFilePath, true, warning);
+		return (metaFilePath, true, JoinWarnings(warnings));
 	}
+
+	/// <summary>
+	/// Records the machine-readable trace for a pinned save whose pin disagrees with the baseline clio
+	/// last recorded for this page, and — on that same path only — the fact that the schema-identity half
+	/// is not armed.
+	/// </summary>
+	/// <remarks>
+	/// The bypass this guards against is: a save is refused, the caller copies actualChecksum out of
+	/// conflictDetails, resubmits the SAME body with the new pin, and the guard passes - the other
+	/// author's edit is gone, the response says success:true / conflict:false, and RefreshOrDrop then
+	/// rewrites meta.json to the post-save checksum, erasing the only local record that the pin ever
+	/// diverged. Without this, a caller that took the bypass and a caller that made a legitimate
+	/// up-to-date save are byte-identical on the wire. Guidance prose is not enough for something only a
+	/// machine reads.
+	/// <para>
+	/// The schema UId is deliberately not armed from disk - a stale on-disk UId refused saves whose pin
+	/// matched the server, which is the false positive this change set removes - but SysSchema.Checksum is
+	/// CONTENT-derived, so two schemas carrying a verbatim-copied body share it: a matching pin proves the
+	/// caller read a schema with this content, not that it read THIS schema. While the pin agrees with the
+	/// recorded baseline the local record corroborates both halves and there is nothing to report; once it
+	/// diverges, neither half is corroborated any more, and the identity the caller can no longer see is
+	/// the one that decides which package the write lands in.
+	/// </para>
+	/// </remarks>
+	private static void AppendPinnedBaselineDivergenceWarnings(
+		List<string> warnings, PageUpdateOptions options, PageBaselineInfo baseline) {
+		bool pinDivergesFromBaseline = !string.IsNullOrWhiteSpace(baseline.Checksum)
+			&& !string.Equals(baseline.Checksum, options.ExpectedChecksum, StringComparison.Ordinal);
+		if (!pinDivergesFromBaseline) {
+			return;
+		}
+		AddWarning(warnings,
+			$"The checksum pinned for '{options.SchemaName}' differs from the baseline clio last "
+			+ "recorded for this page. " + PinnedChecksumMergeAdvice);
+		if (string.IsNullOrWhiteSpace(baseline.EditableSchemaUId)) {
+			return;
+		}
+		AddWarning(warnings,
+			$"The schema-identity check is not armed for this pinned save of '{options.SchemaName}', "
+			+ $"and clio last recorded schema {baseline.EditableSchemaUId} for this page and "
+			+ "environment. A checksum is derived from the page content, so a matching pin does not "
+			+ "by itself prove the write is landing on that same schema; pass target-schema-uid "
+			+ "when the target matters.");
+	}
+
+	/// <summary>
+	/// Arms nothing from disk for a write that <c>--target-package-uid</c> / <c>--target-schema-uid</c>
+	/// redirects, and decides whether a caller-supplied checksum survives it.
+	/// </summary>
+	private static (string MetaFilePath, bool RefreshBaseline, string Warning) ArmForRedirectedWrite(
+		PageUpdateOptions options, bool callerPinnedChecksum) {
+		// THE TWO REDIRECT KINDS ARE NOT THE SAME for a caller-supplied pin. --target-package-uid lets
+		// the hierarchy resolver land on a different - possibly newly created replacing - schema, so a
+		// checksum taken from get-page describes something else and must not govern the write.
+		// --target-schema-uid names the target outright (TryResolveContext sets EditableSchemaUId from
+		// it with IsCreateReplacing: false), so the comparison would run against exactly the schema the
+		// caller pinned. Nulling the pin there turned external-modification detection OFF on a
+		// destructive write and reported success: true / conflict: false, which is the failure this
+		// guard exists to prevent, not a case of an inapplicable baseline.
+		bool pinDescribesTheTarget = !string.IsNullOrWhiteSpace(options.TargetSchemaUId);
+		// The DISK-derived halves are dropped for both kinds - that part is the real fix: the baseline
+		// is keyed by schema name alone and get-page has no redirect option, so nothing on disk
+		// describes the redirected schema. Arming from it produced a false schema-uid-mismatch or
+		// schema-deleted-externally, and reporting armed let RefreshOrDrop stamp the REDIRECTED
+		// schema's identity into the schema-name-keyed baseline, refusing the next ordinary save too.
+		options.ExpectedSchemaUId = null;
+		options.ExpectedSchemaAbsent = false;
+		if (callerPinnedChecksum && pinDescribesTheTarget) {
+			// The pin stays and still governs the save: TryCheckForExternalModification gates on
+			// ExpectedChecksum alone. Nothing local corroborates it, which is what the trace says.
+			return (null, false,
+				$"The checksum pinned for '{options.SchemaName}' governs this save but could not be "
+				+ "corroborated locally: target-schema-uid redirects the write to a schema the "
+				+ ".clio-pages baseline does not describe, because get-page always reads the "
+				+ "automatically resolved schema and has no redirect of its own. " + PinnedChecksumMergeAdvice);
+		}
+		options.ExpectedChecksum = null;
+		return (null, false, callerPinnedChecksum
+			? $"The checksum pinned for '{options.SchemaName}' was ignored and external-modification "
+				+ "detection did not run for this save: target-package-uid redirects the write to a "
+				+ "schema that neither the .clio-pages baseline nor a checksum taken from get-page "
+				+ "describes - the hierarchy resolver may land on a different or newly created replacing "
+				+ "schema - because get-page always reads the automatically resolved schema and has no "
+				+ "redirect of its own. The write proceeds unchecked. Pass target-schema-uid instead to "
+				+ "keep the pin in force."
+			: $"External-modification detection did not run for this save of '{options.SchemaName}': "
+				+ "target-package-uid / target-schema-uid redirect the write to a schema the .clio-pages "
+				+ "baseline does not describe, because get-page always reads the automatically resolved "
+				+ "schema and has no redirect of its own. The write proceeds unchecked.");
+	}
+
+	private static void AddWarning(List<string> warnings, string warning) {
+		if (!string.IsNullOrWhiteSpace(warning)) {
+			warnings.Add(warning.Trim());
+		}
+	}
+
+	/// <summary>
+	/// Collapses the accumulated traces back into the single string the tuple contract carries. Null when
+	/// nothing was recorded, so "no warning" stays distinguishable from "an empty one".
+	/// </summary>
+	private static string JoinWarnings(List<string> warnings) =>
+		warnings.Count == 0 ? null : string.Join(" ", warnings);
 
 	/// <inheritdoc />
 	public string RefreshOrDrop(string metaFilePath, PageUpdateOptions options, PageUpdateResponse response) {

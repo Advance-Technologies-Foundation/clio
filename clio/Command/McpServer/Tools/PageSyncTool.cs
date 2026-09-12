@@ -713,7 +713,7 @@ public sealed class PageSyncTool(
 			PageSyncPageResult samplingFailure = CreateSamplingFailure(page, opOptions.SamplingReview, validationResult);
 			if (samplingFailure != null)
 				return samplingFailure;
-			(string metaFilePath, bool baselineArmed, string baselineWarning, PageUpdateOptions updateOptions) =
+			(string metaFilePath, bool refreshBaseline, string baselineWarning, PageUpdateOptions updateOptions) =
 				BuildUpdateRequest(page, opOptions);
 			if (baselineWarning != null) {
 				validationResult = AppendCommandWarnings(validationResult, [baselineWarning]);
@@ -732,7 +732,7 @@ public sealed class PageSyncTool(
 			validationResult = AppendCommandWarnings(validationResult, updateResponse.Warnings);
 			if (opOptions.Verify && opOptions.GetCommand != null)
 				return VerifySavedPage(page, opOptions, updateResponse, validationResult);
-			if (baselineArmed) {
+			if (refreshBaseline) {
 				// The save already landed on the server, so a failed refresh surfaces as a per-page warning
 				// rather than turning this page's result into a failure (ENG-95262 AC-02).
 				string refreshWarning = pageBaselineGuard.RefreshOrDrop(metaFilePath, updateOptions, updateResponse);
@@ -774,7 +774,7 @@ public sealed class PageSyncTool(
 		};
 	}
 
-	private (string MetaFilePath, bool BaselineArmed, string BaselineWarning, PageUpdateOptions UpdateOptions)
+	private (string MetaFilePath, bool RefreshBaseline, string BaselineWarning, PageUpdateOptions UpdateOptions)
 		BuildUpdateRequest(
 		PageSyncPageInput page,
 		PageSyncOperationOptions opOptions) {
@@ -792,9 +792,9 @@ public sealed class PageSyncTool(
 			Validate = opOptions.Validate,
 			NotifyDesignerPresence = false
 		};
-		(string metaFilePath, bool baselineArmed, string baselineWarning) =
+		(string metaFilePath, bool refreshBaseline, string baselineWarning) =
 			pageBaselineGuard.TryArm(updateOptions, opOptions.OutputDirectory);
-		return (metaFilePath, baselineArmed, baselineWarning, updateOptions);
+		return (metaFilePath, refreshBaseline, baselineWarning, updateOptions);
 	}
 
 	private PageSyncPageResult VerifySavedPage(

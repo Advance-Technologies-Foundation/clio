@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using CommandLine;
@@ -22,7 +23,29 @@ public class SetEntitySchemaPropertiesOptions : RemoteCommandOptions
 	/// re-check so the two layers cannot drift.
 	/// </summary>
 	internal const string NoPropertyToSetError =
-		"At least one schema property to set is required (for example --primary-display-column).";
+		"At least one schema property to set is required " +
+		"(for example --primary-display-column, --title or --title-localizations).";
+
+	/// <summary>
+	/// Single source of truth for the "--title together with --title-localizations" rejection.
+	/// The write path applies the map and IGNORES the scalar, so accepting both would report success
+	/// on a request whose caption for the effective culture was never written.
+	/// </summary>
+	internal const string TitleAndTitleLocalizationsConflictError =
+		"--title and --title-localizations are mutually exclusive. " +
+		"Supply the scalar caption for the effective caption culture, " +
+		"or list every culture you want to change in --title-localizations.";
+
+	/// <summary>
+	/// Single source of truth for the "raw --title-localizations JSON together with an already-populated
+	/// <see cref="ParsedTitleLocalizations"/>" rejection. Only ONE of the two can be normalized and
+	/// written, so accepting both dropped the raw JSON and still reported success on a published
+	/// destructive write - the same defect class as
+	/// <see cref="TitleAndTitleLocalizationsConflictError"/>, only silent.
+	/// </summary>
+	internal const string TitleLocalizationsSourceConflictError =
+		"--title-localizations was supplied both as raw JSON and as an already-parsed map. " +
+		"Supply exactly one of the two - the raw JSON would otherwise be discarded.";
 
 	// Required is enforced in ValidateOptions (not via CommandLineParser's Required=true) so the hidden
 	// --package-name / --name aliases work when used standalone — the parser enforces Required on the
@@ -48,10 +71,57 @@ public class SetEntitySchemaPropertiesOptions : RemoteCommandOptions
 	[Option("primary-display-column", Required = false,
 		HelpText = "Column name (own or inherited) to set as the primary-display column")]
 	public string? PrimaryDisplayColumn { get; set; }
+
+	/// <summary>
+	/// Gets or sets the new schema caption for a single culture. Mutually exclusive with
+	/// <see cref="TitleLocalizations"/>; supplying both is rejected by
+	/// <see cref="SetEntitySchemaPropertiesCommand.ValidateOptions"/>.
+	/// </summary>
+	[Option("title", Required = false,
+		HelpText = "New schema caption for the effective caption culture (see --caption-culture). "
+			+ "Mutually exclusive with --title-localizations")]
+	public string? Title { get; set; }
+
+	/// <summary>
+	/// Gets or sets the new schema caption per culture, as a JSON object such as
+	/// <c>{"en-US":"Mention language"}</c>. Cultures that are not listed are left untouched.
+	/// </summary>
+	[Option("title-localizations", Required = false,
+		HelpText = "New schema caption per culture as JSON, e.g. '{\"en-US\":\"Mention language\"}'. "
+			+ "Mutually exclusive with --title")]
+	public string? TitleLocalizations { get; set; }
+
+	/// <summary>
+	/// Gets or sets the culture used when only the scalar <see cref="Title"/> is supplied.
+	/// Precedence: this override, then the connected user's profile culture, then <c>en-US</c>.
+	/// </summary>
+	[Option("caption-culture", Required = false,
+		HelpText = "Culture used for a scalar --title (e.g. en-US). Precedence: this override > profile culture > en-US")]
+	public string? CaptionCulture { get; set; }
+
+	/// <summary>
+	/// Gets the parsed <see cref="TitleLocalizations"/> map, or <c>null</c> when none was supplied.
+	/// Set by the MCP tool and by <see cref="SetEntitySchemaPropertiesCommand.ValidateOptions"/>.
+	/// </summary>
+	public IReadOnlyDictionary<string, string>? ParsedTitleLocalizations { get; set; }
+
+	/// <summary>
+	/// Gets a value indicating whether any settable schema-level property was supplied.
+	/// </summary>
+	/// <remarks>
+	/// Deliberately does NOT look at the raw <see cref="TitleLocalizations"/> JSON string: the write path
+	/// acts on <see cref="ParsedTitleLocalizations"/> and <see cref="Title"/> only, so counting the
+	/// unparsed string would let this guard pass on a request the manager then saves without any change.
+	/// <see cref="SetEntitySchemaPropertiesCommand.ValidateOptions"/> populates the map before checking.
+	/// </remarks>
+	internal bool HasAnyPropertyToSet =>
+		!string.IsNullOrWhiteSpace(PrimaryDisplayColumn)
+		|| !string.IsNullOrWhiteSpace(Title)
+		|| ParsedTitleLocalizations is { Count: > 0 };
 }
 
 /// <summary>
-/// Sets schema-level properties (v1: the primary-display column) on a remote entity schema through the
+/// Sets schema-level properties (the primary-display column and the schema caption per culture) on a remote entity schema through the
 /// Entity Schema Designer save pipeline, then verifies the change was persisted.
 /// </summary>
 public class SetEntitySchemaPropertiesCommand : Command<SetEntitySchemaPropertiesOptions>
@@ -90,7 +160,33 @@ public class SetEntitySchemaPropertiesCommand : Command<SetEntitySchemaPropertie
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
 			throw new ArgumentException("schema-name is required.");
 		}
-		if (string.IsNullOrWhiteSpace(options.PrimaryDisplayColumn)) {
+		if (!string.IsNullOrWhiteSpace(options.TitleLocalizations) && options.ParsedTitleLocalizations is not null) {
+			// ParsedTitleLocalizations is a PUBLIC settable carrier, so a caller can populate it and still
+			// pass the raw JSON. Only one of the two survives normalization below, so the other one is
+			// dropped - on a published destructive write that reported success. Reject instead of guessing
+			// which of the two the caller meant.
+			throw new ArgumentException(
+				SetEntitySchemaPropertiesOptions.TitleLocalizationsSourceConflictError, nameof(options));
+		}
+		if (!string.IsNullOrWhiteSpace(options.TitleLocalizations) && options.ParsedTitleLocalizations is null) {
+			options.ParsedTitleLocalizations =
+				EntitySchemaDesignerSupport.ParseLocalizationJson(options.TitleLocalizations, "title-localizations");
+		} else if (options.ParsedTitleLocalizations is not null) {
+			// The MCP tool hands the map over already deserialized. Normalize it through the SAME entry
+			// point as the CLI's JSON string - including the culture-name check and the ENG-91044
+			// script/culture guard - so an empty culture name, an unknown culture or a caption in the
+			// wrong script is rejected up front on both surfaces instead of reaching the designer save
+			// and failing only at the readback check.
+			options.ParsedTitleLocalizations = EntitySchemaDesignerSupport.NormalizeSchemaCaptionLocalizations(
+				options.ParsedTitleLocalizations, "title-localizations");
+		}
+		if (!string.IsNullOrWhiteSpace(options.Title) && options.ParsedTitleLocalizations is { Count: > 0 }) {
+			// The write path applies the map and never the scalar, so accepting both silently dropped
+			// --title on a published destructive write and still reported success.
+			throw new ArgumentException(
+				SetEntitySchemaPropertiesOptions.TitleAndTitleLocalizationsConflictError, nameof(options));
+		}
+		if (!options.HasAnyPropertyToSet) {
 			throw new ArgumentException(SetEntitySchemaPropertiesOptions.NoPropertyToSetError, nameof(options));
 		}
 	}

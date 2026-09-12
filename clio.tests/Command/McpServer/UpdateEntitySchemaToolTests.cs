@@ -240,6 +240,53 @@ public class UpdateEntitySchemaToolTests {
 			because: "the deterministic note must only ride a successful update; emitting it on a failed mutation would steer agents into skipping a compile the failure may still require");
 	}
 
+	[Test]
+	[Description("A call with no operations (for example a caller trying to set the SCHEMA caption) reports what is missing and where the schema caption belongs, instead of the opaque \"Value cannot be null. (Parameter 'source')\" that a null Operations enumerable used to produce. Issue #1320.")]
+	[Category("Unit")]
+	public async Task UpdateEntitySchema_Should_Report_Missing_Operations_Instead_Of_Null_Source() {
+		// Arrange
+		FakeUpdateEntitySchemaCommand command = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+		UpdateEntitySchemaArgs args = BuildArgs("labLanguage", operations: null);
+
+		// Act
+		CommandExecutionResult result = await tool.UpdateEntitySchema(args);
+
+		// Assert
+		result.ExitCode.Should().Be(1,
+			because: "a call with nothing to apply cannot succeed");
+		string errorText = string.Join(" ", result.Output.Select(message => message.Value?.ToString()));
+		errorText.Should().NotContain("Parameter 'source'",
+			because: "the raw ArgumentNullException from Enumerable.Select tells the caller nothing about what is missing");
+		errorText.Should().Contain("operations",
+			because: "the message must name the argument that has to be supplied");
+		errorText.Should().Contain("set-entity-schema-properties",
+			because: "a caller reaching this tool to change a SCHEMA caption must be pointed at the tool that can do it");
+	}
+
+	[Test]
+	[Description("An empty operations array is rejected with the same guidance as a null one — both mean there is nothing to apply. Issue #1320.")]
+	[Category("Unit")]
+	public async Task UpdateEntitySchema_Should_Report_Missing_Operations_When_Array_Is_Empty() {
+		// Arrange
+		FakeUpdateEntitySchemaCommand command = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+		UpdateEntitySchemaArgs args = BuildArgs("labLanguage", []);
+
+		// Act
+		CommandExecutionResult result = await tool.UpdateEntitySchema(args);
+
+		// Assert
+		result.ExitCode.Should().Be(1,
+			because: "an empty batch has nothing to apply and must not report success");
+		string.Join(" ", result.Output.Select(message => message.Value?.ToString())).Should().Contain("operations",
+			because: "the message must name the argument that has to be supplied");
+	}
+
 	private static UpdateEntitySchemaArgs BuildArgs(string schemaName, IEnumerable<UpdateEntitySchemaOperationArgs> operations) {
 		return new UpdateEntitySchemaArgs(
 			EnvironmentName: "test-env",

@@ -66,6 +66,10 @@ EXAMPLES
     clio update-entity-schema -e dev --package Custom --schema-name UsrVehicle --operation "{\"action\":\"modify\",\"column-name\":\"UsrOwner\",\"default-value-config\":{\"source\":\"Settings\",\"value-source\":\"Maintainer\"}}"
 
 NOTES
+    - this command applies COLUMN operations only; its per-operation title-localizations
+      is a COLUMN caption. To change the SCHEMA caption use set-entity-schema-properties
+      (--title / --title-localizations)
+    - at least one operation is required; a call with none reports what is missing
     - operations are applied in order
     - a modify on an INHERITED column may override only its caption/description
       (title-localizations/description-localizations); changing its name, type, or
