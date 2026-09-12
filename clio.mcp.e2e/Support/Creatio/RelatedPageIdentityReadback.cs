@@ -23,7 +23,11 @@ internal static class RelatedPageIdentityReadback {
 				"DataService/json/SyncReply/SelectQuery", "-b", query.ToJsonString()], cancellationToken: token);
 		result.ExitCode.Should().Be(0, because: $"the independent SysSchema query must succeed: {result.StandardOutput}");
 		string output = result.StandardOutput;
-		JsonObject response = JsonNode.Parse(output[output.IndexOf('{')..(output.LastIndexOf('}') + 1)])!.AsObject();
+		int start = output.IndexOf('{');
+		int end = output.LastIndexOf('}');
+		start.Should().BeGreaterThanOrEqualTo(0, because: "the successful oracle call must include a JSON response");
+		end.Should().BeGreaterThan(start, because: "the oracle response must include a complete JSON object");
+		JsonObject response = JsonNode.Parse(output[start..(end + 1)])!.AsObject();
 		response["success"]!.GetValue<bool>().Should().BeTrue(because: "the identity oracle must be a successful persisted read");
 		JsonArray rows = response["rows"]!.AsArray();
 		rows.Should().ContainSingle(because: "the named entity must have exactly one base row, independently of replacements");

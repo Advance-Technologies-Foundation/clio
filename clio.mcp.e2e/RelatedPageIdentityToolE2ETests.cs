@@ -47,6 +47,9 @@ public sealed class RelatedPageIdentityToolE2ETests {
 		};
 		var original = await ReadAsync(session, args, deadline.Token);
 		original.Success.Should().BeTrue(because: $"the existing binding must be captured before a write: {original.Error}");
+		original.Pages.Should().OnlyContain(page => string.IsNullOrWhiteSpace(page.Role)
+			|| page.RoleName == "All employees" || page.RoleName == "All external users",
+			because: "the fixture must be able to restore every original role before making any mutation");
 		// Use an existing page reference for a metadata persistence probe, including when mobile starts empty.
 		// This does not test page rendering; the disposable binding is restored below.
 		var web = schemaType == "web" ? original : await ReadAsync(session,
