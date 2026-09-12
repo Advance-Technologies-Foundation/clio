@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using System.IO.Abstractions.TestingHelpers;
 using Clio.Tests.Infrastructure;
 using Clio.UserEnvironment;
@@ -661,5 +662,103 @@ public sealed class SettingsBootstrapServiceTests {
 		// Assert
 		result.Report.ShapeMismatch!.Message.Should().Contain("A newer clio has written the file",
 			because: "a member this build has never heard of, in the same section as the failure, is the evidence a newer writer leaves behind");
+	}
+
+	[TestCase("""
+		{
+		  "ActiveEnvironmentKey": "dev",
+		  "SettingsVersion": 3,
+		  "telemetry": true,
+		  "Environments": { "dev": { "Uri": "http://localhost", "Login": "Supervisor", "Password": "Supervisor" } }
+		}
+		""", TestName = "GetResult_Should_Bind_Siblings_Of_A_Failed_Member(before Environments)")]
+	[TestCase("""
+		{
+		  "ActiveEnvironmentKey": "dev",
+		  "SettingsVersion": 3,
+		  "Environments": { "dev": { "Uri": "http://localhost", "Login": "Supervisor", "Password": "Supervisor" } },
+		  "telemetry": true
+		}
+		""", TestName = "GetResult_Should_Bind_Siblings_Of_A_Failed_Member(after Environments)")]
+	[Category("Unit")]
+	[Description("Binds every member a file declares even when one of them fails, regardless of where the failing member sits in the file.")]
+	public void GetResult_Should_Bind_Siblings_Of_A_Failed_Member(string fileContent) {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(fileContent));
+		SettingsBootstrapService service = new(fileSystem);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+
+		// Assert
+		result.Report.EnvironmentCount.Should().Be(1,
+			because: "a member that failed to bind must not take its siblings with it - the environments are intact in the file");
+		result.Report.CanExecuteEnvTools.Should().BeTrue(
+			because: "the active environment resolved, so environment-scoped tools must stay available");
+		result.Report.ShapeMismatch!.Message.Should().Contain("telemetry",
+			because: "the message must name the member that actually failed");
+		result.Report.ShapeMismatch.Message.Should().NotContain("Environments",
+			because: "naming a member that bound perfectly would send the user to edit the wrong thing");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Names every member that failed to bind, not only the first one.")]
+	public void GetResult_Should_Name_Every_Member_That_Cannot_Bind() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData("""
+			{
+			  "ActiveEnvironmentKey": "dev",
+			  "SettingsVersion": 3,
+			  "telemetry": true,
+			  "dbhub": 42,
+			  "Environments": { "dev": { "Uri": "http://localhost", "Login": "Supervisor", "Password": "Supervisor" } }
+			}
+			"""));
+		SettingsBootstrapService service = new(fileSystem);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+
+		// Assert
+		result.Report.ShapeMismatch!.Message.Should().Contain("telemetry",
+			because: "the first failing member must be named");
+		result.Report.ShapeMismatch.Message.Should().Contain("dbhub",
+			because: "a user who fixes only the member the message names would hit the next one on the following run");
+		result.Report.EnvironmentCount.Should().Be(1,
+			because: "two failed members still must not cost the environments");
+	}
+
+	[TestCase("\"telemetry\": true", TestName = "GetResult_Should_Bind_Siblings_Whatever_Shape_Failed(scalar)")]
+	[TestCase("\"telemetry\": [1,2]", TestName = "GetResult_Should_Bind_Siblings_Whatever_Shape_Failed(array)")]
+	[TestCase("\"telemetry\": { \"enabled\": { \"x\": 1 } }",
+		TestName = "GetResult_Should_Bind_Siblings_Whatever_Shape_Failed(nested object)")]
+	[TestCase("\"dbConnectionStringKeys\": 5", TestName = "GetResult_Should_Bind_Siblings_Whatever_Shape_Failed(dictionary)")]
+	[Category("Unit")]
+	[Description("Keeps the environments when a member fails at ANY depth - a failure nested inside a member's own object used to take every member declared after it with it.")]
+	public void GetResult_Should_Bind_Siblings_Whatever_Shape_Failed(string failingMember) {
+		// Arrange
+		// Json.NET's handled-error recovery calls reader.Skip(), which advances to the end of the CURRENT
+		// CONTAINER. A failure raised INSIDE a member's own object therefore used to skip the rest of the
+		// ROOT object - silently discarding Environments while the message named only the failed member.
+		string fileContent = "{ " + failingMember
+			+ ", \"ActiveEnvironmentKey\": \"dev\", \"SettingsVersion\": 3,"
+			+ " \"Environments\": { \"dev\": { \"Uri\": \"http://localhost\" } } }";
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(fileContent));
+		SettingsBootstrapService service = new(fileSystem);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+
+		// Assert
+		result.Report.EnvironmentCount.Should().Be(1,
+			because: "the environment is declared after the failing member and is perfectly bindable, so it must be bound");
+		result.Report.CanExecuteEnvTools.Should().BeTrue(
+			because: "losing the environments to an unrelated member is the outage, not the diagnosis");
+		result.Report.Status.Should().Be("issues-detected",
+			because: "one unrelated member degrades the configuration; it does not destroy it");
 	}
 }

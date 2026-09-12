@@ -448,4 +448,37 @@ public class EnvManageUiServiceTests
 	}
 
 	#endregion
+
+	[Test]
+	[Description("Copies an environment whole, including members this clio build does not know, because the edit-and-save flow writes the copy back over the original.")]
+	public void Clone_Should_Carry_Every_Member_Including_Unknown_Ones() {
+		// Arrange
+		// The shape a NEWER clio leaves behind: known members, plus one this build has never heard of.
+		EnvironmentSettings original = Newtonsoft.Json.JsonConvert.DeserializeObject<EnvironmentSettings>("""
+			{
+			  "Uri": "https://prod",
+			  "Login": "Supervisor",
+			  "Password": "Supervisor",
+			  "Safe": true,
+			  "DbServerKey": "db-1",
+			  "EnvironmentPath": "/srv/creatio",
+			  "future-flag": true
+			}
+			""");
+
+		// Act
+		EnvironmentSettings copy = original.Clone();
+
+		// Assert
+		copy.Uri.Should().Be("https://prod",
+			because: "a copy that loses the url is not a copy of the environment");
+		copy.Safe.Should().BeTrue(
+			because: "losing the Safe flag would let destructive commands run against this environment without confirmation");
+		copy.DbServerKey.Should().Be("db-1",
+			because: "the db-server key is not on the edit screen, so only a full copy keeps it");
+		copy.EnvironmentPath.Should().Be("/srv/creatio",
+			because: "the environment path is not on the edit screen either");
+		copy.AdditionalData.Should().ContainKey("future-flag",
+			because: "renaming an environment must not delete what a newer clio wrote into it - the overflow bag exists precisely to survive this");
+	}
 }

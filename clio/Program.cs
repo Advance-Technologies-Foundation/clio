@@ -1742,7 +1742,10 @@ internal class Program {
 		}
 	}
 
-	private static bool _settingsWriteRefusalReported;
+	// Process-wide on purpose: the three update targets share one refusal and the operator needs it once.
+	// Internal so a test can restore the process to its pre-run state - a static latch that survives a test
+	// makes the NEXT test's assertion about the warning pass or fail depending on execution order.
+	internal static bool SettingsWriteRefusalReported { get; set; }
 
 	private static void RunIfDue(ISettingsRepository settingsRepository, AutoUpdateTarget target, Action update) {
 		try {
@@ -1754,8 +1757,8 @@ internal class Program {
 			// and every settings write is refused while a member of the file cannot be bound - so automatic
 			// updates are off until the file is fixed, and the update is precisely what would have fixed
 			// it. Reported once per process: all three targets hit the same refusal.
-			if (!_settingsWriteRefusalReported) {
-				_settingsWriteRefusalReported = true;
+			if (!SettingsWriteRefusalReported) {
+				SettingsWriteRefusalReported = true;
 				ConsoleLogger.Instance.WriteWarning(
 					$"Automatic updates are paused. {exception.Message}");
 			}

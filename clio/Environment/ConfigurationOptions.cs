@@ -47,6 +47,21 @@ namespace Clio
 		private void RemoveDeclaredOverflowMembers(System.Runtime.Serialization.StreamingContext context) =>
 			Clio.Common.JsonOverflowMembers.RemoveDeclaredMembers(this, AdditionalData);
 
+		/// <summary>
+		/// Returns a full copy of this environment, INCLUDING members this clio build does not know.
+		/// </summary>
+		/// <remarks>
+		/// Through serialization rather than member by member, and that is the whole point: a hand-written
+		/// copy silently drops whatever the author did not list, and the members most easily forgotten are
+		/// the ones nothing references by name - the <see cref="AdditionalData"/> overflow bag a newer clio
+		/// filled, and the rarely used keys beside it. An edit-and-save flow that rebuilds an environment
+		/// this way would delete them, which is exactly what the bag exists to prevent.
+		/// </remarks>
+		/// <returns>A copy carrying every member of the original.</returns>
+		public EnvironmentSettings Clone() =>
+			JsonConvert.DeserializeObject<EnvironmentSettings>(JsonConvert.SerializeObject(this))
+			?? new EnvironmentSettings();
+
 		[YamlMember(Alias = "url")]
 		public string Uri {
 			get; set;
@@ -1408,6 +1423,11 @@ namespace Clio
 		}
 
 		public bool IsAutoupdateDue(AutoUpdateTarget target, DateTimeOffset now) {
+			// Re-read first, like TryScheduleAutoupdate does through UpdateSettingsIfChanged. The two are
+			// asked about the same schedule within microseconds of each other, and a constructor-time
+			// snapshot would let them disagree - the deferral notice describing a policy the scheduler
+			// never saw.
+			Reload();
 			EnsureSettingsCollections();
 			AutoUpdatePolicy policy = GetPolicy(_settings.Autoupdate, target);
 			return policy.Enabled && (policy.NextRun is null || now > policy.NextRun.Value);

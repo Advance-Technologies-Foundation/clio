@@ -157,6 +157,14 @@ public sealed class AutomaticUpdateStartupTests {
 		settings.Received(1).TryScheduleAutoupdate(AutoUpdateTarget.Clio, Arg.Any<DateTimeOffset>());
 	}
 
+	[SetUp]
+	[TearDown]
+	public void ResetSettingsWriteRefusalLatch() {
+		// The latch is process-wide (one refusal per run, not one per target), so leaving it set would
+		// decide the outcome of whichever test runs next by execution order.
+		Program.SettingsWriteRefusalReported = false;
+	}
+
 	[Test]
 	[Description("Reports a settings-write refusal instead of swallowing it, because that refusal also blocks the update that would have ended the skew.")]
 	public void RunStartupUpdateCheck_ShouldReportTheRefusal_WhenSettingsCannotBeWritten() {
@@ -181,6 +189,8 @@ public sealed class AutomaticUpdateStartupTests {
 		// Assert
 		act.Should().NotThrow(
 			because: "a refused update must never fail the command the user actually asked for");
+		Program.SettingsWriteRefusalReported.Should().BeTrue(
+			because: "the refusal must be REPORTED, not swallowed: it is what stops clio from updating its way out of the skew");
 		appUpdater.DidNotReceive().UpdateInBackgroundAsync();
 		settings.Received(3).TryScheduleAutoupdate(Arg.Any<AutoUpdateTarget>(), Arg.Any<DateTimeOffset>());
 	}

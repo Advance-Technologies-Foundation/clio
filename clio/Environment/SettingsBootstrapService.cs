@@ -184,37 +184,20 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 		// member whose value changed shape (a scalar that became an object) surfaces as the very same
 		// JsonReaderException type and text as a syntax error, so the exception cannot tell them apart.
 		// A successful JToken.Parse can: it proves the bytes are well-formed JSON.
+		JToken parsedContent;
 		try {
-			JToken.Parse(fileContent);
+			parsedContent = JToken.Parse(fileContent);
 		}
 		catch (JsonException e) {
 			return BuildBroken(settingsFilePath, SettingsFileUnreadableCode,
 				$"appsettings.json could not be parsed: {e.Message}");
 		}
-		Settings? settingsModel;
+		if (parsedContent is not JObject root) {
+			return BuildBroken(settingsFilePath, SettingsFileUnreadableCode,
+				"appsettings.json does not contain a JSON object at its root.");
+		}
 		List<string> bindFailurePaths = [];
-		try {
-			settingsModel = JsonConvert.DeserializeObject<Settings>(fileContent,
-				CreateTolerantSerializerSettings(bindFailurePaths));
-		}
-		catch (Exception e) {
-			return BuildBroken(settingsFilePath, SettingsFileUnreadableCode,
-				$"appsettings.json could not be parsed: {e.Message}");
-		}
-		if (settingsModel is null) {
-			// A handled member error can still leave the reader unable to finish the root object, so the
-			// whole deserialization comes back null. The recorded paths are the honest explanation - "could
-			// not be deserialized" would send the reader to look for damage that is not there.
-			if (bindFailurePaths.Count > 0) {
-				string? environmentPath = FindUnbindableEnvironmentPath(bindFailurePaths);
-				return BuildBroken(settingsFilePath, SettingsShapeMismatchCode,
-					environmentPath is not null
-						? BuildEnvironmentBindFailureMessage(environmentPath)
-						: BuildShapeMismatchMessage(bindFailurePaths, new Settings()));
-			}
-			return BuildBroken(settingsFilePath, SettingsFileUnreadableCode,
-				"appsettings.json could not be deserialized into clio settings.");
-		}
+		Settings settingsModel = BindMemberByMember(root, bindFailurePaths);
 		// ANY failure under Environments is fatal, not only one on the collection itself. A dropped member
 		// is invisible and its default is the DANGEROUS answer: an environment whose "Safe" flag failed to
 		// bind comes back Safe = false, and destructive commands would then run against a production stand
@@ -260,6 +243,44 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 			repairs);
 	}
 
+
+	/// <summary>
+	/// Binds the settings file ONE TOP-LEVEL MEMBER AT A TIME, so a member that fails takes only itself.
+	/// </summary>
+	/// <remarks>
+	/// This is not a stylistic choice. Json.NET's error recovery, once an error is marked handled, calls
+	/// <c>reader.Skip()</c> - which advances to the end of the CURRENT CONTAINER, not to the end of the
+	/// failed member. Deserializing the whole file in one pass therefore means that one unbindable member
+	/// silently discards every member declared after it, the environment list included: the file still
+	/// holds five environments, the report says zero, and the message names only the member that failed
+	/// and claims nothing else is at risk. Binding each member from its own single-property object gives
+	/// that skip nothing else to consume. Unknown members still reach the overflow bag, because each pass
+	/// populates the SAME model instance.
+	/// </remarks>
+	/// <param name="root">The parsed settings object.</param>
+	/// <param name="bindFailurePaths">Collects the JSON path of every member that could not be bound.</param>
+	/// <returns>The model, carrying every member that bound.</returns>
+	private static Settings BindMemberByMember(JObject root, List<string> bindFailurePaths) {
+		Settings settingsModel = new();
+		JsonSerializer serializer = JsonSerializer.Create(CreateTolerantSerializerSettings(bindFailurePaths));
+		foreach (JProperty property in root.Properties()) {
+			// DeepClone: a token can have only one parent, and the wrapper would otherwise re-parent the
+			// caller's own tree.
+			JObject singleMember = new(new JProperty(property.Name, property.Value.DeepClone()));
+			using JTokenReader memberReader = new(singleMember);
+			try {
+				serializer.Populate(memberReader, settingsModel);
+			}
+			catch (JsonException) {
+				// A failure the error handler did not already record (it records the inner path; this is
+				// the fallback for one raised where no handler runs).
+				if (!bindFailurePaths.Contains(property.Name)) {
+					bindFailurePaths.Add(property.Name);
+				}
+			}
+		}
+		return settingsModel;
+	}
 
 	/// <summary>
 	/// Builds serializer settings that record member-level bind failures instead of aborting the load.
@@ -335,7 +356,11 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 	private static string BuildShapeMismatchMessage(IReadOnlyList<string> bindFailurePaths, Settings settings) {
 		string sections = string.Join(", ", bindFailurePaths.Where(path => !string.IsNullOrEmpty(path)));
 		if (string.IsNullOrEmpty(sections)) {
-			sections = "(root)";
+			// No path at all means the failure was raised on the root object itself, so there is no member
+			// to name and "correct (root) by hand" would be instructions to edit nothing in particular.
+			return $"appsettings.json is valid JSON, but this clio version ({Clio.Common.ClioAssemblyVersion.Current}) "
+				+ "could not bind its root object. Check that the file contains a clio settings object "
+				+ "rather than some other JSON document. clio will not rewrite it while this is true.";
 		}
 		string preamble = $"appsettings.json is valid JSON, but this clio version "
 			+ $"({Clio.Common.ClioAssemblyVersion.Current}) cannot bind the following member(s): {sections}. ";
