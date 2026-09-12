@@ -22,7 +22,6 @@ namespace Clio.Mcp.E2E;
 public sealed class ApplicationSectionUpdateToolE2ETests {
 	private const string SectionUpdateToolName = ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName;
 	private const string SectionCreateToolName = ApplicationSectionCreateTool.ApplicationSectionCreateToolName;
-	private const string SectionDeleteToolName = ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName;
 	private const string ApplicationCode = "AutoTestClioMcp";
 
 	[Category("McpE2E.Sandbox")]
@@ -203,84 +202,67 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
 		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
 		string? createdSectionCode = null;
-		try {
-			// Act 1: create a section with the initial caption
-			CallToolResult createResult = await session.CallToolAsync(
-				SectionCreateToolName,
-				new Dictionary<string, object?> {
-					["args"] = new Dictionary<string, object?> {
-						["environment-name"] = environmentName,
-						["application-code"] = ApplicationCode,
-						["caption"] = initialCaption
-					}
-				},
-				cancellationTokenSource.Token);
-			ApplicationSectionContextResponseEnvelope createResponse = ApplicationResultParser.ExtractSectionCreate(createResult);
-
-			createResult.IsError.Should().NotBeTrue(
-				because: $"create-app-section should not throw an MCP-level error. Actual: {DescribeCallResult(createResult)}");
-			createResponse.Success.Should().BeTrue(
-				because: $"create-app-section must succeed before the update lifecycle can be verified. Error: {createResponse.Error}");
-			createResponse.Section.Should().NotBeNull(
-				because: "create-app-section readback must include the created section metadata");
-			createResponse.Section!.Code.Should().NotBeNullOrWhiteSpace(
-				because: "the readback must expose the created section code so update-app-section can target it");
-
-			createdSectionCode = createResponse.Section.Code;
-
-			// Act 2: update the section's caption and description
-			CallToolResult updateResult = await session.CallToolAsync(
-				SectionUpdateToolName,
-				new Dictionary<string, object?> {
-					["args"] = new Dictionary<string, object?> {
-						["environment-name"] = environmentName,
-						["application-code"] = ApplicationCode,
-						["section-code"] = createdSectionCode,
-						["caption"] = updatedCaption,
-						["description"] = updatedDescription
-					}
-				},
-				cancellationTokenSource.Token);
-			ApplicationSectionUpdateContextResponseEnvelope updateResponse = ApplicationResultParser.ExtractSectionUpdate(updateResult);
-
-			// Assert
-			updateResult.IsError.Should().NotBeTrue(
-				because: $"update-app-section should not throw an MCP-level error. Actual: {DescribeCallResult(updateResult)}");
-			updateResponse.Success.Should().BeTrue(
-				because: $"update-app-section must succeed for the freshly created section. Error: {updateResponse.Error}");
-			updateResponse.PreviousSection.Should().NotBeNull(
-				because: "update-app-section must include the pre-update section snapshot so callers can diff before-and-after");
-			updateResponse.PreviousSection!.Code.Should().Be(createdSectionCode,
-				because: "the previous-section snapshot must identify the same section that was updated");
-			updateResponse.PreviousSection.Caption.Should().Be(initialCaption,
-				because: "the previous-section snapshot must preserve the caption that existed before update-app-section was invoked");
-			updateResponse.Section.Should().NotBeNull(
-				because: "update-app-section must include the post-update section state for the caller to confirm the new values landed");
-			updateResponse.Section!.Code.Should().Be(createdSectionCode,
-				because: "the post-update section must report the same code as the previous-section snapshot");
-			updateResponse.Section.Caption.Should().Be(updatedCaption,
-				because: "the post-update section must reflect the new caption that update-app-section was asked to apply");
-			updateResponse.Section.Description.Should().Be(updatedDescription,
-				because: "the post-update section must reflect the new description that update-app-section was asked to apply");
-		} finally {
-			if (!string.IsNullOrWhiteSpace(createdSectionCode)) {
-				try {
-					using CancellationTokenSource cleanupCts = new(TimeSpan.FromMinutes(1));
-					await session.CallToolAsync(
-						SectionDeleteToolName,
-						new Dictionary<string, object?> {
-							["args"] = new Dictionary<string, object?> {
-								["environment-name"] = environmentName,
-								["application-code"] = ApplicationCode,
-								["section-code"] = createdSectionCode
-							}
-						},
-						cleanupCts.Token);
-				} catch (Exception ex) {
-					await Console.Error.WriteLineAsync($"[cleanup] delete-app-section '{createdSectionCode}' failed: {ex.Message}");
+		// The stand is deployed fresh for every build and torn down with it, so the created section is not
+		// deleted here: the cleanup cost about 18s, and every assertion that reads the application's section
+		// list checks membership of its own section — none reads a total count.
+		// Act 1: create a section with the initial caption
+		CallToolResult createResult = await session.CallToolAsync(
+			SectionCreateToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["application-code"] = ApplicationCode,
+					["caption"] = initialCaption
 				}
-			}
-		}
+			},
+			cancellationTokenSource.Token);
+		ApplicationSectionContextResponseEnvelope createResponse = ApplicationResultParser.ExtractSectionCreate(createResult);
+
+		createResult.IsError.Should().NotBeTrue(
+			because: $"create-app-section should not throw an MCP-level error. Actual: {DescribeCallResult(createResult)}");
+		createResponse.Success.Should().BeTrue(
+			because: $"create-app-section must succeed before the update lifecycle can be verified. Error: {createResponse.Error}");
+		createResponse.Section.Should().NotBeNull(
+			because: "create-app-section readback must include the created section metadata");
+		createResponse.Section!.Code.Should().NotBeNullOrWhiteSpace(
+			because: "the readback must expose the created section code so update-app-section can target it");
+
+		createdSectionCode = createResponse.Section.Code;
+
+		// Act 2: update the section's caption and description
+		CallToolResult updateResult = await session.CallToolAsync(
+			SectionUpdateToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["application-code"] = ApplicationCode,
+					["section-code"] = createdSectionCode,
+					["caption"] = updatedCaption,
+					["description"] = updatedDescription
+				}
+			},
+			cancellationTokenSource.Token);
+		ApplicationSectionUpdateContextResponseEnvelope updateResponse = ApplicationResultParser.ExtractSectionUpdate(updateResult);
+
+		// Assert
+		updateResult.IsError.Should().NotBeTrue(
+			because: $"update-app-section should not throw an MCP-level error. Actual: {DescribeCallResult(updateResult)}");
+		updateResponse.Success.Should().BeTrue(
+			because: $"update-app-section must succeed for the freshly created section. Error: {updateResponse.Error}");
+		updateResponse.PreviousSection.Should().NotBeNull(
+			because: "update-app-section must include the pre-update section snapshot so callers can diff before-and-after");
+		updateResponse.PreviousSection!.Code.Should().Be(createdSectionCode,
+			because: "the previous-section snapshot must identify the same section that was updated");
+		updateResponse.PreviousSection.Caption.Should().Be(initialCaption,
+			because: "the previous-section snapshot must preserve the caption that existed before update-app-section was invoked");
+		updateResponse.Section.Should().NotBeNull(
+			because: "update-app-section must include the post-update section state for the caller to confirm the new values landed");
+		updateResponse.Section!.Code.Should().Be(createdSectionCode,
+			because: "the post-update section must report the same code as the previous-section snapshot");
+		updateResponse.Section.Caption.Should().Be(updatedCaption,
+			because: "the post-update section must reflect the new caption that update-app-section was asked to apply");
+		updateResponse.Section.Description.Should().Be(updatedDescription,
+			because: "the post-update section must reflect the new description that update-app-section was asked to apply");
 	}
 
 	[Category("McpE2E.NoEnvironment")]
