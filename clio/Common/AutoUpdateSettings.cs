@@ -24,9 +24,14 @@ public sealed class AutoUpdatePolicy {
 	[JsonProperty("frequency-minutes")]
 	public int FrequencyMinutes { get; set; }
 
-	/// <summary>Gets or sets the next scheduled attempt.</summary>
-	[JsonProperty("next-run")]
-	public DateTimeOffset NextRun { get; set; }
+	/// <summary>Gets or sets the next scheduled attempt, or <see langword="null"/> when none is scheduled.</summary>
+	/// <remarks>
+	/// Nullable so an unscheduled policy is OMITTED from appsettings.json rather than written as the
+	/// default <see cref="DateTimeOffset"/>. A reader (including an older clio) that finds no
+	/// <c>next-run</c> treats the policy as due, which is what "never ran yet" means.
+	/// </remarks>
+	[JsonProperty("next-run", NullValueHandling = NullValueHandling.Ignore)]
+	public DateTimeOffset? NextRun { get; set; }
 }
 
 /// <summary>Contains independent schedules for clio, knowledge, and toolkit updates.</summary>
@@ -55,13 +60,34 @@ internal sealed class AutoUpdateSettingsConverter : JsonConverter<AutoUpdateSett
 
 	public override AutoUpdateSettings ReadJson(JsonReader reader, Type objectType,
 		AutoUpdateSettings existingValue, bool hasExistingValue, JsonSerializer serializer) {
-		JToken token = JToken.Load(reader);
+		// Year-0001 defaults used to be rewritten as "0001-01-01T01:24:00+01:24": JToken.Load parses a
+		// timestamp with the default DateParseHandling.DateTime, which yields a DateTime the serializer
+		// then converts to the LOCAL offset - and for year 0001 that offset is the zone's historical local
+		// mean time. Keeping timestamps as strings here lets Populate bind DateTimeOffset directly and
+		// preserves the offset the file actually carries.
+		// Captured BEFORE the token is loaded: it is the path of the autoupdate member itself, and it is
+		// what makes a bind failure inside this section report as "autoupdate.clio.enabled" rather than as
+		// the rootless "clio.enabled" a fresh token reader would produce. The settings bootstrap names that
+		// path to the user (issue #1462), so a path that omits the section is a worse diagnostic.
+		string outerPath = reader.Path;
+		DateParseHandling previousDateParseHandling = reader.DateParseHandling;
+		JToken token;
+		try {
+			reader.DateParseHandling = DateParseHandling.None;
+			token = JToken.Load(reader);
+		}
+		finally {
+			// The reader is the caller's, and it keeps reading the rest of appsettings.json after this
+			// converter returns.
+			reader.DateParseHandling = previousDateParseHandling;
+		}
 		AutoUpdateSettings settings = new();
 		if (token.Type == JTokenType.Boolean) {
 			settings.Clio.Enabled = token.Value<bool>();
 		}
 		else if (token.Type == JTokenType.Object) {
-			serializer.Populate(token.CreateReader(), settings);
+			using JTokenReader tokenReader = new(token, outerPath);
+			serializer.Populate(tokenReader, settings);
 		}
 		return settings;
 	}

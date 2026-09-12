@@ -423,8 +423,8 @@ public sealed class SettingsRepositoryFeatureTests {
 		toolkit.Should().BeFalse(because: "toolkit updates are opt-in");
 		persisted.Autoupdate.Knowledge.NextRun.Should().Be(now.AddMinutes(60),
 			because: "knowledge uses its one-hour default frequency");
-		persisted.Autoupdate.Toolkit.NextRun.Should().Be(default(DateTimeOffset),
-			because: "disabled toolkit updates must not advance their schedule");
+		persisted.Autoupdate.Toolkit.NextRun.Should().BeNull(
+			because: "a schedule that never advanced stays unscheduled and is omitted from the file entirely");
 	}
 
 	[Test]
@@ -481,5 +481,81 @@ public sealed class SettingsRepositoryFeatureTests {
 		// Assert
 		reloaded.GetAutoupdate().Should().BeFalse(
 			because: "knowledge scheduling must not enable clio updates");
+	}
+
+	[Test]
+	[Description("Refuses to write settings while a section could not be bound, so the degraded mode cannot round-trip away what a newer clio wrote.")]
+	public void UpdateSettings_ShouldRefuseAndLeaveTheFileUntouched_WhenSectionCannotBind() {
+		// Arrange
+		const string futureShaped = """
+			{
+			  "ActiveEnvironmentKey": "dev",
+			  "SettingsVersion": 3,
+			  "autoupdate": {
+			    "clio": { "enabled": { "future": true }, "frequency-minutes": 480 }
+			  },
+			  "Environments": {
+			    "dev": { "Uri": "http://localhost", "Login": "Supervisor", "Password": "Supervisor" }
+			  }
+			}
+			""";
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(futureShaped));
+		SettingsRepository sut = new(fileSystem);
+
+		// Act
+		Action act = () => sut.SetAutoupdate(true);
+		string persistedContent = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "writing the file from a model that dropped an unbindable section would destroy the newer clio's settings")
+			.Which.Message.Should().Contain("restart",
+				because: "the refusal must name the action that actually fixes the skew");
+		persistedContent.Should().Be(futureShaped,
+			because: "a refused update must leave the settings file byte-for-byte as it was");
+	}
+
+	[Test]
+	[Description("Reports a due schedule without advancing or persisting next-run, so a deferral leaves the update due on the next cold start.")]
+	public void IsAutoupdateDue_ShouldReportDue_WithoutAdvancingTheSchedule() {
+		// Arrange
+		const string json = """
+			{
+			  "SettingsVersion": 3,
+			  "Environments": {},
+			  "autoupdate": {
+			    "clio": { "enabled": true, "frequency-minutes": 480, "next-run": "2020-01-01T00:00:00+00:00" }
+			  }
+			}
+			""";
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(json));
+		SettingsRepository sut = new(fileSystem);
+
+		// Act
+		bool due = sut.IsAutoupdateDue(AutoUpdateTarget.Clio, new DateTimeOffset(2026, 9, 12, 12, 0, 0, TimeSpan.Zero));
+		Settings persisted = JsonConvert.DeserializeObject<Settings>(
+			fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile));
+
+		// Assert
+		due.Should().BeTrue(
+			because: "an enabled policy whose next-run is in the past is due");
+		persisted.Autoupdate.Clio.NextRun.Should().Be(new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero),
+			because: "a read-only due check must never move the schedule the way TryScheduleAutoupdate does");
+	}
+
+	[Test]
+	[Description("Reports a disabled schedule as not due regardless of its next-run.")]
+	public void IsAutoupdateDue_ShouldReportNotDue_WhenPolicyIsDisabled() {
+		// Arrange
+		SettingsRepository sut = new(_fileSystem);
+
+		// Act
+		bool due = sut.IsAutoupdateDue(AutoUpdateTarget.Toolkit, DateTimeOffset.UtcNow);
+
+		// Assert
+		due.Should().BeFalse(
+			because: "toolkit updates are opt-in and a disabled policy is never due");
 	}
 }

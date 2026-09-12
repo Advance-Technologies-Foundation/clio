@@ -80,7 +80,10 @@ public sealed class AutomaticUpdateStartupTests {
 	[TestCase("update-skill")]
 	[TestCase("delete-toolkit")]
 	[TestCase("delete-skill")]
-	[Description("Skips automatic updates while an explicit command changes knowledge or toolkit files.")]
+	[TestCase("mcp-server")]
+	[TestCase("mcp")]
+	[TestCase("mcp-http")]
+	[Description("Skips automatic updates while an explicit command changes knowledge or toolkit files, and for every MCP host verb, which must never replace its own binaries.")]
 	public void RunStartupUpdateCheck_ShouldSkipUpdate_WhenCommandMutatesUpdateTarget(string command) {
 		// Arrange
 		ISettingsRepository settings = Substitute.For<ISettingsRepository>();
@@ -92,5 +95,65 @@ public sealed class AutomaticUpdateStartupTests {
 		// Assert
 		settings.DidNotReceive().TryScheduleAutoupdate(
 			Arg.Any<AutoUpdateTarget>(), Arg.Any<DateTimeOffset>());
+	}
+
+	[Test]
+	[Description("Defers only the clio self-update while a resident MCP host is recorded, and leaves the schedule untouched so the next cold start still performs it.")]
+	public void RunStartupUpdateCheck_ShouldDeferClioUpdate_WhenMcpHostIsResident() {
+		// Arrange
+		ISettingsRepository settings = Substitute.For<ISettingsRepository>();
+		settings.TryScheduleAutoupdate(Arg.Any<AutoUpdateTarget>(), Arg.Any<DateTimeOffset>()).Returns(true);
+		IAppUpdater appUpdater = Substitute.For<IAppUpdater>();
+		appUpdater.UpdateInBackgroundAsync().Returns(Task.CompletedTask);
+		IKnowledgeSourceManagementService knowledge = Substitute.For<IKnowledgeSourceManagementService>();
+		ISkillInstallService toolkit = Substitute.For<ISkillInstallService>();
+		settings.IsAutoupdateDue(AutoUpdateTarget.Clio, Arg.Any<DateTimeOffset>()).Returns(true);
+		IMcpHostPresenceRegistry presence = Substitute.For<IMcpHostPresenceRegistry>();
+		presence.FindLiveHost().Returns(new McpHostPresenceMarker(4242, "8.1.0.120",
+			DateTimeOffset.UtcNow, "mcp-server.4242.lock"));
+		ServiceProvider services = new ServiceCollection()
+			.AddSingleton(settings)
+			.AddSingleton(appUpdater)
+			.AddSingleton(knowledge)
+			.AddSingleton(toolkit)
+			.AddSingleton(presence)
+			.BuildServiceProvider();
+
+		// Act
+		Program.RunStartupUpdateCheck(["ver"], services);
+
+		// Assert
+		appUpdater.DidNotReceive().UpdateInBackgroundAsync();
+		settings.DidNotReceive().TryScheduleAutoupdate(AutoUpdateTarget.Clio, Arg.Any<DateTimeOffset>());
+		knowledge.Received(1).Update(null);
+		toolkit.Received(1).Update(null, null);
+	}
+
+	[Test]
+	[Description("Performs the clio self-update as usual when no MCP host marker is live.")]
+	public void RunStartupUpdateCheck_ShouldUpdateClio_WhenNoMcpHostIsResident() {
+		// Arrange
+		ISettingsRepository settings = Substitute.For<ISettingsRepository>();
+		settings.TryScheduleAutoupdate(Arg.Any<AutoUpdateTarget>(), Arg.Any<DateTimeOffset>()).Returns(true);
+		IAppUpdater appUpdater = Substitute.For<IAppUpdater>();
+		appUpdater.UpdateInBackgroundAsync().Returns(Task.CompletedTask);
+		IKnowledgeSourceManagementService knowledge = Substitute.For<IKnowledgeSourceManagementService>();
+		ISkillInstallService toolkit = Substitute.For<ISkillInstallService>();
+		IMcpHostPresenceRegistry presence = Substitute.For<IMcpHostPresenceRegistry>();
+		presence.FindLiveHost().Returns((McpHostPresenceMarker)null);
+		ServiceProvider services = new ServiceCollection()
+			.AddSingleton(settings)
+			.AddSingleton(appUpdater)
+			.AddSingleton(knowledge)
+			.AddSingleton(toolkit)
+			.AddSingleton(presence)
+			.BuildServiceProvider();
+
+		// Act
+		Program.RunStartupUpdateCheck(["ver"], services);
+
+		// Assert
+		appUpdater.Received(1).UpdateInBackgroundAsync();
+		settings.Received(1).TryScheduleAutoupdate(AutoUpdateTarget.Clio, Arg.Any<DateTimeOffset>());
 	}
 }

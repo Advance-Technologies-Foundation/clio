@@ -392,6 +392,13 @@ public class BindingsModule {
 		services.AddTransient<Clio.Command.Administration.ManageAccessCommand>();
 		services.AddTransient<Clio.Command.Administration.ManageLicenseCommand>();
 		services.AddTransient<Clio.Common.IFileSystem, Clio.Common.FileSystem>();
+		// Issue #1462 - the resident-MCP-host presence marker the startup update check consults, and the
+		// process-liveness seam that keeps a marker left by a killed host from deferring updates forever.
+		// SINGLETON because both are stateless answers about this machine, and the CLI reads them once per
+		// run: a transient copy would buy nothing and the explicit pair states the intended lifetime
+		// instead of inheriting the assembly scan's transient default.
+		services.AddSingleton<IProcessLivenessProbe, ProcessLivenessProbe>();
+		services.AddSingleton<IMcpHostPresenceRegistry, McpHostPresenceRegistry>();
 		services.AddTransient<IFileSecurityHardening, FileSecurityHardening>();
 		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionCache, Clio.Common.BrowserSession.BrowserSessionCache>();
 		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionService>(sp =>
@@ -1552,24 +1559,49 @@ public class BindingsModule {
 			if (_bootstrapDiagnosticsLogged) {
 				return;
 			}
-			if (report.RepairsApplied.Count > 0) {
-				string repairs = string.Join("; ", report.RepairsApplied.Select(repair => repair.Message));
-				ConsoleLogger.Instance.WriteWarning(
-					$"clio settings bootstrap repaired {repairs}. Active environment: {report.ResolvedActiveEnvironmentKey ?? "<none>"}.");
-				_bootstrapDiagnosticsLogged = true;
+			if (BuildBootstrapDiagnosticMessage(report) is not string message) {
 				return;
 			}
-			if (string.Equals(report.Status, "broken", StringComparison.OrdinalIgnoreCase)) {
-				string issue = report.Issues.FirstOrDefault()?.Message
-					?? "appsettings.json is unreadable.";
-				ConsoleLogger.Instance.WriteWarning(
-					$"clio settings bootstrap is degraded. {issue} File path: {report.SettingsFilePath}. "
-					+ "Fix or delete it and retry — clio never rewrites a broken settings file on its own, "
-					+ "so a hand fix (or deletion, if the registered environments are not worth recovering) "
-					+ "is the only way forward.");
-				_bootstrapDiagnosticsLogged = true;
-			}
+			ConsoleLogger.Instance.WriteWarning(message);
+			_bootstrapDiagnosticsLogged = true;
 		}
+	}
+
+	/// <summary>
+	/// Builds the one startup diagnostic line a bootstrap report deserves, or <see langword="null"/>
+	/// when it deserves none.
+	/// </summary>
+	/// <remarks>
+	/// A shape mismatch is reported for BOTH the degraded and the broken status, and WITHOUT the
+	/// "fix or delete it" tail: the file is valid JSON that a newer clio wrote, so the hand fix that
+	/// sentence asks for is the wrong action (issue #1462). Reporting it in the degraded case matters
+	/// most - there the command goes on working, and without this line a section the running build
+	/// silently dropped would never be mentioned outside the MCP health tool.
+	/// </remarks>
+	/// <param name="report">The bootstrap report to describe.</param>
+	/// <returns>The warning text, or <see langword="null"/> when the report is unremarkable.</returns>
+	internal static string BuildBootstrapDiagnosticMessage(SettingsBootstrapReport report) {
+		if (report.RepairsApplied.Count > 0) {
+			string repairs = string.Join("; ", report.RepairsApplied.Select(repair => repair.Message));
+			return $"clio settings bootstrap repaired {repairs}. "
+				+ $"Active environment: {report.ResolvedActiveEnvironmentKey ?? "<none>"}.";
+		}
+		SettingsIssue shapeMismatch = report.Issues.FirstOrDefault(reported =>
+			string.Equals(reported.Code, SettingsBootstrapService.SettingsShapeMismatchCode,
+				StringComparison.Ordinal));
+		if (shapeMismatch is not null) {
+			return $"clio settings bootstrap is degraded. {shapeMismatch.Message} "
+				+ $"File path: {report.SettingsFilePath}.";
+		}
+		if (string.Equals(report.Status, "broken", StringComparison.OrdinalIgnoreCase)) {
+			string issue = report.Issues.FirstOrDefault()?.Message
+				?? "appsettings.json is unreadable.";
+			return $"clio settings bootstrap is degraded. {issue} File path: {report.SettingsFilePath}. "
+				+ "Fix or delete it and retry — clio never rewrites a broken settings file on its own, "
+				+ "so a hand fix (or deletion, if the registered environments are not worth recovering) "
+				+ "is the only way forward.";
+		}
+		return null;
 	}
 	
 	private static void RegisterAssemblyInterfaceTypes(IServiceCollection services){

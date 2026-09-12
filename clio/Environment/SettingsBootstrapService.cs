@@ -3,7 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
+using System.Reflection;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using Newtonsoft.Json.Serialization;
 
 namespace Clio.UserEnvironment;
 
@@ -59,6 +62,15 @@ public sealed record SettingsBootstrapResult(
 public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 	private const string SettingsFileUnreadableCode = "settings-file-unreadable";
 	private const string SettingsFileMissingCode = "settings-file-missing";
+
+	/// <summary>
+	/// Issue code for a settings file that is valid JSON but whose shape this clio build cannot bind.
+	/// </summary>
+	/// <remarks>
+	/// Distinct from <c>settings-file-unreadable</c> on purpose: the file is intact, so every message built
+	/// from this code must send the reader to restart the resident process, never to edit the file.
+	/// </remarks>
+	internal const string SettingsShapeMismatchCode = "settings-shape-mismatch";
 	private const int CurrentSettingsVersion = 3;
 
 	/// <summary>
@@ -136,9 +148,32 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 			return BuildBroken(settingsFilePath, SettingsFileUnreadableCode,
 				"appsettings.json is empty or whitespace and cannot be parsed.");
 		}
-		Settings? settingsModel;
+		// Distinguishing a damaged file from a future-shaped one has to happen BEFORE binding: a section
+		// whose value changed shape (a scalar that became an object) surfaces as the very same
+		// JsonReaderException type and text as a syntax error, so the exception cannot tell them apart.
+		// A successful JToken.Parse can: it proves the bytes are well-formed JSON.
+		bool isWellFormedJson;
 		try {
-			settingsModel = JsonConvert.DeserializeObject<Settings>(fileContent);
+			JToken.Parse(fileContent);
+			isWellFormedJson = true;
+		}
+		catch (JsonException) {
+			isWellFormedJson = false;
+		}
+		if (!isWellFormedJson) {
+			try {
+				JsonConvert.DeserializeObject<Settings>(fileContent);
+			}
+			catch (Exception e) {
+				return BuildBroken(settingsFilePath, SettingsFileUnreadableCode,
+					$"appsettings.json could not be parsed: {e.Message}");
+			}
+		}
+		Settings? settingsModel;
+		List<string> bindFailurePaths = [];
+		try {
+			settingsModel = JsonConvert.DeserializeObject<Settings>(fileContent,
+				CreateTolerantSerializerSettings(bindFailurePaths));
 		}
 		catch (Exception e) {
 			return BuildBroken(settingsFilePath, SettingsFileUnreadableCode,
@@ -148,8 +183,20 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 			return BuildBroken(settingsFilePath, SettingsFileUnreadableCode,
 				"appsettings.json could not be deserialized into clio settings.");
 		}
+		string? shapeMismatchMessage = bindFailurePaths.Count > 0
+			? BuildShapeMismatchMessage(bindFailurePaths)
+			: null;
+		// Only a root object or an unbindable Environments collection is fatal: without the environment list
+		// there is nothing an environment-scoped tool could run against. Any other unbindable section leaves
+		// the environments intact, so the caller keeps working and only the diagnostic changes.
+		if (shapeMismatchMessage is not null && EnvironmentsAreUnbindable(bindFailurePaths)) {
+			return BuildBroken(settingsFilePath, SettingsShapeMismatchCode, shapeMismatchMessage);
+		}
 		string? originalActiveEnvironmentKey = settingsModel.ActiveEnvironmentKey;
 		List<SettingsIssue> issues = [];
+		if (shapeMismatchMessage is not null) {
+			issues.Add(new SettingsIssue(SettingsShapeMismatchCode, shapeMismatchMessage));
+		}
 		List<SettingsRepair> repairs = [];
 		if (settingsModel.Environments is null) {
 			settingsModel.Environments = [];
@@ -162,7 +209,10 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 				"Use 'clio set-active-environment <name>' to fix this."));
 		}
 		SettingsRepository.AttachDbServers(settingsModel);
-		if (applyRepairs && ApplyMigrations(settingsModel, repairs)) {
+		// NEVER write the file back while a section could not be bound. Serializing the model this build
+		// produced would drop the section a newer clio wrote - the user's settings would be destroyed by a
+		// migration that only meant to stamp a version number.
+		if (applyRepairs && shapeMismatchMessage is null && ApplyMigrations(settingsModel, repairs)) {
 			SettingsRepository.SaveSettings(_fileSystem, settingsModel, fileContent, verifyExpectedContent: true);
 		}
 		return BuildResult(
@@ -173,6 +223,47 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 			issues,
 			repairs);
 	}
+
+
+	/// <summary>
+	/// Builds serializer settings that record member-level bind failures instead of aborting the load.
+	/// </summary>
+	/// <param name="bindFailurePaths">Collects the JSON path of every handled bind failure, in order.</param>
+	private static JsonSerializerSettings CreateTolerantSerializerSettings(List<string> bindFailurePaths) {
+		return new JsonSerializerSettings {
+			Error = (_, args) => {
+				string path = args.ErrorContext.Path ?? string.Empty;
+				// The event fires once per nesting level while the error is unhandled, so the innermost
+				// (most specific) path arrives first and the outer repeats add nothing.
+				if (!bindFailurePaths.Contains(path)) {
+					bindFailurePaths.Add(path);
+				}
+				args.ErrorContext.Handled = true;
+			}
+		};
+	}
+
+	/// <summary>
+	/// True when the environment collection itself, rather than some unrelated section, failed to bind.
+	/// </summary>
+	private static bool EnvironmentsAreUnbindable(IEnumerable<string> bindFailurePaths) {
+		return bindFailurePaths.Any(path =>
+			string.Equals(path, nameof(Settings.Environments), StringComparison.OrdinalIgnoreCase));
+	}
+
+	private static string BuildShapeMismatchMessage(IReadOnlyList<string> bindFailurePaths) {
+		string sections = string.Join(", ", bindFailurePaths.Where(path => !string.IsNullOrEmpty(path)));
+		if (string.IsNullOrEmpty(sections)) {
+			sections = "(root)";
+		}
+		return $"appsettings.json is valid JSON, but this clio version ({CurrentClioVersion}) cannot bind "
+			+ $"the following section(s): {sections}. A newer clio has most likely written the file. "
+			+ "Do NOT edit the file - restart the resident process (the MCP session) so it runs the new "
+			+ "clio build. The settings themselves are intact and are left untouched.";
+	}
+
+	private static string CurrentClioVersion =>
+		typeof(SettingsBootstrapService).Assembly.GetName().Version?.ToString() ?? "unknown";
 
 	/// <summary>
 	/// Applies one-time settings migrations and returns true when the model was changed.

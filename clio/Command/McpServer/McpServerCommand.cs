@@ -62,6 +62,7 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 	Common.McpWorker.IWorkerProcessSupervisor workerProcessSupervisor,
 	Common.McpWorker.IWorkerTempResidueSweeper workerTempResidueSweeper,
 	Relay.ISharedResourceReservation sharedResourceReservation,
+	IMcpHostPresenceRegistry mcpHostPresenceRegistry,
 	ILogger logger) : Command<McpServerCommandOptions>{
 	internal static readonly TimeSpan CuratedKnowledgeBootstrapTimeout = TimeSpan.FromMilliseconds(
 		CuratedKnowledgeSourceDefaults.StartupInstallDeadlineMilliseconds);
@@ -72,6 +73,9 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 		// own process group and arms parent-death signalling, so a hard-killed parent takes the worker and
 		// everything below it. A parent that is SIGKILLed runs no code, so this half cannot live there.
 		ArmWorkerContainment(options, logger);
+		// Announce this host to any clio CLI process that starts while it is resident, so a background
+		// self-update does not replace the binaries and appsettings.json under it (issue #1462).
+		string presenceMarkerPath = RegisterHostPresence(options, mcpHostPresenceRegistry);
 		ReapStaleWorkersForHost(options, workerProcessSupervisor, logger);
 		SweepWorkingDirectoryResidueForHost(options, workerTempResidueSweeper, logger);
 		BootstrapCuratedKnowledgeForHost(options, curatedKnowledgeBootstrapService, logger);
@@ -133,9 +137,26 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 			// stale indefinitely. The two drains run concurrently so shutdown stays bounded at
 			// ~10 seconds.
 			DrainHostBackgroundWork(options, flushScheduler);
+			mcpHostPresenceRegistry.Unregister(presenceMarkerPath);
 			McpLogNotifier.Reset();
 		}
 		return 0;
+	}
+
+	/// <summary>
+	/// Records this process as a resident MCP host unless it is a worker.
+	/// </summary>
+	/// <remarks>
+	/// HOST only, like every other <c>ForHost</c> step: a worker outlives nothing, and one marker per
+	/// spawned worker would defer clio updates for reasons that vanish a second later. The marker the
+	/// CLI has to see is the long-lived host's.
+	/// </remarks>
+	/// <param name="options">The parsed command options; skipped under <c>--worker</c>.</param>
+	/// <param name="registry">The presence registry.</param>
+	/// <returns>The marker path to remove at shutdown, or <see langword="null"/> when none was written.</returns>
+	internal static string RegisterHostPresence(McpServerCommandOptions options,
+		IMcpHostPresenceRegistry registry) {
+		return options.Worker ? null : registry.Register();
 	}
 
 	/// <summary>

@@ -1134,6 +1134,17 @@ namespace Clio
 
 		private Settings LoadLatestSettings(out string expectedContent) {
 			SettingsBootstrapResult latest = _settingsBootstrapService.GetResult();
+			// A shape mismatch is NOT a reason to write. The load is deliberately tolerant so the
+			// environments still resolve (issue #1462), which means the status is "issues-detected" and no
+			// longer refuses the write on its own - but serializing the model this build produced would
+			// silently drop whichever section it could not bind. Refuse, and say what actually fixes it.
+			SettingsIssue shapeMismatch = latest.Report.Issues.FirstOrDefault(issue =>
+				string.Equals(issue.Code, SettingsBootstrapService.SettingsShapeMismatchCode,
+					StringComparison.Ordinal));
+			if (shapeMismatch != null) {
+				throw new InvalidOperationException(
+					$"Cannot update settings: {shapeMismatch.Message}");
+			}
 			if (string.Equals(latest.Report.Status, "broken", StringComparison.OrdinalIgnoreCase)) {
 				string issue = latest.Report.Issues.FirstOrDefault()?.Message
 					?? "appsettings.json is unreadable.";
@@ -1354,13 +1365,19 @@ namespace Clio
 			bool due = false;
 			UpdateSettingsIfChanged(settings => {
 				AutoUpdatePolicy policy = GetPolicy(settings.Autoupdate, target);
-				due = policy.Enabled && now > policy.NextRun;
+				due = policy.Enabled && (policy.NextRun is null || now > policy.NextRun.Value);
 				if (due) {
 					policy.NextRun = now.AddMinutes(Math.Max(1, policy.FrequencyMinutes));
 				}
 				return due;
 			});
 			return due;
+		}
+
+		public bool IsAutoupdateDue(AutoUpdateTarget target, DateTimeOffset now) {
+			EnsureSettingsCollections();
+			AutoUpdatePolicy policy = GetPolicy(_settings.Autoupdate, target);
+			return policy.Enabled && (policy.NextRun is null || now > policy.NextRun.Value);
 		}
 
 		private static AutoUpdatePolicy GetPolicy(AutoUpdateSettings settings, AutoUpdateTarget target) => target switch {

@@ -392,4 +392,143 @@ public sealed class SettingsBootstrapServiceTests {
 			repair => repair.Code == "deploy-creatio-site-port-range-added",
 			because: "no range was added when a user-configured range already existed");
 	}
+
+	/// <summary>
+	/// A settings file that is valid JSON but whose autoupdate section has a shape this build cannot bind —
+	/// exactly what a newer clio writes under an older resident MCP worker (issue #1462).
+	/// </summary>
+	private const string FutureShapedSettings = """
+		{
+		  "$schema": "./schema.json",
+		  "ActiveEnvironmentKey": "dev",
+		  "SettingsVersion": 3,
+		  "autoupdate": {
+		    "clio": { "enabled": { "future": true }, "frequency-minutes": 480 }
+		  },
+		  "Environments": {
+		    "dev": {
+		      "Uri": "http://localhost",
+		      "Login": "Supervisor",
+		      "Password": "Supervisor"
+		    }
+		  }
+		}
+		""";
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reports settings-shape-mismatch, not settings-file-unreadable, for a valid JSON file whose section this clio build cannot bind.")]
+	public void GetResult_Should_Report_Shape_Mismatch_When_Section_Cannot_Bind() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(FutureShapedSettings));
+		SettingsBootstrapService service = new(fileSystem);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+
+		// Assert
+		result.Report.Issues.Should().ContainSingle(issue =>
+				issue.Code == SettingsBootstrapService.SettingsShapeMismatchCode,
+			because: "the file parses as JSON, so the failure is a version/shape mismatch and not an unreadable file");
+		result.Report.Issues.Should().NotContain(issue => issue.Code == "settings-file-unreadable",
+			because: "settings-file-unreadable must stay reserved for a file that is genuinely not parseable");
+		SettingsIssue issue = result.Report.Issues[0];
+		issue.Message.Should().Contain("autoupdate",
+			because: "the message must name the section that failed to bind so the reader can see what changed");
+		issue.Message.Should().Contain("this clio version",
+			because: "the message must attribute the mismatch to the running build, not to the file");
+		issue.Message.Should().Contain("restart",
+			because: "restarting the resident process is the only fix; editing a valid file is not");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps environments usable when an unrelated section fails to bind: status is issues-detected and environment-scoped tools may still run.")]
+	public void GetResult_Should_Keep_Environments_Usable_When_Unrelated_Section_Cannot_Bind() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(FutureShapedSettings));
+		SettingsBootstrapService service = new(fileSystem);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+
+		// Assert
+		result.Report.Status.Should().Be("issues-detected",
+			because: "an unbindable side section degrades the configuration; it does not destroy it");
+		result.Report.EnvironmentCount.Should().Be(1,
+			because: "the environments in the file are intact and must still be bound");
+		result.Report.CanExecuteEnvTools.Should().BeTrue(
+			because: "the active environment resolved, so environment-scoped tools must remain available");
+		result.ResolvedEnvironment!.Uri.Should().Be("http://localhost",
+			because: "the resolved environment must carry the values the file actually holds");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Never writes the settings file back while a section could not be bound, even when a migration is pending.")]
+	public void GetResult_Should_Not_Write_File_Back_When_Section_Cannot_Bind() {
+		// Arrange
+		string originalContent = FutureShapedSettings.Replace("\"SettingsVersion\": 3", "\"SettingsVersion\": 1");
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(originalContent));
+		SettingsBootstrapService service = new(fileSystem, applyRepairs: true);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+		string persistedContent = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
+
+		// Assert
+		persistedContent.Should().Be(originalContent,
+			because: "rewriting the file from a model that dropped an unbindable section would destroy the settings a newer clio wrote");
+		result.Report.RepairsApplied.Should().BeEmpty(
+			because: "no repair may be reported when the degraded mode deliberately suppressed the write");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Falls back to broken only when the environment collection itself cannot be bound.")]
+	public void GetResult_Should_Report_Broken_When_Environments_Cannot_Bind() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData("""
+			{
+			  "ActiveEnvironmentKey": "dev",
+			  "Environments": "not-a-dictionary"
+			}
+			"""));
+		SettingsBootstrapService service = new(fileSystem);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+
+		// Assert
+		result.Report.Status.Should().Be("broken",
+			because: "without an environment collection there is nothing an environment-scoped tool could run against");
+		result.Report.CanExecuteEnvTools.Should().BeFalse(
+			because: "a broken environment collection must stop environment-scoped execution");
+		result.Report.Issues.Should().ContainSingle(issue =>
+				issue.Code == SettingsBootstrapService.SettingsShapeMismatchCode,
+			because: "the file is still valid JSON, so the reason is a shape mismatch even when it is fatal");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps settings-file-unreadable for a file that is not valid JSON at all.")]
+	public void GetResult_Should_Report_Unreadable_When_File_Is_Not_Valid_Json() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData("{ this is not json"));
+		SettingsBootstrapService service = new(fileSystem);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+
+		// Assert
+		result.Report.Status.Should().Be("broken",
+			because: "a damaged file cannot be used and the caller must be told to repair it");
+		result.Report.Issues.Should().ContainSingle(issue => issue.Code == "settings-file-unreadable",
+			because: "a genuine parse failure must keep the code that sends the reader to the file");
+	}
 }

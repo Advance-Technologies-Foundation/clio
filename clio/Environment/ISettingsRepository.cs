@@ -383,6 +383,17 @@ namespace Clio.UserEnvironment
 		/// <returns><c>true</c> when the component should be updated.</returns>
 		bool TryScheduleAutoupdate(global::Clio.Common.AutoUpdateTarget target, DateTimeOffset now) => false;
 
+		/// <summary>Reports whether an update schedule is enabled and due, WITHOUT advancing it.</summary>
+		/// <remarks>
+		/// The read-only counterpart of <see cref="TryScheduleAutoupdate"/>, which advances and persists
+		/// <c>next-run</c> as part of answering. A caller that only needs to say something about the
+		/// schedule - the resident-MCP-host deferral notice - must not move it.
+		/// </remarks>
+		/// <param name="target">Component whose schedule is checked.</param>
+		/// <param name="now">Current time.</param>
+		/// <returns><c>true</c> when the component's update is enabled and due.</returns>
+		bool IsAutoupdateDue(global::Clio.Common.AutoUpdateTarget target, DateTimeOffset now) => false;
+
 		/// <summary>
 		/// Determines whether the named feature flag is enabled.
 		/// </summary>

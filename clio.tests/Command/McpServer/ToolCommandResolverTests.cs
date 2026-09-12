@@ -589,4 +589,83 @@ public class ToolCommandResolverTests {
 		exception.Message.Should().Contain("Bearer",
 			because: "the error must name the real constraint (only Bearer is supported)");
 	}
+
+	[Test]
+	[Description("Tells the caller to restart the MCP session - not to repair the file - when the bootstrap failed on a shape mismatch, because the settings file is valid.")]
+	[Category("Unit")]
+	public void Resolve_Should_Say_Restart_The_Session_When_Bootstrap_Reports_A_Shape_Mismatch() {
+		// Arrange
+		System.IO.Abstractions.IFileSystem originalFileSystem = SettingsRepository.FileSystem;
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		SettingsRepository.FileSystem = fileSystem;
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		ISettingsBootstrapService settingsBootstrapService = Substitute.For<ISettingsBootstrapService>();
+		settingsBootstrapService.GetReport().Returns(new SettingsBootstrapReport(
+			"broken",
+			SettingsRepository.AppSettingsFile,
+			null,
+			null,
+			0,
+			[new SettingsIssue(SettingsBootstrapService.SettingsShapeMismatchCode,
+				"appsettings.json is valid JSON, but this clio version cannot bind autoupdate.")],
+			[],
+			true,
+			false));
+		ToolCommandResolver resolver = CreateResolver(settingsRepository, settingsBootstrapService);
+		EnvironmentOptions options = new() { Environment = "dev" };
+
+		try {
+			// Act
+			Action act = () => resolver.Resolve<CreateEntitySchemaCommand>(options);
+
+			// Assert
+			EnvironmentResolutionException exception = act.Should().Throw<EnvironmentResolutionException>(
+					because: "an unusable bootstrap is still a caller-actionable resolution failure")
+				.Which;
+			exception.Message.Should().Contain("restart the MCP session",
+				because: "restarting the resident process is the only thing that fixes a version skew");
+			exception.Message.Should().NotContain("Repair",
+				because: "sending the user to repair a file that is valid JSON is the misleading advice issue #1462 reported");
+		}
+		finally {
+			SettingsRepository.FileSystem = originalFileSystem;
+		}
+	}
+
+	[Test]
+	[Description("Keeps the repair-the-file wording for a genuinely unreadable settings file.")]
+	[Category("Unit")]
+	public void Resolve_Should_Keep_Repair_Wording_When_Settings_File_Is_Unreadable() {
+		// Arrange
+		System.IO.Abstractions.IFileSystem originalFileSystem = SettingsRepository.FileSystem;
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		SettingsRepository.FileSystem = fileSystem;
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		ISettingsBootstrapService settingsBootstrapService = Substitute.For<ISettingsBootstrapService>();
+		settingsBootstrapService.GetReport().Returns(new SettingsBootstrapReport(
+			"broken",
+			SettingsRepository.AppSettingsFile,
+			null,
+			null,
+			0,
+			[new SettingsIssue("settings-file-unreadable", "appsettings.json is unreadable.")],
+			[],
+			true,
+			false));
+		ToolCommandResolver resolver = CreateResolver(settingsRepository, settingsBootstrapService);
+		EnvironmentOptions options = new() { Environment = "dev" };
+
+		try {
+			// Act
+			Action act = () => resolver.Resolve<CreateEntitySchemaCommand>(options);
+
+			// Assert
+			act.Should().Throw<EnvironmentResolutionException>()
+				.Which.Message.Should().Contain("Repair",
+					because: "a damaged file is exactly the case where repairing the file IS the fix");
+		}
+		finally {
+			SettingsRepository.FileSystem = originalFileSystem;
+		}
+	}
 }
