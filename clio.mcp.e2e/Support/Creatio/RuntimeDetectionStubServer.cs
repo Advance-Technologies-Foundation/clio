@@ -136,6 +136,17 @@ internal sealed class RuntimeDetectionStubServer : IAsyncDisposable {
 	public const string ODataPreWriteEmptyRecord = "emptyrecord";
 
 	/// <summary>
+	/// <see cref="RuntimeDetectionStubServerConfiguration.ODataPreWriteMode"/> value that answers a
+	/// COLLECTION read carrying <c>$expand</c> with the shape a real Creatio service returned for
+	/// <c>Contact?$select=Id,Name,AccountId&amp;$expand=Account&amp;$top=1</c>: an
+	/// <c>@odata.context</c> whose fragment carries the projection and the expanded navigation property
+	/// as <c>Account()</c>, plus one record with the expanded object nested in it. The fragment is built
+	/// from the request's own <c>$select</c>/<c>$expand</c>, so the stub answers what was asked rather
+	/// than a literal it could drift from.
+	/// </summary>
+	public const string ODataExpandRead = "expandread";
+
+	/// <summary>
 	/// Path of the stub's own introspection endpoint. A GET returns a JSON array of
 	/// <c>{ "method": ..., "url": ... }</c> for every request the stub has served, letting a test prove
 	/// which URL the pre-write validation actually requested and that no PATCH was issued.
@@ -414,15 +425,47 @@ http.createServer((request, response) => {
             + " See http://admin:{{ODataPreWriteUnverifiedSecret}}@{{ODataPreWriteUnverifiedHost}}:80/trace for details.");
         return;
       }
+      const isCollectionExpandRead = request.method === "GET"
+        && url.includes("/odata/" + config.ODataEntity + "?")
+        && url.includes("$expand=");
+      if (isCollectionExpandRead && config.ODataPreWriteMode === "{{ODataExpandRead}}") {
+        // The live-proven expand shape: the context fragment names the selected columns AND the
+        // expanded navigation property with empty parentheses, and the record nests the expanded entity.
+        // The query is read through the URL parser rather than by splitting on the parameter name: a
+        // name that is a substring of another ($select inside a hypothetical $selectAny) would make a
+        // hand-rolled split answer the wrong value, and the parser also does the percent-decoding.
+        const query = new URL(url, "http://127.0.0.1").searchParams;
+        const splitList = (value) => (value ? value.split(",") : []);
+        const projection = splitList(query.get("$select"));
+        const expanded = splitList(query.get("$expand"));
+        const fragment = config.ODataEntity + "("
+          + projection.concat(expanded.map((nav) => nav + "()")).join(",") + ")";
+        // Object.create(null) so a column literally named __proto__ or constructor becomes an own
+        // property of the answer instead of mutating/ignoring an inherited one.
+        const record = Object.assign(Object.create(null), { Id: "00000000-0000-0000-0000-000000000001" });
+        for (const column of projection) {
+          if (column && column !== "Id") {
+            record[column] = "probe";
+          }
+        }
+        for (const nav of expanded) {
+          record[nav] = { Id: "00000000-0000-0000-0000-000000000002", Name: "probe" };
+        }
+        sendJson(response, 200, {
+          "@odata.context": "http://127.0.0.1/odata/$metadata#" + fragment,
+          value: [record]
+        });
+        return;
+      }
       if (isKeyedProbe) {
         // The record the $select probe addressed, echoed back with the OData context annotation and
         // EVERY column the probe selected - what a conforming service answers, and what the probe now
         // requires as proof that those fields exist.
-        const selected = decodeURIComponent(url.split("$select=")[1].split("&")[0]).split(",");
-        const record = {
+        const selected = (new URL(url, "http://127.0.0.1").searchParams.get("$select") || "").split(",");
+        const record = Object.assign(Object.create(null), {
           "@odata.context": "http://127.0.0.1/odata/$metadata#" + config.ODataEntity,
           Id: "00000000-0000-0000-0000-000000000001"
-        };
+        });
         for (const column of selected) {
           if (column && column !== "Id") {
             record[column] = "probe";
