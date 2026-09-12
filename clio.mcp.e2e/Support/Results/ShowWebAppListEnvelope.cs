@@ -16,19 +16,20 @@ internal static class ShowWebAppListResultParser
 {
 	public static IReadOnlyList<ShowWebAppListEnvironmentEnvelope> Extract(CallToolResult callResult)
 	{
+		McpParseDiagnostics diagnostics = new();
 		if (TrySerializeToJsonElement(callResult.StructuredContent, out JsonElement structuredContent) &&
-			TryExtract(structuredContent, out IReadOnlyList<ShowWebAppListEnvironmentEnvelope> structuredResult))
+			TryExtract(structuredContent, out IReadOnlyList<ShowWebAppListEnvironmentEnvelope> structuredResult, diagnostics))
 		{
 			return structuredResult;
 		}
 
 		if (TrySerializeToJsonElement(callResult.Content, out JsonElement content) &&
-			TryExtract(content, out IReadOnlyList<ShowWebAppListEnvironmentEnvelope> contentResult))
+			TryExtract(content, out IReadOnlyList<ShowWebAppListEnvironmentEnvelope> contentResult, diagnostics))
 		{
 			return contentResult;
 		}
 
-		throw new InvalidOperationException("Could not parse show-webApp-list MCP result.");
+		throw new InvalidOperationException($"Could not parse show-webApp-list MCP result: {McpResultDiagnostics.Describe(callResult, diagnostics)}");
 	}
 
 	/// <summary>
@@ -47,7 +48,7 @@ internal static class ShowWebAppListResultParser
 			return content.GetRawText();
 		}
 
-		throw new InvalidOperationException("Could not read the show-webApp-list MCP result payload.");
+		throw new InvalidOperationException($"Could not read the show-webApp-list MCP result payload: {McpResultDiagnostics.Describe(callResult)}");
 	}
 
 	private static bool TrySerializeToJsonElement(object? value, out JsonElement element)
@@ -62,9 +63,9 @@ internal static class ShowWebAppListResultParser
 		return true;
 	}
 
-	private static bool TryExtract(JsonElement element, out IReadOnlyList<ShowWebAppListEnvironmentEnvelope> environments)
+	private static bool TryExtract(JsonElement element, out IReadOnlyList<ShowWebAppListEnvironmentEnvelope> environments, McpParseDiagnostics diagnostics)
 	{
-		if (TryDeserialize(element, out environments))
+		if (TryDeserialize(element, out environments, diagnostics))
 		{
 			return true;
 		}
@@ -73,7 +74,7 @@ internal static class ShowWebAppListResultParser
 		// read from appsettings.json at call time and a read problem travels as a warning next to it.
 		if (element.ValueKind == JsonValueKind.Object &&
 			element.TryGetProperty("environments", out JsonElement wrapped) &&
-			TryDeserialize(wrapped, out environments))
+			TryDeserialize(wrapped, out environments, diagnostics))
 		{
 			return true;
 		}
@@ -82,7 +83,7 @@ internal static class ShowWebAppListResultParser
 		{
 			foreach (JsonElement item in element.EnumerateArray())
 			{
-				if (TryDeserialize(item, out environments))
+				if (TryDeserialize(item, out environments, diagnostics))
 				{
 					return true;
 				}
@@ -92,8 +93,8 @@ internal static class ShowWebAppListResultParser
 					continue;
 				}
 
-				if (TryParseJson(textPayload, out JsonElement textPayloadElement) &&
-					TryExtract(textPayloadElement, out environments))
+				if (TryParseJson(textPayload, out JsonElement textPayloadElement, diagnostics) &&
+					TryExtract(textPayloadElement, out environments, diagnostics))
 				{
 					return true;
 				}
@@ -104,8 +105,8 @@ internal static class ShowWebAppListResultParser
 		{
 			string? textPayload = element.GetString();
 			if (!string.IsNullOrWhiteSpace(textPayload) &&
-				TryParseJson(textPayload, out JsonElement textPayloadElement) &&
-				TryExtract(textPayloadElement, out environments))
+				TryParseJson(textPayload, out JsonElement textPayloadElement, diagnostics) &&
+				TryExtract(textPayloadElement, out environments, diagnostics))
 			{
 				return true;
 			}
@@ -115,8 +116,12 @@ internal static class ShowWebAppListResultParser
 		return false;
 	}
 
-	private static bool TryDeserialize(JsonElement element, out IReadOnlyList<ShowWebAppListEnvironmentEnvelope> environments)
+	private static bool TryDeserialize(JsonElement element, out IReadOnlyList<ShowWebAppListEnvironmentEnvelope> environments, McpParseDiagnostics diagnostics)
 	{
+		// The array-wrapper rule lives in McpParseDiagnostics.RecordDeserializeAttempt: a bare MCP
+		// content-item array reaching this last-resort attempt must not be recorded as "JSON was present"
+		// nor contribute its always-doomed exception to the failure message.
+		bool isMeaningfulJsonCandidate = diagnostics.RecordDeserializeAttempt(element);
 		try
 		{
 			ShowWebAppListEnvironmentEnvelope[]? deserialized = JsonSerializer.Deserialize<ShowWebAppListEnvironmentEnvelope[]>(
@@ -131,8 +136,9 @@ internal static class ShowWebAppListResultParser
 				return true;
 			}
 		}
-		catch (JsonException)
+		catch (JsonException exception)
 		{
+			diagnostics.RecordJsonException(exception, isMeaningfulJsonCandidate);
 		}
 
 		environments = [];
@@ -157,15 +163,16 @@ internal static class ShowWebAppListResultParser
 		return false;
 	}
 
-	private static bool TryParseJson(string value, out JsonElement element)
+	private static bool TryParseJson(string value, out JsonElement element, McpParseDiagnostics diagnostics)
 	{
 		try
 		{
 			element = JsonSerializer.SerializeToElement(JsonSerializer.Deserialize<JsonElement>(value));
 			return true;
 		}
-		catch (JsonException)
+		catch (JsonException exception)
 		{
+			diagnostics.RecordJsonException(exception);
 			element = default;
 			return false;
 		}

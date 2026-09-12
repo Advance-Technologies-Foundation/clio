@@ -24,17 +24,18 @@ internal static class GetPkgListResultParser {
 	}
 
 	public static GetPkgListResponseEnvelope ExtractResponse(CallToolResult callResult) {
+		McpParseDiagnostics diagnostics = new();
 		if (TrySerializeToJsonElement(callResult.StructuredContent, out JsonElement structuredContent) &&
-			TryExtractResponse(structuredContent, out GetPkgListResponseEnvelope? structuredResponse)) {
+			TryExtractResponse(structuredContent, out GetPkgListResponseEnvelope? structuredResponse, diagnostics)) {
 			return structuredResponse!;
 		}
 
 		if (TrySerializeToJsonElement(callResult.Content, out JsonElement content) &&
-			TryExtractResponse(content, out GetPkgListResponseEnvelope? contentResponse)) {
+			TryExtractResponse(content, out GetPkgListResponseEnvelope? contentResponse, diagnostics)) {
 			return contentResponse!;
 		}
 
-		throw new InvalidOperationException("Could not parse list-packages MCP result.");
+		throw new InvalidOperationException($"Could not parse list-packages MCP result: {McpResultDiagnostics.Describe(callResult, diagnostics)}");
 	}
 
 	private static bool TrySerializeToJsonElement(object? value, out JsonElement element) {
@@ -47,8 +48,8 @@ internal static class GetPkgListResultParser {
 		return true;
 	}
 
-	private static bool TryExtractResponse(JsonElement element, out GetPkgListResponseEnvelope? response) {
-		if (TryDeserializeResponse(element, out response)) {
+	private static bool TryExtractResponse(JsonElement element, out GetPkgListResponseEnvelope? response, McpParseDiagnostics diagnostics) {
+		if (TryDeserializeResponse(element, out response, diagnostics)) {
 			return true;
 		}
 
@@ -56,8 +57,8 @@ internal static class GetPkgListResultParser {
 			foreach (JsonElement item in element.EnumerateArray()) {
 				if (TryGetTextPayload(item, out string? textPayload) &&
 					!string.IsNullOrWhiteSpace(textPayload) &&
-					TryParseJson(textPayload, out JsonElement textPayloadElement) &&
-					TryDeserializeResponse(textPayloadElement, out response)) {
+					TryParseJson(textPayload, out JsonElement textPayloadElement, diagnostics) &&
+					TryDeserializeResponse(textPayloadElement, out response, diagnostics)) {
 					return true;
 				}
 			}
@@ -66,8 +67,8 @@ internal static class GetPkgListResultParser {
 		if (element.ValueKind == JsonValueKind.String) {
 			string? textPayload = element.GetString();
 			if (!string.IsNullOrWhiteSpace(textPayload) &&
-				TryParseJson(textPayload, out JsonElement textPayloadElement) &&
-				TryDeserializeResponse(textPayloadElement, out response)) {
+				TryParseJson(textPayload, out JsonElement textPayloadElement, diagnostics) &&
+				TryDeserializeResponse(textPayloadElement, out response, diagnostics)) {
 				return true;
 			}
 		}
@@ -76,7 +77,11 @@ internal static class GetPkgListResultParser {
 		return false;
 	}
 
-	private static bool TryDeserializeResponse(JsonElement element, out GetPkgListResponseEnvelope? response) {
+	private static bool TryDeserializeResponse(JsonElement element, out GetPkgListResponseEnvelope? response, McpParseDiagnostics diagnostics) {
+		// The array-wrapper rule lives in McpParseDiagnostics.RecordDeserializeAttempt: a bare MCP
+		// content-item array reaching this last-resort attempt must not be recorded as "JSON was present"
+		// nor contribute its always-doomed exception to the failure message.
+		bool isMeaningfulJsonCandidate = diagnostics.RecordDeserializeAttempt(element);
 		try {
 			GetPkgListResponseEnvelope? parsed = JsonSerializer.Deserialize<GetPkgListResponseEnvelope>(
 				element.GetRawText(),
@@ -89,7 +94,8 @@ internal static class GetPkgListResultParser {
 			response = parsed;
 			return true;
 		}
-		catch (JsonException) {
+		catch (JsonException exception) {
+			diagnostics.RecordJsonException(exception, isMeaningfulJsonCandidate);
 			response = null;
 			return false;
 		}
@@ -110,12 +116,13 @@ internal static class GetPkgListResultParser {
 		return false;
 	}
 
-	private static bool TryParseJson(string value, out JsonElement element) {
+	private static bool TryParseJson(string value, out JsonElement element, McpParseDiagnostics diagnostics) {
 		try {
 			element = JsonSerializer.SerializeToElement(JsonSerializer.Deserialize<JsonElement>(value));
 			return true;
 		}
-		catch (JsonException) {
+		catch (JsonException exception) {
+			diagnostics.RecordJsonException(exception);
 			element = default;
 			return false;
 		}

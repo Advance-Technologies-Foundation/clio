@@ -38,19 +38,20 @@ internal static class AssertInfrastructureResultParser
 {
 	public static AssertInfrastructureEnvelope Extract(CallToolResult callResult)
 	{
+		McpParseDiagnostics diagnostics = new();
 		if (TrySerializeToJsonElement(callResult.StructuredContent, out JsonElement structuredContent) &&
-			TryExtractEnvelope(structuredContent, out AssertInfrastructureEnvelope? structuredEnvelope))
+			TryExtractEnvelope(structuredContent, out AssertInfrastructureEnvelope? structuredEnvelope, diagnostics))
 		{
 			return structuredEnvelope!;
 		}
 
 		if (TrySerializeToJsonElement(callResult.Content, out JsonElement content) &&
-			TryExtractEnvelope(content, out AssertInfrastructureEnvelope? contentEnvelope))
+			TryExtractEnvelope(content, out AssertInfrastructureEnvelope? contentEnvelope, diagnostics))
 		{
 			return contentEnvelope!;
 		}
 
-		throw new InvalidOperationException("Could not parse assert-infrastructure structured MCP result.");
+		throw new InvalidOperationException($"Could not parse assert-infrastructure structured MCP result: {McpResultDiagnostics.Describe(callResult, diagnostics)}");
 	}
 
 	private static bool TrySerializeToJsonElement(object? value, out JsonElement element)
@@ -65,9 +66,9 @@ internal static class AssertInfrastructureResultParser
 		return true;
 	}
 
-	private static bool TryExtractEnvelope(JsonElement element, out AssertInfrastructureEnvelope? envelope)
+	private static bool TryExtractEnvelope(JsonElement element, out AssertInfrastructureEnvelope? envelope, McpParseDiagnostics diagnostics)
 	{
-		if (TryDeserialize(element, out envelope))
+		if (TryDeserialize(element, out envelope, diagnostics))
 		{
 			return true;
 		}
@@ -76,7 +77,7 @@ internal static class AssertInfrastructureResultParser
 		{
 			foreach (JsonElement item in element.EnumerateArray())
 			{
-				if (TryDeserialize(item, out envelope))
+				if (TryDeserialize(item, out envelope, diagnostics))
 				{
 					return true;
 				}
@@ -86,8 +87,8 @@ internal static class AssertInfrastructureResultParser
 					continue;
 				}
 
-				if (TryParseJson(textPayload, out JsonElement textPayloadElement) &&
-					TryDeserialize(textPayloadElement, out envelope))
+				if (TryParseJson(textPayload, out JsonElement textPayloadElement, diagnostics) &&
+					TryDeserialize(textPayloadElement, out envelope, diagnostics))
 				{
 					return true;
 				}
@@ -98,8 +99,8 @@ internal static class AssertInfrastructureResultParser
 		{
 			string? textPayload = element.GetString();
 			if (!string.IsNullOrWhiteSpace(textPayload) &&
-				TryParseJson(textPayload, out JsonElement textPayloadElement) &&
-				TryDeserialize(textPayloadElement, out envelope))
+				TryParseJson(textPayload, out JsonElement textPayloadElement, diagnostics) &&
+				TryDeserialize(textPayloadElement, out envelope, diagnostics))
 			{
 				return true;
 			}
@@ -109,8 +110,12 @@ internal static class AssertInfrastructureResultParser
 		return false;
 	}
 
-	private static bool TryDeserialize(JsonElement element, out AssertInfrastructureEnvelope? envelope)
+	private static bool TryDeserialize(JsonElement element, out AssertInfrastructureEnvelope? envelope, McpParseDiagnostics diagnostics)
 	{
+		// The array-wrapper rule lives in McpParseDiagnostics.RecordDeserializeAttempt: a bare MCP
+		// content-item array reaching this last-resort attempt must not be recorded as "JSON was present"
+		// nor contribute its always-doomed exception to the failure message.
+		bool isMeaningfulJsonCandidate = diagnostics.RecordDeserializeAttempt(element);
 		try
 		{
 			envelope = JsonSerializer.Deserialize<AssertInfrastructureEnvelope>(
@@ -121,8 +126,9 @@ internal static class AssertInfrastructureResultParser
 				&& envelope.Sections is not null
 				&& envelope.DatabaseCandidates is not null;
 		}
-		catch (JsonException)
+		catch (JsonException exception)
 		{
+			diagnostics.RecordJsonException(exception, isMeaningfulJsonCandidate);
 			envelope = null;
 			return false;
 		}
@@ -146,15 +152,16 @@ internal static class AssertInfrastructureResultParser
 		return false;
 	}
 
-	private static bool TryParseJson(string value, out JsonElement element)
+	private static bool TryParseJson(string value, out JsonElement element, McpParseDiagnostics diagnostics)
 	{
 		try
 		{
 			element = JsonSerializer.SerializeToElement(JsonSerializer.Deserialize<JsonElement>(value));
 			return true;
 		}
-		catch (JsonException)
+		catch (JsonException exception)
 		{
+			diagnostics.RecordJsonException(exception);
 			element = default;
 			return false;
 		}
