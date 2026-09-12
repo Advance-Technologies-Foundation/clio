@@ -31,12 +31,38 @@ public sealed class CreateAppOptions : EnvironmentOptions
 	[Option("with-mobile-pages", Required = false, Default = "true", HelpText = "Create mobile pages (_MobileFormPage, _MobileListPage) for the main entity in addition to web pages (default: true). Pass false for a web-only application.")]
 	public string? WithMobilePagesValue { get; set; }
 
+	[Option("entity-schema-name", Required = false, HelpText = "Name of an EXISTING entity schema the application's primary section is built over. The entity must already exist in the environment; Creatio then skips minting a new canonical entity.")]
+	public string? EntitySchemaName { get; set; }
+
+	[Option("app-section-description", Required = false, HelpText = "Description applied to the application's primary section.")]
+	public string? AppSectionDescription { get; set; }
+
 	/// <summary>
 	/// Gets a value indicating whether mobile pages should be generated for the main entity.
 	/// </summary>
 	public bool WithMobilePages {
 		get => string.Equals(WithMobilePagesValue ?? "true", "true", StringComparison.OrdinalIgnoreCase);
 		set => WithMobilePagesValue = value ? "true" : "false";
+	}
+
+	/// <summary>
+	/// Builds the optional CreateApp template payload from the CLI options, or returns
+	/// <see langword="null"/> when neither template option was supplied so the request stays
+	/// byte-identical to a call that predates these options.
+	/// </summary>
+	internal ApplicationOptionalTemplateData? BuildOptionalTemplateData() {
+		bool hasEntitySchemaName = !string.IsNullOrWhiteSpace(EntitySchemaName);
+		bool hasSectionDescription = !string.IsNullOrWhiteSpace(AppSectionDescription);
+		if (!hasEntitySchemaName && !hasSectionDescription) {
+			return null;
+		}
+
+		// --entity-schema-name alone carries the intent, so useExistingEntitySchema is implied here
+		// instead of being a second flag the caller can contradict.
+		return new ApplicationOptionalTemplateData(
+			EntitySchemaName: hasEntitySchemaName ? EntitySchemaName!.Trim() : null,
+			UseExistingEntitySchema: hasEntitySchemaName ? true : null,
+			AppSectionDescription: hasSectionDescription ? AppSectionDescription!.Trim() : null);
 	}
 
 	internal static void ValidateMobilePagesOption(string? value) {
@@ -76,6 +102,7 @@ public sealed class CreateAppCommand(
 				options.TemplateCode,
 				options.IconId,
 				options.IconBackground,
+				OptionalTemplateData: options.BuildOptionalTemplateData(),
 				WithMobilePages: options.WithMobilePages);
 
 			ApplicationInfoResult result = applicationCreateService.CreateApplication(options.Environment, request);

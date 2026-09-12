@@ -29,6 +29,22 @@ DESCRIPTION
     --with-mobile-pages false to create a web-only application; the two mobile
     pages are then skipped.
 
+    By default Creatio mints a new canonical entity for the application's
+    primary section. Pass --entity-schema-name <Name> to build that section
+    over an entity that ALREADY exists in the environment instead; Creatio then
+    suppresses the new entity. This is the only way to get an application whose
+    primary section sits on an existing object -- do not follow create-app with
+    create-app-section for the primary section, which leaves the starter pages
+    of the unused canonical entity behind. --app-section-description sets the
+    description of the primary section and can be used on its own.
+
+    The two commands are different mechanisms, which explains their different
+    timing and options: create-app posts to
+    ServiceModel/AppInstallerService.svc/CreateApp (the platform's application
+    generator), while create-app-section posts to
+    DataService/json/SyncReply/InsertQuery (a direct insert into the section
+    tables) and therefore accepts no template arguments.
+
 SYNOPSIS
     clio create-app [options]
 
@@ -58,6 +74,16 @@ OPTIONS
                                      addition to web pages. Optional; defaults
                                      to true. Pass false for a web-only app.
 
+    --entity-schema-name             Name of an EXISTING entity schema the
+                                     primary section is built over. Optional.
+                                     The entity must already exist in the
+                                     environment; clio sends it together with
+                                     useExistingEntitySchema=true, so no
+                                     canonical entity is created.
+
+    --app-section-description        Description applied to the application's
+                                     primary section. Optional.
+
     --Environment            -e      Environment name. Required.
 
 EXAMPLE
@@ -69,6 +95,9 @@ EXAMPLE
 
     clio create-app --name "Web Portal" --code WebPortal --template-code AppFreedomUI --with-mobile-pages false -e dev
         create a web-only application without the main entity mobile pages
+
+    clio create-app --name "Orders" --code OrdersApp --template-code AppFreedomUI --entity-schema-name UsrExistingOrder -e dev
+        build the primary section over the existing UsrExistingOrder entity instead of a newly created one
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

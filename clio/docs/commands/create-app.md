@@ -33,6 +33,15 @@ By default create-app generates the full set of five pages, including the main
 entity `_MobileFormPage` and `_MobileListPage`. Pass --with-mobile-pages false
 to create a web-only application; the two mobile pages are then skipped.
 
+By default Creatio mints a new canonical entity for the application's primary
+section. Pass --entity-schema-name `<Name>` to build that section over an entity
+that **already exists** in the environment instead; Creatio then suppresses the
+new entity. This is the only way to get an application whose primary section
+sits on an existing object — do not follow create-app with create-app-section
+for the primary section, which leaves the starter pages of the unused canonical
+entity behind. --app-section-description sets the description of the primary
+section and can be used on its own.
+
 ## Synopsis
 
 ```bash
@@ -67,6 +76,16 @@ clio create-app [options]
                                  addition to web pages. Optional; defaults to
                                  true. Pass false for a web-only application.
 
+--entity-schema-name             Name of an EXISTING entity schema the primary
+                                 section is built over. Optional. The entity
+                                 must already exist in the environment; clio
+                                 sends it together with
+                                 useExistingEntitySchema=true, so no canonical
+                                 entity is created.
+
+--app-section-description        Description applied to the application's
+                                 primary section. Optional.
+
 --Environment            -e      Environment name. Required.
 ```
 
@@ -86,6 +105,9 @@ clio create-app --name "Sales" --code SalesApp --template-code EmptyApp --icon-b
 
 clio create-app --name "Web Portal" --code WebPortal --template-code AppFreedomUI --with-mobile-pages false -e dev
 # create a web-only application without the main entity mobile pages
+
+clio create-app --name "Orders" --code OrdersApp --template-code AppFreedomUI --entity-schema-name UsrExistingOrder -e dev
+# build the primary section over the existing UsrExistingOrder entity instead of a newly created one
 ```
 
 ## Notes
@@ -95,6 +117,10 @@ clio create-app --name "Web Portal" --code WebPortal --template-code AppFreedomU
 - --icon-background must be one of the Freedom UI palette colors when provided; a random palette color is assigned when omitted.
 - When --icon-id is omitted the command does not assign an icon automatically.
 - --with-mobile-pages defaults to `true`; existing calls without the flag keep generating the full five-page set. Pass `false` for a web-only app to skip the main entity `_MobileFormPage` and `_MobileListPage`. An explicit client type takes precedence over this flag.
+- --entity-schema-name maps to the CreateApp `optionalTemplateData` payload: clio always sends `useExistingEntitySchema: true` alongside `entitySchemaName`, so the "both fields or neither" rule of the underlying service cannot be violated from the CLI. The entity must already exist in the environment before the call — create-app does not create it, and a missing entity fails server-side.
+- --app-section-description maps to `optionalTemplateData.appSectionDescription` and is independent of --entity-schema-name. When neither option is passed clio sends an empty `optionalTemplateData`, exactly as before these options existed.
+- `useAIContentGeneration` is deliberately not exposed: it is rejected by the MCP `create-app` tool as well.
+- The two application commands use different endpoints, which explains their different timing and options: create-app posts to `ServiceModel/AppInstallerService.svc/CreateApp` (the platform's application generator), while create-app-section posts to `DataService/json/SyncReply/InsertQuery` (a direct insert into the section tables) and therefore accepts no template arguments.
 - --name and --description must be in the connected user's profile language. The application name is localized server-side under the profile, so a value whose script does not match a Latin-script profile (for example Cyrillic under an `en-US` profile) is rejected with an actionable error.
 
 ## Reporting Bugs
