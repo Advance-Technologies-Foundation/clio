@@ -27,21 +27,8 @@ public sealed class RegWebAppToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server with isolated settings, invokes reg-web-app and verifies that the stored environment has IsNetCore=false when only the framework DataService route succeeds.")]
 	[Description("Auto-detects the .NET Framework runtime through MCP registration and persists IsNetCore=false in the clio settings file.")]
 	public async Task RegisterWebApp_Should_Persist_Framework_Runtime_When_AutoDetection_Finds_Framework_Route() {
-		string tempHome = Path.Combine(Path.GetTempPath(), $"clio-reg-web-app-e2e-{Guid.NewGuid():N}");
-		Directory.CreateDirectory(tempHome);
-		string envVarName = OperatingSystem.IsWindows() ? "LOCALAPPDATA" : "HOME";
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		settings.ProcessEnvironmentVariables[envVarName] = tempHome;
-		using TemporaryClioSettingsOverride settingsOverride = TemporaryClioSettingsOverride.ReplaceContent(
-			"""
-			{
-			  "ActiveEnvironmentKey": null,
-			  "Environments": {}
-			}
-			""",
-			settings.ClioProcessPath,
-			settings.ProcessEnvironmentVariables);
+		(McpE2ESettings settings, TemporaryClioSettingsOverride settingsOverride) = ArrangeIsolatedClio();
+		using TemporaryClioSettingsOverride _ = settingsOverride;
 		await using RuntimeDetectionStubServer stubServer = RuntimeDetectionStubServer.Start(
 			new RuntimeDetectionStubServerConfiguration(
 				NetCoreHealthEnabled: true,
@@ -58,6 +45,83 @@ public sealed class RegWebAppToolE2ETests {
 		AssertCommandSucceeded(actResult);
 		AssertInfoOutputIncludesAutoDetectedFrameworkMessage(actResult);
 		AssertSettingsPersistedFrameworkRuntime(context.SettingsFilePath, actResult.EnvironmentName);
+	}
+
+	[Test]
+	[AllureTag(ToolName)]
+	[AllureName("reg-web-app auto-detects .NET Framework on a cold site where the framework login marker drops the connection")]
+	[AllureDescription("Reproduces issue #1428 end to end: neither SelectQuery route works, the .NET Core login marker answers 404, and the framework login marker drops the connection the way a Creatio site does on the first request after an application-pool start. Registration must still resolve .NET Framework instead of demanding --IsNetCore.")]
+	[Description("Auto-detects the .NET Framework runtime when the only conclusive evidence is a 404 on the .NET Core login marker and the framework marker never answers.")]
+	public async Task RegisterWebApp_Should_Persist_Framework_Runtime_When_Only_The_NetCore_Login_Marker_Answers() {
+		// Arrange
+		(McpE2ESettings settings, TemporaryClioSettingsOverride settingsOverride) = ArrangeIsolatedClio();
+		using TemporaryClioSettingsOverride _ = settingsOverride;
+		await using RuntimeDetectionStubServer stubServer = RuntimeDetectionStubServer.Start(
+			new RuntimeDetectionStubServerConfiguration(
+				NetCoreHealthEnabled: true,
+				NetFrameworkHealthEnabled: true,
+				NetCoreServiceEnabled: false,
+				NetFrameworkServiceEnabled: false,
+				NetCoreUiMarkerMode: "notfound",
+				NetFrameworkUiMarkerMode: "drop"));
+		await using ArrangeContext context = await ArrangeAsync(settings, stubServer);
+
+		// Act
+		RegWebAppActResult actResult = await ActAsync(context);
+
+		// Assert
+		AssertToolCallSucceeded(actResult);
+		AssertCommandSucceeded(actResult);
+		AssertInfoOutputIncludesAutoDetectedFrameworkMessage(actResult);
+		AssertSettingsPersistedFrameworkRuntime(context.SettingsFilePath, actResult.EnvironmentName);
+	}
+
+	[Test]
+	[AllureTag(ToolName)]
+	[AllureName("reg-web-app auto-detects .NET Framework when the framework login marker answers with a redirect")]
+	[AllureDescription("A real .NET Framework site answers /0/Login/NuiLogin.aspx with a 302 to the same page off the site root. The probe client must not follow it, and the redirect itself must count as the route being served.")]
+	[Description("Treats a 302 on the framework login marker as the route being served rather than as a probe failure.")]
+	public async Task RegisterWebApp_Should_Persist_Framework_Runtime_When_The_Framework_Login_Marker_Redirects() {
+		// Arrange
+		(McpE2ESettings settings, TemporaryClioSettingsOverride settingsOverride) = ArrangeIsolatedClio();
+		using TemporaryClioSettingsOverride _ = settingsOverride;
+		await using RuntimeDetectionStubServer stubServer = RuntimeDetectionStubServer.Start(
+			new RuntimeDetectionStubServerConfiguration(
+				NetCoreHealthEnabled: true,
+				NetFrameworkHealthEnabled: true,
+				NetCoreServiceEnabled: false,
+				NetFrameworkServiceEnabled: false,
+				NetCoreUiMarkerMode: "notfound",
+				NetFrameworkUiMarkerMode: "redirect"));
+		await using ArrangeContext context = await ArrangeAsync(settings, stubServer);
+
+		// Act
+		RegWebAppActResult actResult = await ActAsync(context);
+
+		// Assert
+		AssertToolCallSucceeded(actResult);
+		AssertCommandSucceeded(actResult);
+		AssertInfoOutputIncludesAutoDetectedFrameworkMessage(actResult);
+		AssertSettingsPersistedFrameworkRuntime(context.SettingsFilePath, actResult.EnvironmentName);
+	}
+
+	private static (McpE2ESettings Settings, TemporaryClioSettingsOverride Override) ArrangeIsolatedClio() {
+		string tempHome = Path.Combine(Path.GetTempPath(), $"clio-reg-web-app-e2e-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(tempHome);
+		string envVarName = OperatingSystem.IsWindows() ? "LOCALAPPDATA" : "HOME";
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		settings.ProcessEnvironmentVariables[envVarName] = tempHome;
+		TemporaryClioSettingsOverride settingsOverride = TemporaryClioSettingsOverride.ReplaceContent(
+			"""
+			{
+			  "ActiveEnvironmentKey": null,
+			  "Environments": {}
+			}
+			""",
+			settings.ClioProcessPath,
+			settings.ProcessEnvironmentVariables);
+		return (settings, settingsOverride);
 	}
 
 	private static async Task<ArrangeContext> ArrangeAsync(

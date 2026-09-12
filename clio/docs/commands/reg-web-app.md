@@ -11,10 +11,20 @@ reg-web-app - create/update a web application (website)
 ## Description
 
 Register new web application settings or update existing ones.
-When credentials are available, clio also validates the chosen route with an
-authenticated `SelectQuery` probe. Without credentials, clio falls back to
-unauthenticated health and login-marker probes and stops if the result remains
-ambiguous.
+
+Omit `--IsNetCore` and clio detects the runtime itself, in this order:
+
+1. **Authenticated `SelectQuery` probe** on each route family, when login/password or
+   OAuth credentials are available. This is the strongest signal.
+2. **Login-page markers** — `/Login/Login.html` for .NET Core / NET8 and
+   `/0/Login/NuiLogin.aspx` for .NET Framework. A page that answers, redirect included,
+   names the runtime; a page that answers `404` proves that runtime is absent, which
+   settles the case even when the other page never answered at all.
+3. **Health endpoints**, last and only as a tiebreaker: `/api/HealthCheck/Ping` answers
+   on a .NET Framework site as well, so it cannot tell the runtimes apart on its own.
+
+When the probes stay inconclusive clio stops with a diagnostic naming every URL it tried,
+rather than guessing — pass `--IsNetCore` to skip detection entirely.
 
 ## Synopsis
 
@@ -38,6 +48,10 @@ Name (pos. 0)	Environment(web application) name
 --Login                 -l          User login (administrator permission required)
 
 --Maintainer            -m          Maintainer name
+
+--IsNetCore             -i          Override runtime auto-detection:
+                                    true for .NET Core / NET8,
+                                    false for .NET Framework
 ```
 
 ## Example
