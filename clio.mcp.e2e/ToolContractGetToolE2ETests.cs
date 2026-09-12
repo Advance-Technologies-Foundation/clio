@@ -678,6 +678,14 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			},
 			because: "the response should preserve the requested local binding tool order");
 
+		foreach (ToolContractDefinition contract in response.Tools) {
+			contract.InputSchema.Properties.Single(field => field.Name == "workspace-path").Description.Should()
+				.Contain(".clio/workspaceSettings.json", because: "the MCP contract must identify the workspace root")
+				.And.Contain("packages/<package-name>", because: "the contract must explain package resolution");
+			contract.Examples.Should().OnlyContain(example => example.Arguments["workspace-path"]!.ToString() == "<workspace-root>",
+				because: "serialized local binding examples must not suggest a package directory");
+		}
+
 		ToolContractDefinition createContract = response.Tools.Single(tool => tool.Name == CreateDataBindingTool.CreateDataBindingToolName);
 		createContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "environment-name" &&
@@ -929,8 +937,10 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		response.Success.Should().BeTrue(
 			because: "the page business-rule mutation tool should be discoverable through tool-contract-get");
 		ToolContractDefinition contract = response.Tools!.Single();
-		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "page-schema-name", "rules"],
-			because: "page-business-rule creation requires environment package page and rule payload");
+		contract.InputSchema.Required.Should().Contain(["environment-name", "package-name", "rules"],
+			because: "page-business-rule creation requires environment package and rule payload");
+		contract.InputSchema.Required.Should().NotContain("page-schema-name",
+			because: "the page schema may arrive under the accepted 'schema-name' alias, so a client validating against the advertised schema must not reject that call");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "enum" &&
 				validator.Field == "rules[*].actions[*].type" &&

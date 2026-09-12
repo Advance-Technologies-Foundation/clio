@@ -8,6 +8,7 @@ using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Clio.Command.SqlScriptCommand
 {
@@ -57,22 +58,18 @@ namespace Clio.Command.SqlScriptCommand
 
 		private static string GetSqlScriptResult(string serverResponse, string viewType, string filePath) {
 			
-			bool isError = TryGetError(serverResponse, out var errorMessage);
-			if (isError) {
-				return errorMessage;
-			}
-			
-			
-			if (serverResponse == "[]") {
-				return string.Empty;
+			viewType = viewType.ToLowerInvariant();
+			if (viewType == "json") {
+				return GetJsonResult(serverResponse, filePath);
 			}
 			if (int.TryParse(serverResponse, out var count)) {
+				if (filePath != null) {
+					throw new InvalidOperationException("Use -v json to export an affected-row count.");
+				}
 				return $"({count} rows affected)";
 			}
-			viewType = viewType.ToLower();
 			var dataTable = JsonConvert.DeserializeObject<DataTable>(serverResponse);
-			var table = CreateConsoleTable(dataTable);
-			string formatResult = table.ToString();
+			string formatResult = dataTable.Rows.Count == 0 ? string.Empty : CreateConsoleTable(dataTable).ToString();
 			if (viewType == "table") {
 				if (filePath != null) {
 					File.WriteAllText(filePath, formatResult);
@@ -88,6 +85,17 @@ namespace Clio.Command.SqlScriptCommand
 				formatResult = serverResponse;
 			}
 			return formatResult;
+		}
+
+		private static string GetJsonResult(string serverResponse, string filePath) {
+			JToken jsonResult = JToken.Parse(serverResponse);
+			if (jsonResult.Type is not (JTokenType.Array or JTokenType.Integer)) {
+				throw new InvalidOperationException("SQL response must contain a JSON row array or an affected-row count.");
+			}
+			if (filePath != null) {
+				File.WriteAllText(filePath, serverResponse);
+			}
+			return serverResponse;
 		}
 
 		private static bool TryGetError(string json, out string errorMessage) {
@@ -170,7 +178,7 @@ namespace Clio.Command.SqlScriptCommand
 		/// Executes SQL and renders the result after validating the CSV destination.
 		/// </summary>
 		/// <param name="opts">SQL input, output format, and destination options.</param>
-		/// <returns>One when CSV has no destination; otherwise the command's execution result.</returns>
+		/// <returns>Zero on success; one for a missing CSV destination, SQL error, or export failure.</returns>
 		public override int Execute(ExecuteSqlScriptOptions opts) {
 			if (string.Equals(opts.ViewType, "csv", StringComparison.OrdinalIgnoreCase)
 				&& string.IsNullOrWhiteSpace(opts.DestPath)) {
@@ -183,7 +191,9 @@ namespace Clio.Command.SqlScriptCommand
 					result = _sqlScriptExecutor.Execute(opts.Script, ApplicationClient, EnvironmentSettings);
 				} else if (!string.IsNullOrEmpty(opts.File)) {
 					var script = File.ReadAllText(opts.File);
-					_logger.WriteLine(script);
+					if (!opts.IsSilent) {
+						_logger.WriteLine(script);
+					}
 					script = script.Replace(Environment.NewLine, "|nl|");
 					result = _sqlScriptExecutor.Execute(script, ApplicationClient, EnvironmentSettings);
 				} else {
@@ -191,16 +201,24 @@ namespace Clio.Command.SqlScriptCommand
 					var sc = Console.ReadLine();
 					result = _sqlScriptExecutor.Execute(sc, ApplicationClient, EnvironmentSettings);
 				}
+				if (TryGetError(result, out string errorMessage)) {
+					_logger.WriteError(errorMessage);
+					return 1;
+				}
 				result = GetSqlScriptResult(result, opts.ViewType, opts.DestPath);
+				if (opts.DestPath != null) {
+					_logger.WriteInfo($"Results saved to: {Path.GetFullPath(opts.DestPath)}");
+				}
 #pragma warning disable CLIO002
 				Console.OutputEncoding = System.Text.Encoding.UTF8;
 #pragma warning restore CLIO002
 				if (!opts.IsSilent) {
 					_logger.WriteLine(result);
 				}
-				_logger.WriteLine("Done");
+				_logger.WriteInfo("Done");
 			} catch (Exception e) {
 				_logger.WriteError(e.Message);
+				return 1;
 			}
 			return 0;
 		}

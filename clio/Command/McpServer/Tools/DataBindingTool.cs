@@ -165,7 +165,7 @@ public sealed record CreateDataBindingArgs(
 	string SchemaName,
 
 	[property: JsonPropertyName("workspace-path")]
-	[property: Description("Absolute path to the local workspace")]
+	[property: Description("Absolute workspace root containing .clio/workspaceSettings.json, not the package directory. The package is resolved under packages/<package-name> beneath that root.")]
 	[property: Required]
 	string WorkspacePath,
 
@@ -182,7 +182,7 @@ public sealed record CreateDataBindingArgs(
 	string? ValuesJson = null,
 
 	[property: JsonPropertyName("localizations")]
-	[property: Description("Optional JSON object keyed by culture then column name")]
+	[property: Description("Optional JSON object keyed by culture then column name. Columns may appear only here; they are included in the descriptor without inventing base values. Input validation failures preserve existing binding files.")]
 	string? LocalizationsJson = null,
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Optional Creatio environment name used only when the schema is not covered by a built-in offline template")]
@@ -204,7 +204,7 @@ public sealed record AddDataBindingRowArgs(
 	string BindingName,
 
 	[property: JsonPropertyName("workspace-path")]
-	[property: Description("Absolute path to the local workspace")]
+	[property: Description("Absolute workspace root containing .clio/workspaceSettings.json, not the package directory. The package is resolved under packages/<package-name> beneath that root.")]
 	[property: Required]
 	string WorkspacePath,
 
@@ -233,7 +233,7 @@ public sealed record RemoveDataBindingRowArgs(
 	string BindingName,
 
 	[property: JsonPropertyName("workspace-path")]
-	[property: Description("Absolute path to the local workspace")]
+	[property: Description("Absolute workspace root containing .clio/workspaceSettings.json, not the package directory. The package is resolved under packages/<package-name> beneath that root.")]
 	[property: Required]
 	string WorkspacePath,
 

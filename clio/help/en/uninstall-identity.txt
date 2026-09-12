@@ -1,0 +1,33 @@
+COMMAND TYPE
+    Deployment & Infrastructure commands
+
+NAME
+    uninstall-identity - Remove recorded local IdentityService and preserve Creatio
+
+SYNOPSIS
+    clio uninstall-identity -e ENVIRONMENT [--skip-crm-cleanup]
+
+OPTIONS
+    -e, --environment NAME
+        Required explicit registered environment name.
+    --skip-crm-cleanup
+        Recovery only. Leave Creatio identity system settings unchanged with a warning.
+        Default: false
+
+DESCRIPTION
+    Uses the environment's IdentityService attachment in clio appsettings to identify
+    the exact folder, IIS target and pool. Clears matching CRM references first, removes
+    the recorded artifacts, then empties the attachment and matching clio credentials.
+    Preserves Creatio, its database, OAuth application records and environment entry.
+    Shared pools are preserved. Unsafe or shared identity targets are refused.
+    Unresolvable IIS paths must be restored or their stale mappings corrected before retrying.
+    An empty attachment succeeds without deleting anything; legacy deployments must
+    have their verified location recorded first. Failed cleanup retains retry metadata.
+    Enable with: clio experimental --name deploy-identity --enable
+
+EXAMPLES
+    clio uninstall-identity -e local-dev
+    clio uninstall-identity -e local-dev --skip-crm-cleanup
+
+RELATED COMMANDS
+    deploy-identity, uninstall-creatio

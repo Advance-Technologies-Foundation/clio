@@ -1,0 +1,18 @@
+download-sys-setting-file
+Save a Binary system setting to a required destination filename.
+
+Usage:
+  clio download-sys-setting-file --code <code> --file-name <path/filename> -e <environment>
+
+--code       Required. Existing Binary system setting code.
+--file-name  Required. Destination including filename, in an existing directory.
+-e           Registered Creatio environment. Standard environment/authentication options apply.
+
+Requires ClioGate (clio install-gate -e <environment>).
+Reads the effective current-user value, with the platform's default fallback.
+Copies decoded bytes exactly. Does not guess MIME types, extensions, or text encodings.
+Text, JSON, XML and images stored as Binary can be saved under any chosen filename.
+Ordinary Text settings, empty/invalid values, values over 10 MB and existing destinations are rejected.
+Prints JSON metadata containing file-name (absolute path) and byte-count, never file content.
+
+MCP: clio-run command=download-sys-setting-file with environment-name, code and absolute file-name.

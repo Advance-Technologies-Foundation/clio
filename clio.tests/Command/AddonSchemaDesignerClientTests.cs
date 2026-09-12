@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Common;
 using FluentAssertions;
@@ -44,6 +45,35 @@ public sealed class AddonSchemaDesignerClientTests {
 			TargetSchemaManagerName = "EntitySchemaManager",
 			UseFullHierarchy = true
 		};
+
+	[Test]
+	[Description("Preserves the target identity and unknown fields in the real add-on deserialize/save round trip.")]
+	public void SaveSchema_ShouldPreserveExtensionData_WhenSchemaWasFetched() {
+		// Arrange
+		const string target = "11111111-1111-1111-1111-111111111111";
+		string savedBody = null;
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(call => {
+				if (call.ArgAt<string>(0).EndsWith("/GetSchema", StringComparison.Ordinal)) {
+					return $$$"""{"success":true,"schema":{"targetSchemaUId":"{{{target}}}","futureField":{"enabled":true},"metaData":"{}","resources":[]}}""";
+				}
+				savedBody = call.ArgAt<string>(1);
+				return """{"success":true,"value":true}""";
+			});
+
+		// Act
+		AddonSchemaDto schema = _client.GetSchema(SampleGetRequest());
+		_client.SaveSchema(schema);
+
+		// Assert
+		using JsonDocument saved = JsonDocument.Parse(savedBody);
+		saved.RootElement.GetProperty("targetSchemaUId").GetString().Should().Be(target,
+			because: "the identity must be passed back unchanged rather than lost or renamed");
+		saved.RootElement.GetProperty("futureField").GetProperty("enabled").GetBoolean().Should().BeTrue(
+			because: "unknown server metadata must survive the same serialization path");
+		saved.RootElement.EnumerateObject().Should().ContainSingle(field => field.Name == "targetSchemaUId",
+			because: "the save payload must not duplicate the identity field");
+	}
 
 	[Test]
 	[Description("Deserializes raw add-on designer responses directly when the service returns valid JSON.")]

@@ -1,12 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Net.Http;
 using System.Threading;
+using System.Threading.Tasks;
 using Clio.Common;
 using Clio.CreatioModel;
 using CommandLine;
@@ -23,7 +26,11 @@ public class CompileConfigurationOptions : RemoteCommandOptions
 	public bool All {
 		get; set;
 	}
-	protected override int DefaultTimeout => Timeout.Infinite;
+	// No DefaultTimeout override. RemoteCommandOptions.GetTimeOut already declares 60 minutes for
+	// `compile-configuration`, and this class used to override it with Timeout.Infinite - which also
+	// silently discarded any --timeout the caller passed. An unbounded wait is what let a build whose
+	// response never arrives hold its slot for the life of the process (issue #1422); the bound is a
+	// backstop now that completion no longer depends on that response at all.
 
 }
 
@@ -45,6 +52,20 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 	private readonly ICompilationHistoryPoller _compilationHistoryPoller;
 	private readonly ILogger _logger;
 	private readonly IInteractiveConsole _interactiveConsole;
+	private readonly IApplicationClientFactory _applicationClientFactory;
+	private readonly ICompilationActivityWatcher _activityWatcher;
+	private readonly IEnvironmentReloadWatcher _reloadWatcher;
+	private readonly ICompilationCompletionDecider _completionDecider;
+	private readonly ICompilationResultReader _compilationResultReader;
+
+	// Set once, when the reload is first seen, so the user is told what the pause in the output is.
+	private bool _reloadReported;
+
+	/// <summary>
+	/// Why the compile request failed, kept so the transport-failure message can name the actual cause
+	/// (401, DNS, TLS) instead of printing a generic checklist. <see langword="null"/> until one is seen.
+	/// </summary>
+	private Exception _requestFailure;
 
 	private const string OdataProjName = "Terrasoft.Configuration.ODataEntities.csproj";
 	private const string DevProjName = "Terrasoft.Configuration.Dev.csproj";
@@ -63,15 +84,33 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 
 	#region Constructors: Public
 
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "The command composes its required collaborators (application client, environment "
+			+ "settings, URL builder, history poller, logger, interactive console, client factory, activity "
+			+ "watcher, reload watcher, completion decider, result reader) via constructor injection; "
+			+ "bundling them into a parameter object would hide the injected contract without changing "
+			+ "behaviour, which is how the other multi-collaborator commands in this assembly are handled.")]
 	public CompileConfigurationCommand(IApplicationClient applicationClient,
 		EnvironmentSettings settings, IServiceUrlBuilder serviceUrlBuilder,
 		ICompilationHistoryPoller compilationHistoryPoller, ILogger logger,
-		IInteractiveConsole interactiveConsole)
+		IInteractiveConsole interactiveConsole, IApplicationClientFactory applicationClientFactory,
+		ICompilationActivityWatcher activityWatcher, IEnvironmentReloadWatcher reloadWatcher,
+		ICompilationCompletionDecider completionDecider, ICompilationResultReader compilationResultReader)
 		: base(applicationClient, settings) {
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_compilationHistoryPoller = compilationHistoryPoller;
 		_logger = logger;
 		_interactiveConsole = interactiveConsole;
+		_applicationClientFactory = applicationClientFactory;
+		_activityWatcher = activityWatcher;
+		_reloadWatcher = reloadWatcher;
+		_completionDecider = completionDecider;
+		_compilationResultReader = compilationResultReader;
+		// The class had two loggers: the injected one used by Execute, and the base Logger property that
+		// defaults to ConsoleLogger.Instance and is what ProceedResponse writes its errors through. In
+		// production DI they resolve to the same singleton, so nobody noticed - but it meant half the
+		// command's output was unreachable from a test that substituted ILogger. One logger now.
+		Logger = logger;
 	}
 
 	#endregion
@@ -89,53 +128,319 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 		}
 		CompilationHistory baseline = TryGetBaseline();
 		_compileAll = options.All;
-		options.TimeOut = Timeout.Infinite;
+		_reloadReported = false;
+		_requestFailure = null;
 		Stopwatch sw = new();
 		sw.Start();
 		_logger.WriteLine("=================================================================================");
 		_logger.WriteInfo($"At: {DateTime.Now:HH:mm:ss} Starting compilation...");
 		_logger.WriteLine();
 
-		using CancellationTokenSource cts = new();
-		// The poll fault is CAPTURED, never allowed to escape this lambda - the same guard PackageBuilder.
-		// CompileWithPolling applies. Poll gives up and THROWS after MaxConsecutiveFailures rounds, and an
-		// unhandled exception on a dedicated thread terminates the whole process: a short app-tier outage
-		// during `clio cc` would have killed clio mid-compile with no error line and no exit code, skipping
-		// cts.Cancel / thread.Join and the result reporting below. Published through a one-element holder with
-		// Volatile.Write/Read so the write on the poll thread is guaranteed to be visible on the main thread.
-		Exception[] pollFaultBox = new Exception[1];
-		Thread thread = new(() => {
-			try {
-				_compilationHistoryPoller.Poll(baseline?.CreatedOn ?? DateTime.MinValue, cts.Token, LogRecord);
-			} catch (Exception exception) {
-				Volatile.Write(ref pollFaultBox[0], exception);
-			}
-		});
-		thread.Start();
-
-		//This will take a while to return, so we will check compilation history in parallel to get progress of compilation
-		int execResult = base.Execute(options);
+		CompilationCompletionKind completion = RunObservedCompilation(options, baseline, out string responseBody);
 		sw.Stop();
-		cts.Cancel();
-		thread.Join(); // Wait for background thread to complete before disposing CancellationTokenSource
+		ApplyVerdict(completion, responseBody, options);
 
-		// Monitoring stopping is NOT a compile failure: the server keeps compiling, and base.Execute above has
-		// already returned its own verdict. So the fault is REPORTED rather than thrown - it explains why the
-		// progress lines stopped, and it leaves the command's exit code to the compile itself.
-		Exception pollFault = Volatile.Read(ref pollFaultBox[0]);
-		if (pollFault is not null) {
-			//Console rendering, not .Message - see TryGetBaseline below for why the fence must not reach a
-			//terminal.
-			_logger.WriteWarning(
-				$"Compilation progress could not be monitored: {pollFault.GetReadableMessageException()}");
-		}
 		if (CommandSuccess) {
 			_logger.WriteLine();
 			_logger.WriteInfo($"Compilation finished in {TimeOnly.FromTimeSpan(sw.Elapsed):HH:mm:ss}");
 			_logger.WriteLine("=================================================================================");
 		}
-		return _isSuccess ? execResult : 1;
+		return _isSuccess ? 0 : 1;
 	}
+
+	#region Constants: Internal
+
+	/// <summary>
+	/// How long a build may stay silent at the start before silence is read as "nothing was ever built".
+	/// </summary>
+	/// <remarks>
+	/// The gap between the compile request and the first <c>CompilationHistory</c> row was measured at
+	/// ~18 s on a warm stand; a cold or loaded one is slower. The grace only gates the TRANSPORT-FAILURE
+	/// verdict, so being generous here costs nothing when the build is real and avoids calling a slow
+	/// start a broken environment.
+	/// </remarks>
+	internal static readonly TimeSpan StartupGrace = TimeSpan.FromSeconds(90);
+
+	/// <summary>Cadence at which the completion rule re-examines what has been observed.</summary>
+	internal static readonly TimeSpan DecisionInterval = TimeSpan.FromSeconds(1);
+
+	/// <summary>
+	/// The bound used when the caller supplied no usable timeout - the same 60 minutes
+	/// <see cref="RemoteCommandOptions"/> declares for this verb.
+	/// </summary>
+	internal static readonly int DeclaredTimeoutMs = (int)TimeSpan.FromMinutes(60).TotalMilliseconds;
+
+	/// <summary>
+	/// How long compilation activity must have been stopped before quiet ALONE ends the wait, when the
+	/// runtime reload that normally ends a build was never observed.
+	/// </summary>
+	/// <remarks>
+	/// <b>It has to outlast the reload, and that is why it is not the settle tracker's 45 seconds.</b>
+	/// That window is calibrated for the gaps BETWEEN projects, which is a different question.
+	/// Measured on a live stand: the reload lands about two minutes after the last compilation-history
+	/// row, so a 45-second window ends the wait BEFORE the application has reloaded - and the verdict
+	/// endpoint carries no timestamp, so what gets read at that moment may still be the previous build's
+	/// result. Five minutes keeps the reload the normal path and leaves this one for the case it exists
+	/// for: an intermediary holding the request open so nothing else ever terminates (issue #1422).
+	/// <para>
+	/// The window is not the only precondition. Quiet only concludes the build while the environment is
+	/// still answering - a runtime that stopped answering mid-build and never came back writes the same
+	/// evidence, and waiting it out to the timeout is the correct report there.
+	/// </para>
+	/// </remarks>
+	internal static readonly TimeSpan QuietFallback = TimeSpan.FromMinutes(5);
+
+	#endregion
+
+	#region Properties: Internal
+
+	/// <summary>
+	/// Test seam overriding <see cref="StartupGrace"/>; <see langword="null"/> in production.
+	/// </summary>
+	/// <remarks>
+	/// Unit tests drive the transport-failure branch with substitutes whose request never produces a
+	/// response, so without this every such test would sit out the real 90-second grace.
+	/// </remarks>
+	internal TimeSpan? StartupGraceOverride { get; set; }
+
+	/// <summary>
+	/// Test seam overriding <see cref="DecisionInterval"/>; <see langword="null"/> in production.
+	/// </summary>
+	internal TimeSpan? DecisionIntervalOverride { get; set; }
+
+	/// <summary>
+	/// Test seam overriding <see cref="QuietFallback"/>; <see langword="null"/> in production.
+	/// </summary>
+	internal TimeSpan? QuietFallbackOverride { get; set; }
+
+	#endregion
+
+	#region Methods: Private
+
+	/// <summary>
+	/// Sends the compile request and watches the environment until the completion rule decides the build
+	/// has ended, the request bound elapses, or nothing was ever built.
+	/// </summary>
+	/// <param name="options">The command options, whose <c>TimeOut</c> bounds the whole operation.</param>
+	/// <param name="baseline">The newest compilation-history row before the build was requested.</param>
+	/// <param name="responseBody">The compile response body when one arrived; otherwise <see langword="null"/>.</param>
+	/// <returns>How the build ended.</returns>
+	/// <remarks>
+	/// The request is sent ONCE. <see cref="RemoteCommandOptions.MaxAttempts"/> defaults to 3 and the old
+	/// synchronous path passed it through, so a build whose connection the runtime reload had just reset
+	/// was re-sent - measured on a live stand as three full rebuilds, three runtime reloads and about nine
+	/// minutes for one `clio cc --all`, after which IIS rapid-fail protection stopped the application pool.
+	/// Under observed completion a retry is not merely wasteful but wrong: the watcher would see the rows
+	/// start over and wait out every repeat.
+	/// </remarks>
+	private CompilationCompletionKind RunObservedCompilation(CompileConfigurationOptions options,
+		CompilationHistory baseline, out string responseBody) {
+		responseBody = null;
+		DateTime startedUtc = DateTime.UtcNow;
+
+		using CancellationTokenSource requestCancellation = new();
+		Task<string> requestTask = SendCompileRequestAsync(options, requestCancellation.Token);
+		try {
+			_activityWatcher.Start(baseline?.CreatedOn ?? DateTime.MinValue, LogRecord);
+			// Availability is watched SEPARATELY from build activity, and on a different endpoint, because
+			// the reload is invisible on the compilation-history channel - see IEnvironmentReloadWatcher.
+			// Both starts are INSIDE the try: if the second one throws, the finally still stops the first,
+			// cancels the request and observes its fault.
+			_reloadWatcher.Start();
+			// A non-positive timeout is NOT "wait forever". Timeout.Infinite (-1) was this verb's documented
+			// default until this change, so scripts plausibly still pass it - and honouring it literally
+			// would restore the unbounded wait that issue #1422 is about.
+			DateTime deadline = startedUtc.AddMilliseconds(EffectiveTimeoutMs(options));
+			while (true) {
+				CompilationCompletionKind completion = Decide(requestTask, startedUtc);
+				if (completion != CompilationCompletionKind.KeepWaiting) {
+					if (completion == CompilationCompletionKind.ResponseReceived) {
+						responseBody = requestTask.Result;
+					} else if (completion == CompilationCompletionKind.TransportFailure) {
+						// Keep WHY the request failed. TransportFailure is only decided once the request has
+						// ended, so the fault is available here - and it is the whole diagnosis (401, DNS,
+						// TLS). Without it the user gets a generic checklist for a cause the command knows.
+						_requestFailure = requestTask.Exception?.GetBaseException();
+					}
+					return completion;
+				}
+				if (DateTime.UtcNow >= deadline) {
+					return CompilationCompletionKind.KeepWaiting;
+				}
+				Thread.Sleep(DecisionIntervalOverride ?? DecisionInterval);
+			}
+		} finally {
+			// Order matters: cancel the request first so a still-open connection stops being held, then stop
+			// the watcher, which joins its poll thread. Cancelling a request nobody is waiting for is what
+			// keeps an abandoned socket from outliving the command.
+			requestCancellation.Cancel();
+			_activityWatcher.Stop();
+			_reloadWatcher.Stop();
+			ObserveAbandonedRequest(requestTask);
+		}
+	}
+
+	/// <summary>Samples the current evidence and asks the completion rule what it means.</summary>
+	private CompilationCompletionKind Decide(Task<string> requestTask, DateTime startedUtc) {
+		CompilationActivitySnapshot activity = _activityWatcher.Snapshot;
+		EnvironmentReloadSnapshot availability = _reloadWatcher.Snapshot;
+		ReportReloadOnce(availability);
+		return _completionDecider.Decide(new CompilationCompletionState(
+			ResponseReceived: requestTask.Status == TaskStatus.RanToCompletion,
+			RequestEnded: requestTask.IsCompleted,
+			NewRecordCount: activity.NewRecordCount,
+			// Availability comes from the reload watcher, not the history poller: the reload is invisible
+			// on the history channel, and "the environment is answering" has to mean the endpoint the
+			// verdict is about to be read from.
+			ReloadObserved: availability.ReloadObserved,
+			EnvironmentReachable: availability.Reachable,
+			EnvironmentEverReachable: availability.EverReachable,
+			LastActivityAtUtc: activity.LastActivityAtUtc,
+			StartedUtc: startedUtc,
+			NowUtc: DateTime.UtcNow,
+			StartupGrace: StartupGraceOverride ?? StartupGrace,
+			QuietFallback: QuietFallbackOverride ?? QuietFallback));
+	}
+
+	/// <summary>
+	/// Tells the user, once, that the runtime reload that ends a build has been seen.
+	/// </summary>
+	/// <param name="availability">The current availability snapshot.</param>
+	private void ReportReloadOnce(EnvironmentReloadSnapshot availability) {
+		if (_reloadReported || !availability.ReloadObserved) {
+			return;
+		}
+		_reloadReported = true;
+		_logger.WriteInfo(
+			$"At: {DateTime.Now:HH:mm:ss} The environment reloaded and is answering again - a configuration "
+			+ "build ends by reloading the application. Reading the compilation result.");
+	}
+
+	/// <summary>
+	/// Sends the configuration-build request on its own owned client, once, with cancellation.
+	/// </summary>
+	private async Task<string> SendCompileRequestAsync(CompileConfigurationOptions options,
+		CancellationToken cancellationToken) {
+		using IOwnedApplicationClient client = _applicationClientFactory.CreateOwnedClient(EnvironmentSettings);
+		using HttpResponseMessage response = await client
+			.ExecutePostRequestAsync(ServiceUri, "{}", EffectiveTimeoutMs(options), maxAttempts: 1,
+				delaySec: 1, cancellationToken)
+			.ConfigureAwait(false);
+		return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+	}
+
+	/// <summary>The bound actually applied, falling back to the declared one for a non-positive value.</summary>
+	private static int EffectiveTimeoutMs(CompileConfigurationOptions options) =>
+		options.TimeOut > 0 ? options.TimeOut : DeclaredTimeoutMs;
+
+	/// <summary>
+	/// Observes the fault of a request nobody is waiting for any more.
+	/// </summary>
+	/// <remarks>
+	/// The expected outcome on every successful build is a fault: the runtime reload resets the connection
+	/// before it answers. Leaving that unobserved would surface later as an UnobservedTaskException in an
+	/// unrelated part of the process. The fault is still REPORTED on the transport-failure path - see
+	/// <see cref="_requestFailure"/>; this method only makes sure the abandoned ones are observed.
+	/// </remarks>
+	private static void ObserveAbandonedRequest(Task<string> requestTask) =>
+		_ = requestTask.ContinueWith(static task => _ = task.Exception,
+			CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+
+	/// <summary>
+	/// Turns the completion kind into the command's success state and user-visible outcome.
+	/// </summary>
+	/// <param name="completion">How the build ended.</param>
+	/// <param name="responseBody">The compile response body, when one arrived.</param>
+	/// <param name="options">The command options.</param>
+	/// <remarks>
+	/// <c>CommandSuccess</c> is set on EVERY path. It defaults to <see langword="true"/> and used to be
+	/// cleared only inside <c>ProceedResponse</c>, which a build with no response never reaches - so a
+	/// failed run printed its error and then "Compilation finished" immediately after it.
+	/// </remarks>
+	private void ApplyVerdict(CompilationCompletionKind completion, string responseBody,
+		CompileConfigurationOptions options) {
+		switch (completion) {
+			case CompilationCompletionKind.ResponseReceived:
+				ProceedResponse(responseBody, options);
+				return;
+			case CompilationCompletionKind.ConfirmedByReload:
+				ApplyEnvironmentVerdict(inferred: false);
+				return;
+			case CompilationCompletionKind.InferredFromQuiet:
+				ApplyEnvironmentVerdict(inferred: true);
+				return;
+			case CompilationCompletionKind.TransportFailure:
+				CommandSuccess = _isSuccess = false;
+				Logger.WriteError(
+					"The compilation request failed and the environment never started building: no compilation "
+					+ "history was written after the request was sent.");
+				if (_requestFailure is not null) {
+					Logger.WriteError($"Request error: {_requestFailure.Message}");
+				}
+				Logger.WriteError($"Endpoint: {ServiceUri}");
+				Logger.WriteError("Check the environment URI, the IsNetCore flag, and the credentials.");
+				return;
+			default:
+				CommandSuccess = _isSuccess = false;
+				Logger.WriteError(
+					"Timed out waiting for the compilation to finish. The build may still be running on the "
+					+ "environment; check `clio last-compilation-log` before starting another one.");
+				return;
+		}
+	}
+
+	/// <summary>
+	/// Reads the verdict from the environment after the build has ended.
+	/// </summary>
+	/// <param name="inferred">
+	/// Whether completion was inferred from activity stopping rather than confirmed by the runtime reload.
+	/// </param>
+	private void ApplyEnvironmentVerdict(bool inferred) {
+		CompilationActivitySnapshot activity = _activityWatcher.Snapshot;
+		CreatioCompilationLogResponse result = _compilationResultReader.TryRead();
+		if (inferred) {
+			Logger.WriteWarning(
+				"The compilation request never returned and no runtime reload was observed. Completion was "
+				+ "inferred from the environment's compilation activity having stopped.");
+		}
+		if (result is null && inferred) {
+			// The build was never confirmed to have ENDED - the reload was not seen, completion was inferred
+			// from activity stopping - and now its verdict cannot be read either. Two unknowns stacked is not
+			// evidence of success: a runtime that stopped answering mid-build presents exactly this. Report a
+			// failure so nothing downstream treats an unverified build as a delivered one.
+			CommandSuccess = _isSuccess = false;
+			Logger.WriteError(
+				"Could not read the compilation result from the environment, and the build's completion was "
+				+ "only inferred from its activity having stopped. The outcome is unknown; check "
+				+ "`clio last-compilation-log` before relying on this environment.");
+			return;
+		}
+		if (result is null) {
+			// Completion here was CONFIRMED by the runtime reload, so the build demonstrably ran to its end
+			// and only the verdict lookup failed. Reporting a clio error would replace something known with
+			// something unknown, so the observed diagnostics decide instead.
+			CommandSuccess = _isSuccess = !activity.HasErrors;
+			Logger.WriteWarning(
+				"Could not read the compilation result from the environment; reporting the outcome from the "
+				+ "compilation history instead.");
+			return;
+		}
+		CommandSuccess = _isSuccess = result.success && !activity.HasErrors;
+		if (_isSuccess) {
+			return;
+		}
+		Logger.WriteError($"Compilation failed on the environment. Build result: {result.buildResult}.");
+		foreach (CreatioCompilationError diagnostic in result.errors ?? []) {
+			if (diagnostic.warning) {
+				continue;
+			}
+			Logger.WriteError(
+				$"({diagnostic.errorNumber}) in {diagnostic.fileName} at ({diagnostic.line},{diagnostic.column}): "
+				+ diagnostic.errorText);
+		}
+	}
+
+	#endregion
 
 	/// <summary>
 	/// Builds the "how to run it later" hint shown when the user postpones the compilation, echoing the

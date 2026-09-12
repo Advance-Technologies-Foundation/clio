@@ -1,0 +1,14 @@
+﻿{
+  "Descriptor": {
+    "UId": "c13b0b33-e153-4797-91b9-1e0e30d58ee5",
+    "Name": "ClioSqlRequestLog",
+    "ModifiedOnUtc": "\/Date(1789152526000)\/",
+    "Parent": {
+      "UId": "1bab9dcf-17d5-49f8-9536-8e0064f1dce0",
+      "Name": "BaseEntity"
+    },
+    "ManagerName": "EntitySchemaManager",
+    "Caption": "Clio SQL request log",
+    "DependsOn": []
+  }
+}

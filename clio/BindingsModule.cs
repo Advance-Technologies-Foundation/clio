@@ -297,6 +297,25 @@ public class BindingsModule {
 				UseCookies = false,
 				AllowAutoRedirect = false
 			});
+		// Dedicated client for the compile-completion availability probe (#1422). It accepts any server
+		// certificate on purpose: every other request this feature makes - the compile POST and the verdict
+		// read - goes through creatio.client, which trusts any certificate (see the remarks on
+		// HealthCheckCommand.HttpMessageHandlerFactory). With the default client the probe would be the only
+		// part that validates, so on a self-signed stand it would fail forever, EnvironmentReachable would
+		// never be true, both completion rules would be disabled and an ordinary build would wait out the
+		// full timeout and exit 1. Redirects are not followed: a 302 to the login page already proves the
+		// application is answering, and following it only spends time the probe is sampled on.
+		// S4830: accepting any certificate is the deliberate behaviour described above - the probe must
+		// reach exactly the stands creatio.client already reaches, including self-signed ones, or the
+		// feature reports a healthy stand as unreachable.
+#pragma warning disable S4830
+		services.AddHttpClient(Clio.Common.EnvironmentAvailabilityProbe.HttpClientName)
+			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
+				AllowAutoRedirect = false,
+				UseCookies = false,
+				ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+			});
+#pragma warning restore S4830
 
 		ISettingsBootstrapService settingsBootstrapService = new SettingsBootstrapService(_fileSystem, applyBootstrapRepairs);
 		SettingsBootstrapResult bootstrapResult = settingsBootstrapService.GetResult();
@@ -343,6 +362,9 @@ public class BindingsModule {
 		services.AddTransient<InstallerCommand>();
 		services.AddTransient<PinCertificateCommand>();
 		services.AddTransient<DeployIdentityCommand>();
+		services.AddTransient<UninstallIdentityCommand>();
+		services.AddTransient<IIdentityReferenceCleanup, IdentityReferenceCleanup>();
+		services.AddTransient<IIdentityServiceLifecycle, IdentityServiceLifecycle>();
 		services.AddTransient<IIdentityServiceArchiveResolver, IdentityServiceArchiveResolver>();
 		services.AddTransient<IIdentityServiceCreatioClient, IdentityServiceCreatioClient>();
 		services.AddTransient<IIdentityServiceRoleGrantService, IdentityServiceRoleGrantService>();
@@ -368,6 +390,10 @@ public class BindingsModule {
 
 		services.AddTransient<Clio.Command.RecordRights.GetRecordRightsCommand>();
 		services.AddTransient<Clio.Command.RecordRights.SetRecordRightsCommand>();
+		services.AddTransient<Clio.Command.Administration.ManageUserCommand>();
+		services.AddTransient<Clio.Command.Administration.ManageRoleCommand>();
+		services.AddTransient<Clio.Command.Administration.ManageAccessCommand>();
+		services.AddTransient<Clio.Command.Administration.ManageLicenseCommand>();
 		services.AddTransient<Clio.Common.IFileSystem, Clio.Common.FileSystem>();
 		services.AddTransient<IFileSecurityHardening, FileSecurityHardening>();
 		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionCache, Clio.Common.BrowserSession.BrowserSessionCache>();
@@ -398,6 +424,8 @@ public class BindingsModule {
 		services.AddTransient<IFeatureStateService, FeatureStateService>();
 		services.AddTransient<SetFileContentStorageConnectionStringCommand>();
 		services.AddTransient<SysSettingsCommand>();
+		services.AddTransient<IDownloadSysSettingFileService, DownloadSysSettingFileService>();
+		services.AddTransient<DownloadSysSettingFileCommand>();
 		services.AddTransient<BuildInfoCommand>();
 		services.AddTransient<BuildDockerImageCommand>();
 		services.AddTransient<InstallSkillsCommand>();
@@ -681,15 +709,11 @@ public class BindingsModule {
 		services.AddSingleton(new KnowledgeGitHubReleaseOptions(TransportDeadlineMilliseconds: 15_000));
 		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 1_000));
 		services.AddSingleton(new KnowledgeInstallationStoreOptions(LockTimeoutMilliseconds: 30_000));
-		services.AddSingleton(new KnowledgeBundleClientCapabilities(
+		services.AddSingleton(provider => new KnowledgeBundleClientCapabilities(
 			ResolveKnowledgeBundleClioVersion(typeof(BindingsModule).Assembly.GetName().Version),
 			new Version(1, 1, 0),
-			new HashSet<string>(StringComparer.Ordinal) {
-				KnowledgeFeedbackPolicyTools.ConfigureToolName,
-				GuidanceGetTool.ToolName,
-				KnowledgeFeedbackPolicyTools.GetToolName,
-				KnowledgeManagementTools.ListKnowledgeExamplesToolName
-			}));
+			provider.GetRequiredService<IMcpToolInvokerRegistry>().ToolNames.ToHashSet(StringComparer.Ordinal)));
+		services.AddSingleton<IInstalledKnowledgeVersions, InstalledKnowledgeVersions>();
 		// LOCAL DEV TOGGLE (off by default): let a Git knowledge bundle that omits the explicit
 		// "sequence" (e.g. clio-knowledge master) load for local iteration. The key is declared in
 		// ExperimentalCommand.StandaloneFeatureKeys so `clio experimental` lists and sets it.
@@ -727,6 +751,7 @@ public class BindingsModule {
 		services.AddTransient<AdviseThemePaletteTool>();
 		services.AddTransient<ClearThemesCacheTool>();
 		services.AddTransient<ListThemesTool>();
+		services.AddTransient<GetThemeTool>();
 		services.AddTransient<CreateThemeTool>();
 		services.AddTransient<UpdateThemeTool>();
 		services.AddTransient<DeleteThemeTool>();
@@ -738,6 +763,10 @@ public class BindingsModule {
 		services.AddTransient<GetUserCultureTool>();
 		services.AddTransient<GetRecordRightsTool>();
 		services.AddTransient<SetRecordRightsTool>();
+		services.AddTransient<ManageUserTool>();
+		services.AddTransient<ManageRoleTool>();
+		services.AddTransient<ManageAccessTool>();
+		services.AddTransient<ManageLicenseTool>();
 		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<AddPackageDependencyTool>();
 		services.AddTransient<AddCustomLoggingTool>();
@@ -924,6 +953,7 @@ public class BindingsModule {
 		services.AddTransient<ClearThemesCacheCommand>();
 		services.AddTransient<ListThemesCommand>();
 		services.AddTransient<IThemeCatalog, ListThemesCommand>();
+		services.AddTransient<GetThemeCommand>();
 		services.AddTransient<CreateThemeCommand>();
 		services.AddTransient<UpdateThemeCommand>();
 		services.AddTransient<DeleteThemeCommand>();
@@ -1240,6 +1270,15 @@ public class BindingsModule {
 				envSettings, reauthExecutor, workingDirectoriesProvider, clioFileSystem, fileSystem, logger);
 		});
 
+		// The container-bound ICompilationHistoryPoller closes over the PROCESS-ACTIVE environment (see the
+		// IDataProvider registration in RegisterActiveEnvironmentServices). Any caller that compiles a
+		// DIFFERENT environment - env-manage-ui clones settings per menu selection - therefore has to build
+		// its own, or it reads compilation history from the wrong stand. Since the completion rule decides
+		// the exit code from those rows, reading the wrong stand's history does not degrade the output: it
+		// reports a successful build as a transport failure.
+		services.AddTransient<Func<EnvironmentSettings, ICompilationHistoryPoller>>(_ =>
+			BuildEnvironmentScopedCompilationHistoryPoller);
+
 		RegisterFluentValidators(services);
 		return settingsRepository;
 	}
@@ -1334,6 +1373,16 @@ public class BindingsModule {
 			fileSystem,
 			logger);
 	}
+
+	/// <summary>
+	/// Builds a compilation-history poller bound to <paramref name="envSettings"/> rather than to the
+	/// process-active environment.
+	/// </summary>
+	/// <param name="envSettings">The environment whose <c>CompilationHistory</c> is to be read.</param>
+	/// <returns>A poller reading that environment.</returns>
+	private static ICompilationHistoryPoller BuildEnvironmentScopedCompilationHistoryPoller(
+		EnvironmentSettings envSettings) =>
+		new CompilationHistoryPoller(BuildRemoteDataProvider(envSettings));
 
 	/// <summary>
 	/// True when the environment authenticates with a token rather than with a login and password: an

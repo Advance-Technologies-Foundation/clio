@@ -8,7 +8,8 @@ using IoFileSystem = System.IO.Abstractions.IFileSystem;
 
 /// <summary>
 /// Shared guard for the <c>--output-file</c> write path of the MCP-callable schema-writing tools
-/// (<c>get-classic-page-sources</c>, <c>get-client-unit-schema</c>, <c>get-schema</c>, <c>get-sql-schema</c>).
+/// (<c>get-classic-page-sources</c>, <c>get-client-unit-schema</c>, <c>get-schema</c>, <c>get-sql-schema</c>,
+/// <c>get-theme</c>).
 /// Those tools can be invoked over MCP, so the output path may be supplied by an agent rather than typed at a
 /// shell. Writing an unconstrained path verbatim would let a <c>..</c> traversal, an absolute system path, or a
 /// symlink overwrite an arbitrary file, so an explicit output-file is confined to the workspace anchor OR the OS
