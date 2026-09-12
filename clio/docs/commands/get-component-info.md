@@ -61,9 +61,14 @@ that routes you to `--composite "Expanded list"` for the assembly recipe — an
 agent reaching for the human label still finds the composite instead of
 hand-building it. The closest-type shortlist is capped at 8 entries.
 
-The catalog is loaded through the CDN → file cache → embedded snapshot
-fallback chain (see `component-registry-refresh` for cache control). For
-local payload iteration, point `CLIO_COMPONENT_REGISTRY_LOCAL_FILE` at a
+The catalog is read from the file cache first, then fetched from the CDN on a
+cache miss. Stale cached registries are returned immediately and refreshed in
+the background. If the requested version is unavailable, clio tries `latest`
+through the same cache/CDN chain. If neither version is available, the lookup
+fails; there is no embedded snapshot fallback (see `component-registry-refresh`
+for cache control).
+
+For local payload iteration, point `CLIO_COMPONENT_REGISTRY_LOCAL_FILE` at a
 `ComponentRegistry.json` on disk — it short-circuits every other tier
 (`source=local`) and is re-read on every call. It also covers the long-form
 documentation: `references.docs[]` is resolved against that file's directory
@@ -86,9 +91,10 @@ chosen by:
 `--version` and `--environment` (or `--uri`) are mutually exclusive.
 
 Pass `--schema-type mobile` to query the mobile component registry instead
-of the default web one. The mobile catalog ships as static data inside
-clio.dll, has no CDN tier, and ignores `--version` / `--environment`; its
-responses omit `resolvedTargetVersion` and `resolvedFrom` accordingly.
+of the default web one. It uses the same cache/CDN lookup and version-resolution
+rules, with a separate mobile cache and `MobileComponentRegistry.json` payload.
+Use `CLIO_MOBILE_COMPONENT_REGISTRY_LOCAL_FILE` for a local mobile registry
+and its `mobile-docs/` tree.
 
 Output defaults to JSON (identical to the MCP tool's response shape,
 including the long-form `documentation` field built from any
@@ -199,7 +205,7 @@ component-info
                                    stdout instead of JSON.
 
 --schema-type                      Component registry to query: 'web'
-                                   (default) or 'mobile'. Mobile ignores
+                                   (default) or 'mobile'. Both honor
                                    --version/--environment.
 ```
 

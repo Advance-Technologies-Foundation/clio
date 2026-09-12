@@ -51,6 +51,14 @@ This operation cannot be undone.
 
 ## Uninstall Process
 
+When removing a named environment with a populated `IdentityService` attachment, Clio
+prevalidates its recorded folder and IIS target before changing anything. After reading
+the CRM connection configuration, it removes the attached identity first. Identity
+cleanup failure prevents CRM IIS, database and file removal. Its shared database is
+dropped only by the normal CRM removal stage. Empty attachments add no identity stage;
+credentials alone do not authorize identity deletion. Use `uninstall-identity` to remove
+the identity component while retaining Creatio and its database.
+
     When using environment name (-e):
         1. Retrieves environment settings from clio configuration
         2. Uses the registered EnvironmentPath as the removal target

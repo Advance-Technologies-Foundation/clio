@@ -3,22 +3,12 @@ using Newtonsoft.Json;
 
 namespace Clio.Common
 {
+	/// <inheritdoc />
 	public class SqlScriptExecutor : ISqlScriptExecutor
 	{
 		private static string ExecuteSqlScriptUrl => @"/rest/CreatioApiGateway/ExecuteSqlScript";
 
-		private string CorrectJson(string body) {
-			body = body.Replace("\\\\r\\\\n", Environment.NewLine);
-			body = body.Replace("\\\\n", Environment.NewLine);
-			body = body.Replace("\\r\\n", Environment.NewLine);
-			body = body.Replace("\\n", Environment.NewLine);
-			body = body.Replace("\\\\t", Convert.ToChar(9).ToString());
-			body = body.Replace("\\\"", "\"");
-			body = body.Replace("\\\\", "\\");
-			body = body.Trim(new char[] { '\"' });
-			return body;
-		}
-
+		/// <inheritdoc />
 		public string Execute(string sql, IApplicationClient applicationClient, EnvironmentSettings settings) {
 			var scriptData = new {
 				script = sql
@@ -29,7 +19,9 @@ namespace Clio.Common
 				: settings.Uri + "/0" + ExecuteSqlScriptUrl;
 			string responseFormServer = applicationClient.ExecutePostRequest(endpointUri,
 				serializedRequestPayload);
-			return CorrectJson(responseFormServer);
+			return responseFormServer.TrimStart().StartsWith("\"", StringComparison.Ordinal)
+				? JsonConvert.DeserializeObject<string>(responseFormServer)
+				: responseFormServer;
 		}
 	}
 }

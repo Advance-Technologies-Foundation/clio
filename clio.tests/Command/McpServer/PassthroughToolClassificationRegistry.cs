@@ -290,6 +290,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["delete-schema"] = PassthroughClassification.NotApplicable,
 			["delete-theme"] = PassthroughClassification.NotApplicable,
 			["deploy-identity"] = PassthroughClassification.NotApplicable,
+			["uninstall-identity"] = PassthroughClassification.NotApplicable, // BaseTool with per-environment command resolver.
 			["describe-business-process"] = PassthroughClassification.NotApplicable,
 			["describe-environment"] = PassthroughClassification.NotApplicable,
 			["download-configuration-by-build"] = PassthroughClassification.NotApplicable,
@@ -303,6 +304,8 @@ internal static class PassthroughToolClassificationRegistry {
 			["find-entity-schema"] = PassthroughClassification.NotApplicable,
 			["finish-hotfix"] = PassthroughClassification.NotApplicable,
 			["generate-process-model"] = PassthroughClassification.NotApplicable,
+			// Uses the existing environment-scoped BaseTool resolver; outside the original passthrough audit.
+			[ExecuteSqlScriptTool.ToolName] = PassthroughClassification.NotApplicable,
 			["generate-source-code"] = PassthroughClassification.NotApplicable,
 			["get-browser-session"] = PassthroughClassification.NotApplicable,
 			["get-classic-list-columns"] = PassthroughClassification.NotApplicable,
