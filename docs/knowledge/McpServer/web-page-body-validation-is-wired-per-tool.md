@@ -19,14 +19,21 @@ results as blocking errors and others as `response.Warnings`, sync-pages merges 
 content-validation aggregate, and validate-page reports them as named result groups. The set grew
 one validator at a time, and no refactor to a common pipeline has been done.
 
-**Worked example (GH-1320)** — the persisted-resource-key rescue was wired into
-`PageUpdateTool.ValidateWebPageBody` and `PageUpdateCommand` but NOT into `PageSyncTool.ValidateBody`,
-which still calls `ValidateStandardFieldBindings` / `ValidateInsertedFieldSelfConsistency` /
-`ValidateInsertedWidgetCaptionResources` with no provider. Because that gate hard-rejects before
-`TryUpdatePage` is reached, the shared command-level fix is unreachable from `sync-pages`: the
-additive-resources rule applies to `update-page` only. Recorded rather than fixed, so the two records
-agree instead of contradicting each other - see
+**Worked example (GH-1320, closed by GH-1464)** — the persisted-resource-key rescue was wired into
+`PageUpdateTool.ValidateWebPageBody` and `PageUpdateCommand` but NOT into `PageSyncTool.ValidateBody`.
+Because that gate hard-rejects before `TryUpdatePage` is reached, the shared command-level fix was
+unreachable from `sync-pages` for a full release cycle: the additive-resources rule applied to
+`update-page` only, on a tool whose own `ToolDeprecation` points callers at `sync-pages`. The cost of
+the missing wiring is the shape to remember — a fix on the DEPRECATED surface while the recommended
+one keeps the defect. `PageSyncTool.ValidateBody` now routes both label-resource validators through
+`ValidateFieldLabelResources` with the same provider; see
 `docs/knowledge/Command/page-resource-keys-persist-on-schema.md`.
+
+`sync-pages` also needs the wiring TWICE: `TryMaterialiseDeterministicFailure` (the off-lock
+pre-pass) and `TryValidatePage` (the in-lock re-run that captures warnings) both call `ValidateBody`,
+and a provider passed to only one of them still rejects the save at the other.
+`ResolvePrePassSyntaxFailureMessage` is the third call site and passes NO provider on purpose — that
+path promises no Creatio I/O for a body that cannot parse (ENG-92049).
 
 **What breaks if you ignore it** — a validator wired into one or two tools looks fully delivered:
 its unit tests pass, and the tool you tested reports the finding. The unwired tool keeps accepting

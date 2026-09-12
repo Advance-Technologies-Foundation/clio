@@ -58,7 +58,7 @@ public sealed class PageUpdateCommandDesignerPresenceTests {
 			_applicationClient,
 			serviceUrlBuilder,
 			logger,
-			Substitute.For<IPageBaselineGuard>(),
+			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(),
 			hierarchyClient,
 			_notifier);
 	}

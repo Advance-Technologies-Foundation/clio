@@ -3718,4 +3718,34 @@ public sealed class ToolContractGetToolTests {
 		warningsField.Description.Should().Contain("never retry on a warning",
 			because: "these findings are advisory and the save already succeeded; an agent that reads a warning as a failure will re-save and can trip conflict detection");
 	}
+	// The sync-pages contract is curated too, and its per-page members live in the PROSE of the `pages`
+	// field rather than as top-level schema properties - so the set-equality oracle above has no
+	// equivalent here, and a new per-page argument can be bound and still be undiscoverable. issue #1464
+	// added `checksum` to PageSyncPageInput; without this the curated literal would keep describing a
+	// page item that has no way to pin a conflict baseline.
+	[Test]
+	[Category("Unit")]
+	[Description("Every bound PageSyncPageInput JSON member is named in the curated sync-pages `pages` description, so a per-page argument cannot be bound and left undiscoverable by the contract a lazy-mode client inspects before dispatch (issue #1464).")]
+	public void ToolContractGet_Should_Describe_Every_PageSyncPageInput_Member() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		string[] boundMemberNames = typeof(PageSyncPageInput)
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Where(property => property.GetCustomAttribute<JsonExtensionDataAttribute>() is null)
+			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
+			.ToArray();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageSyncTool.ToolName]));
+		string pagesDescription = result.Tools!.Single().InputSchema.Properties
+			.Single(property => property.Name == "pages").Description;
+
+		// Assert
+		boundMemberNames.Should().Contain("checksum",
+			because: "an empty or checksum-less reflected set would make the assertion below pass vacuously - and sync-pages without a per-page conflict baseline is the defect issue #1464 closes");
+		foreach (string memberName in boundMemberNames) {
+			pagesDescription.Should().Contain(memberName,
+				because: $"the curated sync-pages contract must name the bound per-page argument '{memberName}' - a client that cannot discover it cannot pass it");
+		}
+	}
 }
