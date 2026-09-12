@@ -253,5 +253,12 @@ ENVIRONMENT VARIABLES
         Comma-separated platform API key(s), unioned with --platform-api-key.
         Setting at least one key enables per-request credential passthrough.
 
+FILES
+    <clio-home>/mcp-server.<pid>.lock
+        The same presence marker mcp-server writes, created when this host
+        starts listening and removed when it stops. While it exists and names a
+        live process, other clio processes skip the background clio self-update
+        instead of replacing this host's binaries and appsettings.json mid-flight.
+
 SEE ALSO
     mcp-server    Start MCP server in stdio mode

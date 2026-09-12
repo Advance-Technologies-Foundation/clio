@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO.Abstractions;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
@@ -49,38 +50,54 @@ public interface IProcessLivenessProbe {
 public sealed class ProcessLivenessProbe : IProcessLivenessProbe {
 
 	/// <inheritdoc />
+	/// <remarks>
+	/// FAILS SAFE: anything that stops this from reaching an answer reports the process as ALIVE. Reading
+	/// another user's process throws Win32Exception on both Windows and macOS, and a probe that reported
+	/// "not running" there would let a CLI replace the binaries of a host that is very much running - the
+	/// failure this whole marker exists to prevent. The cost of the opposite mistake is one deferred
+	/// update, announced on the console.
+	/// </remarks>
+	// CLIO004 asks for IProcessExecutor, which LAUNCHES processes. This asks whether a foreign process
+	// that clio never started is still alive, and the executor has no lookup-by-id at all.
+#pragma warning disable CLIO004
 	public bool IsAlive(int processId, DateTimeOffset? startedNoLaterThanUtc = null) {
 		if (processId <= 0) {
 			return false;
 		}
-		// CLIO004 asks for IProcessExecutor, which LAUNCHES processes. This asks whether a foreign
-		// process that clio never started is still alive, and the executor has no lookup-by-id at all.
-#pragma warning disable CLIO004
 		Process process = null;
 		try {
 			process = Process.GetProcessById(processId);
+		}
+		catch (ArgumentException) {
+			// The ONLY definite negative: the operating system reports no such process.
+			return false;
+		}
+		catch (Exception) {
+			// Could not even look it up. Assume it is there.
+			return true;
+		}
+		try {
 			if (process.HasExited) {
 				return false;
 			}
-			// A margin, not an exact comparison: the marker is written a moment AFTER the process
-			// started, and the two clocks are read through different APIs. Only a process that started
-			// well after the marker was written can be a stranger holding a recycled identifier.
-			return startedNoLaterThanUtc is null
-				|| process.StartTime.ToUniversalTime() <= startedNoLaterThanUtc.Value.UtcDateTime.AddMinutes(1);
+			if (startedNoLaterThanUtc is null) {
+				return true;
+			}
+			// A margin, not an exact comparison: the marker is written a moment AFTER the process started,
+			// and the two clocks are read through different APIs. Only a process that started well after
+			// the marker was written can be a stranger holding a recycled identifier.
+			return process.StartTime.ToUniversalTime()
+				<= startedNoLaterThanUtc.Value.UtcDateTime.AddMinutes(1);
 		}
-		catch (ArgumentException) {
-			// No process with that identifier exists.
-			return false;
-		}
-		catch (InvalidOperationException) {
-			// The process ended between lookup and inspection.
-			return false;
+		catch (Exception) {
+			// A live handle we are not allowed to inspect. Treat it as the host it claims to be.
+			return true;
 		}
 		finally {
 			process?.Dispose();
 		}
-#pragma warning restore CLIO004
 	}
+#pragma warning restore CLIO004
 }
 
 /// <summary>
@@ -118,6 +135,9 @@ public sealed class McpHostPresenceRegistry(
 	internal const string MarkerPrefix = "mcp-server.";
 	internal const string MarkerSuffix = ".lock";
 
+	/// <summary>Refuse to read anything larger than this; a marker is three short fields.</summary>
+	internal const int MaxMarkerBytes = 4096;
+
 	/// <inheritdoc />
 	public string Register() {
 		int processId = Environment.ProcessId;
@@ -129,10 +149,16 @@ public sealed class McpHostPresenceRegistry(
 			}
 			JObject content = new() {
 				["pid"] = processId,
-				["clio-version"] = CurrentClioVersion,
+				["clio-version"] = ClioAssemblyVersion.Current,
 				["started-at-utc"] = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)
 			};
-			fileSystem.File.WriteAllText(markerFilePath, content.ToString(Formatting.Indented));
+			// Written to a temporary name and moved into place: a CLI process scans this directory at any
+			// moment, and a half-written body would be read as an unparsable marker - which this class
+			// treats as stale and DELETES. A torn write would therefore erase the very marker it is
+			// creating, and the resulting missed deferral is silent.
+			string temporaryPath = markerFilePath + ".tmp";
+			fileSystem.File.WriteAllText(temporaryPath, content.ToString(Formatting.Indented));
+			fileSystem.File.Move(temporaryPath, markerFilePath, overwrite: true);
 			return markerFilePath;
 		}
 		catch (Exception exception) when (IsMarkerIoFailure(exception)) {
@@ -170,39 +196,61 @@ public sealed class McpHostPresenceRegistry(
 			return null;
 		}
 		foreach (string markerFile in markerFiles.OrderBy(path => path, StringComparer.Ordinal)) {
-			McpHostPresenceMarker marker = TryReadMarker(markerFile);
-			if (marker is null) {
-				continue;
+			// Per marker, because ONE unreadable file must not abort the scan: the scan's answer decides
+			// whether a self-update runs under a live host, and an exception escaping here is read by the
+			// caller as "no host resident".
+			try {
+				McpHostPresenceMarker marker = TryReadMarker(markerFile);
+				if (marker is null) {
+					// Unusable, by whatever route - and therefore stale. An unparsable body is not a
+					// reason to keep a file that can never again name a live process: `touch
+					// mcp-server.1.lock` would otherwise defer every clio update on the machine forever.
+					Unregister(markerFile);
+					continue;
+				}
+				if (processLivenessProbe.IsAlive(marker.ProcessId, marker.StartedAtUtc)) {
+					return marker;
+				}
+				// The recorded host is gone: drop the marker so a killed host cannot defer updates forever.
+				Unregister(markerFile);
 			}
-			if (processLivenessProbe.IsAlive(marker.ProcessId,
-				marker.StartedAtUtc == DateTimeOffset.MinValue ? null : marker.StartedAtUtc)) {
-				return marker;
+			catch (Exception exception) when (IsMarkerIoFailure(exception)) {
+				// Skip this marker; the next one may still name a live host.
 			}
-			// The recorded host is gone: drop the marker so a killed host cannot defer updates forever.
-			Unregister(markerFile);
 		}
 		return null;
 	}
 
+	/// <summary>
+	/// Reads one marker, or returns <see langword="null"/> when it is not a usable marker.
+	/// </summary>
+	/// <remarks>
+	/// Everything is checked BEFORE the body is read, because reading is the dangerous part: this file
+	/// lives in a directory the user can write, and a symbolic link to an endless device would hang every
+	/// clio command on the machine at startup. A link and an oversized file are therefore refused
+	/// unread, and a marker without a usable start time is refused too - without it the recycled-pid
+	/// guard silently turns itself off.
+	/// </remarks>
 	private McpHostPresenceMarker TryReadMarker(string markerFilePath) {
 		int processId = ParseProcessIdFromFileName(markerFilePath);
 		if (processId <= 0) {
 			return null;
 		}
-		string version = "unknown";
-		DateTimeOffset startedAtUtc = DateTimeOffset.MinValue;
+		IFileInfo markerFile = fileSystem.FileInfo.New(markerFilePath);
+		if (!markerFile.Exists || markerFile.LinkTarget is not null || markerFile.Length > MaxMarkerBytes) {
+			return null;
+		}
+		string version;
+		DateTimeOffset startedAtUtc;
 		try {
 			JObject content = JObject.Parse(fileSystem.File.ReadAllText(markerFilePath));
-			version = content.Value<string>("clio-version") ?? version;
-			if (DateTimeOffset.TryParse(content.Value<string>("started-at-utc"),
-				CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTimeOffset parsed)) {
-				startedAtUtc = parsed;
+			version = content.Value<string>("clio-version") ?? "unknown";
+			if (!DateTimeOffset.TryParse(content.Value<string>("started-at-utc"),
+				CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out startedAtUtc)) {
+				return null;
 			}
 		}
 		catch (JsonException) {
-			// The file name carries the identity that matters; a damaged body only costs the detail.
-		}
-		catch (Exception exception) when (IsMarkerIoFailure(exception)) {
 			return null;
 		}
 		return new McpHostPresenceMarker(processId, version, startedAtUtc, markerFilePath);
@@ -229,6 +277,4 @@ public sealed class McpHostPresenceRegistry(
 		exception is System.IO.IOException or UnauthorizedAccessException or NotSupportedException
 			or ArgumentException;
 
-	private static string CurrentClioVersion =>
-		typeof(McpHostPresenceRegistry).Assembly.GetName().Version?.ToString() ?? "unknown";
 }

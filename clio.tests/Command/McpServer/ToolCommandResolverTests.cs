@@ -83,7 +83,7 @@ public class ToolCommandResolverTests {
 			null,
 			null,
 			0,
-			[new SettingsIssue("settings-file-unreadable", "appsettings.json is unreadable.")],
+			[new SettingsIssue(SettingsBootstrapService.SettingsFileUnreadableCode, "appsettings.json is unreadable.")],
 			[],
 			true,
 			false));
@@ -123,7 +123,7 @@ public class ToolCommandResolverTests {
 			null,
 			null,
 			0,
-			[new SettingsIssue("settings-file-unreadable", "appsettings.json is unreadable.")],
+			[new SettingsIssue(SettingsBootstrapService.SettingsFileUnreadableCode, "appsettings.json is unreadable.")],
 			[],
 			true,
 			false));
@@ -607,7 +607,10 @@ public class ToolCommandResolverTests {
 			null,
 			0,
 			[new SettingsIssue(SettingsBootstrapService.SettingsShapeMismatchCode,
-				"appsettings.json is valid JSON, but this clio version cannot bind autoupdate.")],
+				"appsettings.json is valid JSON, but this clio version (0.0.0.0) cannot bind the "
+				+ "following member(s): autoupdate.clio.enabled. A newer clio has written the file. Do "
+				+ "NOT edit it - restart the resident process (the MCP session) so it runs the new clio "
+				+ "build, or update this one with 'clio update-cli' when there is no session to restart.")],
 			[],
 			true,
 			false));
@@ -622,9 +625,11 @@ public class ToolCommandResolverTests {
 			EnvironmentResolutionException exception = act.Should().Throw<EnvironmentResolutionException>(
 					because: "an unusable bootstrap is still a caller-actionable resolution failure")
 				.Which;
-			exception.Message.Should().Contain("restart the MCP session",
+			exception.Message.Should().Contain("restart the resident process",
 				because: "restarting the resident process is the only thing that fixes a version skew");
-			exception.Message.Should().NotContain("Repair",
+			exception.Message.Should().NotContain("clio settings bootstrap is broken",
+				because: "the file is valid, so the broken-bootstrap sentence would be false");
+			exception.Message.Should().NotContain($"Repair {SettingsRepository.AppSettingsFile}",
 				because: "sending the user to repair a file that is valid JSON is the misleading advice issue #1462 reported");
 		}
 		finally {
@@ -648,7 +653,7 @@ public class ToolCommandResolverTests {
 			null,
 			null,
 			0,
-			[new SettingsIssue("settings-file-unreadable", "appsettings.json is unreadable.")],
+			[new SettingsIssue(SettingsBootstrapService.SettingsFileUnreadableCode, "appsettings.json is unreadable.")],
 			[],
 			true,
 			false));
@@ -661,8 +666,8 @@ public class ToolCommandResolverTests {
 
 			// Assert
 			act.Should().Throw<EnvironmentResolutionException>()
-				.Which.Message.Should().Contain("Repair",
-					because: "a damaged file is exactly the case where repairing the file IS the fix");
+				.Which.Message.Should().Contain($"Repair {SettingsRepository.AppSettingsFile}",
+					because: "a damaged file is exactly the case where repairing that file IS the fix");
 		}
 		finally {
 			SettingsRepository.FileSystem = originalFileSystem;

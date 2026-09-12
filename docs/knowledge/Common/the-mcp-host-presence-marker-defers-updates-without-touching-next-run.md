@@ -5,6 +5,7 @@ applies-to:
   - clio/Environment/ISettingsRepository.cs
   - clio/Program.cs
   - clio/Command/McpServer/McpServerCommand.cs
+  - clio/Command/McpServer/McpHttpServerCommand.cs
 date: 2026-09-12
 ---
 
@@ -23,6 +24,12 @@ process that has to ask is a different one; a file in the shared clio home is th
 two have. Liveness goes through `IProcessLivenessProbe` so a unit test can describe a dead pid
 without creating or killing a real process, and `ISettingsRepository.IsAutoupdateDue` exists purely
 so the notice can ask whether the update would have run without moving the schedule to find out.
+
+**Residual limits, stated on purpose** — the deferral is UNBOUNDED: a host that stays up for weeks
+defers the clio self-update for weeks, and the only signal is the one `[INF]` line per command. The
+liveness probe fails SAFE (anything it cannot determine counts as alive), so a process clio may not
+inspect also defers indefinitely. Both are chosen over the opposite mistake, which is the outage this
+record exists for.
 
 **What breaks if you ignore it** — a deferral made *inside* the `RunIfDue` callback still skips the
 update, but `next-run` has already moved a full frequency window (8 hours for clio) into the future.

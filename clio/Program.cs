@@ -1703,7 +1703,7 @@ internal class Program {
 			// printed on every command of a session whose schedule is disabled or not yet due,
 			// describes something that was never going to happen.
 			ConsoleLogger.Instance.WriteInfo(
-				$"clio self-update deferred: MCP worker pid {residentHost.ProcessId} "
+				$"clio self-update deferred: MCP host pid {residentHost.ProcessId} "
 				+ $"(version {residentHost.ClioVersion}) is running");
 		}
 		// Knowledge and toolkit updates are data-only: they replace no loaded assembly and no settings
@@ -1742,13 +1742,25 @@ internal class Program {
 		}
 	}
 
+	private static bool _settingsWriteRefusalReported;
+
 	private static void RunIfDue(ISettingsRepository settingsRepository, AutoUpdateTarget target, Action update) {
 		try {
 			if (settingsRepository.TryScheduleAutoupdate(target, DateTimeOffset.UtcNow)) {
 				update();
 			}
+		} catch (SettingsShapeMismatchException exception) {
+			// The ONE failure here that must not be silent. Claiming the schedule needs a settings write,
+			// and every settings write is refused while a member of the file cannot be bound - so automatic
+			// updates are off until the file is fixed, and the update is precisely what would have fixed
+			// it. Reported once per process: all three targets hit the same refusal.
+			if (!_settingsWriteRefusalReported) {
+				_settingsWriteRefusalReported = true;
+				ConsoleLogger.Instance.WriteWarning(
+					$"Automatic updates are paused. {exception.Message}");
+			}
 		} catch {
-			// automatic updates are best effort and must never fail the requested command
+			// every other failure: automatic updates are best effort and must never fail the requested command
 		}
 	}
 

@@ -431,15 +431,15 @@ public sealed class SettingsBootstrapServiceTests {
 		result.Report.Issues.Should().ContainSingle(issue =>
 				issue.Code == SettingsBootstrapService.SettingsShapeMismatchCode,
 			because: "the file parses as JSON, so the failure is a version/shape mismatch and not an unreadable file");
-		result.Report.Issues.Should().NotContain(issue => issue.Code == "settings-file-unreadable",
+		result.Report.Issues.Should().NotContain(issue => issue.Code == SettingsBootstrapService.SettingsFileUnreadableCode,
 			because: "settings-file-unreadable must stay reserved for a file that is genuinely not parseable");
 		SettingsIssue issue = result.Report.Issues[0];
 		issue.Message.Should().Contain("autoupdate",
 			because: "the message must name the section that failed to bind so the reader can see what changed");
 		issue.Message.Should().Contain("this clio version",
 			because: "the message must attribute the mismatch to the running build, not to the file");
-		issue.Message.Should().Contain("restart",
-			because: "restarting the resident process is the only fix; editing a valid file is not");
+		issue.Message.Should().Contain("by hand",
+			because: "this fixture carries no evidence of a newer writer, so the honest advice is to correct the member");
 	}
 
 	[Test]
@@ -528,7 +528,138 @@ public sealed class SettingsBootstrapServiceTests {
 		// Assert
 		result.Report.Status.Should().Be("broken",
 			because: "a damaged file cannot be used and the caller must be told to repair it");
-		result.Report.Issues.Should().ContainSingle(issue => issue.Code == "settings-file-unreadable",
+		result.Report.Issues.Should().ContainSingle(issue => issue.Code == SettingsBootstrapService.SettingsFileUnreadableCode,
 			because: "a genuine parse failure must keep the code that sends the reader to the file");
+	}
+
+	private static string EnvironmentSettingsWith(string environmentsJson) => """
+		{
+		  "ActiveEnvironmentKey": "prod",
+		  "SettingsVersion": 3,
+		  "Environments": __ENVIRONMENTS__
+		}
+		""".Replace("__ENVIRONMENTS__", environmentsJson);
+
+	[TestCase("""{ "prod": { "Uri": "https://prod", "Safe": "yes" } }""", "Safe")]
+	[TestCase("""{ "prod": { "Uri": { "host": "prod" } } }""", "Uri")]
+	[TestCase("""{ "prod": "oops" }""", "prod")]
+	[Category("Unit")]
+	[Description("Refuses to load environments at all when any member inside them fails to bind, because a member that silently took its default would change what commands do.")]
+	public void GetResult_Should_Report_Broken_When_An_Environment_Member_Cannot_Bind(
+		string environmentsJson, string expectedMemberName) {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile,
+			new MockFileData(EnvironmentSettingsWith(environmentsJson)));
+		SettingsBootstrapService service = new(fileSystem);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+
+		// Assert
+		result.Report.Status.Should().Be("broken",
+			because: "an environment whose Safe flag or Uri quietly defaulted would run destructive commands against the wrong stand without confirmation");
+		result.Report.CanExecuteEnvTools.Should().BeFalse(
+			because: "no environment-scoped tool may run against a half-bound environment");
+		result.Report.ShapeMismatch.Should().NotBeNull(
+			because: "the file is valid JSON, so the reason is still a shape mismatch");
+		result.Report.ShapeMismatch!.Message.Should().Contain(expectedMemberName,
+			because: "the message must name the member the user has to correct");
+		result.Report.ShapeMismatch.Message.Should().Contain("by hand",
+			because: "an environment entry is hand-edited far more often than a newer clio rewrites it, so the advice must be to correct it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Names the environment key, not just the member path, when one environment entry fails to bind.")]
+	public void GetResult_Should_Name_The_Environment_Key_That_Cannot_Bind() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(
+			EnvironmentSettingsWith("""{ "prod": { "Uri": "https://prod", "Safe": "yes" } }""")));
+		SettingsBootstrapService service = new(fileSystem);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+
+		// Assert
+		result.Report.ShapeMismatch!.Message.Should().Contain("'prod'",
+			because: "with several environments configured, the key is what tells the user which entry to open");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Uses the version-skew wording only with evidence of a newer writer: a settings version this build does not know.")]
+	public void GetResult_Should_Use_Version_Skew_Wording_When_SettingsVersion_Is_From_The_Future() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData("""
+			{
+			  "SettingsVersion": 999,
+			  "Environments": {},
+			  "autoupdate": { "clio": { "enabled": { "future": true } } }
+			}
+			"""));
+		SettingsBootstrapService service = new(fileSystem);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+
+		// Assert
+		result.Report.ShapeMismatch!.Message.Should().Contain("A newer clio has written the file",
+			because: "a settings version this build does not know is direct evidence of a newer writer");
+		result.Report.ShapeMismatch.Message.Should().Contain("update-cli",
+			because: "a user with no MCP session to restart still needs a way out of the skew");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Uses the correct-it-by-hand wording with no evidence of a newer writer, instead of telling the user to wait for a restart that fixes nothing.")]
+	public void GetResult_Should_Use_Hand_Correction_Wording_Without_Evidence_Of_A_Newer_Writer() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData("""
+			{
+			  "SettingsVersion": 3,
+			  "Environments": {},
+			  "autoupdate": { "clio": { "frequency-minutes": "soon" } }
+			}
+			"""));
+		SettingsBootstrapService service = new(fileSystem);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+
+		// Assert
+		result.Report.ShapeMismatch!.Message.Should().Contain("by hand",
+			because: "a typo in a known member is corrected by the user, not by restarting anything");
+		result.Report.ShapeMismatch.Message.Should().NotContain("A newer clio",
+			because: "claiming a newer clio wrote the file, with no evidence, sends the user to wait instead of to fix");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Treats unknown members carried in the same section as the failure as evidence that a newer clio wrote the file.")]
+	public void GetResult_Should_Use_Version_Skew_Wording_When_The_Section_Carries_Unknown_Members() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData("""
+			{
+			  "SettingsVersion": 3,
+			  "Environments": {},
+			  "autoupdate": {
+			    "clio": { "enabled": { "future": true } },
+			    "browser": { "enabled": true }
+			  }
+			}
+			"""));
+		SettingsBootstrapService service = new(fileSystem);
+
+		// Act
+		SettingsBootstrapResult result = service.GetResult();
+
+		// Assert
+		result.Report.ShapeMismatch!.Message.Should().Contain("A newer clio has written the file",
+			because: "a member this build has never heard of, in the same section as the failure, is the evidence a newer writer leaves behind");
 	}
 }

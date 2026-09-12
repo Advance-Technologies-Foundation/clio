@@ -18,8 +18,9 @@ public sealed class AutoUpdateSettingsSerializationTests {
 		Settings settings = new();
 
 		// Act
-		string json = JsonConvert.SerializeObject(settings,
-			new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
+		// DEFAULT settings on purpose: a global NullValueHandling.Ignore would omit the property for the
+		// caller rather than because of the per-property attribute, and the attribute is what the fix is.
+		string json = JsonConvert.SerializeObject(settings);
 
 		// Assert
 		json.Should().NotContain("0001-01-01",

@@ -12,6 +12,20 @@ DESCRIPTION
     independent enabled, frequency-minutes, and next-run settings. Due policies
     reuse the existing update behavior on a best-effort basis.
 
+    "next-run" is optional: a policy that has never claimed a slot carries no
+    "next-run" at all, and is due the next time clio starts.
+
+    The clio self-update is DEFERRED while an MCP host (mcp-server or mcp-http)
+    is resident in the same clio home, because replacing the binaries and
+    appsettings.json underneath a running host breaks it for the rest of its
+    session. The deferral prints one line:
+
+        [INF] - clio self-update deferred: MCP host pid <N> (version <X>) is running
+
+    and it does NOT move "next-run", so the update runs at the next start with no
+    host resident. Knowledge and toolkit updates are never deferred. Run
+    "clio update-cli" to update manually at a moment of your choosing.
+
 OPTIONS
     --enable     Enable automatic clio updates
     --disable    Disable automatic clio updates (default behavior)

@@ -1586,9 +1586,7 @@ public class BindingsModule {
 			return $"clio settings bootstrap repaired {repairs}. "
 				+ $"Active environment: {report.ResolvedActiveEnvironmentKey ?? "<none>"}.";
 		}
-		SettingsIssue shapeMismatch = report.Issues.FirstOrDefault(reported =>
-			string.Equals(reported.Code, SettingsBootstrapService.SettingsShapeMismatchCode,
-				StringComparison.Ordinal));
+		SettingsIssue shapeMismatch = report.ShapeMismatch;
 		if (shapeMismatch is not null) {
 			return $"clio settings bootstrap is degraded. {shapeMismatch.Message} "
 				+ $"File path: {report.SettingsFilePath}.";

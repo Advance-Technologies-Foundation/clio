@@ -345,6 +345,12 @@ curl -X POST http://localhost:8005/mcp \
 | `CLIO_MCP_RESPECT_AMBIENT_PROXY` | When `true` or `1`, do NOT neutralize inherited proxy env vars. Default: proxy is bypassed. |
 | `CLIO_MCP_HTTP_PLATFORM_API_KEY` | Comma-separated platform API key set, unioned with `--platform-api-key`. Setting at least one key enables per-request credential passthrough. |
 
+## Files
+
+| Path | Purpose |
+|------|---------|
+| `<clio-home>/mcp-server.<pid>.lock` | The same presence marker [`mcp-server`](mcp-server.md) writes, created when the HTTP host starts listening and removed when it stops. While it exists and names a live process, other clio processes skip the background clio self-update rather than replacing this host's binaries mid-flight. |
+
 ## See Also
 
 - [`mcp-server`](mcp-server.md) - Start MCP server in stdio mode

@@ -68,6 +68,48 @@ public sealed class SettingsHealthToolE2ETests {
 			because: "named-environment tool execution requires a valid resolved active environment, which a stale key does not provide");
 	}
 
+	[Test]
+	[Description("Reports a settings file a newer clio wrote as a degraded-but-usable shape mismatch, not as an unreadable file, and keeps environment-scoped execution available (issue #1462).")]
+	[AllureTag(SettingsHealthTool.ToolName)]
+	[AllureName("check-settings-health reports settings-shape-mismatch and stays usable for a future-shaped section")]
+	public async Task SettingsHealth_Should_Report_Shape_Mismatch_When_A_Newer_Clio_Wrote_The_File() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		// A private home for the same reason as the fixture above: the deliberate breakage must not reach
+		// the shared catalog the rest of the run reads.
+		IsolatedClioHome.CreateAndRedirect(settings, "settings-shape-mismatch-home");
+		TemporaryClioSettingsOverride settingsOverride =
+			TemporaryClioSettingsOverride.SetFutureShapedAutoupdateSection(
+				settings.ClioProcessPath,
+				settings.ProcessEnvironmentVariables);
+		string originalContent = File.ReadAllText(settingsOverride.AppSettingsPath);
+		originalContent.Should().Contain("\"future\"",
+			because: "the fixture must install the unbindable section before the MCP server starts");
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), settingsOverride);
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			SettingsHealthTool.ToolName,
+			new Dictionary<string, object?>(),
+			context.CancellationTokenSource.Token);
+		SettingsHealthResult result = EntitySchemaStructuredResultParser.Extract<SettingsHealthResult>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "check-settings-health must answer normally about a degraded configuration");
+		result.Issues.Should().Contain(issue => issue.Code == "settings-shape-mismatch",
+			because: "the file is valid JSON that this build cannot fully bind, which is a version skew and not an unreadable file");
+		result.Issues.Should().NotContain(issue => issue.Code == "settings-file-unreadable",
+			because: "reporting a valid file as unreadable is what sent users to hand-edit a correct file in issue #1462");
+		result.EnvironmentCount.Should().Be(1,
+			because: "the environments in the file are intact and must still load in the degraded mode");
+		result.CanExecuteEnvTools.Should().BeTrue(
+			because: "degrading rather than failing is the point: environment-scoped tools must keep working");
+		File.ReadAllText(settingsOverride.AppSettingsPath).Should().Be(originalContent,
+			because: "clio must not rewrite a file holding a section it cannot represent, or it would delete what the newer clio wrote");
+	}
+
 	private static async Task<ArrangeContext> ArrangeAsync(
 		McpE2ESettings settings,
 		TimeSpan timeout,

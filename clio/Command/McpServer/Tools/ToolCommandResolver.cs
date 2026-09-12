@@ -269,13 +269,11 @@ public class ToolCommandResolver(
 	/// restarting the resident process so it runs the new build.
 	/// </remarks>
 	private static string DescribeUnusableBootstrap(SettingsBootstrapReport bootstrapReport) {
-		bool isShapeMismatch = bootstrapReport.Issues.Any(issue =>
-			string.Equals(issue.Code, SettingsBootstrapService.SettingsShapeMismatchCode,
-				StringComparison.Ordinal));
-		if (isShapeMismatch) {
-			return "clio settings bootstrap cannot be used by this clio build: "
-				+ $"{bootstrapReport.SettingsFilePath} is valid JSON that a newer clio has written. "
-				+ "Do not edit or repair the file - restart the MCP session so it runs the new clio build. "
+		if (bootstrapReport.ShapeMismatch is SettingsIssue mismatch) {
+			// The bootstrap's own message already says what failed and what fixes it - version skew or a
+			// hand-editable mistake - so it is quoted rather than paraphrased. Paraphrasing is how the two
+			// surfaces came to disagree about whether the file should be edited in the first place.
+			return $"clio settings bootstrap cannot be used by this clio build. {mismatch.Message} "
 				+ "Explicit uri/login/password remains available only as an emergency fallback.";
 		}
 		return $"clio settings bootstrap is broken. Repair {bootstrapReport.SettingsFilePath}. "

@@ -156,4 +156,32 @@ public sealed class AutomaticUpdateStartupTests {
 		appUpdater.Received(1).UpdateInBackgroundAsync();
 		settings.Received(1).TryScheduleAutoupdate(AutoUpdateTarget.Clio, Arg.Any<DateTimeOffset>());
 	}
+
+	[Test]
+	[Description("Reports a settings-write refusal instead of swallowing it, because that refusal also blocks the update that would have ended the skew.")]
+	public void RunStartupUpdateCheck_ShouldReportTheRefusal_WhenSettingsCannotBeWritten() {
+		// Arrange
+		ISettingsRepository settings = Substitute.For<ISettingsRepository>();
+		settings.TryScheduleAutoupdate(Arg.Any<AutoUpdateTarget>(), Arg.Any<DateTimeOffset>())
+			.Returns(_ => throw new SettingsShapeMismatchException(
+				"Cannot update settings (settings-shape-mismatch): ... use 'clio update-cli'."));
+		IAppUpdater appUpdater = Substitute.For<IAppUpdater>();
+		IKnowledgeSourceManagementService knowledge = Substitute.For<IKnowledgeSourceManagementService>();
+		ISkillInstallService toolkit = Substitute.For<ISkillInstallService>();
+		ServiceProvider services = new ServiceCollection()
+			.AddSingleton(settings)
+			.AddSingleton(appUpdater)
+			.AddSingleton(knowledge)
+			.AddSingleton(toolkit)
+			.BuildServiceProvider();
+
+		// Act
+		Action act = () => Program.RunStartupUpdateCheck(["ver"], services);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a refused update must never fail the command the user actually asked for");
+		appUpdater.DidNotReceive().UpdateInBackgroundAsync();
+		settings.Received(3).TryScheduleAutoupdate(Arg.Any<AutoUpdateTarget>(), Arg.Any<DateTimeOffset>());
+	}
 }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.IO.Abstractions.TestingHelpers;
 using Clio.Common;
 using Clio.Common.McpWorker;
@@ -10,6 +11,7 @@ using Clio.Tests.Infrastructure;
 using Clio.UserEnvironment;
 using FluentAssertions;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
@@ -424,7 +426,9 @@ public sealed class SettingsRepositoryFeatureTests {
 		persisted.Autoupdate.Knowledge.NextRun.Should().Be(now.AddMinutes(60),
 			because: "knowledge uses its one-hour default frequency");
 		persisted.Autoupdate.Toolkit.NextRun.Should().BeNull(
-			because: "a schedule that never advanced stays unscheduled and is omitted from the file entirely");
+			because: "a schedule that never advanced stays unscheduled");
+		_fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile).Should().NotContain("0001-01-01",
+			because: "an unscheduled policy must be OMITTED from the file, not written as a year-0001 timestamp");
 	}
 
 	[Test]
@@ -505,14 +509,13 @@ public sealed class SettingsRepositoryFeatureTests {
 
 		// Act
 		Action act = () => sut.SetAutoupdate(true);
-		string persistedContent = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
 
 		// Assert
-		act.Should().Throw<InvalidOperationException>(
+		act.Should().Throw<SettingsShapeMismatchException>(
 				because: "writing the file from a model that dropped an unbindable section would destroy the newer clio's settings")
-			.Which.Message.Should().Contain("restart",
-				because: "the refusal must name the action that actually fixes the skew");
-		persistedContent.Should().Be(futureShaped,
+			.Which.Message.Should().Contain("update-cli",
+				because: "the refusal must name the way out, since it also blocks the automatic update that would have fixed the skew");
+		fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile).Should().Be(futureShaped,
 			because: "a refused update must leave the settings file byte-for-byte as it was");
 	}
 
@@ -557,5 +560,73 @@ public sealed class SettingsRepositoryFeatureTests {
 		// Assert
 		due.Should().BeFalse(
 			because: "toolkit updates are opt-in and a disabled policy is never due");
+	}
+
+	[Test]
+	[Description("Preserves members a newer clio wrote that this build does not know, instead of deleting them on the next save.")]
+	public void UpdateSettings_ShouldPreserveUnknownMembers_WrittenByANewerClio() {
+		// Arrange
+		const string original = """
+			{
+			  "ActiveEnvironmentKey": "dev",
+			  "SettingsVersion": 3,
+			  "future-section": { "mode": "on", "retries": 3 },
+			  "autoupdate": {
+			    "clio": { "enabled": false, "frequency-minutes": 480, "jitter-minutes": 7 },
+			    "browser": { "enabled": true }
+			  },
+			  "Environments": {
+			    "dev": { "Uri": "http://localhost", "Login": "Supervisor", "Password": "Supervisor",
+			      "future-flag": true }
+			  }
+			}
+			""";
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(original));
+		SettingsRepository sut = new(fileSystem);
+
+		// Act
+		sut.SetAutoupdate(true);
+		JObject persisted = JObject.Parse(fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile));
+
+		// Assert
+		JToken.DeepEquals(persisted["future-section"], JObject.Parse("""{ "mode": "on", "retries": 3 }"""))
+			.Should().BeTrue(
+				because: "an unknown top-level section must survive a save by an older build, or that build silently deletes the newer one's configuration");
+		persisted["Environments"]!["dev"]!["future-flag"]!.Value<bool>().Should().BeTrue(
+			because: "an unknown environment member must survive too; losing one changes what commands do against that environment");
+		persisted["autoupdate"]!["clio"]!["jitter-minutes"]!.Value<int>().Should().Be(7,
+			because: "the autoupdate section binds through a custom converter, and its overflow members must round-trip like every other section's");
+		JToken.DeepEquals(persisted["autoupdate"]!["browser"], JObject.Parse("""{ "enabled": true }"""))
+			.Should().BeTrue(
+				because: "a whole unknown policy added by a newer clio must be carried through unchanged");
+		persisted["autoupdate"]!["clio"]!["enabled"]!.Value<bool>().Should().BeTrue(
+			because: "carrying unknown members must not stop the write the caller actually asked for");
+	}
+
+	[Test]
+	[Description("Does not duplicate a read-only member such as $schema, which Json.NET routes into the overflow bag because it cannot be set.")]
+	public void UpdateSettings_ShouldNotDuplicateReadOnlyMembers_CarriedInTheOverflowBag() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData("""
+			{
+			  "$schema": "./schema.json",
+			  "ActiveEnvironmentKey": "dev",
+			  "SettingsVersion": 3,
+			  "Environments": {
+			    "dev": { "Uri": "http://localhost", "Login": "Supervisor", "Password": "Supervisor" }
+			  }
+			}
+			"""));
+		SettingsRepository sut = new(fileSystem);
+
+		// Act
+		sut.SetAutoupdate(true);
+		string persistedContent = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
+
+		// Assert
+		Regex.Matches(persistedContent, Regex.Escape("\"$schema\"")).Count.Should().Be(1,
+			because: "a member the type declares but cannot set must be written once from the property, never a second time from the overflow bag");
 	}
 }

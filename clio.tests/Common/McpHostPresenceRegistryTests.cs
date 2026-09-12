@@ -139,32 +139,72 @@ public sealed class McpHostPresenceRegistryTests {
 	}
 
 	[Test]
-	[Description("The MCP host writes no presence marker when it runs as a short-lived worker child.")]
-	public void RegisterHostPresence_Should_Write_No_Marker_For_A_Worker() {
+	[Description("Reports the running test process as alive, so the probe's positive answer is proven against a real process rather than a substitute.")]
+	public void IsAlive_Should_Report_The_Current_Process_As_Alive() {
 		// Arrange
-		IMcpHostPresenceRegistry registry = Substitute.For<IMcpHostPresenceRegistry>();
-		Clio.Command.McpServer.McpServerCommandOptions options = new() { Worker = true };
+		ProcessLivenessProbe probe = new();
 
 		// Act
-		string markerFilePath =
-			Clio.Command.McpServer.McpServerCommand.RegisterHostPresence(options, registry);
+		bool alive = probe.IsAlive(Environment.ProcessId);
 
 		// Assert
-		markerFilePath.Should().BeNull(
-			because: "a worker lives for one call; one marker per spawned worker would defer updates for a host that is already gone");
-		registry.DidNotReceive().Register();
+		alive.Should().BeTrue(
+			because: "the process running this assertion is, definitionally, running");
 	}
 
 	[Test]
-	[Description("Treats a marker whose pid now belongs to a process that started later as stale, so a recycled identifier cannot defer updates forever.")]
-	public void FindLiveHost_Should_Reject_A_Process_That_Started_After_The_Marker() {
+	[Description("Accepts the current process when the marker was written after it started, which is what a real host's marker looks like.")]
+	public void IsAlive_Should_Accept_The_Current_Process_When_The_Marker_Is_Newer_Than_It() {
+		// Arrange
+		ProcessLivenessProbe probe = new();
+
+		// Act
+		bool alive = probe.IsAlive(Environment.ProcessId, DateTimeOffset.UtcNow);
+
+		// Assert
+		alive.Should().BeTrue(
+			because: "a marker is always written after the process it describes started, so this is the normal case and must not be read as a recycled pid");
+	}
+
+	[Test]
+	[Description("Rejects the current process when the marker claims a start time long before it, which is what a recycled process identifier looks like.")]
+	public void IsAlive_Should_Reject_The_Current_Process_When_The_Marker_Predates_It() {
+		// Arrange
+		ProcessLivenessProbe probe = new();
+
+		// Act
+		bool alive = probe.IsAlive(Environment.ProcessId, new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero));
+
+		// Assert
+		alive.Should().BeFalse(
+			because: "a process that started decades after the marker was written cannot be the process the marker describes");
+	}
+
+	[Test]
+	[Description("Reports a process identifier that cannot exist as not alive.")]
+	public void IsAlive_Should_Report_An_Impossible_Process_Id_As_Not_Alive() {
+		// Arrange
+		ProcessLivenessProbe probe = new();
+
+		// Act
+		bool aliveForZero = probe.IsAlive(0);
+		bool aliveForNegative = probe.IsAlive(-1);
+
+		// Assert
+		aliveForZero.Should().BeFalse(
+			because: "zero is not a process identifier and must never keep a marker alive");
+		aliveForNegative.Should().BeFalse(
+			because: "a negative identifier is not a process either");
+	}
+
+	[Test]
+	[Description("Deletes a marker whose body cannot be parsed, so an empty or hand-created file cannot defer clio updates forever.")]
+	public void FindLiveHost_Should_Delete_A_Marker_With_An_Unparsable_Body() {
 		// Arrange
 		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
-		string markerPath = MarkerPath(4242);
-		fileSystem.AddFile(markerPath, new MockFileData(
-			"{\"pid\":4242,\"clio-version\":\"8.1.0.120\",\"started-at-utc\":\"2026-09-12T10:00:00.0000000+00:00\"}"));
+		string markerPath = MarkerPath(1);
+		fileSystem.AddFile(markerPath, new MockFileData(string.Empty));
 		IProcessLivenessProbe probe = Substitute.For<IProcessLivenessProbe>();
-		probe.IsAlive(4242, Arg.Any<DateTimeOffset?>()).Returns(false);
 		McpHostPresenceRegistry registry = new(fileSystem, probe);
 
 		// Act
@@ -172,9 +212,71 @@ public sealed class McpHostPresenceRegistryTests {
 
 		// Assert
 		marker.Should().BeNull(
-			because: "a stranger that inherited the recorded pid is not the host the marker claims");
-		probe.Received(1).IsAlive(4242, new DateTimeOffset(2026, 9, 12, 10, 0, 0, TimeSpan.Zero));
+			because: "a marker with no readable identity claims nothing");
 		fileSystem.File.Exists(markerPath).Should().BeFalse(
-			because: "the marker no longer describes anything and must not survive the scan");
+			because: "`touch mcp-server.1.lock` must not be able to disable clio updates on the machine permanently");
+		probe.DidNotReceive().IsAlive(Arg.Any<int>(), Arg.Any<DateTimeOffset?>());
+	}
+
+	[Test]
+	[Description("Refuses a marker with no start time, because without one the recycled-identifier guard would silently switch itself off.")]
+	public void FindLiveHost_Should_Refuse_A_Marker_Without_A_Start_Time() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		string markerPath = MarkerPath(4242);
+		fileSystem.AddFile(markerPath, new MockFileData("{\"pid\":4242,\"clio-version\":\"8.1.0.120\"}"));
+		IProcessLivenessProbe probe = Substitute.For<IProcessLivenessProbe>();
+		McpHostPresenceRegistry registry = new(fileSystem, probe);
+
+		// Act
+		McpHostPresenceMarker marker = registry.FindLiveHost();
+
+		// Assert
+		marker.Should().BeNull(
+			because: "a marker that cannot be checked against a recycled identifier is not trustworthy enough to defer an update on");
+		fileSystem.File.Exists(markerPath).Should().BeFalse(
+			because: "an untrustworthy marker must not survive to be re-read on every future run");
+	}
+
+	[Test]
+	[Description("Refuses to read a marker larger than a marker can be, so a file swapped for a large or endless one cannot stall every clio command.")]
+	public void FindLiveHost_Should_Refuse_An_Oversized_Marker() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		string markerPath = MarkerPath(4242);
+		fileSystem.AddFile(markerPath,
+			new MockFileData(new string('x', McpHostPresenceRegistry.MaxMarkerBytes + 1)));
+		IProcessLivenessProbe probe = Substitute.For<IProcessLivenessProbe>();
+		McpHostPresenceRegistry registry = new(fileSystem, probe);
+
+		// Act
+		McpHostPresenceMarker marker = registry.FindLiveHost();
+
+		// Assert
+		marker.Should().BeNull(
+			because: "a marker holds three short fields; anything larger is not one and must not be read");
+		probe.DidNotReceive().IsAlive(Arg.Any<int>(), Arg.Any<DateTimeOffset?>());
+	}
+
+	[Test]
+	[Description("Keeps scanning after an unusable marker, so one bad file cannot hide a live host and let an update replace its binaries.")]
+	public void FindLiveHost_Should_Keep_Scanning_After_An_Unusable_Marker() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(MarkerPath(1), new MockFileData("not json at all"));
+		fileSystem.AddFile(MarkerPath(4242), new MockFileData(
+			"{\"pid\":4242,\"clio-version\":\"8.1.0.120\",\"started-at-utc\":\"2026-09-12T10:00:00.0000000+00:00\"}"));
+		IProcessLivenessProbe probe = Substitute.For<IProcessLivenessProbe>();
+		probe.IsAlive(4242, Arg.Any<DateTimeOffset?>()).Returns(true);
+		McpHostPresenceRegistry registry = new(fileSystem, probe);
+
+		// Act
+		McpHostPresenceMarker marker = registry.FindLiveHost();
+
+		// Assert
+		marker.Should().NotBeNull(
+			because: "the live host is what decides whether a self-update is safe, and it is listed after the unusable file");
+		marker!.ProcessId.Should().Be(4242,
+			because: "the scan must report the marker that names a live process");
 	}
 }

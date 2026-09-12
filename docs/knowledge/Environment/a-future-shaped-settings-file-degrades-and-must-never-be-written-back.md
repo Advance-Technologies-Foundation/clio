@@ -3,6 +3,7 @@ description: a settings file a newer clio wrote binds partially in an older buil
 applies-to:
   - clio/Environment/SettingsBootstrapService.cs
   - clio/BindingsModule.cs
+  - clio/Command/McpServer/Tools/SettingsHealthTool.cs
   - clio/Environment/ConfigurationOptions.cs
   - clio/Command/McpServer/Tools/ToolCommandResolver.cs
 date: 2026-09-12
@@ -29,6 +30,18 @@ rewriting `appsettings.json` under a resident MCP worker running the previous bu
 can read every environment in that file; it just cannot bind the newer `autoupdate` shape. Refusing
 the whole file cost the user every environment for the rest of the session, and the message sent
 them to hand-edit a file that was correct.
+
+**What this does NOT cover** — the protection is one level deep and deliberately partial. A member a
+newer clio ADDS is not a mismatch at all (Json.NET ignores unknown members); it survives only because
+`Settings`, `EnvironmentSettings`, `AutoUpdateSettings` and `AutoUpdatePolicy` carry
+`[JsonExtensionData]` overflow bags — a type WITHOUT one still loses unknown members on the next save,
+silently. Each bag needs the two guards beside it: `JsonOverflowMembers.RemoveDeclaredMembers` on
+deserialization (a READ-ONLY property such as `$schema` is serialized but cannot be set, so Json.NET
+puts its value in the bag and the next save writes that key TWICE), and a
+`System.Text.Json.JsonIgnore`, because System.Text.Json sees the bag as an ordinary property and would
+put it on the wire. And while a mismatch stands, clio writes nothing at all: `reg-web-app`,
+`set-active-environment` and the automatic update schedule all fail, which is why the refusal names
+`clio update-cli`.
 
 **What breaks if you ignore it** — a write in degraded mode is silent, total and irreversible for
 the section involved: the old model serializes without whatever it could not bind, so the newer

@@ -63,6 +63,37 @@ internal sealed class TemporaryClioSettingsOverride : IDisposable {
 	}
 
 
+	/// <summary>
+	/// Installs a settings file that is valid JSON but whose autoupdate section a released clio cannot
+	/// bind, which is what a NEWER clio writing the file under an older resident host looks like
+	/// (issue #1462).
+	/// </summary>
+	/// <param name="clioProcessPath">The clio executable whose home is overwritten.</param>
+	/// <param name="processEnvironmentVariables">The environment the clio process is started with.</param>
+	/// <returns>The override, which restores the previous content on disposal.</returns>
+	public static TemporaryClioSettingsOverride SetFutureShapedAutoupdateSection(
+		string? clioProcessPath = null,
+		IReadOnlyDictionary<string, string?>? processEnvironmentVariables = null) {
+		return ReplaceContent("""
+			{
+			  "ActiveEnvironmentKey": "dev",
+			  "SettingsVersion": 999,
+			  "autoupdate": {
+			    "clio": { "enabled": { "future": true }, "frequency-minutes": 480 }
+			  },
+			  "Environments": {
+			    "dev": {
+			      "Uri": "http://localhost",
+			      "Login": "Supervisor",
+			      "Password": "Supervisor"
+			    }
+			  }
+			}
+			""",
+			clioProcessPath,
+			processEnvironmentVariables);
+	}
+
 	// clio mutates appsettings.json under a cross-process lock with an atomic replace, and retries a publish
 	// a contending reader refuses. This helper does neither — it is a bare read-modify-write — and on Windows
 	// that is the same MoveFileEx/sharing-violation exposure: 18 of the 46 failures in TeamCity 15893259 were

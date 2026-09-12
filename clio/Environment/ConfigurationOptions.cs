@@ -1,6 +1,7 @@
 using Clio.UserEnvironment;
 using Clio.Utilities;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -27,6 +28,25 @@ namespace Clio
 
 	public class EnvironmentSettings
 	{
+		/// <summary>
+		/// Members of this environment that the running clio build does not know, kept so that a save
+		/// writes them back instead of deleting them.
+		/// </summary>
+		/// <remarks>
+		/// A newer clio adding a property is NOT a bind failure - Json.NET ignores an unknown member
+		/// silently - so nothing reports it, and the next save by an older build would drop it. That is the
+		/// same data loss as an unbindable section, minus the diagnostic. Carrying the members verbatim
+		/// makes an older build a lossless pass-through instead.
+		/// </remarks>
+		[Newtonsoft.Json.JsonExtensionData]
+		[System.Text.Json.Serialization.JsonIgnore]
+		[YamlIgnore]
+		public IDictionary<string, JToken> AdditionalData { get; set; }
+
+		[System.Runtime.Serialization.OnDeserialized]
+		private void RemoveDeclaredOverflowMembers(System.Runtime.Serialization.StreamingContext context) =>
+			Clio.Common.JsonOverflowMembers.RemoveDeclaredMembers(this, AdditionalData);
+
 		[YamlMember(Alias = "url")]
 		public string Uri {
 			get; set;
@@ -544,6 +564,19 @@ namespace Clio
 		public int? SettingsVersion {
 			get; set;
 		}
+
+		/// <summary>
+		/// Top-level settings members that the running clio build does not know, kept so that a save
+		/// writes them back instead of deleting them.
+		/// </summary>
+		/// <remarks>See <see cref="EnvironmentSettings.AdditionalData"/> for why this exists.</remarks>
+		[Newtonsoft.Json.JsonExtensionData]
+		[System.Text.Json.Serialization.JsonIgnore]
+		public IDictionary<string, JToken> AdditionalData { get; set; }
+
+		[System.Runtime.Serialization.OnDeserialized]
+		private void RemoveDeclaredOverflowMembers(System.Runtime.Serialization.StreamingContext context) =>
+			Clio.Common.JsonOverflowMembers.RemoveDeclaredMembers(this, AdditionalData);
 
 		public Dictionary<string, EnvironmentSettings> Environments {
 			get; set;
@@ -1138,12 +1171,12 @@ namespace Clio
 			// environments still resolve (issue #1462), which means the status is "issues-detected" and no
 			// longer refuses the write on its own - but serializing the model this build produced would
 			// silently drop whichever section it could not bind. Refuse, and say what actually fixes it.
-			SettingsIssue shapeMismatch = latest.Report.Issues.FirstOrDefault(issue =>
-				string.Equals(issue.Code, SettingsBootstrapService.SettingsShapeMismatchCode,
-					StringComparison.Ordinal));
-			if (shapeMismatch != null) {
-				throw new InvalidOperationException(
-					$"Cannot update settings: {shapeMismatch.Message}");
+			if (latest.Report.ShapeMismatch is SettingsIssue shapeMismatch) {
+				throw new SettingsShapeMismatchException(
+					$"Cannot update settings ({SettingsBootstrapService.SettingsShapeMismatchCode}): "
+					+ $"{shapeMismatch.Message} Until then clio writes nothing at all - including its own "
+					+ "automatic update schedule - so 'clio update-cli' is the way out when no resident "
+					+ "process is holding the old build.");
 			}
 			if (string.Equals(latest.Report.Status, "broken", StringComparison.OrdinalIgnoreCase)) {
 				string issue = latest.Report.Issues.FirstOrDefault()?.Message

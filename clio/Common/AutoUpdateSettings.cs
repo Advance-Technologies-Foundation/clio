@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -24,6 +25,17 @@ public sealed class AutoUpdatePolicy {
 	[JsonProperty("frequency-minutes")]
 	public int FrequencyMinutes { get; set; }
 
+	/// <summary>
+	/// Policy members the running clio build does not know, carried so a save preserves them.
+	/// </summary>
+	[JsonExtensionData]
+	[System.Text.Json.Serialization.JsonIgnore]
+	public IDictionary<string, JToken> AdditionalData { get; set; }
+
+	[System.Runtime.Serialization.OnDeserialized]
+	private void RemoveDeclaredOverflowMembers(System.Runtime.Serialization.StreamingContext context) =>
+		JsonOverflowMembers.RemoveDeclaredMembers(this, AdditionalData);
+
 	/// <summary>Gets or sets the next scheduled attempt, or <see langword="null"/> when none is scheduled.</summary>
 	/// <remarks>
 	/// Nullable so an unscheduled policy is OMITTED from appsettings.json rather than written as the
@@ -37,6 +49,17 @@ public sealed class AutoUpdatePolicy {
 /// <summary>Contains independent schedules for clio, knowledge, and toolkit updates.</summary>
 [JsonConverter(typeof(AutoUpdateSettingsConverter))]
 public sealed class AutoUpdateSettings {
+	/// <summary>
+	/// Autoupdate members the running clio build does not know, carried so a save preserves them.
+	/// </summary>
+	[JsonExtensionData]
+	[System.Text.Json.Serialization.JsonIgnore]
+	public IDictionary<string, JToken> AdditionalData { get; set; }
+
+	[System.Runtime.Serialization.OnDeserialized]
+	private void RemoveDeclaredOverflowMembers(System.Runtime.Serialization.StreamingContext context) =>
+		JsonOverflowMembers.RemoveDeclaredMembers(this, AdditionalData);
+
 	/// <summary>Gets or sets the clio update schedule.</summary>
 	[JsonProperty("clio")]
 	public AutoUpdatePolicy Clio { get; set; } = CreatePolicy(480, false);

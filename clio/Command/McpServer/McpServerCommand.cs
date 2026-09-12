@@ -73,9 +73,6 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 		// own process group and arms parent-death signalling, so a hard-killed parent takes the worker and
 		// everything below it. A parent that is SIGKILLed runs no code, so this half cannot live there.
 		ArmWorkerContainment(options, logger);
-		// Announce this host to any clio CLI process that starts while it is resident, so a background
-		// self-update does not replace the binaries and appsettings.json under it (issue #1462).
-		string presenceMarkerPath = RegisterHostPresence(options, mcpHostPresenceRegistry);
 		ReapStaleWorkersForHost(options, workerProcessSupervisor, logger);
 		SweepWorkingDirectoryResidueForHost(options, workerTempResidueSweeper, logger);
 		BootstrapCuratedKnowledgeForHost(options, curatedKnowledgeBootstrapService, logger);
@@ -113,10 +110,16 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 
 		Console.CancelKeyPress += onCancelKeyPress;
 		AppDomain.CurrentDomain.ProcessExit += onProcessExit;
+		// Announce this host to any clio CLI process that starts while it is resident, so a background
+		// self-update does not replace the binaries and appsettings.json under it (issue #1462). Written
+		// INSIDE the try whose finally removes it: a startup step that throws between the write and the
+		// try would otherwise leave a marker behind for a process that never served anything.
+		string presenceMarkerPath = null;
 		// Drain the telemetry spool left over from previous sessions; fire-and-forget,
 		// the server starts serving immediately.
 		ScheduleStartupTelemetryFlush(options, flushScheduler);
 		try {
+			presenceMarkerPath = RegisterHostPresence(options, mcpHostPresenceRegistry);
 			server.RunAsync(cts.Token).GetAwaiter().GetResult();
 		} catch (OperationCanceledException) {
 			// Ctrl+C / ProcessExit path: the triggered token makes RunAsync throw here. A plain
