@@ -175,69 +175,76 @@ internal sealed record ApplicationDataForgeColumnHintEnvelope(
 
 internal static class ApplicationResultParser {
 	public static ApplicationListResponseEnvelope ExtractList(CallToolResult callResult) {
-		if (TryExtract(callResult, IsValidListEnvelope, out ApplicationListResponseEnvelope? envelope)) {
+		McpParseDiagnostics diagnostics = new();
+		if (TryExtract(callResult, IsValidListEnvelope, out ApplicationListResponseEnvelope? envelope, diagnostics)) {
 			return envelope!;
 		}
 
-		throw new InvalidOperationException("Could not parse list-apps MCP result.");
+		throw new InvalidOperationException($"Could not parse list-apps MCP result: {McpResultDiagnostics.Describe(callResult, diagnostics)}");
 	}
 
 	public static ApplicationContextResponseEnvelope ExtractInfo(CallToolResult callResult) {
-		if (TryExtract(callResult, IsValidContextEnvelope, out ApplicationContextResponseEnvelope? envelope)) {
+		McpParseDiagnostics diagnostics = new();
+		if (TryExtract(callResult, IsValidContextEnvelope, out ApplicationContextResponseEnvelope? envelope, diagnostics)) {
 			return envelope!;
 		}
 
-		throw new InvalidOperationException("Could not parse get-app-info MCP result.");
+		throw new InvalidOperationException($"Could not parse get-app-info MCP result: {McpResultDiagnostics.Describe(callResult, diagnostics)}");
 	}
 
 	public static ApplicationDeleteResponseEnvelope ExtractDelete(CallToolResult callResult) {
-		if (TryExtract(callResult, IsValidDeleteEnvelope, out ApplicationDeleteResponseEnvelope? envelope)) {
+		McpParseDiagnostics diagnostics = new();
+		if (TryExtract(callResult, IsValidDeleteEnvelope, out ApplicationDeleteResponseEnvelope? envelope, diagnostics)) {
 			return envelope!;
 		}
 
-		throw new InvalidOperationException("Could not parse delete-app MCP result.");
+		throw new InvalidOperationException($"Could not parse delete-app MCP result: {McpResultDiagnostics.Describe(callResult, diagnostics)}");
 	}
 
 	public static ApplicationSectionContextResponseEnvelope ExtractSectionCreate(CallToolResult callResult) {
-		if (TryExtract(callResult, IsValidSectionContextEnvelope, out ApplicationSectionContextResponseEnvelope? envelope)) {
+		McpParseDiagnostics diagnostics = new();
+		if (TryExtract(callResult, IsValidSectionContextEnvelope, out ApplicationSectionContextResponseEnvelope? envelope, diagnostics)) {
 			return envelope!;
 		}
 
-		throw new InvalidOperationException("Could not parse create-app-section MCP result.");
+		throw new InvalidOperationException($"Could not parse create-app-section MCP result: {McpResultDiagnostics.Describe(callResult, diagnostics)}");
 	}
 
 	public static ApplicationSectionUpdateContextResponseEnvelope ExtractSectionUpdate(CallToolResult callResult) {
-		if (TryExtract(callResult, IsValidSectionUpdateContextEnvelope, out ApplicationSectionUpdateContextResponseEnvelope? envelope)) {
+		McpParseDiagnostics diagnostics = new();
+		if (TryExtract(callResult, IsValidSectionUpdateContextEnvelope, out ApplicationSectionUpdateContextResponseEnvelope? envelope, diagnostics)) {
 			return envelope!;
 		}
 
-		throw new InvalidOperationException("Could not parse update-app-section MCP result.");
+		throw new InvalidOperationException($"Could not parse update-app-section MCP result: {McpResultDiagnostics.Describe(callResult, diagnostics)}");
 	}
 
 	public static ApplicationSectionDeleteContextResponseEnvelope ExtractSectionDelete(CallToolResult callResult) {
-		if (TryExtract(callResult, IsValidSectionDeleteContextEnvelope, out ApplicationSectionDeleteContextResponseEnvelope? envelope)) {
+		McpParseDiagnostics diagnostics = new();
+		if (TryExtract(callResult, IsValidSectionDeleteContextEnvelope, out ApplicationSectionDeleteContextResponseEnvelope? envelope, diagnostics)) {
 			return envelope!;
 		}
 
-		throw new InvalidOperationException("Could not parse delete-app-section MCP result.");
+		throw new InvalidOperationException($"Could not parse delete-app-section MCP result: {McpResultDiagnostics.Describe(callResult, diagnostics)}");
 	}
 
 	public static ApplicationSectionListContextResponseEnvelope ExtractSectionList(CallToolResult callResult) {
-		if (TryExtract(callResult, IsValidSectionListContextEnvelope, out ApplicationSectionListContextResponseEnvelope? envelope)) {
+		McpParseDiagnostics diagnostics = new();
+		if (TryExtract(callResult, IsValidSectionListContextEnvelope, out ApplicationSectionListContextResponseEnvelope? envelope, diagnostics)) {
 			return envelope!;
 		}
 
-		throw new InvalidOperationException("Could not parse list-app-sections MCP result.");
+		throw new InvalidOperationException($"Could not parse list-app-sections MCP result: {McpResultDiagnostics.Describe(callResult, diagnostics)}");
 	}
 
-	private static bool TryExtract<T>(CallToolResult callResult, Func<T?, bool> validator, out T? result) {
+	private static bool TryExtract<T>(CallToolResult callResult, Func<T?, bool> validator, out T? result, McpParseDiagnostics diagnostics) {
 		if (TrySerializeToJsonElement(callResult.StructuredContent, out JsonElement structuredContent) &&
-			TryDeserialize(structuredContent, validator, out result)) {
+			TryDeserialize(structuredContent, validator, out result, diagnostics)) {
 			return true;
 		}
 
 		if (TrySerializeToJsonElement(callResult.Content, out JsonElement content) &&
-			TryDeserialize(content, validator, out result)) {
+			TryDeserialize(content, validator, out result, diagnostics)) {
 			return true;
 		}
 
@@ -255,13 +262,13 @@ internal static class ApplicationResultParser {
 		return true;
 	}
 
-	private static bool TryDeserialize<T>(JsonElement element, Func<T?, bool> validator, out T? result) {
+	private static bool TryDeserialize<T>(JsonElement element, Func<T?, bool> validator, out T? result, McpParseDiagnostics diagnostics) {
 		if (element.ValueKind == JsonValueKind.Array) {
 			foreach (JsonElement item in element.EnumerateArray()) {
 				if (TryGetTextPayload(item, out string? textPayload) &&
 					!string.IsNullOrWhiteSpace(textPayload) &&
-					TryParseJson(textPayload, out JsonElement textPayloadElement) &&
-					TryDeserializeRaw(textPayloadElement, validator, out result)) {
+					TryParseJson(textPayload, out JsonElement textPayloadElement, diagnostics) &&
+					TryDeserializeRaw(textPayloadElement, validator, out result, diagnostics)) {
 					return true;
 				}
 			}
@@ -270,13 +277,13 @@ internal static class ApplicationResultParser {
 		if (element.ValueKind == JsonValueKind.String) {
 			string? textPayload = element.GetString();
 			if (!string.IsNullOrWhiteSpace(textPayload) &&
-				TryParseJson(textPayload, out JsonElement textPayloadElement) &&
-				TryDeserializeRaw(textPayloadElement, validator, out result)) {
+				TryParseJson(textPayload, out JsonElement textPayloadElement, diagnostics) &&
+				TryDeserializeRaw(textPayloadElement, validator, out result, diagnostics)) {
 				return true;
 			}
 		}
 
-		if (TryDeserializeRaw(element, validator, out result)) {
+		if (TryDeserializeRaw(element, validator, out result, diagnostics)) {
 			return true;
 		}
 
@@ -284,14 +291,19 @@ internal static class ApplicationResultParser {
 		return false;
 	}
 
-	private static bool TryDeserializeRaw<T>(JsonElement element, Func<T?, bool> validator, out T? result) {
+	private static bool TryDeserializeRaw<T>(JsonElement element, Func<T?, bool> validator, out T? result, McpParseDiagnostics diagnostics) {
+		// The array-wrapper rule lives in McpParseDiagnostics.RecordDeserializeAttempt: a bare MCP
+		// content-item array reaching this last-resort attempt must not be recorded as "JSON was present"
+		// nor contribute its always-doomed exception to the failure message.
+		bool isMeaningfulJsonCandidate = diagnostics.RecordDeserializeAttempt(element);
 		try {
 			result = JsonSerializer.Deserialize<T>(
 				element.GetRawText(),
 				new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 			return validator(result);
 		}
-		catch (JsonException) {
+		catch (JsonException exception) {
+			diagnostics.RecordJsonException(exception, isMeaningfulJsonCandidate);
 			result = default;
 			return false;
 		}
@@ -347,12 +359,13 @@ internal static class ApplicationResultParser {
 		return false;
 	}
 
-	private static bool TryParseJson(string value, out JsonElement element) {
+	private static bool TryParseJson(string value, out JsonElement element, McpParseDiagnostics diagnostics) {
 		try {
 			element = JsonSerializer.SerializeToElement(JsonSerializer.Deserialize<JsonElement>(value));
 			return true;
 		}
-		catch (JsonException) {
+		catch (JsonException exception) {
+			diagnostics.RecordJsonException(exception);
 			element = default;
 			return false;
 		}
