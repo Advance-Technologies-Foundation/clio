@@ -78,6 +78,7 @@ build-theme:build-theme
 get-record-rights:get-record-rights
 set-record-rights:set-record-rights
 list-themes:list-themes,get-themes
+get-theme:get-theme
 create-theme:create-theme
 update-theme:update-theme
 delete-theme:delete-theme
@@ -197,6 +198,7 @@ set-file-content-storage-connection-string:set-file-content-storage-connection-s
 set-fsm-config:set-fsm-config,fsmc,sfsmc
 set-pkg-version:set-pkg-version,spv
 set-syssetting:set-syssetting,get-syssetting,ss,sys-setting,syssetting
+download-sys-setting-file:download-sys-setting-file
 set-webservice-url:set-webservice-url,swu,webservice
 show-diff:show-diff,compare,diff
 show-local-envs:show-local-envs,localenvs
@@ -229,3 +231,7 @@ get-identity-public-jwk:get-identity-public-jwk,identity-public-jwk
 regenerate-identity-signing-key:regenerate-identity-signing-key,identity-regenerate-key
 check-auth-code-flow:check-auth-code-flow,auth-code-flow
 register-sso-provider:register-sso-provider,sso-register-provider
+manage-user:manage-user
+manage-role:manage-role
+manage-access:manage-access
+manage-license:manage-license

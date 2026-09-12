@@ -155,10 +155,10 @@ public class SetEntitySchemaPropertiesCommand : Command<SetEntitySchemaPropertie
 	internal static void ValidateOptions(SetEntitySchemaPropertiesOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		if (string.IsNullOrWhiteSpace(options.Package)) {
-			throw new ArgumentException("Package is required.", nameof(options));
+			throw new ArgumentException("package-name is required.");
 		}
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
-			throw new ArgumentException("Schema name is required.", nameof(options));
+			throw new ArgumentException("schema-name is required.");
 		}
 		if (!string.IsNullOrWhiteSpace(options.TitleLocalizations) && options.ParsedTitleLocalizations is not null) {
 			// ParsedTitleLocalizations is a PUBLIC settable carrier, so a caller can populate it and still

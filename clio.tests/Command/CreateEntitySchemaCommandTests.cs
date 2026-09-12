@@ -139,8 +139,8 @@ internal class CreateEntitySchemaCommandTests : BaseCommandTests<CreateEntitySch
 		// Arrange
 		var options = new CreateEntitySchemaOptions {
 			Package = "UsrPkg",
-			SchemaName = "UsrVehicle",
-			Title = "Vehicle",
+			SchemaName = "Contact",
+			Title = "Contact",
 			ExtendParent = true,
 			ParentSchemaName = "Contact"
 		};
@@ -158,26 +158,44 @@ internal class CreateEntitySchemaCommandTests : BaseCommandTests<CreateEntitySch
 			because: "NormalizeParentSchema must not overwrite the explicit parent when ExtendParent is true; a future guard regression that drops the ExtendParent check would overwrite it with BaseEntity and fail here");
 	}
 
-	[Test]
-	[Description("Rejects --extend-parent without an explicit --parent and does not call the remote creator.")]
-	public void Execute_Should_ReturnFailure_WhenExtendParentIsUsedWithoutParent()
+	[TestCase(null)]
+	[TestCase("")]
+	[TestCase("   ")]
+	[Description("Infers the same-name parent before invoking the creator when a replacement omits its parent.")]
+	public void Execute_ShouldInferSameNameParent_WhenReplacementParentIsOmitted(string? parent)
 	{
 		// Arrange
 		var options = new CreateEntitySchemaOptions {
 			Package = "UsrPkg",
 			SchemaName = "UsrVehicle",
 			Title = "Vehicle",
-			ExtendParent = true
+			ExtendParent = true,
+			ParentSchemaName = parent
 		};
+		List<string?> captured = CaptureParentSchemaNamesAtCreateTime();
 
 		// Act
 		var result = _command.Execute(options);
 
 		// Assert
-		result.Should().Be(1,
-			because: "a replacement schema requires an explicit parent and must fail fast otherwise");
-		_creator.DidNotReceiveWithAnyArgs().Create(default);
-		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("--extend-parent requires --parent")));
+		result.Should().Be(0, because: "a replacement's name identifies its parent");
+		captured.Should().Equal(["UsrVehicle"], because: "the parent must be inferred before the creator runs");
+	}
+
+	[Test]
+	[Description("Rejects a replacement whose explicit parent has a different name before any remote work.")]
+	public void Execute_ShouldRejectReplacement_WhenParentNameDiffers() {
+		// Arrange
+		CreateEntitySchemaOptions options = new() {
+			Package = "UsrPkg", SchemaName = "UsrVehicle", Title = "Vehicle",
+			ExtendParent = true, ParentSchemaName = "Contact"
+		};
+		List<string?> captured = CaptureParentSchemaNamesAtCreateTime();
+		// Act
+		int result = _command.Execute(options);
+		// Assert
+		result.Should().Be(1, because: "replacement schemas retain their parent's name");
+		captured.Should().BeEmpty(because: "invalid replacement names must not reach the remote creator");
 	}
 
 	[Test]

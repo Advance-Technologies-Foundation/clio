@@ -38,6 +38,120 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 	private const string ReadColumnToolName = GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName;
 	private const string CurrentDateTimeSystemValueUId = "d7c295d3-3146-4ee1-ac49-3a7bd0edc45d";
 
+	[TestCase("Contact", false, false)]
+	[TestCase("Account", true, true)]
+	[Description("Creates and replays a replacing entity schema with inferred or explicit parent, preserving the base package.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas replacing schema creation and replay")]
+	public async Task SchemaSync_ShouldPersistReplacement_WhenBaseExistsInAnotherPackage(string schemaName, bool explicitParent, bool directCreate) {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: true);
+		CancellationToken token = context.CancellationTokenSource.Token;
+		CallToolResult dependency = await context.Session.CallToolAsync(AddPackageDependencyToolName,
+			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["package-name"] = context.PackageName,
+				["dependencies"] = new[] { new { name = "Base" } }
+			} }, token);
+		AllureApi.Step("Verify Base dependency", () => McpCommandExecutionParser.Extract(dependency).ExitCode.Should()
+			.Be(0, because: "the new package must be able to replace a Base schema"));
+		EntitySchemaPropertiesInfo before = await GetSchemaPropertiesAsync(context.Session,
+			context.EnvironmentName!, "Base", schemaName, token);
+		string columnName = "UsrReplacement" + Guid.NewGuid().ToString("N")[..8];
+		Dictionary<string, object?> operation = new() {
+			["type"] = "create-entity", ["schema-name"] = schemaName, ["extend-parent"] = true,
+			["title-localizations"] = BuildLocalizations(schemaName),
+			["columns"] = new[] { new Dictionary<string, object?> {
+				["name"] = columnName, ["type"] = "Lookup", ["reference-schema-name"] = "Account",
+				["title-localizations"] = BuildLocalizations("Replacement lookup")
+			} }
+		};
+		if (explicitParent) {
+			operation["parent-schema-name"] = schemaName;
+		}
+		Dictionary<string, object?> args = new() { ["args"] = new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName, ["package-name"] = context.PackageName,
+			["operations"] = new[] { operation }
+		} };
+		// Act
+		if (directCreate) {
+			CallToolResult direct = await context.Session.CallToolAsync(CreateEntitySchemaTool.CreateEntitySchemaToolName,
+				new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName, ["package-name"] = context.PackageName,
+					["schema-name"] = schemaName, ["title-localizations"] = BuildLocalizations(schemaName),
+					["parent-schema-name"] = schemaName, ["extend-parent"] = true, ["columns"] = operation["columns"]
+				} }, token);
+			CommandExecutionEnvelope directEnvelope = McpCommandExecutionParser.Extract(direct);
+			AllureApi.Step("Verify direct replacement creation", () => directEnvelope.ExitCode.Should()
+				.Be(0, because: "the direct create tool must support the same native replacing-schema path"));
+			AllureApi.Step("Verify direct publication log", () => directEnvelope.Output.Should()
+				.Contain(message => message.MessageType == LogDecoratorType.Info, because: "successful direct publication reports execution evidence"));
+		}
+		CallToolResult created = await context.Session.CallToolAsync(ToolName, args, token);
+		JsonElement first = ExtractSchemaSyncResponse(created);
+		// Assert
+		AllureApi.Step("Verify replacement creation", () => first.GetProperty("success").GetBoolean().Should()
+			.BeTrue(because: $"a same-name base schema is a replacement target: {FormatPayload(first)}"));
+		AllureApi.Step("Verify first batch outcome", () => first.GetProperty("results")[0].GetProperty("outcome").GetString().Should()
+			.Be(directCreate ? "already-satisfied" : "created", because: "the batch creates only when direct creation has not already satisfied the request"));
+		if (!directCreate) {
+			AllureApi.Step("Verify creation log", () => GetMessageTypes(first.GetProperty("results")[0]).Should()
+				.Contain(LogDecoratorType.Info, because: "successful publication reports execution evidence"));
+		}
+		EntitySchemaPropertiesInfo replacement = await GetSchemaPropertiesAsync(context.Session,
+			context.EnvironmentName!, context.PackageName!, schemaName, token);
+		AllureApi.Step("Verify replacement metadata", () => replacement.ExtendParent.Should()
+			.BeTrue(because: "the saved schema must extend its same-name parent"));
+		AllureApi.Step("Verify replacement parent", () => replacement.ParentSchemaName.Should()
+			.Be(schemaName, because: "the native same-name parent must persist"));
+		AllureApi.Step("Verify replacement column", () => replacement.Columns.Should()
+			.ContainSingle(column => column.Name == columnName && column.Source == "own" && column.Type == "Lookup",
+				because: "the requested lookup must persist on the replacing layer"));
+		CallToolResult replayed = await context.Session.CallToolAsync(ToolName, args, token);
+		JsonElement replay = ExtractSchemaSyncResponse(replayed);
+		AllureApi.Step("Verify replay succeeded", () => replay.GetProperty("success").GetBoolean().Should()
+			.BeTrue(because: $"replaying the same replacement must converge: {FormatPayload(replay)}"));
+		AllureApi.Step("Verify replay did no work", () => replay.GetProperty("results")[0].GetProperty("outcome").GetString().Should()
+			.Be("already-satisfied", because: "a replay must not recreate the replacing schema or column"));
+		CallToolResult ordinaryResult = await context.Session.CallToolAsync(CreateEntitySchemaTool.CreateEntitySchemaToolName,
+			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["package-name"] = context.PackageName,
+				["schema-name"] = context.EntitySchemaName, ["title-localizations"] = BuildLocalizations("Ordinary entity")
+			} }, token);
+		AllureApi.Step("Prepare ordinary target schema", () => McpCommandExecutionParser.Extract(ordinaryResult).ExitCode.Should()
+			.Be(0, because: "the collision probe needs an editable ordinary schema, not a read-only package refusal"));
+		Dictionary<string, object?> ordinaryReplacement = new(operation) {
+			["schema-name"] = context.EntitySchemaName, ["parent-schema-name"] = context.EntitySchemaName
+		};
+		CallToolResult collisionResult = await context.Session.CallToolAsync(ToolName,
+			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["package-name"] = context.PackageName,
+				["operations"] = new[] { ordinaryReplacement }
+			} }, token);
+		JsonElement collision = ExtractSchemaSyncResponse(collisionResult);
+		AllureApi.Step("Verify original schema is not a replacement", () => collision.GetProperty("success").GetBoolean().Should()
+			.BeFalse(because: "an ordinary schema must not receive replacement columns"));
+		AllureApi.Step("Verify original schema collision", () => collision.GetProperty("results")[0].GetProperty("outcome").GetString().Should()
+			.Be("collision", because: "an ordinary schema already in the target package cannot be reconciled as a replacement"));
+		EntitySchemaPropertiesInfo ordinaryAfter = await GetSchemaPropertiesAsync(context.Session,
+			context.EnvironmentName!, context.PackageName!, context.EntitySchemaName!, token);
+		AllureApi.Step("Verify ordinary schema unchanged", () => ordinaryAfter.Columns.Should()
+			.NotContain(column => column.Name == columnName, because: "a replacement collision must not apply any column changes"));
+		EntitySchemaPropertiesInfo after = await GetSchemaPropertiesAsync(context.Session,
+			context.EnvironmentName!, "Base", schemaName, token);
+		AllureApi.Step("Verify base columns unchanged", () => after.Columns.Select(column => column.Name).Should()
+			.BeEquivalentTo(before.Columns.Select(column => column.Name), because: "replacement writes must leave the base package untouched"));
+		CallToolResult duplicate = await context.Session.CallToolAsync(CreateEntitySchemaTool.CreateEntitySchemaToolName,
+			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["package-name"] = context.PackageName,
+				["schema-name"] = schemaName, ["title-localizations"] = BuildLocalizations(schemaName), ["extend-parent"] = true
+			} }, token);
+		CommandExecutionEnvelope duplicateEnvelope = McpCommandExecutionParser.Extract(duplicate);
+		AllureApi.Step("Verify direct duplicate refused", () => duplicateEnvelope.ExitCode.Should()
+			.Be(1, because: "the create-only tool must not overwrite a replacement already in the target package"));
+		AllureApi.Step("Verify duplicate diagnostic", () => duplicateEnvelope.Output.Should()
+			.Contain(message => message.MessageType == LogDecoratorType.Error, because: "duplicate refusal must explain the failure"));
+	}
+
 	[Test]
 	[Explicit("Publishes schemas; requires an exclusively owned local Creatio sandbox.")]
 	// LocalOnly is a whole-fixture classification; this shared fixture also contains automatic tests.

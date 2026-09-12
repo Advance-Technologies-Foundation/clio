@@ -133,7 +133,11 @@ name instead of trying to edit a non-existent local `insert`.
   column captions and validator messages) and register the key's default-language value through
   `--resources`. Binding expressions (any `$`-prefixed value) and non-string values (e.g.
   `placeholder: false`) are not literals and pass. Call `clio get-guidance --name page-schema-resources`
-  for the full rule.
+  for the full rule. Gallery's `itemConfig.templateValuesMapping` is excluded: values such as
+  `caption: "GalleryDS_Name"` name projected record attributes. Keep those identifiers unchanged;
+  captions elsewhere on the Gallery or its children still require localization. For a standalone
+  `merge` that patches this mapping, include `type: "crt.Gallery"` unless another entry in the
+  same body declares that node's type. Designer-only `_designOptions` mappings are also excluded.
   A **component's own data descriptor is exempt**: a `data` object that carries the platform's
   `typeName` marker, on a node declaring a component `type`, is component metadata (uId, schemaType,
   typeName and the caption the platform stamped on it) rather than page-authored text, so a literal
@@ -270,6 +274,13 @@ keys go with it. Handlers dedupe by `request`.
 
 `SCHEMA_CONVERTERS` and `SCHEMA_VALIDATORS` entries merge by type key, and incoming wins. The final merged web body is rejected when a custom validator reference has no matching
 `SCHEMA_VALIDATORS` declaration.
+
+For an undeclared field binding, use `merge` in `viewConfigDiff` only if the component itself comes from a parent
+schema. For an own-body field, submit its complete original `insert` with the edited values and
+the attribute declaration in `viewModelConfigDiff`, even if that declaration is already stored.
+Append replaces a matching insert as a whole, so retain its other values and placement properties.
+`viewModelConfigDiff` concatenates entries: resubmitting an unchanged declaration adds a duplicate
+merge with the same effective values. A second append cannot remove that duplicate.
 
 **Preserved is not the same as applied**, and this part is not about append at all — it is how the
 platform differ resolves any final body, so a hand-authored `--mode replace` body produces it too.

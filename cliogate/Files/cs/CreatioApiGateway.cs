@@ -235,6 +235,111 @@ namespace cliogate.Files.cs
 		#endregion
 
 		#region Methods: Public
+
+		/// <summary>Invalidates native rights decisions after changing system-operation priority.</summary>
+		/// <returns>True after the native distributed rights-cache hash is updated.</returns>
+		[OperationContract]
+		[WebInvoke(Method = "POST", UriTemplate = "InvalidateAdministrationRightsCache", BodyStyle = WebMessageBodyStyle.Wrapped,
+			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+		public bool InvalidateAdministrationRightsCache() {
+			CheckCanManageSolution();
+			_userConnection.DBSecurityEngine.CheckCanChangeAdminOperationGrantee();
+			_userConnection.DBSecurityEngine.ClearUserAdministratedOperationsCache();
+			// Public native API is newer than the package's compile-time SDK; resolve its public contract at runtime.
+			Assembly core = typeof(UserConnection).Assembly;
+			Type cacheContract = core.GetType("Terrasoft.Core.ClientCache.IClientCacheStore", true);
+			Type constants = core.GetType("Terrasoft.Core.DB.ClientCache.Constants", true);
+			object cache = TryResolveFromClassFactory(cacheContract, new List<string>())
+				?? throw new InvalidOperationException("The native rights-cache store is unavailable.");
+			string key = (string)constants.GetField("RightsCacheHashKey").GetRawConstantValue();
+			cacheContract.GetMethod("SetHashValue", new[] { typeof(string), typeof(string) })
+				.Invoke(cache, new object[] { key, Guid.NewGuid().ToString("N") });
+			return true;
+		}
+
+		/// <summary>Removes one functional-role association with explicit administration authorization.</summary>
+		/// <param name="associationId">Exact SysFuncRoleInOrgRole record identity.</param>
+		/// <returns>Encoded success and license-redistribution scheduling state.</returns>
+		[OperationContract]
+		[WebInvoke(Method = "POST", UriTemplate = "RemoveFunctionalRoleAssociation", BodyStyle = WebMessageBodyStyle.Wrapped,
+			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+		public string RemoveFunctionalRoleAssociation(Guid associationId) {
+			CheckCanManageSolution();
+			UserConnection.DBSecurityEngine.CheckCanExecuteOperation("CanManageAdministration");
+			if (associationId == Guid.Empty) { throw new ArgumentException("An association ID is required."); }
+			Entity entity = UserConnection.EntitySchemaManager.GetInstanceByName("SysFuncRoleInOrgRole").CreateEntity(UserConnection);
+			if (!entity.FetchFromDB(associationId)) { throw new ArgumentException("The association does not exist."); }
+			Guid roleId = entity.GetTypedColumnValue<Guid>("OrgRoleId");
+			bool redistribute = IsRoleLicenseDistributionEnabled()
+				&& SysSettings.GetValue(UserConnection, "RedistributeLicensesOnRoleChanges", false);
+			if (redistribute) { UserConnection.DBSecurityEngine.CheckCanExecuteOperation("CanManageLicUsers"); }
+			// Keep native entity rights and listeners; a raw database delete loses actualization and cache events.
+			if (!entity.Delete()) { throw new InvalidOperationException("The association was not deleted."); }
+			bool actualized = false;
+			try {
+				ActualizeAdministrationRoles();
+				actualized = true;
+				if (redistribute) { ScheduleRoleLicenses(roleId, false); }
+			} catch (Exception) {
+				// Deletion already committed. Return its known outcome without leaking native exception data.
+				return JsonConvert.SerializeObject(new { success = true, completed = false, associationDeleted = true,
+					membershipActualized = actualized, redistributionScheduled = (bool?)null,
+					licenseReconciliationRequired = redistribute, userAssignmentsVerified = false });
+			}
+			return JsonConvert.SerializeObject(new { success = true, completed = true, associationDeleted = true,
+				membershipActualized = true, redistributionScheduled = redistribute, userAssignmentsVerified = false });
+		}
+
+		/// <summary>Schedules native license redistribution for one role after refreshing effective membership.</summary>
+		/// <param name="roleId">Role whose user licenses should be redistributed.</param>
+		/// <param name="redistributeManuallyAssignedLicenses">Whether native redistribution may change manual assignments.</param>
+		/// <returns>Encoded scheduling receipt; completion requires inspecting affected user licenses.</returns>
+		[OperationContract]
+		[WebInvoke(Method = "POST", UriTemplate = "ScheduleRoleLicenseRedistribution", BodyStyle = WebMessageBodyStyle.Wrapped,
+			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
+		public string ScheduleRoleLicenseRedistribution(Guid roleId, bool redistributeManuallyAssignedLicenses) {
+			CheckCanManageSolution();
+			UserConnection.DBSecurityEngine.CheckCanExecuteOperation("CanManageAdministration");
+			UserConnection.DBSecurityEngine.CheckCanExecuteOperation("CanManageLicUsers");
+			if (roleId == Guid.Empty) { throw new ArgumentException("A role ID is required."); }
+			Entity role = UserConnection.EntitySchemaManager.GetInstanceByName("SysAdminUnit").CreateEntity(UserConnection);
+			if (!role.FetchFromDB(roleId)) { throw new ArgumentException("The role does not exist."); }
+			int roleType = role.GetTypedColumnValue<int>("SysAdminUnitTypeValue");
+			if (roleType != 0 && roleType != 1 && roleType != 2 && roleType != 3 && roleType != 6) {
+				throw new ArgumentException("The identity must reference a role.");
+			}
+			if (!IsRoleLicenseDistributionEnabled()) { throw new InvalidOperationException("Role-based license distribution is disabled."); }
+			ActualizeAdministrationRoles();
+			ScheduleRoleLicenses(roleId, redistributeManuallyAssignedLicenses);
+			return JsonConvert.SerializeObject(new { success = true, redistributionScheduled = true, userAssignmentsVerified = false });
+		}
+
+		private void ActualizeAdministrationRoles() {
+			var manager = ClassFactory.Get<Terrasoft.Core.OrgStructure.OrgStructureManager>(
+				new ConstructorArgument("userConnection", UserConnection));
+			if (manager.ActualizeSysAdminUnitInRole() < 0) { throw new InvalidOperationException("Effective membership actualization failed."); }
+		}
+
+		private bool IsRoleLicenseDistributionEnabled() {
+			// Configuration is loaded in package assemblies, and is not a build-time ClioGate dependency.
+			Type utilities = AppDomain.CurrentDomain.GetAssemblies()
+				.Select(assembly => assembly.GetType("Terrasoft.Configuration.FeatureUtilities", false))
+				.FirstOrDefault(type => type != null);
+			MethodInfo method = utilities?.GetMethod("GetIsFeatureEnabled", new[] { typeof(UserConnection), typeof(string) });
+			if (method == null) { throw new InvalidOperationException("Native feature-state inspection is unavailable."); }
+			return (bool)method.Invoke(null, new object[] { UserConnection, "UseRoleBasedLicenseDistribution" });
+		}
+
+		private void ScheduleRoleLicenses(Guid roleId, bool includeManual) {
+			var result = GetSystemUserConnection().ProcessEngine.ProcessExecutor.Execute("ScheduleLicensesRedistribution",
+				new Dictionary<string, string> {
+					["RoleId"] = roleId.ToString(), ["RedistributeLicencesForSpecificRole"] = "true",
+					["RedistributeManuallyAssignedLicences"] = includeManual ? "true" : "false"
+				});
+			if (result == null || result.ProcessStatus != Terrasoft.Core.Process.ProcessStatus.Done) {
+				throw new InvalidOperationException("Native license scheduling did not complete. Inspect license state before retrying.");
+			}
+		}
 		[OperationContract]
 		[WebInvoke(Method = "POST", UriTemplate = "GetSysSettingValueByCode", BodyStyle = WebMessageBodyStyle.WrappedRequest,
         			RequestFormat = WebMessageFormat.Json, ResponseFormat = WebMessageFormat.Json)]
