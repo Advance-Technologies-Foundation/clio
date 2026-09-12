@@ -51,7 +51,12 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("mcp-flat-argument-normalization")]
-[NonParallelizable]
+// Parallelizable on purpose. The single test here spends about 100s waiting on a loopback listener that
+// accepts the connection and never answers — that wait IS the assertion, so it cannot be shortened. As
+// [NonParallelizable] it stopped every other worker for those 100s; the fixture owns everything it
+// touches (its own MCP child with an isolated CLIO_HOME, its own ephemeral-port listener, no stand), so
+// the wait can overlap with other fixtures instead.
+[Parallelizable(ParallelScope.Self)]
 public sealed class FlatArgsProgressTokenE2ETests : McpContractFixtureBase {
 	private const string ToolName = ApplicationSectionGetListTool.ApplicationSectionGetListToolName;
 	private const string StallingEnvironmentName = "mcp-e2e-flat-args-progress-stall";
