@@ -3693,9 +3693,12 @@ stories:
       Category=Unit&(Module=ProcessModel|Module=McpServer|Module=Command|Module=Common). Release rather
       than Debug, because a running MCP server holds the Debug output open; only Release/net10.0 received
       the new archive, so an install run from any other output ships whatever archive that folder holds.
-      STILL OPEN: nothing on this story. PR 1398 is open with all 10 threads resolved; both manual legs
-      and the stand verification have run (four blind rounds on 2026-09-08, evidence committed under
-      spec/eng-91853-gateways-and-flows/). The merge is a human's.
+      MERGED into master 2026-09-08 as ddff7cc62, all 10 threads resolved, 17 checks green including the
+      CLIO MCP e2e (ATF) lane that had been red for days and resolved itself with nothing touched.
+      Both manual legs and the stand verification ran (four blind rounds on 2026-09-08, evidence under
+      spec/eng-91853-gateways-and-flows/). All three repositories are now merged: package 4a000d035,
+      knowledge 8a21fd9c4 released as 1.13.99, clio ddff7cc62 - in that order, because
+      ExpectedProducingCommit pins a package commit.
     depends_on:
       - story-eng-91853-gateways-and-flows-1
     blocks:
