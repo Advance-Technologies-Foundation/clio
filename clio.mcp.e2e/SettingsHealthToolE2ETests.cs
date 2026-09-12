@@ -79,6 +79,17 @@ public sealed class SettingsHealthToolE2ETests {
 		// A private home for the same reason as the fixture above: the deliberate breakage must not reach
 		// the shared catalog the rest of the run reads.
 		IsolatedClioHome.CreateAndRedirect(settings, "settings-shape-mismatch-home");
+		// The closing assertion is "nothing wrote this file", so the HARNESS must not be a writer either:
+		// McpServerSession.StartAsync suppresses the curated-knowledge bootstrap by rewriting
+		// appsettings.json with System.Text.Json before the server starts, which reflows the whole file
+		// (and, on Windows, restamps every line ending from Environment.NewLine). That write lands after
+		// originalContent is captured and is indistinguishable from the defect this test exists to catch.
+		// Leaving clio's own bootstrap ENABLED is the point rather than a cost: Prepare() calls
+		// EnsureKnowledgeSource - a real settings write - before it downloads anything, so the
+		// shape-mismatch guard has to refuse an actual write attempt here, and the assertion proves the
+		// refusal instead of merely proving that nobody tried. The refusal is also what keeps this test
+		// offline: the bootstrap gives up at that write and never reaches the GitHub release.
+		settings.SuppressCuratedKnowledgeBootstrap = false;
 		TemporaryClioSettingsOverride settingsOverride =
 			TemporaryClioSettingsOverride.SetFutureShapedAutoupdateSection(
 				settings.ClioProcessPath,
