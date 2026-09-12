@@ -4,6 +4,17 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E.Support.Configuration;
 
 internal sealed class McpE2ESettings {
+	/// <summary>
+	/// Keeps the curated-knowledge bootstrap out of a fixture's startup path by pre-declaring the
+	/// built-in source as disabled.
+	/// </summary>
+	/// <remarks>
+	/// This is NOT a process-environment switch: <c>McpServerSession.StartAsync</c> implements it by
+	/// REWRITING <c>appsettings.json</c> with System.Text.Json before the server is spawned, which
+	/// reflows the whole document and, on Windows, restamps every line ending. A fixture that asserts
+	/// the settings file was left byte-for-byte alone must therefore set this to <see langword="false"/>
+	/// or it measures the harness instead of clio.
+	/// </remarks>
 	public bool SuppressCuratedKnowledgeBootstrap { get; set; } = true;
 
 	public bool AllowDestructiveMcpTests { get; set; }

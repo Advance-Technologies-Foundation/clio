@@ -1,0 +1,46 @@
+---
+description: mcp-server and mcp-http write <user home>/.clio/mcp-hosts/mcp-server.<pid>.lock while resident - per USER, not per clio home, and RunStartupUpdateCheck must test for it BEFORE TryScheduleAutoupdate, which advances next-run as part of deciding an update is due
+applies-to:
+  - clio/Common/McpHostPresence.cs
+  - clio/Environment/ISettingsRepository.cs
+  - clio/Program.cs
+  - clio/Command/McpServer/McpServerCommand.cs
+  - clio/Command/McpServer/McpHttpServerCommand.cs
+date: 2026-09-12
+---
+
+**What is true** — a non-worker `mcp-server` host, and the `mcp-http` host, write a presence marker
+named `mcp-server.<pid>.lock` into `<user home>/.clio/mcp-hosts` and delete it on graceful shutdown.
+The location is deliberately NOT under the clio home: `dotnet tool update clio -g` replaces ONE
+installation per user however many `CLIO_HOME`s exist, so a marker scoped to a clio home would be
+invisible to a clio started without that variable - which would then overwrite the binaries of the
+host that wrote it. Marker scope has to match the scope of the thing it guards. A separate clio CLI
+process scans for one before its startup update check and, when a live one exists, skips **only** the
+clio self-update. A marker whose pid is no longer running is deleted by the scan.
+
+The ordering is load-bearing: `ISettingsRepository.TryScheduleAutoupdate` advances `next-run` and
+saves it **as part of** answering "is this due", before the update callback runs. So the deferral has
+to wrap the whole `RunIfDue(..., AutoUpdateTarget.Clio, ...)` call. Knowledge and toolkit updates are
+not deferred - they replace no loaded assembly and no settings section.
+
+**Why it is this way** — nothing inside the resident host can answer this question, because the
+process that has to ask is a different one; a file in the shared clio home is the only channel the
+two have. Liveness goes through `IProcessLivenessProbe` so a unit test can describe a dead pid
+without creating or killing a real process, and `ISettingsRepository.IsAutoupdateDue` exists purely
+so the notice can ask whether the update would have run without moving the schedule to find out.
+
+**Residual limits, stated on purpose** — a host that STARTS while a detached `dotnet tool update` is
+already downloading still has its binaries replaced: the marker is read before the update is
+launched, so it cannot see one already in flight, and closing that window means coordinating with the
+lifetime of a process clio deliberately does not wait for. Accepted; the remedy is restarting that
+session, which is the remedy the whole issue ends in. Beyond that, the deferral is UNBOUNDED: a host that stays up for weeks
+defers the clio self-update for weeks, and the only signal is the one `[INF]` line per command. The
+liveness probe fails SAFE (anything it cannot determine counts as alive), so a process clio may not
+inspect also defers indefinitely. Both are chosen over the opposite mistake, which is the outage this
+record exists for.
+
+**What breaks if you ignore it** — a deferral made *inside* the `RunIfDue` callback still skips the
+update, but `next-run` has already moved a full frequency window (8 hours for clio) into the future.
+The next cold start, with no resident host and nothing in the way, then reports nothing is due, and
+the update the deferral was supposed to postpone by minutes is postponed by hours - invisibly,
+because deferring and succeeding look identical from outside.

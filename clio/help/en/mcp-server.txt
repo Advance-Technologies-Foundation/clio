@@ -159,6 +159,15 @@ NOTES
     - Guidance/resource/example lookups use local installed content; only explicit install/update or info-knowledge checkUpdates=true operations contact transports
     - Product telemetry is consent-gated: nothing is uploaded unless consent is granted. A production collector endpoint ships as the default, so uploads begin automatically once consent is granted; override it with CLIO_TELEMETRY_ENDPOINT or the settings "telemetry.endpoint" (https, or http only for loopback), or disable uploading entirely (regardless of consent) with CLIO_TELEMETRY_ENABLED=false or "telemetry.enabled": false. Events are stored under <clio-home>/telemetry (override CLIO_TELEMETRY_HOME) and exclude prompts, secrets, customer data, and generated content
 
+FILES
+    <user-home>/.clio/mcp-hosts/mcp-server.<pid>.lock
+        Presence marker written at startup and removed at shutdown (host only,
+        never by an internal --worker child). While it exists and names a live
+        process, other clio processes skip the background clio self-update, so
+        this host's binaries and appsettings.json are not replaced underneath it.
+        A marker left by a killed host is deleted by the next clio run that sees
+        its process is gone. mcp-http writes the same marker.
+
 RETURN VALUES
     0       Server shut down normally
     1       Server failed to start

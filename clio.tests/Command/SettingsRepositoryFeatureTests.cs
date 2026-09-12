@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.IO.Abstractions.TestingHelpers;
 using Clio.Common;
 using Clio.Common.McpWorker;
@@ -10,6 +11,7 @@ using Clio.Tests.Infrastructure;
 using Clio.UserEnvironment;
 using FluentAssertions;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
@@ -423,8 +425,10 @@ public sealed class SettingsRepositoryFeatureTests {
 		toolkit.Should().BeFalse(because: "toolkit updates are opt-in");
 		persisted.Autoupdate.Knowledge.NextRun.Should().Be(now.AddMinutes(60),
 			because: "knowledge uses its one-hour default frequency");
-		persisted.Autoupdate.Toolkit.NextRun.Should().Be(default(DateTimeOffset),
-			because: "disabled toolkit updates must not advance their schedule");
+		persisted.Autoupdate.Toolkit.NextRun.Should().BeNull(
+			because: "a schedule that never advanced stays unscheduled");
+		_fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile).Should().NotContain("0001-01-01",
+			because: "an unscheduled policy must be OMITTED from the file, not written as a year-0001 timestamp");
 	}
 
 	[Test]
@@ -481,5 +485,181 @@ public sealed class SettingsRepositoryFeatureTests {
 		// Assert
 		reloaded.GetAutoupdate().Should().BeFalse(
 			because: "knowledge scheduling must not enable clio updates");
+	}
+
+	[Test]
+	[Description("Refuses to write settings while a section could not be bound, so the degraded mode cannot round-trip away what a newer clio wrote.")]
+	public void UpdateSettings_ShouldRefuseAndLeaveTheFileUntouched_WhenSectionCannotBind() {
+		// Arrange
+		const string futureShaped = """
+			{
+			  "ActiveEnvironmentKey": "dev",
+			  "SettingsVersion": 3,
+			  "autoupdate": {
+			    "clio": { "enabled": { "future": true }, "frequency-minutes": 480 }
+			  },
+			  "Environments": {
+			    "dev": { "Uri": "http://localhost", "Login": "Supervisor", "Password": "Supervisor" }
+			  }
+			}
+			""";
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(futureShaped));
+		SettingsRepository sut = new(fileSystem);
+
+		// Act
+		Action act = () => sut.SetAutoupdate(true);
+
+		// Assert
+		act.Should().Throw<SettingsShapeMismatchException>(
+				because: "writing the file from a model that dropped an unbindable section would destroy the newer clio's settings")
+			.Which.Message.Should().Contain("update-cli",
+				because: "the refusal must name the way out, since it also blocks the automatic update that would have fixed the skew");
+		fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile).Should().Be(futureShaped,
+			because: "a refused update must leave the settings file byte-for-byte as it was");
+	}
+
+	[Test]
+	[Description("Reports a due schedule without advancing or persisting next-run, so a deferral leaves the update due on the next cold start.")]
+	public void IsAutoupdateDue_ShouldReportDue_WithoutAdvancingTheSchedule() {
+		// Arrange
+		const string json = """
+			{
+			  "SettingsVersion": 3,
+			  "Environments": {},
+			  "autoupdate": {
+			    "clio": { "enabled": true, "frequency-minutes": 480, "next-run": "2020-01-01T00:00:00+00:00" }
+			  }
+			}
+			""";
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(json));
+		SettingsRepository sut = new(fileSystem);
+
+		// Act
+		bool due = sut.IsAutoupdateDue(AutoUpdateTarget.Clio, new DateTimeOffset(2026, 9, 12, 12, 0, 0, TimeSpan.Zero));
+		Settings persisted = JsonConvert.DeserializeObject<Settings>(
+			fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile));
+
+		// Assert
+		due.Should().BeTrue(
+			because: "an enabled policy whose next-run is in the past is due");
+		persisted.Autoupdate.Clio.NextRun.Should().Be(new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero),
+			because: "a read-only due check must never move the schedule the way TryScheduleAutoupdate does");
+	}
+
+	[Test]
+	[Description("Reports a disabled schedule as not due regardless of its next-run.")]
+	public void IsAutoupdateDue_ShouldReportNotDue_WhenPolicyIsDisabled() {
+		// Arrange
+		SettingsRepository sut = new(_fileSystem);
+
+		// Act
+		bool due = sut.IsAutoupdateDue(AutoUpdateTarget.Toolkit, DateTimeOffset.UtcNow);
+
+		// Assert
+		due.Should().BeFalse(
+			because: "toolkit updates are opt-in and a disabled policy is never due");
+	}
+
+	[Test]
+	[Description("Preserves members a newer clio wrote that this build does not know, instead of deleting them on the next save.")]
+	public void UpdateSettings_ShouldPreserveUnknownMembers_WrittenByANewerClio() {
+		// Arrange
+		const string original = """
+			{
+			  "ActiveEnvironmentKey": "dev",
+			  "SettingsVersion": 3,
+			  "future-section": { "mode": "on", "retries": 3 },
+			  "autoupdate": {
+			    "clio": { "enabled": false, "frequency-minutes": 480, "jitter-minutes": 7 },
+			    "browser": { "enabled": true }
+			  },
+			  "Environments": {
+			    "dev": { "Uri": "http://localhost", "Login": "Supervisor", "Password": "Supervisor",
+			      "future-flag": true }
+			  }
+			}
+			""";
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(original));
+		SettingsRepository sut = new(fileSystem);
+
+		// Act
+		sut.SetAutoupdate(true);
+		JObject persisted = JObject.Parse(fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile));
+
+		// Assert
+		JToken.DeepEquals(persisted["future-section"], JObject.Parse("""{ "mode": "on", "retries": 3 }"""))
+			.Should().BeTrue(
+				because: "an unknown top-level section must survive a save by an older build, or that build silently deletes the newer one's configuration");
+		persisted["Environments"]!["dev"]!["future-flag"]!.Value<bool>().Should().BeTrue(
+			because: "an unknown environment member must survive too; losing one changes what commands do against that environment");
+		persisted["autoupdate"]!["clio"]!["jitter-minutes"]!.Value<int>().Should().Be(7,
+			because: "the autoupdate section binds through a custom converter, and its overflow members must round-trip like every other section's");
+		JToken.DeepEquals(persisted["autoupdate"]!["browser"], JObject.Parse("""{ "enabled": true }"""))
+			.Should().BeTrue(
+				because: "a whole unknown policy added by a newer clio must be carried through unchanged");
+		persisted["autoupdate"]!["clio"]!["enabled"]!.Value<bool>().Should().BeTrue(
+			because: "carrying unknown members must not stop the write the caller actually asked for");
+	}
+
+	[Test]
+	[Description("Does not duplicate a read-only member such as $schema, which Json.NET routes into the overflow bag because it cannot be set.")]
+	public void UpdateSettings_ShouldNotDuplicateReadOnlyMembers_CarriedInTheOverflowBag() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData("""
+			{
+			  "$schema": "./schema.json",
+			  "ActiveEnvironmentKey": "dev",
+			  "SettingsVersion": 3,
+			  "Environments": {
+			    "dev": { "Uri": "http://localhost", "Login": "Supervisor", "Password": "Supervisor" }
+			  }
+			}
+			"""));
+		SettingsRepository sut = new(fileSystem);
+
+		// Act
+		sut.SetAutoupdate(true);
+		string persistedContent = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
+
+		// Assert
+		Regex.Matches(persistedContent, Regex.Escape("\"$schema\"")).Count.Should().Be(1,
+			because: "a member the type declares but cannot set must be written once from the property, never a second time from the overflow bag");
+	}
+
+	[Test]
+	[Description("Keeps a value that merely LOOKS like a timestamp exactly as written, because clio re-serializes what it read and a re-formatted password stops authenticating.")]
+	public void UpdateSettings_ShouldPreserveStringsThatLookLikeTimestamps() {
+		// Arrange
+		// Json.NET's default DateParseHandling converts any ISO-looking string into a DateTime while
+		// PARSING - before anything knows which member it belongs to - so the value that comes back is a
+		// re-formatted one, and the next save writes that instead of what the user configured.
+		const string isoLookingSecret = "2026-09-12T10:00:00+00:00";
+		string original = """
+			{
+			  "ActiveEnvironmentKey": "dev",
+			  "SettingsVersion": 3,
+			  "future-section": { "token": "__ISO__" },
+			  "Environments": {
+			    "dev": { "Uri": "http://localhost", "Login": "Supervisor", "Password": "__ISO__" }
+			  }
+			}
+			""".Replace("__ISO__", isoLookingSecret);
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData(original));
+		SettingsRepository sut = new(fileSystem);
+
+		// Act
+		sut.SetAutoupdate(true);
+		string persistedContent = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
+
+		// Assert
+		Regex.Matches(persistedContent, Regex.Escape(isoLookingSecret)).Count.Should().Be(2,
+			because: "both the credential and the unknown member must be written back byte-for-byte; a re-formatted password stops authenticating and clio never interprets an unknown member at all");
+		sut.GetEnvironment("dev").Password.Should().Be(isoLookingSecret,
+			because: "the value clio hands to an authentication call must be the value the file holds");
 	}
 }
