@@ -55,29 +55,41 @@ public sealed class CreateAppOptions : EnvironmentOptions
 		// --entity-schema-name "" as "not supplied" would mint a new canonical entity and its
 		// starter pages after a ~90 s round trip, which is exactly what passing the option was
 		// meant to avoid. Only an absent option means "no template data".
-		if (EntitySchemaName is not null && string.IsNullOrWhiteSpace(EntitySchemaName)) {
-			throw new ArgumentException(
-				"--entity-schema-name was supplied without a value. Pass the name of an entity schema that "
-				+ "already exists in the environment, or omit the option to let Creatio create a new entity.");
-		}
+		string? entitySchemaName = NormalizeTemplateOption(
+			EntitySchemaName,
+			"--entity-schema-name was supplied without a value. Pass the name of an entity schema that "
+			+ "already exists in the environment, or omit the option to let Creatio create a new entity.");
+		string? appSectionDescription = NormalizeTemplateOption(
+			AppSectionDescription,
+			"--app-section-description was supplied without a value. Pass the section description, or omit the option.");
 
-		if (AppSectionDescription is not null && string.IsNullOrWhiteSpace(AppSectionDescription)) {
-			throw new ArgumentException(
-				"--app-section-description was supplied without a value. Pass the section description, or omit the option.");
-		}
-
-		bool hasEntitySchemaName = !string.IsNullOrWhiteSpace(EntitySchemaName);
-		bool hasSectionDescription = !string.IsNullOrWhiteSpace(AppSectionDescription);
-		if (!hasEntitySchemaName && !hasSectionDescription) {
+		if (entitySchemaName is null && appSectionDescription is null) {
 			return null;
 		}
 
 		// --entity-schema-name alone carries the intent, so useExistingEntitySchema is implied here
 		// instead of being a second flag the caller can contradict.
 		return new ApplicationOptionalTemplateData(
-			EntitySchemaName: hasEntitySchemaName ? EntitySchemaName!.Trim() : null,
-			UseExistingEntitySchema: hasEntitySchemaName ? true : null,
-			AppSectionDescription: hasSectionDescription ? AppSectionDescription!.Trim() : null);
+			EntitySchemaName: entitySchemaName,
+			UseExistingEntitySchema: entitySchemaName is null ? null : true,
+			AppSectionDescription: appSectionDescription);
+	}
+
+	/// <summary>
+	/// Returns the trimmed option value, <see langword="null"/> when the option was not supplied at
+	/// all, and throws <paramref name="blankMessage"/> when it was supplied without a usable value.
+	/// </summary>
+	private static string? NormalizeTemplateOption(string? value, string blankMessage) {
+		if (value is null) {
+			return null;
+		}
+
+		string trimmed = value.Trim();
+		if (trimmed.Length == 0) {
+			throw new ArgumentException(blankMessage);
+		}
+
+		return trimmed;
 	}
 
 	internal static void ValidateMobilePagesOption(string? value) {
