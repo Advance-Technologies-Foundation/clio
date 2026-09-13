@@ -609,7 +609,9 @@ public sealed class DataForgeToolE2ETests : McpContractFixtureBase {
 	}
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
-		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
+		// Destructive fixture: configured-only. The AllowDestructiveMcpTests opt-in authorizes writes to
+		// the disposable stand named in settings, never to a fallback environment that merely answers.
+		await ReachableSandboxEnvironment.ResolveConfiguredOrIgnoreAsync(
 			settings,
 			"Configure McpE2E:Sandbox:EnvironmentName to run Data Forge MCP E2E tests.");
 

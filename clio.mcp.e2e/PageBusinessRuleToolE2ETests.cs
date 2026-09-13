@@ -887,7 +887,9 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 			: settings.Sandbox.PackageName;
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
-		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
+		// Destructive fixture: configured-only. The AllowDestructiveMcpTests opt-in authorizes writes to
+		// the disposable stand named in settings, never to a fallback environment that merely answers.
+		await ReachableSandboxEnvironment.ResolveConfiguredOrIgnoreAsync(
 			settings,
 			"create-page-business-rule MCP E2E requires McpE2E:Sandbox:EnvironmentName for destructive tests.");
 

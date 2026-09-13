@@ -918,8 +918,16 @@ public sealed class ApplicationSectionToolE2ETests {
 		CreatedSectionCodes.Add(sectionCode);
 	}
 
-	[OneTimeTearDown]
-	public static async Task RemoveCreatedSectionsAsync() {
+	/// <summary>
+	/// Removes the sections this fixture created — once, not per test.
+	/// </summary>
+	/// <remarks>
+	/// Called from <see cref="StopSharedSessionAsync"/> rather than carrying its own
+	/// <c>[OneTimeTearDown]</c>: NUnit does not order two same-class one-time teardowns, so disposing the
+	/// shared session first would null <c>_sharedSession</c> and make this method return silently,
+	/// leaving every created section on the stand for the mobile-conversion fixtures to trip over.
+	/// </remarks>
+	private static async Task RemoveCreatedSectionsAsync() {
 		if (CreatedSectionCodes.Count == 0 || _sharedSession is null || _createdSectionEnvironmentName is null) {
 			return;
 		}
@@ -951,9 +959,13 @@ public sealed class ApplicationSectionToolE2ETests {
 
 	[OneTimeTearDown]
 	public static async Task StopSharedSessionAsync() {
-		if (_sharedSession is not null) {
-			await _sharedSession.DisposeAsync();
-			_sharedSession = null;
+		try {
+			await RemoveCreatedSectionsAsync();
+		} finally {
+			if (_sharedSession is not null) {
+				await _sharedSession.DisposeAsync();
+				_sharedSession = null;
+			}
 		}
 	}
 

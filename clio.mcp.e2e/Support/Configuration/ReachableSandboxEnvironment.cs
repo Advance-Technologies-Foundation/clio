@@ -29,6 +29,8 @@ internal static class ReachableSandboxEnvironment {
 
 	private static readonly SemaphoreSlim ResolutionGate = new(1, 1);
 	private static string? _resolvedEnvironmentName;
+	private static readonly SemaphoreSlim ConfiguredResolutionGate = new(1, 1);
+	private static string? _configuredEnvironmentName;
 
 	/// <summary>
 	/// Returns the name of the reachable environment for this run, or <see langword="null"/> when
@@ -62,6 +64,56 @@ internal static class ReachableSandboxEnvironment {
 			Assert.Ignore(ignoreMessage);
 		}
 		return environmentName!;
+	}
+
+	/// <summary>
+	/// Returns the CONFIGURED sandbox environment for this run, or ignores the calling test with
+	/// <paramref name="ignoreMessage"/> when it is absent or unreachable. Never falls back to
+	/// <see cref="FallbackEnvironmentName"/>.
+	/// </summary>
+	/// <remarks>
+	/// Destructive fixtures must use this instead of <see cref="ResolveOrIgnoreAsync"/>. Opting in with
+	/// <c>McpE2E:AllowDestructiveMcpTests</c> authorizes writes to the disposable stand the build
+	/// deploys, not to whatever else happens to answer. Falling back would let an unavailable sandbox
+	/// silently redirect persistent writes (system settings, business rules, Data Forge structures) to
+	/// an unrelated registered environment, and nothing would report an error.
+	/// </remarks>
+	/// <param name="settings">Settings carrying the configured sandbox environment name.</param>
+	/// <param name="ignoreMessage">Fixture-specific message explaining what the test needed.</param>
+	/// <returns>The configured, reachable environment name.</returns>
+	public static async Task<string> ResolveConfiguredOrIgnoreAsync(McpE2ESettings settings, string ignoreMessage) {
+		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
+		if (string.IsNullOrWhiteSpace(configuredEnvironmentName)) {
+			Assert.Ignore(ignoreMessage);
+		}
+		if (!await IsConfiguredEnvironmentReachableAsync(settings, configuredEnvironmentName!)) {
+			Assert.Ignore(ignoreMessage);
+		}
+		return configuredEnvironmentName!;
+	}
+
+	private static async Task<bool> IsConfiguredEnvironmentReachableAsync(
+		McpE2ESettings settings,
+		string configuredEnvironmentName) {
+		// Same caching rule as ResolveAsync: only a SUCCESSFUL probe is remembered. Caching a refusal
+		// would freeze a transient warm-up failure for the whole run and turn every destructive fixture
+		// into a skip, which reads as a green build with no coverage.
+		if (string.Equals(_configuredEnvironmentName, configuredEnvironmentName, StringComparison.Ordinal)) {
+			return true;
+		}
+		await ConfiguredResolutionGate.WaitAsync();
+		try {
+			if (string.Equals(_configuredEnvironmentName, configuredEnvironmentName, StringComparison.Ordinal)) {
+				return true;
+			}
+			if (!await CanReachAsync(settings, configuredEnvironmentName)) {
+				return false;
+			}
+			_configuredEnvironmentName = configuredEnvironmentName;
+			return true;
+		} finally {
+			ConfiguredResolutionGate.Release();
+		}
 	}
 
 	private static async Task<string?> ProbeAsync(McpE2ESettings settings) {
