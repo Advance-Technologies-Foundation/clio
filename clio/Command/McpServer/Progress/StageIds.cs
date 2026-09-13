@@ -46,6 +46,9 @@ public static class StageIds {
 	/// <summary>Uninstall stage: read the environment configuration.</summary>
 	public const string ReadConfig = "read-config";
 
+	/// <summary>Uninstall stage: remove the recorded identity before CRM mutation.</summary>
+	public const string RemoveIdentity = "remove-identity";
+
 	/// <summary>Uninstall stage: delete the IIS site / application pool.</summary>
 	public const string DeleteIis = "delete-iis";
 
