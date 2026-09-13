@@ -34,7 +34,7 @@ public abstract class McpContractFixtureBase {
 			return;
 		}
 		// Not `ProcessWideSession ??= await StartAsync(...)`: that reads, awaits and assigns as three
-		// steps. 26 fixtures carry [Parallelizable(ParallelScope.Self)] and the run uses two NUnit
+		// steps. Many fixtures carry [Parallelizable(ParallelScope.Self)] and the run uses two NUnit
 		// workers, so two of their [OneTimeSetUp] bodies do overlap — both would see null, both would
 		// start a child, and only the last assignment would ever be disposed, leaking a clio process
 		// onto the agent for the rest of the build.
