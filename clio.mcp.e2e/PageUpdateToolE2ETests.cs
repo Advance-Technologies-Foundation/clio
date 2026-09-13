@@ -1484,9 +1484,11 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
-		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
+		// Destructive fixture: configured-only. The AllowDestructiveMcpTests opt-in authorizes writes to
+		// the disposable stand named in settings, never to a fallback environment that merely answers.
+		await ReachableSandboxEnvironment.ResolveConfiguredOrIgnoreAsync(
 			settings,
-			$"update-page MCP E2E requires a reachable environment. Configured sandbox environment '{settings.Sandbox.EnvironmentName}' was not reachable, and fallback environment '{ReachableSandboxEnvironment.FallbackEnvironmentName}' was also unavailable.");
+			$"update-page MCP E2E requires the configured sandbox environment '{settings.Sandbox.EnvironmentName}' to be set and reachable.");
 
 	[Test]
 	[Description("Rejects a mobile JSON body that contains a 'validators' section without making any remote call.")]

@@ -371,9 +371,11 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 	}
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
-		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
+		// Destructive fixture: configured-only. The AllowDestructiveMcpTests opt-in authorizes writes to
+		// the disposable stand named in settings, never to a fallback environment that merely answers.
+		await ReachableSandboxEnvironment.ResolveConfiguredOrIgnoreAsync(
 			settings,
-			$"application section MCP E2E requires a reachable environment. Configured sandbox environment '{settings.Sandbox.EnvironmentName}' was not reachable, and fallback environment '{ReachableSandboxEnvironment.FallbackEnvironmentName}' was also unavailable.");
+			$"application section MCP E2E requires the configured sandbox environment '{settings.Sandbox.EnvironmentName}' to be set and reachable.");
 
 	private static string DescribeCallResult(CallToolResult callResult) {
 		return JsonSerializer.Serialize(new {

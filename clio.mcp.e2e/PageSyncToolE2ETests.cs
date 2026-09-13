@@ -829,9 +829,11 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 	}
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
-		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
+		// Destructive fixture: configured-only. The AllowDestructiveMcpTests opt-in authorizes writes to
+		// the disposable stand named in settings, never to a fallback environment that merely answers.
+		await ReachableSandboxEnvironment.ResolveConfiguredOrIgnoreAsync(
 			settings,
-			$"sync-pages MCP E2E requires a reachable environment. Configured sandbox environment '{settings.Sandbox.EnvironmentName}' was not reachable, and fallback environment '{ReachableSandboxEnvironment.FallbackEnvironmentName}' was also unavailable.");
+			$"sync-pages MCP E2E requires the configured sandbox environment '{settings.Sandbox.EnvironmentName}' to be set and reachable.");
 
 	[Test]
 	[Description("ENG-91317: sync-pages surfaces a per-page conflict for a stale-baseline page after an out-of-band modification, and the per-page force flag overwrites it deliberately (restoring the seed body).")]

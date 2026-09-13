@@ -168,9 +168,18 @@ public sealed class SchemaCreateToolE2ETests : McpContractFixtureBase {
 		duplicateResponse.Error.Should().Contain(schemaName).And.Contain("already exists");
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
-		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
+		// The opt-in is consulted BEFORE the environment is resolved, so neither a clio process nor the
+		// stand is reached while it is off. Every caller is a sandbox test that creates a real schema on
+		// the environment, which is exactly what this switch authorizes.
+		if (!DestructiveStandAuthorization.IsAuthorized(true, settings.AllowDestructiveMcpTests)) {
+			Assert.Ignore(DestructiveStandAuthorization.MissingOptInMessage);
+		}
+		// Configured-only: the opt-in authorizes writes to the disposable stand named in settings, never
+		// to a fallback environment that merely answers.
+		return await ReachableSandboxEnvironment.ResolveConfiguredOrIgnoreAsync(
 			settings,
-			$"create-schema MCP E2E requires a reachable environment. Configured sandbox environment '{settings.Sandbox.EnvironmentName}' was not reachable, and fallback environment '{ReachableSandboxEnvironment.FallbackEnvironmentName}' was also unavailable.");
+			$"create-schema MCP E2E requires the configured sandbox environment '{settings.Sandbox.EnvironmentName}' to be set and reachable.");
+	}
 
 }
