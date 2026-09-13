@@ -298,6 +298,52 @@ public sealed class DescribeProcessCommandTests {
 	}
 	[Test]
 	[Category("Unit")]
+	[Description("A member whose package did not resolve OMITS the key rather than writing null, and a member whose package did resolve still carries it - the mixed shape the reader really produces, since one unresolved UId is silent while the others are named. The tool description promises ABSENT, and absence holds here only transitively through the shared serializer options: a global regression is caught elsewhere, a field-specific one by nothing.")]
+	public void Execute_ShouldOmitPackageNameForTheUnnamedMemberOnly_WhenSomeResolveAndSomeDoNot() {
+		// Arrange
+		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
+			.Returns(new DescribeProcessResult {
+				Name = "InvoiceVisaProcess",
+				SchemaUId = "332eac25-1443-4e4e-a972-6c0e66cb9243",
+				Elements = [], Flows = [], Parameters = [],
+				Version = 0,
+				Versions = [
+					new DescribedProcessVersion {
+						SchemaUId = "332eac25-1443-4e4e-a972-6c0e66cb9243",
+						Name = "InvoiceVisaProcess", Version = 0, IsRoot = true,
+						PackageUId = "864d1545-a641-46c3-b866-e57bd6d39579",
+						PackageName = "Invoice", Enabled = true
+					},
+					new DescribedProcessVersion {
+						SchemaUId = "b5e5162a-254a-430f-8978-4738c6ebf76b",
+						Name = "InvoiceVisaProcessOther1", Version = 1, IsRoot = false,
+						PackageUId = "0c1e5f74-9a3d-4f5e-8b21-73d0c6a9e415",
+						PackageName = null, Enabled = true
+					}
+				]
+			});
+		DescribeProcessOptions options = new() { Environment = "dev", ProcessName = "InvoiceVisaProcess" };
+		string written = null;
+		_logger.WriteInfo(Arg.Do<string>(value => written = value));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "an unnamed package is not a failed describe");
+		JsonArray versions = JsonNode.Parse(written)!["versions"]!.AsArray();
+		versions[0]!.AsObject()["packageName"]!.GetValue<string>().Should().Be("Invoice",
+			because: "the member whose package resolved still names it - the absence is per member, not per read");
+		versions[1]!.AsObject().Should().NotContainKey("packageName",
+			because: "the tool description promises the key is ABSENT rather than null, and a null would read "
+				+ "as an established answer of 'no package'");
+		versions[1]!.AsObject()["packageUId"]!.GetValue<string>().Should()
+			.Be("0c1e5f74-9a3d-4f5e-8b21-73d0c6a9e415",
+				because: "the identity the view did report survives the name that could not be resolved");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Writes every field of each version-family entry into the graph JSON, so a caller can pick a version to describe without a second call.")]
 	public void Execute_ShouldWriteEveryFamilyEntryField_WhenTheProcessHasVersions() {
 		// Arrange
@@ -321,6 +367,7 @@ public sealed class DescribeProcessCommandTests {
 						IsActiveVersion = true,
 						IsRoot = false,
 						PackageUId = "864d1545-a641-46c3-b866-e57bd6d39579",
+						PackageName = "Invoice",
 						Enabled = true
 					}
 				]
@@ -336,7 +383,8 @@ public sealed class DescribeProcessCommandTests {
 		result.Should().Be(0, because: "a described versioned process is still a successful describe");
 		JsonObject entry = JsonNode.Parse(written)!["versions"]!.AsArray()[0]!.AsObject();
 		entry.Should().ContainKeys(new[] {
-				"schemaUId", "name", "caption", "version", "isActiveVersion", "isRoot", "packageUId", "enabled"
+				"schemaUId", "name", "caption", "version", "isActiveVersion", "isRoot", "packageUId",
+				"packageName", "enabled"
 			}, "a family entry has to be complete enough to choose and address a version from it alone");
 		entry["isActiveVersion"]!.GetValue<bool>().Should().BeTrue(
 			because: "the entry that runs must be identifiable inside the list, not only at the graph root");
@@ -347,6 +395,9 @@ public sealed class DescribeProcessCommandTests {
 		entry["packageUId"]!.GetValue<string>().Should().Be("864d1545-a641-46c3-b866-e57bd6d39579",
 			because: "packageUId is promised in the tool description and is how a caller decides whether a "
 				+ "version sits in a package it may edit; carrying the wrong package makes that decision wrong");
+		entry["packageName"]!.GetValue<string>().Should().Be("Invoice",
+			because: "the UId alone reaches a builder as a raw GUID - manual testing on ENG-94374 read back "
+				+ "\"lives in package a00051f4-...\" - and the name is what the question was asking for");
 		entry["enabled"]!.GetValue<bool>().Should().BeTrue(
 			because: "enabled is promised too, and it is FAMILY state rather than per-version state "
 				+ "(BaseProcessSchemaManager.EnableProcess keys on the root SysSchema.Id), so it must relay what "

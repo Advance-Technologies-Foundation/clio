@@ -156,6 +156,21 @@ public sealed class DescribeProcessToolE2ETests {
 			graph.Should().NotContainKey("versionReadWarning",
 				because: "these facts were established, and a warning beside them would contradict that");
 		});
+		AllureApi.Step("Assert every member names its package rather than only its UId", () => {
+			foreach (JsonNode? member in graph["versions"]!.AsArray()) {
+				JsonObject entry = member!.AsObject();
+				string packageName = entry["packageName"]?.GetValue<string>();
+				packageName.Should().NotBeNullOrWhiteSpace(
+					because: $"'{entry["name"]!.GetValue<string>()}' lives in a package that exists on this "
+						+ "stand, and a builder asking which one gets the answer read out of this field");
+				Guid.TryParse(packageName, out _).Should().BeFalse(
+					because: "the defect this guards rendered the answer as \"lives in package "
+						+ "a00051f4-cde3-4f3f-b08e-c5ad1a5c735a\" (ENG-94374 manual testing), which is what a "
+						+ "packageUId echoed into the name field looks like");
+				entry["packageUId"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace(
+					because: "the UId stays the unambiguous identity; the name is added beside it, not instead");
+			}
+		});
 	}
 
 	[Test]

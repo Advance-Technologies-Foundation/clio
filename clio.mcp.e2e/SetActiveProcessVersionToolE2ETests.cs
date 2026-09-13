@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
@@ -10,6 +11,7 @@ using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
+using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 
@@ -117,6 +119,73 @@ public sealed class SetActiveProcessVersionToolE2ETests {
 		describedRoot["activeVersionName"]!.GetValue<string>().Should().Be(versionName,
 			because: "the family read from the ROOT must point at the member just activated, which is what "
 				+ "proves the switch reached the environment rather than only the response");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, the family ROOT can be made actual again after a version was activated - the 'go back to the original' rollback. The tool description used to state that the target must be a version and not the root; manual testing on ENG-94374 found the platform accepts the root, so a caller believing that text would conclude a rollback to the original is impossible.")]
+	[AllureTag(ToolName)]
+	[AllureName("set-active-business-process-version can make the family root actual again")]
+	public async Task SetActiveProcessVersion_Should_ActivateTheFamilyRoot_WhenRollingBackToTheOriginal() {
+		// Arrange — a family whose ACTIVE member is the version, so activating the root is a real switch
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpRootActivateE2e{Guid.NewGuid():N}";
+		await CallToolExpectingSuccessAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptor(processName)
+		});
+		await CallToolExpectingSuccessAsync(context, VersionToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["package-name"] = "Custom"
+		});
+		string versionName = $"{processName}Custom1";
+		await CallToolExpectingSuccessAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["version-name"] = versionName
+		});
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["version-name"] = processName
+		});
+
+		// Assert
+		// Parsed rather than substring-matched on the serialized envelope, and that is load-bearing TWICE
+		// here. The version's code is $"{processName}Custom1", so it CONTAINS the root's: a Contain check
+		// passes on an envelope that named the version, which is the exact regression this test exists to
+		// catch. And the payload is a JSON string nested inside the envelope, so its quotes arrive escaped -
+		// a naive Contain("\"exit-code\":0") searches for a sequence that cannot occur.
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+		execution.ExitCode.Should().Be(0,
+			because: "activating the root is an ordinary activation, not a refused one");
+		// The READ-BACK line, not the joined log. The command echoes the request before the POST
+		// ("Activating version '<name>' on '<env>'..."), and on this test that echo already contains
+		// processName - so a Contain over every message is satisfied by the request, including in the
+		// regression it is meant to catch. Only the line the environment answered with is evidence.
+		string readBack = (execution.Output ?? [])
+			.Select(message => message.Value ?? string.Empty)
+			.Single(value => value.Contains("is now the actual one"));
+		readBack.Should().Contain(processName,
+			because: "the environment reports which member it considers actual, and that has to be the root");
+		readBack.Should().NotContain(versionName,
+			because: "the root's code is a PREFIX of the version's, so only the absence of the version's own "
+				+ "code separates 'the root is actual' from 'the activation was a no-op'");
+		JsonObject describedRoot = DescribedProcessGraph.Read(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			}));
+		describedRoot["isActiveVersion"]!.GetValue<bool>().Should().BeTrue(
+			because: "the root is the member the runtime executes once it has been made actual");
+		JsonObject describedVersion = DescribedProcessGraph.Read(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = versionName
+			}));
+		describedVersion["isActiveVersion"]!.GetValue<bool>().Should().BeFalse(
+			because: "a sibling deactivation the platform swallowed would leave two members active, and only "
+				+ "reading the other member catches it");
 	}
 
 	[Test]

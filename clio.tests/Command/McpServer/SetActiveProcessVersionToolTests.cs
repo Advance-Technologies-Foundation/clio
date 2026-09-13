@@ -207,6 +207,26 @@ public class SetActiveProcessVersionToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The description states that ANY member is a valid activation target, the family ROOT included. It said the opposite until ENG-94374 - 'it must be the version itself, not the family root' - and there is no guard behind either wording, so nothing but this pin fails when the sentence regresses. A mutation run restoring the old sentence left the whole suite green.")]
+	public void SetActiveProcessVersion_Description_ShouldStateThatTheRootIsAValidTarget() {
+		// Arrange
+		MethodInfo method = typeof(SetActiveProcessVersionTool)
+			.GetMethod(nameof(SetActiveProcessVersionTool.SetActiveProcessVersion))!;
+
+		// Act
+		string description = ((System.ComponentModel.DescriptionAttribute)method!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false).Single()).Description;
+
+		// Assert
+		description.Should().Contain("the family ROOT included",
+			because: "activating the root is the go-back-to-the-original rollback; a caller who believes it "
+				+ "is excluded concludes that rolling back to the original is impossible");
+		description.Should().NotContain("not the family root",
+			because: "that is the retracted claim, and it is wrong about the platform - the call succeeds");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The description carries the four statements an agent cannot derive: activation reaches NEW instances only, running instances stay on their version, the UI word is 'actual', and no version can ever be deleted. Each of these is a wrong assumption an agent otherwise makes and then reports as fact.")]
 	public void SetActiveProcessVersion_Description_ShouldStateWhatActivationDoesAndDoesNotDo() {
 		// Arrange

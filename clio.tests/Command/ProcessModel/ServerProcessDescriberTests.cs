@@ -37,6 +37,7 @@ public sealed class ServerProcessDescriberTests {
 	private const string OtherFamilyUId = "7c1d4f6e-9b02-4a55-8d31-1f0a5e2c7b48";
 
 	private const string PackageUId = "864d1545-a641-46c3-b866-e57bd6d39579";
+	private const string PackageName = "Invoice";
 
 	/// <summary>
 	/// The version reader defaults to one that establishes nothing, so every pre-existing describe assertion
@@ -234,6 +235,7 @@ public sealed class ServerProcessDescriberTests {
 			IsActiveVersion = isActive,
 			IsRoot = isRoot,
 			PackageUId = PackageUId,
+			PackageName = PackageName,
 			Enabled = true
 		};
 
@@ -1398,6 +1400,15 @@ public sealed class ServerProcessDescriberTests {
 			because: "the caller needs the name of the running version to re-describe it without a second lookup");
 		result.Value.ActiveVersionSchemaUId.Should().Be(ChildUId,
 			because: "the version's UId identifies it unambiguously, unlike the caption the family shares");
+		// The PROJECTION, which is the only place these two reach a caller. The reader fixture proves they
+		// are established and the command fixture hand-builds them already set, so deleting either
+		// assignment in ToDescribedVersion leaves both of those green - and a fact the read established
+		// never reaching the answer is the defect D2 was.
+		result.Value.Versions.Should().OnlyContain(version => version.PackageUId == PackageUId,
+			because: "the package identity the reader established has to survive the projection");
+		result.Value.Versions.Should().OnlyContain(version => version.PackageName == PackageName,
+			because: "the NAME is what a person asking which package a version lives in reads; manual "
+				+ "testing on ENG-94374 got the raw UId because nothing carried it this far");
 		result.Value.ActiveVersionSource.Should().Be("process-library-view",
 			because: "the output states which authority ranked the family, since the runtime consults another");
 		reader.Received(1).Read(RootUId);

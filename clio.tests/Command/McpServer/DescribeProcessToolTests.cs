@@ -138,6 +138,28 @@ public sealed class DescribeProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The version-family entry advertises packageName, and separates the two absences the reader really produces: ONE package that did not resolve is silent, and only a package read that failed outright - which loses every name at once - reaches versionReadWarning. The first draft of this sentence promised a warning for both, which the reader's own test pins the opposite of; an agent reading it treats silence as proof the names are complete.")]
+	public void DescribeProcess_Description_ShouldAdvertisePackageNameAndScopeItsAbsence() {
+		// Arrange
+		MethodInfo method = typeof(DescribeProcessTool).GetMethod(nameof(DescribeProcessTool.DescribeProcess));
+
+		// Act
+		string description = ((System.ComponentModel.DescriptionAttribute)method!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false).Single()).Description;
+
+		// Assert
+		description.Should().Contain("packageName",
+			because: "the field is what a person asking which package a version lives in actually reads, and "
+				+ "nothing else in CI notices when it stops being advertised");
+		description.Should().Contain("that single absence is SILENT",
+			because: "a lone unresolved name raises no warning, and a contract that promises one teaches the "
+				+ "agent to read silence as completeness");
+		description.Should().Contain("failed OUTRIGHT",
+			because: "only the whole-table failure is announced, and the two cases have different remedies");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The describe-business-process description states the version contract: which field reaches the running version, and that absent version fields mean unknown rather than unversioned.")]
 	public void DescribeProcess_ShouldStateTheVersionContract_WhenItsDescriptionIsRead() {
 		// Arrange
