@@ -1619,6 +1619,9 @@ public sealed class ToolContractGetToolTests {
 				field.Name == "body" &&
 				field.Description.Contains("get-page.files.bodyFile"),
 			because: "update-page should advertise the materialized body file as the source of fallback single-page saves");
+		pageUpdateContract.InputSchema.Properties.Single(field => field.Name == "force").Description
+			.Should().Contain("explicit checksum is still compared",
+				because: "the contract must distinguish skipping the disk baseline from disabling a caller-pinned checksum on redirected writes");
 		// validate-page is the third consumer in the get-page handoff. Keep its explicit body-file input pinned so
 		// callers do not have to inline or re-escape the materialized page body.
 		ToolContractDefinition pageValidateContract = tool

@@ -221,6 +221,26 @@ public sealed class PageUpdateCommandConflictTests
 	}
 
 	[Test]
+	[Description("TryUpdatePage must preserve a stale caller checksum when target-package-uid names the existing package, so a concurrent edit is refused instead of overwritten.")]
+	public void TryUpdatePage_ShouldReturnConflict_WhenTargetPackageUidNamesExistingPackageAndChecksumIsStale() {
+		// Arrange
+		StubChecksumRow("server-checksum");
+		PageUpdateOptions options = CreateOptions(expectedChecksum: "baseline-checksum");
+		options.TargetPackageUId = "test-pkg-uid";
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "an explicit checksum must remain an active precondition after target-package resolution");
+		response.Conflict.Should().BeTrue(because: "a same-package target can still have been edited concurrently");
+		response.ConflictDetails.Reason.Should().Be(PageConflictReasons.ChecksumMismatch,
+			because: "the resolved target exists and its checksum differs from the caller's pin");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
 	[Description("TryUpdatePage must return a schema-created-externally conflict when the baseline says absent but a replacing schema now exists.")]
 	public void TryUpdatePage_ShouldReturnConflict_WhenBaselineSaysAbsentButReplacingSchemaExists() {
 		// Arrange

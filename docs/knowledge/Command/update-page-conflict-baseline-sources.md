@@ -13,8 +13,9 @@ there are three cases. On the UNPINNED, non-redirected path all three fields com
 `.clio-pages/{schema}/meta.json`: the checksum, `ExpectedSchemaUId`, and the schema-absent marker
 `ExpectedSchemaAbsent`. On a PINNED save (CLI `--expected-checksum`, MCP `checksum`) the caller's
 checksum alone governs the comparison — neither identity field is armed from disk. On a REDIRECTED
-save (`target-package-uid` / `target-schema-uid`) nothing is armed, the baseline is not even read, a
-pin that was passed is dropped, and the response carries a warning that detection did not run. That
+save (`target-package-uid` / `target-schema-uid`) the disk baseline is not even read, and a caller pin
+is retained for comparison with the resolved target; the response warns that the disk baseline did
+not apply. That
 on-disk baseline is keyed by **(anchor directory, schema name)** only — not by schema UId — and the
 anchor is resolved from the process cwd unless `output-directory` overrides it. It is rewritten both
 by `get-page` and, post-save, by `RefreshOrDrop`.
@@ -40,7 +41,7 @@ for one that already exists. Arming the UId from disk instead made `BuildConflic
 a matching pin with "re-run get-page and retry", which re-pins the same checksum and loops, leaving
 `force` as the only exit.
 
-**A redirect makes the baseline inapplicable, not merely stale — so it is disarmed rather than
+**A redirect makes the disk baseline inapplicable, not merely stale — so it is skipped rather than
 enforced.** `get-page` has no `target-package-uid` / `target-schema-uid`, so both baseline sources
 describe the schema the hierarchy resolver picks automatically, never the one a redirect sends the
 write to. Arming from it failed twice over: the write was refused as `schema-uid-mismatch` /
@@ -48,9 +49,11 @@ write to. Arming from it failed twice over: the write was refused as `schema-uid
 reported armed — `RefreshOrDrop` then stamped the REDIRECTED schema's UId and checksum into a
 `meta.json` keyed by schema name, corrupting the baseline of the automatically resolved schema so
 that the next ordinary save of the same page was refused too. `TryArm` now returns not-armed with a
-warning, which also keeps `RefreshOrDrop` away from that file. A warning and not `conflict: true`
-deliberately: nothing about the write is wrong, it is only unverifiable, and a conflict would send
-the caller into the retry loop and then to `force`.
+warning, which also keeps `RefreshOrDrop` away from that file. A caller-supplied checksum is retained
+and compared with the resolved target after hierarchy resolution; this protects a target-package-uid
+write when it names the existing package and fails safe with a checksum conflict when the pin came from
+another schema. With no explicit pin, the write is only unverifiable, so the warning is not
+`conflict: true` and does not send the caller into a retry loop.
 
 **One scope limit is still open:** the remedy is on `update-page`
 only. `sync-pages` is the tool clio calls the canonical page write path (`update-page` even carries a

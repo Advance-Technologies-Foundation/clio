@@ -43,10 +43,10 @@ public interface IPageBaselineGuard {
 	/// the overwritten value (which would raise a false conflict on the next unpinned save).
 	/// When <see cref="PageUpdateOptions.TargetPackageUId"/> or <see cref="PageUpdateOptions.TargetSchemaUId"/>
 	/// redirects the write, nothing on disk describes the schema being written, so no baseline is read and
-	/// the disk-derived identity halves are cleared. A <c>--target-schema-uid</c> redirect KEEPS a
-	/// caller-supplied checksum — it names the target outright, so the pin describes exactly the schema the
-	/// write lands on — while a <c>--target-package-uid</c> redirect clears it, because the hierarchy
-	/// resolver may land on a different or newly created replacing schema. Either way the method reports
+	/// the disk-derived identity halves are cleared. Both redirect kinds KEEP a caller-supplied checksum:
+	/// the command resolves the target after this method returns and compares the pin with that actual
+	/// schema. This protects a target-package-uid write when it names the existing package, and fails safe
+	/// with a checksum conflict when the pin came from another schema. Either way the method reports
 	/// <c>RefreshBaseline: false</c> with a warning.
 	/// <para>
 	/// The warning exists because "no check" is a legitimate outcome AND a failure mode, and the two used
@@ -274,15 +274,11 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 	/// </summary>
 	private static (string MetaFilePath, bool RefreshBaseline, string Warning) ArmForRedirectedWrite(
 		PageUpdateOptions options, bool callerPinnedChecksum) {
-		// THE TWO REDIRECT KINDS ARE NOT THE SAME for a caller-supplied pin. --target-package-uid lets
-		// the hierarchy resolver land on a different - possibly newly created replacing - schema, so a
-		// checksum taken from get-page describes something else and must not govern the write.
-		// --target-schema-uid names the target outright (TryResolveContext sets EditableSchemaUId from
-		// it with IsCreateReplacing: false), so the comparison would run against exactly the schema the
-		// caller pinned. Nulling the pin there turned external-modification detection OFF on a
-		// destructive write and reported success: true / conflict: false, which is the failure this
-		// guard exists to prevent, not a case of an inapplicable baseline.
-		bool pinDescribesTheTarget = !string.IsNullOrWhiteSpace(options.TargetSchemaUId);
+		// A redirect makes the on-disk baseline inapplicable, but it must not make an explicit checksum
+		// disappear. The command resolves the target after this method returns; retaining the pin lets
+		// TryCheckForExternalModification compare it with the actual resolved schema. That preserves the
+		// protection when target-package-uid names the package that already owns the schema, and fails safe
+		// with a checksum conflict when the pin came from a different target.
 		// The DISK-derived halves are dropped for both kinds - that part is the real fix: the baseline
 		// is keyed by schema name alone and get-page has no redirect option, so nothing on disk
 		// describes the redirected schema. Arming from it produced a false schema-uid-mismatch or
@@ -290,25 +286,19 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 		// schema's identity into the schema-name-keyed baseline, refusing the next ordinary save too.
 		options.ExpectedSchemaUId = null;
 		options.ExpectedSchemaAbsent = false;
-		if (callerPinnedChecksum && pinDescribesTheTarget) {
+		if (callerPinnedChecksum) {
 			// The pin stays and still governs the save: TryCheckForExternalModification gates on
 			// ExpectedChecksum alone. Nothing local corroborates it, which is what the trace says.
 			return (null, false,
 				$"The checksum pinned for '{options.SchemaName}' governs this save but could not be "
-				+ "corroborated locally: target-schema-uid redirects the write to a schema the "
+				+ "corroborated locally: the redirect sends the write to a schema the "
 				+ ".clio-pages baseline does not describe, because get-page always reads the "
-				+ "automatically resolved schema and has no redirect of its own. " + PinnedChecksumMergeAdvice);
+				+ "automatically resolved schema and has no redirect of its own. The pin is still "
+				+ "compared with the resolved target; if it came from another schema, the save is refused. "
+				+ PinnedChecksumMergeAdvice);
 		}
-		options.ExpectedChecksum = null;
-		return (null, false, callerPinnedChecksum
-			? $"The checksum pinned for '{options.SchemaName}' was ignored and external-modification "
-				+ "detection did not run for this save: target-package-uid redirects the write to a "
-				+ "schema that neither the .clio-pages baseline nor a checksum taken from get-page "
-				+ "describes - the hierarchy resolver may land on a different or newly created replacing "
-				+ "schema - because get-page always reads the automatically resolved schema and has no "
-				+ "redirect of its own. The write proceeds unchecked. Pass target-schema-uid instead to "
-				+ "keep the pin in force."
-			: $"External-modification detection did not run for this save of '{options.SchemaName}': "
+		return (null, false,
+			$"External-modification detection did not run for this save of '{options.SchemaName}': "
 				+ "target-package-uid / target-schema-uid redirect the write to a schema the .clio-pages "
 				+ "baseline does not describe, because get-page always reads the automatically resolved "
 				+ "schema and has no redirect of its own. The write proceeds unchecked.");

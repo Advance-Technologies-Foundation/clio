@@ -235,16 +235,18 @@ Two scope limits worth knowing before you rely on the pin:
   fallback, but `PageSyncPageInput` has no `checksum` member, so every `sync-pages` write
   compares against the `.clio-pages` baseline and has `--force` as its only escape. The
   remedy on this page is `update-page`-only.
-- **A redirected save is not conflict-checked at all.** When `update-page` is called with
+- **A redirected save skips only the on-disk baseline.** When `update-page` is called with
   `--target-package-uid` or `--target-schema-uid`, the write goes to a schema other than the
   automatically resolved editable one, while both baseline sources describe that resolved
   schema: `get-page` has no target arguments, so the `.clio-pages` baseline — and any
   `checksum` copied out of a `get-page` response — is about the schema clio would have
-  written without the redirect. The guard therefore reads no baseline, arms nothing, and
-  discards a pinned checksum if one was passed; the response carries a warning that
-  external-modification detection did not run for this save, and the save proceeds
-  unchecked. It is a warning and not `conflict: true`, so there is no "re-run get-page and
-  retry" loop and no reason to reach for `--force`. Because nothing is armed, the post-save
+  written without the redirect. The guard therefore reads no baseline and arms no disk-derived
+  identity. An explicit `checksum` is retained and compared with the resolved target after
+  hierarchy resolution; a mismatch is refused as a conflict, which protects a target-package-uid
+  save that names an existing package and fails safe when the pin came from another schema. The
+  response carries a warning that the disk baseline was skipped. With no explicit pin the save is
+  unchecked, so there is no "re-run get-page and retry" loop and no reason to reach for `--force`.
+  Because nothing from disk is armed, the post-save
   refresh leaves `meta.json` alone as well: writing the redirected schema's UId and checksum
   into a baseline keyed by schema name corrupted the non-redirected schema's baseline and
   produced a false `schema-uid-mismatch` on the next ordinary save.
@@ -367,15 +369,18 @@ deliberately overwrite out-of-band changes
 
 --target-package-uid               Explicit target package UId for the replacing
 schema (overrides automatic design-package
-resolution). A redirected save runs without
-external-modification detection — the baseline
-describes the automatically resolved schema, not
-the target — and the response says so in its
-warnings
+resolution). A redirected save skips only the
+on-disk baseline; an explicit checksum is still
+compared with the resolved target, and a mismatch
+remains a conflict. With no explicit pin the save
+proceeds unchecked and warns
 
 --target-schema-uid                Explicit schema UId to save into (bypasses
-hierarchy resolution). Same effect on conflict
-detection as --target-package-uid
+hierarchy resolution). A redirected save skips only
+the on-disk baseline; an explicit checksum is still
+compared with the resolved target, and a mismatch
+remains a conflict. With no explicit pin the save
+proceeds unchecked and warns
 
 --uri                    -u       Application uri
 

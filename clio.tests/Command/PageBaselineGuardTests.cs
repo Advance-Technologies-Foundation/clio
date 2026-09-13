@@ -412,8 +412,8 @@ public sealed class PageBaselineGuardTests {
 	}
 
 	[Test]
-	[Description("A --target-package-uid redirect still clears the pin: the hierarchy resolver may land on a different or newly created replacing schema, so a checksum taken from get-page describes something else. The trace says the detection did not run and points at the option that keeps it.")]
-	public void TryArm_ShouldClearThePinAndWarn_WhenTheWriteIsRedirectedByTargetPackageUIdOnly() {
+	[Description("A --target-package-uid redirect keeps a caller-supplied checksum: the resolved target is checked after hierarchy resolution, so an existing same-package target remains protected and a pin from another target fails safe with a checksum conflict.")]
+	public void TryArm_ShouldKeepThePinAndWarn_WhenTheWriteIsRedirectedByTargetPackageUIdOnly() {
 		// Arrange
 		AddMetaWithBaseline("dev", "disk-checksum");
 		PageUpdateOptions options = CreateOptions("dev");
@@ -424,13 +424,13 @@ public sealed class PageBaselineGuardTests {
 		(_, bool refreshBaseline, string warning) = _guard.TryArm(options, OutputDirectory);
 
 		// Assert
-		options.ExpectedChecksum.Should().BeNull(
-			because: "the resolver may land on a different schema than the one the pin was read from, so the pin cannot govern this write");
+		options.ExpectedChecksum.Should().Be("caller-pinned-checksum",
+			because: "the resolved target is the only authoritative comparison surface, so dropping the pin would allow a same-package target to overwrite a concurrent edit");
 		refreshBaseline.Should().BeFalse(because: "nothing governs a redirected write, so nothing may be moved forward after it");
-		warning.Should().Contain("was ignored",
-			because: "silently dropping a checksum the caller supplied would leave the caller believing the save was checked");
-		warning.Should().Contain("target-schema-uid",
-			because: "the trace has to name the option that keeps the pin in force, otherwise the caller has no way back to a checked write");
+		warning.Should().Contain("still compared",
+			because: "the trace must make clear that the explicit pin remains an active guard even though the disk baseline is skipped");
+		warning.Should().Contain("target",
+			because: "the trace must explain that the retained pin is compared with the resolved target");
 	}
 
 	[Test]

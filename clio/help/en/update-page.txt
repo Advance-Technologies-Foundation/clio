@@ -164,9 +164,14 @@ DESCRIPTION
     deliberately overwrite. After a successful save the on-disk baseline is
     refreshed automatically, so consecutive updates in the same session do not
     false-conflict. A small race window between the check and the save remains
-    (last write wins).
+	(last write wins).
 
-    WRITE MODES:
+	A write redirected with --target-package-uid or --target-schema-uid skips the
+	on-disk baseline and does not refresh meta.json. A caller-supplied checksum is
+	still compared with the resolved target; a mismatch remains a conflict. With no
+	explicit checksum, the redirected write proceeds unchecked and reports a warning.
+
+	WRITE MODES:
     --mode replace (default) saves the body verbatim. --mode append loads the
     current schema body from the server and merges your incoming fragment into it.
     A viewConfigDiff entry is replaced only when both operation and name match one
