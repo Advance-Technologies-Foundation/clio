@@ -8,6 +8,7 @@ using System.Text.Json.Serialization;
 using Clio.Command;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Common;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
@@ -3774,5 +3775,90 @@ public sealed class ToolContractGetToolTests {
 			.OutputContract.Fields.Single(field => field.Name == "warnings");
 		warningsField.Description.Should().Contain("never retry on a warning",
 			because: "these findings are advisory and the save already succeeded; an agent that reads a warning as a failure will re-save and can trip conflict detection");
+	}
+
+	// Synthetic input, deliberately NOT a production description. Driving these cases through a real
+	// tool's [Description] would pin the rules to prose that a reword silently removes: only `e.g.`
+	// occurs in any description today, so `i.e.` and `vs.` would have no coverage at all, and — measured
+	// — both production tools whose purpose the abbreviation fix repaired end at the 120-char truncation
+	// rather than at a sentence, so an assertion over them cannot tell "the scan resumed correctly" from
+	// "the scan abandoned the description and the cap cut it".
+	[Test]
+	[Category("Unit")]
+	[TestCase("Reads a value (e.g. A). Then stops.", "Reads a value (e.g. A).", TestName = "Purpose_ResumesAfter_EG")]
+	[TestCase("Reads a value (i.e. A). Then stops.", "Reads a value (i.e. A).", TestName = "Purpose_ResumesAfter_IE")]
+	[TestCase("Compares A vs. B. Then stops.", "Compares A vs. B.", TestName = "Purpose_ResumesAfter_VS")]
+	[TestCase("Reads a value (E.G. A). Then stops.", "Reads a value (E.G. A).", TestName = "Purpose_AbbreviationIsCaseInsensitive")]
+	[TestCase("Look at code.g. Then stops.", "Look at code.g.", TestName = "Purpose_WholeTokenGuard_NotAnAbbreviation")]
+	[TestCase("e.g. this opens with one. Then stops.", "e.g. this opens with one.", TestName = "Purpose_AbbreviationAtStartOfText")]
+	[TestCase("Ends with e.g.", "Ends with e.g.", TestName = "Purpose_AbbreviationAtEndOfText")]
+	[TestCase("Lists a, b, etc. Then stops.", "Lists a, b, etc.", TestName = "Purpose_EtcIsDeliberatelyNotSentenceSafe")]
+	[TestCase("Plain sentence. Second one.", "Plain sentence.", TestName = "Purpose_OrdinarySentenceBreakStillWins")]
+	[Description("The compact-index purpose ends at the first REAL sentence break: an abbreviation that is never sentence-final is skipped and the scan resumes, a whole-token lookalike is not, and the ambiguous 'etc.' deliberately still terminates.")]
+	public void BuildPurpose_ShouldEndAtTheFirstRealSentenceBreak_WhenDescriptionContainsAbbreviations(
+		string description, string expectedPurpose) {
+		// Arrange
+		// (synthetic description supplied by the test case)
+
+		// Act
+		string purpose = ToolContractCatalog.BuildPurpose(description);
+
+		// Assert
+		purpose.Should().Be(expectedPurpose,
+			because: "skipping an abbreviation must RESUME the scan, not abandon it - abandoning silently degrades every purpose to a 120-character truncation of the whole description, which reads as the same truncated thought the skip exists to prevent");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase(ValidateProcessGraphTool.ToolName, TestName = "AbbreviationSurvivesInPurpose_ValidateProcessGraph")]
+	[TestCase(GetUserCultureTool.ToolName, TestName = "AbbreviationSurvivesInPurpose_GetUserCulture")]
+	[Description("The two production descriptions whose compact-index purpose was cut at 'e.g.' now carry the example through, guarding the real corpus rather than a synthetic string.")]
+	public void GetToolContracts_ShouldCarryTheExampleIntoPurpose_WhenDescriptionUsesAnAbbreviation(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		ToolContractGetResponse full = tool.GetToolContracts(new ToolContractGetArgs([toolName]));
+		string description = full.Tools!.Single().Description;
+		description.Should().Contain("e.g. ",
+			because: "this test is only meaningful while the description under test still carries the abbreviation it exists to survive; a reword must fail here rather than pass vacuously");
+
+		// Act
+		ToolContractIndexEntry entry = tool.GetToolContracts().Index!.Single(item => item.Name == toolName);
+
+		// Assert
+		entry.Purpose.TrimEnd('…').TrimEnd().Should().NotEndWith("e.g.",
+			because: $"'{toolName}' index purpose '{entry.Purpose}' must carry the example it introduces; stopping at the marker hides what the tool does on the only discovery surface a non-resident tool has");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A genuine first sentence still terminates the compact-index purpose, so making abbreviations safe did not swallow real sentence breaks.")]
+	public void GetToolContracts_ShouldStillEndPurposeAtARealSentence_WhenDescriptionHasNoAbbreviation() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractIndexEntry entry = tool.GetToolContracts().Index!
+			.Single(item => item.Name == PageValidateTool.ToolName);
+
+		// Assert
+		entry.Purpose.Should().Be("Client-side Freedom UI page body validation without saving to Creatio.",
+			because: "the abbreviation exception must narrow the sentence split, never widen it into swallowing an ordinary sentence break");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("No two tools share a compact-index purpose, so every tool is distinguishable on the only discovery surface a non-resident tool has.")]
+	public void GetToolContracts_ShouldGiveEveryToolADistinctPurpose_WhenCompactIndexIsBuilt() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractIndexEntry[] entries = tool.GetToolContracts().Index!.ToArray();
+
+		// Assert
+		entries.Should().NotBeEmpty(
+			because: "the compact index enumerates every tool this guard has to cover");
+		entries.Select(entry => entry.Purpose).Should().OnlyHaveUniqueItems(
+			because: "two tools sharing a byte-identical one-liner are indistinguishable in the index - which is what happened when create-business-process and modify-business-process both opened with the same accessRights warning, so a description must lead with what its tool DOES");
 	}
 }

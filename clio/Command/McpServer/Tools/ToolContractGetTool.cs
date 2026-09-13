@@ -1129,12 +1129,21 @@ internal static class ToolContractCatalog {
 	}
 
 	/// <summary>
-	/// Distills a one-line purpose from a full tool description: takes the first sentence (up to the first
-	/// period followed by whitespace) or first line, collapses inner whitespace, and truncates to
-	/// <see cref="MaxPurposeLength"/> characters with an ellipsis so the index stays compact.
+	/// Distills the one-line purpose the compact index shows for a tool: collapses inner whitespace,
+	/// takes the first sentence (a period followed by whitespace or the end of the text, skipping the
+	/// <see cref="SentenceSafeAbbreviations"/>), and truncates to <see cref="MaxPurposeLength"/>
+	/// characters with an ellipsis so the index stays compact.
 	/// </summary>
+	/// <remarks>
+	/// <c>internal</c> rather than <c>private</c> so the distillation can be driven directly from tests.
+	/// Routing every case through a real tool's <c>[Description]</c> instead would pin this logic to
+	/// production prose: the abbreviation rules are then exercised only where some description happens
+	/// to use one, and a reword silently removes the coverage. See
+	/// <c>docs/knowledge/McpServer/first-sentence-of-a-description-becomes-the-compact-index-purpose.md</c>.
+	/// </remarks>
 	/// <param name="description">The full curated tool description.</param>
-	private static string BuildPurpose(string description) {
+	/// <returns>The one-line purpose, or an empty string when the description has no content.</returns>
+	internal static string BuildPurpose(string description) {
 		string normalized = string.Join(' ',
 			(description ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 		if (normalized.Length == 0) {
@@ -1149,9 +1158,36 @@ internal static class ToolContractCatalog {
 	}
 
 	/// <summary>
+	/// Abbreviations whose own terminating period IS followed by whitespace and therefore reads as a
+	/// sentence break to <see cref="FindFirstSentenceEnd"/>. Membership is decided by ONE property: the
+	/// abbreviation is never sentence-FINAL in English, so skipping its period can only ever be right.
+	/// An ambiguous one must stay out — a wrong skip merges two sentences and pulls the next one (often
+	/// a safety warning) into the one-liner, which is the same truncated-thought symptom ENG-96389 set
+	/// out to remove, merely relocated.
+	/// <para>
+	/// <c>etc.</c> is the worked example of that exclusion, and it is deliberate rather than an
+	/// oversight. Mid-sentence it is written <c>etc.,</c> or <c>etc.)</c>, whose period is NOT followed
+	/// by whitespace and is already kept by the mid-word rule below; the only form that would reach this
+	/// list is the ambiguous one, where sentence-final is the commoner reading.
+	/// </para>
+	/// <para>
+	/// Occurrence counts taken for ENG-96389 (<c>e.g.</c> 470, <c>i.e.</c> 16, <c>vs.</c> 2) are over the
+	/// assembly's whole source text and therefore OVERSTATE what this function sees: most land in
+	/// comments, in argument descriptions, or thousands of characters past a description's first
+	/// sentence. Only <c>e.g.</c> actually reaches the split today — it is what cut
+	/// <c>validate-process-graph</c> and <c>get-user-culture</c> mid-example. <c>i.e.</c> and <c>vs.</c>
+	/// are forward-looking entries, kept because they satisfy the never-sentence-final rule, not because
+	/// they were measured reaching it.
+	/// </para>
+	/// </summary>
+	private static readonly string[] SentenceSafeAbbreviations = ["e.g.", "i.e.", "vs."];
+
+	/// <summary>
 	/// Returns the index of the first sentence-terminating period (a '.' followed by whitespace or the end
 	/// of the text), or <c>-1</c> when the text has no sentence break. Abbreviation periods mid-word (for
-	/// example <c>en-US</c> or version numbers) are kept because they are not followed by whitespace.
+	/// example <c>en-US</c> or version numbers) are kept because they are not followed by whitespace;
+	/// the abbreviations in <see cref="SentenceSafeAbbreviations"/> are kept explicitly, because their
+	/// final period IS followed by whitespace and the mid-word rule cannot see them.
 	/// </summary>
 	/// <param name="text">The whitespace-normalized description.</param>
 	private static int FindFirstSentenceEnd(string text) {
@@ -1159,11 +1195,40 @@ internal static class ToolContractCatalog {
 			if (text[index] != '.') {
 				continue;
 			}
-			if (index == text.Length - 1 || char.IsWhiteSpace(text[index + 1])) {
-				return index;
+			if (index != text.Length - 1 && !char.IsWhiteSpace(text[index + 1])) {
+				continue;
 			}
+			if (EndsWithSentenceSafeAbbreviation(text, index)) {
+				continue;
+			}
+			return index;
 		}
 		return -1;
+	}
+
+	/// <summary>
+	/// Whether the period at <paramref name="periodIndex"/> terminates one of
+	/// <see cref="SentenceSafeAbbreviations"/> rather than a sentence. The match must cover a WHOLE
+	/// token — the character before the abbreviation has to be a non-alphanumeric or the start of the
+	/// text — so a word that merely ends in the same letters (<c>code.g.</c>) is still a sentence break.
+	/// </summary>
+	/// <param name="text">The whitespace-normalized description.</param>
+	/// <param name="periodIndex">Index of the candidate sentence-terminating period.</param>
+	private static bool EndsWithSentenceSafeAbbreviation(string text, int periodIndex) {
+		foreach (string abbreviation in SentenceSafeAbbreviations) {
+			int start = periodIndex - abbreviation.Length + 1;
+			if (start < 0) {
+				continue;
+			}
+			if (string.Compare(text, start, abbreviation, 0, abbreviation.Length,
+				    StringComparison.OrdinalIgnoreCase) != 0) {
+				continue;
+			}
+			if (start == 0 || !char.IsLetterOrDigit(text[start - 1])) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/// <summary>
