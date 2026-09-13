@@ -51,6 +51,21 @@ public sealed class CreateAppOptions : EnvironmentOptions
 	/// byte-identical to a call that predates these options.
 	/// </summary>
 	internal ApplicationOptionalTemplateData? BuildOptionalTemplateData() {
+		// A blank explicit value is a mistake, not an omission: silently treating
+		// --entity-schema-name "" as "not supplied" would mint a new canonical entity and its
+		// starter pages after a ~90 s round trip, which is exactly what passing the option was
+		// meant to avoid. Only an absent option means "no template data".
+		if (EntitySchemaName is not null && string.IsNullOrWhiteSpace(EntitySchemaName)) {
+			throw new ArgumentException(
+				"--entity-schema-name was supplied without a value. Pass the name of an entity schema that "
+				+ "already exists in the environment, or omit the option to let Creatio create a new entity.");
+		}
+
+		if (AppSectionDescription is not null && string.IsNullOrWhiteSpace(AppSectionDescription)) {
+			throw new ArgumentException(
+				"--app-section-description was supplied without a value. Pass the section description, or omit the option.");
+		}
+
 		bool hasEntitySchemaName = !string.IsNullOrWhiteSpace(EntitySchemaName);
 		bool hasSectionDescription = !string.IsNullOrWhiteSpace(AppSectionDescription);
 		if (!hasEntitySchemaName && !hasSectionDescription) {

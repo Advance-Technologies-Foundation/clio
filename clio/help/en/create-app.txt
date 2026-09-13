@@ -79,7 +79,11 @@ OPTIONS
                                      The entity must already exist in the
                                      environment; clio sends it together with
                                      useExistingEntitySchema=true, so no
-                                     canonical entity is created.
+                                     canonical entity is created. The CreateApp
+                                     service requires entitySchemaName and
+                                     useExistingEntitySchema together or neither
+                                     -- clio always sends the pair, so the rule
+                                     cannot be violated from the CLI.
 
     --app-section-description        Description applied to the application's
                                      primary section. Optional.

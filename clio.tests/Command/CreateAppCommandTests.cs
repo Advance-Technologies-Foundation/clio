@@ -10,6 +10,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Property("Module", "Command")]
 public sealed class CreateAppCommandTests : BaseCommandTests<CreateAppOptions>
 {
 	private CreateAppCommand _command;
@@ -236,6 +237,80 @@ public sealed class CreateAppCommandTests : BaseCommandTests<CreateAppOptions>
 				r.OptionalTemplateData.EntitySchemaName == "UsrExistingEntity" &&
 				r.OptionalTemplateData.UseExistingEntitySchema == true &&
 				r.OptionalTemplateData.AppSectionDescription == "Reuses the existing entity"));
+	}
+
+	[Test]
+	[Description("Trims surrounding whitespace from the entity schema name before it reaches the create request.")]
+	public void Execute_Should_Trim_EntitySchemaName_Before_Sending_It()
+	{
+		// Arrange
+		CreateAppOptions options = new() {
+			Environment = "dev",
+			Name = "My App",
+			Code = "UsrMyApp",
+			TemplateCode = "AppFreedomUIv2",
+			EntitySchemaName = "  UsrExistingEntity  "
+		};
+		_service.CreateApplication("dev", Arg.Any<ApplicationCreateRequest>())
+			.Returns(new ApplicationInfoResult("pkg-uid", "UsrMyApp", []));
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "padding around a valid schema name should not fail the call");
+		_service.Received(1).CreateApplication(
+			"dev",
+			Arg.Is<ApplicationCreateRequest>(r =>
+				r.OptionalTemplateData != null &&
+				r.OptionalTemplateData.EntitySchemaName == "UsrExistingEntity"));
+	}
+
+	[Test]
+	[Description("Fails instead of silently creating a new canonical entity when --entity-schema-name is supplied without a value.")]
+	public void Execute_Should_Return_Failure_When_EntitySchemaName_Is_Blank()
+	{
+		// Arrange — a shell variable that expanded to nothing produces exactly this shape
+		CreateAppOptions options = new() {
+			Environment = "dev",
+			Name = "My App",
+			Code = "UsrMyApp",
+			TemplateCode = "AppFreedomUIv2",
+			EntitySchemaName = "   ",
+			AppSectionDescription = "Reuses the existing entity"
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "a blank entity name must not be dropped into a call that mints a new entity instead");
+		_service.DidNotReceiveWithAnyArgs().CreateApplication(default(string)!, default!);
+		_service.DidNotReceiveWithAnyArgs().CreateApplication(default(EnvironmentSettings)!, default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(m => m.Contains("entity-schema-name")));
+	}
+
+	[Test]
+	[Description("Fails when --app-section-description is supplied without a value.")]
+	public void Execute_Should_Return_Failure_When_AppSectionDescription_Is_Blank()
+	{
+		// Arrange
+		CreateAppOptions options = new() {
+			Environment = "dev",
+			Name = "My App",
+			Code = "UsrMyApp",
+			TemplateCode = "AppFreedomUIv2",
+			AppSectionDescription = "  "
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "an empty section description is a caller mistake, not an omission");
+		_service.DidNotReceiveWithAnyArgs().CreateApplication(default(string)!, default!);
+		_service.DidNotReceiveWithAnyArgs().CreateApplication(default(EnvironmentSettings)!, default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(m => m.Contains("app-section-description")));
 	}
 
 	[Test]
