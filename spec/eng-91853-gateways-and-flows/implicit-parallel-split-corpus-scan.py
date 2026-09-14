@@ -121,8 +121,8 @@ for dirpath, _, filenames in os.walk(ROOT):
 
     elements = []
     collect_flow_elements(data, elements)
-    flows = [(element, kind) for element in elements if kind_of(element)
-             for kind in [kind_of(element)]]
+    flows = [(element, kind) for element in elements
+             for kind in (kind_of(element),) if kind]
     if not flows:
         continue
     schemas += 1
@@ -135,7 +135,12 @@ for dirpath, _, filenames in os.walk(ROOT):
         if source_uid:
             kinds_by_source[source_uid].append(kind)
 
-    package_path = dirpath.replace("\\", "/").split("/PackageStore/")[-1]
+    # Relative to the root the script was actually GIVEN, not to a literal "/PackageStore/" segment.
+    # Splitting on the folder name assumed the corpus lives in a directory called PackageStore, while
+    # the docstring above invites any path through argv[1] or CRT_PACKAGE_STORE - and on any other
+    # checkout the split found no separator and every example row printed the whole absolute host path
+    # instead of the package/schema identity a reader needs to check the figure.
+    package_path = os.path.relpath(dirpath, ROOT).replace("\\", "/")
     for source_uid, kinds in kinds_by_source.items():
         source = nodes.get(source_uid)
         source_class = (source or {}).get("BL1") or "<unresolved>"
