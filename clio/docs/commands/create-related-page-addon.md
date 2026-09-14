@@ -78,3 +78,10 @@ clio create-related-page-addon -e dev --entity-schema-name UsrRequest --package-
   manage the **mobile** related-page add-on (`MobileRelatedPage`) instead — the page the Creatio Mobile app
   opens for a record. The two add-ons are independent: a write to one (including an empty-clear reset) is
   neither read nor written against the other, so it never affects the other surface's page configuration.
+
+## Response identity
+
+`entitySchemaUId` is the base/root entity schema UId resolved by Creatio for the add-on.
+It is shared across replacing layers, not the UId of a particular replacing row or an
+unsaved designer schema. The same entity therefore reports the same identity on repeated
+reads and writes. A missing or invalid target identity fails before saving.
