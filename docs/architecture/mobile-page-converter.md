@@ -1,344 +1,395 @@
-# The mobile page converter
+# Mobile page converter
 
-**Tool:** `get-mobile-page-conversion-guide` (MCP, `[FeatureToggle("mobile-page-converter")]` — off by default)
-**Purpose:** turn a Freedom UI **web** page into a Freedom UI **mobile** page, by handing an LLM caller
-enough deterministic data to build the mobile body itself.
-**Companion documents:** [metadata before / after](eng-95827-mobile-converter-metadata-before-after.md) —
-what the ENG-95827 reshaping changed · [contradiction audit](eng-95827-mobile-converter-contradiction-audit.md)
-— the 7-lens audit and what it found.
+Tool `get-mobile-page-conversion-guide` · `[FeatureToggle("mobile-page-converter")]` (off by default) ·
+`clio/Command/McpServer/Tools/MobilePageConverter/`
 
-This file is the single authoritative description of the converter's architecture. Where it and the code
-disagree, the code wins and this file is wrong — but every claim here was read out of the code at the
-time of writing, not remembered.
+Turns a Freedom UI **web** page into the data an LLM caller needs to build the Freedom UI **mobile** page. Read-only:
+writes no page, no Creatio object, no file. Where this file and the code disagree, the code wins.
 
 ---
 
 ## 1. Boundary
 
-The converter **reads** the source page and probes the environment. It **writes nothing** — no page body,
-no Creatio object, no file. The caller builds the body from the guide and persists it with `create-page`
-(mobile template) → `update-page` → `validate-page`.
+| | |
+|---|---|
+| Input | source page + merged bundle (`get-page` under the tenant lock), its web template, the target mobile template, web + mobile component registries, the conversion rules, two best-effort probes (section registration, page business rules) |
+| Output | one `MobilePageConversionGuide` (§3) inside `MobilePageConversionGuideResponse` (+ `resolvedTargetVersion`, `resolvedFrom`, `versionWarning`) |
+| Supported source | `freedom-web` only |
+| Persistence | none — the caller runs `create-page` (mobile template) → `update-page` → `validate-page` |
+| Procedure | `get-guidance name=freedom-page-web-to-mobile-conversion` is mandatory. Article = procedure, response = facts |
 
-It **fails rather than degrades** when the mobile template cannot be read. Without that template
-`mobileTypesByName` is empty, which silently stops same-name twin detection — so an element the template
-already provides (`Feed`, `Tabs`) would fall through to the insert path and the page would ship a
-duplicate of a native element. A guide with a footnote about the least of it is worse than no guide.
+**Refusals** — a failure response, no guide:
 
-Supported source type: `freedom-web`. Anything else is detected and reported as not yet supported.
+| Condition | Why it is not degraded |
+|---|---|
+| Source page unreadable, not Freedom web, or already mobile | Nothing to convert |
+| `version` is neither 3-part semver nor `latest` | The raw value reaches CDN URL composition |
+| Mobile template named by the rule unreadable, or no rule and no `defaultMobileTemplate` | Without it `mobileTypesByName` is empty → same-name twin detection is off → template natives (`Feed`, `Tabs`) are inserted a second time |
+| Web template named by the page but unreadable | Chrome subtraction either skips (template scaffold converted as content) or consumes the whole tree |
 
-Reading `get-guidance name=freedom-page-web-to-mobile-conversion` is **mandatory** before acting on the
-response. That article owns the *procedure*; this response owns the *facts*. The split is deliberate and
-is the organising principle of the whole design (§6.1).
+Both probes (`MobileSectionRegistrationProbe`, `PageBusinessRuleProbe`) never block: failure → `probeOk = false`, flags absent,
+no exception text on the wire.
 
 ---
 
-## 2. The contract
+## 2. Composition
 
-One response, thirty fields. The column that matters is the last one: a field whose caller-action is
-"report" must never be planned from, and a field whose action is "paste" must never be rebuilt.
+```
+MobilePageConversionGuideTool.GetMobilePageConversionGuide          I/O + orchestration
+ ├ ReadPageUnderTenantLock                        → page, merged bundle
+ ├ DetectSourceType · RejectUnsupportedSourceType
+ ├ ResolveVersionAsync → IComponentCatalog.LoadAsync ×2   → mobile/web registries, resolvedFrom (worse of the two)
+ ├ IWebToMobilePageConversionRulesCatalog.GetRulesAsync    → rules (local override → cache → CDN → bundled)
+ ├ ResolveEffectiveTemplateName → ResolveTemplateRule ?? DefaultTemplateRule
+ │     climbs past same-named replacing layers; the default is applied by the caller, not inside the resolver
+ ├ LoadMobileTemplateProbe   → ContainerParents, positional placements, TypesByName, LayoutConfigsByName,
+ │                             merged viewModelConfig / modelConfig, Unavailable
+ ├ LoadWebTemplateBaseline   → Names, Nodes, Resources, Unavailable          (the chrome to subtract)
+ ├ MobileSectionRegistrationProbe.Probe
+ ├ PageBusinessRuleProbe.Probe
+ └ WebToMobileAnalysisService.Analyze(...)         PURE — no I/O          → MobilePageConversionGuide
+```
 
-### 2.1 What the caller applies
+Rule of the split: everything that touches an environment or a catalog lives in the tool or a probe; `Analyze` takes plain
+data and is unit-tested without an environment. Every environment-dependent input of `Analyze` has a null/empty default.
 
-| Field | What it is | Caller action |
+---
+
+## 3. Contract
+
+Thirty fields, three caller actions. A "report" field is never planned from; a "paste" field is never rebuilt.
+
+### 3.1 Paste / pass
+
+| Field | Content | Caller action |
 |---|---|---|
-| `viewConfigDiff` | The mobile page's `viewConfigDiff`, in the applier's own shape | **Paste verbatim, in order** |
-| `modelConfigDiff` | Ready-to-paste data-source diff — focused targeted merges, never one root merge | **Paste verbatim** |
-| `viewModelConfigDiff` | Ready-to-paste view-model diff, same shape | **Paste verbatim** |
-| `resourceStrings` | Every localized string the converted body references | Register them all |
-| `recommendedMobileTemplate` | The mobile template to create the page from | Pass to `create-page` |
-| `suggestedTargetSchemaName` | The proposed target schema name | Pass to `create-page` |
+| `viewConfigDiff` | Mobile `viewConfigDiff` in the applier's own shape | Paste verbatim, in order |
+| `modelConfigDiff` | Targeted merges/inserts over the mobile template's `modelConfig` (§6) | Paste verbatim |
+| `viewModelConfigDiff` | Same, over the template's `viewModelConfig` | Paste verbatim |
+| `resourceStrings` | Every localized string the converted body references | Register all |
+| `recommendedMobileTemplate` | Mobile template to create the page from | `create-page` |
+| `suggestedTargetSchemaName` | Target schema name (argument or `DeriveMobileSchemaName`) | `create-page` |
 
-### 2.2 What the caller reports
+### 3.2 Report
 
-| Field | What it is |
+| Field | Content |
 |---|---|
-| `droppedElements` | Every source element that did **not** reach the page, each with coded reasons |
-| `componentSuggestions` | Per source **type**: what the conversion did to its instances |
+| `droppedElements` | Every source element that did not reach the page, each with coded reasons |
+| `componentSuggestions` | Per source **type**, derived from the finished element map (§8.3) |
 | `requestConversions` | Per action binding: converted / dropped / flagged |
-| `pageBusinessRules` | Converted rule conditions and actions; dropped rules with reasons |
-| `normalizations` | Mobile standards stamped onto inserted containers, and any the stamp refused |
-| `dataSectionConflicts` | Template-owned data-section changes no diff operation can express |
-| `unresolvedParents` | Inserts whose parent **neither** the diff nor the template provides — report and stop |
-| `layoutResolution` | Set only when the source had components but the converted layout is empty |
-| `sectionRegistration` | Mobile-client registration state + the steps to propose at Gate S |
-| `templateMatch` | `"matched"` or `"generic-fallback"` — how the template was chosen |
-| `adaptiveLayout` | Readable index of the per-breakpoint layout already inside the operations |
-| `tabAreaLayers` | Readable index of the tab-body / Area containers already inside the operations |
+| `pageBusinessRules` | Converted rule conditions + surviving actions; dropped rules with reasons |
+| `normalizations` | Rule-declared standards stamped onto inserted elements; skipped ones with reasons |
+| `dataSectionConflicts` | Template-owned data-section changes no diff operation can express (§6) |
+| `unresolvedParents` | Inserts whose parent neither the diff nor the template provides — report and stop |
+| `layoutResolution` | Set only when the source had components and the converted layout is empty |
+| `sectionRegistration` | Mobile-client registration state + the steps to propose |
+| `templateMatch` | `"matched"` (rule has a `web` template) or `"generic-fallback"` (default rule); null without a rule |
+| `adaptiveLayout` / `tabAreaLayers` | Readable indexes of layout the operations already carry |
 | `webOnlySections` | Handlers / validators / converters the source declares and mobile has no place for |
 
-### 2.3 What the caller reads only to understand
+### 3.3 Read only to understand
 
-| Field | Why it is here |
+| Field | Why it exists |
 |---|---|
-| `sourceStructure` | The full resolved source tree — provenance for everything else |
-| `modelConfig` / `viewModelConfig` | The configs the two `*Diff` fields were built FROM. **Do not apply them** |
-| `containerMap` | The container correspondence the converter has **already applied**. Never derive a `parentName` from it |
-| `nameMap` | Source → mobile name, for the elements the converter renamed, and only those |
-| `mobileContracts` | Inline registry contracts for the mobile types the diff emits *that the registry describes* |
-| `dataSources` | All data-source names the source declares — all of them, carried over in full |
-| `sourcePage` / `sourceType` / `sourceTemplate` | Identity of what was converted |
-| `guidanceArticle` | The article name the caller must have read |
+| `sourceStructure` | The resolved source tree — provenance for everything else |
+| `modelConfig` / `viewModelConfig` | The configs the two `*Diff` fields were built FROM. Never applied |
+| `containerMap` | Container correspondence the converter has already applied. Never a source of `parentName` |
+| `nameMap` | Source → mobile name for renamed elements only |
+| `mobileContracts` | Inline registry contracts for the mobile types the diff emits and the registry describes |
+| `dataSources` | Data-source names the source declares (= keys of `modelConfig.dataSources`) |
+| `sourcePage` / `sourceType` / `sourceTemplate` / `guidanceArticle` | Identity |
 
 ---
 
-## 3. The pipeline
-
-`WebToMobileAnalysisService.Analyze` is pure: no Creatio I/O, no body generation. Seven numbered steps.
+## 4. Pipeline — `Analyze`
 
 ```
-        template resolution + chrome pruning
-                    │
-  1.  WalkStructure ─────────────────► sourceStructure, namesByType
-                    │
-  2.  CollectWebOnlySections / CollectDataSources
-                    │
-  3.  BuildElementMap ──────────────► the working element map
-        │
-        ├── RemoveExcludedComponents      (rules-driven positional bans)
-        ├── RemoveEmptyContainers         (bottom-up, cascades)
-        ├── CompactPositionalIndexes
-        ├── AssignConvertedTabIndexes
-        ├── BuildAdaptiveLayout
-        ├── PlacePositionalGroups
-        ├── BuildTabAreaLayers            (adds the synthesized tab layers)
-        ├── InitializeContainerChildSlots
-        ├── ApplyComponentPropertyOverrides
-        ├── NormalizePlacements
-        └── StampParentSource             ◄── LAST pass that touches the map
-                    │
-  4.  BuildComponentSuggestions ────► derived from the FINISHED map
-      BuildMobileContracts               (follows the suggestions)
-                    │
-  5.  Data sections (modelConfig / viewModelConfig + their targeted diffs)
-  6.  ConvertPageBusinessRules
-  7.  CollectResourceStrings
-                    │
-              projections ─────────► viewConfigDiff, droppedElements, nameMap, unresolvedParents
+ 0. PruneTemplateComponents        subtract web-template chrome; keep container twins and nonConvertingScopeContainers
+ 1. WalkStructure                  → sourceStructure, namesByType
+ 2. CollectWebOnlySections · CollectDataSources
+ 3. BuildElementMap                → working map (merge / insert / drop / relocate-children)
+                                     request bindings remapped / stripped / flagged in place
+    ├ RemoveExcludedComponents     rules-driven positional bans
+    ├ RemoveEmptyContainers        bottom-up, cascades
+    ├ CompactPositionalIndexes
+    ├ AssignConvertedTabIndexes
+    ├ BuildRequestConversionInfo   reconciled against both removal passes
+    ├ BuildAdaptiveLayout
+    ├ PlacePositionalGroups
+    ├ BuildTabAreaLayers           synthesizes tab-body + Area layers
+    ├ InitializeContainerChildSlots
+    ├ ApplyComponentPropertyOverrides
+    ├ NormalizePlacements
+    └ StampParentSource            LAST map-mutating pass
+ 4. BuildComponentSuggestions → BuildMobileContracts        from the FINISHED map
+ 5. PassthroughModelConfig · BuildMobileViewModelConfig · BuildTargetedDiff ×2
+ 6. ConvertPageBusinessRules
+ 7. CollectResourceStrings
+    projections: ProjectViewConfigDiff · ProjectDroppedElements · ProjectNameMap · ProjectUnresolvedParents
 ```
 
-### 3.1 Ordering constraints that are load-bearing
+### 4.1 Ordering constraints
 
-Each of these is a decision, not an accident. Breaking one fails silently.
+Each one fails silently when broken.
 
-| Constraint | Why |
+| Constraint | Consequence of breaking it |
 |---|---|
-| Step 4 runs **after** every map-mutating pass | A per-type answer computed earlier answers "what *will* happen to this type" while the caller reads it as "what happened to these elements". A grid becomes a `crt.List` in step 3; an exclusion rule drops every `crt.SearchFilter` in step 3. Enforced by the compiler: the calls take `elementMap`. |
-| `RemoveEmptyContainers` **before** `InitializeContainerChildSlots` | The emptiness test reads slot *absence*. Seeding the slot first makes every container look occupied and disables the pass. |
-| `RemoveExcludedComponents` **before** `RemoveEmptyContainers` | A branch the exclusion empties must then cascade away. |
-| `BuildAdaptiveLayout` **before** `BuildTabAreaLayers` | Adaptive indexes children per grid container; running it on the post-synthesis map would shift a child's stacking index. |
-| `CompactPositionalIndexes` **before** `AssignConvertedTabIndexes` | Compaction rebases each parent's indexed group to 0; run over tab indexes it would rebase the first-tab offset away. |
-| `InitializeContainerChildSlots` **after** `BuildTabAreaLayers` | The synthesized layers are the only other pass adding inserts that other inserts target as parent; running earlier leaves them unseeded. |
-| `NormalizePlacements` **after** `ApplyComponentPropertyOverrides` | A rules file that ever declares a `layoutConfig` would otherwise write a partial one after normalization ran. |
+| Step 4 after every map-mutating pass | Per-type answer says "what will happen to this type" while the caller reads "what happened to these elements"; `mobileContracts` follows the suggestions, so the contract set is wrong in both directions |
+| `RemoveExcludedComponents` before `RemoveEmptyContainers` | A branch the exclusion empties does not cascade away |
+| `RemoveEmptyContainers` before `InitializeContainerChildSlots` | Emptiness is read as slot *absence*; a seeded slot makes every container look occupied and disables the pass |
+| `CompactPositionalIndexes` before `AssignConvertedTabIndexes` | Compaction rebases each parent's indexed group to 0; over tab indexes it moves the first web tab before the template's general tab |
+| `BuildRequestConversionInfo` after both removal passes | A binding on a removed element is reported as converted for an element the map says not to create |
+| `BuildAdaptiveLayout` before `PlacePositionalGroups` and `BuildTabAreaLayers` | Adaptive would overwrite positional grid placement; synthesized layers would shift a child's stacking index |
+| `InitializeContainerChildSlots` after `BuildTabAreaLayers` | Synthesized layers are insert parents; earlier seeding leaves them without a slot → differ: `Item X is not a container for other items` |
+| `ApplyComponentPropertyOverrides` before `NormalizePlacements` | A rule that declares a `layoutConfig` would write a partial one after normalization |
+| `StampParentSource` last | Parent provenance is complete only after the tab layers re-point a tab's children |
 
 ---
 
-## 4. The element map
+## 5. Element map
 
-The internal working map carries **four** operations. Only two reach the wire.
+Four working operations; two reach the wire.
 
-| Operation | Meaning | Reaches `viewConfigDiff`? |
+| Operation | Meaning | In `viewConfigDiff`? |
 |---|---|---|
-| `insert` | Create this element on the mobile page | **Yes** |
-| `merge` | Layer onto an element the mobile template already provides | **Yes** |
-| `drop` | This element did not reach the page | No — projected into `droppedElements` |
-| `relocate-children` | This container is not recreated; its children are reparented | No — projected into `droppedElements` |
+| `insert` | Create the element on the mobile page | yes |
+| `merge` | Layer onto an element the mobile template provides (same-name twin, `mobileTypesByName`) | yes |
+| `drop` | Element did not reach the page | no → `droppedElements` |
+| `relocate-children` | Container not recreated; children reparented | no → `droppedElements` |
 
-A drop lives in the map right up to projection because the passes need it there: one is installed by
-*replacing* an entry in place, which is what lets the orphan and empty-container cascades see it while
-they walk. Only the response separates the two, because they are read for opposite purposes.
-
-The wire projection is an **allow-list** (`IsInsert || IsMerge`), never a deny-list: a future working-map
-operation must fail to reach the applier payload rather than land in it silently.
-
-### 4.1 `values`
-
-On an `insert`: the component's `type` and **every** source property except `name` — the value binding
-(`control`) included. On a `merge`: only the delta over what the template provides, with no `type`.
-
-**A merge with nothing to apply carries an empty object `{}` — never `null`, never absent.**
-`JsonDiffApplier` lists `values` as a required parameter of `merge` and validates *every* operation before
-applying *any*, so one null fails the entire array. Three of the seven merges on the OOTB
-`Leads_FormPage` carry no delta.
-
-Nothing is pruned against the mobile registry. While
-`MobileComponentRegistry.json` publishes no real per-component property list, every property is copied
-from the web component verbatim; removing what a mobile component cannot accept is
-[ENG-96589](https://creatio.atlassian.net/browse/ENG-96589) and is blocked on that registry.
-
-### 4.2 `name` is not unique
-
-Two operations may legitimately target one element — the shipped rules map both `Tabs → Tabs` and
-`CardToggleTabPanel → Tabs`, and three other templates have the same shape. **Apply in order; never
-deduplicate by name.** The one duplicate that used to invite the wrong choice — a payload-free merge
-beside an operation that already declares the element — is no longer emitted.
+- A drop stays in the map until projection: passes replace an entry in place, and the orphan / empty-container cascades read it.
+- Wire projection is an **allow-list** (`IsInsert || IsMerge`), never a deny-list: a new working operation must fail to reach
+  the applier rather than land in it.
+- `values` on `insert`: `type` + every source property except `name`, the value binding (`control`) included. On `merge`:
+  only the delta over the template, no `type`. Nothing is pruned against the mobile registry until it publishes real
+  per-component property lists ([ENG-96589](https://creatio.atlassian.net/browse/ENG-96589)).
+- A merge with nothing to apply carries `{}` — never `null`, never absent. `JsonDiffApplier` requires `values` on `merge`
+  and validates every operation before applying any.
+- `name` is not unique: two operations may target one element (`Tabs → Tabs` and `CardToggleTabPanel → Tabs`). Apply in
+  order; never deduplicate by name. A payload-free merge beside another operation on the same name is not emitted; two
+  payload-carrying operations on one name are a genuine conflict and are both shipped.
+- Synthesized names: `StableSuffix` = SHA-256 over `"{sourcePage}:{tabName}"`, base36, first 7 characters, extended on
+  collision. Stable across runs and machines.
 
 ---
 
-## 5. The closed vocabularies
+## 6. Data sections
 
-### 5.1 Reason codes — 22, across five wire fields
+`modelConfig` is the source page's merged config verbatim (mobile has identical structural support). `viewModelConfig` is
+the source config minus attributes referenced only by dropped components; a removal by the empty-container or excluded-
+components pass is layout cleanup, and its attributes are kept.
 
-One vocabulary spans `droppedElements[].reason`, `requestConversions.droppedRequests[].reason` and
-`.flaggedRequests[].reason`, `pageBusinessRules.droppedRules[].reason`, and
-`normalizations.*.skipped[].reason`, because a caller reads them all the same way and a per-collection
-vocabulary would let one cause acquire two spellings. That is also why the `drop-` prefix is not asserted
-anywhere: `flag-` and `skip-` are first-class.
+`BuildTargetedDiff(pageConfig, templateBase, section)` diffs each against the mobile template's OWN merged base:
+
+| Case | Emitted |
+|---|---|
+| Key exists in the base | Recurse — only the real delta; every path exists in the base |
+| New page-owned key (attribute, list collection, data source) | One `merge` at the parent path carrying the whole subtree |
+| Array exists in the base | Never merged (merge replaces arrays wholesale) — each new entry is an `insert` at the array's path |
+| Scalar changed inside a template-owned collection (`isCollection: true`) | Dropped, reported in `dataSectionConflicts` |
+| Template base unreadable | Single root `merge` of the whole config (`BuildRootMergeDiff`) |
+
+Conflict kinds (closed): `changed-named-element` · `changed-scalar` · `nameless-changed-in-place`.
+
+---
+
+## 7. Requests and business rules
+
+**Requests** (action bindings, e.g. a button's `clicked`): `rules.requests` maps web → mobile request with a category; the
+map is applied while each insert's values are built. Not in the map → `flag-request-unmapped`; unsupported → dropped;
+element removed by a later pass → reported as discarded. Summary: `requestConversions`.
+
+**Page business rules** (add-on metadata, read by `PageBusinessRuleProbe`): an action converts only for elements that
+survive (`merge`/`insert`), names remapped web → mobile. Condition operand paths are remapped from the source DS column
+path to the mobile viewModel attribute name via the source `viewModelConfig`. Dropped whole: mixed AND/OR, unsupported
+comparison, unconvertible operand, no surviving action. Output is ready for `create-page-business-rule`.
+
+---
+
+## 8. Vocabularies
+
+### 8.1 Reason codes — one vocabulary, five wire fields
+
+`droppedElements[].reason` · `requestConversions.droppedRequests[].reason` / `.flaggedRequests[].reason` ·
+`pageBusinessRules.droppedRules[].reason` · `normalizations.*.skipped[].reason`. One set, so one cause cannot acquire
+two spellings; the `drop-` prefix is not asserted — `flag-` and `skip-` are first-class. Constants: `ReasonCodes`.
 
 ```
-NOT LOSS            drop-inherited-chrome  drop-excluded-by-rule  drop-parent-excluded
-                    drop-empty-container   drop-container-no-mobile-equivalent
-GENUINE LOSS        drop-unsupported-request  drop-unknown-request
-                    drop-type-not-in-mobile-registry
-RULES DEFECT        drop-target-missing
-IN SCOPE            drop-no-rule-in-scope  drop-not-an-action-in-scope
-                    drop-non-converting-scope
-A BINDING           drop-request-chrome-native  drop-request-unsupported
-                    drop-request-element-empty-container  drop-request-element-excluded
-                    flag-request-unmapped
-A BUSINESS RULE     drop-rule-condition-mixed-and-or  drop-rule-condition-unsupported-comparison
-                    drop-rule-condition-unconvertible  drop-rule-no-action-converts
-A NORMALIZATION     skip-normalization-path-blocked
+NOT LOSS          drop-inherited-chrome  drop-excluded-by-rule  drop-parent-excluded
+                  drop-empty-container   drop-container-no-mobile-equivalent
+GENUINE LOSS      drop-unsupported-request  drop-unknown-request  drop-type-not-in-mobile-registry
+RULES DEFECT      drop-target-missing
+IN SCOPE          drop-no-rule-in-scope  drop-not-an-action-in-scope  drop-non-converting-scope
+A BINDING         drop-request-chrome-native  drop-request-unsupported
+                  drop-request-element-empty-container  drop-request-element-excluded  flag-request-unmapped
+A BUSINESS RULE   drop-rule-condition-mixed-and-or  drop-rule-condition-unsupported-comparison
+                  drop-rule-condition-unconvertible  drop-rule-no-action-converts
+A NORMALIZATION   skip-normalization-path-blocked
 ```
 
-Two pairs are deliberately distinct and are the ones to get right:
+Pairs to keep distinct:
 
-- `drop-unsupported-request` — the **element** is gone. `drop-request-unsupported` — the element
-  **survives** and only its binding was removed.
-- `drop-container-no-mobile-equivalent` — a **container**, flattened, children preserved.
-  `drop-type-not-in-mobile-registry` — the same cause on a **leaf**, where it *is* loss.
+- `drop-unsupported-request` — the **element** is gone · `drop-request-unsupported` — the element survives, its binding was removed.
+- `drop-container-no-mobile-equivalent` — a **container**, flattened, children preserved · `drop-type-not-in-mobile-registry` — a **leaf**, genuine loss.
 
-### 5.2 `params` rules
+### 8.2 `params`
 
-Three rules, and each exists because it was once broken:
+1. A param never repeats a field the record already carries (`webType` is a field, not a param).
+2. The param set is a property of the **code**, not the call site: every site passes every key, `null` included; the
+   `Reason()` factory drops nulls. Callers may branch on key presence. `Reason()` is `internal` so every pass uses it.
+3. One key, one referent, one format: `targetParent` + `targetSlot` (never dotted), `missingParent` (the parent that does
+   **not** exist — never paste it), `newParent`.
 
-1. **A param never echoes a field the record already carries.** `webType` was a param on two codes while
-   `droppedElements[].webType` sat beside it — two places for one fact to drift.
-2. **A param set is a property of the CODE, not of the call site.** Every site of a code passes every key
-   it declares, `null` included; the `Reason()` factory drops the nulls. So a caller can branch on a key's
-   presence. This is why `Reason()` is `internal` rather than private — `ExcludedComponentsPass` used to
-   hand-build its dictionary, which meant the null-dropping contract held for every code except the one
-   that pass emits.
-3. **One key, one referent, one format.** `params.target` once carried three referents in two formats.
-   It is now `targetParent` + `targetSlot` (never dotted), `missingParent` (the one parent name that does
-   *not* exist, so it must never be pasted into an operation), and `newParent`.
-
-### 5.3 Component categories — 5, PascalCase
-
-Derived from the finished map. Registry membership is **not** evidence that anything converted.
+### 8.3 Component categories — `ComponentMappingCategory`, PascalCase
 
 | Value | Means |
 |---|---|
-| `DirectMapping` | Converted under this same type |
-| `AlternativeAvailable` | Converted under a **different** mobile type, which `suggestedMobileTypes` names |
-| `WithAdaptation` | Transferred but needs adjustment — a judgement no operation carries, so only a rules file declares it |
-| `Unsupported` | No nameable operation, for a type the **web** registry knows |
-| `RequiresManualDecision` | The same for a type unknown to **both** registries — probably custom |
+| `DirectMapping` | Converted under the same type |
+| `AlternativeAvailable` | Converted under a different mobile type, named in `suggestedMobileTypes` |
+| `WithAdaptation` | Transferred, needs adjustment — declared by a rule only |
+| `Unsupported` | No operation, type known to the **web** registry |
+| `RequiresManualDecision` | No operation, type unknown to both registries |
 
-A rules file may substitute its own declared value only where nothing nameable was emitted: where an
-operation exists and its target can be named, there is no outcome for a type table to contradict. A type
-whose configuration shipped **nested** inside another element's `values` gets no row at all.
+Derived from the finished map; registry membership is not evidence of conversion. A rule may substitute its category only
+where nothing nameable was emitted. A type shipped nested inside another element's `values` gets no row.
 
 ---
 
-## 6. The invariants
+## 9. Invariants
 
-### 6.1 Prose is not a channel
+### 9.1 Prose is not a channel
 
-A line that would read the same on any other conversion says nothing about the page in front of the
-caller. Every such line was resolved in this order:
+A line that reads the same on every conversion is not a fact about this page. Resolution order for any candidate free text:
+**code** (enforce, or fail) → **metadata** (typed field) → **article** (procedure) → **delete** (duplicate).
 
-**code** (enforce it, or fail) → **metadata** (a typed field) → **article** (where it is procedure) →
-**delete** (where it duplicated something).
+Free text still on the wire, and why:
 
-What survives on the wire as free text, and why:
-
-| Channel | Why it stays |
+| Channel | Why |
 |---|---|
-| `sectionRegistration.registrationActions[]` | Each step names a clio tool and its arguments — a procedure to execute |
-| `componentSuggestions[].note` | Only when a **rules author** wrote one. The converter synthesizes none |
-| `containerMap[].note`, `pageBusinessRules` notes | Same: authored, not synthesized |
-| `normalizations[].note` | Composed from the actual counts |
+| `sectionRegistration.registrationActions[]` | Each step names a clio tool and its arguments |
+| `componentSuggestions[].note`, `containerMap[].note`, `pageBusinessRules` notes | Authored by a rules author or the probe, never synthesized |
+| `normalizations[].note` | Composed from actual counts |
+| `layoutResolution` | Diagnostic for an otherwise indistinguishable empty layout |
 
-### 6.2 A field must not assert what was not established
+### 9.2 A field must not assert what was not established
 
-`null` means "not established"; a value means "measured". A non-nullable `bool` fed from an optional
-source collapses those two, and the collapse is invisible:
+`null` = not established; a value = measured. A non-nullable `bool` fed from an optional source collapses the two.
 
-- `ComponentRegistryEntry.Container` is `bool?`. No entry in the live catalog publishes the key, so a
-  non-nullable bool made silence read as a published "no" — and `sourceStructure[].isContainer` shipped
-  `false` for elements whose own children the same payload listed with `parentName` pointing back at them.
-  `isContainer` is now derived from the **tree** (a node holding child components is a container), with
-  the registry and a name heuristic left to the one case the tree cannot settle: an empty container.
-- `sectionRegistration`'s environment-derived flags are `bool?` and **absent** when `probeOk` is false.
-  The probe's `catch` no longer puts the exception message on the wire: a caller once received a raw
-  `System.Text.Json` parser complaint as the explanation of a registration probe.
-- A field with **no producer** is not a contract. `sourcePageIsDefaultEditPage` and
-  `mobileDefaultEditPageExists` were deleted for this reason.
+- `ComponentRegistryEntry.Container` is `bool?` (no live entry publishes the key). `sourceStructure[].isContainer` is
+  derived from the tree (a node with child components); registry + name heuristic only for an empty container.
+- `SectionRegistrationInfo.SourcePageIsSection` / `MobileSectionRegistered` are `bool?` and absent when `probeOk` is false.
+- A field with no producer is not a contract — it is deleted, not left null.
 
-### 6.3 Determinism
+### 9.3 Determinism
 
-The response must be reproducible for the same inputs.
+- Every wire collection is ordered by construction or sorted explicitly (`SortedSet(OrdinalIgnoreCase)` for
+  `suggestedMobileTypes`; element-map order for operations = parent-before-child).
+- No dictionary-iteration order, culture, clock or catalog-load order reaches a wire value.
+- All name comparisons are `StringComparer.OrdinalIgnoreCase`.
 
-- Every collection that reaches the wire is ordered by construction or sorted explicitly
-  (`SortedSet` with `OrdinalIgnoreCase` for `suggestedMobileTypes`; element-map order for the operations,
-  which is also the parent-before-child guarantee).
-- `StableSuffix` is SHA-256 over `$"{sourcePage}:{tabName}"`, first 7 lowercase base36 characters — a
-  synthesized name is stable across runs and across machines.
-- No dictionary-iteration order, culture, or catalog-load order reaches a wire value.
+### 9.4 Enforced downstream, not stated
 
-### 6.4 The three sources of truth, and how they stay in step
+Invariants the caller must not violate are checked by the write/validate path, not described in the guide:
 
-| Source | Owns | Guarded by |
-|---|---|---|
-| The code | What the response contains | its own tests |
-| `WebToMobilePageConversionRules.json` | Which types/containers/requests map where, and the value skeletons | `WebToMobilePageConversionRulesCatalogTests`, and the drift guard that keeps hand-written test maps a subset of the shipped rule |
-| The clio-knowledge articles | The procedure, and the reason-code dictionary | `MobileDropReasonCodeVocabularyTests` (clio) ↔ `MobileDropReasonCodeCoverageTests` (clio-knowledge) |
-
-**A code cannot be added, renamed or removed in clio alone.** The vocabulary test compares the constants
-against the set the article publishes; the coverage test compares the article against a list of codes each
-with a stated reason it needs its own entry. Both must move together, and the article change needs a
-`libraryVersion` + `sequence` bump plus a re-pin of
-`clio.tests/Command/McpServer/Fixtures/curated-knowledge-names.json`.
-
-One trap: the rules file's `components` entries carry **no `web` key** — all of them are filter/template
-groups. `FindRule` matches on `web` alone, so against the bundled rules it always returns `null`. See
-[the knowledge record](../knowledge/McpServer/conversion-rules-components-carry-no-web-key.md); the short
-version is that `FindRule` is still load-bearing through its *other* call site, which decides what
-converts.
+| Check | Where |
+|---|---|
+| A second `crt.Scaffold` (insert/set of the type, or insert named `Scaffold`) is rejected; `merge` onto `Scaffold` is allowed | `SchemaValidationService.ValidateMobileSingleScaffoldRoot` |
+| A `merge` whose `values` author children into a slot is rejected — children are authored with `insert`/`set` | `SchemaValidationService.ValidateMobileMergeSlotAuthoring` |
+| Type in neither registry → warning naming `get-component-info schema-type=mobile` | `SchemaValidationService` |
+| The diff is **applied** through the client-engine clones (`JsonDiffApplier`, `JsonPathDiffApplier`); the differ's own exception is returned. Path-diff base: body's own base → target page merged config (`MobilePageMergedConfigResolver`) → empty base seeded at every insert path | `MobileDiffApplyValidator` (`validate-page`, `update-page`, `sync-pages`) |
 
 ---
 
-## 7. Known gaps
+## 10. Rules file — `WebToMobilePageConversionRules.json`
+
+Loaded per version through `IWebToMobilePageConversionRulesCatalog` (local override → cache → CDN → bundled resource
+`Clio.Command.McpServer.Data.WebToMobilePageConversionRules.json`). Every section is a data switch: absent → the pass is
+a no-op.
+
+| Section | Shape | Drives |
+|---|---|---|
+| `defaultMobileTemplate` | string | Fallback rule when no `templates` entry matches → `templateMatch: generic-fallback` |
+| `templates[]` | `web`, `mobile`, `containers`, `components`, `note` | Template pairing, container twins (`containerMap`), component twins, positional `:top` / `:bottom` placements |
+| `components[]` | `filters`, `path?`, `viewConfigTemplates` | Type conversion by filter + value skeleton (`ResolveTemplateTargetType` reads `viewConfigTemplates[].value.type`); `path` scopes to an ancestor |
+| `requests[]` | `web`, `mobile`, `category` | Action-binding map (§7); only supported requests are listed |
+| `componentPropertyOverrides[]` | `filters`, `values`, `mergeNestedObjects` | Standards stamped on inserted elements (`normalizations`) |
+| `excludedComponents[]` | `filters{type, parentType, propertiesContainerName?}` | Positional bans (`drop-excluded-by-rule`); a filter missing `type` or `parentType` is unusable and skipped |
+| `emptyContainerRemoval.removableTypes` | string[] | Closed set of container types removable when empty |
+| `contentContainerTypes` | string[] | Container types treated as content |
+| `nonConvertingScopeContainers` | string[] | Kept in the tree as `path` ancestors, emit no element (`drop-non-converting-scope`) |
+| `tabAreaLayers` | `tabComponentType`, `mainTabContainer` | The designer's two-layer tab body |
+
+`components[]` entries carry **no `web` key**. `FindRule` (matches on `web`) therefore returns `null` against the bundled
+file; it stays load-bearing through `ResolveConvertedMobileType`, where `rule.Mobile` is the last fallback for a leaf's
+target type — a published file that adds `web` changes **which types convert**. A test that asserts a category through a
+hand-built `Web` rule tests a path production does not take.
+
+---
+
+## 11. Tests
+
+| Layer | Fixture | Guards |
+|---|---|---|
+| `WebToMobileConversionServiceTests` | hand-built bundles | Every pass, projection and code; the `Analyze` contract |
+| `WebToMobileRealPageRegressionTests` | `Fixtures/LeadsFormPage.live-snapshot.json` | A real OOTB page end to end |
+| `WebToMobileGeneralInfoTabRegressionTests` | `ServicesFormPageTabbed.live-snapshot.json` + `MobileComponentRegistry.live-snapshot.json` | Tabbed template, general tab, registry-dependent placement |
+| `WebToMobilePageConversionRulesCatalogTests` | bundled rules | Rule shape; a filter that would silently disable a pass fails at authoring time |
+| `MobileDropReasonCodeVocabularyTests` | `ReasonCodes` constants | Code set = the set the article publishes; kebab-case |
+| `MobilePageConversionGuideToolTests` / `…LockTests` | substitutes | Orchestration, refusals, version validation, tenant lock |
+| `MobileSectionRegistrationProbeTests` / `PageBusinessRuleProbeTests` | substitutes | Probe degradation (`probeOk = false`) |
+| `clio.mcp.e2e/MobilePageConversionGuide*E2ETests` | seeded stand | Real MCP round trip; `Assert.Ignore` only for a missing precondition, never for a runtime error |
+
+Three sources of truth, kept in step:
+
+| Source | Owns | Guard |
+|---|---|---|
+| Code | Response content | Unit + regression tests |
+| Rules file | Which types / containers / requests map where; value skeletons | Catalog tests; drift guard keeping hand-written test maps a subset of the shipped rule |
+| clio-knowledge articles | Procedure; reason-code dictionary | `MobileDropReasonCodeVocabularyTests` (clio) ↔ `MobileDropReasonCodeCoverageTests` (clio-knowledge) |
+
+---
+
+## 12. Changing the converter
+
+| Change | Steps |
+|---|---|
+| Add / rename / remove a reason code | `ReasonCodes` constant → `Reason()` call sites → `MobileDropReasonCodeVocabularyTests` → article `web-to-mobile-reason-codes.md` in clio-knowledge (PR there, `libraryVersion` + `sequence` bump) → re-pin `clio.tests/Command/McpServer/Fixtures/curated-knowledge-names.json` |
+| Add a pass | Place it in §4 by the constraints in §4.1; it takes and mutates `elementMap`; add its constraint row; it runs before `StampParentSource` and step 4 |
+| Add a wire field | Model + `///` contract (nullability, ordering, derivation) → producer in `Analyze` → unit assertion → e2e assertion → article if the caller acts on it. No field without a producer |
+| Remove / rename a wire field | Every reader in `clio/`, `clio.tests/`, `clio.mcp.e2e/`, both articles; a `!` commit |
+| Change the rules file | Catalog test for the new shape; an unusable filter must fail at authoring time; no caller-facing prose in rules |
+| New refusal | `Fail(...)` in the tool with the concrete cause; test in `MobilePageConversionGuideToolTests` |
+| Free text on the wire | Apply §9.1 first; if it survives, add its row to the table there |
+| Silent behaviour, workaround, rejected alternative | Record under `docs/knowledge/McpServer/` (`grep -ril mobile docs/knowledge/McpServer/`), `applies-to` pointing at the file |
+
+Validation before commit: `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&Module=McpServer" --no-build`.
+E2E: the `clio.mcp.e2e` converter fixtures against a seeded stand.
+
+---
+
+## 13. Known gaps
 
 | Gap | Status |
 |---|---|
-| `crt.MenuItem` has no inline contract | The bundled rules emit it; the captured mobile registry does not describe it. Named in the `mobileContracts` doc rather than implied fixed. Adjacent to ENG-96589 |
-| Properties a mobile component cannot accept are still copied | Deliberate until `MobileComponentRegistry.json` publishes real property lists — [ENG-96589](https://creatio.atlassian.net/browse/ENG-96589) |
-| `adaptiveLayout` + `tabAreaLayers` re-serialize what the operations already carry | ~10 KB. They exist for gate narration; whether that is worth the bytes is a product call, not a defect |
-| `modelConfig` + `viewModelConfig` duplicate their diffs | ~13 KB, same reasoning: provenance the caller reads, not applies |
-| `sourceStructure` overlaps `viewConfigDiff` | 111 of 155 entries repeat name/type/parentName on the reference page |
-| A type lost with **no** entry anywhere | `drop-non-converting-scope` closed the container case. A type whose every instance vanishes with no entry is still reported per type but not per element |
-| The full `clio.mcp.e2e` suite reports failures in unrelated fixtures | Baseline not established. Both converter fixtures pass or skip |
+| Properties a mobile component cannot accept are copied verbatim | Blocked on `MobileComponentRegistry.json` publishing property lists — [ENG-96589](https://creatio.atlassian.net/browse/ENG-96589) |
+| `crt.MenuItem` has no inline contract | Rules emit it; the mobile registry does not describe it |
+| `adaptiveLayout`, `tabAreaLayers`, `modelConfig`, `viewModelConfig` re-serialize data the operations / diffs carry | Provenance the caller reads, not applies; removal is a contract decision |
+| A type whose every instance vanishes is reported per type, not per element | `componentSuggestions` only |
+| `BuildRootMergeDiff` fallback is indistinguishable by field | A root merge and a targeted diff share the `*Diff` field |
 
 ---
 
-## 8. Where things live
+## 14. Where things live
 
 | Path | Role |
 |---|---|
-| `WebToMobileAnalysisService.cs` (332 KB) | The engine: every projection, every pass, the `Reason()` factory |
-| `MobilePageConversionGuideModels.cs` (89 KB) | The wire contract and `ReasonCodes` |
-| `MobilePageConversionGuideTool.cs` (48 KB) | The MCP tool, template resolution, the trigger `[Description]` |
-| `WebToMobilePageConversionRulesModels.cs` (43 KB) | The rules-file model |
-| `ExcludedComponentsPass.cs` (33 KB) | Positional exclusion |
-| `PageBusinessRuleProbe.cs` (19 KB) | Reads the source page's business-rule add-on |
-| `MobileSectionRegistrationProbe.cs` (10 KB) | Reads SysModule / workplace registration |
-| `WebToMobilePageConversionRulesCatalog.cs` (4 KB) | Loads the rules (bundled today; CDN not published) |
-| `clio/Command/McpServer/Data/WebToMobilePageConversionRules.json` | The rules data |
-| `clio/Command/PageConversionModels.cs` | The shared, converter-agnostic category enum and DTOs |
-
-Tests: `clio.tests/Command/McpServer/Tools/MobilePageConverter/` (unit, real-page regression, vocabulary) ·
-`clio.mcp.e2e/MobilePageConversionGuide*E2ETests.cs` (sandbox oracles, skipped without a seeded stand).
-
-Articles: `clio-knowledge/guidance/mcp/guides/platform/mobile/web-to-mobile-conversion.md` (the mandated
-procedure) · `web-to-mobile-reason-codes.md` (the dictionary) · `page-modification.md` (mobile page editing).
+| `WebToMobileAnalysisService.cs` | Pure engine: passes, projections, `BuildTargetedDiff`, `Reason()` |
+| `MobilePageConversionGuideModels.cs` | Wire contract, `ReasonCodes`, `DataSectionConflict` |
+| `MobilePageConversionGuideTool.cs` | MCP tool: I/O, template resolution, refusals, `[Description]` trigger |
+| `ExcludedComponentsPass.cs` | Positional exclusion |
+| `PageBusinessRuleProbe.cs` · `MobileSectionRegistrationProbe.cs` | Best-effort environment probes |
+| `WebToMobilePageConversionRulesCatalog.cs` · `WebToMobilePageConversionRulesModels.cs` | Rules loading and model |
+| `clio/Command/McpServer/Data/WebToMobilePageConversionRules.json` | Bundled rules |
+| `clio/Command/PageConversionModels.cs` | `ComponentMappingCategory` and shared DTOs |
+| `clio/Command/McpServer/Tools/MobileDiffApplyValidator.cs` · `clio/Command/SchemaValidationService.cs` | Downstream enforcement (§9.4) |
+| `clio-knowledge/guidance/mcp/guides/platform/mobile/` | `web-to-mobile-conversion.md` (procedure) · `web-to-mobile-reason-codes.md` (dictionary) · `page-modification.md` |
