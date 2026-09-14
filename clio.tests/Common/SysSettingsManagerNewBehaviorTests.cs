@@ -26,6 +26,23 @@ namespace Clio.Tests.Common;
 [Category("Unit")]
 public class SysSettingsManagerNewBehaviorTests {
 
+	/// <summary>
+	/// Builds the command and its classifier over ONE logger. Two substitutes would make any future
+	/// assertion on a log line pass vacuously - the line would be written to the instance the test never
+	/// looks at.
+	/// </summary>
+	/// <param name="manager">The sys-settings manager the command reads and writes through.</param>
+	/// <param name="fileSystem">The file system, or <see langword="null"/> for an inert substitute.</param>
+	/// <param name="logger">The shared sink, or <see langword="null"/> for an inert substitute.</param>
+	/// <returns>A command whose classifier writes to the same logger it does.</returns>
+	private static SysSettingsCommand BuildCommand(ISysSettingsManager manager, IFileSystem fileSystem = null,
+		ILogger logger = null) {
+		ILogger sink = logger ?? Substitute.For<ILogger>();
+		return new SysSettingsCommand(manager, sink, fileSystem ?? Substitute.For<IFileSystem>(),
+			new OperationCorrelationIdProvider(),
+			new SysSettingFailureClassifier(sink, new OperationCorrelationIdProvider()));
+	}
+
 	#region Helpers
 
 	// Both lines a failed CLI update writes end with "(correlation-id: X)". Pulling the ID out is how a
@@ -518,7 +535,7 @@ public class SysSettingsManagerNewBehaviorTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(InsertSuccessJson);
 		ISysSettingsManager manager = BuildSut(BuildRejectedProvider(), applicationClient);
-		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(), Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(manager);
 
 		// Act
 		SysSettingCreateResult result = command.TryCreateSysSetting(
@@ -537,7 +554,7 @@ public class SysSettingsManagerNewBehaviorTests {
 		// Arrange
 		IApplicationClient applicationClient = BuildAcceptedClient();
 		ISysSettingsManager manager = BuildSut(BuildRejectedProvider(), applicationClient);
-		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(), Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(manager);
 
 		// Act
 		SysSettingCreateResult result = command.TryCreateSysSetting(
@@ -558,7 +575,7 @@ public class SysSettingsManagerNewBehaviorTests {
 	public void TryUpdateSysSetting_ShouldReportAuthenticationFailure_WhenCredentialsAreRejected() {
 		// Arrange
 		ISysSettingsManager manager = BuildSut(BuildRejectedProvider());
-		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(), Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(manager);
 
 		// Act
 		SysSettingUpdateResult result = command.TryUpdateSysSetting(
@@ -666,7 +683,7 @@ public class SysSettingsManagerNewBehaviorTests {
 		List<string> loggedErrors = [];
 		logger.When(value => value.WriteError(Arg.Any<string>()))
 			.Do(call => loggedErrors.Add(call.ArgAt<string>(0)));
-		SysSettingsCommand command = new(manager, logger, Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(manager, null, logger);
 
 		// Act
 		command.TryUpdateSysSetting(new SysSettingsOptions {
@@ -694,7 +711,7 @@ public class SysSettingsManagerNewBehaviorTests {
 		List<string> loggedErrors = [];
 		logger.When(value => value.WriteError(Arg.Any<string>()))
 			.Do(call => loggedErrors.Add(call.ArgAt<string>(0)));
-		SysSettingsCommand command = new(manager, logger, Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(manager, null, logger);
 
 		// Act
 		command.TryUpdateSysSetting(new SysSettingsOptions {
@@ -718,7 +735,7 @@ public class SysSettingsManagerNewBehaviorTests {
 
 	// A gateway/WAF/404 page that is NOT the Creatio login page: ThrowIfSessionRejected only fires when the
 	// body PROVES a rejected session, so this shape is the one that reaches JsonSerializer.Deserialize on the
-	// write path. It is what makes SysSettingsCommand.CategorizeError's JsonException arm reachable, and
+	// write path. It is what makes SysSettingFailureClassifier.CategorizeError's JsonException arm reachable, and
 	// nothing exercised it before.
 	private const string NonJsonGatewayPage = "<html><head><title>404 Not Found</title></head><body>404</body></html>";
 
@@ -728,7 +745,7 @@ public class SysSettingsManagerNewBehaviorTests {
 	// about the operator-visible result still holds - it is pinned at the command level by
 	// SysSettingsFailureEnvelopeTests instead of by the exception type here.
 	[Test]
-	[Description("A non-JSON gateway/404 answer to InsertSysSettingRequest surfaces as a diagnosed NonJsonWriteResponseException rather than a parsed response or a bare JsonException, so the write path reaches the non-JSON arm of SysSettingsCommand.CategorizeError instead of the uncategorized \"Failed creating sys-setting.\".")]
+	[Description("A non-JSON gateway/404 answer to InsertSysSettingRequest surfaces as a diagnosed NonJsonWriteResponseException rather than a parsed response or a bare JsonException, so the write path reaches the non-JSON arm of SysSettingFailureClassifier.CategorizeError instead of the uncategorized \"Failed creating sys-setting.\".")]
 	public void InsertSysSetting_ThrowsNonJsonWriteResponseException_WhenWriteEndpointAnswersWithANonJsonPage() {
 		// Arrange
 		ISysSettingsManager sut = BuildSut(new DataProviderMock(), BuildClientAnswering(NonJsonGatewayPage));
@@ -981,7 +998,7 @@ public class SysSettingsManagerNewBehaviorTests {
 				{ "TextValue", "ENCRYPTED_BASE64_CIPHERTEXT_PAYLOAD" }
 			});
 		ISysSettingsManager managerForTryList = BuildSut(providerMock);
-		SysSettingsCommand command = new(managerForTryList, Substitute.For<ILogger>(), Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(managerForTryList);
 
 		SysSettingsListResult result = command.TryListSysSettings(new ListSysSettingsArgs("local"));
 
@@ -997,7 +1014,7 @@ public class SysSettingsManagerNewBehaviorTests {
 		Guid settingId = Guid.NewGuid();
 		DataProviderMock providerMock = SetupSysSettingsMock(settingId, "UsrEmptySecret", "SecureText", valueRow: null);
 		ISysSettingsManager managerForTryList = BuildSut(providerMock);
-		SysSettingsCommand command = new(managerForTryList, Substitute.For<ILogger>(), Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(managerForTryList);
 
 		SysSettingsListResult result = command.TryListSysSettings(new ListSysSettingsArgs("local"));
 
@@ -1029,7 +1046,7 @@ public class SysSettingsManagerNewBehaviorTests {
 		});
 		providerMock.MockItems("SysSettingsValue").Returns(new List<Dictionary<string, object>>());
 		ISysSettingsManager managerForTryList = BuildSut(providerMock);
-		SysSettingsCommand command = new(managerForTryList, Substitute.For<ILogger>(), Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(managerForTryList);
 
 		// Act
 		SysSettingsListResult result = command.TryListSysSettings(new ListSysSettingsArgs("local"));
@@ -1481,7 +1498,7 @@ public class SysSettingsManagerNewBehaviorTests {
 		IDataProvider dataProvider = new ClassifyingDataProvider(new ThrowingDataProvider(
 			() => new HttpRequestException("Connection refused at http://localhost:40124")));
 		ISysSettingsManager manager = BuildSut(dataProvider);
-		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(), Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(manager);
 
 		// Act
 		SysSettingUpdateResult result = command.TryUpdateSysSetting(
@@ -1501,7 +1518,7 @@ public class SysSettingsManagerNewBehaviorTests {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(LoginPageBody);
 		ISysSettingsManager manager = BuildSut(new DataProviderMock(), applicationClient);
-		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(), Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(manager);
 
 		// Act
 		SysSettingCreateResult result = command.TryCreateSysSetting(
@@ -1575,7 +1592,7 @@ public class SysSettingsManagerNewBehaviorTests {
 	public void SysSettingsCommand_Get_ShouldThrowAuthenticationException_WhenCredentialsAreRejected() {
 		// Arrange
 		ISysSettingsManager manager = BuildSut(BuildRejectedProvider());
-		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(), Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(manager);
 
 		// Act
 		Action act = () => command.Execute(new SysSettingsOptions { Code = "MaxFileSize", IsGet = true });
@@ -1592,7 +1609,8 @@ public class SysSettingsManagerNewBehaviorTests {
 		SysSettingsManager manager = (SysSettingsManager)BuildSut(BuildRejectedProvider());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>()).Returns(manager);
-		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SchemaNamePrefixTool tool = new(commandResolver,
+			new SysSettingFailureClassifier(Substitute.For<ILogger>(), new OperationCorrelationIdProvider()));
 
 		// Act
 		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("local"));
@@ -1611,7 +1629,8 @@ public class SysSettingsManagerNewBehaviorTests {
 		SysSettingsManager manager = (SysSettingsManager)BuildSut(BuildRejectedProvider(LoginPageParserError));
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsManager>(Arg.Any<EnvironmentOptions>()).Returns(manager);
-		SchemaNamePrefixTool tool = new(commandResolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SchemaNamePrefixTool tool = new(commandResolver,
+			new SysSettingFailureClassifier(Substitute.For<ILogger>(), new OperationCorrelationIdProvider()));
 
 		// Act
 		SchemaNamePrefixResult result = tool.GetSchemaNamePrefix(new GetSchemaNamePrefixArgs("local"));
@@ -2026,7 +2045,7 @@ public class SysSettingsManagerNewBehaviorTests {
 
 		// Assert
 		NonJsonWriteResponseException exception = act.Should().Throw<NonJsonWriteResponseException>(
-			because: "JObject.Parse raises a Newtonsoft JsonReaderException, which derives from no System.Text.Json type and so matched no arm of CategorizeFailure").Which;
+			because: "JObject.Parse raises a Newtonsoft JsonReaderException, which derives from no System.Text.Json type and so matched no arm of ISysSettingFailureClassifier.Categorize").Which;
 		exception.Message.Should().Contain("Failed resolving a lookup value",
 			because: "the operator has to know which step of the Lookup write failed");
 	}
@@ -2065,8 +2084,7 @@ public class SysSettingsManagerNewBehaviorTests {
 			.ExecutePostRequest(Arg.Is<string>(url => url.Contains("PostSysSettingsValues")), Arg.Any<string>())
 			.Returns(NonJsonGatewayPage);
 		ISysSettingsManager manager = BuildSut(new DataProviderMock(), applicationClient);
-		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(),
-			Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(manager);
 
 		// Act
 		SysSettingCreateResult result = command.TryCreateSysSetting(
@@ -2095,8 +2113,7 @@ public class SysSettingsManagerNewBehaviorTests {
 			.ExecutePostRequest(Arg.Is<string>(url => url.Contains("PostSysSettingsValues")), Arg.Any<string>())
 			.Returns(LoginPageBody);
 		ISysSettingsManager manager = BuildSut(new DataProviderMock(), applicationClient);
-		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(),
-			Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(manager);
 
 		// Act
 		SysSettingCreateResult result = command.TryCreateSysSetting(

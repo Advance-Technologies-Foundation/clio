@@ -24,17 +24,56 @@ namespace Clio.Tests.Command;
 [Category("Unit")]
 public sealed class SysSettingsFailureEnvelopeTests {
 
+	/// <summary>
+	/// Builds the command and its classifier over ONE logger. Two substitutes would make any future
+	/// assertion on a log line pass vacuously - the line would be written to the instance the test never
+	/// looks at.
+	/// </summary>
+	/// <param name="manager">The sys-settings manager the command reads and writes through.</param>
+	/// <param name="fileSystem">The file system, or <see langword="null"/> for an inert substitute.</param>
+	/// <param name="logger">The shared sink, or <see langword="null"/> for an inert substitute.</param>
+	/// <returns>A command whose classifier writes to the same logger it does.</returns>
+	private static SysSettingsCommand BuildCommand(ISysSettingsManager manager, IFileSystem fileSystem = null,
+		ILogger logger = null) {
+		ILogger sink = logger ?? Substitute.For<ILogger>();
+		return new SysSettingsCommand(manager, sink, fileSystem ?? Substitute.For<IFileSystem>(),
+			new OperationCorrelationIdProvider(),
+			new SysSettingFailureClassifier(sink, new OperationCorrelationIdProvider()));
+	}
+
+	/// <summary>
+	/// The production classifier under a substituted logger. Issue #1379 moved these operations off
+	/// <c>SysSettingsCommand</c>'s statics and behind <see cref="ISysSettingFailureClassifier"/>; what is
+	/// asserted below is unchanged, only how the tests reach it is.
+	/// </summary>
+	/// <param name="logger">The sink to assert on, or <see langword="null"/> for an inert substitute.</param>
+	/// <returns>A classifier writing to <paramref name="logger"/>.</returns>
+	private static ISysSettingFailureClassifier BuildClassifier(ILogger logger = null) =>
+		new SysSettingFailureClassifier(logger ?? Substitute.For<ILogger>(),
+			new OperationCorrelationIdProvider());
+
+	/// <summary>
+	/// The legacy message-only shorthand these assertions are written against. It lives here rather than on
+	/// the classifier because no production caller wants a failure stripped of its cause, its recovery
+	/// action and the correlation ID - that loss is what issue #1329 was about.
+	/// </summary>
+	/// <param name="ex">The failure to classify.</param>
+	/// <param name="operationLabel">The operation, as it reads inside the legacy message.</param>
+	/// <returns>The classified failure's legacy message alone.</returns>
+	private static string CategorizeError(Exception ex, string operationLabel) =>
+		BuildClassifier().Categorize(ex, operationLabel, correlationId: null).Error;
+
 	private const string Operation = "reading sys-setting";
 	private const string CorrelationId = "abc123def456";
 
 	[Test]
 	[Description("A rejected credential is categorized as Authentication and carries the fixed cause, the fixed recovery action and the supplied correlation ID.")]
-	public void CategorizeFailure_Should_Report_Authentication_With_Cause_And_Recovery() {
+	public void Categorize_Should_Report_Authentication_With_Cause_And_Recovery() {
 		// Arrange
 		UnauthorizedAccessException exception = new("denied");
 
 		// Act
-		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(exception, Operation, CorrelationId);
+		SysSettingFailure failure = BuildClassifier().Categorize(exception, Operation, CorrelationId);
 
 		// Assert
 		failure.Category.Should().Be(SysSettingErrorCategories.Authentication,
@@ -51,12 +90,12 @@ public sealed class SysSettingsFailureEnvelopeTests {
 
 	[Test]
 	[Description("A refused connection is categorized as Network with the network cause and recovery action rather than as a credential failure.")]
-	public void CategorizeFailure_Should_Report_Network_For_A_Refused_Connection() {
+	public void Categorize_Should_Report_Network_For_A_Refused_Connection() {
 		// Arrange
 		SocketException exception = new((int)SocketError.ConnectionRefused);
 
 		// Act
-		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(exception, Operation, CorrelationId);
+		SysSettingFailure failure = BuildClassifier().Categorize(exception, Operation, CorrelationId);
 
 		// Assert
 		failure.Category.Should().Be(SysSettingErrorCategories.Network,
@@ -69,13 +108,13 @@ public sealed class SysSettingsFailureEnvelopeTests {
 
 	[Test]
 	[Description("A DataProviderFailureException is categorized as ProviderFailure and its locally composed message becomes the cause, because that message is the only diagnosis available.")]
-	public void CategorizeFailure_Should_Report_ProviderFailure_With_The_Composed_Message() {
+	public void Categorize_Should_Report_ProviderFailure_With_The_Composed_Message() {
 		// Arrange
 		DataProviderFailureException exception = new(
 			"Failed reading records from entity schema 'SysSettings': the environment answered with a non-JSON page.");
 
 		// Act
-		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(exception, Operation, CorrelationId);
+		SysSettingFailure failure = BuildClassifier().Categorize(exception, Operation, CorrelationId);
 
 		// Assert
 		failure.Category.Should().Be(SysSettingErrorCategories.ProviderFailure,
@@ -88,12 +127,12 @@ public sealed class SysSettingsFailureEnvelopeTests {
 
 	[Test]
 	[Description("An argument rejection is categorized as Validation, so a caller can tell a bad request from an unreachable environment.")]
-	public void CategorizeFailure_Should_Report_Validation_For_An_Argument_Rejection() {
+	public void Categorize_Should_Report_Validation_For_An_Argument_Rejection() {
 		// Arrange
 		ArgumentException exception = new("code is required.");
 
 		// Act
-		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(exception, Operation, CorrelationId);
+		SysSettingFailure failure = BuildClassifier().Categorize(exception, Operation, CorrelationId);
 
 		// Assert
 		failure.Category.Should().Be(SysSettingErrorCategories.Validation,
@@ -104,12 +143,12 @@ public sealed class SysSettingsFailureEnvelopeTests {
 
 	[Test]
 	[Description("A failure that matches no arm is categorized as Unknown with the fixed generic cause instead of an empty envelope.")]
-	public void CategorizeFailure_Should_Report_Unknown_For_An_Unmatched_Failure() {
+	public void Categorize_Should_Report_Unknown_For_An_Unmatched_Failure() {
 		// Arrange
 		NotSupportedException exception = new("unexpected");
 
 		// Act
-		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(exception, Operation, CorrelationId);
+		SysSettingFailure failure = BuildClassifier().Categorize(exception, Operation, CorrelationId);
 
 		// Assert
 		failure.Category.Should().Be(SysSettingErrorCategories.Unknown,
@@ -127,8 +166,8 @@ public sealed class SysSettingsFailureEnvelopeTests {
 		HttpRequestException exception = new("boom", null, HttpStatusCode.Unauthorized);
 
 		// Act
-		string message = SysSettingsCommand.CategorizeError(exception, Operation);
-		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(exception, Operation, CorrelationId);
+		string message = CategorizeError(exception, Operation);
+		SysSettingFailure failure = BuildClassifier().Categorize(exception, Operation, CorrelationId);
 
 		// Assert
 		message.Should().Be(failure.Error,
@@ -146,8 +185,7 @@ public sealed class SysSettingsFailureEnvelopeTests {
 		string loggedLine = null;
 		logger.When(l => l.WriteError(Arg.Any<string>()))
 			.Do(call => loggedLine = call.Arg<string>());
-		SysSettingsCommand command = new(manager, logger, Substitute.For<IFileSystem>(),
-			new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(manager, null, logger);
 
 		// Act
 		SysSettingGetResult result = command.TryGetSysSetting(new GetSysSettingArgs("local", "MaxFileSize"));
@@ -186,12 +224,12 @@ public sealed class SysSettingsFailureEnvelopeTests {
 
 	[Test]
 	[Description("An unresolvable environment is reported as a Configuration failure whose cause is the resolver's own actionable text, not as Unknown with 'no cause could be determined' and 'retry' - advice that makes an agent loop.")]
-	public void CategorizeFailure_Should_Report_Configuration_For_An_Unresolvable_Environment() {
+	public void Categorize_Should_Report_Configuration_For_An_Unresolvable_Environment() {
 		// Arrange
 		EnvironmentResolutionException exception = new("Environment 'ghost' is not registered.");
 
 		// Act
-		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(exception, Operation, CorrelationId);
+		SysSettingFailure failure = BuildClassifier().Categorize(exception, Operation, CorrelationId);
 
 		// Assert
 		failure.Category.Should().Be(SysSettingErrorCategories.Configuration,
@@ -213,9 +251,8 @@ public sealed class SysSettingsFailureEnvelopeTests {
 		logger.When(l => l.WriteError(Arg.Any<string>())).Do(call => lines.Add(call.Arg<string>()));
 
 		// Act
-		SysSettingFailure failure = SysSettingsCommand.CategorizeAndLog(
-			new UnauthorizedAccessException("denied"), Operation, logger,
-			new OperationCorrelationIdProvider());
+		SysSettingFailure failure = BuildClassifier(logger).CategorizeAndLog(
+			new UnauthorizedAccessException("denied"), Operation);
 
 		// Assert
 		lines.Should().ContainSingle(
@@ -234,8 +271,7 @@ public sealed class SysSettingsFailureEnvelopeTests {
 		ILogger logger = Substitute.For<ILogger>();
 		List<string> errors = [];
 		logger.When(l => l.WriteError(Arg.Any<string>())).Do(call => errors.Add(call.Arg<string>()));
-		SysSettingsCommand command = new(manager, logger, Substitute.For<IFileSystem>(),
-			new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(manager, null, logger);
 		SysSettingsOptions options = new() { Code = "UsrSetting", Value = "x", Type = "Text" };
 
 		// Act
@@ -271,8 +307,7 @@ public sealed class SysSettingsFailureEnvelopeTests {
 		ILogger logger = Substitute.For<ILogger>();
 		List<string> errors = [];
 		logger.When(l => l.WriteError(Arg.Any<string>())).Do(call => errors.Add(call.Arg<string>()));
-		SysSettingsCommand command = new(manager, logger, Substitute.For<IFileSystem>(),
-			new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(manager, null, logger);
 
 		// Act
 		SysSettingUpdateResult result = command.TryUpdateSysSetting(
@@ -296,14 +331,14 @@ public sealed class SysSettingsFailureEnvelopeTests {
 
 	[Test]
 	[Description("PR #1373 review: an EnvironmentResolutionException raised for MISSING CREDENTIALS is Authentication, not Configuration - a credential-passthrough caller has no environment to register and cannot reach reg-web-app over mcp-http.")]
-	public void CategorizeFailure_Should_Report_Authentication_For_A_Passthrough_Credential_Refusal() {
+	public void Categorize_Should_Report_Authentication_For_A_Passthrough_Credential_Refusal() {
 		// Arrange
 		EnvironmentResolutionException exception = new(
 			"Authentication material (an access token or a login/password pair) is required for credential-passthrough command execution.",
 			EnvironmentResolutionReason.Authentication);
 
 		// Act
-		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(exception, Operation, CorrelationId);
+		SysSettingFailure failure = BuildClassifier().Categorize(exception, Operation, CorrelationId);
 
 		// Assert
 		failure.Category.Should().Be(SysSettingErrorCategories.Authentication,
@@ -316,13 +351,13 @@ public sealed class SysSettingsFailureEnvelopeTests {
 
 	[Test]
 	[Description("PR #1373 review: an EnvironmentResolutionException wrapping a target-URL allowlist rejection is Validation - the request is refused, not the local configuration missing.")]
-	public void CategorizeFailure_Should_Report_Validation_For_A_Refused_Target_Url() {
+	public void Categorize_Should_Report_Validation_For_A_Refused_Target_Url() {
 		// Arrange
 		EnvironmentResolutionException exception = new("Target URL is not allowed by policy.",
 			EnvironmentResolutionReason.Validation, new InvalidOperationException("blocked"));
 
 		// Act
-		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(exception, Operation, CorrelationId);
+		SysSettingFailure failure = BuildClassifier().Categorize(exception, Operation, CorrelationId);
 
 		// Assert
 		failure.Category.Should().Be(SysSettingErrorCategories.Validation,
@@ -333,12 +368,12 @@ public sealed class SysSettingsFailureEnvelopeTests {
 
 	[Test]
 	[Description("PR #1373 review: an unregistered environment keeps Configuration and its existing recovery - the Reason default means no existing throw site changed meaning.")]
-	public void CategorizeFailure_Should_Keep_Configuration_For_An_Unregistered_Environment() {
+	public void Categorize_Should_Keep_Configuration_For_An_Unregistered_Environment() {
 		// Arrange
 		EnvironmentResolutionException exception = new("Environment 'ghost' is not registered.");
 
 		// Act
-		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(exception, Operation, CorrelationId);
+		SysSettingFailure failure = BuildClassifier().Categorize(exception, Operation, CorrelationId);
 
 		// Assert
 		failure.Category.Should().Be(SysSettingErrorCategories.Configuration,
@@ -357,8 +392,7 @@ public sealed class SysSettingsFailureEnvelopeTests {
 		ILogger logger = Substitute.For<ILogger>();
 		List<string> errors = [];
 		logger.When(l => l.WriteError(Arg.Any<string>())).Do(call => errors.Add(call.Arg<string>()));
-		SysSettingsCommand command = new(manager, logger, Substitute.For<IFileSystem>(),
-			new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(manager, null, logger);
 
 		// Act
 		SysSettingGetResult quiet = command.TryGetSysSettingQuietly(
@@ -382,8 +416,7 @@ public sealed class SysSettingsFailureEnvelopeTests {
 		ILogger logger = Substitute.For<ILogger>();
 		List<string> errors = [];
 		logger.When(l => l.WriteError(Arg.Any<string>())).Do(call => errors.Add(call.Arg<string>()));
-		SysSettingsCommand command = new(manager, logger, Substitute.For<IFileSystem>(),
-			new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(manager, null, logger);
 
 		// Act
 		SysSettingGetResult reported = command.TryGetSysSetting(new GetSysSettingArgs("dev", "UsrSetting"));
@@ -397,14 +430,14 @@ public sealed class SysSettingsFailureEnvelopeTests {
 
 	[Test]
 	[Description("Issue #1378: the diagnosed non-JSON write failure lands in the same Network envelope the bare JsonException produced, so no agent branching on error-category and no MCP assertion changes.")]
-	public void CategorizeFailure_Should_Report_Network_For_A_Diagnosed_NonJson_Response() {
+	public void Categorize_Should_Report_Network_For_A_Diagnosed_NonJson_Response() {
 		// Arrange
 		NonJsonWriteResponseException exception = new("Failed reading sys-setting: the environment answered "
 			+ "with an HTML/XML page where a DataService JSON response was expected.",
 			NonJsonWriteResponseKind.NotJson, serverDetail: "<html>404</html>");
 
 		// Act
-		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(exception, Operation, CorrelationId);
+		SysSettingFailure failure = BuildClassifier().Categorize(exception, Operation, CorrelationId);
 
 		// Assert
 		failure.Category.Should().Be(SysSettingErrorCategories.Network,
@@ -421,13 +454,13 @@ public sealed class SysSettingsFailureEnvelopeTests {
 
 	[Test]
 	[Description("Issue #1378: NonJsonWriteResponseException derives from InvalidOperationException, so its arm must sit above the provider-failure and unknown arms rather than be captured by them.")]
-	public void CategorizeFailure_Should_Not_Report_A_NonJson_Response_As_ProviderFailure() {
+	public void Categorize_Should_Not_Report_A_NonJson_Response_As_ProviderFailure() {
 		// Arrange
 		NonJsonWriteResponseException exception = new("Failed creating sys-setting: non-JSON.",
 			NonJsonWriteResponseKind.NotJson);
 
 		// Act
-		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(exception, Operation, CorrelationId);
+		SysSettingFailure failure = BuildClassifier().Categorize(exception, Operation, CorrelationId);
 
 		// Assert
 		failure.Category.Should().Be(SysSettingErrorCategories.Network,
@@ -438,13 +471,13 @@ public sealed class SysSettingsFailureEnvelopeTests {
 
 	[Test]
 	[Description("Issue #1378: a valid-JSON-wrong-shape answer keeps the Network category but must not repeat the not-JSON cause, which names a proxy or WAF page that demonstrably is not what answered.")]
-	public void CategorizeFailure_Should_Report_Its_Own_Cause_For_An_Unexpected_Response_Shape() {
+	public void Categorize_Should_Report_Its_Own_Cause_For_An_Unexpected_Response_Shape() {
 		// Arrange
 		NonJsonWriteResponseException exception = new("Failed reading sys-setting: unexpected shape.",
 			NonJsonWriteResponseKind.UnexpectedShape, serverDetail: "{\"id\":null}");
 
 		// Act
-		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(exception, Operation, CorrelationId);
+		SysSettingFailure failure = BuildClassifier().Categorize(exception, Operation, CorrelationId);
 
 		// Assert
 		failure.Category.Should().Be(SysSettingErrorCategories.Network,

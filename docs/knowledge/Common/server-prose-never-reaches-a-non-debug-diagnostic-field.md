@@ -8,6 +8,7 @@ applies-to:
   - clio/Common/DataProviderFailureException.cs
   - clio/Common/NonJsonWriteResponseException.cs
   - clio/Command/SysSettingsCommand.cs
+  - clio/Command/SysSettingFailureClassifier.cs
   - clio/Command/McpServer/SensitiveErrorTextRedactor.cs
   - clio/ExceptionReadableMessageExtension.cs
   - clio/Common/ServerReportedFailureText.cs
@@ -80,7 +81,7 @@ terminal to drop. It does implement `IAuthoritativeErrorMessage` — without tha
 quotes the offending JSON path and value in its own message, so server-chosen bytes reach an MCP
 envelope unfenced and uncapped. A carrier whose message is authoritative must say so.
 
-`SysSettingsCommand.WriteAndForwardFailureLine` is the one path that keeps the fence while writing to the
+`SysSettingFailureClassifier.LogFailureLine` is the one path that keeps the fence while writing to the
 console, because the same line is forwarded to `McpLogNotifier` — it *is* MCP-visible. What changed there
 is only that `DescribeFailureForLog` no longer prints the same composed diagnostic as both `Error` and
 `Cause`, which used to put two fence pairs on one line.

@@ -252,7 +252,7 @@ internal static partial class SensitiveErrorTextRedactor {
 	/// <remarks>
 	/// An outer cap applied to a composed diagnostic is not the same problem as the cap inside
 	/// <see cref="NeutralizeOrNull"/>: that one clamps the payload BEFORE appending the suffix, so the
-	/// closer always survives. A caller that re-caps the finished message (<c>SysSettingsCommand.SafeDetail</c>
+	/// closer always survives. A caller that re-caps the finished message (<c>SysSettingFailureClassifier.SafeDetail</c>
 	/// re-capping <c>DataProviderFailureException.Message</c>, which is
 	/// <c>ServerReportedFailureText.ComposeMessage</c>'s fenced output) cuts the closer off instead,
 	/// leaving an opener with no terminator. Every field emitted after such a message - <c>error-category</c>,

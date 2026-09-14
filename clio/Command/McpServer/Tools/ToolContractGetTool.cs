@@ -555,7 +555,7 @@ internal static class ToolContractCatalog {
 	// the correlation ID beside the legacy message, so an agent has something to act on and an operator
 	// can find the matching log line.
 	// PR #1373 review (Blocker) — COMPOSED from the SysSettingErrorCategories constants, not retyped. The hand-
-	// written list had already drifted: it omitted `Configuration`, which `CategorizeFailure` returns for every
+	// written list had already drifted: it omitted `Configuration`, which `ISysSettingFailureClassifier.Categorize` returns for every
 	// `EnvironmentResolutionException` (an unregistered environment - the most common failure an agent hits, and
 	// the one arm carrying actionable recovery advice). Per
 	// docs/knowledge/McpServer/curated-tool-contract-wins-over-the-description-attribute.md this curated string can
@@ -570,7 +570,7 @@ internal static class ToolContractCatalog {
 			.OrderBy(name => name, StringComparer.Ordinal))
 		+ ". Null on success.";
 	// PR #1373 review — the previous wording claimed `cause` is "never composed from server prose", which
-	// `CategorizeFailure` does not honour: the `ProviderFailure` arm sets it from `DataProviderFailureException.Message`,
+	// `ISysSettingFailureClassifier.Categorize` does not honour: the `ProviderFailure` arm sets it from `DataProviderFailureException.Message`,
 	// built from the environment's HTTP response. Advertising a trust label the code does not keep is worse than no
 	// label - an agent would read environment-influenced text as trusted local guidance, the prompt-injection surface
 	// issue #1333 exists to close. Keeping `Cause` strictly fixed-local for `ProviderFailure` (the reviewer's preferred

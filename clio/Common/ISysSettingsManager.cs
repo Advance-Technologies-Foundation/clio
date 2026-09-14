@@ -337,7 +337,7 @@ public class SysSettingsManager : ISysSettingsManager
 		//Issue #1378: same treatment as the two write endpoints, because this call is REACHED from the
 		//write path (a Lookup value given as a display name) and holds the raw body just as they do. The
 		//parser here is Newtonsoft, so its failure is a JsonReaderException that does not derive from
-		//System.Text.Json.JsonException - it matched no arm of SysSettingsCommand.CategorizeFailure and
+		//System.Text.Json.JsonException - it matched no arm of SysSettingFailureClassifier.Categorize and
 		//was reported as an uncategorised Unknown with "no cause could be determined".
 		JObject json = ParseLookupResponse(responseJson, "resolving a lookup value");
 		JArray rows = json["rows"] as JArray;
@@ -430,7 +430,7 @@ public class SysSettingsManager : ISysSettingsManager
 	/// Without this check, a rejected session on a write reached the caller as
 	/// "Failed creating sys-setting." / "... is not updated. Invalid response format.": the login page is
 	/// not JSON, so the deserializer threw a <see cref="JsonException"/> that
-	/// <c>SysSettingsCommand.CategorizeFailure</c> has no arm for. The genuinely-malformed-JSON path below is
+	/// <c>SysSettingFailureClassifier.Categorize</c> has no arm for. The genuinely-malformed-JSON path below is
 	/// unaffected, because it is only reached once this check has passed.
 	/// </para>
 	/// </remarks>
@@ -693,7 +693,7 @@ public class SysSettingsManager : ISysSettingsManager
 	/// The cliogate call is an OPTIMIZATION, not the contract: an environment without cliogate installed
 	/// answers it with a 404 whose body is not JSON, and ATF's provider does not catch on this method - so
 	/// the parser failure (a Newtonsoft <c>JsonReaderException</c>, which no arm of
-	/// <c>SysSettingsCommand.CategorizeFailure</c> recognises) escaped as an uncategorised Unknown and the
+	/// <c>SysSettingFailureClassifier.Categorize</c> recognises) escaped as an uncategorised Unknown and the
 	/// SelectQuery path below never ran. That made every reader of this method - get-schema-name-prefix
 	/// above all - report "no cause could be determined" for an environment the DataService path could
 	/// have answered, or could have diagnosed properly as a rejected session.
@@ -952,7 +952,7 @@ public class SysSettingsManager : ISysSettingsManager
 		//rather than as a bare JsonException or a `false` that says the setting was refused.
 		//It ESCAPES rather than being caught and turned into `false`, exactly like the
 		//SessionRejectedException raised from the same spot already did: the two command entry points
-		//(TryUpdateSysSetting) catch every exception and route it through CategorizeFailure, which mints
+		//(TryUpdateSysSetting) catch every exception and route it through ISysSettingFailureClassifier.Categorize, which mints
 		//the correlation ID and writes ServerDetail at debug verbosity. Returning `false` instead would
 		//report RefusedUpdateCause - "the setting may not exist, or the value did not match its type" -
 		//for a gateway page, and the excerpt would have no sink at all. The bool contract is unchanged
