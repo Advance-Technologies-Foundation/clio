@@ -32,7 +32,8 @@ internal static class ApplicationToolResultMapper {
 							column.Caption,
 							column.DataValueType,
 							column.ReferenceSchema,
-							column.Required))
+							DefaultValueConfig: column.DefaultValueConfig,
+							Required: column.Required))
 						.ToList(),
 					entity.IsVirtual))
 				.ToList(),
@@ -79,7 +80,8 @@ internal static class ApplicationToolResultMapper {
 							column.Caption,
 							column.DataValueType,
 							column.ReferenceSchema,
-							column.Required))
+							DefaultValueConfig: column.DefaultValueConfig,
+							Required: column.Required))
 						.ToList(),
 					result.Entity.IsVirtual),
 			result.Pages

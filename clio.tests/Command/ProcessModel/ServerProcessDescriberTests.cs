@@ -112,6 +112,64 @@ public sealed class ServerProcessDescriberTests {
 				+ "non-nullable bool, WhenWritingNull could not omit it and the payload fabricated an answer");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("A flow's label round-trips by its WIRE NAME, and this is the only place the JSON member is exercised at all: FlowLabelExpectationTests builds DescribedFlow with an object initialiser, so a renamed or dropped [JsonPropertyName] there changes nothing. The consequence of getting it wrong is not a missing field, it is a WRONG WARNING - the post-write guard reads Label typed, finds null on every flow, and tells the caller their labels did not land and their CrtProcessBuilder is out of date, on a build that worked perfectly. DescribedFlow also carries a [JsonExtensionData] bag, so the value still reaches the caller's output through AdditionalData and the describe result looks entirely correct while the guard is crying wolf.")]
+	public void Describe_ShouldRoundTripAFlowLabel() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[],"
+			+ "\"flows\":[{\"source\":\"task1\",\"target\":\"end1\",\"kind\":\"conditional\","
+			+ "\"condition\":\"[#Amount#] > 100\",\"label\":\"Above the threshold\"}],"
+			+ "\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Flows[0].Label.Should().Be("Above the threshold",
+			because: "the TYPED property is what the post-write guard reads by name; a value that only survives "
+				+ "in the extension-data bag leaves the guard reporting a dropped label on a build that worked");
+		result.Value.Flows[0].Condition.Should().Be("[#Amount#] > 100",
+			because: "both fields come off the same flow, so asserting the label alone would pass on a describe "
+				+ "that dropped everything else");
+		JsonNode output = JsonNode.Parse(reserialized);
+		output["flows"]![0]!["label"]!.GetValue<string>().Should().Be("Above the threshold",
+			because: "the outbound half is separate, and this field is what the shipped guidance tells an agent "
+				+ "to read before overwriting a human's label");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A flow the server reports WITHOUT a label must not gain an explicit null on the way out. The server omits the member for an unlabelled flow - measured on a 1.6.0.8 stand - and clio mirrors that omission rather than fabricating a value. Note what this does NOT buy, because an earlier revision of the property's docblock claimed it did: absence still cannot distinguish 'this flow has no label' from 'this package predates the field', since both produce the same bytes. What it does buy is that clio does not ASSERT the first of those. Nothing tells them apart, the installed version included - clio normally refuses a package older than the one it ships, so a high number is no evidence the member is present - which is why the guidance now says to treat an all-absent read as uninformative rather than to go and check a number.")]
+	public void Describe_ShouldNotInventAFlowLabel_WhenTheServerOmitsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[],"
+			+ "\"flows\":[{\"source\":\"task1\",\"target\":\"end1\",\"kind\":\"sequence\"}],"
+			+ "\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Flows[0].Label.Should().BeNull(
+			because: "the server said nothing about a label, and clio must not turn that into a claim");
+		result.Value.Flows[0].Source.Should().Be("task1",
+			because: "the rest of the flow still round-trips; asserting the absence alone would pass on a "
+				+ "describe that dropped everything");
+		JsonNode output = JsonNode.Parse(reserialized);
+		output["flows"]![0]!.AsObject().ContainsKey("label").Should().BeFalse(
+			because: "an absent label is OMITTED, matching what the server itself does for an unlabelled flow - "
+				+ "emitting null here would only move the ambiguity into clio's own output");
+	}
+
 	/// <summary>
 	/// Caption-resolution candidates, keyed by the view's column names as ATF replays them. The family key
 	/// is per-row and REQUIRED: sharing one across every row makes distinct processes look like one family,
@@ -188,6 +246,46 @@ public sealed class ServerProcessDescriberTests {
 		client.ExecutePostRequest(DescribeUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(response);
 		return client;
+	}
+
+	[Test]
+	[Description("A best-effort read spends ONE attempt at half the timeout. It is a VERIFICATION of a "
+		+ "write that already committed, and the caller treats a failure as a caveat rather than an error, "
+		+ "so the full budget - three attempts at ten seconds - would stall the common success path for "
+		+ "about half a minute to establish something that then gets reported as unverified anyway. The "
+		+ "population that pays all of it is the one these guards target: an environment whose "
+		+ "DescribeProcess route is failing. Asserted here because every other stub in this fixture passes "
+		+ "Arg.Any<int>() in both positions, so deleting the whole budget leaves the suite green.")]
+	public void Describe_ShouldSpendTheShortBudget_WhenBestEffort() {
+		// Arrange
+		IApplicationClient client = ClientReturning(GraphResponse(RootUId));
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		describer.Describe(new ProcessIdentity("UsrProc", null, null), null,
+			includeVersionFacts: false, bestEffort: true);
+
+		// Assert
+		client.Received(1).ExecutePostRequest(DescribeUrl, Arg.Any<string>(), 5_000, 1, 1);
+		client.DidNotReceive().ExecutePostRequest(DescribeUrl, Arg.Any<string>(), 10_000, 3, 1);
+	}
+
+	[Test]
+	[Description("An ORDINARY read keeps the full retry budget. Here the description is the caller's "
+		+ "answer rather than a caveat on something already done, so a transient failure has to be retried "
+		+ "instead of reported. Asserted separately because a version that always took the short budget "
+		+ "would satisfy the best-effort test above.")]
+	public void Describe_ShouldSpendTheFullBudget_WhenNotBestEffort() {
+		// Arrange
+		IApplicationClient client = ClientReturning(GraphResponse(RootUId));
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		client.Received(1).ExecutePostRequest(DescribeUrl, Arg.Any<string>(), 10_000, 3, 1);
+		client.DidNotReceive().ExecutePostRequest(DescribeUrl, Arg.Any<string>(), 5_000, 1, 1);
 	}
 
 	[Test]

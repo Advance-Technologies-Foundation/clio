@@ -18,6 +18,51 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class McpToolArgumentSupportTests
 {
+	[TestCase("set-widget", "update-widget")]
+	[TestCase("UPDATE-widget", "set-widget")]
+	[Category("Unit")]
+	[Description("Equivalent set/update verbs lead only when the complete subject matches.")]
+	public void SuggestToolNames_ShouldPreferEquivalentVerb_WhenSubjectMatches(string requested, string expected) {
+		// Arrange
+		string[] candidates = ["get-widget", "set-other", "update-other", expected];
+
+		// Act
+		IReadOnlyList<string> result = McpToolArgumentSupport.SuggestToolNames(requested, candidates);
+
+		// Assert
+		result[0].Should().Be(expected, because: "synonymous intent applies only to the same subject");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Ordinary typo suggestions remain distinct, bounded, and ordered by edit distance then name.")]
+	public void SuggestToolNames_ShouldKeepLexicalRanking_WhenNoSynonymMatches() {
+		// Arrange
+		string[] candidates = ["cat", "bat", "BAT", "hat", "mat", "AT", "", " "];
+
+		// Act
+		IReadOnlyList<string> result = McpToolArgumentSupport.SuggestToolNames("at", candidates);
+
+		// Assert
+		result.Should().Equal(["bat", "cat", "hat"],
+			because: "self-matches, blank names, duplicates and fourth-place candidates must not enter the shortlist");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Oversized input retains full-name exclusion while bounding edit-distance work.")]
+	public void SuggestToolNames_ShouldExcludeFullInput_WhenNameExceedsRankingLimit() {
+		// Arrange
+		string requested = new('a', 10000);
+		string shorter = new('a', 64);
+
+		// Act
+		IReadOnlyList<string> result = McpToolArgumentSupport.SuggestToolNames(requested, [requested, shorter]);
+
+		// Assert
+		result.Should().Equal([shorter], because: "the cap must bound ranking without weakening full-input self-exclusion");
+	}
+
 	private static IReadOnlyDictionary<string, JsonElement> Overflow(params string[] keys) {
 		Dictionary<string, JsonElement> bag = new(System.StringComparer.Ordinal);
 		foreach (string key in keys) {

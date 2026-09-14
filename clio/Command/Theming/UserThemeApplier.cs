@@ -87,12 +87,7 @@ public class UserThemeApplier : IUserThemeApplier
 			return true;
 		}
 		string selector = options.Theme.Trim();
-		ListThemesOptions listOptions = new() {
-			Environment = options.Environment,
-			TimeOut = options.TimeOut,
-			MaxAttempts = options.MaxAttempts,
-			RetryDelay = options.RetryDelay
-		};
+		ListThemesOptions listOptions = ListThemesOptions.From(options);
 		IReadOnlyList<ThemeDescriptor> themes;
 		bool listed;
 		try {
@@ -166,13 +161,8 @@ public class UserThemeApplier : IUserThemeApplier
 
 	private static string BuildUnknownThemeMessage(string selector, IReadOnlyList<ThemeDescriptor> themes) {
 		if (themes.Count == 0) {
-			// list-themes returns an empty catalog both when the environment genuinely has no custom themes
-			// AND when the caller lacks the CanCustomizeBranding license (the service returns an empty list
-			// rather than an error in that case), so an empty catalog cannot be treated as definitively
-			// empty — name the license possibility alongside the create-a-theme hint.
 			return $"Theme '{selector}' was not found and no custom themes are listed on this environment. " +
-				"This can also mean the CanCustomizeBranding license is missing (list-themes returns an empty " +
-				"catalog in that case) — verify access with check-theming-access. Otherwise create a theme with " +
+				ThemeCatalogMessages.EmptyCatalogLicenseCaveat + " Otherwise create a theme with " +
 				"create-theme, or use --reset to restore the environment default.";
 		}
 		IEnumerable<string> available = themes

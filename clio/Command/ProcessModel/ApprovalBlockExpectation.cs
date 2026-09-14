@@ -368,14 +368,12 @@ public static class ApprovalBlockExpectation {
 	private static string ElementNoun(int count) => count == 1 ? "element" : "elements";
 
 	/// <summary>
-	/// Reads an element name, tolerating a node that is not a string.
-	/// <para><c>GetValue&lt;string&gt;()</c> THROWS on <c>"name": 123</c>, and this check runs AFTER a successful
-	/// operation, inside the command's try — so a payload the server happily accepted would be reported to the
-	/// caller as a failed build. The check exists to warn about a dropped block; it must never be the thing that
-	/// fails. Same idiom <see cref="EmailBlockExpectation"/> uses for the email body.</para>
+	/// Reads an element name, tolerating a node that is not a string. Delegates to
+	/// <see cref="BlockExpectationJson.ReadText"/>, which owns the reasoning: the check exists to warn about a
+	/// dropped block and must never be the thing that fails, so a non-string member answers null rather than
+	/// throwing inside the command's post-success try.
 	/// </summary>
-	private static string? ReadName(JsonNode? node) =>
-		node is JsonValue value && value.TryGetValue(out string? text) ? text : null;
+	private static string? ReadName(JsonNode? node) => BlockExpectationJson.ReadText(node);
 
 	/// <summary>
 	/// Parses caller-supplied JSON, returning null on anything malformed. A payload this cannot parse is not this

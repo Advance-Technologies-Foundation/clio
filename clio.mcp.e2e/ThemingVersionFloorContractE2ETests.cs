@@ -39,6 +39,7 @@ public sealed class ThemingVersionFloorContractE2ETests : McpContractFixtureBase
 		UpdateThemeTool.ToolName,
 		DeleteThemeTool.ToolName,
 		ListThemesTool.ToolName,
+		GetThemeTool.ToolName,
 		ClearThemesCacheTool.ToolName
 	];
 

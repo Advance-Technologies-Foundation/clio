@@ -31,7 +31,8 @@ public class AddPackageToolTests {
 			@"C:\Projects\clio-with-core-and-ui\workspace",
 			"docker_fix2",
 			true,
-			@"C:\Builds\creatio.zip"));
+			@"C:\Builds\creatio.zip",
+			"Ktl"));
 
 		// Assert
 		result.ExitCode.Should().Be(0, "because the tool should forward a valid add-package request");
@@ -40,7 +41,8 @@ public class AddPackageToolTests {
 			&& options.WorkspacePath == @"C:\Projects\clio-with-core-and-ui\workspace"
 			&& options.Environment == "docker_fix2"
 			&& options.AsApp
-			&& options.BuildZipPath == @"C:\Builds\creatio.zip"));
+			&& options.BuildZipPath == @"C:\Builds\creatio.zip"
+			&& options.SchemaNamePrefix == "Ktl"));
 		defaultCommand.CapturedOptions.Should().BeNull(
 			"because the environment-aware tool should execute the resolved command instance");
 		resolvedCommand.CapturedOptions.Should().NotBeNull("because the resolved command should receive the mapped options");
@@ -70,6 +72,34 @@ public class AddPackageToolTests {
 		resolvedCommand.CapturedOptions.Environment.Should().BeNull("because environment-name is not optional for the MCP tool");
 		resolvedCommand.CapturedOptions.AsApp.Should().BeFalse("because as-app should default to false when omitted");
 		resolvedCommand.CapturedOptions.BuildZipPath.Should().BeNull("because build-zip-path is optional");
+		resolvedCommand.CapturedOptions.SchemaNamePrefix.Should().BeNull(
+			"because an omitted schema-name-prefix must let the generator read it from the environment");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Forwards an empty schema-name-prefix unchanged so both surfaces mean the same thing by it.")]
+	[Category("Unit")]
+	public void AddPackage_ShouldForwardEmptySchemaNamePrefix_WhenSentAsAnEmptyString() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeAddPackageCommand defaultCommand = new();
+		FakeAddPackageCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.ResolveWithoutEnvironment<AddPackageCommand>(Arg.Any<AddPackageOptions>())
+			.Returns(resolvedCommand);
+		WorkspacePackageTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.AddPackage(new AddPackageArgs(
+			"MyPackage", @"C:\Projects\clio-with-core-and-ui\workspace", AsApp: true,
+			SchemaNamePrefix: string.Empty));
+
+		// Assert
+		result.ExitCode.Should().Be(0, "because an explicitly empty prefix is a valid request, not an error");
+		resolvedCommand.CapturedOptions.SchemaNamePrefix.Should().BeEmpty(
+			"because empty must stay distinguishable from omitted - it is what selects between honouring "
+			+ "the caller and reading the environment - and the resolver warns about it either way");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 

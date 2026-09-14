@@ -24,15 +24,17 @@ public class LastCompilationLogCommand : RemoteCommand<LastCompilationLogOptions
 	#region Fields: Private
 
 	private readonly ICompilationLogParser _compilationLogParser;
+	private readonly ICompilationResultReader _compilationResultReader;
 
 	#endregion
 
 	#region Constructors: Public
 
 	public LastCompilationLogCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
-		ICompilationLogParser compilationLogParser)
+		ICompilationLogParser compilationLogParser, ICompilationResultReader compilationResultReader)
 		: base(applicationClient, settings){
 		_compilationLogParser = compilationLogParser;
+		_compilationResultReader = compilationResultReader;
 		EnvironmentSettings = settings;
 	}
 
@@ -73,10 +75,10 @@ public class LastCompilationLogCommand : RemoteCommand<LastCompilationLogOptions
 
 	#region Methods: Private
 
-	private string GetLastCompilationResultJson(){
-		ServicePath = "/api/ConfigurationStatus/GetLastCompilationResult";
-		return ApplicationClient.ExecuteGetRequest(ServiceUri);
-	}
+	// The endpoint moved into ICompilationResultReader when CompileConfigurationCommand became its second
+	// caller: a configuration build reads its verdict from here whenever the compile request produced no
+	// response, which on current platforms is the normal case.
+	private string GetLastCompilationResultJson() => _compilationResultReader.ReadRaw();
 
 	#endregion
 

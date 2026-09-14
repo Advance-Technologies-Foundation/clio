@@ -62,7 +62,8 @@ public sealed class LastCompilationLogToolTests {
 		resolver.Received(1).Resolve<LastCompilationLogCommand>(Arg.Is<EnvironmentOptions>(options =>
 			options.Environment == "dev"));
 		client.Received(1).ExecuteGetRequest(Arg.Is<string>(url =>
-			url.EndsWith("/api/ConfigurationStatus/GetLastCompilationResult", StringComparison.Ordinal)));
+				url.EndsWith("/api/ConfigurationStatus/GetLastCompilationResult", StringComparison.Ordinal)),
+			CompilationResultReader.ReadTimeoutMs, Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]
@@ -145,7 +146,8 @@ public sealed class LastCompilationLogToolTests {
 	private static (IApplicationClient Client, IToolCommandResolver Resolver, LastCompilationLogTool Tool)
 		CreateTool(string payload) {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
-		client.ExecuteGetRequest(Arg.Any<string>()).Returns(payload);
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(payload);
 		LastCompilationLogCommand command = CreateCommand(client);
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<LastCompilationLogCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
@@ -153,6 +155,13 @@ public sealed class LastCompilationLogToolTests {
 	}
 
 	private static LastCompilationLogCommand CreateCommand(IApplicationClient client) {
-		return new LastCompilationLogCommand(client, new EnvironmentSettings(), new CompilationLogParser());
+		EnvironmentSettings settings = new();
+		// A substituted URL builder rather than the real one: these fixtures carry no environment Uri,
+		// and the real builder rejects that before the tool under test is ever reached.
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.LastCompilationResult)
+			.Returns("http://test/0/api/ConfigurationStatus/GetLastCompilationResult");
+		return new LastCompilationLogCommand(client, settings, new CompilationLogParser(),
+			new CompilationResultReader(client, serviceUrlBuilder, new CompilationLogParser()));
 	}
 }

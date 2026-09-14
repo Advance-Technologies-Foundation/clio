@@ -18,6 +18,12 @@ that support the MCP protocol.
 The server runs until the stdin stream is closed or the process is
 terminated.
 
+Worker processes inherit `DOTNET_ROOT` (including architecture-specific variants) and
+`DOTNET_ROLL_FORWARD` from the server process. Configure these in your MCP client's
+server environment when using a non-default .NET installation or an explicit runtime
+roll-forward policy. Clio preserves that policy; it does not enable major-version
+roll-forward automatically.
+
 Available MCP tool categories:
 - application     Create, list, and inspect Creatio applications
 - entity          Create and update entity schemas (DB-first)

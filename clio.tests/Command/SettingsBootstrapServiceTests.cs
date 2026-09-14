@@ -178,8 +178,8 @@ public sealed class SettingsBootstrapServiceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Clears a legacy Autoupdate=false artifact (serialized when the field was a non-nullable bool) and stamps the settings version, restoring the enabled opt-out default.")]
-	public void GetResult_Should_Reset_Legacy_Autoupdate_False_And_Stamp_Version() {
+	[Description("Preserves legacy Autoupdate=false while stamping the settings version.")]
+	public void GetResult_ShouldPreserveLegacyAutoupdateFalse_WhenMigratingSettings() {
 		// Arrange
 		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
 		fileSystem.AddFile(SettingsRepository.AppSettingsFile, new MockFileData("""
@@ -196,12 +196,12 @@ public sealed class SettingsBootstrapServiceTests {
 		Settings persisted = JsonConvert.DeserializeObject<Settings>(persistedContent);
 
 		// Assert
-		result.Settings.Autoupdate.Clio.Enabled.Should().BeTrue(
-			because: "the legacy false must be cleared so the enabled opt-out default applies");
-		result.Report.RepairsApplied.Should().ContainSingle(repair => repair.Code == "autoupdate-legacy-default-reset",
-			because: "the migration must surface that auto-update was re-enabled so the user is informed");
-		persisted.Autoupdate.Clio.Enabled.Should().BeTrue(
-			because: "the repaired clio policy must be persisted as enabled");
+		result.Settings.Autoupdate.Clio.Enabled.Should().BeFalse(
+			because: "legacy false must remain disabled with opt-in updates");
+		result.Report.RepairsApplied.Should().NotContain(repair => repair.Code == "autoupdate-legacy-default-reset",
+			because: "migration must never re-enable auto-update");
+		persisted.Autoupdate.Clio.Enabled.Should().BeFalse(
+			because: "the clio policy must remain disabled");
 		persisted.SettingsVersion.Should().Be(3,
 			because: "the settings version must be stamped so the one-time migration never runs again");
 		persistedContent.Should().Contain("\"autoupdate\"",
@@ -283,8 +283,8 @@ public sealed class SettingsBootstrapServiceTests {
 		// Assert
 		persisted.SettingsVersion.Should().Be(3,
 			because: "new installs must be born at the current settings version so the legacy migration never runs for them");
-		result.Settings.Autoupdate.Clio.Enabled.Should().BeTrue(
-			because: "a fresh file has no autoupdate key, so the enabled opt-out default applies");
+		result.Settings.Autoupdate.Clio.Enabled.Should().BeFalse(
+			because: "a fresh file must default to disabled clio updates");
 		persisted.DeployCreatioDefaults.Should().NotBeNull(
 			because: "fresh installations must visibly persist deploy-creatio-defaults in appsettings.json");
 		persisted.DeployCreatioDefaults.SitePortRange.Should().Equal(new[] { 40100, 40199 },

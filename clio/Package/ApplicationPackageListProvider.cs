@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using Clio.Common;
 
 namespace Clio.Package
@@ -101,12 +102,16 @@ namespace Clio.Package
 
 		public IEnumerable<PackageInfo> GetPackages() => GetPackages("{}");
 
-		public IEnumerable<PackageInfo> GetPackages(string scriptData) {
+		public IEnumerable<PackageInfo> GetPackages(string scriptData) =>
+			GetPackages(scriptData, Timeout.Infinite);
+
+		/// <inheritdoc cref="IApplicationPackageListProvider.GetPackages(string, int)"/>
+		public IEnumerable<PackageInfo> GetPackages(string scriptData, int requestTimeoutMs) {
 			IReadOnlyList<SelectQueryHelper.SelectQueryFilterDefinition> filters = ParseFilters(scriptData);
 			object query = BuildSysPackageQuery(filters);
 			SysPackageSelectQueryResponseDto response =
 				SelectQueryHelper.ExecuteSelectQuery<SysPackageSelectQueryResponseDto>(
-					_applicationClient, _serviceUrlBuilder, query);
+					_applicationClient, _serviceUrlBuilder, query, requestTimeoutMs);
 			return (response.Rows ?? []).Select(CreatePackageInfo);
 		}
 
