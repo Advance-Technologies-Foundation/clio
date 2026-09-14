@@ -16,7 +16,7 @@ clio i [OPTIONS]
 ## Description
 
 Displays version information for clio, cliogate, the bundled `CrtProcessBuilder`
-package, installed knowledge bundles, and the .NET runtime
+package, installed knowledge bundles, toolkit versions per coding agent, and the .NET runtime
 environment. By default (without options), displays all component versions
 and the path to the settings file.
 
@@ -70,6 +70,10 @@ clio:   8.0.1.97
 gate:   2.0.0.38
 process-builder:   1.0.0.0
 knowledge (creatio-curated):   1.14.10
+toolkit (claude):   1.10.0
+toolkit (codex):   1.10.0
+toolkit (cursor):   not installed
+toolkit (copilot):   not installed
 dotnet: 8.0.0
 settings file path: C:\Users\username\.clio\appsettings.json
 
@@ -77,6 +81,12 @@ Individual component output:
 clio:   8.0.1.97
 
 ## Notes
+
+- Toolkit versions are read locally for the global installations managed by `clio update-toolkit`:
+  Claude, Codex, Cursor, and Copilot. Each agent gets a separate line. Absent installations show
+  `not installed`; unreadable or missing version metadata shows `unknown (metadata unavailable)`.
+  No agent CLI or remote update check is run. Component-only options skip toolkit inspection.
+  `CODEX_HOME` and `CLAUDE_CONFIG_DIR` overrides are honored when set.
 
 - Knowledge versions are read from local installation records, including disabled sources, without
   checking publishers for updates. This reports GitHub Release and NuGet bundles; use `info-knowledge`

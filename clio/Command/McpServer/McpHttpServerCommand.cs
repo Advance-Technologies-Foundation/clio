@@ -355,7 +355,20 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 
 		ConsoleLogger.Instance.WriteInfo(
 			$"MCP HTTP server listening on http://{options.Host}:{options.Port}{options.Path}");
-		app.Run();
+		// Issue #1462 — the SAME presence marker the stdio host writes. This host is the longer-lived of
+		// the two (it runs as a scheduled service task on the development stands), and an ordinary clio
+		// command replacing its binaries mid-flight breaks it in exactly the way the stdio host was broken.
+		// mcp-http is already exempt from running the update itself; the marker is what stops OTHER clio
+		// processes from running one on its behalf.
+		IMcpHostPresenceRegistry presenceRegistry =
+			app.Services.GetRequiredService<IMcpHostPresenceRegistry>();
+		string presenceMarkerPath = presenceRegistry.Register();
+		try {
+			app.Run();
+		}
+		finally {
+			presenceRegistry.Unregister(presenceMarkerPath);
+		}
 		return 0;
 	}
 

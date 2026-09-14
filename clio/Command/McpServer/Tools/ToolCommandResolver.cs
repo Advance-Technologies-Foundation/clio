@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using Clio;
@@ -230,7 +231,7 @@ public class ToolCommandResolver(
 		if (!string.IsNullOrWhiteSpace(options.Environment)) {
 			if (!bootstrapReport.CanExecuteEnvTools) {
 				throw new EnvironmentResolutionException(
-					$"clio settings bootstrap is broken. Repair {bootstrapReport.SettingsFilePath}. Explicit uri/login/password remains available only as an emergency fallback.");
+					DescribeUnusableBootstrap(bootstrapReport));
 			}
 			if (!settingsRepository.IsEnvironmentExists(options.Environment)) {
 				throw new EnvironmentResolutionException(BuildEnvironmentNotFoundError(options.Environment));
@@ -249,13 +250,34 @@ public class ToolCommandResolver(
 			if (string.IsNullOrWhiteSpace(settings.Uri)) {
 				if (!bootstrapReport.CanExecuteEnvTools) {
 					throw new EnvironmentResolutionException(
-						$"clio settings bootstrap is broken. Repair {bootstrapReport.SettingsFilePath}. Explicit uri/login/password remains available only as an emergency fallback.");
+						DescribeUnusableBootstrap(bootstrapReport));
 				}
 				throw new EnvironmentResolutionException(
 					"Either a configured environment name or an explicit URI is required for MCP command execution. Prefer a registered environment name; use explicit URI credentials only as a bootstrap or emergency fallback.");
 			}
 		}
 		return (settings, BuildCacheKey(options, settings));
+	}
+
+	/// <summary>
+	/// Builds the caller-facing text for a bootstrap report that cannot serve environment-scoped tools.
+	/// </summary>
+	/// <remarks>
+	/// A shape mismatch means the file is INTACT and a newer clio wrote it, so "Repair the file" is
+	/// actively wrong advice there: hand-editing a valid file is what issue #1462 reported doing three
+	/// times in one session, each edit undone by the next CLI run. The only fix for that case is
+	/// restarting the resident process so it runs the new build.
+	/// </remarks>
+	private static string DescribeUnusableBootstrap(SettingsBootstrapReport bootstrapReport) {
+		if (bootstrapReport.ShapeMismatch is SettingsIssue mismatch) {
+			// The bootstrap's own message already says what failed and what fixes it - version skew or a
+			// hand-editable mistake - so it is quoted rather than paraphrased. Paraphrasing is how the two
+			// surfaces came to disagree about whether the file should be edited in the first place.
+			return $"clio settings bootstrap cannot be used by this clio build. {mismatch.Message} "
+				+ "Explicit uri/login/password remains available only as an emergency fallback.";
+		}
+		return $"clio settings bootstrap is broken. Repair {bootstrapReport.SettingsFilePath}. "
+			+ "Explicit uri/login/password remains available only as an emergency fallback.";
 	}
 
 	// Resolves a command from a per-request credential context. The SSRF/egress guard runs FIRST

@@ -23,6 +23,10 @@ DESCRIPTION
     The generated OAuth client secret is never printed. Command output shows only the
     IdentityService URL and client id.
 
+    Deployment records the resolved path, IIS target, pool and URL in the environment's
+    IdentityService component before extracting files, including with --no-app. Partial
+    failures retain cleanup metadata. Use uninstall-identity to remove that component.
+
 SYNOPSIS
     clio deploy-identity -e ENVIRONMENT [OPTIONS]
 
@@ -37,7 +41,7 @@ OPTIONS
 
     --identity-site-port PORT
         Optional. HTTP port where IdentityService will listen. When omitted, the command
-        selects the first free IIS port in range 40001-40100.
+        selects the first free IIS port in range 40001-40100. With overwrite and a recorded attachment, it reuses the recorded port.
 
     --identity-archive-path-in-bundle PATH
         Nested IdentityService archive path when --zip-file is a Creatio distribution bundle.

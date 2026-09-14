@@ -8,6 +8,8 @@ namespace Clio.Command.RelatedPages;
 /// </summary>
 internal static class RelatedPageAddonMessages {
 	internal const string EntitySchemaNameRequired = "entity-schema-name is required.";
+	internal const string TargetSchemaUIdInvalid =
+		"The related-page add-on response is missing a valid targetSchemaUId.";
 	internal const string PackageNameRequired = "package-name is required.";
 
 	// The pages list itself. Shared by the MCP tool's argument guard and the service's ValidateRequest, which
