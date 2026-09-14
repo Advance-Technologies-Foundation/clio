@@ -1409,7 +1409,8 @@ public class BindingsModule {
 	/// <returns>A poller reading that environment.</returns>
 	private static ICompilationHistoryPoller BuildEnvironmentScopedCompilationHistoryPoller(
 		EnvironmentSettings envSettings) =>
-		new CompilationHistoryPoller(BuildRemoteDataProvider(envSettings));
+		new CompilationHistoryPoller(BuildRemoteDataProvider(envSettings), ConsoleLogger.Instance,
+			TimeProvider.System, new CancellableDelay());
 
 	/// <summary>
 	/// True when the environment authenticates with a token rather than with a login and password: an

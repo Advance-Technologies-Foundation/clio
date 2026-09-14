@@ -172,7 +172,21 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 			return SetBackgroundResult.Failure(galleryError);
 		}
 		string configJson = JsonSerializer.Serialize(new { imageId = imageId.ToString(), mode = "Image" });
-		if (!_sysSettingsManager.UpdateSysSetting(BackgroundConfigCode, configJson)) {
+		//Issue #1378: the setting write no longer reports an unusable acknowledgement as `false` - a
+		//gateway or WAF page now leaves the manager as NonJsonWriteResponseException. This command's
+		//contract is a SetBackgroundResult, and the image really is in the gallery by this point, so the
+		//partial state has to be reported with the same prefix the refusal already uses rather than
+		//escaping as an exception that would lose it. The diagnosis is appended, not replaced: it is
+		//locally composed prose with the server excerpt kept on ServerDetail (issue #1333).
+		bool configWritten;
+		try {
+			configWritten = _sysSettingsManager.UpdateSysSetting(BackgroundConfigCode, configJson);
+		} catch (NonJsonWriteResponseException nonJsonEx) {
+			return SetBackgroundResult.Failure(
+				$"The image is in the background gallery, but writing the {BackgroundConfigCode} setting "
+				+ $"failed. {nonJsonEx.Message}");
+		}
+		if (!configWritten) {
 			return SetBackgroundResult.Failure(
 				$"The image is in the background gallery, but writing the {BackgroundConfigCode} setting failed.");
 		}

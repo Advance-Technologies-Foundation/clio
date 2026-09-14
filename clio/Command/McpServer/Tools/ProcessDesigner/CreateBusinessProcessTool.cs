@@ -25,9 +25,14 @@ public class CreateBusinessProcessTool(
 	/// <returns>The command execution result with the created schema identity in the log output.</returns>
 	[McpServerTool(Name = CreateBusinessProcessToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		 OpenWorld = false),
-	 Description("BEFORE CALLING with an accessRights block: that block changes who can read, edit or delete LIVE records. Show the user the target object, the element record filter that decides WHICH records are affected, and every grantee with its operations and level - calling out level:delegate as onward re-sharing, level:restrict as the platform Deny level, which is DESTRUCTIVE rather than inert: it DOWNGRADES an existing Allow row for that grantee to Deny, and on a fresh insert denies the two operations you did not name, so it deserves the same confirmation as a remove, a remove entry as a revoke, and a supplied add/remove as a REPLACEMENT that drops every entry it does not restate - and get an explicit yes. The element has no output parameters, so nothing at run time will report what it did. "
-		 + "Build a business process on a Creatio environment from a declarative JSON descriptor. The "
-		 + "descriptor is an object with: name (schema code), caption, packageName, elements[] "
+	 // The FIRST sentence is what the get-tool-contract compact index shows as this tool's one-line
+	 // purpose, and that index is the only discovery surface a non-resident tool has. It must therefore
+	 // say what the tool DOES; the accessRights warning below is no less binding for standing second,
+	 // because an agent reads the full contract before calling. See
+	 // docs/knowledge/McpServer/first-sentence-of-a-description-becomes-the-compact-index-purpose.md
+	 Description("Build a business process on a Creatio environment from a declarative JSON descriptor. "
+		 + "BEFORE CALLING with an accessRights block: that block changes who can read, edit or delete LIVE records. Show the user the target object, the element record filter that decides WHICH records are affected, and every grantee with its operations and level - calling out level:delegate as onward re-sharing, level:restrict as the platform Deny level, which is DESTRUCTIVE rather than inert: it DOWNGRADES an existing Allow row for that grantee to Deny, and on a fresh insert denies the two operations you did not name, so it deserves the same confirmation as a remove, a remove entry as a revoke, and a supplied add/remove as a REPLACEMENT that drops every entry it does not restate - and get an explicit yes. The element has no output parameters, so nothing at run time will report what it did. "
+		 + "The descriptor is an object with: name (schema code), caption, packageName, elements[] "
 		 + "({name (the element handle/local code), type:startEvent|signalStart|endEvent|userTask|sendEmail|approval|exclusiveGateway|parallelGateway|"
 		 + "openEditPage|preconfiguredPage (aliases readData/changeData/changeAccessRights/performTask), caption, userTaskName?, "
 		 + "approval? (approval elements only — the designer's Approval element, which requests a visa on a record: "
