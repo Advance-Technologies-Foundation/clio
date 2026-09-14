@@ -1,6 +1,8 @@
 ﻿using System;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Clio.Common;
 
@@ -41,7 +43,10 @@ internal enum CreatioResponseContext {
 
 }
 
-internal static class CreatioResponseError {
+internal static partial class CreatioResponseError {
+
+	/// <summary>Match timeout for the error-page title pattern, in milliseconds.</summary>
+	private const int RegexTimeoutMilliseconds = 1_000;
 
 	/// <summary>
 	/// The JSON property name carrying the human-readable error text across every envelope shape this
@@ -83,27 +88,89 @@ internal static class CreatioResponseError {
 	/// <summary>
 	/// Builds the failure text for a write response body that failed to parse as JSON.
 	/// </summary>
-	internal static string DescribeNonJsonResponse(string body) =>
-		$"Creatio did not return a JSON response. {NonJsonResponseHint} Response: {Truncate(body)}";
+	/// <remarks>
+	/// The HTTP status is named when the body is an error page that carries one in its title, because
+	/// the transport (<see cref="IApplicationClient"/>) never exposes the status itself and a caller
+	/// otherwise cannot tell a 404 (the entity has no OData controller) from a 405 or a 503. The
+	/// truncated body stays: unlike the read path, a write failure has an unverified side effect and
+	/// the raw tail is what lets a human confirm which hop answered.
+	/// </remarks>
+	internal static string DescribeNonJsonResponse(string body) {
+		string status = TryGetMarkupErrorStatusCode(body, out int statusCode)
+			? $" The server answered with an {MarkupStatusPhrase(statusCode)}."
+			: string.Empty;
+		return $"Creatio did not return a JSON response.{status} {NonJsonResponseHint} Response: {Truncate(body)}";
+	}
 
 	/// <summary>
-	/// Attempts to classify the IIS HTML 404 returned when an entity set has no OData controller.
+	/// The one noun phrase every caller uses to name an error page by the status its title states, so
+	/// the wording has a single source. It is vocabulary, not a diagnosis: what each caller says AROUND
+	/// it stays that caller's own text.
 	/// </summary>
-	/// <param name="body">The raw response body returned by the OData request.</param>
-	/// <param name="entityName">The requested OData entity set name.</param>
-	/// <param name="message">The actionable failure message when the body is an IIS 404.</param>
-	/// <returns><see langword="true"/> when the response is an IIS-style 404 page.</returns>
-	internal static bool TryDescribeMissingEntitySet(string body, string entityName, out string message) {
-		message = string.Empty;
-		if (!LooksLikeIisNotFoundPage(body)) {
+	/// <param name="statusCode">The status read out of the page title.</param>
+	internal static string MarkupStatusPhrase(int statusCode) => $"HTTP {statusCode} error page";
+
+	/// <summary>
+	/// Classifies a response body as an IIS/proxy-style HTML error page and, when its title states
+	/// one, reads the HTTP status out of it.
+	/// </summary>
+	/// <param name="body">The raw response body returned by the request.</param>
+	/// <param name="statusCode">
+	/// The HTTP status read out of the page title when the page carries one; otherwise
+	/// <see langword="null"/>.
+	/// </param>
+	/// <returns><see langword="true"/> when the response is an IIS-style HTML error page.</returns>
+	/// <remarks>
+	/// Only the classification and the three digits leave this class - never a fragment of the page,
+	/// because the caller's text lands in an MCP transcript that a model reads as trusted content. The
+	/// wording is composed by each caller on purpose: the read path, the pre-write probe and the write
+	/// path have to say different things about the same page, and the entity name such a message needs
+	/// is a caller concern that has no business in <c>Clio.Common</c>. The status is recovered from the
+	/// page rather than from the transport because <see cref="IApplicationClient"/> exposes only the
+	/// response body, never the HTTP status.
+	/// </remarks>
+	internal static bool TryClassifyMarkupError(string body, out int? statusCode) {
+		statusCode = null;
+		if (!IsMarkup(body)) {
 			return false;
 		}
-
-		message = $"OData entity set '{entityName}' could not be reached and may not be exposed over OData. "
-			+ "Use execute-esq to read schemas that do not have an OData entity set. "
-			+ "The server returned an IIS 404 page instead of an OData response.";
+		statusCode = TryGetMarkupErrorStatusCode(body, out int parsedStatusCode) ? parsedStatusCode : null;
 		return true;
 	}
+
+	/// <summary>
+	/// Reads the HTTP status out of an IIS-style error page title such as
+	/// <c>&lt;title&gt;404 - File or directory not found.&lt;/title&gt;</c>.
+	/// </summary>
+	/// <param name="body">The raw response body.</param>
+	/// <param name="statusCode">The parsed three-digit status when the title carries one.</param>
+	/// <returns><see langword="true"/> when a status could be read.</returns>
+	internal static bool TryGetMarkupErrorStatusCode(string body, out int statusCode) {
+		statusCode = 0;
+		if (string.IsNullOrEmpty(body)) {
+			return false;
+		}
+		Match titleMatch = MarkupErrorTitleStatusPattern().Match(body);
+		return titleMatch.Success
+			&& int.TryParse(titleMatch.Groups["status"].Value, NumberStyles.None, CultureInfo.InvariantCulture,
+				out statusCode);
+	}
+
+	/// <summary>
+	/// Matches the HTTP status an error page states at the start of its title, in the four shapes the
+	/// deployments in front of Creatio actually produce: the IIS short form
+	/// (<c>&lt;title&gt;404 - File or directory not found.&lt;/title&gt;</c>), the IIS detailed form
+	/// (<c>&lt;title&gt;HTTP Error 500.0 - Internal Server Error&lt;/title&gt;</c>), the nginx/Apache
+	/// form with no separator at all (<c>&lt;title&gt;502 Bad Gateway&lt;/title&gt;</c>), and a title
+	/// tag carrying attributes (<c>&lt;title lang="en"&gt;404 - ...</c>).
+	/// Only 4xx and 5xx are accepted: a page whose title starts with 200 or 302 is not stating the
+	/// status of a failure, and stamping it onto a failed read would make the member untrustworthy.
+	/// The bounded quantifiers keep a crafted body from turning this into a backtracking cost.
+	/// </summary>
+	[GeneratedRegex(
+		@"<title[^>]{0,64}>\s{0,8}(?:HTTP\s{1,4}Error\s{1,4})?(?<status>[45]\d{2})(?:\.\d{1,2})?(?=[\s\-–:<])",
+		RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
+	private static partial Regex MarkupErrorTitleStatusPattern();
 
 	/// <summary>
 	/// The fixed, locally authored diagnostic for a read whose body IS JSON and reports an error.
@@ -150,13 +217,6 @@ internal static class CreatioResponseError {
 		"Creatio did not return a JSON OData response. This points to an IIS, proxy, routing, or session "
 		+ "problem rather than an OData query-shape problem; verify the environment and retry only after the "
 		+ "endpoint is returning JSON.";
-
-	private static bool LooksLikeIisNotFoundPage(string body) {
-		string trimmedBody = body.TrimStart();
-		return trimmedBody.StartsWith("<", StringComparison.Ordinal)
-		&& body.Contains("404", StringComparison.OrdinalIgnoreCase)
-		&& body.Contains("not found", StringComparison.OrdinalIgnoreCase);
-	}
 
 	/// <summary>Truncates a raw response body to a safe preview length for error messages.</summary>
 	internal static string Truncate(string value) {

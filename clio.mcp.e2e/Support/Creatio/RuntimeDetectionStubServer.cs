@@ -174,6 +174,27 @@ const recordedRequests = [];
 
 // CSDL 4.0 served at the SERVICE-ROOT odata/$metadata. Declares only Id and Name, so any other
 // field name in an odata-update payload must be rejected before the PATCH.
+// A login marker answers in one of four ways. "drop" destroys the socket without a response, which is what a
+// Creatio site does on the first request after an application-pool start - the case issue #1428 reports, and the
+// one a status code cannot express. "redirect" is what a .NET Framework site really answers on the /0 login page.
+function serveUiMarker(request, response, mode, enabled, redirectLocation) {
+  const effective = mode || (enabled ? "ok" : "notfound");
+  if (effective === "drop") {
+    request.socket.destroy();
+    return;
+  }
+  if (effective === "redirect") {
+    response.writeHead(302, { "Location": redirectLocation });
+    response.end();
+    return;
+  }
+  if (effective === "gone") {
+    sendText(response, 410, "Gone");
+    return;
+  }
+  sendText(response, effective === "ok" ? 200 : 404, effective === "ok" ? "OK" : "Not Found");
+}
+
 function metadataCsdl(entity) {
   return '<?xml version="1.0" encoding="utf-8" standalone="no"?>'
     + '<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">'
@@ -213,6 +234,12 @@ http.createServer((request, response) => {
       return;
     }
     recordedRequests.push({ method: request.method, url: url });
+    // A stopped or recycling application pool answers 503 on every route, including the auth endpoint.
+    // It goes FIRST on purpose: the whole point of the switch is that no route answers normally.
+    if (config.AllRoutesUnavailable) {
+      sendText(response, 503, "Service Unavailable");
+      return;
+    }
     if (config.PackageSynchronizationResponse && url.endsWith("/WorkspaceExplorerService.svc/GetIsFileDesignMode")) {
       sendJson(response, 200, { success: true, value: true });
       return;
@@ -247,11 +274,11 @@ http.createServer((request, response) => {
       return;
     }
     if (request.method === "GET" && url === "/Login/Login.html") {
-      sendText(response, config.NetCoreUiMarkerEnabled ? 200 : 404, config.NetCoreUiMarkerEnabled ? "OK" : "Not Found");
+      serveUiMarker(request, response, config.NetCoreUiMarkerMode, config.NetCoreUiMarkerEnabled, "/Login/Login.html");
       return;
     }
     if (request.method === "GET" && url === "/0/Login/NuiLogin.aspx") {
-      sendText(response, config.NetFrameworkUiMarkerEnabled ? 200 : 404, config.NetFrameworkUiMarkerEnabled ? "OK" : "Not Found");
+      serveUiMarker(request, response, config.NetFrameworkUiMarkerMode, config.NetFrameworkUiMarkerEnabled, "/Login/NuiLogin.aspx");
       return;
     }
     if (config.DesignerHtmlMode && request.method === "POST"
@@ -544,6 +571,9 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	bool NetFrameworkServiceEnabled,
 	bool NetCoreUiMarkerEnabled = false,
 	bool NetFrameworkUiMarkerEnabled = false,
+	string? NetCoreUiMarkerMode = null,
+	string? NetFrameworkUiMarkerMode = null,
+	bool AllRoutesUnavailable = false,
 	string? ODataRoutingErrorEntity = null,
 	string? CoreVersion = null,
 	string? ThemeCatalogJson = null,
