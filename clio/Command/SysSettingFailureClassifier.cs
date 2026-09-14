@@ -193,7 +193,7 @@ public sealed class SysSettingFailureClassifier : ISysSettingFailureClassifier {
 	/// </remarks>
 	/// <param name="failure">The classified failure to render.</param>
 	/// <returns>The single log line.</returns>
-	internal string DescribeFailureForLog(SysSettingFailure failure) {
+	internal static string DescribeFailureForLog(SysSettingFailure failure) {
 		string cause = string.Equals(failure.Error, failure.Cause, StringComparison.Ordinal)
 			? string.Empty
 			: $"Cause: {failure.Cause} ";

@@ -169,7 +169,7 @@ public sealed class ConsoleFacingDiagnosticsTests {
 
 		// Act
 		SysSettingFailureClassifier classifier = BuildClassifier();
-		string line = classifier.DescribeFailureForLog(
+		string line = SysSettingFailureClassifier.DescribeFailureForLog(
 			classifier.Categorize(exception, "reading sys-setting", "abc123"));
 
 		// Assert
