@@ -333,7 +333,8 @@ public class SysSettingsManager : ISysSettingsManager
 		parameterObj["value"] = optsValue;
 
 		string selectQueryUrl = _serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery");
-		string responseJson = _creatioClient.ExecutePostRequest(selectQueryUrl, requestBody.ToString(NewtonsoftJson.Formatting.None));
+		string responseJson = ExecuteWriteRequest(selectQueryUrl,
+			requestBody.ToString(NewtonsoftJson.Formatting.None), "resolving a lookup value");
 		//Issue #1378: same treatment as the two write endpoints, because this call is REACHED from the
 		//write path (a Lookup value given as a display name) and holds the raw body just as they do. The
 		//parser here is Newtonsoft, so its failure is a JsonReaderException that does not derive from
@@ -521,6 +522,38 @@ public class SysSettingsManager : ISysSettingsManager
 	/// <returns>The deserialized response, never <see langword="null"/>.</returns>
 	/// <exception cref="SessionRejectedException">The body proves Creatio rejected the session.</exception>
 	/// <exception cref="NonJsonWriteResponseException">The body is not the expected DataService response.</exception>
+	/// <summary>
+	/// Runs a DataService POST and converts a JsonException raised INSIDE the client into the same
+	/// diagnosed <see cref="NonJsonWriteResponseException"/> the body-parsing path produces.
+	/// </summary>
+	/// <remarks>
+	/// Creatio.Client parses the response itself on some paths and throws <see cref="JsonException"/>
+	/// rather than returning the body - which is exactly what an upload or a re-authenticated call
+	/// answered with a login page does (<c>SysSettingsCommand</c> keeps its own <c>JsonException</c> arm
+	/// for that reason). On master the enclosing <c>catch (JsonException)</c> turned that into
+	/// <c>false</c>; once the deserialize half moved to <see cref="NonJsonWriteResponseException"/> the
+	/// client-raised one had nothing left to catch it and escaped as a bare <see cref="JsonException"/>,
+	/// past callers that now catch only the new type (PR #1488 review). Converting it here keeps ONE exit
+	/// shape for "the answer was not a DataService response", whichever layer noticed first.
+	/// <para>
+	/// The raw body is unavailable in this case - the client consumed it - so the excerpt is empty and
+	/// the clause names only what is actually known.
+	/// </para>
+	/// </remarks>
+	/// <param name="url">The DataService endpoint.</param>
+	/// <param name="requestBody">The serialized request.</param>
+	/// <param name="operationLabel">The sys-settings operation, used in the diagnostic.</param>
+	/// <returns>The raw response body.</returns>
+	/// <exception cref="NonJsonWriteResponseException">The client could not read the answer as JSON.</exception>
+	private string ExecuteWriteRequest(string url, string requestBody, string operationLabel) {
+		try {
+			return _creatioClient.ExecutePostRequest(url, requestBody);
+		} catch (JsonException clientFailure) {
+			throw BuildNotJsonFailure(rawResponse: null, operationLabel,
+				"a response the client could not read as JSON", clientFailure);
+		}
+	}
+
 	private TResponse DeserializeWriteResponse<TResponse>(string rawResponse, string operationLabel)
 		where TResponse : class {
 		ThrowIfSessionRejected(rawResponse, operationLabel);
@@ -831,7 +864,7 @@ public class SysSettingsManager : ISysSettingsManager
 		string json = sysSetting.ToString();
 		const string endpoint = "DataService/json/SyncReply/InsertSysSettingRequest";
 		string url = _serviceUrlBuilder.Build(endpoint);
-		string response = _creatioClient.ExecutePostRequest(url, json);
+		string response = ExecuteWriteRequest(url, json, "creating sys-setting");
 		return DeserializeWriteResponse<InsertSysSettingResponse>(response, "creating sys-setting");
 	}
 
@@ -946,7 +979,7 @@ public class SysSettingsManager : ISysSettingsManager
 		}, _jsonSerializerOptions);
 		string postSysSettingsValuesUrl
 			= _serviceUrlBuilder.Build("DataService/json/SyncReply/PostSysSettingsValues");
-		string result = _creatioClient.ExecutePostRequest(postSysSettingsValuesUrl, requestData);
+		string result = ExecuteWriteRequest(postSysSettingsValuesUrl, requestData, "updating sys-setting");
 		//Issue #1378: the deserialize is wrapped, and the empty-body check folded in, so every answer
 		//that is not a DataService JSON response leaves here as a diagnosed NonJsonWriteResponseException
 		//rather than as a bare JsonException or a `false` that says the setting was refused.

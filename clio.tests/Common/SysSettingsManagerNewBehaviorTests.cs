@@ -16,6 +16,7 @@ using Clio.Common;
 using Clio.Tests.Infrastructure;
 using FluentAssertions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 using mockFs = System.IO.Abstractions;
 
@@ -1790,6 +1791,52 @@ public class SysSettingsManagerNewBehaviorTests {
 	// Everything this region exercises reaches JsonSerializer.Deserialize on master: ThrowIfSessionRejected
 	// fires only when the body PROVES a rejected session, so a proxy page, an empty body and a truncated
 	// body all escaped as a bare parser fault that named a byte offset and nothing else.
+
+	// The client raising JsonException ITSELF, rather than returning a body: Creatio.Client parses some
+	// answers internally and throws when a re-authenticated call or an upload is answered with the login
+	// page. On master an enclosing catch (JsonException) turned that into `false`; after issue #1378 moved
+	// the deserialize half to NonJsonWriteResponseException it had nothing left to catch it (PR #1488
+	// review).
+	private static IApplicationClient BuildClientThrowingJsonException() {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Throws(new JsonException("'<' is an invalid start of a value."));
+		applicationClient
+			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Throws(new JsonException("'<' is an invalid start of a value."));
+		return applicationClient;
+	}
+
+	[Test]
+	[Description("A JsonException raised INSIDE the client leaves UpdateSysSetting as the same diagnosed NonJsonWriteResponseException the body-parsing path produces, so a caller that catches only the new type does not have a bare JsonException escape past it (PR #1488 review).")]
+	public void UpdateSysSetting_ThrowsNonJsonWriteResponseException_WhenTheClientItselfRaisesAJsonException() {
+		// Arrange
+		ISysSettingsManager sut = BuildSut(new DataProviderMock(), BuildClientThrowingJsonException());
+
+		// Act
+		Action act = () => sut.UpdateSysSetting("UsrAny", "value");
+
+		// Assert
+		act.Should().Throw<NonJsonWriteResponseException>(
+				because: "the answer was not a DataService response whichever layer noticed first, and one exit shape is what lets SetBackgroundImageCommand report its partial state instead of losing it")
+			.Which.InnerException.Should().BeOfType<JsonException>(
+				because: "the client's own failure is the cause and must stay reachable for a debug-level reader");
+	}
+
+	[Test]
+	[Description("The same conversion covers InsertSysSetting, so the two write endpoints do not differ in what escapes them.")]
+	public void InsertSysSetting_ThrowsNonJsonWriteResponseException_WhenTheClientItselfRaisesAJsonException() {
+		// Arrange
+		ISysSettingsManager sut = BuildSut(new DataProviderMock(), BuildClientThrowingJsonException());
+
+		// Act
+		Action act = () => sut.InsertSysSetting("Plain", "UsrPlain", "Text");
+
+		// Assert
+		act.Should().Throw<NonJsonWriteResponseException>(
+			because: "a caller cannot be expected to catch one type for the insert endpoint and two for the update one");
+	}
 
 	private static IApplicationClient BuildClientAnswering(string body) {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
