@@ -9,6 +9,7 @@ using Clio.Common;
 using FluentAssertions;
 using Microsoft.Extensions.Http;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
@@ -90,7 +91,8 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 
 		Action act = () => sut.Detect(CreateEnvironment());
 
-		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>()
+		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
+				because: "no probe distinguished the runtimes, and guessing one would misconfigure every later command")
 			.Which;
 		exception.Message.Should().Contain(BuildSelectUrl(true),
 			because: "the failure should name the .NET Core service probe URL for troubleshooting");
@@ -219,7 +221,8 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 
 		Action act = () => sut.Detect(CreateEnvironment());
 
-		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>()
+		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
+				because: "both route families answered, so nothing in the probe results names one runtime")
 			.Which;
 		exception.Message.Should().Contain("both .NET Core / NET8 and .NET Framework service probes succeeded",
 			because: "the detector should stop instead of silently guessing when both route families look valid");
@@ -258,12 +261,252 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 			Uri = "http://ts1-infr-web01:88/studioenu_14771250_0401"
 		});
 
-		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>()
+		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
+				because: "an unreachable host is a connectivity problem, not an undecidable runtime")
 			.Which;
 		exception.Message.Should().Contain("could not be reached from this machine",
 			because: "the detector should explain that the host is unreachable instead of implying a runtime mismatch");
 		exception.Message.Should().Contain("ts1-infr-web01:88",
 			because: "the diagnostic should identify which host could not be reached");
+	}
+
+	[TestCase(HttpStatusCode.NotFound)]
+	[TestCase(HttpStatusCode.Gone)]
+	[Description("Chooses .NET Framework when the .NET Core login marker answers 404 or 410 and the framework marker fails at transport level on a cold site.")]
+	public void Detect_Should_Return_False_When_NetCore_Ui_Marker_Is_Absent_And_NetFramework_Ui_Marker_Fails_To_Respond(
+		HttpStatusCode absenceStatusCode) {
+		// Arrange
+		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+		IHttpClientFactory httpClientFactory = CreateHttpClientFactory(
+			new Dictionary<string, HttpStatusCode> {
+				[BuildHealthUrl(true)] = HttpStatusCode.OK,
+				[BuildHealthUrl(false)] = HttpStatusCode.OK,
+				[BuildUiMarkerUrl(true)] = absenceStatusCode
+			},
+			new Dictionary<string, Exception> {
+				[BuildUiMarkerUrl(false)] =
+					new HttpRequestException("An existing connection was forcibly closed by the remote host.")
+			});
+		IOwnedApplicationClient netCoreClient = Substitute.For<IOwnedApplicationClient>();
+		IOwnedApplicationClient netFrameworkClient = Substitute.For<IOwnedApplicationClient>();
+		ConfigureFactory(applicationClientFactory, netCoreClient, netFrameworkClient);
+		ConfigureClientWarmup(netCoreClient, true);
+		ConfigureClientWarmup(netFrameworkClient, false);
+		ConfigureServiceFailure(netCoreClient, true, "SelectQuery failed.");
+		ConfigureServiceThrows(netFrameworkClient, false, new TaskCanceledException("A task was canceled."));
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
+
+		// Act
+		bool result = sut.Detect(CreateEnvironment());
+
+		// Assert
+		result.Should().BeFalse(
+			because: "a 404 proves Login.html is absent, while a reset connection on NuiLogin.aspx proves nothing, so the framework route is the only runtime not ruled out");
+	}
+
+	[Test]
+	[Description("Chooses .NET Core when the framework login marker answers 404 and the .NET Core marker fails at transport level on a cold site.")]
+	public void Detect_Should_Return_True_When_NetFramework_Ui_Marker_Is_NotFound_And_NetCore_Ui_Marker_Fails_To_Respond() {
+		// Arrange
+		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+		IHttpClientFactory httpClientFactory = CreateHttpClientFactory(
+			new Dictionary<string, HttpStatusCode> {
+				[BuildHealthUrl(true)] = HttpStatusCode.OK,
+				[BuildHealthUrl(false)] = HttpStatusCode.OK,
+				[BuildUiMarkerUrl(false)] = HttpStatusCode.NotFound
+			},
+			new Dictionary<string, Exception> {
+				[BuildUiMarkerUrl(true)] = new TaskCanceledException("A task was canceled.")
+			});
+		IOwnedApplicationClient netCoreClient = Substitute.For<IOwnedApplicationClient>();
+		IOwnedApplicationClient netFrameworkClient = Substitute.For<IOwnedApplicationClient>();
+		ConfigureFactory(applicationClientFactory, netCoreClient, netFrameworkClient);
+		ConfigureClientWarmup(netCoreClient, true);
+		ConfigureClientWarmup(netFrameworkClient, false);
+		ConfigureServiceFailure(netCoreClient, true, "NetCore SelectQuery failed.");
+		ConfigureServiceFailure(netFrameworkClient, false, "Framework SelectQuery failed.");
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
+
+		// Act
+		bool result = sut.Detect(CreateEnvironment());
+
+		// Assert
+		result.Should().BeTrue(
+			because: "an explicit 404 on NuiLogin.aspx rules out the framework route even when the NET8 marker never answered");
+	}
+
+	[Test]
+	[Description("Prefers an absent login marker over a lone successful health probe when no credentials are supplied and the other marker never answered.")]
+	public void Detect_Should_Prefer_An_Absent_Ui_Marker_Over_A_Lone_Health_Probe_When_Credentials_Are_Missing() {
+		// Arrange
+		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+		IHttpClientFactory httpClientFactory = CreateHttpClientFactory(
+			new Dictionary<string, HttpStatusCode> {
+				[BuildHealthUrl(true)] = HttpStatusCode.OK,
+				[BuildUiMarkerUrl(true)] = HttpStatusCode.NotFound
+			},
+			new Dictionary<string, Exception> {
+				[BuildHealthUrl(false)] = new TaskCanceledException("A task was canceled."),
+				[BuildUiMarkerUrl(false)] =
+					new HttpRequestException("An existing connection was forcibly closed by the remote host.")
+			});
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
+
+		// Act
+		bool result = sut.Detect(new EnvironmentSettings {
+			Uri = BaseUri
+		});
+
+		// Assert
+		result.Should().BeFalse(
+			because: "/api/HealthCheck/Ping also answers on a .NET Framework site, so a single successful health probe must not outweigh a 404 on Login.html");
+	}
+
+	[Test]
+	[Description("Still fails with diagnostics when both login markers answer 404 and neither runtime can be ruled in.")]
+	public void Detect_Should_Throw_When_Both_Ui_Markers_Are_NotFound() {
+		// Arrange
+		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+		IHttpClientFactory httpClientFactory = CreateHttpClientFactory(new Dictionary<string, HttpStatusCode> {
+			[BuildHealthUrl(true)] = HttpStatusCode.OK,
+			[BuildHealthUrl(false)] = HttpStatusCode.OK,
+			[BuildUiMarkerUrl(true)] = HttpStatusCode.NotFound,
+			[BuildUiMarkerUrl(false)] = HttpStatusCode.NotFound
+		});
+		IOwnedApplicationClient netCoreClient = Substitute.For<IOwnedApplicationClient>();
+		IOwnedApplicationClient netFrameworkClient = Substitute.For<IOwnedApplicationClient>();
+		ConfigureFactory(applicationClientFactory, netCoreClient, netFrameworkClient);
+		ConfigureClientWarmup(netCoreClient, true);
+		ConfigureClientWarmup(netFrameworkClient, false);
+		ConfigureServiceFailure(netCoreClient, true, "NetCore SelectQuery failed.");
+		ConfigureServiceFailure(netFrameworkClient, false, "Framework SelectQuery failed.");
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
+
+		// Act
+		Action act = () => sut.Detect(CreateEnvironment());
+
+		// Assert
+		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
+				because: "two absent markers rule out both runtimes, so guessing one of them would be worse than asking for --IsNetCore")
+			.Which;
+		exception.Message.Should().Contain("--IsNetCore true",
+			because: "the diagnostic has to tell the caller how to get past detection");
+		exception.Message.Should().Contain(BuildUiMarkerUrl(true),
+			because: "naming the probed marker URLs is what makes the failure reproducible by hand");
+	}
+
+	[Test]
+	[Description("Refuses to decide when the .NET Core login marker answers 404 but the framework marker answers a non-404 error, because that pairing is equally consistent with a wrong base URL.")]
+	public void Detect_Should_Throw_When_One_Ui_Marker_Is_NotFound_And_The_Other_Answers_A_Non_Absence_Error() {
+		// Arrange
+		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+		IHttpClientFactory httpClientFactory = CreateHttpClientFactory(new Dictionary<string, HttpStatusCode> {
+			[BuildHealthUrl(true)] = HttpStatusCode.OK,
+			[BuildHealthUrl(false)] = HttpStatusCode.OK,
+			[BuildUiMarkerUrl(true)] = HttpStatusCode.NotFound,
+			[BuildUiMarkerUrl(false)] = HttpStatusCode.Forbidden
+		});
+		IOwnedApplicationClient netCoreClient = Substitute.For<IOwnedApplicationClient>();
+		IOwnedApplicationClient netFrameworkClient = Substitute.For<IOwnedApplicationClient>();
+		ConfigureFactory(applicationClientFactory, netCoreClient, netFrameworkClient);
+		ConfigureClientWarmup(netCoreClient, true);
+		ConfigureClientWarmup(netFrameworkClient, false);
+		ConfigureServiceFailure(netCoreClient, true, "NetCore SelectQuery failed.");
+		ConfigureServiceFailure(netFrameworkClient, false, "Framework SelectQuery failed.");
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
+
+		// Act
+		Action act = () => sut.Detect(CreateEnvironment());
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+			because: "a 403 says the route answered something, not that the runtime is present, so the 404 on the other side is not enough to pick a runtime");
+	}
+
+	[Test]
+	[Description("Applies the absent-marker rule on the ambiguous path too, when both authenticated SelectQuery probes succeed.")]
+	public void Detect_Should_Return_False_When_Both_Service_Probes_Succeed_And_Only_The_NetCore_Ui_Marker_Is_Absent() {
+		// Arrange
+		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+		IHttpClientFactory httpClientFactory = CreateHttpClientFactory(
+			new Dictionary<string, HttpStatusCode> {
+				[BuildHealthUrl(true)] = HttpStatusCode.OK,
+				[BuildHealthUrl(false)] = HttpStatusCode.OK,
+				[BuildUiMarkerUrl(true)] = HttpStatusCode.NotFound
+			},
+			new Dictionary<string, Exception> {
+				[BuildUiMarkerUrl(false)] =
+					new HttpRequestException("An existing connection was forcibly closed by the remote host.")
+			});
+		IOwnedApplicationClient netCoreClient = Substitute.For<IOwnedApplicationClient>();
+		IOwnedApplicationClient netFrameworkClient = Substitute.For<IOwnedApplicationClient>();
+		ConfigureFactory(applicationClientFactory, netCoreClient, netFrameworkClient);
+		ConfigureClientWarmup(netCoreClient, true);
+		ConfigureClientWarmup(netFrameworkClient, false);
+		ConfigureServiceSuccess(netCoreClient, true);
+		ConfigureServiceSuccess(netFrameworkClient, false);
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
+
+		// Act
+		bool result = sut.Detect(CreateEnvironment());
+
+		// Assert
+		result.Should().BeFalse(
+			because: "the tie-break between two working service routes must use the same evidence rules as every other path");
+	}
+
+	[Test]
+	[Description("Counts a redirect on a login marker as the route being served, because a .NET Framework site answers the /0 login page with a 302 to the site root.")]
+	public void Detect_Should_Return_False_When_The_NetFramework_Ui_Marker_Answers_A_Redirect() {
+		// Arrange
+		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+		IHttpClientFactory httpClientFactory = CreateHttpClientFactory(new Dictionary<string, HttpStatusCode> {
+			[BuildHealthUrl(true)] = HttpStatusCode.OK,
+			[BuildHealthUrl(false)] = HttpStatusCode.OK,
+			[BuildUiMarkerUrl(true)] = HttpStatusCode.NotFound,
+			[BuildUiMarkerUrl(false)] = HttpStatusCode.Found
+		});
+		IOwnedApplicationClient netCoreClient = Substitute.For<IOwnedApplicationClient>();
+		IOwnedApplicationClient netFrameworkClient = Substitute.For<IOwnedApplicationClient>();
+		ConfigureFactory(applicationClientFactory, netCoreClient, netFrameworkClient);
+		ConfigureClientWarmup(netCoreClient, true);
+		ConfigureClientWarmup(netFrameworkClient, false);
+		ConfigureServiceFailure(netCoreClient, true, "NetCore SelectQuery failed.");
+		ConfigureServiceFailure(netFrameworkClient, false, "Framework SelectQuery failed.");
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
+
+		// Act
+		bool result = sut.Detect(CreateEnvironment());
+
+		// Assert
+		result.Should().BeFalse(
+			because: "the probe client does not follow redirects, so the 302 is the framework login page answering rather than a status borrowed from another URL");
+	}
+
+	[Test]
+	[Description("Prefers a conclusive login marker over a lone successful health probe when no credentials are supplied.")]
+	public void Detect_Should_Prefer_A_Conclusive_Ui_Marker_Over_A_Lone_Health_Probe_When_Credentials_Are_Missing() {
+		// Arrange
+		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+		IHttpClientFactory httpClientFactory = CreateHttpClientFactory(
+			new Dictionary<string, HttpStatusCode> {
+				[BuildHealthUrl(true)] = HttpStatusCode.OK,
+				[BuildUiMarkerUrl(true)] = HttpStatusCode.NotFound,
+				[BuildUiMarkerUrl(false)] = HttpStatusCode.OK
+			},
+			new Dictionary<string, Exception> {
+				[BuildHealthUrl(false)] = new TaskCanceledException("A task was canceled.")
+			});
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
+
+		// Act
+		bool result = sut.Detect(new EnvironmentSettings {
+			Uri = BaseUri
+		});
+
+		// Assert
+		result.Should().BeFalse(
+			because: "/api/HealthCheck/Ping also answers on a .NET Framework site, so a single successful health probe must not outrank the login markers");
 	}
 
 	private static void ConfigureFactory(
@@ -303,6 +546,16 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 				.Returns($"{{\"success\":false,\"errorInfo\":{{\"message\":\"{errorMessage}\"}}}}");
 	}
 
+	private static void ConfigureServiceThrows(IApplicationClient client, bool isNetCore, Exception exception) {
+		client.ExecutePostRequest(
+				BuildSelectUrl(isNetCore),
+				Arg.Any<string>(),
+				Arg.Any<int>(),
+				Arg.Any<int>(),
+				Arg.Any<int>())
+			.Throws(exception);
+	}
+
 	private static void ConfigureClientWarmup(IApplicationClient client, bool isNetCore) {
 		client.ExecuteGetRequest(
 				BuildHealthUrl(isNetCore),
@@ -324,10 +577,15 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 	private static string BuildUiMarkerUrl(bool isNetCore) =>
 		$"{BaseUri}{(isNetCore ? "/Login/Login.html" : "/0/Login/NuiLogin.aspx")}";
 
-	private static IHttpClientFactory CreateHttpClientFactory(IReadOnlyDictionary<string, HttpStatusCode> responsesByUrl) {
+	private static IHttpClientFactory CreateHttpClientFactory(IReadOnlyDictionary<string, HttpStatusCode> responsesByUrl) =>
+		CreateHttpClientFactory(responsesByUrl, new Dictionary<string, Exception>());
+
+	private static IHttpClientFactory CreateHttpClientFactory(
+		IReadOnlyDictionary<string, HttpStatusCode> responsesByUrl,
+		IReadOnlyDictionary<string, Exception> exceptionsByUrl) {
 		IHttpClientFactory httpClientFactory = Substitute.For<IHttpClientFactory>();
 		httpClientFactory.CreateClient(Arg.Any<string>())
-			.Returns(_ => new HttpClient(new StubHttpMessageHandler(responsesByUrl), disposeHandler: true));
+			.Returns(_ => new HttpClient(new StubHttpMessageHandler(responsesByUrl, exceptionsByUrl), disposeHandler: true));
 		return httpClientFactory;
 	}
 
@@ -338,11 +596,18 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 		return httpClientFactory;
 	}
 
-	private sealed class StubHttpMessageHandler(IReadOnlyDictionary<string, HttpStatusCode> responsesByUrl) : HttpMessageHandler {
+	private sealed class StubHttpMessageHandler(
+		IReadOnlyDictionary<string, HttpStatusCode> responsesByUrl,
+		IReadOnlyDictionary<string, Exception> exceptionsByUrl) : HttpMessageHandler {
 		protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) {
+			if (exceptionsByUrl.TryGetValue(request.RequestUri!.ToString(), out Exception? mappedException)) {
+				return Task.FromException<HttpResponseMessage>(mappedException);
+			}
+			// A 404 is proof that a runtime is absent, so an unmapped URL must never quietly become one - a test that
+			// forgets a route would otherwise pass for the wrong reason.
 			HttpStatusCode statusCode = responsesByUrl.TryGetValue(request.RequestUri!.ToString(), out HttpStatusCode mappedStatusCode)
 				? mappedStatusCode
-				: HttpStatusCode.NotFound;
+				: throw new InvalidOperationException($"Unmapped probe URL: {request.RequestUri}");
 			return Task.FromResult(new HttpResponseMessage(statusCode) {
 				RequestMessage = request,
 				Content = new StringContent(string.Empty)
