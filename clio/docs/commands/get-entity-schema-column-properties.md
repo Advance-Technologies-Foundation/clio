@@ -67,6 +67,12 @@ structured default-value-config
   `display-value` (the referenced record's display value, resolved in the connected user's
   culture); when it cannot be resolved, `record-resolution` carries a marker
   (`no-access`, `not-found-or-no-access`, or `display-column-unavailable`) and `display-value` is empty
+- `SystemValue` defaults on any supported column type include the native catalog
+  caption in `display-value` while preserving the canonical GUID. This identifies
+  the configured source, not its evaluated runtime value. If unavailable,
+  `source-resolution` is `invalid-source`, `unsupported-type`, `not-found-for-type`,
+  `caption-unavailable`, or `catalog-unavailable`. Catalog unavailability does not
+  imply that the stored selector is invalid. This applies to package-scoped and merged reads.
 - column type names are normalized to readable values such as Binary, Image, File, and ImageLookup
 
 ## Reporting Bugs

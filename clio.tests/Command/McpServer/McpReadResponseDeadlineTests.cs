@@ -58,6 +58,19 @@ public sealed class McpReadResponseDeadlineTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("get-theme is admitted by name even though it is ReadOnly=false (its optional output-file writes locally): it reads from Creatio and a retry re-reads + rewrites, so it is retry-safe.")]
+	public void IsRetrySafe_ShouldBeTrue_WhenToolIsGetThemeEvenIfNotReadOnly() {
+		// Arrange
+		// Act
+		bool result = McpReadDeadlineGate.IsRetrySafe(GetThemeTool.ToolName, readOnly: false, destructive: false);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "get-theme reads from Creatio (ReadOnly=false only reflects its optional local file write) and must not be excluded");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A destructive tool is never retry-safe.")]
 	public void IsRetrySafe_ShouldBeFalse_WhenDestructive() {
 		// Arrange

@@ -184,7 +184,7 @@ public sealed partial class UninstallFormViewModel : ViewModelBase {
 		ConfirmMessage = $"Are you sure you want to uninstall '{env.Name}'?";
 		ConfirmConsequence =
 			"This will DROP the database (local or containerized) and permanently REMOVE all application " +
-			"files. There is no undo.";
+			"files, including a locally attached IdentityService recorded in this environment. There is no undo.";
 		IsConfirmVisible = true;
 	}
 

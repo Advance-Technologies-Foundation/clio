@@ -9,7 +9,9 @@ date: 2026-08-19
 ---
 
 **What is true** — `clio/help/en/read-data-binding-db.txt` already states the projection rule: a
-binding ships only the columns it was created with and install supplies no default for the rest. What
+binding ships only the columns it was created with and install supplies no default for the rest.
+For local creation, that includes columns requested only through localizations; this does not invent
+a base-row value or change the installer rules below. What
 it does not say is that the mistake is one-way. Every non-key column is written with
 `"IsForceUpdate": false` (spec/data-binding/data-binding.md:75, "Always use false"), and installing a
 package whose version has not changed applies no data rows at all. Correcting the binding and

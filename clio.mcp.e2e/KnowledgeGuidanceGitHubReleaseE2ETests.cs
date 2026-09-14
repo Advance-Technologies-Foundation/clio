@@ -38,7 +38,12 @@ public sealed class KnowledgeGuidanceGitHubReleaseE2ETests : McpContractFixtureB
 
 	public KnowledgeGuidanceGitHubReleaseE2ETests() {
 		_fixture = SyntheticKnowledgeGitHubReleaseFixture.Create();
-		_initial = _fixture.PublishValid("1.0.0", sequence: 10, revision: "initial");
+		_initial = _fixture.PublishValid("1.0.0", sequence: 10, revision: "initial", requiredTools: [
+			GuidanceGetTool.ToolName, ManageUserTool.InspectToolName, ManageUserTool.ToolName,
+			ManageRoleTool.InspectToolName, ManageRoleTool.ToolName,
+			ManageAccessTool.InspectToolName, ManageAccessTool.ToolName,
+			ManageLicenseTool.InspectToolName, ManageLicenseTool.ToolName
+		]);
 	}
 
 	[OneTimeTearDown]
@@ -114,6 +119,11 @@ public sealed class KnowledgeGuidanceGitHubReleaseE2ETests : McpContractFixtureB
 			new Dictionary<string, object?> { ["source"] = SourceAlias });
 		(CallToolResult afterTamperedCall, GuidanceGetResponse afterTamperedResponse) = await CallSelectedGuide(context);
 
+		_fixture.PublishValid("1.4.0", sequence: 50, revision: "unsupported", requiredTools: ["missing-tool"]);
+		CallToolResult unsupportedUpdate = await CallKnowledgeCommand(context,
+			KnowledgeManagementTools.UpdateKnowledgeToolName,
+			new Dictionary<string, object?> { ["source"] = SourceAlias });
+		(CallToolResult afterUnsupportedCall, GuidanceGetResponse afterUnsupportedResponse) = await CallSelectedGuide(context);
 		_fixture.Api.Offline = true;
 		_fixture.Api.ResetRequests();
 		await using McpServerSession offlineSession = await McpServerSession.StartAsync(
@@ -143,6 +153,8 @@ public sealed class KnowledgeGuidanceGitHubReleaseE2ETests : McpContractFixtureB
 
 		AssertCommandFailed(tamperedUpdate, "a newer release whose bytes do not match its published digest must be refused");
 		AssertDelivered(afterTamperedCall, afterTamperedResponse, updated, "last-known-good after a tampered release");
+		AssertCommandFailed(unsupportedUpdate, "a signed bundle requiring an unknown tool must still be rejected");
+		AssertDelivered(afterUnsupportedCall, afterUnsupportedResponse, updated, "last-known-good after unsupported requirements");
 
 		AssertDelivered(offlineCall, offlineResponse, updated, "warm restart with the Releases API offline");
 		offlineRequests.Should().BeEmpty(

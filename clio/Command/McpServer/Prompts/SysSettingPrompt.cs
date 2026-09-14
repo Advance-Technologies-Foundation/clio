@@ -27,7 +27,7 @@ public static class SysSettingPrompt {
 		[Description("Display name of the sys-setting")]
 		string name,
 		[Required]
-		[Description("Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup. Aliases: Currency=Money, Decimal=Float. Binary (blob data, such as the logo) is write-only: set the value via update-sys-setting with value-file-path.")]
+		[Description("Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup. Aliases: Currency=Money, Decimal=Float. Binary stores opaque bytes: upload using update-sys-setting with value-file-path and download using clio-run command=download-sys-setting-file with a required file-name.")]
 		string valueTypeName,
 		[Description("Optional initial All-Users default value")]
 		string value = null,
@@ -42,8 +42,8 @@ public static class SysSettingPrompt {
 		 must be a Creatio internal name: `Text`, `ShortText`, `MediumText`, `LongText`, `SecureText`,
 		 `MaxSizeText`, `Boolean`, `DateTime`, `Date`, `Time`, `Integer`, `Money`, `Float`, `Lookup`.
 		 Aliases `Currency` and `Decimal` map to `Money` and `Float` respectively. `Binary` settings (a value stored
-		 as blob data, such as the logo) are write-only through clio: create the setting, then assign the value with
-		 `{SysSettingUpdateTool.UpdateSysSettingToolName}` using `value-file-path`. Reading a `Binary` value back is not exposed through MCP (the legacy CLI `get-syssetting` returns the raw Base64).
+		 as blob data, such as the logo) store opaque bytes: create the setting, then assign the value with
+		 `{SysSettingUpdateTool.UpdateSysSettingToolName}` using `value-file-path`. Download exact bytes via `clio-run` command `download-sys-setting-file` with `environment-name`, `code` and a required absolute `file-name`. No MIME type or extension is inferred.
 		 For `Lookup` settings, `reference-schema-name` is required and must reference an entity schema that exists
 		 on the target environment (e.g. `Contact`, `UsrPhoneFormat`). For non-Lookup settings, omit it.
 		 When the caller supplies an initial value, pass it via `value`; clio then invokes
@@ -91,7 +91,7 @@ public static class SysSettingPrompt {
 		 environment `{environmentName}`. The response includes code, display name, value-type-name, default
 		 value, and the cacheable/personal flags for every setting. Binary-type settings (whose value is stored as blob
 		 data, e.g. the logo) are listed too, with their value shown as `<binary>` because MCP does not surface the blob value;
-		 write them with `{SysSettingUpdateTool.UpdateSysSettingToolName}` using `value-file-path`.
+		 write them with `{SysSettingUpdateTool.UpdateSysSettingToolName}` using `value-file-path`; download them via `clio-run` command `download-sys-setting-file` with a required absolute `file-name`.
 		 Use this catalog before `{SysSettingGetTool.GetSysSettingToolName}` or
 		 `{SysSettingUpdateTool.UpdateSysSettingToolName}` when the exact setting code is unknown.
 		 """;
@@ -132,8 +132,8 @@ public static class SysSettingPrompt {
 		 blob never travels through the tool-call arguments. For Lookup settings, `value` may be a GUID or the display
 		 name of an existing lookup record; clio resolves display names to GUIDs before save. For DateTime / Date /
 		 Time, use ISO 8601. Verify a non-Binary value with `{SysSettingGetTool.GetSysSettingToolName}` when explicit
-		 confirmation is needed (for a `Binary` setting get-sys-setting returns an empty value, so treat a successful
-		 update response as the confirmation). Date and Time values may round-trip with a local-TZ offset on some
+		 confirmation is needed. For a `Binary` setting use `clio-run` command `download-sys-setting-file` with
+		 a required absolute `file-name` to verify the saved bytes. Date and Time values may round-trip with a local-TZ offset on some
 		 platform deployments — treat single-day or single-hour deltas as a platform quirk rather than a tool error.
 		 """;
 	}

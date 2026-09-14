@@ -3,6 +3,7 @@ using System.IO.Abstractions.TestingHelpers;
 using Clio;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Knowledge;
+using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using Clio.Tests.Infrastructure;
 using FluentAssertions;
@@ -21,6 +22,32 @@ namespace Clio.Tests.Command;
 [TestFixture]
 [Property("Module", "Command")]
 public class BindingsModuleMcpHostGateTests {
+	[TestCase(false)]
+	[TestCase(true)]
+	[Category("Unit")]
+	[Description("Knowledge installation uses the full enabled runtime catalog in CLI and MCP containers.")]
+	public void Register_ShouldAdvertiseEnabledKnowledgeTools_WhenHostModeChanges(bool registerMcpHost) {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		using ServiceProvider provider = (ServiceProvider)new BindingsModule(fileSystem)
+			.Register(profile: BindingsModuleRegistrationProfile.Bootstrap, registerMcpHost: registerMcpHost);
+
+		// Act
+		KnowledgeBundleClientCapabilities capabilities = provider.GetRequiredService<KnowledgeBundleClientCapabilities>();
+
+		// Assert
+		capabilities.Tools.Should().BeEquivalentTo(provider.GetRequiredService<IMcpToolInvokerRegistry>().ToolNames,
+			because: "knowledge requirements must use the same enabled catalog as runtime invocation");
+		capabilities.Tools.Should().Contain(new[] {
+			ManageUserTool.InspectToolName, ManageUserTool.ToolName,
+			ManageRoleTool.InspectToolName, ManageRoleTool.ToolName,
+			ManageAccessTool.InspectToolName, ManageAccessTool.ToolName,
+			ManageLicenseTool.InspectToolName, ManageLicenseTool.ToolName
+		}, because: "the administration requirements must be recognized, including long-tail tools");
+		capabilities.Tools.Should().NotContain("missing-tool", because: "unknown tools must remain unsupported");
+		capabilities.Tools.Should().NotContain("deploy-identity", because: "disabled tools are not runtime capabilities");
+	}
+
 	[TestCase("0.0.0")]
 	[TestCase("0.0.0.0")]
 	[Category("Unit")]
