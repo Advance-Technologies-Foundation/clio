@@ -20,42 +20,10 @@ The path may also come from the CRT_PACKAGE_STORE environment variable; it defau
 C:/Projects/PackageStore.
 """
 import collections
-import io
-import json
 import os
 import sys
 
-# The flow-element container inside a process schema's metadata. A sub-process owns its children in
-# its OWN BK4, which is why the walk below is recursive rather than a single lookup.
-ELEMENTS_KEY = "BK4"
-
-# A flow's endpoints. CI1 is the source and CI2 the target - confirmed by chaining: the flow whose
-# CI1 is the start event's UId has a CI2 that is the next flow's CI1.
-SOURCE_KEY = "CI1"
-
-# A flow's kind is read from the CLR CLASS first and the FlowType enum (CI4) second - the order the
-# run time reads them. ProcessSchemaEditSequenceFlowType: Sequence=0 (absent), Default=1.
-FLOW_CLASSES = {
-    "Terrasoft.Core.Process.ProcessSchemaSequenceFlow": "sequence",
-    "Terrasoft.Core.Process.ProcessSchemaConditionalFlow": "conditional",
-}
-FLOW_TYPE_DEFAULT = 1
-
-
-def collect_flow_elements(node, out):
-    """Appends every flow-element dict under an ELEMENTS_KEY list, sub-process children included."""
-    if isinstance(node, dict):
-        for key, value in node.items():
-            if key == ELEMENTS_KEY and isinstance(value, list):
-                for item in value:
-                    if isinstance(item, dict):
-                        out.append(item)
-                    collect_flow_elements(item, out)
-            else:
-                collect_flow_elements(value, out)
-    elif isinstance(node, list):
-        for item in node:
-            collect_flow_elements(item, out)
+from process_corpus import SOURCE_KEY, collect_flow_elements, kind_of, read_schemas, resolve_root
 
 
 def index_every_node(node, out):
@@ -80,22 +48,7 @@ def index_every_node(node, out):
             index_every_node(item, out)
 
 
-def kind_of(element):
-    """'sequence' | 'conditional' | 'default' for a flow element, None for anything that is not one."""
-    kind = FLOW_CLASSES.get(element.get("BL1"))
-    if kind is None:
-        return None
-    if kind == "conditional":
-        return "conditional"
-    return "default" if element.get("CI4") == FLOW_TYPE_DEFAULT else "sequence"
-
-
-ROOT = (sys.argv[1] if len(sys.argv) > 1
-        else os.environ.get("CRT_PACKAGE_STORE", r"C:/Projects/PackageStore"))
-if not os.path.isdir(ROOT):
-    raise SystemExit(
-        "Not a directory: %s\nPass a PackageStore checkout as the first argument, or set "
-        "CRT_PACKAGE_STORE." % ROOT)
+ROOT = resolve_root(sys.argv)
 
 schemas = 0
 skipped_metadata = []
@@ -104,21 +57,7 @@ broad_by_source_class = collections.Counter()
 unresolved = []
 examples = []
 
-for dirpath, _, filenames in os.walk(ROOT):
-    if "metadata.json" not in filenames:
-        continue
-    if (os.sep + "Schemas" + os.sep) not in (dirpath + os.sep):
-        continue
-    try:
-        with io.open(os.path.join(dirpath, "metadata.json"), encoding="utf-8-sig") as fh:
-            data = json.load(fh)
-    except (IOError, OSError, ValueError) as exc:
-        # COUNTED, not swallowed, for the reason the sibling script gives: a half-read corpus is
-        # otherwise indistinguishable from a complete one, and the number would simply shift and
-        # still look plausible. Narrowed from `except Exception` so a defect in this script raises.
-        skipped_metadata.append((dirpath, str(exc)))
-        continue
-
+for dirpath, data in read_schemas(ROOT, skipped_metadata):
     elements = []
     collect_flow_elements(data, elements)
     flows = [(element, kind) for element in elements
