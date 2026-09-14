@@ -193,6 +193,7 @@ public sealed class ServerProcessDescriber(
 			IsActiveVersion = member.IsActiveVersion,
 			IsRoot = member.IsRoot,
 			PackageUId = member.PackageUId,
+			PackageName = member.PackageName,
 			Enabled = member.Enabled
 		};
 
@@ -427,6 +428,19 @@ public sealed class DescribedProcessVersion {
 	/// <summary>UId of the package this version lives in.</summary>
 	[JsonPropertyName("packageUId")]
 	public string PackageUId { get; set; }
+
+	/// <summary>
+	/// Name of that package, absent when it could not be resolved.
+	/// </summary>
+	/// <remarks>
+	/// Published because a builder asking which package a version lives in is asking for the name — the UId
+	/// alone renders as a raw GUID in the answer they read (reported by manual testing on ENG-94374).
+	/// <see cref="PackageUId"/> stays the authority and is always present; this is read from
+	/// <c>SysPackage</c> beside the family, so absence means the package could not be NAMED, never that the
+	/// version has no package.
+	/// </remarks>
+	[JsonPropertyName("packageName")]
+	public string PackageName { get; set; }
 
 	/// <summary>
 	/// Whether the process is enabled. This is FAMILY state, not per-version state: the platform keys
