@@ -3757,54 +3757,79 @@ public sealed class WebToMobileConversionServiceTests {
 	[Test]
 	[Description("Non-replacing page: the direct parent already differs from the page's own name, so it is used verbatim — no chain climb, no behavior change.")]
 	public void ResolveEffectiveTemplateName_NonReplacing_ReturnsDirectParent() {
-		string result = MobilePageConversionGuideTool.ResolveEffectiveTemplateName(
-			Page("Leads_FormPage", "PageWithTabsFreedomTemplate"),
-			Chain("Leads_FormPage", "PageWithTabsFreedomTemplate", "BasePageFreedomTemplate"),
-			Rules);
-		result.Should().Be("PageWithTabsFreedomTemplate");
+		// Arrange
+		PageMetadataInfo page = Page("Leads_FormPage", "PageWithTabsFreedomTemplate");
+		PageBundleInfo chain = Chain("Leads_FormPage", "PageWithTabsFreedomTemplate", "BasePageFreedomTemplate");
+
+		// Act
+		string result = MobilePageConversionGuideTool.ResolveEffectiveTemplateName(page, chain, Rules);
+
+		// Assert
+		result.Should().Be("PageWithTabsFreedomTemplate",
+			because: "a non-replacing page's direct parent already differs from its own name, so it is used verbatim");
 	}
 
 	[Test]
 	[Description("Replacing form page (parentSchemaName == schemaName): climb past the same-named base to the first rule-matching template ancestor.")]
 	public void ResolveEffectiveTemplateName_ReplacingForm_ClimbsToTemplate() {
-		string result = MobilePageConversionGuideTool.ResolveEffectiveTemplateName(
-			Page("Cases_FormPage", "Cases_FormPage"),
-			Chain("Cases_FormPage", "PageWithTabsFreedomTemplate", "BasePageFreedomTemplate"),
-			Rules);
-		result.Should().Be("PageWithTabsFreedomTemplate");
+		// Arrange
+		PageMetadataInfo page = Page("Cases_FormPage", "Cases_FormPage");
+		PageBundleInfo chain = Chain("Cases_FormPage", "PageWithTabsFreedomTemplate", "BasePageFreedomTemplate");
+
+		// Act
+		string result = MobilePageConversionGuideTool.ResolveEffectiveTemplateName(page, chain, Rules);
+
+		// Assert
+		result.Should().Be("PageWithTabsFreedomTemplate",
+			because: "a replacing page (parentSchemaName == schemaName) climbs past the same-named base to the first rule-matching template ancestor");
 	}
 
 	[Test]
 	[Description("Multi-level replacing chain (page → same-named base → another same-named base → template): every same-named layer is skipped.")]
 	public void ResolveEffectiveTemplateName_MultiLevelReplacing_ClimbsPastAllSameNamed() {
-		string result = MobilePageConversionGuideTool.ResolveEffectiveTemplateName(
-			Page("Cases_FormPage", "Cases_FormPage"),
-			Chain("Cases_FormPage", "Cases_FormPage", "PageWithTabsFreedomTemplate"),
-			Rules);
-		result.Should().Be("PageWithTabsFreedomTemplate");
+		// Arrange
+		PageMetadataInfo page = Page("Cases_FormPage", "Cases_FormPage");
+		PageBundleInfo chain = Chain("Cases_FormPage", "Cases_FormPage", "PageWithTabsFreedomTemplate");
+
+		// Act
+		string result = MobilePageConversionGuideTool.ResolveEffectiveTemplateName(page, chain, Rules);
+
+		// Assert
+		result.Should().Be("PageWithTabsFreedomTemplate",
+			because: "every same-named layer in the replacing chain (page → same-named base → another same-named base) is skipped");
 	}
 
 	[Test]
 	[Description("Replacing LIST page uses the same mechanism and resolves the list template rule.")]
 	public void ResolveEffectiveTemplateName_ReplacingList_ClimbsToListTemplate() {
+		// Arrange
 		var rules = new WebToMobilePageConversionRules {
 			Templates = [new TemplateMappingRule { Web = "ListPageV3Template", Mobile = "BaseMobileListTemplate" }]
 		};
-		string result = MobilePageConversionGuideTool.ResolveEffectiveTemplateName(
-			Page("UsrDemo_ListPage", "UsrDemo_ListPage"),
-			Chain("UsrDemo_ListPage", "ListPageV3Template", "BaseTemplate"),
-			rules);
-		result.Should().Be("ListPageV3Template");
+		PageMetadataInfo page = Page("UsrDemo_ListPage", "UsrDemo_ListPage");
+		PageBundleInfo chain = Chain("UsrDemo_ListPage", "ListPageV3Template", "BaseTemplate");
+
+		// Act
+		string result = MobilePageConversionGuideTool.ResolveEffectiveTemplateName(page, chain, rules);
+
+		// Assert
+		result.Should().Be("ListPageV3Template",
+			because: "a replacing LIST page resolves through the same mechanism as a form page, onto the list template rule");
 	}
 
 	[Test]
 	[Description("Replacing page with no rule-matching ancestor falls back to the first differently-named ancestor — never the page itself.")]
 	public void ResolveEffectiveTemplateName_NoRuleMatch_ReturnsFirstDistinctAncestor() {
-		string result = MobilePageConversionGuideTool.ResolveEffectiveTemplateName(
-			Page("Foo_FormPage", "Foo_FormPage"),
-			Chain("Foo_FormPage", "Bar_BaseFormPage", "BazTemplate"),
-			Rules);
-		result.Should().Be("Bar_BaseFormPage");
+		// Arrange
+		PageMetadataInfo page = Page("Foo_FormPage", "Foo_FormPage");
+		PageBundleInfo chain = Chain("Foo_FormPage", "Bar_BaseFormPage", "BazTemplate");
+
+		// Act
+		string result = MobilePageConversionGuideTool.ResolveEffectiveTemplateName(page, chain, Rules);
+
+		// Assert
+		result.Should().Be("Bar_BaseFormPage",
+			because: "a replacing page with no rule-matching ancestor anywhere falls back to the first differently-named ancestor, never the page itself");
 	}
 
 	[Test]
@@ -3813,22 +3838,32 @@ public sealed class WebToMobileConversionServiceTests {
 		"climb past the unmapped parent to the rule-matching template instead of trusting the direct parent blindly — " +
 		"reproduces the production case of a page inheriting through PageWithTabsAndProgressBarTemplate.")]
 	public void ResolveEffectiveTemplateName_ParentIsUnmappedIntermediateTemplate_ClimbsPastIt() {
-		string result = MobilePageConversionGuideTool.ResolveEffectiveTemplateName(
-			Page("UsrPage_dlzi7uh", "PageWithTabsAndProgressBarTemplate"),
-			Chain("UsrPage_dlzi7uh", "PageWithTabsAndProgressBarTemplate", "PageWithTabsFreedomTemplate", "BasePageFreedomTemplate"),
-			Rules);
-		result.Should().Be("PageWithTabsFreedomTemplate");
+		// Arrange
+		PageMetadataInfo page = Page("UsrPage_dlzi7uh", "PageWithTabsAndProgressBarTemplate");
+		PageBundleInfo chain = Chain("UsrPage_dlzi7uh", "PageWithTabsAndProgressBarTemplate", "PageWithTabsFreedomTemplate", "BasePageFreedomTemplate");
+
+		// Act
+		string result = MobilePageConversionGuideTool.ResolveEffectiveTemplateName(page, chain, Rules);
+
+		// Assert
+		result.Should().Be("PageWithTabsFreedomTemplate",
+			because: "the direct parent is an unmapped intermediate template adding its own chrome, so resolution climbs past it to the rule-matching template instead of trusting the direct parent blindly");
 	}
 
 	[Test]
 	[Description("Direct parent is an unmapped intermediate template AND no ancestor anywhere matches a rule: falls back " +
 		"to the first differently-named ancestor (the direct parent itself), same as the no-rule-match replacing case.")]
 	public void ResolveEffectiveTemplateName_ParentIsUnmappedIntermediateTemplate_NoRuleAnywhere_ReturnsDirectParent() {
-		string result = MobilePageConversionGuideTool.ResolveEffectiveTemplateName(
-			Page("UsrPage_dlzi7uh", "SomeUnmappedIntermediateTemplate"),
-			Chain("UsrPage_dlzi7uh", "SomeUnmappedIntermediateTemplate", "SomeUnmappedRootTemplate"),
-			Rules);
-		result.Should().Be("SomeUnmappedIntermediateTemplate");
+		// Arrange
+		PageMetadataInfo page = Page("UsrPage_dlzi7uh", "SomeUnmappedIntermediateTemplate");
+		PageBundleInfo chain = Chain("UsrPage_dlzi7uh", "SomeUnmappedIntermediateTemplate", "SomeUnmappedRootTemplate");
+
+		// Act
+		string result = MobilePageConversionGuideTool.ResolveEffectiveTemplateName(page, chain, Rules);
+
+		// Assert
+		result.Should().Be("SomeUnmappedIntermediateTemplate",
+			because: "the direct parent is an unmapped intermediate template and no ancestor anywhere matches a rule, so resolution falls back to the direct parent itself, same as the no-rule-match replacing case");
 	}
 
 	[Test]

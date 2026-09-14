@@ -31,11 +31,14 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	[Test]
 	[Description("The bundled rules resource parses into the seeded template and component groups.")]
 	public void LoadBundled_ReturnsSeededTemplatesAndComponents() {
+		// Arrange & Act
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
-		rules.Should().NotBeNull();
-		rules.Version.Should().Be("latest");
-		rules.Templates.Should().Contain(t => t.Web == "PageWithTabsFreedomTemplate" && t.Mobile == "MobilePageWithTabsFreedomTemplate");
+		// Assert
+		rules.Should().NotBeNull(because: "the bundled rules resource must parse into a usable object");
+		rules.Version.Should().Be("latest", because: "the bundled rules carry the version the catalog seeds by default");
+		rules.Templates.Should().Contain(t => t.Web == "PageWithTabsFreedomTemplate" && t.Mobile == "MobilePageWithTabsFreedomTemplate",
+			because: "the tabbed record page is one of the seeded template mappings");
 		rules.Components.Should().Contain(c =>
 			c.Filters.Any(f => f.Type == "crt.DataGrid") && c.ViewConfigTemplates.Count > 0,
 			because: "the grid mapping now lives in components as a filters + viewConfigTemplates group "
@@ -379,7 +382,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		extra.Index.Should().Be(1, because: "the declared tab follows General information and precedes page-authored tabs");
 		extra.CaptionResource.Should().NotBeNull(because: "a tab needs a caption");
 		extra.CaptionResource.Key.Should().Be("RightPanelTab_caption", because: "the caption is a page resource keyed by the tab name");
-		extra.CaptionResource.Value.Should().NotBeNullOrWhiteSpace(because: "the resource must carry its text");
+		extra.CaptionResource.Value.Should().Be("Details", because: "the declared caption text is the standard right-panel tab caption");
 		rightArea.Containers.Should().Contain(c => c.Web == "RightAreaProfileContainer" && c.Mobile == "RightPanelTab",
 			because: "the right profile area walks its content into the declared tab");
 		rightArea.Containers.Should().NotContain(c => c.Web.Contains(':'),
