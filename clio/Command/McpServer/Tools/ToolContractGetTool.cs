@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Reflection;
@@ -527,7 +527,32 @@ internal static class ToolContractCatalog {
 		// The SecureText aliases are spelled out in prose rather than as `Password = SecureText`: the
 		// key-equals-value form reads as a hard-coded credential to static analysis (S2068).
 		"Other aliases: Blob = Binary, ImageLink = ImageLookup, EmailAddress = Email, " +
-		"Decimal/Float = Decimal2. The Creatio display names 'Encrypted' and 'Password' both map to SecureText.";
+		"Decimal/Float = Decimal2. The Creatio display names 'Encrypted' and 'Password' both map to SecureText. " +
+		"Most canonical names the read tools report are accepted here too: Float0-Float4/Float8 = " +
+		"Decimal0-Decimal4/Decimal8, Money0/Money1/Money3 = Currency0/Currency1/Currency3, " +
+		"PhoneText = PhoneNumber, WebText = WebLink, EmailText = Email. Three read names resolve to a " +
+		"DIFFERENT type here, so do not echo them blindly: 'Float' (the unbounded float a read reports for " +
+		"dataValueType 5) resolves to Decimal2, and 'Date'/'Time' resolve to DateTime. Read names for " +
+		"non-writable types (Enum, HashText, Collection, Entity, StageIndicator, FileLocator and the other " +
+		"structural types) are rejected — there is no way to create those columns through clio.";
+
+	// The `data-type` values are stated explicitly because a caller has to decide from them whether a column
+	// is numeric. A partial type map that fell back to "Text" once reported every decimal scale as text, and
+	// callers filtered a numeric column as a lexicographic string comparison (ENG-93202).
+	private const string DataForgeColumnsFieldDescription =
+		"Runtime column projections with `name`, `caption`, `description`, `data-type`, `required`, and " +
+		"`reference-schema-name`. `data-type` is the canonical Creatio type name — Text, Integer, Float, " +
+		"Float0-Float4/Float8 (decimal scales; Float2 is the common 'Decimal (0.01)'), Money/Money0/Money1/" +
+		"Money3 (currency scales), Boolean, DateTime, Date, Time, Lookup, Guid, ShortText/MediumText/LongText/" +
+		"MaxSizeText, PhoneText, WebText, EmailText, RichText, and so on. All Float*/Money*/Integer names are " +
+		"numeric, so compare them numerically rather than as strings. A type clio does not model yet is " +
+		"reported as its raw numeric ordinal (for example `51`) rather than as a guessed type name. " +
+		"Do NOT assume a name read here is writable: the write tools accept it back only for the types they " +
+		"can create, and three names mean a DIFFERENT type on write — " +
+		"`Float` writes Decimal2 (send Float2/Decimal2 explicitly for a scaled decimal, and note an " +
+		"unbounded Float column cannot be created by clio at all), while `Date` and `Time` both write " +
+		"DateTime. Names such as Enum, HashText, StageIndicator, Collection, Entity or FileLocator are " +
+		"read-only: the write tools reject them. Read the `type` field of those tools for the accepted list.";
 
 	// Shared by the create-lookup / create-entity-schema `columns` arrays. Spelling out the column identity
 	// field matters: these two contracts used to say only "Optional initial columns", so a caller had no way
@@ -770,6 +795,7 @@ internal static class ToolContractCatalog {
 			[FindEmptyIisPortTool.FindEmptyIisPortToolName] = BuildFindEmptyIisPort(),
 			[InstallerCommandTool.DeployCreatioToolName] = BuildDeployCreatio(),
 			[DeployIdentityTool.DeployIdentityToolName] = BuildDeployIdentity(),
+			[UninstallIdentityTool.ToolName] = BuildUninstallIdentity(),
 			[RestoreWorkspaceTool.RestoreWorkspaceToolName] = BuildRestoreWorkspace(),
 			[PushWorkspaceTool.PushWorkspaceToolName] = BuildPushWorkspace(),
 			[ListCreatioBuildsTool.ListCreatioBuildsToolName] = BuildListCreatioBuilds()
@@ -2109,7 +2135,7 @@ internal static class ToolContractCatalog {
 					Field("table-name", StringType, "Target runtime entity schema name.")),
 				OutputFields = DataForgeEnvelopeFields(
 					QueryCorrelationIdentifierDescription,
-					Field(ColumnsFieldName, ArrayType, "Runtime column projections with `name`, `caption`, `description`, `data-type`, `required`, and `reference-schema-name`.")),
+					Field(ColumnsFieldName, ArrayType, DataForgeColumnsFieldDescription)),
 				Examples = [
 					Example("Read Contact runtime columns for a configured environment", new Dictionary<string, object?> {
 						["table-name"] = ExampleContactSchemaName,
@@ -2142,7 +2168,8 @@ internal static class ToolContractCatalog {
 					Field("similar-tables", ArrayType, "Similar table results."),
 					Field("similar-lookups", ArrayType, "Similar lookup results."),
 					Field("relations", ObjectType, "Resolved relation paths keyed by source-target pair."),
-					Field(ColumnsFieldName, ObjectType, "Resolved runtime column projections keyed by table name."),
+					Field(ColumnsFieldName, ObjectType, "Resolved runtime column projections keyed by table name. "
+						+ $"Each projection has the same shape and `data-type` vocabulary as {DataForgeTool.DataForgeGetTableColumnsToolName}."),
 					Field("coverage", ObjectType, "Coverage flags for health, tables, lookups, relations, and table-columns.")),
 				Examples = [
 					Example("Aggregate app-modeling context for a configured environment", new Dictionary<string, object?> {
@@ -2210,8 +2237,8 @@ internal static class ToolContractCatalog {
 					Field(EntityFieldName, StringType, "Creatio OData entity set name, usually the referenced lookup schema name such as Contact, Account, or a custom lookup schema."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(FiltersFieldName, ObjectType, "Structured filter. all conditions join with AND; any conditions join with OR. GUID values in Id-suffixed fields and navigation paths ending in Id are automatically unquoted. Use lookup traversal paths such as Account/Id when filtering records by lookup primary value. Example: { \"all\": [{ \"field\": \"Account/Id\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }."),
-					Field(SelectFieldName, ArrayType, "Fields to return. Use [\"Id\", \"Name\"] when resolving lookup records by display value."),
-					Field("expand", ArrayType, "Navigation properties to expand."),
+					Field(SelectFieldName, ArrayType, "Array of field names to return. Use [\"Id\", \"Name\"] when resolving lookup records by display value. A comma-separated string (\"Id,Name\") is tolerated as input; an array element is always one column name and is never split on commas."),
+					Field("expand", ArrayType, "Array of navigation properties to expand. A comma-separated string (\"Account,Owner\") is tolerated as input; an array element is always one navigation name and is never split on commas."),
 					Field("order-by", StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
 					Field("top", NumberType, "Maximum number of records to return, 1-100. Default: 25. An out-of-range top (including 0 or negative) is rejected with success:false, never silently changed."),
 					Field("skip", NumberType, "Number of matching records to skip. Must be zero or greater. Use order-by for stable paging."),
@@ -2235,7 +2262,9 @@ internal static class ToolContractCatalog {
 				Field(CountFieldName, NumberType, "Number of records returned in this page."),
 				Field("total-count", NumberType, "Total records matching the filter before top/skip paging; present when count=true."),
 				Field(ValueFieldName, ArrayType, "OData value array or single entity response."),
-				Field("next-link", StringType, "OData next-link URL when more records are available; use skip with a stable order-by to request subsequent pages through this tool.")
+				Field("next-link", StringType, "OData next-link URL when more records are available; use skip with a stable order-by to request subsequent pages through this tool."),
+				Field("status-code", NumberType, "HTTP status behind a failure, present ONLY when the response was an HTML error page that states its status in its title (404 when the entity has no OData controller, 401/502/503 for an auth/proxy/outage hop). Absent otherwise: Creatio serves the JSON routing 404 with HTTP 200, and that case instead carries the wait-and-retry hint in error. Branch on both, never on status-code alone."),
+				Field(EntityFieldName, StringType, "The OData entity set the failure refers to, echoed back so several concurrent reads can be told apart. Present on every failure raised once the requested entity name is known; an argument-level rejection (a missing or malformed entity, an unsupported argument) is refused before that point and carries no entity.")
 			),
 			CommonErrorContract,
 			[
@@ -6027,16 +6056,25 @@ internal static class ToolContractCatalog {
 			]);
 	}
 
+	private static ToolContractDefinition BuildUninstallIdentity() => new(
+		UninstallIdentityTool.ToolName,
+		"Removes only the IdentityService explicitly recorded in the environment's appsettings. Preserves CRM and its database. Clears matching references before deletion, protects shared pools and retains attachment on failure. No attachment is a no-op. skip-crm-cleanup is explicit recovery: CRM settings remain stale and a warning is reported.",
+		new ToolInputSchemaContract([EnvironmentNameFieldName], [
+			Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+			Field("skip-crm-cleanup", BooleanType, "Recovery only: leave CRM system settings unchanged and warn. Default false.")]),
+		CommandExecutionOutput(), CommonErrorContract, [], [], [],
+		Flow([UninstallIdentityTool.ToolName], "Confirm the recorded identity target and preserve the retained CRM."), [], []);
+
 	private static ToolContractDefinition BuildDeployIdentity() {
 		return new ToolContractDefinition(
 			DeployIdentityTool.DeployIdentityToolName,
-			"Deploys IdentityService to IIS for a registered local Creatio environment, connects Creatio through the platform sys-settings/REST path, creates a fresh clio OAuth client bound to an existing user by default, and stores the returned client credentials in local clio appsettings only after discovery, token issuance, and a read-only CRM bearer request succeed. With noApp, token and CRM checks are skipped. Never echo the generated client secret in logs or public messages.",
+			"Deploys IdentityService to IIS for a registered local Creatio environment, connects Creatio through the platform sys-settings/REST path, creates a fresh clio OAuth client bound to an existing user by default, and stores the returned client credentials in local clio appsettings only after discovery, token issuance, and a read-only CRM bearer request succeed. Records its resolved IdentityService attachment before artifacts, including noApp and partial deployments, for later standalone or combined removal. With noApp, token and CRM checks are skipped. Never echo the generated client secret in logs or public messages.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(ZipFileFieldName, StringType, "Optional path to a standalone IdentityService.zip or a Creatio distribution bundle containing IdentityService.zip. When omitted, deploy-identity finds IdentityService.zip under the registered EnvironmentPath."),
-					Field(IdentitySitePortFieldName, NumberType, "Optional HTTP port where IdentityService will listen. When omitted, deploy-identity selects the first free IIS port in range 40001-40100."),
+					Field(IdentitySitePortFieldName, NumberType, "Optional HTTP port where IdentityService will listen. When omitted, deploy-identity selects the first free IIS port in range 40001-40100. With overwrite and a recorded attachment, it reuses the recorded port."),
 					Field(IdentityArchivePathInBundleFieldName, StringType, "Nested IdentityService archive path when zipFile is a Creatio bundle, and the relative path preferred under EnvironmentPath when zipFile is omitted. Default: IdentityService.zip."),
 					Field(IdentitySiteNameFieldName, StringType, "Optional IIS site and app pool name. Defaults to <environment>-identity."),
 					Field(IdentityPathFieldName, StringType, "Optional target directory for IdentityService files. Filesystem reparse points are refused anywhere in the target path."),

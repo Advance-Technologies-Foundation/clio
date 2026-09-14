@@ -57,7 +57,10 @@ public sealed class DataForgeToolTests {
 			Guid.NewGuid(), "Contact", Guid.NewGuid(), null, null,
 			[
 				new RuntimeEntitySchemaColumnResult(Guid.NewGuid(), "Name", "Full name", null, 1, true, false, null),
-				new RuntimeEntitySchemaColumnResult(Guid.NewGuid(), "Account", "Account", null, 10, false, false, "Account")
+				new RuntimeEntitySchemaColumnResult(Guid.NewGuid(), "Account", "Account", null, 10, false, false, "Account"),
+				// dataValueType 32 is Float2 — "Decimal (0.01)" in the designer. This fixture asserted only
+				// the column COUNT, which is why a decimal reported as Text shipped unnoticed (ENG-93202).
+				new RuntimeEntitySchemaColumnResult(Guid.NewGuid(), "Amount", "Amount", null, 32, false, false, null)
 			]));
 		DataForgeTool tool = CreateTool(runtimeEntitySchemaReader: runtimeReader);
 
@@ -69,8 +72,12 @@ public sealed class DataForgeToolTests {
 		// Assert
 		result.Success.Should().BeTrue(
 			because: "valid runtime schema results should produce a successful response");
-		result.Columns.Should().HaveCount(2,
-			because: "all non-inherited columns from the runtime schema should be returned");
+		result.Columns.Should().BeEquivalentTo(new[] {
+			new { Name = "Account", DataType = "Lookup" },
+			new { Name = "Amount", DataType = "Float2" },
+			new { Name = "Name", DataType = "Text" }
+		}, options => options.ExcludingMissingMembers(),
+			because: "the tool must report each column's real data type, not just the column set");
 		runtimeReader.Received(1).GetByName("Contact");
 	}
 

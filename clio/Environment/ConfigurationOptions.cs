@@ -1,6 +1,7 @@
 using Clio.UserEnvironment;
 using Clio.Utilities;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -27,6 +28,52 @@ namespace Clio
 
 	public class EnvironmentSettings
 	{
+		private IdentityServiceAttachment _identityService = new();
+
+		/// <summary>Optional local identity component; empty values mean none is attached.</summary>
+		[YamlIgnore] // Local deletion authority must not travel in portable environment manifests.
+		public IdentityServiceAttachment IdentityService {
+			get => _identityService;
+			set => _identityService = value ?? new IdentityServiceAttachment();
+		}
+
+		/// <summary>
+		/// Members of this environment that the running clio build does not know, kept so that a save
+		/// writes them back instead of deleting them.
+		/// </summary>
+		/// <remarks>
+		/// A newer clio adding a property is NOT a bind failure - Json.NET ignores an unknown member
+		/// silently - so nothing reports it, and the next save by an older build would drop it. That is the
+		/// same data loss as an unbindable section, minus the diagnostic. Carrying the members verbatim
+		/// makes an older build a lossless pass-through instead.
+		/// </remarks>
+		[Newtonsoft.Json.JsonExtensionData]
+		[System.Text.Json.Serialization.JsonIgnore]
+		[YamlIgnore]
+		public IDictionary<string, JToken> AdditionalData { get; set; }
+
+		[System.Runtime.Serialization.OnDeserialized]
+		private void RemoveDeclaredOverflowMembers(System.Runtime.Serialization.StreamingContext context) =>
+			Clio.Common.JsonOverflowMembers.RemoveDeclaredMembers(this, AdditionalData);
+
+		/// <summary>
+		/// Returns a full copy of this environment, INCLUDING members this clio build does not know.
+		/// </summary>
+		/// <remarks>
+		/// Through serialization rather than member by member, and that is the whole point: a hand-written
+		/// copy silently drops whatever the author did not list, and the members most easily forgotten are
+		/// the ones nothing references by name - the <see cref="AdditionalData"/> overflow bag a newer clio
+		/// filled, and the rarely used keys beside it. An edit-and-save flow that rebuilds an environment
+		/// this way would delete them, which is exactly what the bag exists to prevent.
+		/// </remarks>
+		/// <returns>A copy carrying every member of the original.</returns>
+		public EnvironmentSettings Clone() =>
+			JsonConvert.DeserializeObject<EnvironmentSettings>(JsonConvert.SerializeObject(this),
+				// Strings stay strings: a credential that looks like an ISO timestamp would otherwise come
+				// back through the overflow bag as a re-formatted DateTime.
+				new JsonSerializerSettings { DateParseHandling = DateParseHandling.None })
+			?? new EnvironmentSettings();
+
 		[YamlMember(Alias = "url")]
 		public string Uri {
 			get; set;
@@ -142,6 +189,9 @@ namespace Clio
 		}
 
 		internal void Merge(EnvironmentSettings environment) {
+			if (!environment.IdentityService.IsEmpty) {
+				IdentityService = environment.IdentityService;
+			}
 			if (!string.IsNullOrEmpty(environment.Login)) {
 				Login = environment.Login;
 			}
@@ -207,6 +257,7 @@ namespace Clio
 
 		public virtual EnvironmentSettings Fill(EnvironmentOptions options, IInteractiveConsole interactiveConsole) {
 			var result = new EnvironmentSettings();
+			result.IdentityService = IdentityService;
 			result.Uri = string.IsNullOrEmpty(options.Uri) ? this.Uri : options.Uri;
 			result.IsNetCore = options.IsNetCore ?? this.IsNetCore;
 			result.DeveloperModeEnabled = options.DeveloperModeEnabled ?? this.DeveloperModeEnabled;
@@ -544,6 +595,19 @@ namespace Clio
 		public int? SettingsVersion {
 			get; set;
 		}
+
+		/// <summary>
+		/// Top-level settings members that the running clio build does not know, kept so that a save
+		/// writes them back instead of deleting them.
+		/// </summary>
+		/// <remarks>See <see cref="EnvironmentSettings.AdditionalData"/> for why this exists.</remarks>
+		[Newtonsoft.Json.JsonExtensionData]
+		[System.Text.Json.Serialization.JsonIgnore]
+		public IDictionary<string, JToken> AdditionalData { get; set; }
+
+		[System.Runtime.Serialization.OnDeserialized]
+		private void RemoveDeclaredOverflowMembers(System.Runtime.Serialization.StreamingContext context) =>
+			Clio.Common.JsonOverflowMembers.RemoveDeclaredMembers(this, AdditionalData);
 
 		public Dictionary<string, EnvironmentSettings> Environments {
 			get; set;
@@ -1134,6 +1198,17 @@ namespace Clio
 
 		private Settings LoadLatestSettings(out string expectedContent) {
 			SettingsBootstrapResult latest = _settingsBootstrapService.GetResult();
+			// A shape mismatch is NOT a reason to write. The load is deliberately tolerant so the
+			// environments still resolve (issue #1462), which means the status is "issues-detected" and no
+			// longer refuses the write on its own - but serializing the model this build produced would
+			// silently drop whichever section it could not bind. Refuse, and say what actually fixes it.
+			if (latest.Report.ShapeMismatch is SettingsIssue shapeMismatch) {
+				throw new SettingsShapeMismatchException(
+					$"Cannot update settings ({SettingsBootstrapService.SettingsShapeMismatchCode}): "
+					+ $"{shapeMismatch.Message} Until then clio writes nothing at all - including its own "
+					+ "automatic update schedule - so 'clio update-cli' is the way out when no resident "
+					+ "process is holding the old build.");
+			}
 			if (string.Equals(latest.Report.Status, "broken", StringComparison.OrdinalIgnoreCase)) {
 				string issue = latest.Report.Issues.FirstOrDefault()?.Message
 					?? "appsettings.json is unreadable.";
@@ -1142,7 +1217,12 @@ namespace Clio
 			}
 
 			expectedContent = _fileSystem.File.ReadAllText(AppSettingsFile);
-			return JsonConvert.DeserializeObject<Settings>(expectedContent)
+			// DateParseHandling.None for the same reason as in the bootstrap load: this model is about to
+			// be SERIALIZED BACK over the file, so any string Json.NET decides is a timestamp on the way in
+			// is rewritten in its own format on the way out - an ISO-looking password, or any such value a
+			// newer clio parked in an overflow bag, would be silently replaced.
+			return JsonConvert.DeserializeObject<Settings>(expectedContent,
+					new JsonSerializerSettings { DateParseHandling = DateParseHandling.None })
 				?? throw new Newtonsoft.Json.JsonSerializationException(
 					"appsettings.json did not contain a settings object.");
 		}
@@ -1354,13 +1434,24 @@ namespace Clio
 			bool due = false;
 			UpdateSettingsIfChanged(settings => {
 				AutoUpdatePolicy policy = GetPolicy(settings.Autoupdate, target);
-				due = policy.Enabled && now > policy.NextRun;
+				due = policy.Enabled && (policy.NextRun is null || now > policy.NextRun.Value);
 				if (due) {
 					policy.NextRun = now.AddMinutes(Math.Max(1, policy.FrequencyMinutes));
 				}
 				return due;
 			});
 			return due;
+		}
+
+		public bool IsAutoupdateDue(AutoUpdateTarget target, DateTimeOffset now) {
+			// Re-read first, like TryScheduleAutoupdate does through UpdateSettingsIfChanged. The two are
+			// asked about the same schedule within microseconds of each other, and a constructor-time
+			// snapshot would let them disagree - the deferral notice describing a policy the scheduler
+			// never saw.
+			Reload();
+			EnsureSettingsCollections();
+			AutoUpdatePolicy policy = GetPolicy(_settings.Autoupdate, target);
+			return policy.Enabled && (policy.NextRun is null || now > policy.NextRun.Value);
 		}
 
 		private static AutoUpdatePolicy GetPolicy(AutoUpdateSettings settings, AutoUpdateTarget target) => target switch {
@@ -1454,6 +1545,37 @@ namespace Clio
 				return false;
 			});
 			return matches;
+		}
+
+		/// <inheritdoc />
+		public bool UpdateIdentityAttachment(string environment, string expectedEnvironmentPath,
+			IdentityServiceAttachment expected, IdentityServiceAttachment replacement,
+			bool clearMatchingCredentials = false) {
+			bool updated = false;
+			UpdateSettingsIfChanged(settings => {
+				updated = false;
+				string key = settings.Environments.Keys.FirstOrDefault(item =>
+					string.Equals(item, environment, StringComparison.OrdinalIgnoreCase));
+				if (key is null) {
+					return false;
+				}
+				EnvironmentSettings target = settings.Environments[key];
+				if (!EnvironmentPathsMatch(target.EnvironmentPath, expectedEnvironmentPath)
+					|| target.IdentityService != expected) {
+					return false;
+				}
+				if (clearMatchingCredentials && System.Uri.TryCreate(target.AuthAppUri, UriKind.Absolute, out Uri token)
+					&& System.Uri.TryCreate(expected.Uri?.TrimEnd('/') + "/connect/token", UriKind.Absolute, out Uri owned)
+					&& token.Equals(owned)) {
+					target.AuthAppUri = string.Empty;
+					target.ClientId = string.Empty;
+					target.ClientSecret = string.Empty;
+				}
+				target.IdentityService = replacement;
+				updated = true;
+				return true;
+			});
+			return updated;
 		}
 
 		public EnvironmentSettings FindCurrentEnvironment(string environment) {

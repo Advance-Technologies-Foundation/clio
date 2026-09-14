@@ -55,8 +55,7 @@ public class SqlScriptCommandTests : BaseCommandTests<ExecuteSqlScriptOptions> {
 
 	[TestCase("table", null)]
 	[TestCase("json", null)]
-	[TestCase("csv", "result.csv")]
-	[Description("Table and JSON still allow no destination, and CSV accepts a supplied destination.")]
+	[Description("Table and JSON allow execution without a destination file.")]
 	public void Execute_ShouldExecuteSql_WhenOutputOptionsAreValid(string view, string destination) {
 		// Arrange
 		var options = new ExecuteSqlScriptOptions {
@@ -73,5 +72,59 @@ public class SqlScriptCommandTests : BaseCommandTests<ExecuteSqlScriptOptions> {
 		_executor.ReceivedCalls().Should().ContainSingle(because: "SQL must execute exactly once");
 		_logger.ReceivedCalls().Select(call => call.GetArguments().FirstOrDefault()).Should()
 			.Equal(new object[] { "Done" }, because: "silent successful execution retains its completion message");
+	}
+
+	[Test]
+	[Description("Reports SQL server errors as failures instead of a successful Done message, including silent exports.")]
+	public void Execute_ShouldReturnFailure_WhenServerReportsSqlError() {
+		// Arrange
+		ExecuteSqlScriptOptions options = new() { Script = "invalid SQL", ViewType = "json", IsSilent = true };
+		_executor.Execute(options.Script, Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>())
+			.Returns("ExecuteSQL ERROR: invalid query");
+
+		// Act
+		int exitCode = _sut.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "SQL errors must not be reported as successful exports");
+		_logger.ReceivedCalls().Should().ContainSingle(call => call.GetMethodInfo().Name == nameof(ILogger.WriteError)
+			&& (string)call.GetArguments()[0] == "invalid query", because: "silent mode must retain the actionable error");
+		_logger.ReceivedCalls().Should().NotContain(call => call.GetArguments().Contains("Done"),
+			because: "failure must never include a success marker");
+	}
+
+	[TestCase("<html>Service unavailable</html>")]
+	[TestCase("{\"success\":false}")]
+	[Description("Rejects malformed or unexpected JSON export responses instead of reporting successful SQL execution.")]
+	public void Execute_ShouldRejectResponse_WhenJsonResultIsNotRowsOrCount(string response) {
+		// Arrange
+		ExecuteSqlScriptOptions options = new() { Script = "SELECT 1", ViewType = "json", IsSilent = true };
+		_executor.Execute(options.Script, Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>()).Returns(response);
+
+		// Act
+		int exitCode = _sut.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "an error page or unexpected object is not a SQL result");
+		_logger.ReceivedCalls().Should().ContainSingle(call => call.GetMethodInfo().Name == nameof(ILogger.WriteError),
+			because: "silent mode must not hide response validation errors");
+	}
+
+	[TestCase("table")]
+	[TestCase("csv")]
+	[TestCase("xlsx")]
+	[Description("Rejects a non-JSON affected-row-count export instead of reporting success without writing the requested file.")]
+	public void Execute_ShouldRejectCountExport_WhenFormatIsNotJson(string view) {
+		// Arrange
+		ExecuteSqlScriptOptions options = new() { Script = "UPDATE example", ViewType = view, DestPath = "unused", IsSilent = true };
+		_executor.Execute(options.Script, Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>()).Returns("3");
+
+		// Act
+		int exitCode = _sut.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "non-JSON count responses cannot satisfy the requested file format");
+		_logger.ReceivedCalls().Should().ContainSingle(call => call.GetMethodInfo().Name == nameof(ILogger.WriteError)
+			&& call.GetArguments()[0].ToString().Contains("-v json"), because: "the error must identify the supported count format");
 	}
 }

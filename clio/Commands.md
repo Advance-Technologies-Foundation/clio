@@ -377,7 +377,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`download-configuration`](docs/commands/download-configuration.md) - Download configuration libraries from Creatio, `dconf`
 <a id="execute-sql-script"></a>
 <a id="sql"></a>
-- [`execute-sql-script`](docs/commands/execute-sql-script.md) - Execute a SQL script in Creatio, with full request logging in ClioGate 2.0.0.53+, `sql`
+- [`execute-sql-script`](docs/commands/execute-sql-script.md) - Execute a SQL script in Creatio; table display uses 40 characters per cell line, with JSON/CSV/XLSX file exports for full content (also available through MCP), `sql`
 <a id="export-component-registry"></a>
 <a id="export-registry"></a>
 - [`export-component-registry`](docs/commands/export-component-registry.md) - Write the full Freedom UI component registry for a resolved platform version to a file, `export-registry`
@@ -421,7 +421,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="get-version"></a>
 <a id="i"></a>
 <a id="ver"></a>
-- [`info`](docs/commands/info.md) - Show clio, cliogate, bundled process-builder, installed knowledge, and .NET runtime versions, `get-version`, `i`, `ver`
+- [`info`](docs/commands/info.md) - Show clio, cliogate, bundled process-builder, installed knowledge, toolkit per agent, and .NET runtime versions, `get-version`, `i`, `ver`
 <a id="install-sql-schema"></a>
 <a id="sql-schema-install"></a>
 <a id="execute-sql-schema"></a>
@@ -619,6 +619,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="uninstall-creatio"></a>
 <a id="uc"></a>
 - [`uninstall-creatio`](docs/commands/uninstall-creatio.md) - Uninstall by registered EnvironmentPath with all-site and shared-pool-safe IIS cleanup, `uc`
+<a id="uninstall-identity"></a>
+- [`uninstall-identity`](docs/commands/uninstall-identity.md) - Remove the recorded local IdentityService while preserving Creatio and its database
 <a id="upload-license"></a>
 <a id="license"></a>
 <a id="load-license"></a>
@@ -774,3 +776,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`set-app-version`](docs/commands/set-app-version.md) - Set application version, `appversion`
 <a id="unregister"></a>
 - [`unregister`](docs/commands/unregister.md) - Remove clio shell integrations
+
+### Related-page response identity
+
+`get-related-page-addon` and `create-related-page-addon` report `entitySchemaUId` as
+the base/root entity UId resolved by Creatio for the add-on, shared across replacing
+layers. A temporary designer schema or an individual replacing row is not that identity.
