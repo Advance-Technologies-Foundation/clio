@@ -3810,45 +3810,67 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[TestCase(ValidateProcessGraphTool.ToolName, TestName = "AbbreviationSurvivesInPurpose_ValidateProcessGraph")]
+	// validate-process-graph is deliberately NOT in this list any more. ENG-96389 round 2 rewrote its
+	// first sentence into a self-contained purpose that fits the cap, which is the better repair: the
+	// abbreviation skip kept the example but only relocated the truncation to mid-identifier. Its
+	// one-liner is pinned exactly in the repaired-purpose table below instead. get-user-culture still
+	// leads with an example, so it remains the real-corpus guard for the skip itself.
 	[TestCase(GetUserCultureTool.ToolName, TestName = "AbbreviationSurvivesInPurpose_GetUserCulture")]
-	[Description("The two production descriptions whose compact-index purpose was cut at 'e.g.' now carry the example through, guarding the real corpus rather than a synthetic string.")]
+	[Description("The production description whose compact-index purpose was cut at 'e.g.' now carries the example through, guarding the real corpus rather than a synthetic string.")]
 	public void GetToolContracts_ShouldCarryTheExampleIntoPurpose_WhenDescriptionUsesAnAbbreviation(string toolName) {
 		// Arrange
 		ToolContractGetTool tool = BuildToolWithRegistry();
-		ToolContractGetResponse full = tool.GetToolContracts(new ToolContractGetArgs([toolName]));
-		string description = full.Tools!.Single().Description;
-		// The abbreviation must sit in the FIRST SENTENCE, which is the only part the split looks at.
-		// Asserting it appears anywhere in a multi-thousand-character description would leave the test
-		// green after a reword that moved it past the first boundary - at which point it exercises the
-		// abbreviation skip not at all, and the NotEndWith assertion below holds for any text whatsoever
-		// because both purposes reach the 120-character cap.
-		ToolContractCatalog.BuildPurpose(description).Should().Contain("e.g. ",
-			because: "this test is only meaningful while the abbreviation is still inside the first sentence the splitter sees; a reword that moves it out must fail here rather than silently disarm the test");
+		string description = tool.GetToolContracts(new ToolContractGetArgs([toolName]))
+			.Tools!.Single().Description;
 
 		// Act
+		string purpose = ToolContractCatalog.BuildPurpose(description);
 		ToolContractIndexEntry entry = tool.GetToolContracts().Index!.Single(item => item.Name == toolName);
 
 		// Assert
+		// The falsifying assertion, and it must be the one under Assert: `purpose` is what the splitter
+		// produced, so a description reworded to move `e.g.` past the first sentence fails HERE. The
+		// index check below cannot carry that weight - once a purpose reaches the 120-character cap,
+		// NotEndWith holds for any text whatsoever (measured: both tools truncate), so on its own it is
+		// a vacuous pass dressed as a guard.
+		purpose.Should().Contain("e.g. ",
+			because: $"'{toolName}' must still carry its example through the first sentence the splitter reads; a reword that moves the abbreviation out of that sentence must fail here rather than silently disarm this test");
 		entry.Purpose.TrimEnd('…').TrimEnd().Should().NotEndWith("e.g.",
-			because: $"'{toolName}' index purpose '{entry.Purpose}' must carry the example it introduces; stopping at the marker hides what the tool does on the only discovery surface a non-resident tool has");
+			because: $"'{toolName}' index purpose '{entry.Purpose}' must not stop AT the marker it introduces - note this holds trivially for a purpose that reaches the cap, so it is a companion to the assertion above, never a substitute");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("A genuine first sentence still terminates the compact-index purpose, so making abbreviations safe did not swallow real sentence breaks.")]
-	public void GetToolContracts_ShouldStillEndPurposeAtARealSentence_WhenDescriptionHasNoAbbreviation() {
+	[TestCase(CreateBusinessProcessTool.CreateBusinessProcessToolName, TestName = "AccessRightsConsentSurvives_CreateBusinessProcess")]
+	[TestCase(ModifyBusinessProcessTool.ModifyBusinessProcessToolName, TestName = "AccessRightsConsentSurvives_ModifyBusinessProcess")]
+	[Description("The accessRights destructive-consent warning is still present in the served contract after ENG-96389 moved it out of first position, so a later trim cannot drop it unnoticed.")]
+	public void GetToolContracts_ShouldStillCarryTheAccessRightsConsentWarning_WhenContractIsResolved(string toolName) {
 		// Arrange
 		ToolContractGetTool tool = BuildToolWithRegistry();
 
 		// Act
-		ToolContractIndexEntry entry = tool.GetToolContracts().Index!
-			.Single(item => item.Name == PageValidateTool.ToolName);
+		string description = tool.GetToolContracts(new ToolContractGetArgs([toolName]))
+			.Tools!.Single().Description;
 
 		// Assert
-		entry.Purpose.Should().Be("Client-side Freedom UI page body validation without saving to Creatio.",
-			because: "the abbreviation exception must narrow the sentence split, never widen it into swallowing an ordinary sentence break");
+		// ENG-96389 demoted this warning from first position so the compact index could advertise what
+		// the tool DOES. Demoting it made it droppable: the purpose pins check only the FIRST sentence,
+		// so a later "trim this 30 000-character description" edit that keeps the opening line and loses
+		// the buried warning would pass every other guard here. The element changes who can read, edit
+		// or delete LIVE records and has no output parameters to report what it did, so the consent gate
+		// is the only thing standing between an agent and a silent permission change.
+		description.Should().Contain("BEFORE CALLING with an accessRights block",
+			because: $"'{toolName}' must keep its destructive-consent warning wherever it sits in the description; moving it off the first sentence must not make it deletable without a test noticing");
+		description.Should().Contain("get an explicit yes",
+			because: "the warning is only a gate if it still demands confirmation - keeping the heading while losing the instruction would satisfy a substring check and change nothing for the agent");
 	}
+
+	// NOTE: the "an ordinary sentence break still wins" claim is proven by the synthetic
+	// Purpose_OrdinarySentenceBreakStillWins case above, not by a production description. An earlier
+	// revision pinned page-validate's index line for this - but page-validate is CURATED, so that pin
+	// asserted ToolContractCatalog's handwritten string and said nothing about the attribute path this
+	// rule governs, while a copy-edit to unrelated curated wording would have failed a test whose name
+	// is about abbreviations and sent the next author to the wrong file.
 
 	// Pins the repaired one-liner for every tool ENG-96389 changed, mirroring the stop-creatio convention
 	// earlier in this fixture. The uniqueness guard below is NOT a substitute: reverting a single
@@ -3879,6 +3901,9 @@ public sealed class ToolContractGetToolTests {
 	[TestCase(CompileCreatioTool.CompileCreatioToolName,
 		"Recompiles a registered Creatio environment and forces a runtime reload.",
 		TestName = "PurposePinned_CompileCreatio_ComesFromTheCuratedContract")]
+	[TestCase(ValidateProcessGraphTool.ToolName,
+		"Checks a planned Creatio business-process graph against the BPMN connection rules before you build it.",
+		TestName = "PurposePinned_ValidateProcessGraph")]
 	[Description("Each tool whose compact-index one-liner ENG-96389 examined advertises that exact purpose, so reverting a single description fails here instead of hiding behind the uniqueness guard.")]
 	public void GetToolContracts_ShouldAdvertiseTheRepairedPurpose_WhenCompactIndexIsBuilt(
 		string toolName, string expectedPurpose) {

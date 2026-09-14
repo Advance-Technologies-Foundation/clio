@@ -413,6 +413,7 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract compact index does not cut a purpose at an abbreviation")]
+	[AllureDescription("Drives the real stdio MCP server: reads the compact index plus the full contract of each tool whose description carries an 'e.g.', then asserts the abbreviation still sits in the first sentence the server distils (so the check cannot go vacuous after a reword), that the served purpose does not stop at the marker, and that no two advertised purposes collide.")]
 	[Description("Verifies over the real MCP transport that a description containing 'e.g.' yields a compact-index purpose describing the tool rather than one truncated at the abbreviation.")]
 	public async Task ToolContractGet_Should_NotCutCompactIndexPurposeAtAbbreviation() {
 		// Arrange
@@ -435,12 +436,27 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		foreach (string toolName in new[] {
 			         ValidateProcessGraphTool.ToolName, GetUserCultureTool.ToolName }) {
 			ToolContractIndexEntry? entry = indexResponse.Index!.FirstOrDefault(item => item.Name == toolName);
-			AllureApi.Step($"Assert '{toolName}' purpose carries its example", () => {
+			AllureApi.Step($"Assert '{toolName}' is advertised in the index", () =>
 				entry.Should().NotBeNull(
-					because: $"'{toolName}' must be advertised in the compact index for this assertion to mean anything");
+					because: $"'{toolName}' must be advertised in the compact index for the purpose assertions to mean anything"));
+
+			ToolContractGetResponse full = await CallAsync(
+				context.Session,
+				context.CancellationTokenSource.Token,
+				new Dictionary<string, object?> { ["tool-names"] = new[] { toolName } });
+			string description = full.Tools!.Single().Description;
+
+			// Non-vacuity precondition, asserted over the wire for the same reason the unit test asserts
+			// it in-process: once a purpose reaches the 120-character cap, NotEndWith holds for ANY text,
+			// so a reword that moved `e.g.` past the first sentence would leave the next step green while
+			// exercising the abbreviation skip not at all.
+			AllureApi.Step($"Assert '{toolName}' still carries the abbreviation it is tested for", () =>
+				description.Should().Contain("e.g. ",
+					because: $"'{toolName}' must still carry the example this test exists to protect; a reword that drops it has to fail here rather than silently disarm the assertion below"));
+
+			AllureApi.Step($"Assert '{toolName}' purpose does not stop at the marker", () =>
 				entry!.Purpose.TrimEnd('…').TrimEnd().Should().NotEndWith("e.g.",
-					because: $"'{toolName}' index purpose '{entry.Purpose}' must carry the example it introduces, not stop at the marker");
-			});
+					because: $"'{toolName}' index purpose '{entry.Purpose}' must carry the example it introduces, not stop at the marker"));
 		}
 		AllureApi.Step("Assert every advertised purpose is distinct", () =>
 			indexResponse.Index!.Select(entry => entry.Purpose).Should().OnlyHaveUniqueItems(

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Reflection;
@@ -872,6 +872,38 @@ internal static class ToolContractCatalog {
 	private const int MaxPurposeLength = 120;
 
 	/// <summary>
+	/// Abbreviations whose own terminating period IS followed by whitespace and therefore reads as a
+	/// sentence break to <see cref="FindFirstSentenceEnd"/>. Membership is decided by ONE property: the
+	/// abbreviation is never sentence-FINAL in English, so skipping its period can only ever be right.
+	/// An ambiguous one must stay out — a wrong skip merges two sentences and pulls the next one (often
+	/// a safety warning) into the one-liner, which is the same truncated-thought symptom ENG-96389 set
+	/// out to remove, merely relocated.
+	/// <para>
+	/// <c>etc.</c> is the worked example of that exclusion, and it is deliberate rather than an
+	/// oversight. Mid-sentence it is written <c>etc.,</c> or <c>etc.)</c>, whose period is NOT followed
+	/// by whitespace and is already kept by the mid-word rule below; the only form that would reach this
+	/// list is the ambiguous one, where sentence-final is the commoner reading.
+	/// </para>
+	/// <para>
+	/// Only <c>e.g.</c> reaches a first-sentence boundary in this assembly today - it is what cut
+	/// <c>get-user-culture</c> mid-example, and the reason this list exists. <c>i.e.</c> and <c>vs.</c>
+	/// are forward-looking entries, kept because they satisfy the never-sentence-final rule above, NOT
+	/// because either was measured reaching the split. Deliberately no occurrence counts here: a counted
+	/// claim in shipped text has no drift oracle and goes stale unnoticed (an earlier revision of this
+	/// comment carried three numbers that were already wrong when review checked them) - see
+	/// docs/knowledge/McpServer/counted-claims-in-shipped-text-have-no-drift-oracle.md.
+	/// </para>
+	/// <para>
+	/// This list narrows ONE trigger; it does not close the class. An index line is still DERIVED from
+	/// free prose and hard-cut at <see cref="MaxPurposeLength"/>, so a description written as
+	/// "Creates rows, columns, etc. BEFORE CALLING: ..." still distils to a truncated thought, and 73 of
+	/// the 212 served purposes are cut mid-word today. The general fix is an AUTHORED purpose declared
+	/// per tool with this distillation kept only as the fallback - tracked separately, not here.
+	/// </para>
+	/// </summary>
+	private static readonly string[] SentenceSafeAbbreviations = ["e.g.", "i.e.", "vs."];
+
+	/// <summary>
 	/// The names that have a HANDWRITTEN contract, as opposed to one synthesized from the registered tool
 	/// schema by <see cref="McpToolRegistrySchemaContract"/>. Exposed so a test can tell the two apart:
 	/// only a handwritten contract can disagree with the emitted schema, because the synthesized one is
@@ -1181,31 +1213,6 @@ internal static class ToolContractCatalog {
 		}
 		return firstSentence[..(MaxPurposeLength - 1)].TrimEnd() + "…";
 	}
-
-	/// <summary>
-	/// Abbreviations whose own terminating period IS followed by whitespace and therefore reads as a
-	/// sentence break to <see cref="FindFirstSentenceEnd"/>. Membership is decided by ONE property: the
-	/// abbreviation is never sentence-FINAL in English, so skipping its period can only ever be right.
-	/// An ambiguous one must stay out — a wrong skip merges two sentences and pulls the next one (often
-	/// a safety warning) into the one-liner, which is the same truncated-thought symptom ENG-96389 set
-	/// out to remove, merely relocated.
-	/// <para>
-	/// <c>etc.</c> is the worked example of that exclusion, and it is deliberate rather than an
-	/// oversight. Mid-sentence it is written <c>etc.,</c> or <c>etc.)</c>, whose period is NOT followed
-	/// by whitespace and is already kept by the mid-word rule below; the only form that would reach this
-	/// list is the ambiguous one, where sentence-final is the commoner reading.
-	/// </para>
-	/// <para>
-	/// Occurrence counts taken for ENG-96389 (<c>e.g.</c> 470, <c>i.e.</c> 16, <c>vs.</c> 2) are over the
-	/// assembly's whole source text and therefore OVERSTATE what this function sees: most land in
-	/// comments, in argument descriptions, or thousands of characters past a description's first
-	/// sentence. Only <c>e.g.</c> actually reaches the split today — it is what cut
-	/// <c>validate-process-graph</c> and <c>get-user-culture</c> mid-example. <c>i.e.</c> and <c>vs.</c>
-	/// are forward-looking entries, kept because they satisfy the never-sentence-final rule, not because
-	/// they were measured reaching it.
-	/// </para>
-	/// </summary>
-	private static readonly string[] SentenceSafeAbbreviations = ["e.g.", "i.e.", "vs."];
 
 	/// <summary>
 	/// Returns the index of the first sentence-terminating period (a '.' followed by whitespace or the end

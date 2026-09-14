@@ -1,8 +1,6 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Reflection;
 using System.Text.Json;
 using Clio.Command;
 using Clio.Command.McpServer;
@@ -22,8 +20,9 @@ namespace Clio.Tests.Command.McpServer;
 /// <see cref="McpProfileGatingTests"/> ratchets <c>tools/list</c>, the payload every session pays for.
 /// It says nothing about <c>get-tool-contract</c>, which is what a long-tail tool actually costs: the
 /// compact index on discovery, then one tool's full contract on demand. That surface had no bound at
-/// all, and ENG-96389 measured the consequence — the four ProcessDesigner descriptions grew from
-/// 35 910 to 81 106 characters in twelve days (2.26x) with nothing to notice.
+/// all, and ENG-96389 measured the consequence — the four ProcessDesigner descriptions grew roughly
+/// 2.3x in twelve days with nothing to notice. (A character total is deliberately not quoted here: it
+/// moves with every unrelated edit to any of the four and would be stale before the next reader.)
 /// </para>
 /// <para>
 /// These ratchets do not shrink anything. They make growth a decision defended at review — raising a
@@ -54,10 +53,11 @@ public sealed class ToolContractPayloadBudgetTests {
 	// Compact-index ceiling. The index is the ONE get-tool-contract payload with a fixed size: every
 	// registered tool contributes a name, a <=120-char purpose and its safety/availability flags, whether
 	// or not the agent ever calls it, so this ceiling grows by TOOL COUNT (roughly 180-200 bytes each)
-	// rather than by description bulk. Measured 43564 bytes on the DEFAULT surface with this branch
-	// applied (43683 after this branch also split the two identical clear-redis purposes) — already 32% above the entire 33024-byte tools/list budget, which is worth knowing but is
-	// NOT this ratchet's business to fix: ENG-96389 §3 measured that relocating description content into
-	// guidance articles is token-NEGATIVE beyond 1.3 articles, so the index is pinned where it stands.
+	// rather than by description bulk. Measured 43660 bytes on the DEFAULT surface at 14e2dd5a9 plus
+	// this branch's round-2 fixes — already 32% above the entire 33024-byte tools/list budget, which is
+	// worth knowing but is NOT this ratchet's business to fix: ENG-96389 §3 measured that relocating
+	// description content into guidance articles is token-NEGATIVE beyond 1.3 articles, so the index is
+	// pinned where it stands.
 	// 173 * 256 = 44288 leaves 605 bytes, about three tools - see the deviation note in the fixture remarks.
 	// Serialization uses the default JSON encoder,
 	// which escapes non-ASCII (a purpose ellipsis is written as a 6-byte escape), so it over-counts the real
@@ -75,9 +75,18 @@ public sealed class ToolContractPayloadBudgetTests {
 	// This is the number ENG-96389 watched double: create-business-process answers a single
 	// get-tool-contract call with more than the ENTIRE tools/list budget, for one tool. Pinning the
 	// MAXIMUM rather than the sum keeps the guard on what ONE fetch costs, which is what an agent pays.
-	// Measured 34165 bytes (create-business-process); 134 * 256 = 34304 leaves 139 bytes of headroom per
-	// the next-256 convention: a wording fix passes, a new element block does not — and a new element
-	// block IS the budget decision this ratchet exists to force.
+	// Measured 34165 bytes (create-business-process) at 14e2dd5a9 plus this branch's round-2 fixes;
+	// 134 * 256 = 34304 per the next-256 convention.
+	//
+	// Be honest about what 139 bytes of headroom means rather than claiming a wording fix passes: the
+	// default JSON encoder escapes every non-ASCII character and apostrophe as a six-byte unicode
+	// escape, and these descriptions are dense with both, so the room is roughly TWENTY escaped
+	// characters — less than one clause. Adding a sentence to create-business-process trips this, and so
+	// does growing modify-business-process, which sits 831 bytes behind at 33334. That tightness is
+	// deliberate on the two tools this ticket is about, and the failure message names the largest three
+	// so an author who edited a different one is not sent to the wrong file. If it starts firing on
+	// edits that are NOT budget decisions, re-pin it deliberately and say so here — never widen it in
+	// passing.
 	private const int MaxToolContractSerializedBytes = 134 * 256;
 
 	[Test]
@@ -123,9 +132,8 @@ public sealed class ToolContractPayloadBudgetTests {
 						? 0
 						: Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(contract)));
 			})
-			.OrderByDescending(entry => entry.Bytes)
 			.ToArray();
-		(string Name, int Bytes) largest = resolved.FirstOrDefault();
+		(string Name, int Bytes) largest = resolved.MaxBy(entry => entry.Bytes);
 
 		// Assert
 		toolNames.Should().NotBeEmpty(
@@ -137,8 +145,12 @@ public sealed class ToolContractPayloadBudgetTests {
 		// green. (get-tool-contract itself is absent from the index by design and so is not measured here.)
 		resolved.Should().OnlyContain(entry => entry.Bytes > 0,
 			because: "a name the compact index advertises whose contract does not resolve would be counted as zero and escape the ceiling");
+		string leaderboard = string.Join(", ", resolved
+			.OrderByDescending(entry => entry.Bytes)
+			.Take(3)
+			.Select(entry => $"{entry.Name} {entry.Bytes}B"));
 		largest.Bytes.Should().BeLessThanOrEqualTo(MaxToolContractSerializedBytes,
-			because: $"'{largest.Name}' answers one get-tool-contract call with {largest.Bytes} bytes against the {MaxToolContractSerializedBytes}-byte ceiling; raising it is the moment to ask whether the text belongs in a [Description] at all");
+			because: $"one get-tool-contract call must stay under {MaxToolContractSerializedBytes} bytes; largest three are {leaderboard}. If you did not edit the tool named first, check yours - this ceiling tracks the MAXIMUM, so any description crossing it fails here. Raising it is the moment to ask whether the text belongs in a [Description] at all");
 	}
 
 	// Builds get-tool-contract over the REAL invoker registry so uncurated tools resolve through the same
