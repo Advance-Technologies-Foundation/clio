@@ -867,6 +867,31 @@ public sealed class SensitiveErrorTextRedactorTests {
 			because: "a second pass must find nothing new to replace");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description(
+		"Issue #1505: a SERIALIZED JSON body puts the key's closing quote between the key and the colon "
+		+ "({\"password\":\"s3cr3t\"}), which the credential pair pattern used to miss. Both the MCP Redact "
+		+ "path and the console RedactCredentials path share that pattern, so both are pinned here.")]
+	public void RedactAndRedactCredentials_ShouldRedactJsonQuotedCredentialKey() {
+		// Arrange
+		const string text = "backend echoed {\"password\":\"s3cr3t\",\"server\":\"db.internal\"}";
+
+		// Act
+		string mcp = SensitiveErrorTextRedactor.Redact(text);
+		string console = SensitiveErrorTextRedactor.RedactCredentials(text);
+
+		// Assert
+		mcp.Should().NotContain("s3cr3t",
+			because: "the JSON-quoted shape is the one issue #1505 measured on the MCP path too");
+		console.Should().NotContain("s3cr3t",
+			because: "the console variant reuses the same pair pattern and must fail closed on the same shape");
+		console.Should().Contain("password=[redacted]",
+			because: "the key is kept so the line still reads sensibly while the value is replaced");
+		console.Should().Contain("server=[redacted]",
+			because: "a connection-string host echoed by the server is redacted alongside the password");
+	}
+
 	private static int CountOccurrences(string text, string token) {
 		int count = 0;
 		int index = text.IndexOf(token, StringComparison.OrdinalIgnoreCase);

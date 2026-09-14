@@ -244,6 +244,34 @@ public class ExceptionReadableMessageExtensionTestCase
 
 	[Test]
 	[Description(
+		"Issue #1505's own measured repro: errorInfo.message carried the credential in SERIALIZED JSON, "
+		+ "{\"password\":\"s3cr3t\",\"server\":\"db.internal\"}, where the key's closing quote sits between the key "
+		+ "and the colon. SelectQueryHelper falls back to the whole raw JSON body when errorInfo.message is "
+		+ "absent, so this is the DEFAULT shape, not a contrived one.")]
+	public void GetReadableMessageException_ShouldRedactJsonQuotedCredentials_WhenSelectQueryFailureIsRendered() {
+		// Arrange
+		var exception = new InvalidOperationException(
+			"SelectQuery failed: Configuration service failed: backend echoed "
+			+ "{\"password\":\"s3cr3t\",\"server\":\"db.internal\"}");
+
+		// Act
+		string result = exception.GetReadableMessageException();
+
+		// Assert
+		result.Should().StartWith("SelectQuery failed: Configuration service failed:",
+			because: "clio's own diagnosis must survive redaction, otherwise the operator loses the reason");
+		result.Should().NotContain("s3cr3t",
+			because: "the JSON-quoted shape is the one issue #1505 measured - it must not reach the console");
+		result.Should().NotContain("db.internal",
+			because: "the connection-string host is redacted in the JSON shape exactly as in the bare shape");
+		result.Should().Contain("password=[redacted]",
+			because: "the key is kept so the line still reads sensibly while the value is replaced");
+		result.Should().Contain("server=[redacted]",
+			because: "the same placeholder policy as the MCP path (ClioRunTool.RedactFailureContent) applies");
+	}
+
+	[Test]
+	[Description(
 		"Issue #1505: the InvalidOperationException arm prefers the inner message, so a bearer token in an "
 		+ "INNER exception must be redacted too - the arm that is actually taken is the one that has to scrub.")]
 	public void GetReadableMessageException_ShouldRedactBearerToken_WhenInvalidOperationExceptionWrapsInner() {

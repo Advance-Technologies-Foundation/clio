@@ -59,6 +59,13 @@ an MCP envelope, a log an operator pastes into a ticket, or a third-party model'
 a host ARE a leak and the full `Scrub`/`Fenced` rules apply. The debug path stays
 `exception.ToString()` unredacted.
 
+`CredentialPairRegex` tolerates a closing quote on the KEY (`"password":"s3cr3t"`), not only on the
+value. Issue #1505 measured the leak in serialized JSON, where that quote sits between the key and
+the colon and the pair therefore never matched; `SelectQueryHelper` uses
+`response.ErrorInfo?.Message ?? responseJson`, so the whole raw JSON body is the exception message
+whenever `errorInfo.message` is absent — the JSON shape is the fallback path, not an edge case. The
+pattern is shared, so the same change covers the MCP `Redact` path (`ClioRunTool.RedactFailureContent`).
+
 The single exception is a plain `Success == false` whose `ErrorMessage` is the platform's own
 validation prose ("Column 'Name' is required") — no fixed sentence can replace it without destroying
 the diagnosis. That one is kept, but passed through

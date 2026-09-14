@@ -77,8 +77,14 @@ internal static partial class SensitiveErrorTextRedactor {
 	// The value alternation takes the QUOTED forms first: the bare class excludes a quote character, so
 	// without them a quoted secret (password="s3cr3t") matches nothing at all and reaches the reader
 	// verbatim — the pattern has to fail closed on the whole pair, not on the quote.
+	//
+	// The KEY may also carry its own closing quote: in serialized JSON — the shape issue #1505 measured,
+	// {"password":"s3cr3t","server":"db.internal"} — the closing " sits between the key and the colon, so
+	// without the optional ""? the pair never matched and the credential reached the console in the clear.
+	// This is the default fallback path, not a contrived one: SelectQueryHelper falls back to the whole raw
+	// JSON body when errorInfo.message is absent.
 	[GeneratedRegex(
-		@"\b(password|pwd|pass|secret|token|api[_-]?key|client[_-]?secret|access[_-]?key|connection ?string|data ?source|server|host|hostname|initial ?catalog|database|uid|user ?id|authorization|auth|bearer|set-cookie|cookie|asp\.net_sessionid|aspxauth|bpmcsrf|jsessionid|phpsessid|session[_-]?id|[xc]srf[_-]?token)\b\s*[=:]\s*(?:""[^""]*""|'[^']*'|[^\s,;""']+)",
+		@"\b(password|pwd|pass|secret|token|api[_-]?key|client[_-]?secret|access[_-]?key|connection ?string|data ?source|server|host|hostname|initial ?catalog|database|uid|user ?id|authorization|auth|bearer|set-cookie|cookie|asp\.net_sessionid|aspxauth|bpmcsrf|jsessionid|phpsessid|session[_-]?id|[xc]srf[_-]?token)\b""?\s*[=:]\s*(?:""[^""]*""|'[^']*'|[^\s,;""']+)",
 		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
 	private static partial Regex CredentialPairRegex();
 
