@@ -1,6 +1,7 @@
 ---
 description: the first sentence of a tool's [Description] is what an agent sees in the get-tool-contract compact index, so a description opening with a safety warning advertises the warning instead of the tool
 applies-to:
+  - clio/Command/McpServer/Tools/
   - clio/Command/McpServer/Tools/ToolContractGetTool.cs
   - clio.tests/Command/McpServer/ToolContractGetToolTests.cs
   - clio.tests/Command/McpServer/ToolContractPayloadBudgetTests.cs
@@ -35,14 +36,20 @@ silent in both directions: nothing used to cover the purpose, the tool still wor
 directly by name, and the only symptom was an agent that did not find the tool — or picked the wrong
 one of two identical lines and paid ~7 700 tokens for the wrong 30 000-character contract.
 
-ENG-96389 found five defective one-liners across the 127 tools carrying a substantial description and
-fixed all of them. Three opened with a warning — `create-business-process` and
-`modify-business-process` produced a BYTE-IDENTICAL purpose ("BEFORE CALLING with an accessRights
-block: …"), and `compile-creatio` had the same shape; each now leads with what the tool does.
-`validate-process-graph` and `get-user-culture` were cut mid-example at `e.g.`, which is what the
-abbreviation list above was added for. A sixth pair surfaced only once the uniqueness guard existed:
-`clear-redis-db-by-environment` and `clear-redis-db-by-credentials` shared one line and differ
-precisely in the thing it did not mention — how the target is identified.
+ENG-96389 repaired five one-liners. `create-business-process` and `modify-business-process` both
+opened with the same warning and produced a BYTE-IDENTICAL purpose ("BEFORE CALLING with an
+accessRights block: …"); each now leads with what the tool does. `validate-process-graph` and
+`get-user-culture` were cut mid-example at `e.g.`, which is what the abbreviation list above was added
+for. `clear-redis-db-by-environment` and `clear-redis-db-by-credentials` shared one line and differ
+precisely in the thing it did not mention — how the target is identified; that pair surfaced only once
+the uniqueness guard existed.
+
+**The audit that found them had a blind spot worth repeating.** It read the `[Description]` attribute
+straight from source and applied the distillation to it — which is right only for an UNCURATED tool.
+On that basis `compile-creatio` was reported defective and its attribute was edited; in fact it has a
+curated contract, so its index line was already "Recompiles a registered Creatio environment and forces
+a runtime reload." and the edit changed nothing observable. Review caught it. Measure the SERVED
+purpose (`GetToolContracts().Index`), never the attribute, or the curated tools lie to you.
 
 The property is now enforced, not merely recorded: `ToolContractGetToolTests` drives `BuildPurpose`
 directly over synthetic input (each abbreviation, the whole-token guard, case, start- and

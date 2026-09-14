@@ -64,22 +64,28 @@ public sealed class ToolContractPayloadBudgetTests {
 	// UTF-8 wire size — conservative, which is the safe direction for a ceiling.
 	private const int MaxCompactIndexSerializedBytes = 173 * 256;
 
-	// Worst-case ceiling for ONE named full contract, measured in characters of the resolved
-	// `description` field alone (the input schema and examples are bounded by the tool's argument
-	// count; the description is the unbounded part). This is the number ENG-96389 watched double:
-	// create-business-process answers a single get-tool-contract call with 31052 characters — one tool's
-	// description, alone, is larger than the ENTIRE tools/list budget. Pinning the MAXIMUM rather than
-	// the sum keeps the guard on what one fetch costs an agent, which is what it actually pays.
-	// 122 * 256 = 31232 leaves 180 characters of headroom: a wording fix passes, a new element block
-	// does not — and a new element block IS the budget decision this ratchet exists to force.
-	private const int MaxToolContractDescriptionChars = 122 * 256;
+	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
+	// — the same quantity the index ratchet above measures, and what the agent actually receives.
+	// Measuring `description` alone would leave an escape hatch open: argument descriptions are free-form
+	// multi-line prose copied into the contract by McpToolRegistrySchemaContract.BuildInputSchema, so the
+	// cheapest way to pass a description-only ceiling after the next element block is to move the text
+	// into an argument description or an example. The per-fetch cost would be unchanged, the ratchet
+	// green, and the budget decision this test exists to force skipped (ENG-96389 review).
+	//
+	// This is the number ENG-96389 watched double: create-business-process answers a single
+	// get-tool-contract call with more than the ENTIRE tools/list budget, for one tool. Pinning the
+	// MAXIMUM rather than the sum keeps the guard on what ONE fetch costs, which is what an agent pays.
+	// Measured 34165 bytes (create-business-process); 134 * 256 = 34304 leaves 139 bytes of headroom per
+	// the next-256 convention: a wording fix passes, a new element block does not — and a new element
+	// block IS the budget decision this ratchet exists to force.
+	private const int MaxToolContractSerializedBytes = 134 * 256;
 
 	[Test]
 	[Category("Unit")]
 	[Description("The compact discovery index returned by a no-arguments get-tool-contract call stays within its byte budget, ratcheting the cost every long-tail discovery call pays.")]
 	public void GetToolContracts_ShouldKeepCompactIndexSerializedSizeWithinBudget_WhenCalledWithoutToolNames() {
 		// Arrange
-		ToolContractGetTool tool = BuildToolWithRegistry();
+		ToolContractGetTool tool = BuildToolOverDefaultSurface();
 
 		// Act
 		ToolContractGetResponse response = tool.GetToolContracts();
@@ -94,27 +100,32 @@ public sealed class ToolContractPayloadBudgetTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("No single tool's resolved contract description exceeds the per-fetch character budget, ratcheting what one get-tool-contract call costs an agent.")]
-	public void GetToolContracts_ShouldKeepLargestContractDescriptionWithinBudget_WhenEveryIndexedToolIsNamed() {
+	[Description("No single tool's resolved contract exceeds the per-fetch byte budget, ratcheting what one get-tool-contract call costs an agent.")]
+	public void GetToolContracts_ShouldKeepLargestContractWithinBudget_WhenEveryIndexedToolIsNamed() {
 		// Arrange
 		// Every tool is resolved BY NAME, one call each, exactly as an agent reaches a long-tail tool.
 		// detail=full is deliberately NOT used: it answers from CanonicalToolNames, i.e. the CURATED
 		// catalog only, so every uncurated tool - which is where the unbounded [Description] attributes
 		// actually live - is absent from that payload and would escape the ratchet entirely.
-		ToolContractGetTool tool = BuildToolWithRegistry();
+		ToolContractGetTool tool = BuildToolOverDefaultSurface();
 		string[] toolNames = (tool.GetToolContracts().Index ?? [])
 			.Select(entry => entry.Name)
 			.ToArray();
 
 		// Act
-		(string Name, int Length)[] resolved = toolNames
-			.Select(name => (
-				Name: name,
-				Length: tool.GetToolContracts(new ToolContractGetArgs([name]))
-					.Tools?.SingleOrDefault()?.Description?.Length ?? 0))
-			.OrderByDescending(entry => entry.Length)
+		(string Name, int Bytes)[] resolved = toolNames
+			.Select(name => {
+				ToolContractDefinition? contract = tool
+					.GetToolContracts(new ToolContractGetArgs([name])).Tools?.SingleOrDefault();
+				return (
+					Name: name,
+					Bytes: contract is null
+						? 0
+						: Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(contract)));
+			})
+			.OrderByDescending(entry => entry.Bytes)
 			.ToArray();
-		(string Name, int Length) largest = resolved.FirstOrDefault();
+		(string Name, int Bytes) largest = resolved.FirstOrDefault();
 
 		// Assert
 		toolNames.Should().NotBeEmpty(
@@ -124,26 +135,34 @@ public sealed class ToolContractPayloadBudgetTests {
 		// Without this guard the ratchet cannot tell "this tool's description is small" from "this tool
 		// stopped being measured", and the headline case it exists for could vanish while the test stays
 		// green. (get-tool-contract itself is absent from the index by design and so is not measured here.)
-		resolved.Should().OnlyContain(entry => entry.Length > 0,
+		resolved.Should().OnlyContain(entry => entry.Bytes > 0,
 			because: "a name the compact index advertises whose contract does not resolve would be counted as zero and escape the ceiling");
-		largest.Length.Should().BeLessThanOrEqualTo(MaxToolContractDescriptionChars,
-			because: $"'{largest.Name}' answers one get-tool-contract call with {largest.Length} characters against the {MaxToolContractDescriptionChars}-character ceiling; raising it is the moment to ask whether the text belongs in a [Description] at all");
+		largest.Bytes.Should().BeLessThanOrEqualTo(MaxToolContractSerializedBytes,
+			because: $"'{largest.Name}' answers one get-tool-contract call with {largest.Bytes} bytes against the {MaxToolContractSerializedBytes}-byte ceiling; raising it is the moment to ask whether the text belongs in a [Description] at all");
 	}
 
 	// Builds get-tool-contract over the REAL invoker registry so uncurated tools resolve through the same
 	// registry-schema path clio-run dispatches against.
 	//
-	// The feature predicate matches McpProfileGatingTests' DefaultSurfaceEnabled - every [FeatureToggle]
-	// type OFF - so both ratchets measure the surface a FRESH INSTALL serves. With every toggle on
+	// NAMED for the surface it builds, deliberately. ToolContractGetToolTests declares a
+	// BuildToolWithRegistry() in this same namespace whose registry enables EVERY tool type; this one is
+	// its inverse. Two same-named helpers measuring opposite tool sets would invite a maintainer to
+	// "consolidate the duplication" and silently change what these ratchets measure - folding the all-on
+	// version in here blows the headroom below, and folding this one into the sibling fixture drops the
+	// gated tools out of the uniqueness guard with nothing turning red.
+	//
+	// The predicate IS McpProfileGatingTests.DefaultSurfaceEnabled, called rather than re-implemented -
+	// every [FeatureToggle] type OFF - so both fixtures measure the surface a FRESH INSTALL serves and
+	// cannot drift apart. With every toggle on
 	// instead, the five gated tool types (deploy-identity, uninstall-identity, create-oauth-technical-user,
 	// watch-compilation, mobile-page-conversion-guide) add roughly 900-1000 bytes to the index: more than
 	// the whole headroom above, so an experimental tool that ships disabled would consume budget for a
 	// payload no user receives, and promoting one to default-on would not move the number at all.
-	private static ToolContractGetTool BuildToolWithRegistry() {
+	private static ToolContractGetTool BuildToolOverDefaultSurface() {
 		IServiceProvider provider = Substitute.For<IServiceProvider>();
 		IFeatureToggleService featureToggle = Substitute.For<IFeatureToggleService>();
 		featureToggle.IsEnabled(Arg.Any<Type>())
-			.Returns(call => call.Arg<Type>().GetCustomAttribute<FeatureToggleAttribute>() is null);
+			.Returns(call => McpProfileGatingTests.DefaultSurfaceEnabled(call.Arg<Type>()));
 		McpToolInvokerRegistry registry = new(
 			provider,
 			typeof(SchemaSyncTool).Assembly,

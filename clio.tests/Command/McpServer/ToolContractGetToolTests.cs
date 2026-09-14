@@ -3818,8 +3818,13 @@ public sealed class ToolContractGetToolTests {
 		ToolContractGetTool tool = BuildToolWithRegistry();
 		ToolContractGetResponse full = tool.GetToolContracts(new ToolContractGetArgs([toolName]));
 		string description = full.Tools!.Single().Description;
-		description.Should().Contain("e.g. ",
-			because: "this test is only meaningful while the description under test still carries the abbreviation it exists to survive; a reword must fail here rather than pass vacuously");
+		// The abbreviation must sit in the FIRST SENTENCE, which is the only part the split looks at.
+		// Asserting it appears anywhere in a multi-thousand-character description would leave the test
+		// green after a reword that moved it past the first boundary - at which point it exercises the
+		// abbreviation skip not at all, and the NotEndWith assertion below holds for any text whatsoever
+		// because both purposes reach the 120-character cap.
+		ToolContractCatalog.BuildPurpose(description).Should().Contain("e.g. ",
+			because: "this test is only meaningful while the abbreviation is still inside the first sentence the splitter sees; a reword that moves it out must fail here rather than silently disarm the test");
 
 		// Act
 		ToolContractIndexEntry entry = tool.GetToolContracts().Index!.Single(item => item.Name == toolName);
@@ -3843,6 +3848,49 @@ public sealed class ToolContractGetToolTests {
 		// Assert
 		entry.Purpose.Should().Be("Client-side Freedom UI page body validation without saving to Creatio.",
 			because: "the abbreviation exception must narrow the sentence split, never widen it into swallowing an ordinary sentence break");
+	}
+
+	// Pins the repaired one-liner for every tool ENG-96389 changed, mirroring the stop-creatio convention
+	// earlier in this fixture. The uniqueness guard below is NOT a substitute: reverting a single
+	// description restores the old warning-first purpose, which is still byte-distinct from every other
+	// one, so uniqueness stays green while the defect returns on exactly the tool it was found on.
+	//
+	// compile-creatio is in this table for the OPPOSITE reason. It is the one tool of the six that HAS a
+	// curated ToolContractCatalog entry, so its index line comes from the curated string and its
+	// [Description] attribute is never consulted - see
+	// docs/knowledge/McpServer/curated-tool-contract-wins-over-the-description-attribute.md. The expected
+	// value below is that CURATED sentence, which already reads as a purpose. Editing the attribute could
+	// not have moved it, and ENG-96389 initially did exactly that; pinning it here makes the inertness
+	// executable instead of something the next author has to rediscover.
+	[Test]
+	[Category("Unit")]
+	[TestCase(CreateBusinessProcessTool.CreateBusinessProcessToolName,
+		"Build a business process on a Creatio environment from a declarative JSON descriptor.",
+		TestName = "PurposePinned_CreateBusinessProcess")]
+	[TestCase(ModifyBusinessProcessTool.ModifyBusinessProcessToolName,
+		"Edit an EXISTING business process on a Creatio environment by applying an ordered JSON array of operations.",
+		TestName = "PurposePinned_ModifyBusinessProcess")]
+	[TestCase(ClearRedisTool.ClearRedisByEnvironmentName,
+		"Empties the redis database used by a creatio instance identified by its REGISTERED ENVIRONMENT NAME.",
+		TestName = "PurposePinned_ClearRedisByEnvironment")]
+	[TestCase(ClearRedisTool.ClearRedisByCredentialsToolName,
+		"Empties the redis database used by a creatio instance identified by RAW CREDENTIALS - url, username and password.",
+		TestName = "PurposePinned_ClearRedisByCredentials")]
+	[TestCase(CompileCreatioTool.CompileCreatioToolName,
+		"Recompiles a registered Creatio environment and forces a runtime reload.",
+		TestName = "PurposePinned_CompileCreatio_ComesFromTheCuratedContract")]
+	[Description("Each tool whose compact-index one-liner ENG-96389 examined advertises that exact purpose, so reverting a single description fails here instead of hiding behind the uniqueness guard.")]
+	public void GetToolContracts_ShouldAdvertiseTheRepairedPurpose_WhenCompactIndexIsBuilt(
+		string toolName, string expectedPurpose) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractIndexEntry entry = tool.GetToolContracts().Index!.Single(item => item.Name == toolName);
+
+		// Assert
+		entry.Purpose.Should().Be(expectedPurpose,
+			because: $"'{toolName}' must lead with what it DOES on the only discovery surface a non-resident tool has; a warning-first or shared one-liner is the defect ENG-96389 removed");
 	}
 
 	[Test]
