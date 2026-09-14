@@ -417,4 +417,50 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 		saveResponse.AppendProjection.Should().BeEquivalentTo(dryRunResponse.AppendProjection,
 			because: "the projection is a by-product of the one merge, so both paths must report it identically");
 	}
+	[Test]
+	[Description("A dry run that fails validation BEFORE the mode is branched on still reports dryRun: true.")]
+	public void TryUpdatePage_ShouldStillReportTheFailureAsADryRun_WhenValidationFailsBeforeTheModeBranch() {
+		// Arrange - a body with no marker pairs at all. Marker-integrity validation runs upstream of the
+		// dry-run branch, so this failure never reaches TryCompleteDryRun and was returning dryRun: false:
+		// byte-identical to a failed real save, which is exactly the distinction GH-1150 set out to establish.
+		PageUpdateOptions options = new() {
+			SchemaName = SchemaName,
+			Body = """[{"operation":"merge","name":"UsrPanel","values":{"title":"New"}}]""",
+			Mode = "replace",
+			DryRun = true
+		};
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "a body with no marker pairs cannot be written");
+		response.DryRun.Should().BeTrue(
+			because: "every failure exit of a dry run must say so, not only the ones downstream of the mode branch");
+		response.SchemaName.Should().Be(SchemaName,
+			because: "the caller has to be able to tell WHICH schema the rejected call was aimed at");
+		AssertNothingWasSaved();
+	}
+
+	[Test]
+	[Description("The same validation failure on a real save is NOT mislabelled as a dry run.")]
+	public void TryUpdatePage_ShouldNotReportTheFailureAsADryRun_WhenTheSameValidationFailsOnASave() {
+		// Arrange - the guard is `options.DryRun`, so the pairing matters: stamping unconditionally would make
+		// every failed save claim nothing was written, inverting the defect instead of fixing it.
+		PageUpdateOptions options = new() {
+			SchemaName = SchemaName,
+			Body = """[{"operation":"merge","name":"UsrPanel","values":{"title":"New"}}]""",
+			Mode = "replace",
+			DryRun = false
+		};
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "a body with no marker pairs cannot be written");
+		response.DryRun.Should().BeFalse(
+			because: "a real save that failed must never claim the safety of a dry run");
+		AssertNothingWasSaved();
+	}
 }

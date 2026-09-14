@@ -20,7 +20,14 @@ real merge (`TryResolveBodyToWrite`). So an append dry run:
 - can **fail**, with the same error the save would produce (a full-config current body, for instance).
   Be precise about the baseline: master ALREADY failed here, because it already ran the merge and
   returned on the error. What is new is that every dry-run failure now stamps `dryRun: true` and the
-  schema name, so it stays distinguishable from a failed real save;
+  schema name, so it stays distinguishable from a failed real save. That stamping lives at the single
+  exit of `TryUpdatePage`, NOT at each failure site, and it has to stay there: most of the failure
+  exits — required-field, common-input, context resolution, external-modification and input validation
+  — return BEFORE the mode is ever branched on, so a per-site rule silently misses them. Manual testing
+  on a live stand is what caught this: `--mode replace --dry-run` with a markerless body was returning
+  `dryRun: false`, indistinguishable from a failed real save, while 9767 unit tests passed. The guard is
+  `options.DryRun`; stamping unconditionally would make every failed SAVE claim the safety of a dry run,
+  which inverts the defect rather than fixing it;
 - runs the SAME body checks the save runs, against the projected final body: the inert-operation
   detector (so it sees pairs formed between the caller's fragment and the server's body), the
   insert-downgrade detector, and the save's own authoritative widget-caption gate — the last reported as

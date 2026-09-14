@@ -177,6 +177,27 @@
 		/// <param name="response">Structured command response.</param>
 		/// <returns><c>true</c> when the page was updated successfully; otherwise <c>false</c>.</returns>
 		public bool TryUpdatePage(PageUpdateOptions options, out PageUpdateResponse response) {
+			bool succeeded = TryUpdatePageCore(options, out response);
+			// GH-1150: stamped HERE rather than at each failure site, because the failure sites upstream of the
+			// dry-run branch outnumber the ones inside it - required-field, common-input, context-resolution,
+			// external-modification and input validation all return before the mode is ever branched on, and the
+			// catch below returns a bare envelope. Stamping them individually is a rule someone has to remember
+			// at every new exit; stamping the one exit they all funnel through is not. Without it a failed
+			// `--dry-run` is byte-identical to a failed real save and the caller cannot tell whether anything
+			// was written - which is the property this ticket exists to establish, so establishing it for only
+			// the downstream half would be worse than not claiming it.
+			if (!succeeded && options.DryRun && response != null) {
+				response.DryRun = true;
+				response.SchemaName ??= options.SchemaName;
+			}
+			return succeeded;
+		}
+
+		/// <summary>
+		/// The body of <see cref="TryUpdatePage"/>. Split out so every failure exit is stamped in one place;
+		/// see the remarks there.
+		/// </summary>
+		private bool TryUpdatePageCore(PageUpdateOptions options, out PageUpdateResponse response) {
 			try {
 				if (!TryLoadBodyFromFile(options, out response)) return false;
 				// Single chokepoint for update-page, sync-pages, and the CLI: run the registered before-save
@@ -279,14 +300,9 @@
 			// while the save read the merged body and the final registration set - disagreeing in BOTH
 			// directions. Append already fetches the schema, so it now resolves exactly the write the save
 			// would perform and runs the save's own gate, with severity the only difference.
+			// A failure here needs no stamping: TryUpdatePage marks every dry-run failure on the way out.
 			if (!TryPrepareWrite(options, context, explicitResources, parsedOptionalProperties,
-				out PreparedWrite prepared, out response)) {
-				// Every failure exit is stamped, not just the merge one. Without this a failed dry run is
-				// byte-identical to a failed real save and the caller cannot tell whether anything was written.
-				response.DryRun = true;
-				response.SchemaName = options.SchemaName;
-				return false;
-			}
+				out PreparedWrite prepared, out response)) return false;
 			response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
 			response.AppendProjection = prepared.Projection;
 			// The same four sources the save reports, against the same body. The caption gate is the one that
