@@ -1208,4 +1208,71 @@ public sealed class SensitiveErrorTextRedactorTests {
 		FluentActions.Invoking(() => JsonDocument.Parse(redacted)).Should().NotThrow(
 			because: "the document must still parse for the caller");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An address on a bare dotted-quad IPv4 host loses the address, with or without a port: neither the dotted branch (last label must be alphabetic) nor the single-label branch (must start with a letter) accepted it, and HostPortRegex never sees a host preceded by '@' (PR #1493 review).")]
+	[TestCase("sa@10.0.0.5:1433", "[redacted]:1433", TestName = "Ipv4Host_WithPort")]
+	[TestCase("user@10.0.0.5", "[redacted]", TestName = "Ipv4Host_WithoutPort")]
+	[TestCase("svc@192.168.1.10", "[redacted]", TestName = "Ipv4Host_PrivateRange")]
+	public void Redact_ShouldRedactAnAddressOnABareIpv4Host(string address, string expected) {
+		// Arrange
+		string message = $"Authentication failed for {address} on this environment.";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(message);
+
+		// Assert
+		redacted.Should().Be($"Authentication failed for {expected} on this environment.",
+			because: "an on-prem stand named by its IP is exactly where an authentication failure names a real account, and the whole address shipped in the clear");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A three-part version behind an @ must stay readable: the new IPv4 branch requires four octets, so the narrowing PR #1374 introduced is not reopened.")]
+	[TestCase("clio@8.0.1", TestName = "Survives_ThreePartVersion")]
+	[TestCase("node@20.11.1", TestName = "Survives_NodeVersionAfterIpv4Branch")]
+	public void Redact_ShouldNotRedactAThreePartVersion_AfterTheIpv4Widening(string shape) {
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact($"Package {shape} is required.");
+
+		// Assert
+		redacted.Should().Contain(shape,
+			because: "a version specifier is load-bearing diagnostic content and must not be replaced by a placeholder indistinguishable from a credential removal");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("camelCase token keys and the private-key / client-id keys are redacted: a bare 'token' behind a word boundary cannot match inside 'accessToken', and neither private_key nor client_id was in the key set at all (PR #1493 review).")]
+	[TestCase("accessToken", TestName = "CamelCase_AccessToken")]
+	[TestCase("refreshToken", TestName = "CamelCase_RefreshToken")]
+	[TestCase("idToken", TestName = "CamelCase_IdToken")]
+	[TestCase("access_token", TestName = "Snake_AccessToken")]
+	[TestCase("private_key", TestName = "Snake_PrivateKey")]
+	[TestCase("privateKey", TestName = "CamelCase_PrivateKey")]
+	[TestCase("client_id", TestName = "Snake_ClientId")]
+	[TestCase("clientId", TestName = "CamelCase_ClientId")]
+	public void Redact_ShouldRedactTheValueOfASecretKey(string key) {
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact($"Request rejected: {key}=s3cr3tvalue");
+
+		// Assert
+		redacted.Should().NotContain("s3cr3tvalue",
+			because: "a private key is the highest-value string this redactor is handed, and an OAuth token is close behind");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The camelCase widening is qualifier-scoped, not a generic prefix: UId is how Creatio spells the identifier property on every schema and package payload, so it must not be pulled in by the 'uid' key.")]
+	[TestCase("SchemaUId=00000000-0000-0000-0000-000000000001", TestName = "Survives_SchemaUId")]
+	[TestCase("PackageUId=00000000-0000-0000-0000-000000000002", TestName = "Survives_PackageUId")]
+	[TestCase("tokenCount=5", TestName = "Survives_TokenCountSuffix")]
+	public void Redact_ShouldNotRedactAnIdentifierProperty(string pair) {
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact($"Schema read returned {pair}.");
+
+		// Assert
+		redacted.Should().Contain(pair,
+			because: "over-redacting an identifier every Creatio payload carries would cost more diagnostic signal than the camelCase widening buys");
+	}
 }

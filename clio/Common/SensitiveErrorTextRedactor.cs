@@ -73,6 +73,16 @@ internal static partial class SensitiveErrorTextRedactor {
 	// measured on a stand. A Creatio Forms-auth cookie IS the session - possessing it is possessing the
 	// session - so it belongs in the same class as a password.
 	//
+	// THE TOKEN ALTERNATIVE CARRIES ITS OWN QUALIFIER LIST (PR #1493 review). A bare "token" behind \b
+	// cannot match inside "accessToken": the boundary is between "s" and "T", both word characters, so
+	// "accessToken=..." and "refreshToken=..." shipped in the clear while "access_token=..." was caught.
+	// The qualifiers are enumerated rather than allowing any camelCase prefix, because a generic prefix
+	// would pull "uid" into "SchemaUId" - the exact collision this class must not make, since UId is how
+	// Creatio spells the identifier property on every schema and package payload.
+	// "private_key" and "client_id" were in neither key set. A private key is the highest-value string
+	// this redactor is ever handed; both forms ("private_key", "privateKey") are covered by [_-]? plus
+	// IgnoreCase.
+	//
 	// The value alternation takes the QUOTED forms first: the bare class excludes a quote character, so
 	// without them a quoted secret (password="s3cr3t") matches nothing at all and reaches the reader
 	// verbatim — the pattern has to fail closed on the whole pair, not on the quote.
@@ -85,8 +95,20 @@ internal static partial class SensitiveErrorTextRedactor {
 	// They are split into TWO sets, because the JSON rule must not take all of them: a secret is a
 	// secret in any spelling, while a connection-string PART is only a secret when it is written as part
 	// of a connection string.
+	// The token alternative carries its OWN qualifier list (PR #1493 review). A bare "token" behind \b
+	// cannot match inside "accessToken" - the boundary falls between "s" and "T", both word characters -
+	// so "accessToken=..." and "refreshToken=..." shipped in the clear while "access_token=..." was
+	// caught. JsonCredentialKeyPattern has the same gap by a different route: its wrapper reaches a key
+	// only through a "_", "." or "-", so the JSON spelling leaked too. Fixing it here fixes both rules,
+	// since the JSON pattern is built from this constant.
+	// The qualifiers are ENUMERATED rather than allowing any camelCase prefix: a generic prefix would
+	// pull "uid" into "SchemaUId", and UId is how Creatio spells the identifier property on every schema
+	// and package payload, so that collision would cost more diagnostic signal than the widening buys.
+	// "private_key" and "client_id" were in neither key set at all. A private key is the highest-value
+	// string this redactor is ever handed; [_-]? plus IgnoreCase covers both spellings of each.
 	private const string CredentialSecretKeys =
-		@"password|pwd|pass|secret|token|api[_-]?key|client[_-]?secret|access[_-]?key|connection ?string|"
+		@"password|pwd|pass|secret|(?:access|refresh|id|auth|bearer|api|client|session|[xc]srf)?[_-]?token|"
+		+ @"api[_-]?key|client[_-]?secret|client[_-]?id|private[_-]?key|access[_-]?key|connection ?string|"
 		+ @"authorization|auth|bearer|set-cookie|cookie|asp\.net_sessionid|aspxauth|bpmcsrf|jsessionid|"
 		+ @"phpsessid|session[_-]?id|[xc]srf[_-]?token";
 
@@ -240,6 +262,12 @@ internal static partial class SensitiveErrorTextRedactor {
 	//      hyphens after the first character. The letter start is what keeps rule 2's narrowing intact -
 	//      "@8.0.1", "@20" and "@1.2.3" cannot enter this branch at all. A trailing DIGIT is allowed,
 	//      because on-prem host names routinely end in one ("user@WEB01", "svc@dev04").
+	//   2b. a bare dotted-quad IPv4 literal (PR #1493 review). Branch 2 refuses it - its final label must
+	//      be alphabetic - and branch 3 refuses it too, since that one must start with a letter. So
+	//      "sa@10.0.0.5" and "sa@10.0.0.5:1433" were matched by NOTHING and shipped whole. HostPortRegex is
+	//      not the safety net the earlier comment assumed: its (?<![\w:./@-]) guard rejects a start
+	//      preceded by "@", so it never sees the host half of an address. Placed AFTER branch 2 so a dotted
+	//      alphabetic host still wins, and the four-octet shape keeps "clio@8.0.1" (three parts) out.
 	// Branch 3's trailing (?![A-Za-z0-9\-]) only forbids stopping part-way through a label. It deliberately
 	// does NOT also forbid a following ".<label>". An earlier revision did, on the theory that it prevented
 	// a partial match; it does not - for "user@host.example.c" branch 2 backtracks to "user@host.example"
@@ -261,7 +289,7 @@ internal static partial class SensitiveErrorTextRedactor {
 	// "[redacted]:org/repo.git"; a digest specifier ("image@sha256:...") stops at the ":" the same way.
 	// Also unchanged by this widening: "Prop@odata.mediaReadLink"-style OData annotations were already
 	// eaten by the dotted branch before issue #1380 and still are.
-	[GeneratedRegex(@"(?<!\\u?[0-9A-Fa-f]{0,3})[A-Za-z0-9._%+\-]+@(?:\[[^\]\s]{1,45}\]|[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}|[A-Za-z][A-Za-z0-9\-]*[A-Za-z0-9](?![A-Za-z0-9\-]))",
+	[GeneratedRegex(@"(?<!\\u?[0-9A-Fa-f]{0,3})[A-Za-z0-9._%+\-]+@(?:\[[^\]\s]{1,45}\]|[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}|\d{1,3}(?:\.\d{1,3}){3}|[A-Za-z][A-Za-z0-9\-]*[A-Za-z0-9](?![A-Za-z0-9\-]))",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex EmailRegex();
 
