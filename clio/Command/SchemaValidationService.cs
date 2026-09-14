@@ -1660,19 +1660,9 @@ public static class SchemaValidationService
 					&& string.Equals(type.GetString(), ScaffoldComponentType, StringComparison.Ordinal)) {
 					return true;
 				}
-				foreach (JsonProperty property in element.EnumerateObject()) {
-					if (DeclaresScaffold(property.Value)) {
-						return true;
-					}
-				}
-				return false;
+				return element.EnumerateObject().Any(property => DeclaresScaffold(property.Value));
 			case JsonValueKind.Array:
-				foreach (JsonElement item in element.EnumerateArray()) {
-					if (DeclaresScaffold(item)) {
-						return true;
-					}
-				}
-				return false;
+				return element.EnumerateArray().Any(DeclaresScaffold);
 			default:
 				return false;
 		}

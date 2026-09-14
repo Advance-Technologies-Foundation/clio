@@ -4580,7 +4580,7 @@ public static class WebToMobileAnalysisService {
 				}
 			}
 			if (placedAbove > 0) {
-				SetAnchorPlacement(elementMap, group.Key, ShiftRows(anchorPlacement, placedAbove), placedAbove);
+				SetAnchorPlacement(elementMap, group.Key, ShiftRows(anchorPlacement, placedAbove));
 			}
 		}
 	}
@@ -4790,7 +4790,7 @@ public static class WebToMobileAnalysisService {
 	/// the anchor is re-placed exactly once however the page reached it.
 	/// </summary>
 	private static void SetAnchorPlacement(
-		List<ElementMapEntry> elementMap, string anchor, JsonObject placement, int above) {
+		List<ElementMapEntry> elementMap, string anchor, JsonObject placement) {
 		ElementMapEntry existing = elementMap.FirstOrDefault(e =>
 			IsMerge(e)
 			&& string.Equals(e.Name, anchor, StringComparison.OrdinalIgnoreCase));

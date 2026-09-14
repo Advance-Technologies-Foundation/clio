@@ -148,18 +148,8 @@ public sealed class MobilePageConversionGuideTool {
 		IReadOnlyList<ComponentRegistryEntry> webEntries = webState.Entries;
 		HashSet<string> mobileTypes = new(mobileEntries.Select(e => e.ComponentType), StringComparer.OrdinalIgnoreCase);
 		HashSet<string> webTypes = new(webEntries.Select(e => e.ComponentType), StringComparer.OrdinalIgnoreCase);
-		Dictionary<string, ComponentRegistryEntry> mobileByType = new(StringComparer.OrdinalIgnoreCase);
-		foreach (ComponentRegistryEntry entry in mobileEntries) {
-			if (!string.IsNullOrWhiteSpace(entry.ComponentType)) {
-				mobileByType[entry.ComponentType] = entry;
-			}
-		}
-		Dictionary<string, ComponentRegistryEntry> webByType = new(StringComparer.OrdinalIgnoreCase);
-		foreach (ComponentRegistryEntry entry in webEntries) {
-			if (!string.IsNullOrWhiteSpace(entry.ComponentType)) {
-				webByType[entry.ComponentType] = entry;
-			}
-		}
+		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType = IndexByComponentType(mobileEntries);
+		IReadOnlyDictionary<string, ComponentRegistryEntry> webByType = IndexByComponentType(webEntries);
 
 		WebToMobilePageConversionRules rules = await _rulesCatalog.GetRulesAsync(version, cancellationToken).ConfigureAwait(false);
 		// Resolve the effective web template, climbing past same-named replacing layers when the page is a
@@ -271,6 +261,19 @@ public sealed class MobilePageConversionGuideTool {
 			RequiresVersionConfirmation = ComponentInfoResolution.RequiresVersionConfirmation(resolvedFrom),
 			ResolvedFromReason = ComponentInfoResolution.GetFallbackReason(resolvedFrom, versionResolution.Reason)
 		};
+	}
+
+	/// <summary>
+	/// Indexes a registry's entries by component type, skipping the entries that declare none. Last wins on a
+	/// duplicate type, which is the behaviour every consumer of these two maps already relied on.
+	/// </summary>
+	private static IReadOnlyDictionary<string, ComponentRegistryEntry> IndexByComponentType(
+		IReadOnlyList<ComponentRegistryEntry> entries) {
+		var byType = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase);
+		foreach (ComponentRegistryEntry entry in entries.Where(e => !string.IsNullOrWhiteSpace(e.ComponentType))) {
+			byType[entry.ComponentType] = entry;
+		}
+		return byType;
 	}
 
 	/// <summary>
