@@ -20,10 +20,10 @@ namespace Clio.Command;
 [RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.1.0",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class SetActiveProcessVersionOptions : EnvironmentOptions {
-	/// <summary>Schema name (code) of the VERSION to activate. Provide exactly one of <see cref="VersionName"/> or <see cref="VersionUid"/>.</summary>
+	/// <summary>Schema name (code) of the family member to activate, the ROOT included. Provide exactly one of <see cref="VersionName"/> or <see cref="VersionUid"/>.</summary>
 	public string VersionName { get; set; } = string.Empty;
 
-	/// <summary>Schema UId of the VERSION to activate. Provide exactly one of <see cref="VersionName"/> or <see cref="VersionUid"/>.</summary>
+	/// <summary>Schema UId of the family member to activate, the ROOT included. Provide exactly one of <see cref="VersionName"/> or <see cref="VersionUid"/>.</summary>
 	public string VersionUid { get; set; } = string.Empty;
 }
 
