@@ -10,7 +10,6 @@ using System.Security.Authentication;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using CommandLine;
@@ -987,8 +986,8 @@ namespace Clio.Command
 			if (string.IsNullOrEmpty(message)) {
 				return message;
 			}
-			string redacted = McpServer.SensitiveErrorTextRedactor.Redact(message);
-			return McpServer.SensitiveErrorTextRedactor.ClampPreservingFence(redacted, MaxPromotedMessageLength);
+			string redacted = SensitiveErrorTextRedactor.Redact(message);
+			return SensitiveErrorTextRedactor.ClampPreservingFence(redacted, MaxPromotedMessageLength);
 		}
 		// Bounds every walk over an exception chain. A chain this deep is not something a transport
 		// produces, and the bound is what keeps a hand-built or self-referencing chain from looping.

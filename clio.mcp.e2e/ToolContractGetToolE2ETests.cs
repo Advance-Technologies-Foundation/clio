@@ -3,6 +3,7 @@ using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -403,6 +404,63 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			entry => entry.Name == SchemaSyncTool.ToolName);
 		syncSchemas.Resident.Should().BeFalse(
 			because: "sync-schemas is a hidden long-tail tool reachable only via clio-run against the real running MCP server");
+	}
+
+	// ENG-96389 (4.1): against the REAL running MCP server, a compact-index purpose must not stop at an
+	// abbreviation whose own period is followed by whitespace (e.g., i.e., etc., vs.). The index is the
+	// ONLY discovery surface for a long-tail tool, so a one-liner cut at "e.g." hides what the tool does
+	// behind a truncated example. Asserted over the wire because the purpose is distilled server-side.
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract compact index does not cut a purpose at an abbreviation")]
+	[AllureDescription("Drives the real stdio MCP server: reads the compact index plus the full contract of each tool whose description carries an 'e.g.', then asserts the abbreviation still sits in the first sentence the server distils (so the check cannot go vacuous after a reword), that the served purpose does not stop at the marker, and that no two advertised purposes collide.")]
+	[Description("Verifies over the real MCP transport that a description containing 'e.g.' yields a compact-index purpose describing the tool rather than one truncated at the abbreviation.")]
+	public async Task ToolContractGet_Should_NotCutCompactIndexPurposeAtAbbreviation() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse indexResponse = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?>());
+
+		// Assert
+		AllureApi.Step("Assert the compact index is populated", () =>
+			indexResponse.Index.Should().NotBeNullOrEmpty(
+				because: "the no-args default is the discovery entry point for every long-tail tool"));
+		// Only `e.g.` is asserted: it is the only abbreviation that reaches a first-sentence boundary in
+		// the real corpus. `i.e.` and `vs.` are covered by the synthetic table in ToolContractGetToolTests
+		// - asserting them here against descriptions that do not contain them would be decoration, not
+		// coverage.
+		foreach (string toolName in new[] {
+			         ValidateProcessGraphTool.ToolName, GetUserCultureTool.ToolName }) {
+			ToolContractIndexEntry? entry = indexResponse.Index!.FirstOrDefault(item => item.Name == toolName);
+			AllureApi.Step($"Assert '{toolName}' is advertised in the index", () =>
+				entry.Should().NotBeNull(
+					because: $"'{toolName}' must be advertised in the compact index for the purpose assertions to mean anything"));
+
+			ToolContractGetResponse full = await CallAsync(
+				context.Session,
+				context.CancellationTokenSource.Token,
+				new Dictionary<string, object?> { ["tool-names"] = new[] { toolName } });
+			string description = full.Tools!.Single().Description;
+
+			// Non-vacuity precondition, asserted over the wire for the same reason the unit test asserts
+			// it in-process: once a purpose reaches the 120-character cap, NotEndWith holds for ANY text,
+			// so a reword that moved `e.g.` past the first sentence would leave the next step green while
+			// exercising the abbreviation skip not at all.
+			AllureApi.Step($"Assert '{toolName}' still carries the abbreviation it is tested for", () =>
+				description.Should().Contain("e.g. ",
+					because: $"'{toolName}' must still carry the example this test exists to protect; a reword that drops it has to fail here rather than silently disarm the assertion below"));
+
+			AllureApi.Step($"Assert '{toolName}' purpose does not stop at the marker", () =>
+				entry!.Purpose.TrimEnd('…').TrimEnd().Should().NotEndWith("e.g.",
+					because: $"'{toolName}' index purpose '{entry.Purpose}' must carry the example it introduces, not stop at the marker"));
+		}
+		AllureApi.Step("Assert every advertised purpose is distinct", () =>
+			indexResponse.Index!.Select(entry => entry.Purpose).Should().OnlyHaveUniqueItems(
+				because: "two tools sharing a byte-identical one-liner are indistinguishable on the only discovery surface a non-resident tool has, and the real server is where that has to hold"));
 	}
 
 	[Test]
