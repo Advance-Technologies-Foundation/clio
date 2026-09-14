@@ -848,16 +848,32 @@ public sealed class ApplicationSectionToolE2ETests {
 		try {
 			// Act — fire every create-app-section call concurrently against the SAME application, on one
 			// long-lived MCP server, exactly reproducing the parallel batch that produced the contention.
+			// Each call is individually wrapped in the transient-platform-condition retry gate (issue #1106):
+			// the recorded flakes here were NOT contention but a rejected implicit login with
+			// in-flight-logins=0/0, one of the three shapes the gate already classifies. Gating does not
+			// weaken what this test proves - the gate excludes error-class=contention explicitly, so a real
+			// contention answer is still returned unretried and still fails the assertion below.
+			// Retrying a create-app-section is NOT inherently duplicate-safe - the insert carries a
+			// client-generated id and the verify matches on that id, so a retry inserts a second section
+			// rather than recovering the first. What makes it safe here is the gate's exclusion of
+			// section-created in-progress/true, which covers every answer that says the insert landed or
+			// may still be landing; only answers that failed BEFORE the insert are retried.
+			// No re-authentication seam is supplied: the three calls share one session that a single
+			// failing call must not replace underneath the others. Section commands build a fresh
+			// IApplicationClient per call, so a retried attempt performs a fresh implicit login anyway.
 			Task<CallToolResult>[] calls = captions
-				.Select(caption => session.CallToolAsync(
-					SectionCreateToolName,
-					new Dictionary<string, object?> {
-						["args"] = new Dictionary<string, object?> {
-							["environment-name"] = environmentName,
-							["application-code"] = ApplicationCode,
-							["caption"] = caption
-						}
-					},
+				.Select(caption => TransientPlatformConditionRetryGate.InvokeWithRetryAsync(
+					attemptToken => session.CallToolAsync(
+						SectionCreateToolName,
+						new Dictionary<string, object?> {
+							["args"] = new Dictionary<string, object?> {
+								["environment-name"] = environmentName,
+								["application-code"] = ApplicationCode,
+								["caption"] = caption
+							}
+						},
+						attemptToken),
+					reauthenticateAsync: null,
 					cancellationTokenSource.Token))
 				.ToArray();
 			CallToolResult[] results = await Task.WhenAll(calls);
