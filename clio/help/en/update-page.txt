@@ -211,12 +211,17 @@ DESCRIPTION
         yours to read, so warning about your own input would be noise. Counted so
         the totals can be reconciled.
     Named lists are capped; counts are exact.
-    Two consequences: an append whose real save could not merge now FAILS the
-    dry run with the same error instead of reporting success (that response
-    carries dryRun: true, so it stays distinguishable from a failed real save);
-    and --mode replace
-    is unaffected - it writes verbatim, so there is nothing to project and no
-    extra round-trip is made. The same projection is returned on a real append
+    An append dry run also runs the SAME body checks as the save, against the
+    same body, including the save's widget-caption gate - reported as a warning
+    rather than a refusal, so a dry run and a save cannot disagree about a
+    caption. Two consequences: an append whose real save could not merge now
+    FAILS the dry run with the same error instead of reporting success (every
+    dry-run failure carries dryRun: true, so it stays distinguishable from a
+    failed real save); and --mode replace
+    is unaffected and stays a PURE OFFLINE check - it writes verbatim, so there
+    is nothing to project and no round-trip is made. Trade-off: its caption
+    check resolves only against the resources you pass, so it is weaker than
+    the save's. The same projection is returned on a real append
     save.
     appendProjection speaks for viewConfigDiff only. The sibling *_DIFF arrays
     append unconditionally and cannot lose an entry. Handlers are NOT covered:

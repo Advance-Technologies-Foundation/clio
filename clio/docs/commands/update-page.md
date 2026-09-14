@@ -297,11 +297,16 @@ anywhere.
 
 Two consequences worth knowing:
 
+- An append dry run runs the **same body checks the save runs, against the same body** — including the
+  save's own widget-caption gate, reported as a warning rather than a refusal. A dry run and a save
+  therefore cannot disagree about a caption, which they previously could in both directions.
 - An append whose real save could not merge — a full-config current body, for instance — now **fails
-  the dry run** with the same error, instead of reporting `success` and failing on the write. That
-  failure response carries `dryRun: true`, so it stays distinguishable from a failed real save.
-- `--mode replace` is unaffected. It writes the body verbatim, so there is nothing to project and no
-  extra server round-trip is made; `appendProjection` is absent.
+  the dry run** with the same error, instead of reporting `success` and failing on the write. Every
+  dry-run failure carries `dryRun: true`, so it stays distinguishable from a failed real save.
+- `--mode replace` is unaffected and stays a **pure offline check**: it writes the body verbatim, so
+  there is nothing to project, no server round-trip is made, and `appendProjection` is absent. The
+  trade-off is that its caption check can only resolve against the resources you pass, so it is weaker
+  than the save's — the one place a replace dry run can still differ from its save.
 
 The same `appendProjection` is returned on a real append save, for the caller who skipped the dry
 run.

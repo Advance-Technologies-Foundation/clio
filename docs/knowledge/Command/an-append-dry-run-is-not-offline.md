@@ -10,18 +10,22 @@ date: 2026-08-31
 ---
 
 **What is true** — `PageUpdateCommand.TryUpdatePage`'s `options.DryRun` branch sits **after**
-`TryProjectDryRun`, which for `mode: append` loads the schema (`TryLoadSchemaForSave`) and runs the
+`TryCompleteDryRun`, which for `mode: append` loads the schema (`TryLoadSchemaForSave`) and runs the
 real merge (`TryResolveBodyToWrite`). So an append dry run:
 
 - performs one designer `GetSchema` round trip. Note the magnitude honestly: an append dry run was
   **never** offline — `TryResolveContext` already issued a `SysSchema` `SelectQuery`, `GetDesignPackageUId`
   and `GetParentSchemas`, and the MCP layer already probed the platform version. This is the fourth or
   fifth call, roughly **+25% dry-run latency**, not a transition from local to networked;
-- can **fail**, with the same error the save would produce (a full-config current body, for instance),
-  where it previously returned `success: true`. The failure response stamps `dryRun: true` so it stays
-  distinguishable from a failed real save;
-- runs `PageInertOperationDetector` against the **projected final body**, so it sees pairs formed between
-  the caller's fragment and the server's body. `PageInsertDowngradeDetector` is deliberately NOT called
+- can **fail**, with the same error the save would produce (a full-config current body, for instance).
+  Be precise about the baseline: master ALREADY failed here, because it already ran the merge and
+  returned on the error. What is new is that every dry-run failure now stamps `dryRun: true` and the
+  schema name, so it stays distinguishable from a failed real save;
+- runs the SAME body checks the save runs, against the projected final body: the inert-operation
+  detector (so it sees pairs formed between the caller's fragment and the server's body), the
+  insert-downgrade detector, and the save's own authoritative widget-caption gate — the last reported as
+  a warning rather than a refusal, because a dry run's job is to say what would happen, not to refuse.
+  Severity is the only difference between the two paths. `PageInsertDowngradeDetector` is deliberately NOT called
   here: it cannot fire on this path. It needs the prior body to introduce a component with an `insert`
   that the final body drops for a transform, and an append never produces that shape — a current
   `insert X` is only ever replaced by an incoming entry of the same identity (another `insert X`), and
@@ -39,8 +43,11 @@ real merge (`TryResolveBodyToWrite`). So an append dry run:
 reasoning. The uncovered sibling is handlers — `MergeHandlersRaw` can drop a duplicated current
 handler — which the DTO documents rather than reporting zeros for.
 
-`mode: replace` is deliberately excluded: it writes the body verbatim, so it stays exactly as offline
-and as cheap as before. `sync-pages` pins `replace` and never reaches the merger, so it is unaffected.
+`mode: replace` is the deliberate exception and stays OFFLINE: `TryCompleteDryRun` returns before any
+fetch, which the pre-existing `TryUpdatePage_WhenDryRun_SkipsDesignerServiceCalls` asserts by name. The
+cost of that guarantee is the one divergence left: a replace dry run's caption check resolves only
+against the explicitly passed resources, so it is weaker than the save's. Closing it would mean making
+that path networked too, which is a product decision, not a refactor.
 
 **Why it is this way** — a dry run exists to answer "what will this write do?", and in append mode
 that question cannot be answered without the server's body: the written body is a function of both
@@ -53,7 +60,7 @@ The nearby comment in `PageUpdateTool.ResolveSyntaxFailure` — "a body that can
 Creatio I/O even in dry-run" — is still true and is a different claim: that path rejects an unparseable
 body before `TryUpdatePage` is ever reached.
 
-**What breaks if you ignore it** — moving the dry-run return back above `TryProjectDryRun`, or
+**What breaks if you ignore it** — moving the dry-run return back above `TryCompleteDryRun`, or
 short-circuiting it "because a dry run should not hit the network", restores the GH-1150 defect
 silently: `update-page --mode append --dry-run` reports `success` with no projection, the inert-operation
 check inspects the incoming fragment instead of the body that would be saved (so every pair formed with

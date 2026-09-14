@@ -89,7 +89,7 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 
 	[Test]
 	[Description("An append dry run reports the projected operation counts instead of a bare success, and writes nothing.")]
-	public void TryUpdatePage_WhenAppendDryRun_ReportsTheProjectedCounts() {
+	public void TryUpdatePage_ShouldReportTheProjectedCounts_WhenAppendDryRun() {
 		// Arrange
 		StubCurrentBody(WebBody("""
 			[
@@ -122,7 +122,7 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 
 	[Test]
 	[Description("An append dry run warns before the write when an existing operation would be dropped.")]
-	public void TryUpdatePage_WhenAppendDryRunWouldDropAnOperation_WarnsAndNamesIt() {
+	public void TryUpdatePage_ShouldWarnAndNameTheOperation_WhenAppendDryRunWouldDropOne() {
 		// Arrange
 		StubCurrentBody(WebBody("""
 			[
@@ -153,7 +153,7 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 
 	[Test]
 	[Description("GH-1150 review: a dry run COUNTS an operation the caller's own fragment supersedes, without warning about it.")]
-	public void TryUpdatePage_WhenFragmentSupersedesItsOwnOperation_CountsItWithoutWarning() {
+	public void TryUpdatePage_ShouldCountItWithoutWarning_WhenFragmentSupersedesItsOwnOperation() {
 		// Arrange — the caller's own loss, distinct from a server-body drop, and reported separately because
 		// the fix is theirs to make.
 		StubCurrentBody(WebBody("[]"));
@@ -180,7 +180,7 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 
 	[Test]
 	[Description("GH-1150 review: a dry run warns when the merged viewConfigDiff cannot be written back at all.")]
-	public void TryUpdatePage_WhenCurrentBodyHasNoViewConfigDiffSection_WarnsThatEveryOperationIsDiscarded() {
+	public void TryUpdatePage_ShouldWarnThatEveryOperationIsDiscarded_WhenCurrentBodyHasNoViewConfigDiffSection() {
 		// Arrange — a current body with no SCHEMA_VIEW_CONFIG_DIFF marker pair. The merged array is silently
 		// discarded, so a projection that reported the counts alone would confirm a write that loses
 		// everything: strictly worse than the bare success it replaced.
@@ -208,7 +208,7 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 
 	[Test]
 	[Description("An append dry run runs the inert-operation detector against the MERGED body, not the fragment alone.")]
-	public void TryUpdatePage_WhenAppendDryRunFormsAnInertPairWithTheServerBody_WarnsBeforeTheWrite() {
+	public void TryUpdatePage_ShouldWarnBeforeTheWrite_WhenAppendDryRunFormsAnInertPairWithTheServerBody() {
 		// Arrange — the pair exists only in the merged body: the insert is the server's, the merge is the
 		// caller's. Against the fragment alone, which is the pre-fix behaviour, there is nothing to see.
 		StubCurrentBody(WebBody("""[{"operation":"insert","name":"UsrName","parentName":"Main","values":{"type":"crt.Input"}}]"""));
@@ -230,7 +230,7 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 
 	[Test]
 	[Description("An append whose real save could not merge fails the dry run with the same error, marked as a dry run.")]
-	public void TryUpdatePage_WhenAppendDryRunCannotMerge_FailsInsteadOfReportingSuccess() {
+	public void TryUpdatePage_ShouldFailWithTheSaveError_WhenAppendDryRunCannotMerge() {
 		// Arrange — a full-config current body cannot be appended to. Before the fix the dry run reported
 		// success and the caller only learned this on the real save.
 		StubCurrentBody("""
@@ -265,7 +265,7 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 
 	[Test]
 	[Description("A dry run whose loss exceeds the naming cap keeps the count exact and truncates only the labels.")]
-	public void TryUpdatePage_WhenAppendDryRunDropsMoreThanTheNamingCap_KeepsTheCountExact() {
+	public void TryUpdatePage_ShouldKeepTheCountExact_WhenAppendDryRunDropsMoreThanTheNamingCap() {
 		// Arrange — 30 components each carrying the same identity twice in the CURRENT body, with a fragment
 		// that supersedes all 30: 30 drops against a 25-entry naming cap.
 		List<string> currentEntries = [];
@@ -294,7 +294,7 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 
 	[Test]
 	[Description("An append against an empty stored body writes the fragment verbatim and reports no projection.")]
-	public void TryUpdatePage_WhenAppendDryRunAgainstAnEmptyServerBody_ReportsNoProjection() {
+	public void TryUpdatePage_ShouldReportNoProjection_WhenAppendDryRunRunsAgainstAnEmptyServerBody() {
 		// Arrange — the merger is never invoked when the stored body is blank, so there is no merge to
 		// project. Pinning it because the contract text is read as 'append implies a projection'.
 		StubCurrentBody(string.Empty);
@@ -313,8 +313,36 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 	}
 
 	[Test]
+	[Description("An append dry run reports the SAVE's caption gate, on the same body, as a warning rather than a refusal.")]
+	public void TryUpdatePage_ShouldReportTheSaveCaptionGateAsAWarning_WhenAppendDryRun() {
+		// Arrange — an inserted widget whose caption binds an unregistered, NON-Usr, non-DS-bound localizable
+		// key. The Usr prefix matters: those are auto-provided and would pass. The save REFUSES this shape;
+		// before the gate was unified the dry run ran a weaker, fragment-scoped variant and the two could
+		// disagree in both directions.
+		StubCurrentBody(WebBody("[]"));
+		const string insertWithUnregisteredCaption =
+			"""[{"operation":"insert","name":"ProbeLabel","parentName":"MainContainer","propertyName":"items","index":0,"values":{"type":"crt.Label","caption":"#ResourceString(ProbeLabel_caption)#"}}]""";
+
+		// Act
+		bool dryRunResult = _command.TryUpdatePage(AppendDryRun(insertWithUnregisteredCaption), out PageUpdateResponse dryRunResponse);
+		bool saveResult = _command.TryUpdatePage(
+			new PageUpdateOptions { SchemaName = SchemaName, Body = WebBody(insertWithUnregisteredCaption), Mode = "append" },
+			out PageUpdateResponse saveResponse);
+
+		// Assert
+		saveResult.Should().BeFalse(because: "the save's caption gate blocks an unregistered inserted caption");
+		saveResponse.Error.Should().Contain("unregistered localizable strings",
+			because: "this test is only meaningful if the save really does refuse this body");
+		dryRunResult.Should().BeTrue(
+			because: "a dry run reports what would happen rather than refusing - severity is the only difference between the paths");
+		dryRunResponse.Warnings.Should().Contain(warning => warning.Contains("unregistered localizable strings"),
+			because: "the preview must state exactly what the save would refuse, in the save's own words; a dry run that stays silent here is the false reassurance this ticket exists to remove");
+		AssertNothingWasSaved();
+	}
+
+	[Test]
 	[Description("A replace-mode dry run keeps its previous shape: no projection, and no schema fetch.")]
-	public void TryUpdatePage_WhenReplaceDryRun_ProjectsNothingAndDoesNotFetchTheSchemaBody() {
+	public void TryUpdatePage_ShouldProjectNothing_WhenReplaceDryRun() {
 		// Arrange — replace writes the body verbatim, so there is nothing to project and no reason to pay for
 		// the round trip. sync-pages pins replace and runs at volume, so this has to stay free.
 		PageUpdateOptions options = new() {
@@ -338,7 +366,7 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 
 	[Test]
 	[Description("A real append save carries the same projection as the dry run.")]
-	public void TryUpdatePage_WhenAppendSaves_CarriesTheProjectionToo() {
+	public void TryUpdatePage_ShouldCarryTheProjectionToo_WhenAppendSaves() {
 		// Arrange
 		StubCurrentBody(WebBody("""[{"operation":"merge","name":"UsrPanel","values":{"title":"Old"}}]"""));
 		PageUpdateOptions options = new() {
@@ -363,7 +391,7 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 
 	[Test]
 	[Description("An append dry run and the equivalent real save produce the same warnings for the same input.")]
-	public void TryUpdatePage_WhenAppendDryRunAndSaveSeeTheSameInput_ProduceTheSameWarnings() {
+	public void TryUpdatePage_ShouldProduceTheSameWarnings_WhenAppendDryRunAndSaveSeeTheSameInput() {
 		// Arrange — the PR's central claim is that a dry run predicts the save. Two call sites assemble the
 		// warning set independently, so nothing but this test stops them drifting apart.
 		string currentBody = WebBody("""

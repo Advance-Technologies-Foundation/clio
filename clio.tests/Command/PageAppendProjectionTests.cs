@@ -65,7 +65,7 @@ public class PageAppendProjectionTests {
 
 	[Test]
 	[Description("Counts a purely additive append: nothing replaced, nothing lost on any channel, totals add up.")]
-	public void Merge_WhenFragmentOnlyAdds_ProjectsTheSumWithNoLoss() {
+	public void Merge_ShouldProjectTheSumWithNoLoss_WhenFragmentOnlyAdds() {
 		// Arrange — the GH-1150 arithmetic in miniature: the reporter expected 106 + 16 = 122, got 121, and
 		// had no way to see that before the write.
 		string current = """
@@ -104,7 +104,7 @@ public class PageAppendProjectionTests {
 
 	[Test]
 	[Description("Names a replaced current operation, and counts it as neither a loss nor an addition.")]
-	public void Merge_WhenFragmentCollidesWithCurrentIdentity_NamesTheReplacementWithoutInflatingTheTotal() {
+	public void Merge_ShouldNameTheReplacementWithoutInflatingTheTotal_WhenFragmentCollidesWithCurrentIdentity() {
 		// Arrange
 		string current = """
 			[
@@ -132,7 +132,7 @@ public class PageAppendProjectionTests {
 
 	[Test]
 	[Description("Reports a further current entry of an already-superseded identity as dropped.")]
-	public void Merge_WhenCurrentRepeatsAnIdentityTheFragmentSupersedes_ReportsTheFurtherEntryAsDropped() {
+	public void Merge_ShouldReportTheFurtherEntryAsDropped_WhenCurrentRepeatsAnIdentityTheFragmentSupersedes() {
 		// Arrange — the merger replaces the FIRST occurrence and drops any later one rather than re-applying
 		// stale values after the replacement. Deliberate, but it IS a lost operation.
 		string current = """
@@ -162,7 +162,7 @@ public class PageAppendProjectionTests {
 
 	[Test]
 	[Description("GH-1150 review: a fragment that carries one identity twice loses its own earlier entry, and says so.")]
-	public void Merge_WhenFragmentRepeatsOneIdentity_ReportsTheEarlierEntryAsCollapsed() {
+	public void Merge_ShouldReportTheEarlierEntryAsCollapsed_WhenFragmentRepeatsOneIdentity() {
 		// Arrange — the likeliest loss in practice, and the one the first version of this projection missed
 		// entirely: the caller's OWN operation vanishes, and the response used to say dropped=0.
 		string incoming = """
@@ -192,7 +192,7 @@ public class PageAppendProjectionTests {
 
 	[Test]
 	[Description("GH-1150 review: a current web body with no viewConfigDiff marker pair discards the merged array, and the projection says so.")]
-	public void Merge_WhenCurrentBodyHasNoViewConfigDiffSection_ReportsThatTheMergedArrayIsNotApplied() {
+	public void Merge_ShouldReportTheMergedArrayAsNotApplied_WhenCurrentBodyHasNoViewConfigDiffSection() {
 		// Arrange — ReplaceSection is a single-match regex over a marker PAIR; with no pair it returns the
 		// body unchanged and the merged array is silently discarded. Nothing upstream rejects such a body:
 		// marker-integrity validation is skipped in append mode and only ever inspected the fragment.
@@ -212,7 +212,7 @@ public class PageAppendProjectionTests {
 
 	[Test]
 	[Description("A normal web append reports the merged array as applied.")]
-	public void Merge_WhenCurrentBodyHasTheViewConfigDiffSection_ReportsThatTheMergedArrayIsApplied() {
+	public void Merge_ShouldReportTheMergedArrayAsApplied_WhenCurrentBodyHasTheViewConfigDiffSection() {
 		// Arrange
 		string current = WebBody("[]");
 
@@ -228,7 +228,7 @@ public class PageAppendProjectionTests {
 
 	[Test]
 	[Description("A mobile body reports the merged array as applied even when it carries no viewConfigDiff property.")]
-	public void Merge_WhenMobileBodyOmitsViewConfigDiff_StillReportsItApplied() {
+	public void Merge_ShouldStillReportItApplied_WhenMobileBodyOmitsViewConfigDiff() {
 		// Arrange — the mobile path assigns the property unconditionally, creating it when absent, so it has
 		// no marker-pair precondition to miss.
 		string currentWithoutSection = """
@@ -248,35 +248,39 @@ public class PageAppendProjectionTests {
 		projection.AddedOperationCount.Should().Be(1, because: "the incoming insert is a new identity");
 	}
 
-	[Test]
-	[Description("A property remove and an element remove for one name are labelled distinctly.")]
-	public void Merge_WhenPropertyRemoveIsReplaced_LabelDistinguishesItFromAnElementRemove() {
+	[TestCase("remove")]
+	[TestCase("set")]
+	[Description("A properties-targeting operation and its element form for one name are labelled distinctly.")]
+	public void Merge_ShouldDistinguishThePropertyLabelFromTheElementForm_WhenAPropertyTargetingOperationIsReplaced(
+			string verb) {
 		// Arrange — the two are different identities because JsonDiffApplier routes them into different
-		// groups. If the label collapsed them, two rows would read as one repeated line.
-		string current = """
+		// groups, and BOTH `remove` and `set` split on `properties`. If the label collapsed them, two rows
+		// would read as one repeated line and the per-identity warning dedup would fold two losses into one.
+		string current = $$"""
 			[
-				{"operation":"remove","name":"UsrPanel"},
-				{"operation":"remove","name":"UsrPanel","properties":["layoutConfig"]}
+				{"operation":"{{verb}}","name":"UsrPanel"},
+				{"operation":"{{verb}}","name":"UsrPanel","properties":["layoutConfig"]}
 			]
 			""";
-		string incoming = """[{"operation":"remove","name":"UsrPanel","properties":["layoutConfig"]}]""";
+		string incoming = $$"""[{"operation":"{{verb}}","name":"UsrPanel","properties":["layoutConfig"]}]""";
 
 		// Act
 		PageBodyMerger.Merge(WebBody(current), WebBody(incoming), out PageAppendProjection projection);
 
 		// Assert
-		projection.ReplacedOperations.Should().ContainSingle(because: "only the property remove is matched")
-			.Which.Should().Be("remove(properties) UsrPanel",
-				because: "the property-targeting discriminator must be visible in the label");
+		projection.ReplacedOperations.Should().ContainSingle(
+				because: "only the properties-targeting entry shares an identity with the fragment")
+			.Which.Should().Be($"{verb}(properties) UsrPanel",
+				because: "the property-targeting discriminator must be visible in the label for every verb that splits on it");
 		projection.ProjectedOperationCount.Should().Be(2,
-			because: "the element remove is a different identity and survives untouched");
+			because: "the element form is a different identity and survives untouched");
 		projection.DroppedOperationCount.Should().Be(0,
 			because: "neither current entry shares an identity with the other, so nothing is superseded twice");
 	}
 
 	[Test]
 	[Description("An entry carrying no operation verb is named rather than blanked.")]
-	public void Merge_WhenEntryHasNoOperationVerb_LabelsItExplicitly() {
+	public void Merge_ShouldLabelTheVerbExplicitly_WhenEntryHasNoOperationVerb() {
 		// Arrange
 		string current = """[{"name":"UsrPanel","values":{"title":"Old"}}]""";
 		string incoming = """[{"name":"UsrPanel","values":{"title":"New"}}]""";
@@ -292,7 +296,7 @@ public class PageAppendProjectionTests {
 
 	[Test]
 	[Description("Mobile bodies project identically — both dialects share the viewConfigDiff merge.")]
-	public void Merge_WhenBodyIsMobile_ProjectsTheSameWayAsWeb() {
+	public void Merge_ShouldProjectTheSameWayAsWeb_WhenBodyIsMobile() {
 		// Arrange
 		string current = """
 			[
@@ -314,7 +318,7 @@ public class PageAppendProjectionTests {
 
 	[Test]
 	[Description("Unidentified entries are counted in the totals but never reported as replaced, dropped or collapsed.")]
-	public void Merge_WhenEntriesLackAUsableName_CountsThemWithoutClaimingAnIdentity() {
+	public void Merge_ShouldCountEntriesWithoutClaimingAnIdentity_WhenEntriesLackAUsableName() {
 		// Arrange — an entry whose name is absent or not a JSON string is never merged and never reordered.
 		// It still occupies a slot, so the totals must include it, but it has no identity to name.
 		string current = """[{"operation":"merge","name":123,"values":{"title":"Old"}}]""";
@@ -338,7 +342,7 @@ public class PageAppendProjectionTests {
 
 	[Test]
 	[Description("The named lists are capped while the counts stay exact, so a cap never understates the scale.")]
-	public void Merge_WhenLossExceedsTheNamingCap_KeepsCountsExactAndTruncatesOnlyTheNames() {
+	public void Merge_ShouldKeepCountsExactAndTruncateOnlyTheNames_WhenLossExceedsTheNamingCap() {
 		// Arrange — 30 distinct components, each with a duplicate current merge the fragment supersedes:
 		// 30 drops, above the 25-entry naming cap.
 		List<string> currentEntries = [];
@@ -367,7 +371,7 @@ public class PageAppendProjectionTests {
 
 	[Test]
 	[Description("The collapsed-incoming list is capped the same way, with its own exact count.")]
-	public void Merge_WhenCollapsedIncomingExceedsTheNamingCap_KeepsItsCountExactToo() {
+	public void Merge_ShouldKeepItsCountExactToo_WhenCollapsedIncomingExceedsTheNamingCap() {
 		// Arrange — 30 components, each named twice in the FRAGMENT, so all 30 collapses are caller-side.
 		List<string> incomingEntries = [];
 		for (int i = 0; i < 30; i++) {

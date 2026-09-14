@@ -615,6 +615,73 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("GitHub #1150: appendProjection reaches the wire on BOTH serializers with camelCase names, and SupersededDropWarnings is excluded from both - it is copied into the top-level warnings, so serializing it here too would report one loss twice.")]
+	public void PageUpdateResponse_Should_Serialize_AppendProjection_Without_SupersededDropWarnings() {
+		// Arrange
+		PageUpdateResponse response = new() {
+			Success = true,
+			SchemaName = "UsrTodo_FormPage",
+			DryRun = true,
+			AppendProjection = new PageAppendProjection {
+				CurrentOperationCount = 3,
+				IncomingOperationCount = 1,
+				ProjectedOperationCount = 3,
+				AddedOperationCount = 0,
+				ReplacedOperations = ["merge UsrPanel"],
+				ReplacedOperationCount = 1,
+				DroppedOperations = ["merge UsrPanel"],
+				DroppedOperationCount = 1,
+				CollapsedIncomingOperations = ["set(properties) UsrPanel"],
+				CollapsedIncomingOperationCount = 1,
+				ViewConfigDiffApplied = true,
+				SupersededDropWarnings = ["Component 'UsrPanel' carried more than one 'merge' operation"]
+			}
+		};
+
+		// Act
+		string systemTextJson = System.Text.Json.JsonSerializer.Serialize(response);
+		string newtonsoftJson = Newtonsoft.Json.JsonConvert.SerializeObject(response);
+
+		// Assert
+		foreach ((string payload, string serializer) in new[] {
+			(systemTextJson, "System.Text.Json (the MCP path)"),
+			(newtonsoftJson, "Newtonsoft (the CLI output path)")
+		}) {
+			payload.Should().Contain("\"appendProjection\":{",
+				because: $"the projection is the whole point of the dry run and must reach the caller through {serializer}");
+			payload.Should().Contain("\"projectedOperationCount\":3",
+				because: $"the count a caller compares against their expectation must survive {serializer}");
+			payload.Should().Contain("\"droppedOperations\":[\"merge UsrPanel\"]",
+				because: $"the loss labels are the machine-readable half of the report and must survive {serializer}");
+			payload.Should().Contain("\"viewConfigDiffApplied\":true",
+				because: $"the flag saying whether the counts describe a body the write keeps must survive {serializer}");
+			payload.ToLowerInvariant().Should().NotContain("supersededdropwarnings",
+				because: $"those sentences are copied into the top-level warnings, so emitting them inside appendProjection through {serializer} would report one loss twice");
+		}
+	}
+
+	[Test]
+	[Description("GitHub #1150: appendProjection is omitted entirely when no merge ran, so its absence is an unambiguous signal rather than a zeroed projection that reads as coverage.")]
+	public void PageUpdateResponse_Should_Omit_AppendProjection_When_No_Merge_Ran() {
+		// Arrange
+		PageUpdateResponse response = new() {
+			Success = true,
+			SchemaName = "UsrTodo_FormPage",
+			DryRun = true
+		};
+
+		// Act
+		string systemTextJson = System.Text.Json.JsonSerializer.Serialize(response);
+		string newtonsoftJson = Newtonsoft.Json.JsonConvert.SerializeObject(response);
+
+		// Assert
+		systemTextJson.Should().NotContain("appendProjection",
+			because: "a replace-mode or empty-body call has no merge to project, and a zeroed projection would read as coverage of one that never happened");
+		newtonsoftJson.Should().NotContain("appendProjection",
+			because: "the CLI output path must agree with the MCP path about what absence means");
+	}
+
+	[Test]
 	[Description("PageGetTool returns the nested MCP response contract with page, bundle, raw, and packageUId")]
 	public void PageGetTool_WhenCalled_ReturnsNestedResponseContract() {
 		// Arrange

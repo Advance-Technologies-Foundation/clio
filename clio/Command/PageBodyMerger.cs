@@ -271,14 +271,6 @@ internal static class PageBodyMerger {
 	/// Merges two web (AMD) page bodies using marker-based section replacement.
 	/// </summary>
 	private static string MergeWeb(string currentBody, string incomingBody, ProjectionCollector collector) {
-		// GH-1150: ReplaceSection below is a single-match Regex.Replace that requires a marker PAIR. With no
-		// pair it returns the body UNCHANGED and the merged array is silently discarded — behaviour Merge's
-		// own remarks document. Nothing upstream rejects such a current body either: ValidateMarkerIntegrity
-		// is skipped in append mode and only ever inspected the incoming fragment. So the projection has to
-		// be told, or it reports operations the write will not carry — a dry run confidently confirming a
-		// write that loses everything, which is worse than the bare success it replaced.
-		collector.RecordViewConfigDiffApplied(
-			PageSchemaSectionReader.TryRead(currentBody, out _, "SCHEMA_VIEW_CONFIG_DIFF"));
 		// Precondition: Merge() has already rejected a full-config current or incoming body via the shared
 		// UsesUnsupportedFullConfigForm predicate, so this method only ever sees diff-form bodies.
 		JArray mergedViewConfigDiff = MergeViewConfigDiffOperations(
@@ -301,8 +293,17 @@ internal static class PageBodyMerger {
 			ReadRawSection(currentBody, "SCHEMA_VALIDATORS") ?? "{}",
 			ReadRawSection(incomingBody, "SCHEMA_VALIDATORS") ?? "{}");
 
+		// GH-1150: ReplaceSection is a single-match Regex.Replace over a marker PAIR. With no pair it returns
+		// the body UNCHANGED and the merged array is silently discarded - behaviour Merge's own remarks
+		// document, and which nothing upstream rejects (marker-integrity validation is skipped in append mode
+		// and only ever inspected the incoming fragment). The projection has to be told, or it reports
+		// operations the write will not carry: a dry run confidently confirming a write that loses
+		// everything, which is worse than the bare success it replaced. Taken from the write-back itself
+		// rather than a separate probe, so the flag cannot disagree with the writer that sets it.
 		string result = currentBody;
-		result = ReplaceSection(result, "SCHEMA_VIEW_CONFIG_DIFF", mergedViewConfigDiff.ToString(Newtonsoft.Json.Formatting.Indented));
+		result = ReplaceSection(result, "SCHEMA_VIEW_CONFIG_DIFF",
+			mergedViewConfigDiff.ToString(Newtonsoft.Json.Formatting.Indented), out bool viewConfigDiffApplied);
+		collector.SetViewConfigDiffApplied(viewConfigDiffApplied);
 		result = ReplaceSection(result, "SCHEMA_VIEW_MODEL_CONFIG_DIFF", mergedViewModelConfigDiff.ToString(Newtonsoft.Json.Formatting.Indented));
 		result = ReplaceSection(result, "SCHEMA_MODEL_CONFIG_DIFF", mergedModelConfigDiff.ToString(Newtonsoft.Json.Formatting.Indented));
 		result = ReplaceSection(result, "SCHEMA_HANDLERS", mergedHandlers);
@@ -335,8 +336,8 @@ internal static class PageBodyMerger {
 		// UsesUnsupportedFullConfigForm predicate — including a present-but-non-object viewModelConfig /
 		// modelConfig on the current body (ENG-93090 RC-9) — so this method only ever sees diff-form bodies.
 		// Mobile assigns the property unconditionally below, creating it when absent, so the merged array
-		// always lands — there is no marker-pair precondition to miss as there is on the web path.
-		collector.RecordViewConfigDiffApplied(true);
+		// always lands - there is no marker-pair precondition to miss as there is on the web path.
+		collector.SetViewConfigDiffApplied(true);
 		JArray mergedViewConfigDiff = MergeViewConfigDiffOperations(
 			current["viewConfigDiff"] as JArray ?? new JArray(),
 			incoming["viewConfigDiff"] as JArray ?? new JArray(),
@@ -447,11 +448,8 @@ internal static class PageBodyMerger {
 			if (!TryGetOperationIdentity(item, out OperationIdentity identity)) {
 				continue;
 			}
-			// GH-1150: an overwrite here IS a loss — the earlier spelling never reaches the merged array. It
-			// is COUNTED but deliberately NOT warned about: the fragment is the caller's own, they can read
-			// it, and warning about their own input would be noise (the rule set with the superseded-drop
-			// warning, which reports the SERVER's body instead). Counting it is what keeps the projection
-			// honest, because otherwise the reported totals cannot be reconciled and a real loss is invisible.
+			// GH-1150: an overwrite here IS a loss - the earlier spelling never reaches the merged array.
+			// Counted, never warned about; see PageAppendProjection.CollapsedIncomingOperations for why.
 			if (!incomingByIdentity.TryAdd(identity, item)) {
 				collector.RecordCollapsedIncoming(identity);
 				incomingByIdentity[identity] = item;
@@ -537,9 +535,21 @@ internal static class PageBodyMerger {
 	/// group in array order and the stale values would then re-apply after the caller's replacement. The
 	/// message names what to do about it, since the caller cannot see the server body they just overwrote.
 	/// </remarks>
+	/// <summary>
+	/// The verb half of an identity, rendered once for every consumer. An absent verb is NAMED rather than
+	/// blanked (it is a real, distinct identity in the merge), and a <c>properties</c>-targeting variant is
+	/// marked, because <c>remove X</c> and <c>remove(properties) X</c> are two different identities that
+	/// must not render as one repeated line - the per-identity warning dedup depends on them differing.
+	/// </summary>
+	private static string VerbLabel(OperationIdentity identity) =>
+		string.IsNullOrEmpty(identity.Operation)
+			? "(no operation)"
+			: identity.TargetsProperties
+				? $"{identity.Operation}(properties)"
+				: identity.Operation;
+
 	private static string BuildSupersededDropMessage(OperationIdentity identity) {
-		string verb = string.IsNullOrEmpty(identity.Operation) ? "(no operation)" : identity.Operation;
-		return $"Component '{identity.Name}' carried more than one '{verb}' operation in the page's own body, " +
+		return $"Component '{identity.Name}' carried more than one '{VerbLabel(identity)}' operation in the page's own body, " +
 			"and the appended fragment supersedes that operation. Only the first occurrence was replaced; every " +
 			"later one was dropped, because keeping it would re-apply its values AFTER your replacement. If they " +
 			"set different keys, the dropped entries' keys are gone from the saved page. Re-read the page with " +
@@ -694,11 +704,26 @@ internal static class PageBodyMerger {
 		return PageSchemaSectionReader.TryRead(body, out string content, marker) ? content.Trim() : null;
 	}
 
-	private static string ReplaceSection(string body, string marker, string newContent) {
+	private static string ReplaceSection(string body, string marker, string newContent) =>
+		ReplaceSection(body, marker, newContent, out _);
+
+	/// <summary>
+	/// Replaces one marker-pair section, reporting whether the pair was actually there.
+	/// </summary>
+	/// <param name="replaced">
+	/// <c>false</c> when the body carries no such marker PAIR: the regex matches nothing, the body comes
+	/// back unchanged, and the caller's content is silently discarded. Callers that report what a write
+	/// will do must read this rather than compare strings - a section whose merged content happens to equal
+	/// what is already there is still genuinely applied (GH-1150).
+	/// </param>
+	private static string ReplaceSection(string body, string marker, string newContent, out bool replaced) {
 		string pattern = $@"/\*\*{Regex.Escape(marker)}\*/([\s\S]*?)/\*\*{Regex.Escape(marker)}\*/";
 		Regex regex = new(pattern, RegexOptions.CultureInvariant | RegexOptions.Compiled, RegexTimeout);
 		string replacement = $"/**{marker}*/{newContent}/**{marker}*/";
-		return regex.Replace(body, _ => replacement, 1);
+		bool matched = false;
+		string result = regex.Replace(body, _ => { matched = true; return replacement; }, 1);
+		replaced = matched;
+		return result;
 	}
 	/// <summary>
 	/// Accumulates a <see cref="PageAppendProjection"/> while the real merge runs. Mutable and single-use;
@@ -731,7 +756,7 @@ internal static class PageBodyMerger {
 		private int _replacedCount;
 		private int _droppedCount;
 		private int _collapsedIncomingCount;
-		private bool _viewConfigDiffApplied = true;
+		private bool _viewConfigDiffApplied;
 
 		public void RecordReplaced(OperationIdentity identity) {
 			_replacedCount++;
@@ -745,8 +770,8 @@ internal static class PageBodyMerger {
 
 		/// <summary>
 		/// One incoming entry superseded an earlier entry of the same identity in the SAME fragment, so the
-		/// earlier one never reaches the merged array. Counted, never warned about — see the rationale at
-		/// the call site in <c>IndexIncomingByIdentity</c>.
+		/// earlier one never reaches the merged array. Counted, never warned about; the reasoning has one
+		/// owner, on <see cref="PageAppendProjection.CollapsedIncomingOperations"/>.
 		/// </summary>
 		public void RecordCollapsedIncoming(OperationIdentity identity) {
 			_collapsedIncomingCount++;
@@ -766,7 +791,13 @@ internal static class PageBodyMerger {
 		/// Whether the merged <c>viewConfigDiff</c> array actually reaches the returned body. False when the
 		/// current web body carries no <c>SCHEMA_VIEW_CONFIG_DIFF</c> marker pair to write it back into.
 		/// </summary>
-		public void RecordViewConfigDiffApplied(bool applied) => _viewConfigDiffApplied = applied;
+		/// <remarks>
+		/// The backing field defaults to FALSE deliberately, so a path that forgets to call this reports
+		/// "not applied" and surfaces a spurious warning in the first test, rather than claiming the array
+		/// landed. Defaulting the other way would make a missed call look like success - the exact class of
+		/// confident lie this projection exists to prevent.
+		/// </remarks>
+		public void SetViewConfigDiffApplied(bool applied) => _viewConfigDiffApplied = applied;
 
 		public void SetSectionCounts(int currentCount, int incomingCount, int projectedCount) {
 			_currentCount = currentCount;
@@ -798,17 +829,10 @@ internal static class PageBodyMerger {
 		}
 
 		/// <summary>
-		/// Renders an identity as a short label. All three discriminators are spelled out, because two
-		/// entries that differ only in <c>TargetsProperties</c> would otherwise read as one repeated line.
-		/// An absent verb is named rather than blanked — it is a real, distinct identity in the merge.
+		/// Renders an identity as a short label: the verb, then the component. Both discriminators are
+		/// spelled out by <see cref="VerbLabel"/>, because two entries differing only in
+		/// <c>TargetsProperties</c> would otherwise read as one repeated line.
 		/// </summary>
-		private static string Describe(OperationIdentity identity) {
-			string verb = identity.Operation.Length == 0
-				? "(no operation)"
-				: identity.TargetsProperties
-					? $"{identity.Operation}(properties)"
-					: identity.Operation;
-			return $"{verb} {identity.Name}";
-		}
+		private static string Describe(OperationIdentity identity) => $"{VerbLabel(identity)} {identity.Name}";
 	}
 }

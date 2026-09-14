@@ -393,7 +393,7 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		response.AppendProjection.ViewConfigDiffApplied.Should().BeTrue(
 			because: "a seeded diff-form page carries the marker pair, so the merged array would reach the written body");
 
-        // Assert the dry run wrote nothing, read back over the same transport
+		// Assert the dry run wrote nothing, read back over the same transport
 		string bodyAfter = await ReadRawBodyAsync(arrangeContext, environmentName, savePage);
 		bodyAfter.Should().Be(bodyBefore,
 			because: "a dry run must never reach TrySaveSchema; a unit test can only assert this against a substitute, so the wire path needs its own proof");
