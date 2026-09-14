@@ -156,7 +156,7 @@ public static class WebToMobileAnalysisService {
 		DeclaredElementSelection declaredSelection = SelectDeclaredElements(templateRule, mobileTypes,
 			bundle.ViewConfig, map, templateComponentNames, mobileTypesByName, templateProbeAvailable);
 		IReadOnlyList<DeclaredElementRule> declaredElements = declaredSelection.Accepted;
-		IReadOnlyList<string> skippedDeclaredElements = declaredSelection.Skipped;
+		IReadOnlyList<SkippedDeclaredElement> skippedDeclaredElements = declaredSelection.Skipped;
 		map = declaredSelection.ContainerNameMap;
 		if (templateProbeAvailable && declaredElements.Count > 0) {
 			mobileTypesByName = WithDeclaredElements(mobileTypesByName, declaredElements, e => e.Type);
@@ -1725,6 +1725,30 @@ public static class WebToMobileAnalysisService {
 	/// <summary>The parent slot every converted element is inserted into.</summary>
 	private const string ItemsPropertyName = "items";
 
+	/// <summary>Placeholder substituted for a rules-file identifier that fails <see cref="SafeIdentifierPattern"/>.</summary>
+	private const string InvalidRuleIdentifierPlaceholder = "<invalid-name>";
+
+	/// <summary>
+	/// The same conservative allowlist already used for resource names (<see cref="ResourceStringsRefPattern"/>),
+	/// reused to sanitize any <c>declaredElements</c> identifier (element name, parent name) before it is
+	/// interpolated into agent-facing text. <c>constraints</c>/<c>Reason</c> are documented as closed to
+	/// everything outside this binary (see the summary on <see cref="BuildConstraints"/>); the rules file is
+	/// external input resolved at runtime (env var -> local cache -> CDN), so an identifier is unbounded and may
+	/// contain arbitrary text (including newlines) until it passes this check.
+	/// </summary>
+	// \z, not $: .NET's $ also matches immediately before a single trailing \n, so "Foo\n" would otherwise pass —
+	// reintroducing exactly the newline this check exists to keep out of agent-facing text.
+	private static readonly Regex SafeIdentifierPattern =
+		new(@"^[A-Za-z_][A-Za-z0-9_]*\z", RegexOptions.Compiled, RegexTimeout);
+
+	/// <summary>
+	/// Returns <paramref name="value"/> unchanged when it is a safe identifier, otherwise a fixed placeholder —
+	/// never the offending text itself, so a malformed or hostile rules-file value can never reach the
+	/// agent-facing report/reason channels verbatim.
+	/// </summary>
+	private static string SanitizeRuleIdentifier(string value) =>
+		!string.IsNullOrEmpty(value) && SafeIdentifierPattern.IsMatch(value) ? value : InvalidRuleIdentifierPlaceholder;
+
 	/// <summary>
 	/// Every viewModelConfig attribute a node references — both plain <c>$Attr</c> bindings AND
 	/// <c>$Resources.Strings.&lt;attr&gt;</c> label/caption references (the platform auto-provides that
@@ -1870,7 +1894,7 @@ public static class WebToMobileAnalysisService {
 		bool exclusionSearchTruncated = false, int discardedExclusionFilters = 0,
 		int skippedOverrideRules = 0, bool hasExcludedComponents = false,
 		IReadOnlyList<string> retargetParentsOnTemplate = null,
-		IReadOnlyList<string> skippedDeclaredElements = null,
+		IReadOnlyList<SkippedDeclaredElement> skippedDeclaredElements = null,
 		IReadOnlyList<UnresolvedTargetRequest> unresolvedTargetRequests = null,
 		IReadOnlyList<string> pairsOntoMissingMobileSide = null) {
 		var constraints = new List<string> {
@@ -1984,11 +2008,15 @@ public static class WebToMobileAnalysisService {
 				"layers of its own and must stay untouched.");
 		}
 		if (skippedDeclaredElements is { Count: > 0 }) {
+			// Only the sanitized name and a fixed, code-owned reason-code/text pass through here (see
+			// DescribeSkippedDeclaredElement) — never raw rules-file prose; constraints is closed to everything
+			// outside this binary (see AppendNormalizationLines' summary), even when it fires on the rules file's
+			// own mistakes.
 			constraints.Add(
-				"The template rule declares element(s) (declaredElements) that could NOT be applied, so they were skipped "
-				+ "and the containers pairs targeting them fell back to the default placement: "
-				+ string.Join("; ", skippedDeclaredElements)
-				+ ". Fix the rule's declaredElements entry (or rename the page element).");
+				$"The template rule's declaredElements skipped {skippedDeclaredElements.Count} element(s) it could not "
+				+ "apply — name [reason-code]: outcome — "
+				+ string.Join("; ", skippedDeclaredElements.Select(DescribeSkippedDeclaredElement))
+				+ ". Fix the rule's declaredElements entry (or rename the page element) for any that fell back to the default placement.");
 		}
 		if (pairsOntoMissingMobileSide is { Count: > 0 }) {
 			// A pair is always a merge; when its mobile side exists nowhere the merge lands on nothing and every child
@@ -2203,8 +2231,53 @@ public static class WebToMobileAnalysisService {
 	/// </summary>
 	private sealed record DeclaredElementSelection(
 		IReadOnlyList<DeclaredElementRule> Accepted,
-		IReadOnlyList<string> Skipped,
+		IReadOnlyList<SkippedDeclaredElement> Skipped,
 		IReadOnlyDictionary<string, string> ContainerNameMap);
+
+	/// <summary>
+	/// One <c>declaredElements</c> entry admission refused. <see cref="Name"/> is the rules-file identifier as
+	/// declared (sanitized only at render time, in <see cref="DescribeSkippedDeclaredElement"/>); <see cref="Reason"/>
+	/// is a fixed, code-owned classification — never text copied from the rules file — so the agent-facing report
+	/// carries a stable machine-readable code instead of unbounded external prose.
+	/// </summary>
+	private sealed record SkippedDeclaredElement(string Name, DeclaredElementSkipReason Reason);
+
+	/// <summary>Why a <c>declaredElements</c> entry was refused admission. See <see cref="SelectDeclaredElements"/>.</summary>
+	private enum DeclaredElementSkipReason {
+		/// <summary>The name repeats an earlier declaration; the earlier one stands and keeps any pair.</summary>
+		DuplicateName,
+		/// <summary>The PROBED mobile template already has an element under this name; the template element wins and keeps any pair.</summary>
+		TemplateProvidesElement,
+		/// <summary>The declared type is not a registered mobile component; any pair targeting the name falls back to the default placement.</summary>
+		UnknownMobileType,
+		/// <summary>The source page already uses this name for an element of its own; any pair targeting the name falls back to the default placement.</summary>
+		PageNameCollision,
+		/// <summary>The declared parent is neither a probed template element, another admitted declaration, nor a page-authored element; any pair targeting the name falls back to the default placement.</summary>
+		OrphanParent
+	}
+
+	/// <summary>
+	/// Renders one skip as "&lt;sanitized name&gt; [&lt;machine reason code&gt;]: &lt;fixed, code-owned prose&gt;".
+	/// The name is the only rules-file text in the output, and only after <see cref="SanitizeRuleIdentifier"/> —
+	/// every other word comes from this switch, never from the rules file, keeping <c>constraints</c> closed to
+	/// everything outside this binary (see <see cref="AppendNormalizationLines"/>'s summary for the invariant).
+	/// </summary>
+	private static string DescribeSkippedDeclaredElement(SkippedDeclaredElement skip) {
+		(string code, string text) = skip.Reason switch {
+			DeclaredElementSkipReason.DuplicateName =>
+				("duplicate-name", "declared more than once — the earlier declaration stands and still receives any containers pair"),
+			DeclaredElementSkipReason.TemplateProvidesElement =>
+				("template-provides-element", "the probed mobile template already has an element with this name — the template element wins and still receives any containers pair"),
+			DeclaredElementSkipReason.UnknownMobileType =>
+				("unknown-mobile-type", "its declared type is not a registered mobile component — any containers pair targeting it fell back to the default placement"),
+			DeclaredElementSkipReason.PageNameCollision =>
+				("page-name-collision", "the source page already uses this name for an element of its own — any containers pair targeting it fell back to the default placement"),
+			DeclaredElementSkipReason.OrphanParent =>
+				("orphan-parent", "its declared parent is neither a mobile template element nor an element this conversion creates — any containers pair targeting it fell back to the default placement"),
+			_ => ("unknown", "skipped")
+		};
+		return $"{SanitizeRuleIdentifier(skip.Name)} [{code}]: {text}";
+	}
 
 	/// <summary>
 	/// Admits the rule's <c>declaredElements</c>. An entry is skipped, with a reason, when: it repeats a name an
@@ -2231,13 +2304,20 @@ public static class WebToMobileAnalysisService {
 		IReadOnlySet<string> webTemplateComponentNames, IReadOnlyDictionary<string, string> probedTypesByName,
 		bool templateProbeAvailable) {
 		var accepted = new List<DeclaredElementRule>();
-		var skipped = new List<string>();
+		var skipped = new List<SkippedDeclaredElement>();
 		// Names removed outright (not the duplicate case, whose first declaration stands): their pairs go too.
 		var removedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		// The merged tree the page carries also includes inherited web-template chrome this conversion prunes
+		// outright (see the "0." filter in Analyze); subtracting webTemplateComponentNames here keeps the
+		// collision check below scoped to elements the PAGE actually authors, so a declaration colliding with
+		// pruned chrome is not misreported as "the source page already uses this name for an element of its own".
 		HashSet<string> pageNames = pageViewConfig is null
 			? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
 			: CollectComponentNames(pageViewConfig);
+		if (webTemplateComponentNames is { Count: > 0 }) {
+			pageNames.ExceptWith(webTemplateComponentNames);
+		}
 		foreach (DeclaredElementRule declared in rule?.DeclaredElements ?? []) {
 			if (declared is null
 				|| string.IsNullOrWhiteSpace(declared.Name)
@@ -2246,25 +2326,24 @@ public static class WebToMobileAnalysisService {
 				continue;
 			}
 			if (!seen.Add(declared.Name)) {
-				skipped.Add($"{declared.Name}: declared more than once (the earlier declaration stands)");
+				skipped.Add(new SkippedDeclaredElement(declared.Name, DeclaredElementSkipReason.DuplicateName));
 				continue;
 			}
 			if (templateProbeAvailable && probedTypesByName.ContainsKey(declared.Name)) {
 				// NOT added to removedNames: the template genuinely has this element, so a pair targeting it is a valid
 				// merge target — unlike the skips below, where the mobile side will not exist.
-				skipped.Add($"{declared.Name}: the probed mobile template already has an element with this name "
-					+ "(the template element wins; the rule declares only what the template lacks)");
+				skipped.Add(new SkippedDeclaredElement(declared.Name, DeclaredElementSkipReason.TemplateProvidesElement));
 				continue;
 			}
 			if (!mobileTypes.Contains(declared.Type)) {
-				skipped.Add($"{declared.Name}: type '{declared.Type}' is not a registered mobile component");
+				skipped.Add(new SkippedDeclaredElement(declared.Name, DeclaredElementSkipReason.UnknownMobileType));
 				removedNames.Add(declared.Name);
 				continue;
 			}
 			bool pairedOntoItself = containerNameMap.TryGetValue(declared.Name, out string mappedTo)
 				&& string.Equals(mappedTo, declared.Name, StringComparison.OrdinalIgnoreCase);
 			if (pageNames.Contains(declared.Name) && !pairedOntoItself) {
-				skipped.Add($"{declared.Name}: the source page already uses this name for an element of its own");
+				skipped.Add(new SkippedDeclaredElement(declared.Name, DeclaredElementSkipReason.PageNameCollision));
 				removedNames.Add(declared.Name);
 				continue;
 			}
@@ -2274,8 +2353,7 @@ public static class WebToMobileAnalysisService {
 			// Page-authored elements convert under their own names; a web-template element does not (it is pruned
 			// as chrome or merged through its pair). A pair's mobile side is not a parent of its own (see the summary).
 			List<string> ownNamedPageElements = pageNames
-				.Where(n => !containerNameMap.ContainsKey(n)
-					&& !(webTemplateComponentNames?.Contains(n) ?? false))
+				.Where(n => !containerNameMap.ContainsKey(n))
 				.ToList();
 			bool changed = true;
 			while (changed) {
@@ -2289,8 +2367,7 @@ public static class WebToMobileAnalysisService {
 						&& !string.Equals(declared.ParentName, declared.Name, StringComparison.OrdinalIgnoreCase)) {
 						continue;
 					}
-					skipped.Add($"{declared.Name}: parent '{declared.ParentName}' is neither a mobile template element nor "
-						+ "an element this conversion creates");
+					skipped.Add(new SkippedDeclaredElement(declared.Name, DeclaredElementSkipReason.OrphanParent));
 					removedNames.Add(declared.Name);
 					accepted.RemoveAt(i);
 					changed = true;
@@ -2371,10 +2448,18 @@ public static class WebToMobileAnalysisService {
 				values[pair.Key] = JsonNode.Parse(pair.Value.GetRawText());
 			}
 			CaptionResource caption = null;
-			if (extra.CaptionResource is { } cap && !string.IsNullOrWhiteSpace(cap.Key)) {
-				caption = new CaptionResource { Key = cap.Key, SourceValue = cap.Value };
+			if (extra.CaptionResource is { } cap
+				&& !string.IsNullOrWhiteSpace(cap.Key)
+				&& SafeIdentifierPattern.IsMatch(cap.Key)) {
 				string captionProperty = string.IsNullOrWhiteSpace(cap.Property) ? "caption" : cap.Property;
-				values[captionProperty] = $"#ResourceString({cap.Key})#";
+				// Same guard as the extra.Values loop above: "type" is authoritative and "items" is the child
+				// collection InitializeContainerChildSlots owns — a captionResource.property naming either would
+				// otherwise overwrite it, bypassing the loop's own check by a different route (O8).
+				if (!string.Equals(captionProperty, "type", StringComparison.OrdinalIgnoreCase)
+					&& !string.Equals(captionProperty, ItemsPropertyName, StringComparison.OrdinalIgnoreCase)) {
+					caption = new CaptionResource { Key = cap.Key, SourceValue = cap.Value };
+					values[captionProperty] = $"#ResourceString({cap.Key})#";
+				}
 			}
 			// The web elements a containers pair maps onto this declaration, if any — a declared element may just as
 			// well be a leaf or a container nothing is mapped into, and the reason must not claim content it has none of.
@@ -2393,11 +2478,16 @@ public static class WebToMobileAnalysisService {
 				CaptionResource = caption,
 				MobileValues = values,
 				DeclaredByRule = true,
+				// extra.Type is safe to echo raw: admission (SelectDeclaredElements) already validated it against the
+				// mobile component registry before this element was accepted. extra.ParentName and every name in
+				// receivingPairs (containers[].web from the same rules file) are NOT — neither is validated against
+				// any registry or set — so both go through the same sanitizer as the skip report before they reach
+				// this agent-facing Reason text.
 				Reason = $"declared by the template rule (declaredElements; no web counterpart) — a {extra.Type} the mobile "
-					+ $"template lacks, inserted into {extra.ParentName}"
+					+ $"template lacks, inserted into {SanitizeRuleIdentifier(extra.ParentName)}"
 					+ (receivingPairs.Count > 0
-						? $"; the containers pair(s) {string.Join(", ", receivingPairs)} name it as their mobile side, so "
-							+ "their web content walks into it"
+						? $"; the containers pair(s) {string.Join(", ", receivingPairs.Select(SanitizeRuleIdentifier))} name it "
+							+ "as their mobile side, so their web content walks into it"
 						: "; no containers pair targets it, so it carries only its declared values")
 			};
 			int parentAt = ctx.Out.FindIndex(e =>
