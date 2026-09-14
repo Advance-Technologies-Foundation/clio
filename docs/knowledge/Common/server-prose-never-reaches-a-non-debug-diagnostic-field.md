@@ -7,7 +7,7 @@ applies-to:
   - clio/Common/SessionRejectedException.cs
   - clio/Common/DataProviderFailureException.cs
   - clio/Command/SysSettingsCommand.cs
-  - clio/Command/McpServer/SensitiveErrorTextRedactor.cs
+  - clio/Common/SensitiveErrorTextRedactor.cs
   - clio/ExceptionReadableMessageExtension.cs
   - clio/Common/ServerReportedFailureText.cs
 ticket: GH-1333
@@ -77,16 +77,15 @@ console, because the same line is forwarded to `McpLogNotifier` — it *is* MCP-
 is only that `DescribeFailureForLog` no longer prints the same composed diagnostic as both `Error` and
 `Cause`, which used to put two fence pairs on one line.
 
-## Layering: the `Clio.Common` seam and the deferred move
+## Layering: the `Clio.Common` seam
 
-`SensitiveErrorTextRedactor` still lives in `namespace Clio.Command.McpServer` while being the
-product-wide untrusted-text rule. `clio/Common/UntrustedText.cs` is the `Clio.Common`-owned seam that
-every `Common` call site depends on instead, and it is deliberately the only file under `clio/Common`
-that names the MCP namespace for this rule (`CreatioUninstaller`'s
-`Clio.Command.McpServer.Progress` import is a separate, older edge).
+`SensitiveErrorTextRedactor` lives in `namespace Clio.Common` (moved there by issue #1375; it was in
+`Clio.Command.McpServer` from issue #1333 until then, which made the shared foundation layer import a
+transport-specific module). `clio/Common/UntrustedText.cs` remains the named seam every `Common` call
+site is expected to depend on, because it states WHICH of the three renderings — fenced, console,
+scrub-only — a given field takes; the redactor itself has no opinion about that choice.
 
-**Deferred:** moving `SensitiveErrorTextRedactor` into `Clio.Common` is a ~90-file mechanical change,
-left out of issue #1333 on purpose. **Owner:** whoever next touches redaction broadly; the move now
-touches `UntrustedText.cs` rather than the call sites. Until then, do not add a new
-`using Clio.Command.McpServer;` to a file under `clio/Common` — route it through `UntrustedText`, or the
-inverted edge is silently normalized and `Common` can no longer be reasoned about without the MCP module.
+Do not add a `using Clio.Command.McpServer;` to a file under `clio/Common`: the dependency runs
+`McpServer` → `Common`, never back. Two edges still run the wrong way, both older than issue #1333 and
+untouched by the move: `CreatioUninstaller`'s `Clio.Command.McpServer.Progress` import and
+`McpWorker/StaleWorkerRegistry`'s `Clio.Command.McpServer.Tools` import.
