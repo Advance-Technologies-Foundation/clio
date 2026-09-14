@@ -2777,14 +2777,14 @@ public sealed class WebToMobileConversionServiceTests {
 		]
 		""")!.AsArray();
 
-	// ── Template-rule declaredElements and the created-twin rule that makes them useful ────────────
+	// ── Template-rule declaredElements: creation is explicit, a containers pair always merges ────────
 	//
 	// A web record page on PageWithRightAreaAndTabsFreedomTemplate converted to BaseMobilePageTemplate,
-	// a mobile template with NO tab strip. The bundled rule maps Tabs -> Tabs and GeneralInfoTab ->
-	// GeneralInfoTab, names the mobile template does not have, so the web strip and its general tab
-	// are CONVERTED (inserted) rather than merged onto nothing; and it declares one declared tab,
-	// RightPanelTab, that the right profile area maps onto so the right-panel content becomes a tab of
-	// its own.
+	// a mobile template with NO tab strip. The bundled rule DECLARES the strip (Tabs in MainContainer), its
+	// general tab (GeneralInfoTab at index 0) and one more tab, RightPanelTab, and pairs the web Tabs /
+	// GeneralInfoTab onto the declared strip and tab by name, and the right profile area onto RightPanelTab —
+	// so every pair is a merge onto an element that exists (the template's, or a declared one), and nothing
+	// is ever created from a web element under another name.
 	// The shapes are hand-written from the live templates (own-body operations and merged trees
 	// captured with get-page on a live environment on 2026-09-07) rather than a full snapshot: the
 	// behaviour under test is the element-map decision per named container, which these minimal
@@ -2799,8 +2799,8 @@ public sealed class WebToMobileConversionServiceTests {
 	private const string DeclaredElementsPageTabField = "UsrExtraField";
 
 	[Test]
-	[Description("A containers pair whose mobile side the PROBED mobile template lacks (Tabs -> Tabs on BaseMobilePageTemplate) converts the web element instead of merging onto nothing: the web crt.TabPanel is inserted into MainContainer, its general tab is inserted under it at index 0, and the general-tab field lands in that tab's synthesized Area; the bundled crt.TabPanel 'Tabs' viewConfigTemplate rule stamps the created strip scrollable and transparent.")]
-	public void Analyze_ShouldConvertWebTabStrip_WhenMobileTemplateHasNoTabs() {
+	[Description("On BaseMobilePageTemplate (no tab strip) the bundled rule DECLARES the strip and its general tab: Tabs is a declared crt.TabPanel insert into MainContainer carrying the declared mobile standard (scrollable, transparent body) and the adaptive placement the grid parent needs; GeneralInfoTab is a declared crt.TabContainer insert under it at index 0 with the declared General information caption; the web Tabs and GeneralInfoTab are MERGE twins onto the declared elements (never created from the web element), the general-tab field lands in the declared tab's synthesized Area, and both declared inserts precede the walked content in the element map.")]
+	public void Analyze_ShouldDeclareTabStripAndGeneralTab_WhenMobileTemplateHasNoTabs() {
 		// Arrange
 		JArray page = DeclaredElementsPage(withRightWidget: true, withPageTab: false);
 
@@ -2808,34 +2808,71 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page);
 
 		// Assert
-		ElementMapEntry tabs = DeclaredElement(guide, "Tabs");
-		tabs.Operation.Should().Be("insert",
-			because: "the mobile template has no Tabs, so the pair cannot be a merge — the web strip is created");
-		tabs.MobileType.Should().Be("crt.TabPanel", because: "the created element keeps the web component type");
-		tabs.ParentName.Should().Be("MainContainer",
-			because: "the web strip sits in CardContentWrapper, which the rule maps onto MainContainer");
-		tabs.Reason.Should().Contain("created from the web element",
-			because: "the reason must say why a mapped container is an insert and not a merge");
+		ElementMapEntry tabs = Declared(guide, "Tabs");
+		tabs.Operation.Should().Be("insert", because: "the mobile template has no Tabs, so the rule declares one and it is created");
+		tabs.WebName.Should().BeNull(because: "a declared element has no web counterpart — the web strip is a separate merge twin");
+		tabs.MobileType.Should().Be("crt.TabPanel", because: "the type comes from the declaration");
+		tabs.ParentName.Should().Be("MainContainer", because: "the declaration puts the strip in the template's main container");
+		tabs.Reason.Should().Contain("declared by the template rule", because: "the reason says the strip is a declaration, not a converted web element")
+			.And.Contain("Tabs name it as their mobile side", because: "the reason names the pair whose web content walks into the declared strip");
 		tabs.MobileValues!["scrollable"]!.GetValue<bool>().Should().BeTrue(
-			because: "the bundled crt.TabPanel 'Tabs' viewConfigTemplate rule must stamp the created strip so it scrolls on mobile");
+			because: "the declared values carry the mobile standard for a converted strip: it must scroll");
 		tabs.MobileValues!["bodyBackgroundColor"]!.GetValue<string>().Should().Be("transparent",
-			because: "the same bundled rule must stamp a transparent body so the strip does not paint over the Area cards its tabs wrap");
+			because: "the declared values carry the mobile standard for a converted strip: no opaque backdrop over the Area cards");
+		tabs.MobileValues!["items"].Should().BeOfType<JsonArray>(
+			because: "the declared strip receives tab inserts, so its items slot is declared like any inserted container's");
+		tabs.MobileValues!["layoutConfig"].Should().NotBeNull(
+			because: "MainContainer is a grid that positions by layoutConfig only, and the declared insert is the one entry that carries the strip's placement");
 
-		ElementMapEntry generalTab = DeclaredElement(guide, "GeneralInfoTab");
-		generalTab.Operation.Should().Be("insert", because: "the general tab is created the same way, under the created strip");
+		ElementMapEntry webTabs = WebElement(guide, "Tabs");
+		webTabs.Operation.Should().Be("merge", because: "a containers pair is always a merge: the declaration creates, the pair merges");
+		webTabs.MobileName.Should().Be("Tabs", because: "the pair names the declared strip as its mobile side");
+		webTabs.MobileType.Should().Be("crt.TabPanel", because: "the twin reports the declared element's type, folded into the probed template maps");
+		webTabs.MobileValues.Should().BeNull(
+			because: "the twin is the same element as the declared insert; a second placement written onto the merge would compete with "
+				+ "the insert's — and the adaptive pass WOULD place it here, since the fixture's CardContentWrapper is a two-column grid "
+				+ "mapped onto MainContainer, so this assertion fails the moment the twin is admitted to that group again");
+		webTabs.Reason.Should().Contain("declares", because: "the reason must say the element comes from the rule, not from the mobile template")
+			.And.NotContain("provided by the mobile template", because: "the template does not provide Tabs on this page");
+
+		ElementMapEntry generalTab = Declared(guide, "GeneralInfoTab");
+		generalTab.Operation.Should().Be("insert", because: "the general tab is declared under the declared strip");
 		generalTab.ParentName.Should().Be("Tabs", because: "a tab belongs to the strip it was declared in");
-		generalTab.Index.Should().Be(0,
-			because: "a converter-created strip has no template general tab at position 0, so numbering starts at 0");
+		generalTab.Index.Should().Be(0, because: "the declaration puts General information first, as on the tabbed mobile template");
+		generalTab.CaptionResource.Should().NotBeNull(because: "the declaration carries the caption resource");
+		generalTab.CaptionResource.Key.Should().Be("GeneralInfoTab_caption", because: "the caption key is the declared one");
+		generalTab.CaptionResource.SourceValue.Should().Be("General information", because: "the caption text is the declared one, not read from the web element");
+		generalTab.MobileValues!["caption"]!.GetValue<string>().Should().Be("#ResourceString(GeneralInfoTab_caption)#",
+			because: "the element references its caption through the resource token, like every converted caption");
+		generalTab.MobileValues!["items"].Should().BeOfType<JsonArray>(
+			because: "the declared tab receives its synthesized body, so its items slot is declared");
+		guide.ResourceStrings.Should().ContainKey("GeneralInfoTab_caption").WhoseValue.Should().Be("General information",
+			because: "the declared caption is registered from resourceStrings like every converted caption");
+
+		ElementMapEntry webGeneralTab = WebElement(guide, "GeneralInfoTab");
+		webGeneralTab.Operation.Should().Be("merge", because: "the web general tab merges onto the declared one by name");
+		webGeneralTab.MobileName.Should().Be("GeneralInfoTab", because: "the pair names the declared tab as its mobile side");
 
 		TabAreaLayerGroup generalBody = guide.TabAreaLayers.Should()
-			.ContainSingle(g => g.TabName == "GeneralInfoTab", because: "a created tab gets the designer's two-layer body like any converted tab")
+			.ContainSingle(g => g.TabName == "GeneralInfoTab", because: "a declared tab is an inserted crt.TabContainer and gets the designer's two-layer body like any converted tab")
 			.Subject;
 		generalBody.MovedChildren.Should().Contain(DeclaredElementsGeneralField,
-			because: "the template grid is pruned as chrome and the page's field is hoisted into the tab, then stacked in its Area");
+			because: "the template grid is pruned as chrome and the page's field is hoisted into the declared tab, then stacked in its Area");
+
+		int tabsAt = IndexOfDeclared(guide, "Tabs");
+		int generalAt = IndexOfDeclared(guide, "GeneralInfoTab");
+		tabsAt.Should().BeLessThan(generalAt, because: "the declared parent is emitted before the declared child");
+		generalAt.Should().BeLessThan(IndexOfDeclared(guide, DeclaredElementsExtraTab),
+			because: "siblings declared under one parent keep the rules file's order in the map (GeneralInfoTab before RightPanelTab), "
+				+ "so the map and the declared indexes never disagree");
+		generalAt.Should().BeLessThan(IndexOfWebElement(guide, DeclaredElementsGeneralField),
+			because: "declarations precede the walked content that merges into them, so applying the map in order never inserts into a missing parent");
+		guide.Constraints.Should().NotContain(c => c.Contains("declaredElements") && c.Contains("skipped"),
+			because: "every bundled declaration is admitted on this template");
 	}
 
 	[Test]
-	[Description("The declared tab is inserted as if the mobile template had it: right after its created parent Tabs in the element map (parent before child), at its declared index, carrying the caption token and its resource; the right profile area maps onto it as a merge twin so the right-panel widget walks into the tab and its synthesized Area; a page-authored tab is indexed AFTER the declared one, never onto the same position.")]
+	[Description("The declared tab is inserted as if the mobile template had it: after its declared parent Tabs in the element map (parent before child), at its declared index, carrying the caption token and its resource; the right profile area maps onto it as a merge twin so the right-panel widget walks into the tab and its synthesized Area; a page-authored tab is indexed AFTER the declared one, never onto the same position.")]
 	public void Analyze_ShouldDeclareExtraTab_AndWalkRightPanelContentIntoIt() {
 		// Arrange
 		JArray page = DeclaredElementsPage(withRightWidget: true, withPageTab: true);
@@ -2844,7 +2881,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page);
 
 		// Assert
-		ElementMapEntry extra = DeclaredElement(guide, DeclaredElementsExtraTab);
+		ElementMapEntry extra = Declared(guide, DeclaredElementsExtraTab);
 		extra.Operation.Should().Be("insert", because: "a declared container is created on the mobile page");
 		extra.WebName.Should().BeNull(because: "a declared container has no web counterpart");
 		extra.MobileType.Should().Be("crt.TabContainer", because: "the type comes from the declaredElements entry");
@@ -2852,7 +2889,7 @@ public sealed class WebToMobileConversionServiceTests {
 		extra.Index.Should().Be(1, because: "the rule declares index 1, right after General information");
 		extra.CaptionResource.Should().NotBeNull(because: "the rule declares a caption resource");
 		string declaredCaption = WebToMobilePageConversionRulesCatalog.LoadBundled().Templates
-			.Single(t => t.Web == DeclaredElementsWebTemplate).DeclaredElements.Single().CaptionResource.Value;
+			.Single(t => t.Web == DeclaredElementsWebTemplate).DeclaredElements.Single(d => d.Name == DeclaredElementsExtraTab).CaptionResource.Value;
 		extra.CaptionResource.Key.Should().Be(DeclaredElementsExtraTabCaptionKey, because: "the caption key is the declared one");
 		extra.CaptionResource.SourceValue.Should().Be(declaredCaption, because: "the caption text is the declared one");
 		extra.MobileValues!["caption"]!.GetValue<string>().Should().Be($"#ResourceString({DeclaredElementsExtraTabCaptionKey})#",
@@ -2862,15 +2899,15 @@ public sealed class WebToMobileConversionServiceTests {
 		extra.Reason.Should().Contain("RightAreaProfileContainer",
 			because: "the reason names the web element whose pair walks content into the declared tab, not a generic claim");
 
-		int tabsAt = DeclaredElementIndexOf(guide, "Tabs");
-		int extraAt = DeclaredElementIndexOf(guide, DeclaredElementsExtraTab);
-		int widgetAt = DeclaredElementIndexOf(guide, DeclaredElementsRightWidget);
+		int tabsAt = IndexOfDeclared(guide, "Tabs");
+		int extraAt = IndexOfDeclared(guide, DeclaredElementsExtraTab);
+		int widgetAt = IndexOfWebElement(guide, DeclaredElementsRightWidget);
 		extraAt.Should().BeGreaterThan(tabsAt,
-			because: "the declared tab's parent is created by the conversion, so the parent entry must come first");
+			because: "the declared tab's parent is itself a declaration, so the parent entry must come first");
 		extraAt.Should().BeLessThan(widgetAt,
 			because: "the content mapped into the declared tab is emitted after it, so applying the map in order never inserts into a missing parent");
 
-		ElementMapEntry rightArea = DeclaredElement(guide, "RightAreaProfileContainer");
+		ElementMapEntry rightArea = WebElement(guide, "RightAreaProfileContainer");
 		rightArea.Operation.Should().Be("merge",
 			because: "the declared tab is folded into the template probe, so the pair is an ordinary twin: the web card is not recreated");
 		rightArea.MobileName.Should().Be(DeclaredElementsExtraTab, because: "the pair names the declared tab as its mobile side");
@@ -2881,7 +2918,7 @@ public sealed class WebToMobileConversionServiceTests {
 		extraBody.MovedChildren.Should().Contain(DeclaredElementsRightWidget,
 			because: "the right-panel widget walked into the declared tab and is stacked in its Area");
 
-		DeclaredElement(guide, DeclaredElementsPageTab).Index.Should().Be(2,
+		WebElement(guide, DeclaredElementsPageTab).Index.Should().Be(2,
 			because: "converted tabs skip the position the declared tab claims, so the page tab follows it");
 		guide.ResourceStrings.Should().ContainKey(DeclaredElementsExtraTabCaptionKey).WhoseValue.Should().Be(declaredCaption,
 			because: "the caller registers the declared caption from resourceStrings, the same way as every converted caption");
@@ -2897,7 +2934,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page);
 
 		// Assert
-		ElementMapEntry extra = DeclaredElement(guide, DeclaredElementsExtraTab);
+		ElementMapEntry extra = Declared(guide, DeclaredElementsExtraTab);
 		extra.Operation.Should().Be("drop", because: "nothing was mapped into the declared tab");
 		extra.Reason.Should().Contain("declaredElements", because: "the drop reason says the removed container was a declared one");
 		extra.WebName.Should().BeNull(
@@ -2908,11 +2945,18 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the type of a declared drop belongs on mobileType, not webType, for the same reason as the name");
 		guide.TabAreaLayers.Should().NotContain(g => g.TabName == DeclaredElementsExtraTab,
 			because: "a dropped tab never gets body layers synthesized");
+		ElementMapEntry rightArea = WebElement(guide, "RightAreaProfileContainer");
+		rightArea.Operation.Should().Be("drop",
+			because: "the web twin merged onto the removed declaration has no target left; a dangling merge would also be a candidate "
+				+ "for the adaptive pass once the declared insert is gone");
+		rightArea.Reason.Should().Contain(DeclaredElementsExtraTab).And.Contain("removed as empty",
+			because: "the drop reason names the declared element the twin was merged onto and why it is gone");
+		rightArea.MobileValues.Should().BeNull(because: "nothing is written onto a dropped twin");
 	}
 
 	[Test]
-	[Description("With NO mobile template probe the created-twin rule stays off: a containers pair is a merge exactly as before, so an unreadable template never silently turns template twins into inserts.")]
-	public void Analyze_ShouldKeepPairAsMerge_WhenMobileTemplateWasNotProbed() {
+	[Description("With NO mobile template probe the declarations are still emitted — creation does not depend on reading the template — and every containers pair is a merge onto them exactly as with the probe: the web Tabs merges onto the declared strip, the right profile area onto the declared right-panel tab whose synthesized Area receives the right-panel widget, and nothing is skipped. An unreadable template changes only the probe-dependent admission gates, never what the rule creates.")]
+	public void Analyze_ShouldEmitDeclaredElementsAndMergePairsOntoThem_WhenMobileTemplateWasNotProbed() {
 		// Arrange
 		JArray page = DeclaredElementsPage(withRightWidget: true, withPageTab: false);
 
@@ -2920,8 +2964,76 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, mobileTemplateProbed: false);
 
 		// Assert
-		DeclaredElement(guide, "Tabs").Operation.Should().Be("merge",
-			because: "without the probe the converter cannot know the template lacks Tabs, so the pre-existing merge behaviour is kept");
+		guide.ElementMap.Where(e => e.DeclaredByRule).Select(e => e.MobileName).Should()
+			.BeEquivalentTo(["Tabs", "GeneralInfoTab", DeclaredElementsExtraTab],
+				because: "the rule's three declarations are emitted whether or not the template was probed");
+		Declared(guide, "Tabs").Operation.Should().Be("insert", because: "the declared strip is created without a probe too");
+		Declared(guide, DeclaredElementsExtraTab).ParentName.Should().Be("Tabs", because: "the declared tab still lives in the declared strip");
+		WebElement(guide, "Tabs").Operation.Should().Be("merge", because: "a containers pair is a merge with or without the probe");
+		WebElement(guide, "Tabs").MobileName.Should().Be("Tabs", because: "the pair names the declared strip as its mobile side");
+		ElementMapEntry rightArea = WebElement(guide, "RightAreaProfileContainer");
+		rightArea.Operation.Should().Be("merge", because: "the pair onto the declared tab is a merge; nothing is recreated from the web card");
+		rightArea.MobileName.Should().Be(DeclaredElementsExtraTab, because: "the pair names the declared tab as its mobile side");
+		rightArea.MobileType.Should().Be("crt.TabContainer",
+			because: "a declared mobile side has its type in the declaration, so the twin reports it even without a probe instead of "
+				+ "falling back to the web card's crt.GridContainer and describing one element two ways");
+		guide.TabAreaLayers.Should().ContainSingle(g => g.TabName == DeclaredElementsExtraTab,
+				because: "the declared tab is an inserted crt.TabContainer and gets its body without a probe")
+			.Which.MovedChildren.Should().Contain(DeclaredElementsRightWidget,
+				because: "the right-panel widget walked into the declared tab through the pair and is stacked in its Area");
+		guide.Constraints.Should().NotContain(c => c.Contains("declaredElements") && c.Contains("skipped"),
+			because: "without a probe the probe-dependent gates are off and no declaration is skipped");
+	}
+
+	[Test]
+	[Description("A containers pair whose mobile side is NEITHER on the probed mobile template NOR declared stays a merge onto that name — the converter never creates a mobile element from a web element under the pair's name. Creation is the rule's job, stated in declaredElements; a pair alone never creates.")]
+	public void Analyze_ShouldKeepPairAsMerge_WhenMobileSideIsNeitherOnTemplateNorDeclared() {
+		// Arrange — the bundled containers pairs, but NO declarations at all: Tabs -> Tabs targets a name the base
+		// mobile template lacks and nothing declares.
+		JArray page = DeclaredElementsPage(withRightWidget: true, withPageTab: false);
+		TemplateMappingRule rule = DeclaredElementsRuleWith(new JsonArray(), keepStripDeclarations: false);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule);
+
+		// Assert
+		guide.ElementMap.Should().NotContain(e => e.DeclaredByRule, because: "the rule declares nothing");
+		ElementMapEntry webTabs = WebElement(guide, "Tabs");
+		webTabs.Operation.Should().Be("merge",
+			because: "the pair is a merge onto its mobile side however the template looks; a missing mobile side is a rules-file gap, not a signal to create");
+		webTabs.MobileName.Should().Be("Tabs", because: "the pair still names its mobile side");
+		guide.ElementMap.Should().NotContain(e => e.Operation == "insert" && e.MobileName == "Tabs",
+			because: "no insert is manufactured from the web strip under the pair's name — that is what declaredElements is for");
+		guide.ElementMap.Should().NotContain(e => e.Operation == "insert" && e.MobileName == DeclaredElementsExtraTab,
+			because: "the right-area pair onto an undeclared name creates nothing either");
+		guide.Constraints.Should().ContainSingle(c => c.Contains("does not provide and the rule does not declare"),
+				because: "a merge onto nothing is a rules-file gap the guide must report rather than leave the model to discover at apply time")
+			.Which.Should().Contain("Tabs -> Tabs", because: "the report names the pair whose mobile side is missing")
+			.And.Contain("RightAreaProfileContainer -> RightPanelTab", because: "every such pair is listed, not just the first");
+	}
+
+	[Test]
+	[Description("A declared element whose parent is only a containers pair's MOBILE SIDE — a name nothing declares and the probed template lacks — is skipped: a pair merges and creates nothing, so its mobile side is not a parent anything can be inserted into. The pair itself stays a merge (onto nothing) and is reported as such.")]
+	public void Analyze_ShouldSkipDeclaredElement_WhenParentIsOnlyAPairsMobileSide() {
+		// Arrange — no strip declarations; the bundled pair RightAreaProfileContainer -> RightPanelTab is present but
+		// RightPanelTab is NOT declared, and UsrHint names it as its parent.
+		JArray page = DeclaredElementsPage(withRightWidget: true, withPageTab: false);
+		TemplateMappingRule rule = DeclaredElementsRuleWith(new JsonArray(new JsonObject {
+			["name"] = "UsrHint", ["type"] = "crt.Label", ["parentName"] = DeclaredElementsExtraTab,
+			["values"] = new JsonObject { ["caption"] = "x" }
+		}), keepStripDeclarations: false);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule);
+
+		// Assert
+		guide.ElementMap.Should().NotContain(e => e.DeclaredByRule && e.MobileName == "UsrHint",
+			because: "a pair's mobile side is not created by the conversion, so a declaration parented there would dangle");
+		guide.Constraints.Should().ContainSingle(c => c.Contains("declaredElements") && c.Contains("skipped"),
+				because: "the skip is reported so the rule can declare the parent first")
+			.Which.Should().Contain($"UsrHint: parent '{DeclaredElementsExtraTab}'", because: "the report names the declaration and the parent it could not find");
+		WebElement(guide, "RightAreaProfileContainer").Operation.Should().Be("merge",
+			because: "the pair stays a merge — it never became a parent by being named as one");
 	}
 
 	[Test]
@@ -2944,7 +3056,7 @@ public sealed class WebToMobileConversionServiceTests {
 			+ "the pair targeting the declared name is removed too, so no twin merges onto the page's element");
 		named[0].WebName.Should().Be(DeclaredElementsExtraTab, because: "the surviving entry is the page-authored element, not the declared container");
 		named[0].DeclaredByRule.Should().BeFalse(because: "the declared container was skipped");
-		DeclaredElement(guide, DeclaredElementsRightWidget).ParentName.Should().Be("MainContainer",
+		WebElement(guide, DeclaredElementsRightWidget).ParentName.Should().Be("MainContainer",
 			because: "with its pair removed the right area is pruned as chrome and its widget falls back to the default placement");
 		guide.Constraints.Should().Contain(c => c.Contains(DeclaredElementsExtraTab) && c.Contains("already uses this name"),
 			because: "the skipped declaration is reported with its reason so the rule or the page can be renamed");
@@ -2967,7 +3079,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule);
 
 		// Assert
-		ElementMapEntry hint = DeclaredElement(guide, "UsrHint");
+		ElementMapEntry hint = Declared(guide, "UsrHint");
 		hint.Operation.Should().Be("insert", because: "a declared leaf is created on the mobile page and never dropped as empty");
 		hint.MobileType.Should().Be("crt.Label", because: "the type comes from the declaration");
 		hint.ParentName.Should().Be("MainContainer", because: "the parent comes from the declaration");
@@ -2995,12 +3107,12 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule);
 
 		// Assert
-		guide.ElementMap.Should().NotContain(e => e.DeclaredByRule,
-			because: "the only declaration has an unknown type, so nothing is declared");
+		guide.ElementMap.Should().NotContain(e => e.DeclaredByRule && e.MobileName == DeclaredElementsExtraTab,
+			because: "the right-panel declaration has an unknown type, so it is not declared; the strip declarations are unaffected");
 		guide.ElementMap.Should().NotContain(e =>
 				string.Equals(e.MobileName, DeclaredElementsExtraTab, StringComparison.OrdinalIgnoreCase),
-			because: "the pair targeting the skipped name is removed, so no twin merges onto it and no created twin is made under it");
-		DeclaredElement(guide, DeclaredElementsRightWidget).ParentName.Should().Be("MainContainer",
+			because: "the pair targeting the skipped name is removed, so no twin merges onto it and nothing is created under that name");
+		WebElement(guide, DeclaredElementsRightWidget).ParentName.Should().Be("MainContainer",
 			because: "with its pair removed the right area is pruned as chrome and its widget falls back to the default placement");
 		guide.Constraints.Should().Contain(c => c.Contains(DeclaredElementsExtraTab) && c.Contains("crt.NoSuchTab") && c.Contains("not a registered mobile component"),
 			because: "the skip names the element and the offending type so the rules file can be fixed");
@@ -3027,8 +3139,8 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule);
 
 		// Assert
-		guide.ElementMap.Where(e => e.DeclaredByRule).Select(e => e.MobileName).Should().BeEquivalentTo([DeclaredElementsExtraTab],
-			because: "only the declaration that does not collide with a template element is applied");
+		guide.ElementMap.Where(e => e.DeclaredByRule).Select(e => e.MobileName).Should().BeEquivalentTo(["Tabs", "GeneralInfoTab", DeclaredElementsExtraTab],
+			because: "only the declarations that do not collide with a template element are applied");
 		guide.ElementMap.Should().NotContain(e => e.Operation == "insert" && e.MobileName == "AreaProfileContainer",
 			because: "the template already provides this element; the declaration must never emit a conflicting insert for it");
 		guide.Constraints.Should().Contain(c => c.Contains("AreaProfileContainer") && c.Contains("template element wins"),
@@ -3055,16 +3167,16 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule);
 
 		// Assert
-		guide.ElementMap.Should().NotContain(e => e.DeclaredByRule,
-			because: "the only declaration collides with a template element and is skipped");
+		guide.ElementMap.Should().NotContain(e => e.DeclaredByRule && e.MobileName == "AreaProfileContainer",
+			because: "the stale declaration collides with a template element and is skipped");
 		guide.Constraints.Should().Contain(c => c.Contains("AreaProfileContainer") && c.Contains("template element wins"),
 			because: "the skip is still reported so the stale declaration can be removed from the rule");
-		ElementMapEntry rightArea = DeclaredElement(guide, "RightAreaProfileContainer");
+		ElementMapEntry rightArea = WebElement(guide, "RightAreaProfileContainer");
 		rightArea.Operation.Should().Be("merge",
 			because: "the pair survives the skip: its mobile side is a real template element, so the web area is a merge twin");
 		rightArea.MobileName.Should().Be("AreaProfileContainer",
 			because: "the pair still names the template element as its mobile side");
-		DeclaredElement(guide, DeclaredElementsRightWidget).ParentName.Should().Be("AreaProfileContainer",
+		WebElement(guide, DeclaredElementsRightWidget).ParentName.Should().Be("AreaProfileContainer",
 			because: "the right-panel content walks into the template element through the kept pair, not into the default placement");
 	}
 
@@ -3082,8 +3194,8 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule);
 
 		// Assert
-		guide.ElementMap.Where(e => e.DeclaredByRule).Select(e => e.MobileName).Should().BeEquivalentTo([DeclaredElementsExtraTab],
-			because: "only the declaration whose parent (the converter-created Tabs) exists is applied");
+		guide.ElementMap.Where(e => e.DeclaredByRule).Select(e => e.MobileName).Should().BeEquivalentTo(["Tabs", "GeneralInfoTab", DeclaredElementsExtraTab],
+			because: "only the declarations whose parents exist (the template's MainContainer, the declared Tabs) are applied");
 		guide.Constraints.Should().ContainSingle(c => c.Contains("declaredElements") && c.Contains("skipped"),
 			because: "every skip is reported in one constraint").Which.Should()
 			.Contain("Orphan: parent 'NoSuchParent'", because: "the orphan names its missing parent").And
@@ -3103,10 +3215,10 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule);
 
 		// Assert
-		ElementMapEntry declared = guide.ElementMap.Should().ContainSingle(e => e.DeclaredByRule,
+		ElementMapEntry declared = guide.ElementMap.Should().ContainSingle(e => e.DeclaredByRule && e.MobileName == DeclaredElementsExtraTab,
 			because: "a name is declared once however many times the rule repeats it").Subject;
 		declared.MobileType.Should().Be("crt.TabContainer", because: "the earlier declaration stands");
-		DeclaredElement(guide, "RightAreaProfileContainer").MobileName.Should().Be(DeclaredElementsExtraTab,
+		WebElement(guide, "RightAreaProfileContainer").MobileName.Should().Be(DeclaredElementsExtraTab,
 			because: "the pair still targets the surviving declaration");
 		guide.Constraints.Should().Contain(c => c.Contains(DeclaredElementsExtraTab) && c.Contains("declared more than once"),
 			because: "the repeat is reported so the rules file can be fixed");
@@ -3136,8 +3248,8 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		guide.ElementMap.Where(e => e.DeclaredByRule).Select(e => e.MobileName).Should().BeEquivalentTo(
-			[DeclaredElementsExtraTab, "ChildLabel"], because: "both declarations are valid and admitted regardless of their JSON order");
-		DeclaredElementIndexOf(guide, DeclaredElementsExtraTab).Should().BeLessThan(DeclaredElementIndexOf(guide, "ChildLabel"),
+			["Tabs", "GeneralInfoTab", DeclaredElementsExtraTab, "ChildLabel"], because: "both declarations are valid and admitted regardless of their JSON order");
+		IndexOfDeclared(guide, DeclaredElementsExtraTab).Should().BeLessThan(IndexOfDeclared(guide, "ChildLabel"),
 			because: "applying the map in order must create the parent container before inserting the child into it, regardless of which one the rules file lists first");
 	}
 
@@ -3154,7 +3266,7 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule);
 
 		// Assert
-		guide.ElementMap.Where(e => e.DeclaredByRule).Select(e => e.MobileName).Should().BeEquivalentTo(["CycleA", "CycleB"],
+		guide.ElementMap.Where(e => e.DeclaredByRule).Select(e => e.MobileName).Should().BeEquivalentTo(["Tabs", "GeneralInfoTab", "CycleA", "CycleB"],
 			because: "the cycle is broken deterministically rather than dropping either declaration silently");
 	}
 
@@ -3250,10 +3362,26 @@ public sealed class WebToMobileConversionServiceTests {
 
 	/// <summary>
 	/// The bundled right-area rule with its <c>declaredElements</c> replaced — through the JSON contract, so the
-	/// test states the declaration exactly as a rules file would.
+	/// test states the declaration exactly as a rules file would. The bundled strip declarations (Tabs and
+	/// GeneralInfoTab) are kept in front of <paramref name="declaredElements"/> unless
+	/// <paramref name="keepStripDeclarations"/> is false: they are the parents every other declaration and pair
+	/// on this template lean on, and a test about one declaration should not have to restate them.
 	/// </summary>
-	private static TemplateMappingRule DeclaredElementsRuleWith(JsonArray declaredElements, JsonArray containers = null) {
+	private static TemplateMappingRule DeclaredElementsRuleWith(JsonArray declaredElements, JsonArray containers = null,
+		bool keepStripDeclarations = true) {
 		JsonObject rule = JsonSerializer.SerializeToNode(DeclaredElementsBundledRule())!.AsObject();
+		if (keepStripDeclarations) {
+			var merged = new JsonArray();
+			foreach (JsonNode bundled in rule["declaredElements"]!.AsArray()) {
+				if (bundled!["name"]!.GetValue<string>() is "Tabs" or "GeneralInfoTab") {
+					merged.Add(bundled.DeepClone());
+				}
+			}
+			foreach (JsonNode extra in declaredElements) {
+				merged.Add(extra!.DeepClone());
+			}
+			declaredElements = merged;
+		}
 		rule["declaredElements"] = declaredElements;
 		if (containers is not null) {
 			rule["containers"] = containers;
@@ -3262,21 +3390,37 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	/// <summary>
-	/// The entry that IS the named element: a web element by its web name, or a declared element (no web name)
-	/// by its mobile name. A merge twin that only TARGETS the name (e.g. RightAreaProfileContainer -> RightPanelTab)
-	/// is a different element and is deliberately not matched.
+	/// A declared element's own entry (declaredElements; no web name), by its mobile name. A web twin that a pair
+	/// MERGES onto the same name (web Tabs -> declared Tabs) is a different entry — see <see cref="WebElement"/>.
 	/// </summary>
-	private static bool IsDeclaredOrWebElement(ElementMapEntry e, string name) =>
-		string.Equals(e.WebName, name, StringComparison.OrdinalIgnoreCase)
-		|| (e.WebName is null && string.Equals(e.MobileName, name, StringComparison.OrdinalIgnoreCase));
+	private static bool IsDeclared(ElementMapEntry e, string name) =>
+		e.DeclaredByRule && string.Equals(e.MobileName, name, StringComparison.OrdinalIgnoreCase);
 
-	private static ElementMapEntry DeclaredElement(MobilePageConversionGuide guide, string name) =>
-		guide.ElementMap.Should().ContainSingle(e => IsDeclaredOrWebElement(e, name),
-			because: $"'{name}' must have exactly one element-map entry")
+	/// <summary>A web element's own entry, by its web name (merge twin or converted insert alike).</summary>
+	private static bool IsWebElement(ElementMapEntry e, string name) =>
+		string.Equals(e.WebName, name, StringComparison.OrdinalIgnoreCase);
+
+	private static ElementMapEntry Declared(MobilePageConversionGuide guide, string name) =>
+		guide.ElementMap.Should().ContainSingle(e => IsDeclared(e, name),
+			because: $"declared '{name}' must have exactly one element-map entry")
 			.Subject;
 
-	private static int DeclaredElementIndexOf(MobilePageConversionGuide guide, string name) =>
-		guide.ElementMap.ToList().FindIndex(e => IsDeclaredOrWebElement(e, name));
+	private static ElementMapEntry WebElement(MobilePageConversionGuide guide, string name) =>
+		guide.ElementMap.Should().ContainSingle(e => IsWebElement(e, name),
+			because: $"web element '{name}' must have exactly one element-map entry")
+			.Subject;
+
+	private static int IndexOfDeclared(MobilePageConversionGuide guide, string name) {
+		int at = guide.ElementMap.ToList().FindIndex(e => IsDeclared(e, name));
+		at.Should().BeGreaterThanOrEqualTo(0, because: $"declared '{name}' must be in the element map before its position can be compared");
+		return at;
+	}
+
+	private static int IndexOfWebElement(MobilePageConversionGuide guide, string name) {
+		int at = guide.ElementMap.ToList().FindIndex(e => IsWebElement(e, name));
+		at.Should().BeGreaterThanOrEqualTo(0, because: $"web element '{name}' must be in the element map before its position can be compared");
+		return at;
+	}
 
 	[Test]
 	[Description("With no template baseline the tree is untouched (backward-compatible): a would-be-chrome element is still surfaced.")]
