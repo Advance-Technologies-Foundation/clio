@@ -343,6 +343,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["list-themes"] = PassthroughClassification.NotApplicable,
 			["list-user-tasks"] = PassthroughClassification.NotApplicable,
 			["modify-business-process"] = PassthroughClassification.NotApplicable,
+			["modify-business-process-as-new-version"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - the same already-resolver-backed class (a) pattern as modify-business-process
 			["modify-entity-schema-column"] = PassthroughClassification.NotApplicable,
 			["modify-user-task-parameters"] = PassthroughClassification.NotApplicable,
 			["new-integration-test-project"] = PassthroughClassification.NotApplicable,
@@ -372,6 +373,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["restore-db-to-local-server"] = PassthroughClassification.NotApplicable,
 			["restore-workspace"] = PassthroughClassification.NotApplicable,
 			["run-process"] = PassthroughClassification.NotApplicable,
+			["set-active-business-process-version"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - the same already-resolver-backed class (a) pattern as modify-business-process
 			["set-background-image"] = PassthroughClassification.NotApplicable,
 			["set-fsm-mode"] = PassthroughClassification.NotApplicable,
 			["set-logo"] = PassthroughClassification.NotApplicable,

@@ -1,0 +1,48 @@
+pkg-to-file-system - Export configuration-database packages to the file system
+
+SYNOPSIS
+    clio pkg-to-file-system [options]
+
+DESCRIPTION
+    Exports the package definitions registered in the Creatio configuration
+    database to the web application's file system. This is the reverse direction
+    of pkg-to-db (2db) and the way an environment switched into file system
+    development mode (FSM) gets its current configuration onto disk so it can be
+    edited and put under version control.
+
+    Scope: the command writes package CONTENT - schemas, resources and package
+    descriptors. Package DATA is not part of the export: a Data/<BindingName>
+    folder is produced by create-data-binding (or by an installed package), not by
+    this command.
+
+    The command requires file system development mode to be enabled on the
+    environment. When FSM is disabled, when the FSM state cannot be read, or when
+    the platform refuses the export, nothing is written and the command exits with
+    code 1 and an error message.
+
+EXAMPLES
+    Export the environment's packages to the file system
+    (the aliases 2fs and tofs accept exactly the same arguments):
+        clio pkg-to-file-system -e dev
+
+    Switch an environment into file system mode and export in one step:
+        clio turn-fsm -e dev on
+
+REQUIREMENTS
+    File system development mode (FSM) must be enabled on the environment. Check it
+    with:
+        clio get-fsm-mode -e <ENVIRONMENT_NAME>
+
+NOTES
+    - Aliases: 2fs, tofs
+    - Exit code 0 means the platform reported the export as completed; any other
+      outcome (FSM disabled, unreadable FSM state, platform error) exits with 1
+    - turn-fsm on runs this export after it enables FSM, so a failure there leaves
+      FSM enabled with the export unfinished; re-run this command once the web
+      application has restarted
+
+SEE ALSO
+    pkg-to-db                   Import file-system package definitions into the database
+    turn-fsm                    Turn file system mode on or off for an environment
+    get-fsm-mode                Show whether file system development mode is enabled
+    link-to-repository          Link environment packages to a local repository checkout

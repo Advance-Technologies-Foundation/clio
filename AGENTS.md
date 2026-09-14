@@ -127,15 +127,19 @@ clio ships two Creatio packages inside its own distribution — `cliogate` (preb
 - `clio/Common/BundledPackages.cs` — the identity constants
 - `clio/Common/BundledPackageCatalog.cs` / `BundledPackageConvergence.cs` — the version source of truth
   and the rule that decides an environment is behind
-- `clio.tests/Common/BundledProcessBuilderPackageTests.cs` — the SHA-256 / `ModifiedOnUtc` pins
+- `clio.tests/Common/BundledProcessBuilderPackageTests.cs` — the SHA-256 / `ModifiedOnUtc` pins, and the two
+  security counts the script does NOT write: `ExpectedOperationContractCount` and
+  `ExpectedAuthorizationGateCallSites`. They are properties of the shipped sources, so a rebundle that
+  changed the service surface has to move them by hand, in the same commit, and the package side moves first
 - a `[RequiresPackage]` version literal
 
 The normal path is one call — `pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <ProcessBuilder
-checkout> -Version X.Y.Z.W`. It runs the whole procedure, refreshes all four clio-side pins — only the
-SHA is computed from the archive it just produced; the version comes from `-Version`, the stamp from the
+checkout> -Version X.Y.Z.W`. It runs the whole procedure, refreshes all four clio-side PROVENANCE pins — only
+the SHA is computed from the archive it just produced; the version comes from `-Version`, the stamp from the
 package descriptor after the restamp, and the commit from that repository's HEAD before it — and checks
-the archive's inventory. The article documents it, and keeps the manual steps as the
-fallback for a host without `pwsh`.
+the archive's inventory. It does NOT write the schema-descriptor stamp or the two security counts; those are
+hand-maintained, and the article's pin table says which. It documents the procedure, and keeps the manual
+steps as the fallback for a host without `pwsh`.
 
 **`-Version` is required and must go UP on every rebundle.** clio reads the shipped version out of the
 archive and compares it against the version the environment recorded; an unchanged version therefore

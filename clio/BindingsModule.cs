@@ -446,6 +446,10 @@ public class BindingsModule {
 		services.AddTransient<CreateBusinessProcessCommand>();
 		services.AddTransient<IModifyBusinessProcessService, ModifyBusinessProcessService>();
 		services.AddTransient<ModifyBusinessProcessCommand>();
+		services.AddTransient<IModifyProcessAsNewVersionService, ModifyProcessAsNewVersionService>();
+		services.AddTransient<ModifyProcessAsNewVersionCommand>();
+		services.AddTransient<ISetActiveProcessVersionService, SetActiveProcessVersionService>();
+		services.AddTransient<SetActiveProcessVersionCommand>();
 		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
 		services.AddTransient<GetAppSectionsCommand>();
 		services.AddTransient<IdentityProviderListCommand>();

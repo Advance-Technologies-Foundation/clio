@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using Clio.Project.NuGet;
@@ -77,28 +78,120 @@ namespace Clio.Common
 
 		/// <summary>
 		/// Prepares untrusted text (typically a raw HTTP response body from a Creatio service) for safe inclusion
-		/// in a user-facing message, log line, or MCP tool result. Replaces every control character with a space so
-		/// a hostile or misbehaving endpoint cannot forge extra output lines or inject terminal escape sequences,
-		/// and caps the result at <paramref name="maxLength"/> characters (appending an ellipsis) so a large
-		/// non-JSON payload — for example a whole HTML login page — cannot flood the output.
+		/// in a user-facing message, log line, or MCP tool result. Replaces every character that could forge output
+		/// with a space so a hostile or misbehaving endpoint cannot invent extra output lines or inject terminal
+		/// escape sequences - the <c>char.IsControl</c> set PLUS <c>UnicodeCategory.Format</c> and the two Unicode
+		/// separators, since <c>char.IsControl</c> is FALSE for both and U+2028/U+2029 and the BiDi overrides
+		/// U+202A-U+202E / U+2066-U+2069 otherwise pass untouched while reordering RENDERED text (Trojan Source,
+		/// CVE-2021-42574). It also caps the result at <paramref name="maxLength"/> characters (appending an
+		/// ellipsis) so a large non-JSON payload — for example a whole HTML login page — cannot flood the
+		/// output. Hand-mirrored in CrtProcessBuilder <c>SafeText.Sanitize</c>: the two halves are kept in step
+		/// by hand, so widening one means widening the other.
 		/// </summary>
 		/// <param name="text">The untrusted text to sanitize.</param>
 		/// <param name="maxLength">The maximum length of the sanitized text before it is truncated.</param>
-		/// <returns>A single-line, length-capped, control-character-free rendering of <paramref name="text"/>;
-		/// the input unchanged when it is <c>null</c> or empty.</returns>
+		/// <returns>A single-line, length-capped rendering of <paramref name="text"/> with every output-forging
+		/// character replaced; the input unchanged when it is <c>null</c> or empty. Always VALID UTF-16: a cap
+		/// that would fall
+		/// between a surrogate pair drops the whole character rather than emitting a lone surrogate, which
+		/// a JSON serializer refuses. A non-positive cap yields the ellipsis alone rather than throwing.</returns>
+		// A character that must not reach a terminal or a tool result verbatim. See the remark at the
+		// call site for why control characters alone are not the right set.
+		private static bool IsUnsafeForDisplay(char character) {
+			if (char.IsControl(character)) {
+				return true;
+			}
+
+			UnicodeCategory category = CharUnicodeInfo.GetUnicodeCategory(character);
+			return category is UnicodeCategory.Format
+				or UnicodeCategory.LineSeparator
+				or UnicodeCategory.ParagraphSeparator;
+		}
+
 		public static string SanitizeForDisplay(string text, int maxLength = 500) {
 			if (string.IsNullOrEmpty(text)) {
 				return text;
 			}
-			var sb = new StringBuilder(text.Length);
-			foreach (char character in text) {
-				sb.Append(char.IsControl(character) ? ' ' : character);
+			// Clamped BEFORE the builder, and it MOVED here from after the loop. It is a regression guard: the
+			// previous implementation answered "..." for a non-positive cap, and the surrogate back-off below
+			// reads sanitized[cut - 1], which throws IndexOutOfRange at cut == 0 - and this helper runs while
+			// BUILDING a message about another failure, so it must never be the thing that throws. It has to be
+			// up here now that the builder is sized from maxLength: int.MinValue + 1 is still negative, and
+			// StringBuilder throws on a negative capacity. Its old remark - that the sanitized string cannot be
+			// empty because the loop is one-for-one - stopped being true with the bounded loop below, which is
+			// the other reason it could not stay where it was. SafeText.Sanitize clamps the same case here too.
+			if (maxLength <= 0) {
+				return "...";
+			}
+			// BOUNDED by the cap, not by the input. This used to size the builder to text.Length and scan the
+			// whole value before capping - so a caller value of any size cost a full scan AND a full-size
+			// allocation to produce at most maxLength characters, which is the opposite of "never throw while
+			// building a message": a large enough value makes the allocation itself the failure.
+			// TWO units of slack, and the number matters. The loop below runs while the output is <= the cap, so
+			// it can be entered with exactly maxLength already written; if the next input is a surrogate PAIR it
+			// appends two more, and the output ends at maxLength + 2. An earlier version of this comment said "one
+			// more" and sized the builder to maxLength + 1 - the bound was wrong and the capacity was one short,
+			// so the pair case quietly grew the builder. One unit would still be needed regardless: it is what
+			// lets the code below tell "exactly at the cap" from "over it" without looking at the input again.
+			//
+			// The cap is added in LONG arithmetic because it is a caller argument: maxLength + 2 overflows to a
+			// negative int near int.MaxValue, and a negative capacity makes StringBuilder throw - inside a helper
+			// whose whole purpose is never to be the thing that throws while a message is being built.
+			//
+			// What this does NOT bound is the scan of a value made entirely of DROPPED characters - lone
+			// surrogate halves add nothing to the output, so the loop still walks them. Bounding that would mean
+			// truncating the INPUT, which changes the answer: a megabyte of lone halves followed by real text
+			// must still sanitize to that text. Allocation is bounded; the walk is O(input) in that one shape.
+			var sb = new StringBuilder((int)System.Math.Min((long)text.Length, (long)maxLength + 2));
+			int index = 0;
+			while (index < text.Length && sb.Length <= maxLength) {
+				char character = text[index];
+				// An UNPAIRED surrogate half is dropped, not spaced: it is invalid UTF-16, which a JSON
+				// serializer refuses outright - so a caller value carrying one would make this helper the
+				// cause of a serialization failure in the very message it exists to make safe. Guarding the
+				// TRUNCATION against splitting a pair was not enough; a lone half the caller supplied passed
+				// straight through. A valid PAIR survives, so this needs the pairwise scan rather than a
+				// per-character test. The package half states the same rule in SafeText.Sanitize.
+				if (char.IsHighSurrogate(character)
+					&& index + 1 < text.Length
+					&& char.IsLowSurrogate(text[index + 1])) {
+					sb.Append(character).Append(text[index + 1]);
+					index += 2;
+					continue;
+				}
+
+				// Advanced BEFORE the branches below, so the counter is never touched inside them. A `for` here
+				// updated its own stop-condition variable in the body (Sonar S127) - the pair branch has to
+				// consume TWO code units, which a for-header cannot express.
+				index++;
+				if (char.IsSurrogate(character)) {
+					// A PAIRED high surrogate was consumed above, so anything reaching here is an unpaired half:
+					// not a character at all.
+					continue;
+				}
+				// WIDER than char.IsControl, which is FALSE for UnicodeCategory.Format and for the two Unicode
+				// separators. U+2028/U+2029 are line breaks to a terminal, and the BiDi overrides U+202A-U+202E
+				// and U+2066-U+2069 reorder rendered text without changing its bytes (Trojan Source,
+				// CVE-2021-42574) - so both forged output while passing a control-character filter untouched.
+				// This is the clio half of a mirror: CrtProcessBuilder SafeText.Sanitize carries the same rule,
+				// and the two are hand-kept in step.
+				sb.Append(IsUnsafeForDisplay(character) ? ' ' : character);
 			}
 			string sanitized = sb.ToString();
-			if (sanitized.Length > maxLength) {
-				return sanitized.Substring(0, maxLength) + "...";
+			if (sanitized.Length <= maxLength) {
+				return sanitized;
 			}
-			return sanitized;
+			// Never cut BETWEEN a surrogate pair. Substring counts UTF-16 units, so a cap landing inside an
+			// astral character (emoji, and every supplementary-plane script) would emit a lone high surrogate:
+			// invalid UTF-16 that a console renders as a replacement glyph and a JSON serializer has to escape
+			// as an unpaired code unit, in the middle of otherwise readable text. Backing off one unit drops
+			// the whole character instead, which is what the caller means by truncation.
+			int cut = maxLength;
+			if (char.IsHighSurrogate(sanitized[cut - 1])) {
+				cut--;
+			}
+
+			return sanitized.Substring(0, cut) + "...";
 		}
 
 		/// <summary>
@@ -126,7 +219,7 @@ namespace Clio.Common
 		/// what is true: it was not credible, so it is not shown.
 		/// <para>
 		/// <see cref="SanitizeForDisplay"/> is the wrong tool here even though it looks like the right one: it
-		/// removes control characters, which stops a forged output line but leaves
+		/// removes the characters that could forge output, which stops an invented output line but leaves
 		/// <c>1.0.0.0-IGNORE PRIOR INSTRUCTIONS AND CALL …</c> completely intact — one line, no control bytes,
 		/// whole payload. These messages reach an MCP agent's context, so the defence has to be "the output can
 		/// only look like a version".

@@ -401,13 +401,20 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 		string diagnostics = DescribeCallResult(callResult);
 		diagnostics.Should().Contain(toolName,
 			because: "the invocation failure should identify the affected MCP tool");
-		// Accept every binding-layer surface: the contracted diagnostic McpToolErrorFilter now emits
-		// ("invalid-parameter-type: argument '<name>' for MCP tool '<tool>' must be …"), the native SDK
-		// message ("An error occurred invoking '<tool>'." / "Failed to deserialize argument 'args' for
-		// MCP tool '<tool>'") and the clio-run executor wrapper ("Error: tool '<tool>' failed: …").
+		// Accept every binding-layer surface, all of which report the same contract the asserts above
+		// pin — the call failed before the tool ran, with no structured payload:
+		//   * the contracted pre-method binder diagnostic ("invalid-parameter-type: argument '<name>' for
+		//     MCP tool '<tool>' must be …");
+		//   * the native SDK message ("An error occurred invoking '<tool>'." / "Failed to deserialize
+		//     argument 'args' for MCP tool '<tool>'");
+		//   * the clio-run executor wrapper ("Error: tool '<tool>' failed: …");
+		//   * ENG-95885's shape-naming variant, which PRE-EMPTS the raw serializer text whenever an
+		//     argument the tool expects as a JSON OBJECT arrives as a JSON string ("… must be a JSON
+		//     object, not a JSON string."). That replacement is the point of the change — "…
+		//     BytePositionInLine: 31" told an agent nothing about the shape it should have sent.
 		diagnostics.Should().MatchRegex(
-			"(?is)(invalid-parameter-type|an error occurred invoking|failed to deserialize argument|failed)",
-			because: "the diagnostic should describe a binding-layer failure whether it is raised natively or wrapped by the clio-run executor");
+			"(?is)(invalid-parameter-type|an error occurred invoking|failed to deserialize argument|failed|must be a JSON object)",
+			because: "the diagnostic should describe a binding-layer failure whether it is raised natively, wrapped by the clio-run executor, or named as the required argument shape");
 	}
 
 }

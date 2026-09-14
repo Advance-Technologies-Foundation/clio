@@ -310,8 +310,10 @@ public class ModifyUserTaskParametersCommand : RemoteCommand<ModifyUserTaskParam
 
 		Logger.WriteInfo($"Applying direction metadata for {directionsByParameterName.Count} parameter(s) on '{schemaName}'...");
 		_userTaskMetadataDirectionApplier.ApplyDirections(packageName, schemaName, directionsByParameterName);
-		Logger.WriteInfo("Loading workspace packages to database to apply direction metadata changes...");
-		_fileDesignModePackages.LoadPackagesToDb();
+		UserTaskSchemaSupport.LoadWorkspacePackagesToDatabase(_fileDesignModePackages, Logger, schemaName,
+			$"The other parameter changes to '{schemaName}' were already saved and built on the environment, so only " +
+			"the directions are missing: enable file system development mode (clio turn-fsm on) and run " +
+			$"'clio pkg-to-db' followed by 'clio compile-package {packageName}'.");
 		BuildPackage(packageName);
 	}
 

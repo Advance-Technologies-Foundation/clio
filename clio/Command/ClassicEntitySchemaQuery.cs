@@ -87,6 +87,21 @@ internal static class ClassicEntitySchemaQuery {
 	internal static JObject Column(string path) =>
 		new() { ["expression"] = new JObject { [ExpressionTypeKey] = 0, ["columnPath"] = path } };
 
+	/// <summary>
+	/// A selected column that also ORDERS the result ascending by itself. Needed whenever a row cap can cut
+	/// off the row the caller actually wants: a <c>SelectQuery</c> applies <c>rowCount</c> to an unordered
+	/// result, so the wanted row is kept only by luck of the DB's ordering. Sorting a boolean ascending puts
+	/// <see langword="false"/> first, which is how the base <c>SysSchema</c> row (<c>ExtendParent = false</c>)
+	/// is made to survive any cap — verified against a stand where 4 of 6 common objects have 8 schema layers
+	/// and lost their base row to a 4-row window.
+	/// </summary>
+	/// <param name="path">The column path to select and order by.</param>
+	internal static JObject ColumnOrderedAsc(string path) =>
+		new() {
+			["expression"] = new JObject { [ExpressionTypeKey] = 0, ["columnPath"] = path },
+			["orderDirection"] = 1, ["orderPosition"] = 0
+		};
+
 	internal static JObject Eq(string columnPath, string value, int dataValueType) => new() {
 		["filterType"] = 1, ["comparisonType"] = 3, ["isEnabled"] = true,
 		["leftExpression"] = new JObject { [ExpressionTypeKey] = 0, ["columnPath"] = columnPath },

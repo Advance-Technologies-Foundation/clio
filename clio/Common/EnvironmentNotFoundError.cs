@@ -34,9 +34,13 @@ public static class EnvironmentNotFoundError {
 			: missingEnvironmentName.Trim();
 		string availableHint = BuildAvailableHint(availableEnvironmentNames);
 		// The caller is the same command class on both surfaces, so the audience cannot be decided per
-		// call site: it is a property of the process. Program.IsMcpServerMode is set once from the verb
-		// (mcp-server / mcp-http) — the same ambient marker ConsoleLogger already branches on. The
-		// parameter exists so a test can pin either text without mutating that process-wide state.
+		// call site: it is a property of the process. Program.IsMcpServerMode is set once from the verb —
+		// mcp-server / mcp ONLY, never mcp-http (ENG-95885; see
+		// docs/knowledge/McpServer/is-mcp-server-mode-excludes-the-http-host.md, and do not restate it as
+		// covering the HTTP host — it does not) — the same ambient marker ConsoleLogger already branches
+		// on. So the HTTP host currently gets the CLI wording here; that is pre-existing and out of this
+		// change's scope, but it is the flag's real behaviour rather than an oversight in the comment.
+		// The parameter exists so a test can pin either text without mutating that process-wide state.
 		bool isMcp = isMcpContext ?? Program.IsMcpServerMode;
 		string fix = isMcp ? BuildMcpFix(name) : BuildCliFix(name);
 		return $"Environment with key '{name}' not found.{availableHint} {fix}";

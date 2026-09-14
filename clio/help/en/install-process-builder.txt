@@ -14,6 +14,8 @@ DESCRIPTION
     The package is required by the process-designer capability, which is exposed
     as MCP TOOLS and has no CLI verbs - do not expect to run these from a shell:
     - create-business-process / modify-business-process
+    - modify-business-process-as-new-version
+    - set-active-business-process-version
     - describe-business-process
     - list-user-tasks
     - validate-process-graph

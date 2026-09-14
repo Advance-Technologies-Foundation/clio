@@ -42,10 +42,23 @@ internal sealed class McpServerSession : IAsyncDisposable {
 	/// answers, simulating a headless agent). When it is <see langword="null"/> the client behaves as
 	/// before and does not advertise elicitation.
 	/// </summary>
+	/// <param name="standardErrorLines">
+	/// Optional sink for the SERVER child's standard-error lines. Omitted by every fixture that does not
+	/// care, so this is additive: the SDK simply does not wire the callback and behaviour is unchanged.
+	/// <para>
+	/// ENG-95885 review round 6: stderr is where the MCP host reads clio's advisory diagnostics, and it
+	/// was the one delivery half no test could observe — an in-process test is never in MCP server mode,
+	/// so the transport flag, the rate gate and the write itself were each pinned separately with the
+	/// wiring between them unproven. This is the seam that closes it, and it needs no global state:
+	/// <c>StdioClientTransportOptions.StandardErrorLines</c> is an <see cref="Action{T}"/> the SDK
+	/// already offers.
+	/// </para>
+	/// </param>
 	public static async Task<McpServerSession> StartAsync(
 		McpE2ESettings settings,
 		Func<ElicitRequestParams?, CancellationToken, ValueTask<ElicitResult>>? elicitationHandler,
-		CancellationToken cancellationToken) {
+		CancellationToken cancellationToken,
+		Action<string>? standardErrorLines = null) {
 		SuppressCuratedKnowledgeBootstrap(settings);
 		ClioProcessDescriptor process = ClioExecutableResolver.Resolve(settings);
 		StdioClientTransport transport = new(new StdioClientTransportOptions {
@@ -55,7 +68,8 @@ internal sealed class McpServerSession : IAsyncDisposable {
 			EnvironmentVariables = settings.ProcessEnvironmentVariables,
 			Name = "clio-mcp-e2e",
 			// SDK waits the full window on dispose even after the child exits (~0.05s measured on CI); 40x margin.
-			ShutdownTimeout = TimeSpan.FromSeconds(2)
+			ShutdownTimeout = TimeSpan.FromSeconds(2),
+			StandardErrorLines = standardErrorLines
 		}, NullLoggerFactory.Instance);
 
 		McpClientOptions options = new() {

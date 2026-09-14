@@ -77,6 +77,14 @@ public sealed class ToolContractGetTool {
 		BudgetPolicy = McpToolBudgetPolicy.None,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	// ENG-95885 (field-test defect: a FLAT name-only call silently returned the full tool INDEX as a
+	// success). A flat {"name":"<tool>"} payload carries no key that is a canonical wire property of
+	// ToolContractGetArgs ("tool-names" / "detail"), so the normalizer classifies it unknown-only. This
+	// declaration forwards it instead of refusing it: the key binds into the args record's
+	// [JsonExtensionData] overflow bag and TryRecoverFlatToolNames below resolves the NAMED contract.
+	// Before ENG-95885 the flat call bound `args` to null, fell through to the no-tool-names branch, and
+	// handed the agent the entire index back as a plausible success.
+	[McpRecoversUnknownArguments]
 	[Description("Returns clio MCP tool contracts. Omit tool-names for a compact index of ALL tools (names + one-line purpose + safety flags) — cheap discovery without full schemas; pass tool-names to expand those tools' full contracts (parameter schema, aliases, defaults, examples, and preferred or fallback workflow hints); pass detail=full (with no tool-names) to expand every tool's full contract at once.")]
 	public ToolContractGetResponse GetToolContracts(
 		[Description("Parameters: tool-names (optional array of tool names) and detail (optional 'index' | 'full'). Omit entirely for a compact index of all tools; pass tool-names for full contracts; pass detail=full to expand all full contracts.")]
@@ -135,7 +143,40 @@ public sealed class ToolContractGetTool {
 	}
 
 	private const string ExpectedArgsShapeHint =
-		"Expected args shape: {\"tool-names\": [\"list-pages\", ...] } or omit tool-names to list all.";
+		"Expected args shape: {\"tool-names\": [\"list-pages\", ...] } or omit tool-names to list all. "
+		+ AcceptedArgumentShapesHint;
+
+	/// <summary>
+	/// ENG-95885. The canonical statement of clio's runtime argument-shape contract, carried on the
+	/// <c>get-tool-contract</c> surface — the one tool every agent reads before calling anything else.
+	/// </summary>
+	/// <remarks>
+	/// This is deliberately framed as a TOLERANT RUNTIME layer, not a schema change: <c>tools/list</c>
+	/// keeps publishing <c>required: ["args"]</c>, so the published schema and the accepted input set are
+	/// NOT identical and this text must never claim they are. Server instructions stay pointer-only
+	/// (<c>McpServerInstructions</c>), and the narrative guidance articles live in the external
+	/// clio-knowledge repository — so the rule is stated once, here, next to the contracts it governs.
+	/// </remarks>
+	internal const string AcceptedArgumentShapesHint =
+		"Argument shapes accepted at runtime by any tool whose only parameter is an args record: "
+		+ "wrapped {\"args\": {\"<field>\": \"<value>\"}} (the shape tools/list publishes) and flat "
+		+ "{\"<field>\": \"<value>\"} (normalized to the wrapped shape on arrival). Rules: every flat key "
+		+ "must be a real field name — a payload carrying any unknown key (even beside a valid one) is "
+		+ "refused, never answered with defaults; "
+		+ "mixing an \"args\" object with extra top-level keys is refused as ambiguous; two top-level "
+		+ "keys differing only in casing name one argument and are refused the same way, since names "
+		+ "are matched case-insensitively; an args value must "
+		+ "be a JSON object, never a string containing JSON text.";
+
+	// ENG-95885: the accepted-shape rule is deliberately NOT advertised in the published tools/list
+	// description. That payload is ratcheted by a byte budget
+	// (McpProfileGatingTests.RegisterEnabledPrimitives_ShouldKeepToolsSerializedSizeWithinBudget_WhenCalled,
+	// 32768 bytes) and the current default surface leaves ~15 bytes of headroom, so even a one-line
+	// summary (~236 bytes) breaks it. Raising the ceiling for a rule an agent needs at the moment a call
+	// FAILS would trade every session's context for text most sessions never read. The rule therefore
+	// lives where it is actually consumed: the error text below (ExpectedArgsShapeHint), the normalizer's
+	// refusal messages in McpToolErrorFilter, the full get-tool-contract output, and
+	// clio/Command/McpServer/AGENTS.md.
 
 	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
 		["toolNames"] = ToolNamesParam,
@@ -1518,7 +1559,7 @@ internal static class ToolContractCatalog {
 				Field(ApplicationNameFieldName, StringType, InstalledApplicationDisplayNameDescription),
 				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
-				Field("entities", ArrayType, "Application entities. Each entity includes `virtual`, and each entity `columns` item carries a vocabulary unified with the sync-schemas write surfaces so it round-trips without translation: `name`, `caption`, canonical `type` (with `data-value-type` kept as a legacy alias), canonical `reference-schema-name` (with `reference-schema` kept as a legacy alias), and `required`. Send a column back to sync-schemas update-entity by adding the `action` verb."),
+				Field("entities", ArrayType, "Application entities. Each entity includes `virtual`, and each entity `columns` item carries a vocabulary unified with the sync-schemas write surfaces so it round-trips without translation: `name`, `caption`, canonical `type` (with `data-value-type` kept as a legacy alias), canonical `reference-schema-name` (with `reference-schema` kept as a legacy alias), and `required`. A column with a default additionally carries `default-value-config` (`source` Const/Settings/SystemValue/Sequence; `value` for Const — the stable record GUID for a lookup column, otherwise a scalar; `value-source` for Settings/SystemValue; `sequence-prefix` + `sequence-number-of-chars` for Sequence); absent means no default. Send a column back to sync-schemas update-entity by adding the `action` verb — send `default-value-config` back as-is to re-apply the default, or send `{\"source\": \"None\"}` to remove it."),
 				Field(PagesFieldName, ArrayType, "Primary-package Freedom UI pages using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field("schema-name-prefix", StringType, "Active SchemaNamePrefix resolved from the environment. Use as the prefix for all subsequent custom schema codes (lookups, columns, supporting entities). Empty string means no prefix is configured."),
 				Field("dataforge", ObjectType, "Optional Data Forge enrichment diagnostics including health/status/coverage, warnings, and a compact context-summary."),
@@ -2509,7 +2550,7 @@ internal static class ToolContractCatalog {
 				Field(ApplicationNameFieldName, StringType, InstalledApplicationDisplayNameDescription),
 				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
-				Field("entities", ArrayType, "Application entities. Each entity includes `virtual`, and each entity `columns` item carries a vocabulary unified with the sync-schemas write surfaces so it round-trips without translation: `name`, `caption`, canonical `type` (with `data-value-type` kept as a legacy alias), canonical `reference-schema-name` (with `reference-schema` kept as a legacy alias), and `required`. Send a column back to sync-schemas update-entity by adding the `action` verb."),
+				Field("entities", ArrayType, "Application entities. Each entity includes `virtual`, and each entity `columns` item carries a vocabulary unified with the sync-schemas write surfaces so it round-trips without translation: `name`, `caption`, canonical `type` (with `data-value-type` kept as a legacy alias), canonical `reference-schema-name` (with `reference-schema` kept as a legacy alias), and `required`. A column with a default additionally carries `default-value-config` (`source` Const/Settings/SystemValue/Sequence; `value` for Const — the stable record GUID for a lookup column, otherwise a scalar; `value-source` for Settings/SystemValue; `sequence-prefix` + `sequence-number-of-chars` for Sequence); absent means no default. Send a column back to sync-schemas update-entity by adding the `action` verb — send `default-value-config` back as-is to re-apply the default, or send `{\"source\": \"None\"}` to remove it."),
 				Field(PagesFieldName, ArrayType, "Primary-package Freedom UI pages using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field("schema-name-prefix", StringType, "Active SchemaNamePrefix system setting for the environment. Use as the prefix for all subsequent custom schema codes. Empty string means no prefix is configured."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
@@ -3835,7 +3876,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
-					Field(OperationsFieldName, ArrayType, "Ordered schema operations. Supported `type` values: create-lookup, create-entity, update-entity, seed-data. For create-entity, set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. A standalone `seed-data` operation inserts `seed-rows` into an existing schema (used by resume-plan when a create succeeded but its inline seeding failed). Column fields are unified with get-app-info and are the same for the create-entity/create-lookup `columns` array: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied).")),
+					Field(OperationsFieldName, ArrayType, "Ordered schema operations. Supported `type` values: create-lookup, create-entity, update-entity, seed-data. For create-entity, set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. A standalone `seed-data` operation inserts `seed-rows` into an existing schema (used by resume-plan when a create succeeded but its inline seeding failed). Column fields are unified with get-app-info and are the same for the create-entity/create-lookup `columns` array: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. Default values are accepted on create-entity/create-lookup `columns` items and on `update-operations` items: `default-value-config` with `source` Const (its `value` is the scalar — for a lookup column the STABLE RECORD GUID of the target record, which must exist at write time), Settings (`value-source` = setting code), SystemValue (`value-source` = system value GUID), or Sequence (`sequence-prefix` + `sequence-number-of-chars`); `source: None` removes an existing default. The legacy shorthand `default-value-source: Const|None` (+ `default-value` for Const) is also accepted. A column read from get-app-info reports its default as `default-value-config` — send it back as-is to re-apply, or set `source: None` to clear it. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied).")),
 				Validators: [
 					new ToolContractValidator(
 						"sync-schemas-operations-localizations",
@@ -4982,7 +5023,7 @@ internal static class ToolContractCatalog {
 					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit overrides). Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance."),
 					Field("optional-properties", StringType, "JSON array of {key, value} objects merged into schema optionalProperties (e.g. '[{\"key\":\"entitySchemaName\",\"value\":\"UsrMyEntity\"}]')."),
 					Field(VerifyFieldName, BooleanType, "If true, read the page back after saving and return its metadata. Best-effort \u2014 verify failure does not fail the update."),
-					Field("mode", StringType, "Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming fragment with the schema's current body \u2014 viewConfigDiff entries dedupe by `name`, handlers by `request`, and SCHEMA_CONVERTERS / SCHEMA_VALIDATORS entries by type key (incoming wins). The final merged web body rejects unresolved custom validator references."),
+					Field("mode", StringType, "Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming fragment with the schema's current body \u2014 viewConfigDiff entries are replaced only when BOTH `operation` and `name` match — and, for a `remove`, whether it targets `properties` — with incoming winning in place. Every existing operation the fragment does not collide with is preserved, including a second operation on the same component. The one exception: a FURTHER existing entry of an identity the fragment already superseded is dropped rather than re-applied after the replacement. Handlers dedupe by `request`. SCHEMA_CONVERTERS and SCHEMA_VALIDATORS entries merge by type key and incoming wins, and the final merged web body is rejected when a custom validator reference has no matching SCHEMA_VALIDATORS declaration. Separately, at APPLY time: preserved is not the same as applied, and this part is not append-specific — a 'replace' body produces it too. The differ applies whole operation GROUPS in a fixed order (merges, then removes/inserts/moves, `set` last), never in viewConfigDiff array order. So a `merge`, `move`, or element `remove` that ends up beside an `insert` for one `name`, or a `move` whose name the same body also element-removes, resolves against a base without that component and is silently dropped. The same holds for any two operations whose groups run in sequence for one name: a `merge` beside an element `remove` or a `set`, and a property `remove` beside an element `remove` or beside a `set`. The response then carries an advisory `warnings` entry naming the component; fold the transform's values into the `insert`, or use `set`. Reordering the array changes nothing."),
 					Field("target-package-uid", StringType, "Explicit target package UId for the replacing schema. Overrides automatic design-package resolution."),
 					Field("target-schema-uid", StringType, "Explicit schema UId to save into directly. Bypasses hierarchy resolution entirely.")),
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
@@ -4996,6 +5037,7 @@ internal static class ToolContractCatalog {
 				Field("bodyLength", NumberType, "Saved body length."),
 				Field("dryRun", BooleanType, "Whether the call ran in validation mode."),
 				Field("resourcesRegistered", NumberType, "Number of registered resources."),
+				Field("warnings", ArrayType, "Advisory non-fatal warnings; omitted when there are none. The save already succeeded — never retry on a warning. Covers an operation the differ will silently drop because another operation for the same component name cancels it (see `mode`), an `insert` this body replaced with a `merge`/`move`/`remove`, an existing operation an `append` could not preserve because the fragment superseded an identity the page carried twice (re-read with get-page), page-body lint findings, and the best-effort Designer Presence push."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
@@ -5816,7 +5858,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildDeployIdentity() {
 		return new ToolContractDefinition(
 			DeployIdentityTool.DeployIdentityToolName,
-			"Deploys IdentityService to IIS for a registered local Creatio environment, connects Creatio through the platform sys-settings/REST path, creates a fresh clio OAuth client bound to an existing user by default, and stores the returned client credentials in local clio appsettings. Never echo the generated client secret in logs or public messages.",
+			"Deploys IdentityService to IIS for a registered local Creatio environment, connects Creatio through the platform sys-settings/REST path, creates a fresh clio OAuth client bound to an existing user by default, and stores the returned client credentials in local clio appsettings only after discovery, token issuance, and a read-only CRM bearer request succeed. With noApp, token and CRM checks are skipped. Never echo the generated client secret in logs or public messages.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName],
 				[

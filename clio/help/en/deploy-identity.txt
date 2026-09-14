@@ -121,3 +121,6 @@ NOTES
     With --no-app, deployment still verifies IdentityService discovery and writes the
     Creatio IdentityService sys-settings. It intentionally skips OAuth app creation, local
     clio OAuth credential updates, and connect/token verification because no client exists.
+
+    Deployment validates discovery issuer and endpoint metadata, obtains a usable bearer token, and checks it with a read-only CRM DataService request before saving client credentials. Failed verification returns a nonzero exit code.
+    With --no-app, token and CRM OAuth verification are explicitly skipped.

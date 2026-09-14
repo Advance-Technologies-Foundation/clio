@@ -156,8 +156,10 @@ public sealed class OAuthConfigurationToolsTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("verify-oauth-app advertises its stable name and returns a success envelope with the verification result.")]
-	public void VerifyOAuthApp_ShouldAdvertiseNameAndReturnSuccess_WhenCommandResolves() {
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("verify-oauth-app resolves the selected environment and preserves optional credential overrides.")]
+	public void VerifyOAuthApp_ShouldAdvertiseNameAndReturnSuccess_WhenCommandResolves(bool explicitCredentials) {
 		// Arrange
 		GetToolName<VerifyOAuthAppTool>(nameof(VerifyOAuthAppTool.VerifyOAuthApp))
 			.Should().Be(VerifyOAuthAppTool.VerifyOAuthAppToolName,
@@ -173,10 +175,13 @@ public sealed class OAuthConfigurationToolsTests
 		VerifyOAuthAppTool tool = new(command, ConsoleLogger.Instance, resolver);
 
 		// Act
-		VerifyOAuthAppResponse response = tool.VerifyOAuthApp(new VerifyOAuthAppArgs("dev", "cid", "secret"));
+		VerifyOAuthAppResponse response = tool.VerifyOAuthApp(new VerifyOAuthAppArgs("dev", explicitCredentials ? "cid" : null, explicitCredentials ? "secret" : null));
 
 		// Assert
 		response.Success.Should().BeTrue(because: "a completed verification is a success envelope");
 		response.Result.Should().Be(expected, because: "the tool surfaces the command's verification result");
+		command.Received(1).Verify(Arg.Is<VerifyOAuthAppOptions>(options => options.Environment == "dev"
+			&& options.ClientId == (explicitCredentials ? "cid" : null)
+			&& options.ClientSecret == (explicitCredentials ? "secret" : null)));
 	}
 }

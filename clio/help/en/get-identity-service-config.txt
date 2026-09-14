@@ -14,7 +14,7 @@ DESCRIPTION
 
     It reports identityServerUrl, source (setting, derived, or none), the token endpoint
     ({base}/connect/token), the discovery endpoint ({base}/.well-known/openid-configuration), and
-    whether the discovery document is reachable. Use it first when configuring server-to-server
+    whether discovery succeeds with an issuer and valid endpoint URLs. Use it first when configuring server-to-server
     OAuth on a remote Creatio.
 
 SYNOPSIS

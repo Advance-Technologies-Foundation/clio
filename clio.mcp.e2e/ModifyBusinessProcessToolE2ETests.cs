@@ -101,6 +101,146 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, setFlow's `label` covers the four outcomes that can only be proven against a real server, because a flow's caption is a LocalizableString and lives in the schema RESOURCES rather than in metadata — nothing in-memory shows whether the row was written, moved or deleted. (1) THE TRAP: a re-kind re-derives a generated flow's NAME and the resource key is built from that name, so a label the caller never mentioned could be orphaned under the old key; it is not. (2) a supplied label replaces the old one across the same re-kind. (3) an EMPTY label clears it, which is the only way to remove one. (4) a label applied while the KIND does not change still lands — `kind` is mandatory on setFlow, so relabelling alone takes the no-op early return, and returning before the label would report success and write nothing.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process writes, keeps and clears a flow label with setFlow")]
+	public async Task ModifyBusinessProcess_Should_WriteKeepAndClearAFlowLabelWithSetFlow() {
+		// Arrange — every branch labelled, which is the state a designer-authored process is normally in:
+		// 84.9% of the conditional flows in the shipped product carry a label.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpFlowLabelE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildLabelledThreeBranchTaskDescriptor(processName)
+		});
+
+		// Act — one batch covering all four: EndA is re-kinded with NO label mentioned (the trap), EndB is
+		// re-kinded WITH a new label, EndC's label is cleared, and Start1->Decide is relabelled while its kind
+		// stays exactly what it already is.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """
+				[
+				  { "op": "setFlow", "source": "Decide", "target": "EndA", "kind": "conditional",
+				    "condition": "1 > 0" },
+				  { "op": "setFlow", "source": "Decide", "target": "EndB", "kind": "conditional",
+				    "condition": "2 > 1", "label": "Renamed outcome" },
+				  { "op": "setFlow", "source": "Decide", "target": "EndC", "kind": "conditional",
+				    "condition": "3 > 1", "label": "" },
+				  { "op": "setFlow", "source": "Start1", "target": "Decide", "kind": "sequence",
+				    "label": "Amount confirmed" },
+				  { "op": "addFlow", "source": "EndA", "target": "EndB", "label": "Carried on" }
+				]
+				"""
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "writing, keeping and clearing labels in one batch must complete without a transport error");
+
+		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
+			}));
+		DescribedFlow toA = described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndA");
+		DescribedFlow toB = described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndB");
+		DescribedFlow toC = described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndC");
+		DescribedFlow intoDecide = described.Flows.Single(f => f.Source == "Start1" && f.Target == "Decide");
+		DescribedFlow added = described.Flows.Single(f => f.Source == "EndA" && f.Target == "EndB");
+
+		// Through the extension-data bag: a flow's stored NAME is not a typed member of DescribedFlow - the
+		// DTO carries only what the guards address by name, and a flow is addressed by its endpoint PAIR
+		// everywhere in the write API. It still arrives, and it is what this assertion needs.
+		toA.AdditionalData["name"].GetString().Should().Be("ConditionalFlow_Decide_EndA",
+			because: "the generated name IS re-derived by the re-kind - that is what moves the resource key out "
+				+ "from under the label, and without this assertion the next one proves nothing");
+		toA.Label.Should().Be("Take this branch",
+			because: "an omitted label means the caller said nothing about it, so the row has to be "
+				+ "re-materialised under the NEW name rather than orphaned under the old one. What this "
+				+ "asserts is the round trip through the real server; the ROW-level proof - that nothing "
+				+ "lingers under the old key - was taken by hand and is recorded in "
+				+ "docs/knowledge/platform/a-flow-rekind-does-not-orphan-its-label.md, because describe reads "
+				+ "the manager's runtime instance in the same warm app pool that just wrote through the design "
+				+ "instance and a cached instance could satisfy this without touching storage");
+		toB.Label.Should().Be("Renamed outcome",
+			because: "a supplied label replaces the previous one across the same re-kind");
+		toC.Label.Should().BeNull(
+			because: "an empty label CLEARS the caption, and a cleared caption deletes its resource row rather "
+				+ "than leaving a blank one - describe reports null, not an empty string");
+		intoDecide.Label.Should().Be("Amount confirmed",
+			because: "kind is mandatory on setFlow, so relabelling alone passes the kind the flow already has "
+				+ "and takes the no-op early return - a label lost there is a success report on an edit that "
+				+ "wrote nothing");
+		intoDecide.Kind.Should().Be("sequence",
+			because: "and the no-op is still a no-op: the flow must not be re-kinded by a relabel");
+		added.Label.Should().Be("Carried on",
+			because: "addFlow is the OTHER operation that writes a label, and nothing else in this suite sends "
+				+ "one through it - dropping operation.Label from AddFlowOperation would otherwise leave every "
+				+ "suite green while clio's guard blamed the environment's package version");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, removeFlow REFUSES a field it does not read rather than ignoring it, and the atomic batch around it applies nothing. removeFlow resolves a flow by its endpoint PAIR alone, so a kind, condition or label carried over from a describe used to be silently discarded for two of the three and refused for the third - the asymmetry the pre-merge review called the worst of both worlds. It is refused for all three now, and not for tidiness: on a pair joined by two flows, honouring the removal while ignoring a kind would delete a flow the caller did not name. The read-back is the point of running this against a real server - the whole batch must be intact, because ProcessModifyHandler aborts before SaveEdited and a partial apply would be invisible to a unit test.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process refuses removeFlow with a field it does not read")]
+	public async Task ModifyBusinessProcess_Should_RefuseRemoveFlowCarryingAFieldItDoesNotRead() {
+		// Arrange — a labelled three-branch process, the shape a describe-then-echo workflow produces.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpRemoveFlowFieldE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildLabelledThreeBranchTaskDescriptor(processName)
+		});
+
+		// Act — the echo an agent naturally produces from a described flow: the whole object, kind included.
+		// A second operation follows it so the batch's atomicity is observable.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """
+				[
+				  { "op": "removeFlow", "source": "Decide", "target": "EndC", "kind": "conditional" },
+				  { "op": "setFlow", "source": "Decide", "target": "EndB", "kind": "conditional",
+				    "condition": "2 > 1", "label": "Should not be written" }
+				]
+				"""
+		});
+
+		// Assert - on the call TEXT rather than IsError, which this surface measures null on a refusal (the
+		// sibling gateway-refusal test below records the same thing; asserting IsError here failed against a
+		// server that had refused correctly).
+		// Quote-free fragments ONLY. The text is a serialized envelope, so every apostrophe in the refusal
+		// arrives as ' - the trap this fixture already records, and the reason an assertion on
+		// "does not take a 'kind'" fails against a server that refused perfectly.
+		string message = SerializeToolText(callResult);
+		message.Should().Contain("does not take a",
+			because: "the refusal has to name the field the caller sent, or they cannot tell which of three "
+				+ "to strip from their echo");
+		message.Should().Contain("kind",
+			because: "and the field it names has to be the one that was sent");
+		message.Should().Contain("source and target alone",
+			because: "a caller who does not learn WHY removeFlow cannot honour it will send it again");
+		message.Should().Contain("act on one you did not name",
+			because: "the CONSEQUENCE is what makes this a refusal rather than pedantry, and it is the half a "
+				+ "caller needs to accept the extra step. Wording note: this read 'remove one you did not "
+				+ "name' until the guard was generalised to serve setFlowCondition as well, which is also how "
+				+ "this test confirmed the stand was really running the new package rather than a cached one");
+
+		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
+			}));
+		described.Flows.Should().Contain(flow => flow.Source == "Decide" && flow.Target == "EndC",
+			because: "the refused removal must not have happened - this is the half a unit test cannot see, "
+				+ "because the abort has to land before SaveEdited on the real server");
+		described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndB").Label
+			.Should().NotBe("Should not be written",
+				because: "the batch is ATOMIC: a refusal in operation one must discard operation two as well, "
+					+ "and a label written here would prove it half-applied");
+	}
+
+	[Test]
 	[Description("Off a deciding GATEWAY, setFlow kind sequence is refused when the gateway ALREADY has a default branch - the flow has nothing left to normalise into. A gateway with no default normalises the request instead, and re-kinding the gateway's own default is a silent no-op, so this is the one shape that refuses. Asserted here because the first version of the test above assumed a refusal that does not happen and could never have passed.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process refuses a second unconditional branch out of a gateway")]
@@ -219,9 +359,84 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				because: "both addresses must survive: append semantics, not overwrite");
 	}
 
+	[Test]
+	[Description("Over the real MCP path, setElement switches an existing custom-message sendEmail element to TEMPLATE mode (ENG-95986) and back: after the template lands describe reports messageSource 'template', the template id and display name and no body (the stale custom body and the constant subject are cleared); a body then switches it back to custom and clears the template. Neither modify emits the template-landed warning on a package that supports the mode. Depends on the stock template 'Case closure notification' being present.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process switches a sendEmail element to template mode and back")]
+	public async Task ModifyBusinessProcess_Should_SwitchSendEmailToTemplateModeAndBack() {
+		// Arrange — a custom-message element with a subject and a recipient.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpEmailTplSwitchE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildSendEmailWithRecipientDescriptor(processName)
+		});
+
+		// Act 1 — switch to a template (one without a macro-source object, so no templateEntity is needed).
+		CallToolResult toTemplate = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """
+				[ { "op": "setElement", "elementName": "SendEmail1",
+				    "elementUpdate": { "email": { "template": "Case closure notification" } } } ]
+				"""
+		});
+
+		// Assert 1
+		toTemplate.IsError.Should().NotBeTrue(because: "switching an element to an existing email template is supported");
+		JsonSerializer.Serialize(toTemplate).Should().NotContain(EmailBlockExpectation.TemplateWarningMarker,
+			because: "the template-landed check must stay silent when the deployed package stored the template");
+		DescribedEmail afterTemplate = await ReadEmailAsync(context, processName);
+		afterTemplate.MessageSource.Should().Be("template", because: "BodyTemplateType '0' decodes to the template mode");
+		afterTemplate.Template.Should().NotBeNullOrWhiteSpace(because: "the resolved template id is stored on EmailTemplateId");
+		afterTemplate.TemplateDisplay.Should().Be("Case closure notification",
+			because: "the template NAME is stored as the lookup's display value");
+		afterTemplate.HasBody.Should().BeFalse(because: "a template element reports no body, and the custom body was cleared on the switch");
+		afterTemplate.Subject.Should().BeNull(because: "a constant subject not re-supplied is cleared on the switch so the template's own subject is sent");
+		afterTemplate.To.Should().NotBeNull().And.HaveCount(1, because: "recipients are untouched by the mode switch");
+		AssertOptionsUnchanged(await ReadSendEmailElementAsync(context, processName), "the switch to template mode");
+
+		// Act 2 — a body switches it back to a custom message.
+		CallToolResult toCustom = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """
+				[ { "op": "setElement", "elementName": "SendEmail1",
+				    "elementUpdate": { "email": { "body": "<p>ClioTemplateSwitchProbe</p>" } } } ]
+				"""
+		});
+
+		// Assert 2
+		toCustom.IsError.Should().NotBeTrue(because: "switching back to a custom message with a body is supported");
+		DescribedEmail afterCustom = await ReadEmailAsync(context, processName);
+		afterCustom.MessageSource.Should().Be("custom", because: "a body selects the custom message");
+		afterCustom.Template.Should().BeNull(because: "the template and its macro source are cleared on the switch, as the designer's card does");
+		afterCustom.HasBody.Should().BeTrue(because: "the body sent with the switch is stored");
+		AssertOptionsUnchanged(await ReadSendEmailElementAsync(context, processName), "the switch back to a custom message");
+	}
+
+	// AC-7 of ENG-95986: sender, recipients, importance, ignoreErrors and useBackgroundMode behave identically in both
+	// modes. A mode switch is exactly the operation that CLEARS what the other mode owns, so this is where an over-eager
+	// clear of an option would show - the values are the ones BuildSendEmailWithRecipientDescriptor seeds.
+	private static void AssertOptionsUnchanged(DescribedElement sendEmail, string afterWhat) {
+		sendEmail.Email!.Importance.Should().Be("high",
+			because: $"importance is not owned by either message mode, so {afterWhat} must leave it alone");
+		sendEmail.Email.IgnoreErrors.Should().BeFalse(
+			because: $"ignoreErrors is not owned by either message mode, so {afterWhat} must leave it alone");
+		sendEmail.Email.Mode.Should().Be("manual",
+			because: $"the send mode is not owned by either message mode, so {afterWhat} must leave it alone");
+		sendEmail.UseBackgroundMode.Should().BeTrue(
+			because: $"useBackgroundMode is an element-level flag outside the email block, so {afterWhat} must leave it alone");
+	}
+
 	// Reads the process back and returns the sendEmail element's email block, so a recipient assertion can be made
 	// against typed fields instead of substring-matching the escaped MCP envelope.
-	private static async Task<DescribedEmail> ReadEmailAsync(ArrangeContext context, string processName) {
+	private static async Task<DescribedEmail> ReadEmailAsync(ArrangeContext context, string processName) =>
+		(await ReadSendEmailElementAsync(context, processName)).Email!;
+
+	// The whole SendEmail1 element, for the assertions that need element-level fields (useBackgroundMode) beside the
+	// email block.
+	private static async Task<DescribedElement> ReadSendEmailElementAsync(ArrangeContext context, string processName) {
 		CallToolResult describeResult = await CallToolAsync(context, DescribeProcessTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
@@ -234,7 +449,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				&& value!.TrimStart().StartsWith("{", StringComparison.Ordinal))!;
 		DescribeProcessResult graph = JsonSerializer.Deserialize<DescribeProcessResult>(graphJson,
 			new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
-		return graph.Elements.Single(element => element.Name == "SendEmail1").Email!;
+		return graph.Elements.Single(element => element.Name == "SendEmail1");
 	}
 
 	// A sendEmail element seeded with exactly one To recipient, so the modify calls that follow are measured against
@@ -247,8 +462,9 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		  "packageName": "Custom",
 		  "elements": [
 		    { "name": "StartEvent1", "type": "startEvent" },
-		    { "name": "SendEmail1", "type": "sendEmail",
+		    { "name": "SendEmail1", "type": "sendEmail", "useBackgroundMode": true,
 		      "email": { "mode": "manual", "subject": "Recipient merge probe",
+		        "importance": "high", "ignoreErrors": false,
 		        "to": [ { "value": "first@example.com" } ] } },
 		    { "name": "EndEvent1", "type": "endEvent" }
 		  ],
@@ -1539,6 +1755,33 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		    { "source": "Decide", "target": "EndA" },
 		    { "source": "Decide", "target": "EndB", "kind": "conditional", "condition": "2 > 1" },
 		    { "source": "Decide", "target": "EndC", "kind": "conditional", "condition": "3 > 1" }
+		  ]
+		}
+		""";
+
+	// The three-branch fixture with every flow LABELLED, which is the state a designer-authored process is
+	// normally in. Kept separate from BuildThreeBranchTaskDescriptor so the re-kind test above keeps
+	// asserting the unlabelled case - a label present in both would hide a label-only regression in either.
+	private static string BuildLabelledThreeBranchTaskDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Flow Label E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "Start1", "type": "startEvent" },
+		    { "name": "Decide", "type": "performTask" },
+		    { "name": "EndA", "type": "endEvent" },
+		    { "name": "EndB", "type": "endEvent" },
+		    { "name": "EndC", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "Start1", "target": "Decide", "label": "Amount known" },
+		    { "source": "Decide", "target": "EndA", "label": "Take this branch" },
+		    { "source": "Decide", "target": "EndB", "kind": "conditional", "condition": "2 > 1",
+		      "label": "Original outcome" },
+		    { "source": "Decide", "target": "EndC", "kind": "conditional", "condition": "3 > 1",
+		      "label": "Everything else" }
 		  ]
 		}
 		""";

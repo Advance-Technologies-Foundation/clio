@@ -8,12 +8,18 @@ namespace Clio.Command.ProcessModel;
 
 /// <summary>
 /// The payload-reading and element-matching mechanics shared by the post-operation block guards
-/// (<see cref="EmailBlockExpectation"/>, <see cref="AccessRightsBlockExpectation"/>).
-/// <para>Both guards answer the same three questions about a caller's payload — which elements asked for
-/// this block on a build, which asked for it on a modify, and which described element corresponds to a
-/// name the caller used — and only the block key and the presence predicate differ. Keeping the mechanics
-/// here means a fix to the parsing or the name-or-uid matching lands once instead of once per block, and
-/// the next block to need a guard adds a key rather than a fourth copy.</para>
+/// (<see cref="EmailBlockExpectation"/>, <see cref="AccessRightsBlockExpectation"/>,
+/// <see cref="FlowLabelExpectation"/>).
+/// <para>The two BLOCK guards answer the same three questions about a caller's payload — which elements
+/// asked for this block on a build, which asked for it on a modify, and which described element
+/// corresponds to a name the caller used — and only the block key and the presence predicate differ.
+/// Keeping the mechanics here means a fix to the parsing or the name-or-uid matching lands once instead of
+/// once per block, and the next block to need a guard adds a key rather than a fourth copy.</para>
+/// <para><see cref="FlowLabelExpectation"/> is in the see-also list but is NOT one of those: it has no
+/// block key, no presence predicate and no element matching, because a label hangs off a FLOW and a flow
+/// is addressed by its endpoint pair rather than by an element name. It reuses exactly one thing from
+/// here, <see cref="Parse"/> and <see cref="ReadText"/>, so do not read this class as an extension point
+/// that would accommodate it - the element-shaped helpers below do not apply to it.</para>
 /// </summary>
 internal static class BlockExpectationJson {
 
@@ -123,8 +129,19 @@ internal static class BlockExpectationJson {
 	/// <summary>Singular/plural of "element", so the warnings agree with their own subject count.</summary>
 	internal static string ElementNoun(int count) => count == 1 ? "element" : "elements";
 
+	/// <summary>
+	/// A JSON member read as a string, or <c>null</c> when it is absent or is not a string.
+	/// <para>Tolerant on purpose, and this is the piece most worth having in one place: the obvious
+	/// <c>GetValue&lt;string&gt;()</c> THROWS on a number, an object or a bool, and every caller runs inside a
+	/// post-success guard - so a payload with a mistyped member would turn a write that landed into a reported
+	/// failure. The server's own <c>DataContractJsonSerializer</c> rejects the same payload, so answering
+	/// null here agrees with it rather than guessing.</para>
+	/// </summary>
+	internal static string? ReadText(JsonNode? node) =>
+		node is JsonValue value && value.TryGetValue(out string? text) ? text : null;
+
 	private static void AddName(List<string> names, JsonNode? node) {
-		string? name = node is JsonValue value && value.TryGetValue(out string? text) ? text : null;
+		string? name = ReadText(node);
 		if (!string.IsNullOrWhiteSpace(name)) {
 			names.Add(name);
 		}
@@ -141,9 +158,37 @@ internal static class BlockExpectationJson {
 		}
 
 		try {
-			return JsonNode.Parse(json);
+			JsonNode? node = JsonNode.Parse(json);
+			Materialize(node);
+			return node;
 		} catch (JsonException) {
 			return null;
+		} catch (ArgumentException) {
+			// A duplicate property name is accepted by JsonNode.Parse and only surfaces when the JsonObject builds
+			// its dictionary - on the first indexer access or enumeration - as ArgumentException
+			// (dotnet/runtime#70604). Without the walk above that first access would happen in the CALLERS, outside
+			// this try, so the catch would be inert and the exception would still take every other read-back
+			// warning down with it through the commands' blanket verification catch. The payload is the caller's,
+			// so a duplicate key is treated like unparseable text: the verification is skipped, not the command.
+			return null;
+		}
+	}
+
+	// Walks the parsed tree once so every JsonObject materialises under the catch in Parse. Enumerating a
+	// JsonObject is what triggers its lazy dictionary build (and the duplicate-key throw); arrays are walked
+	// for the objects nested in them (elements[], operations[]).
+	private static void Materialize(JsonNode? node) {
+		switch (node) {
+			case JsonObject jsonObject:
+				foreach (KeyValuePair<string, JsonNode?> property in jsonObject) {
+					Materialize(property.Value);
+				}
+				break;
+			case JsonArray jsonArray:
+				foreach (JsonNode? item in jsonArray) {
+					Materialize(item);
+				}
+				break;
 		}
 	}
 }

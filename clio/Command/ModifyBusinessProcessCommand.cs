@@ -158,7 +158,17 @@ namespace Clio.Command;
 // floor alone for the same reason. AccessRightsBlockExpectation is the guard instead - it reads the
 // process back after the write and warns when the block did not land, which is the behavioural
 // equivalent that does not punish callers who never send one.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.0.3",
+// From ENG-95986, 1.6.2.1: the Send email TEMPLATE message mode - `email.messageSource`, `email.template`
+// and `email.templateEntity`. The descriptions above now advertise it, and an older server has no such
+// members: its serializer DISCARDS them and answers success, leaving an element in the WRONG mode - no
+// mode at all (which the platform runs as template mode with no template and fails with "Localizable
+// template not found"), or a custom message with no body when a subject travelled with the template.
+// EmailBlockExpectation's template-landed read-back still warns behind this floor, but a floor is the gate
+// and the read-back is the evidence; the rule stays "moves when clio starts ADVERTISING behaviour the
+// deployed server may not have", which is exactly this raise. 1.6.2.1 is the archive cut from the
+// producing commit that carries the mode (crt-process-builder fe18ff3); every in-flight branch numbered
+// below it at the time of the cut.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.2.1",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
@@ -402,10 +412,20 @@ public class ModifyBusinessProcessCommand(
 		}
 	}
 
-	// Same silent-drop guard as the build path, for every block an edit can carry: a server predating a
-	// feature discards its block and still answers success, so an edit can report an applied operation whose
-	// configuration never landed. Read the process back ONCE and check both. Only runs when the operations
-	// actually carried a block. See EmailBlockExpectation / AccessRightsBlockExpectation.
+	// Same silent-drop guard as the build path, for every guard an edit can trigger: a server predating a
+	// feature DISCARDS its block and still answers success:true, so an edit can report an applied operation
+	// whose configuration never landed. Read the saved process back ONCE and check every guard the payload
+	// triggered: separate describes would double the latency and the retry budget of the success path. See
+	// EmailBlockExpectation / AccessRightsBlockExpectation for why this is behavioural rather than
+	// version-based.
+	//
+	// This used to say "check both" and "only runs when the operations actually carried a block". The flow
+	// label made both false: there are three guards now, and the short-circuit below lets ANY operations
+	// array carrying one labelled flow through - which the guidance ("LABEL EVERY BRANCH") makes the common
+	// path rather than the exception. Its twin on CreateBusinessProcessCommand carries the same correction,
+	// including the visible cost: a describe that fails for reasons of its own now emits "Could not verify
+	// ..." where the caller previously saw a clean success. An array with no blocks AND no labels still
+	// short-circuits and pays nothing.
 	private void WarnOnDiscardedConfigurationBlocks(ModifyBusinessProcessOptions options, string? schemaName) {
 		BlockExpectationIntent intent = BlockExpectationIntent.FromOperations(options.OperationsJson);
 		// The Approval element has the same silent-drop failure, so master's guard verifies it
@@ -413,6 +433,12 @@ public class ModifyBusinessProcessCommand(
 		// part. Email needs no separate expectation here: ReportDescribed covers it from intent.
 		IReadOnlyList<ApprovalBlockExpectation.ApprovalExpectation> expectedApproval =
 			ApprovalBlockExpectation.FromOperations(options.OperationsJson);
+		// Flow labels ride the SAME read-back, and on THIS path the drop is worse than on the build path:
+		// a modify is normally applied to a designer-authored process, where 84.9% of conditional flows
+		// already carry a label, so a caller relabelling a branch against a package that PREDATES the label
+		// is told the edit succeeded while the old label is still what is drawn.
+		IReadOnlyList<FlowLabelExpectation.FlowLabel> expectedLabels =
+			FlowLabelExpectation.FromOperations(options.OperationsJson);
 
 		// An accessRights block on addElement is dropped by the server (it applies only email/performer).
 		// That is by design, but the outcome the caller lives with is the same unconfigured element as a
@@ -430,7 +456,7 @@ public class ModifyBusinessProcessCommand(
 		// A setFilter/clearFilter carries no block, so it used to return here - and clearing the filter on a
 		// Change access rights element is the single most dangerous edit this surface offers, because it moves
 		// the element from narrowing to acting on EVERY record of its object. Read back for those too.
-		if (intent.IsEmpty && expectedApproval.Count == 0) {
+		if (intent.IsEmpty && expectedApproval.Count == 0 && expectedLabels.Count == 0) {
 			return;
 		}
 
@@ -440,15 +466,21 @@ public class ModifyBusinessProcessCommand(
 		string code = string.IsNullOrWhiteSpace(schemaName) ? options.ProcessName : schemaName;
 		if (string.IsNullOrWhiteSpace(code) && string.IsNullOrWhiteSpace(options.ProcessUid)) {
 			// Nothing to read back against; silence would be indistinguishable from a verified success.
-			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent,
-				"the edit returned no process identity to read back");
+			const string noIdentity = "the edit returned no process identity to read back";
+			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent, noIdentity);
+			BlockExpectationReporter.WarnFlowLabelsUnverified(logger, expectedLabels, noIdentity);
 			return;
 		}
 
+		// Version facts are not read: this read-back consumes elements[] only, and asking for them would buy an
+		// ATF session and two DataService round-trips per edit, on a write path, for values it discards.
 		ErrorOr<DescribeProcessResult> described = processDescriber.Describe(
-			new ProcessIdentity(string.IsNullOrWhiteSpace(code) ? null : code, options.ProcessUid, null), null);
+			new ProcessIdentity(string.IsNullOrWhiteSpace(code) ? null : code, options.ProcessUid, null), null,
+			includeVersionFacts: false, bestEffort: true);
 		if (described.IsError) {
 			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent,
+				described.FirstError.Description);
+			BlockExpectationReporter.WarnFlowLabelsUnverified(logger, expectedLabels,
 				described.FirstError.Description);
 			return;
 		}
@@ -460,6 +492,8 @@ public class ModifyBusinessProcessCommand(
 		if (approvalWarning is not null) {
 			logger.WriteWarning(approvalWarning);
 		}
+
+		BlockExpectationReporter.ReportFlowLabels(logger, described.Value, expectedLabels);
 	}
 }
 

@@ -34,6 +34,55 @@ public record CommandExecutionResult(
 
 	public const string CompileNotRequiredNote = "compile-creatio not required";
 
+	/// <summary>
+	/// Substring of the server's own "cannot execute until the configuration is compiled" warning. Matching on
+	/// it is how <see cref="WithCompileNotRequiredNote"/> avoids contradicting the environment.
+	/// </summary>
+	/// <remarks>
+	/// A wire-text match, which is worth being explicit about: it mirrors
+	/// <c>ProcessVersionSaveHandler.NotInterpretableWarning</c> in CrtProcessBuilder and can only be kept in
+	/// step by hand. It is a substring rather than the whole sentence so a reworded warning that keeps the
+	/// clause still suppresses the note, because the failure that matters is asserting the OPPOSITE of what the
+	/// server said. The cleaner shape is for the server to report <c>isInterpretable</c> as a field and for
+	/// this to gate on that; until the contract carries one, this is the signal available.
+	/// </remarks>
+	public const string CompileRequiredWarningMarker = "until the configuration is compiled";
+
+	/// <summary>
+	/// Appends <see cref="CompileNotRequiredNote"/> unless the execution log already says a compile IS required.
+	/// </summary>
+	/// <remarks>
+	/// The note used to be appended unconditionally on every exit code 0, which let one response carry both
+	/// "compile-creatio not required" and the server's warning that the artifact cannot execute until the
+	/// configuration is compiled. Those cannot both be acted on, and an agent that believed the note skipped
+	/// the compile and activated a version that throws <c>NotImplementedException</c> out of
+	/// <c>CreateProcess</c> on first run - <c>IsInterpretable</c> is inherited by a clone through the metadata
+	/// round-trip and is never recomputed server-side, so a version taken from a non-interpretable source
+	/// reaches exactly that state.
+	/// </remarks>
+	public CommandExecutionResult WithCompileNotRequiredNote() {
+		if (MentionsCompileRequirement()) {
+			return this;
+		}
+
+		return this with {
+			Note = string.IsNullOrWhiteSpace(Note)
+				? CompileNotRequiredNote
+				: Note + " " + CompileNotRequiredNote
+		};
+	}
+
+	private bool MentionsCompileRequirement() {
+		foreach (LogMessage message in Output ?? []) {
+			if (message?.Value?.ToString()?.Contains(CompileRequiredWarningMarker,
+					StringComparison.OrdinalIgnoreCase) == true) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
 	// MCP exit-code contract (ENG-91825):
 	//   • exit code  1  → EXPECTED, caller-actionable failure: input/argument validation, a missing
 	//                     environment, or a refused precondition (e.g. a required package is absent).
