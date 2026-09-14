@@ -26,3 +26,7 @@ never stricter than what the server will accept.
 happily, including processes that already exist and work on the stand. The error blames the caller's
 parameter types, so it reads as a modelling mistake rather than as an over-strict clio check, and the
 only way out is to bypass the guard.
+
+A second reason not to compare by UId, recorded under ENG-93202: the four currency scales (codes 6, 48,
+49, 50) all carry the SAME `DataValueType` UId, so a UId lookup cannot even distinguish them from each
+other. See [[data-value-type-vocabularies]].

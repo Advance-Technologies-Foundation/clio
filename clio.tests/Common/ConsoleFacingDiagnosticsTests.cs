@@ -33,6 +33,34 @@ namespace Clio.Tests.Common;
 [Property("Module", "Common")]
 public sealed class ConsoleFacingDiagnosticsTests {
 
+	/// <summary>
+	/// Builds the command and its classifier over ONE logger. Two substitutes would make any future
+	/// assertion on a log line pass vacuously - the line would be written to the instance the test never
+	/// looks at.
+	/// </summary>
+	/// <param name="manager">The sys-settings manager the command reads and writes through.</param>
+	/// <param name="fileSystem">The file system, or <see langword="null"/> for an inert substitute.</param>
+	/// <param name="logger">The shared sink, or <see langword="null"/> for an inert substitute.</param>
+	/// <returns>A command whose classifier writes to the same logger it does.</returns>
+	private static SysSettingsCommand BuildCommand(ISysSettingsManager manager, IFileSystem fileSystem = null,
+		ILogger logger = null) {
+		ILogger sink = logger ?? Substitute.For<ILogger>();
+		return new SysSettingsCommand(manager, sink, fileSystem ?? Substitute.For<IFileSystem>(),
+			new OperationCorrelationIdProvider(),
+			new SysSettingFailureClassifier(sink, new OperationCorrelationIdProvider()));
+	}
+
+	/// <summary>
+	/// The production classifier under a substituted logger. Issue #1379 moved these operations off
+	/// <c>SysSettingsCommand</c>'s statics and behind <see cref="ISysSettingFailureClassifier"/>; what is
+	/// asserted below is unchanged, only how the tests reach it is.
+	/// </summary>
+	/// <param name="logger">The sink to assert on, or <see langword="null"/> for an inert substitute.</param>
+	/// <returns>A classifier writing to <paramref name="logger"/>.</returns>
+	private static SysSettingFailureClassifier BuildClassifier(ILogger logger = null) =>
+		new SysSettingFailureClassifier(logger ?? Substitute.For<ILogger>(),
+			new OperationCorrelationIdProvider());
+
 	private const string FenceMarker = "untrusted-source-text";
 
 	private const string PlatformValidationProse = "Column 'Name' is required.";
@@ -140,8 +168,9 @@ public sealed class ConsoleFacingDiagnosticsTests {
 				.ComposeMessage("reading sys-setting"));
 
 		// Act
-		string line = SysSettingsCommand.DescribeFailureForLog(
-			SysSettingsCommand.CategorizeFailure(exception, "reading sys-setting", "abc123"));
+		SysSettingFailureClassifier classifier = BuildClassifier();
+		string line = SysSettingFailureClassifier.DescribeFailureForLog(
+			classifier.Categorize(exception, "reading sys-setting", "abc123"));
 
 		// Assert
 		line.Split($"[{FenceMarker} begin]").Length.Should().Be(2,
@@ -213,7 +242,7 @@ public sealed class ConsoleFacingDiagnosticsTests {
 	}
 
 	[Test]
-	[Description("A proven session rejection reaches Authentication through the PUBLIC read path, not only through CategorizeFailure: the fix is positional, so nothing but an end-to-end assertion pins it")]
+	[Description("A proven session rejection reaches Authentication through the PUBLIC read path, not only through ISysSettingFailureClassifier.Categorize: the fix is positional, so nothing but an end-to-end assertion pins it")]
 	public void TryGetSysSetting_Should_Report_Authentication_For_A_Rejected_Session() {
 		// Arrange
 		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
@@ -222,8 +251,7 @@ public sealed class ConsoleFacingDiagnosticsTests {
 				"Authentication failed while reading sys-setting 'SslCertificateThumbprint': "
 				+ "The password for the registered user has expired.",
 				"5: Your password has expired."));
-		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(),
-			Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(manager);
 
 		// Act
 		SysSettingGetResult result =
@@ -243,5 +271,66 @@ public sealed class ConsoleFacingDiagnosticsTests {
 			because: "the correlation ID is the bridge to the debug line carrying the server excerpt");
 		result.Error.Should().NotContain("Your password has expired",
 			because: "the server excerpt never reaches a caller-visible field (issue #1333)");
+	}
+
+	[Test]
+	[Description("A THREE-link chain keeps the middle wrapper too: PackageBuilder wraps the compilation poll's give-up exception, which itself wraps the provider's carrier, and rendering only the outermost message reported that monitoring stopped while silently dropping why.")]
+	public void ReadableMessage_Should_Keep_Every_Wrapper_Above_The_Carrier() {
+		// Arrange
+		DataProviderFailureException carrier = new("Failed reading records: the provider refused.");
+		InvalidOperationException middle = new(
+			"Compilation polling gave up after 93 s of rounds that all failed "
+			+ "(give-up window 90 s, 21 failed rounds)", carrier);
+		InvalidOperationException outer = new("Package compilation could not be monitored", middle);
+
+		// Act
+		string rendered = outer.GetReadableMessageException();
+
+		// Assert
+		rendered.Should().Contain("Package compilation could not be monitored",
+			because: "the outermost wrapper is what names the operation the operator started");
+		rendered.Should().Contain("give-up window 90 s",
+			because: "the middle wrapper carries the elapsed time, the window and the round count - the entire diagnosis of WHY monitoring stopped, which only this link holds");
+		rendered.Should().Contain("the provider refused.",
+			because: "the carrier's own diagnosis still has to survive underneath both wrappers");
+	}
+
+	[Test]
+	[Description("A wrapper that merely restates the message below it is still printed once: the de-duplication that protects the two-link case must not be lost when the walk visits every link.")]
+	public void ReadableMessage_Should_Not_Repeat_A_Wrapper_That_Restates_The_One_Below_It() {
+		// Arrange
+		DataProviderFailureException carrier = new("Failed reading records: the provider refused.");
+		InvalidOperationException middle = new("Monitoring stopped", carrier);
+		InvalidOperationException outer = new("Monitoring stopped while compiling", middle);
+
+		// Act
+		string rendered = outer.GetReadableMessageException();
+
+		// Assert
+		rendered.Should().Contain("Monitoring stopped while compiling",
+			because: "the outermost wrapper is the more specific of the two and is the one worth keeping");
+		rendered.Should().NotContain("Monitoring stopped: Monitoring stopped",
+			because: "printing a restatement twice is exactly the noise the per-link duplicate check exists to prevent");
+	}
+
+	[Test]
+	[Description("A wrapper whose inner carries NO server detail keeps its own text and scrubs the inner: ClassifyingDataProvider rethrows a transport fault unchanged, and that arm used to return the inner message alone - raw, and without the wrapper's diagnosis.")]
+	public void ReadableMessage_Should_Keep_The_Wrapper_And_Scrub_The_Inner_When_There_Is_No_Carrier() {
+		// Arrange
+		Exception inner = new("Connection refused reading https://ts1-core-dev04:88/app/0/DataService");
+		InvalidOperationException outer = new(
+			"Compilation polling gave up after 93 s of rounds that all failed "
+			+ "(give-up window 90 s, 21 failed rounds)", inner);
+
+		// Act
+		string rendered = outer.GetReadableMessageException();
+
+		// Assert
+		rendered.Should().Contain("give-up window 90 s",
+			because: "the wrapper's diagnosis is the only place the window and the round count exist, and returning the inner message alone deleted them");
+		rendered.Should().NotContain("ts1-core-dev04",
+			because: "a transport fault's message routinely carries the full request URI, and this line reaches a console and a CI log unfenced");
+		rendered.Should().Contain("Connection refused",
+			because: "the underlying cause is scrubbed, not dropped - it is still what tells a refused connection apart from a rejected session");
 	}
 }
