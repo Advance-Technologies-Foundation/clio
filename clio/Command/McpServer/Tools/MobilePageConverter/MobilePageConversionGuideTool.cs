@@ -447,8 +447,8 @@ public sealed class MobilePageConversionGuideTool {
 		PageMetadataInfo page, PageBundleInfo bundle, WebToMobilePageConversionRules rules) {
 		string own = page?.SchemaName;
 		string parent = page?.ParentSchemaName;
-		// Trust the direct parent only when it matches a known rule (unchanged behavior for the common case);
-		// otherwise fall through to the climb below, so an intermediate template's own chrome is not mistaken for baseline.
+		// Trust the direct parent only when it matches a known rule — unchanged behavior for the common case.
+		// Otherwise fall through to the climb below, so an intermediate template's own chrome is not mistaken for baseline.
 		if (!string.IsNullOrWhiteSpace(parent)
 			&& !string.Equals(parent, own, StringComparison.OrdinalIgnoreCase)
 			&& ResolveTemplateRule(rules, parent) is not null) {
