@@ -69,6 +69,13 @@ public sealed class DeleteDataElementContractToolE2ETests : McpContractFixtureBa
 		description.Should().Contain("NAME THE OBJECT AS THE DESIGNER NAMES IT",
 			because: "the object picker offers the platform's junction tables interleaved with the business "
 				+ "objects, so a shortened name can hide that the step deletes membership rows rather than records");
+		description.Should().NotContain("(count:true, top:0)",
+			because: "that was the PRESCRIBED count shape here, and odata-read - the tool that ships with these "
+				+ "process tools - refuses top:0 and answers in total-count, so an agent following it met a "
+				+ "refusal on the step this same sentence calls mandatory");
+		description.Should().Contain("odata-read refuses top:0",
+			because: "the description must say WHY it stopped prescribing a shape, or the next author reads the "
+				+ "omission as an oversight and puts the broken recipe back");
 		description.Should().NotContain("|deleteData|",
 			because: "deleteData resolves through the generic user-task handler, so it belongs in the alias list "
 				+ "with readData/changeData rather than in the type enum");
@@ -91,6 +98,10 @@ public sealed class DeleteDataElementContractToolE2ETests : McpContractFixtureBa
 			because: "setElement's field list is how a caller learns the element can be reconfigured in place");
 		description.Should().Contain("deleteData {source?}",
 			because: "the block has exactly one field, and saying so is what stops a caller inventing others");
+		description.Should().Contain("COUNT what the new filter",
+			because: "a retarget changes WHICH object is deleted from and drops the filter that scoped the old "
+				+ "one, so consent for the previous set cannot carry - it needs the same count-and-confirm duty "
+				+ "create-business-process states, not a softer one for the riskier edit");
 		description.Should().Contain("deletes nothing and fails at run time",
 			because: "a retarget clears the filter, and the caller has to know that leaves a broken step unless "
 				+ "a setFilter follows in the same batch");
@@ -111,6 +122,9 @@ public sealed class DeleteDataElementContractToolE2ETests : McpContractFixtureBa
 		// Assert
 		description.Should().Contain("deleteData element's data configuration",
 			because: "a caller round-tripping a described process needs to know the block comes back");
+		description.Should().Contain("sourceSchemaUId",
+			because: "the block carries the resolved UId beside the name, and the description used to say "
+				+ "\"source alone\" - a claim of completeness that was simply untrue of the payload");
 		description.Should().Contain("not part of this one",
 			because: "the filter is reported separately, and a caller expecting it inside the block would read a "
 				+ "configured element as unfiltered");
