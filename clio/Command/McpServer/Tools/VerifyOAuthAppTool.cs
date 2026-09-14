@@ -13,7 +13,6 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool surface for the <c>verify-oauth-app</c> command.
 /// </summary>
 [McpServerToolType]
-[FeatureToggle("deploy-identity")]
 public sealed class VerifyOAuthAppTool(
 	VerifyOAuthAppCommand command,
 	ILogger logger,

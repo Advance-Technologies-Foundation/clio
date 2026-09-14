@@ -21,5 +21,5 @@ cliogate unit test has to flip the private static property by reflection to exer
 
 **What breaks if you ignore it** — a survey or diagnostic built on `execute-sql-script` SELECTs works on one stand
 and dies on the next, and because writes keep working the failure looks like a broken query or a stale cliogate
-rather than a policy. Do not spend a round on redeploying the gate. Get the data another way: DataService ESQ
+rather than a policy. This diagnosis applies to the server denial above, not to a local missing-CSV-destination error; those two failures require different remedies. Do not spend a round on redeploying the gate. Get the data another way: DataService ESQ
 (`execute-esq`), a per-record command, or the dedicated clio read commands.

@@ -59,7 +59,7 @@ Create a virtual entity schema without a physical database table. Default: false
 --column <VALUE>
 Column spec <name>:<type>[:<title>[:<refSchema>]] or JSON with
 name/type/title/reference-schema-name/required/default-value-source/default-value/default-value-config.
-Repeat the option for multiple columns.
+Repeat the option for multiple columns, pass multiple values after one option, or pass a non-empty JSON array of column objects. JSON punctuation is preserved. Invalid array entries fail before the schema is saved.
 Supported types include Guid, Text/ShortText/MediumText/LongText/MaxSizeText, Integer, Float,
 Boolean, Date/DateTime/Time, Lookup, Binary, Image, ImageLookup, File, SecureText, Email, and Color.
 `Color` stores a hex color string (e.g. `#RRGGBB`) and is not a text column — the text-only options
@@ -149,3 +149,10 @@ cliogate must be installed on the target Creatio environment.
 - `modify-entity-schema-column`
 
 - [Clio Command Reference](../../Commands.md#create-entity-schema)
+
+### Multiple columns (PowerShell or Bash)
+
+```shell
+clio create-entity-schema -e dev --package Custom --name UsrVehicle --title Vehicle --column 'Notes:Text' --column 'Amount:Integer'
+clio create-entity-schema -e dev --package Custom --name UsrInvoice --title Invoice --column '[{"name":"Notes","type":"Text"},{"name":"Amount","type":"Integer","required":true}]'
+```

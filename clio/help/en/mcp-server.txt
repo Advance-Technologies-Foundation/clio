@@ -13,6 +13,11 @@ DESCRIPTION
     The server runs until the stdin stream is closed or the process is
     terminated.
 
+    Workers inherit DOTNET_ROOT (including architecture-specific variants) and
+    DOTNET_ROLL_FORWARD from the server. Set these in your MCP client's server
+    environment for a non-default .NET installation or explicit roll-forward
+    policy. Clio does not enable major-version roll-forward automatically.
+
     Available MCP tool categories:
     - application     Create, list, and inspect Creatio applications
     - entity          Create and update entity schemas (DB-first)

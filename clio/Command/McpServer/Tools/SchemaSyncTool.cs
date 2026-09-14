@@ -102,6 +102,8 @@ public sealed class SchemaSyncTool(
 		Idempotent = false, OpenWorld = false)]
 	[Description("Executes a batch of schema operations in a single call: " +
 		"create lookups, create entities, seed data, update entities. " +
+		"Date and Time column types are write-time aliases of DateTime; readback reports DateTime. " +
+		"For date-only Freedom UI fields, explicitly set crt.DateTimePicker pickerType to date. " +
 		"For create-entity, set is-virtual to true only when the schema must not have a physical database table; it defaults to false. " +
 		"Before setting is-virtual to true, call get-guidance with name virtual-entities and follow its schema-before-executor, bounded-provider, authorization, and version-gated write rules. " +
 		"Reduces MCP round-trips and lock overhead compared to individual tool calls. " +

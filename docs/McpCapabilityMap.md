@@ -55,7 +55,7 @@ server registers an unmatched-name handler (`McpDurableCallToolHandler` via the 
   CLI hidden-alias policy; e.g. `restart-by-environmentName` → `restart-by-environment-name`). Catalog
   collisions fail at startup.
 - **Unresolvable name** → a structured, machine-readable outcome instead of an opaque error:
-  `unknown-tool` (with Levenshtein did-you-mean candidates and the `get-tool-contract` discovery hint),
+  `unknown-tool` (with did-you-mean alternatives from the live tool registry and the `get-tool-contract` discovery hint),
   `feature-disabled`, `cli-verb-not-mcp-tool`, `deprecated-tool-alias`, or `foreign-command` — every
   outcome carrying a `correlation-id`.
 

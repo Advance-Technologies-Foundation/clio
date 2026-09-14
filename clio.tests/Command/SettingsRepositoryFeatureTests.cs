@@ -348,6 +348,60 @@ public sealed class SettingsRepositoryFeatureTests {
 	}
 
 	[Test]
+	[Description("Keeps settings editor completion aligned with the per-component automatic-update defaults.")]
+	public void AppSettingsSchema_ShouldUseComponentDefaults_WhenCompletingAutoUpdatePolicies() {
+		// Arrange
+		string templatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tpl", "jsonschema", "schema.json.tpl");
+		JsonObject definitions = JsonNode.Parse(File.ReadAllText(templatePath))!["definitions"]!.AsObject();
+
+		// Act
+		JsonNode policies = definitions["autoupdatesettings"]!["properties"]!;
+		JsonNode sharedEnabled = definitions["autoupdatepolicy"]!["properties"]!["enabled"]!;
+
+		// Assert
+		policies["clio"]!["default"]!["enabled"]!.GetValue<bool>().Should().BeFalse(
+			because: "editor completion must not opt users into clio updates");
+		policies["knowledge"]!["default"]!["enabled"]!.GetValue<bool>().Should().BeTrue(
+			because: "knowledge updates remain enabled by default");
+		policies["toolkit"]!["default"]!["enabled"]!.GetValue<bool>().Should().BeFalse(
+			because: "editor completion must not opt users into toolkit updates");
+		sharedEnabled["default"].Should().BeNull(
+			because: "there is no single enabled default shared by all components");
+	}
+
+	[TestCase("{}", false, true, false)]
+	[TestCase("{\"autoupdate\":null}", false, true, false)]
+	[TestCase("{\"autoupdate\":{}}", false, true, false)]
+	[TestCase("{\"autoupdate\":{\"clio\":{},\"knowledge\":{},\"toolkit\":{}}}", false, true, false)]
+	[TestCase("{\"autoupdate\":{\"clio\":null,\"knowledge\":null,\"toolkit\":null}}", false, true, false)]
+	[TestCase("{\"autoupdate\":true}", true, true, false)]
+	[TestCase("{\"autoupdate\":false}", false, true, false)]
+	[TestCase("{\"autoupdate\":{\"clio\":{\"enabled\":true},\"knowledge\":{\"enabled\":false},\"toolkit\":{\"enabled\":true}}}", true, false, true)]
+	[Description("Defaults absent policies correctly and preserves explicit preferences through bootstrap, scheduling, and reload.")]
+	public void TryScheduleAutoupdate_ShouldRespectDefaultsAndPreferences_WhenSettingsAreLoaded(
+		string json, bool clioEnabled, bool knowledgeEnabled, bool toolkitEnabled) {
+		// Arrange
+		_fileSystem.File.WriteAllText(SettingsRepository.AppSettingsFile, json);
+		SettingsRepository sut = new(_fileSystem);
+		DateTimeOffset now = new(2026, 9, 10, 12, 0, 0, TimeSpan.Zero);
+
+		// Act
+		bool clio = sut.TryScheduleAutoupdate(AutoUpdateTarget.Clio, now);
+		bool knowledge = sut.TryScheduleAutoupdate(AutoUpdateTarget.Knowledge, now);
+		bool toolkit = sut.TryScheduleAutoupdate(AutoUpdateTarget.Toolkit, now);
+		Settings persisted = JsonConvert.DeserializeObject<Settings>(
+			_fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile));
+
+		// Assert
+		clio.Should().Be(clioEnabled, because: "clio updates require an opt-in");
+		knowledge.Should().Be(knowledgeEnabled, because: "knowledge updates default on but respect an opt-out");
+		toolkit.Should().Be(toolkitEnabled, because: "toolkit updates require an opt-in");
+		persisted.Autoupdate.Clio.Enabled.Should().Be(clioEnabled, because: "persistence must retain the clio preference");
+		persisted.Autoupdate.Knowledge.Enabled.Should().Be(knowledgeEnabled, because: "persistence must retain the knowledge preference");
+		persisted.Autoupdate.Toolkit.Enabled.Should().Be(toolkitEnabled, because: "persistence must retain the toolkit preference");
+	}
+
+	[Test]
 	[Description("Claims each due automatic update once and advances its independent next-run timestamp by the configured frequency.")]
 	public void TryScheduleAutoupdate_ShouldAdvanceIndependentTimestamp_WhenPolicyIsDue() {
 		// Arrange
@@ -366,11 +420,11 @@ public sealed class SettingsRepositoryFeatureTests {
 		// Assert
 		first.Should().BeTrue(because: "a missing next-run timestamp makes the enabled policy due immediately");
 		repeated.Should().BeFalse(because: "the same policy must wait for its configured frequency");
-		toolkit.Should().BeTrue(because: "the toolkit schedule is independent from knowledge");
+		toolkit.Should().BeFalse(because: "toolkit updates are opt-in");
 		persisted.Autoupdate.Knowledge.NextRun.Should().Be(now.AddMinutes(60),
 			because: "knowledge uses its one-hour default frequency");
-		persisted.Autoupdate.Toolkit.NextRun.Should().Be(now.AddMinutes(60),
-			because: "toolkit uses its own one-hour default frequency");
+		persisted.Autoupdate.Toolkit.NextRun.Should().Be(default(DateTimeOffset),
+			because: "disabled toolkit updates must not advance their schedule");
 	}
 
 	[Test]
@@ -407,8 +461,8 @@ public sealed class SettingsRepositoryFeatureTests {
 	}
 
 	[Test]
-	[Description("Preserves the existing pre-version migration when startup schedules content before normal repairs run.")]
-	public void TryScheduleAutoupdate_ShouldResetHistoricalFalse_WhenBootstrapRepairsAreDeferred() {
+	[Description("Preserves legacy false when startup schedules knowledge before normal repairs run.")]
+	public void TryScheduleAutoupdate_ShouldPreserveHistoricalFalse_WhenBootstrapRepairsAreDeferred() {
 		// Arrange
 		const string json = """
 			{
@@ -425,7 +479,7 @@ public sealed class SettingsRepositoryFeatureTests {
 		SettingsRepository reloaded = new(_fileSystem);
 
 		// Assert
-		reloaded.GetAutoupdate().Should().BeTrue(
-			because: "the historical serialized false default must not become a deliberate clio opt-out");
+		reloaded.GetAutoupdate().Should().BeFalse(
+			because: "knowledge scheduling must not enable clio updates");
 	}
 }

@@ -31,6 +31,12 @@ entity column references.
 
 ### Operation Types
 
+Column types are case-insensitive. `Date` and `Time` are write-time aliases of `DateTime`
+in both `columns` and `update-operations`: Creatio stores the column as `DateTime`, and
+`get-entity-schema-properties` reads it back as `DateTime`. Date-only/time-only intent is
+not preserved in the schema type. Read the columns back after writing; for a date-only
+Freedom UI field, explicitly set `pickerType: "date"` on its `crt.DateTimePicker`.
+
 Each operation in the `operations` array must have a `type` and a non-empty `schema-name`. Additional
 fields depend on the operation type.
 

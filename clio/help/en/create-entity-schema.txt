@@ -61,7 +61,9 @@ OPTIONS
                            reference-schema-name/required/
                            legacy default-value-source/default-value or
                            structured default-value-config.
-                           Repeat the option for multiple columns
+                           Repeat the option for multiple columns, pass multiple values
+                           after one option, or pass a non-empty JSON array of objects.
+                           Invalid array entries fail before saving the schema.
     --caption-culture      Override the culture used for the generated schema and
                            column captions/labels (e.g. en-US, uk-UA). Precedence:
                            this override > the connected user's profile culture >

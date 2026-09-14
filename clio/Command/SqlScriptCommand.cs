@@ -43,6 +43,8 @@ namespace Clio.Command.SqlScriptCommand
 
 	public class SqlScriptCommand : RemoteCommand<ExecuteSqlScriptOptions>
 	{
+		private const string CsvDestinationRequired =
+			"-d/--destination-path is required when -v csv is used.";
 		private readonly ISqlScriptExecutor _sqlScriptExecutor;
 		private readonly ILogger _logger;
 
@@ -164,7 +166,17 @@ namespace Clio.Command.SqlScriptCommand
 			spreadsheetDocument.Close();
 		}
 
+		/// <summary>
+		/// Executes SQL and renders the result after validating the CSV destination.
+		/// </summary>
+		/// <param name="opts">SQL input, output format, and destination options.</param>
+		/// <returns>One when CSV has no destination; otherwise the command's execution result.</returns>
 		public override int Execute(ExecuteSqlScriptOptions opts) {
+			if (string.Equals(opts.ViewType, "csv", StringComparison.OrdinalIgnoreCase)
+				&& string.IsNullOrWhiteSpace(opts.DestPath)) {
+				_logger.WriteError(CsvDestinationRequired);
+				return 1;
+			}
 			try {
 				string result = string.Empty;
 				if (!string.IsNullOrEmpty(opts.Script)) {

@@ -24,13 +24,13 @@ Install or update cliogate with `clio install-gate -e <ENVIRONMENT_NAME>`.
 Value (pos. 0)   Sql script to execute
 --File           -f          Path to the SQL script file
 --View           -v          Output format: table, csv, xlsx (default: table)
---DestinationPath -d         Path to save the result file
+--destination-path -d         Path to save the result file
 --silent                     Suppress console output
 --uri            -u          Application uri
---Password       -p          User password
---Login          -l          User login (administrator permission required)
---Environment    -e          Environment name
---Maintainer     -m          Maintainer name
+--password       -p          User password
+--login          -l          User login (administrator permission required)
+--environment    -e          Environment name
+--maintainer     -m          Maintainer name
 ```
 
 ## Examples
@@ -46,7 +46,8 @@ execute-sql-script -f c:\Path\to\file.sql -v xlsx -d result.xlsx
 
 If both Script and File are omitted, the command prompts for SQL input.
 Output is shown in the console unless --silent is specified.
-Results can be saved to a file in the chosen format.
+Results can be saved to a file in the chosen format. CSV requires -d/--destination-path.
+If the CSV destination is missing or blank, the command exits with code 1 before executing SQL.
 
 cliogate version 2.0.0.41 or higher must be installed on the target environment for this command to work.
 Install or update it with: clio install-gate -e <ENVIRONMENT_NAME>

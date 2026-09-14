@@ -227,7 +227,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="up"></a>
 - [`unlock-package`](docs/commands/unlock-package.md) - Unlock a package in Creatio, `up`
 <a id="autoupdate"></a>
-- [`autoupdate`](docs/commands/autoupdate.md) - Enable or disable automatic clio updates on startup
+- [`autoupdate`](docs/commands/autoupdate.md) - Enable or disable automatic clio updates on startup (disabled by default; knowledge enabled, toolkit disabled)
 <a id="experimental"></a>
 <a id="exp"></a>
 - [`experimental`](docs/commands/experimental.md) - List and toggle clio experimental feature flags, `exp`
@@ -338,7 +338,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="client-unit-schema-create"></a>
 - [`create-client-unit-schema`](docs/commands/create-client-unit-schema.md) - Create a new JavaScript (ClientUnit) schema on a remote Creatio environment, `client-unit-schema-create`
 <a id="create-entity-schema"></a>
-- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create a persistent or virtual entity schema in a remote Creatio package
+- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create a persistent or virtual entity schema in a remote Creatio package; columns accept repeated flags or a JSON array
 <a id="create-lookup"></a>
 - [`create-lookup`](docs/commands/create-lookup.md) - Create a lookup entity schema in a remote Creatio package
 <a id="create-schema"></a>

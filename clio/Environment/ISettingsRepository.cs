@@ -368,7 +368,7 @@ namespace Clio.UserEnvironment
 		string GetActualEnvironmentName(string environmentName);
 
 		/// <summary>
-		/// Gets the AutoUpdate setting. Returns true when not explicitly configured (opt-out model).
+		/// Gets the AutoUpdate setting. Returns false when not explicitly configured (opt-in model).
 		/// </summary>
 		bool GetAutoupdate();
 

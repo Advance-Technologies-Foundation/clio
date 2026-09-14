@@ -12,7 +12,7 @@ date: 2026-08-19
 that behaves differently under one of its aliases (`get-syssetting` vs `set-syssetting`) can only
 be distinguished by inspecting `args[0]` before parsing — that is what
 `Program.NormalizeGetSysSettingArgs` does, alongside the `create-data-binding --environment` and
-bare `--json` normalizations. Separately, `clio/YAML/Step.cs` instantiates the options type with
+bare `--json` normalizations, and repeated `create-entity-schema --column` groups. Separately, `clio/YAML/Step.cs` instantiates the options type with
 `Activator.CreateInstance` and fills properties from the YAML step, so a scenario step never passes
 through `NormalizeCommandLineArgs` at all.
 

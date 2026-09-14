@@ -4,13 +4,16 @@ using CommandLine;
 
 namespace Clio.Command.Update;
 
+/// <summary>Options for inspecting or changing automatic clio updates.</summary>
 [Verb("autoupdate", HelpText = "Enable or disable automatic clio updates on startup")]
 public class SetAutoupdateOptions {
 
-	[Option("enable", SetName = "enable", HelpText = "Enable automatic updates on startup (default behavior)")]
+	/// <summary>Gets or sets whether to opt in to automatic clio updates.</summary>
+	[Option("enable", SetName = "enable", HelpText = "Enable automatic updates on startup")]
 	public bool Enable { get; set; }
 
-	[Option("disable", SetName = "disable", HelpText = "Disable automatic updates on startup")]
+	/// <summary>Gets or sets whether to disable automatic clio updates.</summary>
+	[Option("disable", SetName = "disable", HelpText = "Disable automatic updates on startup (default behavior)")]
 	public bool Disable { get; set; }
 
 }
