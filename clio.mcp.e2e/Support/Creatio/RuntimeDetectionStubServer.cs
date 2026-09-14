@@ -228,6 +228,12 @@ http.createServer((request, response) => {
       return;
     }
     recordedRequests.push({ method: request.method, url: url });
+    // A stopped or recycling application pool answers 503 on every route, including the auth endpoint.
+    // It goes FIRST on purpose: the whole point of the switch is that no route answers normally.
+    if (config.AllRoutesUnavailable) {
+      sendText(response, 503, "Service Unavailable");
+      return;
+    }
     if (config.PackageSynchronizationResponse && url.endsWith("/WorkspaceExplorerService.svc/GetIsFileDesignMode")) {
       sendJson(response, 200, { success: true, value: true });
       return;
@@ -524,6 +530,7 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	bool NetFrameworkUiMarkerEnabled = false,
 	string? NetCoreUiMarkerMode = null,
 	string? NetFrameworkUiMarkerMode = null,
+	bool AllRoutesUnavailable = false,
 	string? ODataRoutingErrorEntity = null,
 	string? CoreVersion = null,
 	string? ThemeCatalogJson = null,

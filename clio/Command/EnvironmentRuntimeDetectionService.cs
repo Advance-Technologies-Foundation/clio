@@ -280,7 +280,7 @@ internal sealed class EnvironmentRuntimeDetectionService(
 	}
 
 	private static string BuildFailureMessage(string baseUri, RuntimeProbeResult netCoreProbe, RuntimeProbeResult netFrameworkProbe) =>
-		TryBuildReachabilityFailureMessage(baseUri, netCoreProbe, netFrameworkProbe, out string message)
+		TryBuildSiteUnavailableMessage(baseUri, netCoreProbe, netFrameworkProbe, out string message)
 			? message
 			: $"Unable to auto-detect the Creatio runtime. {BuildProbeSummary(netCoreProbe, netFrameworkProbe)} Rerun reg-web-app with --IsNetCore true or --IsNetCore false to override detection.";
 
@@ -288,14 +288,26 @@ internal sealed class EnvironmentRuntimeDetectionService(
 		string baseUri,
 		RuntimeProbeResult netCoreProbe,
 		RuntimeProbeResult netFrameworkProbe) =>
-		TryBuildReachabilityFailureMessage(baseUri, netCoreProbe, netFrameworkProbe, out string message)
+		TryBuildSiteUnavailableMessage(baseUri, netCoreProbe, netFrameworkProbe, out string message)
 			? message
 			: $"Unable to auto-detect the Creatio runtime because no credentials were provided and the unauthenticated probes were inconclusive. {BuildProbeSummary(netCoreProbe, netFrameworkProbe)} Provide -l/-p or OAuth settings to enable the authenticated SelectQuery probe, or rerun reg-web-app with --IsNetCore true or --IsNetCore false.";
 
 	private static string BuildAmbiguousMessage(RuntimeProbeResult netCoreProbe, RuntimeProbeResult netFrameworkProbe) =>
 		$"Unable to auto-detect the Creatio runtime because both .NET Core / NET8 and .NET Framework service probes succeeded. {BuildProbeSummary(netCoreProbe, netFrameworkProbe)} Rerun reg-web-app with --IsNetCore true or --IsNetCore false to override detection.";
 
-	private static bool TryBuildReachabilityFailureMessage(
+	/// <summary>
+	/// Builds the diagnostic for a site that never served a single probe, so the caller does not tell the user
+	/// to choose a runtime for a site that is simply not up.
+	/// </summary>
+	/// <remarks>
+	/// Two distinct outcomes, and the difference matters to whoever reads the message: no HTTP response arrived
+	/// at all (DNS, refused, no route, timed out) points at connectivity, while an HTTP server error from every
+	/// route points at the application itself being stopped or recycling. Classification is by whether a status
+	/// code came back, never by matching words in the exception text - a real
+	/// <see cref="HttpClient"/> timeout surfaces as "A task was canceled." once
+	/// <see cref="Exception.GetBaseException"/> has unwrapped it, so text matching silently misses it.
+	/// </remarks>
+	private static bool TryBuildSiteUnavailableMessage(
 		string baseUri,
 		RuntimeProbeResult netCoreProbe,
 		RuntimeProbeResult netFrameworkProbe,
@@ -306,32 +318,31 @@ internal sealed class EnvironmentRuntimeDetectionService(
 			netFrameworkProbe.HealthProbe,
 			netFrameworkProbe.UiMarkerProbe
 		];
-		if (directAttempts.Any(attempt => attempt.Succeeded)
-			|| directAttempts.Any(attempt => !IsReachabilityFailure(attempt.ErrorMessage))) {
+		if (!directAttempts.All(WasNotServed)) {
 			message = string.Empty;
 			return false;
 		}
 		string authority = Uri.TryCreate(baseUri, UriKind.Absolute, out Uri? uri)
 			? uri.Authority
 			: baseUri;
-		message =
-			$"Unable to auto-detect the Creatio runtime because the host '{authority}' could not be reached from this machine. Verify the URL, DNS/VPN connectivity, and that the site is accessible, then rerun reg-web-app. {BuildProbeSummary(netCoreProbe, netFrameworkProbe)}";
+		if (directAttempts.All(attempt => attempt.StatusCode is null)) {
+			message =
+				$"Unable to auto-detect the Creatio runtime because the host '{authority}' could not be reached from this machine. Verify the URL, DNS/VPN connectivity, and that the site is accessible, then rerun reg-web-app. {BuildProbeSummary(netCoreProbe, netFrameworkProbe)}";
+			return true;
+		}
+		message = directAttempts.All(ProvesAbsence)
+			? $"Unable to auto-detect the Creatio runtime because nothing at '{baseUri}' serves a Creatio route: every probe answered 404. Verify the application path in the URL and that the application is still deployed, then rerun reg-web-app. {BuildProbeSummary(netCoreProbe, netFrameworkProbe)}"
+			: $"Unable to auto-detect the Creatio runtime because the site at '{authority}' is not serving requests: every probe answered an HTTP server error. Verify that the Creatio application is started and finished warming up, then rerun reg-web-app. {BuildProbeSummary(netCoreProbe, netFrameworkProbe)}";
 		return true;
 	}
 
-	private static bool IsReachabilityFailure(string? errorMessage) {
-		if (string.IsNullOrWhiteSpace(errorMessage)) {
-			return false;
-		}
-		return errorMessage.Contains("could not resolve host", StringComparison.OrdinalIgnoreCase)
-			|| errorMessage.Contains("nodename nor servname", StringComparison.OrdinalIgnoreCase)
-			|| errorMessage.Contains("name or service not known", StringComparison.OrdinalIgnoreCase)
-			|| errorMessage.Contains("no such host is known", StringComparison.OrdinalIgnoreCase)
-			|| errorMessage.Contains("connection refused", StringComparison.OrdinalIgnoreCase)
-			|| errorMessage.Contains("actively refused", StringComparison.OrdinalIgnoreCase)
-			|| errorMessage.Contains("timed out", StringComparison.OrdinalIgnoreCase)
-			|| errorMessage.Contains("timeout", StringComparison.OrdinalIgnoreCase);
-	}
+	/// <summary>Reports whether a probe route failed without the site serving anything usable there: no HTTP
+	/// response at all, an HTTP server error, or a "not found" that proves the route does not exist.</summary>
+	/// <remarks>A 401 or 403 does NOT qualify - the site served the route and refused the request, which means it
+	/// is up and the diagnostic must not claim otherwise.</remarks>
+	private static bool WasNotServed(ProbeAttempt attempt) =>
+		!attempt.Succeeded
+		&& (attempt.StatusCode is null || (int)attempt.StatusCode >= 500 || ProvesAbsence(attempt));
 
 	private static string BuildProbeSummary(RuntimeProbeResult netCoreProbe, RuntimeProbeResult netFrameworkProbe) =>
 		$".NET Core / NET8: health {netCoreProbe.HealthUrl} => {Describe(netCoreProbe.HealthProbe)}, service {netCoreProbe.ServiceUrl} => {Describe(netCoreProbe.ServiceProbe)}, UI marker {netCoreProbe.UiMarkerUrl} => {Describe(netCoreProbe.UiMarkerProbe)}. .NET Framework: health {netFrameworkProbe.HealthUrl} => {Describe(netFrameworkProbe.HealthProbe)}, service {netFrameworkProbe.ServiceUrl} => {Describe(netFrameworkProbe.ServiceProbe)}, UI marker {netFrameworkProbe.UiMarkerUrl} => {Describe(netFrameworkProbe.UiMarkerProbe)}.";
