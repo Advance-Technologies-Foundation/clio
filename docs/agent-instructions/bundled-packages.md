@@ -51,7 +51,8 @@ no `SqlScripts/`, no `InstallScripts` in the descriptor, the `DashboardsMigrator
 rewrites the pins in `clio.tests/Common/BundledDashboardsMigratorPackageTests.cs` and rebuilds clio. The
 provenance pin is the SHA-256 of the build zip (`ExpectedSourceBuildSha256`); the commit is on the build's page
 in the SDLC app. Facts 1–3 below (UId, `ModifiedOnUtc`, installed-vs-serving) hold for it exactly as for the
-process builder; the package-side half of the procedure is `docs/bundling-into-clio.md` in its repository.
+process builder; the package-side contract (Ping route and answer, no `InstallScripts`, both assemblies) is
+listed in that repository's `RELEASE.md`, step 8.
 
 ## Platform facts you must know first
 
