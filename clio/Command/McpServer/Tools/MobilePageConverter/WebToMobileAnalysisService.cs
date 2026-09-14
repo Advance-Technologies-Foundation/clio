@@ -441,7 +441,11 @@ public static class WebToMobileAnalysisService {
 				mobileTemplateUnavailable: mobileTemplateUnavailable,
 				dataSectionArrayConflicts: dataSectionArrayConflicts,
 				hasTabAreaLayers: tabAreaLayers.Count > 0,
-				hasEmptyContainerRemovals: emptyRemovedNames.Count > 0,
+				// emptyRemovedNames only carries WEB-sourced removals; a declared element (declaredElements — no
+				// WebName) removed as empty is recorded solely in emptyRemovedMobileNames, so both must be checked
+				// or a declared-only removal (e.g. Tabs/GeneralInfoTab with nothing mapped into them) silently skips
+				// this constraint even though its drop entry is in elementMap.
+				hasEmptyContainerRemovals: emptyRemovedNames.Count > 0 || emptyRemovedMobileNames.Count > 0,
 				normalization: componentPropertyOverrides,
 				webTemplateUnavailable: webTemplateUnavailable,
 				hasComponentTwin: componentMap.Count > 0,
@@ -2253,7 +2257,9 @@ public static class WebToMobileAnalysisService {
 		/// <summary>The source page already uses this name for an element of its own; any pair targeting the name falls back to the default placement.</summary>
 		PageNameCollision,
 		/// <summary>The declared parent is neither a probed template element, another admitted declaration, nor a page-authored element; any pair targeting the name falls back to the default placement.</summary>
-		OrphanParent
+		OrphanParent,
+		/// <summary>Its parent chain loops back to itself through other declarations of the same rule (no template element, no page-authored anchor breaks the chain); every element on the cycle is skipped, since a cycle has no valid parent-first emission order.</summary>
+		CyclicParent
 	}
 
 	/// <summary>
@@ -2274,6 +2280,8 @@ public static class WebToMobileAnalysisService {
 				("page-name-collision", "the source page already uses this name for an element of its own — any containers pair targeting it fell back to the default placement"),
 			DeclaredElementSkipReason.OrphanParent =>
 				("orphan-parent", "its declared parent is neither a mobile template element nor an element this conversion creates — any containers pair targeting it fell back to the default placement"),
+			DeclaredElementSkipReason.CyclicParent =>
+				("cyclic-parent", "its declared parent chain loops back to itself through other declarations — a cycle has no valid creation order, so every element on it is skipped; any containers pair targeting it fell back to the default placement"),
 			_ => ("unknown", "skipped")
 		};
 		return $"{SanitizeRuleIdentifier(skip.Name)} [{code}]: {text}";
@@ -2296,7 +2304,10 @@ public static class WebToMobileAnalysisService {
 	/// template-presence gate is off too; or the source page already uses its name for an element of its own (a
 	/// same-named web element that a pair maps onto the declared one is not a conflict: the pair says the two are
 	/// one element, and the web one is walked as a twin). A skipped parent cascades: a declaration whose parent was
-	/// skipped is skipped with it. An entry missing its name, type or parent is dropped silently, as before — it
+	/// skipped is skipped with it. Two or more declarations whose parent chain loops back to itself through each
+	/// other (no template element, no page-authored anchor breaks the chain) are ALL skipped as a cycle — decided
+	/// independently of the template probe, since it is a rules-file self-consistency defect, not a
+	/// template-presence question. An entry missing its name, type or parent is dropped silently, as before — it
 	/// cannot be named in a report.
 	/// </summary>
 	private static DeclaredElementSelection SelectDeclaredElements(TemplateMappingRule rule,
@@ -2348,6 +2359,57 @@ public static class WebToMobileAnalysisService {
 				continue;
 			}
 			accepted.Add(declared);
+		}
+		// Declaration-to-declaration cycles (D7): the fixed-point OrphanParent pass below never catches these — every
+		// member of a cycle keeps finding the OTHER member in its own "known" set on every iteration, so neither is
+		// ever removed and the loop converges with both still accepted. A cycle has no valid parent-first emission
+		// order (OrderDeclaredElementsParentFirst breaks it only defensively, to avoid an infinite recursion — not to
+		// produce a correct map), so every element on it is rejected here instead of reaching emission with an
+		// unpredictable parent. This check is independent of the template probe: it only asks whether a declaration's
+		// parent chain, followed through OTHER ACCEPTED DECLARATIONS ONLY, returns to its own start — a question the
+		// rules file answers about itself, with no need to know what the template provides. A self-parented
+		// declaration (name == parentName) is NOT treated as a cycle here — the OrphanParent gate below already
+		// rejects it (its own "known" check explicitly excludes a name matching itself), with the more specific
+		// "orphan-parent" reason.
+		if (accepted.Count > 1) {
+			Dictionary<string, DeclaredElementRule> byName =
+				accepted.ToDictionary(a => a.Name, StringComparer.OrdinalIgnoreCase);
+			var state = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase); // 0 unvisited, 1 in-progress, 2 done
+			var cyclic = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			foreach (DeclaredElementRule start in accepted) {
+				if (state.GetValueOrDefault(start.Name) != 0) {
+					continue;
+				}
+				var chain = new List<string>();
+				DeclaredElementRule current = start;
+				while (current is not null && state.GetValueOrDefault(current.Name) == 0) {
+					state[current.Name] = 1;
+					chain.Add(current.Name);
+					bool selfParented = string.Equals(current.ParentName, current.Name, StringComparison.OrdinalIgnoreCase);
+					current = !selfParented && byName.TryGetValue(current.ParentName, out DeclaredElementRule parent)
+						? parent
+						: null;
+				}
+				if (current is not null && state[current.Name] == 1) {
+					// current re-enters the chain at its first occurrence — everything from there to the end is the cycle.
+					int cycleStart = chain.IndexOf(current.Name);
+					for (int i = cycleStart; i < chain.Count; i++) {
+						cyclic.Add(chain[i]);
+					}
+				}
+				foreach (string name in chain) {
+					state[name] = 2;
+				}
+			}
+			if (cyclic.Count > 0) {
+				for (int i = accepted.Count - 1; i >= 0; i--) {
+					if (cyclic.Contains(accepted[i].Name)) {
+						skipped.Add(new SkippedDeclaredElement(accepted[i].Name, DeclaredElementSkipReason.CyclicParent));
+						removedNames.Add(accepted[i].Name);
+						accepted.RemoveAt(i);
+					}
+				}
+			}
 		}
 		if (templateProbeAvailable) {
 			// Page-authored elements convert under their own names; a web-template element does not (it is pruned
@@ -2516,9 +2578,11 @@ public static class WebToMobileAnalysisService {
 	/// among what it has ALREADY emitted, so a forward reference (a child declared before its declared-element
 	/// parent) would otherwise find no parent entry yet and be misclassified as parented by the template. A
 	/// declaration whose parent is NOT another declaration of this rule (the common case — the template or a
-	/// page-authored element) is left in its original relative position; a mutual/cyclic
-	/// parent reference (a rules-file error outside this method's remit) is broken deterministically by emitting
-	/// each name at most once, in first-encountered order, rather than looping forever.
+	/// page-authored element) is left in its original relative position. <see cref="SelectDeclaredElements"/>
+	/// rejects every element on a declaration-to-declaration cycle before this method ever runs, so <c>extras</c>
+	/// is cycle-free in practice; the cycle guard here (emitting each name at most once, in first-encountered
+	/// order, rather than looping forever) is a defensive backstop only, kept in case that invariant is ever
+	/// bypassed — it is not this method's job to decide what a cycle means.
 	/// </summary>
 	private static IReadOnlyList<DeclaredElementRule> OrderDeclaredElementsParentFirst(
 		IReadOnlyList<DeclaredElementRule> extras) {
@@ -4967,7 +5031,7 @@ public static class WebToMobileAnalysisService {
 						Reason = EmptyContainerDropReason
 							+ " (declared by the template rule's declaredElements; nothing was mapped into it)",
 					}
-					: Drop(entry.WebName, entry.WebType ?? entry.MobileType, EmptyContainerDropReason);
+					: Drop(entry.WebName, entry.WebType, EmptyContainerDropReason);
 				if (entry.DeclaredByRule) {
 					// The web twins a containers pair merged onto the declaration are the same element seen from the web
 					// side; with the declaration gone their merge has no target, and left in place the adaptive pass
@@ -4976,7 +5040,7 @@ public static class WebToMobileAnalysisService {
 						ElementMapEntry twin = elementMap[j];
 						if (string.Equals(twin.Operation, "merge", StringComparison.Ordinal)
 							&& string.Equals(twin.MobileName, entry.MobileName, StringComparison.OrdinalIgnoreCase)) {
-							elementMap[j] = Drop(twin.WebName, twin.WebType ?? twin.MobileType,
+							elementMap[j] = Drop(twin.WebName, twin.WebType,
 								$"merged onto the declared element '{entry.MobileName}', which was removed as empty — nothing "
 								+ "survived under it, so the twin has no target");
 							if (twin.WebName is { Length: > 0 }) {
@@ -5361,6 +5425,9 @@ public static class WebToMobileAnalysisService {
 	/// <summary>Mobile component type of a single tab.</summary>
 	private const string MobileTabComponentType = "crt.TabContainer";
 
+	/// <summary>Mobile component type of the Tabs strip itself (see the declaredElements Tabs entry in the rules file).</summary>
+	private const string MobileTabsPanelComponentType = "crt.TabPanel";
+
 	/// <summary>
 	/// 0-based index of the FIRST converted tab within the mobile Tabs items: 1 places it right after the
 	/// template's general tab (position 0) and before the template's Feed/Attachments tabs, which shift
@@ -5401,7 +5468,8 @@ public static class WebToMobileAnalysisService {
 		// order never collide — the declared tab keeps its own index untouched.
 		bool tabsCreatedByConverter = elementMap.Any(e =>
 			string.Equals(e.Operation, "insert", StringComparison.Ordinal)
-			&& string.Equals(e.MobileName, MobileTabsElementName, StringComparison.OrdinalIgnoreCase));
+			&& string.Equals(e.MobileName, MobileTabsElementName, StringComparison.OrdinalIgnoreCase)
+			&& string.Equals(e.MobileType, MobileTabsPanelComponentType, StringComparison.OrdinalIgnoreCase));
 		var declaredIndexes = new HashSet<int>(elementMap
 			.Where(e => e.DeclaredByRule && e.Index is not null
 				&& string.Equals(e.Operation, "insert", StringComparison.Ordinal)

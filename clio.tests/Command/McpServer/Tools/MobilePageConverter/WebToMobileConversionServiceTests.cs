@@ -2955,6 +2955,32 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("D8 regression: a declared element with NO containers pair pointed at it and no content of its own is removed as empty exactly like any other declared element, but its removal touches no web name anywhere — not its own (declaredElements has none) and not a merge twin's (no pair names it) — so the empty-container constraint must not depend on a web name having been recorded. RightPanelTab is re-declared and kept alive by real right-widget content so its own (unrelated) empty-removal never contributes a web name either.")]
+	public void Analyze_ShouldReportEmptyContainerConstraint_WhenOnlyADeclaredElementWithNoTwinWasRemovedAsEmpty() {
+		// Arrange
+		JArray page = DeclaredElementsPage(withRightWidget: true, withPageTab: false);
+		TemplateMappingRule rule = DeclaredElementsRuleWith(new JsonArray(
+			new JsonObject {
+				["name"] = DeclaredElementsExtraTab, ["type"] = "crt.TabContainer", ["parentName"] = "Tabs",
+				["propertyName"] = "items", ["index"] = 1,
+				["values"] = new JsonObject { ["iconPosition"] = "only-text" },
+				["captionResource"] = new JsonObject { ["key"] = "RightPanelTab_caption", ["value"] = "Details" }
+			},
+			new JsonObject { ["name"] = "OrphanEmptyTab", ["type"] = "crt.TabContainer", ["parentName"] = "Tabs", ["index"] = 2 }));
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule);
+
+		// Assert
+		Declared(guide, "OrphanEmptyTab").Operation.Should().Be("drop",
+			because: "nothing is mapped into it and no containers pair merges onto it");
+		guide.ElementMap.Should().NotContain(e => e.Operation == "merge" && e.MobileName == "OrphanEmptyTab",
+			because: "no containers pair names this declaration, so its removal has no twin to also drop");
+		guide.Constraints.Should().Contain(c => c.Contains("empty container"),
+			because: "a declared-only removal that touches no web name anywhere must still surface the empty-container constraint");
+	}
+
+	[Test]
 	[Description("With NO mobile template probe the declarations are still emitted — creation does not depend on reading the template — and every containers pair is a merge onto them exactly as with the probe: the web Tabs merges onto the declared strip, the right profile area onto the declared right-panel tab whose synthesized Area receives the right-panel widget, and nothing is skipped. An unreadable template changes only the probe-dependent admission gates, never what the rule creates.")]
 	public void Analyze_ShouldEmitDeclaredElementsAndMergePairsOntoThem_WhenMobileTemplateWasNotProbed() {
 		// Arrange
@@ -3385,20 +3411,24 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("Two declared elements that name each other as parent (a rules-file mistake no legitimate rule would contain) do not hang or overflow the stack when the parent-first reordering pass walks them — the cycle is broken deterministically and both entries still surface instead of one silently disappearing.")]
-	public void Analyze_ShouldNotHang_WhenDeclaredElementsHaveACyclicParentReference() {
+	[Description("T6/D7: two declared elements that name each other as parent (a rules-file mistake no legitimate rule would contain) are BOTH rejected at admission — a cycle has no valid parent-first emission order, so accepting one of them (as before) would hand the caller a map with an unpredictable parent instead of a clear, reportable error.")]
+	public void Analyze_ShouldRejectBothDeclaredElements_WhenTheyHaveACyclicParentReference() {
 		// Arrange — CycleA's parent is CycleB and vice versa.
 		JArray page = DeclaredElementsPage(withRightWidget: false, withPageTab: false);
 		TemplateMappingRule rule = DeclaredElementsRuleWith(new JsonArray(
 			new JsonObject { ["name"] = "CycleA", ["type"] = "crt.Label", ["parentName"] = "CycleB", ["values"] = new JsonObject { ["caption"] = "A" } },
 			new JsonObject { ["name"] = "CycleB", ["type"] = "crt.Label", ["parentName"] = "CycleA", ["values"] = new JsonObject { ["caption"] = "B" } }));
 
-		// Act — completing at all (no stack overflow / infinite loop) is the primary claim of this test.
+		// Act — completing at all (no stack overflow / infinite loop) is also covered by this test.
 		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule);
 
 		// Assert
-		guide.ElementMap.Where(e => e.DeclaredByRule).Select(e => e.MobileName).Should().BeEquivalentTo(["Tabs", "GeneralInfoTab", "CycleA", "CycleB"],
-			because: "the cycle is broken deterministically rather than dropping either declaration silently");
+		guide.ElementMap.Where(e => e.DeclaredByRule).Select(e => e.MobileName).Should().BeEquivalentTo(["Tabs", "GeneralInfoTab"],
+			because: "both cyclic declarations are rejected — neither has a valid emission order — while the unrelated strip declarations are unaffected");
+		guide.Constraints.Should().ContainSingle(c => c.Contains("declaredElements") && c.Contains("skipped"),
+				because: "every skip is reported in one constraint").Which.Should()
+			.Contain("CycleA [cyclic-parent]", because: "CycleA is named with the machine-readable cyclic-parent reason code").And
+			.Contain("CycleB [cyclic-parent]", because: "CycleB is named with the same reason code — both sides of the cycle are reported");
 	}
 
 	/// <summary>The web template's content subtree as merged on a live environment (header chrome omitted: it is pruned either way).</summary>

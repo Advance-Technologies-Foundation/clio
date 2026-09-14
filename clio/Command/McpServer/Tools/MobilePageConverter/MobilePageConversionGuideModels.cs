@@ -190,7 +190,7 @@ public sealed class ElementMapEntry {
 	/// layer must never be. Not part of the guide contract; the entry's <c>reason</c> says where it came from.
 	/// </summary>
 	[JsonIgnore]
-	public bool DeclaredByRule { get; init; }
+	internal bool DeclaredByRule { get; init; }
 
 	/// <summary>
 	/// The prebuilt, ready-to-paste mobile component <c>values</c>. For an <c>insert</c> it carries the
