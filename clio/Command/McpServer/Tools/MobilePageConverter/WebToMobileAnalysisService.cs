@@ -135,24 +135,10 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, JsonObject> mobileLayoutConfigs =
 			mobileTemplateLayoutConfigs ?? new Dictionary<string, JsonObject>(StringComparer.OrdinalIgnoreCase);
 
-		// Containers the template rule DECLARES on top of the mobile template (declaredElements). They are folded
-		// into the probed template maps so every pass sees them as template elements: a `containers` pair may
-		// name one as its mobile side (its content then walks in by merge-by-name), the hosting-parent and
-		// positional passes can classify it, and a retarget into it is not "missing". Folded ONLY when the template
-		// was actually probed: with no probe the name maps are empty, which is what switches the template-presence
-		// gates (RetargetTargetMissing / ParentProvidedByTemplate) off — seeding them with the declared names alone
-		// would switch those gates on over an otherwise empty map and drop every retarget into a real template
-		// element as absent. The probe state is captured BEFORE the fold so admission (SelectDeclaredElements) reads
-		// the template's OWN names, not the folded ones.
+		// declaredElements are folded into the probed maps ONLY when the template was actually probed — seeding
+		// them from declared names alone would turn the template-presence gates on over an otherwise empty map.
 		bool templateProbeAvailable = mobileTemplateTypesByName is { Count: > 0 };
-		// The declarations are ADMITTED before the fold. One that cannot be applied is skipped here, and every pair
-		// naming it as its mobile side is removed with it (so the web content falls back to the default placement
-		// instead of merging onto a name that will not exist on the mobile page): a type the mobile registry does
-		// not know, a parent that is neither on the probed template nor another declaration nor a page-authored
-		// element, or a name the source page already uses for an element of its own. A declaration the probed
-		// template already provides is skipped WITHOUT removing its pairs — that element exists, so the pair is an
-		// ordinary merge target. Every skip is reported as one guide constraint; an incomplete entry (no name, type
-		// or parent) is not, because it cannot even be named.
+		// Declarations are admitted (and skip reasons reported) before the fold — see SelectDeclaredElements.
 		DeclaredElementSelection declaredSelection = SelectDeclaredElements(templateRule, mobileTypes,
 			bundle.ViewConfig, map, templateComponentNames, mobileTypesByName, templateProbeAvailable);
 		IReadOnlyList<DeclaredElementRule> declaredElements = declaredSelection.Accepted;
@@ -2305,27 +2291,8 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Admits the rule's <c>declaredElements</c>. An entry is skipped, with a reason, when: it repeats a name an
-	/// earlier entry declared (the earlier one stands); the PROBED mobile template already has an element under
-	/// this name (the template element wins — the rule declares only what the template lacks, it never redefines
-	/// what the template has; decided only when the template was probed, for the same reason as the parent check
-	/// below) — this is the same precedence <see cref="WithDeclaredElements"/> documents for its own maps, enforced
-	/// here so a real template element is never shadowed by a stale or mistaken declaration at emission time; a
-	/// <c>containers</c> pair targeting that name is KEPT, since the template element it merges onto exists; its
-	/// type is not a registered mobile component (nothing downstream would catch the typo — the guide would tell
-	/// the caller to insert a component that does not exist); its parent is neither an element of the PROBED mobile
-	/// template, nor another admitted declaration, nor a page-authored element this conversion converts under its
-	/// own name (a <c>containers</c> pair's mobile side is NOT one: a pair merges onto an element that exists — a
-	/// template element or a declaration — and creates nothing of its own) — decided only when the
-	/// template was probed, since without the probe the template's names are unknown and every other
-	/// template-presence gate is off too; or the source page already uses its name for an element of its own (a
-	/// same-named web element that a pair maps onto the declared one is not a conflict: the pair says the two are
-	/// one element, and the web one is walked as a twin). A skipped parent cascades: a declaration whose parent was
-	/// skipped is skipped with it. Two or more declarations whose parent chain loops back to itself through each
-	/// other (no template element, no page-authored anchor breaks the chain) are ALL skipped as a cycle — decided
-	/// independently of the template probe, since it is a rules-file self-consistency defect, not a
-	/// template-presence question. An entry missing its name, type or parent is dropped silently, as before — it
-	/// cannot be named in a report.
+	/// Admits the rule's <c>declaredElements</c>; each rejection is a <see cref="DeclaredElementSkipReason"/> (see
+	/// its own doc for what triggers it), and a skipped parent cascades to its declared children.
 	/// </summary>
 	private static DeclaredElementSelection SelectDeclaredElements(TemplateMappingRule rule,
 		IReadOnlySet<string> mobileTypes, JsonArray pageViewConfig, IReadOnlyDictionary<string, string> containerNameMap,
@@ -5055,10 +5022,8 @@ public static class WebToMobileAnalysisService {
 				if (!IsEmptyRemovalCandidate(entry, removable) || occupied.Contains(entry.MobileName)) {
 					continue;
 				}
-				// A DeclaredByRule entry has no web counterpart (WebName is documented-null); folding its
-				// MobileName into the WebName slot via ?? would misreport a mobile-only element as a dropped
-				// WEB element. Route it into MobileType/MobileName instead so the guide keeps the documented
-				// contract.
+				// Route into MobileType/MobileName, not WebName ?? MobileName: a DeclaredByRule entry has no web
+				// counterpart, and folding MobileName into WebName would misreport it as a dropped WEB element.
 				elementMap[i] = entry.DeclaredByRule
 					? new ElementMapEntry {
 						MobileName = entry.MobileName,
