@@ -395,8 +395,7 @@ public static class WebToMobileAnalysisService {
 			if (string.IsNullOrWhiteSpace(entry?.WebName)) {
 				continue;
 			}
-			if (string.Equals(entry.Operation, "merge", StringComparison.OrdinalIgnoreCase)
-				|| string.Equals(entry.Operation, "insert", StringComparison.OrdinalIgnoreCase)) {
+			if (IsMerge(entry) || IsInsert(entry)) {
 				survivors[entry.WebName] = string.IsNullOrWhiteSpace(entry.Name) ? entry.WebName : entry.Name;
 			}
 		}
@@ -1070,9 +1069,9 @@ public static class WebToMobileAnalysisService {
 				//
 				// The exemption is per TYPE because this section is per type. One instance with an entry of
 				// any kind keeps the row for all of them, so a loss can never be erased by a passenger that
-				// happens to share its type. What this cannot rescue is a type whose every instance is lost
-				// with NO entry at all — the nonConvertingScopeContainers path, which reports nothing
-				// anywhere today; that is a missing reason code, not a suggestion-row question.
+				// happens to share its type. Every path that loses an element now leaves one — a
+				// nonConvertingScopeContainers member included (drop-non-converting-scope) — so no silent
+				// class is left for this exemption to mis-handle.
 				continue;
 			}
 			ComponentEquivalenceRule rule = FindRule(rules, type);
@@ -1505,8 +1504,9 @@ public static class WebToMobileAnalysisService {
 	private const string NamelessChangedInPlaceConflict = "nameless-changed-in-place";
 
 	/// <summary>
-	/// The closed vocabulary of <see cref="ElementMapEntry.ParentSource"/>, which the contract documents and
-	/// both the unit and E2E suites assert verbatim — named for the same reason the conflict kinds above are.
+	/// The closed vocabulary of <see cref="ElementMapEntry.ParentSource"/> — named for the same reason the
+	/// conflict kinds above are. Only <see cref="ParentSourceUnknown"/> reaches the wire, through
+	/// <c>unresolvedParents</c>; the other three steer the projections.
 	/// </summary>
 	private const string ParentSourceTemplate = "template";
 
@@ -1520,7 +1520,7 @@ public static class WebToMobileAnalysisService {
 	private const string ParentSourceUnknown = "unknown";
 
 	/// <summary>
-	/// Recursive worker for <see cref="BuildTargetedDiff(JsonNode, JsonNode, out IReadOnlyList{string})"/>. At
+	/// Recursive worker for <see cref="BuildTargetedDiff(JsonNode, JsonNode, string, out IReadOnlyList{DataSectionConflict})"/>. At
 	/// <paramref name="path"/> it emits one <c>merge</c> carrying every changed scalar and every new object/array
 	/// subtree, then recurses into shared object subtrees and appends an <c>insert</c> per new element of a shared
 	/// array. Every emitted operation targets a path that exists in the base: the merge's own path is a base
@@ -1773,7 +1773,7 @@ public static class WebToMobileAnalysisService {
 		if (vmc["attributes"] is JObject attributes && attributes.Count > 0) {
 			HashSet<string> dropped = new(
 				elementMap
-					.Where(e => string.Equals(e.Operation, "drop", StringComparison.OrdinalIgnoreCase))
+					.Where(IsDrop)
 					.Select(e => e.WebName)
 					.Where(n => !string.IsNullOrEmpty(n)),
 				StringComparer.OrdinalIgnoreCase);
@@ -1872,8 +1872,7 @@ public static class WebToMobileAnalysisService {
 		var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		foreach (ElementMapEntry entry in elementMap) {
 			if (entry.Values is null
-				|| (!string.Equals(entry.Operation, "insert", StringComparison.OrdinalIgnoreCase)
-					&& !string.Equals(entry.Operation, "merge", StringComparison.OrdinalIgnoreCase))) {
+				|| (!IsInsert(entry) && !IsMerge(entry))) {
 				continue;
 			}
 			string json = entry.Values.ToJsonString();
@@ -1919,9 +1918,7 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, JObject> WebBaselineNodes,
 		JObject WebBaselineResources,
 		IReadOnlySet<string> ScopeContainerNames,
-		IReadOnlySet<string> ContentContainerTypes) {
-
-	}
+		IReadOnlySet<string> ContentContainerTypes);
 
 	/// <summary>
 	/// The set of NON-CONVERTING scope container names — declared EXPLICITLY by the rules'
@@ -2067,7 +2064,7 @@ public static class WebToMobileAnalysisService {
 					JsonNode scopedValues = BuildMobileValues(ctx, node, name, scopedType, scopedCaption,
 						target.Parent, target.Property, sourceAncestors);
 					ctx.Out.Add(new ElementMapEntry {
-						WebName = name, WebType = Nz(type), Operation = "insert", Name = name, MobileType = scopedType,
+						WebName = name, WebType = Nz(type), Operation = ElementMapOperations.Insert, Name = name, MobileType = scopedType,
 						ParentName = target.Parent, PropertyName = target.Property, Index = null,
 						CaptionResource = scopedCaption, Values = scopedValues
 					});
@@ -2126,7 +2123,7 @@ public static class WebToMobileAnalysisService {
 				// ExcludedComponentsPass, which matches a filter's parentType against this field. Falls back to
 				// the web type (the pair is same-type for every other shipped entry) when the template is unknown.
 				var twinEntry = new ElementMapEntry {
-					WebName = name, WebType = Nz(type), Operation = "merge", Name = twinMobileName,
+					WebName = name, WebType = Nz(type), Operation = ElementMapOperations.Merge, Name = twinMobileName,
 					MobileType = ctx.MobileTypesByName.TryGetValue(twinMobileName, out string twinType)
 							&& !string.IsNullOrEmpty(twinType)
 						? twinType
@@ -2179,7 +2176,7 @@ public static class WebToMobileAnalysisService {
 				// overrides the template label; CollectResourceStrings adds its resource to the schema).
 				JsonNode twinValues = BuildTwinMergeValues(ctx, node, compRule, twinMobileType, type);
 				ctx.Out.Add(new ElementMapEntry {
-					WebName = name, WebType = Nz(type), Operation = "merge", Name = compRule.Mobile,
+					WebName = name, WebType = Nz(type), Operation = ElementMapOperations.Merge, Name = compRule.Mobile,
 					MobileType = twinMobileType,
 					Values = twinValues
 				});
@@ -2209,7 +2206,7 @@ public static class WebToMobileAnalysisService {
 				// the survivors map — a page business rule targeting it converts instead of being dropped as
 				// "every referenced element is unsupported".
 				ctx.Out.Add(new ElementMapEntry {
-					WebName = name, WebType = Nz(type), Operation = "merge", Name = name, MobileType = type,
+					WebName = name, WebType = Nz(type), Operation = ElementMapOperations.Merge, Name = name, MobileType = type,
 					Values = delta,
 				});
 				continue;
@@ -2225,7 +2222,7 @@ public static class WebToMobileAnalysisService {
 				if (!typeSupported) {
 					string target = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName);
 					ctx.Out.Add(new ElementMapEntry {
-						WebName = name, WebType = Nz(type), Operation = "relocate-children", ParentName = target
+						WebName = name, WebType = Nz(type), Operation = ElementMapOperations.RelocateChildren, ParentName = target
 					});
 					if (items is not null) {
 						WalkElements(ctx, items, target, sourceAncestors: Append(sourceAncestors, name),
@@ -2288,7 +2285,7 @@ public static class WebToMobileAnalysisService {
 				JsonNode containerValues = BuildMobileValues(ctx, node, name, type, containerCaption,
 					containerParent, containerProperty, sourceAncestors);
 				ctx.Out.Add(new ElementMapEntry {
-					WebName = name, WebType = Nz(type), Operation = "insert", Name = name, MobileType = type,
+					WebName = name, WebType = Nz(type), Operation = ElementMapOperations.Insert, Name = name, MobileType = type,
 					ParentName = containerParent, PropertyName = containerProperty,
 					Index = containerIndex,
 					CaptionResource = containerCaption,
@@ -2382,7 +2379,7 @@ public static class WebToMobileAnalysisService {
 			JsonNode leafValues = BuildMobileValues(ctx, node, name, leafMobileType, leafCaption,
 				leafParent, leafProperty, sourceAncestors);
 			ctx.Out.Add(new ElementMapEntry {
-				WebName = name, WebType = Nz(type), Operation = "insert", Name = name, MobileType = leafMobileType,
+				WebName = name, WebType = Nz(type), Operation = ElementMapOperations.Insert, Name = name, MobileType = leafMobileType,
 				ParentName = leafParent, PropertyName = leafProperty,
 				Index = leafIndex,
 				CaptionResource = leafCaption,
@@ -2520,7 +2517,7 @@ public static class WebToMobileAnalysisService {
 		List<ElementMapEntry> elementMap, IReadOnlyDictionary<string, string> mobileTemplateTypesByName) {
 		var authoredHere = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 		foreach (ElementMapEntry entry in elementMap) {
-			if (string.Equals(entry.Operation, "insert", StringComparison.OrdinalIgnoreCase)
+			if (IsInsert(entry)
 				&& !string.IsNullOrEmpty(entry.Name)) {
 				// The value records whether the parent came from the source page (it has a webName) or was
 				// synthesized by the converter (it has none) — the two "authored here" answers.
@@ -2528,7 +2525,7 @@ public static class WebToMobileAnalysisService {
 			}
 		}
 		foreach (ElementMapEntry entry in elementMap) {
-			if (!string.Equals(entry.Operation, "insert", StringComparison.OrdinalIgnoreCase)
+			if (!IsInsert(entry)
 				|| string.IsNullOrEmpty(entry.ParentName)) {
 				entry.ParentSource = null;
 				continue;
@@ -2830,9 +2827,9 @@ public static class WebToMobileAnalysisService {
 	/// caption may be a resource token in any form — <c>$Resources.Strings.KEY</c>, <c>#ResourceString(KEY)#</c>,
 	/// or <c>#MacrosTemplateString(#ResourceString(KEY)#)#</c>; its KEY is extracted (reusing
 	/// <see cref="ResourceStringHelper.ExtractKeys"/>) and looked up in the page's localized strings for its
-	/// en-US text. <see cref="CaptionResource.Key"/> is that referenced KEY (matching the carried token), so
-	/// registering it makes the token resolve. Returns null when the caption references no resource (a plain
-	/// literal — carried as-is — or a data binding such as <c>$HeaderCaption</c>).
+	/// en-US text. Returns null — leaving the source token to be carried verbatim — in three cases: the
+	/// caption is a plain literal, it is a data binding such as <c>$HeaderCaption</c>, or the key it
+	/// references is one the source page does not DECLARE (the platform owns that caption; see below).
 	/// </summary>
 	private static CaptionResource ResolveCaptionResource(ElementMapContext ctx, JObject node, string mobileName) {
 		string caption = node["caption"]?.ToString();
@@ -2843,27 +2840,28 @@ public static class WebToMobileAnalysisService {
 		if (string.IsNullOrEmpty(sourceKey)) {
 			return null; // literal (carried verbatim) or data binding — no resource to register
 		}
+		// A key the source page does not DECLARE cannot be re-keyed, and the two halves of that are one
+		// decision. Re-keying rewrites the element's carried token to <mobileName>_caption — a name the
+		// converter invented, which only a registration can give meaning — while an undeclared key gives
+		// nothing to register: the platform resolves that caption itself from the entity column (every mobile
+		// template ships this way; MobilePageWithTabsFreedomTemplate references AttachmentListDS_Name /
+		// _CreatedOn / _CreatedBy / _Size and declares none of them), so inventing a registration would
+		// replace a localized label with one hardcoded culture. Doing one without the other ships a
+		// #ResourceString token with no key behind it and the device renders the RAW TOKEN. So: no caption
+		// resource at all, the source token is carried verbatim, and the platform resolves it.
+		if (!TryResolveDeclaredResourceString(ctx.Resources, sourceKey, out string sourceValue)) {
+			return null;
+		}
 		// Re-key the caption to a key UNIQUE to this new mobile element (<mobileName>_caption). A web element
 		// can carry an INHERITED caption key whose name does not match the element (e.g. web OverviewTab is
 		// bound to the base-template key GeneralInfoTab_caption). If carried verbatim, that key collides with
 		// one the mobile template already owns with a different value (GeneralInfoTab_caption = "Details"), and
 		// update-page — which never overwrites an existing page/template key — silently drops our override, so
 		// the template value wins at render. A per-element key avoids the collision. SourceValue keeps the
-		// web caption's own text (resolved from the source key). When the source key already equals the
-		// element key, nothing changes and the caller keeps the source token verbatim.
-		string key = mobileName + "_caption";
-		// Declaredness is carried SEPARATELY from the text, and the difference is the whole point. The source
-		// key may be declared with EMPTY text — the page's own deliberate "no visible label" — and that must be
-		// registered, because the re-key above means the carried token names a key the converter INVENTED, which
-		// no source declaration can back. Dropping it ships a #ResourceString token with no key behind it, and
-		// the device renders the RAW TOKEN. An ABSENT key must be skipped for the opposite reason: registering
-		// one would REPLACE the platform's own localized caption with a single hardcoded culture, and the old
-		// `?? sourceKey` fallback did something stranger still — it registered the KEY NAME as the caption text,
-		// so the element rendered as the literal string "GeneralInfoTab_caption" (ENG-95827).
-		if (!TryResolveDeclaredResourceString(ctx.Resources, sourceKey, out string sourceValue)) {
-			return new CaptionResource { Key = key, SourceValue = null, SourceDeclared = false };
-		}
-		return new CaptionResource { Key = key, SourceValue = sourceValue, SourceDeclared = true };
+		// web caption's own text, EMPTY TEXT INCLUDED: a caption the page declares as "" is its own deliberate
+		// "no visible label", and the invented key must carry it or the token has nothing behind it. When the
+		// source key already equals the element key, nothing changes and the caller keeps the token verbatim.
+		return new CaptionResource { Key = mobileName + "_caption", SourceValue = sourceValue };
 	}
 
 	/// <summary>
@@ -2871,16 +2869,11 @@ public static class WebToMobileAnalysisService {
 	/// no text". Returns false only when the key is absent from the bundle's merged strings.
 	/// </summary>
 	/// <remarks>
-	/// The distinction matters and <see cref="ResolveResourceString"/> cannot make it — that returns
-	/// <c>null</c> for an absent key and <c>""</c> for a declared-but-empty one, and the collector used to
-	/// drop both with a single <c>IsNullOrEmpty</c> check. A declared-empty caption is a deliberate "no
-	/// visible label", and dropping it ships a <c>#ResourceString</c> token with NO key behind it, which
-	/// renders as the RAW TOKEN on the device instead of as nothing — strictly worse than the web page it was
-	/// converted from (ENG-95827). An ABSENT key must still be skipped: the platform resolves a list column's
-	/// caption from the entity column itself, and every mobile template ships that way (the platform's own
-	/// MobilePageWithTabsFreedomTemplate references AttachmentListDS_Name / _CreatedOn / _CreatedBy / _Size
-	/// and declares none of them), so registering a key for it would OVERRIDE the platform's localized label
-	/// with one hardcoded culture.
+	/// <see cref="ResolveResourceString"/> cannot make the distinction — it returns <c>null</c> for an absent
+	/// key and <c>""</c> for a declared-but-empty one, so a single <c>IsNullOrEmpty</c> test conflates two
+	/// opposite outcomes: a declared-empty caption is the page's deliberate "no visible label" and must be
+	/// carried, while an absent key must be left to the platform, which resolves that caption from the entity
+	/// column itself.
 	/// </remarks>
 	private static bool TryResolveDeclaredResourceString(JObject resources, string key, out string text) {
 		text = null;
@@ -2960,12 +2953,11 @@ public static class WebToMobileAnalysisService {
 			// Register the element's caption key with its source text FIRST. A re-keyed caption
 			// (<mobileName>_caption, used to dodge a template key collision) does not exist under that name in
 			// the source strings, so a token scan alone would not resolve it — take the value from the
-			// CaptionResource, which carries the web caption's own text.
-			// Gated on SourceDeclared, NOT on the text being non-empty. The two differ exactly where it
-			// matters: a caption the page declares with EMPTY text is its own "no visible label" and must be
-			// registered, or the re-keyed token ships with no key behind it and the device renders the RAW
-			// TOKEN. A key the page never declared must be skipped. (ENG-95827)
-			if (entry.CaptionResource is { SourceDeclared: true } cap
+			// CaptionResource, which carries the web caption's own text. Registered whatever that text is,
+			// EMPTY INCLUDED: the page's own "no visible label" still needs the invented key to exist, or the
+			// token ships with nothing behind it and the device renders the RAW TOKEN. An element whose source
+			// key the page never declared has no CaptionResource at all — see ResolveCaptionResource.
+			if (entry.CaptionResource is { } cap
 				&& !string.IsNullOrEmpty(cap.Key)
 				&& !result.ContainsKey(cap.Key)) {
 				result[cap.Key] = cap.SourceValue ?? string.Empty;
@@ -3978,7 +3970,7 @@ public static class WebToMobileAnalysisService {
 			// nesting there would place the tab strip inside its own descendant -- and twice, since two web twins
 			// (Tabs and CardToggleTabPanel) share the mobile name. Without the mobile parent map the pass places
 			// no twin at all: an unplaced twin renders exactly as it does today, a wrongly placed one does not.
-			bool isPlaceableTwin = string.Equals(e.Operation, "merge", StringComparison.Ordinal)
+			bool isPlaceableTwin = IsMerge(e)
 				&& e.MergeParentName is { Length: > 0 }
 				&& e.Name is { Length: > 0 }
 				&& mobileContainerParents is not null
@@ -3999,7 +3991,7 @@ public static class WebToMobileAnalysisService {
 				}
 				parent = e.MergeParentName;
 			} else {
-				if (!string.Equals(e.Operation, "insert", StringComparison.Ordinal)
+				if (!IsInsert(e)
 					|| e.Values is not JsonObject) {
 					continue;
 				}
@@ -4053,8 +4045,8 @@ public static class WebToMobileAnalysisService {
 			// element-map entry (insert or merge twin) so the result is a SINGLE operation on that element — no
 			// separate merge diff for the model to apply on top (which would duplicate the operation).
 			ElementMapEntry containerEntry = elementMap.FirstOrDefault(e =>
-				(string.Equals(e.Operation, "insert", StringComparison.Ordinal) ||
-				 string.Equals(e.Operation, "merge", StringComparison.Ordinal)) &&
+				(IsInsert(e) ||
+				 IsMerge(e)) &&
 				string.Equals(e.Name, container, StringComparison.OrdinalIgnoreCase));
 			if (containerEntry is not null) {
 				if (containerEntry.Values is not JsonObject containerValues) {
@@ -4261,7 +4253,7 @@ public static class WebToMobileAnalysisService {
 	}
 
 	private static ElementMapEntry Drop(string name, string type, params ReasonCode[] reason) =>
-		new() { WebName = name, WebType = Nz(type), Operation = "drop", Reason = Reasons(reason) };
+		new() { WebName = name, WebType = Nz(type), Operation = ElementMapOperations.Drop, Reason = Reasons(reason) };
 
 	/// <summary>
 	/// Deterministic empty-container removal: converts to a <c>drop</c> every converter-created
@@ -4318,7 +4310,7 @@ public static class WebToMobileAnalysisService {
 			// parent to the next round — a container is removed strictly on round-start evidence, never early.
 			var occupied = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 			foreach (ElementMapEntry entry in elementMap) {
-				if (string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
+				if (IsInsert(entry)
 					&& entry.ParentName is { Length: > 0 }) {
 					occupied.Add(entry.ParentName);
 				}
@@ -4343,7 +4335,7 @@ public static class WebToMobileAnalysisService {
 	/// collection binding (items-as-string marks a repeater with data; items-as-array is never carried).
 	/// </summary>
 	private static bool IsEmptyRemovalCandidate(ElementMapEntry entry, HashSet<string> removableTypes) =>
-		string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
+		IsInsert(entry)
 		&& entry.WebName is { Length: > 0 }
 		&& entry.Name is { Length: > 0 }
 		&& entry.MobileType is { Length: > 0 }
@@ -4368,7 +4360,7 @@ public static class WebToMobileAnalysisService {
 	/// </summary>
 	private static void CompactPositionalIndexes(List<ElementMapEntry> elementMap) {
 		IEnumerable<IGrouping<string, ElementMapEntry>> indexedByParent = elementMap
-			.Where(e => string.Equals(e.Operation, "insert", StringComparison.Ordinal)
+			.Where(e => IsInsert(e)
 				&& e.Index is not null && e.ParentName is { Length: > 0 })
 			.GroupBy(e => e.ParentName, StringComparer.OrdinalIgnoreCase);
 		foreach (IGrouping<string, ElementMapEntry> group in indexedByParent) {
@@ -4424,7 +4416,7 @@ public static class WebToMobileAnalysisService {
 			return;
 		}
 		List<IGrouping<string, ElementMapEntry>> groups = elementMap
-			.Where(e => string.Equals(e.Operation, "insert", StringComparison.Ordinal)
+			.Where(e => IsInsert(e)
 				&& e.PositionalAnchor is { Length: > 0 })
 			.GroupBy(e => e.PositionalAnchor, StringComparer.OrdinalIgnoreCase)
 			.ToList();
@@ -4668,7 +4660,7 @@ public static class WebToMobileAnalysisService {
 	private static void SetAnchorPlacement(
 		List<ElementMapEntry> elementMap, string anchor, JsonObject placement, int above) {
 		ElementMapEntry existing = elementMap.FirstOrDefault(e =>
-			string.Equals(e.Operation, "merge", StringComparison.Ordinal)
+			IsMerge(e)
 			&& string.Equals(e.Name, anchor, StringComparison.OrdinalIgnoreCase));
 		if (existing is not null) {
 			// A merge payload is a JsonObject or null by construction (BuildTwinMergeValues / BuildDeltaTwinMergeValues).
@@ -4680,7 +4672,7 @@ public static class WebToMobileAnalysisService {
 			return;
 		}
 		elementMap.Add(new ElementMapEntry {
-			Operation = "merge",
+			Operation = ElementMapOperations.Merge,
 			Name = anchor,
 			Values = new JsonObject { ["layoutConfig"] = placement }
 		});
@@ -4727,7 +4719,7 @@ public static class WebToMobileAnalysisService {
 	private static void AssignConvertedTabIndexes(List<ElementMapEntry> elementMap) {
 		int next = FirstConvertedTabIndex;
 		foreach (ElementMapEntry entry in elementMap) {
-			if (string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
+			if (IsInsert(entry)
 				&& string.Equals(entry.ParentName, MobileTabsElementName, StringComparison.OrdinalIgnoreCase)
 				&& string.Equals(entry.MobileType, MobileTabComponentType, StringComparison.OrdinalIgnoreCase)) {
 				entry.Index = next++;
@@ -4779,8 +4771,8 @@ public static class WebToMobileAnalysisService {
 		[.. (codes ?? []).Where(code => code is not null)];
 
 	/// <summary>True when this entry records an element that did NOT reach the mobile page.</summary>
-	private static bool IsDrop(ElementMapEntry entry) =>
-		string.Equals(entry?.Operation, "drop", StringComparison.Ordinal);
+	internal static bool IsDrop(ElementMapEntry entry) =>
+		string.Equals(entry?.Operation, ElementMapOperations.Drop, StringComparison.Ordinal);
 
 	/// <summary>
 	/// Splits the drops out of the finished element map into the guide's <c>droppedElements</c>. Null when
@@ -4817,16 +4809,16 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>True when this entry only reparents its children — the container itself is not created.</summary>
-	private static bool IsRelocateChildren(ElementMapEntry entry) =>
-		string.Equals(entry?.Operation, "relocate-children", StringComparison.Ordinal);
+	internal static bool IsRelocateChildren(ElementMapEntry entry) =>
+		string.Equals(entry?.Operation, ElementMapOperations.RelocateChildren, StringComparison.Ordinal);
 
 	/// <summary>True when this entry layers onto an element the target page already has.</summary>
-	private static bool IsMerge(ElementMapEntry entry) =>
-		string.Equals(entry?.Operation, "merge", StringComparison.Ordinal);
+	internal static bool IsMerge(ElementMapEntry entry) =>
+		string.Equals(entry?.Operation, ElementMapOperations.Merge, StringComparison.Ordinal);
 
 	/// <summary>True when this entry creates a new element on the target page.</summary>
-	private static bool IsInsert(ElementMapEntry entry) =>
-		string.Equals(entry?.Operation, "insert", StringComparison.Ordinal);
+	internal static bool IsInsert(ElementMapEntry entry) =>
+		string.Equals(entry?.Operation, ElementMapOperations.Insert, StringComparison.Ordinal);
 
 	/// <summary>
 	/// Projects the working element map into the mobile page's <c>viewConfigDiff</c> — applier operations
@@ -5010,7 +5002,7 @@ public static class WebToMobileAnalysisService {
 
 		var groups = new List<TabAreaLayerGroup>();
 		List<ElementMapEntry> convertedTabs = elementMap
-			.Where(e => string.Equals(e.Operation, "insert", StringComparison.Ordinal)
+			.Where(e => IsInsert(e)
 				&& string.Equals(e.MobileType, rule.TabComponentType, StringComparison.OrdinalIgnoreCase)
 				&& e.Name is { Length: > 0 })
 			.ToList();
@@ -5022,8 +5014,8 @@ public static class WebToMobileAnalysisService {
 			// business; a merge twin carries no parentName at all and stays wherever the template put it.
 			List<ElementMapEntry> content = elementMap
 				.Where(e => string.Equals(e.ParentName, tab.Name, StringComparison.OrdinalIgnoreCase)
-					&& (string.Equals(e.Operation, "insert", StringComparison.Ordinal)
-						|| string.Equals(e.Operation, "relocate-children", StringComparison.Ordinal)))
+					&& (IsInsert(e)
+						|| IsRelocateChildren(e)))
 				.ToList();
 			if (content.Count == 0) {
 				continue;
@@ -5044,7 +5036,7 @@ public static class WebToMobileAnalysisService {
 			// occupies a row, so a tab whose content is hints alone gets no Area (an Area that would hold
 			// nothing must not be created — the same AC#5 construction, one level down).
 			string areaName = null;
-			if (content.Any(c => string.Equals(c.Operation, "insert", StringComparison.Ordinal))) {
+			if (content.Any(c => IsInsert(c))) {
 				areaName = areaRule.NamePrefix + suffix;
 				taken.Add(areaName);
 				elementMap.Insert(insertAt + 1, SynthesizedLayerEntry(areaRule, areaName, mainName));
@@ -5067,7 +5059,7 @@ public static class WebToMobileAnalysisService {
 			foreach (ElementMapEntry child in ordered) {
 				// Without an Area only routing hints can remain here; they point at the tab body.
 				child.ParentName = areaName ?? mainName;
-				if (!string.Equals(child.Operation, "insert", StringComparison.Ordinal)) {
+				if (!IsInsert(child)) {
 					continue; // a relocate-children entry is a routing hint, not an element — nothing to place
 				}
 				// The slot travels with the parent. A web crt.TabContainer declares BOTH items and tools (its
@@ -5150,7 +5142,7 @@ public static class WebToMobileAnalysisService {
 		// insert gate must state its own tie-break rather than assume uniqueness.
 		var occupiedSlots = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 		foreach (ElementMapEntry entry in elementMap) {
-			if (!string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
+			if (!IsInsert(entry)
 				|| entry.ParentName is not { Length: > 0 }) {
 				continue;
 			}
@@ -5174,7 +5166,7 @@ public static class WebToMobileAnalysisService {
 			// branch that calls it here only does so after confirming ctx.MobileTypes.Contains(type) — the one
 			// case BuildMobileValues returns null for. Kept anyway so a future insert-producing path that does NOT
 			// share that same guarantee degrades to a silent no-op here instead of an InvalidCastException.
-			if (!string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
+			if (!IsInsert(entry)
 				|| entry.Name is not { Length: > 0 }
 				|| entry.Values is not JsonObject values
 				|| !occupiedSlots.TryGetValue(entry.Name, out HashSet<string> slots)) {
@@ -5266,7 +5258,7 @@ public static class WebToMobileAnalysisService {
 			values[pair.Key] = JsonNode.Parse(pair.Value.GetRawText());
 		}
 		return new ElementMapEntry {
-			Operation = "insert",
+			Operation = ElementMapOperations.Insert,
 			Name = name,
 			// Guaranteed a non-empty string by IsUsableLayer, which gates every call to this method.
 			MobileType = values["type"].GetValue<string>(),
@@ -5320,7 +5312,7 @@ public static class WebToMobileAnalysisService {
 			return result;
 		}
 		foreach (ElementMapEntry entry in elementMap) {
-			if (!string.Equals(entry.Operation, "insert", StringComparison.Ordinal)
+			if (!IsInsert(entry)
 				|| entry.MobileType is not { Length: > 0 }
 				|| entry.Values is not JsonObject values) {
 				continue;
@@ -5577,29 +5569,14 @@ public static class WebToMobileAnalysisService {
 			: mobileType;
 
 	/// <summary>
-	/// The single caller-facing sentence describing one group's outcome, carried by that group's
-	/// <c>normalizations[group].note</c>.
-	/// </summary>
-	/// <remarks>
-	/// Deliberately composed here rather than taken from the rules file: that file is resolved at runtime
-	/// (env var → local cache → CDN), so nothing outside this binary may write a sentence the calling agent
-	/// reads as clio's own rule. It sits beside the <c>normalized[]</c> / <c>skipped[]</c> entries it counts,
-	/// which is why it does not point at its own section.
-	/// </remarks>
-	private static string SummaryFor(string group, ComponentPropertyOverrideResult.GroupAccumulator accumulator) {
-		string skipped = accumulator.Skipped.Count > 0
-			? $", {accumulator.Skipped.Count} skipped (kept their web values — worth calling out, see skipped[])"
-			: string.Empty;
-		return $"{group}: {accumulator.Normalized.Count} element(s) normalized{skipped} — one entry per element "
-			+ "in normalized[] below. The values are already in viewConfigDiff[].values; the web "
-			+ "page's own values for those properties were IGNORED by design. Do NOT restore them, do NOT "
-			+ "treat the difference as a defect, and never raise it as a gate question.";
-	}
-
-	/// <summary>
 	/// Projects the pass output into the guide's <c>normalizations</c> map — one section per group that
 	/// recorded something. Null when nothing was normalized, so the section is omitted rather than empty.
 	/// </summary>
+	/// <remarks>
+	/// Each section is entries only. A section used to carry a composed <c>note</c> restating the standing
+	/// rule that the web values are discarded rather than translated, which read the same on every page and
+	/// every group — a rule, not a finding, and the article owns rules (ENG-95827).
+	/// </remarks>
 	private static IReadOnlyDictionary<string, NormalizationInfo> BuildNormalizations(
 		ComponentPropertyOverrideResult result) {
 		if (result.IsEmpty) {
@@ -5608,7 +5585,6 @@ public static class WebToMobileAnalysisService {
 		var sections = new Dictionary<string, NormalizationInfo>(StringComparer.OrdinalIgnoreCase);
 		foreach ((string group, ComponentPropertyOverrideResult.GroupAccumulator accumulator) in result.Groups) {
 			sections[group] = new NormalizationInfo {
-				Note = SummaryFor(group, accumulator),
 				Normalized = accumulator.Normalized,
 				Skipped = accumulator.Skipped.Count > 0 ? accumulator.Skipped : null
 			};
@@ -5631,10 +5607,6 @@ public static class WebToMobileAnalysisService {
 
 		/// <summary>True when no group recorded anything — the guide then omits the section entirely.</summary>
 		public bool IsEmpty => _order.Count == 0;
-
-		/// <summary>The entries of one group, or an empty list when that group recorded nothing.</summary>
-		public IReadOnlyList<NormalizationEntry> EntriesOf(string group) =>
-			_groups.TryGetValue(group, out GroupAccumulator accumulator) ? accumulator.Normalized : [];
 
 		/// <summary>
 		/// Records one element under its group. Only a merging rule can skip — a replacing rule always

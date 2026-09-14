@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -8246,6 +8246,57 @@ public sealed class SchemaValidationServiceTests
 		// Assert
 		result.IsValid.Should().BeFalse(
 			because: "the element name Scaffold belongs to the template, so an insert under it collides regardless of the declared type");
+	}
+
+	[Test]
+	[Description("A crt.Scaffold NESTED inside an insert's values is caught: an insert whose whole values object becomes the element authors its children too, so a second Scaffold one level down is the same defect by a longer route. A rule stated page-wide that only inspected the top level would be one a caller could satisfy while still shipping it.")]
+	public void ValidateMobileSingleScaffoldRoot_WhenInsertNestsScaffoldInsideValues_AddsBlockingError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"Wrap","parentName":"MainContainer","propertyName":"items",
+		                   "values":{"type":"crt.FlexContainer","items":[
+		                     {"name":"Inner","type":"crt.Scaffold"}]}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileSingleScaffoldRoot(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the nested child is authored by the same insert, so it adds the second Scaffold just as "
+				+ "a top-level one would");
+		result.Errors.Should().ContainSingle(e => e.Contains("crt.Scaffold"),
+			because: "one diagnostic per offending entry, naming the type at fault");
+	}
+
+	[Test]
+	[Description("An insert carrying no Scaffold anywhere in its values subtree stays valid, so the subtree scan does not turn the rule into a blanket refusal of nested children.")]
+	public void ValidateMobileSingleScaffoldRoot_WhenInsertNestsOrdinaryChildren_StaysValid() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"Wrap","parentName":"MainContainer","propertyName":"items",
+		                   "values":{"type":"crt.FlexContainer","items":[
+		                     {"name":"Inner","type":"crt.GridContainer","items":[
+		                       {"name":"Field","type":"crt.Input"}]}]}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileSingleScaffoldRoot(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "authoring children inside an insert's values is the documented way to build a container "
+				+ "tree — only a Scaffold among them is refused");
+		result.Errors.Should().BeEmpty(
+			because: "a rule that fired on ordinary nesting would block the normal conversion output");
 	}
 
 	[Test]

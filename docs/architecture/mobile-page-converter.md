@@ -162,7 +162,7 @@ Four working operations; two reach the wire.
   the applier rather than land in it.
 - `values` on `insert`: `type` + every source property except `name`, the value binding (`control`) included. On `merge`:
   only the delta over the template, no `type`. Nothing is pruned against the mobile registry until it publishes real
-  per-component property lists ([ENG-96589](https://creatio.atlassian.net/browse/ENG-96589)).
+  per-component property lists.
 - A merge with nothing to apply carries `{}` — never `null`, never absent. `JsonDiffApplier` requires `values` on `merge`
   and validates every operation before applying any.
 - `name` is not unique: two operations may target one element (`Tabs → Tabs` and `CardToggleTabPanel → Tabs`). Apply in
@@ -268,8 +268,10 @@ Free text still on the wire, and why:
 |---|---|
 | `sectionRegistration.registrationActions[]` | Each step names a clio tool and its arguments |
 | `componentSuggestions[].note`, `containerMap[].note`, `pageBusinessRules` notes | Authored by a rules author or the probe, never synthesized |
-| `normalizations[].note` | Composed from actual counts |
 | `layoutResolution` | Diagnostic for an otherwise indistinguishable empty layout |
+
+`normalizations` carries entries only. The rule that a normalized element's web value is discarded rather than translated
+reads the same on every page, so it is the article's, not the response's.
 
 ### 9.2 A field must not assert what was not established
 
@@ -293,7 +295,7 @@ Invariants the caller must not violate are checked by the write/validate path, n
 
 | Check | Where |
 |---|---|
-| A second `crt.Scaffold` (insert/set of the type, or insert named `Scaffold`) is rejected; `merge` onto `Scaffold` is allowed | `SchemaValidationService.ValidateMobileSingleScaffoldRoot` |
+| A second `crt.Scaffold` — anywhere in an insert/set's `values` subtree, or an insert named `Scaffold` — is rejected; `merge` onto `Scaffold` is allowed | `SchemaValidationService.ValidateMobileSingleScaffoldRoot` |
 | A `merge` whose `values` author children into a slot is rejected — children are authored with `insert`/`set` | `SchemaValidationService.ValidateMobileMergeSlotAuthoring` |
 | Type in neither registry → warning naming `get-component-info schema-type=mobile` | `SchemaValidationService` |
 | The diff is **applied** through the client-engine clones (`JsonDiffApplier`, `JsonPathDiffApplier`); the differ's own exception is returned. Path-diff base: body's own base → target page merged config (`MobilePageMergedConfigResolver`) → empty base seeded at every insert path | `MobileDiffApplyValidator` (`validate-page`, `update-page`, `sync-pages`) |
@@ -371,7 +373,7 @@ E2E: the `clio.mcp.e2e` converter fixtures against a seeded stand.
 
 | Gap | Status |
 |---|---|
-| Properties a mobile component cannot accept are copied verbatim | Blocked on `MobileComponentRegistry.json` publishing property lists — [ENG-96589](https://creatio.atlassian.net/browse/ENG-96589) |
+| Properties a mobile component cannot accept are copied verbatim | Blocked on `MobileComponentRegistry.json` publishing real per-component property lists |
 | `crt.MenuItem` has no inline contract | Rules emit it; the mobile registry does not describe it |
 | `adaptiveLayout`, `tabAreaLayers`, `modelConfig`, `viewModelConfig` re-serialize data the operations / diffs carry | Provenance the caller reads, not applies; removal is a contract decision |
 | A type whose every instance vanishes is reported per type, not per element | `componentSuggestions` only |

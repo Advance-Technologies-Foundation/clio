@@ -23,7 +23,7 @@ using JsonObject = System.Text.Json.Nodes.JsonObject;
 /// PHASE A (entry graph — the primary shape on real pages): the child-array traversal walks a host's
 /// <c>tools</c>/<c>menuItems</c> children into their OWN element-map entries whenever every member of the
 /// array resolves to a mobile type, so the banned component is an <c>insert</c> entry whose
-/// <c>ParentName</c> ancestor chain reaches the host — the host's own <c>mobileValues</c> then carries no
+/// <c>ParentName</c> ancestor chain reaches the host — the host's own <c>values</c> then carries no
 /// nested copy at all. This phase matches such entries by climbing the <c>ParentName</c> chain: the host is
 /// any ancestor entry (insert or merge — a template twin can host too) whose <c>MobileType</c> equals the
 /// filter's <c>ParentType</c>, and when the filter names a <c>PropertiesContainerName</c> the check applies
@@ -38,19 +38,19 @@ using JsonObject = System.Text.Json.Nodes.JsonObject;
 /// <para>
 /// PHASE B (verbatim carry — the fallback shape): when a member of the host's child array does NOT resolve
 /// to a mobile type, the traversal leaves the whole subtree verbatim inside the copied host property, and the
-/// banned component survives only as a JSON node nested in some entry's <c>mobileValues</c>. This phase is
+/// banned component survives only as a JSON node nested in some entry's <c>values</c>. This phase is
 /// the original recursive strip: a HOST (<c>parentType</c> match) is found structurally — the entry itself or
-/// any array-element object with a matching <c>type</c> anywhere inside an entry's <c>mobileValues</c> (only
+/// any array-element object with a matching <c>type</c> anywhere inside an entry's <c>values</c> (only
 /// ARRAY elements qualify: a matching plain property value is a config object, not a component). Hosts are
 /// processed OUTERMOST-FIRST during the walk, so a subtree an outer host's filter removed is never searched
 /// again. Overlapping scopes are safe because the strip is idempotent, and filters apply in rules-file order.
-/// An entry PHASE A already replaced carries no <c>mobileValues</c> and is skipped naturally.
+/// An entry PHASE A already replaced carries no <c>values</c> and is skipped naturally.
 /// </para>
 /// <para>
 /// PHASE B deliberately does NOT inherit PHASE A's insert-only rule, and the asymmetry is the point rather
 /// than an oversight. PHASE A refuses to remove a <c>merge</c> ENTRY because the element belongs to the
 /// mobile template and a <c>drop</c> cannot un-create it — reporting one would describe a removal that never
-/// happens. A merge entry's <c>mobileValues</c> are a different thing entirely: they are the DELTA this
+/// happens. A merge entry's <c>values</c> are a different thing entirely: they are the DELTA this
 /// converter writes over that element, so a banned component sitting inside them is something the converter
 /// is about to ADD, and declining to strip it would ship the very component the rule bans. The two rules
 /// therefore point the same way — the converter never puts a banned component on the page, and never claims
@@ -186,7 +186,7 @@ internal static class ExcludedComponentsPass {
 		Dictionary<string, ElementMapEntry> byMobileName = IndexByMobileName(elementMap);
 		for (int i = 0; i < elementMap.Count; i++) {
 			ElementMapEntry entry = elementMap[i];
-			if (!IsInsert(entry) || entry.MobileType is not { Length: > 0 }) {
+			if (!WebToMobileAnalysisService.IsInsert(entry) || entry.MobileType is not { Length: > 0 }) {
 				continue;
 			}
 			foreach (ExcludedComponentFilterRule filter in filters) {
@@ -200,7 +200,7 @@ internal static class ExcludedComponentsPass {
 				elementMap[i] = new ElementMapEntry {
 					WebName = entry.WebName,
 					WebType = entry.WebType,
-					Operation = "drop",
+					Operation = ElementMapOperations.Drop,
 					Reason = BuildDropReason(filter, hostMobileName)
 				};
 				RecordRemoved(entry, removedWebNames, removedMobileNames);
@@ -265,7 +265,7 @@ internal static class ExcludedComponentsPass {
 		Dictionary<string, ElementMapEntry> byMobileName = IndexByMobileName(elementMap);
 		for (int i = 0; i < elementMap.Count; i++) {
 			ElementMapEntry entry = elementMap[i];
-			if (!IsInsert(entry)) {
+			if (!WebToMobileAnalysisService.IsInsert(entry)) {
 				continue;
 			}
 			string removedAncestor = FindRemovedAncestor(entry, removedMobileNames, byMobileName);
@@ -275,13 +275,9 @@ internal static class ExcludedComponentsPass {
 			elementMap[i] = new ElementMapEntry {
 				WebName = entry.WebName,
 				WebType = entry.WebType,
-				Operation = "drop",
-				Reason = [new ReasonCode {
-					Code = ReasonCodes.DropParentExcluded,
-					Params = new Dictionary<string, JsonNode>(StringComparer.Ordinal) {
-						["ancestor"] = removedAncestor
-					}
-				}]
+				Operation = ElementMapOperations.Drop,
+				Reason = [WebToMobileAnalysisService.Reason(
+					ReasonCodes.DropParentExcluded, ("ancestor", Nz(removedAncestor)))]
 			};
 			RecordRemoved(entry, removedWebNames, removedMobileNames);
 		}
@@ -321,15 +317,12 @@ internal static class ExcludedComponentsPass {
 		var byMobileName = new Dictionary<string, ElementMapEntry>(StringComparer.OrdinalIgnoreCase);
 		foreach (ElementMapEntry entry in elementMap) {
 			if (entry.Name is { Length: > 0 }
-				&& (IsInsert(entry) || string.Equals(entry.Operation, "merge", StringComparison.OrdinalIgnoreCase))) {
+				&& (WebToMobileAnalysisService.IsInsert(entry) || WebToMobileAnalysisService.IsMerge(entry))) {
 				byMobileName.TryAdd(entry.Name, entry);
 			}
 		}
 		return byMobileName;
 	}
-
-	private static bool IsInsert(ElementMapEntry entry) =>
-		string.Equals(entry.Operation, "insert", StringComparison.OrdinalIgnoreCase);
 
 	private static void RecordRemoved(
 		ElementMapEntry removed, HashSet<string> removedWebNames, HashSet<string> removedMobileNames) {
@@ -345,8 +338,8 @@ internal static class ExcludedComponentsPass {
 
 	/// <summary>
 	/// The original nested strip, over components the generic per-element copy carried verbatim inside an
-	/// entry's <c>mobileValues</c> (see PHASE B in the class remarks). Appends a synthetic drop entry per
-	/// removed node; entries PHASE A replaced carry no <c>mobileValues</c> and are skipped naturally.
+	/// entry's <c>values</c> (see PHASE B in the class remarks). Appends a synthetic drop entry per
+	/// removed node; entries PHASE A replaced carry no <c>values</c> and are skipped naturally.
 	/// Every appended drop's web name is recorded into <paramref name="removedWebNames"/> so a PHASE B removal
 	/// carries the same layout-cleanup exemption a PHASE A one does — see <see cref="RemoveExcludedComponents"/>
 	/// for why that costs nothing today and why it is still recorded.
@@ -543,7 +536,7 @@ internal static class ExcludedComponentsPass {
 		return new ElementMapEntry {
 			WebName = string.IsNullOrEmpty(name) ? null : name,
 			WebType = string.IsNullOrEmpty(filter.Type) ? null : filter.Type,
-			Operation = "drop",
+			Operation = ElementMapOperations.Drop,
 			Reason = BuildDropReason(filter, hostMobileName)
 		};
 	}

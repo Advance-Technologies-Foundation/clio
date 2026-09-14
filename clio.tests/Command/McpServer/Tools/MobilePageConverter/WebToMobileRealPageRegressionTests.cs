@@ -2,10 +2,12 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
@@ -420,6 +422,42 @@ public sealed class WebToMobileRealPageRegressionTests {
 				&& e.Values.ToJsonString().Contains("crt.SearchFilter", StringComparison.Ordinal))
 			.Select(e => e.Name ?? "<unnamed>")
 			.ToList();
+
+	[Test]
+	[Description("The whole response is reproducible: converting the same page twice — the second run under a different culture — produces byte-identical JSON. The ticket's premise is that a weaker model can rely on the response, which it cannot if any value comes from a clock, a GUID, a random source or the ambient culture. A Turkish culture is used deliberately: its dotless-i casing rule is what a culture-sensitive comparison or casing of a name such as 'IndicatorWidget' or 'Tabs' would trip over, and de-DE-style decimal separators are the other half of the same class.")]
+	public void Analyze_ShouldProduceByteIdenticalOutput_AcrossRunsAndCultures() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+		IReadOnlySet<string> mobileTypes = MobileTypesResolvingSearchFilter(fixture["viewConfig"]!);
+		WebToMobilePageConversionRules rules = BundledRules();
+		CultureInfo originalCulture = CultureInfo.CurrentCulture;
+		CultureInfo originalUiCulture = CultureInfo.CurrentUICulture;
+
+		// Act
+		string first = Serialize(Convert(fixture, mobileTypes, rules));
+		string second;
+		try {
+			var turkish = new CultureInfo("tr-TR");
+			CultureInfo.CurrentCulture = turkish;
+			CultureInfo.CurrentUICulture = turkish;
+			second = Serialize(Convert(fixture, mobileTypes, rules));
+		} finally {
+			CultureInfo.CurrentCulture = originalCulture;
+			CultureInfo.CurrentUICulture = originalUiCulture;
+		}
+
+		// Assert
+		first.Should().NotBeEmpty(
+			because: "the real page converts, so the comparison below has a subject");
+		second.Should().Be(first,
+			because: "a response that differs between runs cannot be reasoned about by the caller, and a "
+				+ "difference under another culture means a culture-sensitive comparison or format reached a "
+				+ "wire value — which would make the output depend on the machine clio runs on");
+	}
+
+	/// <summary>The whole guide as canonical JSON — the subject of the reproducibility comparison.</summary>
+	private static string Serialize(MobilePageConversionGuide guide) =>
+		JsonSerializer.Serialize(guide, new JsonSerializerOptions { WriteIndented = false });
 
 	private static MobilePageConversionGuide Convert(
 		JsonObject fixture, IReadOnlySet<string> mobileTypes, WebToMobilePageConversionRules rules) {

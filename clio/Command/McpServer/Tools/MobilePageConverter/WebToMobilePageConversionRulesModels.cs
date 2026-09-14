@@ -1,4 +1,4 @@
-namespace Clio.Command.McpServer.Tools.MobilePageConverter;
+﻿namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 
 using System.Collections.Generic;
 using System.Text.Json;
@@ -185,6 +185,12 @@ public sealed class TemplateMappingRule {
 	[JsonPropertyName("components")]
 	public IReadOnlyList<ComponentMappingRule> Components { get; init; } = [];
 
+	/// <summary>
+	/// AUTHORING documentation for whoever edits this rules file — which web template this pair covers and
+	/// why. Deliberately has no reader: it is not projected onto the response, and must not become one. A
+	/// rules file resolves at runtime (env var → cache → CDN), so text from it reaching the wire would make
+	/// a rules author the writer of the calling agent's instructions.
+	/// </summary>
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
 }
@@ -473,7 +479,7 @@ public sealed class ExcludedComponentFilterRule {
 	/// Mobile type of the HOST element the search is confined to (e.g. <c>"crt.ExpansionPanel"</c>). The
 	/// host is found STRUCTURALLY, at any depth: an <c>elementMap</c> entry whose resolved <c>MobileType</c>
 	/// matches ANY ancestor on the banned entry's <c>parentName</c> chain (primary shape), or any
-	/// array-element object with this <c>type</c> nested anywhere inside an entry's <c>mobileValues</c>
+	/// array-element object with this <c>type</c> nested anywhere inside an entry's <c>values</c>
 	/// (fallback shape — a host buried in a verbatim-carried property, with no entry of its own). This is NOT
 	/// a direct-JSON-parent check either way: <see cref="Type"/> may sit several levels deeper inside one of
 	/// the host's properties.

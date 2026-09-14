@@ -115,9 +115,7 @@ public sealed class ContainerMapEntry {
 /// an operation of any kind AND the type is observed inside another element's <c>values</c> — a passenger
 /// the caller pastes without ever addressing it, so there is nothing to do about it. One instance with an
 /// entry of any kind keeps the row for the whole type, so a loss is never erased by a passenger that
-/// happens to share its type. The boundary: a type whose every instance is lost with NO entry at all is
-/// still reported here, but nothing anywhere reports the individual elements — that is a missing reason
-/// code, not a property of this section.
+/// happens to share its type.
 /// </summary>
 public sealed class ComponentSuggestion {
 	[JsonPropertyName("sourceType")]
@@ -152,14 +150,12 @@ public sealed class ComponentSuggestion {
 	/// may substitute its own declared value, because there is no outcome for it to contradict.
 	/// </para>
 	/// <para>
-	/// Presence in the MOBILE registry is deliberately not evidence of anything: the previous implementation
-	/// treated it as such, which is how a type whose every instance an exclusion rule dropped still shipped
-	/// as "carry it over as-is", while a grid the same response converted into five finished <c>crt.List</c>
-	/// inserts shipped as "Unsupported". One consequence to expect rather than read as a bug: an operation
-	/// CAN be emitted under a type the mobile registry cannot name (a name-mapped container twin whose
-	/// mobile type resolves to null), and such a row falls back to <c>Unsupported</c> /
-	/// <c>RequiresManualDecision</c> with an empty <see cref="SuggestedMobileTypes"/> — there is no target
-	/// to report, and a category asserting one would name nothing (ENG-95827).
+	/// Presence in the MOBILE registry is deliberately not evidence of anything — only an emitted operation
+	/// is. One consequence to expect rather than read as a bug: an operation CAN be emitted under a type the
+	/// mobile registry cannot name (a name-mapped container twin whose mobile type resolves to null), and
+	/// such a row falls back to <c>Unsupported</c> / <c>RequiresManualDecision</c> with an empty
+	/// <see cref="SuggestedMobileTypes"/> — there is no target to report, and a category asserting one would
+	/// name nothing.
 	/// </para>
 	/// </remarks>
 	[JsonPropertyName("category")]
@@ -228,14 +224,17 @@ public sealed class DroppedElement {
 }
 
 /// <summary>
-/// One coded reason on a <see cref="DroppedElement"/>. <see cref="Code"/> is drawn from the closed vocabulary
-/// in <see cref="ReasonCodes"/> and is the thing to branch on; <see cref="Params"/> carries the values that
-/// would otherwise have been interpolated into a sentence.
+/// One coded reason. <see cref="Code"/> is drawn from the closed vocabulary in <see cref="ReasonCodes"/> and
+/// is the thing to branch on; <see cref="Params"/> carries the values that would otherwise have been
+/// interpolated into a sentence.
 /// </summary>
 /// <remarks>
-/// Everything a caller must DO about a code lives in the guidance article, keyed by the code — not here and
-/// not in the payload. That is the whole point: the same conversion decision reads identically on every run,
-/// so restating it in English per entry cost bytes and determinism without adding information (ENG-95827).
+/// The reason type of FIVE collections, not of dropped elements alone: <see cref="DroppedElement.Reason"/>,
+/// <see cref="DroppedRequest.Reason"/>, <see cref="FlaggedRequest.Reason"/>,
+/// <see cref="DroppedPageBusinessRule.Reason"/> and <see cref="NormalizationSkip.Reason"/>. One vocabulary
+/// across all five, because a caller reads them the same way and a per-collection vocabulary would let one
+/// cause acquire two spellings. Everything a caller must DO about a code lives in the guidance article,
+/// keyed by the code — not here and not in the payload.
 /// </remarks>
 public sealed class ReasonCode {
 	/// <summary>The classification, from <see cref="ReasonCodes"/>.</summary>
@@ -252,25 +251,21 @@ public sealed class ReasonCode {
 }
 
 /// <summary>
-/// The closed vocabulary of <see cref="DroppedElement.Reason"/> codes: why a source element did NOT reach
-/// the mobile page.
+/// The closed vocabulary carried by every <see cref="ReasonCode"/>, across all five collections that hold
+/// one: why an element, a request binding, a business rule or a normalization did not make it.
 /// </summary>
 /// <remarks>
-/// Every code here answers a question the rest of the payload cannot. That was NOT true of the codes this
-/// vocabulary used to carry for elements that DO convert — <c>leaf-supported</c> restated
-/// <c>operation: "insert"</c> plus the presence of <c>mobileType</c>; <c>*-retargeted</c> and
-/// <c>*-positioned</c> restated <c>parentName</c> / <c>propertyName</c> / <c>index</c>, which already carry
-/// the RESULT; <c>synthesized-by-converter</c> restated an absent <c>webName</c>. An entry in
-/// <see cref="MobilePageConversionGuide.ViewConfigDiff"/> is a deterministic instruction to apply, so a code
-/// explaining it added bytes and nothing else and they are gone (ENG-95827).
+/// Every code answers a question the rest of the payload cannot. A code for something that DID convert would
+/// not: an entry in <see cref="MobilePageConversionGuide.ViewConfigDiff"/> is a deterministic instruction to
+/// apply, and its <c>operation</c>, <c>parentName</c>, <c>propertyName</c> and <c>index</c> already carry the
+/// result — so nothing here explains a conversion.
 /// <para>
-/// A DROP is the opposite: nothing gets built, so there is no instruction to read the cause off. It was
-/// measured on a real <c>Leads_FormPage</c> — 11 of its 12 dropped elements have
-/// <c>componentSuggestions[].category = "DirectMapping"</c>, i.e. a type that converts perfectly well, so
-/// without a code the entry reads as conversion loss and the natural response to conversion loss is to
-/// re-insert. The causes need four DIFFERENT things said to the user: inherited chrome and a positional
-/// exclusion are not loss and must not be re-added, an unsupported request IS a lost action, and an emptied
-/// container is automatic housekeeping.
+/// A DROP is the opposite: nothing gets built, so there is no instruction to read the cause off, and the
+/// dropped element's TYPE does not supply it either — a type that converts perfectly well elsewhere on the
+/// page is the common case, which without a code reads as conversion loss, and the natural response to
+/// conversion loss is to re-insert. The causes need four DIFFERENT things said to the user: inherited chrome
+/// and a positional exclusion are not loss and must not be re-added, an unsupported request IS a lost
+/// action, and an emptied container is automatic housekeeping.
 /// </para>
 /// <para>
 /// Named constants rather than inline literals because these are asserted verbatim by the unit and E2E
@@ -459,6 +454,12 @@ public static class ReasonCodes {
 /// which does not overwrite an existing key). The caller registers <see cref="Key"/> = <see cref="SourceValue"/>
 /// (the web caption's resolved en-US text) via <c>update-page resources</c>; the inserted element's caption
 /// token references the same <see cref="Key"/>.
+/// <para>
+/// Present ONLY when the source page declares the key the web caption references. Its presence is therefore
+/// the invariant that the invented <see cref="Key"/> always has a registration behind it: an element whose
+/// caption key the page never declared gets none of this — its token is carried verbatim so the platform
+/// resolves it from the entity column, exactly as every mobile template does.
+/// </para>
 /// </summary>
 public sealed class CaptionResource {
 	[JsonPropertyName("key")]
@@ -466,18 +467,6 @@ public sealed class CaptionResource {
 
 	[JsonPropertyName("sourceValue")]
 	public string SourceValue { get; init; }
-
-	/// <summary>
-	/// True when the SOURCE page declares the key this caption came from. Not serialized — it exists so the
-	/// resource collector can tell a caption declared with EMPTY text (register it: the page's own deliberate
-	/// "no visible label") from one whose key the page never declared (skip it: the platform resolves the
-	/// caption itself, and registering a key would replace a localized title with one hardcoded culture).
-	/// A single "is the text non-empty" test conflates the two, and because the caption is RE-KEYED to
-	/// <c>&lt;mobileName&gt;_caption</c> the token scan cannot recover the first case — the carried token names
-	/// a key the converter invented, which no source declaration backs (ENG-95827).
-	/// </summary>
-	[JsonIgnore]
-	public bool SourceDeclared { get; init; }
 }
 
 /// <summary>
@@ -491,16 +480,10 @@ public sealed class CaptionResource {
 /// and <c>merge</c> appear here; <c>set</c>, <c>move</c> and <c>remove</c> exist in the applier but the
 /// converter emits none of them today.
 /// <para>
-/// This replaced an <c>elementMap</c> whose entries mixed the operation with conversion METADATA —
-/// <c>webName</c>, <c>webType</c>, <c>mobileName</c>, <c>mobileValues</c>, <c>parentSource</c>,
-/// <c>captionResource</c> — so the caller had to transcribe each entry into an operation by hand, and a
-/// transcription is a place to make mistakes. The metadata did not disappear: the source
-/// correspondence is <c>nameMap</c> (renames only — everything else joins to
-/// <c>sourceStructure</c> by name), an unresolvable parent is <c>unresolvedParents</c>, the caption
-/// resource was pure duplication of <c>resourceStrings</c> and is gone, and an element that did not
-/// convert is in <c>droppedElements</c>. The <c>web*</c> naming went with it, because the converter is
-/// growing a second source kind — old mobile page to new mobile page — and a field called
-/// <c>webName</c> would then be a lie (ENG-95827).
+/// It carries NO conversion metadata, so there is nothing to transcribe: the source correspondence is
+/// <c>nameMap</c> (renames only — everything else joins to <c>sourceStructure</c> by name), an
+/// unresolvable parent is <c>unresolvedParents</c>, a referenced localized string is
+/// <c>resourceStrings</c>, and an element that did not convert is <c>droppedElements</c>.
 /// </para>
 /// </remarks>
 public sealed class ViewConfigDiffOperation {
@@ -538,10 +521,11 @@ public sealed class ViewConfigDiffOperation {
 	/// The component values. On an <c>insert</c> this carries the <c>type</c> and EVERY source property
 	/// except the element's <c>name</c> — the value binding (<c>control</c>, the same wire name on both
 	/// sides) included, and deliberately without pruning against the mobile registry while that registry
-	/// publishes no real per-component property list (ENG-96589); on a <c>merge</c> only the delta over
-	/// what the template provides,
-	/// with no <c>type</c>. Absent when a merge has nothing to apply — the template's own configuration
-	/// stands and there is nothing to add.
+	/// publishes no real per-component property list; on a <c>merge</c> only the delta over what the
+	/// template provides, with no <c>type</c>. A merge with no delta carries an EMPTY object <c>{}</c>,
+	/// never null and never absent: the applier lists <c>values</c> as a required parameter of
+	/// <c>merge</c> and validates every operation before applying any, so one missing value fails the
+	/// whole array.
 	/// </summary>
 	[JsonPropertyName("values")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -575,21 +559,45 @@ public sealed class UnresolvedParent {
 }
 
 /// <summary>
+/// The closed vocabulary of <see cref="ElementMapEntry.Operation"/>. Named constants rather than inline
+/// literals for the same reason <see cref="ReasonCodes"/> is: one spelling, one comparer. Only
+/// <see cref="Insert"/> and <see cref="Merge"/> reach the wire — the wire projection is an ALLOW-list, so a
+/// working-map operation added here fails to reach the applier payload rather than landing in it silently.
+/// </summary>
+internal static class ElementMapOperations {
+	/// <summary>Create this element on the mobile page. Reaches <c>viewConfigDiff</c>.</summary>
+	internal const string Insert = "insert";
+
+	/// <summary>Layer onto an element the mobile template already provides. Reaches <c>viewConfigDiff</c>.</summary>
+	internal const string Merge = "merge";
+
+	/// <summary>The element did not reach the page. Projected into <c>droppedElements</c>.</summary>
+	internal const string Drop = "drop";
+
+	/// <summary>
+	/// The container is not recreated and its children are reparented. Projected into
+	/// <c>droppedElements</c> too — from the page's point of view the container is gone.
+	/// </summary>
+	internal const string RelocateChildren = "relocate-children";
+}
+
+/// <summary>
 /// Instance-level conversion decision for ONE named element of the source page (ENG-89620). CONVERTER
 /// BOOKKEEPING ONLY — never serialized. It is the working shape every pass mutates; the response is
 /// projected out of it into <c>viewConfigDiff</c> + <c>droppedElements</c> + the metadata siblings.
 /// </summary>
 public sealed class ElementMapEntry {
 	/// <summary>
-	/// Source element name. Omitted for a SYNTHESIZED entry — a container the converter creates that has
-	/// no web counterpart (the tab-body / Area layers of a converted tab). Its <c>reason</c>
-	/// says so explicitly; apply it exactly like any other <c>insert</c>.
+	/// Source element name. Omitted for a SYNTHESIZED entry — a container the converter creates that has no
+	/// web counterpart (the tab-body / Area layers of a converted tab). Its absence IS the signal: a
+	/// synthesized entry converts, so it carries no reason of any kind, and it is applied exactly like any
+	/// other <c>insert</c>.
 	/// </summary>
 	public string WebName { get; init; }
 
 	public string WebType { get; init; }
 
-	/// <summary>One of: <c>merge</c> | <c>insert</c> | <c>drop</c> | <c>relocate-children</c>.</summary>
+	/// <summary>One of <see cref="ElementMapOperations"/>.</summary>
 	public string Operation { get; init; }
 
 	/// <summary>Target element name on mobile (merge / insert).</summary>
@@ -619,46 +627,32 @@ public sealed class ElementMapEntry {
 	/// Where this entry's <see cref="ParentName"/> comes from. Set on EVERY <c>insert</c> that names a parent,
 	/// and only on those — the other operations do not insert anything into a parent. One of:
 	/// <list type="bullet">
-	/// <item><description><c>"template"</c> — this map does not create the parent AND the probed mobile template
-	/// provides it (e.g. <c>MainContainer</c>, or <c>FloatingActionButton</c> via the Scaffold's
-	/// <c>floatAction</c> slot). Insert THIS child into it; do not author, recreate or duplicate the parent
-	/// ELEMENT — your own copy would override the native one. This does NOT forbid the parent's own
-	/// <c>merge</c> entry, which is how per-breakpoint <c>columns</c> and a shifted <c>layoutConfig</c> reach
-	/// the page at all, nor the empty-slot <c>merge</c> that the two-step idiom requires when the
-	/// template-provided parent does not yet carry the slot being inserted into (an insert into a property the
-	/// element does not carry throws — <c>menuItems</c> on a <c>crt.FloatingActionButton</c> is the standard
-	/// case, and this converter emits exactly that).</description></item>
-	/// <item><description><c>"page"</c> — the parent is inserted by this map and came from the source page; its
-	/// own entry says how to create it.</description></item>
-	/// <item><description><c>"converter"</c> — the parent is inserted by this map and was synthesized by the
-	/// converter (a tab-body grid or its Area card); it carries no <c>webName</c>, and its own entry says how to
-	/// create it.</description></item>
-	/// <item><description><c>"unknown"</c> — NEITHER this map nor the probed mobile template provides the
-	/// parent. Do not guess: inserting into it throws, and authoring it may duplicate something the template
-	/// owns under another name. This is a CONVERSION-RULES defect, not a page defect — a
-	/// <c>containers</c> mapping names a mobile container the target template does not have — so report the
-	/// parent name and stop rather than working around it.</description></item>
+	/// <item><description><c>"template"</c> — this map does not create the parent AND the probed mobile
+	/// template provides it (<c>MainContainer</c>, or <c>FloatingActionButton</c> via the Scaffold's
+	/// <c>floatAction</c> slot). The child insert stands on its own; the parent may still carry its own
+	/// <c>merge</c>, which is how a shifted <c>layoutConfig</c> and the empty-slot seeding reach the page.
+	/// </description></item>
+	/// <item><description><c>"page"</c> — the parent is inserted by this map, from the source page.
+	/// </description></item>
+	/// <item><description><c>"converter"</c> — the parent is inserted by this map and was synthesized (a
+	/// tab-body grid or its Area card), so it carries no <see cref="WebName"/>.</description></item>
+	/// <item><description><c>"unknown"</c> — NEITHER this map nor the template provides it. This is the one
+	/// value that reaches the caller, projected into
+	/// <see cref="MobilePageConversionGuide.UnresolvedParents"/>, which owns the caller-facing contract.
+	/// </description></item>
 	/// </list>
 	/// </summary>
 	/// <remarks>
-	/// Derived in ONE pass over the finished map (see <c>WebToMobileAnalysisService.StampParentSource</c>).
-	/// It replaced a <c>parentExistsOnTemplate</c> boolean that three separate retarget code paths each set for
-	/// themselves, so it was absent from an ORDINARY insert into a template-provided parent — verified on a real
-	/// <c>Leads_FormPage</c> guide, where <c>FloatingActionButton</c> carried the flag and <c>MainContainer</c>,
-	/// equally template-provided, did not. A caller applying the flag's rule literally therefore handled two
-	/// identical situations differently (ENG-95827).
+	/// Derived in ONE pass over the finished map (<c>WebToMobileAnalysisService.StampParentSource</c>) rather
+	/// than per retarget path, so an ORDINARY insert into a template-provided parent is answered the same way
+	/// a retargeted one is.
 	/// <para>
-	/// "Not created by this map" is decidable from the map alone, but it is NOT the same question as "the
-	/// template provides it", and conflating the two is why <c>"unknown"</c> exists. The shipped rules reach
-	/// that state: <c>BlankPageTemplate</c> maps to <c>BlankMobilePageTemplate</c> with a
-	/// <c>MainContainer -&gt; MainContainer</c> container pair, but mobile blank is a STANDALONE root — a bare
-	/// <c>crt.Scaffold</c> — and <c>MainContainer</c> comes from <c>BaseMobileTemplate</c>, a different root it
-	/// does not derive from. Stamping <c>"template"</c> there would tell the caller the page already provides a
-	/// container that does not exist, and the insert would fail in the applier ("is not a container for other
-	/// items"). The retarget paths' own <c>RetargetTargetMissing</c> check does not cover it: a container-map
-	/// twin and the <c>MainContainer</c> fallback in <c>RelocateTargetFor</c> both produce a parent without
-	/// consulting it. So the template's node set is consulted here, and <c>"template"</c> is only claimed when
-	/// that set actually contains the parent — the check the old boolean did have.
+	/// "Not created by this map" is NOT the same question as "the template provides it", and conflating the
+	/// two is why <c>"unknown"</c> exists. The shipped rules reach that state: <c>BlankPageTemplate</c> maps to
+	/// <c>BlankMobilePageTemplate</c> with a <c>MainContainer -&gt; MainContainer</c> container pair, but
+	/// mobile blank is a STANDALONE root — a bare <c>crt.Scaffold</c> — and <c>MainContainer</c> comes from
+	/// <c>BaseMobileTemplate</c>, a different root it does not derive from. So the template's node set is
+	/// consulted here and <c>"template"</c> is claimed only when that set actually contains the parent.
 	/// </para>
 	/// </remarks>
 	public string ParentSource { get; set; }
@@ -1108,12 +1102,15 @@ public sealed class MobilePageConversionGuide {
 	/// <c>clicked</c>, a field's <c>valueChange</c>/<c>updated</c>), deterministically converted for
 	/// mobile. Supported requests are remapped in-place inside the affected element's
 	/// <c>viewConfigDiff[].values</c>. An unsupported or unknown/custom request is handled by component
-	/// type: on a <c>crt.Button</c> the whole element is DROPPED (a dead button, appearing as an
-	/// <c>droppedElements</c> entry and recorded under <c>droppedRequests</c>) — including a button retargeted
-	/// into the FAB from a non-converting scope; on any other component type the binding is kept verbatim
-	/// and flagged for manual review (the component stays). This section is an advisory SUMMARY — the
-	/// actionable result is already baked into <c>mobileValues</c>. Null when the source page references no
-	/// requests. (Page <c>handlers</c> are web-only and never transferred.)
+	/// type: on a <c>crt.Button</c> the whole element is DROPPED — a dead button, read in
+	/// <see cref="DroppedElement"/> under <see cref="ReasonCodes.DropUnsupportedRequest"/>, which is the
+	/// only place a plain leaf button's loss is reported; on any other component type the binding is kept
+	/// verbatim and flagged for manual review (the component stays). <c>droppedRequests</c> reports a
+	/// BINDING: one lost while its element survived, and one lost on the paths that place or remove the
+	/// element itself (retarget onto a native, missing retarget target, non-converting scope, empty
+	/// container, exclusion). This section is an advisory SUMMARY — the actionable result is already in
+	/// <see cref="ViewConfigDiff"/>. Null when the source page references no requests.
+	/// (Page <c>handlers</c> are web-only and never transferred.)
 	/// </summary>
 	[JsonPropertyName("requestConversions")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -1128,8 +1125,7 @@ public sealed class MobilePageConversionGuide {
 	/// <c>viewConfigDiff[].values.layoutConfig.adaptive</c> — so there is nothing separate to apply. Present
 	/// it at the conversion gate as what the conversion DID, and if the user wants it different, the change
 	/// is an edit to those <c>values</c> before pasting: this section is a readable index of them, not a
-	/// switch. It used to call itself a proposal the user could "adjust or decline" while being baked in,
-	/// which described a choice the response gave the caller no mechanism to honour (ENG-95827).
+	/// switch, and there is no mechanism here to decline it.
 	/// Null when no multi-column grid container is present (a single-column grid gets no adaptive).
 	/// </summary>
 	[JsonPropertyName("adaptiveLayout")]
@@ -1151,27 +1147,19 @@ public sealed class MobilePageConversionGuide {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<TabAreaLayerGroup> TabAreaLayers { get; init; }
 
-	// ── Spacing normalized on inserted containers ──────────────────────
-	/// <summary>
-	/// Spacing normalization applied by the converter: mobile pages follow the mobile spacing
-	/// standard, so the WEB page's container spacing is deliberately IGNORED (discarded, not translated) —
-	/// every <c>crt.GridContainer</c> / <c>crt.FlexContainer</c> the converter INSERTS (converted from web
-	/// and synthesized tab-body / Area layers alike) already carries gap Medium on all axes in
-	/// <c>viewConfigDiff[].values</c>, so there is nothing separate to apply. Merge twins the mobile
-	/// template provides are never touched. This is a SILENT normalization, NOT a gate decision: report it
-	/// as one aggregated line in the plan and the final report; never ask whether to apply it and never
-	/// restore the web spacing. Null when nothing was normalized.
-	/// </summary>
 	// ── Every property normalization the conversion rules declare ──────
 	/// <summary>
-	/// One section per normalization standard the CONVERSION RULES declare, keyed by the rule's
-	/// <c>reportGroup</c> (e.g. <c>"spacing"</c>, <c>"metricStyle"</c>). The set of keys is open: the rules
-	/// file is resolved at runtime, so a standard added there appears here without a binary change, and a
-	/// key this build has never seen gets its own section rather than being folded into another standard's.
+	/// One section per normalization standard the CONVERSION RULES declare, keyed by the section name the
+	/// standard's target component TYPE maps to (e.g. <c>"spacing"</c>, <c>"metricStyle"</c>). The set of
+	/// keys is open: the rules file is resolved at runtime, so a standard added there appears here without
+	/// a binary change, and a type this build has never seen gets its own section under its own name rather
+	/// than being folded into another standard's.
 	/// <para>
-	/// Each section carries the caller-facing wording from its rule, the elements normalized (with the
-	/// dotted paths actually written), and anything the stamp had to skip. Read the section rather than
-	/// assuming a fixed set of properties. Null when nothing was normalized at all.
+	/// Each section lists the elements normalized (with the dotted paths actually written) and anything the
+	/// stamp had to skip; both are already applied in <see cref="ViewConfigDiff"/>, so nothing here is
+	/// separate to apply. Read the section rather than assuming a fixed set of properties. The rule that
+	/// the web page's own values for those properties are discarded rather than translated is a standing
+	/// one and lives in the guidance article, not in this section. Null when nothing was normalized at all.
 	/// </para>
 	/// </summary>
 	[JsonPropertyName("normalizations")]
@@ -1180,7 +1168,7 @@ public sealed class MobilePageConversionGuide {
 
 	/// <summary>
 	/// Every localized string the converted body references, keyed by resource name and resolved to its
-	/// en-US text (e.g. <c>{ "EmailsSentNewMetric_title": "Emails sent" }</c>). The converted mobileValues
+	/// en-US text (e.g. <c>{ "EmailsSentNewMetric_title": "Emails sent" }</c>). The converted <c>values</c>
 	/// carry the <c>#ResourceString(key)#</c> tokens verbatim (top-level captions AND nested ones like
 	/// <c>config.title</c>); register this whole map on the mobile page via <c>update-page resources</c> so
 	/// every token resolves. Null when the page references no resolvable localized strings.
@@ -1352,9 +1340,21 @@ public sealed class DroppedRequest {
 	public string WebRequest { get; init; }
 
 	/// <summary>
-	/// Coded cause. A binding lost because its ELEMENT was dropped carries that element's OWN code — the
-	/// same one its <c>droppedElements</c> entry reports — so the two can never disagree. A binding lost
-	/// while its element SURVIVED carries a <c>ReasonCodes.DropRequest*</c> code of its own.
+	/// Coded cause, from the one vocabulary — never the element's <c>webType</c> or a sentence. Three
+	/// shapes, and which one you get says what happened:
+	/// <list type="bullet">
+	/// <item><description>The element SURVIVED and only its binding went:
+	/// <see cref="ReasonCodes.DropRequestUnsupported"/>.</description></item>
+	/// <item><description>The element went and the binding's own fate has a name of its own —
+	/// <see cref="ReasonCodes.DropRequestChromeNative"/> (the mobile native it was retargeted onto carries
+	/// its own action), <see cref="ReasonCodes.DropRequestElementEmptyContainer"/>,
+	/// <see cref="ReasonCodes.DropRequestElementExcluded"/>.</description></item>
+	/// <item><description>The element went for a reason that already explains the binding — a
+	/// non-converting scope, a missing retarget target — and the binding then carries the SAME code object
+	/// the element's <c>droppedElements</c> entry reports, because restating it in a second vocabulary
+	/// could only drift from the first.</description></item>
+	/// </list>
+	/// So join to <c>droppedElements</c> by <c>elementName</c>, never by code.
 	/// </summary>
 	[JsonPropertyName("reason")]
 	public IReadOnlyList<ReasonCode> Reason { get; init; } = [];
@@ -1378,10 +1378,10 @@ public sealed class FlaggedRequest {
 
 /// <summary>
 /// The adaptive (per-breakpoint) layout applied to one multi-column mobile grid container. Both sides are
-/// ALREADY baked into the operations' values by the tool — the container's <c>adaptive</c> columns into the
-/// container's own values, and each child's placement into its <c>mobileValues.layoutConfig.adaptive</c> —
-/// so there is nothing separate to apply (no duplicate merge). This is an advisory summary; present it at
-/// the conversion gate so the user can adjust or decline.
+/// ALREADY in <see cref="MobilePageConversionGuide.ViewConfigDiff"/> — the container's <c>adaptive</c>
+/// columns in its own <c>values</c>, and each child's placement in that child's
+/// <c>values.layoutConfig.adaptive</c> — so there is nothing separate to apply (no duplicate merge). A
+/// readable index of what the conversion did, not a switch.
 /// </summary>
 public sealed class AdaptiveLayoutGroup {
 	/// <summary>The mobile container these fields are grouped into (e.g. "AreaProfileContainer").</summary>
@@ -1389,7 +1389,7 @@ public sealed class AdaptiveLayoutGroup {
 	public string ContainerName { get; init; }
 
 	/// <summary>
-	/// Advisory overview of the grid columns per breakpoint (already baked into the container's mobileValues):
+	/// Advisory overview of the grid columns per breakpoint (already in the container's <c>values</c>):
 	/// keys <c>small</c> / <c>medium</c> / <c>large</c>, each a list of CSS column sizes (e.g. ["1fr","1fr"]).
 	/// </summary>
 	[JsonPropertyName("columnsByBreakpoint")]
@@ -1439,15 +1439,6 @@ public sealed class TabAreaLayerGroup {
 /// rules-file entry, not another pair of identical DTOs.
 /// </summary>
 public sealed class NormalizationInfo {
-	/// <summary>
-	/// Caller-facing summary of this standard's outcome, composed by clio from the actual counts. Never
-	/// sourced from the rules file: those resolve at runtime, and this text reaches the agent's
-	/// instruction channel.
-	/// </summary>
-	[JsonPropertyName("note")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string Note { get; init; }
-
 	/// <summary>One entry per element this standard normalized.</summary>
 	[JsonPropertyName("normalized")]
 	public IReadOnlyList<NormalizationEntry> Normalized { get; init; } = [];
@@ -1473,7 +1464,7 @@ public sealed class NormalizationEntry {
 	public string Type { get; init; }
 
 	/// <summary>
-	/// The properties stamped onto this element's mobileValues. A replacing rule reports the top-level key
+	/// The properties stamped onto this element's <c>values</c>. A replacing rule reports the top-level key
 	/// it replaced (e.g. <c>["gap"]</c>); a merging rule reports the dotted paths of the leaves it actually
 	/// changed (e.g. <c>["config.layout.border.hidden"]</c>) — never the merged root, which would
 	/// under-report, and never a leaf that already held the target value.
@@ -1504,7 +1495,7 @@ public sealed class NormalizationSkip {
 	public IReadOnlyList<ReasonCode> Reason { get; init; } = [];
 }
 
-/// <summary>One field's proposed per-breakpoint cell placement (mirrors its baked-in mobileValues).</summary>
+/// <summary>One field's per-breakpoint cell placement, mirroring the one already in its <c>values.layoutConfig.adaptive</c>.</summary>
 public sealed class AdaptiveLayoutItem {
 	[JsonPropertyName("name")]
 	public string Name { get; init; }

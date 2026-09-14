@@ -312,8 +312,7 @@ public sealed class WebToMobileConversionServiceTests {
 	private static ComponentSuggestion ForType(MobilePageConversionGuide guide, string sourceType) =>
 		guide.ComponentSuggestions.Single(s => s.SourceType == sourceType);
 
-	/// <summary>The container-standards section of <c>normalizations</c>, which the deleted
-	/// <c>spacingNormalization</c> alias used to duplicate. Null when nothing was normalized.</summary>
+	/// <summary>The container-standards section of <c>normalizations</c>. Null when nothing was normalized.</summary>
 	private static NormalizationInfo Spacing(MobilePageConversionGuide guide) =>
 		guide.Normalizations is { } groups && groups.TryGetValue("spacing", out NormalizationInfo info)
 			? info
@@ -1023,6 +1022,45 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "a hand-written mapping absent from (or different in) the shipped rules is a green test "
 				+ "asserting behaviour the product does not have; shipped map: "
 				+ string.Join(", ", shipped.Select(kv => $"{kv.Key}->{kv.Value}")));
+	}
+
+	[Test]
+	[Description("Two operations on ONE mobile name where one carries a payload: the payload-bearing one survives and the payload-free one is dropped, whichever came FIRST. This is the half of the dedupe that can destroy data — keeping 'the first' or 'the cleaner empty one' would discard the only copy of a delta nothing else reports, so the payload-free entry is deliberately placed first here (ENG-95827, step 3.5).")]
+	public void Analyze_TwoTwinsOnOneMobileName_PayloadBearingSurvivesEvenWhenItComesSecond() {
+		// Arrange — both web lists are name-mapped onto the SAME mobile element. The one with no delta over
+		// the web-template baseline comes FIRST in the tree; the one carrying the page's real change is second.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "AttachmentsTabContainer", "type": "crt.TabContainer", "items": [
+				{ "name": "LegacyList", "type": "crt.FileList", "recordColumnName": "Account" },
+				{ "name": "AttachmentList", "type": "crt.FileList", "recordColumnName": "Lead" } ] } ]
+			""");
+		var componentNameMap = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
+			["LegacyList"] = new ComponentMappingRule { Web = "LegacyList", Mobile = "AttachmentFileList" },
+			["AttachmentList"] = new ComponentMappingRule { Web = "AttachmentList", Mobile = "AttachmentFileList" }
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: Reg(("crt.TabContainer", true), ("crt.FileList", false)),
+			templateComponentNames: Names("AttachmentsTabContainer", "LegacyList", "AttachmentList"),
+			componentNameMap: componentNameMap,
+			webTemplateBaselineNodes: BaselineNodes("""
+				[ { "name": "LegacyList", "type": "crt.FileList", "recordColumnName": "Account" },
+				  { "name": "AttachmentList", "type": "crt.FileList", "recordColumnName": "Account" } ]
+				"""));
+
+		// Assert
+		ViewConfigDiffOperation survivor = guide.ViewConfigDiff.Should().ContainSingle(
+				op => string.Equals(op.Name, "AttachmentFileList", StringComparison.OrdinalIgnoreCase),
+				because: "two operations on one element leave the caller choosing, and here the choice has a "
+					+ "wrong answer")
+			.Subject;
+		survivor.Values!.AsObject().Should().NotBeEmpty(
+			because: "position must not decide which twin survives: the payload-free one came FIRST, so a rule "
+				+ "that kept the first-seen entry would have shipped an empty merge here");
+		survivor.Values!.AsObject()["recordColumnName"]!.GetValue<string>().Should().Be("Lead",
+			because: "the survivor must be the one that says something — dropping it would lose the page's only "
+				+ "real change to the template-provided element, and nothing else in the response reports it");
 	}
 
 	private static MobilePageConversionGuide AnalyzeTabbed(
@@ -2215,6 +2253,12 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "SaveButton is inherited from the web template (chrome the mobile template provides natively), so retargeting it into the FAB would duplicate it");
 		Codes(save).Should().Contain(ReasonCodes.DropInheritedChrome,
 			because: "the drop reason must state why the inherited-chrome header button was not retargeted");
+		ReasonParam(save, ReasonCodes.DropInheritedChrome, "targetParent").Should().Be("FloatingActionButton",
+			because: "the caller is told WHICH mobile element already provides this action, so it can verify "
+				+ "the native rather than re-adding the web one");
+		ReasonParam(save, ReasonCodes.DropInheritedChrome, "targetSlot").Should().Be("menuItems",
+			because: "parent and slot are separate keys, never one dotted string: a caller pasting a dotted "
+				+ "\"FloatingActionButton.menuItems\" as a parentName addresses an element that does not exist");
 		ViewConfigDiffOperation send = Element(guide, "SendForApprovalButton");
 		send.Operation.Should().Be("insert", because: "a page-authored header action (absent from the web baseline) still converts");
 		send.ParentName.Should().Be("FloatingActionButton", because: "it is retargeted into the FAB");
@@ -4646,6 +4690,61 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A caption key the source page does NOT declare is left alone: the token is carried verbatim and no resource is registered. Re-keying it would rewrite the token to a name the converter invented while having no text to register under it, so the element would ship a #ResourceString token with nothing behind it and the device would render the raw token — strictly worse than carrying the key the platform resolves itself from the entity column.")]
+	public void Analyze_CaptionKeyNotDeclaredBySource_TokenCarriedVerbatimAndNothingRegistered() {
+		// Arrange — the page references a key it never declares (every mobile template ships this way:
+		// AttachmentListDS_Name and friends are referenced and declared nowhere).
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "caption": "#ResourceString(GeneralInfoTab_caption)#", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] } ] } ]
+			""",
+			resourcesJson: "{ }");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle);
+
+		// Assert
+		Element(guide, "OverviewTab").Values!.AsObject()["caption"]!.GetValue<string>()
+			.Should().Be("#ResourceString(GeneralInfoTab_caption)#",
+				because: "with nothing to register, the source token is the only one that can still resolve — "
+					+ "the platform provides that caption itself");
+		(guide.ResourceStrings ?? new Dictionary<string, string>()).Should().NotContainKey("OverviewTab_caption",
+			because: "the converter must not invent a key it has no text for");
+		(guide.ResourceStrings ?? new Dictionary<string, string>()).Should().NotContainKey("GeneralInfoTab_caption",
+			because: "registering the referenced key would replace the platform's own localized caption with "
+				+ "a single hardcoded culture");
+	}
+
+	[Test]
+	[Description("A caption key the page declares with EMPTY text is still re-keyed and registered — empty is the page's own deliberate \"no visible label\", and the invented key must exist or the token ships with nothing behind it.")]
+	public void Analyze_CaptionKeyDeclaredEmpty_StillRekeyedAndRegistered() {
+		// Arrange
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "caption": "#ResourceString(GeneralInfoTab_caption)#", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] } ] } ]
+			""",
+			resourcesJson: """
+			{ "GeneralInfoTab_caption": { "en-US": "" } }
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle);
+
+		// Assert
+		Element(guide, "OverviewTab").Values!.AsObject()["caption"]!.GetValue<string>()
+			.Should().Be("#ResourceString(OverviewTab_caption)#",
+				because: "a declared key is re-keyed to dodge the template-owned collision, whatever its text");
+		guide.ResourceStrings.Should().ContainKey("OverviewTab_caption",
+			because: "the invented key must be registered or the token has nothing behind it");
+		guide.ResourceStrings!["OverviewTab_caption"].Should().BeEmpty(
+			because: "the page's own \"no visible label\" is carried as-is, not turned into a fallback string");
+	}
+
+	[Test]
 	[Description("`items` as a STRING is a real collection binding and is carried into mobileValues (e.g. crt.CommunicationOptions items: \"$Attr\"); `items` as an ARRAY of child elements is structural and is not carried (the tree walk emits the children).")]
 	public void Analyze_ItemsStringBinding_IsCarried_NotTreatedAsStructuralChildren() {
 		PageBundleInfo bundle = Bundle("""
@@ -6021,11 +6120,13 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeMetric(bundle, rules);
 
 		// Assert
-		guide.Normalizations!["metricStyle"].Note.Should().Contain("1 element(s) normalized",
-			because: "the summary is derived from what actually happened, not from prose");
-		string joined = guide.Normalizations["metricStyle"].Note;
-		joined.Should().NotContain("IGNORE PREVIOUS INSTRUCTIONS",
-			because: "the rules file must not be able to write into any caller-facing channel, the group note included");
+		guide.Normalizations!["metricStyle"].Normalized.Should().ContainSingle(
+			because: "the section reports what actually happened, one entry per element");
+		string section = JsonSerializer.Serialize(guide.Normalizations);
+		section.Should().NotContain("IGNORE PREVIOUS INSTRUCTIONS",
+			because: "the rules file resolves at runtime, so nothing it declares may reach ANY caller-facing "
+				+ "channel — asserted against the whole serialized section rather than one field, because a "
+				+ "field-scoped assertion only holds until someone adds a second field");
 	}
 
 	[Test]
@@ -6052,8 +6153,9 @@ public sealed class WebToMobileConversionServiceTests {
 		Codes(skip.Reason).Should().Equal([ReasonCodes.SkipNormalizationPathBlocked],
 			because: "the cause is a coded token now; the four-sentence rationale it replaced belongs in the "
 				+ "guidance article, not in every response that skips a branch");
-		guide.Normalizations["metricStyle"].Note.Should().Contain("1 skipped",
-			because: "suppressing the count would hide the one case where an element kept its web values — and the note is now the single place it is stated");
+		guide.Normalizations["metricStyle"].Normalized.Should().BeEmpty(
+			because: "a group that only skipped still gets its own section — omitting it would hide the one "
+				+ "case where an element kept its web values, and skipped[] is where that is stated");
 	}
 
 	[Test]
@@ -6297,27 +6399,6 @@ public sealed class WebToMobileConversionServiceTests {
 		guide.Normalizations!["spacing"].Normalized.Single(n => n.Name == "InfoGrid")
 			.Properties.Should().BeEquivalentTo(["gap"],
 				because: "a replacing rule reports the top-level key it replaced, unchanged by the merge feature");
-	}
-
-	[Test]
-	[Description("The back-compat alias carries the same elements as the spacing section it mirrors, so a caller reading the old shape sees what it always saw.")]
-	public void Analyze_PropertyNormalization_AliasShouldMirrorTheSpacingSection() {
-		// Arrange
-		PageBundleInfo bundle = Bundle("""
-			[ { "name": "InfoGrid", "type": "crt.GridContainer", "items": [
-				{ "name": "LeadName", "type": "crt.Input", "control": "$LeadName" } ] } ]
-			""");
-
-		// Act
-		MobilePageConversionGuide guide = AnalyzeMetric(bundle, RulesWithMetricOverride());
-
-		// Assert
-		Spacing(guide)!.Normalized.Select(n => n.Name).Should().BeEquivalentTo(["InfoGrid"],
-			because: "the alias exists so a caller reading the old section sees the same elements");
-		Spacing(guide)!.Normalized.Single().Properties.Should().BeEquivalentTo(["gap"],
-			because: "and the same properties, in the same shape");
-		Spacing(guide)!.Note.Should().NotBeNullOrWhiteSpace(
-			because: "the alias keeps its own summary so the old shape stays self-describing");
 	}
 
 	[Test]

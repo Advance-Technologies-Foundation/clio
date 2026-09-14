@@ -1,4 +1,4 @@
-namespace Clio.Command;
+﻿namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
@@ -760,9 +760,14 @@ public static class SchemaValidationService
 	/// alone here; <see cref="ValidateMobileMergeSlotAuthoring"/> owns the rule for merging into its slots.
 	/// </para>
 	/// <para>
-	/// This exists because the invariant previously travelled only as prose — the mobile registry's own
-	/// <c>crt.Scaffold</c> description and the conversion guide's <c>constraints</c> both stated it, and nothing
-	/// enforced it (ENG-95827).
+	/// The type test looks at the whole <c>values</c> SUBTREE, not just its root: a page authoring
+	/// <c>{ type: "crt.FlexContainer", items: [{ type: "crt.Scaffold" }] }</c> adds the same second root by a
+	/// longer route, and a rule stated page-wide that only inspects the top level is one a caller can satisfy
+	/// while still shipping the defect.
+	/// </para>
+	/// <para>
+	/// This exists because the invariant otherwise travels only as prose — the mobile registry's own
+	/// <c>crt.Scaffold</c> description states it, and prose enforces nothing.
 	/// </para>
 	/// </remarks>
 	/// <param name="body">Plain-JSON mobile page body.</param>
@@ -786,7 +791,8 @@ public static class SchemaValidationService
 		if (!isInsert && !string.Equals(operation, SetOperationName, StringComparison.Ordinal)) {
 			return;
 		}
-		bool typeIsScaffold = string.Equals(GetMobileEntryType(entry), ScaffoldComponentType, StringComparison.Ordinal);
+		bool typeIsScaffold = string.Equals(GetMobileEntryType(entry), ScaffoldComponentType, StringComparison.Ordinal)
+			|| (entry.TryGetProperty(ValuesPropertyName, out JsonElement values) && DeclaresScaffold(values));
 		bool nameIsScaffold = isInsert
 			&& TryGetStringProperty(entry, "name", out string name)
 			&& string.Equals(name, ScaffoldElementName, StringComparison.Ordinal);
@@ -1635,6 +1641,40 @@ public static class SchemaValidationService
 		}
 		// Distinguish assignment '=' from comparison '=='/'===' and arrow '=>', which are reads.
 		return i + 1 >= jsBody.Length || (jsBody[i + 1] != '=' && jsBody[i + 1] != '>');
+	}
+
+	/// <summary>
+	/// True when <paramref name="element"/> declares a <c>crt.Scaffold</c> anywhere in its subtree — a nested
+	/// child authors the same second root as a top-level one.
+	/// </summary>
+	/// <remarks>
+	/// Unbounded by design: <see cref="JsonDocument"/> rejects a body deeper than its own 64-level limit before
+	/// this ever runs, so the recursion is bounded by the parser rather than by a second limit to keep in step.
+	/// </remarks>
+	private static bool DeclaresScaffold(JsonElement element) {
+		switch (element.ValueKind) {
+			case JsonValueKind.Object:
+				if (element.TryGetProperty(TypePropertyName, out JsonElement type)
+					&& type.ValueKind == JsonValueKind.String
+					&& string.Equals(type.GetString(), ScaffoldComponentType, StringComparison.Ordinal)) {
+					return true;
+				}
+				foreach (JsonProperty property in element.EnumerateObject()) {
+					if (DeclaresScaffold(property.Value)) {
+						return true;
+					}
+				}
+				return false;
+			case JsonValueKind.Array:
+				foreach (JsonElement item in element.EnumerateArray()) {
+					if (DeclaresScaffold(item)) {
+						return true;
+					}
+				}
+				return false;
+			default:
+				return false;
+		}
 	}
 
 	private static string? GetMobileEntryType(JsonElement entry) {
