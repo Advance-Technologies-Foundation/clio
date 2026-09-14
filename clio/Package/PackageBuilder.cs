@@ -120,9 +120,27 @@
 		/// </remarks>
 		private static void StopMonitoring(CancellationTokenSource cts, Thread pollThread, Task httpTask) {
 			cts.Cancel();
-			pollThread.Join();
+			JoinPollThread(pollThread);
 			ObserveCancelledRequest(httpTask, cts);
 		}
+
+		/// <summary>
+		/// Joins the poll thread under the same bound <see cref="CompilationActivityWatcher.StopJoinTimeout"/>
+		/// puts on its own poll thread.
+		/// </summary>
+		/// <remarks>
+		/// An UNBOUNDED join is the #1422 hang: <c>PollOnce</c> is a synchronous ATF.Repository call with no
+		/// timeout and no cancellation token, so a stand that accepts the connection and never answers pins
+		/// build-package past its own 10-minute timeout indefinitely. Cancelling the token does not help - it
+		/// is only read BETWEEN rounds. Issue #1376 extends the poll thread's failing lifetime from about
+		/// 10 s to about 93 s, which widens the window this can be observed in, so the bound
+		/// CompilationActivityWatcher already carries is ported across rather than walked past (PR #1477
+		/// review). A thread left behind is a background thread reading a cancelled token; it cannot keep the
+		/// process alive, and the compile itself is unaffected either way - the server keeps compiling.
+		/// </remarks>
+		/// <param name="pollThread">The history-poll thread to join.</param>
+		private static void JoinPollThread(Thread pollThread) =>
+			pollThread.Join(CompilationActivityWatcher.StopJoinTimeout);
 
 		/// <summary>
 		/// Reads the compilation-history baseline, degrading to <c>null</c> when the read fails.
@@ -186,7 +204,7 @@
 
 				if (httpTask.IsCompleted) {
 					cts.Cancel();
-					pollThread.Join();
+					JoinPollThread(pollThread);
 					httpTask.GetAwaiter().GetResult();
 					return;
 				}
