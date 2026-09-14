@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -467,6 +468,30 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 			because: "the ImageInput tooltip literal is a valid, working authoring form and must not produce an error");
 	}
 
+	[TestCase("crt.Gallery", "itemConfig")]
+	[TestCase("crt.Playbook", "_designOptions")]
+	[Description("Accepts attribute-name caption mappings on Gallery and Playbook through the real MCP validator.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts Gallery and Playbook attribute mappings")]
+	[AllureDescription("Checks issue #1194 and related #1224 without converting record attribute identifiers to resource bindings.")]
+	public async Task PageValidateTool_ShouldAcceptMapping_WhenCaptionNamesRecordAttribute(string componentType, string configProperty) {
+		// Arrange
+		string diff = """[{"operation":"insert","name":"MappingProbe","values":{"type":"COMPONENT","CONFIG":{"templateValuesMapping":{"caption":"GalleryDS_Name"}}}}]"""
+			.Replace("COMPONENT", componentType).Replace("CONFIG", configProperty);
+		string body = ValidPageBody.Replace("/**SCHEMA_VIEW_CONFIG_DIFF*/[]", "/**SCHEMA_VIEW_CONFIG_DIFF*/" + diff);
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		PageValidateResponse response = await AllureApi.Step("Validate the mapping through stdio MCP", async () =>
+			await CallAsync(context.Session, context.CancellationTokenSource.Token, body));
+
+		// Assert
+		AllureApi.Step("Verify the mapping is valid", () => response.Valid.Should().BeTrue(
+			because: "template slots name attributes rather than user-visible text"));
+		AllureApi.Step("Verify no content errors were reported", () => response.Validation!.Errors.Should().BeNullOrEmpty(
+			because: "valid mapping identifiers must not require resource registration"));
+	}
+
 	[Test]
 	[Description("Returns valid: true when an inserted crt.EmailComposer carries the platform-authored data.caption literal — a component's data descriptor is component metadata, not page-authored user-visible text, so the localizable-text rule must NOT reject it (issue #1298). Proves the descriptor exemption reaches through the real MCP transport.")]
 	[AllureTag(ToolName)]
@@ -801,6 +826,69 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 		response.Validation.Warnings!.Should().Contain(
 			e => e.Contains("handler-attribute-change-unscoped-write", System.StringComparison.OrdinalIgnoreCase),
 			because: "the rule id must be visible in the wire response so the agent can map the warning to the page-schema-handlers scoping guidance");
+	}
+
+	[Test]
+	[Description("Validates the contents of the file named by body-file when body is omitted, so a large body never has to be inlined (issue #1297).")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page reads the body from body-file")]
+	[AllureDescription("Writes a valid page body to a temporary file, calls validate-page with body-file only through the real MCP transport, and verifies the file content was validated instead of being reported as an empty body.")]
+	public async Task PageValidateTool_Should_Validate_Body_From_BodyFile() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string bodyFilePath = Path.Combine(Path.GetTempPath(), $"clio-e2e-validate-page-{Guid.NewGuid():N}.js");
+		await File.WriteAllTextAsync(bodyFilePath, ValidPageBody, context.CancellationTokenSource.Token);
+
+		try {
+			// Act
+			CallToolResult callResult = await context.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["body-file"] = bodyFilePath
+					}
+				},
+				context.CancellationTokenSource.Token);
+
+			// Assert
+			callResult.IsError.Should().NotBeTrue(
+				because: "body-file must be accepted and bound by the tool, not rejected as a protocol-level error");
+			PageValidateResponse response = EntitySchemaStructuredResultParser.Extract<PageValidateResponse>(callResult);
+			response.Valid.Should().BeTrue(
+				because: "the file holds a well-formed page body, so validation must run over the file content");
+			response.Validation!.Errors.Should().BeNullOrEmpty(
+				because: "a valid body read from body-file must not report 'JS body is null or empty.'");
+		} finally {
+			File.Delete(bodyFilePath);
+		}
+	}
+
+	[Test]
+	[Description("Rejects a call that supplies neither body nor body-file, naming both accepted parameters.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page names both body parameters when neither is supplied")]
+	[AllureDescription("Calls validate-page with no body source through the real MCP transport and verifies the error names both 'body' and 'body-file'.")]
+	public async Task PageValidateTool_Should_Name_Both_Body_Parameters_When_None_Supplied() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?>()
+			},
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a missing body is a request-shape rejection reported in the validation envelope, not a protocol error");
+		PageValidateResponse response = EntitySchemaStructuredResultParser.Extract<PageValidateResponse>(callResult);
+		response.Valid.Should().BeFalse(
+			because: "there is nothing to validate without a body");
+		response.Validation!.Errors.Should().ContainSingle(error =>
+				error.Contains("'body'") && error.Contains("'body-file'"),
+			because: "the caller must be told both parameters that can carry the body");
 	}
 
 	private static async Task<PageValidateResponse> CallAsync(

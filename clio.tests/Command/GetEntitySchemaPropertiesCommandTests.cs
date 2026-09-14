@@ -184,6 +184,11 @@ internal class GetEntitySchemaPropertiesCommandTests : BaseCommandTests<GetEntit
 		// Assert
 		result.Should().Be(1, because: "schema identity is required for a schema read");
 		_columnManager.DidNotReceiveWithAnyArgs().GetSchemaProperties(default);
-		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("Schema name is required.")));
+		// The WHOLE rendered message, not a Contains (PR #1352 review): everything issue #1304 is about
+		// lives in the suffix `ArgumentException.Message` appends, so a substring assertion is satisfied
+		// by `(Parameter 'Package')` just as well as by the clean message and cannot tell the fix from the
+		// revert. The negative guard is the half that actually pins it.
+		_logger.Received(1).WriteError("schema-name is required.");
+		_logger.DidNotReceive().WriteError(Arg.Is<string>(message => message.Contains("(Parameter '")));
 	}
 }

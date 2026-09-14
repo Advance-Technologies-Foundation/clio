@@ -49,10 +49,10 @@ public sealed class StageEventLivenessHeartbeatTests {
 	private static readonly TimeSpan RefreshInterval = TimeSpan.FromMilliseconds(100);
 
 	/// <summary>
-	/// How long the observed stage runs: several refresh intervals, so "more than one refresh" is not a
-	/// race with the scheduler.
+	/// Maximum wait for a real refresh on a loaded runner, rather than a fixed stage duration that
+	/// races the scheduler.
 	/// </summary>
-	private static readonly TimeSpan LongStageDuration = TimeSpan.FromMilliseconds(700);
+	private static readonly TimeSpan RefreshWaitBound = TimeSpan.FromSeconds(10);
 
 	[Test]
 	[Category("Unit")]
@@ -66,7 +66,7 @@ public sealed class StageEventLivenessHeartbeatTests {
 		(StageEventEmitter emitter, List<ClioStageEvent> events) = CreateEmitter();
 
 		// Act
-		emitter.RunStage(LongStageId, () => Thread.Sleep(LongStageDuration));
+		emitter.RunStage(LongStageId, () => WaitForRefresh(events));
 
 		// Assert
 		List<ClioStageEvent> running = RunningEventsFor(events, LongStageId);
@@ -95,7 +95,7 @@ public sealed class StageEventLivenessHeartbeatTests {
 	public void RunStage_ShouldStopTheLivenessRefresh_WhenTheStageEnds() {
 		// Arrange
 		(StageEventEmitter emitter, List<ClioStageEvent> events) = CreateEmitter();
-		emitter.RunStage(LongStageId, () => Thread.Sleep(LongStageDuration));
+		emitter.RunStage(LongStageId, () => WaitForRefresh(events));
 		int emittedByTheStage = events.Count;
 
 		// Act — several refresh intervals with no stage running at all.
@@ -119,7 +119,7 @@ public sealed class StageEventLivenessHeartbeatTests {
 
 		// Act
 		Action failing = () => emitter.RunStage(LongStageId, () => {
-			Thread.Sleep(LongStageDuration);
+			WaitForRefresh(events);
 			throw new InvalidOperationException("the restore failed");
 		});
 		failing.Should().Throw<InvalidOperationException>(
@@ -149,7 +149,7 @@ public sealed class StageEventLivenessHeartbeatTests {
 
 		// Act
 		int exitCode = emitter.RunStage(LongStageId, () => {
-			Thread.Sleep(LongStageDuration);
+			WaitForRefresh(events);
 			return 3;
 		});
 		int emittedByTheRun = events.Count;
@@ -340,6 +340,11 @@ public sealed class StageEventLivenessHeartbeatTests {
 			}
 		});
 		return (emitter, events);
+	}
+
+	private static void WaitForRefresh(List<ClioStageEvent> events) {
+		SpinWait.SpinUntil(() => RunningEventsFor(events, LongStageId).Count > 1, RefreshWaitBound)
+			.Should().BeTrue(because: "the real timer must emit a refresh before the stage is allowed to finish");
 	}
 
 	private static List<ClioStageEvent> RunningEventsFor(List<ClioStageEvent> events, string stageId) {
