@@ -262,12 +262,24 @@ internal static partial class SensitiveErrorTextRedactor {
 	//      hyphens after the first character. The letter start is what keeps rule 2's narrowing intact -
 	//      "@8.0.1", "@20" and "@1.2.3" cannot enter this branch at all. A trailing DIGIT is allowed,
 	//      because on-prem host names routinely end in one ("user@WEB01", "svc@dev04").
-	//   2b. a bare dotted-quad IPv4 literal (PR #1493 review). Branch 2 refuses it - its final label must
-	//      be alphabetic - and branch 3 refuses it too, since that one must start with a letter. So
-	//      "sa@10.0.0.5" and "sa@10.0.0.5:1433" were matched by NOTHING and shipped whole. HostPortRegex is
-	//      not the safety net the earlier comment assumed: its (?<![\w:./@-]) guard rejects a start
-	//      preceded by "@", so it never sees the host half of an address. Placed AFTER branch 2 so a dotted
-	//      alphabetic host still wins, and the four-octet shape keeps "clio@8.0.1" (three parts) out.
+	//   2b. a dotted-quad IPv4 literal THAT IS FOLLOWED BY A PORT (PR #1493 review). Branch 2 refuses a
+	//      bare quad - its final label must be alphabetic - and branch 3 refuses it too, since that one
+	//      must start with a letter. So "sa@10.0.0.5:1433" was matched by NOTHING and shipped whole,
+	//      account, host and service in one string. HostPortRegex is not the safety net the earlier
+	//      comment assumed: its (?<![\w:./@-]) guard rejects a start preceded by "@", so it never sees
+	//      the host half of an address. Placed AFTER branch 2 so a dotted alphabetic host still wins.
+	//      THE (?=:\d) PORT REQUIREMENT IS THE WHOLE POINT OF THIS BRANCH'S SHAPE, and it is a deliberate
+	//      trade, not a tightening for its own sake. A four-octet quad and a four-part version are the
+	//      SAME TOKEN to a regex: "10.0.0.5" and "8.1.0.57" differ in nothing a pattern can read. An
+	//      unguarded four-octet branch therefore redacts "clio@8.1.0.57", "cliogate@1.4.0.53" and
+	//      "crtprocessbuilder@1.6.0.1" - the exact package-and-version strings the bundled-package
+	//      convergence messages print on the console path - which is PR #1374's narrowing reopened by
+	//      accident. Requiring a port keeps that narrowing intact and still closes the ported form, the
+	//      one an authentication failure against an on-prem stand actually produces.
+	//      KNOWN GAP, accepted knowingly: a bare "user@10.0.0.5" with no port still ships whole. It
+	//      leaked before this PR as well, so nothing regresses; the alternative was trading a live leak
+	//      for a live regression in readable version output, and this class prefers the smaller net gain
+	//      over that swap. Closing it needs a signal a regex does not have.
 	// Branch 3's trailing (?![A-Za-z0-9\-]) only forbids stopping part-way through a label. It deliberately
 	// does NOT also forbid a following ".<label>". An earlier revision did, on the theory that it prevented
 	// a partial match; it does not - for "user@host.example.c" branch 2 backtracks to "user@host.example"
@@ -289,7 +301,7 @@ internal static partial class SensitiveErrorTextRedactor {
 	// "[redacted]:org/repo.git"; a digest specifier ("image@sha256:...") stops at the ":" the same way.
 	// Also unchanged by this widening: "Prop@odata.mediaReadLink"-style OData annotations were already
 	// eaten by the dotted branch before issue #1380 and still are.
-	[GeneratedRegex(@"(?<!\\u?[0-9A-Fa-f]{0,3})[A-Za-z0-9._%+\-]+@(?:\[[^\]\s]{1,45}\]|[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}|\d{1,3}(?:\.\d{1,3}){3}|[A-Za-z][A-Za-z0-9\-]*[A-Za-z0-9](?![A-Za-z0-9\-]))",
+	[GeneratedRegex(@"(?<!\\u?[0-9A-Fa-f]{0,3})[A-Za-z0-9._%+\-]+@(?:\[[^\]\s]{1,45}\]|[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}|\d{1,3}(?:\.\d{1,3}){3}(?=:\d)|[A-Za-z][A-Za-z0-9\-]*[A-Za-z0-9](?![A-Za-z0-9\-]))",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex EmailRegex();
 

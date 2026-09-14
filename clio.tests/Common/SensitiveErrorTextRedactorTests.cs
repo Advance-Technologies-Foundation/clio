@@ -1211,11 +1211,10 @@ public sealed class SensitiveErrorTextRedactorTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("An address on a bare dotted-quad IPv4 host loses the address, with or without a port: neither the dotted branch (last label must be alphabetic) nor the single-label branch (must start with a letter) accepted it, and HostPortRegex never sees a host preceded by '@' (PR #1493 review).")]
+	[Description("An address on a dotted-quad IPv4 host FOLLOWED BY A PORT loses the address: neither the dotted branch (last label must be alphabetic) nor the single-label branch (must start with a letter) accepted it, and HostPortRegex never sees a host preceded by '@' (PR #1493 review).")]
 	[TestCase("sa@10.0.0.5:1433", "[redacted]:1433", TestName = "Ipv4Host_WithPort")]
-	[TestCase("user@10.0.0.5", "[redacted]", TestName = "Ipv4Host_WithoutPort")]
-	[TestCase("svc@192.168.1.10", "[redacted]", TestName = "Ipv4Host_PrivateRange")]
-	public void Redact_ShouldRedactAnAddressOnABareIpv4Host(string address, string expected) {
+	[TestCase("admin@192.168.1.10:5432", "[redacted]:5432", TestName = "Ipv4Host_PrivateRangeWithPort")]
+	public void Redact_ShouldRedactAnAddressOnAPortedIpv4Host(string address, string expected) {
 		// Arrange
 		string message = $"Authentication failed for {address} on this environment.";
 
@@ -1224,21 +1223,38 @@ public sealed class SensitiveErrorTextRedactorTests {
 
 		// Assert
 		redacted.Should().Be($"Authentication failed for {expected} on this environment.",
-			because: "an on-prem stand named by its IP is exactly where an authentication failure names a real account, and the whole address shipped in the clear");
+			because: "the ported form names account, host and service in a single string, and it shipped in the clear");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("A three-part version behind an @ must stay readable: the new IPv4 branch requires four octets, so the narrowing PR #1374 introduced is not reopened.")]
+	[Description("KNOWN GAP, pinned deliberately (PR #1493 review): a bare IPv4 host with no port still ships whole, because a four-octet quad and a four-part version are the same token to a regex. Dropping the port requirement would redact 'clio@8.1.0.57' - PR #1374's narrowing reopened. This shape leaked before the widening too, so nothing regresses.")]
+	[TestCase("user@10.0.0.5", TestName = "KnownGap_BareIpv4Host")]
+	[TestCase("svc@192.168.1.10", TestName = "KnownGap_BareIpv4PrivateRange")]
+	public void Redact_ShouldLeaveABareIpv4HostAlone_KnownGap(string address) {
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact($"Authentication failed for {address} on this environment.");
+
+		// Assert
+		redacted.Should().Contain(address,
+			because: "the alternative trades a live leak this class never closed for a live regression in readable version output");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A version specifier behind an @ must stay readable at THREE parts and at FOUR: the IPv4 branch requires a port, so the narrowing PR #1374 introduced is not reopened by the four-octet shape.")]
 	[TestCase("clio@8.0.1", TestName = "Survives_ThreePartVersion")]
 	[TestCase("node@20.11.1", TestName = "Survives_NodeVersionAfterIpv4Branch")]
-	public void Redact_ShouldNotRedactAThreePartVersion_AfterTheIpv4Widening(string shape) {
+	[TestCase("clio@8.1.0.57", TestName = "Survives_FourPartVersion")]
+	[TestCase("cliogate@1.4.0.53", TestName = "Survives_FourPartGateVersion")]
+	[TestCase("crtprocessbuilder@1.6.0.1", TestName = "Survives_FourPartPackageVersion")]
+	public void Redact_ShouldNotRedactAVersionSpecifier_AfterTheIpv4Widening(string shape) {
 		// Act
 		string redacted = SensitiveErrorTextRedactor.Redact($"Package {shape} is required.");
 
 		// Assert
 		redacted.Should().Contain(shape,
-			because: "a version specifier is load-bearing diagnostic content and must not be replaced by a placeholder indistinguishable from a credential removal");
+			because: "package-and-version is what the bundled-package convergence messages print, and Redact is on the console path");
 	}
 
 	[Test]
