@@ -20,9 +20,26 @@ DESCRIPTION
     - Overall compilation time
     - Final compilation status
 
-    Special attention is given to key projects:
-    - Terrasoft.Configuration.ODataEntities.csproj
-    - Terrasoft.Configuration.Dev.csproj
+    Rows for Terrasoft.Configuration.ODataEntities.csproj and
+    Terrasoft.Configuration.Dev.csproj are highlighted in the progress output. Note that a
+    configuration compile does NOT rebuild the OData entities assembly - only an entity-schema
+    publish requests that - so an ODataEntities row seen during a compile was produced by
+    something else on the environment.
+
+HOW COMPLETION IS DETERMINED
+    Creatio does not answer the configuration-build request. A build's last step is reloading the
+    application, which tears down the connection the response would have travelled on, so the
+    request typically ends with no response at all.
+
+    The command therefore sends the build request ONCE, without retries, and determines the outcome
+    by observing the environment:
+      - if a response does arrive, it is used - it carries the compiler diagnostics
+      - otherwise, once compilation activity has been seen and the runtime reload that ends a build
+        has been observed, the result is read from the environment's last-compilation record
+      - a connection dropped by an intermediary WITHOUT a reload is not treated as completion, so a
+        load balancer's idle timeout cannot make a still-running build look finished
+      - a request that fails while the environment never built anything is reported as a connection
+        or authorization failure rather than waited out
 
 SYNOPSIS
     compile-configuration [options]
@@ -31,8 +48,8 @@ OPTIONS
     --all                               Compile all configurations (full rebuild)
                                         Default: false
 
-    --timeout                           Request timeout in milliseconds
-                                        Default: Infinite (compilation can take time)
+    --timeout                           Overall timeout in milliseconds
+                                        Default: 3600000 (60 minutes)
 
     --uri                   -u          Application uri
 
@@ -64,7 +81,7 @@ EXAMPLES
         Compiles using direct connection parameters
 
     clio compile-configuration -e dev --timeout 300000
-        Compiles with a custom 5-minute timeout (though default is infinite)
+        Compiles with a custom 5-minute timeout (default is 60 minutes)
 
 OUTPUT
     The command provides detailed real-time output including:
@@ -91,8 +108,9 @@ NOTES
       and asks whether to compile now or postpone. Declining postpones the
       compilation (nothing is compiled, exit code 2) and prints how to run it later.
       Non-interactive hosts (scripts, CI, redirected stdin) and --silent proceed without asking.
-    - The command uses an infinite timeout by default as compilation can take
-      significant time depending on configuration size
+    - The build request is sent once, without retries. Retrying it re-runs the whole
+      compilation on the environment, because the connection is reset by the runtime
+      reload that ENDS a successful build rather than by a transport problem.
     - Real-time progress is tracked by monitoring the CompilationHistory table
     - Compilation errors include detailed information: error code, file name,
       line number, and error description

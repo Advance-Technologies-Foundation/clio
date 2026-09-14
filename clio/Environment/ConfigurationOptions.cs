@@ -27,6 +27,15 @@ namespace Clio
 
 	public class EnvironmentSettings
 	{
+		private IdentityServiceAttachment _identityService = new();
+
+		/// <summary>Optional local identity component; empty values mean none is attached.</summary>
+		[YamlIgnore] // Local deletion authority must not travel in portable environment manifests.
+		public IdentityServiceAttachment IdentityService {
+			get => _identityService;
+			set => _identityService = value ?? new IdentityServiceAttachment();
+		}
+
 		[YamlMember(Alias = "url")]
 		public string Uri {
 			get; set;
@@ -142,6 +151,9 @@ namespace Clio
 		}
 
 		internal void Merge(EnvironmentSettings environment) {
+			if (!environment.IdentityService.IsEmpty) {
+				IdentityService = environment.IdentityService;
+			}
 			if (!string.IsNullOrEmpty(environment.Login)) {
 				Login = environment.Login;
 			}
@@ -207,6 +219,7 @@ namespace Clio
 
 		public virtual EnvironmentSettings Fill(EnvironmentOptions options, IInteractiveConsole interactiveConsole) {
 			var result = new EnvironmentSettings();
+			result.IdentityService = IdentityService;
 			result.Uri = string.IsNullOrEmpty(options.Uri) ? this.Uri : options.Uri;
 			result.IsNetCore = options.IsNetCore ?? this.IsNetCore;
 			result.DeveloperModeEnabled = options.DeveloperModeEnabled ?? this.DeveloperModeEnabled;
@@ -1454,6 +1467,37 @@ namespace Clio
 				return false;
 			});
 			return matches;
+		}
+
+		/// <inheritdoc />
+		public bool UpdateIdentityAttachment(string environment, string expectedEnvironmentPath,
+			IdentityServiceAttachment expected, IdentityServiceAttachment replacement,
+			bool clearMatchingCredentials = false) {
+			bool updated = false;
+			UpdateSettingsIfChanged(settings => {
+				updated = false;
+				string key = settings.Environments.Keys.FirstOrDefault(item =>
+					string.Equals(item, environment, StringComparison.OrdinalIgnoreCase));
+				if (key is null) {
+					return false;
+				}
+				EnvironmentSettings target = settings.Environments[key];
+				if (!EnvironmentPathsMatch(target.EnvironmentPath, expectedEnvironmentPath)
+					|| target.IdentityService != expected) {
+					return false;
+				}
+				if (clearMatchingCredentials && System.Uri.TryCreate(target.AuthAppUri, UriKind.Absolute, out Uri token)
+					&& System.Uri.TryCreate(expected.Uri?.TrimEnd('/') + "/connect/token", UriKind.Absolute, out Uri owned)
+					&& token.Equals(owned)) {
+					target.AuthAppUri = string.Empty;
+					target.ClientId = string.Empty;
+					target.ClientSecret = string.Empty;
+				}
+				target.IdentityService = replacement;
+				updated = true;
+				return true;
+			});
+			return updated;
 		}
 
 		public EnvironmentSettings FindCurrentEnvironment(string environment) {

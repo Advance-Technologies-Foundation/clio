@@ -290,6 +290,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["delete-schema"] = PassthroughClassification.NotApplicable,
 			["delete-theme"] = PassthroughClassification.NotApplicable,
 			["deploy-identity"] = PassthroughClassification.NotApplicable,
+			["uninstall-identity"] = PassthroughClassification.NotApplicable, // BaseTool with per-environment command resolver.
 			["describe-business-process"] = PassthroughClassification.NotApplicable,
 			["describe-environment"] = PassthroughClassification.NotApplicable,
 			["download-configuration-by-build"] = PassthroughClassification.NotApplicable,
@@ -303,6 +304,8 @@ internal static class PassthroughToolClassificationRegistry {
 			["find-entity-schema"] = PassthroughClassification.NotApplicable,
 			["finish-hotfix"] = PassthroughClassification.NotApplicable,
 			["generate-process-model"] = PassthroughClassification.NotApplicable,
+			// Uses the existing environment-scoped BaseTool resolver; outside the original passthrough audit.
+			[ExecuteSqlScriptTool.ToolName] = PassthroughClassification.NotApplicable,
 			["generate-source-code"] = PassthroughClassification.NotApplicable,
 			["get-browser-session"] = PassthroughClassification.NotApplicable,
 			["get-classic-list-columns"] = PassthroughClassification.NotApplicable,
@@ -337,6 +340,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-sql-schema"] = PassthroughClassification.NotApplicable,
 			["get-sys-setting"] = PassthroughClassification.NotApplicable,
 			["get-target-package"] = PassthroughClassification.NotApplicable,
+			["get-theme"] = PassthroughClassification.NotApplicable,
 			["import-schema"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - already resolver-backed (class a), not part of the ENG-93347 passthrough audit
 			["install-application"] = PassthroughClassification.NotApplicable,
 			["last-compilation-log"] = PassthroughClassification.NotApplicable, // BaseTool<T>.ExecuteResolved<TCommand,TResponse> is already resolver-backed (class a)

@@ -50,6 +50,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
 		settingsRepository.GetActualEnvironmentName("bank").Returns("bank");
 		settingsRepository.FindEnvironment("bank").Returns(persistedEnvironment);
+		settingsRepository.FindCurrentEnvironment("bank").Returns(persistedEnvironment);
 		settingsRepository.GetEnvironment(Arg.Any<DeployIdentityOptions>()).Returns(filledEnvironmentWithoutPath);
 		IIdentityServiceArchiveResolver archiveResolver = Substitute.For<IIdentityServiceArchiveResolver>();
 		archiveResolver.Resolve(Arg.Any<string>(), Arg.Any<string>()).Returns(identityArchivePath);
@@ -84,7 +85,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 			roleGrantService,
 			systemUserResolver,
 			targetReservation,
-			Substitute.For<ILogger>());
+			Substitute.For<ILogger>(), Substitute.For<IIdentityServiceLifecycle>());
 		DeployIdentityOptions options = new() {
 			Environment = "bank",
 			ZipFile = identityArchivePath,
@@ -141,6 +142,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
 		settingsRepository.GetActualEnvironmentName("bank").Returns("bank");
 		settingsRepository.FindEnvironment("bank").Returns(persistedEnvironment);
+		settingsRepository.FindCurrentEnvironment("bank").Returns(persistedEnvironment);
 		IIdentityServiceArchiveResolver archiveResolver = Substitute.For<IIdentityServiceArchiveResolver>();
 		archiveResolver.Resolve(discoveredArchivePath, "IdentityService.zip").Returns(identityArchivePath);
 		IIdentityServiceCreatioClient creatioClient = Substitute.For<IIdentityServiceCreatioClient>();
@@ -177,7 +179,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 			roleGrantService,
 			systemUserResolver,
 			CreateTargetReservation(),
-			Substitute.For<ILogger>());
+			Substitute.For<ILogger>(), Substitute.For<IIdentityServiceLifecycle>());
 		DeployIdentityOptions options = new() {
 			Environment = "bank",
 			IdentityPath = CreateIdentityTargetPath(),
@@ -606,6 +608,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
 		settingsRepository.GetActualEnvironmentName("bank").Returns("bank");
 		settingsRepository.FindEnvironment("bank").Returns(persistedEnvironment);
+		settingsRepository.FindCurrentEnvironment("bank").Returns(persistedEnvironment);
 		return settingsRepository;
 	}
 
@@ -614,7 +617,8 @@ public sealed class IdentityServiceDeploymentServiceTests
 		IIdentityServiceArchiveResolver? archiveResolver = null,
 		IIdentityServiceCreatioClient? creatioClient = null,
 		IIdentityServiceRoleGrantService? roleGrantService = null,
-		IIdentityServiceSystemUserResolver? systemUserResolver = null)
+		IIdentityServiceSystemUserResolver? systemUserResolver = null,
+		IIdentityServiceLifecycle? lifecycle = null)
 	{
 		ISysSettingsManager sysSettingsManager = Substitute.For<ISysSettingsManager>();
 		sysSettingsManager.UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>()).Returns(true);
@@ -634,7 +638,42 @@ public sealed class IdentityServiceDeploymentServiceTests
 			roleGrantService ?? Substitute.For<IIdentityServiceRoleGrantService>(),
 			systemUserResolver ?? Substitute.For<IIdentityServiceSystemUserResolver>(),
 			CreateTargetReservation(),
-			Substitute.For<ILogger>());
+			Substitute.For<ILogger>(), lifecycle ?? Substitute.For<IIdentityServiceLifecycle>());
+	}
+
+	[TestCase(false), TestCase(true)]
+	[Platform("Win", Reason = "Identity deployment supports IIS on Windows")]
+	[Description("Deployment records its resolved target before extraction even for no-app or extraction failure.")]
+	public void Deploy_ShouldRecordTargetBeforeArtifacts_WhenNoAppOrExtractionFails(bool corruptArchive) {
+		// Arrange
+		string crmPath = CreateCreatioEnvironmentPath();
+		string archive = CreateIdentityArchive();
+		if (corruptArchive) { File.WriteAllText(archive, "invalid archive"); }
+		string target = CreateIdentityTargetPath();
+		ISettingsRepository settings = CreateSettingsRepository(new EnvironmentSettings { EnvironmentPath = crmPath,
+			Uri = "http://localhost:40085", Login = "Supervisor", Password = "Supervisor", IsNetCore = true });
+		IIdentityServiceArchiveResolver resolver = Substitute.For<IIdentityServiceArchiveResolver>();
+		resolver.Resolve(archive, "IdentityService.zip").Returns(archive);
+		IIdentityServiceCreatioClient client = Substitute.For<IIdentityServiceCreatioClient>();
+		client.GetDesignerClientSecret().Returns("test-secret");
+		IIdentityServiceLifecycle lifecycle = Substitute.For<IIdentityServiceLifecycle>();
+		IdentityServiceAttachment recorded = null;
+		bool artifactsExistedWhenRecorded = true;
+		lifecycle.When(service => service.RecordDeployment("bank", Arg.Any<IdentityServiceAttachment>(), true)).Do(call => {
+			recorded = call.ArgAt<IdentityServiceAttachment>(1);
+			artifactsExistedWhenRecorded = File.Exists(Path.Combine(target, "IdentityService.dll"));
+		});
+		IdentityServiceDeploymentService sut = CreateService(settings, resolver, client, lifecycle: lifecycle);
+		// Act
+		Action act = () => sut.Deploy(new DeployIdentityOptions { Environment = "bank", ZipFile = archive,
+			IdentitySitePort = 40086, IdentitySiteName = "chosen-identity", IdentityPath = target, Overwrite = true, NoApp = true });
+		// Assert
+		if (corruptArchive) { act.Should().Throw<InvalidDataException>(because: "the deliberately corrupt archive cannot be extracted"); }
+		else { act.Should().NotThrow(because: "no-app deployment still records its target"); }
+		recorded.Should().NotBeNull(because: "failure recovery must have a recorded attachment before extraction starts");
+		recorded.EnvironmentPath.Should().Be(target, because: "cleanup uses the resolved explicit path");
+		recorded.IisTarget.Should().Be("chosen-identity", because: "custom names must not be reconstructed from the environment");
+		artifactsExistedWhenRecorded.Should().BeFalse(because: "recording precedes creation of identity artifacts");
 	}
 
 	private static string CreateIdentityArchive(string directory)

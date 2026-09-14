@@ -48,7 +48,7 @@ registered environment EnvironmentPath.
 
 --identity-site-port PORT
 Optional. HTTP port where IdentityService will listen. When omitted, the command selects
-the first free IIS port in range 40001-40100.
+the first free IIS port in range 40001-40100. With overwrite and a recorded attachment, it reuses the recorded port.
 
 --identity-archive-path-in-bundle PATH
 Nested IdentityService archive path when --zip-file is a Creatio distribution bundle.
@@ -131,6 +131,13 @@ clio deploy-identity -e bank --no-app
 ```
 
 ## Notes
+
+Deployment records the resolved folder, IIS target, pool and URL in the environment's
+optional `IdentityService` component before extracting files. This also happens with
+`--no-app` and leaves cleanup information after a partial deployment failure. Empty
+component fields mean no identity is recorded. See [uninstall-identity](uninstall-identity.md)
+for the schema example and removal options. Existing IIS bindings must match the
+requested target; `--overwrite` reuses the recorded port unless one is explicitly supplied.
 
 This command is experimental and hidden by default. Enable it before use:
 

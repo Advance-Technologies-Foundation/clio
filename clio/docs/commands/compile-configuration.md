@@ -26,9 +26,10 @@ The command monitors the CompilationHistory table to provide live feedback on:
 - Overall compilation time
 - Final compilation status
 
-Special attention is given to key projects:
-- Terrasoft.Configuration.ODataEntities.csproj
-- Terrasoft.Configuration.Dev.csproj
+Rows for Terrasoft.Configuration.ODataEntities.csproj and Terrasoft.Configuration.Dev.csproj are
+highlighted in the progress output. Note that a configuration compile does NOT rebuild the OData
+entities assembly - only an entity-schema publish requests that - so an ODataEntities row seen
+during a compile was produced by something else on the environment.
 
 ## Synopsis
 
@@ -42,8 +43,8 @@ compile-configuration [options]
 --all                               Compile all configurations (full rebuild)
 Default: false
 
---timeout                           Request timeout in milliseconds
-Default: Infinite (compilation can take time)
+--timeout                           Overall timeout in milliseconds
+Default: 3600000 (60 minutes)
 
 --uri                   -u          Application uri
 
@@ -62,6 +63,21 @@ Default: Infinite (compilation can take time)
 --authAppUri                        OAuth app URI
 ```
 
+## How completion is determined
+Creatio does not answer the configuration-build request. A build's last step is reloading the
+application, which tears down the connection the response would have travelled on, so the
+request typically ends with no response at all.
+
+The command therefore sends the build request ONCE, without retries, and determines the outcome
+by observing the environment:
+  - if a response does arrive, it is used - it carries the compiler diagnostics
+  - otherwise, once compilation activity has been seen and the runtime reload that ends a build
+    has been observed, the result is read from the environment's last-compilation record
+  - a connection dropped by an intermediary WITHOUT a reload is not treated as completion, so a
+    load balancer's idle timeout cannot make a still-running build look finished
+  - a request that fails while the environment never built anything is reported as a connection
+    or authorization failure rather than waited out
+
 ## Examples
 
 ```bash
@@ -78,7 +94,7 @@ clio compile-configuration -u "https://myapp.creatio.com" -l "admin" -p "passwor
 Compiles using direct connection parameters
 
 clio compile-configuration -e dev --timeout 300000
-Compiles with a custom 5-minute timeout (though default is infinite)
+Compiles with a custom 5-minute timeout (default is 60 minutes)
 ```
 
 ## Output

@@ -6,6 +6,7 @@ using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.Theming;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
@@ -183,6 +184,84 @@ public sealed class ThemingSandboxE2ETests : McpContractFixtureBase {
 		ListThemesResult afterDelete = await ListThemesAsync(context, environmentName);
 		afterDelete.Themes.Should().NotContain(theme => theme.Id == themeId,
 			because: "the deleted theme must disappear from the live catalog");
+	}
+
+	[Test]
+	[AllureTag(GetThemeTool.ToolName)]
+	[AllureName("get-theme closes the read → edit → update round-trip on the sandbox environment")]
+	[Description("Runs the modify-an-existing-theme flow against the configured sandbox environment: create-theme, get-theme returns the exact caption/cssClassName/cssContent, update-theme reuses the values just read with an edited CSS, get-theme reflects the change, and after delete-theme the read reports a clear not-found. Ignored when the stand lacks theming access.")]
+	public async Task GetTheme_Should_Close_Read_Edit_Update_RoundTrip_When_Theming_Access_Is_Granted() {
+		// Arrange
+		string environmentName = await ResolveReachableSandboxEnvironmentAsync();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await EnsureThemingAccessAsync(context, environmentName);
+		Guid themeGuid = Guid.NewGuid();
+		string themeId = themeGuid.ToString("D");
+		string cssClassName = $"e2e-get-theme-{themeGuid:N}";
+		const string caption = "Clio MCP E2E get-theme";
+		string originalCss = $".{cssClassName}{{color:#003366}}";
+		string editedCss = $".{cssClassName}{{color:#ff6600}}";
+		_environmentNameForCleanup = environmentName;
+
+		// Act / Assert — create the theme to read
+		CreateThemeResult created = EntitySchemaStructuredResultParser.Extract<CreateThemeResult>(
+			await CallToolAsync(context, CreateThemeTool.ToolName, new Dictionary<string, object?> {
+				["environment-name"] = environmentName,
+				["id"] = themeId,
+				["caption"] = caption,
+				["css-class-name"] = cssClassName,
+				["css-content"] = originalCss
+			}));
+		created.Success.Should().BeTrue(
+			because: $"the theme to read must be created first (error: {created.Error})");
+		_createdThemeId = themeId;
+
+		// Act / Assert — read: the envelope carries everything update-theme needs
+		GetThemeResponse read = await GetThemeAsync(context, environmentName, themeId);
+		read.Success.Should().BeTrue(
+			because: $"reading a just-created theme must succeed (error: {read.Error})");
+		read.Caption.Should().Be(caption,
+			because: "the caption must round-trip so it can feed update-theme verbatim");
+		read.CssClassName.Should().Be(cssClassName,
+			because: "the cssClassName must round-trip so it can feed update-theme verbatim");
+		read.CssContent.Should().Be(originalCss,
+			because: "the CSS must be returned exactly as it was created");
+		read.CssContentLength.Should().Be(originalCss.Length,
+			because: "the reported length must match the returned content");
+
+		// Act / Assert — edit + update using the values just read
+		CommandExecutionEnvelope updateResponse = McpCommandExecutionParser.Extract(
+			await CallToolAsync(context, UpdateThemeTool.ToolName, new Dictionary<string, object?> {
+				["environment-name"] = environmentName,
+				["id"] = themeId,
+				["caption"] = read.Caption,
+				["css-class-name"] = read.CssClassName,
+				["css-content"] = editedCss
+			}));
+		updateResponse.ExitCode.Should().Be(0,
+			because: "applying the edited CSS with the metadata just read must succeed");
+
+		// Act / Assert — re-read: the change is reflected
+		GetThemeResponse reRead = await GetThemeAsync(context, environmentName, themeId);
+		reRead.Success.Should().BeTrue(
+			because: $"re-reading the updated theme must succeed (error: {reRead.Error})");
+		reRead.CssContent.Should().Be(editedCss,
+			because: "the read after update-theme must return the edited CSS, closing the round-trip");
+
+		// Act / Assert — delete, then the read reports a clear not-found
+		CommandExecutionEnvelope deleteResponse = McpCommandExecutionParser.Extract(
+			await CallToolAsync(context, DeleteThemeTool.ToolName, new Dictionary<string, object?> {
+				["environment-name"] = environmentName,
+				["id"] = themeId
+			}));
+		deleteResponse.ExitCode.Should().Be(0,
+			because: "deleting the throwaway theme must succeed");
+		_createdThemeId = null;
+		GetThemeResponse afterDelete = await GetThemeAsync(context, environmentName, themeId);
+		afterDelete.Success.Should().BeFalse(
+			because: "reading a deleted theme must report a clear not-found result, not content");
+		afterDelete.Error.Should().Contain(themeId,
+			because: "the not-found error must name the id the caller asked for");
 	}
 
 	[Test]
@@ -432,6 +511,18 @@ public sealed class ThemingSandboxE2ETests : McpContractFixtureBase {
 		result.Success.Should().BeTrue(
 			because: $"reading the live theme catalog must succeed (error: {result.Error})");
 		return result;
+	}
+
+	private static async Task<GetThemeResponse> GetThemeAsync(
+		ArrangeContext context, string environmentName, string themeId) {
+		CallToolResult callResult = await CallToolAsync(context, GetThemeTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = environmentName,
+				["id"] = themeId
+			});
+		callResult.IsError.Should().NotBeTrue(
+			because: "get-theme reports its outcome as a structured payload, not an MCP protocol error");
+		return EntitySchemaStructuredResultParser.Extract<GetThemeResponse>(callResult);
 	}
 
 	private async Task<SetUserThemeResult> SetUserThemeAsync(

@@ -9,6 +9,7 @@ namespace Clio.Command;
 [Verb("create-entity-schema", HelpText = "Create an entity schema in a remote Creatio package")]
 public class CreateEntitySchemaOptions : RemoteCommandOptions
 {
+	internal const string ReplacementNameMismatchMessage = "A replacement schema must have the same name as its parent.";
 	/// <summary>
 	/// Parent schema applied when <c>--parent</c> is omitted (and the schema is not a replacement schema).
 	/// A parentless root schema gets a prefixed primary column (e.g. <c>UsrId</c> instead of <c>Id</c>) and is
@@ -33,10 +34,12 @@ public class CreateEntitySchemaOptions : RemoteCommandOptions
 
 	public IReadOnlyDictionary<string, string>? TitleLocalizations { get; set; }
 
-	[Option("parent", Required = false, HelpText = "Parent schema name. Defaults to BaseEntity when omitted (not applied with --extend-parent)")]
+	/// <summary>Parent name; defaults to the schema name for replacements and BaseEntity otherwise.</summary>
+	[Option("parent", Required = false, HelpText = "Parent schema name. Defaults to the schema name for replacements, or BaseEntity otherwise")]
 	public string ParentSchemaName { get; set; }
 
-	[Option("extend-parent", Required = false, Default = false, HelpText = "Create replacement schema")]
+	/// <summary>Whether to create a same-name replacement in the target package.</summary>
+	[Option("extend-parent", Required = false, Default = false, HelpText = "Create a same-name replacement schema in the target package")]
 	public bool ExtendParent { get; set; }
 
 	/// <summary>
@@ -93,19 +96,21 @@ public class CreateEntitySchemaCommand : Command<CreateEntitySchemaOptions>
 		if (string.IsNullOrWhiteSpace(options.Title)) {
 			throw new InvalidOperationException("Schema title is required.");
 		}
-		if (options.ExtendParent && string.IsNullOrWhiteSpace(options.ParentSchemaName)) {
-			throw new InvalidOperationException("--extend-parent requires --parent.");
+		if (options.ExtendParent && !string.IsNullOrWhiteSpace(options.ParentSchemaName)
+			&& !string.Equals(options.SchemaName, options.ParentSchemaName, StringComparison.OrdinalIgnoreCase)) {
+			throw new InvalidOperationException(CreateEntitySchemaOptions.ReplacementNameMismatchMessage);
 		}
 	}
 
 	// Single source of truth for parent defaulting across every execution path (CLI and MCP). Defaults a root
 	// schema's parent to DefaultParentSchemaName when --parent was omitted; without a parent the created schema
 	// gets a prefixed primary column (e.g. UsrId) and cannot be used over OData (ENG-94424). An explicit parent
-	// and replacement schemas (--extend-parent) are left untouched.
+	// is preserved; a replacement defaults to the same-name base schema.
 	private static void NormalizeParentSchema(CreateEntitySchemaOptions options)
 	{
-		if (!options.ExtendParent && string.IsNullOrWhiteSpace(options.ParentSchemaName)) {
-			options.ParentSchemaName = CreateEntitySchemaOptions.DefaultParentSchemaName;
+		if (string.IsNullOrWhiteSpace(options.ParentSchemaName)) {
+			options.ParentSchemaName = options.ExtendParent
+				? options.SchemaName : CreateEntitySchemaOptions.DefaultParentSchemaName;
 		}
 	}
 }
