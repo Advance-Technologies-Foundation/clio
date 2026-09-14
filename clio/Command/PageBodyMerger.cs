@@ -730,7 +730,7 @@ internal static class PageBodyMerger {
 	/// one instance per <c>Merge</c> call, never shared.
 	/// </summary>
 	/// <remarks>
-	/// <see cref="SetSectionCounts"/> and <see cref="RecordViewConfigDiffApplied"/> ASSIGN, where the
+	/// <see cref="SetSectionCounts"/> and <see cref="SetViewConfigDiffApplied"/> ASSIGN, where the
 	/// <c>Record*</c> methods accumulate. Both are called exactly once per collector, because the collector
 	/// describes a single identity-merged section and only one of <c>MergeWeb</c> / <c>MergeMobile</c> runs
 	/// per merge. A second identity-merged section added later must not reuse this shape: the counts would

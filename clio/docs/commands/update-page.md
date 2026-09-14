@@ -303,7 +303,7 @@ The named lists are capped in length; every count is always exact.
 the last spelling — the earlier one is discarded with its values, and before this it went unreported
 anywhere.
 
-Two consequences worth knowing:
+Three consequences worth knowing:
 
 - An append dry run runs the **same body checks the save runs, against the same body** — including the
   save's own widget-caption gate, reported as a warning rather than a refusal. A dry run and a save

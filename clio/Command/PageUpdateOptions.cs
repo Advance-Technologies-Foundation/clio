@@ -376,11 +376,10 @@
 		/// <remarks>
 		/// Two channels warn, a third deliberately does not. A REPLACEMENT is not a loss - the operation
 		/// survives carrying the caller's values - and warning on it would fire on most appends. A
-		/// COLLAPSED INCOMING entry is a real loss but the fragment is the caller's own, they can read it,
-		/// and warning about their own input would be noise; it is reported as data in
-		/// <c>appendProjection.collapsedIncomingOperations</c> instead, which is what keeps the totals
-		/// reconcilable. The superseded-drop sentences are built by the merge rather than rebuilt here, so
-		/// the wording and the one-per-identity rule live in one place.
+		/// COLLAPSED INCOMING entry is a real loss that is still not warned about; that reasoning has one
+		/// owner, on <see cref="PageAppendProjection.CollapsedIncomingOperations"/>.
+		/// The superseded-drop sentences are built by the merge rather than rebuilt here, so the wording
+		/// and the one-per-identity rule live in one place.
 		/// </remarks>
 		private static IReadOnlyList<string> BuildProjectedLossWarnings(PageAppendProjection projection) {
 			if (projection is null) {

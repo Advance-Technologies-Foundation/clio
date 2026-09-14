@@ -501,7 +501,7 @@ public sealed class ToolContractGetToolTests {
 		projectionField.Description.Should().Contain("projectedOperationCount",
 			because: "the count the reporter compared against their expected total is what makes the projection actionable");
 		projectionField.Description.Should().Contain("droppedOperations",
-			because: "the one remaining way an append loses an operation must be named, not left to be derived from the counts");
+			because: "a loss sourced from the SERVER body must be named, not left to be derived from the counts");
 		projectionField.Description.Should().Contain("NOT a loss",
 			because: "a replaced operation survives with the caller's values; conflating it with a drop would make every ordinary append look lossy");
 		projectionField.Description.Should().Contain("collapsedIncomingOperations",
