@@ -3738,6 +3738,71 @@ stories:
       - story-eng-91853-gateways-and-flows-2
     blocks: []
 
+  - id: story-eng-91853-implicit-parallel-split-1
+    title: "Report the implicit parallel split create-business-process built in silence"
+    feature: "eng-91853-gateways-and-flows"
+    repo: "clio + crt-process-builder + clio-knowledge"
+    size: M
+    status: review
+    jira: ENG-91853
+    pr: https://github.com/Advance-Technologies-Foundation/clio/pull/1524
+    prs:
+      - https://github.com/Advance-Technologies-Foundation/clio/pull/1524
+      - https://creatio.ghe.com/engineering/crt-process-builder/pull/60
+      - https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/166
+    file: spec/eng-91853-gateways-and-flows/implicit-parallel-split-corpus-scan.py
+    notes: >
+      An ordinary element (not a gateway) with more than one outgoing plain sequence flow is an
+      implicit parallel split: nothing decides between them and the platform starts every one.
+      clio's validate-process-graph has reported it as R12 all along; the build path said nothing,
+      so a caller who validated first was warned and one who went straight to create-business-process
+      was not. Same graph, two answers - the quietest kind of divergence, because a clean build reads
+      as a clean graph.
+      SEVERITY WAS MEASURED BEFORE IT WAS CHOSEN, which on this ticket is not a formality: three
+      earlier rules were written without it and each rejected shipped, running processes (R14 - 45
+      gateways; R7/R9 - 7 and 65). Of 1 710 shipped schemas that contain flows, 74 non-gateway
+      sources carry this shape - 31 userTask, 2 formulaTask, 41 start events. The 41 starts are
+      refused on the build path by ValidateStructure's start-arity rule, so the reachable population
+      is 33 ordinary activities. A refusal would reject content that runs; hence a NOTICE. The scan
+      is committed (implicit-parallel-split-corpus-scan.py) because the figure is quoted in package
+      source, in the divergence docblock and in test descriptions, and a number that picks a severity
+      has to stay re-derivable.
+      The first probe answered 75 and invented an element class in its histogram: resolving a flow's
+      source against the schema's own BK4 leaves inherited elements unresolved, and an unresolved
+      source is still COUNTED because it is not a gateway - one of those 14 was a gateway. Recorded
+      at docs/knowledge/ProcessModel/corpus-scan-must-index-nodes-outside-bk4.md.
+      PEER REVIEW (2026-09-14) found two blockers, both verified by EXECUTION rather than reading.
+      (1) The notice prescribed a remedy this package refuses: "condition all but one" throws at three
+      or more branches, because a conditional flow is rejected while two or more siblings carry none,
+      in any order. The text is arity-aware now - two branches condition in place, three or more route
+      through an exclusiveGateway - and three tests execute both routes. (2) The guidance caveat
+      "below X the build stays silent" was false: the convergence refusal fires on ANY environment
+      recording a package older than the one clio ships, floor or no floor, and it gates
+      validate-process-graph too - so an older stand gets a REFUSAL naming install-process-builder,
+      not silence.
+      REVIEW CHANGED THE DESIGN. The notice was first raised per write, and it claims a property of
+      the SAVED process - so a batch could build the shape and dissolve it (addFlow twice, then
+      setFlow kind=conditional, which is the remedy the notice prescribes) and still ship the
+      warning, the collector being append-only. It now runs ONCE per request over the finished graph,
+      scoped to the sources the request touched. That also covers removeFlow, which a per-write check
+      missed entirely: drop the conditional from [conditional, plain, plain] and the platform stops
+      synthesizing the gateway.
+      VERSION: CrtProcessBuilder 1.6.1.24, not the 1.6.2.0 first cut. 1.6.1.22 and 1.6.1.23 were each cut, tagged and then burned when a review round changed the sources; their tags stay on the superseded commits so the gaps are traceable. 1.6.2.0 is already used in both
+      histories, and the 1.6.2 band is in flight elsewhere up to 1.6.2.12 - the rule on
+      ExpectedArchiveSha256 says go up from the version clio ships to the first candidate free in
+      BOTH histories and not above the global maximum. No [RequiresPackage] floor was raised: a
+      notice is optional behaviour and a floor would make describe/create refuse an un-upgraded stand.
+      Validated: package suite 1711 passed (-c dev-nf); clio Category=Unit&Module=Common 1579 and
+      Module=McpServer 5202; clio-knowledge bundle tests 161. Every new rule test was
+      mutation-checked - disabling the notice, removing the gateway exclusion, widening the scope to
+      count a default flow, scanning untouched sources, and restoring per-write reporting each redden
+      a named test.
+      NOT DONE: no stand run. The notice reaching the caller is proven by source (Warnings is
+      assigned only on the success path in both handlers), not by executing against an environment.
+    depends_on:
+      - story-eng-91853-gateways-and-flows-2
+    blocks: []
+
   - id: story-eng-91853-flow-labels-1
     title: "Give a sequence flow a diagram label, on all three write paths and on describe"
     feature: "eng-91853-gateways-and-flows"

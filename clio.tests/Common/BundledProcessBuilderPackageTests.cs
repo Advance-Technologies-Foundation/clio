@@ -74,7 +74,7 @@ public class BundledProcessBuilderPackageTests {
 	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1</c> at
 	/// <see cref="ExpectedArchiveVersion"/> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-91853-flow-labels</c>, tag <c>crtprocessbuilder-1.6.1.4</c>), at the commit
+	/// <c>feature/ENG-91853-implicit-parallel-split-notice</c>, tag <c>crtprocessbuilder-1.6.1.24</c>), at the commit
 	/// recorded mechanically in
 	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
 	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
@@ -90,7 +90,14 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries, over the 1.3.1.1 performer/lookup delivery it replaces: server-side
+	/// <para>What THIS cut carries, over 1.6.1.9: the implicit-parallel-split notice. An ordinary element left
+	/// with more than one outgoing plain flow is reported once per request, over the finished graph, closing the
+	/// last silent divergence against clio&apos;s <c>validate-process-graph</c> - which has reported the shape as
+	/// R12 all along while the build path said nothing. A notice and not a refusal: 74 non-gateway sources in the
+	/// shipped corpus carry it. 1.6.1.24 rather than the next 1.6.2.x because that band is in flight on other
+	/// branches up to 1.6.2.12; 1.6.1.22 and 1.6.1.23 were each cut, tagged and then burned when review changed
+	/// the sources, and their tags stay pointing at the superseded commits so the gaps are traceable.</para>
+	/// <para>What the 1.4.0.x line carried, over the 1.3.1.1 performer/lookup delivery it replaced: server-side
 	/// VALIDATION of formula expressions — an <c>expression</c> mapping source and a conditional-flow condition
 	/// are now parsed, their parameter references resolved against the process, and their result type checked
 	/// against the declared target, instead of being stored unchecked. The MINOR digit moved at 1.4.0.0 because
@@ -176,7 +183,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"ECF7618DC827655E3578603BA249CBC8618B72F89890CD1E9610E45CAFDDF649";
+		"653C6E9C170DF032B5DE2B67B6B142FAFF753D047700141D613BDDB10FAAAC76";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -204,7 +211,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.1.9";
+	private const string ExpectedArchiveVersion = "1.6.1.24";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -216,7 +223,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "ee5188ef404dfae299a373f1d67adfa9bb13df3b";
+	private const string ExpectedProducingCommit = "8bb416dcbad4267db8b96a2a60ab9bada78e030c";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -242,7 +249,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789033773000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789373668000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
