@@ -437,7 +437,7 @@ internal class LoginDiagnosticsTests {
 				+ "credential stops failing fast and burns the readiness budget on further rejected logins), "
 				+ "GetCreatioInfoCommand (BaseProbeFailure.Authentication), SchemaNamePrefixTool (the "
 				+ "MCP-visible 'Authentication error reading SchemaNamePrefix.' result) and "
-				+ "SysSettingsCommand.CategorizeError");
+				+ "SysSettingFailureClassifier.CategorizeError");
 	}
 
 	#endregion

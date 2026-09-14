@@ -8,74 +8,24 @@ Run it against a PackageStore checkout:
     python flow-caption-corpus-scan.py [path-to-PackageStore]
 
 The path may also come from the CRT_PACKAGE_STORE environment variable; it defaults to
-C:/Projects/PackageStore. Nothing else is needed - this file is self-contained, which it was not
-when it was first committed: it `exec`'d two helpers out of a session-scoped scratchpad directory
-under one user's AppData\\Local\\Temp, so it raised FileNotFoundError on every other machine and on
-the same machine once temp was cleaned. The figures it produces are quoted as fact in shipped MCP
-tool descriptions, in package documentation, in a docs/knowledge record and in test descriptions, so
-being unable to re-derive them was the real defect rather than the broken import.
+C:/Projects/PackageStore. The corpus vocabulary and walk come from `process_corpus`, the COMMITTED
+sibling module beside this file - which is not the arrangement that broke this script once: it then
+`exec`'d two helpers out of a session-scoped scratchpad under one user's AppData\\Local\\Temp, so it
+raised FileNotFoundError on every other machine and on the same machine once temp was cleaned. The
+figures it produces are quoted as fact in shipped MCP tool descriptions, in package documentation, in
+a docs/knowledge record and in test descriptions, so being unable to re-derive them was the real
+defect rather than the broken import. A sibling in git, resolved through the script's own directory,
+carries none of that risk and is what keeps this scan and the split scan reading ONE corpus.
 """
 import collections
 import io
-import json
 import os
 import re
 import sys
 
-# The flow-element container inside a process schema's metadata. A sub-process owns its children in
-# its OWN BK4, which is why the walk below is recursive rather than a single lookup.
-ELEMENTS_KEY = "BK4"
+from process_corpus import collect_flow_elements, kind_of, read_schemas, resolve_root
 
-# A flow's kind is read from the CLR CLASS first and the FlowType enum (CI4) second - the order the
-# run time reads them, and the order that makes the corpus's one anomaly (a default flow stamped with
-# the sequence palette item) land where the platform would put it.
-# ProcessSchemaEditSequenceFlowType: Sequence=0 (absent), Default=1, Conditional=2.
-FLOW_CLASSES = {
-    "Terrasoft.Core.Process.ProcessSchemaSequenceFlow": "sequence",
-    "Terrasoft.Core.Process.ProcessSchemaConditionalFlow": "conditional",
-}
-FLOW_TYPE_DEFAULT = 1
-
-
-def collect(node, out):
-    """Appends every flow-element dict in the schema to `out`, sub-process children included."""
-    if isinstance(node, dict):
-        _collect_from_dict(node, out)
-    elif isinstance(node, list):
-        for item in node:
-            collect(item, out)
-
-
-def _collect_from_dict(node, out):
-    """The dict half: ELEMENTS_KEY holds flow elements, and every other value is walked through."""
-    for key, value in node.items():
-        if key != ELEMENTS_KEY or not isinstance(value, list):
-            collect(value, out)
-            continue
-        for item in value:
-            if isinstance(item, dict):
-                out.append(item)
-            # Unconditional, and equivalent: collect() is a no-op on anything that is neither a
-            # dict nor a list, so a non-dict entry costs a call and changes nothing.
-            collect(item, out)
-
-
-def kind_of(element):
-    """'sequence' | 'conditional' | 'default' for a flow element, None for anything that is not one."""
-    kind = FLOW_CLASSES.get(element.get("BL1"))
-    if kind is None:
-        return None
-    if kind == "conditional":
-        return "conditional"
-    return "default" if element.get("CI4") == FLOW_TYPE_DEFAULT else "sequence"
-
-
-ROOT = (sys.argv[1] if len(sys.argv) > 1
-        else os.environ.get("CRT_PACKAGE_STORE", r"C:/Projects/PackageStore"))
-if not os.path.isdir(ROOT):
-    raise SystemExit(
-        "Not a directory: %s\nPass a PackageStore checkout as the first argument, or set "
-        "CRT_PACKAGE_STORE." % ROOT)
+ROOT = resolve_root(sys.argv)
 
 ITEM = re.compile(r'<Item\s+Name="BaseElements\.([^".]+)\.Caption"\s+Value="([^"]*)"')
 
@@ -86,24 +36,13 @@ schemas = 0
 skipped_metadata = []
 skipped_resources = []
 
-for dirpath, _, filenames in os.walk(ROOT):
-    if "metadata.json" not in filenames:
-        continue
-    if (os.sep + "Schemas" + os.sep) not in (dirpath + os.sep):
-        continue
-    try:
-        with io.open(os.path.join(dirpath, "metadata.json"), encoding="utf-8-sig") as fh:
-            data = json.load(fh)
-    except (IOError, OSError, ValueError) as exc:
-        # COUNTED, not swallowed. This script solely owns the 84.9% / 25.5% / 0.7% figures now quoted as
-        # fact in shipped tool descriptions and in published guidance, and a bare `continue` made a
-        # half-read corpus indistinguishable from a complete one - the percentages would simply shift and
-        # still look plausible. Narrowed from `except Exception` too, so a defect in this script (a typo,
-        # a bad regex) raises instead of silently reducing the denominator.
-        skipped_metadata.append((dirpath, str(exc)))
-        continue
+# The skip is COUNTED rather than swallowed, inside read_schemas, and this script is why the rule is
+# there: it solely owns the 84.9% / 25.5% / 0.7% figures quoted as fact in shipped tool descriptions and
+# in published guidance, and a half-read corpus would simply shift the percentages and still look
+# plausible.
+for dirpath, data in read_schemas(ROOT, skipped_metadata):
     elements = []
-    collect(data, elements)
+    collect_flow_elements(data, elements)
     flows = {}
     for el in elements:
         k = kind_of(el)
