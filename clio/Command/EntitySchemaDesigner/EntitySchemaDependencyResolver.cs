@@ -120,9 +120,14 @@ internal sealed class EntitySchemaDependencyResolver : IEntitySchemaDependencyRe
 	private const int MaxLoggedFailureLength = 300;
 
 	/// <summary>
-	/// Upper bound on the wait for the offloaded schema search, covering its own read bound PLUS the delay
-	/// before the thread pool schedules it at all - which no per-request timeout can cap.
+	/// Upper bound on the WHOLE resolve, covering the offloaded schema search's own read bound plus the
+	/// delay before the thread pool schedules it at all - which no per-request timeout can cap.
 	/// </summary>
+	/// <remarks>
+	/// Measured from the start of <c>Resolve</c>, not from after the dependency read: measured from after
+	/// it the two budgets added up, so a saturated pool cost 90 s where the sequential version this
+	/// replaces cost 60 s - worse than the sum the change exists to avoid (PR #1494 review).
+	/// </remarks>
 	/// <remarks>
 	/// Settable only so a test can prove the guard without blocking for a minute; production never assigns
 	/// it. Same kind of seam as <c>ReauthExecutor.LoginVersion</c>.
@@ -178,6 +183,11 @@ internal sealed class EntitySchemaDependencyResolver : IEntitySchemaDependencyRe
 			// schema, and what a warning written on the offloaded thread depends on to reach an MCP response -
 			// are in
 			// docs/knowledge/Command/the-dependency-diagnosis-runs-two-reads-in-parallel-off-a-sync-method.md.
+			// Started BEFORE the offload so the wait below is measured from here, not from after the
+			// dependency read (PR #1494 review). Measured from after it, the two budgets ADDED UP: on the
+			// saturated pool this guard exists for, a 30 s dependency read followed by a 60 s wait cost 90 s,
+			// worse than the 60 s the sequential version it replaces cost.
+			Stopwatch resolveClock = Stopwatch.StartNew();
 			Task<List<string>> contributorsTask = Task.Run(
 				() => Measure(() => FindContributingPackages(schemaName, targetPackageName), "schema search"));
 			(HashSet<string> existingDependencies, bool dependenciesKnown, string? dependencyFailureReason) =
@@ -188,7 +198,12 @@ internal sealed class EntitySchemaDependencyResolver : IEntitySchemaDependencyRe
 			// Waited through the handle rather than with Task.Wait(int) on purpose - Wait throws an
 			// AggregateException for a faulted task, and this path has to surface the exception the
 			// environment actually raised, which the GetAwaiter().GetResult() below does.
-			if (!((IAsyncResult)contributorsTask).AsyncWaitHandle.WaitOne(ContributorsWaitTimeoutMs)) {
+			// The REMAINING budget, so ContributorsWaitTimeoutMs bounds the whole method rather than only
+			// this wait. A read that has already spent the budget leaves 0, and WaitOne(0) still answers
+			// true for a task that has finished - so a fast search is never failed just because the read
+			// before it was slow.
+			int remainingWaitMs = (int)Math.Max(0, ContributorsWaitTimeoutMs - resolveClock.ElapsedMilliseconds);
+			if (!((IAsyncResult)contributorsTask).AsyncWaitHandle.WaitOne(remainingWaitMs)) {
 				throw new TimeoutException(
 					"The lookup of the packages that contribute the schema did not finish within "
 					+ $"{ContributorsWaitTimeoutMs} ms.");

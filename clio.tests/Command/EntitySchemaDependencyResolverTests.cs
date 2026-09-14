@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using Clio.Command;
@@ -358,6 +359,38 @@ internal sealed class EntitySchemaDependencyResolverTests
 				because: "a search that was never scheduled is the absence of an answer, not the answer 'nothing contributes this schema'");
 			resolution.LookupFailureReason.Should().Contain("did not finish within",
 				because: "the caller must be told the lookup was abandoned rather than completed");
+		} finally {
+			releaseTheSchemaSearch.Set();
+		}
+	}
+
+	[Test]
+	[Description("The bounded wait covers the WHOLE resolve, not just the wait after the dependency read: measured from after it, a slow dependency read and the wait added up to more than the sequential version this replaces (PR #1494 review).")]
+	public void Resolve_ShouldBoundTheWholeResolve_WhenTheDependencyReadIsSlowAndTheSchemaSearchNeverAnswers() {
+		// Arrange
+		using ManualResetEventSlim releaseTheSchemaSearch = new();
+		const int budgetMs = 600;
+		const int dependencyReadMs = 400;
+		_resolver.ContributorsWaitTimeoutMs = budgetMs;
+		_dependencyManager.GetDependencies(TargetPackageUId, "Custom", Arg.Any<int>())
+			.Returns<IReadOnlyList<string>>(_ => { Thread.Sleep(dependencyReadMs); return []; });
+		_findCommand.FindSchemas(Arg.Any<FindEntitySchemaOptions>(), Arg.Any<int>())
+			.Returns(_ => {
+				releaseTheSchemaSearch.Wait(TimeSpan.FromSeconds(30));
+				return new List<EntitySchemaSearchResult>();
+			});
+
+		try {
+			// Act
+			Stopwatch clock = Stopwatch.StartNew();
+			EntitySchemaDependencyResolution resolution = _resolver.Resolve("Opportunity", TargetPackageUId, "Custom");
+			clock.Stop();
+
+			// Assert
+			resolution.LookupSucceeded.Should().BeFalse(
+				because: "the search never answered, so there is no answer to report");
+			clock.ElapsedMilliseconds.Should().BeLessThan(budgetMs + dependencyReadMs,
+				because: "the budget has to bound the whole resolve - measured from after the dependency read the two added up, and the worst case came out longer than the sequential version this change replaces");
 		} finally {
 			releaseTheSchemaSearch.Set();
 		}
