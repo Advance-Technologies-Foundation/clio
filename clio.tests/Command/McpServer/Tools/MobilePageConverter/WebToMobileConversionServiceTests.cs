@@ -2925,6 +2925,53 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A declared element's parent can be a PAGE-AUTHORED element the walk only reaches partway through the tree (not another declaration — those are always emitted parent-first). When a containers pair merges directly onto the declaration from EARLIER in that same walk, inserting strictly after the parent (the ordinary rule) would put the declared entry after content that needs it to exist first. EmitDeclaredElements clamps the insertion point ahead of that content instead — applying the map in order never inserts content into a name that is not there yet — and reports the conflict as a constraint, since the declared element then lands ahead of its own declared parent.")]
+	public void Analyze_ShouldClampDeclaredElementOrdering_WhenPageAuthoredParentFollowsItsOwnContentInTheWalk() {
+		// Arrange — UsrEarlyWidget (paired onto the declared LeftPanelTab) sits BEFORE UsrHost (LeftPanelTab's
+		// declared parent) in document order, so the ordinary "right after the parent" placement would land the
+		// declaration after content that must precede it. An empty web template baseline means the whole tree
+		// converts as page-authored content, so UsrHost is a valid ("known") parent for the declaration.
+		JArray page = JArray.Parse("""
+			[
+			  { "name": "MainContainer", "type": "crt.FlexContainer", "direction": "column", "items": [
+			    { "name": "UsrEarlyWidget", "type": "crt.GridContainer", "items": [
+			      { "name": "UsrEarlyWidgetField", "type": "crt.Label", "caption": "Early field" }
+			    ] },
+			    { "name": "UsrHost", "type": "crt.Label", "caption": "Host" }
+			  ] }
+			]
+			""");
+		var rule = new TemplateMappingRule {
+			Web = "UsrOrderingTestTemplate",
+			Mobile = "BaseMobilePageTemplate",
+			Containers = [new ContainerMappingRule { Web = "UsrEarlyWidget", Mobile = "LeftPanelTab" }],
+			DeclaredElements = [new DeclaredElementRule { Name = "LeftPanelTab", Type = "crt.GridContainer", ParentName = "UsrHost" }]
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule,
+			webTemplateTree: new JArray(), webTemplateName: "UsrOrderingTestTemplate");
+
+		// Assert
+		int leftPanelAt = IndexOfDeclared(guide, "LeftPanelTab");
+		int earlyWidgetAt = IndexOfWebElement(guide, "UsrEarlyWidget");
+		leftPanelAt.Should().BeLessThan(earlyWidgetAt,
+			because: "the containers pair merges onto the declared element, so applying the map in order must create it before that merge is applied");
+
+		ElementMapEntry earlyWidget = WebElement(guide, "UsrEarlyWidget");
+		earlyWidget.Operation.Should().Be("merge", because: "the containers pair merges the web widget onto the declared element");
+		earlyWidget.MobileName.Should().Be("LeftPanelTab", because: "the pair names the declaration as its mobile side");
+
+		int hostAt = IndexOfWebElement(guide, "UsrHost");
+		leftPanelAt.Should().BeLessThan(hostAt,
+			because: "the parent lookup landed after content the declaration must precede, so the entry is clamped ahead of that content — even ahead of its own declared parent");
+
+		guide.Constraints.Should().ContainSingle(c => c.Contains("declaredElements produced insertion order"),
+				because: "the rule, not this placement, is what needs fixing — the conflict must be surfaced")
+			.Which.Should().Contain("LeftPanelTab").And.Contain("UsrHost");
+	}
+
+	[Test]
 	[Description("A declared element that receives no surviving content is removed like any other converter-created container — an empty declared tab must never reach the mobile page — and it gets no synthesized body.")]
 	public void Analyze_ShouldDropDeclaredExtraTab_WhenNoRightPanelContentSurvives() {
 		// Arrange
