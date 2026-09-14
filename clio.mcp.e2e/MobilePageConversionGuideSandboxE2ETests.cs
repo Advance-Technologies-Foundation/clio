@@ -275,7 +275,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
-		await RequireConverterFeatureOrIgnoreAsync(context);
+		await RequireConverterToolAsync(context);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		IReadOnlyList<string> candidates = await ResolveSeededTabbedPageCandidatesOrIgnoreAsync(
 			context.Session, context.CancellationTokenSource.Token, environmentName);
