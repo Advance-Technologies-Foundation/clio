@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -45,6 +45,30 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	private const string ToolName = MobilePageConversionGuideTool.ToolName;
 	private const string ApplicationCode = "AutoTestClioMcp";
 
+	/// <summary>
+	/// Budget for the one-off candidate probe, which converts every seeded page. It is deliberately
+	/// independent of the calling test's token: the probe is fixture-scoped work, and charging it to the
+	/// first test's (smallest) budget would cancel that test for a cost none of its own assertions caused.
+	/// </summary>
+	private static readonly TimeSpan ProbeTimeout = TimeSpan.FromMinutes(10);
+
+	/// <summary>
+	/// The seeded pages the converter accepts, resolved once for the whole fixture. The seed application
+	/// also carries pages the converter must REFUSE (see
+	/// <see cref="ResolveConvertibleSeededPageCandidatesAsync"/>), and the probe that separates
+	/// them costs one conversion per seeded page — paying that once per fixture rather than once per test
+	/// keeps the sandbox tier's call count where it was.
+	/// </summary>
+	private IReadOnlyList<string>? _convertibleCandidates;
+
+	/// <summary>
+	/// Why the one-off candidate probe failed, or <c>null</c> while it has not. Cached like the success
+	/// result: a probe that failed once fails every test the same way, and re-running it per test would cost
+	/// up to <see cref="ProbeTimeout"/> each time for an answer already known.
+	/// </summary>
+	private string? _probeFailure;
+
+
 	[Test]
 	[Description("Converts a real seeded Freedom UI page through the real clio MCP server and verifies that the returned modelConfigDiff / viewModelConfigDiff are SPLIT into focused targeted merges (no path-[] root merge remains), which is the split/union behavior fed by the mobile template probe, and that no element is dropped for being bound to a non-primary page data source.")]
 	[AllureTag(ToolName)]
@@ -54,41 +78,53 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
-		await RequireConverterFeatureOrIgnoreAsync(context);
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterToolAsync(context);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		string sourceSchemaName = await ResolveSeededPageSchemaNameOrIgnoreAsync(
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
 			context.Session, context.CancellationTokenSource.Token, environmentName);
 
-		// Act
-		CallToolResult callResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["schema-name"] = sourceSchemaName,
-					["environment-name"] = environmentName
-				}
-			},
-			context.CancellationTokenSource.Token);
-		MobilePageConversionGuideResponse response =
-			EntitySchemaStructuredResultParser.Extract<MobilePageConversionGuideResponse>(callResult);
+		// Act — convert candidates until one carries a data-section diff. The diff IS this test's subject:
+		// AssertSplitShape returns on a null diff and every assertion below is vacuous on an empty guide, so
+		// stopping at the first page that happened to have no data section would pass without the split pass
+		// ever running. Trying them all also removes the "unlucky single pick" this test used to make.
+		MobilePageConversionGuide? guide = null;
+		string convertedSchemaName = string.Empty;
+		List<string> failedCandidates = [];
+		foreach (string schemaName in candidates) {
+			MobilePageConversionGuide? candidate = await ConvertOrCollectFailureAsync(
+				context.Session, context.CancellationTokenSource.Token, environmentName, schemaName, failedCandidates);
+			if (candidate is null) {
+				continue;
+			}
+			if (candidate.ModelConfigDiff is not null || candidate.ViewModelConfigDiff is not null) {
+				guide = candidate;
+				convertedSchemaName = schemaName;
+				break;
+			}
+		}
 
 		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: "converting a seeded page should return a structured guide payload, not a transport-level error");
-		response.Success.Should().BeTrue(
-			because: $"get-mobile-page-conversion-guide should convert the seeded page '{sourceSchemaName}'. Error: {response.Error}");
-		response.Guide.Should().NotBeNull(
-			because: "a successful conversion must carry the guide inline so the caller can paste its diffs");
-		AssertSplitShape(response.Guide!.ModelConfigDiff, "modelConfigDiff");
-		AssertSplitShape(response.Guide!.ViewModelConfigDiff, "viewModelConfigDiff");
-		response.Guide!.ElementMap.Should().NotContain(
+		FailOnConversionFailures(failedCandidates, candidates.Count, environmentName);
+		if (guide is null) {
+			// FAILS rather than ignores, by the same rule the candidate probe applies: "no page produced a
+			// data-section diff" is equally what a regression in the converter's diff emission looks like, and
+			// the seed is provisioned with a list page whose quick filters and sorting are exactly that data.
+			Assert.Fail(
+				$"None of the {candidates.Count} convertible seeded page(s) of '{ApplicationCode}' on environment "
+				+ $"'{environmentName}' produced a modelConfigDiff or a viewModelConfigDiff, so the root-merge split "
+				+ "had nothing to split. The seed application is provisioned with a list page carrying a data "
+				+ "section, so an empty result across every page is a converter regression, not missing seed data.");
+		}
+		AssertSplitShape(guide!.ModelConfigDiff, "modelConfigDiff");
+		AssertSplitShape(guide!.ViewModelConfigDiff, "viewModelConfigDiff");
+		guide!.ElementMap.Should().NotContain(
 			e => e.Operation == "drop" && e.Reason != null && e.Reason.Contains("multi-data-source"),
-			because: "a mobile page carries the same multi-data-source structure as web, so an element bound to a "
-				+ "non-primary page data source must convert — the drop used to remove whole detail sections and, "
-				+ "because emptiness cascades, their wrapper containers with them");
-		AssertConvertedListsCarryTheirRow(response.Guide!);
-		AssertHeaderActionsConvertToFab(response.Guide!);
+			because: $"on '{convertedSchemaName}' a mobile page carries the same multi-data-source structure as web, so an "
+				+ "element bound to a non-primary page data source must convert — the drop used to remove whole detail "
+				+ "sections and, because emptiness cascades, their wrapper containers with them");
+		AssertConvertedListsCarryTheirRow(guide!);
+		AssertHeaderActionsConvertToFab(guide!);
 	}
 
 	[Test]
@@ -101,9 +137,9 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
-		await RequireConverterFeatureOrIgnoreAsync(context);
+		await RequireConverterToolAsync(context);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		IReadOnlyList<string> candidates = await ResolveSeededTabbedPageCandidatesOrIgnoreAsync(
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
 			context.Session, context.CancellationTokenSource.Token, environmentName);
 
 		// Act — convert candidates until one yields a FAB conversion; a conversion FAILURE is a regression, not a seed gap.
@@ -141,13 +177,8 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		}
 
 		// Assert
+		FailOnConversionFailures(failedCandidates, candidates.Count, environmentName);
 		if (fabEntryCount == 0) {
-			if (failedCandidates.Count > 0) {
-				Assert.Fail(
-					$"{failedCandidates.Count} of {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment "
-					+ $"'{environmentName}' failed to convert; get-mobile-page-conversion-guide must succeed on every seeded "
-					+ $"page, so this is a runtime regression, not missing seed data: {string.Join("; ", failedCandidates)}");
-			}
 			Assert.Ignore(
 				$"None of the {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
 				+ "carries a MainHeader action, so MainHeader->FAB could not be exercised end to end. Add a seeded page with a "
@@ -167,9 +198,9 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
-		await RequireConverterFeatureOrIgnoreAsync(context);
+		await RequireConverterToolAsync(context);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		IReadOnlyList<string> candidates = await ResolveSeededTabbedPageCandidatesOrIgnoreAsync(
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
 			context.Session, context.CancellationTokenSource.Token, environmentName);
 		List<ExcludedComponentFilterRule> filters = WebToMobilePageConversionRulesCatalog.LoadBundled()
 			.ExcludedComponents
@@ -384,9 +415,9 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
-		await RequireConverterFeatureOrIgnoreAsync(context);
+		await RequireConverterToolAsync(context);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		IReadOnlyList<string> candidates = await ResolveSeededTabbedPageCandidatesOrIgnoreAsync(
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
 			context.Session, context.CancellationTokenSource.Token, environmentName);
 
 		// Act — convert candidates (form pages first) until one synthesizes tab layers. A candidate that
@@ -421,13 +452,8 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				break;
 			}
 		}
+		FailOnConversionFailures(failedCandidates, candidates.Count, environmentName);
 		if (guide is null) {
-			if (failedCandidates.Count > 0) {
-				Assert.Fail(
-					$"{failedCandidates.Count} of {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment "
-					+ $"'{environmentName}' failed to convert; get-mobile-page-conversion-guide must succeed on every seeded "
-					+ $"page, so this is a runtime regression, not missing seed data: {string.Join("; ", failedCandidates)}");
-			}
 			Assert.Ignore(
 				$"All {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
 				+ "converted successfully, but none produced tabAreaLayers: the seed application has no Freedom UI page "
@@ -488,32 +514,30 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
-		await RequireConverterFeatureOrIgnoreAsync(context);
+		await RequireConverterToolAsync(context);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		IReadOnlyList<string> candidates = await ResolveSeededTabbedPageCandidatesOrIgnoreAsync(
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
 			context.Session, context.CancellationTokenSource.Token, environmentName);
 
 		// Act — convert candidates until one places content above an anchor. The converter's own reason text is
 		// the trigger; a conversion FAILURE is a regression, not a seed gap.
-		MobilePageConversionGuide guide = null;
+		MobilePageConversionGuide? guide = null;
 		string convertedSchemaName = string.Empty;
 		List<string> failedCandidates = [];
 		foreach (string schemaName in candidates) {
-			MobilePageConversionGuide candidate = await ConvertOrCollectFailureAsync(
+			MobilePageConversionGuide? candidate = await ConvertOrCollectFailureAsync(
 				context.Session, context.CancellationTokenSource.Token, environmentName, schemaName, failedCandidates);
-			if (PlacedAboveAnchor(candidate).Count > 0) {
+			// A candidate that failed to convert is already recorded in failedCandidates and fails the test
+			// below; passing its null guide on would raise a NullReferenceException instead, masking the
+			// diagnostic with a crash. The sibling loops already guard this.
+			if (candidate is not null && PlacedAboveAnchor(candidate).Count > 0) {
 				guide = candidate;
 				convertedSchemaName = schemaName;
 				break;
 			}
 		}
+		FailOnConversionFailures(failedCandidates, candidates.Count, environmentName);
 		if (guide is null) {
-			if (failedCandidates.Count > 0) {
-				Assert.Fail(
-					$"{failedCandidates.Count} of {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment "
-					+ $"'{environmentName}' failed to convert; get-mobile-page-conversion-guide must succeed on every seeded "
-					+ $"page, so this is a runtime regression, not missing seed data: {string.Join("; ", failedCandidates)}");
-			}
 			Assert.Ignore(
 				$"All {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
 				+ "converted successfully, but none placed content above a positional anchor. Add a tabbed record "
@@ -524,7 +548,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		// Assert — the anchor made room. The exact arithmetic is unit-tested; what must hold end to end is that
 		// the anchor no longer sits in the row the template pinned it to, and that it is re-placed exactly once.
 		List<ElementMapEntry> above = PlacedAboveAnchor(guide);
-		string anchorName = ResolveBundledPositionalAnchor();
+		string? anchorName = ResolveBundledPositionalAnchor();
 		anchorName.Should().NotBeNullOrEmpty(
 			because: "the bundled tabbed template rule must declare the mobile anchor its ':top' content is placed "
 				+ $"around, so '{convertedSchemaName}' has something to be positioned against");
@@ -533,7 +557,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			.Where(e => e.Operation == "merge" && string.Equals(e.MobileName, anchorName, StringComparison.OrdinalIgnoreCase))];
 		anchorMerges.Should().ContainSingle(
 			because: "the anchor is re-placed exactly once, whether the page produced a template twin for it or not");
-		JsonNode row = anchorMerges[0].MobileValues?["layoutConfig"]?["row"];
+		JsonNode? row = anchorMerges[0].MobileValues?["layoutConfig"]?["row"];
 		row.Should().NotBeNull(
 			because: $"'{anchorName}' is positioned by layoutConfig, so the {above.Count} element(s) above it can "
 				+ "only be made room for by moving its row");
@@ -566,7 +590,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// break this test, and the rule is the authoritative source anyway. Mirrors
 	/// <see cref="ResolveBundledRemovableTypes"/>. Null when no rule declares a positional entry.
 	/// </summary>
-	private static string ResolveBundledPositionalAnchor() =>
+	private static string? ResolveBundledPositionalAnchor() =>
 		WebToMobilePageConversionRulesCatalog.LoadBundled().Templates
 			.Where(t => t.Mobile == "MobilePageWithTabsFreedomTemplate")
 			.SelectMany(t => t.Containers)
@@ -584,9 +608,9 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
-		await RequireConverterFeatureOrIgnoreAsync(context);
+		await RequireConverterToolAsync(context);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		IReadOnlyList<string> candidates = await ResolveSeededTabbedPageCandidatesOrIgnoreAsync(
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
 			context.Session, context.CancellationTokenSource.Token, environmentName);
 
 		// Act + Assert (per page) — convert EVERY seeded page; a conversion failure is a runtime
@@ -655,18 +679,19 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		pagesWithTargetedParents.Should().BeGreaterThan(0,
 			because: "at least one seeded page with nested containers must have exercised the differ-apply gate");
 		if (pagesWithAConvertedTab == 0) {
-			// Not a failure: the tab-strip invariant is pinned hermetically on every build by
-			// WebToMobileGeneralInfoTabRegressionTests against the OOTB Services_FormPage. What is NOT covered
-			// while this is silent is the RUNTIME-FETCHED rules file reaching the same verdict through the real
-			// clio mcp-server process — the one failure mode no hermetic unit test can see.
-			Assert.Ignore(
-				$"None of the {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment "
-				+ $"'{environmentName}' produced a converted tab, so the ENG-94951 placement invariant could not be "
-				+ "exercised end to end. This is not a coverage gap for the rule itself \u2014 "
-				+ "WebToMobileGeneralInfoTabRegressionTests pins it hermetically on the OOTB Services_FormPage and "
-				+ "runs on every build. What is NOT covered while this skips is the RUNTIME-FETCHED rules file "
-				+ "reaching the same verdict through the real clio mcp-server process. To close it, add a tabbed "
-				+ "record page whose General information tab holds an expansion panel to the seed application.");
+			// Reported, NOT ignored. By this line the test's own subject — the container child-slot contract
+			// and the differ-apply gate — has been verified on every seeded page, so marking the run skipped
+			// would deny work that actually happened, and an ignore count that misreports verified runs is
+			// precisely how issue #1382 stayed invisible for 55 builds. The tab-strip invariant is a SECOND
+			// observation this test makes when the seed allows it, and it is pinned hermetically on every build
+			// by WebToMobileGeneralInfoTabRegressionTests against the OOTB Services_FormPage. What goes
+			// uncovered while this line prints is only the RUNTIME-FETCHED rules file reaching the same verdict
+			// through the real clio mcp-server process.
+			TestContext.Out.WriteLine(
+				$"[seed gap] None of the {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment "
+				+ $"'{environmentName}' produced a converted tab, so the ENG-94951 placement invariant was not "
+				+ "exercised end to end on this run. To close it, add a tabbed record page whose General "
+				+ "information tab holds an expansion panel to the seed application.");
 		}
 	}
 
@@ -719,9 +744,9 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
-		await RequireConverterFeatureOrIgnoreAsync(context);
+		await RequireConverterToolAsync(context);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		IReadOnlyList<string> candidates = await ResolveSeededTabbedPageCandidatesOrIgnoreAsync(
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
 			context.Session, context.CancellationTokenSource.Token, environmentName);
 		IReadOnlySet<string> removableTypes = ResolveBundledRemovableTypes();
 
@@ -751,13 +776,8 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		}
 
 		// Assert
+		FailOnConversionFailures(failedCandidates, candidates.Count, environmentName);
 		if (matchedGuide is null) {
-			if (failedCandidates.Count > 0) {
-				Assert.Fail(
-					$"{failedCandidates.Count} of {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment "
-					+ $"'{environmentName}' failed to convert; get-mobile-page-conversion-guide must succeed on every seeded "
-					+ $"page, so this is a runtime regression, not missing seed data: {string.Join("; ", failedCandidates)}");
-			}
 			Assert.Ignore(
 				$"None of the {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
 				+ "produced a surviving parent-targeted insert whose type is outside emptyContainerRemoval.removableTypes "
@@ -774,6 +794,148 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		SchemaValidationResult applied = MobileDiffApplyValidator.Validate(AssembleViewConfigDiffBody(matchedGuide!));
 		applied.IsValid.Should().BeTrue(
 			because: $"the viewConfigDiff assembled from the guide for '{convertedSchemaName}' must survive the Creatio differ clones. Errors: {string.Join("; ", applied.Errors)}");
+	}
+
+	[Test]
+	[Description("ENG-94839 end to end: a converted page whose actions navigate somewhere must report, against the LIVE environment, whether each target exists on mobile. Asserts the probe actually ran (targetsProbed), that every finding uses the declared vocabulary, that it names a control the element map really carries, and — the warn-only contract — that a verified-missing target never removes that control. A conversion failure always fails the test; only a seed with no navigating action degrades to Ignore.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide verifies each action's navigation target against the environment")]
+	[AllureDescription("Converts the seeded application's pages through the real clio MCP server until one carries an action whose request declares a navigation target, then asserts the guide reports the target verification as typed data and leaves the control in place.")]
+	public async Task MobilePageConversionGuideTool_Should_Verify_Action_Targets_Against_The_Environment() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterToolAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		// Every CONVERTIBLE seeded page is a candidate: a navigating action can sit on any page shape, not
+		// only a tabbed one. The filter removes nothing this test wants — it drops only the pages the converter
+		// refuses by contract, which can carry no converted action at all and whose refusal this loop would
+		// otherwise report as a conversion regression (issue #1382).
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+		IReadOnlySet<string> declaredKinds = ResolveBundledTargetKinds();
+		declaredKinds.Should().NotBeEmpty(
+			because: "the shipped rules must declare at least one navigation target, or this surface is dead data");
+		IReadOnlySet<string> navigatingRequests = ResolveBundledNavigatingRequests();
+
+		// Act — convert candidates until one carries an action that actually NAVIGATES. Selecting on
+		// TargetsProbed alone would be vacuous: the probe reports ProbeOk for a page with no navigating action
+		// at all, so the first page with any request binding would satisfy it and every assertion below would
+		// iterate an empty list. A conversion FAILURE is a regression, not a seed gap, so it fails the test.
+		MobilePageConversionGuide? guide = null;
+		string convertedSchemaName = string.Empty;
+		List<string> failedCandidates = [];
+		foreach (string schemaName in candidates) {
+			MobilePageConversionGuide? candidate = await ConvertOrCollectFailureAsync(
+				context.Session, context.CancellationTokenSource.Token, environmentName, schemaName, failedCandidates);
+			if (candidate?.RequestConversions is { TargetsProbed: true } candidateConversions
+				&& CarriesNavigatingAction(candidateConversions, navigatingRequests)) {
+				guide = candidate;
+				convertedSchemaName = schemaName;
+				break;
+			}
+		}
+		FailOnConversionFailures(failedCandidates, candidates.Count, environmentName);
+		if (guide is null) {
+			Assert.Ignore(
+				$"All {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
+				+ "converted successfully, but none carried an action whose request declares a navigation target. Add a "
+				+ "page with a button firing crt.OpenPageRequest or crt.CreateRecordRequest to the seed application to "
+				+ "exercise this surface.");
+		}
+
+		// Assert — the findings are usable typed data, consistent with the element map, and non-destructive.
+		RequestConversionInfo conversions = guide!.RequestConversions!;
+		CarriesNavigatingAction(conversions, navigatingRequests).Should().BeTrue(
+			because: $"'{convertedSchemaName}' was selected precisely because it fires a navigating request, so "
+				+ "the assertions below are about a page the probe genuinely had to resolve targets for");
+		// Keyed on MOBILE names, because that is what a finding's elementName IS (ProcessEventBindings is
+		// called with the converted element's mobile name). Building this from WebName passed only while the
+		// two happened to coincide, and would false-fail on a renamed twin or on an inserted element, whose
+		// WebName is legitimately null.
+		var survivingMobileNames = new HashSet<string>(
+			guide.ElementMap
+				.Where(e => e.Operation != "drop" && !string.IsNullOrWhiteSpace(e.MobileName))
+				.Select(e => e.MobileName!),
+			StringComparer.OrdinalIgnoreCase);
+
+		foreach (UnresolvedTargetRequest finding in conversions.UnresolvedTargetRequests) {
+			finding.State.Should().BeOneOf(["missing", "unknown"],
+				because: $"'{convertedSchemaName}' must report a state the caller knows how to act on, and the two "
+					+ "differ in how confidently the broken target is reported");
+			declaredKinds.Should().Contain(finding.TargetKind,
+				because: $"the kind on '{finding.ElementName}' must come from the shipped rules, never from a literal "
+					+ "the analysis service invented");
+			finding.Target.Should().NotBeNullOrWhiteSpace(
+				because: "a finding the user cannot trace back to a page or object name is not actionable");
+			survivingMobileNames.Should().Contain(finding.ElementName!,
+				because: $"'{finding.ElementName}' on '{convertedSchemaName}' is reported as carrying an unreachable "
+					+ "target, so the CONTROL must still be on the converted page: naming a control the guide "
+					+ "already dropped would contradict its own element map");
+			if (finding.BindingRemoved) {
+				finding.State.Should().Be("missing",
+					because: "an action is only ever removed for an absence that was established, never for one "
+						+ "the environment could not answer for");
+				conversions.DroppedRequests.Should().Contain(
+					r => r.ElementName == finding.ElementName && r.Binding == finding.Binding,
+					because: "a removed binding is a dropped request, so the two collections must agree over the "
+						+ "real MCP transport and not only in unit tests");
+			}
+		}
+	}
+
+	/// <summary>
+	/// The <c>targetKind</c> values the SHIPPED rules declare, read from the rules file rather than restated
+	/// here: the vocabulary is data, and a rules update that adds a kind must not fail this test.
+	/// </summary>
+	private static IReadOnlySet<string> ResolveBundledTargetKinds() =>
+		WebToMobilePageConversionRulesCatalog.LoadBundled().Requests
+			.Select(r => r.TargetKind)
+			.Where(kind => !string.IsNullOrWhiteSpace(kind))
+			.ToHashSet(StringComparer.OrdinalIgnoreCase)!;
+
+	/// <summary>
+	/// The web requests the SHIPPED rules say carry a navigation target — the ones whose presence on a page
+	/// means the probe had real work to do. Read from the rules for the same reason as the kinds.
+	/// </summary>
+	private static IReadOnlySet<string> ResolveBundledNavigatingRequests() =>
+		WebToMobilePageConversionRulesCatalog.LoadBundled().Requests
+			.Where(r => !string.IsNullOrWhiteSpace(r.TargetParam) && !string.IsNullOrWhiteSpace(r.Web))
+			.Select(r => r.Web)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase)!;
+
+	/// <summary>
+	/// Whether the converted page actually fired a navigating request, across every outcome the conversion
+	/// records. Without this the fixture would select a page whose only action is e.g. a save button, and its
+	/// per-finding assertions would iterate nothing.
+	/// </summary>
+	private static bool CarriesNavigatingAction(
+		RequestConversionInfo conversions, IReadOnlySet<string> navigatingRequests) =>
+		conversions.ConvertedRequests.Any(r => navigatingRequests.Contains(r.WebRequest ?? string.Empty))
+		|| conversions.FlaggedRequests.Any(r => navigatingRequests.Contains(r.Request ?? string.Empty))
+		|| conversions.DroppedRequests.Any(r => navigatingRequests.Contains(r.WebRequest ?? string.Empty));
+
+	/// <summary>
+	/// Fails the test when any seeded page failed to convert, whether or not the search that collected the
+	/// failures went on to find its match.
+	/// </summary>
+	/// <remarks>
+	/// The searching tests break out of their loop on the first candidate carrying the shape they are after.
+	/// Reporting the collected failures only when NOTHING matched therefore discarded a genuine regression on
+	/// an earlier candidate as soon as a later one matched — the fixture's contract is that
+	/// <c>get-mobile-page-conversion-guide</c> succeeds on every seeded page, so the check belongs above the
+	/// search's own verdict, not inside its miss branch.
+	/// </remarks>
+	private static void FailOnConversionFailures(
+		List<string> failedCandidates, int candidateCount, string environmentName) {
+		if (failedCandidates.Count == 0) {
+			return;
+		}
+		Assert.Fail(
+			$"{failedCandidates.Count} of {candidateCount} seeded page(s) of '{ApplicationCode}' on environment "
+			+ $"'{environmentName}' failed to convert; get-mobile-page-conversion-guide must succeed on every seeded "
+			+ $"page, so this is a runtime regression, not missing seed data: {string.Join("; ", failedCandidates)}");
 	}
 
 	/// <summary>
@@ -935,6 +1097,159 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	}
 
 	/// <summary>
+	/// The seeded pages the converter accepts, resolved once per fixture from
+	/// <see cref="ResolveSeededTabbedPageCandidatesOrIgnoreAsync"/>.
+	/// </summary>
+	/// <remarks>
+	/// The seed application deliberately carries pages the converter must REFUSE — <c>create-app</c>
+	/// generates <c>_MobileFormPage</c> / <c>_MobileListPage</c> alongside the web pages, and the app also
+	/// holds a Detail schema — so enumerating everything <c>list-pages</c> returns fed the "must convert"
+	/// set pages whose rejection is the product working as designed (issue #1382). A rejection is separated
+	/// from a runtime error by the response's own structured <c>sourceType</c>, not by matching error text.
+	/// Every unsuccessful response that does NOT carry a refused source type — a transport error, or a
+	/// failure whose <c>sourceType</c> is absent or <c>freedom-web</c> — stays in the candidate set, so the
+	/// callers' "must succeed on every seeded page" assertions still catch a genuine regression.
+	///
+	/// A refused type includes <c>unknown</c>, which is what the Detail schema reports; that bucket is also
+	/// where a source-type DETECTION regression would land, so an empty surviving set FAILS rather than
+	/// ignores. The seed application is provisioned with Freedom UI web pages (<c>create-app</c> always
+	/// generates them), so "every seeded page was refused" is a product regression, not a seed gap — and an
+	/// Ignore there would recreate exactly the silent-green state this fixture was repaired to remove.
+	/// <para>
+	/// The name carries no <c>OrIgnore</c> suffix on purpose: every branch THIS method owns fails. It can
+	/// still end in an Ignore, but only by propagating one from the precondition resolvers it calls (no
+	/// seeded application, or an application with no pages at all). Do not add an Ignore exit here — an
+	/// ambiguous candidate set is exactly what this fixture was repaired to stop reporting as a skip.
+	/// </para>
+	/// </remarks>
+	private async Task<IReadOnlyList<string>> ResolveConvertibleSeededPageCandidatesAsync(
+		McpServerSession session, CancellationToken cancellationToken, string environmentName) {
+		if (_probeFailure is not null) {
+			Assert.Fail(_probeFailure);
+		}
+		if (_convertibleCandidates is not null) {
+			return _convertibleCandidates;
+		}
+		IReadOnlyList<string> seededCandidates =
+			await ResolveSeededTabbedPageCandidatesOrIgnoreAsync(session, cancellationToken, environmentName);
+
+		// The probe converts every seeded page, so it must not be charged to the budget of whichever test
+		// happens to run first — the smallest of those budgets was sized for a single conversion.
+		using CancellationTokenSource probeCts = new(ProbeTimeout);
+		List<string> convertible = [];
+		List<string> rejected = [];
+		List<string> unreachable = [];
+		foreach (string schemaName in seededCandidates) {
+			CandidateProbeResult probe;
+			try {
+				probe = await ProbeCandidateAsync(session, probeCts.Token, environmentName, schemaName);
+			} catch (Exception exception) when (exception is OperationCanceledException or JsonException) {
+				// The probe budget elapsing on a hung conversion, or a structured response that will not
+				// parse, are the two ways this loop throws instead of returning a verdict. Both must still
+				// CACHE a reason: a throw that leaves _probeFailure null sends the next test through the
+				// whole probe again, which is the cost the cache exists to remove — and it is the hung or
+				// intermittently-dropping sandbox, the likeliest fault of all, that would pay it seven times.
+				FailProbeAndCache(
+					$"Probing seeded page '{schemaName}' of '{ApplicationCode}' on environment '{environmentName}' "
+					+ $"threw after {ProbeTimeout.TotalMinutes:0} minute(s) of probe budget: "
+					+ $"{exception.GetType().Name}: {exception.Message}. The candidate set could not be established, "
+					+ "so this is a sandbox availability or response-shape fault, not a converter regression.");
+				throw;
+			}
+			switch (probe.Verdict) {
+				case CandidateVerdict.RefusedBySourceType:
+					rejected.Add(probe.Detail);
+					break;
+				case CandidateVerdict.Unreachable:
+					unreachable.Add(probe.Detail);
+					break;
+				default:
+					convertible.Add(schemaName);
+					break;
+			}
+		}
+
+		// A probe that could not reach the tool learned NOTHING about the page, so it must not be reported
+		// as a conversion regression by the loops downstream — the message has to name connectivity, or a
+		// sandbox outage reads as "the converter broke".
+		if (unreachable.Count > 0) {
+			FailProbeAndCache(
+				$"{unreachable.Count} of {seededCandidates.Count} seeded page(s) of '{ApplicationCode}' could not be "
+				+ $"probed on environment '{environmentName}': the tool call itself failed, so nothing is known about "
+				+ "these pages. This is a transport or sandbox-availability fault, not a converter regression: "
+				+ string.Join("; ", unreachable));
+		}
+		if (convertible.Count == 0) {
+			FailProbeAndCache(
+				$"All {seededCandidates.Count} seeded page(s) of '{ApplicationCode}' on environment "
+				+ $"'{environmentName}' were refused by source type, leaving nothing to convert. The seed "
+				+ "application is provisioned with Freedom UI web pages, so a set with none surviving is a "
+				+ $"source-type detection regression, not missing seed data: {string.Join("; ", rejected)}");
+		}
+		_convertibleCandidates = convertible;
+		return convertible;
+	}
+
+	/// <summary>
+	/// Records why the one-off probe failed and fails the current test with that reason. The reason is cached
+	/// so the six other tests short-circuit on it instead of each re-running a probe already known to fail —
+	/// on a real regression that turned one slow failure into seven.
+	/// </summary>
+	private void FailProbeAndCache(string reason) {
+		_probeFailure = reason;
+		Assert.Fail(reason);
+	}
+
+	/// <summary>What the one-off probe learned about one seeded page.</summary>
+	private enum CandidateVerdict {
+		/// <summary>
+		/// The converter accepted the page, or failed in a way only the calling test can judge — an
+		/// unexplained failure stays a candidate so the caller's "must succeed on every seeded page"
+		/// assertion still fires on it.
+		/// </summary>
+		Convertible,
+
+		/// <summary>The converter refused the page by contract: a populated, non-<c>freedom-web</c> source type.</summary>
+		RefusedBySourceType,
+
+		/// <summary>The tool call itself failed, so the probe learned nothing about the page.</summary>
+		Unreachable
+	}
+
+	/// <summary>One page's probe verdict together with the text describing it in a failure message.</summary>
+	private readonly record struct CandidateProbeResult(CandidateVerdict Verdict, string Detail);
+
+	/// <summary>
+	/// Converts one seeded page and classifies the outcome for the candidate set. A refusal BY CONTRACT — an
+	/// already-mobile page, or any other populated non-<c>freedom-web</c> source — drops the page; a failed
+	/// tool call reports <see cref="CandidateVerdict.Unreachable"/> so a systemic outage is never read as a
+	/// converter regression; everything else stays a candidate and remains the calling test's to judge.
+	/// </summary>
+	private static async Task<CandidateProbeResult> ProbeCandidateAsync(
+		McpServerSession session, CancellationToken cancellationToken, string environmentName, string schemaName) {
+		CallToolResult callResult = await session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = schemaName,
+					["environment-name"] = environmentName
+				}
+			},
+			cancellationToken);
+		if (callResult.IsError == true) {
+			return new CandidateProbeResult(CandidateVerdict.Unreachable, $"'{schemaName}': transport-level error");
+		}
+		MobilePageConversionGuideResponse response =
+			EntitySchemaStructuredResultParser.Extract<MobilePageConversionGuideResponse>(callResult);
+		if (response.Success || string.IsNullOrWhiteSpace(response.SourceType)) {
+			return new CandidateProbeResult(CandidateVerdict.Convertible, schemaName);
+		}
+		return string.Equals(response.SourceType, WebToMobileAnalysisService.SourceTypeFreedomWeb, StringComparison.OrdinalIgnoreCase)
+			? new CandidateProbeResult(CandidateVerdict.Convertible, schemaName)
+			: new CandidateProbeResult(CandidateVerdict.RefusedBySourceType, $"'{schemaName}' (sourceType '{response.SourceType}')");
+	}
+
+	/// <summary>
 	/// A data-section diff (when present) must be split into FOCUSED targeted merges: no path-[] root merge
 	/// may carry an ARRAY, because the mobile diff engine replaces arrays wholesale on a merge, so a path-[]
 	/// array would silently drop the page's own entries. A scalar-only residual path-[] merge (a top-level
@@ -965,46 +1280,21 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		_ => false
 	};
 
-	private async Task RequireConverterFeatureOrIgnoreAsync(ArrangeContext context) {
+	/// <summary>
+	/// Gates on the converter tool being advertised. The suite-owned clio home built by
+	/// <see cref="McpSharedHomeSetUpFixture"/> forces <c>mobile-page-converter</c> on, so an absent tool is
+	/// a REGRESSION (the feature gate or the tool registration broke) and never "this machine has the flag
+	/// off" — that ambient dependency is what made the suite's effective test set a property of which build
+	/// agent picked up the build.
+	/// </summary>
+	private static async Task RequireConverterToolAsync(ArrangeContext context) {
 		IReadOnlyCollection<string> toolNames =
 			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
-		if (!toolNames.Contains(ToolName)) {
-			Assert.Ignore(
-				$"'{ToolName}' is not advertised: the 'mobile-page-converter' feature is not enabled in the active clio home. "
-				+ "Enable it (Features.mobile-page-converter=true) to run this sandbox test.");
-		}
+		toolNames.Should().Contain(ToolName,
+			because: "the suite-owned clio home enables 'mobile-page-converter', so the tool must be advertised "
+				+ "regardless of the settings on the machine running the suite");
 	}
 
-	private static async Task<string> ResolveSeededPageSchemaNameOrIgnoreAsync(
-		McpServerSession session, CancellationToken cancellationToken, string environmentName) {
-		ApplicationListItemEnvelope installedApplication = await SeededApplicationResolver.ResolveOrIgnoreAsync(
-			session, cancellationToken, environmentName, ApplicationCode);
-		CallToolResult callResult = await session.CallToolAsync(
-			PageListTool.ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName,
-					["code"] = installedApplication.Code
-				}
-			},
-			cancellationToken);
-		PageListResponse pageList = EntitySchemaStructuredResultParser.Extract<PageListResponse>(callResult);
-		pageList.Success.Should().BeTrue(
-			because: $"list-pages must succeed before a seeded page can be converted; an MCP-level failure would hide real runtime regressions. Error: {pageList.Error}");
-
-		// Prefer a list page — it carries the data-source arrays (quick filters / sorting) whose union with
-		// the template's natives is the point of the split. Fall back to any seeded page otherwise.
-		PageListItem? candidate = pageList.Pages?
-				.FirstOrDefault(page => page.SchemaName?.EndsWith("ListPage", StringComparison.OrdinalIgnoreCase) == true)
-			?? pageList.Pages?.FirstOrDefault();
-		if (candidate is not null && !string.IsNullOrWhiteSpace(candidate.SchemaName)) {
-			return candidate.SchemaName;
-		}
-
-		Assert.Ignore(
-			$"Seeded application '{installedApplication.Code}' has no Freedom UI pages on environment '{environmentName}'. Add at least one page to the seed application.");
-		return string.Empty;
-	}
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
 		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;

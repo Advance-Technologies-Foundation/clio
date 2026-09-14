@@ -8,6 +8,11 @@ ALIASES
     uc
 
 DESCRIPTION
+    Named environment removal also removes its recorded IdentityService before CRM IIS,
+    database and files. Invalid or shared identity targets abort cleanup; identity failure
+    preserves CRM. Empty attachments do not add cleanup. For identity-only removal use
+    uninstall-identity, which preserves CRM and its database.
+
     uninstall-creatio command removes a local Creatio instance from your machine,
     including the target IIS site or application, database (both local and
     containerized), and application files. The application pool is removed only

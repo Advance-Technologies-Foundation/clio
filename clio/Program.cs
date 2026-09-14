@@ -61,6 +61,7 @@ internal class Program {
 		typeof(AddItemOptions),
 		typeof(DeveloperModeOptions),
 		typeof(SysSettingsOptions),
+		typeof(DownloadSysSettingFileOptions),
 		typeof(FeatureOptions),
 		typeof(SetFileContentStorageConnectionStringOptions),
 		typeof(PingAppOptions),
@@ -181,6 +182,7 @@ internal class Program {
 		typeof(ListKnowledgeSourcesOptions),
 		typeof(ListKnowledgeExamplesOptions),
 		typeof(DeployIdentityOptions),
+		typeof(UninstallIdentityOptions),
 		typeof(GetIdentityServiceConfigOptions),
 		typeof(ResolveOAuthSystemUserOptions),
 		typeof(CreateOAuthTechnicalUserOptions),
@@ -243,8 +245,13 @@ internal class Program {
 		typeof(BuildThemeOptions),
 		typeof(Command.RecordRights.GetRecordRightsOptions),
 		typeof(Command.RecordRights.SetRecordRightsOptions),
+		typeof(Command.Administration.ManageUserOptions),
+		typeof(Command.Administration.ManageRoleOptions),
+		typeof(Command.Administration.ManageAccessOptions),
+		typeof(Command.Administration.ManageLicenseOptions),
 		typeof(ClearThemesCacheOptions),
 		typeof(ListThemesOptions),
+		typeof(GetThemeOptions),
 		typeof(CreateThemeOptions),
 		typeof(UpdateThemeOptions),
 		typeof(DeleteThemeOptions),
@@ -322,7 +329,7 @@ internal class Program {
 
 	internal static IReadOnlyList<Type> GetCommandOptionTypes() => CommandOption;
 
-	private static string[] NormalizeCommandLineArgs(string[] args) {
+	internal static string[] NormalizeCommandLineArgs(string[] args) {
 		string[] result = args;
 		if (args.Length >= 3 &&
 			string.Equals(args[0], "create-data-binding", StringComparison.OrdinalIgnoreCase)) {
@@ -336,8 +343,60 @@ internal class Program {
 			result = normalizedArgs;
 		}
 
+		result = NormalizeEntityColumnArgs(result);
 		result = NormalizeGetSysSettingArgs(result);
 		return NormalizeJsonFlagArgs(result);
+	}
+
+	// CommandLineSDK rejects repeated sequence option names too. Gather complete --column
+	// groups before parsing, retaining payload tokens verbatim and leaving malformed groups
+	// to the parser so a missing value cannot silently create an incomplete schema.
+	private static string[] NormalizeEntityColumnArgs(string[] args) {
+		if (args.Length < 2 || args[0] != "create-entity-schema") {
+			return args;
+		}
+		List<string> output = [];
+		List<string> columns = [];
+		int insertionIndex = -1;
+		int groups = 0;
+		int index = 0;
+		while (index < args.Length) {
+			string token = args[index];
+			if (token == "--") {
+				output.AddRange(args.Skip(index));
+				break;
+			}
+			if (token != "--column" && !token.StartsWith("--column=", StringComparison.Ordinal)) {
+				output.Add(token);
+				index++;
+				continue;
+			}
+			insertionIndex = insertionIndex < 0 ? output.Count : insertionIndex;
+			groups++;
+			List<string> group = ReadColumnGroup(args, ref index);
+			if (group.Count == 0 || group.Any(string.IsNullOrWhiteSpace)) {
+				return args;
+			}
+			columns.AddRange(group);
+		}
+		if (groups < 2) {
+			return args;
+		}
+		output.Insert(insertionIndex, "--column");
+		output.InsertRange(insertionIndex + 1, columns);
+		return output.ToArray();
+	}
+
+	private static List<string> ReadColumnGroup(string[] args, ref int index) {
+		string token = args[index++];
+		List<string> values = [];
+		if (token.StartsWith("--column=", StringComparison.Ordinal)) {
+			values.Add(token["--column=".Length..]);
+		}
+		while (index < args.Length && !args[index].StartsWith("-", StringComparison.Ordinal)) {
+			values.Add(args[index++]);
+		}
+		return values;
 	}
 
 	// The `get-syssetting` alias shares the `set-syssetting` verb and its options, and read mode
@@ -461,8 +520,13 @@ internal class Program {
 			BuildThemeOptions opts => Resolve<BuildThemeCommand>(opts).Execute(opts),
 			Command.RecordRights.GetRecordRightsOptions opts => Resolve<Command.RecordRights.GetRecordRightsCommand>(opts).Execute(opts),
 			Command.RecordRights.SetRecordRightsOptions opts => Resolve<Command.RecordRights.SetRecordRightsCommand>(opts).Execute(opts),
+			Command.Administration.ManageUserOptions opts => Resolve<Command.Administration.ManageUserCommand>(opts).Execute(opts),
+			Command.Administration.ManageRoleOptions opts => Resolve<Command.Administration.ManageRoleCommand>(opts).Execute(opts),
+			Command.Administration.ManageAccessOptions opts => Resolve<Command.Administration.ManageAccessCommand>(opts).Execute(opts),
+			Command.Administration.ManageLicenseOptions opts => Resolve<Command.Administration.ManageLicenseCommand>(opts).Execute(opts),
 			ClearThemesCacheOptions opts => Resolve<ClearThemesCacheCommand>(opts).Execute(opts),
 			ListThemesOptions opts => Resolve<ListThemesCommand>(opts).Execute(opts),
+			GetThemeOptions opts => Resolve<GetThemeCommand>(opts).Execute(opts),
 			CreateThemeOptions opts => Resolve<CreateThemeCommand>(opts).Execute(opts),
 			UpdateThemeOptions opts => Resolve<UpdateThemeCommand>(opts).Execute(opts),
 			DeleteThemeOptions opts => Resolve<DeleteThemeCommand>(opts).Execute(opts),
@@ -507,6 +571,7 @@ internal class Program {
 			AddItemOptions opts => Resolve<AddItemCommand>(opts).Execute(opts),
 			DeveloperModeOptions opts => SetDeveloperMode(opts),
 			SysSettingsOptions opts => Resolve<SysSettingsCommand>(opts).Execute(opts),
+			DownloadSysSettingFileOptions opts => Resolve<DownloadSysSettingFileCommand>(opts).Execute(opts),
 			FeatureOptions opts => Resolve<FeatureCommand>(opts).Execute(opts),
 			SetFileContentStorageConnectionStringOptions opts =>
 				Resolve<SetFileContentStorageConnectionStringCommand>(opts).Execute(opts),
@@ -589,6 +654,7 @@ internal class Program {
 			ListKnowledgeSourcesOptions opts => Resolve<ListKnowledgeSourcesCommand>().Execute(opts),
 			ListKnowledgeExamplesOptions opts => Resolve<ListKnowledgeExamplesCommand>().Execute(opts),
 			DeployIdentityOptions opts => Resolve<DeployIdentityCommand>(opts).Execute(opts),
+			UninstallIdentityOptions opts => Resolve<UninstallIdentityCommand>(opts).Execute(opts),
 			GetIdentityServiceConfigOptions opts => Resolve<GetIdentityServiceConfigCommand>(opts).Execute(opts),
 			ResolveOAuthSystemUserOptions opts => Resolve<ResolveOAuthSystemUserCommand>(opts).Execute(opts),
 			CreateOAuthTechnicalUserOptions opts => Resolve<CreateOAuthTechnicalUserCommand>(opts).Execute(opts),

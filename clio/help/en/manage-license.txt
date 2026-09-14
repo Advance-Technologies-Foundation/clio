@@ -1,0 +1,29 @@
+COMMAND TYPE
+    Administration commands
+
+NAME
+    manage-license
+
+DESCRIPTION
+    Manage Creatio license administration. Read the administration guidance before changing accounts, roles or permissions.
+
+OPTIONS
+    --action  user-list | user-assign | user-remove | role-list | role-assign | role-remove | role-redistribute Required.
+    --user-id  Target user GUID.
+    --role-id  Target role GUID.
+    --package-id  License package GUID.
+    --offset  Read offset.
+    --limit  Read page size from 1 to 200. Default: 100.
+    --include-manual  Permit redistribution to change manual assignments.
+    --confirm  Apply a mutation.
+    -e, --environment  Registered target environment.
+    -u, --uri; -l, --login; -p, --password  Caller connection overrides.
+
+EXAMPLE
+    clio manage-license -e <environment> --action user-list --user-id <guid>
+
+NOTES
+    role-redistribute requires ClioGate 2.0.0.50 or newer in both CLI and MCP.
+    Scheduling is not proof that user license assignments have finished changing.
+    Inspect after failure before retrying. Writes may have partially completed.
+    Full behavior and per-action requirements: clio/docs/commands/manage-license.md

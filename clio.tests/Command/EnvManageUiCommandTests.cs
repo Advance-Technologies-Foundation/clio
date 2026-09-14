@@ -26,6 +26,11 @@ public class EnvManageUiCommandTests : BaseCommandTests<EnvManageUiOptions>
 	private EnvManageUiCommand _command;
 	private IServiceProvider _serviceProvider;
 
+	/// <summary>The environment the poller factory was asked to build for, captured per test.</summary>
+	private EnvironmentSettings _pollerFactoryEnvironment;
+
+	private Func<EnvironmentSettings, ICompilationHistoryPoller> _compilationHistoryPollerFactory;
+
 	#endregion
 
 	#region Methods: Setup
@@ -37,13 +42,19 @@ public class EnvManageUiCommandTests : BaseCommandTests<EnvManageUiOptions>
 		_service = new EnvManageUiService();
 		_applicationClientFactory = Substitute.For<IApplicationClientFactory>();
 		_serviceProvider = Substitute.For<IServiceProvider>();
+		_pollerFactoryEnvironment = null;
+		_compilationHistoryPollerFactory = environmentSettings => {
+			_pollerFactoryEnvironment = environmentSettings;
+			return Substitute.For<ICompilationHistoryPoller>();
+		};
 
 		_command = new EnvManageUiCommand(
 			_serviceProvider,
 			_settingsRepository,
 			_logger,
 			_service,
-			_applicationClientFactory);
+			_applicationClientFactory,
+			_compilationHistoryPollerFactory);
 		
 		// Default setup
 		_settingsRepository.AppSettingsFilePath.Returns("/test/path/appsettings.json");
@@ -103,6 +114,44 @@ public class EnvManageUiCommandTests : BaseCommandTests<EnvManageUiOptions>
 			because: "the warning must be surfaced before compilation is attempted on the env-ui path (RC-21)");
 	}
 
+	[Test]
+	[Description("THE WRONG-STAND GUARD. env-manage-ui is a second composition root: it clones the SELECTED environment's settings and hands them to the compile command's collaborators. The compilation-history poller must be built for that clone, not resolved from the container - the container's poller closes over the environment the process started with, so its rows belong to a different stand. Since the completion rule derives the exit code from those rows, a mis-bound poller reports a successful build as a transport failure.")]
+	public void ExecuteCompileConfiguration_ShouldBuildTheHistoryPoller_ForTheSelectedEnvironment()
+	{
+		// Arrange - the substitute service provider cannot build the whole compile command, so the call
+		// throws part-way; the poller factory is invoked before that, which is what this asserts.
+		var environmentSettings = new EnvironmentSettings {
+			Uri = "https://selected-stand.example", Login = "s", Password = "p"
+		};
+
+		// Act
+		try { _command.ExecuteCompileConfiguration("selected", environmentSettings); } catch { /* the substitute provider cannot complete the graph */ }
+
+		// Assert
+		_pollerFactoryEnvironment.Should().NotBeNull(
+			because: "the poller has to be built per environment rather than resolved from the process-active container");
+		_pollerFactoryEnvironment.Uri.Should().Be(environmentSettings.Uri,
+			because: "compilation history has to be read from the environment the build was actually started on");
+	}
+
+	[Test]
+	[Description("THE WRONG-STAND GUARD, second half. The verdict reader, the availability probe and the reload watcher are all built against the client and URL builder made from the CLONE, so the transport every one of them uses has to carry the selected environment. Only the history poller was covered before, which is why the mis-binding this test would catch was found by review rather than by a test.")]
+	public void ExecuteCompileConfiguration_ShouldBuildTheOwnedClient_ForTheSelectedEnvironment()
+	{
+		// Arrange - the substitute service provider cannot build the whole compile command, so the call
+		// throws part-way; the owned client is created before that, which is what this asserts.
+		var environmentSettings = new EnvironmentSettings {
+			Uri = "https://selected-stand.example", Login = "s", Password = "p"
+		};
+
+		// Act
+		try { _command.ExecuteCompileConfiguration("selected", environmentSettings); } catch { /* the substitute provider cannot complete the graph */ }
+
+		// Assert
+		_applicationClientFactory.Received(1).CreateOwnedClient(
+			Arg.Is<EnvironmentSettings>(settings => settings.Uri == environmentSettings.Uri));
+	}
+
 	#endregion
 
 	#region Tests: Constructor
@@ -117,7 +166,8 @@ public class EnvManageUiCommandTests : BaseCommandTests<EnvManageUiOptions>
 			_settingsRepository,
 			_logger,
 			_service,
-			_applicationClientFactory);
+			_applicationClientFactory,
+			_compilationHistoryPollerFactory);
 
 		// Assert
 		command.Should().NotBeNull(because: "command should be created with valid dependencies");
@@ -128,15 +178,17 @@ public class EnvManageUiCommandTests : BaseCommandTests<EnvManageUiOptions>
 	public void Constructor_WithNullDependencies_ShouldThrow()
 	{
 		// Arrange & Act & Assert
-		Action actNullRepo = () => new EnvManageUiCommand(_serviceProvider, null, _logger, _service, _applicationClientFactory);
-		Action actNullLogger = () => new EnvManageUiCommand(_serviceProvider, _settingsRepository, null, _service, _applicationClientFactory);
-		Action actNullService = () => new EnvManageUiCommand(_serviceProvider, _settingsRepository, _logger, null, _applicationClientFactory);
-		Action actNullClientFactory = () => new EnvManageUiCommand(_serviceProvider, _settingsRepository, _logger, _service, null);
+		Action actNullRepo = () => new EnvManageUiCommand(_serviceProvider, null, _logger, _service, _applicationClientFactory, _compilationHistoryPollerFactory);
+		Action actNullLogger = () => new EnvManageUiCommand(_serviceProvider, _settingsRepository, null, _service, _applicationClientFactory, _compilationHistoryPollerFactory);
+		Action actNullService = () => new EnvManageUiCommand(_serviceProvider, _settingsRepository, _logger, null, _applicationClientFactory, _compilationHistoryPollerFactory);
+		Action actNullClientFactory = () => new EnvManageUiCommand(_serviceProvider, _settingsRepository, _logger, _service, null, _compilationHistoryPollerFactory);
+		Action actNullPollerFactory = () => new EnvManageUiCommand(_serviceProvider, _settingsRepository, _logger, _service, _applicationClientFactory, null);
 
 		actNullRepo.Should().Throw<ArgumentNullException>(because: "settings repository is required");
 		actNullLogger.Should().Throw<ArgumentNullException>(because: "logger is required");
 		actNullService.Should().Throw<ArgumentNullException>(because: "service is required");
 		actNullClientFactory.Should().Throw<ArgumentNullException>(because: "application client factory is required");
+		actNullPollerFactory.Should().Throw<ArgumentNullException>(because: "the compilation-history poller must be built for the SELECTED environment, so its factory is required");
 	}
 
 	#endregion

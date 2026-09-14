@@ -60,6 +60,7 @@ public sealed class DeployIdentityToolE2ETests
 			because: "agents must be able to expand deploy-identity into its full contract before calling it through clio-run");
 
 		ToolContractDefinition contract = contracts.Tools!.Single(tool => tool.Name == ToolName);
+		contract.Description.Should().Contain("CRM bearer request", because: "deployment must verify CRM token acceptance before saving credentials");
 		contract.Description.Should().Contain("Never echo the generated client secret",
 			because: "the tool contract should prevent public disclosure of generated OAuth secrets");
 		FieldDescription(contract, "zipFile").Should().Contain("EnvironmentPath",

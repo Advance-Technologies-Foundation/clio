@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Clio.Command;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.UserEnvironment;
 using FluentAssertions;
@@ -79,6 +81,76 @@ public sealed class ApplicationInfoServiceTests {
 		result.Pages[0].SchemaName.Should().Be("UsrAlpha_FormPage",
 			because: "page metadata should use schema-name semantics consistently");
 		_applicationClient.Received(1).Dispose();
+	}
+
+	[Test]
+	[Description("Projects the runtime defValue into a typed default-value-config per column for every supported source; None and missing defaults read back as no default.")]
+	public void GetApplicationInfo_Should_Project_Typed_Default_Value_Configs_For_All_Sources() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysInstalledApp\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"Id":"app-uid","Code":"APP","Name":"App","Version":"1.0"}]}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("GetApplicationPackages", StringComparison.Ordinal)),
+				Arg.Any<string>())
+			.Returns("""{"success":true,"packages":[{"uId":"pkg-uid","name":"PrimaryPkg","isApplicationPrimaryPackage":true}]}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationEntity\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"UId":"entity-d","Name":"UsrDelta","Caption":"Delta"}]}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("RuntimeEntitySchemaRequest", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"uId\":\"entity-d\"", StringComparison.Ordinal)))
+			.Returns("""
+				{"success":true,"schema":{"uId":"entity-d","name":"UsrDelta","caption":{"en-US":"Delta"},"columns":{"Items":{
+					"const":{"name":"UsrTextConst","caption":{"en-US":"Text Const"},"dataValueType":1,"isInherited":false,"defValue":{"valueSourceType":1,"value":"hello"}},
+					"lookup":{"name":"UsrOwner","caption":{"en-US":"Owner"},"dataValueType":10,"isInherited":false,"referenceSchemaName":"Contact","defValue":{"valueSourceType":1,"value":"11111111-1111-1111-1111-111111111111"}},
+					"settings":{"name":"UsrSetting","caption":{"en-US":"Setting"},"dataValueType":1,"isInherited":false,"defValue":{"valueSourceType":2,"valueSource":"MySetting"}},
+					"system":{"name":"UsrSystem","caption":{"en-US":"System"},"dataValueType":10,"isInherited":false,"referenceSchemaName":"Contact","defValue":{"valueSourceType":3,"valueSource":"22222222-2222-2222-2222-222222222222"}},
+					"sequence":{"name":"UsrNumber","caption":{"en-US":"Number"},"dataValueType":4,"isInherited":false,"defValue":{"valueSourceType":4,"sequencePrefix":"LN-","sequenceNumberOfChars":5}},
+					"none":{"name":"UsrNone","caption":{"en-US":"None"},"dataValueType":1,"isInherited":false,"defValue":{"valueSourceType":0}},
+					"plain":{"name":"UsrPlain","caption":{"en-US":"Plain"},"dataValueType":1,"isInherited":false}
+				}}}}
+				""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysSchema\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[]}""");
+
+		// Act
+		ApplicationInfoResult result = _sut.GetApplicationInfo("sandbox", null, "APP");
+
+		// Assert
+		Dictionary<string, ApplicationColumnInfoResult> columns = result.Entities[0].Columns
+			.ToDictionary(column => column.Name, StringComparer.OrdinalIgnoreCase);
+		EntitySchemaDefaultValueConfig? constConfig = columns["UsrTextConst"].DefaultValueConfig;
+		constConfig.Should().NotBeNull(
+			because: "a Const default must project into the typed default-value-config the sync-schemas write path accepts");
+		constConfig!.Source.Should().Be("Const",
+			because: "the typed config source must carry the friendly source name");
+		constConfig.Value.Should().Be("hello",
+			because: "a scalar Const default must round-trip verbatim");
+		columns["UsrOwner"].DefaultValueConfig!.Value.Should().Be("11111111-1111-1111-1111-111111111111",
+			because: "a lookup Const default must keep the stable record GUID verbatim so it can be re-applied");
+		columns["UsrSetting"].DefaultValueConfig!.Source.Should().Be("Settings",
+			because: "a Settings default must project with the Settings source");
+		columns["UsrSetting"].DefaultValueConfig!.ValueSource.Should().Be("MySetting",
+			because: "the setting code must round-trip verbatim");
+		columns["UsrSystem"].DefaultValueConfig!.Source.Should().Be("SystemValue",
+			because: "a SystemValue default must project with the SystemValue source");
+		columns["UsrSystem"].DefaultValueConfig!.ValueSource.Should().Be("22222222-2222-2222-2222-222222222222",
+			because: "the system value identifier must round-trip verbatim");
+		columns["UsrNumber"].DefaultValueConfig!.Source.Should().Be("Sequence",
+			because: "a Sequence default must project with the Sequence source");
+		columns["UsrNumber"].DefaultValueConfig!.SequencePrefix.Should().Be("LN-",
+			because: "the sequence prefix must be preserved so the read shape round-trips");
+		columns["UsrNumber"].DefaultValueConfig!.SequenceNumberOfChars.Should().Be(5,
+			because: "the sequence char count must be preserved so the read shape round-trips");
+		columns["UsrNone"].DefaultValueConfig.Should().BeNull(
+			because: "a None source means the column has no default — it must read back as absent, not as a None config");
+		columns["UsrPlain"].DefaultValueConfig.Should().BeNull(
+			because: "a column without a defValue payload must read back as no default");
 	}
 
 	[Test]

@@ -13,9 +13,20 @@ DESCRIPTION
     envelope with nested page metadata, bundle data, and raw.body. Use raw.body
     as the editable payload for update-page.
 
-    The command resolves the design package for the schema and uses the top of
-    the parent-schema hierarchy to load the editable version. This ensures that
-    raw.body is always read from the package where the schema can be modified.
+    The command resolves the design package independently of the current hierarchy
+    leaf. page.packageName (also page.currentLeafPackageName) names that leaf and
+    may identify a read-only vendor package. page.designPackageUId and
+    page.designPackageName identify the default write destination, including a
+    virtual customer package before its first save. The name is best-effort and
+    may be absent if package metadata is unavailable. Read-time design resolution
+    can fall back to the leaf; update-page resolves its destination again and
+    fails closed if that resolution fails.
+
+    page.willCreateReplacingInDesignPackage means the design package has no
+    replacing schema yet; it does not by itself mean the package is new. raw.body
+    contains the design-package schema body, or an empty scaffold for its first
+    replacement. Normal update-page/sync-pages calls create that replacement;
+    there is no need to copy vendor bodies or override the target package.
 
     CLI vs MCP: the CLI verb returns bundle and raw.body inline. The MCP
     get-page tool compacts its successful response to page and files, plus

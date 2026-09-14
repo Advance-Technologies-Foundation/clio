@@ -22,8 +22,7 @@ public class SqlSchemaUpdateToolTests {
 			.Returns(resolvedCommand);
 		SqlSchemaUpdateTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
-		SqlSchemaUpdateResponse response = tool.UpdateSchema(new SqlSchemaUpdateArgs(
-			"UsrScript", "SELECT 1;", "/tmp/body.sql", true, "dev", null, null, null));
+		SqlSchemaUpdateResponse response = tool.UpdateSchema(new SqlSchemaUpdateArgs("UsrScript", "SELECT 1;", "/tmp/body.sql", true) { EnvironmentName = "dev" });
 
 		response.Success.Should().BeTrue();
 		resolvedCommand.CapturedOptions.Should().NotBeNull();
@@ -47,8 +46,7 @@ public class SqlSchemaUpdateToolTests {
 			.Returns(resolvedCommand);
 		SqlSchemaUpdateTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
-		tool.UpdateSchema(new SqlSchemaUpdateArgs(
-			"UsrScript", "SELECT 1;", null, null, "dev", null, null, null));
+		tool.UpdateSchema(new SqlSchemaUpdateArgs("UsrScript", "SELECT 1;") { EnvironmentName = "dev" });
 
 		resolvedCommand.CapturedOptions.DryRun.Should().BeFalse();
 		ConsoleLogger.Instance.ClearMessages();
@@ -64,8 +62,7 @@ public class SqlSchemaUpdateToolTests {
 			.Returns(_ => throw new System.InvalidOperationException("boom"));
 		SqlSchemaUpdateTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
-		SqlSchemaUpdateResponse response = tool.UpdateSchema(new SqlSchemaUpdateArgs(
-			"UsrScript", "SELECT 1;", null, null, "missing", null, null, null));
+		SqlSchemaUpdateResponse response = tool.UpdateSchema(new SqlSchemaUpdateArgs("UsrScript", "SELECT 1;") { EnvironmentName = "missing" });
 
 		response.Success.Should().BeFalse();
 		response.Error.Should().Contain("boom");

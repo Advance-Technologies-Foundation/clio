@@ -64,7 +64,7 @@ public class PackageDependencyManagerTests
 		new(new PackageDescriptor { Name = name, UId = uId, PackageVersion = version }, string.Empty, []);
 
 	private void ArrangeInstalledPackages() {
-		_packageListProvider.GetPackages("{}").Returns([
+		_packageListProvider.GetPackages("{}", Arg.Any<int>()).Returns([
 			CreatePackageInfo(TargetPackageName, _targetUId, "1.0.0.0"),
 			CreatePackageInfo(DependencyPackageName, _dependencyUId, "8.2.1.999")
 		]);
@@ -151,7 +151,7 @@ public class PackageDependencyManagerTests
 	[Description("Throws a descriptive error when the target package is not installed in the environment.")]
 	public void AddDependencies_ShouldThrow_WhenTargetPackageNotFound() {
 		// Arrange
-		_packageListProvider.GetPackages("{}").Returns([
+		_packageListProvider.GetPackages("{}", Arg.Any<int>()).Returns([
 			CreatePackageInfo(DependencyPackageName, _dependencyUId, "8.2.1.999")
 		]);
 
@@ -168,7 +168,7 @@ public class PackageDependencyManagerTests
 	[Description("Throws a descriptive error when a requested dependency package is not installed.")]
 	public void AddDependencies_ShouldThrow_WhenDependencyPackageNotFound() {
 		// Arrange
-		_packageListProvider.GetPackages("{}").Returns([
+		_packageListProvider.GetPackages("{}", Arg.Any<int>()).Returns([
 			CreatePackageInfo(TargetPackageName, _targetUId, "1.0.0.0")
 		]);
 		ArrangeGetPackageProperties(new WorkspacePackageDto { UId = _targetUId, Name = TargetPackageName });
@@ -393,7 +393,7 @@ public class PackageDependencyManagerTests
 	[Description("Throws a descriptive error when the target package is not installed in the environment (ENG-91314).")]
 	public void RemoveDependencies_ShouldThrow_WhenTargetPackageNotFound() {
 		// Arrange
-		_packageListProvider.GetPackages("{}").Returns([
+		_packageListProvider.GetPackages("{}", Arg.Any<int>()).Returns([
 			CreatePackageInfo(DependencyPackageName, _dependencyUId, "8.2.1.999")
 		]);
 
@@ -418,6 +418,83 @@ public class PackageDependencyManagerTests
 		// Assert
 		act.Should().Throw<ArgumentException>(
 			because: "at least one non-empty dependency name must be specified to remove");
+	}
+
+	[Test]
+	[Description("Reads the declared dependencies of a package without saving anything, so the schema-designer diagnosis can filter candidates it would be pointless to propose.")]
+	public void GetDependencies_ShouldReturnDeclaredNames_WhenPackageExists() {
+		// Arrange
+		ArrangeInstalledPackages();
+		ArrangeGetPackageProperties(new WorkspacePackageDto {
+			UId = _targetUId,
+			Name = TargetPackageName,
+			DependsOnPackages = [
+				new WorkspacePackageDto { UId = _dependencyUId, Name = DependencyPackageName, Version = "8.2.1.999" }
+			]
+		});
+
+		// Act
+		IReadOnlyList<string> dependencies = _manager.GetDependencies(TargetPackageName);
+
+		// Assert
+		dependencies.Should().Equal([DependencyPackageName],
+			because: "the declared dependency names are what the caller filters candidate packages against");
+		_applicationClient.DidNotReceiveWithAnyArgs()
+			.ExecutePostRequest<SavePackagePropertiesResponse>(default, default);
+	}
+
+	[Test]
+	[Description("Falls back to the dependency UId when the server sends a dependency row without a name, so a nameless row is reported rather than silently dropped.")]
+	public void GetDependencies_ShouldFallBackToUId_WhenDependencyRowHasNoName() {
+		// Arrange
+		ArrangeInstalledPackages();
+		ArrangeGetPackageProperties(new WorkspacePackageDto {
+			UId = _targetUId,
+			Name = TargetPackageName,
+			DependsOnPackages = [new WorkspacePackageDto { UId = _dependencyUId, Name = null }]
+		});
+
+		// Act
+		IReadOnlyList<string> dependencies = _manager.GetDependencies(TargetPackageName);
+
+		// Assert
+		dependencies.Should().Equal([_dependencyUId.ToString()],
+			because: "a nameless dependency row must still be reported, by its identifier, rather than disappearing from the list");
+	}
+
+	[Test]
+	[Description("Reports an empty dependency list, not a failure, when the package declares no dependencies at all.")]
+	public void GetDependencies_ShouldReturnEmpty_WhenPackageDeclaresNoDependencies() {
+		// Arrange
+		ArrangeInstalledPackages();
+		ArrangeGetPackageProperties(new WorkspacePackageDto {
+			UId = _targetUId,
+			Name = TargetPackageName,
+			DependsOnPackages = null
+		});
+
+		// Act
+		IReadOnlyList<string> dependencies = _manager.GetDependencies(TargetPackageName);
+
+		// Assert
+		dependencies.Should().BeEmpty(
+			because: "a package with no declared dependencies is an ordinary state, not an error");
+	}
+
+	[Test]
+	[Description("Fails loudly when the requested package is not installed in the environment, so a typo is not read as 'this package has no dependencies'.")]
+	public void GetDependencies_ShouldThrow_WhenPackageIsNotInstalled() {
+		// Arrange
+		ArrangeInstalledPackages();
+
+		// Act
+		Action act = () => _manager.GetDependencies("UsrNotInstalled");
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "an unknown package name must not degrade to an empty dependency list, which reads as a fact about the package")
+			.WithMessage("*UsrNotInstalled*",
+				because: "the message must name the package the caller asked for");
 	}
 
 }

@@ -165,6 +165,25 @@ public sealed class SetUserThemeCommandTests : BaseCommandTests<SetUserThemeOpti
 	}
 
 	[Test, Category("Unit")]
+	[Description("Names the possibly-missing CanCustomizeBranding license in the unknown-theme error when the whole catalog is empty, because an unlicensed caller sees an empty list rather than an error — mirrors GetThemeCommandTests.TryGetTheme_ShouldMentionLicense_WhenCatalogIsEmpty so a future edit to the shared ThemeCatalogMessages.EmptyCatalogLicenseCaveat constant cannot silently drop the wording on this path.")]
+	public void SetUserTheme_ShouldMentionLicense_WhenCatalogIsEmpty() {
+		// Arrange
+		StubAvailableThemes(string.Empty);
+		SetUserThemeOptions options = new() { Theme = "Ocean" };
+
+		// Act
+		bool succeeded = _command.TrySetUserTheme(options, out _, out string error);
+
+		// Assert
+		succeeded.Should().BeFalse(because: "the theme cannot be resolved from an empty catalog");
+		error.Should().Contain(ThemeCatalogMessages.EmptyCatalogLicenseCaveat,
+			because: "an empty catalog is ambiguous between no-themes and no-license, so both causes must be named — asserted against the shared constant so a wording change surfaces here too");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(u => u.Contains("UpdateQuery")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test, Category("Unit")]
 	[Description("Fails with the candidate theme ids and posts no UpdateQuery when a caption matches more than one theme, instead of silently applying the first match.")]
 	public void SetUserTheme_ShouldFailWithCandidates_WhenCaptionIsAmbiguous() {
 		// Arrange

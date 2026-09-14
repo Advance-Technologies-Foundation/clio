@@ -36,7 +36,7 @@ REQUIREMENTS
 NOTES
     - Aliases: 2fs, tofs
     - Exit code 0 means the platform reported the export as completed; any other
-      outcome (FSM disabled, unreadable FSM state, platform error) exits with 1
+      outcome (FSM disabled, unreadable FSM state, platform error, or per-item synchronization errors) exits with 1
     - turn-fsm on runs this export after it enables FSM, so a failure there leaves
       FSM enabled with the export unfinished; re-run this command once the web
       application has restarted

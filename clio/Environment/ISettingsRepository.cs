@@ -130,6 +130,17 @@ namespace Clio.UserEnvironment
 		/// <returns><see langword="true"/> only while the current registration still matches.</returns>
 		bool EnvironmentPathMatches(string name, string expectedEnvironmentPath);
 
+		/// <summary>Atomically updates only the expected identity attachment, preserving unrelated settings.</summary>
+		/// <param name="environment">Registered environment name.</param>
+		/// <param name="expectedEnvironmentPath">CRM directory that owns the attachment.</param>
+		/// <param name="expected">Exact attachment read before the operation.</param>
+		/// <param name="replacement">New attachment, or empty values after successful removal.</param>
+		/// <param name="clearMatchingCredentials">Clear OAuth credentials only if their token URL matches the removed identity.</param>
+		/// <returns>False when the registration or attachment changed.</returns>
+		bool UpdateIdentityAttachment(string environment, string expectedEnvironmentPath,
+			IdentityServiceAttachment expected, IdentityServiceAttachment replacement,
+			bool clearMatchingCredentials = false);
+
 		/// <summary>
 		/// Writes settings to the supplied text writer.
 		/// </summary>
@@ -368,7 +379,7 @@ namespace Clio.UserEnvironment
 		string GetActualEnvironmentName(string environmentName);
 
 		/// <summary>
-		/// Gets the AutoUpdate setting. Returns true when not explicitly configured (opt-out model).
+		/// Gets the AutoUpdate setting. Returns false when not explicitly configured (opt-in model).
 		/// </summary>
 		bool GetAutoupdate();
 

@@ -47,6 +47,13 @@ DESCRIPTION
     entry for it in viewConfigDiff, add a local merge for that control
     name instead of editing a non-existent local insert.
 
+    For an own-body field with an undeclared binding, keep the complete insert,
+    edit its values, and include its attribute declaration in viewModelConfigDiff
+    even when already stored. Append replaces a matching insert as a whole;
+    a separate merge does not patch the insert.
+    viewModelConfigDiff concatenates entries, so an unchanged declaration is
+    appended again with the same effective values. Another append cannot remove it.
+
     VALIDATION RULES:
     - SCHEMA_CONVERTERS keys (object form) must follow VendorPrefix.Name
       format (e.g., usr.MyConverter).
@@ -108,6 +115,11 @@ DESCRIPTION
       viewConfigDiff must be a localizable-string binding, not an inline
       literal. Bind via #ResourceString(<Key>)# and register the key's
       default-language value with --resources. Inline literals are rejected.
+      Gallery itemConfig.templateValuesMapping values name record attributes
+      (e.g. caption: "GalleryDS_Name") and must stay unchanged. Other captions
+      still require localization. For a standalone merge, repeat type:
+      "crt.Gallery" unless the same body declares that node's type elsewhere.
+      Designer-only _designOptions mappings are also excluded.
       A component's own data descriptor is exempt: a "data" object carrying the
       platform's "typeName" marker, on any node that declares a component type
       and at any depth, is component metadata (uId, schemaType, typeName and

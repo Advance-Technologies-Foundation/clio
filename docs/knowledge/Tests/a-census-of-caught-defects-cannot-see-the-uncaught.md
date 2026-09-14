@@ -52,7 +52,7 @@ caught by a differently-shaped probe from another party" is the load-bearing sen
 
 **The sibling failure: a count that was right when taken and is used later as current.** This is not a
 probe incapable of falsification — the probe was fine — it is that *nothing re-reads a number you have
-already used*. Four instances on this ticket:
+already used*. Five instances on this ticket:
 
 - a review PR read as 16 threads early on and quoted as 16 for the rest of the session; it was **20** by
   the time the replies were written, and the four newest included one about code added that same hour
@@ -60,6 +60,13 @@ already used*. Four instances on this ticket:
   carried it
 - three package/library version collisions, each a number chosen against a base that then moved
 - a merge base that moved twice underneath a review anchored to hashes
+- **and a fifth, added later and across a session boundary:** one session read a stand's installed
+  package version at 11:00, another quoted it at 18:00 as though current, and by then this ticket's own
+  verification had upgraded that stand three times. The reading was correct when taken; the row's
+  `ModifiedOn` settles it. This one is worth its bullet for the dimension the four above do not have:
+  the number came from SOMEBODY ELSE'S measurement, and "take it again at the moment of use" is harder
+  to reach for then, because a peer's figure does not feel like yours to re-take. It is, and it is one
+  query. Note also that this record already existed and had been read by the session that then did it.
 
 The two failures need different remedies and are easy to confuse. A probe that cannot falsify itself
 needs a *differently shaped* probe. A number that has gone stale needs only to be **taken again at the

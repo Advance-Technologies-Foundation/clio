@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using ATF.Repository.Providers;
 using Clio.Command;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.PackageCommand;
 using Clio.Command.McpServer.Prompts;
 using Clio.Command.McpServer.Tools;
@@ -276,6 +277,7 @@ public sealed class ApplicationToolTests {
 								null,
 								"Const",
 								"Default",
+								DefaultValueConfig: new EntitySchemaDefaultValueConfig { Source = "Const", Value = "Default" },
 								Required: true)
 						],
 						IsVirtual: true)
@@ -331,6 +333,12 @@ public sealed class ApplicationToolTests {
 			because: "the canonical 'type' field must mirror data-value-type so the read shape round-trips to the write surfaces (ENG-90313)");
 		result.Entities![0].Columns[0].Required.Should().BeTrue(
 			because: "the runtime required flag must be surfaced so the read shape carries the field the write surfaces accept (ENG-90313)");
+		result.Entities![0].Columns[0].DefaultValueConfig.Should().NotBeNull(
+			because: "a column default read from the backend service must reach the MCP read shape");
+		result.Entities![0].Columns[0].DefaultValueConfig!.Source.Should().Be("Const",
+			because: "the typed default-value-config must carry the source so the read shape round-trips to sync-schemas (issue #969)");
+		result.Entities![0].Columns[0].DefaultValueConfig!.Value.Should().Be("Default",
+			because: "the Const default payload must round-trip verbatim");
 		result.Pages.Should().ContainSingle(
 			because: "get-app-info should now return the primary-package page summaries");
 		result.Pages![0].SchemaName.Should().Be("UsrVehicle_FormPage",
@@ -1158,6 +1166,7 @@ public sealed class ApplicationToolTests {
 							Caption: "Name",
 							DataValueType: "Text",
 							ReferenceSchema: "Contact",
+							DefaultValueConfig: new EntitySchemaDefaultValueConfig { Source = "Const", Value = "Default text" },
 							Required: true)
 					],
 					Virtual: true)
@@ -1221,6 +1230,8 @@ public sealed class ApplicationToolTests {
 			because: "the unified vocabulary adds the canonical 'reference-schema-name' field that mirrors the write surfaces (ENG-90313)");
 		json.Should().Contain("\"required\":true",
 			because: "the unified vocabulary adds the 'required' flag the write surfaces accept (ENG-90313)");
+		json.Should().Contain("\"default-value-config\":{\"source\":\"Const\",\"value\":\"Default text\"",
+			because: "column payloads must expose the typed default-value-config in the sync-schemas write vocabulary so a defaulted column round-trips (issue #969)");
 		json.Should().Contain("\"dataforge\"",
 			because: "create-app responses should serialize the optional Data Forge diagnostics block");
 		json.Should().Contain("\"context-summary\"",
