@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading;
 using Clio.Command;
@@ -366,6 +367,11 @@ internal sealed class EntitySchemaDependencyResolverTests
 
 	[Test]
 	[Description("The bounded wait covers the WHOLE resolve, not just the wait after the dependency read: measured from after it, a slow dependency read and the wait added up to more than the sequential version this replaces (PR #1494 review).")]
+	[SuppressMessage("Major Code Smell", "S2925:Tests should not use Thread.Sleep()",
+		Justification = "The sleep IS the subject here: it makes the stubbed dependency read consume real " +
+			"wall-clock time, and the assertion below compares a Stopwatch reading against the resolver's " +
+			"own budget. A fake clock would leave the resolve instantaneous and the elapsed-time assertion " +
+			"vacuous, which is exactly the regression this case exists to catch.")]
 	public void Resolve_ShouldBoundTheWholeResolve_WhenTheDependencyReadIsSlowAndTheSchemaSearchNeverAnswers() {
 		// Arrange
 		using ManualResetEventSlim releaseTheSchemaSearch = new();
