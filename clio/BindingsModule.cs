@@ -293,12 +293,21 @@ public class BindingsModule {
 		// page off the site root, and detection reads a 404 as proof that a runtime is absent — so following the
 		// redirect would let the status of a different URL convict the wrong runtime. Timeout is set here, once,
 		// under the same rule as the clients above.
+		// S4830: accepting any certificate is deliberate here for the same reason the availability probe
+		// below does it (PR #1429 review). reg-web-app registers a stand that every LATER request reaches
+		// through creatio.client, which trusts any certificate. A probe that validates would refuse exactly
+		// the self-signed dev stands the command exists to register, and detection would read the absent
+		// HTTP response as "the runtime is absent" - so a certificate this product otherwise accepts would
+		// convict a runtime that is running. The two probes against a Creatio stand must agree on trust.
+#pragma warning disable S4830
 		services.AddHttpClient(EnvironmentRuntimeDetectionService.HttpClientName)
 			.ConfigureHttpClient(client => client.Timeout = TimeSpan.FromSeconds(10))
 			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
 				UseCookies = false,
-				AllowAutoRedirect = false
+				AllowAutoRedirect = false,
+				ServerCertificateCustomValidationCallback = (_, _, _, _) => true
 			});
+#pragma warning restore S4830
 		services.AddHttpClient(ClassicEnumVocabularyResolver.HttpClientName)
 			.ConfigureHttpClient(client => {
 				client.Timeout = TimeSpan.FromSeconds(120);
