@@ -9,6 +9,8 @@ using Clio.Common;
 using Clio.Common.IIS;
 using Clio.Common.K8;
 using Clio.Tests.Command;
+using Clio.UserEnvironment;
+using Newtonsoft.Json;
 using FluentAssertions;
 using k8s;
 using NSubstitute;
@@ -42,6 +44,11 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests{
 	private readonly string _remoteArtifactServerPath = Environment.OSVersion.Platform == PlatformID.Win32NT
 		? @"\\tscrm.com\dfs-ts\builds-7"
 		: "/mnt/tscrm.com/dfs-ts/builds-7";
+
+	// The native identity check reads the real ancestor even though deployment files are mocked.
+	private static readonly string IisRootPath = Path.Combine(
+		DirectoryPathIdentity.Normalize(Path.GetTempPath()),
+		nameof(CreatioInstallerServiceTests), Guid.NewGuid().ToString("N"));
 
 	private CreatioInstallerService _creatioInstallerService;
 	private IProcessExecutor _processExecutor;
@@ -77,6 +84,10 @@ internal class CreatioInstallerServiceTests : BaseClioModuleTests{
 
 	protected override MockFileSystem CreateFs() {
 		return new MockFileSystem(new Dictionary<string, MockFileData> {
+			{
+				SettingsRepository.AppSettingsFile,
+				new MockFileData(JsonConvert.SerializeObject(new Settings { IISClioRootPath = IisRootPath }))
+			},
 			{
 				Path.Combine(_remoteArtifactServerPath, "8.1.2", "8.1.2.3888",
 					"BankSales_BankCustomerJourney_Lending_Marketing_Softkey_ENU",

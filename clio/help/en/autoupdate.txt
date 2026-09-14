@@ -13,8 +13,8 @@ DESCRIPTION
     reuse the existing update behavior on a best-effort basis.
 
 OPTIONS
-    --enable     Enable automatic clio updates (default behavior)
-    --disable    Disable automatic clio updates
+    --enable     Enable automatic clio updates
+    --disable    Disable automatic clio updates (default behavior)
 
 EXAMPLES
     autoupdate
@@ -26,3 +26,7 @@ EXIT CODES
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
+
+DEFAULTS
+    Clio updates: disabled. Knowledge updates: enabled. Toolkit updates: disabled.
+    Existing explicitly configured preferences are preserved.

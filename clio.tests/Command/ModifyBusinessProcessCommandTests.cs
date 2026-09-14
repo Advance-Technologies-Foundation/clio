@@ -66,7 +66,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 				["accessRights"] = JsonDocument.Parse("{\"object\":\"Order\"}").RootElement.Clone()
 			}
 		};
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(new DescribeProcessResult { Elements = [element] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -76,7 +76,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		_command.Execute(options);
 
 		// Assert
-		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null, false);
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null, false, true);
 		warnings.Should().NotContain(message => message.Contains("Could not verify"),
 			because: "the UId was in hand the whole time, so declaring the check unperformable would be a "
 				+ "wrong warning in a workflow the tool supports");
@@ -94,7 +94,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		};
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(_ => throw new InvalidOperationException("read-back exploded"));
 
 		// Act
@@ -118,7 +118,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		};
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>()).Returns(
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>()).Returns(
 			new DescribeProcessResult { Elements = [new DescribedElement { Name = "Mail", Email = null }] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -158,7 +158,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 				["accessRights"] = JsonDocument.Parse("{\"object\":\"Order\"}").RootElement.Clone()
 			}
 		};
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(new DescribeProcessResult { Elements = [element] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -192,7 +192,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 				["accessRights"] = JsonDocument.Parse("{\"object\":\"Order\"}").RootElement.Clone()
 			}
 		};
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(new DescribeProcessResult { Elements = [element] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -227,7 +227,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 				["accessRights"] = JsonDocument.Parse("{\"object\":\"Order\"}").RootElement.Clone()
 			}
 		};
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(new DescribeProcessResult { Elements = [element] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -237,7 +237,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		_command.Execute(options);
 
 		// Assert
-		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null, false);
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null, false, true);
 		warnings.Should().ContainSingle(message => message.Contains("EVERY record of the target object"),
 			because: "the element is left acting on every row of its object and carries no output parameter to "
 				+ "say so, so this warning is the only signal the caller gets");
@@ -255,7 +255,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		};
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(Error.Failure(description: "the environment refused the read"));
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -286,7 +286,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		};
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>()).Returns(new DescribeProcessResult {
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>()).Returns(new DescribeProcessResult {
 			Elements = [new DescribedElement { Name = "ReadOrders", UserTaskName = "ReadDataUserTask" }]
 		});
 		List<string> warnings = [];
@@ -312,7 +312,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		};
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>()).Returns(
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>()).Returns(
 			new DescribeProcessResult { Elements = [new DescribedElement { Name = "Grant" }] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -338,7 +338,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		};
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(Error.Failure("Describe.Failed", "the environment did not answer"));
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -363,7 +363,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		};
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>()).Returns(
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>()).Returns(
 			new DescribeProcessResult { Elements = [new DescribedElement { Name = "SomethingElse" }] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -571,4 +571,180 @@ public sealed class ModifyBusinessProcessCommandTests {
 			because: "the command should propagate service-level failures as a non-zero exit code");
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("StartEvent1")));
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An operations array whose ONLY special content is a flow label still triggers the read-back, and the warning still reaches the caller. On the modify path the drop is worse than on the build path: an edit normally lands on a designer-authored process where a label already exists, so a caller relabelling a branch against an old package is told the edit succeeded while the OLD label is still what is drawn. Both mutations are otherwise invisible — dropping the `expectedLabels.Count == 0` clause makes the guard dead code for a labels-only edit, and deleting the WriteWarning block loses the only signal. NOTE: this fixture pinned the WRONG wording until the pre-merge review. The read-back here returns 'Rejected', so the outcome is a MISMATCH, and the assertion demanded the absent-case sentence ('no diagram label ... (Approved)') while its own because-clause said 'the connector still says something else'. The test was documenting the defect. It now asserts the mismatch branch, including that the destructive package remedy is NOT prescribed for a cause the package version did not create.")]
+	public void Execute_ShouldWarn_WhenAFlowLabelWasDiscarded() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = "[{\"op\":\"setFlow\",\"source\":\"Decide\",\"target\":\"Yes\","
+				+ "\"kind\":\"sequence\",\"label\":\"Approved\"}]"
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		// The old label is STILL on the flow - the shape a package below the capability version leaves after
+		// answering success, and the one a caller cannot distinguish from "my edit applied".
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(new DescribeProcessResult {
+				Elements = [],
+				Flows = [new DescribedFlow { Source = "Decide", Target = "Yes", Label = "Rejected" }]
+			});
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "a dropped label is a caveat about an edit that SUCCEEDED, never a failure");
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null, false, true);
+		warnings.Should().ContainSingle(
+			warning => warning.Contains("Decide -> Yes (asked for 'Approved', drawn 'Rejected')"),
+			because: "the caller asked for 'Approved' and the connector still says something else - so the "
+				+ "warning has to carry BOTH, and the old label is the datum that tells them the edit did not "
+				+ "take rather than that the field vanished");
+		warnings.Should().NotContain(warning => warning.Contains("install-process-builder"),
+			because: "a package that discards the field leaves NOTHING on the flow; text coming back means "
+				+ "the field arrived, so recommending a configuration build and an instance restart here "
+				+ "prescribes a destructive remedy for a cause it cannot fix");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A label that LANDED emits no warning at all. See the create twin for why this is the mutation the other label tests cannot catch: dropping the MissingLabels filter keeps every one of them green while turning every successful labelled edit into a false report that the label was discarded. Pinned on both write paths because the emission is per-command and one path can regress alone.")]
+	public void Execute_ShouldNotWarn_WhenTheFlowLabelLanded() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = "[{\"op\":\"setFlow\",\"source\":\"Decide\",\"target\":\"Yes\",\"kind\":\"sequence\",\"label\":\"Approved\"}]"
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		// The edit took: the flow comes back with the new label.
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(new DescribeProcessResult {
+				Elements = [],
+				Flows = [new DescribedFlow { Source = "Decide", Target = "Yes", Label = "Approved" }]
+			});
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a verified label is an ordinary success");
+		warnings.Should().BeEmpty(
+			because: "the relabel is drawn exactly as asked, so there is nothing to caveat");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A label addressed by UId reaches the caller as an explicit 'could not verify' caveat. This pins the EMISSION, which nothing did: BlockExpectationReporter.ReportFlowLabels has no fixture of its own and neither command fixture sent a UId-addressed label, so deleting the two lines that emit this was green. What went undetected is exactly the silence the [RequiresPackage] floor was left unraised on the strength of avoiding - the same defect class as the two dead tests this remediation revived, in the same file family.")]
+	public void Execute_ShouldReportALabelAddressedByUidAsUnverifiable() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = "[{\"op\":\"setFlow\",\"source\":\"3f2504e0-4f89-11d3-9a0c-0305e82c3301\",\"target\":\"Yes\",\"kind\":\"sequence\",\"label\":\"Approved\"}]"
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		// The read-back reports endpoints as element NAMES, so the UId-addressed expectation can never match
+		// it - which is the whole point: the label may have landed or been discarded and nothing here can say.
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(new DescribeProcessResult {
+				Elements = [],
+				Flows = [new DescribedFlow { Source = "Decide", Target = "Yes", Label = "Approved" }]
+			});
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "an unverifiable label is a caveat on an edit that SUCCEEDED");
+		warnings.Should().ContainSingle(warning => warning.Contains("addressed by UId"),
+			because: "the caller has to learn the check did not happen, and why, or they read silence as "
+				+ "confirmation");
+		warnings.Should().NotContain(warning => warning.Contains("shows no diagram label"),
+			because: "nothing was found to be missing - claiming a drop here would be a finding the read-back "
+				+ "cannot support");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When one label is unverifiable and another really was dropped, BOTH reach the caller and the caveat comes FIRST. The order is load-bearing and is stated as such in ReportFlowLabels, matching what ReportDescribed does for the block guards: a caller who reads a definite finding first and a 'could not check' second is being invited to treat the second as an afterthought. Inverting the two emission lines was green before this.")]
+	public void Execute_ShouldReportTheUnverifiableCaveatBeforeTheDroppedLabel() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = "[{\"op\":\"setFlow\",\"source\":\"3f2504e0-4f89-11d3-9a0c-0305e82c3301\",\"target\":\"Yes\",\"kind\":\"sequence\",\"label\":\"Approved\"},{\"op\":\"setFlow\",\"source\":\"Decide\",\"target\":\"No\",\"kind\":\"sequence\",\"label\":\"Rejected\"}]"
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		// Decide->No exists and came back with NO label: a real drop. The UId-addressed one cannot be checked.
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(new DescribeProcessResult {
+				Elements = [],
+				Flows = [new DescribedFlow { Source = "Decide", Target = "No" }]
+			});
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		int caveat = warnings.FindIndex(warning => warning.Contains("addressed by UId"));
+		int dropped = warnings.FindIndex(warning => warning.Contains("shows no diagram label"));
+		caveat.Should().BeGreaterThanOrEqualTo(0, because: "the unverifiable label must be reported");
+		dropped.Should().BeGreaterThanOrEqualTo(0, because: "the genuinely dropped label must be reported");
+		caveat.Should().BeLessThan(dropped,
+			because: "what could not be CHECKED is read first and what was found wrong second - the order "
+				+ "ReportDescribed uses for the block guards, and the reason is the same: a caveat after a "
+				+ "definite finding reads as an afterthought");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When the read-back itself fails, a labels-only edit is told the check did not happen. The intent-based unverified warning says nothing for such a payload — it configures no block — so silence here would print a plain success on an edit whose label was discarded, and the decision not to raise the package floor for this field depends on the read-back being able to speak.")]
+	public void Execute_ShouldReportLabelsUnverified_WhenTheReadBackFails() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = "[{\"op\":\"setFlow\",\"source\":\"Decide\",\"target\":\"Yes\","
+				+ "\"kind\":\"sequence\",\"label\":\"Approved\"}]"
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(Error.Failure(description: "the request timed out"));
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "an unreadable description is not evidence of a drop");
+		warnings.Should().ContainSingle(warning => warning.Contains("Could not verify")
+				&& warning.Contains("Decide -> Yes ('Approved')")
+				&& warning.Contains("the request timed out"),
+			because: "'could not check' and 'verified' must not look the same to the caller");
+	}
+
 }

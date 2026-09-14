@@ -519,7 +519,7 @@ public class SetLogoToolTests {
 		public FakeSetLogoCommand(SetLogoResult result = null)
 			: base(Substitute.For<IApplicationClient>(), new EnvironmentSettings(),
 				new SysSettingsCommand(Substitute.For<ISysSettingsManager>(), Substitute.For<ILogger>(),
-					Substitute.For<IFileSystem>()),
+					Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider()),
 				Substitute.For<IPackageDataBinder>(), Substitute.For<IFileSystem>()) {
 			_result = result ?? SetLogoResult.Successful(["logo"], BoundPackageName, []);
 		}

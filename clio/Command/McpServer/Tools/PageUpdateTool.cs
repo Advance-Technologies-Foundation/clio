@@ -711,29 +711,16 @@ public sealed record PageUpdateArgs(
 
 	[property: JsonPropertyName("body")]
 	[property: Description("Full JavaScript page body with markers, passed as a RAW STRING (not a JSON object/dict) — the schema source text with its /**MARKER*/ pairs. Pass either `body` (inline string) or `body-file` (path); one is required. WARNING: re-sending the full inherited body from `get-page.files.bodyFile` back verbatim is wrong in BOTH modes, and the two modes fail differently. In `append` a full-config body is rejected UP-FRONT, offline, and the rejection points at replace mode; that mode requires the diff form (SCHEMA_VIEW_MODEL_CONFIG_DIFF / SCHEMA_MODEL_CONFIG_DIFF) and only the new viewConfigDiff/handlers operations plus the required marker envelope. In `replace` the body REACHES THE SERVER and can fail there with 'Object vs Array' when it re-applies merges already inherited from the parent hierarchy — this is the mode the server error actually fires in.")]
-	string? Body,
+	string? Body = null,
 
 	[property: JsonPropertyName("resources")]
 	[property: Description(McpToolDescriptions.PageResources)]
-	string? Resources,
+	string? Resources = null,
 
 	[property: JsonPropertyName("dry-run")]
 	[property: Description("If true, validate without saving. Default: false")]
-	bool? DryRun,
+	bool? DryRun = null,
 
-	[property: JsonPropertyName("environment-name")]
-	[property: Description(McpToolDescriptions.EnvironmentName)]
-	string? EnvironmentName,
-
-	[property: JsonPropertyName("uri")]
-	[property: Description(McpToolDescriptions.Uri)]
-	string? Uri,
-	[property: JsonPropertyName("login")]
-	[property: Description(McpToolDescriptions.Login)]
-	string? Login,
-	[property: JsonPropertyName("password")]
-	[property: Description(McpToolDescriptions.Password)]
-	string? Password,
 	[property: JsonPropertyName("skip-sampling")]
 	[property: Description("Reserved escape hatch. Omit by default. Pre-condition for setting true: the immediately preceding user message in this turn contains an explicit instruction to skip the AI semantic review, OR the MCP host has reported sampling as unavailable in this session. Absent that evidence, omit this field. Default: false")]
 	bool? SkipSampling = null,
@@ -764,4 +751,4 @@ public sealed record PageUpdateArgs(
 	[property: JsonPropertyName("validate")]
 	[property: Description("Run client-side content and run-process validation before saving. Default: true. Set false only as an explicit escape hatch for a pre-existing page defect; JavaScript syntax, AST loadability, replace-mode marker integrity, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. It stays combinable with force=true - the two flags are orthogonal (one gates content checks, the other the baseline/conflict guard) - and the response then warns that both are relaxed.")]
 	bool? Validate = null
-);
+) : ConnectionArgsBase;

@@ -18,14 +18,15 @@ internal sealed class IdentityServerProbeTests : BaseClioModuleTests {
 	private IApplicationClientFactory _applicationClientFactory;
 	private IOwnedApplicationClient _applicationClient;
 	private IIdentityServerProbe _sut;
+	private IHttpClientFactory _httpClientFactory;
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		base.AdditionalRegistrations(containerBuilder);
 		_applicationClientFactory = Substitute.For<IApplicationClientFactory>();
 		_applicationClient = Substitute.For<IOwnedApplicationClient>();
-		IHttpClientFactory httpClientFactory = Substitute.For<IHttpClientFactory>();
+		_httpClientFactory = Substitute.For<IHttpClientFactory>();
 		containerBuilder.AddSingleton(_applicationClientFactory);
-		containerBuilder.AddSingleton(httpClientFactory);
+		containerBuilder.AddSingleton(_httpClientFactory);
 	}
 
 	public override void Setup() {
@@ -38,7 +39,85 @@ internal sealed class IdentityServerProbeTests : BaseClioModuleTests {
 
 	public override void TearDown() {
 		_applicationClient?.Dispose();
+		_applicationClient.ClearReceivedCalls();
+		_applicationClientFactory.ClearReceivedCalls();
+		_httpClientFactory.ClearReceivedCalls();
 		base.TearDown();
+	}
+
+	[TestCase("{}")]
+	[TestCase("[]")]
+	[TestCase("not json")]
+	[TestCase("{\"access_token\":\"secret-token\"}")]
+	[TestCase("{\"access_token\":\"\",\"token_type\":\"Bearer\"}")]
+	[TestCase("{\"access_token\":\"secret token\",\"token_type\":\"Bearer\"}")]
+	[TestCase("{\"access_token\":\"secret-token\",\"token_type\":\"Basic\"}")]
+	[Description("HTTP 200 cannot make an empty, malformed, or non-bearer token response pass verification.")]
+	public void AcquireClientCredentialsToken_ShouldReturnEmpty_WhenResponseIsInvalid(string body) {
+		// Arrange
+		_httpClientFactory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(new ResponseHandler(body)));
+
+		// Act
+		string token = _sut.AcquireClientCredentialsToken("https://identity.example", "client", "secret");
+
+		// Assert
+		token.Should().BeEmpty(because: "only a usable bearer token can be tested against CRM");
+	}
+
+	[Test]
+	[Description("Token validation accepts a nonempty bearer token without decoding or reimplementing its permissions.")]
+	public void AcquireClientCredentialsToken_ShouldReturnToken_WhenBearerResponseIsValid() {
+		// Arrange
+		_httpClientFactory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(
+			new ResponseHandler("{\"access_token\":\"opaque-token\",\"token_type\":\"bearer\"}")));
+
+		// Act
+		string token = _sut.AcquireClientCredentialsToken("https://identity.example", "client", "secret");
+
+		// Assert
+		token.Should().Be("opaque-token", because: "CRM owns validation of the issued token");
+	}
+
+	[TestCase("{}", false)]
+	[TestCase("[]", false)]
+	[TestCase("invalid", false)]
+	[TestCase("{\"issuer\":\"https://identity.example\"}", false)]
+	[TestCase("{\"issuer\":\"https://identity.example\",\"token_endpoint\":\"https://identity.example/connect/token\",\"jwks_uri\":\"https://identity.example/keys\",\"authorization_endpoint\":\"https://identity.example/connect/authorize\"}", true)]
+	[TestCase("{\"issuer\":\"creatio.com\",\"token_endpoint\":\"https://identity.example/connect/token\",\"jwks_uri\":\"https://identity.example/keys\",\"authorization_endpoint\":\"https://identity.example/connect/authorize\"}", true)]
+	[Description("Discovery validates the issuer and required endpoint metadata instead of trusting HTTP 200.")]
+	public void IsDiscoveryReachable_ShouldValidateMetadata_WhenHttpStatusIsSuccessful(string body, bool expected) {
+		// Arrange
+		_httpClientFactory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(new ResponseHandler(body)));
+
+		// Act
+		bool result = _sut.IsDiscoveryReachable("https://identity.example");
+
+		// Assert
+		result.Should().Be(expected, because: "a discovery response must contain usable issuer and endpoint URLs");
+	}
+
+	[TestCase("<html>login</html>")]
+	[TestCase("{}")]
+	[TestCase("{\"success\":false}")]
+	[Description("A login page or failed DataService response must not count as CRM accepting the token.")]
+	public void RunBearerDataServiceSmokeTest_ShouldFail_WhenHttp200BodyIsNotSuccessful(string body) {
+		// Arrange
+		_applicationClient.ExecutePostRequestAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body) }));
+
+		// Act
+		Action act = () => _sut.RunBearerDataServiceSmokeTest(new EnvironmentSettings { Uri = "https://crm.example" },
+			"https://crm.example/select", "opaque-token");
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "HTTP success alone does not prove CRM authentication")
+			.WithMessage("CRM OAuth smoke request*", because: "the sanitized error identifies the failing check");
+	}
+
+	private sealed class ResponseHandler(string body) : HttpMessageHandler {
+		protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+			Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body) });
 	}
 
 	[Test]

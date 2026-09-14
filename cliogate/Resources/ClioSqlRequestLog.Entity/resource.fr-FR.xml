@@ -1,0 +1,8 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Resources Culture="fr-FR">
+	<Group Type="String">
+		<Items>
+			<Item Name="EventsProcessSchema.Caption" Value="Base objet" />
+		</Items>
+	</Group>
+</Resources>

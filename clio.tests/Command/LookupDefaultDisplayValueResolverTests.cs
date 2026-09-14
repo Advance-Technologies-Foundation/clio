@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
@@ -222,5 +224,148 @@ internal sealed class LookupDefaultDisplayValueResolverTests
 		result.RecordResolution.Should().Be(LookupDefaultDisplayValueResolver.NotFoundMarker,
 			because: "a generic query failure must not throw; it degrades to a marker so the readback survives");
 		_logger.Received().WriteWarning(Arg.Is<string>(message => message.Contains("Unexpected backend failure")));
+	}
+
+	private static readonly Guid RecordId2 = Guid.Parse("e2c7fb69-7b99-5dc8-cffb-8b52dbb1bf61");
+
+	[Test]
+	[Description("ResolveMany resolves several records of one reference schema to their display values in a single batched query.")]
+	public void ResolveMany_ShouldResolveMultipleRecords_InOneQuery() {
+		// Arrange
+		ArrangeDisplayColumn("Name");
+		ArrangeSelectResponse(
+			$"{{\"success\":true,\"rows\":[" +
+			$"{{\"Id\":\"{RecordId:D}\",\"DisplayValue\":\"Green\"}}," +
+			$"{{\"Id\":\"{RecordId2:D}\",\"DisplayValue\":\"Blue\"}}]}}");
+
+		// Act
+		IReadOnlyDictionary<Guid, LookupDefaultResolution> result =
+			_resolver.ResolveMany(ReferenceSchema, [RecordId, RecordId2], new RemoteCommandOptions());
+
+		// Assert
+		result[RecordId].DisplayValue.Should().Be("Green", because: "each requested record must map to its own display value");
+		result[RecordId2].DisplayValue.Should().Be("Blue", because: "each requested record must map to its own display value");
+		_applicationClient.Received(1).ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("ResolveMany keys on the parsed Guid, so a record whose Id is returned in a braced, upper-case form still resolves (no raw-string miss).")]
+	public void ResolveMany_ShouldResolve_WhenIdReturnedInDifferentGuidForm() {
+		// Arrange - the endpoint returns the Id in braced upper-case form; the requested id is the plain 'D' form.
+		ArrangeDisplayColumn("Name");
+		ArrangeSelectResponse(
+			$"{{\"success\":true,\"rows\":[{{\"Id\":\"{{{RecordId.ToString("D").ToUpperInvariant()}}}\",\"DisplayValue\":\"Green\"}}]}}");
+
+		// Act
+		IReadOnlyDictionary<Guid, LookupDefaultResolution> result =
+			_resolver.ResolveMany(ReferenceSchema, [RecordId], new RemoteCommandOptions());
+
+		// Assert
+		result[RecordId].DisplayValue.Should().Be("Green",
+			because: "the returned Id is parsed to Guid, so a braces/case form difference must still resolve, not silently degrade to GUID-only");
+	}
+
+	// Counts the IN-filter values in a serialized SelectQuery body — one per requested id in that chunk.
+	private static int CountFilterValues(string requestBody) => Regex.Matches(requestBody, "\"value\"\\s*:").Count;
+
+	[Test]
+	[Description("ResolveMany issues exactly one IN query for a request at the chunk cap (400 ids), pinning the boundary so an off-by-one that split 400 into two chunks would fail.")]
+	public void ResolveMany_ShouldIssueOneQuery_ForExactly400Ids() {
+		// Arrange - exactly 400 distinct ids; capture the request bodies to count the IN-filter values per query.
+		ArrangeDisplayColumn("Name");
+		var bodies = new List<string>();
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(body => bodies.Add(body)), Arg.Any<int>())
+			.Returns("{\"success\":true,\"rows\":[]}");
+		Guid[] ids = Enumerable.Range(0, 400)
+			.Select(i => Guid.Parse($"11110000-0000-0000-0000-{i:D12}")).ToArray();
+
+		// Act
+		_resolver.ResolveMany(ReferenceSchema, ids, new RemoteCommandOptions());
+
+		// Assert
+		bodies.Should().ContainSingle(because: "400 ids sit exactly at the cap and must resolve in a single IN query");
+		CountFilterValues(bodies[0]).Should().Be(400, because: "the single query must carry all 400 ids");
+	}
+
+	[Test]
+	[Description("ResolveMany splits 401 ids into exactly two IN queries (400 then 1), unions their results (a record from each chunk resolves), and never issues one query per id.")]
+	public void ResolveMany_ShouldSplitInto400Then1_And_UnionResults_For401Ids() {
+		// Arrange - 401 distinct ids force two queries. Capture bodies to assert the per-chunk id counts (400, then 1),
+		// and return the FIRST and LAST id so each is only satisfiable from a DIFFERENT chunk — proving union, not overwrite.
+		ArrangeDisplayColumn("Name");
+		Guid[] ids = Enumerable.Range(0, 401)
+			.Select(i => Guid.Parse($"11110000-0000-0000-0000-{i:D12}")).ToArray();
+		var bodies = new List<string>();
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(body => bodies.Add(body)), Arg.Any<int>())
+			.Returns(
+				$"{{\"success\":true,\"rows\":[" +
+				$"{{\"Id\":\"{ids[0]:D}\",\"DisplayValue\":\"First\"}}," +
+				$"{{\"Id\":\"{ids[400]:D}\",\"DisplayValue\":\"Last\"}}]}}");
+
+		// Act
+		IReadOnlyDictionary<Guid, LookupDefaultResolution> result =
+			_resolver.ResolveMany(ReferenceSchema, ids, new RemoteCommandOptions());
+
+		// Assert
+		bodies.Count.Should().Be(2, because: "401 ids exceed the 400 cap by one, so exactly two IN queries are issued");
+		CountFilterValues(bodies[0]).Should().Be(400, because: "the first chunk carries the full cap of ids");
+		CountFilterValues(bodies[1]).Should().Be(1, because: "the second chunk carries the single remaining id");
+		result[ids[0]].DisplayValue.Should().Be("First", because: "an id in the first chunk resolves from the first query");
+		result[ids[400]].DisplayValue.Should().Be("Last",
+			because: "an id in the second chunk resolves from the second query, proving results union across chunks");
+	}
+
+	[Test]
+	[Description("ResolveMany marks ids with no returned row as not-found-or-no-access, preserving the single Resolve fail-soft contract.")]
+	public void ResolveMany_ShouldMarkNotFound_ForIdsWithNoRow() {
+		// Arrange
+		ArrangeDisplayColumn("Name");
+		ArrangeSelectResponse("{\"success\":true,\"rows\":[]}");
+
+		// Act
+		IReadOnlyDictionary<Guid, LookupDefaultResolution> result =
+			_resolver.ResolveMany(ReferenceSchema, [RecordId], new RemoteCommandOptions());
+
+		// Assert
+		result[RecordId].DisplayValue.Should().BeNull(because: "no row means no display value");
+		result[RecordId].RecordResolution.Should().Be(LookupDefaultDisplayValueResolver.NotFoundMarker,
+			because: "a requested id with no returned row degrades to the same honest marker as the single Resolve");
+	}
+
+	[Test]
+	[Description("ResolveMany marks every id display-column-unavailable and issues no query when the reference schema has no resolvable display column.")]
+	public void ResolveMany_ShouldMarkDisplayColumnUnavailable_AndSkipQuery_WhenNoDisplayColumn() {
+		// Arrange
+		ArrangeDisplayColumn(null);
+
+		// Act
+		IReadOnlyDictionary<Guid, LookupDefaultResolution> result =
+			_resolver.ResolveMany(ReferenceSchema, [RecordId, RecordId2], new RemoteCommandOptions());
+
+		// Assert
+		result[RecordId].RecordResolution.Should().Be(LookupDefaultDisplayValueResolver.DisplayColumnUnavailableMarker,
+			because: "a reference schema with no resolvable display column cannot yield captions for any id");
+		result[RecordId2].RecordResolution.Should().Be(LookupDefaultDisplayValueResolver.DisplayColumnUnavailableMarker,
+			because: "the marker applies to every requested id");
+		_applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("ResolveMany marks every id in the chunk no-access when the batched read is denied by security.")]
+	public void ResolveMany_ShouldMarkNoAccess_WhenSecurityDenied() {
+		// Arrange
+		ArrangeDisplayColumn("Name");
+		ArrangeSelectResponse(
+			"{\"success\":false,\"errorInfo\":{\"message\":\"Current user does not have permission for the \\\"UsrEng91318Color\\\" object\"}}");
+
+		// Act
+		IReadOnlyDictionary<Guid, LookupDefaultResolution> result =
+			_resolver.ResolveMany(ReferenceSchema, [RecordId, RecordId2], new RemoteCommandOptions());
+
+		// Assert
+		result[RecordId].RecordResolution.Should().Be(LookupDefaultDisplayValueResolver.NoAccessMarker,
+			because: "a schema-level security denial applies to every id in the failed batch");
+		result[RecordId2].RecordResolution.Should().Be(LookupDefaultDisplayValueResolver.NoAccessMarker,
+			because: "a schema-level security denial applies to every id in the failed batch");
 	}
 }

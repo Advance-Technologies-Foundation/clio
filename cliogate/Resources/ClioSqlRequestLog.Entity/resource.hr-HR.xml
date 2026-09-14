@@ -1,0 +1,8 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Resources Culture="hr-HR">
+	<Group Type="String">
+		<Items>
+			<Item Name="EventsProcessSchema.Caption" Value="Osnovni objekt" />
+		</Items>
+	</Group>
+</Resources>

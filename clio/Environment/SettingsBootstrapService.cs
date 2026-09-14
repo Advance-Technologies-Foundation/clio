@@ -181,19 +181,7 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 		if ((settings.SettingsVersion ?? 0) >= CurrentSettingsVersion) {
 			return false;
 		}
-		// Migration 1: before #576 Autoupdate was a non-nullable bool, so the C# default
-		// 'false' was serialized into appsettings.json for every user who never opted in,
-		// silently disabling auto-update. Clear that legacy artifact so the opt-out default
-		// (enabled) applies again. Guarded by SettingsVersion, this runs once — a deliberate
-		// 'clio autoupdate --disable' made afterwards is preserved.
-		if ((settings.SettingsVersion ?? 0) < 1
-			&& settings.Autoupdate is { WasLegacyScalar: true, Clio.Enabled: false }) {
-			settings.Autoupdate.Clio.Enabled = true;
-			repairs.Add(new SettingsRepair(
-				"autoupdate-legacy-default-reset",
-				"auto-update was disabled by a legacy default and has been re-enabled "
-				+ "(run 'clio autoupdate --disable' to opt out)"));
-		}
+		// Preserve legacy auto-update choices now that clio updates are opt-in.
 		// Migration 2 makes automatic IIS port selection visible and immediately usable after an upgrade.
 		// Preserve a user-configured range; only materialize the built-in range when the setting was absent.
 		if ((settings.SettingsVersion ?? 0) < 2

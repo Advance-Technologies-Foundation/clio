@@ -4,7 +4,7 @@
 **Jira**: ENG-94374
 **Stories**: `spec/stories/story-process-versioning-1.md` … `-18.md`
 **Author**: QA Planner Agent
-**Status**: Draft (revised after adversarial review 2026-09-02)
+**Status**: Approved — revised after adversarial review 2026-09-02; carried in clio#1410 and crt-process-builder#47, both approved by d-krestov on 2026-09-09
 **Created**: 2026-09-02
 
 ---

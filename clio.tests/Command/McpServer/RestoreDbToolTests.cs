@@ -119,15 +119,15 @@ public sealed class RestoreDbToolTests {
 		FakeRestoreDbCommand command = new(logger, exitCode: 0, dbOperationLogSessionFactory);
 		RestoreDbTool tool = new(command, logger, Substitute.For<IToolCommandResolver>(), dbOperationLogContextAccessor);
 		RestoreDbByCredentialsArgs args = new(
-			"mssql://localhost:1433",
-			"sa",
-			"Password1!",
-			@"C:\sql-share",
-			@"C:\backups\db.bak",
-			"sandbox_db",
-			true,
-			true,
-			false);
+			DbServerUri: "mssql://localhost:1433",
+			DbUser: "sa",
+			DbPassword: "Password1!",
+			BackupPath: @"C:\backups\db.bak",
+			DbName: "sandbox_db",
+			Force: true,
+			AsTemplate: true,
+			DisableResetPassword: false,
+			DbWorkingFolder: @"C:\sql-share");
 
 		// Act
 		CommandExecutionResult result = tool.RestoreByCredentials(args);

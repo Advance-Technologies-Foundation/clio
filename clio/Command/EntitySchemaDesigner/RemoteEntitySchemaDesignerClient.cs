@@ -78,9 +78,6 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 	private const string DesignerServicePath = "ServiceModel/EntitySchemaDesignerService.svc";
 	private const string WorkspaceExplorerServicePath = "ServiceModel/WorkspaceExplorerService.svc";
 
-	/// <summary>UTF-8 byte-order mark, spelled as an escape so it stays visible in diffs and survives formatters.</summary>
-	private const char ByteOrderMark = '\uFEFF';
-
 	// Publishing triggers a server-side configuration build on legacy instances (BuildWorkspace),
 	// which is a compile-class operation. Use the same long timeout as compile-configuration
 	// so a slow-but-successful build is not mistaken for a failure.
@@ -292,7 +289,7 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 		where TResponse : BaseResponse {
 		string requestBody = request == null ? "{}" : _jsonConverter.SerializeObject(request);
 		string rawResponse = _applicationClient.ExecutePostRequest(url, requestBody, timeoutMs, maxAttempts, retryDelay);
-		TResponse response = DeserializeResponse<TResponse>(methodName, rawResponse);
+		TResponse response = DeserializeResponse<TResponse>(methodName, url, rawResponse);
 		return EnsureSuccess(response, methodName);
 	}
 
@@ -305,63 +302,113 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 		string requestBody = request == null ? "{}" : _jsonConverter.SerializeObject(request);
 		string rawResponse = _applicationClient.ExecutePostRequest(url, requestBody, options.TimeOut,
 			maxAttempts ?? options.MaxAttempts, options.RetryDelay);
-		if (IsHtmlResponse(rawResponse)) {
+		// The session check runs BEFORE the markup gate on purpose. A login page is markup, so without this
+		// the caller would receive null - the same value that means "this server cannot answer that" - and
+		// RemoteEntitySchemaColumnManager.LoadSchema turns that null into a package-dependency mutation. An
+		// authentication failure must never be able to rewrite a package's dependency list.
+		ThrowIfSessionExpired(methodName, url, rawResponse);
+		if (ServiceResponseJsonGuard.LooksLikeMarkup(rawResponse)) {
 			return null;
 		}
-		TResponse response = DeserializeResponse<TResponse>(methodName, rawResponse);
+		TResponse response = DeserializeResponse<TResponse>(methodName, url, rawResponse);
 		return EnsureSuccess(response, methodName);
 	}
 
-	private TResponse DeserializeResponse<TResponse>(string methodName, string rawResponse)
+	/// <summary>
+	/// Deserializes a designer service body into <typeparamref name="TResponse"/>, converting every
+	/// non-JSON shape into a classified <see cref="NonJsonServiceResponseException"/>.
+	/// <para>
+	/// Four shapes are told apart, because the recovery for each is different and a message that conflates
+	/// them sends the caller down the wrong path: an expired session (the sign-in response), a markup body,
+	/// an empty body, and a body that is neither markup nor parseable JSON. No branch echoes an HTML body and
+	/// no branch states a cause the call has no evidence for - naming what the request observed is the whole
+	/// contract here (issue #722).
+	/// </para>
+	/// </summary>
+	/// <typeparam name="TResponse">Designer response contract to deserialize into.</typeparam>
+	/// <param name="methodName">Designer method the body came from, used to open the error message.</param>
+	/// <param name="url">Endpoint the body came from, included so the caller can tell which request failed.</param>
+	/// <param name="rawResponse">Raw response body as returned by the application client.</param>
+	/// <returns>The deserialized designer response.</returns>
+	private TResponse DeserializeResponse<TResponse>(string methodName, string url, string rawResponse)
 		where TResponse : BaseResponse {
+		// Checked against the RAW body, before any parse attempt: IsSessionExpiredResponse also recognises the
+		// JSON 401 fault envelope, which deserializes cleanly into TResponse and would otherwise reach the
+		// caller as the generic "<method> failed." from EnsureSuccess.
+		ThrowIfSessionExpired(methodName, url, rawResponse);
+		if (string.IsNullOrWhiteSpace(rawResponse)) {
+			throw new NonJsonServiceResponseException(
+				ServiceResponseJsonGuard.BuildEmptyBodyMessage(methodName, url));
+		}
 		try {
 			return _jsonConverter.DeserializeObject<TResponse>(rawResponse);
 		} catch (Exception rawException) {
-			if (IsHtmlResponse(rawResponse)) {
+			if (ServiceResponseJsonGuard.LooksLikeMarkup(rawResponse)) {
 				// NonJsonServiceResponseException (not a plain InvalidOperationException): its message is marked
-				// authoritative, so the MCP boundary surfaces this recovery guidance instead of unwrapping to the
-				// raw parser text of the inner exception (ENG-93365).
-				throw new NonJsonServiceResponseException(
-					$"{methodName} returned an HTML error page instead of JSON. " +
-					"The Creatio server encountered an unhandled error. Two common causes, check them in this order: " +
-					"(1) the target package is MISSING A DEPENDENCY on the package/app that owns the upper layer of " +
-					"the object you are extending (for example extending the Opportunity layer without depending on " +
-					"CrtLeadOppMgmtApp) — add the owning package with the add-package-dependency command/tool, then " +
-					"retry the operation; " +
-					"(2) a stale database table left by a previously deleted package — use find-entity-schema to check " +
-					"whether the schema was partially created before retrying. " +
-					"Do NOT write into the owning (managed) package and do NOT fall back to raw SQL/OData/DataService. " +
-					"MCP agents: read get-guidance name=package-dependencies for the full recovery path.",
-					rawException);
+				// authoritative, so the MCP boundary surfaces this classified text instead of unwrapping to the
+				// raw parser message of the inner exception (ENG-93365).
+				throw new NonJsonServiceResponseException(BuildMarkupResponseMessage(methodName, url), rawException);
 			}
 			string correctedJson = _jsonConverter.CorrectJson(rawResponse);
 			try {
 				return _jsonConverter.DeserializeObject<TResponse>(correctedJson);
 			} catch (Exception correctedException) {
-				// Authoritative for the same reason as the HTML branch above: this message already carries both
-				// parser errors and the response, so unwrapping to the inner exception would only lose context.
+				// Authoritative for the same reason as the markup branch above. The message is built by the
+				// shared guard rather than locally: it redacts the parser text and caps the body preview at 200
+				// characters, which the previous local Truncate(rawResponse, 1000) did not - that path copied up
+				// to a kilobyte of unredacted response body straight into an agent transcript.
 				throw new NonJsonServiceResponseException(
-					$"{methodName} returned invalid JSON. Raw error: {rawException.Message}. " +
-					$"Corrected error: {correctedException.Message}. Response: {Truncate(rawResponse, 1000)}",
+					ServiceResponseJsonGuard.BuildNonJsonMessage(methodName, url, rawResponse, correctedException),
 					correctedException);
 			}
 		}
 	}
 
-	private static bool IsHtmlResponse(string rawResponse) {
-		if (string.IsNullOrEmpty(rawResponse)) {
-			return false;
+	/// <summary>
+	/// Throws when the body is Creatio's answer to an unauthenticated request - the rendered sign-in page or
+	/// the JSON 401 fault envelope - so an authentication failure is never reported as, or acted on as,
+	/// anything else.
+	/// </summary>
+	/// <param name="methodName">Designer method the body came from.</param>
+	/// <param name="url">Endpoint the body came from.</param>
+	/// <param name="rawResponse">Raw response body.</param>
+	/// <exception cref="NonJsonServiceResponseException">The body is a session-expired response.</exception>
+	private static void ThrowIfSessionExpired(string methodName, string url, string rawResponse) {
+		if (!ReauthExecutor.IsSessionExpiredResponse(rawResponse)) {
+			return;
 		}
-		// Byte-order marks are stripped along with whitespace (char.IsWhiteSpace does not report a BOM), so a
-		// BOM-prefixed HTML error page still takes the dependency-recovery branch instead of falling through to
-		// the generic invalid-JSON message. The predicate stays narrower than
-		// ServiceResponseJsonGuard.LooksLikeMarkup on purpose: this branch claims a Creatio HTML/XML error page
-		// specifically, while the guard classifies any markup-looking body.
-		string trimmed = rawResponse.TrimStart(ByteOrderMark).TrimStart();
-		return trimmed.StartsWith("<!DOCTYPE", StringComparison.OrdinalIgnoreCase)
-			|| trimmed.StartsWith("<html", StringComparison.OrdinalIgnoreCase)
-			|| trimmed.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase);
+		// Same recovery wording as the generic ExecutePostRequest<T> overload in CreatioClientAdapter, which
+		// the string-typed overload this client uses does not apply.
+		throw new SessionExpiredServiceResponseException(
+			$"{methodName} was answered with the Creatio sign-in response instead of JSON (URL: {url}). " +
+			"The session expired and the automatic re-authentication did not restore it. Verify the " +
+			"environment credentials (for example 'clio reg-web-app --check-login') and retry. " +
+			"This response says nothing about the requested schema or package, so do not read it as a " +
+			"missing dependency, a missing schema, or a server defect. " +
+			"The response body is omitted because a sign-in page can carry session tokens.");
 	}
+
+	/// <summary>
+	/// Builds the message for a designer body that is markup rather than JSON. It states only what was
+	/// observed: the method, the endpoint, and that the body was withheld.
+	/// </summary>
+	/// <remarks>
+	/// It deliberately asserts NO cause. The predecessor of this text named two - a missing package
+	/// dependency and "a stale database table left by a previously deleted package" - on the strength of a
+	/// purely syntactic "the body starts with &lt;" test, and nothing in this class can distinguish them or
+	/// produce evidence for either. The missing-dependency diagnosis, WITH the packages that were actually
+	/// found, is added one level up by <c>RemoteEntitySchemaColumnManager.LoadSchema</c>, which has run the
+	/// lookup that supports it (issue #722).
+	/// </remarks>
+	/// <param name="methodName">Designer method the body came from.</param>
+	/// <param name="url">Endpoint the body came from.</param>
+	/// <returns>The error message to surface.</returns>
+	private static string BuildMarkupResponseMessage(string methodName, string url) =>
+		$"{methodName} answered with an HTML/XML page instead of JSON (URL: {url}). " +
+		"The Creatio server did not produce a service response for this request. " +
+		"The response body is omitted from this message because an error or sign-in page can carry session " +
+		"tokens. clio has not established WHY the server answered this way and states no cause - check the " +
+		"Creatio server log for this endpoint.";
 
 	private string BuildDesignerMethodUrl(string methodName) {
 		string baseUrl = _serviceUrlBuilder.Build(DesignerServicePath);
@@ -382,11 +429,5 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 		}
 
 		return response;
-	}
-
-	private static string Truncate(string value, int maxLength) {
-		return string.IsNullOrEmpty(value) || value.Length <= maxLength
-			? value
-			: value[..maxLength];
 	}
 }
