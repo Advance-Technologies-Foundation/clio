@@ -51,7 +51,11 @@ the others — the shape clio's own package template uses for `System.Text.Json`
 `$(TargetFramework)` comparison is interpreted; a condition that mentions the property inside
 something more complex (`And`, `Or`, a negation, a property function) is treated as not applying, so
 the dependency is kept in the props file — a duplicate reference is an MSBuild warning, a missing
-one is a compile error.
+one is a compile error. A condition built on a neighbouring property — `$(TargetFrameworks)`,
+`$(TargetFrameworkVersion)`, `$(TargetFrameworkIdentifier)` — counts as unevaluable for the same
+reason, so the classic `'$(TargetFrameworkVersion)' == 'v4.7.2'` idiom keeps its dependency in **both**
+props files, copies the dll into both `Files/Libs/*` directories, and has its `PackageReference`
+commented out as a materialized assembly.
 
 A NuGet package that contributes no assembly at all — an analyzer, for example — keeps its
 `PackageReference` in the csproj instead of being commented out. A package is considered

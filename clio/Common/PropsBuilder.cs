@@ -145,7 +145,14 @@ public class PropsBuilder : IPropsBuilder
 		+ @"|'(?<framework2>[^']*)'\s*(?<operator2>==|!=)\s*'\$\(TargetFramework\)')\s*$",
 		RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout);
 
-	//Any mention of the property, used to tell "no opinion" from "an expression we cannot evaluate"
+	//Used to tell "no opinion" from "an expression clio cannot evaluate". The [^)]* tail deliberately
+	//matches the WHOLE TargetFramework* family, not just $(TargetFramework): $(TargetFrameworks),
+	//$(TargetFrameworkVersion) and $(TargetFrameworkIdentifier) all qualify (PR #1496 review). None of
+	//them is the property SimpleTargetFrameworkConditionRegex evaluates, so a condition built on one is
+	//unevaluable here and the dependency is KEPT - the safe side, same as And/Or/negation. Widening the
+	//family costs a duplicate reference (an MSBuild warning); narrowing it to the exact property would
+	//let a classic '$(TargetFrameworkVersion)' == 'v4.7.2' read as "no opinion" and suppress a dll that
+	//is genuinely needed. See the knowledge record for the materialization knock-on that follows.
 	private static readonly Regex TargetFrameworkMentionRegex = new(
 		@"\$\(TargetFramework[^)]*\)", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout);
 
@@ -249,27 +256,41 @@ public class PropsBuilder : IPropsBuilder
 			if (string.IsNullOrWhiteSpace(condition)) {
 				continue;
 			}
-			Match match = SimpleTargetFrameworkConditionRegex.Match(condition);
-			if (!match.Success) {
-				if (TargetFrameworkMentionRegex.IsMatch(condition)) {
-					//The condition depends on the target framework in a way clio cannot evaluate
-					return false;
-				}
-				continue;
-			}
-			string comparisonOperator = match.Groups["operator"].Success
-				? match.Groups["operator"].Value
-				: match.Groups["operator2"].Value;
-			string framework = match.Groups["framework"].Success
-				? match.Groups["framework"].Value
-				: match.Groups["framework2"].Value;
-			bool negated = comparisonOperator == "!=";
-			bool matchesFramework = string.Equals(framework, targetFramework, StringComparison.OrdinalIgnoreCase);
-			if (matchesFramework == negated) {
+			if (!ConditionAllowsTargetFramework(condition, targetFramework)) {
 				return false;
 			}
 		}
 		return true;
+	}
+
+	/// <summary>
+	/// Evaluates ONE <c>Condition</c> attribute against the target framework being built.
+	/// </summary>
+	/// <remarks>
+	/// Split out of <see cref="AppliesToTargetFramework"/> so the ancestor walk reads as a walk: the loop
+	/// says which elements are consulted, this says what one condition means.
+	/// </remarks>
+	/// <param name="condition">The raw <c>Condition</c> attribute value.</param>
+	/// <param name="targetFramework">Target framework being built: net472 or netstandard2.0.</param>
+	/// <returns>
+	/// <see langword="false"/> when the condition excludes this target framework, or mentions the property
+	/// in a form clio cannot evaluate; <see langword="true"/> when it admits it or says nothing about it.
+	/// </returns>
+	private static bool ConditionAllowsTargetFramework(string condition, string targetFramework){
+		Match match = SimpleTargetFrameworkConditionRegex.Match(condition);
+		if (!match.Success) {
+			//A mention clio cannot evaluate: not applying, so the dll stays in the props file
+			return !TargetFrameworkMentionRegex.IsMatch(condition);
+		}
+		string comparisonOperator = match.Groups["operator"].Success
+			? match.Groups["operator"].Value
+			: match.Groups["operator2"].Value;
+		string framework = match.Groups["framework"].Success
+			? match.Groups["framework"].Value
+			: match.Groups["framework2"].Value;
+		bool negated = comparisonOperator == "!=";
+		bool matchesFramework = string.Equals(framework, targetFramework, StringComparison.OrdinalIgnoreCase);
+		return matchesFramework != negated;
 	}
 
 	/// <summary>

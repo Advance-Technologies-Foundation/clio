@@ -35,3 +35,24 @@ is therefore treated as unevaluable and the dependency is kept, on the same "a d
 warning, a missing one is a compile error" rule as the complex-condition arm. An `<Otherwise>` under a
 `<Choose>` that says nothing about the target framework is left alone.
 
+
+**The mention test covers the whole `TargetFramework*` family (PR #1496 review)** — the "does this
+condition mention the property" regex is `\$\(TargetFramework[^)]*\)`, so `$(TargetFrameworks)`,
+`$(TargetFrameworkVersion)` and `$(TargetFrameworkIdentifier)` all qualify even though none of them is
+the property the simple-comparison regex evaluates. That is deliberate and it lands on the same safe
+side: a condition built on one of them is unevaluable, so the dependency is kept. Narrowing the test to
+the exact property would make the classic `'$(TargetFrameworkVersion)' == 'v4.7.2'` idiom read as
+"no opinion about the target framework", and the dll it guards would be suppressed.
+
+The knock-on is worth stating because it is not free: a workspace on that classic idiom gets the dll
+into **both** props files, copied into both `Files/Libs/*`, and listed in `materializedAssemblies` —
+which is what makes `switch-nuget-to-dll-reference` comment out its `PackageReference`. Two references
+where one would do is an MSBuild warning, not a failure, so this is the cost the safe direction buys.
+
+**Not covered: the target framework moniker is fixed, not read from the csproj** — the builder compares
+conditions against the literal `net472` / `netstandard2.0` (`NugetMaterializer` carries the same pair).
+A workspace whose csproj targets a different netstandard moniker is therefore evaluated against the
+wrong one, and a `!=` condition naming that other moniker is the one shape where this check can
+subtract: clio reads it as applying and suppresses a dll MSBuild would have needed. Out of scope for
+GH-1283, which is about honouring conditions at all; fixing it means resolving the moniker from
+`<TargetFrameworks>` and belongs with the materializer that shares the constant.

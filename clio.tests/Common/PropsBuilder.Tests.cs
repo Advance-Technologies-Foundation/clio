@@ -362,6 +362,49 @@ public class PropsBuilder_Tests
 				+ "compile error, so an unreadable condition must not drop the dependency");
 	}
 
+	[Test]
+	[Description("The condition commonly sits on the enclosing ItemGroup rather than on the Reference itself, and only the ancestor walk sees it - nothing pinned that idiom before (PR #1496 review)")]
+	public void Build_HonoursTargetFrameworkCondition_When_ItSitsOnTheEnclosingItemGroup(){
+		//Arrange
+		_fileSystem.ReadAllText(Arg.Is<string>(s => s.EndsWith(".tpl"))).Returns(MockPropItemTemplate);
+		_fileSystem.ReadAllText(Arg.Is<string>(s => s.EndsWith(".csproj"))).Returns(@"
+			<Project Sdk=""Microsoft.NET.Sdk"">
+				<ItemGroup Condition=""'$(TargetFramework)' == 'net472'"">
+					<Reference Include=""ATF.Repository"">
+						<HintPath>$(CoreLibPath)/ATF.Repository.dll</HintPath>
+					</Reference>
+				</ItemGroup>
+				<ItemGroup Condition=""'$(TargetFramework)' == 'netstandard2.0'"">
+					<Reference Include=""Newtonsoft.Json"">
+						<HintPath>$(CoreLibPath)/Newtonsoft.Json.dll</HintPath>
+					</Reference>
+				</ItemGroup>
+			</Project>");
+		_fileSystem.When(fs => fs.WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>()))
+			.Do(ci => _writtenPropsFiles[ci.ArgAt<string>(0)] = ci.ArgAt<string>(1));
+		_fileSystem.GetFiles(Arg.Any<string>(), Arg.Is("*.dll"), Arg.Is(SearchOption.TopDirectoryOnly))
+			.Returns(ci => [
+				Path.Combine(ci.ArgAt<string>(0), "ATF.Repository.dll"),
+				Path.Combine(ci.ArgAt<string>(0), "Newtonsoft.Json.dll")
+			]);
+
+		//Act
+		_sut.Build(PackageName);
+
+		//Assert - both directions off ONE csproj, so a walk that stopped reading ancestors entirely
+		//would fail the first assertion and one that read them indiscriminately would fail the second
+		string net472Props = CapturedPropsContent("net472");
+		net472Props.Should().NotContain("ATF.Repository",
+			because: "the enclosing ItemGroup resolves to net472, so the reference already applies there");
+		net472Props.Should().Contain("Newtonsoft.Json",
+			because: "its ItemGroup is netstandard2.0-only, so it says nothing about net472 and the dll is needed");
+		string netStandardProps = CapturedPropsContent("netstandard");
+		netStandardProps.Should().Contain("ATF.Repository",
+			because: "the net472-only ItemGroup must not suppress the dll from the netstandard props file");
+		netStandardProps.Should().NotContain("Newtonsoft.Json",
+			because: "the enclosing ItemGroup resolves to netstandard2.0, so the reference already applies there");
+	}
+
 	[TestCase("'net472' == '$(TargetFramework)'")]
 	[TestCase("  '$(TargetFramework)'=='net472'  ")]
 	[TestCase("'$(TargetFramework)' != 'netstandard2.0'")]
