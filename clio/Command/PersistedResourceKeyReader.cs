@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using Clio.Command.McpServer;
+using Clio.Command.McpServer.Tools;
 
 namespace Clio.Command;
 
@@ -155,7 +156,7 @@ public interface IPersistedResourceKeyReader {
 }
 
 /// <inheritdoc />
-public sealed class PersistedResourceKeyReader : IPersistedResourceKeyReader {
+public sealed class PersistedResourceKeyReader(IToolCommandResolver commandResolver = null) : IPersistedResourceKeyReader {
 
 	// STATIC, not instance: see the interface remarks — the tools and the command are resolved from two
 	// different containers within one call, so an instance store would never be shared.
@@ -187,13 +188,24 @@ public sealed class PersistedResourceKeyReader : IPersistedResourceKeyReader {
 			return result;
 		}
 		scope.Keys[target] = result;
+		// The recorded reason is dropped on success, and it has to be: a failed read is deliberately NOT
+		// cached, so the retry is guaranteed, and leaving the earlier warning behind annotated a page that
+		// succeeded with a strictness that was never applied.
+		scope.Failures.TryRemove(target, out _);
 		return result;
 	}
 
 	/// <inheritdoc />
 	public void Invalidate(PageUpdateOptions options) {
 		PersistedResourceKeyScopeState scope = CurrentScope.Value;
-		scope?.Keys.TryRemove(ResolveTarget(options), out _);
+		if (scope is null) {
+			return;
+		}
+		// BOTH stores: invalidating the key while keeping the reason would leave the next read reporting a
+		// failure that its own retry may well not reproduce.
+		PersistedResourceKeyTarget target = ResolveTarget(options);
+		scope.Keys.TryRemove(target, out _);
+		scope.Failures.TryRemove(target, out _);
 	}
 
 	/// <inheritdoc />
@@ -215,11 +227,21 @@ public sealed class PersistedResourceKeyReader : IPersistedResourceKeyReader {
 	// across tenants because the cache lives in the per-call scope, and one call is one tenant.
 	private const string CredentialPassthroughMarker = "(credential-passthrough)";
 
-	private static PersistedResourceKeyTarget ResolveTarget(PageUpdateOptions options) {
+	private PersistedResourceKeyTarget ResolveTarget(PageUpdateOptions options) {
 		if (options is null) {
 			return new PersistedResourceKeyTarget(CredentialPassthroughMarker, string.Empty, string.Empty, string.Empty, string.Empty);
 		}
-		string environment = FirstNonBlank(options.Environment, options.Uri) ?? CredentialPassthroughMarker;
+		// GetTargetKey, not a hand-rolled FirstNonBlank(Environment, Uri): it is the repository's single
+		// source of truth for "which stand is this", it resolves a registered environment NAME through to
+		// the same key its resolved URL produces, and it is what BaseTool already keys its per-tenant lock
+		// by. Keying by whichever field happened to be populated made two gates addressing one stand by
+		// different fields miss each other's cache entry. It never throws - an unresolvable target keeps a
+		// stable "unresolved:" key of its own.
+		// The resolver is optional ONLY for hand-construction in tests; every container that registers
+		// this type supplies one, so there is a single keying path in production.
+		string environment = commandResolver is not null
+			? FirstNonBlank(commandResolver.GetTargetKey(options), CredentialPassthroughMarker)
+			: FirstNonBlank(options.Environment, options.Uri) ?? CredentialPassthroughMarker;
 		return new PersistedResourceKeyTarget(
 			environment,
 			options.Login ?? string.Empty,
