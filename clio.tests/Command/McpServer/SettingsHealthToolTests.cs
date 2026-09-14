@@ -67,4 +67,36 @@ public sealed class SettingsHealthToolTests {
 		result.CanExecuteEnvTools.Should().BeFalse(
 			because: "named-environment tools must stay blocked when no active environment is resolved");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Surfaces the settings-shape-mismatch issue code with environment execution still available, so a caller can tell a version skew from a damaged file.")]
+	public void SettingsHealth_Should_Report_Shape_Mismatch_Without_Blocking_Environment_Tools() {
+		// Arrange
+		ISettingsBootstrapService settingsBootstrapService = Substitute.For<ISettingsBootstrapService>();
+		settingsBootstrapService.GetReport().Returns(new SettingsBootstrapReport(
+			"issues-detected",
+			"/tmp/appsettings.json",
+			"dev",
+			"dev",
+			1,
+			[new SettingsIssue(SettingsBootstrapService.SettingsShapeMismatchCode,
+				"appsettings.json is valid JSON, but this clio version cannot bind autoupdate.clio.enabled.")],
+			[],
+			true,
+			true));
+		SettingsHealthTool tool = new(settingsBootstrapService);
+
+		// Act
+		SettingsHealthResult result = tool.GetSettingsHealth();
+
+		// Assert
+		result.Issues.Should().ContainSingle(issue =>
+				issue.Code == SettingsBootstrapService.SettingsShapeMismatchCode,
+			because: "the health payload is where a caller learns the file is valid and the binary is old");
+		result.EnvironmentCount.Should().Be(1,
+			because: "a shape mismatch in an unrelated section leaves the environments bound and countable");
+		result.CanExecuteEnvTools.Should().BeTrue(
+			because: "degrading instead of failing is the point: environment-scoped tools must keep working");
+	}
 }
