@@ -39,7 +39,8 @@ Default: false
 Default: false
 
 --timeout                           Request timeout in milliseconds
-Default: 100000
+Default: 3600000 (60 minutes)
+MCP `timeout` argument: accepted range 1..10800000 (3 hours); a value outside it is rejected before the call is made
 
 --uri                   -u          Application uri
 

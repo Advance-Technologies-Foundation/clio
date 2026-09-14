@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -68,6 +68,7 @@ internal sealed class CommandHelpCatalog {
 			["deploy-application"] = "Copy an application package between Creatio environments",
 			["deploy-creatio"] = "Install Creatio from a distribution package",
 			["deploy-identity"] = "Deploy IdentityService to IIS and connect it to a Creatio environment",
+			["uninstall-identity"] = "Remove the recorded IdentityService while preserving its Creatio environment",
 			["get-identity-service-config"] = "Read or derive the OAuth IdentityService configuration of a Creatio environment over REST",
 			["resolve-oauth-system-user"] = "Resolve a Creatio system user (id or name) for OAuth app binding over REST",
 			["create-oauth-technical-user"] = "Create a Creatio technical system user for OAuth over REST",
@@ -92,6 +93,7 @@ internal sealed class CommandHelpCatalog {
 			["create-lookup"] = "Create a lookup entity schema in a remote Creatio package",
 			["get-app-hash"] = "Calculate the hash of an application package",
 			["get-page"] = "Read a Freedom UI page as a merged bundle plus raw schema body",
+			["get-process-page-facts"] = "Read the completing-button candidates and page-scoped data sources a Pre-configured page process element needs",
 			["list-app-sections"] = "List sections of an existing installed application",
 			["list-pages"] = "List Freedom UI page schemas in a Creatio environment",
 			[GetEntitySchemaProperties] = "Get properties from a remote Creatio entity schema",
@@ -122,8 +124,8 @@ internal sealed class CommandHelpCatalog {
 			["listen"] = "Stream Creatio log events over WebSocket",
 			["publish-app"] = "Publish a workspace to a ZIP archive or hub folder",
 			["pack-nuget-pkg"] = "Pack a package into a NuGet artifact",
-			["pkg-to-db"] = "Load packages into Creatio database storage",
-			["pkg-to-file-system"] = "Load packages into Creatio file system storage",
+			["pkg-to-db"] = "Load file-system package definitions into the configuration database (no package data)",
+			["pkg-to-file-system"] = "Export configuration-database packages to the file system (no package data)",
 			["cfg-worspace"] = "Configure workspace package selection",
 			["compressApp"] = "Archive an application directory into ZIP",
 			["reg-web-app"] = "Register a Creatio environment",
@@ -211,6 +213,7 @@ internal sealed class CommandHelpCatalog {
 			"create-server-to-server-oauth-app",
 			"deploy-creatio",
 			"deploy-identity",
+			"uninstall-identity",
 			"deploy-infrastructure",
 			"get-build-info",
 			"get-identity-service-config",
@@ -245,6 +248,7 @@ internal sealed class CommandHelpCatalog {
 			"clear-themes-cache",
 			"create-theme",
 			"delete-theme",
+			"get-theme",
 			"list-themes",
 			"update-theme"
 		];
@@ -292,6 +296,7 @@ internal sealed class CommandHelpCatalog {
 			"new-ui-project",
 			"open-settings",
 			"get-page",
+			"get-process-page-facts",
 			"list-pages",
 			"update-client-unit-schema",
 			"update-page",

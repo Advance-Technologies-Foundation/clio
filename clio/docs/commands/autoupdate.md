@@ -19,15 +19,18 @@ autoupdate [--enable | --disable]
 Controls the `clio` policy in the automatic-update settings. Running the
 command without arguments displays whether automatic clio updates are enabled.
 
+By default, automatic clio and toolkit updates are disabled; knowledge updates are enabled.
+Existing explicitly configured values, including legacy scalar values, are preserved.
+
 Clio also has independent knowledge and toolkit policies. On an eligible
 command startup, each due enabled policy advances its `next-run` timestamp and
 calls the existing updater on a best-effort basis.
 
 ```json
 "autoupdate": {
-  "clio":      { "enabled": true, "frequency-minutes": 480, "next-run": "2026-09-04T08:00:00Z" },
+  "clio":      { "enabled": false, "frequency-minutes": 480, "next-run": "2026-09-04T08:00:00Z" },
   "knowledge": { "enabled": true, "frequency-minutes": 60,  "next-run": "2026-09-04T01:00:00Z" },
-  "toolkit":   { "enabled": true, "frequency-minutes": 60,  "next-run": "2026-09-04T01:00:00Z" }
+  "toolkit":   { "enabled": false, "frequency-minutes": 60,  "next-run": "2026-09-04T01:00:00Z" }
 }
 ```
 
@@ -37,9 +40,9 @@ is accepted and applied only to the clio policy.
 ## Options
 
 ```bash
---enable    Enable automatic clio updates (default behavior)
+--enable    Enable automatic clio updates
 
---disable   Disable automatic clio updates
+--disable   Disable automatic clio updates (default behavior)
 ```
 
 ## Examples

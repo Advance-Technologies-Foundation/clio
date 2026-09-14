@@ -46,6 +46,25 @@ internal static class McpToolSchemaCatalog {
 		SchemaContracts.Value.TryGetValue(toolName, out contract);
 
 	/// <summary>
+	/// Tries to read the output contract reflected from a registered tool's RETURN TYPE, so a
+	/// registry-derived contract can advertise the failure signals the tool actually emits instead of a
+	/// fixed guess. A tool returning <see cref="CommandExecutionResult"/> reports
+	/// <c>command-execution-result</c> (<c>exit-code</c> / <c>execution-log-messages</c>), never a
+	/// <c>success</c> field it does not carry.
+	/// </summary>
+	/// <param name="toolName">The requested MCP tool name.</param>
+	/// <param name="outputContract">The reflected output contract when the tool is registered; otherwise <c>null</c>.</param>
+	/// <returns><c>true</c> when a registered tool matched; otherwise <c>false</c>.</returns>
+	internal static bool TryGetOutputContract(string toolName, out ToolOutputContract outputContract) {
+		if (SchemaContracts.Value.TryGetValue(toolName, out ToolContractDefinition contract)) {
+			outputContract = contract.OutputContract;
+			return true;
+		}
+		outputContract = null;
+		return false;
+	}
+
+	/// <summary>
 	/// Tries to read the tool's RAW reflected description (the <c>[Description]</c> on the MCP tool method)
 	/// WITHOUT the uncurated "Auto-generated … no curated contract yet" note that
 	/// <see cref="TryGetSchemaContract"/> appends. The compact discovery index uses this so a one-line

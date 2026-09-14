@@ -1,4 +1,5 @@
 using System;
+using System.Reflection;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading;
@@ -616,6 +617,45 @@ public sealed class RunProcessToolTests {
 		attribute.Idempotent.Should().BeFalse(
 			because: "idempotency is a property of the specific process, never of this transport");
 		attribute.ReadOnly.Should().BeFalse(because: "the call writes");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The run-process description states that a code names one version, points the caller at the active version, and does NOT claim this endpoint folds a non-active code onto it.")]
+	public void RunProcessTool_Should_StateTheVersionContract_WhenItsDescriptionIsRead() {
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(RunProcessTool).GetMethod(nameof(RunProcessTool.RunProcess))!;
+
+		// Act
+		string description = ((System.ComponentModel.DescriptionAttribute)method
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), inherit: false)[0]).Description;
+
+		// Assert
+		description.Should().Contain("activeVersionName",
+			because: "an agent that must launch the running version needs the field naming the code to launch");
+		description.Should().Contain("NOT established",
+			because: "whether this endpoint redirects a non-active code is unverified, and shipped text must not "
+				+ "turn that gap into a promise an agent then relies on");
+		description.Should().Contain("isActiveVersion",
+			because: "the description names the flag to read before launching, so the check is actionable here too");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The process-name argument says a code names one version and that a rejected caption reports the ACTIVE version code.")]
+	public void RunProcessArgs_Should_StateThatACodeNamesOneVersion_WhenTheArgumentIsRead() {
+		// Arrange
+		System.Reflection.PropertyInfo property = typeof(RunProcessArgs).GetProperty(nameof(RunProcessArgs.ProcessName))!;
+
+		// Act
+		string description = property
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Assert
+		description.Should().Contain("ONE version",
+			because: "the argument itself is where a caller learns that a code is not the whole process");
+		description.Should().Contain("ACTIVE version",
+			because: "the caption refusal hands back the active code, which is the fast path to the right one");
 	}
 
 	#endregion

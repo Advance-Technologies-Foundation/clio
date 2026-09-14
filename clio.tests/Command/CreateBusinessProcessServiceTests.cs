@@ -1,6 +1,8 @@
 using System;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Clio.Command;
+using Clio.Command.ProcessModel;
 using Clio.Common;
 using Clio.UserEnvironment;
 using FluentAssertions;
@@ -24,7 +26,8 @@ public sealed class CreateBusinessProcessServiceTests {
 	private const string SampleDescriptor =
 		"{\"name\":\"UsrSampleProcess\",\"packageName\":\"Custom\",\"elements\":[],\"flows\":[]}";
 
-	private static CreateBusinessProcessService CreateService(IApplicationClient client, out EnvironmentSettings env) {
+	private static CreateBusinessProcessService CreateService(IApplicationClient client, out EnvironmentSettings env,
+			IProcessPageFactsChecker pageButtonChecker) {
 		env = new EnvironmentSettings { Uri = "http://sandbox", Login = "Supervisor", Password = "Supervisor" };
 		ISettingsRepository settings = Substitute.For<ISettingsRepository>();
 		settings.FindEnvironment(Env).Returns(env);
@@ -32,7 +35,38 @@ public sealed class CreateBusinessProcessServiceTests {
 		factory.CreateEnvironmentClient(env).Returns(client);
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.BuildProcess, env).Returns(BuildUrl);
-		return new CreateBusinessProcessService(settings, factory, urlBuilder, Substitute.For<ILogger>());
+		return new CreateBusinessProcessService(settings, factory, urlBuilder, pageButtonChecker,
+			Substitute.For<ILogger>());
+	}
+
+	[Test]
+	[Description("A refused button name STOPS the build: nothing is posted. The check exists because the server accepts an invented name and the failure only appears at run time, so letting the request through after refusing it would defeat the whole point.")]
+	public void BuildProcess_ShouldNotPost_WhenAButtonNameIsRefused() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IProcessPageFactsChecker checker = Substitute.For<IProcessPageFactsChecker>();
+		checker.CheckPreconfiguredPages(Env, Arg.Any<JsonNode>())
+			.Returns(new ProcessPageCheckResult("Page 'X' has no button named 'Ghost'.", []));
+		CreateBusinessProcessService service = CreateService(client, out EnvironmentSettings _, checker);
+
+		// Act
+		Action act = () => service.BuildProcess(Env, new CreateBusinessProcessRequest(SampleDescriptor));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*no button named 'Ghost'*");
+		client.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	private static CreateBusinessProcessService CreateService(IApplicationClient client,
+			out EnvironmentSettings env) {
+		env = new EnvironmentSettings { Uri = "http://sandbox", Login = "Supervisor", Password = "Supervisor" };
+		ISettingsRepository settings = Substitute.For<ISettingsRepository>();
+		settings.FindEnvironment(Env).Returns(env);
+		IApplicationClientFactory factory = Substitute.For<IApplicationClientFactory>();
+		factory.CreateEnvironmentClient(env).Returns(client);
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.BuildProcess, env).Returns(BuildUrl);
+		return new CreateBusinessProcessService(settings, factory, urlBuilder, Substitute.For<IProcessPageFactsChecker>(), Substitute.For<ILogger>());
 	}
 
 	[Test]
@@ -133,7 +167,7 @@ public sealed class CreateBusinessProcessServiceTests {
 		settings.FindEnvironment(Env).Returns((EnvironmentSettings)null);
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		var service = new CreateBusinessProcessService(settings,
-			Substitute.For<IApplicationClientFactory>(), urlBuilder, Substitute.For<ILogger>());
+			Substitute.For<IApplicationClientFactory>(), urlBuilder, Substitute.For<IProcessPageFactsChecker>(), Substitute.For<ILogger>());
 
 		Action act = () => service.BuildProcess(Env, new CreateBusinessProcessRequest(SampleDescriptor));
 
@@ -159,4 +193,32 @@ public sealed class CreateBusinessProcessServiceTests {
 
 	// The service wraps the descriptor under a "request" property (ProcessDesignService BodyStyle=Wrapped).
 	private static JsonNode Wrapped(string body) => JsonNode.Parse(body)?["request"];
+	[Test]
+	[Description("A response body that is not the BuildProcess envelope is reported as an UNREADABLE response whose outcome is unknown, not as a raw System.Text.Json message. This path had the same unguarded deserialization as modify, where manual testing on ENG-92713 actually hit it; nobody has tripped it here yet, which is exactly why it needs the guard rather than the luck.")]
+	public void BuildProcess_ShouldReportAnUnreadableResponse_WhenTheBodyIsNotTheEnvelope() {
+		// Arrange — valid JSON, wrong document: what a server-side serialization failure returns
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		// Root is not an object at all — the shape the parser could not map on the real hit (Path: $). An error
+		// DOCUMENT that is an object deserializes into an all-null envelope and is already covered by the
+		// "unexpected response shape" branch; only a body the parser cannot map reaches this guard.
+		client.ExecutePostRequest(BuildUrl, Arg.Any<string>()).Returns(
+			"[{\"ExceptionType\":\"System.Runtime.Serialization.SerializationException\"}]");
+		CreateBusinessProcessService service = CreateService(client, out _);
+
+		// Act
+		Action act = () => service.BuildProcess(Env, new CreateBusinessProcessRequest(SampleDescriptor, "MyApp"));
+
+		// Assert
+		InvalidOperationException thrown = act.Should().Throw<InvalidOperationException>(
+			because: "an unreadable response is a real outcome and has to be named as one").Which;
+		thrown.Message.Should().Contain("UNKNOWN",
+			because: "the process may or may not have been created, and the caller has to re-read before "
+				+ "retrying rather than assume either way");
+		thrown.Message.Should().NotContain("BytePositionInLine",
+			because: "a .NET parser message is written for a developer reading a stack trace, and this one "
+				+ "reaches an agent that cannot act on it");
+		thrown.InnerException.Should().BeOfType<JsonException>(
+			because: "the parser failure is kept for whoever does want it, just not as the message");
+	}
+
 }

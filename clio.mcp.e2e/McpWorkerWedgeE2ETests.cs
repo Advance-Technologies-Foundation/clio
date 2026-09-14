@@ -74,6 +74,22 @@ public sealed class McpWorkerWedgeE2ETests {
 	/// </summary>
 	private static readonly TimeSpan Budget = TimeSpan.FromSeconds(12);
 
+	/// <summary>
+	/// How long every worker seen during the run may take to leave the on-disk registry AND stop running,
+	/// once the sequence has finished.
+	/// </summary>
+	/// <remarks>
+	/// DERIVED, not guessed. The removal is attempted inline before a call answers, but it goes through
+	/// the <c>workers.lock</c> interprocess gate, and a contended gate can hold that attempt for its own
+	/// <see cref="InterprocessFileGate.DefaultTimeoutSeconds"/> before it either succeeds or throws. A
+	/// ceiling below the gate's own would therefore report a merely contended removal as a leak, which is
+	/// the opposite of what this case is for. The margin on top covers the kill-to-exit gap, which the
+	/// registry does not bound at all — the entry goes on the kill REQUEST, not on confirmed exit.
+	/// Still far inside the fixture's own five-minute ceiling, and paid only on a run that is failing.
+	/// </remarks>
+	private static readonly TimeSpan WorkerReleaseWait =
+		TimeSpan.FromSeconds(InterprocessFileGate.DefaultTimeoutSeconds) + TimeSpan.FromSeconds(15);
+
 	/// <summary>Delay before call B, so call A certainly owns the per-tenant monitor first.</summary>
 	private static readonly TimeSpan CallBDelay = TimeSpan.FromSeconds(1.5);
 
@@ -597,14 +613,45 @@ public sealed class McpWorkerWedgeE2ETests {
 		WedgeCallResult resultD,
 		CreatioWedgeStubServer stub,
 		string table) {
-		string described = observer.Describe();
-		observer.ReadCurrent().Should().BeEmpty(
-			because: $"every lease is disposed when its call answers, so no worker may still be RECORDED "
-				+ $"once the sequence has finished. {described}{table}");
-		observer.Observed.Where(worker => worker.IsStillRunning()).Should().BeEmpty(
-			because: $"a recorded entry disappearing is not the same as the process dying — the identity "
-				+ $"(pid AND start time) of every worker seen during the run must be gone, or the stalled "
-				+ $"call was outrun rather than killed. {described}{table}");
+		// Waited for, not sampled. list-pages is a PerCall tool, so DispatchPerCallAsync's finally disposes
+		// the lease inline and the removal is ATTEMPTED before the call answers — but UnregisterWorker
+		// swallows a gate TimeoutException/IOException and leaves the entry behind, and the entry goes on
+		// the kill REQUEST rather than on confirmed exit. See WorkerSpawnObserver.WaitUntilWorkersAreReleased
+		// for both paths. Sampling once read that eventually-consistent state synchronously.
+		WorkerReleaseObservation released = observer.WaitUntilWorkersAreReleased(WorkerReleaseWait);
+		// Described from the snapshot the assertions below actually use, NOT from a fresh read: a registry
+		// that drained in the milliseconds between the two would otherwise print "still-recorded=0" beside
+		// "Expected collection to be empty" and send whoever triages the CI failure after a phantom.
+		string described = observer.Describe(released.StillRecorded);
+		// Emitted UNCONDITIONALLY, because a `because` string is materialised only when an assertion FAILS
+		// — and on failure this number is pinned at the ceiling by definition. The runs that could show the
+		// wait creeping toward that ceiling are the GREEN ones, so the green ones are where it has to be
+		// printed. It is the only signal that says whether WorkerReleaseWait is still generous.
+		TestContext.Out.WriteLine(
+			$"[worker-release] waited {released.Waited.TotalMilliseconds:0}ms of "
+			+ $"{WorkerReleaseWait.TotalMilliseconds:0}ms ceiling; registry-read={released.RegistryRead}, "
+			+ $"still-recorded={released.StillRecorded.Count}, still-running={released.StillRunning.Count}");
+		// The instrument first, exactly as the spawn assertion does it — and it has to be repeated HERE:
+		// every read the wait just performed happened after that earlier check, so a reader that started
+		// failing during the wait would otherwise turn an unobserved registry into "no worker is recorded".
+		observer.ReadFailures.Should().BeEmpty(
+			because: $"a registry read that failed during the {WorkerReleaseWait.TotalSeconds:0}s release "
+				+ $"wait makes the emptiness asserted below meaningless. {described}{table}");
+		released.RegistryRead.Should().BeTrue(
+			because: $"the registry must have been READ for its emptiness to mean anything — an unreadable "
+				+ $"registry is not a drained one, and only a confirmed read may end the wait. "
+				+ $"{described}{table}");
+		released.StillRecorded.Should().BeEmpty(
+			because: $"every lease is released once its call answers, so within "
+				+ $"{WorkerReleaseWait.TotalSeconds:0}s (actually waited {released.Waited.TotalMilliseconds:0}ms) "
+				+ $"no worker may still be RECORDED once the sequence has finished — nothing retries a "
+				+ $"swallowed unregister, so an entry that never goes is a leaked worker, which is the thing "
+				+ $"this case exists to catch. {described}{table}");
+		released.StillRunning.Should().BeEmpty(
+			because: $"a recorded entry disappearing is not the same as the process dying — the entry is "
+				+ $"removed on the kill REQUEST, not on confirmed exit, so the identity (pid AND start time) "
+				+ $"of every worker seen during the run is waited for separately and must be gone, or the "
+				+ $"stalled call was outrun rather than killed. {described}{table}");
 		// The environment side of the same statement: A's authenticated session must never be used again.
 		// A reused token after D would mean the stalled context was still alive somewhere and had simply
 		// stopped blocking, which is a quieter version of the same defect.

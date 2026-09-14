@@ -114,6 +114,24 @@ public sealed class McpFixturePolicyTests {
 	}
 
 	[Test]
+	[Description("Keeps the schema-publishing temporal alias probe explicit and manual without disabling the shared fixture's automatic tests.")]
+	public void TemporalAliasProbe_ShouldStayExplicitAndManual_WhenSharingAnAutomaticFixture() {
+		// Arrange
+		Type fixture = typeof(SchemaSyncToolE2ETests);
+		MethodInfo method = fixture.GetMethod(nameof(SchemaSyncToolE2ETests.SchemaSync_ShouldReadBackDateTime_WhenTemporalAliasesAreWritten))!;
+
+		// Act
+		ExplicitAttribute? explicitGuard = method.GetCustomAttribute<ExplicitAttribute>();
+		string[] categories = method.GetCustomAttributes<CategoryAttribute>().Select(attribute => attribute.Name).ToArray();
+
+		// Assert
+		explicitGuard.Should().NotBeNull(because: "schema publication must require an explicitly selected local run");
+		categories.Should().Contain("McpE2E.Manual", because: "the publishing probe must remain outside automatic test lanes");
+		fixture.GetCustomAttribute<ExplicitAttribute>().Should().BeNull(because: "existing automatic sync-schemas coverage must remain enabled");
+		FixtureHasCategory(fixture, "McpE2E.Sandbox").Should().BeTrue(because: "the probe still requires an exclusively owned Creatio sandbox");
+	}
+
+	[Test]
 	[Description("Asserts the off-stand tests that cover the uninstall warning contract still exist, since UninstallCreatioWarningE2ETests is [Explicit] and never runs in CI to catch a regression itself.")]
 	public void UninstallWarningContract_ShouldStayCoveredOffStand_WhenExplicitFixtureNeverRunsInCi() {
 		// Arrange

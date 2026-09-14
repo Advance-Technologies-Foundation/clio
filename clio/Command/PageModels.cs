@@ -255,11 +255,19 @@ public sealed class PageMetadataInfo {
 	public string SchemaUId { get; init; }
 
 	/// <summary>
-	/// Gets or sets the owning package name.
+	/// Gets or sets the current hierarchy leaf's package name, which may identify a read-only vendor package.
 	/// </summary>
 	[JsonProperty("packageName")]
 	[JsonPropertyName("packageName")]
 	public string PackageName { get; init; }
+
+	/// <summary>
+	/// Gets the current hierarchy leaf's package name. Explicit alias of <see cref="PackageName"/>;
+	/// it identifies the read source, not the destination of a subsequent write.
+	/// </summary>
+	[JsonProperty("currentLeafPackageName")]
+	[JsonPropertyName("currentLeafPackageName")]
+	public string CurrentLeafPackageName => PackageName;
 
 	/// <summary>
 	/// Gets or sets the owning package identifier.
@@ -288,8 +296,8 @@ public sealed class PageMetadataInfo {
 
 	/// <summary>
 	/// Gets or sets the design package identifier that subsequent <c>update-page</c> writes
-	/// will target when <c>mode</c> is not explicitly overridden. Equals the value returned by
-	/// <c>ApplicationPackagesService.svc/GetDesignPackageUId</c> for this schema.
+	/// resolve when no target-package override is supplied. Reads can fall back to the leaf if
+	/// design resolution fails; writes resolve the destination independently and fail closed.
 	/// </summary>
 	[JsonProperty("designPackageUId")]
 	[JsonPropertyName("designPackageUId")]
@@ -297,8 +305,8 @@ public sealed class PageMetadataInfo {
 	public string DesignPackageUId { get; init; }
 
 	/// <summary>
-	/// Gets or sets the design package name for <see cref="DesignPackageUId"/>. May be empty
-	/// for virtual packages that have not yet been materialized in the database.
+	/// Gets or sets the stored or virtual design package name for <see cref="DesignPackageUId"/>.
+	/// May be empty when the optional package metadata lookup is unavailable.
 	/// </summary>
 	[JsonProperty("designPackageName")]
 	[JsonPropertyName("designPackageName")]
@@ -306,10 +314,8 @@ public sealed class PageMetadataInfo {
 	public string DesignPackageName { get; init; }
 
 	/// <summary>
-	/// When <c>true</c>, <see cref="DesignPackageUId"/> differs from <see cref="PackageUId"/>
-	/// which means a subsequent write will materialize a NEW replacing schema in the design
-	/// package. Callers should warn the user because the edit may land in a different app than
-	/// the one currently shown at runtime when multiple apps replace the same platform page.
+	/// Gets whether a subsequent default write needs to create a replacing schema in the design
+	/// package. The package itself may already exist or may be virtual until that first save.
 	/// </summary>
 	[JsonProperty("willCreateReplacingInDesignPackage")]
 	[JsonPropertyName("willCreateReplacingInDesignPackage")]
@@ -334,6 +340,18 @@ public sealed class PageMetadataInfo {
 	[JsonPropertyName("schema-type")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public string SchemaType { get; init; }
+
+	/// <summary>
+	/// Gets or sets the RAW numeric <c>ClientUnitSchemaType</c> the hierarchy service reported, before the
+	/// web/mobile/unknown collapse — null when the service omitted it. The label above folds "present but neither
+	/// web nor mobile" (a Classic page, a module) and "absent" into one <c>unknown</c>, and a consumer that must
+	/// tell those apart (the process-page-facts guard) needs the difference: a PRESENT non-web value is a positive
+	/// identification, an absent one is not.
+	/// </summary>
+	[JsonProperty("schema-type-value", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("schema-type-value")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public int? SchemaTypeValue { get; init; }
 }
 
 /// <summary>

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using Clio.Common;
 
 namespace Clio.Command.Theming;
@@ -6,7 +7,19 @@ namespace Clio.Command.Theming;
 /// <summary>
 /// Options for the MCP-only <c>check-theming-access</c> operation.
 /// </summary>
-[RequiresCreatioVersion(ThemeServiceRequirement.MinVersion)]
+/// <remarks>
+/// Deliberately NOT decorated with <c>[RequiresCreatioVersion]</c>, unlike every theme command that calls the
+/// native <c>ThemeService</c>. This command reads only the generic <c>RightsService</c> and
+/// <c>LicenseService</c> endpoints, which exist well below the 10.0.0 ThemeService floor. Gating it made the
+/// first step of the documented branding flow fail on a supported version with "requires Creatio 10.0.0 or
+/// later" instead of answering the question it is there to answer (issue #1303 C5). The write commands stay
+/// gated, and the answer below reports the ThemeService floor explicitly so a caller on an older core is not
+/// misled into thinking custom themes are usable.
+/// </remarks>
+[SuppressMessage("Minor Code Smell", "S2094:Classes should not be empty",
+	Justification = "Options carrier for the command, instantiated by CommandLine verb binding; it inherits every "
+		+ "argument it needs from EnvironmentOptions, so an interface cannot replace it. Matches the other "
+		+ "argument-free *Options types in clio/Command.")]
 public class CheckThemingAccessOptions : EnvironmentOptions
 {
 }

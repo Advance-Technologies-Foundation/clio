@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml;
@@ -57,6 +58,18 @@ internal static class ODataFieldValidation {
 	internal const int FollowUpProbeTimeoutMs = 10_000;
 
 	/// <summary>
+	/// Timeout for the OPTIONAL metadata read of <see cref="TryGetPropertyTypes"/>, used with a single
+	/// attempt. On that path the CSDL only sharpens the value guard - the write proceeds without it - so
+	/// it must not inherit the mandatory pre-write budget (<see cref="RequestTimeoutMs"/> x
+	/// <see cref="TransientAttempts"/> = up to 90 s plus delays); a stalled <c>$metadata</c> would
+	/// otherwise hold the whole batch before its first POST.
+	/// </summary>
+	internal const int OptionalMetadataTimeoutMs = 10_000;
+
+	/// <summary>Attempts used for the optional metadata read: one, then degrade.</summary>
+	internal const int OptionalMetadataAttempts = 1;
+
+	/// <summary>
 	/// A data field to validate. Only the name is carried: validation is name-only, so a value
 	/// would be plumbed through and never read.
 	/// </summary>
@@ -75,12 +88,20 @@ internal static class ODataFieldValidation {
 	/// <param name="entity">The OData entity set name (already validated by the caller).</param>
 	/// <param name="id">The addressed record GUID (already validated by the caller).</param>
 	/// <param name="fields">The data field names to verify.</param>
+	/// <param name="propertyTypes">
+	/// Receives the entity's property name to Edm type map when the CSDL was parsed, or
+	/// <see langword="null"/> when the metadata endpoint could not be resolved. The caller uses it to
+	/// decide which supplied values are bound to a date-time column (see <see cref="ODataDateTimeGuard"/>);
+	/// a <see langword="null"/> map means the type is unknown, not that no column is temporal.
+	/// </param>
 	internal static ODataWriteResponse? ValidateDataFields(
 		IApplicationClient client,
 		IServiceUrlBuilder urlBuilder,
 		string entity,
 		string id,
-		IReadOnlyList<DataField> fields) {
+		IReadOnlyList<DataField> fields,
+		out IReadOnlyDictionary<string, string>? propertyTypes) {
+		propertyTypes = null;
 		// A malformed field name would also corrupt a fallback $select list, so it is rejected
 		// locally before any remote call. A PATCH key must be a SIMPLE identifier, not the member
 		// path odata-read accepts for filters: `Account/Id` is a read-oriented navigation path, and
@@ -98,8 +119,9 @@ internal static class ODataFieldValidation {
 
 		List<string> keys = fields.Select(field => field.Name).Distinct(StringComparer.Ordinal).ToList();
 
-		EntityMetadata metadata = FetchMetadata(client, urlBuilder, entity);
+		EntityMetadata metadata = FetchMetadata(client, urlBuilder, entity, RequestTimeoutMs, TransientAttempts);
 		if (metadata.Resolved) {
+			propertyTypes = metadata.PropertyTypes;
 			// The service's own type definition is the oracle: every unknown name is known from
 			// this single fetch, so no per-field probing is needed on this path.
 			List<string> unknown = keys.Where(key => !metadata.Properties.Contains(key)).ToList();
@@ -115,6 +137,30 @@ internal static class ODataFieldValidation {
 	}
 
 	/// <summary>
+	/// Reads the entity's property name to Edm type map from the service-root CSDL, for callers that
+	/// need the declared types without the name validation (<c>odata-create</c>, which does not verify
+	/// field names). Returns <see langword="null"/> when the metadata endpoint could not be resolved -
+	/// the caller must treat that as "types unknown" and never as a reason to fail the write.
+	/// </summary>
+	/// <param name="client">The environment-scoped application client.</param>
+	/// <param name="urlBuilder">The environment-scoped URL builder.</param>
+	/// <param name="entity">The OData entity set name.</param>
+	internal static IReadOnlyDictionary<string, string>? TryGetPropertyTypes(
+		IApplicationClient client,
+		IServiceUrlBuilder urlBuilder,
+		string entity) {
+		try {
+			EntityMetadata metadata = FetchMetadata(
+				client, urlBuilder, entity, OptionalMetadataTimeoutMs, OptionalMetadataAttempts);
+			return metadata.Resolved ? metadata.PropertyTypes : null;
+		} catch (Exception) {
+			// The type map is an optimization for the value guard, never a precondition of the write:
+			// a failed metadata fetch degrades to the conservative textual rule instead of failing.
+			return null;
+		}
+	}
+
+	/// <summary>
 	/// Outcome of the metadata fetch. <see cref="Resolved"/> means the CSDL was parsed and the
 	/// entity's property sets are populated; otherwise exactly one of
 	/// <see cref="ServerError"/> (a recognized Creatio error shape for the entity) or
@@ -124,6 +170,7 @@ internal static class ODataFieldValidation {
 	private sealed record EntityMetadata(
 		bool Resolved,
 		HashSet<string> Properties,
+		Dictionary<string, string> PropertyTypes,
 		string? ServerError,
 		string? UnverifiedDetail);
 
@@ -140,11 +187,13 @@ internal static class ODataFieldValidation {
 	private static EntityMetadata FetchMetadata(
 		IApplicationClient client,
 		IServiceUrlBuilder urlBuilder,
-		string entity) {
+		string entity,
+		int timeoutMs,
+		int attempts) {
 		string url = urlBuilder.Build("odata/$metadata");
-		string body = client.ExecuteGetRequest(url, RequestTimeoutMs, TransientAttempts, TransientDelaySec);
+		string body = client.ExecuteGetRequest(url, timeoutMs, attempts, TransientDelaySec);
 		if (string.IsNullOrWhiteSpace(body)) {
-			return new EntityMetadata(false, [], null, "the OData metadata response was empty.");
+			return new EntityMetadata(false, [], [], null, "the OData metadata response was empty.");
 		}
 		if (body.TrimStart().StartsWith("<", StringComparison.Ordinal)) {
 			// The metadata endpoint answers with CSDL XML. A parse that yields the entity's type
@@ -153,23 +202,23 @@ internal static class ODataFieldValidation {
 			try {
 				CsdlType? type = ParseCSDLEntity(body, entity);
 				if (type is not null) {
-					return new EntityMetadata(true, type.Properties, null, null);
+					return new EntityMetadata(true, type.Properties, type.PropertyTypes, null, null);
 				}
-				return new EntityMetadata(false, [], null,
+				return new EntityMetadata(false, [], [], null,
 					"the OData metadata response did not contain a type definition for the entity.");
 			} catch (Exception) {
-				return new EntityMetadata(false, [], null,
+				return new EntityMetadata(false, [], [], null,
 					SensitiveErrorTextRedactor.Redact(CreatioResponseError.DescribeNonJsonResponse(body)));
 			}
 		}
 		try {
 			using JsonDocument doc = JsonDocument.Parse(body);
 			return CreatioResponseError.TryDetect(doc.RootElement, CreatioResponseContext.ODataPayload, out string serverError)
-				? new EntityMetadata(false, [], SensitiveErrorTextRedactor.Redact(serverError), null)
-				: new EntityMetadata(false, [], null,
+				? new EntityMetadata(false, [], [], SensitiveErrorTextRedactor.Redact(serverError), null)
+				: new EntityMetadata(false, [], [], null,
 					SensitiveErrorTextRedactor.Redact(CreatioResponseError.DescribeNonJsonResponse(body)));
 		} catch (JsonException) {
-			return new EntityMetadata(false, [], null,
+			return new EntityMetadata(false, [], [], null,
 				SensitiveErrorTextRedactor.Redact(CreatioResponseError.DescribeNonJsonResponse(body)));
 		}
 	}
@@ -179,7 +228,11 @@ internal static class ODataFieldValidation {
 	/// included - both are legal <c>$select</c> members) and its base type name for inheritance
 	/// resolution.
 	/// </summary>
-	private sealed record CsdlType(string Name, string? BaseType, HashSet<string> Properties);
+	private sealed record CsdlType(
+		string Name,
+		string? BaseType,
+		HashSet<string> Properties,
+		Dictionary<string, string> PropertyTypes);
 
 	/// <summary>
 	/// Parses the CSDL document and resolves the <paramref name="entity"/> type following
@@ -225,7 +278,7 @@ internal static class ODataFieldValidation {
 		}
 		if (reader.LocalName == "EntityType" && reader.GetAttribute("Name") is string name) {
 			currentTypeName = name;
-			types[name] = new CsdlType(name, reader.GetAttribute("BaseType"), []);
+			types[name] = new CsdlType(name, reader.GetAttribute("BaseType"), [], new Dictionary<string, string>(StringComparer.Ordinal));
 			return;
 		}
 		if (currentTypeName is null || !types.TryGetValue(currentTypeName, out CsdlType? type)) {
@@ -251,6 +304,11 @@ internal static class ODataFieldValidation {
 	private static void RecordMember(XmlReader reader, CsdlType type, ref string? currentTypeName) {
 		if (reader.LocalName == "Property" && reader.GetAttribute("Name") is string propName) {
 			type.Properties.Add(propName);
+			// The declared Edm type is what lets the value-level date-time guard fire on temporal
+			// columns only, so a text column holding "2024-01-01T04:00:00" stays writable.
+			if (reader.GetAttribute("Type") is string propType) {
+				type.PropertyTypes[propName] = propType;
+			}
 			return;
 		}
 		if (reader.LocalName == "NavigationProperty") {
@@ -294,6 +352,10 @@ internal static class ODataFieldValidation {
 		if (types.TryGetValue(ShortTypeName(type.BaseType), out CsdlType? baseType)) {
 			CollectInherited(baseType, types, visited);
 			type.Properties.UnionWith(baseType.Properties);
+			foreach (KeyValuePair<string, string> inherited in baseType.PropertyTypes) {
+				// A redeclared property on the derived type wins; TryAdd keeps the derived declaration.
+				type.PropertyTypes.TryAdd(inherited.Key, inherited.Value);
+			}
 		}
 	}
 
@@ -440,11 +502,45 @@ internal static class ODataFieldValidation {
 			//The body itself is never quoted: DescribeNonJsonResponse embeds a 500-character preview,
 			//and a proxy page or session redirect can put arbitrary remote content in it. The locally
 			//authored hint says what the shape means without reproducing any of it.
+			//An HTML body goes through the SAME classification the read path uses, so the probe reports
+			//the HTTP status the page states and, for a 404, the wait-and-retry hint. Without it the
+			//caller was told only "the probe response was not JSON" for an entity whose OData controller
+			//simply had not been rebuilt yet - the one case that clears itself in a minute.
 			return new ProbeResult(false, null,
-				"the probe response was not JSON, which Creatio's OData pipeline never returns by itself - "
-				+ "this points to a proxy, IIS, routing or session problem rather than the request's shape. "
-				+ "The body is not reproduced here");
+				CreatioResponseError.TryClassifyMarkupError(body, out int? markupStatusCode)
+					? DescribeMarkupProbeResponse(markupStatusCode)
+					: "the probe response was not JSON, which Creatio's OData pipeline never returns by itself - "
+					+ "this points to a proxy, IIS, routing or session problem rather than the request's shape. "
+					+ "The body is not reproduced here");
 		}
+	}
+
+	/// <summary>
+	/// The pre-write probe's own wording for an HTML error page, composed from the two facts
+	/// <see cref="CreatioResponseError.TryClassifyMarkupError"/> returns.
+	/// </summary>
+	/// <remarks>
+	/// The probe needs a different sentence from the read path: it must stay a clause the caller's
+	/// template can finish with ". No write was performed", and steering to execute-esq - which the
+	/// read path does on a 404 - is meaningless for a write. Composing it here is what removed the
+	/// former cross-module coupling, where this method trimmed the punctuation off the read path's
+	/// finished prose to graft it into its own template.
+	/// The entity is not named here: the caller's template already opens with
+	/// "The pre-write field probe for {entity}({id})", so repeating it would say it twice.
+	/// </remarks>
+	/// <param name="statusCode">The status the page's title states, or null when it states none.</param>
+	private static string DescribeMarkupProbeResponse(int? statusCode) {
+		string status = statusCode is { } knownStatus
+			? $"The server answered with an {CreatioResponseError.MarkupStatusPhrase(knownStatus)}"
+			: "The page states no HTTP status";
+		string hint = statusCode == (int)HttpStatusCode.NotFound
+			//The 404 probe and the 404 read are the same condition, so they share the one hint - the
+			//asynchronous OData rebuild that follows create-entity-schema/create-lookup.
+			? $". {CreatioResponseError.UnregisteredEntityHint}"
+			: string.Empty;
+		//The trailing stop is dropped because the caller's template finishes the sentence with
+		//". No write was performed".
+		return $"the probe response was not JSON but an HTML error page. {status}{hint}".TrimEnd(' ', '.');
 	}
 
 	/// <summary>

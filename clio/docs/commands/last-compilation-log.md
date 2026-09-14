@@ -1,5 +1,10 @@
 # last-compilation-log
 
+## Timeout
+
+The read is bounded at 60 seconds. It used to be unbounded, which meant an environment that accepted
+the connection and then said nothing held the command for the life of the process.
+
 ## Name
 
 last-compilation-log - Get last compilation log

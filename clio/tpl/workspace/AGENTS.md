@@ -33,7 +33,7 @@ and the solution is C#-only. Setup details (esproj + `global.json` + `<Build/>` 
 
 ### /tests
 
-Unit/integration tests live under `./tests/<PACKAGE_NAME>/`.
+Unit tests live under `./tests/<PACKAGE_NAME>/`; integration tests live under `./tests/<PACKAGE_NAME>.IntegrationTests/`.
 
 ### /.application
 
@@ -86,6 +86,7 @@ The running app reads packages from the filesystem. Do **NOT** use `push-workspa
 | **C# (`Files/src/cs`)** and/or **Angular (`projects/...`)** | `dotnet build MainSolution.slnx -c dev-n8` (one build covers both — the Angular `.esproj` runs the npm build), **then** restart via `clio-run` (tool `restart-by-environment-name`, which waits for readiness by default). Nothing else. (`npm run build` alone also works for a client-only iteration, but still restart afterwards.) |
 | **Schema via clio MCP** (schema tools such as `modify-entity-schema-column`, `update-entity-schema` — resolve the current set via `get-tool-contract`) | After the MCP call, flush the DB changes to the filesystem via `clio-run` (tool `pkg-to-file-system`, aka **2fs**) so they land in the workspace and persist. |
 | **Schema/metadata edited directly on the filesystem** | Load the filesystem packages into the running database/runtime via `clio-run` (tool `pkg-to-db`, aka **2db**). |
+| **Package data (a `Data/` binding folder)** | `pkg-to-db` loads package definitions only; it leaves package data alone, so an edited or hand-made binding folder stays local. Apply the same values on the environment through `clio-run` (tools `create-data-binding-db`, then `upsert-data-binding-row-db`) — read `get-guidance name=data-bindings` first. |
 
 Key FSM facts learned the hard way:
 - The package's compiled assembly comes from your local `dotnet build` (the workspace is the FS the app loads). **Build before you restart.** A restart is what loads the freshly built DLL.
@@ -160,3 +161,52 @@ Discovery: <important behavior/constraint learned>
 Files: <path1>, <path2>
 Impact: <how this helps future tasks>
 ```
+
+## Creating package test projects (required)
+
+Clio is the only approved way to scaffold package unit-test and integration-test projects.
+Do not hand-create test `.csproj`, `.sln`, or `.slnx` files, run `dotnet new` test templates,
+or invent a separate test harness. Write scenario-specific test cases inside the Clio-generated
+projects, using their existing frameworks, base fixtures, and configuration conventions.
+This rule concerns package C# tests; retain the existing Angular test tooling for UI tests.
+
+Run these commands from the Clio workspace root (the directory containing `.clio`):
+
+```shell
+clio unit-test --package <Package_Name>
+clio integration-test --package <Package_Name>
+```
+
+For example, for package `UsrOrders`:
+
+```shell
+clio unit-test --package UsrOrders
+clio integration-test --package UsrOrders --target-framework net8.0
+```
+
+Integration tests default to `net10.0`; select `--target-framework` to match the intended test runtime.
+Before adding integration scenarios, read `get-guidance name=integration-testing`.
+For MCP, discover contracts with `get-tool-contract`, then invoke the existing tools through `clio-run`:
+
+```json
+{"command":"new-test-project","args":{"package-name":"UsrOrders","workspace-path":"<absolute-workspace-path>","environment-name":"<registered-environment>"}}
+```
+
+```json
+{"command":"new-integration-test-project","args":{"package-name":"UsrOrders","workspace-path":"<absolute-workspace-path>","target-framework":"net8.0"}}
+```
+
+Use the workspace root even when working inside a nested UI project. Unit-test MCP scaffolding
+requires a registered environment name; integration-test scaffolding does not.
+Verify the command's exit code and the resulting solution membership before reporting success:
+
+| Scaffold | Generated test project | Test solution | Workspace solution |
+|---|---|---|---|
+| Unit | `tests/UsrOrders/UsrOrders.Tests.csproj` | `tests/UnitTests.slnx` | `MainSolution.slnx` |
+| Integration | `tests/UsrOrders.IntegrationTests/UsrOrders.IntegrationTests.csproj` | `tests/IntegrationTests.slnx` | `MainSolution.slnx` |
+
+Both solutions must contain the generated test project. UnitTests.slnx also contains the package
+project under test. Rerunning the unit scaffold repairs missing registrations and preserves existing
+project/fixture files. The integration scaffold refuses an existing project directory to protect
+customizations. If Clio reports an error, report the diagnostic and fix the Clio workflow; do not
+bypass it by inventing another test project. Scaffolding alone does not prove the tests pass.

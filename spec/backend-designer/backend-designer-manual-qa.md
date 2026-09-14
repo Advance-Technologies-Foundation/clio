@@ -284,9 +284,14 @@ runtime check · expected result · must NOT work (known gaps).
 - **Business task for AI:**
   > "Validate the graph of a process with an exclusive gateway and two conditional flows before building."
 - **Check:**
-  1. The validator correctly applies BPMN rules R1–R17 (one start, no dangling/loop, gateway arity, reachability).
-  2. **Record the fork:** the validator **accepts** gateways/conditional flows the builder
-     **cannot** build → the subsequent `create-business-process` rejects them. This is a known divergence.
+  1. The validator correctly applies BPMN rules R1–R17 (one start, no dangling/loop, reachability).
+     It says **nothing about gateway arity** — R6 is deliberately not enforced, because it would reject
+     60+ shipped gateways.
+  2. **The fork NARROWED (ENG-91853), it did not close.** Exclusive and parallel gateways and all three
+     flow kinds are now buildable, so this case should now validate **and** build. What the validator
+     still accepts and the builder still refuses: inclusive and event-based gateways, timer/message
+     starts, intermediate events, sub-processes, formula and script tasks, and branching on an activity
+     RESULT rather than a formula. Re-check the divergence against that list, not against gateways.
 
 ---
 
@@ -299,8 +304,16 @@ runtime check · expected result · must NOT work (known gaps).
 
 - **Business task for AI:**
   > "Create a process: if the deal amount > 1000 — request approval, otherwise auto-approve."
-- **Expected result:** the builder **rejects** the gateway/conditional flow with an explicit message;
-  the AI explains that branching is not supported yet. No broken process is created.
+- **Expected result (INVERTED by ENG-91853 — this is no longer a negative case).** The builder
+  **creates** the process: an `exclusiveGateway`, a conditional flow carrying the amount condition, and a
+  default flow for the else branch. Check three things the shape depends on, none of which an error
+  message would reveal:
+  the default branch is a `default` flow and not a plain one (out of a gateway that chooses, a lone
+  unconditional flow is written as the default — the designer cannot draw a plain one there);
+  the two branches sit on **separate lanes** in the designer, the first-declared one on top, because
+  lane order is evaluation order;
+  and `describe-business-process` reports `kind` plus the `condition` for the conditional flow.
+  A second default out of the same gateway must still be **refused**, naming both flows.
 
 ## TC-D-02 — Timer / message start request `[P4]`
 

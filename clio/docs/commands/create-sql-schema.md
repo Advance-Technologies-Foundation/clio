@@ -74,3 +74,14 @@ clio sql-schema-create --schema-name UsrCleanupStaleRows --package-name Custom -
     https://github.com/Advance-Technologies-Foundation/clio
 
 - [Clio Command Reference](../../Commands.md#create-sql-schema)
+
+## Notes
+
+`ScriptSchemaDesignerService` must be served by the target environment. When it is not, the
+endpoint answers with an empty body or an HTML error page. clio reports which service, operation
+and URL answered instead of a raw JSON parser message; because clio's synchronous client does not
+expose the HTTP status, the message states that the status is unknown rather than quoting one.
+
+When the save answer itself is unusable, clio reads the schema back before reporting the outcome:
+a schema that was in fact created is reported as a success, a schema that is absent as a failure,
+and a read-back that itself fails as an unverified outcome that must be checked manually.

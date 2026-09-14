@@ -41,6 +41,9 @@ public class TurnFsmCommandLoginRetryTests {
 		setFsmConfigCommand.Execute(Arg.Any<SetFsmConfigOptions>()).Returns(0);
 
 		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		// The loader reports whether the packages were actually loaded; turn-fsm derives its own exit
+		// code from it, so the successful-retry scenario must arrange a successful load.
+		fileDesignModePackages.LoadPackagesToFileSystem().Returns(FileDesignModeLoadResult.Completed);
 		LoadPackagesToFileSystemCommand loadToFs = new(fileDesignModePackages, logger);
 
 		LoadPackagesToDbCommand loadToDb = new(fileDesignModePackages, logger);
@@ -80,4 +83,150 @@ public class TurnFsmCommandLoginRetryTests {
 		retryDelay.Received(2).Wait(TimeSpan.FromSeconds(3));
 		fileDesignModePackages.Received(1).LoadPackagesToFileSystem();
 	}
+
+	[Test]
+	[Description("Imports the packages and then applies the configuration when turning FSM off on an environment whose import completes, because that is the primary success path of the off direction and the switch that dispatches it has no other pin.")]
+	public void Execute_WritesConfiguration_WhenTurningFsmOff_AndImportCompletes() {
+		// Arrange
+		TurnFsmTestContext context = BuildContext();
+		context.FileDesignModePackages.LoadPackagesToDb().Returns(FileDesignModeLoadResult.Completed);
+		TurnFsmCommandOptions options = new() { IsFsm = "off", Uri = EnvironmentUri };
+
+		// Act
+		int result = context.Command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "a completed import is the one outcome that lets 'turn-fsm off' write the configuration "
+				+ "and report success");
+		context.SetFsmConfigCommand.Received(1).Execute(options);
+		context.Logger.DidNotReceive().WriteError(Arg.Any<string>());
+		context.Logger.DidNotReceive().WriteWarning(Arg.Any<string>());
+		context.FileDesignModePackages.Received(1).LoadPackagesToDb();
+	}
+
+	[Test]
+	[Description("Applies the file system mode configuration when turning FSM off on an environment that already reports file design mode as disabled, because that state is the goal of the off direction and never had anything to import.")]
+	public void Execute_WritesConfiguration_WhenTurningFsmOff_OnAlreadyDisabledEnvironment() {
+		// Arrange
+		TurnFsmTestContext context = BuildContext();
+		context.FileDesignModePackages.LoadPackagesToDb().Returns(FileDesignModeLoadResult.FileDesignModeDisabled);
+		TurnFsmCommandOptions options = new() { IsFsm = "off", Uri = EnvironmentUri };
+
+		// Act
+		int result = context.Command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "an environment that already has file design mode disabled is in the target state of " +
+			"'turn-fsm off', so the command must finish by writing the configuration instead of failing");
+		context.SetFsmConfigCommand.Received(1).Execute(options);
+		context.Logger.DidNotReceive().WriteError(Arg.Any<string>());
+		context.Logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("already has file design mode disabled")));
+	}
+
+	[Test]
+	[Description("Fails and leaves the configuration unchanged when turning FSM off and the platform refuses the database import, because unimported file system work would otherwise be orphaned.")]
+	public void Execute_LeavesConfigurationUnchanged_WhenTurningFsmOff_AndImportIsRefused() {
+		// Arrange
+		TurnFsmTestContext context = BuildContext();
+		context.FileDesignModePackages.LoadPackagesToDb().Returns(FileDesignModeLoadResult.LoadRefused);
+		TurnFsmCommandOptions options = new() { IsFsm = "off", Uri = EnvironmentUri };
+
+		// Act
+		int result = context.Command.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "a refused import means file system work has not reached the database, so switching file " +
+			"system mode off would orphan it");
+		context.SetFsmConfigCommand.DidNotReceive().Execute(Arg.Any<SetFsmConfigOptions>());
+	}
+
+	[Test]
+	[Description("Returns a non-zero exit code when turning FSM on and the file system export fails, even though the configuration has already been applied at that point.")]
+	public void Execute_ReturnsOne_WhenTurningFsmOn_AndFileSystemExportFails() {
+		// Arrange
+		TurnFsmTestContext context = BuildContext();
+		context.FileDesignModePackages.LoadPackagesToFileSystem().Returns(FileDesignModeLoadResult.LoadRefused);
+		TurnFsmCommandOptions options = new() { IsFsm = "on", Uri = EnvironmentUri };
+
+		// Act
+		int result = context.Command.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "packages that were not exported must not be reported to the caller as a completed switch " +
+			"to file system mode");
+		context.SetFsmConfigCommand.Received(1).Execute(options);
+		context.FileDesignModePackages.Received(1).LoadPackagesToFileSystem();
+		// A refused export and an environment still reporting FSM disabled need different remediation, so
+		// asserting only the exit code would leave the two branches indistinguishable to the suite.
+		context.Logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("already switched on in the configuration")));
+	}
+
+	[Test]
+	[Description("Reports the configuration as written but the export as skipped when turning FSM on and the environment still answers that file design mode is disabled, which is the semantics the FsmModeTool description promises to agents.")]
+	public void Execute_ReportsConfigurationWritten_WhenTurningFsmOn_AndEnvironmentStillReportsDisabled() {
+		// Arrange
+		TurnFsmTestContext context = BuildContext();
+		context.FileDesignModePackages.LoadPackagesToFileSystem()
+			.Returns(FileDesignModeLoadResult.FileDesignModeDisabled);
+		TurnFsmCommandOptions options = new() { IsFsm = "on", Uri = EnvironmentUri };
+
+		// Act
+		int result = context.Command.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "nothing was exported, so the switch to file system mode is not complete");
+		context.SetFsmConfigCommand.Received(1).Execute(options);
+		// This branch has to say the configuration was written and the environment has not caught up yet,
+		// which is a different situation from a refused export.
+		context.Logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("still reports file design mode as disabled")
+			&& message.Contains("clio pkg-to-file-system")));
+	}
+
+	private const string EnvironmentUri = "http://localhost:1919";
+
+	// A .NET Framework environment is used so the on-direction skips the restart-and-relogin block and the
+	// test exercises only the export step whose exit code changed.
+	private static TurnFsmTestContext BuildContext() {
+		IValidator<SetFsmConfigOptions> validator = Substitute.For<IValidator<SetFsmConfigOptions>>();
+		validator.Validate(Arg.Any<SetFsmConfigOptions>()).Returns(new ValidationResult());
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		settingsRepository.GetEnvironment(Arg.Any<EnvironmentOptions>()).Returns(new EnvironmentSettings { IsNetCore = false });
+		settingsRepository.GetEnvironment(Arg.Any<string>()).Returns(new EnvironmentSettings { IsNetCore = false });
+		ILogger logger = Substitute.For<ILogger>();
+		SetFsmConfigCommand setFsmConfigCommand = Substitute.ForPartsOf<SetFsmConfigCommand>(
+			validator,
+			settingsRepository,
+			new Clio.Common.FileSystem(new System.IO.Abstractions.FileSystem()),
+			logger,
+			Substitute.For<Clio.Requests.IIisScanner>(),
+			Substitute.For<IFsmModeStatusService>(),
+			Substitute.For<IFileDesignModePackages>());
+		setFsmConfigCommand.Execute(Arg.Any<SetFsmConfigOptions>()).Returns(0);
+		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		EnvironmentSettings environmentSettings = new() { IsNetCore = false, Uri = EnvironmentUri };
+		RestartCommand restartCommand = Substitute.ForPartsOf<RestartCommand>(
+			applicationClient, environmentSettings, Substitute.For<IServerReadinessWaiter>());
+		restartCommand.Execute(Arg.Any<RestartOptions>()).Returns(0);
+		TurnFsmCommand command = new(setFsmConfigCommand,
+			new LoadPackagesToFileSystemCommand(fileDesignModePackages, logger),
+			new LoadPackagesToDbCommand(fileDesignModePackages, logger),
+			applicationClient, environmentSettings, restartCommand, logger,
+			Substitute.For<IRetryDelay>());
+		return new TurnFsmTestContext(command, setFsmConfigCommand, fileDesignModePackages, logger);
+	}
+
+	private sealed record TurnFsmTestContext(
+		TurnFsmCommand Command,
+		SetFsmConfigCommand SetFsmConfigCommand,
+		IFileDesignModePackages FileDesignModePackages,
+		ILogger Logger);
 }

@@ -27,6 +27,15 @@ namespace Clio
 
 	public class EnvironmentSettings
 	{
+		private IdentityServiceAttachment _identityService = new();
+
+		/// <summary>Optional local identity component; empty values mean none is attached.</summary>
+		[YamlIgnore] // Local deletion authority must not travel in portable environment manifests.
+		public IdentityServiceAttachment IdentityService {
+			get => _identityService;
+			set => _identityService = value ?? new IdentityServiceAttachment();
+		}
+
 		[YamlMember(Alias = "url")]
 		public string Uri {
 			get; set;
@@ -142,6 +151,9 @@ namespace Clio
 		}
 
 		internal void Merge(EnvironmentSettings environment) {
+			if (!environment.IdentityService.IsEmpty) {
+				IdentityService = environment.IdentityService;
+			}
 			if (!string.IsNullOrEmpty(environment.Login)) {
 				Login = environment.Login;
 			}
@@ -207,6 +219,7 @@ namespace Clio
 
 		public virtual EnvironmentSettings Fill(EnvironmentOptions options, IInteractiveConsole interactiveConsole) {
 			var result = new EnvironmentSettings();
+			result.IdentityService = IdentityService;
 			result.Uri = string.IsNullOrEmpty(options.Uri) ? this.Uri : options.Uri;
 			result.IsNetCore = options.IsNetCore ?? this.IsNetCore;
 			result.DeveloperModeEnabled = options.DeveloperModeEnabled ?? this.DeveloperModeEnabled;
@@ -745,8 +758,24 @@ namespace Clio
 					isRealFileSystem, policy);
 			}
 			finally {
-				if (fileSystem.File.Exists(tempFilePath)) {
-					fileSystem.File.Delete(tempFilePath);
+				// SWALLOWED ON PURPOSE, and this is the only place in the save path where that is right.
+				// The original failure is the one the caller has to see: a write error, an exhausted
+				// publish retry, SettingsFileChangedException. An unguarded Delete in `finally` REPLACES
+				// whichever of those was in flight if it throws itself, and the Exists/Delete pair is racy
+				// by construction - a concurrent clio in its own finally, or a virus scanner holding the
+				// handle, is enough. The cost of losing the cleanup is one orphaned .tmp beside
+				// appsettings.json; the cost of losing the original exception is an operator told the
+				// wrong thing about why their save failed.
+				try {
+					if (fileSystem.File.Exists(tempFilePath)) {
+						fileSystem.File.Delete(tempFilePath);
+					}
+				}
+				catch (IOException) {
+					// See the comment above: the orphaned .tmp is the cheaper loss.
+				}
+				catch (UnauthorizedAccessException) {
+					// See the comment above: the orphaned .tmp is the cheaper loss.
 				}
 			}
 			TrySaveSchema(fileSystem);
@@ -1005,9 +1034,9 @@ namespace Clio
 			result.Knowledge ??= new KnowledgeConfiguration();
 			result.KnowledgeFeedback ??= new KnowledgeFeedbackSettings();
 			result.Autoupdate ??= new AutoUpdateSettings();
-			result.Autoupdate.Clio ??= new AutoUpdatePolicy { FrequencyMinutes = 480 };
+			result.Autoupdate.Clio ??= new AutoUpdatePolicy { Enabled = false, FrequencyMinutes = 480 };
 			result.Autoupdate.Knowledge ??= new AutoUpdatePolicy { FrequencyMinutes = 60 };
-			result.Autoupdate.Toolkit ??= new AutoUpdatePolicy { FrequencyMinutes = 60 };
+			result.Autoupdate.Toolkit ??= new AutoUpdatePolicy { Enabled = false, FrequencyMinutes = 60 };
 			if (result.Autoupdate.Clio.FrequencyMinutes <= 0) result.Autoupdate.Clio.FrequencyMinutes = 480;
 			if (result.Autoupdate.Knowledge.FrequencyMinutes <= 0) result.Autoupdate.Knowledge.FrequencyMinutes = 60;
 			if (result.Autoupdate.Toolkit.FrequencyMinutes <= 0) result.Autoupdate.Toolkit.FrequencyMinutes = 60;
@@ -1095,7 +1124,8 @@ namespace Clio
 			}
 			catch (Newtonsoft.Json.JsonException exception) {
 				throw new InvalidOperationException(
-					"Cannot update settings because appsettings.json changed to unreadable content.", exception);
+					"Cannot update settings because appsettings.json changed to unreadable content. "
+					+ $"Fix or delete {AppSettingsFile} and retry.", exception);
 			}
 		}
 
@@ -1121,7 +1151,7 @@ namespace Clio
 				string issue = latest.Report.Issues.FirstOrDefault()?.Message
 					?? "appsettings.json is unreadable.";
 				throw new InvalidOperationException(
-					$"Cannot update settings because {issue}");
+					$"Cannot update settings because {issue} Fix or delete {AppSettingsFile} and retry.");
 			}
 
 			expectedContent = _fileSystem.File.ReadAllText(AppSettingsFile);
@@ -1336,10 +1366,6 @@ namespace Clio
 		public bool TryScheduleAutoupdate(AutoUpdateTarget target, DateTimeOffset now) {
 			bool due = false;
 			UpdateSettingsIfChanged(settings => {
-				if ((settings.SettingsVersion ?? 0) < 1
-					&& settings.Autoupdate is { WasLegacyScalar: true, Clio.Enabled: false }) {
-					settings.Autoupdate.Clio.Enabled = true;
-				}
 				AutoUpdatePolicy policy = GetPolicy(settings.Autoupdate, target);
 				due = policy.Enabled && now > policy.NextRun;
 				if (due) {
@@ -1441,6 +1467,37 @@ namespace Clio
 				return false;
 			});
 			return matches;
+		}
+
+		/// <inheritdoc />
+		public bool UpdateIdentityAttachment(string environment, string expectedEnvironmentPath,
+			IdentityServiceAttachment expected, IdentityServiceAttachment replacement,
+			bool clearMatchingCredentials = false) {
+			bool updated = false;
+			UpdateSettingsIfChanged(settings => {
+				updated = false;
+				string key = settings.Environments.Keys.FirstOrDefault(item =>
+					string.Equals(item, environment, StringComparison.OrdinalIgnoreCase));
+				if (key is null) {
+					return false;
+				}
+				EnvironmentSettings target = settings.Environments[key];
+				if (!EnvironmentPathsMatch(target.EnvironmentPath, expectedEnvironmentPath)
+					|| target.IdentityService != expected) {
+					return false;
+				}
+				if (clearMatchingCredentials && System.Uri.TryCreate(target.AuthAppUri, UriKind.Absolute, out Uri token)
+					&& System.Uri.TryCreate(expected.Uri?.TrimEnd('/') + "/connect/token", UriKind.Absolute, out Uri owned)
+					&& token.Equals(owned)) {
+					target.AuthAppUri = string.Empty;
+					target.ClientId = string.Empty;
+					target.ClientSecret = string.Empty;
+				}
+				target.IdentityService = replacement;
+				updated = true;
+				return true;
+			});
+			return updated;
 		}
 
 		public EnvironmentSettings FindCurrentEnvironment(string environment) {

@@ -8,7 +8,9 @@ date: 2026-08-19
 
 **What is true** — `SchemaSyncTool.ExecuteBatch` runs stop-on-first-failure (`ExecuteBatchOperation`
 returning false `break`s the loop) and `ExecuteBatchOperation` pushes its
-`"{i}/{total}: {op} {schema}"` stage marker through `ctx.ReportStage` **before** doing the work. A
+`"{i}/{total}: {op} {schema}"` stage marker through `ctx.ReportStage` **before** doing the work — except
+when the operation is rejected up front by the argument-shape, `schema-name` or seed-row validation, which
+returns earlier still and therefore emits NO marker at all, not even its own (GH-1303). A
 business failure is not an MCP protocol failure: the tool still returns a well-formed
 `SchemaSyncResponse` carrying `success:false`, and `CallToolResult.IsError` stays unset.
 

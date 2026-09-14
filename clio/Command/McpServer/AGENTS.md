@@ -77,6 +77,87 @@ the pipeline mechanism already covers it. Destructive tools own their own timeou
 `create-app-section`'s `section-created: in-progress`); never route a destructive tool through the
 read deadline. See `spec/adr/adr-read-only-mcp-response-deadline.md`.
 
+## Accepted argument shapes (flat-args normalization)
+
+For a tool whose ONLY bindable parameter is a composite `args` record, two call shapes are accepted at
+runtime (ENG-95885). Normalization lives at the call-tool pipeline layer
+(`McpToolErrorFilter.TryRefuseCallArguments`), NOT per tool, so it is transport-neutral and covers the
+whole resident set with no per-tool edits:
+
+- wrapped — `{"args": {"<field>": "<value>"}}` — what `tools/list` publishes; unchanged, byte-compatible.
+- flat — `{"<field>": "<value>"}` — rewritten into the wrapper on arrival ONLY when EVERY top-level key is
+  a wire property; all of them are moved inside the wrapper together.
+
+The payload is CLASSIFIED, never wrapped blindly. Refused shapes:
+
+- **any unknown key** — at least one top-level key is not a wire property, whether the WHOLE payload is
+  unknown or a real field sits next to a typo (`{"environment-name":"dev","filer":"x"}`): refused with the
+  canonical field list. The PARTIAL case is refused for the same reason as the all-unknown case — for the
+  resident majority whose args record has no `[JsonExtensionData]` overflow bag, wrapping the payload lets
+  the serializer silently DROP the typo at bind time (it ignores unmapped members) and the tool answers a
+  validation mistake with a plausible list/default **success** — worse for an agent than a hard failure.
+  The good field does not make the typo safe. Only `[McpRecoversUnknownArguments]` (below) forwards it.
+- **hybrid** — an `args` object plus extra top-level keys: refused as ambiguous, no silent precedence.
+- **case collision** — two top-level keys differing only in casing (`environment-name` plus
+  `Environment-Name`). Names are matched case-insensitively, so both claim ONE argument; wrapping
+  them would hand the serializer two properties it treats as the same one, and picking the winner
+  is the same guessing the hybrid shape is refused for. Neither value is echoed back.
+- **empty `{}`** — keeps today's missing-parameter error unless the tool declares capability (below).
+- an argument the tool binds as an object but which arrives as a **JSON string**: refused with a
+  shape-naming error. It is never parsed — accepting stringified JSON would widen the contract for good.
+
+Two EXPLICIT, fail-closed declarations opt a tool out of a refusal. Both live in
+`Tools/McpFlatArgumentContract.cs`, both go on the tool METHOD, and neither is ever inferred from the
+generated schema (the schema's required-property set is a weak proxy for runtime semantics — e.g.
+`DataForgeMaintenanceArgs.EnvironmentName` is schema-optional yet `EnsureRequired`-checked):
+
+- `[McpAcceptsEmptyArguments]` — the tool has a documented no-arguments operation, so `{}` is a real call
+  and the empty wrapper is synthesized. Today: `list-apps`, `get-request-info`.
+- `[McpRecoversUnknownArguments]` — the tool binds a `[JsonExtensionData]` bag AND inspects it (alias
+  rename, flat recovery, or an explicit unknown-arg error), so a payload carrying any unknown key is
+  forwarded to its richer diagnosis instead of refused. Today: `get-tool-contract`.
+  `McpFlatArgumentNormalizationCompletenessTests` fails the build if this is declared on an args record
+  that has no overflow bag.
+
+Rules to keep:
+
+- **The published schema stays wrapped.** This is a tolerant RUNTIME layer, not a schema change:
+  `tools/list` keeps `required: ["args"]`. Never claim the schema and the accepted input set are
+  identical. The canonical agent-facing statement is
+  `ToolContractGetTool.AcceptedArgumentShapesHint`; `McpServerInstructions` stays pointer-only.
+- **The trigger predicate is shared, not copied.** `McpToolArgumentSupport.TryGetSingleCompositeParameter`
+  is the one definition of "exactly one bindable non-framework composite parameter", used by both the
+  normalizer and `ClioRunTool`. A multi-parameter tool (`clio-run`'s `command` + `args`) or a
+  single-scalar tool binds top-level keys BY PARAMETER NAME and must never be rewritten — otherwise the
+  normalizer and `ClioRunExecutor.RecoverWrappedCall` fight over the same payload.
+- **Aliases stay rejection-only.** A non-canonical spelling produces a rename hint
+  (`McpToolArgumentSupport.EnvironmentNameAliases`), never a silent binding.
+- **Mutate `Arguments` on the EXISTING `Params` instance.** Building a new `CallToolRequestParams` drops
+  `_meta`, the progress token and task metadata, breaking `notifications/progress` and the
+  `_meta.clioStageEvent` stream ClioRing consumes.
+- **Resident tools only.** The durable long-tail path (`McpDurableCallToolHandler` /
+  `InvokeResolvedAsync`) has no `MatchedPrimitive` to reflect and stays wrapped-only; the long tail is
+  reached through `clio-run`, which owns its own recovery.
+- **Keep the shape decision observable.** The classifier reports its outcome plus the ORIGINAL top-level
+  key names (`McpArgumentShapeReport`), and `McpToolErrorFilter.ReportArgumentShape` emits one advisory
+  line for every outcome EXCEPT `Untouched`. The rewrite is in place, so without that report a
+  downstream observer sees only the wrapped shape and cannot tell an accommodated flat call from a
+  correct one - and ENG-95885 closes on a MEASURED near-zero wrapper error class, so a silent rewrite
+  would hide the fix's own effect. Two constraints if you touch it: the line carries key NAMES only,
+  never argument VALUES (a value can be a password or a token), and it goes to the logger plus
+  **stderr** - never stdout, which is the JSON-RPC channel. `Untouched` stays silent on purpose: it is
+  the steady state and the state the change is trying to reach.
+
+- **Framework parameters are excluded by SDK ASSEMBLY, never by namespace name.**
+  `McpToolArgumentSupport.IsFrameworkOwnedType` keys on the SDK assembly plus `IsAssignableFrom` on
+  `McpServer`. Do not reintroduce a `Namespace.StartsWith("ModelContextProtocol")` match — it swallows
+  unrelated same-prefix namespaces and misses an `McpServer` subclass declared elsewhere, either of
+  which moves the bindable-parameter count and hands the normalizer a payload it must not rewrite.
+
+**Why the accepted input set is wider than the published schema, and why it can never be narrowed
+again:** see [`spec/adr/adr-mcp-flat-argument-normalization.md`](../../../spec/adr/adr-mcp-flat-argument-normalization.md).
+Tightening `tools/list` back to reject a flat payload is an explicit, permanent non-goal recorded there.
+
 ## Uniformity rules
 
 - New MCP tools should inherit from `BaseTool<TOptions>` unless there is a strong reason not to.
@@ -128,6 +209,39 @@ Above the registry chain sits the developer-only override: when
 `CLIO_COMPONENT_REGISTRY_LOCAL_FILE` points at a JSON file on disk, that
 file is served directly and the cache/CDN tiers are skipped. The override
 is fail-fast (missing file throws) and never writes to the cache.
+
+The override covers the **documentation tier too** (issue #1361). Registry JSON
+and its `docs/` tree are generated into one output directory, so
+`ComponentRegistryDocsClient` resolves every `references.docs[]` path against the
+directory of the flavour's `*_LOCAL_FILE`, picking the flavour from the path's
+documentation namespace (`docs/` → web, `mobile-docs/` → mobile, `request-docs/`
+→ requests, `mobile-request-docs/` → mobile requests — see
+`ComponentRegistryDocsPath.TryResolveFlavor`). Three rules make the provenance
+honest, and none of them may be relaxed into a fall-through:
+
+- while an override is active it is the **only** documentation tier — a declared
+  file that is absent from the working copy returns `documentationSource: "none"`
+  plus `documentationWarning` naming the registry-relative path and the `*_LOCAL_FILE`
+  variable that captured it (the resolved host path stays in the server-side log, so
+  `mcp-http` never echoes the server's directory layout to a remote client), and the
+  published CDN copy
+  is **not** substituted. Silent substitution was the reported defect: the
+  developer validated a documentation edit against production prose and the
+  round-trip only looked successful;
+- locally-read documentation is **never** written to the docs cache, so an
+  unpublished draft cannot leak into a later env-unset call;
+- the containment check (`IFileSystem.Path.GetFullPath` + `StartsWith(root + separator)`)
+  runs at the filesystem boundary in addition to `ComponentRegistryDocsPath.TryNormalise`.
+  It is **lexical**: symlinks are not resolved, so the override directory is a trusted
+  input — a `docs/` symlink pointing outside it is followed. Point `*_LOCAL_FILE` only at
+  a directory you own. The variable must hold an **absolute** path: the MCP server runs as
+  a child process whose working directory is not the developer's shell, so a relative path
+  resolves against a directory nobody chose.
+
+`documentationSource` (`local` | `cache` | `cdn` | `mixed` | `none`) and
+`documentationWarning` are emitted on `get-component-info` and `get-request-info`
+detail responses whose entry declares docs, on both the MCP and the CLI (`--pretty`
+included) surfaces.
 
 When the chain runs out of tiers (the file cache is empty AND the CDN is
 unreachable AND no local override is set), `GetAsync` throws
@@ -300,12 +414,12 @@ same async pipeline, same `CreateDetailResponse`, same response shape
 `resolvedTargetVersion`/`resolvedFrom`). The two flavors are isolated by a
 `RegistryFlavor` config carried on the client at construction time:
 
-| Flavor | CDN file | Cache subdirectory | Local-override env var | Bundled fallback |
-|---|---|---|---|---|
-| Web (default) | `{base}/{version}/ComponentRegistry.json` | `~/.clio/cache/component-registry/` | `CLIO_COMPONENT_REGISTRY_LOCAL_FILE` | none (exhaustion → `ComponentRegistryUnavailableException`) |
-| Mobile | `{base}/{version}/MobileComponentRegistry.json` | `~/.clio/cache/component-registry/mobile/` | `CLIO_MOBILE_COMPONENT_REGISTRY_LOCAL_FILE` | `Command/McpServer/Data/MobileComponentRegistry.json` (transitional, while producer rolls out) |
-| Requests (`get-request-info`) | `{base}/{version}/RequestRegistry.json` | `~/.clio/cache/component-registry/requests/` | `CLIO_REQUEST_REGISTRY_LOCAL_FILE` | none (exhaustion → `ComponentRegistryUnavailableException` naming the requests env var) |
-| Mobile requests (`get-request-info schema-type=mobile`) | `{base}/{version}/MobileRequestRegistry.json` | `~/.clio/cache/component-registry/mobile-requests/` | `CLIO_MOBILE_REQUEST_REGISTRY_LOCAL_FILE` | none (exhaustion → `ComponentRegistryUnavailableException` naming the mobile-requests env var) |
+| Flavor | CDN file | Cache subdirectory | Local-override env var (registry JSON **and** its `docs/` tree) | Docs namespace | Bundled fallback |
+|---|---|---|---|---|---|
+| Web (default) | `{base}/{version}/ComponentRegistry.json` | `~/.clio/cache/component-registry/` | `CLIO_COMPONENT_REGISTRY_LOCAL_FILE` | `docs/` | none (exhaustion → `ComponentRegistryUnavailableException`) |
+| Mobile | `{base}/{version}/MobileComponentRegistry.json` | `~/.clio/cache/component-registry/mobile/` | `CLIO_MOBILE_COMPONENT_REGISTRY_LOCAL_FILE` | `mobile-docs/` | `Command/McpServer/Data/MobileComponentRegistry.json` (transitional, while producer rolls out) |
+| Requests (`get-request-info`) | `{base}/{version}/RequestRegistry.json` | `~/.clio/cache/component-registry/requests/` | `CLIO_REQUEST_REGISTRY_LOCAL_FILE` | `request-docs/` | none (exhaustion → `ComponentRegistryUnavailableException` naming the requests env var) |
+| Mobile requests (`get-request-info schema-type=mobile`) | `{base}/{version}/MobileRequestRegistry.json` | `~/.clio/cache/component-registry/mobile-requests/` | `CLIO_MOBILE_REQUEST_REGISTRY_LOCAL_FILE` | `mobile-request-docs/` | none (exhaustion → `ComponentRegistryUnavailableException` naming the mobile-requests env var) |
 
 The mobile fallback is a deliberate, narrowly-scoped concession: the academy
 mirror does not yet serve `MobileComponentRegistry.json` (the producer-side

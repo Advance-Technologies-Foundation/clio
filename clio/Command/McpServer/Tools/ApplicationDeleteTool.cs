@@ -87,10 +87,6 @@ public sealed class ApplicationDeleteTool(
 /// Arguments for the <c>delete-app</c> MCP tool.
 /// </summary>
 public sealed record ApplicationDeleteArgs(
-	[property: JsonPropertyName("environment-name")]
-	[property: Description(McpToolDescriptions.EnvironmentName)]
-	string? EnvironmentName,
-
 	[property: JsonPropertyName("app-name")]
 	[property: Description("Application name or code to uninstall, e.g. 'UsrMyApp'")]
 	[property: Required]
@@ -104,7 +100,10 @@ public sealed record ApplicationDeleteArgs(
 	string? Login = null,
 	[property: JsonPropertyName("password")]
 	[property: Description(McpToolDescriptions.Password)]
-	string? Password = null
+	string? Password = null,
+	[property: JsonPropertyName("environment-name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
+	string? EnvironmentName = null
 );
 
 /// <summary>

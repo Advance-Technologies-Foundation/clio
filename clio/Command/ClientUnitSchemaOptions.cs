@@ -169,14 +169,19 @@ public class ClientUnitSchemaUpdateCommand : Command<ClientUnitSchemaUpdateOptio
 			_applicationClient,
 			_serviceUrlBuilder,
 			schemaToSave,
-			SchemaDesignerKind.ClientUnit);
+			SchemaDesignerKind.ClientUnit,
+			out bool outcomeUnknown);
 		if (error == null) {
 			response = null;
 			return true;
 		}
+		// An unusable save answer says nothing about whether the schema was written, so the failure carries
+		// that instead of reading as an observed rejection.
 		response = new ClientUnitSchemaUpdateResponse {
 			Success = false,
-			Error = error
+			Error = outcomeUnknown
+				? $"{error} {SchemaDesignerHelper.SaveOutcomeUnknownNote}"
+				: error
 		};
 		return false;
 	}

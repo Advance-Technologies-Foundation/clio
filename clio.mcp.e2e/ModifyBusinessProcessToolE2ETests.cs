@@ -52,6 +52,231 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, setFlow re-kinds an existing flow in place — the operation ENG-91853 added and the one nothing else in this suite sends. Two directions in one call, because they fail differently: sequence -> conditional must store the condition, and conditional -> sequence is the clear-condition route. The source is an ORDINARY element, and that is the correction: an earlier version of this test asked for kind sequence on a flow out of a GATEWAY, which the builder refuses whenever a conditional sibling exists, so its expected outcome was unreachable and the operation before it could never have been committed either. Unit tests build the operation record positionally in C#, so the JSON binder for op/kind/condition is exercised nowhere else.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process re-kinds a flow with setFlow in both directions")]
+	public async Task ModifyBusinessProcess_Should_ReKindAFlowWithSetFlow() {
+		// Arrange — an ordinary element with one plain and two conditional branches. Both re-kinds below
+		// stay legal on it: neither leaves a conditional flow beside two unconditional ones, and neither
+		// drops the LAST conditional flow off an element that still has other outgoing flows.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpSetFlowE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildThreeBranchTaskDescriptor(processName)
+		});
+
+		// Act — make the plain branch conditional, and clear the condition off one that already is.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """
+				[
+				  { "op": "setFlow", "source": "Decide", "target": "EndA", "kind": "conditional",
+				    "condition": "1 > 0" },
+				  { "op": "setFlow", "source": "Decide", "target": "EndC", "kind": "sequence" }
+				]
+				"""
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "re-kinding a flow in both directions must complete without a transport error");
+
+		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
+			}));
+		DescribedFlow toA = described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndA");
+		DescribedFlow toC = described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndC");
+
+		toA.Kind.Should().Be("conditional",
+			because: "setFlow's kind has to reach the builder through the JSON binder - dropped, the flow stays "
+				+ "plain and the operation reports success on an edit that did nothing");
+		toA.Condition.Should().Be("1 > 0",
+			because: "kind and condition are separate fields on the same operation and are dropped separately");
+		toC.Kind.Should().Be("sequence",
+			because: "this is the clear-condition route off an ordinary element - a flow that stayed "
+				+ "conditional here means the op was accepted and ignored");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, setFlow's `label` covers the four outcomes that can only be proven against a real server, because a flow's caption is a LocalizableString and lives in the schema RESOURCES rather than in metadata — nothing in-memory shows whether the row was written, moved or deleted. (1) THE TRAP: a re-kind re-derives a generated flow's NAME and the resource key is built from that name, so a label the caller never mentioned could be orphaned under the old key; it is not. (2) a supplied label replaces the old one across the same re-kind. (3) an EMPTY label clears it, which is the only way to remove one. (4) a label applied while the KIND does not change still lands — `kind` is mandatory on setFlow, so relabelling alone takes the no-op early return, and returning before the label would report success and write nothing.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process writes, keeps and clears a flow label with setFlow")]
+	public async Task ModifyBusinessProcess_Should_WriteKeepAndClearAFlowLabelWithSetFlow() {
+		// Arrange — every branch labelled, which is the state a designer-authored process is normally in:
+		// 84.9% of the conditional flows in the shipped product carry a label.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpFlowLabelE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildLabelledThreeBranchTaskDescriptor(processName)
+		});
+
+		// Act — one batch covering all four: EndA is re-kinded with NO label mentioned (the trap), EndB is
+		// re-kinded WITH a new label, EndC's label is cleared, and Start1->Decide is relabelled while its kind
+		// stays exactly what it already is.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """
+				[
+				  { "op": "setFlow", "source": "Decide", "target": "EndA", "kind": "conditional",
+				    "condition": "1 > 0" },
+				  { "op": "setFlow", "source": "Decide", "target": "EndB", "kind": "conditional",
+				    "condition": "2 > 1", "label": "Renamed outcome" },
+				  { "op": "setFlow", "source": "Decide", "target": "EndC", "kind": "conditional",
+				    "condition": "3 > 1", "label": "" },
+				  { "op": "setFlow", "source": "Start1", "target": "Decide", "kind": "sequence",
+				    "label": "Amount confirmed" },
+				  { "op": "addFlow", "source": "EndA", "target": "EndB", "label": "Carried on" }
+				]
+				"""
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "writing, keeping and clearing labels in one batch must complete without a transport error");
+
+		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
+			}));
+		DescribedFlow toA = described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndA");
+		DescribedFlow toB = described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndB");
+		DescribedFlow toC = described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndC");
+		DescribedFlow intoDecide = described.Flows.Single(f => f.Source == "Start1" && f.Target == "Decide");
+		DescribedFlow added = described.Flows.Single(f => f.Source == "EndA" && f.Target == "EndB");
+
+		// Through the extension-data bag: a flow's stored NAME is not a typed member of DescribedFlow - the
+		// DTO carries only what the guards address by name, and a flow is addressed by its endpoint PAIR
+		// everywhere in the write API. It still arrives, and it is what this assertion needs.
+		toA.AdditionalData["name"].GetString().Should().Be("ConditionalFlow_Decide_EndA",
+			because: "the generated name IS re-derived by the re-kind - that is what moves the resource key out "
+				+ "from under the label, and without this assertion the next one proves nothing");
+		toA.Label.Should().Be("Take this branch",
+			because: "an omitted label means the caller said nothing about it, so the row has to be "
+				+ "re-materialised under the NEW name rather than orphaned under the old one. What this "
+				+ "asserts is the round trip through the real server; the ROW-level proof - that nothing "
+				+ "lingers under the old key - was taken by hand and is recorded in "
+				+ "docs/knowledge/platform/a-flow-rekind-does-not-orphan-its-label.md, because describe reads "
+				+ "the manager's runtime instance in the same warm app pool that just wrote through the design "
+				+ "instance and a cached instance could satisfy this without touching storage");
+		toB.Label.Should().Be("Renamed outcome",
+			because: "a supplied label replaces the previous one across the same re-kind");
+		toC.Label.Should().BeNull(
+			because: "an empty label CLEARS the caption, and a cleared caption deletes its resource row rather "
+				+ "than leaving a blank one - describe reports null, not an empty string");
+		intoDecide.Label.Should().Be("Amount confirmed",
+			because: "kind is mandatory on setFlow, so relabelling alone passes the kind the flow already has "
+				+ "and takes the no-op early return - a label lost there is a success report on an edit that "
+				+ "wrote nothing");
+		intoDecide.Kind.Should().Be("sequence",
+			because: "and the no-op is still a no-op: the flow must not be re-kinded by a relabel");
+		added.Label.Should().Be("Carried on",
+			because: "addFlow is the OTHER operation that writes a label, and nothing else in this suite sends "
+				+ "one through it - dropping operation.Label from AddFlowOperation would otherwise leave every "
+				+ "suite green while clio's guard blamed the environment's package version");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, removeFlow REFUSES a field it does not read rather than ignoring it, and the atomic batch around it applies nothing. removeFlow resolves a flow by its endpoint PAIR alone, so a kind, condition or label carried over from a describe used to be silently discarded for two of the three and refused for the third - the asymmetry the pre-merge review called the worst of both worlds. It is refused for all three now, and not for tidiness: on a pair joined by two flows, honouring the removal while ignoring a kind would delete a flow the caller did not name. The read-back is the point of running this against a real server - the whole batch must be intact, because ProcessModifyHandler aborts before SaveEdited and a partial apply would be invisible to a unit test.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process refuses removeFlow with a field it does not read")]
+	public async Task ModifyBusinessProcess_Should_RefuseRemoveFlowCarryingAFieldItDoesNotRead() {
+		// Arrange — a labelled three-branch process, the shape a describe-then-echo workflow produces.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpRemoveFlowFieldE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildLabelledThreeBranchTaskDescriptor(processName)
+		});
+
+		// Act — the echo an agent naturally produces from a described flow: the whole object, kind included.
+		// A second operation follows it so the batch's atomicity is observable.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """
+				[
+				  { "op": "removeFlow", "source": "Decide", "target": "EndC", "kind": "conditional" },
+				  { "op": "setFlow", "source": "Decide", "target": "EndB", "kind": "conditional",
+				    "condition": "2 > 1", "label": "Should not be written" }
+				]
+				"""
+		});
+
+		// Assert - on the call TEXT rather than IsError, which this surface measures null on a refusal (the
+		// sibling gateway-refusal test below records the same thing; asserting IsError here failed against a
+		// server that had refused correctly).
+		// Quote-free fragments ONLY. The text is a serialized envelope, so every apostrophe in the refusal
+		// arrives as ' - the trap this fixture already records, and the reason an assertion on
+		// "does not take a 'kind'" fails against a server that refused perfectly.
+		string message = SerializeToolText(callResult);
+		message.Should().Contain("does not take a",
+			because: "the refusal has to name the field the caller sent, or they cannot tell which of three "
+				+ "to strip from their echo");
+		message.Should().Contain("kind",
+			because: "and the field it names has to be the one that was sent");
+		message.Should().Contain("source and target alone",
+			because: "a caller who does not learn WHY removeFlow cannot honour it will send it again");
+		message.Should().Contain("act on one you did not name",
+			because: "the CONSEQUENCE is what makes this a refusal rather than pedantry, and it is the half a "
+				+ "caller needs to accept the extra step. Wording note: this read 'remove one you did not "
+				+ "name' until the guard was generalised to serve setFlowCondition as well, which is also how "
+				+ "this test confirmed the stand was really running the new package rather than a cached one");
+
+		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
+			}));
+		described.Flows.Should().Contain(flow => flow.Source == "Decide" && flow.Target == "EndC",
+			because: "the refused removal must not have happened - this is the half a unit test cannot see, "
+				+ "because the abort has to land before SaveEdited on the real server");
+		described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndB").Label
+			.Should().NotBe("Should not be written",
+				because: "the batch is ATOMIC: a refusal in operation one must discard operation two as well, "
+					+ "and a label written here would prove it half-applied");
+	}
+
+	[Test]
+	[Description("Off a deciding GATEWAY, setFlow kind sequence is refused when the gateway ALREADY has a default branch - the flow has nothing left to normalise into. A gateway with no default normalises the request instead, and re-kinding the gateway's own default is a silent no-op, so this is the one shape that refuses. Asserted here because the first version of the test above assumed a refusal that does not happen and could never have passed.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process refuses a second unconditional branch out of a gateway")]
+	public async Task ModifyBusinessProcess_Should_RefuseASecondUnconditionalBranchOutOfAGateway() {
+		// Arrange — a gateway with a default branch and a conditional one.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpGatewayPlainE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildTwoBranchDescriptor(processName)
+		});
+
+		// Act — clear the condition off the branch whose gateway already has a default.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """
+				[
+				  { "op": "setFlow", "source": "Decide", "target": "EndB", "kind": "sequence" }
+				]
+				"""
+		});
+
+		// Assert - on the call text rather than IsError, which this surface measures null on a refusal.
+		JsonSerializer.Serialize(callResult).Should().Contain("chooses between its branches",
+			because: "the refusal must say WHY a plain flow cannot leave a gateway, or the caller retries it");
+
+		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
+			}));
+		described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndB").Kind.Should().Be("conditional",
+			because: "a refused operation must leave the flow exactly as it was");
+	}
+
+	[Test]
 	[Description("Over the real MCP path, builds a process then edits it (replace start with a record-signal start).")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process edits an existing process")]
@@ -443,6 +668,489 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 
 	// A signal-start process with NO filter — the base for the setFilter/clearFilter e2e (setFilter targets a
 	// signalStart or a DataSourceFilters-exposing data element). Contact.Name is a base column on every stand.
+	[Test]
+	[Description("Mandatory MCP e2e gate for the modify path, which is the higher-risk one: a supplied add/remove REPLACES the stored collection. Sets an accessRights block and a record filter in ONE operations array, then asserts the block round-trips through describe AND that clio's post-operation warning agrees with what actually landed. The guard's load-bearing assumption is that a real server surfaces the block on DescribedElement.AdditionalData; every unit test around it builds that dictionary by hand, so only this can falsify it.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process setElement accessRights round-trips and its warning matches reality")]
+	public async Task ModifyBusinessProcess_Should_KeepTheAccessRightsWarning_ConsistentWithWhatLanded() {
+		// Arrange - a process carrying a Change access rights element with nothing configured yet.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpModAccessRightsE2e{Guid.NewGuid():N}";
+		CallToolResult built = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildBareAccessRightsDescriptor(processName)
+		});
+		SkipWhenPackagePredatesTheElement(built);
+
+		// Act - configure the block and its record filter in one batch.
+		CallToolResult edited = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildAccessRightsSetElementOperations()
+		});
+
+		// Assert
+		edited.IsError.Should().NotBeTrue(because: "configuring the block must apply without a transport error");
+		string payload = JsonSerializer.Serialize(edited);
+
+		DescribeProcessResult graph = ParseDescribeGraph(await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			}));
+		DescribedElement element = graph.Elements.Single(e => e.Name == "GrantRights1");
+		bool landed = element.AdditionalData is not null
+			&& element.AdditionalData.Any(entry =>
+				string.Equals(entry.Key, "accessRights", StringComparison.OrdinalIgnoreCase)
+				&& entry.Value.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null));
+		bool warnedDiscarded = payload.Contains("does not implement IExtensibleDataObject");
+
+		warnedDiscarded.Should().Be(!landed,
+			because: "the drop warning has to track reality in BOTH directions on the modify path too - warning "
+				+ "when the block DID land tells a caller to treat a real permission change as not applied, and "
+				+ "silence when it did NOT land is the silent discard the guard exists to catch");
+		if (landed) {
+			payload.Should().NotContain("has NO record filter at all",
+				because: "the same batch supplied a record filter, so clio's widest-configuration warning must "
+					+ "not fire - if it does, setFilter and setElement did not compose in one array");
+			payload.Should().NotContain("will apply the permission change to EVERY record of the new object",
+				because: "the PACKAGE raises its own retarget notice, and this guard previously matched only "
+					+ "clio's wording - so the notice could assert the element ends unbounded, in the very batch "
+					+ "shape every surface prescribes, while this test stayed green. Two surfaces disagreeing "
+					+ "inside one response is the thing to catch, not one of them");
+		}
+	}
+
+	[Test]
+	[Description("A clearFilter-only batch carries no accessRights block, so every block-shaped check skips it - yet clearing the filter moves the element from narrowing to acting on EVERY record of its object. Asserts the record-filter warning actually reaches the caller over the real MCP path, which is the one path a unit test cannot prove.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process clearFilter-only batch still warns about the widened element")]
+	public async Task ModifyBusinessProcess_Should_WarnOnAClearFilterOnlyBatch() {
+		// Arrange - build, then configure the element WITH a filter so there is one to clear.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpClearFilterWarnE2e{Guid.NewGuid():N}";
+		CallToolResult built = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildBareAccessRightsDescriptor(processName)
+		});
+		SkipWhenPackagePredatesTheElement(built);
+		await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildAccessRightsSetElementOperations()
+		});
+
+		// Act - clearFilter ALONE. No block in the payload at all.
+		CallToolResult cleared = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "clearFilter", "elementName": "GrantRights1" } ]"""
+		});
+
+		// Assert
+		cleared.IsError.Should().NotBeTrue(because: "clearFilter must apply without a transport error");
+		JsonSerializer.Serialize(cleared).Should().Contain("EVERY record of the target object",
+			because: "this batch left the element acting on every record of its object, and it carries no block, "
+				+ "so the filter-state check is the ONLY thing that speaks - a silent success here is exactly "
+				+ "the gap the guard was widened to close");
+	}
+
+	// Same shape as the create fixture's: the described graph arrives as the Info log-message value inside the
+	// clio command envelope, so a test can assert element fields instead of substring-matching the escaped payload.
+	private static DescribeProcessResult ParseDescribeGraph(CallToolResult describeResult) {
+		CommandExecutionEnvelope envelope = McpCommandExecutionParser.Extract(describeResult);
+		string graphJson = envelope.Output!
+			.Select(message => message.Value)
+			.First(value => !string.IsNullOrWhiteSpace(value) && value!.TrimStart().StartsWith("{", StringComparison.Ordinal))!;
+		return JsonSerializer.Deserialize<DescribeProcessResult>(graphJson,
+			new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+	}
+
+	// The gate, in one place so both tests read the same way. A CrtProcessBuilder predating the element rejects
+	// the element TYPE outright, before anything this fixture is about, so such an environment can exercise
+	// neither direction. It is Ignored rather than failed - but named, so an ignored run is not mistaken for
+	// coverage: the rebundle is the follow-up that makes these two tests meaningful.
+	private static void SkipWhenPackagePredatesTheElement(CallToolResult built) {
+		string payload = JsonSerializer.Serialize(built);
+		if (built.IsError is true && !payload.Contains("created (UId:")) {
+			Assert.Ignore(
+				"The sandbox's deployed CrtProcessBuilder does not accept a 'changeAccessRights' element type, so "
+				+ "the accessRights block never reaches the read-back guard. This is expected until the "
+				+ "bundled archive is rebuilt from a source tree that CONTAINS the element - note the floors are "
+				+ "already at 1.4.0.40 and the bundled archive already reports that version, so the version "
+				+ "precondition passes while the block is still discarded. Until then "
+				+ "then this test is Ignored, NOT passing, and the modify path is unverified end to end.");
+		}
+	}
+
+	// A Change access rights element with NO accessRights block yet: the modify path configures it. Kept separate
+	// from the create fixture's descriptor so a change there cannot silently alter what this fixture edits.
+	private static string BuildBareAccessRightsDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Modify AccessRights E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "GrantRights1", "type": "changeAccessRights", "caption": "Grant rights" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "GrantRights1" },
+		    { "source": "GrantRights1", "target": "EndEvent1" }
+		  ],
+		  "parameters": [
+		    { "name": "ContactIdParameter", "type": "Guid", "direction": "In", "caption": "Contact Id" }
+		  ]
+		}
+		""";
+
+
+	[Test]
+	[Description("Over the real MCP path, setElement reconfigures an existing openEditPage element IN PLACE, and the two DESTRUCTIVE changes are guarded: switching editMode without the new mode's payload is REFUSED, while supplying it succeeds AND clears the branch being left. The clearing matters beyond tidiness - the runtime applies stored pre-filled values in either mode, so a leftover set would be live configuration nobody asked for, and only a real server can prove it is gone.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process setElement guards an openEditPage mode switch and clears the old branch")]
+	public async Task ModifyBusinessProcess_Should_GuardOpenEditPageModeSwitch_AndClearOldBranch() {
+		// Arrange - an edit-mode element opening a fixed record, so the switch to add mode has a branch to clear.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpOpenEditPageSetElementE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildOpenEditPageEditModeDescriptor(processName));
+
+		// Act 1 - switch the mode with NO replacement payload.
+		CallToolResult refused = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildOpenEditPageModeSwitchOperations(withDefaultValues: false)
+		});
+
+		// Assert 1
+		string refusedJson = JsonSerializer.Serialize(refused);
+		// Matched WITHOUT apostrophes: the tool envelope escapes them as \u0027, so a quoted fragment never matches
+		// however right the message is.
+		refusedJson.Should().Contain("defaultValues",
+			because: "the stored record belongs to the mode being left, so the new mode's payload must arrive with the "
+				+ "switch - and the refusal has to name the field the caller is missing");
+		refusedJson.Should().Contain("clears the branch being left",
+			because: "the refusal must also say WHY the payload is required, not only which field");
+		ParseDescribeResult(await CallToolAsync(context, DescribeProcessTool.ToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			}))
+			.Elements.Single(element => element.Name == "OpenPage1").OpenEditPage!.EditMode.Should().Be("edit",
+				because: "a refused update must leave the element exactly as it was, not half-switched");
+
+		// Act 2 - the same switch WITH the replacement payload. Through the helper that asserts the success LINE:
+		// on a test whose whole purpose is to prove a guard, the server's refusal text is the only diagnostic that
+		// matters, and an IsError-only gate cannot fail for a refusal - it would fail three lines later on a state
+		// mismatch instead.
+		await ModifyExpectingSuccessAsync(context, processName,
+			BuildOpenEditPageModeSwitchOperations(withDefaultValues: true));
+
+		// Assert 2
+		DescribedOpenEditPage block = ParseDescribeResult(
+				await CallToolAsync(context, DescribeProcessTool.ToolName, new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["process-name"] = processName
+				}))
+			.Elements.Single(element => element.Name == "OpenPage1").OpenEditPage!;
+		block.EditMode.Should().Be("add", because: "the requested mode is now stored");
+		block.DefaultValues.Should().NotBeNullOrEmpty(because: "the replacement payload was written");
+		block.RecordId.Should().BeNull(
+			because: "the branch being left is CLEARED - a leftover record from edit mode would be configuration "
+				+ "nobody asked for, and the runtime does not ignore it");
+	}
+
+
+	[Test]
+	[Description("Over the real MCP path, setElement with an EMPTY defaultValues array REMOVES every pre-filled value from an openEditPage element, and describe confirms the set is gone. Only a real server proves this: the values are stored through the platform's own packer, so 'cleared' has to be verified as the packer's absence rather than as an empty local object - and the runtime applies whatever stays stored, so a set that survives is live configuration nobody asked for.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process clears an openEditPage element's pre-filled values")]
+	public async Task ModifyBusinessProcess_Should_ClearOpenEditPageDefaultValues_WhenEmptyArraySupplied() {
+		// Arrange - an add-mode element that really carries a pre-filled value
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpOpenEditPageClearE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildOpenEditPageAddModeDescriptor(processName));
+		DescribedOpenEditPage before = ParseDescribeResult(
+				await CallToolAsync(context, DescribeProcessTool.ToolName, new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["process-name"] = processName
+				}))
+			.Elements.Single(element => element.Name == "OpenPage1").OpenEditPage!;
+		before.DefaultValues.Should().NotBeNullOrEmpty(
+			because: "the arrange step must really have stored a value for the clearing to prove anything");
+
+		// Act
+		CallToolResult applied = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """
+			[
+			  { "op": "setElement", "elementName": "OpenPage1",
+			    "elementUpdate": { "openEditPage": { "defaultValues": [] } } }
+			]
+			"""
+		});
+
+		// Assert
+		SerializeToolText(applied).Should().Contain("edited (",
+			because: "an empty array is a valid request - it is the only way to empty the block - and a refusal must "
+				+ "not be readable as success: clio-run reports a refused edit with exit-code 1 INSIDE the payload "
+				+ "while isError stays null");
+		DescribedOpenEditPage after = ParseDescribeResult(
+				await CallToolAsync(context, DescribeProcessTool.ToolName, new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["process-name"] = processName
+				}))
+			.Elements.Single(element => element.Name == "OpenPage1").OpenEditPage!;
+		after.DefaultValues.Should().BeNullOrEmpty(
+			because: "the stored set must be GONE on the server, not merely absent from the request - the runtime "
+				+ "applies whatever stays stored, in either editing mode");
+		after.EditMode.Should().Be("add",
+			because: "clearing the values must not disturb the rest of the configuration");
+	}
+
+	// An add-mode element carrying one pre-filled value, the starting state for the clearing test.
+	private static string BuildOpenEditPageAddModeDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Open Edit Page Clear E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "OpenPage1", "type": "openEditPage", "caption": "Fill in the account",
+		      "openEditPage": {
+		        "page": "AccountPageV2",
+		        "editMode": "add",
+		        "recommendation": "Fill in the account details",
+		        "defaultValues": [ { "column": "Address", "value": "ClioClearProbe" } ]
+		      } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "OpenPage1" },
+		    { "source": "OpenPage1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	// setElement + setFilter in ONE array: the composition the tool description prescribes after a retarget, and
+	// the shape whose warning behaviour the modify guard is responsible for.
+	private static string BuildAccessRightsSetElementOperations() =>
+		"""
+		[
+		  { "op": "setElement", "elementName": "GrantRights1",
+		    "elementUpdate": { "accessRights": {
+		      "object": "Contact",
+		      "add": [ { "operations": [ "read" ], "level": "permit",
+		                 "grantee": { "type": "role", "role": "All employees" } } ] } } },
+		  { "op": "setFilter", "elementName": "GrantRights1",
+		    "filter": { "object": "Contact", "conditions": [
+		      { "column": "Id", "comparison": "equal", "processParameter": "ContactIdParameter" } ] } }
+		]
+		""";
+
+
+	[Test]
+	[Description("Over the real MCP path, setElement REPLACES an openEditPage element's performer in place: a user assignment becomes a ROLE named by name. Only a real environment proves this end - the role name resolves against SysAdminUnit, and a role performer needs a RoleId parameter the user-task schema does not declare, so the element has to GROW it on an already-saved element rather than at create.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process replaces an openEditPage performer with a role")]
+	public async Task ModifyBusinessProcess_Should_ReplaceOpenEditPagePerformer_WithRole() {
+		// Arrange - an element already assigned to a user, so the change is a REPLACEMENT, not a first write.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpOpenEditPagePerformerSetE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildOpenEditPageSetElementDescriptor(processName, performerType: "user"));
+
+		// Act
+		await ModifyExpectingSuccessAsync(context, processName, """
+			[
+			  { "op": "setElement", "elementName": "OpenPage1",
+			    "elementUpdate": { "openEditPage": {
+			      "performer": { "type": "role", "role": "All employees", "showPage": false } } } }
+			]
+			""");
+
+		// Assert - the helper already refused to read a refusal as success.
+		DescribedPerformer performer = ReadOpenEditPage(
+			await DescribeAsync(context, processName)).Performer!;
+		performer.Type.Should().Be("role",
+			because: "the supplied block REPLACES the assignment - a stale 'user' here would mean the element kept an "
+				+ "assignment the caller overwrote");
+		performer.RoleDisplay.Should().Be("All employees",
+			because: "the name the caller used is kept as the display value, so a human opening the element sees a "
+				+ "role name rather than a GUID");
+		performer.Role.Should().NotBeNullOrWhiteSpace(
+			because: "the macro must be written on the dynamically CREATED RoleId parameter - an empty read would mean "
+				+ "the parameter was never added to the saved element");
+		performer.ShowPage.Should().BeFalse(
+			because: "the block carried showPage:false, which must win over the true written at create");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, setElement updates ONE Log activity interval and leaves the others stored. This is the partial-update contract where it matters most: each interval is two independent platform parameters, so the test proves both that the untouched interval survived AND that the touched one landed with its unit - a number stored without its period would read back with a null unit rather than failing.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process updates one Log activity interval and keeps the rest")]
+	public async Task ModifyBusinessProcess_Should_UpdateOneLogActivityInterval_AndKeepTheRest() {
+		// Arrange - an element logging an activity with a duration and the calendar flag already stored.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpOpenEditPageActivitySetE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildOpenEditPageSetElementDescriptor(processName, withLogActivity: true));
+
+		// Act - change the reminder only.
+		await ModifyExpectingSuccessAsync(context, processName, """
+			[
+			  { "op": "setElement", "elementName": "OpenPage1",
+			    "elementUpdate": { "openEditPage": {
+			      "logActivity": { "remindIn": { "value": 3, "unit": "days" } } } } }
+			]
+			""");
+
+		// Assert
+		DescribedOpenEditPageLogActivity activity = ReadOpenEditPage(
+			await DescribeAsync(context, processName)).LogActivity!;
+		activity.RemindIn!.Value.Should().Be(3, because: "the requested amount reached the server");
+		activity.RemindIn.Unit.Should().Be("days",
+			because: "the PERIOD member landed too - a null unit here would mean the number was stored alone and is "
+				+ "measured in whatever the schema default left behind");
+		activity.Duration!.Value.Should().Be(20,
+			because: "an omitted interval must keep its stored value; a partial update that wiped it would be silent "
+				+ "loss - the panel would still show a duration, from the schema default");
+		activity.Duration.Unit.Should().Be("minutes", because: "and keep its unit with it");
+		activity.ShowInCalendar.Should().BeTrue(
+			because: "an omitted flag is left alone, exactly like the untouched interval");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, setElement turns an openEditPage element's results-by-column list ON against a real lookup column and then OFF again. The OFF half is the one a stand has to prove: the designer clears that field with the literal string 'null', and the read-back has to report 'no column' rather than a column named null.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process enables then disables an openEditPage results-by-column list")]
+	public async Task ModifyBusinessProcess_Should_EnableThenDisableOpenEditPageResultsByColumn() {
+		// Arrange - an element with no results list at all, so enabling it is a first write.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpOpenEditPageResultsSetE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildOpenEditPageSetElementDescriptor(processName));
+
+		// Act 1 - enable it on the saved element.
+		await ModifyExpectingSuccessAsync(context, processName, """
+			[
+			  { "op": "setElement", "elementName": "OpenPage1",
+			    "elementUpdate": { "openEditPage": { "resultsByColumn": { "column": "Owner" } } } }
+			]
+			""");
+
+		// Assert 1 - enabling an object-bound block on an existing element must NOT require the page back.
+		DescribedOpenEditPageResultsByColumn after = ReadOpenEditPage(
+			await DescribeAsync(context, processName)).ResultsByColumn!;
+		after.Enabled.Should().BeTrue(because: "naming a column turns the list on");
+		after.Column.Should().Be("Owner",
+			because: "the stored UId resolved back to the column name, which is what proves the write used the "
+				+ "platform's column identifier rather than the name");
+
+		// Act 2 - turn it off.
+		await ModifyExpectingSuccessAsync(context, processName, """
+			[
+			  { "op": "setElement", "elementName": "OpenPage1",
+			    "elementUpdate": { "openEditPage": { "resultsByColumn": { "enabled": false } } } }
+			]
+			""");
+
+		// Assert 2
+		DescribedOpenEditPageResultsByColumn cleared = ReadOpenEditPage(
+			await DescribeAsync(context, processName)).ResultsByColumn!;
+		cleared.Enabled.Should().BeFalse(because: "the explicit off is stored, not left to a default");
+		cleared.Column.Should().BeNull(
+			because: "the designer's cleared marker is the literal string 'null', and reading it as a column named "
+				+ "'null' would be worse than reporting no column");
+		cleared.ColumnUId.Should().BeNull(
+			because: "no UId remains stored - which is what distinguishes a cleared list from a column that merely "
+				+ "does not resolve here");
+	}
+
+	// Reads the single Open edit page element out of a describe result, so each assertion above stays about the block
+	// rather than about walking the graph.
+	private static DescribedOpenEditPage ReadOpenEditPage(CallToolResult describeResult) =>
+		ParseDescribeResult(describeResult).Elements.Single(element => element.Name == "OpenPage1").OpenEditPage!;
+
+	private static async Task<CallToolResult> DescribeAsync(ArrangeContext context, string processName) =>
+		await CallToolAsync(context, DescribeProcessTool.ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName
+		});
+
+	// The "already configured" starting state every setElement case above edits: an add-mode element whose
+	// performer and Log activity block are optional. Deliberately NOT named ...AddModeDescriptor - that name
+	// is taken by the clearing test's builder, and an overload pair would silently route a one-argument call
+	// to the other one.
+	private static string BuildOpenEditPageSetElementDescriptor(string processName, string performerType = null,
+			bool withLogActivity = false) {
+		string performer = performerType == null
+			? string.Empty
+			: $$""", "performer": { "type": "{{performerType}}" }""";
+		string logActivity = withLogActivity
+			? """, "logActivity": { "duration": { "value": 20, "unit": "minutes" }, "showInCalendar": true }"""
+			: string.Empty;
+		return $$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Open Edit Page setElement E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "OpenPage1", "type": "openEditPage", "caption": "Fill in the account",
+		      "openEditPage": {
+		        "page": "AccountPageV2",
+		        "editMode": "add",
+		        "recommendation": "Fill in the account details"{{performer}}{{logActivity}}
+		      } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "OpenPage1" },
+		    { "source": "OpenPage1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+	}
+
+	// An edit-mode Open edit page element opening a fixed record, used as the starting state for the mode switch.
+	private static string BuildOpenEditPageEditModeDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Open Edit Page setElement E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "OpenPage1", "type": "openEditPage", "caption": "Review the account",
+		      "openEditPage": {
+		        "page": "AccountPageV2",
+		        "editMode": "edit",
+		        "recommendation": "Review the account",
+		        "recordId": { "value": "e308b781-3c5b-4ecb-89ef-5c1ed4da488e" }
+		      } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "OpenPage1" },
+		    { "source": "OpenPage1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	// The same mode switch with and without the replacement payload the guard requires.
+	private static string BuildOpenEditPageModeSwitchOperations(bool withDefaultValues) {
+		string payload = withDefaultValues
+			? """, "defaultValues": [ { "column": "Address", "value": "ClioSetElementProbe" } ]"""
+			: string.Empty;
+		return $$"""
+		[
+		  { "op": "setElement", "elementName": "OpenPage1",
+		    "elementUpdate": { "openEditPage": { "editMode": "add"{{payload}} } } }
+		]
+		""";
+	}
+
 	private static string BuildSignalStartDescriptor(string processName) =>
 		$$"""
 		{
@@ -947,6 +1655,80 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	private static string BuildAmountMappingOperations(string expression) =>
 		"[{\"op\":\"addMapping\",\"mapping\":{\"targetProcessParameter\":\"Amount\",\"expression\":\""
 		+ expression.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"}}]";
+
+	// A gateway with two branches, so both directions of a setFlow re-kind are legal on it: a lone
+	// unconditional flow out of a deciding gateway would be normalised to the default branch instead.
+	// An ORDINARY element as the branch source, which is where both re-kind directions are legal. One plain
+	// flow and two conditional ones: re-kinding the plain one leaves no unconditional sibling behind, and
+	// re-kinding EndC leaves EndB conditional, so neither operation trips a rule.
+	private static string BuildThreeBranchTaskDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP SetFlow E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "Start1", "type": "startEvent" },
+		    { "name": "Decide", "type": "performTask" },
+		    { "name": "EndA", "type": "endEvent" },
+		    { "name": "EndB", "type": "endEvent" },
+		    { "name": "EndC", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "Start1", "target": "Decide" },
+		    { "source": "Decide", "target": "EndA" },
+		    { "source": "Decide", "target": "EndB", "kind": "conditional", "condition": "2 > 1" },
+		    { "source": "Decide", "target": "EndC", "kind": "conditional", "condition": "3 > 1" }
+		  ]
+		}
+		""";
+
+	// The three-branch fixture with every flow LABELLED, which is the state a designer-authored process is
+	// normally in. Kept separate from BuildThreeBranchTaskDescriptor so the re-kind test above keeps
+	// asserting the unlabelled case - a label present in both would hide a label-only regression in either.
+	private static string BuildLabelledThreeBranchTaskDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Flow Label E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "Start1", "type": "startEvent" },
+		    { "name": "Decide", "type": "performTask" },
+		    { "name": "EndA", "type": "endEvent" },
+		    { "name": "EndB", "type": "endEvent" },
+		    { "name": "EndC", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "Start1", "target": "Decide", "label": "Amount known" },
+		    { "source": "Decide", "target": "EndA", "label": "Take this branch" },
+		    { "source": "Decide", "target": "EndB", "kind": "conditional", "condition": "2 > 1",
+		      "label": "Original outcome" },
+		    { "source": "Decide", "target": "EndC", "kind": "conditional", "condition": "3 > 1",
+		      "label": "Everything else" }
+		  ]
+		}
+		""";
+
+	private static string BuildTwoBranchDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP SetFlow E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "Start1", "type": "startEvent" },
+		    { "name": "Decide", "type": "exclusiveGateway" },
+		    { "name": "EndA", "type": "endEvent" },
+		    { "name": "EndB", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "Start1", "target": "Decide" },
+		    { "source": "Decide", "target": "EndA", "kind": "default" },
+		    { "source": "Decide", "target": "EndB", "kind": "conditional", "condition": "2 > 1" }
+		  ]
+		}
+		""";
 
 	private static string BuildDescriptor(string processName) =>
 		$$"""
@@ -2192,6 +2974,13 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	/// Creates the process and asserts the create itself succeeded. An unchecked create turns every later
 	/// assertion into a statement about a process that does not exist.
 	/// </summary>
+	/// <remarks>
+	/// The success LINE, not <c>IsError</c> alone: clio-run reports a refused build with exit code 1 inside the
+	/// payload while <c>isError</c> stays null, so an IsError-only gate cannot fail for a refusal. Without this the
+	/// arrange's refusal — an older CrtProcessBuilder on the stand being the likely cause — surfaces much later as
+	/// a Single(...) or null-reference failure in the act stage, pointing the reader at the wrong subsystem
+	/// instead of showing the server's message.
+	/// </remarks>
 	private static async Task CreateProcessAsync(ArrangeContext context, string processName, string descriptor) {
 		CallToolResult result = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
@@ -2199,6 +2988,9 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		});
 		result.IsError.Should().NotBeTrue(
 			because: $"the arrange must actually create '{processName}', or the test measures nothing");
+		SerializeToolText(result).Should().Contain("created (UId:",
+			because: "only a genuinely successful build logs the created-schema line; IsError stays null on a "
+				+ "refusal, so without this the arrange's failure is read as success");
 	}
 
 	/// <summary>Applies operations and asserts the edit succeeded, returning the result so a caller can read its notices.</summary>

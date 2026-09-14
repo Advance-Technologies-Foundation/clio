@@ -711,29 +711,16 @@ public sealed record PageUpdateArgs(
 
 	[property: JsonPropertyName("body")]
 	[property: Description("Full JavaScript page body with markers, passed as a RAW STRING (not a JSON object/dict) — the schema source text with its /**MARKER*/ pairs. Pass either `body` (inline string) or `body-file` (path); one is required. WARNING: re-sending the full inherited body from `get-page.files.bodyFile` back verbatim is wrong in BOTH modes, and the two modes fail differently. In `append` a full-config body is rejected UP-FRONT, offline, and the rejection points at replace mode; that mode requires the diff form (SCHEMA_VIEW_MODEL_CONFIG_DIFF / SCHEMA_MODEL_CONFIG_DIFF) and only the new viewConfigDiff/handlers operations plus the required marker envelope. In `replace` the body REACHES THE SERVER and can fail there with 'Object vs Array' when it re-applies merges already inherited from the parent hierarchy — this is the mode the server error actually fires in.")]
-	string? Body,
+	string? Body = null,
 
 	[property: JsonPropertyName("resources")]
 	[property: Description(McpToolDescriptions.PageResources)]
-	string? Resources,
+	string? Resources = null,
 
 	[property: JsonPropertyName("dry-run")]
 	[property: Description("If true, validate without saving. Default: false")]
-	bool? DryRun,
+	bool? DryRun = null,
 
-	[property: JsonPropertyName("environment-name")]
-	[property: Description(McpToolDescriptions.EnvironmentName)]
-	string? EnvironmentName,
-
-	[property: JsonPropertyName("uri")]
-	[property: Description(McpToolDescriptions.Uri)]
-	string? Uri,
-	[property: JsonPropertyName("login")]
-	[property: Description(McpToolDescriptions.Login)]
-	string? Login,
-	[property: JsonPropertyName("password")]
-	[property: Description(McpToolDescriptions.Password)]
-	string? Password,
 	[property: JsonPropertyName("skip-sampling")]
 	[property: Description("Reserved escape hatch. Omit by default. Pre-condition for setting true: the immediately preceding user message in this turn contains an explicit instruction to skip the AI semantic review, OR the MCP host has reported sampling as unavailable in this session. Absent that evidence, omit this field. Default: false")]
 	bool? SkipSampling = null,
@@ -747,7 +734,7 @@ public sealed record PageUpdateArgs(
 	[property: Description("Absolute path to a file containing the page body. Used when `body` is empty. Enables passing large bodies without inline JSON escaping.")]
 	string? BodyFile = null,
 	[property: JsonPropertyName("mode")]
-	[property: Description("Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming body fragment with the schema's current body on the server — viewConfigDiff entries dedupe by `name`, handlers by `request`, and SCHEMA_CONVERTERS / SCHEMA_VALIDATORS entries by type key (incoming wins). The final merged web body is rejected when a custom validator reference lacks a matching SCHEMA_VALIDATORS declaration. Use 'append' when adding a component without clobbering existing customizations. Append requires the diff form; a full-config body (SCHEMA_VIEW_MODEL_CONFIG / SCHEMA_MODEL_CONFIG, or mobile viewModelConfig / modelConfig) is rejected up-front — use 'replace' for those.")]
+	[property: Description("Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming body fragment with the schema's current body on the server — viewConfigDiff entries are replaced only when BOTH `operation` and `name` match — and, for a `remove`, whether it targets `properties` — with incoming winning in place. Every existing operation the fragment does not collide with is preserved, including a second operation on the same component. The one exception: a FURTHER existing entry of an identity the fragment already superseded is dropped rather than re-applied after the replacement. Handlers dedupe by `request`. SCHEMA_CONVERTERS and SCHEMA_VALIDATORS entries merge by type key and incoming wins, and the final merged web body is rejected when a custom validator reference has no matching SCHEMA_VALIDATORS declaration. Use 'append' when adding a component without clobbering existing customizations. Append requires the diff form; a full-config body (SCHEMA_VIEW_MODEL_CONFIG / SCHEMA_MODEL_CONFIG, or mobile viewModelConfig / modelConfig) is rejected up-front — use 'replace' for those. Separately, at APPLY time (not append-specific — a 'replace' body produces it too): the differ applies whole operation GROUPS in a fixed order (merges, then removes/inserts/moves, `set` last), never in viewConfigDiff array order, so a `merge`, `move`, or element `remove` beside an `insert` for one `name` — or a `move` whose name the same body also element-removes — resolves against a base without that component and is silently dropped. The same holds for any two operations whose groups run in sequence for one name: a `merge` beside an element `remove` or a `set`, and a property `remove` beside an element `remove` or beside a `set`. The response carries an advisory `warnings` entry naming the component; fold the transform's values into the `insert`, or use `set`.")]
 	string? Mode = null,
 	[property: JsonPropertyName("target-package-uid")]
 	[property: Description("Explicit target package UId for the replacing schema. Overrides automatic design-package resolution. Required when multiple apps replace the same platform page and automatic resolution would land the edit in the wrong app's design package.")]
@@ -764,4 +751,4 @@ public sealed record PageUpdateArgs(
 	[property: JsonPropertyName("validate")]
 	[property: Description("Run client-side content and run-process validation before saving. Default: true. Set false only as an explicit escape hatch for a pre-existing page defect; JavaScript syntax, AST loadability, replace-mode marker integrity, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. It stays combinable with force=true - the two flags are orthogonal (one gates content checks, the other the baseline/conflict guard) - and the response then warns that both are relaxed.")]
 	bool? Validate = null
-);
+) : ConnectionArgsBase;

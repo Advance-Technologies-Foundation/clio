@@ -1122,10 +1122,18 @@ public static class ManagerMap{
 			"webservice" => EventType.WebServiceTask,
 			"callactivity" => EventType.SubProcess,
 			"eventsubprocessexpanded" => EventType.EventSubProcess,
-			// "sendemail" is the dedicated build/describe token for the Send email element (EmailTemplateUserTask) —
-			// an activity like any user task for the connection rules; the camelCase data-id emailTemplateUserTask
-			// is already covered by the "usertask"-suffix arm below.
-			"usertask" or "performtask" or "sendemail" => EventType.UserTask,
+			// "sendemail", "approval" and "openeditpage" are the dedicated build/describe tokens for the Send email
+			// (EmailTemplateUserTask), Approval (ApprovalUserTask) and Open edit page (OpenEditPageUserTask)
+			// elements — activities like any user task for the connection rules. They must be listed EXPLICITLY:
+			// none ends with the "usertask" suffix the arm below matches on, so a missing entry resolves a VALID
+			// graph to Unknown and validate-process-graph rejects it. The camelCase data-ids
+			// emailTemplateUserTask / approvalUserTask / openEditPageUserTask are already covered by that suffix arm.
+			// "readdata" / "changedata" / "changeaccessrights" are the same case: dedicated build/describe
+			// tokens whose data-ids (readDataUserTask / changeDataUserTask / changeAdminRightsUserTask) already
+			// resolve through that suffix arm, while the token a descriptor actually carries does not end in
+			// "usertask" and would otherwise fall to Unknown — a hard validator Error on a graph that builds fine.
+			"usertask" or "performtask" or "sendemail" or "approval" or "openeditpage" or "readdata"
+					or "changedata" or "changeaccessrights" => EventType.UserTask,
 			var i when i.StartsWith("intermediatecatchevent", StringComparison.Ordinal) => EventType.IntermediateCatchSignalEvent,
 			var i when i.StartsWith("intermediatethrowevent", StringComparison.Ordinal) => EventType.IntermediateThrowSignalEvent,
 			// every system/user action element ends with the "usertask" suffix and is an activity.

@@ -215,4 +215,27 @@ public sealed class SourceCodeSchemaCreateCommandTests {
 		_applicationClient.Received(1).ExecutePostRequest(SaveSchemaUrl,
 			Arg.Is<string>(s => s.Contains("Helper utilities")));
 	}
+
+	[Test]
+	[Description("An unanswerable duplicate-name check aborts create-schema instead of proceeding, so an empty SelectQuery body is never read as 'the schema does not exist'.")]
+	public void TryCreate_ShouldAbort_WhenDuplicateCheckCannotBeAnswered() {
+		// Arrange
+		var selectResponses = new Queue<string>([
+			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
+			string.Empty
+		]);
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>())
+			.Returns(_ => selectResponses.Dequeue());
+		var options = new SourceCodeSchemaCreateOptions { SchemaName = "UsrMyHelper", PackageName = "Custom" };
+
+		// Act
+		bool result = _command.TryCreate(options, out SourceCodeSchemaCreateResponse response);
+
+		// Assert
+		result.Should().BeFalse("an unanswerable duplicate check is a failure, not a licence to create");
+		response.Error.Should().Contain("Could not check whether schema",
+				"the caller must be told the check failed rather than that the schema is absent")
+			.And.Contain("SelectQuery", "the caller must learn which request could not be answered");
+		_applicationClient.Received(0).ExecutePostRequest(CreateNewSchemaUrl, Arg.Any<string>());
+	}
 }

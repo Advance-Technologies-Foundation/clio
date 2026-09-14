@@ -101,6 +101,7 @@ Commands:
   get-related-page-addon                      Read an object's current RelatedPage configuration (bound default/add pages per role and type), get-related-pages, related-page-addon-get
   get-schema                                  Read the body and metadata of a C# source-code schema from a remote Creatio environment, schema-get
   get-sql-schema                              Read the body and metadata of a SQL script schema from a remote Creatio environment, sql-schema-get
+  get-theme                                   Read the content (theme.css) and metadata of a custom Creatio theme from the target environment
   get-user-culture                            Print the logged-in Creatio user's profile culture (e.g. en-US, uk-UA) for an environment, profile-language
   get-webservice-url                          Show the configured base URL for a web service, gwu
   git-sync                                    Syncs environment with Git repository, sync
@@ -161,8 +162,8 @@ Commands:
   pin-certificate                             Select the preferred local-machine certificate for IIS HTTPS deployments
   ping-app                                    Verify connectivity to a Creatio environment, ping
   pkg-hotfix                                  Enable/disable hotfix state for package, hf, hotfix
-  pkg-to-db                                   Load packages into Creatio database storage, 2db, todb
-  pkg-to-file-system                          Load packages into Creatio file system storage, 2fs, tofs
+  pkg-to-db                                   Load file-system package definitions into the configuration database (no package data), 2db, todb
+  pkg-to-file-system                          Export configuration-database packages to the file system (no package data), 2fs, tofs
   prune-db-templates                          Interactively prune managed PostgreSQL templates
   publish-app                                 Publish a workspace to a ZIP archive or hub folder, ph, publish-hub, publish-workspace, publishw
   pull-pkg                                    Download package from a web application, download

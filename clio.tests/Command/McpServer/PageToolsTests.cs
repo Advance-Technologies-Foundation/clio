@@ -60,8 +60,7 @@ public class PageToolsTests
 	[Description("Serializes the update-page validation escape hatch using the kebab-case MCP argument name.")]
 	public void PageUpdateArgs_ShouldSerializeValidateUsingKebabCase() {
 		// Arrange
-		PageUpdateArgs args = new("UsrValidationEscape_FormPage", "define(...)", null, null, null, null, null, null,
-			Validate: false);
+		PageUpdateArgs args = new("UsrValidationEscape_FormPage", "define(...)", Validate: false);
 
 		// Act
 		string json = System.Text.Json.JsonSerializer.Serialize(args);
@@ -93,8 +92,7 @@ public class PageToolsTests
 		PageUpdateTool tool = BuildAppendGuardTool(applicationClient);
 		string body = CreatePageBody(
 			viewConfigDiff: """[{"operation":"insert","name":"Playbook_g0bz14m","values":{"type":"crt.Playbook","_designOptions":{"templateValuesMapping":{"caption":"Playbook_KnowledgeBaseDS_Name"}}}},{"operation":"insert","name":"RunBpButton","values":{"type":"crt.Button","clicked":{"request":"crt.RunBusinessProcessRequest","params":{"processRunType":"RegardlessOfThePage"}}}}]""");
-		PageUpdateArgs args = new("UsrValidationEscape_FormPage", body, null, false, null, null, null, null,
-			SkipSampling: true, TargetSchemaUId: "validation-schema-uid", Validate: false);
+		PageUpdateArgs args = new("UsrValidationEscape_FormPage", body, null, false, SkipSampling: true, TargetSchemaUId: "validation-schema-uid", Validate: false);
 
 		// Act
 		PageUpdateResponse response = await tool.UpdatePage(args, null);
@@ -126,15 +124,12 @@ public class PageToolsTests
 			}.ToString());
 		PageUpdateTool tool = BuildAppendGuardTool(applicationClient);
 		// A mobile body carrying an AMD-only 'handlers' section - a CONTENT rule, the half validate=false skips.
-		PageUpdateArgs args = new("UsrMobile_FormPage",
-			"""
+		PageUpdateArgs args = new("UsrMobile_FormPage", """
 			{
 			  "viewConfigDiff": [],
 			  "handlers": []
 			}
-			""",
-			null, true, null, null, null, null,
-			SkipSampling: true, TargetSchemaUId: "validation-schema-uid");
+			""", null, true, SkipSampling: true, TargetSchemaUId: "validation-schema-uid");
 
 		// Act
 		PageUpdateResponse response = await tool.UpdatePage(args, null);
@@ -152,8 +147,7 @@ public class PageToolsTests
 	public async System.Threading.Tasks.Task PageUpdateTool_Should_WarnRatherThanReject_WhenValidationBypassMeetsForce() {
 		// Arrange
 		PageUpdateTool tool = BuildAppendGuardTool();
-		PageUpdateArgs args = new("UsrValidationEscape_FormPage", CreatePageBody(), null, true, null, null, null, null,
-			SkipSampling: true, Force: true, Validate: false);
+		PageUpdateArgs args = new("UsrValidationEscape_FormPage", CreatePageBody(), null, true, SkipSampling: true, Force: true, Validate: false);
 
 		// Act
 		PageUpdateResponse response = await tool.UpdatePage(args, null);
@@ -171,8 +165,7 @@ public class PageToolsTests
 	public async System.Threading.Tasks.Task PageUpdateTool_Should_RetainSyntaxGate_WhenValidateIsFalse() {
 		// Arrange
 		PageUpdateTool tool = BuildSyntaxFailureTool(out IApplicationClient applicationClient);
-		PageUpdateArgs args = new("UsrValidationEscapeSyntax_FormPage", SyntaxBrokenMarkerBody, null, true, null, null, null, null,
-			SkipSampling: true, Validate: false);
+		PageUpdateArgs args = new("UsrValidationEscapeSyntax_FormPage", SyntaxBrokenMarkerBody, null, true, SkipSampling: true, Validate: false);
 
 		// Act
 		PageUpdateResponse response = await tool.UpdatePage(args, null);
@@ -201,11 +194,7 @@ public class PageToolsTests
 	[Test]
 	[Description("Serializes create-page MCP request arguments using kebab-case field names")]
 	public void PageCreateToolArgs_Should_Serialize_Using_Kebab_Case_Field_Names() {
-		PageCreateArgs args = new(
-			"UsrDemo_BlankPage", "BlankPageTemplate", "Custom",
-			"Demo page", "Demo description", "UsrDemoEntity",
-			"sandbox", null, null, null,
-			OptionalProperties: """[{"key":"DashboardsEntitySchemaName","value":"Contact"}]""");
+		PageCreateArgs args = new("UsrDemo_BlankPage", "BlankPageTemplate", "Custom", "Demo page", "Demo description", "UsrDemoEntity", OptionalProperties: """[{"key":"DashboardsEntitySchemaName","value":"Contact"}]""") { EnvironmentName = "sandbox" };
 
 		string json = System.Text.Json.JsonSerializer.Serialize(args);
 
@@ -313,10 +302,10 @@ public class PageToolsTests
 	[Description("Serializes page MCP request arguments using kebab-case field names")]
 	public void PageToolArgs_Should_Serialize_Using_Kebab_Case_Field_Names() {
 		// Arrange
-		PageGetArgs getArgs = new("UsrTodo_FormPage", "sandbox", "https://sandbox", "Supervisor", "Supervisor");
-		PageListArgs listArgs = new("UsrTodo", null, "FormPage", 25, "sandbox", "https://sandbox", "Supervisor", "Supervisor");
-		PageListArgs listArgsByApp = new(null, "UsrTodo", "FormPage", 25, "sandbox", "https://sandbox", "Supervisor", "Supervisor");
-		PageUpdateArgs updateArgs = new("UsrTodo_FormPage", "define(...)", "{\"UsrTitle\":\"Title\"}", true, "sandbox", "https://sandbox", "Supervisor", "Supervisor");
+		PageGetArgs getArgs = new("UsrTodo_FormPage") { EnvironmentName = "sandbox", Uri = "https://sandbox", Login = "Supervisor", Password = "Supervisor" };
+		PageListArgs listArgs = new("UsrTodo", null, "FormPage", 25) { EnvironmentName = "sandbox", Uri = "https://sandbox", Login = "Supervisor", Password = "Supervisor" };
+		PageListArgs listArgsByApp = new(null, "UsrTodo", "FormPage", 25) { EnvironmentName = "sandbox", Uri = "https://sandbox", Login = "Supervisor", Password = "Supervisor" };
+		PageUpdateArgs updateArgs = new("UsrTodo_FormPage", "define(...)", "{\"UsrTitle\":\"Title\"}", true) { EnvironmentName = "sandbox", Uri = "https://sandbox", Login = "Supervisor", Password = "Supervisor" };
 
 		// Act
 		string getJson = System.Text.Json.JsonSerializer.Serialize(getArgs);
@@ -677,7 +666,7 @@ public class PageToolsTests
 		PageGetTool tool = new(command, logger, commandResolver, new PageFileWriter(mockFs));
 
 		// Act
-		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage"));
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -2263,6 +2252,117 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("TryUpdatePage returns BOTH the insert-downgrade warning and the inert-operation warning instead of one overwriting the other (locks CombineWarnings).")]
+	public void TryUpdatePage_WhenDowngradeAndInertPairBothApply_ReturnsBothWarningsAndSaves() {
+		// Arrange — the stored schema inserts UsrName AND UsrPhone. The incoming replace body downgrades
+		// UsrName's insert to a merge (a downgrade finding) and carries an insert+merge pair for UsrPhone
+		// (an inert-operation finding), so the two detectors fire on one save.
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse(
+				"UsrBothWarnings_FormPage",
+				"both-schema-uid",
+				"both-package-uid",
+				"UsrBothPackage",
+				"BasePage").ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["body"] = CreatePageBody("""
+						[
+							{ "operation": "insert", "name": "UsrName", "values": { "type": "crt.Input" } },
+							{ "operation": "insert", "name": "UsrPhone", "values": { "type": "crt.Input" } }
+						]
+						"""),
+					["localizableStrings"] = new JArray()
+				}
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrBothWarnings_FormPage",
+			Body = CreatePageBody("""
+				[
+					{ "operation": "merge", "name": "UsrName", "values": { "label": "X" } },
+					{ "operation": "insert", "name": "UsrPhone", "values": { "type": "crt.Input" } },
+					{ "operation": "merge", "name": "UsrPhone", "values": { "visible": false } }
+				]
+				"""),
+			DryRun = false
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "both findings are advisory and neither may block the save");
+		response.Warnings.Should().Contain(w => w.Contains("UsrName") && w.Contains("orphaned"),
+			because: "the insert->merge downgrade warning must survive the second warning source");
+		response.Warnings.Should().Contain(w => w.Contains("UsrPhone") && w.Contains("'merge'"),
+			because: "the inert insert+merge pair must be reported too — assigning response.Warnings per source would silently drop whichever ran first");
+	}
+
+	[Test]
+	[Description("TryUpdatePage reports an inert operation pair on a dry run, without saving, so the caller learns before writing.")]
+	public void TryUpdatePage_WhenDryRunBodyCarriesInertPair_ReturnsWarningWithoutSaving() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse(
+				"UsrDryInert_FormPage",
+				"dry-inert-schema-uid",
+				"dry-inert-package-uid",
+				"UsrDryInertPackage",
+				"BasePage").ToString());
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrDryInert_FormPage",
+			Body = CreatePageBody("""
+				[
+					{ "operation": "remove", "name": "UsrName" },
+					{ "operation": "move", "name": "UsrName", "parentName": "Other", "propertyName": "items", "index": 0 }
+				]
+				"""),
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "a dry run of a valid body succeeds; the finding is advisory");
+		response.DryRun.Should().BeTrue(because: "the dry-run flag must still be reported on the envelope");
+		response.Warnings.Should().Contain(w => w.Contains("UsrName") && w.Contains("'move'"),
+			because: "a dry run is exactly the call that asks whether a body is right before writing it, so a body-only finding belongs there");
+		applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("SaveSchema")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
 	[Description("PageUpdateTool merges the command's downgrade warning with body-only validation warnings instead of overwriting either (locks MergeWarnings).")]
 	public async System.Threading.Tasks.Task UpdatePage_WhenDowngradeAndAwaitWarningsBothApply_MergesBothIntoResponse() {
 		// Arrange — the stored schema inserts UsrName (so the incoming merge is a downgrade), and the
@@ -2304,7 +2404,7 @@ public class PageToolsTests
 		string body = CreatePageBody(
 			viewConfigDiff: """[{ "operation": "merge", "name": "UsrName", "values": { "label": "$Resources.Strings.UsrName" } }]""",
 			handlers: """[{ request: "crt.HandleViewModelInitRequest", handler: async (request, next) => { const x = $context["UsrMode"]; return next?.handle(request); } }]""");
-		PageUpdateArgs args = new("UsrMerge_FormPage", body, null, false, "dev", null, null, null, SkipSampling: true);
+		PageUpdateArgs args = new("UsrMerge_FormPage", body, null, false, SkipSampling: true) { EnvironmentName = "dev" };
 
 		// Act
 		PageUpdateResponse response = await tool.UpdatePage(args, null);
@@ -2324,7 +2424,7 @@ public class PageToolsTests
 		// Arrange
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageValidateTool tool = new(mobileCatalog, webCatalog);
+		PageValidateTool tool = new(mobileCatalog, webCatalog, Substitute.For<System.IO.Abstractions.IFileSystem>());
 		string body = CreatePageBody(
 			handlers: """[{ request: "crt.HandleViewModelInitRequest", handler: async (request, next) => { const x = $context["UsrMode"]; return next?.handle(request); } }]""");
 		PageValidateArgs args = new(body);
@@ -2345,7 +2445,7 @@ public class PageToolsTests
 		// Arrange
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageValidateTool tool = new(mobileCatalog, webCatalog);
+		PageValidateTool tool = new(mobileCatalog, webCatalog, Substitute.For<System.IO.Abstractions.IFileSystem>());
 		string body = CreatePageBody(
 			viewConfigDiff: """
 				[
@@ -2795,7 +2895,7 @@ public class PageToolsTests
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string bodyWithBadJson = CreatePageBody(viewConfigDiff: "[{ bad json }]");
-		PageUpdateArgs args = new("UsrTest_FormPage", bodyWithBadJson, null, null, null, null, null, null);
+		PageUpdateArgs args = new("UsrTest_FormPage", bodyWithBadJson);
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -2836,7 +2936,7 @@ public class PageToolsTests
 			"        }]\n" +
 			"    };\n" +
 			"});";
-		PageUpdateArgs args = new("UsrTest_FormPage", incidentBody, null, null, null, null, null, null);
+		PageUpdateArgs args = new("UsrTest_FormPage", incidentBody);
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -2890,7 +2990,7 @@ public class PageToolsTests
 		PageUpdateTool tool = BuildSyntaxFailureTool(out IApplicationClient applicationClient);
 		PageUpdateArgs args = new(
 			"UsrBadOptionalProps_FormPage", SyntaxBrokenMarkerBody, null, DryRun: true,
-			"local", null, null, null, OptionalProperties: "{not-an-array}");
+			OptionalProperties: "{not-an-array}") { EnvironmentName = "local" };
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -2913,8 +3013,8 @@ public class PageToolsTests
 		// Arrange
 		PageUpdateTool tool = BuildSyntaxFailureTool(out IApplicationClient applicationClient);
 		PageUpdateArgs args = new(
-			"UsrValidationOnly_FormPage", SyntaxBrokenMarkerBody, Resources: "{\"UsrTitle\":", DryRun: true,
-			"local", null, null, null);
+			"UsrValidationOnly_FormPage", SyntaxBrokenMarkerBody, Resources: "{\"UsrTitle\":", DryRun: true)
+			{ EnvironmentName = "local" };
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -2947,8 +3047,8 @@ public class PageToolsTests
 			+ "/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, "
 			+ "/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 		PageUpdateArgs args = new(
-			"UsrRunProcessValidation_FormPage", runProcessBody, null, DryRun: true,
-			"local", null, null, null);
+			"UsrRunProcessValidation_FormPage", runProcessBody, null, DryRun: true)
+			{ EnvironmentName = "local" };
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -3006,7 +3106,7 @@ public class PageToolsTests
 		string body = CreatePageBody(
 			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"UpperCase":{"type":"usr.UpperCase","params":{"message":"$Resources.Strings.UsrUpperCaseValidator_Message"}}}}}}""",
 			validators: """{"usr.UpperCase":{"validator":function(config){return function(control){return null;}},"params":[{"name":"message"}],"async":false}}""");
-		PageUpdateArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
+		PageUpdateArgs args = new("UsrTest_FormPage", body);
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -3041,7 +3141,7 @@ public class PageToolsTests
 		string body = CreatePageBody(
 			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"UpperCase":{"type":"usr.UpperCase","params":{"message":"#ResourceString(UsrUpperCaseValidator_Message)#"}}}}}}""",
 			validators: """{"usr.UpperCase":{"validator":function(config){return function(control){return null;}},"params":[{"name":"message"}],"async":false}}""");
-		PageUpdateArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
+		PageUpdateArgs args = new("UsrTest_FormPage", body);
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -3066,7 +3166,7 @@ public class PageToolsTests
 		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string body = CreatePageBody(
 			handlers: """{ request: "crt.HandleViewModelInitRequest", handler: async (request, next) => { await next?.handle(request); } }""");
-		PageUpdateArgs args = new("UsrHandlerShape_FormPage", body, null, true, null, null, null, null);
+		PageUpdateArgs args = new("UsrHandlerShape_FormPage", body, null, true);
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -3097,7 +3197,7 @@ public class PageToolsTests
 		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string body = CreatePageBody(
 			handlers: """[{ handler: async (request, next) => { await next?.handle(request); } }]""");
-		PageUpdateArgs args = new("UsrHandlerShape_FormPage", body, null, true, null, null, null, null);
+		PageUpdateArgs args = new("UsrHandlerShape_FormPage", body, null, true);
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -3128,7 +3228,7 @@ public class PageToolsTests
 		string body = CreatePageBody(
 			viewConfigDiff: """[{"operation":"insert","name":"UsrName","values":{"type":"crt.Input","control":"$UsrName"}}]""",
 			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"NameMaxLength":{"type":"crt.MaxLength","params":{"max":4}}}}}}""");
-		PageUpdateArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
+		PageUpdateArgs args = new("UsrTest_FormPage", body);
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -3161,7 +3261,7 @@ public class PageToolsTests
 			viewConfigDiff: """[{"operation":"insert","name":"UsrCode","values":{"type":"crt.Input","control":"$UsrCode","validators":[{"id":"usr.MaxLengthFromSysSettingValidator","params":{"settingCode":"MaxProcessLoopCount","message":"Too long"}}]}}]""",
 			viewModelConfig: """{"attributes":{"UsrCode":{"modelConfig":{"path":"PDS.UsrCode"}}}}""",
 			validators: """{"usr.MaxLengthFromSysSettingValidator":{"validator":function(config){return async function(control){return null;};},"params":[{"name":"settingCode"},{"name":"message"}],"async":true}}""");
-		PageUpdateArgs args = new("UsrTest_FormPage", body, null, null, null, null, null, null);
+		PageUpdateArgs args = new("UsrTest_FormPage", body);
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -3427,7 +3527,7 @@ public class PageToolsTests
 		PageGetTool tool = new(command, logger, commandResolver, new PageFileWriter(mockFs));
 
 		// Act
-		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", "sandbox", null, null, null));
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage") { EnvironmentName = "sandbox" });
 
 		// Assert
 		response.Success.Should().BeTrue(because: "the baseline capture must not affect a successful get-page");
@@ -3474,7 +3574,7 @@ public class PageToolsTests
 		PageGetTool tool = new(command, logger, commandResolver, new PageFileWriter(mockFs));
 
 		// Act
-		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", "sandbox", null, null, null));
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage") { EnvironmentName = "sandbox" });
 
 		// Assert
 		response.Success.Should().BeTrue(because: "the baseline capture must not affect a successful get-page");
@@ -3520,7 +3620,7 @@ public class PageToolsTests
 		PageGetTool tool = new(command, logger, commandResolver, new PageFileWriter(mockFs));
 
 		// Act
-		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", "sandbox", null, null, null));
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage") { EnvironmentName = "sandbox" });
 
 		// Assert
 		response.Success.Should().BeTrue(because: "a failed checksum capture must never fail get-page (best-effort, FR-10)");
@@ -3674,7 +3774,7 @@ public class PageToolsTests
 		MockFileSystem mockFs = new();
 		PageGetTool tool = new(command, logger, commandResolver, new PageFileWriter(mockFs));
 
-		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage"));
 
 		response.Success.Should().BeTrue(because: "page read and file write should both succeed");
 		response.Bundle.Should().BeNull(because: "bundle must be omitted from MCP response when written to disk");
@@ -3720,7 +3820,7 @@ public class PageToolsTests
 		MockFileSystem mockFs = new();
 		PageGetTool tool = new(command, logger, commandResolver, new PageFileWriter(mockFs));
 
-		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage"));
 
 		response.Files.BodyFile.Should().Contain(".clio-pages",
 			because: "files must be written under .clio-pages directory");
@@ -3817,7 +3917,7 @@ public class PageToolsTests
 		(PageGetTool tool, MockFileSystem mockFs) = CreatePageGetToolWithBody(proxyBody);
 
 		// Act
-		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage"));
 
 		// Assert
 		response.Success.Should().BeTrue(because: "get-page should succeed even when the source body has proxy view-model attribute bindings");
@@ -3839,7 +3939,7 @@ public class PageToolsTests
 		(PageGetTool tool, MockFileSystem mockFs) = CreatePageGetToolWithBody(canonicalBody);
 
 		// Act
-		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage"));
 
 		// Assert
 		response.Success.Should().BeTrue(because: "get-page should succeed for a body with canonical bindings");
@@ -3860,7 +3960,7 @@ public class PageToolsTests
 		string oldBodyPath = System.IO.Path.Combine(schemaDir, "body.js");
 		mockFs.File.WriteAllText(oldBodyPath, "previous session body");
 
-		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage"));
 
 		response.Success.Should().BeTrue();
 		mockFs.File.Exists(stalePath).Should().BeFalse(
@@ -3877,7 +3977,7 @@ public class PageToolsTests
 	public void PageGetTool_WhenWriting_AddsGitIgnoreEntry() {
 		(PageGetTool tool, MockFileSystem mockFs) = CreatePageGetToolWithBody(CreatePageBody());
 
-		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage"));
 
 		response.Success.Should().BeTrue();
 		string gitignorePath = System.IO.Path.Combine(mockFs.Directory.GetCurrentDirectory(), ".clio-pages", ".gitignore");
@@ -3930,7 +4030,7 @@ public class PageToolsTests
 			.Do(_ => throw new System.UnauthorizedAccessException("Access denied"));
 		PageGetTool tool = new(command, logger, commandResolver, new PageFileWriter(failingFs));
 
-		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", null, null, null, null));
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage"));
 
 		response.Success.Should().BeFalse(because: "directory creation failure should produce a failed response");
 		response.Error.Should().Contain("Failed to prepare output directory",
@@ -4366,7 +4466,7 @@ public class PageToolsTests
 	}
 
 	[Test]
-	[Description("PageBodyMerger.Merge concatenates viewConfigDiff entries, dedupes by name (incoming wins), and preserves other sections")]
+	[Description("PageBodyMerger.Merge concatenates viewConfigDiff entries, replaces on an (operation, name) collision (incoming wins), and preserves other sections")]
 	public void PageBodyMerger_Should_Merge_ViewConfigDiff_And_Handlers() {
 		string currentBody = "define(\"P\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"RefreshButton\",\"values\":{\"size\":\"large\"}},{\"operation\":\"insert\",\"name\":\"Existing\",\"values\":{\"type\":\"crt.Input\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
@@ -4385,10 +4485,141 @@ public class PageToolsTests
 
 		merged.Should().Contain("\"name\": \"Existing\"", because: "existing entries without collisions are preserved");
 		merged.Should().Contain("\"name\": \"TestButton\"", because: "new entries are appended");
-		merged.Should().Contain("\"size\": \"small\"", because: "incoming wins when names collide (RefreshButton gets size:small)");
+		merged.Should().Contain("\"size\": \"small\"", because: "incoming wins when operation AND name both collide (both entries are a merge on RefreshButton, so it gets size:small)");
 		merged.Should().NotContain("\"size\": \"large\"", because: "the colliding entry is superseded");
 		merged.Should().Contain("crt.KeepMeRequest", because: "existing handlers without request collision are preserved");
 		merged.Should().Contain("usr.TestRequest", because: "new handlers are appended");
+	}
+
+	[Test]
+	[Description("update-page: a save with nothing to report leaves response.Warnings NULL, so the envelope omits the field rather than emitting an empty array")]
+	public void TryUpdatePage_Should_LeaveWarningsNull_WhenNothingToReport() {
+		// Arrange - a body no detector has anything to say about: one insert, one name, no pairs, and a
+		// current body that introduces nothing to downgrade. CombineWarnings must therefore collapse
+		// three empty sources to null, NOT to an empty list: PageUpdateResponse.Warnings is serialized
+		// with null-omission on both Newtonsoft and STJ, so returning [] would ship "warnings":[] on
+		// every clean save. Nothing else pins that, and flipping the return would keep every other test
+		// green while the envelope silently gained a field.
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse(
+				"UsrCleanSave_FormPage", "clean-schema-uid", "clean-package-uid", "UsrCleanPackage", "BasePage").ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["body"] = CreatePageBody("""[{ "operation": "merge", "name": "UsrUntouched", "values": { "visible": true } }]"""),
+					["localizableStrings"] = new JArray()
+				}
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrCleanSave_FormPage",
+			Body = CreatePageBody("""[{ "operation": "insert", "name": "UsrSolo", "values": { "type": "crt.Input" } }]"""),
+			DryRun = false
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "the body is clean, so the save succeeds");
+		response.Warnings.Should().BeNull(
+			because: "CombineWarnings must return null rather than an empty list when every source is empty - the envelope omits the field only when it is null, and an empty array would appear on every clean save");
+	}
+
+	[Test]
+	[Description("update-page append: the #1132 AC4 superseded-drop warning reaches response.Warnings through the real save path, for web and mobile")]
+	public void TryUpdatePage_AppendMode_Should_SurfaceSupersededDropWarning_WhenCurrentBodyCarriesOneIdentityTwice(
+		[Values(PageSchemaType.Web, PageSchemaType.Mobile)] PageSchemaType kind) {
+		// Arrange - the current body carries `merge UsrDup` TWICE with DISJOINT keys, and the incoming
+		// fragment supersedes that identity. The merger replaces the first occurrence and must DROP the
+		// later one, taking its `b` key with it - the one loss #1132 AC4 requires be reported rather than
+		// applied silently. Without this test, removing mergeWarnings from the CombineWarnings call in
+		// TryUpdatePage would leave every other test green.
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		var hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		const string originalUId = "86416224-550a-4087-87d9-d4ebc9aa69c8";
+		const string designPkg = "520a3697-4d73-c598-38d4-a7501f8c8e9b";
+		const string schemaName = "UsrSupersededDrop_FormPage";
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		hierarchyClient.GetDesignPackageUId(originalUId).Returns(designPkg);
+		hierarchyClient.GetParentSchemas(originalUId, designPkg).Returns(new List<PageDesignerHierarchySchema> {
+			new() { UId = originalUId, Name = schemaName, PackageUId = designPkg, PackageName = "UsrSupersededDropPackage" }
+		});
+		const string duplicatedDiff =
+			"[{\"operation\":\"merge\",\"name\":\"UsrDup\",\"values\":{\"a\":1}}," +
+			"{\"operation\":\"merge\",\"name\":\"UsrDup\",\"values\":{\"b\":2}}]";
+		const string supersedingDiff =
+			"[{\"operation\":\"merge\",\"name\":\"UsrDup\",\"values\":{\"a\":99}}]";
+		string currentBody = kind == PageSchemaType.Mobile
+			? "{ \"viewConfigDiff\": " + duplicatedDiff + ", \"viewModelConfigDiff\": [], \"modelConfigDiff\": [] }"
+			: "define(\"" + schemaName + "\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			  "viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/" + duplicatedDiff + "/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			  "viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			  "modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			  "handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			  "converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			  "validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		string incomingFragment = kind == PageSchemaType.Mobile
+			? "{ \"viewConfigDiff\": " + supersedingDiff + " }"
+			: "/**SCHEMA_VIEW_CONFIG_DIFF*/" + supersedingDiff + "/**SCHEMA_VIEW_CONFIG_DIFF*/";
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["UId"] = originalUId } }
+		};
+		var getSchemaResponse = new JObject {
+			["success"] = true,
+			["schema"] = new JObject { ["uId"] = originalUId, ["name"] = schemaName, ["body"] = currentBody, ["package"] = new JObject { ["uId"] = designPkg } }
+		};
+		var saveResponse = new JObject { ["success"] = true };
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ci => {
+				callIndex++;
+				return callIndex switch {
+					1 => metadataResponse.ToString(),
+					2 => getSchemaResponse.ToString(),
+					_ => saveResponse.ToString()
+				};
+			});
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
+
+		// Act
+		bool ok = command.TryUpdatePage(new PageUpdateOptions {
+			SchemaName = schemaName,
+			Body = incomingFragment,
+			Mode = "append",
+			DryRun = false
+		}, out PageUpdateResponse response);
+
+		// Assert
+		ok.Should().BeTrue(
+			because: $"the drop is advisory and must not block the save - refusing the write would leave the caller with no way to append at all ({kind})");
+		response.Success.Should().BeTrue(because: $"the schema was saved ({kind}). Error: {response.Error}");
+		response.Warnings.Should().NotBeNull(
+			because: $"the merger reported a drop, so CombineWarnings must have materialized a list rather than leaving it null ({kind})");
+		response.Warnings.Should().ContainSingle(w => w.Contains("UsrDup") && w.Contains("carried more than one"),
+			because: $"the later 'merge UsrDup' entry was dropped and its disjoint 'b' key went with it - #1132 AC4 requires that be reported through the save response, once per identity ({kind})");
+		response.Warnings.Should().Contain(w => w.Contains("get-page"),
+			because: $"the caller cannot see the body they just overwrote, so the warning has to tell them how to recover it ({kind})");
 	}
 
 	[Test]
@@ -5204,7 +5435,7 @@ public class PageToolsTests
 	}
 
 	[Test]
-	[Description("PageBodyMerger mobile: merges viewConfigDiff by name, viewModelConfigDiff and modelConfigDiff by append")]
+	[Description("PageBodyMerger mobile: merges viewConfigDiff by (operation, name), viewModelConfigDiff and modelConfigDiff by append")]
 	public void PageBodyMerger_Should_Merge_Mobile_Bodies() {
 		string currentBody = "{\"viewConfigDiff\":[{\"operation\":\"merge\",\"name\":\"Existing\",\"values\":{\"size\":\"large\"}}],\"viewModelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"VM1\"}],\"modelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"M1\"}]}";
 		string incomingBody = "{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"NewButton\",\"values\":{\"type\":\"crt.Button\"}},{\"operation\":\"merge\",\"name\":\"Existing\",\"values\":{\"size\":\"small\"}}],\"viewModelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"VM2\"}],\"modelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"M2\"}]}";
@@ -5215,8 +5446,8 @@ public class PageToolsTests
 		JArray viewConfigDiff = (JArray)result["viewConfigDiff"];
 		viewConfigDiff.Count.Should().Be(2, because: "existing + new entry, collision replaced");
 		viewConfigDiff.Any(t => t["name"]?.ToString() == "NewButton").Should().BeTrue(because: "new entry is appended");
-		viewConfigDiff.Any(t => t["values"]?["size"]?.ToString() == "small").Should().BeTrue(because: "incoming wins on name collision");
-		viewConfigDiff.Any(t => t["values"]?["size"]?.ToString() == "large").Should().BeFalse(because: "old entry with same name is replaced");
+		viewConfigDiff.Any(t => t["values"]?["size"]?.ToString() == "small").Should().BeTrue(because: "incoming wins on an (operation, name) collision");
+		viewConfigDiff.Any(t => t["values"]?["size"]?.ToString() == "large").Should().BeFalse(because: "the old entry with the same operation and name is replaced");
 
 		JArray viewModelConfigDiff = (JArray)result["viewModelConfigDiff"];
 		viewModelConfigDiff.Count.Should().Be(2, because: "viewModelConfigDiff uses append, both items kept");
@@ -5668,7 +5899,7 @@ public class PageToolsTests
 			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
 			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
-		PageUpdateArgs args = new("UsrX_FormPage", fullConfigBody, null, false, "dev", null, null, null, SkipSampling: true, Mode: "append");
+		PageUpdateArgs args = new("UsrX_FormPage", fullConfigBody, null, false, SkipSampling: true, Mode: "append") { EnvironmentName = "dev" };
 
 		// Act
 		PageUpdateResponse response = await tool.UpdatePage(args, null);
@@ -5714,7 +5945,7 @@ public class PageToolsTests
 			  "modelConfigDiff": []
 			}
 			""";
-		PageUpdateArgs args = new("UsrMobile_FormPage", mobileBody, null, null, null, null, null, null);
+		PageUpdateArgs args = new("UsrMobile_FormPage", mobileBody);
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -5759,7 +5990,7 @@ public class PageToolsTests
 			.Returns((PageSamplingReview)null);
 		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, samplingService, new PageBaselineGuard(new MockFileSystem()));
 		string body = CreatePageBody();
-		PageUpdateArgs args = new("UsrValid_FormPage", body, "{\"caption\":\"Hello\"}", null, null, null, null, null);
+		PageUpdateArgs args = new("UsrValid_FormPage", body, "{\"caption\":\"Hello\"}");
 
 		// Act
 		_ = tool.UpdatePage(args, null).Result;
@@ -5792,7 +6023,7 @@ public class PageToolsTests
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		IPageBodySamplingService samplingService = Substitute.For<IPageBodySamplingService>();
 		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, samplingService, new PageBaselineGuard(new MockFileSystem()));
-		PageUpdateArgs args = new("UsrBad_FormPage", "define('BadPage', {})}", null, null, null, null, null, null);
+		PageUpdateArgs args = new("UsrBad_FormPage", "define('BadPage', {})}");
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -5822,7 +6053,7 @@ public class PageToolsTests
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
-		PageUpdateArgs args = new("UsrTest_FormPage", null, null, null, null, null, null, null);
+		PageUpdateArgs args = new("UsrTest_FormPage");
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -5853,7 +6084,7 @@ public class PageToolsTests
 		string tempFile = Path.Combine(Path.GetTempPath(), $"clio-bodyfile-{Path.GetRandomFileName()}.js");
 		File.WriteAllText(tempFile, bodyWithBadJson);
 		try {
-			PageUpdateArgs args = new("UsrTest_FormPage", null, null, null, null, null, null, null, BodyFile: tempFile);
+			PageUpdateArgs args = new("UsrTest_FormPage", BodyFile: tempFile);
 
 			// Act
 			PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -5888,7 +6119,7 @@ public class PageToolsTests
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 		string missingPath = Path.Combine(Path.GetTempPath(), $"clio-missing-{Path.GetRandomFileName()}.js");
-		PageUpdateArgs args = new("UsrTest_FormPage", null, null, null, null, null, null, null, BodyFile: missingPath);
+		PageUpdateArgs args = new("UsrTest_FormPage", BodyFile: missingPath);
 
 		// Act
 		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -5961,7 +6192,7 @@ public class PageToolsTests
 	public async System.Threading.Tasks.Task UpdatePage_ShouldNotRejectFullConfigBody_WhenModeIsReplace() {
 		// Arrange
 		PageUpdateTool tool = BuildAppendGuardTool();
-		PageUpdateArgs args = new("UsrX_FormPage", FullConfigWebBody, null, false, "dev", null, null, null, SkipSampling: true, Mode: "replace");
+		PageUpdateArgs args = new("UsrX_FormPage", FullConfigWebBody, null, false, SkipSampling: true, Mode: "replace") { EnvironmentName = "dev" };
 
 		// Act
 		PageUpdateResponse response = await tool.UpdatePage(args, null);
@@ -5977,7 +6208,7 @@ public class PageToolsTests
 	public async System.Threading.Tasks.Task UpdatePage_ShouldNotRejectFullConfigBody_WhenModeIsDefault() {
 		// Arrange
 		PageUpdateTool tool = BuildAppendGuardTool();
-		PageUpdateArgs args = new("UsrX_FormPage", FullConfigWebBody, null, false, "dev", null, null, null, SkipSampling: true, Mode: null);
+		PageUpdateArgs args = new("UsrX_FormPage", FullConfigWebBody, null, false, SkipSampling: true, Mode: null) { EnvironmentName = "dev" };
 
 		// Act
 		PageUpdateResponse response = await tool.UpdatePage(args, null);
@@ -5994,7 +6225,7 @@ public class PageToolsTests
 		// Arrange
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		PageUpdateTool tool = BuildAppendGuardTool(applicationClient);
-		PageUpdateArgs args = new("UsrX_FormPage", FullConfigWebBody, null, false, "dev", null, null, null, SkipSampling: true, Mode: "Append");
+		PageUpdateArgs args = new("UsrX_FormPage", FullConfigWebBody, null, false, SkipSampling: true, Mode: "Append") { EnvironmentName = "dev" };
 
 		// Act
 		PageUpdateResponse response = await tool.UpdatePage(args, null);
@@ -6016,7 +6247,7 @@ public class PageToolsTests
 		string tempFile = Path.Combine(Path.GetTempPath(), $"clio-fullconfig-{Path.GetRandomFileName()}.js");
 		File.WriteAllText(tempFile, FullConfigWebBody);
 		try {
-			PageUpdateArgs args = new("UsrX_FormPage", null, null, false, "dev", null, null, null, SkipSampling: true, Mode: "append", BodyFile: tempFile);
+			PageUpdateArgs args = new("UsrX_FormPage", null, null, false, SkipSampling: true, Mode: "append", BodyFile: tempFile) { EnvironmentName = "dev" };
 
 			// Act
 			PageUpdateResponse response = tool.UpdatePage(args, null).Result;
@@ -6044,7 +6275,7 @@ public class PageToolsTests
 		string fullConfigButMalformed =
 			"define(\"UsrX_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
 			"viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{}/**SCHEMA_VIEW_MODEL_CONFIG*/, @@@ not valid javascript (((";
-		PageUpdateArgs args = new("UsrX_FormPage", fullConfigButMalformed, null, false, "dev", null, null, null, SkipSampling: true, Mode: "append");
+		PageUpdateArgs args = new("UsrX_FormPage", fullConfigButMalformed, null, false, SkipSampling: true, Mode: "append") { EnvironmentName = "dev" };
 
 		// Act
 		PageUpdateResponse response = await tool.UpdatePage(args, null);

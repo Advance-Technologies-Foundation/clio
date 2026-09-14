@@ -141,30 +141,28 @@ public class ModifyEntitySchemaColumnCommand : Command<ModifyEntitySchemaColumnO
 	internal static void ValidateOptions(ModifyEntitySchemaColumnOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		if (string.IsNullOrWhiteSpace(options.Package)) {
-			throw new ArgumentException("Package is required.", nameof(options.Package));
+			throw new ArgumentException("package-name is required.");
 		}
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
-			throw new ArgumentException("Schema name is required.", nameof(options.SchemaName));
+			throw new ArgumentException("schema-name is required.");
 		}
 		if (string.IsNullOrWhiteSpace(options.Action)) {
-			throw new ArgumentException("Action is required.", nameof(options.Action));
+			throw new ArgumentException("action is required.");
 		}
 		if (!Enum.TryParse(options.Action, true, out EntitySchemaColumnAction action)) {
-			throw new ArgumentException("Action must be one of: add, modify, remove.", nameof(options.Action));
+			throw new ArgumentException("action must be one of: add, modify, remove.");
 		}
 		if (string.IsNullOrWhiteSpace(options.ColumnName)) {
-			throw new ArgumentException("Column name is required.", nameof(options.ColumnName));
+			throw new ArgumentException("column-name is required.");
 		}
 		if (action == EntitySchemaColumnAction.Add && string.IsNullOrWhiteSpace(options.Type)) {
-			throw new ArgumentException("--type is required for add action.", nameof(options.Type));
+			throw new ArgumentException("type is required for the add action.");
 		}
 		if (action == EntitySchemaColumnAction.Remove && HasMutableOptions(options)) {
-			throw new ArgumentException("Remove action does not accept column property options.", nameof(options.Action));
+			throw new ArgumentException("Remove action does not accept column property options.");
 		}
 		if (action == EntitySchemaColumnAction.Modify && !HasMutableOptions(options)) {
-			throw new ArgumentException(
-				"Modify action requires at least one property option to change.",
-				nameof(options.Action));
+			throw new ArgumentException("Modify action requires at least one property option to change.");
 		}
 	}
 

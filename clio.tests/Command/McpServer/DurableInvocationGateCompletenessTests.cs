@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -55,6 +55,11 @@ public sealed class DurableInvocationGateCompletenessTests {
 	/// instead of extending this list.
 	/// </remarks>
 	private static readonly HashSet<string> ReviewedSilentlyExecutableTools = new(StringComparer.Ordinal) {
+		// Administration inspection rejects mutation actions before resolving the environment.
+		"inspect-user",
+		"inspect-role",
+		"inspect-access",
+		"inspect-license",
 		"advise-theme-palette",
 		"assert-infrastructure",
 		"check-auth-code-flow",
@@ -90,6 +95,7 @@ public sealed class DurableInvocationGateCompletenessTests {
 		// Reads an exact package-relative file and its generated project; never writes package content.
 		"get-package-file",
 		"get-page-hierarchy",
+		"get-process-page-facts",
 		"get-process-signature",
 		"get-record-rights",
 		"get-related-page-addon",
@@ -236,7 +242,7 @@ public sealed class DurableInvocationGateCompletenessTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("set-background-image is classified destructive, so the durable gate never silently runs it — it replaces the environment-wide background for all users and must be host-confirmed. This is why the tool is intentionally absent from the silently-executable ReviewedSilentWriteCapableTools baseline (that list holds Destructive=false write tools only; upload-image is there because it is additive-only).")]
+	[Description("set-background-image is classified destructive, so the durable gate never silently runs it — it replaces the environment-wide background for all users and must be host-confirmed, which is also why it is absent from the ReviewedSilentlyExecutableTools baseline (PR #984 flipped that baseline to hold ReadOnly=true tools only, so ANY write-capable tool — ReadOnly=false, destructive or not, e.g. get-page / get-schema / get-theme / upload-image — is correctly absent from it and needs no entry).")]
 	public void SetBackgroundImage_ShouldBeDestructive_SoTheGateNeverSilentlyRunsIt() {
 		// Arrange
 		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();

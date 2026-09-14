@@ -18,10 +18,59 @@ internal sealed class VerifyOAuthAppCommandTests : BaseCommandTests<VerifyOAuthA
 	private IIdentityServerProbe _identityServerProbe;
 	private IServiceUrlBuilder _serviceUrlBuilder;
 	private ILogger _logger;
+	private EnvironmentSettings _environment;
 
 	public override void Setup() {
 		base.Setup();
 		_command = Container.GetRequiredService<VerifyOAuthAppCommand>();
+		_environment = Container.GetRequiredService<EnvironmentSettings>();
+	}
+
+	public override void TearDown() {
+		_environment.ClientId = null;
+		_environment.ClientSecret = null;
+		_environment.AuthAppUri = null;
+		_identityServerProbe.ClearReceivedCalls();
+		_sysSettingsManager.ClearReceivedCalls();
+		_logger.ClearReceivedCalls();
+		base.TearDown();
+	}
+
+	[TestCase("")]
+	[TestCase("/connect/token")]
+	[Description("An environment-only invocation uses saved OAuth credentials and URL without querying CRM settings or mutating options.")]
+	public void Verify_ShouldUseRegisteredCredentials_WhenOverridesAreOmitted(string endpointPath) {
+		// Arrange
+		_environment.ClientId = "saved-client";
+		_environment.ClientSecret = "saved-secret";
+		_environment.AuthAppUri = "https://saved-identity.example" + endpointPath;
+		_identityServerProbe.AcquireClientCredentialsToken("https://saved-identity.example", "saved-client", "saved-secret").Returns(Token);
+		_identityServerProbe.RunBearerDataServiceSmokeTest(_environment, SelectUrl, Token).Returns(200);
+		VerifyOAuthAppOptions options = new() { Environment = "DEV" };
+
+		// Act
+		VerifyOAuthAppResult result = _command.Verify(options);
+
+		// Assert
+		result.Ok.Should().BeTrue(because: "saved credentials should support an environment-only invocation");
+		options.ClientSecret.Should().BeNull(because: "verification must not copy stored secrets into command options");
+		_sysSettingsManager.DidNotReceive().GetSysSettingValueByCode(Arg.Any<string>());
+	}
+
+	[TestCase(401)]
+	[TestCase(403)]
+	[TestCase(500)]
+	[Description("Verification fails when CRM does not accept the bearer smoke request, without interpreting permissions.")]
+	public void Execute_ShouldReturnFailure_WhenCrmRequestFails(int status) {
+		// Arrange
+		_identityServerProbe.AcquireClientCredentialsToken(Arg.Any<string>(), "cid", "secret").Returns(Token);
+		_identityServerProbe.RunBearerDataServiceSmokeTest(Arg.Any<EnvironmentSettings>(), SelectUrl, Token).Returns(status);
+
+		// Act
+		int exitCode = _command.Execute(new VerifyOAuthAppOptions { ClientId = "cid", ClientSecret = "secret" });
+
+		// Assert
+		exitCode.Should().Be(1, because: "token issuance alone cannot pass OAuth verification");
 	}
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {

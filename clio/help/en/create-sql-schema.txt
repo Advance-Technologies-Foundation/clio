@@ -51,6 +51,17 @@ EXAMPLES
     clio sql-schema-create --schema-name UsrCleanupStaleRows --package-name Custom --description "Nightly cleanup" -e dev
         Create with a description using the alias
 
+NOTES
+    ScriptSchemaDesignerService must be served by the target environment. When it
+    is not, the endpoint answers with an empty body or an HTML error page; clio
+    then reports which service, operation and URL answered, instead of a raw JSON
+    parser message. clio's synchronous client does not expose the HTTP status, so
+    the message says the status is unknown rather than quoting one.
+
+    When the save answer is unusable, clio reads the schema back before reporting:
+    a schema that was in fact created is reported as a success, a schema that is
+    absent as a failure, and a failed read-back as an unverified outcome.
+
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
 
