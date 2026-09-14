@@ -94,6 +94,16 @@ public static class SchemaValidationService
 		new[] { "SCHEMA_MODEL_CONFIG_DIFF", "SCHEMA_MODEL_CONFIG" }
 	};
 
+	/// <summary>
+	/// Every marker an append fragment may legitimately carry - the required set plus BOTH spellings of each
+	/// alternate pair. Deliberately a superset of what the merge reads: the full-config spellings are
+	/// recognized here so that a body carrying only those reaches
+	/// <see cref="PageBodyMerger.UsesUnsupportedFullConfigForm(string, out string)"/> and gets its precise
+	/// "use --mode replace" message, instead of being pre-empted by the generic unrecognizable-body error.
+	/// </summary>
+	private static readonly string[] RecognizedSectionMarkerNames =
+		RequiredMarkerNames.Concat(AlternateMarkerPairs.SelectMany(pair => pair)).ToArray();
+
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
 
 	private static readonly Regex SdkUsagePattern = new(@"\bsdk\s*[.\[]", RegexOptions.Compiled, RegexTimeout);
@@ -1741,6 +1751,45 @@ public static class SchemaValidationService
 
 	public static string BuildMarkerPattern(string markerName) {
 		return @"/\*\*" + Regex.Escape(markerName) + @"\*/(.*?)/\*\*" + Regex.Escape(markerName) + @"\*/";
+	}
+
+	/// <summary>
+	/// Rejects an append fragment that carries NO recognizable page section at all.
+	/// </summary>
+	/// <remarks>
+	/// Full marker integrity is deliberately NOT required in append mode - the incoming body is a fragment
+	/// and may legitimately omit sections. But that skip used to be all-or-nothing, so a body with no marker
+	/// pairs whatsoever was accepted: every section read as empty (PageBodyMerger.ReadJsonArray returns an
+	/// empty JArray when the marker is absent), the merge became a no-op, and the call reported success while
+	/// silently discarding the caller's entire fragment. A bare JSON array is the easy way to hit this,
+	/// because it is valid JavaScript and so clears the syntax gate too. Found by manual testing on a live
+	/// stand, not by the unit suite.
+	///
+	/// The rule is deliberately the weakest one that closes it: ONE recognized marker pair is enough. Anything
+	/// stricter would re-impose the completeness requirement that append exists to relax.
+	/// </remarks>
+	/// <param name="jsBody">The caller's incoming append fragment.</param>
+	/// <returns>A failed result when the body carries no recognizable section; otherwise a valid result.</returns>
+	public static SchemaValidationResult ValidateAppendFragmentIsRecognizable(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			result.IsValid = false;
+			result.Errors.Add("JS body is null or empty.");
+			return result;
+		}
+		bool carriesAnySection = RecognizedSectionMarkerNames.Any(markerName =>
+			Regex.IsMatch(jsBody, BuildMarkerPattern(markerName), RegexOptions.Singleline, RegexTimeout));
+		if (carriesAnySection) {
+			return result;
+		}
+		result.IsValid = false;
+		result.Errors.Add(
+			"an append body is a FRAGMENT of a page body, not a bare list of operations, so it must carry at " +
+			"least one section marker pair - for example " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[ ... ]/**SCHEMA_VIEW_CONFIG_DIFF*/. Without one, every section reads " +
+			"as empty and the merge would silently discard everything you sent. Recognized sections: " +
+			string.Join(", ", RecognizedSectionMarkerNames));
+		return result;
 	}
 
 	public static SchemaValidationResult ValidateMarkerIntegrity(string jsBody) {

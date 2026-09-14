@@ -1136,7 +1136,19 @@
 			// extract sections and append-merge is dead on that page. ResolveSyntaxFailure already treats
 			// markers as the "is this still a recognizable page" test for the same reason.
 			bool isAppendMode = IsAppendMode(options);
-			if (!isAppendMode) {
+			if (isAppendMode) {
+				// Append relaxes COMPLETENESS, not recognizability. A fragment may omit sections; a body that
+				// carries none at all is always a mistake, and accepting it meant reporting success for a merge
+				// that discarded the caller's whole fragment. See ValidateAppendFragmentIsRecognizable.
+				SchemaValidationResult fragmentResult =
+					SchemaValidationService.ValidateAppendFragmentIsRecognizable(options.Body);
+				if (!fragmentResult.IsValid) {
+					return new PageUpdateResponse {
+						Success = false,
+						Error = $"Append body carries no recognizable page section: {string.Join("; ", fragmentResult.Errors)}"
+					};
+				}
+			} else {
 				SchemaValidationResult integrityResult = SchemaValidationService.ValidateMarkerIntegrity(options.Body);
 				if (!integrityResult.IsValid) {
 					return new PageUpdateResponse {

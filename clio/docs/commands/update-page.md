@@ -215,6 +215,14 @@ can report a conflict against a page that has not actually changed. This edge fa
 `--mode replace` (default) saves the body verbatim. `--mode append` loads the current
 schema body from the server and merges your incoming fragment into it.
 
+An append body is a **fragment of a page body**, not a bare list of operations. It may omit
+sections — that is the point of append, and full marker integrity is deliberately not required —
+but it must carry **at least one** section marker pair, for example
+`/**SCHEMA_VIEW_CONFIG_DIFF*/[ ... ]/**SCHEMA_VIEW_CONFIG_DIFF*/`. A body carrying none is
+rejected. It used to be accepted: a bare JSON array is valid JavaScript, so it cleared the syntax
+gate, then every section read as empty, the merge became a no-op, and the call reported `success`
+with `incomingOperationCount: 0` — silently discarding the whole fragment while looking clean.
+
 A `viewConfigDiff` entry is replaced only when **both** `operation` and `name` match one of
 yours — and, for a `remove` or a `set`, whether it targets `properties`. Incoming wins, and the replacement
 keeps the existing entry's position. Every other existing operation is preserved verbatim and in

@@ -463,4 +463,69 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 			because: "a real save that failed must never claim the safety of a dry run");
 		AssertNothingWasSaved();
 	}
+	[Test]
+	[Description("An append dry run REFUSES a body with no recognizable section instead of reporting a clean no-op.")]
+	public void TryUpdatePage_ShouldRefuse_WhenTheAppendBodyCarriesNoRecognizableSection() {
+		// Arrange - the reported hole: a bare operation list is valid JavaScript, and append skips marker-
+		// integrity validation, so every section read as empty and the dry run answered
+		// `success: true, incoming: 0` - a confident "nothing will change" for a body that was never understood.
+		StubCurrentBody(WebBody("""[{"operation":"merge","name":"UsrPanel","values":{"title":"Old"}}]"""));
+		PageUpdateOptions options = new() {
+			SchemaName = SchemaName,
+			Body = """[{"operation":"merge","name":"UsrPanel","values":{"title":"New"}}]""",
+			Mode = "append",
+			DryRun = true
+		};
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "silently discarding the caller's entire fragment is the defect this projection exists to prevent");
+		response.AppendProjection.Should().BeNull(
+			because: "a projection for a body that was never understood would be the confident lie, not the fix");
+		response.DryRun.Should().BeTrue(because: "a refused dry run must still say it was a dry run");
+		AssertNothingWasSaved();
+	}
+
+	[Test]
+	[Description("A real append save refuses the same unrecognizable body, and writes nothing.")]
+	public void TryUpdatePage_ShouldRefuseAndNotSave_WhenTheAppendSaveBodyCarriesNoRecognizableSection() {
+		// Arrange - the save mattered more than the dry run here: it would have written the CURRENT body back
+		// unchanged and reported success, so the caller's fragment vanished with a green result.
+		StubCurrentBody(WebBody("""[{"operation":"merge","name":"UsrPanel","values":{"title":"Old"}}]"""));
+		PageUpdateOptions options = new() {
+			SchemaName = SchemaName,
+			Body = """[{"operation":"merge","name":"UsrPanel","values":{"title":"New"}}]""",
+			Mode = "append",
+			DryRun = false
+		};
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "the body carries no section the merge could read");
+		response.Error.Should().Contain("no recognizable page section",
+			because: "the caller has to learn their body was not understood, not that their merge was a no-op");
+		AssertNothingWasSaved();
+	}
+
+	[Test]
+	[Description("A proper fragment is unaffected by the recognizability rule.")]
+	public void TryUpdatePage_ShouldStillProject_WhenTheAppendBodyCarriesAMarkedSection() {
+		// Arrange - the regression guard for the rule itself: the normal append path must stay untouched.
+		StubCurrentBody(WebBody("""[{"operation":"merge","name":"UsrPanel","values":{"title":"Old"}}]"""));
+
+		// Act
+		bool result = _command.TryUpdatePage(
+			AppendDryRun("""[{"operation":"merge","name":"UsrOther","values":{"title":"New"}}]"""),
+			out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "a fragment carrying a real section marker is exactly what append is for");
+		response.AppendProjection.ProjectedOperationCount.Should().Be(2,
+			because: "the rule rejects unreadable bodies, and must not narrow what a valid append can do");
+	}
 }

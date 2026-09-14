@@ -46,6 +46,19 @@ real merge (`TryResolveBodyToWrite`). So an append dry run:
   the superseded-drop warning was set with. It is still counted, because without it the reported totals
   cannot be reconciled and a real loss stays invisible.
 
+Append relaxes marker COMPLETENESS, not recognizability. `ValidateWebInput` skips
+`ValidateMarkerIntegrity` in append mode because the incoming body is a fragment and may omit
+sections — but that skip used to be all-or-nothing, so a body with NO marker pair at all was
+accepted. A bare JSON array is the easy way in: it is valid JavaScript, so it clears the syntax
+gate, then `PageBodyMerger.ReadJsonArray` returns an empty `JArray` for every absent marker, the
+merge becomes a no-op, and the call reports `success` with `incomingOperationCount: 0` — the
+caller's entire fragment discarded, described as a clean no-change. `ValidateAppendFragmentIsRecognizable`
+now rejects it. Keep the rule at ONE recognized marker pair: anything stricter re-imposes the
+completeness requirement append exists to relax. Its recognized set deliberately includes the
+full-config spellings, which the merge does NOT read, so that a full-config body still reaches
+`UsesUnsupportedFullConfigForm` and gets its precise "use --mode replace" message instead of the
+generic one. Manual testing on a live stand found this; 9769 unit tests did not.
+
 `appendProjection` covers `viewConfigDiff` only; the XML docs on `PageAppendProjection` carry the
 reasoning. The uncovered sibling is handlers — `MergeHandlersRaw` can drop a duplicated current
 handler — which the DTO documents rather than reporting zeros for.
