@@ -41,7 +41,7 @@ Nothing is built on the bundling machine, so the procedure below — build, test
 `Files/Bin` — does NOT apply to it. Its whole procedure is one script:
 
 ```powershell
-pwsh ./rebundle-dashboards-migrator.ps1 -BuildZip '\tscrm.com\dfs-ts\ComposableApps\CrtDashboardsMigratorApp\<X.Y.Z>\CrtDashboardsMigratorApp_<X.Y.Z>.zip' -Version <the build's full version, X.Y.Z.N>
+pwsh ./rebundle-dashboards-migrator.ps1 -BuildZip '\\tscrm.com\dfs-ts\ComposableApps\CrtDashboardsMigratorApp\<X.Y.Z>\CrtDashboardsMigratorApp_<X.Y.Z>.zip' -Version <the build's full version, X.Y.Z.N>
 ```
 
 It unpacks the build, checks the version extends the app version and is higher than what clio ships, stamps

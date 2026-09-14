@@ -346,6 +346,17 @@ public class BundledPackagePingOutcomeVerifierTests {
 	}
 
 	[Test]
+	[Description("Throws for a package name that is not bundled: an answer about some other package's route would be a wrong verdict, and the caller passed a name only a programming error can produce.")]
+	public void IsPackageOperational_ShouldThrow_ForAnUnknownPackage() {
+		// Arrange, Act & Assert
+		Assert.Throws<ArgumentException>(
+			() => _verifier.IsPackageOperational("NotBundled", out string _),
+			"the route map covers exactly the bundled packages, so an unknown name has no route to probe");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
 	[Description("Rejects null collaborators, so a misconfigured DI graph fails at construction rather than mid-install.")]
 	public void Constructor_ShouldRejectNullCollaborators() {
 		// Arrange, Act & Assert

@@ -35,7 +35,5 @@ public class InstallProcessBuilderCommand : InstallBundledPackageCommand<Install
 	/// <inheritdoc />
 	protected override string PackageName => BundledPackages.ProcessBuilderPackageName;
 
-	/// <inheritdoc />
-	protected override ServiceUrlBuilder.KnownRoute PingRoute => ServiceUrlBuilder.KnownRoute.ProcessBuilderPing;
 
 }

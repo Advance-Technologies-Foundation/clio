@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using Clio.Common;
 using Clio.Project.NuGet;
 using FluentAssertions;
@@ -88,6 +89,17 @@ public class BundledDashboardsMigratorPackageTests {
 		return compressionUtilities.ListGZipEntryNames(BundledArchivePath);
 	}
 
+	private static readonly string PlaceholderHash = new('0', 64);
+
+	private static JsonElement ReadBundledDescriptor() {
+		IFileSystem fileSystem = new FileSystem(new System.IO.Abstractions.FileSystem());
+		ICompressionUtilities compressionUtilities = new CompressionUtilities(fileSystem, new ZipFileWrapper());
+		compressionUtilities.TryReadFileFromGZip(BundledArchivePath, "descriptor.json", out byte[] content)
+			.Should().BeTrue(because: "every Creatio package archive carries descriptor.json at its root");
+		string json = Encoding.UTF8.GetString(content).TrimStart('\uFEFF');
+		return JsonDocument.Parse(json).RootElement.GetProperty("Descriptor");
+	}
+
 	private static string ReadBundledArchiveAsText() {
 		using FileStream compressed = File.OpenRead(BundledArchivePath);
 		using GZipStream decompressor = new(compressed, CompressionMode.Decompress);
@@ -126,6 +138,8 @@ public class BundledDashboardsMigratorPackageTests {
 		actual.Should().Be(ExpectedArchiveSha256,
 			because: "the archive is produced from another team's build and ships compiled code into "
 				+ "customers' Creatio instances; a change to it must be a reviewable line, not a byte count");
+		ExpectedArchiveSha256.Should().NotBe(PlaceholderHash,
+			because: "a placeholder pin would only ever match a placeholder archive");
 	}
 
 	[Test]
@@ -144,14 +158,14 @@ public class BundledDashboardsMigratorPackageTests {
 	[Description("The descriptor inside the archive must carry the identity clio advertises, the pinned stamp, a plain four-part version readable through the production catalog, and no install script.")]
 	public void BundledArchive_ShouldCarryADescriptorMatchingBundledPackages() {
 		// Arrange
-		string archive = ReadBundledArchiveAsText();
+		JsonElement descriptor = ReadBundledDescriptor();
 
 		// Act & Assert
-		archive.Should().Contain($"\"Name\": \"{BundledPackages.DashboardsMigratorPackageName}\"",
+		descriptor.GetProperty("Name").GetString().Should().Be(BundledPackages.DashboardsMigratorPackageName,
 			because: "the install command ships this archive under this name and the verifier maps the name to the Ping route");
-		archive.Should().Contain($"\"UId\": \"{ExpectedPackageUId}\"",
+		descriptor.GetProperty("UId").GetString().Should().Be(ExpectedPackageUId,
 			because: "Creatio identifies a package by UId; a changed UId installs a SECOND package instead of upgrading");
-		archive.Should().Contain($"\"ModifiedOnUtc\": \"{ExpectedDescriptorModifiedOnUtc}\"",
+		descriptor.GetProperty("ModifiedOnUtc").GetString().Should().Be(ExpectedDescriptorModifiedOnUtc,
 			because: "Creatio rewrites the SysPackage row only when this field changes, never because PackageVersion did");
 		ExpectedDescriptorModifiedOnUtc.Should().EndWith("000)/",
 			because: "whole seconds are the provenance oracle: milliseconds mean the descriptor was written by hand with a wrong tool");
@@ -159,7 +173,7 @@ public class BundledDashboardsMigratorPackageTests {
 			because: "the shipped version is what clio info reports and what the downgrade check compares; pinning puts a version move on a reviewable line");
 		ExpectedArchiveVersion.Should().MatchRegex("^[0-9]+(\\.[0-9]+){3}$",
 			because: "four parts and no suffix: the install command refuses a suffixed distribution outright");
-		archive.Should().NotContain("\"InstallScripts\"",
+		descriptor.TryGetProperty("InstallScripts", out JsonElement _).Should().BeFalse(
 			because: "the package applies its column rights from an app-start listener instead; an install script "
 				+ "would run before the target compiles a source package, and this archive must stay installable "
 				+ "either way");
@@ -229,11 +243,14 @@ public class BundledDashboardsMigratorPackageTests {
 	}
 
 	[Test]
-	[Description("The source-build pin is a full SHA-256, so a reviewer can verify the SDLC zip the archive was cut from.")]
-	public void ExpectedSourceBuildSha256_ShouldBeAFullHash() {
+	[Description("The source-build pin is a real SHA-256, so a reviewer can verify the SDLC zip the archive was cut from. Nothing in the repository can recompute it, so the placeholder is refused explicitly.")]
+	public void ExpectedSourceBuildSha256_ShouldBeARealHash() {
 		// Arrange, Act & Assert
 		ExpectedSourceBuildSha256.Should().MatchRegex("^[0-9A-F]{64}$",
-			because: "a placeholder or abbreviated hash cannot be checked against the build on the share");
+			because: "an abbreviated hash cannot be checked against the build on the share");
+		ExpectedSourceBuildSha256.Should().NotBe(PlaceholderHash,
+			because: "the SDLC build zip never enters the repository, so this line is the only thing that says "
+				+ "which build the archive came from; sixty-four zeros say nothing");
 	}
 
 	#endregion

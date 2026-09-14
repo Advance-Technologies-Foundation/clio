@@ -42,7 +42,5 @@ public class InstallDashboardsMigratorCommand : InstallBundledPackageCommand<Ins
 	/// <inheritdoc />
 	protected override string PackageName => BundledPackages.DashboardsMigratorPackageName;
 
-	/// <inheritdoc />
-	protected override ServiceUrlBuilder.KnownRoute PingRoute => ServiceUrlBuilder.KnownRoute.DashboardsMigratorPing;
 
 }

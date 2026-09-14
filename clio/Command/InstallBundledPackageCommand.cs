@@ -11,8 +11,9 @@ namespace Clio.Command;
 
 /// <summary>
 /// Installs one bundled package into a Creatio environment and verifies that its service answers afterwards.
-/// Derived commands name the package (<see cref="PackageName"/>) and its probe (<see cref="PingRoute"/>);
-/// everything else — the downgrade refusals, the readiness wait, the outcome check — is shared.
+/// Derived commands name the package (<see cref="PackageName"/>); its Ping route comes from
+/// <see cref="BundledPackages.PingRouteOf"/>, and everything else — the downgrade refusals, the readiness
+/// wait, the outcome check — is shared.
 /// </summary>
 /// <remarks>
 /// Modelled on <see cref="InstallGateCommand"/>, with four deliberate differences that the on-stand
@@ -110,8 +111,11 @@ public abstract class InstallBundledPackageCommand<TOptions> : Command<TOptions>
 			.Single()
 			.Name;
 
-	// The probe route as `clio call-service --service-path` takes it (no leading slash, no `0/` prefix).
-	private string PingServicePath => ServiceUrlBuilder.KnownRoutes[PingRoute].TrimStart('/');
+	// The probe route as `clio call-service --service-path` takes it (no leading slash, no `0/` prefix). Read
+	// from the same map the outcome verifier probes through, so the route quoted to the operator is the one
+	// that was actually called.
+	private string PingServicePath =>
+		ServiceUrlBuilder.KnownRoutes[BundledPackages.PingRouteOf(PackageName)].TrimStart('/');
 
 	#endregion
 
@@ -121,12 +125,6 @@ public abstract class InstallBundledPackageCommand<TOptions> : Command<TOptions>
 	/// Name of the bundled package this command installs, as recorded in the archive's <c>descriptor.json</c>.
 	/// </summary>
 	protected abstract string PackageName { get; }
-
-	/// <summary>
-	/// The package's ungated Ping route, quoted in the readiness-timeout message so an operator can verify
-	/// by hand. The outcome verifier resolves the route from <see cref="PackageName"/> on its own.
-	/// </summary>
-	protected abstract ServiceUrlBuilder.KnownRoute PingRoute { get; }
 
 	#endregion
 

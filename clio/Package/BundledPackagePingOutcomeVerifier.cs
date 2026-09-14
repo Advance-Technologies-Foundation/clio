@@ -9,8 +9,8 @@ namespace Clio.Package;
 
 /// <summary>
 /// Verifies a bundled package's outcome by asking the package's own ungated <c>Ping</c> operation whether its
-/// code is serving on the target. One implementation for every bundled package: <see cref="PingRoutes"/> maps
-/// the package name to the route it exposes, so the interface auto-registration stays a single binding.
+/// code is serving on the target. One implementation for every bundled package: <see cref="BundledPackages.PingRouteOf"/>
+/// maps the package name to the route it exposes, so the interface auto-registration stays a single binding.
 /// </summary>
 /// <remarks>
 /// The name says what it USES, while <see cref="IPackageInstallOutcomeVerifier"/> says what it ANSWERS.
@@ -75,14 +75,6 @@ public class BundledPackagePingOutcomeVerifier : IPackageInstallOutcomeVerifier 
 
 	#region Fields: Private
 
-	// Package name -> its Ping route. Every package this verifier can answer for is listed here; an unknown
-	// name is a programming error at the call site, not a negative verdict.
-	private static readonly IReadOnlyDictionary<string, ServiceUrlBuilder.KnownRoute> PingRoutes =
-		new Dictionary<string, ServiceUrlBuilder.KnownRoute>(StringComparer.OrdinalIgnoreCase) {
-			[BundledPackages.ProcessBuilderPackageName] = ServiceUrlBuilder.KnownRoute.ProcessBuilderPing,
-			[BundledPackages.DashboardsMigratorPackageName] = ServiceUrlBuilder.KnownRoute.DashboardsMigratorPing
-		};
-
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly ILogger _logger;
@@ -128,11 +120,8 @@ public class BundledPackagePingOutcomeVerifier : IPackageInstallOutcomeVerifier 
 	/// </remarks>
 	public bool IsPackageOperational(string packageName, out string diagnosis) {
 		diagnosis = null;
-		if (!PingRoutes.TryGetValue(packageName ?? string.Empty, out ServiceUrlBuilder.KnownRoute route)) {
-			throw new ArgumentException(
-				$"No Ping route is known for package '{packageName}'; only bundled packages can be verified.",
-				nameof(packageName));
-		}
+		// Throws for a name that is not a bundled package: a programming error at the call site, not a verdict.
+		ServiceUrlBuilder.KnownRoute route = BundledPackages.PingRouteOf(packageName);
 		string url = null;
 		try {
 			url = _serviceUrlBuilder.Build(route);

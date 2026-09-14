@@ -692,9 +692,6 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="install-dashboards-migrator"></a>
 <a id="update-dashboards-migrator"></a>
 - [`install-dashboards-migrator`](docs/commands/install-dashboards-migrator.md) - Install or update the bundled dashboards-migrator package in Creatio, `update-dashboards-migrator`
-<a id="install-dashboards-migrator"></a>
-<a id="update-dashboards-migrator"></a>
-- [`install-dashboards-migrator`](docs/commands/install-dashboards-migrator.md) - Install or update the bundled dashboards-migrator package in Creatio, `update-dashboards-migrator`
 <a id="install-process-builder"></a>
 <a id="installprocessbuilder"></a>
 <a id="update-process-builder"></a>

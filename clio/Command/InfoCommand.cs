@@ -107,8 +107,8 @@ namespace Clio.Command
 				// unpacking the archive. Compare it against `clio list-packages -e <env>` to tell whether an
 				// environment is behind — and it is the same value the convergence rule compares, because
 				// both read it from the archive.
-				_logger.WriteInfo($"process-builder:   {GetBundledVersion(BundledPackages.ProcessBuilderPackageName)}");
-				_logger.WriteInfo($"dashboards-migrator:   {GetBundledVersion(BundledPackages.DashboardsMigratorPackageName)}");
+				_logger.WriteInfo($"process-builder:     {GetBundledVersion(BundledPackages.ProcessBuilderPackageName)}");
+				_logger.WriteInfo($"dashboards-migrator: {GetBundledVersion(BundledPackages.DashboardsMigratorPackageName)}");
 				_logger.WriteInfo($"dotnet:   {Environment.Version.ToString()}");
 				_logger.WriteInfo($"settings file path: {SettingsRepository.AppSettingsFile}");
 				return 0;

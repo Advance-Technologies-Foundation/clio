@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+
 namespace Clio.Common;
 
 /// <summary>
@@ -98,12 +101,36 @@ public static class BundledPackages {
 	/// </summary>
 	public const string DashboardsMigratorArchiveFileName = DashboardsMigratorPackageName + ".gz";
 
+	#endregion
+
+	#region Fields: Private
+
+	// Package name -> the ungated Ping route its install is verified through. The ONE place this pairing
+	// lives: the install command quotes it to the operator and the outcome verifier probes it, so a route
+	// stated twice could send someone to check a URL nobody called.
+	private static readonly IReadOnlyDictionary<string, ServiceUrlBuilder.KnownRoute> PingRoutes =
+		new Dictionary<string, ServiceUrlBuilder.KnownRoute>(StringComparer.OrdinalIgnoreCase) {
+			[ProcessBuilderPackageName] = ServiceUrlBuilder.KnownRoute.ProcessBuilderPing,
+			[DashboardsMigratorPackageName] = ServiceUrlBuilder.KnownRoute.DashboardsMigratorPing
+		};
+
+	#endregion
+
+	#region Methods: Public
+
 	/// <summary>
-	/// Remediation text naming both surfaces that install the dashboards migrator.
+	/// Returns the Ping route of a bundled package.
 	/// </summary>
-	public const string DashboardsMigratorInstallHint =
-		"Run 'clio install-dashboards-migrator -e <environment>' (or call the install-dashboards-migrator "
-		+ "MCP tool) to install or update " + DashboardsMigratorPackageName + ".";
+	/// <param name="packageName">A package name from this class.</param>
+	/// <exception cref="ArgumentException">The package is not bundled — a programming error, not a verdict.</exception>
+	public static ServiceUrlBuilder.KnownRoute PingRouteOf(string packageName) {
+		if (packageName is not null && PingRoutes.TryGetValue(packageName, out ServiceUrlBuilder.KnownRoute route)) {
+			return route;
+		}
+		throw new ArgumentException(
+			$"No Ping route is known for package '{packageName}'; only bundled packages can be verified.",
+			nameof(packageName));
+	}
 
 	#endregion
 
