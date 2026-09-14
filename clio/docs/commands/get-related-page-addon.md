@@ -47,3 +47,10 @@ clio get-related-page-addon -e dev --entity-schema-name UsrDeliveryItem --packag
 
 - Aliases: `related-page-addon-get`, `get-related-pages`.
 - Pairs with [`create-related-page-addon`](create-related-page-addon.md): read → modify → `create` (which replaces the full set). Raw page/role UIds are always returned so the modified set can be sent back exactly.
+
+## Response identity
+
+`entitySchemaUId` is the base/root entity schema UId resolved by Creatio for the add-on.
+It is shared across replacing layers, not the UId of a particular replacing row or an
+unsaved designer schema. The same entity therefore reports the same identity on repeated
+reads and writes. A missing or invalid target identity fails before saving.

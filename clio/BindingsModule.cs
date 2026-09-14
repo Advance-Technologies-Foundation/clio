@@ -288,6 +288,26 @@ public class BindingsModule {
 		// unauthenticated GET to an operator-registered host has no reason to follow a redirect. The response-size
 		// cap is a defence-in-depth bound: sysenums.js is a small static file (~50KB today), so a multi-megabyte
 		// response is itself the signal something is wrong, well before the brace-matched parser would need to look at it.
+		// Dedicated client for the unauthenticated runtime-detection probes of reg-web-app. AllowAutoRedirect=false
+		// is load-bearing, not hygiene: a .NET Framework site answers /0/Login/NuiLogin.aspx with a 302 to the same
+		// page off the site root, and detection reads a 404 as proof that a runtime is absent — so following the
+		// redirect would let the status of a different URL convict the wrong runtime. Timeout is set here, once,
+		// under the same rule as the clients above.
+		// S4830: accepting any certificate is deliberate here for the same reason the availability probe
+		// below does it (PR #1429 review). reg-web-app registers a stand that every LATER request reaches
+		// through creatio.client, which trusts any certificate. A probe that validates would refuse exactly
+		// the self-signed dev stands the command exists to register, and detection would read the absent
+		// HTTP response as "the runtime is absent" - so a certificate this product otherwise accepts would
+		// convict a runtime that is running. The two probes against a Creatio stand must agree on trust.
+#pragma warning disable S4830
+		services.AddHttpClient(EnvironmentRuntimeDetectionService.HttpClientName)
+			.ConfigureHttpClient(client => client.Timeout = TimeSpan.FromSeconds(10))
+			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
+				UseCookies = false,
+				AllowAutoRedirect = false,
+				ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+			});
+#pragma warning restore S4830
 		services.AddHttpClient(ClassicEnumVocabularyResolver.HttpClientName)
 			.ConfigureHttpClient(client => {
 				client.Timeout = TimeSpan.FromSeconds(120);
@@ -297,6 +317,25 @@ public class BindingsModule {
 				UseCookies = false,
 				AllowAutoRedirect = false
 			});
+		// Dedicated client for the compile-completion availability probe (#1422). It accepts any server
+		// certificate on purpose: every other request this feature makes - the compile POST and the verdict
+		// read - goes through creatio.client, which trusts any certificate (see the remarks on
+		// HealthCheckCommand.HttpMessageHandlerFactory). With the default client the probe would be the only
+		// part that validates, so on a self-signed stand it would fail forever, EnvironmentReachable would
+		// never be true, both completion rules would be disabled and an ordinary build would wait out the
+		// full timeout and exit 1. Redirects are not followed: a 302 to the login page already proves the
+		// application is answering, and following it only spends time the probe is sampled on.
+		// S4830: accepting any certificate is the deliberate behaviour described above - the probe must
+		// reach exactly the stands creatio.client already reaches, including self-signed ones, or the
+		// feature reports a healthy stand as unreachable.
+#pragma warning disable S4830
+		services.AddHttpClient(Clio.Common.EnvironmentAvailabilityProbe.HttpClientName)
+			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
+				AllowAutoRedirect = false,
+				UseCookies = false,
+				ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+			});
+#pragma warning restore S4830
 
 		ISettingsBootstrapService settingsBootstrapService = new SettingsBootstrapService(_fileSystem, applyBootstrapRepairs);
 		SettingsBootstrapResult bootstrapResult = settingsBootstrapService.GetResult();
@@ -343,6 +382,9 @@ public class BindingsModule {
 		services.AddTransient<InstallerCommand>();
 		services.AddTransient<PinCertificateCommand>();
 		services.AddTransient<DeployIdentityCommand>();
+		services.AddTransient<UninstallIdentityCommand>();
+		services.AddTransient<IIdentityReferenceCleanup, IdentityReferenceCleanup>();
+		services.AddTransient<IIdentityServiceLifecycle, IdentityServiceLifecycle>();
 		services.AddTransient<IIdentityServiceArchiveResolver, IdentityServiceArchiveResolver>();
 		services.AddTransient<IIdentityServiceCreatioClient, IdentityServiceCreatioClient>();
 		services.AddTransient<IIdentityServiceRoleGrantService, IdentityServiceRoleGrantService>();
@@ -373,6 +415,13 @@ public class BindingsModule {
 		services.AddTransient<Clio.Command.Administration.ManageAccessCommand>();
 		services.AddTransient<Clio.Command.Administration.ManageLicenseCommand>();
 		services.AddTransient<Clio.Common.IFileSystem, Clio.Common.FileSystem>();
+		// Issue #1462 - the resident-MCP-host presence marker the startup update check consults, and the
+		// process-liveness seam that keeps a marker left by a killed host from deferring updates forever.
+		// SINGLETON because both are stateless answers about this machine, and the CLI reads them once per
+		// run: a transient copy would buy nothing and the explicit pair states the intended lifetime
+		// instead of inheriting the assembly scan's transient default.
+		services.AddSingleton<IProcessLivenessProbe, ProcessLivenessProbe>();
+		services.AddSingleton<IMcpHostPresenceRegistry, McpHostPresenceRegistry>();
 		services.AddTransient<IFileSecurityHardening, FileSecurityHardening>();
 		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionCache, Clio.Common.BrowserSession.BrowserSessionCache>();
 		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionService>(sp =>
@@ -687,15 +736,11 @@ public class BindingsModule {
 		services.AddSingleton(new KnowledgeGitHubReleaseOptions(TransportDeadlineMilliseconds: 15_000));
 		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 1_000));
 		services.AddSingleton(new KnowledgeInstallationStoreOptions(LockTimeoutMilliseconds: 30_000));
-		services.AddSingleton(new KnowledgeBundleClientCapabilities(
+		services.AddSingleton(provider => new KnowledgeBundleClientCapabilities(
 			ResolveKnowledgeBundleClioVersion(typeof(BindingsModule).Assembly.GetName().Version),
 			new Version(1, 1, 0),
-			new HashSet<string>(StringComparer.Ordinal) {
-				KnowledgeFeedbackPolicyTools.ConfigureToolName,
-				GuidanceGetTool.ToolName,
-				KnowledgeFeedbackPolicyTools.GetToolName,
-				KnowledgeManagementTools.ListKnowledgeExamplesToolName
-			}));
+			provider.GetRequiredService<IMcpToolInvokerRegistry>().ToolNames.ToHashSet(StringComparer.Ordinal)));
+		services.AddSingleton<IInstalledKnowledgeVersions, InstalledKnowledgeVersions>();
 		// LOCAL DEV TOGGLE (off by default): let a Git knowledge bundle that omits the explicit
 		// "sequence" (e.g. clio-knowledge master) load for local iteration. The key is declared in
 		// ExperimentalCommand.StandaloneFeatureKeys so `clio experimental` lists and sets it.
@@ -1252,6 +1297,15 @@ public class BindingsModule {
 				envSettings, reauthExecutor, workingDirectoriesProvider, clioFileSystem, fileSystem, logger);
 		});
 
+		// The container-bound ICompilationHistoryPoller closes over the PROCESS-ACTIVE environment (see the
+		// IDataProvider registration in RegisterActiveEnvironmentServices). Any caller that compiles a
+		// DIFFERENT environment - env-manage-ui clones settings per menu selection - therefore has to build
+		// its own, or it reads compilation history from the wrong stand. Since the completion rule decides
+		// the exit code from those rows, reading the wrong stand's history does not degrade the output: it
+		// reports a successful build as a transport failure.
+		services.AddTransient<Func<EnvironmentSettings, ICompilationHistoryPoller>>(_ =>
+			BuildEnvironmentScopedCompilationHistoryPoller);
+
 		RegisterFluentValidators(services);
 		return settingsRepository;
 	}
@@ -1346,6 +1400,16 @@ public class BindingsModule {
 			fileSystem,
 			logger);
 	}
+
+	/// <summary>
+	/// Builds a compilation-history poller bound to <paramref name="envSettings"/> rather than to the
+	/// process-active environment.
+	/// </summary>
+	/// <param name="envSettings">The environment whose <c>CompilationHistory</c> is to be read.</param>
+	/// <returns>A poller reading that environment.</returns>
+	private static ICompilationHistoryPoller BuildEnvironmentScopedCompilationHistoryPoller(
+		EnvironmentSettings envSettings) =>
+		new CompilationHistoryPoller(BuildRemoteDataProvider(envSettings));
 
 	/// <summary>
 	/// True when the environment authenticates with a token rather than with a login and password: an
@@ -1518,24 +1582,47 @@ public class BindingsModule {
 			if (_bootstrapDiagnosticsLogged) {
 				return;
 			}
-			if (report.RepairsApplied.Count > 0) {
-				string repairs = string.Join("; ", report.RepairsApplied.Select(repair => repair.Message));
-				ConsoleLogger.Instance.WriteWarning(
-					$"clio settings bootstrap repaired {repairs}. Active environment: {report.ResolvedActiveEnvironmentKey ?? "<none>"}.");
-				_bootstrapDiagnosticsLogged = true;
+			if (BuildBootstrapDiagnosticMessage(report) is not string message) {
 				return;
 			}
-			if (string.Equals(report.Status, "broken", StringComparison.OrdinalIgnoreCase)) {
-				string issue = report.Issues.FirstOrDefault()?.Message
-					?? "appsettings.json is unreadable.";
-				ConsoleLogger.Instance.WriteWarning(
-					$"clio settings bootstrap is degraded. {issue} File path: {report.SettingsFilePath}. "
-					+ "Fix or delete it and retry — clio never rewrites a broken settings file on its own, "
-					+ "so a hand fix (or deletion, if the registered environments are not worth recovering) "
-					+ "is the only way forward.");
-				_bootstrapDiagnosticsLogged = true;
-			}
+			ConsoleLogger.Instance.WriteWarning(message);
+			_bootstrapDiagnosticsLogged = true;
 		}
+	}
+
+	/// <summary>
+	/// Builds the one startup diagnostic line a bootstrap report deserves, or <see langword="null"/>
+	/// when it deserves none.
+	/// </summary>
+	/// <remarks>
+	/// A shape mismatch is reported for BOTH the degraded and the broken status, and WITHOUT the
+	/// "fix or delete it" tail: the file is valid JSON that a newer clio wrote, so the hand fix that
+	/// sentence asks for is the wrong action (issue #1462). Reporting it in the degraded case matters
+	/// most - there the command goes on working, and without this line a section the running build
+	/// silently dropped would never be mentioned outside the MCP health tool.
+	/// </remarks>
+	/// <param name="report">The bootstrap report to describe.</param>
+	/// <returns>The warning text, or <see langword="null"/> when the report is unremarkable.</returns>
+	internal static string BuildBootstrapDiagnosticMessage(SettingsBootstrapReport report) {
+		if (report.RepairsApplied.Count > 0) {
+			string repairs = string.Join("; ", report.RepairsApplied.Select(repair => repair.Message));
+			return $"clio settings bootstrap repaired {repairs}. "
+				+ $"Active environment: {report.ResolvedActiveEnvironmentKey ?? "<none>"}.";
+		}
+		SettingsIssue shapeMismatch = report.ShapeMismatch;
+		if (shapeMismatch is not null) {
+			return $"clio settings bootstrap is degraded. {shapeMismatch.Message} "
+				+ $"File path: {report.SettingsFilePath}.";
+		}
+		if (string.Equals(report.Status, "broken", StringComparison.OrdinalIgnoreCase)) {
+			string issue = report.Issues.FirstOrDefault()?.Message
+				?? "appsettings.json is unreadable.";
+			return $"clio settings bootstrap is degraded. {issue} File path: {report.SettingsFilePath}. "
+				+ "Fix or delete it and retry — clio never rewrites a broken settings file on its own, "
+				+ "so a hand fix (or deletion, if the registered environments are not worth recovering) "
+				+ "is the only way forward.";
+		}
+		return null;
 	}
 	
 	private static void RegisterAssemblyInterfaceTypes(IServiceCollection services){

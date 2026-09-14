@@ -159,9 +159,11 @@ public sealed class CompileCreatioTool(
 	/// behavior. Extracted for direct unit testing.
 	/// </summary>
 	internal static string CompileAlreadyInProgressMessage(string environmentName) =>
-		$"A compilation is already in progress for '{environmentName}'. The Creatio core serializes "
-		+ "compilation (a second concurrent compile is rejected), so this request was not started. Poll "
-		+ "compile-status for the running operation and wait for it to finish before compiling again.";
+		$"THIS clio process is already running a compilation for '{environmentName}', so this request was "
+		+ "not started. That is a local guard, not a server-wide one - a different clio process is not "
+		+ "covered by it. What actually serializes concurrent builds is the Creatio platform, which rejects "
+		+ "a second one on the node. Poll compile-status for the running operation and wait for it to "
+		+ "finish before compiling again.";
 
 	private CommandExecutionResult ExecuteFullCompile(string environmentName)
 	{

@@ -83,7 +83,7 @@ public sealed class CreateEntitySchemaTool(
 				 Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more. For the schema-design workflow call get-guidance with name app-modeling.
 				 """)]
 	public async Task<CommandExecutionResult> CreateEntitySchema(
-		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns, parent-schema-name (optional, defaults to BaseEntity unless extend-parent is true), extend-parent (optional, requires parent-schema-name when true)")] [Required] CreateEntitySchemaArgs args
+		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns, parent-schema-name (optional, defaults to schema-name for replacements or BaseEntity otherwise), extend-parent (optional; an explicit parent must match schema-name)")] [Required] CreateEntitySchemaArgs args
 	) {
 		ApplicationDataForgeResult? dataForge = enrichmentService is not null
 			? enrichmentService.Enrich(
@@ -773,11 +773,11 @@ public sealed record CreateEntitySchemaArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("parent-schema-name")]
-	[property: Description("Optional parent schema name. Defaults to BaseEntity when omitted (not applied with extend-parent); a parentless schema is not reachable over OData.")]
+	[property: Description("Optional parent schema name. Defaults to schema-name for replacements, or BaseEntity otherwise. An explicit replacement parent must match schema-name.")]
 	string? ParentSchemaName = null,
 
 	[property: JsonPropertyName("extend-parent")]
-	[property: Description("Create a replacement schema. Requires parent-schema-name.")]
+	[property: Description("Create a same-name replacement in the target package. Omitted parent-schema-name is inferred from schema-name; an existing replacement in this package is rejected.")]
 	bool ExtendParent = false,
 
 	IEnumerable<CreateEntitySchemaColumnArgs>? Columns = null
@@ -858,7 +858,10 @@ public sealed record CreateEntitySchemaColumnArgs(
 	[property: Description("""
 						  Column type. Supported values:
 						  Guid, Text, ShortText, MediumText, LongText, MaxSizeText,
+						  Text50, Text250, Text500, TextUnlimited, RichText, PhoneNumber, WebLink,
 						  Integer, Float, Boolean, DateTime, Lookup,
+						  Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8,
+						  Currency0, Currency1, Currency2, Currency3,
 						  Binary, Image, ImageLookup, File, SecureText, Email, Color.
 						  Case-insensitive.
 						  Date and Time are accepted but are ALIASES of DateTime: Creatio stores the column as
@@ -871,6 +874,14 @@ public sealed record CreateEntitySchemaColumnArgs(
 						  EmailAddress is accepted as an alias for Email.
 						  Money is accepted as an alias for Currency2 (the normal two-decimal Creatio money column),
 						  and Decimal for Decimal2 (same as Float).
+						  Most canonical names reported by the read tools (dataforge-get-table-columns, get-app-info)
+						  are accepted here too: Float0-Float4/Float8 = Decimal0-Decimal4/Decimal8,
+						  Money0/Money1/Money3 = Currency0/Currency1/Currency3,
+						  PhoneText = PhoneNumber, WebText = WebLink, EmailText = Email.
+						  Three read names mean a DIFFERENT type here, so do not echo a read value blindly:
+						  'Float' (reported for the unbounded float, dataValueType 5) resolves to Decimal2, and
+						  'Date'/'Time' resolve to DateTime. Read names of non-writable types (Enum, HashText,
+						  Collection, Entity, StageIndicator, FileLocator, ...) are rejected outright.
 						  For image/photo fields rendered by the crt.ImageInput Freedom UI component,
 						  use ImageLookup ("Image link") — NOT the binary Image type, which crt.ImageInput
 						  cannot read or write. ImageLookup references the SysImage schema automatically.
@@ -1018,6 +1029,14 @@ public abstract record ColumnModificationArgsBase(
 						   DateTime and reads it back as DateTime, so date-only or time-only intent is NOT preserved.
 						   Money is accepted as an alias for Currency2 (the normal two-decimal Creatio money column),
 						   and Decimal for Decimal2 (same as Float).
+						   Most canonical names reported by the read tools (dataforge-get-table-columns, get-app-info)
+						   are accepted here too: Float0-Float4/Float8 = Decimal0-Decimal4/Decimal8,
+						   Money0/Money1/Money3 = Currency0/Currency1/Currency3,
+						   PhoneText = PhoneNumber, WebText = WebLink, EmailText = Email.
+						   Three read names mean a DIFFERENT type here, so do not echo a read value blindly:
+						   'Float' (reported for the unbounded float, dataValueType 5) resolves to Decimal2, and
+						   'Date'/'Time' resolve to DateTime. Read names of non-writable types (Enum, HashText,
+						   Collection, Entity, StageIndicator, FileLocator, ...) are rejected outright.
 						   Color stores a hex color string (e.g. #RRGGBB) and is not a text column:
 						   text-only options (multiline / accent-insensitive / format-validated / masked) do not apply.
 						   Encrypted and Password are accepted as aliases for SecureText.

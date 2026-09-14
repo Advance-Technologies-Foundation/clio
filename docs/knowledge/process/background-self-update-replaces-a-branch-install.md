@@ -14,9 +14,11 @@ can quietly restore the released package underneath you. Turn it off for the dur
 measurement with `clio autoupdate --disable`, or set `CLIO_NO_UPDATE_CHECK` for a spawned process
 tree.
 
-**Why it is this way** — clio updates are disabled by default, but explicit opt-ins are preserved. `ShouldSkipUpdateCheck` exempts only the update verbs themselves, `mcp-server`, `mcp-http`,
+**Why it is this way** — clio updates are disabled by default, but explicit opt-ins are preserved. `ShouldSkipUpdateCheck` exempts only the update verbs themselves, `mcp-server` / `mcp`, `mcp-http`,
 `--version` and the help flags, because those are the paths where an update would be actively
-harmful. Nothing exempts "the operator is deliberately running a non-released build" — the tool has
+harmful. Since issue #1462 an ordinary CLI invocation ALSO defers the clio self-update while a
+resident `mcp-server` host has a presence marker in the clio home — so a measurement run is not
+protected by starting an MCP session either; that deferral lapses the moment the host exits. Nothing exempts "the operator is deliberately running a non-released build" — the tool has
 no way to know that.
 
 **What breaks if you ignore it** — the measurement stays green and measures the wrong binary. Half a

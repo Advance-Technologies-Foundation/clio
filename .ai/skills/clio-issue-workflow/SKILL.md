@@ -14,7 +14,7 @@ Treat the issue number or URL as required input. The original Clio issue remains
 ## Route the request
 
 - For `take`, `triage`, `fix`, `implement`, or `resolve`, start with the `claim-clio-issue` skill; claiming always precedes investigation.
-- Continue with the `investigate-clio-issue` skill to prove the failure boundary and identify every affected repository.
+- Continue with the `investigate-clio-issue` skill to prove the failure boundary, identify every affected repository, and check related open, unclaimed issues before deciding whether one PR should resolve multiple reports.
 - Use the `repair-clio-issue` skill only when the user authorized implementation. A triage-only request stops after publishing the diagnosis and any authorized downstream issue relationships.
 - For brainstorming, planning, explanation, or review-only requests, stay read-only and do not claim the issue.
 
@@ -28,7 +28,7 @@ Use GitHub's existing primitives only:
 - Issue Type and labels: the evidence-backed classification, normalized before investigation hands work to repair or another owner.
 - `Mitigation stage` issue field: `Investigating`, `Fixing`, `QA`, or `Waiting for human approval`.
 - Development: the linked branch and later the draft pull request.
-- Relationships: the original issue is `blocked by` an issue in another repository when that downstream issue owns work required to resolve the report.
+- Relationships: create and verify GitHub-native `blocked by` / `blocking` links for confirmed dependencies, in the same repository or across repositories. Follow the investigation skill's native relationship procedure before handoff; a diagnosis comment, Markdown link, or shared PR alone does not populate the Relationships section.
 
 Do not introduce claim records, leases, receipts, lock files, custom refs, or a separate state store.
 
@@ -64,6 +64,6 @@ If the field, option, permission, or API support is missing, report the exact fa
 
 ## Completion
 
-Report the original issue, assignee, current stage, linked branch or PR, owning repositories, blocking downstream issues, validation state, and any genuine human decision still required.
+Report the original issue, assignee, current stage, linked branch or PR, owning repositories, blocking downstream issues, related-issue search and grouping decision, validation state, and any genuine human decision still required.
 
 Do not add coordination artifacts beyond the assignee, Issue Type, labels, stage field, Development link, issue relationships, and normal issue or PR comments required to explain a blocker.

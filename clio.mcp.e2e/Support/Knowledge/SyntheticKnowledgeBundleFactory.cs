@@ -124,7 +124,7 @@ internal static class SyntheticKnowledgeBundleFactory {
 			mcpToolContract = new { min = "1.0.0", max = "1.1.0" }
 		},
 		requirements = new {
-			tools = new[] { GuidanceGetTool.ToolName },
+			tools = request.RequiredTools ?? new[] { GuidanceGetTool.ToolName },
 			itemIds = resources.Select(resource => resource.Name).ToArray(),
 			resourceUris = resources.Select(resource => resource.Uri).ToArray()
 		},
@@ -172,7 +172,8 @@ internal sealed record SyntheticBundleRequest(
 	string SourceRepository,
 	string? ReferenceName = null,
 	IReadOnlyDictionary<string, string>? LegacyUris = null,
-	bool CorruptSignature = false) {
+	bool CorruptSignature = false,
+	IReadOnlyList<string>? RequiredTools = null) {
 
 	/// <summary>Legacy URI aliases keyed by item ID, never null.</summary>
 	internal IReadOnlyDictionary<string, string> LegacyUriByItemId =>
