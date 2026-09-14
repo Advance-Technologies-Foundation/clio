@@ -2295,6 +2295,13 @@ public static class WebToMobileAnalysisService {
 							WalkElements(ctx, items, ResolveParent(ctx, mobileParentName), sourceAncestors: Append(sourceAncestors, name),
 								hostableParentName: hostableParentName);
 						}
+						// The OTHER child slots (tools, menuItems, …) are hoisted the same way. Walking `items`
+						// alone lost them without a trace: no operation and no droppedElements entry, because
+						// the container's own drop is the only record and it says nothing about what was inside
+						// a slot it did not carry. That is the silent class drop-non-converting-scope exists to
+						// close, and the scope branch above has always recursed for exactly this reason.
+						RecurseChildArrays(ctx, node, ResolveParent(ctx, mobileParentName), type,
+							Append(sourceAncestors, name));
 						continue;
 					}
 					// A retarget into a parent the mobile template lacks is dropped, not emitted as an unresolvable
@@ -2308,6 +2315,13 @@ public static class WebToMobileAnalysisService {
 							WalkElements(ctx, items, ResolveParent(ctx, mobileParentName), sourceAncestors: Append(sourceAncestors, name),
 								hostableParentName: hostableParentName);
 						}
+						// The OTHER child slots (tools, menuItems, …) are hoisted the same way. Walking `items`
+						// alone lost them without a trace: no operation and no droppedElements entry, because
+						// the container's own drop is the only record and it says nothing about what was inside
+						// a slot it did not carry. That is the silent class drop-non-converting-scope exists to
+						// close, and the scope branch above has always recursed for exactly this reason.
+						RecurseChildArrays(ctx, node, ResolveParent(ctx, mobileParentName), type,
+							Append(sourceAncestors, name));
 						continue;
 					}
 					containerParent = containerTarget.Parent;

@@ -1,4 +1,4 @@
-# update-page
+﻿# update-page
 
 ## Command Type
 
@@ -101,6 +101,13 @@ name instead of trying to edit a non-existent local `insert`.
     Scaffold with no content, so on a page built from it those slots may be empty, the merge would apply, and
     clio still refuses — it validates `viewConfigDiff` against an empty base and cannot see which case a body is
     in. Author the child with an `insert` there too rather than reaching for `validate: false`.
+  - **Rejected — a second `crt.Scaffold`.** An `insert`/`set` that declares `crt.Scaffold` ANYWHERE in its
+    `values` subtree — a nested child authors the same second root as a top-level one — or an `insert` of an
+    element NAMED `Scaffold` whatever type it declares, since the template already owns that element name.
+    Every mobile template provides the Scaffold root and it is the page's only permitted one: a second one
+    shadows the native element, so the top navigation bar and the page body silently come from the wrong
+    element. A `merge` onto `Scaffold` is the SUPPORTED way to patch the template's own root and is left
+    alone here — the merge-slot rules above own what may go inside it.
   - **Warned — a `merge` that authors child elements in any other slot.** Same mechanism, different odds: a
     slot the target does not carry (`menuItems` on a `crt.Button` or `crt.FloatingActionButton`, `items` on
     `crt.QuickFilterGroup`, `crt.Sort`, `crt.Timeline`) is *created* by the merge and the authoring works.
@@ -115,6 +122,10 @@ name instead of trying to edit a non-existent local `insert`.
     renders, as the `values` copy. Two identical types are accepted silently.
   - **Warned — an operation whose letter case does not match** the differ's exact-case dispatch
     (`"Insert"`): the whole operation is discarded, so it authors nothing.
+  - **Warned — a component type in NEITHER the mobile nor the web registry.** The type may be a custom
+    mobile component registered in your own package, in which case ignore it; it is equally what a typo
+    looks like. Confirm with `get-component-info` using `schema-type: "mobile"`. Advisory because clio
+    cannot tell a custom registration from a mistake, and refusing would block legitimate packages.
   - **Warned — a `crt.Button` inserted into the Scaffold `actions` slot** (`parentName: "Scaffold"`,
     `propertyName: "actions"`). ENG-95429: the save succeeds, but a button placed there does not appear on the
     Freedom UI mobile designer canvas, so nobody can see or edit it there. Place it as an item of a page

@@ -545,6 +545,108 @@ public sealed class WebToMobileRealPageRegressionTests {
 				+ "wire value — which would make the output depend on the machine clio runs on");
 	}
 
+	/// <summary>
+	/// Converts the pinned page the way the TOOL does: the tabbed template's container correspondence, its
+	/// web-template chrome named so it is subtracted, and the mobile template's own element types so a twin
+	/// is a merge. <see cref="Convert"/> passes none of these — it is deliberately bare for the
+	/// exclusion-rule assertions — and the difference decides whether the emitted diff is appliable at all.
+	/// </summary>
+	/// <remarks>
+	/// The chrome list is the load-bearing part. Unpruned, the source ROOT (<c>Main</c>) converts and, having
+	/// no source parent, takes the relocate fallback — <c>MainContainer</c>, which on this page is its own
+	/// child. That is a parent CYCLE, and the applier refuses the whole array over it, not just the one
+	/// operation. It is unreachable through the tool because a web template that was named and could not be
+	/// read REFUSES the conversion outright (RejectUnobtainableWebTemplate), so the chrome is either
+	/// subtracted or there is no guide — but it is why this fixture reproduces the tool's inputs rather than
+	/// the bare ones.
+	/// </remarks>
+	private static MobilePageConversionGuide ConvertAsTheToolDoes(JsonObject fixture) =>
+		WebToMobileAnalysisService.Analyze(
+			new PageBundleInfo {
+				ViewConfig = fixture["viewConfig"]!.DeepClone().AsArray(),
+				ViewModelConfig = fixture["viewModelConfig"]?.DeepClone().AsObject() ?? new JsonObject(),
+				ModelConfig = new JsonObject(),
+				Resources = new PageResourceInfo()
+			},
+			MobileTypesResolvingSearchFilter(fixture["viewConfig"]!),
+			new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+			webByType: new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
+			mobileByType: null, BundledRules(), templateRule: null,
+			sourcePage: "Leads_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
+			suggestedTarget: "UsrLeads_MobileFormPage",
+			containerNameMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				["CardContentWrapper"] = "GeneralTabContainer",
+				["Tabs"] = "Tabs"
+			},
+			templateComponentNames: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Main", "MainContainer" },
+			mobileTemplateTypesByName: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				["Tabs"] = "crt.Tabs",
+				["GeneralTabContainer"] = "crt.GridContainer"
+			});
+
+	[Test]
+	[Description("The central promise — \"paste viewConfigDiff verbatim\" — put through the Creatio differ clones on the real page, hermetically. The only other oracle that applies converter output lives in the sandbox E2E fixture, which Assert.Ignores without a stand, so the promise had no gate that runs on every build: a regression making the emitted diff unappliable would reach a user before anything went red.")]
+	public void Analyze_ViewConfigDiff_ShouldApplyThroughTheCreatioDiffer_OnTheRealLeadsFormPageShape() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+
+		// Act — the body is the guide's own array and nothing else. Assembling one by hand would prove the
+		// caller's transcription rather than the converter's output, and removing that transcription is what
+		// this response shape exists for.
+		MobilePageConversionGuide guide = ConvertAsTheToolDoes(fixture);
+		string body = new JsonObject {
+			["viewConfigDiff"] = JsonSerializer.SerializeToNode(guide.ViewConfigDiff)
+		}.ToJsonString();
+		SchemaValidationResult applied = MobileDiffApplyValidator.Validate(body);
+
+		// Assert
+		guide.ViewConfigDiff.Should().NotBeEmpty(
+			because: "the real page converts, so the apply below has a subject and cannot pass vacuously");
+		applied.IsValid.Should().BeTrue(
+			because: "the response tells the caller to paste this array AS SHIPPED, so it must survive the "
+				+ "differ clones unfiltered and unrepaired. Errors: " + string.Join("; ", applied.Errors));
+	}
+
+	[Test]
+	[Description("The two invariants the paste-verbatim promise rests on, asserted directly rather than inferred from an apply that happened to succeed: every merge carries a values object (the applier lists it as required and validates every operation before applying any, so one null fails the whole array), and a parent this diff creates never appears after a child that names it.")]
+	public void Analyze_ViewConfigDiff_ShouldCarryValuesOnEveryMergeAndPlaceParentsFirst_OnTheRealLeadsFormPageShape() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+
+		// Act
+		IReadOnlyList<ViewConfigDiffOperation> operations = ConvertAsTheToolDoes(fixture).ViewConfigDiff;
+
+		// Assert
+		List<ViewConfigDiffOperation> merges =
+			[.. operations.Where(operation => operation.Operation == "merge")];
+		merges.Should().NotBeEmpty(
+			because: "the harness names the mobile template's own elements, so this page HAS twins — an empty "
+				+ "collection here would make the assertion below vacuous rather than satisfied");
+		merges.Should().OnlyContain(
+			operation => operation.Values != null,
+			because: "the applier lists values as a REQUIRED parameter of merge and validates every operation "
+				+ "before applying any, so one null fails the whole paste; a no-delta merge carries {}");
+		var declaredBefore = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		var lateParents = new List<string>();
+		foreach (ViewConfigDiffOperation operation in operations) {
+			// Only a parent this diff CREATES has to come first. A parent that merely MERGES is an element the
+			// mobile template already provides, so it is on the page before the array is applied at all and
+			// its position among the operations decides nothing.
+			if (operation.ParentName is { Length: > 0 } parent
+				&& !declaredBefore.Contains(parent)
+				&& operations.Any(other => other.Operation == "insert"
+					&& string.Equals(other.Name, parent, StringComparison.OrdinalIgnoreCase))) {
+				lateParents.Add($"{operation.Name} -> {parent}");
+			}
+			if (operation.Operation == "insert" && operation.Name is { Length: > 0 } name) {
+				declaredBefore.Add(name);
+			}
+		}
+		lateParents.Should().BeEmpty(
+			because: "the caller applies the array IN ORDER, so a parent this diff INSERTS must precede the "
+				+ "child that names it — inserting into an element that does not exist yet throws");
+	}
+
 	/// <summary>The whole guide as canonical JSON — the subject of the reproducibility comparison.</summary>
 	private static string Serialize(MobilePageConversionGuide guide) =>
 		JsonSerializer.Serialize(guide, new JsonSerializerOptions { WriteIndented = false });

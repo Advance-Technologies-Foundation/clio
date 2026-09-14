@@ -1,4 +1,4 @@
-# sync-pages
+﻿# sync-pages
 
 Updates multiple Freedom UI page schemas in a single MCP call. For each page: validates the
 body client-side (optional), saves to Creatio, and verifies the update (optional). Continues
@@ -42,6 +42,10 @@ When `validate` is `true` (the default), the body is checked client-side before 
     clio validates `viewConfigDiff` against an empty base and cannot see the target, so a page built from
     `BlankMobilePageTemplate` — a bare Scaffold whose slots may be empty — is refused as well, even though the
     merge would have applied there.
+  - **Rejected** — a second `crt.Scaffold`: an `insert`/`set` declaring that type anywhere in its `values`
+    subtree, or an `insert` of an element named `Scaffold` whatever its type. The template already provides
+    the only permitted Scaffold root, and a second one shadows it so the navigation bar and body come from
+    the wrong element. A `merge` onto `Scaffold` is the supported way to patch the template's root.
   - **Warned** — the same authoring in any other slot. There the target may legitimately lack the slot, in
     which case the merge creates it and the authoring works; clio validates against an empty base and cannot
     distinguish the two. Both are `merge`-only — for `insert`/`set` the `values` object becomes the element,
@@ -50,7 +54,9 @@ When `validate` is `true` (the default), the body is checked client-side before 
     element still renders, as the `values` copy); and an operation whose letter case does not match the
     differ's exact-case dispatch; and a `crt.Button` inserted into `parentName: "Scaffold"`,
     `propertyName: "actions"`, which saves but does not appear on the mobile designer canvas (ENG-95429) —
-    place it in a page container's `items` with a `layoutConfig` instead.
+    place it in a page container's `items` with a `layoutConfig` instead; and a component type in NEITHER
+    the mobile nor the web registry, which is either a custom component registered in your package or a
+    typo — confirm with `get-component-info` and `schema-type: "mobile"`.
   - **Not enforced** — the same type-placement and merge-slot defects break **web** pages identically and are not checked
     there, and `validate: false` skips these checks along with every other one, re-opening the
     silent-persist path; do not use it to get past a rejection.
