@@ -43,29 +43,39 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("Each bundled template rule declares isFormPage matching whether it is an edit/form (record) template or a list/section/blank one — the authoritative source MobilePageConversionGuideTool.IsFormPage consults before falling back to its hardcoded template-name heuristic.")]
-	public void LoadBundled_TemplatesDeclareIsFormPage() {
+	[Description("The bundled rules declare the form (record) MOBILE templates in one root mobileFormPageTemplates list, keyed by the mobile template the conversion produces rather than per web→mobile pair — the source MobilePageConversionGuideTool.IsFormPage consults when a template rule matched; the hardcoded template-name heuristic applies only when no rule matched.")]
+	public void LoadBundled_DeclaresMobileFormPageTemplatesAtRoot() {
 		// Arrange & Act
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
 		// Assert
-		rules.Templates.Single(t => t.Web == "BasePageFreedomTemplate").IsFormPage.Should().BeTrue(
-			because: "the base non-tabbed record page is a form page");
-		rules.Templates.Single(t => t.Web == "PageWithTabsFreedomTemplate").IsFormPage.Should().BeTrue(
-			because: "the tabbed record page is a form page");
-		rules.Templates.Single(t => t.Web == "PageWithRightAreaAndTabsFreedomTemplate").IsFormPage.Should().BeTrue(
-			because: "the right-area tabbed record page is a form page, matching the hardcoded fallback's intent "
-				+ "even though it was never in the old 3-name allowlist");
-		rules.Templates.Single(t => t.Web == "BasePageTemplate").IsFormPage.Should().BeTrue(
-			because: "the classic base page template also maps to a mobile record page");
-		rules.Templates.Single(t => t.Web == "ListPageV3Template").IsFormPage.Should().BeFalse(
-			because: "a section/list template is not a form page and omits the key, defaulting to false");
-		rules.Templates.Single(t => t.Web == "ListPageV2Template").IsFormPage.Should().BeFalse(
-			because: "a section/list template is not a form page and omits the key, defaulting to false");
-		rules.Templates.Single(t => t.Web == "BlankPageTemplate").IsFormPage.Should().BeFalse(
-			because: "a blank page is not a form page and omits the key, defaulting to false");
-		rules.Templates.Single(t => t.Web == "BaseTemplate").IsFormPage.Should().BeFalse(
-			because: "the structural root template is not itself a form page and omits the key, defaulting to false");
+		rules.MobileFormPageTemplates.Should().BeEquivalentTo(
+			new[] { "BaseMobilePageTemplate", "MobilePageWithTabsFreedomTemplate" },
+			because: "the base record page and the tabbed record page are the two mobile form templates; a list, "
+				+ "blank or structural-root mobile template is simply absent");
+		rules.Templates.Where(t => t.Web is "BasePageFreedomTemplate" or "PageWithTabsFreedomTemplate"
+				or "PageWithRightAreaAndTabsFreedomTemplate" or "BasePageTemplate")
+			.Select(t => t.Mobile).Should().OnlyContain(m => rules.MobileFormPageTemplates.Contains(m),
+				because: "every web record-page template maps onto a mobile template the root list names, so the "
+					+ "per-pair flag is redundant and no mapping carries it");
+		rules.Templates.Where(t => t.Web is "ListPageV3Template" or "ListPageV2Template" or "BlankPageTemplate" or "BaseTemplate")
+			.Select(t => t.Mobile).Should().NotContain(m => rules.MobileFormPageTemplates.Contains(m),
+				because: "a section/list, blank or structural-root template does not produce a form page");
+	}
+
+	[Test]
+	[Description("The ListPageV2Template rule carries no duplicated FolderTree note: the rationale is stated once, on the V3 rule.")]
+	public void LoadBundled_ListPageV2FolderTreeMapping_CarriesNoDuplicatedNote() {
+		// Arrange & Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		ComponentMappingRule v2FolderTree = rules.Templates.Single(t => t.Web == "ListPageV2Template")
+			.Components.Single(c => c.Web == "FolderTree");
+		ComponentMappingRule v3FolderTree = rules.Templates.Single(t => t.Web == "ListPageV3Template")
+			.Components.Single(c => c.Web == "FolderTree");
+		v2FolderTree.Note.Should().BeNull(because: "the V2 mapping mirrors V3 and the note was a verbatim duplicate");
+		v3FolderTree.Note.Should().NotBeNullOrWhiteSpace(because: "the rationale for carrying the folder-schema binding lives once, on the V3 rule");
 	}
 
 	[Test]
@@ -230,14 +240,17 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 
 		ComponentMappingRule v2FolderTree = v2.Components.Single(c => c.Web == "FolderTree");
 		ComponentMappingRule v3FolderTree = v3.Components.Single(c => c.Web == "FolderTree");
-		v2FolderTree.Mobile.Should().Be(v3FolderTree.Mobile);
-		v2FolderTree.MobileType.Should().Be(v3FolderTree.MobileType);
+		v2FolderTree.Mobile.Should().Be(v3FolderTree.Mobile,
+			because: "both generations merge the web folder tree onto the same template-provided mobile element");
+		v2FolderTree.MobileType.Should().Be(v3FolderTree.MobileType,
+			because: "the mobile twin's type is a property of the mobile template, not of the web generation");
 		v2FolderTree.CarryProperties.Should().BeEquivalentTo(v3FolderTree.CarryProperties,
 			because: "the folder-tree schema binding (sourceSchemaName/rootSchemaName) must be carried for either template generation");
 
 		ComponentMappingRule v2DataTable = v2.Components.Single(c => c.Web == "DataTable");
 		ComponentMappingRule v3DataTable = v3.Components.Single(c => c.Web == "DataTable");
-		v2DataTable.Mobile.Should().Be(v3DataTable.Mobile);
+		v2DataTable.Mobile.Should().Be(v3DataTable.Mobile,
+			because: "the primary list component targets the same mobile List for either template generation");
 	}
 
 	[Test]

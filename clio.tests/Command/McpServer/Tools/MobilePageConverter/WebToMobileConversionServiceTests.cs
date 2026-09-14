@@ -449,46 +449,87 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuideTool.DeriveMobileSchemaName("UsrApp_Custom").Should().Be("UsrApp_Custom_Mobile");
 	}
 
+	private static WebToMobilePageConversionRules FormPageRules(params string[] mobileFormPageTemplates) =>
+		new() { MobileFormPageTemplates = mobileFormPageTemplates };
+
 	[Test]
 	[Description("A schema name ending in FormPage is a form page regardless of the resolved template rule.")]
 	public void IsFormPage_SchemaNameSuffix_TakesPrecedenceOverTemplateRule() {
 		// Arrange
-		var listRule = new TemplateMappingRule { Web = "ListPageV3Template", IsFormPage = false };
+		var listRule = new TemplateMappingRule { Web = "ListPageV3Template", Mobile = "BaseMobileListTemplate" };
+		WebToMobilePageConversionRules rules = FormPageRules("BaseMobilePageTemplate");
 
 		// Act
-		bool result = MobilePageConversionGuideTool.IsFormPage("UsrApp_FormPage", "ListPageV3Template", listRule);
+		bool result = MobilePageConversionGuideTool.IsFormPage("UsrApp_FormPage", "ListPageV3Template", listRule, rules);
 
 		// Assert
 		result.Should().BeTrue(because: "a page literally named *FormPage is a form page regardless of its template rule");
 	}
 
 	[Test]
-	[Description("A cataloged template rule's IsFormPage flag is authoritative when the schema name carries no FormPage suffix, including a template the old hardcoded allowlist never named.")]
-	public void IsFormPage_UsesTemplateRuleFlag_WhenSchemaNameSuffixAbsent() {
+	[Description("With a cataloged template rule and no FormPage suffix, the page is a form page exactly when the MOBILE template the rule targets is in the root mobileFormPageTemplates list — including a web template the old hardcoded allowlist never named.")]
+	public void IsFormPage_UsesRootMobileFormPageTemplates_WhenSchemaNameSuffixAbsent() {
 		// Arrange
-		var rightAreaRule = new TemplateMappingRule { Web = "PageWithRightAreaAndTabsFreedomTemplate", IsFormPage = true };
-		var listRule = new TemplateMappingRule { Web = "ListPageV3Template", IsFormPage = false };
+		var rightAreaRule = new TemplateMappingRule { Web = "PageWithRightAreaAndTabsFreedomTemplate", Mobile = "BaseMobilePageTemplate" };
+		var listRule = new TemplateMappingRule { Web = "ListPageV3Template", Mobile = "BaseMobileListTemplate" };
+		var differentlyCasedRule = new TemplateMappingRule { Web = "UsrCustomTemplate", Mobile = "basemobilepagetemplate" };
+		var mobilelessRule = new TemplateMappingRule { Web = "BasePageFreedomTemplate", Mobile = null };
+		WebToMobilePageConversionRules rules = FormPageRules("BaseMobilePageTemplate", "MobilePageWithTabsFreedomTemplate");
 
 		// Act
 		bool rightAreaResult = MobilePageConversionGuideTool.IsFormPage(
-			"UsrApp_Details", "PageWithRightAreaAndTabsFreedomTemplate", rightAreaRule);
-		bool listResult = MobilePageConversionGuideTool.IsFormPage("UsrApp_Details", "ListPageV3Template", listRule);
+			"UsrApp_Details", "PageWithRightAreaAndTabsFreedomTemplate", rightAreaRule, rules);
+		bool listResult = MobilePageConversionGuideTool.IsFormPage("UsrApp_Details", "ListPageV3Template", listRule, rules);
+		bool differentlyCasedResult = MobilePageConversionGuideTool.IsFormPage("UsrApp_Details", "UsrCustomTemplate", differentlyCasedRule, rules);
+		bool mobilelessResult = MobilePageConversionGuideTool.IsFormPage("UsrApp_Details", "BasePageFreedomTemplate", mobilelessRule, rules);
 
 		// Assert
 		rightAreaResult.Should().BeTrue(
-			because: "the catalog flag recognizes this template as a form page even though the hardcoded "
-				+ "fallback list never named it");
-		listResult.Should().BeFalse(because: "the catalog flag says this template is not a form page");
+			because: "the rule targets BaseMobilePageTemplate, which the root list names as a form template, even though "
+				+ "the hardcoded fallback list never named this web template");
+		listResult.Should().BeFalse(because: "BaseMobileListTemplate is not in the root form-template list");
+		differentlyCasedResult.Should().BeTrue(because: "schema names are matched case-insensitively, like every other name lookup in the rules");
+		mobilelessResult.Should().BeFalse(
+			because: "a matched rule with no mobile target answers for itself (no form page) and does not fall through to "
+				+ "the hardcoded web-template allowlist, exactly as a flagless rule did before");
+	}
+
+	[Test]
+	[Description("A matched rule whose loaded rules carry no mobileFormPageTemplates (an old CDN copy predating the key) falls back to the bundled list instead of switching the advice off.")]
+	public void IsFormPage_FallsBackToBundledMobileFormPageTemplates_WhenLoadedRulesCarryNone() {
+		// Arrange
+		// A web template the hardcoded allowlist never names, targeting a mobile template the BUNDLED list names:
+		// only the bundled fallback can answer true here, so a no-fallback implementation fails this test.
+		var rightAreaRule = new TemplateMappingRule { Web = "PageWithRightAreaAndTabsFreedomTemplate", Mobile = "BaseMobilePageTemplate" };
+		var listRule = new TemplateMappingRule { Web = "ListPageV3Template", Mobile = "BaseMobileListTemplate" };
+		WebToMobilePageConversionRules oldRules = new();
+
+		// Act
+		bool rightAreaResult = MobilePageConversionGuideTool.IsFormPage(
+			"UsrApp_Details", "PageWithRightAreaAndTabsFreedomTemplate", rightAreaRule, oldRules);
+		bool listResult = MobilePageConversionGuideTool.IsFormPage("UsrApp_Details", "ListPageV3Template", listRule, oldRules);
+		bool nullRulesResult = MobilePageConversionGuideTool.IsFormPage(
+			"UsrApp_Details", "PageWithRightAreaAndTabsFreedomTemplate", rightAreaRule, rules: null);
+
+		// Assert
+		rightAreaResult.Should().BeTrue(
+			because: "the bundled list names BaseMobilePageTemplate, so an old rules file without the key still recognizes "
+				+ "the right-area record page — a web template the hardcoded allowlist does not name");
+		listResult.Should().BeFalse(because: "the bundled list does not name the mobile list template");
+		nullRulesResult.Should().BeTrue(because: "a null rules object is treated like an empty list and also falls back to the bundled one");
 	}
 
 	[Test]
 	[Description("With no matched template rule (uncataloged custom template, or rules unavailable), IsFormPage falls back to the hardcoded template-name allowlist.")]
 	public void IsFormPage_FallsBackToHardcodedTemplateNames_WhenNoRuleMatched() {
-		// Arrange & Act
+		// Arrange
+		WebToMobilePageConversionRules rules = FormPageRules("BaseMobilePageTemplate");
+
+		// Act
 		bool knownRootResult = MobilePageConversionGuideTool.IsFormPage(
-			"UsrApp_Details", "BasePageFreedomTemplate", templateRule: null);
+			"UsrApp_Details", "BasePageFreedomTemplate", templateRule: null, rules);
 		bool unknownResult = MobilePageConversionGuideTool.IsFormPage(
-			"UsrApp_Details", "SomeCustomUncatalogedTemplate", templateRule: null);
+			"UsrApp_Details", "SomeCustomUncatalogedTemplate", templateRule: null, rules);
 
 		// Assert
 		knownRootResult.Should().BeTrue(because: "the fallback allowlist still recognizes the hardcoded root template names");

@@ -194,7 +194,7 @@ public sealed class MobilePageConversionGuideTool {
 
 		// Read-only probe: is this page a section, and what would registering it for mobile take?
 		// Best-effort — never blocks the guide if the environment can't be queried.
-		bool isFormPage = IsFormPage(args.SchemaName, pageResponse.Page?.ParentSchemaName, templateRule);
+		bool isFormPage = IsFormPage(args.SchemaName, pageResponse.Page?.ParentSchemaName, templateRule, rules);
 		SectionRegistrationInfo sectionRegistration = MobileSectionRegistrationProbe.Probe(
 			_commandResolver, args.EnvironmentName, args.Uri, args.Login, args.Password,
 			pageResponse.Page?.SchemaUId, isFormPage);
@@ -612,20 +612,34 @@ public sealed class MobilePageConversionGuideTool {
 	/// Whether the source page is an edit/form page (vs a list/section page). Used only to tailor the
 	/// read-only section-registration advice (the default mobile edit page is a manual step).
 	/// The schema-name suffix is checked first (a page literally named <c>*FormPage</c> is a form
-	/// regardless of what its template rule says); otherwise the resolved <paramref name="templateRule"/>'s
-	/// <see cref="TemplateMappingRule.IsFormPage"/> is authoritative when the page's effective template
-	/// matched a cataloged rule. The hardcoded template-name check is a best-effort fallback for when no
-	/// rule matched at all (an uncataloged custom template, or the rules file failed to load).
+	/// regardless of its template); otherwise, when the page's effective template matched a cataloged
+	/// <paramref name="templateRule"/>, the answer is whether the MOBILE template that rule targets is listed in
+	/// <see cref="WebToMobilePageConversionRules.MobileFormPageTemplates"/> — a root list keyed by the mobile
+	/// template, since form-ness belongs to the page the conversion produces, not to each web→mobile pair. An
+	/// OLD rules file without that list (a CDN copy behind the bundled one) falls back to the bundled list, like
+	/// <c>contentContainerTypes</c>. The hardcoded web-template-name check is a best-effort fallback only for when
+	/// no rule matched at all (an uncataloged custom template, or the rules file failed to load).
 	/// </summary>
-	internal static bool IsFormPage(string schemaName, string parentTemplate, TemplateMappingRule templateRule) {
+	internal static bool IsFormPage(string schemaName, string parentTemplate, TemplateMappingRule templateRule,
+		WebToMobilePageConversionRules rules) {
 		if (!string.IsNullOrWhiteSpace(schemaName) && schemaName.EndsWith("FormPage", StringComparison.OrdinalIgnoreCase)) {
 			return true;
 		}
 		if (templateRule is not null) {
-			return templateRule.IsFormPage;
+			return !string.IsNullOrWhiteSpace(templateRule.Mobile)
+				&& MobileFormPageTemplatesOf(rules).Contains(templateRule.Mobile, StringComparer.OrdinalIgnoreCase);
 		}
 		return parentTemplate is "PageWithTabsFreedomTemplate" or "BasePageFreedomTemplate" or "BasePageTemplate";
 	}
+
+	/// <summary>
+	/// The rules' <c>mobileFormPageTemplates</c> list, or the bundled list when the loaded rules carry none
+	/// (an old CDN copy predating the key).
+	/// </summary>
+	private static IReadOnlyList<string> MobileFormPageTemplatesOf(WebToMobilePageConversionRules rules) =>
+		rules?.MobileFormPageTemplates is { Count: > 0 } fromRules
+			? fromRules
+			: WebToMobilePageConversionRulesCatalog.LoadBundled()?.MobileFormPageTemplates ?? [];
 
 	internal static string DeriveMobileSchemaName(string webSchemaName) {
 		if (string.IsNullOrWhiteSpace(webSchemaName)) {
