@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Reflection;
@@ -527,7 +527,32 @@ internal static class ToolContractCatalog {
 		// The SecureText aliases are spelled out in prose rather than as `Password = SecureText`: the
 		// key-equals-value form reads as a hard-coded credential to static analysis (S2068).
 		"Other aliases: Blob = Binary, ImageLink = ImageLookup, EmailAddress = Email, " +
-		"Decimal/Float = Decimal2. The Creatio display names 'Encrypted' and 'Password' both map to SecureText.";
+		"Decimal/Float = Decimal2. The Creatio display names 'Encrypted' and 'Password' both map to SecureText. " +
+		"Most canonical names the read tools report are accepted here too: Float0-Float4/Float8 = " +
+		"Decimal0-Decimal4/Decimal8, Money0/Money1/Money3 = Currency0/Currency1/Currency3, " +
+		"PhoneText = PhoneNumber, WebText = WebLink, EmailText = Email. Three read names resolve to a " +
+		"DIFFERENT type here, so do not echo them blindly: 'Float' (the unbounded float a read reports for " +
+		"dataValueType 5) resolves to Decimal2, and 'Date'/'Time' resolve to DateTime. Read names for " +
+		"non-writable types (Enum, HashText, Collection, Entity, StageIndicator, FileLocator and the other " +
+		"structural types) are rejected — there is no way to create those columns through clio.";
+
+	// The `data-type` values are stated explicitly because a caller has to decide from them whether a column
+	// is numeric. A partial type map that fell back to "Text" once reported every decimal scale as text, and
+	// callers filtered a numeric column as a lexicographic string comparison (ENG-93202).
+	private const string DataForgeColumnsFieldDescription =
+		"Runtime column projections with `name`, `caption`, `description`, `data-type`, `required`, and " +
+		"`reference-schema-name`. `data-type` is the canonical Creatio type name — Text, Integer, Float, " +
+		"Float0-Float4/Float8 (decimal scales; Float2 is the common 'Decimal (0.01)'), Money/Money0/Money1/" +
+		"Money3 (currency scales), Boolean, DateTime, Date, Time, Lookup, Guid, ShortText/MediumText/LongText/" +
+		"MaxSizeText, PhoneText, WebText, EmailText, RichText, and so on. All Float*/Money*/Integer names are " +
+		"numeric, so compare them numerically rather than as strings. A type clio does not model yet is " +
+		"reported as its raw numeric ordinal (for example `51`) rather than as a guessed type name. " +
+		"Do NOT assume a name read here is writable: the write tools accept it back only for the types they " +
+		"can create, and three names mean a DIFFERENT type on write — " +
+		"`Float` writes Decimal2 (send Float2/Decimal2 explicitly for a scaled decimal, and note an " +
+		"unbounded Float column cannot be created by clio at all), while `Date` and `Time` both write " +
+		"DateTime. Names such as Enum, HashText, StageIndicator, Collection, Entity or FileLocator are " +
+		"read-only: the write tools reject them. Read the `type` field of those tools for the accepted list.";
 
 	// Shared by the create-lookup / create-entity-schema `columns` arrays. Spelling out the column identity
 	// field matters: these two contracts used to say only "Optional initial columns", so a caller had no way
@@ -847,6 +872,38 @@ internal static class ToolContractCatalog {
 	private const int MaxPurposeLength = 120;
 
 	/// <summary>
+	/// Abbreviations whose own terminating period IS followed by whitespace and therefore reads as a
+	/// sentence break to <see cref="FindFirstSentenceEnd"/>. Membership is decided by ONE property: the
+	/// abbreviation is never sentence-FINAL in English, so skipping its period can only ever be right.
+	/// An ambiguous one must stay out — a wrong skip merges two sentences and pulls the next one (often
+	/// a safety warning) into the one-liner, which is the same truncated-thought symptom ENG-96389 set
+	/// out to remove, merely relocated.
+	/// <para>
+	/// <c>etc.</c> is the worked example of that exclusion, and it is deliberate rather than an
+	/// oversight. Mid-sentence it is written <c>etc.,</c> or <c>etc.)</c>, whose period is NOT followed
+	/// by whitespace and is already kept by the mid-word rule below; the only form that would reach this
+	/// list is the ambiguous one, where sentence-final is the commoner reading.
+	/// </para>
+	/// <para>
+	/// Only <c>e.g.</c> reaches a first-sentence boundary in this assembly today - it is what cut
+	/// <c>get-user-culture</c> mid-example, and the reason this list exists. <c>i.e.</c> and <c>vs.</c>
+	/// are forward-looking entries, kept because they satisfy the never-sentence-final rule above, NOT
+	/// because either was measured reaching the split. Deliberately no occurrence counts here: a counted
+	/// claim in shipped text has no drift oracle and goes stale unnoticed (an earlier revision of this
+	/// comment carried three numbers that were already wrong when review checked them) - see
+	/// docs/knowledge/McpServer/counted-claims-in-shipped-text-have-no-drift-oracle.md.
+	/// </para>
+	/// <para>
+	/// This list narrows ONE trigger; it does not close the class. An index line is still DERIVED from
+	/// free prose and hard-cut at <see cref="MaxPurposeLength"/>, so a description written as
+	/// "Creates rows, columns, etc. BEFORE CALLING: ..." still distils to a truncated thought, and 73 of
+	/// the 212 served purposes are cut mid-word today. The general fix is an AUTHORED purpose declared
+	/// per tool with this distillation kept only as the fallback - tracked separately, not here.
+	/// </para>
+	/// </summary>
+	private static readonly string[] SentenceSafeAbbreviations = ["e.g.", "i.e.", "vs."];
+
+	/// <summary>
 	/// The names that have a HANDWRITTEN contract, as opposed to one synthesized from the registered tool
 	/// schema by <see cref="McpToolRegistrySchemaContract"/>. Exposed so a test can tell the two apart:
 	/// only a handwritten contract can disagree with the emitted schema, because the synthesized one is
@@ -1129,12 +1186,21 @@ internal static class ToolContractCatalog {
 	}
 
 	/// <summary>
-	/// Distills a one-line purpose from a full tool description: takes the first sentence (up to the first
-	/// period followed by whitespace) or first line, collapses inner whitespace, and truncates to
-	/// <see cref="MaxPurposeLength"/> characters with an ellipsis so the index stays compact.
+	/// Distills the one-line purpose the compact index shows for a tool: collapses inner whitespace,
+	/// takes the first sentence (a period followed by whitespace or the end of the text, skipping the
+	/// <see cref="SentenceSafeAbbreviations"/>), and truncates to <see cref="MaxPurposeLength"/>
+	/// characters with an ellipsis so the index stays compact.
 	/// </summary>
+	/// <remarks>
+	/// <c>internal</c> rather than <c>private</c> so the distillation can be driven directly from tests.
+	/// Routing every case through a real tool's <c>[Description]</c> instead would pin this logic to
+	/// production prose: the abbreviation rules are then exercised only where some description happens
+	/// to use one, and a reword silently removes the coverage. See
+	/// <c>docs/knowledge/McpServer/first-sentence-of-a-description-becomes-the-compact-index-purpose.md</c>.
+	/// </remarks>
 	/// <param name="description">The full curated tool description.</param>
-	private static string BuildPurpose(string description) {
+	/// <returns>The one-line purpose, or an empty string when the description has no content.</returns>
+	internal static string BuildPurpose(string description) {
 		string normalized = string.Join(' ',
 			(description ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 		if (normalized.Length == 0) {
@@ -1151,7 +1217,9 @@ internal static class ToolContractCatalog {
 	/// <summary>
 	/// Returns the index of the first sentence-terminating period (a '.' followed by whitespace or the end
 	/// of the text), or <c>-1</c> when the text has no sentence break. Abbreviation periods mid-word (for
-	/// example <c>en-US</c> or version numbers) are kept because they are not followed by whitespace.
+	/// example <c>en-US</c> or version numbers) are kept because they are not followed by whitespace;
+	/// the abbreviations in <see cref="SentenceSafeAbbreviations"/> are kept explicitly, because their
+	/// final period IS followed by whitespace and the mid-word rule cannot see them.
 	/// </summary>
 	/// <param name="text">The whitespace-normalized description.</param>
 	private static int FindFirstSentenceEnd(string text) {
@@ -1159,11 +1227,40 @@ internal static class ToolContractCatalog {
 			if (text[index] != '.') {
 				continue;
 			}
-			if (index == text.Length - 1 || char.IsWhiteSpace(text[index + 1])) {
-				return index;
+			if (index != text.Length - 1 && !char.IsWhiteSpace(text[index + 1])) {
+				continue;
 			}
+			if (EndsWithSentenceSafeAbbreviation(text, index)) {
+				continue;
+			}
+			return index;
 		}
 		return -1;
+	}
+
+	/// <summary>
+	/// Whether the period at <paramref name="periodIndex"/> terminates one of
+	/// <see cref="SentenceSafeAbbreviations"/> rather than a sentence. The match must cover a WHOLE
+	/// token — the character before the abbreviation has to be a non-alphanumeric or the start of the
+	/// text — so a word that merely ends in the same letters (<c>code.g.</c>) is still a sentence break.
+	/// </summary>
+	/// <param name="text">The whitespace-normalized description.</param>
+	/// <param name="periodIndex">Index of the candidate sentence-terminating period.</param>
+	private static bool EndsWithSentenceSafeAbbreviation(string text, int periodIndex) {
+		foreach (string abbreviation in SentenceSafeAbbreviations) {
+			int start = periodIndex - abbreviation.Length + 1;
+			if (start < 0) {
+				continue;
+			}
+			if (string.Compare(text, start, abbreviation, 0, abbreviation.Length,
+				    StringComparison.OrdinalIgnoreCase) != 0) {
+				continue;
+			}
+			if (start == 0 || !char.IsLetterOrDigit(text[start - 1])) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/// <summary>
@@ -2110,7 +2207,7 @@ internal static class ToolContractCatalog {
 					Field("table-name", StringType, "Target runtime entity schema name.")),
 				OutputFields = DataForgeEnvelopeFields(
 					QueryCorrelationIdentifierDescription,
-					Field(ColumnsFieldName, ArrayType, "Runtime column projections with `name`, `caption`, `description`, `data-type`, `required`, and `reference-schema-name`.")),
+					Field(ColumnsFieldName, ArrayType, DataForgeColumnsFieldDescription)),
 				Examples = [
 					Example("Read Contact runtime columns for a configured environment", new Dictionary<string, object?> {
 						["table-name"] = ExampleContactSchemaName,
@@ -2143,7 +2240,8 @@ internal static class ToolContractCatalog {
 					Field("similar-tables", ArrayType, "Similar table results."),
 					Field("similar-lookups", ArrayType, "Similar lookup results."),
 					Field("relations", ObjectType, "Resolved relation paths keyed by source-target pair."),
-					Field(ColumnsFieldName, ObjectType, "Resolved runtime column projections keyed by table name."),
+					Field(ColumnsFieldName, ObjectType, "Resolved runtime column projections keyed by table name. "
+						+ $"Each projection has the same shape and `data-type` vocabulary as {DataForgeTool.DataForgeGetTableColumnsToolName}."),
 					Field("coverage", ObjectType, "Coverage flags for health, tables, lookups, relations, and table-columns.")),
 				Examples = [
 					Example("Aggregate app-modeling context for a configured environment", new Dictionary<string, object?> {
