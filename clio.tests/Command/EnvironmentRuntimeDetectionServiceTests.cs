@@ -509,6 +509,127 @@ public sealed class EnvironmentRuntimeDetectionServiceTests {
 			because: "/api/HealthCheck/Ping also answers on a .NET Framework site, so a single successful health probe must not outrank the login markers");
 	}
 
+	[Test]
+	[Description("Reports a wrong or removed application path, instead of asking for a runtime, when every probe route answers 404.")]
+	public void Detect_Should_Report_A_Missing_Application_When_Every_Probe_Answers_NotFound() {
+		// Arrange
+		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+		IHttpClientFactory httpClientFactory = CreateHttpClientFactory(new Dictionary<string, HttpStatusCode> {
+			[BuildHealthUrl(true)] = HttpStatusCode.NotFound,
+			[BuildHealthUrl(false)] = HttpStatusCode.NotFound,
+			[BuildUiMarkerUrl(true)] = HttpStatusCode.NotFound,
+			[BuildUiMarkerUrl(false)] = HttpStatusCode.NotFound
+		});
+		IOwnedApplicationClient netCoreClient = Substitute.For<IOwnedApplicationClient>();
+		IOwnedApplicationClient netFrameworkClient = Substitute.For<IOwnedApplicationClient>();
+		ConfigureFactory(applicationClientFactory, netCoreClient, netFrameworkClient);
+		ConfigureClientWarmup(netCoreClient, true);
+		ConfigureClientWarmup(netFrameworkClient, false);
+		ConfigureServiceThrows(netCoreClient, true, new HttpRequestException("404 Not Found."));
+		ConfigureServiceThrows(netFrameworkClient, false, new HttpRequestException("404 Not Found."));
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
+
+		// Act
+		Action act = () => sut.Detect(CreateEnvironment());
+
+		// Assert
+		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
+				because: "a URL where no Creatio route exists cannot be classified into a runtime")
+			.Which;
+		exception.Message.Should().Contain("serves a Creatio route",
+			because: "the operator has to check the application path, not pick a runtime for a URL with nothing behind it");
+		exception.Message.Should().NotContain("--IsNetCore true",
+			because: "registering a runtime for a dead URL would only move the failure to the next command");
+	}
+
+	[Test]
+	[Description("Reports that the site is not serving requests, instead of asking for a runtime, when every probe route answers an HTTP server error.")]
+	public void Detect_Should_Report_An_Unavailable_Site_When_Every_Probe_Answers_A_Server_Error() {
+		// Arrange
+		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+		IHttpClientFactory httpClientFactory = CreateHttpClientFactory(new Dictionary<string, HttpStatusCode> {
+			[BuildHealthUrl(true)] = HttpStatusCode.ServiceUnavailable,
+			[BuildHealthUrl(false)] = HttpStatusCode.ServiceUnavailable,
+			[BuildUiMarkerUrl(true)] = HttpStatusCode.ServiceUnavailable,
+			[BuildUiMarkerUrl(false)] = HttpStatusCode.ServiceUnavailable
+		});
+		IOwnedApplicationClient netCoreClient = Substitute.For<IOwnedApplicationClient>();
+		IOwnedApplicationClient netFrameworkClient = Substitute.For<IOwnedApplicationClient>();
+		ConfigureFactory(applicationClientFactory, netCoreClient, netFrameworkClient);
+		ConfigureClientWarmup(netCoreClient, true);
+		ConfigureClientWarmup(netFrameworkClient, false);
+		ConfigureServiceThrows(netCoreClient, true, new HttpRequestException("503 Service Unavailable."));
+		ConfigureServiceThrows(netFrameworkClient, false, new HttpRequestException("503 Service Unavailable."));
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
+
+		// Act
+		Action act = () => sut.Detect(CreateEnvironment());
+
+		// Assert
+		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
+				because: "a site that serves nothing cannot be classified, and it is not the caller's runtime choice that is missing")
+			.Which;
+		exception.Message.Should().Contain("is not serving requests",
+			because: "the operator has to be sent to the stopped application, not to the --IsNetCore flag");
+		exception.Message.Should().NotContain("--IsNetCore true",
+			because: "choosing a runtime cannot fix a site that is down, so offering it sends the operator to the wrong problem");
+	}
+
+	[Test]
+	[Description("Keeps asking for an explicit runtime when every probe route answers 401, because a gated site is still serving.")]
+	public void Detect_Should_Not_Report_An_Unavailable_Site_When_Every_Probe_Answers_Unauthorized() {
+		// Arrange
+		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+		IHttpClientFactory httpClientFactory = CreateHttpClientFactory(new Dictionary<string, HttpStatusCode> {
+			[BuildHealthUrl(true)] = HttpStatusCode.Unauthorized,
+			[BuildHealthUrl(false)] = HttpStatusCode.Unauthorized,
+			[BuildUiMarkerUrl(true)] = HttpStatusCode.Unauthorized,
+			[BuildUiMarkerUrl(false)] = HttpStatusCode.Unauthorized
+		});
+		IOwnedApplicationClient netCoreClient = Substitute.For<IOwnedApplicationClient>();
+		IOwnedApplicationClient netFrameworkClient = Substitute.For<IOwnedApplicationClient>();
+		ConfigureFactory(applicationClientFactory, netCoreClient, netFrameworkClient);
+		ConfigureClientWarmup(netCoreClient, true);
+		ConfigureClientWarmup(netFrameworkClient, false);
+		ConfigureServiceFailure(netCoreClient, true, "NetCore SelectQuery failed.");
+		ConfigureServiceFailure(netFrameworkClient, false, "Framework SelectQuery failed.");
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
+
+		// Act
+		Action act = () => sut.Detect(CreateEnvironment());
+
+		// Assert
+		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
+				because: "a gated site answers every route, so nothing distinguishes the runtimes")
+			.Which;
+		exception.Message.Should().Contain("--IsNetCore true",
+			because: "the site is serving, so an explicit override really is the way past it");
+		exception.Message.Should().NotContain("is not serving requests",
+			because: "a 401 proves the route was served, so calling the site unavailable would be false");
+	}
+
+	[Test]
+	[Description("Classifies a real HttpClient timeout as an unreachable host even though the unwrapped message says only that a task was canceled.")]
+	public void Detect_Should_Report_An_Unreachable_Host_When_Every_Probe_Times_Out() {
+		// Arrange
+		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
+		IHttpClientFactory httpClientFactory = CreateFailingHttpClientFactory(
+			new TaskCanceledException("A task was canceled."));
+		EnvironmentRuntimeDetectionService sut = new(applicationClientFactory, httpClientFactory, new ServiceUrlBuilderFactory());
+
+		// Act
+		Action act = () => sut.Detect(new EnvironmentSettings {
+			Uri = "http://ts1-infr-web01:88/studioenu_14771250_0401"
+		});
+
+		// Assert
+		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
+				because: "a host that never answers cannot be classified")
+			.Which;
+		exception.Message.Should().Contain("could not be reached from this machine",
+			because: "no HTTP status came back at all, which is a connectivity problem regardless of how the exception text reads");
+	}
+
 	private static void ConfigureFactory(
 		IApplicationClientFactory applicationClientFactory,
 		IOwnedApplicationClient netCoreClient,

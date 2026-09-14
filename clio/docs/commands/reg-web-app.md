@@ -23,8 +23,10 @@ Omit `--IsNetCore` and clio detects the runtime itself, in this order:
 3. **Health endpoints**, last and only as a tiebreaker: `/api/HealthCheck/Ping` answers
    on a .NET Framework site as well, so it cannot tell the runtimes apart on its own.
 
-When the probes stay inconclusive clio stops with a diagnostic naming every URL it tried,
-rather than guessing — pass `--IsNetCore` to skip detection entirely.
+When the probes stay inconclusive clio stops with a diagnostic naming every URL it tried, rather than guessing,
+and **registers nothing** — an environment whose runtime was guessed would misdirect every later command. Pass
+`--IsNetCore` to skip detection entirely. If no route was served at all, the diagnostic says the site is
+unreachable or not serving requests instead of asking for a runtime.
 
 ## Synopsis
 
