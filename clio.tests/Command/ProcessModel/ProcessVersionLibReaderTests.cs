@@ -4,6 +4,7 @@ using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
+using ATF.Repository;
 using ATF.Repository.Mock;
 using ATF.Repository.Providers;
 using Clio.Command.ProcessModel;
@@ -30,6 +31,8 @@ namespace Clio.Tests.Command.ProcessModel;
 public sealed class ProcessVersionLibReaderTests {
 
 	private const string SchemaName = "VwProcessLib";
+	private const string PackageSchemaName = "SysPackage";
+	private const string PackageName = "UsrInvoicing";
 
 	private static readonly Guid RootUId = Guid.Parse("332eac25-1443-4e4e-a972-6c0e66cb9243");
 	private static readonly Guid ChildUId = Guid.Parse("b5e5162a-254a-430f-8978-4738c6ebf76b");
@@ -67,11 +70,28 @@ public sealed class ProcessVersionLibReaderTests {
 	/// <see cref="ProcessVersionLibReader.SelectFamily"/>, which runs in memory over whatever the provider
 	/// returned: a filter that lives only in the query is invisible to every test in this file.
 	/// </remarks>
-	private static ProcessVersionLibReader ReaderOver(params Dictionary<string, object>[] rows) {
+	private static ProcessVersionLibReader ReaderOver(params Dictionary<string, object>[] rows) =>
+		ReaderOver(rows, PackageRow(PackageUId, PackageName));
+
+	/// <summary>
+	/// A reader over the view rows plus an explicit <c>SysPackage</c> row set, for the cases that are ABOUT
+	/// the package names rather than merely carrying them.
+	/// </summary>
+	private static ProcessVersionLibReader ReaderOver(Dictionary<string, object>[] rows,
+		params Dictionary<string, object>[] packageRows) {
 		DataProviderMock provider = new();
 		provider.MockItems(SchemaName).Returns(rows.ToList());
+		provider.MockItems(PackageSchemaName).Returns(packageRows.ToList());
 		return new ProcessVersionLibReader(provider);
 	}
+
+	/// <summary>A <c>SysPackage</c> row, keyed by the view's own column names for the same reason as <see cref="Row"/>.</summary>
+	private static Dictionary<string, object> PackageRow(Guid uid, string name) =>
+		new() {
+			["Id"] = uid,
+			["UId"] = uid,
+			["Name"] = name
+		};
 
 	/// <summary>A row object of the kind the describe caption arm already holds when it calls the reader.</summary>
 	private static VwProcessLib RowObject(Guid uid, string name, int? version, bool? isActive, Guid rootUId) =>
@@ -166,6 +186,116 @@ public sealed class ProcessVersionLibReaderTests {
 		facts.Versions.Should().BeNull(
 			because: "an empty list would read as 'checked, no versions', which is a different claim");
 		facts.ActiveVersionSource.Should().BeNull(because: "no authority answered, so none is credited");
+	}
+
+	[Test]
+	[Description("Every family member names the package it lives in, not just its UId. A builder asking which package a version lives in reads the answer, and manual testing on ENG-94374 saw it rendered as the raw GUID 'lives in package a00051f4-...' because packageUId was all the read carried.")]
+	public void Read_Should_NameEachMembersPackage_When_ThePackageRowsAreReadable() {
+		// Arrange
+		ProcessVersionLibReader sut = ReaderOver(
+			Row(RootUId, "InvoiceVisaProcess", version: 0, isActive: false, rootUId: RootUId),
+			Row(ChildUId, "InvoiceVisaProcessInvoice1", version: 1, isActive: true, rootUId: RootUId));
+
+		// Act
+		ProcessVersionFacts facts = sut.Read(RootUId.ToString());
+
+		// Assert
+		facts.Versions.Should().OnlyContain(v => v.PackageName == PackageName,
+			because: "the package a version lives in is reported by NAME, which is what a person is asking for");
+		facts.Versions.Should().OnlyContain(v => v.PackageUId == PackageUId.ToString(),
+			because: "the UId stays on the response as the unambiguous identity - the name is added, not swapped in");
+		facts.Warning.Should().BeNull(
+			because: "naming the packages succeeded, and a warning here would read as a standing that was not established");
+	}
+
+	[Test]
+	[Description("A cross-package family names each member's OWN package. Version numbering is counted within a package, so a family spread over two packages is normal rather than an error - and reporting one name for all of them would state the opposite.")]
+	public void Read_Should_NameEachPackageSeparately_When_TheFamilySpansPackages() {
+		// Arrange
+		Guid secondPackageUId = Guid.Parse("6f2d9c11-45ab-42a7-9c1e-2d4b8f0a7e33");
+		Dictionary<string, object> child = Row(ChildUId, "InvoiceVisaProcessUsrOther1", version: 1,
+			isActive: true, rootUId: RootUId);
+		child["PackageUId"] = secondPackageUId;
+		ProcessVersionLibReader sut = ReaderOver(
+			[Row(RootUId, "InvoiceVisaProcess", version: 0, isActive: false, rootUId: RootUId), child],
+			PackageRow(PackageUId, PackageName),
+			PackageRow(secondPackageUId, "UsrOther"));
+
+		// Act
+		ProcessVersionFacts facts = sut.Read(RootUId.ToString());
+
+		// Assert
+		facts.Versions.Single(v => v.IsRoot).PackageName.Should().Be(PackageName,
+			because: "the root keeps its own package");
+		facts.Versions.Single(v => !v.IsRoot).PackageName.Should().Be("UsrOther",
+			because: "a version need not land in the root's package, and the answer has to say where it did land");
+	}
+
+	[Test]
+	[Description("A package UId with no SysPackage row leaves that member unnamed and raises NO warning. An individual name that does not resolve is a gap in one field, not a standing that could not be established - and the warning channel is what a caller reads as 'the version facts are unknown'.")]
+	public void Read_Should_LeaveThePackageUnnamedWithoutWarning_When_ItsRowIsMissing() {
+		// Arrange
+		ProcessVersionLibReader sut = ReaderOver(
+			[Row(RootUId, "InvoiceVisaProcess", version: 0, isActive: true, rootUId: RootUId)],
+			PackageRow(Guid.Parse("0c1e5f74-9a3d-4f5e-8b21-73d0c6a9e415"), "UsrSomethingElse"));
+
+		// Act
+		ProcessVersionFacts facts = sut.Read(RootUId.ToString());
+
+		// Assert
+		facts.Versions.Should().OnlyContain(v => v.PackageName == null,
+			because: "nothing named this package, and an invented name is worse than none");
+		facts.Versions.Should().OnlyContain(v => v.PackageUId == PackageUId.ToString(),
+			because: "the identity the view did report survives the name that could not be resolved");
+		facts.Version.Should().Be(0,
+			because: "the version facts are established whether or not the packages could be named");
+		facts.Warning.Should().BeNull(
+			because: "one unresolved name is not an unestablished standing, and warning here would train a caller to report UNKNOWN for a read that answered");
+	}
+
+	[Test]
+	[Description("A SysPackage read that comes back with NO ROWS is treated as not read, not as read-and-empty. A Creatio environment always carries packages, so an empty set is a refusal - and measured on ATF.Repository 2.0.3.1 a null or unsuccessful IItemsResponse does not throw, it yields no rows, which is the shape a restricted SysPackage comes back as. Classified as success it would publish every member with no package name and NO warning, the one combination the contract says cannot occur.")]
+	public void Read_Should_WarnAboutTheUnreadablePackages_When_ThePackageQueryReturnsNoRows() {
+		// Arrange
+		ProcessVersionLibReader sut = ReaderOver(
+			[Row(RootUId, "InvoiceVisaProcess", version: 0, isActive: true, rootUId: RootUId)],
+			[]);
+
+		// Act
+		ProcessVersionFacts facts = sut.Read(RootUId.ToString());
+
+		// Assert
+		facts.Version.Should().Be(0,
+			because: "the view answered, so the version facts are established whatever SysPackage did");
+		facts.Versions.Should().OnlyContain(v => v.PackageName == null,
+			because: "no row named this package, and an invented name is worse than none");
+		facts.Warning.Should().Contain("package names could not be read",
+			because: "every member lost its name at once, which is the case a caller has to be told about - "
+				+ "silently answering in UIds is the defect the name was added to remove");
+	}
+
+	[Test]
+	[Description("When the package table itself cannot be read, every member loses its name at once - so THAT is reported, unlike a single UId with no row. Without it the answer degrades silently to raw GUIDs in front of a builder who asked which package a version lives in.")]
+	public void Read_Should_WarnAboutTheUnreadablePackages_When_ThePackageQueryFails() {
+		// Arrange
+		DataProviderMock inner = new();
+		inner.MockItems(SchemaName).Returns(new List<Dictionary<string, object>> {
+			Row(RootUId, "InvoiceVisaProcess", version: 0, isActive: true, rootUId: RootUId)
+		});
+		ProcessVersionLibReader sut = new(new FailingSchemaDataProvider(inner, PackageSchemaName));
+
+		// Act
+		ProcessVersionFacts facts = sut.Read(RootUId.ToString());
+
+		// Assert
+		facts.Version.Should().Be(0,
+			because: "the version facts came from the view, which answered - the packages are a separate read");
+		facts.Versions.Should().OnlyContain(v => v.PackageName == null,
+			because: "no name was established for any member");
+		facts.Warning.Should().Be(
+			"the package names could not be read, so those facts were not established",
+			because: "the gap was deliberately rephrased to compose with the shared tail without a doubled "
+				+ "'so' and without claiming the version facts were lost - a Contain cannot see either");
 	}
 
 	[Test]
@@ -404,6 +534,10 @@ public sealed class ProcessVersionLibReaderTests {
 			Row(RootUId, "InvoiceVisaProcess", version: 0, isActive: false, rootUId: RootUId),
 			Row(ChildUId, "InvoiceVisaProcessInvoice1", version: 1, isActive: true, rootUId: RootUId)
 		]);
+		// Mocked even though this test is about the query COUNT on the view: an unmocked SysPackage answers
+		// with no rows, which the reader reads as a refused package table and reports - correctly, and
+		// unrelated to what is under test here.
+		provider.MockItems(PackageSchemaName).Returns([PackageRow(PackageUId, PackageName)]);
 		ProcessVersionLibReader sut = new(provider);
 
 		// Act
@@ -416,6 +550,83 @@ public sealed class ProcessVersionLibReaderTests {
 		facts.ActiveVersionName.Should().Be("InvoiceVisaProcessInvoice1",
 			because: "skipping the identity query must not change the facts the reader establishes");
 		facts.Warning.Should().BeNull(because: "the family was read and its active member established");
+	}
+
+	[Test]
+	[Description("A SysPackage read that is merely SLOW loses the NAMES and nothing else. Guarded converts a package read that FAILS into an absent name but cannot convert one that is still running, so without a separate budget a stalled package table spends the version read's own time and the OUTER expiry discards facts that were already computed. Every other test here answers instantly, so the slice is unreachable from them: deleting the WithinBudget wrapper leaves them all green.")]
+	public void Read_Should_KeepTheVersionFacts_When_ThePackageReadStalls() {
+		// Arrange
+		using BlockingSchemaDataProvider provider = new(ViewRows(), PackageSchemaName);
+		ProcessVersionLibReader sut = new(provider, TimeSpan.FromSeconds(1));
+
+		// Act
+		ProcessVersionFacts facts = sut.Read(RootUId.ToString());
+
+		// Assert
+		facts.Version.Should().Be(0,
+			because: "the view answered; only the package table is stuck, and the two are separate reads");
+		facts.ActiveVersionSource.Should().Be("process-library-view",
+			because: "an authority answered, which is what separates this from a read that established nothing");
+		facts.Versions.Should().NotBeNull().And.OnlyContain(v => v.PackageName == null,
+			because: "the names are what the stall costs");
+		facts.Warning.Should().Contain("package names could not be read",
+			because: "the caller has to know WHY it is answering in UIds");
+		facts.Warning.Should().NotContain("did not complete within",
+			because: "that is the OUTER expiry - reporting it here would mean the version facts were lost too, "
+				+ "which is the failure the slice exists to prevent");
+	}
+
+	[Test]
+	[Description("The by-UId entry point measures the identity query too. That overload pays a lookup BEFORE the family read, and a clock started after it leaves that time unmeasured - the package read then computes its share against a budget already partly spent and can outlast the outer wait, discarding version facts that were in hand. This is the path describe takes for process-name and process-uid, so the row-overload test alone does not cover it.")]
+	public void Read_Should_KeepTheVersionFacts_When_TheIdentityQueryAlreadySpentPartOfTheBudget() {
+		// Arrange
+		using BlockingSchemaDataProvider provider = new(ViewRows(), PackageSchemaName) {
+			DelayBeforeViewAnswer = TimeSpan.FromMilliseconds(1600)
+		};
+		ProcessVersionLibReader sut = new(provider, TimeSpan.FromSeconds(4));
+
+		// Act
+		// The by-UId overload, so the delay is paid TWICE - once for the identity query and once for the
+		// family - which is exactly the term a stopwatch started inside FactsForRow would miss.
+		ProcessVersionFacts facts = sut.Read(RootUId.ToString());
+
+		// Assert
+		facts.Version.Should().Be(0,
+			because: "both view reads finished inside the budget, so the standing is established");
+		facts.Warning.Should().Contain("package names could not be read",
+			because: "only the names may be lost to a stalled package table");
+		facts.Warning.Should().NotContain("did not complete within",
+			because: "that is the OUTER expiry, and reaching it means the identity query's time went "
+				+ "unmeasured - the version facts are then discarded after being computed");
+	}
+
+	[Test]
+	[Description("The slice is bounded by what is LEFT, not by a fraction of the total. The package read starts only after the family read, so a third of the TOTAL on top of a family read that already spent most of it pushes past the outer bound - the outer wait expires and discards version facts that were computed. Reverting PackageReadBudget to the slice alone reddens this and nothing else.")]
+	public void Read_Should_KeepTheVersionFacts_When_TheFamilyReadAlreadySpentMostOfTheBudget() {
+		// Arrange
+		using BlockingSchemaDataProvider provider = new(ViewRows(), PackageSchemaName) {
+			DelayBeforeViewAnswer = TimeSpan.FromMilliseconds(3200)
+		};
+		// 4 s against a 3.2 s delay, not 2 s against 1.6 s: the fixture is Parallelizable and already holds
+		// two pool threads, and ~200 ms of slack for two Task.Run scheduling hops flakes as `Version` null
+		// plus "did not complete within" - the test reporting the very defect it exists to disprove.
+		ProcessVersionLibReader sut = new(provider, TimeSpan.FromSeconds(4));
+
+		// Act
+		// The ROW entry point, so the view is read once: the by-UId overload also pays the identity query,
+		// and two delays would expire the outer budget before the package read is ever reached - which is a
+		// different failure from the one under test.
+		ProcessVersionFacts facts = sut.Read(RowObject(RootUId, "InvoiceVisaProcess", 0, true, RootUId));
+
+		// Assert
+		facts.Version.Should().Be(0,
+			because: "the family read finished inside the budget, so its facts are established whatever the "
+				+ "package read then did with the little that was left");
+		facts.Warning.Should().Contain("package names could not be read",
+			because: "the names are the only thing a stalled package table may cost");
+		facts.Warning.Should().NotContain("did not complete within",
+			because: "a slice taken from the TOTAL rather than the REMAINING time is what pushes the whole read "
+				+ "past its bound, and that loss is the one under test");
 	}
 
 	[Test]
@@ -494,4 +705,94 @@ public sealed class ProcessVersionLibReaderTests {
 				+ "unless the gap says why");
 	}
 
+	/// <summary>
+	/// Answers every schema through <paramref name="inner"/> except one, which fails the way a DataService
+	/// read fails.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="DataProviderMock"/> can be told what a schema RETURNS and not that it throws, and a
+	/// substitute that throws for any argument cannot separate the family read from the package read - the
+	/// two go through the same provider. The distinction under test is exactly that separation: the version
+	/// facts have to survive a package read that did not.
+	/// </remarks>
+	private sealed class FailingSchemaDataProvider(DataProviderMock inner, string failingSchemaName)
+		: IDataProvider {
+
+		public IDefaultValuesResponse GetDefaultValues(string schemaName) => inner.GetDefaultValues(schemaName);
+
+		public IItemsResponse GetItems(ISelectQuery selectQuery) =>
+			string.Equals(selectQuery?.RootSchemaName, failingSchemaName, StringComparison.OrdinalIgnoreCase)
+				? throw new WebException($"simulated failure reading '{failingSchemaName}'")
+				: inner.GetItems(selectQuery);
+
+		public IExecuteResponse BatchExecute(List<IBaseQuery> queries) => inner.BatchExecute(queries);
+
+		public T GetSysSettingValue<T>(string sysSettingCode) => inner.GetSysSettingValue<T>(sysSettingCode);
+
+		public bool GetFeatureEnabled(string featureCode) => inner.GetFeatureEnabled(featureCode);
+
+		public IExecuteProcessResponse ExecuteProcess(IExecuteProcessRequest request) =>
+			inner.ExecuteProcess(request);
+	}
+
+	/// <summary>The canned view rows the budget tests read a family out of.</summary>
+	private static List<Dictionary<string, object>> ViewRows() => [
+		Row(RootUId, "InvoiceVisaProcess", version: 0, isActive: true, rootUId: RootUId)
+	];
+
+	/// <summary>
+	/// Answers the view from a canned set and BLOCKS one schema until disposal.
+	/// </summary>
+	/// <remarks>
+	/// The blocked read is what no other fixture here can produce: <see cref="DataProviderMock"/> answers
+	/// instantly, so a budget that is never reached is a budget no assertion can see - both the slice and its
+	/// remaining-time bound delete cleanly with the suite green.
+	/// <para>
+	/// A gate released on Dispose rather than a sleep-to-completion: the test asserts on the reader's own
+	/// expiry, so it must not also wait for the blocked call, and a fixed sleep would trade one timing
+	/// assumption for a slower one. <see cref="DelayBeforeViewAnswer"/> exists for the second case, where the
+	/// point is that the FAMILY read has already spent most of the budget before the package read starts.
+	/// </para>
+	/// </remarks>
+	private sealed class BlockingSchemaDataProvider(
+		List<Dictionary<string, object>> viewRows, string blockedSchemaName) : IDataProvider, IDisposable {
+		private readonly ManualResetEventSlim _release = new(false);
+
+		public TimeSpan DelayBeforeViewAnswer { get; init; } = TimeSpan.Zero;
+
+		public IItemsResponse GetItems(ISelectQuery selectQuery) {
+			if (string.Equals(selectQuery?.RootSchemaName, blockedSchemaName, StringComparison.OrdinalIgnoreCase)) {
+				_release.Wait();
+				return new CannedItemsResponse([]);
+			}
+			if (DelayBeforeViewAnswer > TimeSpan.Zero) {
+				_release.Wait(DelayBeforeViewAnswer);
+			}
+			return new CannedItemsResponse(viewRows);
+		}
+
+		public IDefaultValuesResponse GetDefaultValues(string schemaName) => null;
+
+		public IExecuteResponse BatchExecute(List<IBaseQuery> queries) => null;
+
+		public T GetSysSettingValue<T>(string sysSettingCode) => default;
+
+		public bool GetFeatureEnabled(string featureCode) => false;
+
+		public IExecuteProcessResponse ExecuteProcess(IExecuteProcessRequest request) => null;
+
+		public void Dispose() {
+			// Set only. Disposing while the abandoned reader thread is still inside Wait() is a race of its
+			// own, and the gate is a per-test object the GC can take.
+			_release.Set();
+		}
+	}
+
+	private sealed class CannedItemsResponse(List<Dictionary<string, object>> items) : IItemsResponse {
+		public bool Success => true;
+
+		public string ErrorMessage => null;
+
+		public List<Dictionary<string, object>> Items => items;
+	}
 }
