@@ -256,25 +256,29 @@ public sealed class ComponentInfoTool(
 	/// <item>neither — <c>latest</c> with a non-authoritative source so the response carries <c>latest-fallback</c>.</item>
 	/// </list>
 	/// </summary>
-	private Task<PlatformVersionResolution> ResolveVersionAsync(
+	private async Task<PlatformVersionResolution> ResolveVersionAsync(
 		ComponentInfoArgs args,
 		bool hasExplicitVersion,
 		bool hasEnvironment,
 		CancellationToken cancellationToken) {
 		if (hasExplicitVersion) {
-			return Task.FromResult(new PlatformVersionResolution(args.Version!.Trim(), VersionResolutionSource.Environment));
+			return new PlatformVersionResolution(args.Version!.Trim(), VersionResolutionSource.Environment);
 		}
 
 		if (hasEnvironment) {
 			EnvironmentSettings settings = ResolveEnvironmentSettings(args);
+			// Await the probe INSIDE the using scope. Returning the Task unawaited let the using
+			// dispose the resolver — and with it the owned IApplicationClient — while the probe was
+			// still running on its Task.Run thread, so the probe hit an already-disposed CreatioClient
+			// and every call degraded to probe-error (ENG-96840).
 			using IOwnedPlatformVersionResolver resolver = resolverFactory.CreateOwned(settings);
-			return resolver.ResolveAsync(cancellationToken);
+			return await resolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
 		}
 
 		// Neither an explicit version nor an environment was supplied, so there is nothing to probe:
 		// a clear input gap (no-active-environment), not a probe error. Built via the shared factory so
 		// the CLI verb and this MCP tool stay byte-identical on the no-flags fallback.
-		return Task.FromResult(ComponentInfoResolution.CreateNoActiveEnvironmentFallback());
+		return ComponentInfoResolution.CreateNoActiveEnvironmentFallback();
 	}
 
 	/// <summary>

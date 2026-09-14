@@ -11,7 +11,7 @@ namespace Clio.Common;
 /// <c>true</c>), resolves the environment's core version through <see cref="ICreatioVersionProvider"/>,
 /// and — when a triggered requirement is unmet — throws a
 /// <see cref="CreatioVersionRequirementException"/>. A development build (<c>0.0.0</c> / <c>0.0.0.0</c>)
-/// is treated as compatible; a reachable environment whose version is undeterminable, and an
+/// is treated as compatible unless a triggered requirement disables AllowDevelopmentBuild; a reachable environment whose version is undeterminable, and an
 /// environment whose version check could not be performed at all, both fail closed (deny execution).
 /// </remarks>
 public interface ICreatioVersionChecker

@@ -464,4 +464,48 @@ internal class ReauthExecutorTests {
 
 	#endregion
 
+
+	[Test]
+	[Description("Recognises a sign-in page that starts with a byte-order mark, because Creatio's WCF endpoints emit one and char.IsWhiteSpace does not report it, which would otherwise leave the body classified as neither HTML nor JSON (issue #722).")]
+	public void IsSessionExpiredResponse_ShouldReturnTrue_WhenLoginPageIsPrefixedWithAByteOrderMark() {
+		// Arrange
+		const string body = "\uFEFF<html><body><form action=\"/Login/NuiLogin.aspx\"></form></body></html>";
+
+		// Act
+		bool isExpired = ReauthExecutor.IsSessionExpiredResponse(body);
+
+		// Assert
+		isExpired.Should().BeTrue(
+			because: "a byte-order mark before the markup must not hide the auth-routing token from the classifier");
+	}
+
+	[Test]
+	[Description("Recognises the JSON 401 fault envelope behind a byte-order mark as well, so the JSON arm is not blinded by the same leading character (issue #722).")]
+	public void IsSessionExpiredResponse_ShouldReturnTrue_WhenJsonAuthEnvelopeIsPrefixedWithAByteOrderMark() {
+		// Arrange
+		const string body = "\uFEFF{\"Message\":\"Authentication failed.\",\"StackTrace\":null}";
+
+		// Act
+		bool isExpired = ReauthExecutor.IsSessionExpiredResponse(body);
+
+		// Assert
+		isExpired.Should().BeTrue(
+			because: "the byte-order-mark skip must apply to both detection arms, not only the HTML one");
+	}
+
+	[Test]
+	[Description("Still ignores a byte-order-mark-prefixed generic server error page, so widening the leading-character skip does not widen what counts as an expired session (issue #722).")]
+	public void IsSessionExpiredResponse_ShouldReturnFalse_WhenByteOrderMarkPrecedesAGenericErrorPage() {
+		// Arrange - the exact shape captured from a 10.1.725 stand for a genuine SchemaIsNotAvailableException.
+		const string body = "\uFEFF<?xml version=\"1.0\" encoding=\"utf-8\"?><html><head><title>Request Error</title>"
+			+ "</head><body>The server encountered an error processing the request.</body></html>";
+
+		// Act
+		bool isExpired = ReauthExecutor.IsSessionExpiredResponse(body);
+
+		// Assert
+		isExpired.Should().BeFalse(
+			because: "a generic WCF error page carries no auth-routing token and re-authentication could not fix it");
+	}
+
 }

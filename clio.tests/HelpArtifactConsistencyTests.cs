@@ -41,6 +41,7 @@ internal class HelpArtifactConsistencyTests {
 		// Arrange
 		string[] verbs = [
 			"deploy-identity",
+			"uninstall-identity",
 			"get-identity-service-config",
 			"resolve-oauth-system-user",
 			"create-oauth-technical-user",

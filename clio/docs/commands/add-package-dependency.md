@@ -8,7 +8,7 @@ add-package-dependency - Add one or more package dependencies to a package
 
 Adds one or more package dependencies to a Creatio package via the `PackageService.svc` endpoint, then persists the change.
 
-Use this command when the schema designer or compiler fails for a package because it extends objects owned by an app/package that is not in the target package's dependency list. The classic symptom is `GetSchemaDesignItem returned an HTML error page` when opening a designer for a layered object (for example an app extending the Opportunity layer without depending on `CrtLeadOppMgmtApp`). Add the owning app/package as a dependency and the designer works.
+Use this command when the schema designer or compiler fails for a package because it extends objects owned by an app/package that is not in the target package's dependency list. The symptom is `Schema '<NAME>' could not be opened in package '<PACKAGE>'` when opening a designer for a layered object (for example an app extending the Opportunity layer without depending on `CrtLeadOppMgmtApp`). That error lists the packages that contribute the schema and are not already dependencies of the target, ranked with installed applications first — add the owning one and the designer works. clio reports the candidates instead of picking one, because more than one of them can be a valid dependency.
 
 The operation is idempotent: adding a dependency that is already present is a no-op. When a dependency version is omitted, the installed version of the dependency package is used.
 

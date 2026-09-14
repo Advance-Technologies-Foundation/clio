@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using Clio;
@@ -230,7 +231,7 @@ public class ToolCommandResolver(
 		if (!string.IsNullOrWhiteSpace(options.Environment)) {
 			if (!bootstrapReport.CanExecuteEnvTools) {
 				throw new EnvironmentResolutionException(
-					$"clio settings bootstrap is broken. Repair {bootstrapReport.SettingsFilePath}. Explicit uri/login/password remains available only as an emergency fallback.");
+					DescribeUnusableBootstrap(bootstrapReport));
 			}
 			if (!settingsRepository.IsEnvironmentExists(options.Environment)) {
 				throw new EnvironmentResolutionException(BuildEnvironmentNotFoundError(options.Environment));
@@ -249,13 +250,34 @@ public class ToolCommandResolver(
 			if (string.IsNullOrWhiteSpace(settings.Uri)) {
 				if (!bootstrapReport.CanExecuteEnvTools) {
 					throw new EnvironmentResolutionException(
-						$"clio settings bootstrap is broken. Repair {bootstrapReport.SettingsFilePath}. Explicit uri/login/password remains available only as an emergency fallback.");
+						DescribeUnusableBootstrap(bootstrapReport));
 				}
 				throw new EnvironmentResolutionException(
 					"Either a configured environment name or an explicit URI is required for MCP command execution. Prefer a registered environment name; use explicit URI credentials only as a bootstrap or emergency fallback.");
 			}
 		}
 		return (settings, BuildCacheKey(options, settings));
+	}
+
+	/// <summary>
+	/// Builds the caller-facing text for a bootstrap report that cannot serve environment-scoped tools.
+	/// </summary>
+	/// <remarks>
+	/// A shape mismatch means the file is INTACT and a newer clio wrote it, so "Repair the file" is
+	/// actively wrong advice there: hand-editing a valid file is what issue #1462 reported doing three
+	/// times in one session, each edit undone by the next CLI run. The only fix for that case is
+	/// restarting the resident process so it runs the new build.
+	/// </remarks>
+	private static string DescribeUnusableBootstrap(SettingsBootstrapReport bootstrapReport) {
+		if (bootstrapReport.ShapeMismatch is SettingsIssue mismatch) {
+			// The bootstrap's own message already says what failed and what fixes it - version skew or a
+			// hand-editable mistake - so it is quoted rather than paraphrased. Paraphrasing is how the two
+			// surfaces came to disagree about whether the file should be edited in the first place.
+			return $"clio settings bootstrap cannot be used by this clio build. {mismatch.Message} "
+				+ "Explicit uri/login/password remains available only as an emergency fallback.";
+		}
+		return $"clio settings bootstrap is broken. Repair {bootstrapReport.SettingsFilePath}. "
+			+ "Explicit uri/login/password remains available only as an emergency fallback.";
 	}
 
 	// Resolves a command from a per-request credential context. The SSRF/egress guard runs FIRST
@@ -272,7 +294,7 @@ public class ToolCommandResolver(
 			targetUrlValidator.EnsureAllowed(context.Url);
 		}
 		catch (TargetUrlNotAllowedException ex) {
-			throw new EnvironmentResolutionException(ex.Message, ex);
+			throw new EnvironmentResolutionException(ex.Message, EnvironmentResolutionReason.Validation, ex);
 		}
 
 		// FR-12 / AC-05: name the real missing piece. Cookie auth is caller-actionable (exit code 1),
@@ -280,11 +302,13 @@ public class ToolCommandResolver(
 		// ApplicationClientFactory NotSupportedException surface as an unexpected wiring failure.
 		if (context.Auth?.Kind == CredentialKind.Cookie) {
 			throw new EnvironmentResolutionException(
-				"Cookie-based authentication is not supported for credential passthrough in v1; supply an access token.");
+				"Cookie-based authentication is not supported for credential passthrough in v1; supply an access token.",
+				EnvironmentResolutionReason.Authentication);
 		}
 		if (!HasUsableAuth(context.Auth)) {
 			throw new EnvironmentResolutionException(
-				"Authentication material (an access token or a login/password pair) is required for credential-passthrough command execution.");
+				"Authentication material (an access token or a login/password pair) is required for credential-passthrough command execution.",
+				EnvironmentResolutionReason.Authentication);
 		}
 		// Same footgun class as cookie: a non-Bearer access-token type would otherwise trip
 		// ApplicationClientFactory.GuardBearerSettings deep in command resolution (exit -1). Surface it
@@ -294,7 +318,8 @@ public class ToolCommandResolver(
 			&& !string.IsNullOrWhiteSpace(context.Auth.AccessTokenType)
 			&& !string.Equals(context.Auth.AccessTokenType, AuthenticationScheme.Bearer, StringComparison.OrdinalIgnoreCase)) {
 			throw new EnvironmentResolutionException(
-				$"Access-token type '{context.Auth.AccessTokenType}' is not supported for credential passthrough; only 'Bearer' is supported.");
+				$"Access-token type '{context.Auth.AccessTokenType}' is not supported for credential passthrough; only 'Bearer' is supported.",
+				EnvironmentResolutionReason.Authentication);
 		}
 
 		EnvironmentSettings settings = BuildEphemeralSettings(context);

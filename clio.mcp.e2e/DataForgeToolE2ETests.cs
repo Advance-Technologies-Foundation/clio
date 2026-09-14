@@ -1,9 +1,11 @@
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
+using Clio.Common;
 using Clio.Common.DataForge;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
@@ -271,6 +273,58 @@ public sealed class DataForgeToolE2ETests {
 			because: "Contact should expose its primary display column through the Data Forge columns tool");
 		response.Columns.Should().Contain(column => column.Name == "Account",
 			because: "Contact should expose its Account lookup through the Data Forge columns tool");
+	}
+
+	[Test]
+	[Description("Starts the real clio MCP server, invokes dataforge-get-table-columns for the core CurrencyRate schema, and verifies that its live Decimal8 column reports a numeric type instead of the Text fallback that ENG-93202 reported.")]
+	[AllureTag(ColumnsToolName)]
+	[AllureName("DataForge get-table-columns reports a live decimal column as numeric")]
+	[AllureDescription("Uses the real clio MCP server to call dataforge-get-table-columns for CurrencyRate against the configured reachable sandbox environment and verifies that its own Decimal8 (Rate), Date (StartDate) and Lookup (Currency) columns report canonical Creatio type names, so the decimal scale that used to fall through to the Text fallback is now covered against real platform metadata.")]
+	public async Task DataForgeGetTableColumns_Should_Report_Live_Decimal_Column_As_Numeric() {
+		// Arrange — CurrencyRate is a core CrtBase schema present on every install, and unlike Currency its
+		// OWN (non-inherited) columns include a decimal: Rate is Decimal8 (dataValueType 40), one of the nine
+		// scales that the mapper's private table lacked and therefore reported as "Text" (ENG-93202). This is
+		// the ticket's exact failure mode against live platform metadata rather than a substituted schema.
+		// StartDate (dataValueType 8) is asserted alongside it because the designer's write-scoped readback
+		// vocabulary has no name for code 8 and reports the raw string "8" for this very column, so it also
+		// pins that the canonical read vocabulary covers codes the write vocabulary cannot express.
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: true);
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(
+			arrangeContext,
+			ColumnsToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["table-name"] = "CurrencyRate"
+			});
+		DataForgeColumnsResponse response = DeserializeStructuredContent<DataForgeColumnsResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "dataforge-get-table-columns should return a structured success payload for a reachable configured environment");
+		response.Success.Should().BeTrue(
+			because: "CurrencyRate runtime schema reads should succeed through the shared by-name runtime reader");
+
+		DataForgeColumnResult rate = response.Columns.Should().ContainSingle(column => column.Name == "Rate",
+			because: "Rate is declared on CurrencyRate itself, so it survives the non-inherited column filter; "
+				+ "if the platform ever moves it to a parent schema this assertion must be retargeted rather than relaxed")
+			.Subject;
+		rate.DataType.Should().NotBe("Text",
+			because: "reporting a live Decimal8 column as Text is the defect ENG-93202 reported");
+		rate.DataType.Should().Be("Float8",
+			because: "dataValueType 40 is Float8 in the canonical registry, which the kind classifier resolves as numeric");
+		CreatioDataValueType.IsNumeric(rate.DataType).Should().BeTrue(
+			because: "a caller must be able to conclude from the reported name alone that the column compares numerically");
+
+		response.Columns.Should().Contain(column => column.Name == "StartDate" && column.DataType == "Date",
+			because: "the canonical read vocabulary names dataValueType 8, which the designer readback reports "
+				+ "as the raw string \"8\" because it is scoped to types clio can write");
+		response.Columns.Should().Contain(
+			column => column.Name == "Currency" && column.DataType == "Lookup" && column.ReferenceSchemaName == "Currency",
+			because: "the projection must keep carrying the lookup target alongside the data type");
 	}
 
 	[Test]

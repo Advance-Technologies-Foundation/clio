@@ -57,21 +57,5 @@ public sealed record SqlSchemaInstallArgs(
 	[property: JsonPropertyName("schema-name")]
 	[property: Description("SQL script schema name to execute, e.g. 'UsrMySqlScript'")]
 	[property: Required]
-	string SchemaName,
-
-	[property: JsonPropertyName("environment-name")]
-	[property: Description(McpToolDescriptions.EnvironmentName)]
-	string? EnvironmentName,
-
-	[property: JsonPropertyName("uri")]
-	[property: Description(McpToolDescriptions.Uri)]
-	string? Uri,
-
-	[property: JsonPropertyName("login")]
-	[property: Description(McpToolDescriptions.Login)]
-	string? Login,
-
-	[property: JsonPropertyName("password")]
-	[property: Description(McpToolDescriptions.Password)]
-	string? Password
-);
+	string SchemaName
+) : ConnectionArgsBase;

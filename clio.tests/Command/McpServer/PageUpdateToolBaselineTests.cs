@@ -119,15 +119,14 @@ public sealed class PageUpdateToolBaselineTests
 	}
 
 	private static PageUpdateArgs CreateArgs(bool? force = null) =>
-		new(SchemaName, ValidBody, null, null, "sandbox", null, null, null,
-			SkipSampling: true, OutputDirectory: "/ws", Force: force);
+		new(SchemaName, ValidBody, SkipSampling: true, OutputDirectory: "/ws", Force: force)
+			{ EnvironmentName = "sandbox" };
 
 	[Test]
 	[Description("update-page scopes the registry-driven chart-widget validation to the platform version resolved from the target environment.")]
 	public async System.Threading.Tasks.Task UpdatePage_ShouldScopeChartValidationToResolvedEnvironmentVersion() {
 		// Arrange
-		PageUpdateArgs args = new(SchemaName, ValidBody, null, null, "sandbox", null, null, null,
-			SkipSampling: true, OutputDirectory: "/ws");
+		PageUpdateArgs args = new(SchemaName, ValidBody, SkipSampling: true, OutputDirectory: "/ws") { EnvironmentName = "sandbox" };
 
 		// Act
 		await _tool.UpdatePage(args, null);
@@ -256,9 +255,7 @@ public sealed class PageUpdateToolBaselineTests
 			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
 			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
-		PageUpdateArgs args = new(SchemaName, bodyWithResourceBoundInsert,
-			"{\"PDS_UsrContactPhone\":\"Contact phone\"}", null, "sandbox", null, null, null,
-			SkipSampling: true, OutputDirectory: "/ws");
+		PageUpdateArgs args = new(SchemaName, bodyWithResourceBoundInsert, "{\"PDS_UsrContactPhone\":\"Contact phone\"}", SkipSampling: true, OutputDirectory: "/ws") { EnvironmentName = "sandbox" };
 
 		// Act
 		PageUpdateResponse response = _tool.UpdatePage(args, null).Result;

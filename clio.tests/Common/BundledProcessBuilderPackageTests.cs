@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
@@ -74,7 +74,8 @@ public class BundledProcessBuilderPackageTests {
 	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1</c> at
 	/// <see cref="ExpectedArchiveVersion"/> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-95891-formula-expressions</c>), at the commit recorded mechanically in
+	/// <c>feature/ENG-91853-implicit-parallel-split-notice</c>, tag <c>crtprocessbuilder-1.6.2.10</c>), at the commit
+	/// recorded mechanically in
 	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
 	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
 	/// by hand. Many numbers below the current one are burned rather than reused — some because two branches drew
@@ -89,7 +90,22 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries, over the 1.3.1.1 performer/lookup delivery it replaces: server-side
+	/// <para>What THIS cut carries, over 1.6.2.9: the implicit-parallel-split notice. An ordinary element left
+	/// with more than one outgoing plain flow is reported once per request, over the finished graph, closing the
+	/// last silent divergence against clio&apos;s <c>validate-process-graph</c> - which has reported the shape as
+	/// R12 all along while the build path said nothing. A notice and not a refusal: 74 non-gateway sources in the
+	/// shipped corpus carry it.</para>
+	/// <para>THE NUMBER IS A KNOWN COLLISION, recorded here rather than left for whoever hits it. This branch
+	/// cut 1.6.1.22 through 1.6.1.25 in the 1.6.1 band, each superseded by a review round; merging <c>main</c>
+	/// then brought the package to 1.6.2.9, so every 1.6.1 number became unusable - a version below content the
+	/// branch now CONTAINS reaches no environment that already records 1.6.2.9. Above it, 1.6.2.10, 1.6.2.11 and
+	/// 1.6.2.12 are bundled on <c>feature/ENG-92709-delete-data-element</c> and
+	/// <c>feature/ENG-96504-read-data-collection</c>, whose package descriptor now sits at 1.6.2.13 - so the
+	/// first candidate free in BOTH histories was 1.6.2.14, one ABOVE the global maximum, which the rule above
+	/// equally forbids. The rule has no satisfiable answer on this branch. 1.6.2.10 was chosen deliberately; if
+	/// that line merges without re-cutting, one version names two byte sets and one side has to move. The
+	/// superseded tags stay pointing at their commits so every gap is traceable.</para>
+	/// <para>What the 1.4.0.x line carried, over the 1.3.1.1 performer/lookup delivery it replaced: server-side
 	/// VALIDATION of formula expressions — an <c>expression</c> mapping source and a conditional-flow condition
 	/// are now parsed, their parameter references resolved against the process, and their result type checked
 	/// against the declared target, instead of being stored unchecked. The MINOR digit moved at 1.4.0.0 because
@@ -175,7 +191,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"E9C8FD50EE7B14D9552B29D2E444C89C5C34955B142B3A830AFC383561D2CCD8";
+		"3E5ECF789D8E561FEB16B9576C10EDB3A59DCE0B14DB716C396A9EFAE33D238A";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -203,7 +219,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.1.2";
+	private const string ExpectedArchiveVersion = "1.6.2.10";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -215,7 +231,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "a115cc75ab2160a38481736c0265bb27b62ddea3";
+	private const string ExpectedProducingCommit = "932ee494077988636df832acfac7ef791077aada";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -241,7 +257,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1788873501000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789382349000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -437,6 +453,32 @@ public class BundledProcessBuilderPackageTests {
 		using MemoryStream buffer = new();
 		decompressor.CopyTo(buffer);
 		return Encoding.UTF8.GetString(buffer.ToArray());
+	}
+
+	// True when <paramref name="typeName"/>'s OWN declaration carries the `label` DataMember. The
+	// archive ships SOURCE and every contract type sits in its own `#region Class: <Name>` block, so the
+	// region is that type's extent - which is what turns a name appearing on three contracts into an
+	// answer about ONE of them.
+	//
+	// Two ways this could quietly become the whole-blob check it replaced, both closed here. The region
+	// name is matched WITH its line terminator, so a later `#region Class: <Name>V2` cannot be found by
+	// a prefix search for <Name>. And an UNTERMINATED region answers false rather than widening: taking
+	// the rest of the archive as the window would let a member on any later type satisfy the probe,
+	// which is exactly the vacuity this helper exists to remove. `DescribeProcessFlow` is the last
+	// region in its file, so that is not a hypothetical shape.
+	private static bool DeclaresLabelOn(string archive, string typeName) {
+		int start = archive.IndexOf($"#region Class: {typeName}\r", StringComparison.Ordinal);
+		if (start < 0) {
+			start = archive.IndexOf($"#region Class: {typeName}\n", StringComparison.Ordinal);
+		}
+
+		if (start < 0) {
+			return false;
+		}
+
+		int end = archive.IndexOf("#endregion", start, StringComparison.Ordinal);
+		return end >= 0
+			&& archive[start..end].Contains("[DataMember(Name = \"label\")]", StringComparison.Ordinal);
 	}
 
 	/// <summary>
@@ -966,6 +1008,32 @@ public class BundledProcessBuilderPackageTests {
 				+ "nothing linking the two. Renaming this DataMember, or dropping it so the member serialises "
 				+ "as 'Success', makes the verifier return false for a healthy install — and no test on either "
 				+ "side would fail");
+		archive.Should().Contain("\'\\uFFFE\'",
+			because: "the character filter is hand-mirrored in FlowLabelExpectation.IsUnstorable, and THIS is "
+				+ "the only thing in this fixture that can catch the two halves diverging. The SHA pin cannot: "
+				+ "it detects a CHANGED archive, not a stale one, and its own remark says so. Without this "
+				+ "probe an archive cut before the filter was widened satisfies every other pin here while "
+				+ "clio predicts a stored label the server never stores - which makes clio report DIFFERENT "
+				+ "text on a write that landed exactly as sent, in a message whose two quoted strings look "
+				+ "identical because the offending character is invisible");
+		// A field NAME alone cannot be a probe, and this line used to be one. `label` lives on THREE
+		// contracts in this archive - the create flow descriptor, the modify operation descriptor and the
+		// describe projection - so a containment check over the whole blob is satisfied by any ONE of them
+		// while the other two are absent. docs/agent-instructions/bundled-packages.md rejects exactly that
+		// shape: "only a FIELD ON A NAMED TYPE settles it". All three are asserted because clio's warning
+		// needs all three to be true - two write paths that STORE the label and a read side that REPORTS
+		// it - and an archive carrying only the describe member would satisfy a bare name check while the
+		// write path silently drops the field and clio blames the caller for an archive it just installed.
+		DeclaresLabelOn(archive, "ProcessFlowDescriptor").Should().BeTrue(
+			because: "the CREATE path stores the label from this descriptor; without the member a build "
+				+ "answers success and stores nothing");
+		DeclaresLabelOn(archive, "ProcessOperationDescriptor").Should().BeTrue(
+			because: "the MODIFY path stores it from this one, and relabelling an existing flow is the case "
+				+ "clio's post-write warning exists for - 84.9% of shipped conditional flows already carry a "
+				+ "human's wording, so a silent drop here overwrites nothing and reports success");
+		DeclaresLabelOn(archive, "DescribeProcessFlow").Should().BeTrue(
+			because: "the READ side reports it, and the read-back IS the guard - without this member every "
+				+ "label reads as absent and clio reports a correct write as a dropped label");
 		archive.Should().Contain("BodyStyle = WebMessageBodyStyle.Wrapped",
 			because: "the wrapper name clio looks for (PingResult) is a FUNCTION of this setting; flipping it to "
 				+ "Bare removes the envelope and the verdict inverts silently");
@@ -1030,7 +1098,7 @@ public class BundledProcessBuilderPackageTests {
 					typeof(Clio.Command.McpServer.Tools.ProcessDesigner.SetActiveProcessVersionTool)),
 			["modify-business-process prompt"] =
 				Clio.Command.McpServer.Prompts.ProcessDesigner.ModifyBusinessProcessPrompt.PromptByProcess(
-					"env-placeholder", "process-placeholder")
+					"env-placeholder", "process-placeholder"),
 		};
 		var literalPattern = new System.Text.RegularExpressions.Regex(@"CrtProcessBuilder (\d+\.\d+\.\d+\.\d+)");
 
@@ -1039,18 +1107,107 @@ public class BundledProcessBuilderPackageTests {
 		// Act & Assert
 		foreach (KeyValuePair<string, string> surface in surfaces) {
 			System.Text.RegularExpressions.MatchCollection matches = literalPattern.Matches(surface.Value);
+			// Back to the SHAPED pattern. This briefly read the wide net instead, to accommodate four
+			// surfaces added here that stated the version in another shape - and that traded a guard on
+			// five surfaces for a convenience on four, because any stray four-part number then satisfied
+			// it and deleting a "CrtProcessBuilder X.Y.Z.W" sentence stopped turning this red. Those four
+			// surfaces no longer name a version at all - the flow-label texts now describe their cause as a
+			// CAPABILITY, since convergence puts every reader above any floor a message could name - so
+			// they are out of this registry and guarded by their own inverse test below.
 			matches.Should().NotBeEmpty(
-				because: $"the {surface.Key} documents the version the lookup/performer route ships from — if the "
-					+ "sentence was removed on purpose, remove the surface from this test in the same commit");
+				because: $"the {surface.Key} documents the version a route ships from or the remedy to install — "
+					+ "if the sentence was removed on purpose, remove the surface from this test in the same "
+					+ "commit");
+			System.Text.RegularExpressions.MatchCollection anyMatches =
+				anyVersionPattern.Matches(surface.Value);
 			foreach (System.Text.RegularExpressions.Match match in matches) {
 				AssertInstallableFromThisDistribution(match.Groups[1].Value, surface.Key);
 			}
 			// The wide net behind the shaped one: ANY four-part version on these surfaces is the package
 			// version (nothing else four-part belongs in them), so a mention that drifts into a different
 			// shape — 'CrtProcessBuilder >= X', 'pre-X', a bare number — cannot hide beside a matching literal.
-			foreach (System.Text.RegularExpressions.Match match in anyVersionPattern.Matches(surface.Value)) {
+			foreach (System.Text.RegularExpressions.Match match in anyMatches) {
 				AssertInstallableFromThisDistribution(match.Value, surface.Key);
 			}
+		}
+	}
+
+	[Test]
+	[Description("The archive probe answers about ONE named type. `label` is declared on three contracts "
+		+ "in this same archive, so a probe that answered from anywhere in the blob would report a member "
+		+ "present on a type that had lost it - the bare-name check this helper replaced. All three "
+		+ "production call sites assert TRUE, so none of them can see this direction; DescribeProcessConnection "
+		+ "is a real region in the shipped archive that carries no label, which anchors the test on the "
+		+ "artifact rather than on a fabricated string.")]
+	public void DeclaresLabelOn_ShouldBeFalse_ForATypeThatDoesNotDeclareIt() {
+		// Arrange
+		string archive = ReadBundledArchiveAsText();
+
+		// Act
+		bool onAnotherContract = DeclaresLabelOn(archive, "DescribeProcessConnection");
+		bool onAnAbsentType = DeclaresLabelOn(archive, "NoSuchContractInThisArchive");
+
+		// Assert
+		onAnotherContract.Should().BeFalse(
+			because: "the member sits on three OTHER contracts in this archive, so answering true here "
+				+ "would mean the probe reads the whole blob and settles nothing about a named type");
+		onAnAbsentType.Should().BeFalse(
+			because: "a type the archive does not contain declares nothing, and a probe that cannot find "
+				+ "its type must fail closed rather than widen its window");
+	}
+
+	[Test]
+	[Description("The flow-label surfaces must name NO package version. A number cannot be the diagnosis "
+		+ "here: every write command and describe carries [RequiresPackage] for this package, and "
+		+ "RequiredPackageChecker throws on a convergence refusal for any environment below the archive clio "
+		+ "SHIPS - so a reader who can see one of these texts is already above any floor it could quote, and "
+		+ "the remedy would be one they have satisfied. The reachable cause is a CAPABILITY gap - a cut from "
+		+ "a line that never carried the member - which is why these read like the sibling guards ('predates "
+		+ "the sendEmail element'). This is the INVERSE of the literal pin above and exists because the "
+		+ "number was removed on purpose: without it, re-adding a helpful-looking version turns nothing red.")]
+	public void FlowLabelSurfaces_ShouldNameNoPackageVersion() {
+		// Arrange
+		var surfaces = new Dictionary<string, string> {
+			["describe-business-process description"] =
+				GetToolDescription(typeof(Clio.Command.McpServer.Tools.ProcessDesigner.DescribeProcessTool)),
+			["describe-business-process prompt"] =
+				Clio.Command.McpServer.Prompts.ProcessDesigner.DescribeProcessPrompt.DescribeProcessGuidance(
+					"process-placeholder", "env-placeholder"),
+			["flow-label dropped warning"] =
+				Clio.Command.ProcessModel.FlowLabelExpectation.BuildWarning([
+					new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabelMiss(
+						new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabel("A", "B", "Yes"), string.Empty)
+				]),
+			["flow-label unverified warning"] =
+				Clio.Command.ProcessModel.FlowLabelExpectation.BuildUnverifiedWarning(
+					[new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabel("A", "B", "Yes")], "reason-placeholder"),
+			// BuildWarning has THREE branches and the entry above renders only the absent one, so a version
+			// re-added to either of the others would have passed. BuildUidAddressedWarning is a fourth
+			// caller-facing string entirely, emitted from BlockExpectationReporter.
+			["flow-label different-text warning"] =
+				Clio.Command.ProcessModel.FlowLabelExpectation.BuildWarning([
+					new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabelMiss(
+						new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabel("A", "B", "Yes"), "No")
+				]),
+			["flow-label failed-clear warning"] =
+				Clio.Command.ProcessModel.FlowLabelExpectation.BuildWarning([
+					new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabelMiss(
+						new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabel("A", "B", string.Empty), "Old")
+				]),
+			["flow-label uid-addressed caveat"] =
+				Clio.Command.ProcessModel.FlowLabelExpectation.BuildUidAddressedWarning(
+					[new Clio.Command.ProcessModel.FlowLabelExpectation.FlowLabel("A", "B", "Yes")])
+		};
+		var anyVersion = new System.Text.RegularExpressions.Regex(@"\d+\.\d+\.\d+\.\d+");
+
+		// Act & Assert
+		foreach (KeyValuePair<string, string> surface in surfaces) {
+			surface.Value.Should().NotBeNullOrEmpty(
+				because: $"the {surface.Key} has to render something, or this test passes on an empty string");
+			anyVersion.Matches(surface.Value).Should().BeEmpty(
+				because: $"the {surface.Key} states its cause as a capability, not a version - a four-part "
+					+ "number there is advice the reader has already satisfied, and it hides the real cause "
+					+ "instead of naming it");
 		}
 	}
 

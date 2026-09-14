@@ -19,15 +19,18 @@ autoupdate [--enable | --disable]
 Controls the `clio` policy in the automatic-update settings. Running the
 command without arguments displays whether automatic clio updates are enabled.
 
+By default, automatic clio and toolkit updates are disabled; knowledge updates are enabled.
+Existing explicitly configured values, including legacy scalar values, are preserved.
+
 Clio also has independent knowledge and toolkit policies. On an eligible
 command startup, each due enabled policy advances its `next-run` timestamp and
 calls the existing updater on a best-effort basis.
 
 ```json
 "autoupdate": {
-  "clio":      { "enabled": true, "frequency-minutes": 480, "next-run": "2026-09-04T08:00:00Z" },
+  "clio":      { "enabled": false, "frequency-minutes": 480, "next-run": "2026-09-04T08:00:00Z" },
   "knowledge": { "enabled": true, "frequency-minutes": 60,  "next-run": "2026-09-04T01:00:00Z" },
-  "toolkit":   { "enabled": true, "frequency-minutes": 60,  "next-run": "2026-09-04T01:00:00Z" }
+  "toolkit":   { "enabled": false, "frequency-minutes": 60,  "next-run": "2026-09-04T01:00:00Z" }
 }
 ```
 
@@ -37,9 +40,9 @@ is accepted and applied only to the clio policy.
 ## Options
 
 ```bash
---enable    Enable automatic clio updates (default behavior)
+--enable    Enable automatic clio updates
 
---disable   Disable automatic clio updates
+--disable   Disable automatic clio updates (default behavior)
 ```
 
 ## Examples
@@ -62,6 +65,15 @@ autoupdate --enable
 - Default frequencies are 480 minutes for clio and 60 minutes for knowledge and toolkit
 - Due policies reuse the existing clio, knowledge, and toolkit update services
 - Manual update commands remain available and bypass the schedule
+- `next-run` is optional: a policy that has never run carries no `next-run`, which means it is due
+- The clio self-update is deferred while an MCP host (`mcp-server` or `mcp-http`) is resident for this
+  user — replacing binaries under a running host breaks it for the rest of its session. The marker is
+  per user, not per clio home, because the update replaces one per-user tool installation.
+  The deferral prints `clio self-update deferred: MCP host pid <N> (version <X>) is running` and
+  leaves `next-run` untouched, so the update happens at the next start with no host running.
+  Knowledge and toolkit updates are never deferred, and `clio update-cli` always updates now
+- While `appsettings.json` holds a member this clio build cannot bind, clio refuses every settings
+  write — including the automatic update schedule — and says so once per run
 
 ## Exit Codes
 

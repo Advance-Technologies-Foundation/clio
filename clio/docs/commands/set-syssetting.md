@@ -36,6 +36,9 @@ Type (pos. 2)    Sys setting type (default: Text). Use Binary for blob-data sett
 
 ## Notes
 
+- To save a Binary value to a file, use [download-sys-setting-file](download-sys-setting-file.md)
+  with a required destination filename. It copies decoded bytes without format inference.
+
 - Exit code 0 means the value reached the environment. When the environment does not apply it, the
   command reports the setting and exits with code 1.
 

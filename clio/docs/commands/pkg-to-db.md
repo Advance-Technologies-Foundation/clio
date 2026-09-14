@@ -51,7 +51,7 @@ clio get-fsm-mode -e <ENVIRONMENT_NAME>
 
 - Aliases: 2db, todb
 - Exit code 0 means the platform reported the import as completed; any other
-outcome (FSM disabled, unreadable FSM state, platform error) exits with 1
+outcome (FSM disabled, unreadable FSM state, platform error, or per-item synchronization errors) exits with 1
 - Configuration changes may additionally require a compilation and a restart
 before they take full effect
 - A Data/ folder created by create-data-binding is a transferable source

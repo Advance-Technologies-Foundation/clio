@@ -130,6 +130,17 @@ namespace Clio.UserEnvironment
 		/// <returns><see langword="true"/> only while the current registration still matches.</returns>
 		bool EnvironmentPathMatches(string name, string expectedEnvironmentPath);
 
+		/// <summary>Atomically updates only the expected identity attachment, preserving unrelated settings.</summary>
+		/// <param name="environment">Registered environment name.</param>
+		/// <param name="expectedEnvironmentPath">CRM directory that owns the attachment.</param>
+		/// <param name="expected">Exact attachment read before the operation.</param>
+		/// <param name="replacement">New attachment, or empty values after successful removal.</param>
+		/// <param name="clearMatchingCredentials">Clear OAuth credentials only if their token URL matches the removed identity.</param>
+		/// <returns>False when the registration or attachment changed.</returns>
+		bool UpdateIdentityAttachment(string environment, string expectedEnvironmentPath,
+			IdentityServiceAttachment expected, IdentityServiceAttachment replacement,
+			bool clearMatchingCredentials = false);
+
 		/// <summary>
 		/// Writes settings to the supplied text writer.
 		/// </summary>
@@ -368,7 +379,7 @@ namespace Clio.UserEnvironment
 		string GetActualEnvironmentName(string environmentName);
 
 		/// <summary>
-		/// Gets the AutoUpdate setting. Returns true when not explicitly configured (opt-out model).
+		/// Gets the AutoUpdate setting. Returns false when not explicitly configured (opt-in model).
 		/// </summary>
 		bool GetAutoupdate();
 
@@ -382,6 +393,17 @@ namespace Clio.UserEnvironment
 		/// <param name="now">Current time.</param>
 		/// <returns><c>true</c> when the component should be updated.</returns>
 		bool TryScheduleAutoupdate(global::Clio.Common.AutoUpdateTarget target, DateTimeOffset now) => false;
+
+		/// <summary>Reports whether an update schedule is enabled and due, WITHOUT advancing it.</summary>
+		/// <remarks>
+		/// The read-only counterpart of <see cref="TryScheduleAutoupdate"/>, which advances and persists
+		/// <c>next-run</c> as part of answering. A caller that only needs to say something about the
+		/// schedule - the resident-MCP-host deferral notice - must not move it.
+		/// </remarks>
+		/// <param name="target">Component whose schedule is checked.</param>
+		/// <param name="now">Current time.</param>
+		/// <returns><c>true</c> when the component's update is enabled and due.</returns>
+		bool IsAutoupdateDue(global::Clio.Common.AutoUpdateTarget target, DateTimeOffset now) => false;
 
 		/// <summary>
 		/// Determines whether the named feature flag is enabled.

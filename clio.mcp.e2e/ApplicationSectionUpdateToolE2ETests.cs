@@ -200,20 +200,37 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 		string initialCaption = $"E2E UpdBefore {Guid.NewGuid():N}"[..24];
 		string updatedCaption = $"E2E UpdAfter {Guid.NewGuid():N}"[..24];
 		const string updatedDescription = "E2E update lifecycle";
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
+		// Budget raised from 5 to 15 minutes because both acts below now retry a KNOWN transient platform
+		// answer (issue #1106) and this one CancellationTokenSource covers the whole test, cleanup included.
+		// The gate's window is additive on top of the ~90-100s a section create already takes, and its
+		// OverallDeadline is WALL-CLOCK, counting the attempts themselves: at this call duration the loop
+		// reaches that 3-minute ceiling after only one or two extra full attempts, well before the attempt
+		// cap. So budget ~3 minutes per gated act, not the 120s of waiting the attempt cap would suggest.
+		// An exhausted token does NOT degrade gracefully - Task.Delay and CallToolAsync throw
+		// OperationCanceledException instead of the gate returning its last answer, which would lose both
+		// the "the test's own assertions still decide" property and the DescribeCallResult diagnostics that
+		// were added to this fixture precisely so a failure is readable from CI output alone.
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(15));
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		string? createdSectionCode = null;
 		try {
-			// Act 1: create a section with the initial caption
-			CallToolResult createResult = await session.CallToolAsync(
-				SectionCreateToolName,
-				new Dictionary<string, object?> {
-					["args"] = new Dictionary<string, object?> {
-						["environment-name"] = environmentName,
-						["application-code"] = ApplicationCode,
-						["caption"] = initialCaption
-					}
-				},
+			// Act 1: create a section with the initial caption. Wrapped in the transient-platform-condition
+			// retry gate (issue #1106): this fixture's recorded failures were the runtime-entity-schema read
+			// answering with an HTML page instead of JSON, one of the three shapes the gate classifies.
+			// No re-authentication seam is supplied - the session is owned by the enclosing `await using`
+			// and the cleanup block below calls back into it, so it must not be replaced mid-test.
+			CallToolResult createResult = await TransientPlatformConditionRetryGate.InvokeWithRetryAsync(
+				attemptToken => session.CallToolAsync(
+					SectionCreateToolName,
+					new Dictionary<string, object?> {
+						["args"] = new Dictionary<string, object?> {
+							["environment-name"] = environmentName,
+							["application-code"] = ApplicationCode,
+							["caption"] = initialCaption
+						}
+					},
+					attemptToken),
+				reauthenticateAsync: null,
 				cancellationTokenSource.Token);
 			ApplicationSectionContextResponseEnvelope createResponse = ApplicationResultParser.ExtractSectionCreate(createResult);
 
@@ -229,17 +246,31 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 			createdSectionCode = createResponse.Section.Code;
 
 			// Act 2: update the section's caption and description
-			CallToolResult updateResult = await session.CallToolAsync(
-				SectionUpdateToolName,
-				new Dictionary<string, object?> {
-					["args"] = new Dictionary<string, object?> {
-						["environment-name"] = environmentName,
-						["application-code"] = ApplicationCode,
-						["section-code"] = createdSectionCode,
-						["caption"] = updatedCaption,
-						["description"] = updatedDescription
-					}
-				},
+			// Gated for the same reason as the create above, and this is the act that actually produced the
+			// muted failures. Of its two recorded shapes the gate covers ONE: the HTML-page answer from the
+			// runtime-entity-schema readback. The other, a bare "Select query failed.", is deliberately NOT
+			// covered - it is built from a SUCCESSFUL HTTP response carrying success:false
+			// (ApplicationInfoService.cs) and names no cause at all, so making it a transient marker would
+			// retry every genuine query failure in the suite and turn a real regression into a slow pass.
+			// An update is idempotent in the values it applies - the same caption and description are
+			// rewritten. It is not idempotent in what the RESPONSE reports: if the write landed and only
+			// the readback failed, the retry's previous-section snapshot carries the ALREADY-updated
+			// caption, so the initialCaption assertion below fails with a caption mismatch instead of the
+			// transient cause. That is a clearer failure than today's outright one, not a silent pass.
+			CallToolResult updateResult = await TransientPlatformConditionRetryGate.InvokeWithRetryAsync(
+				attemptToken => session.CallToolAsync(
+					SectionUpdateToolName,
+					new Dictionary<string, object?> {
+						["args"] = new Dictionary<string, object?> {
+							["environment-name"] = environmentName,
+							["application-code"] = ApplicationCode,
+							["section-code"] = createdSectionCode,
+							["caption"] = updatedCaption,
+							["description"] = updatedDescription
+						}
+					},
+					attemptToken),
+				reauthenticateAsync: null,
 				cancellationTokenSource.Token);
 			ApplicationSectionUpdateContextResponseEnvelope updateResponse = ApplicationResultParser.ExtractSectionUpdate(updateResult);
 
