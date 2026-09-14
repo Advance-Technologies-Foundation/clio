@@ -111,6 +111,83 @@ public sealed class RegAppCommandAutoDetectionTests {
 	}
 
 	[Test]
+	[Description("Keeps the runtime already recorded for an existing environment, and completes the rest of the update, when detection refuses at the same URI.")]
+	public void Execute_Should_Keep_The_Recorded_Runtime_When_Detection_Refuses_At_The_Same_Uri() {
+		// Arrange
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		settingsRepository.FindEnvironment("sandbox").Returns(new EnvironmentSettings {
+			Uri = "http://example.invalid",
+			Login = "Supervisor",
+			Password = "Supervisor",
+			IsNetCore = true
+		});
+		IEnvironmentRuntimeDetectionService runtimeDetectionService = Substitute.For<IEnvironmentRuntimeDetectionService>();
+		runtimeDetectionService.Detect(Arg.Any<EnvironmentSettings>())
+			.Throws(new InvalidOperationException("Unable to auto-detect the Creatio runtime."));
+		RegAppCommand sut = new(
+			settingsRepository,
+			Substitute.For<IApplicationClientFactory>(),
+			Substitute.For<IPowerShellFactory>(),
+			_logger,
+			runtimeDetectionService);
+		RegAppOptions options = new() {
+			EnvironmentName = "sandbox",
+			Uri = "http://example.invalid/",
+			Login = "Supervisor",
+			Password = "RotatedPassword"
+		};
+
+		// Act
+		int result = sut.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "a site whose runtime is already recorded, re-registered at the same URI, must not lose the rest of the update over a runtime nobody asked to change");
+		settingsRepository.Received(1).ConfigureEnvironment("sandbox", Arg.Is<EnvironmentSettings>(settings =>
+			settings.IsNetCore
+			&& settings.Password == "RotatedPassword"));
+		_logger.Received().WriteWarning(Arg.Is<string>(text =>
+			text.Contains("Unable to auto-detect the Creatio runtime")
+			&& text.Contains("--IsNetCore")));
+	}
+
+	[Test]
+	[Description("Still refuses to register when detection fails and the supplied URI differs from the one the environment was registered with.")]
+	public void Execute_Should_Not_Register_When_Detection_Refuses_At_A_Different_Uri() {
+		// Arrange
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		settingsRepository.FindEnvironment("sandbox").Returns(new EnvironmentSettings {
+			Uri = "http://example.invalid",
+			Login = "Supervisor",
+			Password = "Supervisor",
+			IsNetCore = true
+		});
+		IEnvironmentRuntimeDetectionService runtimeDetectionService = Substitute.For<IEnvironmentRuntimeDetectionService>();
+		runtimeDetectionService.Detect(Arg.Any<EnvironmentSettings>())
+			.Throws(new InvalidOperationException("Unable to auto-detect the Creatio runtime."));
+		RegAppCommand sut = new(
+			settingsRepository,
+			Substitute.For<IApplicationClientFactory>(),
+			Substitute.For<IPowerShellFactory>(),
+			_logger,
+			runtimeDetectionService);
+		RegAppOptions options = new() {
+			EnvironmentName = "sandbox",
+			Uri = "http://another.invalid/",
+			Login = "Supervisor",
+			Password = "Supervisor"
+		};
+
+		// Act
+		int result = sut.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "a different URI is a different site, and the recorded runtime says nothing about it");
+		settingsRepository.DidNotReceiveWithAnyArgs().ConfigureEnvironment(default!, default!);
+	}
+
+	[Test]
 	[Description("Preserves the stored runtime flag when an existing environment is updated without a new URI or explicit IsNetCore override.")]
 	public void Execute_Should_Preserve_Existing_Runtime_When_Uri_Is_Not_Provided() {
 		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();

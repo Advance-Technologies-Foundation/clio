@@ -187,9 +187,40 @@ public class RegAppCommand : Command<RegAppOptions> {
 		}
 
 		EnvironmentSettings detectionEnvironment = BuildDetectionEnvironment(options, existingEnvironment);
-		bool isNetCore = _environmentRuntimeDetectionService.Detect(detectionEnvironment);
+		bool isNetCore;
+		try {
+			isNetCore = _environmentRuntimeDetectionService.Detect(detectionEnvironment);
+		} catch (InvalidOperationException detectionRefusal)
+			when (CanKeepRecordedRuntime(options, existingEnvironment)) {
+			//A re-registration of an environment whose runtime is already recorded, at the SAME uri: the recorded
+			//value is not a guess this command would be inventing, and refusing here would discard the rest of the
+			//update (password rotation, maintainer, workspace paths) over a runtime nobody asked to change. A site
+			//that is permanently undecidable - all probes 401 behind SSO, or both services answering - would
+			//otherwise be unregisterable without the hidden --IsNetCore flag.
+			_logger.WriteWarning(
+				$"{detectionRefusal.Message} Keeping the runtime already recorded for "
+				+ $"{options.EnvironmentName}: {(existingEnvironment!.IsNetCore ? ".NET Core / NET8" : ".NET Framework")}."
+				+ " Pass --IsNetCore to change it.");
+			return existingEnvironment.IsNetCore;
+		}
 		_logger.WriteInfo($"Auto-detected runtime: {(isNetCore ? ".NET Core / NET8" : ".NET Framework")}");
 		return isNetCore;
+	}
+
+	/// <summary>
+	/// Whether a detection refusal may fall back to the runtime already recorded for this environment.
+	/// </summary>
+	/// <remarks>
+	/// Only when the environment already exists AND the supplied uri is the one it was registered with. A NEW
+	/// registration has nothing to fall back to, and a CHANGED uri points at a different site whose runtime the
+	/// recorded value says nothing about - both keep the hard failure issue #1435 introduced.
+	/// </remarks>
+	private static bool CanKeepRecordedRuntime(RegAppOptions options, EnvironmentSettings? existingEnvironment) {
+		if (existingEnvironment is null || string.IsNullOrWhiteSpace(existingEnvironment.Uri)) {
+			return false;
+		}
+		return string.Equals(existingEnvironment.Uri.TrimEnd('/'), options.Uri?.TrimEnd('/'),
+			StringComparison.OrdinalIgnoreCase);
 	}
 
 	private static EnvironmentSettings BuildDetectionEnvironment(

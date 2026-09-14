@@ -135,6 +135,35 @@ public sealed class RegWebAppToolE2ETests {
 
 	[Test]
 	[AllureTag(ToolName)]
+	[AllureName("reg-web-app persists the runtime the caller supplies when auto-detection would refuse")]
+	[AllureDescription("The other half of the refusal case: a refusal is only survivable if the MCP surface can express the override the error text asks for. Same stub configuration as the refusal test, plus is-net-core.")]
+	[Description("Registers the environment with the supplied runtime, skipping auto-detection, on a site detection cannot classify.")]
+	public async Task RegisterWebApp_Should_Persist_The_Supplied_Runtime_When_Detection_Would_Refuse() {
+		// Arrange
+		(McpE2ESettings settings, TemporaryClioSettingsOverride settingsOverride) = ArrangeIsolatedClio();
+		using TemporaryClioSettingsOverride _ = settingsOverride;
+		await using RuntimeDetectionStubServer stubServer = RuntimeDetectionStubServer.Start(
+			new RuntimeDetectionStubServerConfiguration(
+				NetCoreHealthEnabled: true,
+				NetFrameworkHealthEnabled: true,
+				NetCoreServiceEnabled: false,
+				NetFrameworkServiceEnabled: false,
+				NetCoreUiMarkerMode: "notfound",
+				NetFrameworkUiMarkerMode: "notfound"));
+		await using ArrangeContext context = await ArrangeAsync(settings, stubServer);
+
+		// Act
+		RegWebAppActResult actResult = await ActAsync(context,
+			new Dictionary<string, object?> { ["is-net-core"] = true });
+
+		// Assert
+		AssertToolCallSucceeded(actResult);
+		AssertCommandSucceeded(actResult);
+		AssertSettingsPersistedNetCoreRuntime(context.SettingsFilePath, actResult.EnvironmentName);
+	}
+
+	[Test]
+	[AllureTag(ToolName)]
 	[AllureName("reg-web-app reports a stopped site instead of asking for a runtime")]
 	[AllureDescription("Issue #1435: when every probe route answers 503 the operator was told to pass --IsNetCore, which cannot fix a site that is down.")]
 	[Description("Reports that the site is not serving requests when every probe route answers an HTTP server error.")]
@@ -200,7 +229,12 @@ public sealed class RegWebAppToolE2ETests {
 		return new ArrangeContext(session, cancellationTokenSource, stubServer, settingsFilePath);
 	}
 
-	private static async Task<RegWebAppActResult> ActAsync(ArrangeContext context) {
+	private static Task<RegWebAppActResult> ActAsync(ArrangeContext context) =>
+		ActAsync(context, null);
+
+	private static async Task<RegWebAppActResult> ActAsync(
+		ArrangeContext context,
+		IReadOnlyDictionary<string, object?>? additionalArguments) {
 		string environmentName = $"runtime-auto-{Guid.NewGuid():N}";
 		IReadOnlyCollection<string> toolNames =
 			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
@@ -210,16 +244,36 @@ public sealed class RegWebAppToolE2ETests {
 		CallToolResult callResult = await context.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName,
-					["uri"] = context.StubServer.BaseUrl,
-					["login"] = "Supervisor",
-					["password"] = "Supervisor"
-				}
+				["args"] = BuildToolArguments(environmentName, context, additionalArguments)
 			},
 			context.CancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
 		return new RegWebAppActResult(environmentName, callResult, execution);
+	}
+
+	private static Dictionary<string, object?> BuildToolArguments(
+		string environmentName,
+		ArrangeContext context,
+		IReadOnlyDictionary<string, object?>? additionalArguments) {
+		Dictionary<string, object?> arguments = new() {
+			["environment-name"] = environmentName,
+			["uri"] = context.StubServer.BaseUrl,
+			["login"] = "Supervisor",
+			["password"] = "Supervisor"
+		};
+		foreach ((string name, object? value) in additionalArguments ?? new Dictionary<string, object?>()) {
+			arguments[name] = value;
+		}
+		return arguments;
+	}
+
+	private static void AssertSettingsPersistedNetCoreRuntime(string settingsFilePath, string environmentName) {
+		using JsonDocument document = JsonDocument.Parse(File.ReadAllText(settingsFilePath));
+		JsonElement environment = document.RootElement
+			.GetProperty("Environments")
+			.GetProperty(environmentName);
+		environment.GetProperty("IsNetCore").GetBoolean().Should().BeTrue(
+			because: "the runtime the caller supplied explicitly should be persisted as given, with no detection run");
 	}
 
 	private static void AssertToolCallSucceeded(RegWebAppActResult actResult) {
