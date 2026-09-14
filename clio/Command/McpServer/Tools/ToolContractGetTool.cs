@@ -655,7 +655,6 @@ internal static class ToolContractCatalog {
 		"Accepted alias for 'page-schema-name' \u2014 the spelling every other page tool uses. Supply one of the two.";
 	private const string ResourcesFieldName = "resources";
 	private const string SelectFieldName = "select";
-	private const string SkipSamplingFieldName = "skip-sampling";
 	private const string StringType = "string";
 	private const string StatusFieldName = "status";
 	private const string SuccessFalseSignal = "success == false";

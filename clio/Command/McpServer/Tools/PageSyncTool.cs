@@ -11,7 +11,6 @@ using System.Threading.Tasks;
 using Acornima.Ast;
 using Clio.Command;
 using Clio.UserEnvironment;
-using McpServerLib = ModelContextProtocol.Server;
 using ModelContextProtocol.Server;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
@@ -33,7 +32,6 @@ public sealed class PageSyncTool(
 	IFileSystem fileSystem,
 	IMobileComponentInfoCatalog mobileComponentCatalog,
 	IComponentInfoCatalog webComponentCatalog,
-	IPageBodySamplingService samplingService,
 	IPageBaselineGuard pageBaselineGuard,
 	IPlatformVersionResolverFactory? resolverFactory = null,
 	// Injected by DI (Clio.Common.ILogger is registered in the container) so a failed mobile-base pre-resolution
@@ -51,18 +49,18 @@ public sealed class PageSyncTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
-	// One of the two sampling callers (PageBodySamplingService): a relay that is not full-duplex degrades the
-	// semantic review to skipped SILENTLY. SharedFileResource is .clio-pages — the verify read-back body.js
+	// Issues no client requests: the pre-save LLM semantic review (sampling) was removed in ENG-98526, so a
+	// half-duplex relay is sufficient. SharedFileResource is .clio-pages — the verify read-back body.js
 	// and the meta.json rewrite, already routed through IInterprocessFileGate above.
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,
 		OperationFamily = McpToolOperationFamily.None,
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
-		RequiresClientRequests = McpToolClientRequests.Sampling,
+		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.ClioPages)]
 	[Description("Updates multiple Freedom UI page schemas in a single call. " +
-	             "For each page: validates body client-side (optional), runs AI semantic review (optional), saves to Creatio, " +
+	             "For each page: validates body client-side (optional), saves to Creatio, " +
 	             "and verifies the update (optional). Continues processing remaining pages on failure. " +
 		             "CONFLICT DETECTION: when get-page previously stored a checksum baseline in .clio-pages/{schema}/meta.json for the same environment, a page whose schema was modified outside this session fails with per-page `conflict: true` + `conflict-details` (other pages in the batch are unaffected). On a conflict: do NOT retry with the same body — re-run get-page for that schema, re-apply your change on top of the fresh body, then retry; inform the user about the external changes and set the per-page `force: true` ONLY after they explicitly confirm overwriting them. " +
 		             "When verify=true, the read-back body is written to .clio-pages/{schema-name}/body.js, anchored at the workspace root (or the `output-directory` argument); see get-page for the anchoring rules. " +
@@ -80,17 +78,14 @@ public sealed class PageSyncTool(
 	public async Task<PageSyncResponse> SyncPages(
 		[Description("Parameters: environment-name (required unless an authorized HTTP credential-passthrough header supplies the target tenant); pages array (required); validate, verify (optional).")]
 		[Required] PageSyncArgs args,
-		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
 		// Materialise the input list once so every downstream stage can index
 		// into a stable snapshot. The MCP contract types `Pages` as
 		// IEnumerable; without this snapshot a non-list source would be
-		// enumerated multiple times and the pre-pass / sampling / sync stages
+		// enumerated multiple times and the pre-pass / sync stages
 		// could disagree on positions.
 		IReadOnlyList<PageSyncPageInput> pages = args.Pages as IReadOnlyList<PageSyncPageInput> ?? args.Pages.ToArray();
 		PageSyncPrePassResults prePass = BuildPrePassResults(pages);
-		IReadOnlyList<PageSamplingReview?> samplingResults = await RunSamplingPrePassAsync(
-			server, args, pages, prePass, cancellationToken);
 		// Registry-driven chart-widget validation needs the async, version-scoped catalog. Scope it to the
 		// target environment's platform version (probed the same way get-component-info resolves it) so the
 		// batch validates against the component set the environment actually ships, not the broader 'latest'.
@@ -104,7 +99,7 @@ public sealed class PageSyncTool(
 			chartTypeDefinitions = await ChartWidgetValidation
 				.ResolveTypeDefinitionsAsync(webComponentCatalog, platformVersion, cancellationToken).ConfigureAwait(false);
 		}
-		List<PageSyncPageResult> results = ExecuteSyncBatch(args, pages, prePass, samplingResults, chartTypeDefinitions);
+		List<PageSyncPageResult> results = ExecuteSyncBatch(args, pages, prePass, chartTypeDefinitions);
 		return new PageSyncResponse {
 			Success = results.Count > 0 && results.All(r => r.Success),
 			Pages = results
@@ -153,8 +148,7 @@ public sealed class PageSyncTool(
 	}
 
 	// Pre-pass: runs the deterministic syntax + AST-lint gates on every web
-	// body BEFORE invoking the LLM sampling service or resolving any
-	// environment-bound command. Both gates are pure functions of the input
+	// body BEFORE resolving any environment-bound command. Both gates are pure functions of the input
 	// body — they need no environment, no network, no lock — so running them
 	// here lets us:
 	//   1. Materialise per-page fail-fast results from `ExecuteSyncBatch`
@@ -163,8 +157,6 @@ public sealed class PageSyncTool(
 	//      `Page body lint failed`) regardless of environment validity —
 	//      a missing or unreachable environment must not mask the gate's
 	//      message (e2e fail-fast contract reported by reviewer 2026-06-11).
-	//   3. Skip sampling for already-doomed bodies — no LLM tokens spent on
-	//      bodies the deterministic gate will block anyway.
 	// Per-page entries are keyed by INDEX (not SchemaName) so duplicate
 	// schema-name submissions in a single batch do not cross-contaminate
 	// (last-write-wins on a Dictionary keyed by SchemaName would lint one
@@ -193,8 +185,7 @@ public sealed class PageSyncTool(
 		if (ast is null) {
 			return PageSyncPrePassEntry.Empty;
 		}
-		// Lint runs here so we can decide whether to skip sampling on doomed
-		// bodies (any Error-severity finding short-circuits sampling); the
+		// Lint runs here, ahead of the environment-bound work; the
 		// findings themselves are NOT materialised into a failure result yet
 		// — regex content validation runs first inside SyncSinglePage so its
 		// established error wording wins on overlapping detections, and lint
@@ -203,32 +194,10 @@ public sealed class PageSyncTool(
 		return new PageSyncPrePassEntry(null, findings);
 	}
 
-	private async Task<IReadOnlyList<PageSamplingReview?>> RunSamplingPrePassAsync(
-		McpServerLib.McpServer server,
-		PageSyncArgs args,
-		IReadOnlyList<PageSyncPageInput> pages,
-		PageSyncPrePassResults prePass,
-		CancellationToken cancellationToken) {
-		var samplingResults = new PageSamplingReview?[pages.Count];
-		if (args.SkipSampling == true) {
-			return samplingResults;
-		}
-		for (int i = 0; i < pages.Count; i++) {
-			if (prePass.Entries[i].IsBodyDoomed) {
-				continue;
-			}
-			PageSyncPageInput page = pages[i];
-			samplingResults[i] = await samplingService.TrySamplingReviewAsync(
-				server, page.SchemaName, page.Body, page.Resources, cancellationToken);
-		}
-		return samplingResults;
-	}
-
 	private List<PageSyncPageResult> ExecuteSyncBatch(
 		PageSyncArgs args,
 		IReadOnlyList<PageSyncPageInput> pages,
 		PageSyncPrePassResults prePass,
-		IReadOnlyList<PageSamplingReview?> samplingResults,
 		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? chartTypeDefinitions) {
 		var results = new List<PageSyncPageResult>(pages.Count);
 		var pendingIndices = new List<int>();
@@ -305,8 +274,7 @@ public sealed class PageSyncTool(
 					args.Validate ?? true,
 					verify,
 					args.OutputDirectory,
-					prePass,
-					samplingResults) {
+					prePass) {
 					EnvironmentName = args.EnvironmentName,
 					PreResolvedMobileBases = preResolvedMobileBases,
 					DegradedMobileBaseIndices = degradedMobileBaseIndices
@@ -542,13 +510,11 @@ public sealed class PageSyncTool(
 
 	private PageSyncPageResult ProcessPendingPage(PageSyncPageInput page, int index, PageSyncBatchContext ctx) {
 		PageSyncPrePassEntry prePassEntry = ctx.PrePass.Entries[index];
-		PageSamplingReview samplingReview = ctx.SamplingResults[index];
 		PageSyncOperationOptions opOptions = new(
 			ctx.UpdateCommand,
 			ctx.GetCommand,
 			ctx.Validate,
 			ctx.Verify,
-			samplingReview,
 			ctx.OutputDirectory,
 			prePassEntry.LintFindings) {
 			EnvironmentName = ctx.EnvironmentName,
@@ -566,8 +532,7 @@ public sealed class PageSyncTool(
 		bool Validate,
 		bool Verify,
 		string? OutputDirectory,
-		PageSyncPrePassResults PrePass,
-		IReadOnlyList<PageSamplingReview?> SamplingResults) {
+		PageSyncPrePassResults PrePass) {
 		// Environment identity for the conflict-baseline guard. Init-only property (not a
 		// positional parameter) to keep the primary constructor under Sonar S107's limit.
 		public string? EnvironmentName { get; init; }
@@ -588,13 +553,6 @@ public sealed class PageSyncTool(
 		string? SyntaxFailureMessage,
 		IReadOnlyList<PageBodyLintFinding> LintFindings) {
 		public static readonly PageSyncPrePassEntry Empty = new(null, Array.Empty<PageBodyLintFinding>());
-
-		// "Doomed" = sampling has no value because the body will be rejected
-		// downstream regardless of the LLM verdict. Either a parse failure
-		// (no AST) or any Error-severity lint finding qualifies.
-		public bool IsBodyDoomed =>
-			SyntaxFailureMessage != null
-			|| LintFindings.Any(f => f.Severity == LintSeverity.Error);
 	}
 
 	// Per-page execution options for SyncSinglePage. Bundled into a record so
@@ -611,7 +569,6 @@ public sealed class PageSyncTool(
 		PageGetCommand GetCommand,
 		bool Validate,
 		bool Verify,
-		PageSamplingReview SamplingReview,
 		string? OutputDirectory,
 		IReadOnlyList<PageBodyLintFinding> LintFindings) {
 		// Environment identity for the conflict-baseline guard — see PageSyncBatchContext.
@@ -628,7 +585,6 @@ public sealed class PageSyncTool(
 
 	private PageSyncPageResult TryValidatePage(
 		PageSyncPageInput page,
-		PageSamplingReview samplingReview,
 		(string? Vmc, string? Mc)? preResolvedMobileBase,
 		out PageSyncValidationResult validationResult) {
 		validationResult = null;
@@ -653,7 +609,6 @@ public sealed class PageSyncTool(
 					SchemaName = page.SchemaName,
 					Success = false,
 					Validation = validationResult,
-					SamplingReview = samplingReview,
 					Error = "Mobile page validation failed: " + string.Join("; ", validationResult.Errors ?? [])
 				};
 		} else {
@@ -663,7 +618,6 @@ public sealed class PageSyncTool(
 					SchemaName = page.SchemaName,
 					Success = false,
 					Validation = validationResult,
-					SamplingReview = samplingReview,
 					Error = "Client-side validation failed: " +
 						string.Join("; ", validationResult.Errors ?? Array.Empty<string>())
 				};
@@ -691,7 +645,7 @@ public sealed class PageSyncTool(
 			// PageSyncOperationOptions and skip the second run.
 			PageSyncValidationResult validationResult = null;
 			if (opOptions.Validate) {
-				PageSyncPageResult validationFailure = TryValidatePage(page, opOptions.SamplingReview, opOptions.PreResolvedMobileBase, out validationResult);
+				PageSyncPageResult validationFailure = TryValidatePage(page, opOptions.PreResolvedMobileBase, out validationResult);
 				if (validationFailure != null)
 					return validationFailure;
 			}
@@ -711,9 +665,6 @@ public sealed class PageSyncTool(
 						+ "the environment/credentials are available to validate against the real base."
 				]);
 			}
-			PageSyncPageResult samplingFailure = CreateSamplingFailure(page, opOptions.SamplingReview, validationResult);
-			if (samplingFailure != null)
-				return samplingFailure;
 			(string metaFilePath, bool baselineArmed, string baselineWarning, PageUpdateOptions updateOptions) =
 				BuildUpdateRequest(page, opOptions);
 			if (baselineWarning != null) {
@@ -746,7 +697,6 @@ public sealed class PageSyncTool(
 				Success = true,
 				BodyLength = updateResponse.BodyLength,
 				Validation = validationResult,
-				SamplingReview = opOptions.SamplingReview,
 				ResourcesRegistered = updateResponse.ResourcesRegistered
 			};
 		} catch (Exception ex) {
@@ -756,23 +706,6 @@ public sealed class PageSyncTool(
 				Error = SensitiveErrorTextRedactor.Redact(ex.Message)
 			};
 		}
-	}
-
-	private PageSyncPageResult CreateSamplingFailure(
-		PageSyncPageInput page,
-		PageSamplingReview samplingReview,
-		PageSyncValidationResult validationResult) {
-		if (samplingReview is not { Ok: false, Skipped: false } || samplingReview.Issues?.Count <= 0) {
-			return null;
-		}
-		return new PageSyncPageResult {
-			SchemaName = page.SchemaName,
-			Success = false,
-			Validation = validationResult,
-			SamplingReview = samplingReview,
-			Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues)
-				+ ". Fix the page body and resubmit. Do NOT retry the same body with skip-sampling=true to bypass this check."
-		};
 	}
 
 	private (string MetaFilePath, bool BaselineArmed, string BaselineWarning, PageUpdateOptions UpdateOptions)
@@ -826,7 +759,6 @@ public sealed class PageSyncTool(
 			Success = true,
 			BodyLength = updateResponse.BodyLength,
 			Validation = validationResult,
-			SamplingReview = opOptions.SamplingReview,
 			ResourcesRegistered = updateResponse.ResourcesRegistered,
 			Page = getResponse.Page,
 			VerifiedBodyFile = verifiedBodyFile
@@ -1181,9 +1113,6 @@ public sealed record PageSyncArgs(
 	[property: Description("Read back each page after saving to confirm the update. Default: false")]
 	bool? Verify = null,
 
-	[property: JsonPropertyName("skip-sampling")]
-	[property: Description("Reserved escape hatch. Omit by default. Pre-condition for setting true: the immediately preceding user message in this turn contains an explicit instruction to skip the AI semantic review for this batch, OR the MCP host has reported sampling as unavailable in this session. Absent that evidence, omit this field. Default: false")]
-	bool? SkipSampling = null,
 
 	[property: JsonPropertyName("output-directory")]
 	[property: Description("Optional. Directory to anchor verified-page .clio-pages output under — typically your project/workspace root. When omitted, the workspace root is auto-detected by walking up for .clio/workspaceSettings.json; if running from the home directory with no workspace found, output falls back to the clio home root rather than $HOME. Only relevant when verify=true.")]
@@ -1257,10 +1186,6 @@ public sealed class PageSyncPageResult {
 	[JsonPropertyName("page")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public PageMetadataInfo Page { get; init; }
-
-	[JsonPropertyName("sampling-review")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public PageSamplingReview SamplingReview { get; init; }
 
 	[JsonPropertyName("verified-body-file")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

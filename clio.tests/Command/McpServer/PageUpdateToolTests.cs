@@ -86,13 +86,12 @@ public sealed class PageUpdateToolTests {
 			command, logger, _commandResolver,
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			_webComponentCatalog,
-			Substitute.For<IPageBodySamplingService>(),
 			Substitute.For<IPageBaselineGuard>(),
 			_resolverFactory, settingsRepository);
 	}
 
 	private static PageUpdateArgs CreateArgs(string environmentName) =>
-		new(SchemaName, ValidBody, SkipSampling: true) { EnvironmentName = environmentName };
+		new(SchemaName, ValidBody) { EnvironmentName = environmentName };
 
 	private string ReceivedChartValidationVersion() =>
 		(string)_webComponentCatalog.ReceivedCalls()
@@ -114,7 +113,7 @@ public sealed class PageUpdateToolTests {
 		PageUpdateArgs args = CreateArgs(environmentName: null);
 
 		// Act
-		await _tool.UpdatePage(args, null);
+		await _tool.UpdatePage(args);
 
 		// Assert
 		_commandResolver.Received(1).Resolve<EnvironmentSettings>(
@@ -133,7 +132,7 @@ public sealed class PageUpdateToolTests {
 		PageUpdateArgs args = CreateArgs(environmentName: "other-registered-env");
 
 		// Act
-		PageUpdateResponse response = await _tool.UpdatePage(args, null);
+		PageUpdateResponse response = await _tool.UpdatePage(args);
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -158,7 +157,7 @@ public sealed class PageUpdateToolTests {
 		PageUpdateArgs args = CreateArgs(environmentName: "sandbox");
 
 		// Act
-		PageUpdateResponse response = await _tool.UpdatePage(args, null);
+		PageUpdateResponse response = await _tool.UpdatePage(args);
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -223,8 +222,8 @@ public sealed class PageUpdateToolTests {
 				Substitute.For<IPageFileWriter>());
 			_commandResolver.Resolve<PageGetCommand>(Arg.Do<EnvironmentOptions>(o => captured = o)).Returns(getCommand);
 
-			PageUpdateArgs args = new(SchemaName, mobileBody, null, true, SkipSampling: true, Mode: mode) { EnvironmentName = "dev" };
-			await _tool.UpdatePage(args, null);
+			PageUpdateArgs args = new(SchemaName, mobileBody, null, true, Mode: mode) { EnvironmentName = "dev" };
+			await _tool.UpdatePage(args);
 
 			captured.Should().BeOfType<PageGetOptions>(
 				because: "update-page must resolve the mobile base via get-page for a body that needs one");

@@ -85,7 +85,6 @@ public sealed class PageUpdateToolBaselineTests
 			command, logger, commandResolver,
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			_webComponentCatalog,
-			Substitute.For<IPageBodySamplingService>(),
 			new PageBaselineGuard(_fileSystem),
 			resolverFactory, settingsRepository);
 	}
@@ -119,17 +118,17 @@ public sealed class PageUpdateToolBaselineTests
 	}
 
 	private static PageUpdateArgs CreateArgs(bool? force = null) =>
-		new(SchemaName, ValidBody, SkipSampling: true, OutputDirectory: "/ws", Force: force)
+		new(SchemaName, ValidBody, OutputDirectory: "/ws", Force: force)
 			{ EnvironmentName = "sandbox" };
 
 	[Test]
 	[Description("update-page scopes the registry-driven chart-widget validation to the platform version resolved from the target environment.")]
 	public async System.Threading.Tasks.Task UpdatePage_ShouldScopeChartValidationToResolvedEnvironmentVersion() {
 		// Arrange
-		PageUpdateArgs args = new(SchemaName, ValidBody, SkipSampling: true, OutputDirectory: "/ws") { EnvironmentName = "sandbox" };
+		PageUpdateArgs args = new(SchemaName, ValidBody, OutputDirectory: "/ws") { EnvironmentName = "sandbox" };
 
 		// Act
-		await _tool.UpdatePage(args, null);
+		await _tool.UpdatePage(args);
 
 		// Assert
 		string requestedVersion = (string)_webComponentCatalog.ReceivedCalls()
@@ -147,7 +146,7 @@ public sealed class PageUpdateToolBaselineTests
 		StubChecksumByUId(ChecksumRow("server-checksum"));
 
 		// Act
-		PageUpdateResponse response = _tool.UpdatePage(CreateArgs(), null).Result;
+		PageUpdateResponse response = _tool.UpdatePage(CreateArgs()).Result;
 
 		// Assert
 		response.Success.Should().BeFalse(because: "the stored baseline differs from the server checksum");
@@ -164,7 +163,7 @@ public sealed class PageUpdateToolBaselineTests
 		StubChecksumByUId(ChecksumRow("server-checksum"));
 
 		// Act
-		PageUpdateResponse response = _tool.UpdatePage(CreateArgs(), null).Result;
+		PageUpdateResponse response = _tool.UpdatePage(CreateArgs()).Result;
 
 		// Assert
 		response.Success.Should().BeTrue(because: "a baseline from another environment is not evidence of an external modification here");
@@ -182,7 +181,7 @@ public sealed class PageUpdateToolBaselineTests
 		StubChecksumByUId(ChecksumRow("baseline-checksum"), ChecksumRow("fresh-after-save"));
 
 		// Act
-		PageUpdateResponse response = _tool.UpdatePage(CreateArgs(), null).Result;
+		PageUpdateResponse response = _tool.UpdatePage(CreateArgs()).Result;
 
 		// Assert
 		response.Success.Should().BeTrue(because: "a matching baseline allows the save to proceed");
@@ -201,7 +200,7 @@ public sealed class PageUpdateToolBaselineTests
 		StubChecksumByUId(ChecksumRow("baseline-checksum"), """{"success": false}""");
 
 		// Act
-		PageUpdateResponse response = _tool.UpdatePage(CreateArgs(), null).Result;
+		PageUpdateResponse response = _tool.UpdatePage(CreateArgs()).Result;
 
 		// Assert
 		response.Success.Should().BeTrue(because: "a failed post-save metadata query must not fail the already-successful save");
@@ -216,7 +215,7 @@ public sealed class PageUpdateToolBaselineTests
 		StubChecksumByUId();
 
 		// Act
-		PageUpdateResponse response = _tool.UpdatePage(CreateArgs(), null).Result;
+		PageUpdateResponse response = _tool.UpdatePage(CreateArgs()).Result;
 
 		// Assert
 		response.Success.Should().BeTrue(because: "the legacy flow without a baseline must be unaffected");
@@ -232,7 +231,7 @@ public sealed class PageUpdateToolBaselineTests
 		StubChecksumByUId(ChecksumRow("fresh-after-save"));
 
 		// Act
-		PageUpdateResponse response = _tool.UpdatePage(CreateArgs(force: true), null).Result;
+		PageUpdateResponse response = _tool.UpdatePage(CreateArgs(force: true)).Result;
 
 		// Assert
 		response.Success.Should().BeTrue(because: "force=true deliberately bypasses the conflict check");
@@ -255,10 +254,10 @@ public sealed class PageUpdateToolBaselineTests
 			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
 			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
-		PageUpdateArgs args = new(SchemaName, bodyWithResourceBoundInsert, "{\"PDS_UsrContactPhone\":\"Contact phone\"}", SkipSampling: true, OutputDirectory: "/ws") { EnvironmentName = "sandbox" };
+		PageUpdateArgs args = new(SchemaName, bodyWithResourceBoundInsert, "{\"PDS_UsrContactPhone\":\"Contact phone\"}", OutputDirectory: "/ws") { EnvironmentName = "sandbox" };
 
 		// Act
-		PageUpdateResponse response = _tool.UpdatePage(args, null).Result;
+		PageUpdateResponse response = _tool.UpdatePage(args).Result;
 
 		// Assert
 		response.Success.Should().BeTrue(
