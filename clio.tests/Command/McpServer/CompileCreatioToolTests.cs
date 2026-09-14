@@ -515,7 +515,7 @@ public sealed class CompileCreatioToolTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("The already-in-progress notice states the compile was NOT started, points at compile-status, and reflects the core's reject (not queue) semantics.")]
+	[Description("The already-in-progress notice states the compile was NOT started, points at compile-status, and describes the guard's real SCOPE: it belongs to this clio process, and the platform is what serializes builds across processes (issue #1422 - the earlier wording claimed server-wide authority the guard does not have).")]
 	public void CompileAlreadyInProgressMessage_Should_Explain_Reject_And_PollTarget()
 	{
 		// Act
@@ -523,10 +523,12 @@ public sealed class CompileCreatioToolTests
 
 		// Assert
 		message.Should().Contain("sandbox", because: "the caller must know which environment is already compiling");
-		message.Should().Contain("already in progress",
-			because: "the caller must understand a compile is already running");
+		message.Should().Contain("THIS clio process",
+			because: "the guard is a static in one process, so the notice must not read as server-wide state");
 		message.Should().Contain("not started",
 			because: "the caller must know this duplicate request did not launch a compile");
+		message.Should().Contain("platform",
+			because: "the caller must know what actually serializes builds across processes");
 		message.Should().Contain(CompileStatusTool.CompileStatusToolName,
 			because: "the notice must point the caller at compile-status rather than retrying");
 	}
@@ -563,7 +565,12 @@ public sealed class CompileCreatioToolTests
 				Substitute.For<IServiceUrlBuilder>(),
 				Substitute.For<ICompilationHistoryPoller>(),
 				Substitute.For<ILogger>(),
-				Substitute.For<IInteractiveConsole>())
+				Substitute.For<IInteractiveConsole>(),
+				Substitute.For<IApplicationClientFactory>(),
+				Substitute.For<ICompilationActivityWatcher>(),
+				Substitute.For<IEnvironmentReloadWatcher>(),
+				Substitute.For<ICompilationCompletionDecider>(),
+				Substitute.For<ICompilationResultReader>())
 		{
 		}
 

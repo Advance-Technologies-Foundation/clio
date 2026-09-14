@@ -22,8 +22,7 @@ public class SqlSchemaInstallToolTests {
 			.Returns(resolvedCommand);
 		SqlSchemaInstallTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
-		SqlSchemaInstallResponse response = tool.InstallSchema(new SqlSchemaInstallArgs(
-			"UsrScript", "dev", null, null, null));
+		SqlSchemaInstallResponse response = tool.InstallSchema(new SqlSchemaInstallArgs("UsrScript") { EnvironmentName = "dev" });
 
 		response.Success.Should().BeTrue();
 		resolvedCommand.CapturedOptions.Should().NotBeNull();
@@ -43,8 +42,7 @@ public class SqlSchemaInstallToolTests {
 			.Returns(_ => throw new System.InvalidOperationException("boom"));
 		SqlSchemaInstallTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
-		SqlSchemaInstallResponse response = tool.InstallSchema(new SqlSchemaInstallArgs(
-			"UsrScript", "missing", null, null, null));
+		SqlSchemaInstallResponse response = tool.InstallSchema(new SqlSchemaInstallArgs("UsrScript") { EnvironmentName = "missing" });
 
 		response.Success.Should().BeFalse();
 		response.Error.Should().Contain("boom");

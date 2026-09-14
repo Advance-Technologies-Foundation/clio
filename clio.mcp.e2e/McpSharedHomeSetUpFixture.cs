@@ -1,3 +1,4 @@
+﻿using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using System.Text.Json;
@@ -56,6 +57,7 @@ public sealed class McpSharedHomeSetUpFixture {
 			["root-path"] = Path.Combine(_sharedClioHome, "knowledge"),
 			["sources"] = new JsonObject()
 		};
+		SuiteFeatureFlags.Enable(root, typeof(MobilePageConversionGuideTool));
 		File.WriteAllText(
 			_isolatedSettingsPath,
 			root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));

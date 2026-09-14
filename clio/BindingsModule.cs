@@ -306,6 +306,25 @@ public class BindingsModule {
 				UseCookies = false,
 				AllowAutoRedirect = false
 			});
+		// Dedicated client for the compile-completion availability probe (#1422). It accepts any server
+		// certificate on purpose: every other request this feature makes - the compile POST and the verdict
+		// read - goes through creatio.client, which trusts any certificate (see the remarks on
+		// HealthCheckCommand.HttpMessageHandlerFactory). With the default client the probe would be the only
+		// part that validates, so on a self-signed stand it would fail forever, EnvironmentReachable would
+		// never be true, both completion rules would be disabled and an ordinary build would wait out the
+		// full timeout and exit 1. Redirects are not followed: a 302 to the login page already proves the
+		// application is answering, and following it only spends time the probe is sampled on.
+		// S4830: accepting any certificate is the deliberate behaviour described above - the probe must
+		// reach exactly the stands creatio.client already reaches, including self-signed ones, or the
+		// feature reports a healthy stand as unreachable.
+#pragma warning disable S4830
+		services.AddHttpClient(Clio.Common.EnvironmentAvailabilityProbe.HttpClientName)
+			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
+				AllowAutoRedirect = false,
+				UseCookies = false,
+				ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+			});
+#pragma warning restore S4830
 
 		ISettingsBootstrapService settingsBootstrapService = new SettingsBootstrapService(_fileSystem, applyBootstrapRepairs);
 		SettingsBootstrapResult bootstrapResult = settingsBootstrapService.GetResult();
@@ -352,6 +371,9 @@ public class BindingsModule {
 		services.AddTransient<InstallerCommand>();
 		services.AddTransient<PinCertificateCommand>();
 		services.AddTransient<DeployIdentityCommand>();
+		services.AddTransient<UninstallIdentityCommand>();
+		services.AddTransient<IIdentityReferenceCleanup, IdentityReferenceCleanup>();
+		services.AddTransient<IIdentityServiceLifecycle, IdentityServiceLifecycle>();
 		services.AddTransient<IIdentityServiceArchiveResolver, IdentityServiceArchiveResolver>();
 		services.AddTransient<IIdentityServiceCreatioClient, IdentityServiceCreatioClient>();
 		services.AddTransient<IIdentityServiceRoleGrantService, IdentityServiceRoleGrantService>();
@@ -377,6 +399,10 @@ public class BindingsModule {
 
 		services.AddTransient<Clio.Command.RecordRights.GetRecordRightsCommand>();
 		services.AddTransient<Clio.Command.RecordRights.SetRecordRightsCommand>();
+		services.AddTransient<Clio.Command.Administration.ManageUserCommand>();
+		services.AddTransient<Clio.Command.Administration.ManageRoleCommand>();
+		services.AddTransient<Clio.Command.Administration.ManageAccessCommand>();
+		services.AddTransient<Clio.Command.Administration.ManageLicenseCommand>();
 		services.AddTransient<Clio.Common.IFileSystem, Clio.Common.FileSystem>();
 		services.AddTransient<IFileSecurityHardening, FileSecurityHardening>();
 		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionCache, Clio.Common.BrowserSession.BrowserSessionCache>();
@@ -407,6 +433,8 @@ public class BindingsModule {
 		services.AddTransient<IFeatureStateService, FeatureStateService>();
 		services.AddTransient<SetFileContentStorageConnectionStringCommand>();
 		services.AddTransient<SysSettingsCommand>();
+		services.AddTransient<IDownloadSysSettingFileService, DownloadSysSettingFileService>();
+		services.AddTransient<DownloadSysSettingFileCommand>();
 		services.AddTransient<BuildInfoCommand>();
 		services.AddTransient<BuildDockerImageCommand>();
 		services.AddTransient<InstallSkillsCommand>();
@@ -690,15 +718,11 @@ public class BindingsModule {
 		services.AddSingleton(new KnowledgeGitHubReleaseOptions(TransportDeadlineMilliseconds: 15_000));
 		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 1_000));
 		services.AddSingleton(new KnowledgeInstallationStoreOptions(LockTimeoutMilliseconds: 30_000));
-		services.AddSingleton(new KnowledgeBundleClientCapabilities(
+		services.AddSingleton(provider => new KnowledgeBundleClientCapabilities(
 			ResolveKnowledgeBundleClioVersion(typeof(BindingsModule).Assembly.GetName().Version),
 			new Version(1, 1, 0),
-			new HashSet<string>(StringComparer.Ordinal) {
-				KnowledgeFeedbackPolicyTools.ConfigureToolName,
-				GuidanceGetTool.ToolName,
-				KnowledgeFeedbackPolicyTools.GetToolName,
-				KnowledgeManagementTools.ListKnowledgeExamplesToolName
-			}));
+			provider.GetRequiredService<IMcpToolInvokerRegistry>().ToolNames.ToHashSet(StringComparer.Ordinal)));
+		services.AddSingleton<IInstalledKnowledgeVersions, InstalledKnowledgeVersions>();
 		// LOCAL DEV TOGGLE (off by default): let a Git knowledge bundle that omits the explicit
 		// "sequence" (e.g. clio-knowledge master) load for local iteration. The key is declared in
 		// ExperimentalCommand.StandaloneFeatureKeys so `clio experimental` lists and sets it.
@@ -736,6 +760,7 @@ public class BindingsModule {
 		services.AddTransient<AdviseThemePaletteTool>();
 		services.AddTransient<ClearThemesCacheTool>();
 		services.AddTransient<ListThemesTool>();
+		services.AddTransient<GetThemeTool>();
 		services.AddTransient<CreateThemeTool>();
 		services.AddTransient<UpdateThemeTool>();
 		services.AddTransient<DeleteThemeTool>();
@@ -747,6 +772,10 @@ public class BindingsModule {
 		services.AddTransient<GetUserCultureTool>();
 		services.AddTransient<GetRecordRightsTool>();
 		services.AddTransient<SetRecordRightsTool>();
+		services.AddTransient<ManageUserTool>();
+		services.AddTransient<ManageRoleTool>();
+		services.AddTransient<ManageAccessTool>();
+		services.AddTransient<ManageLicenseTool>();
 		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<AddPackageDependencyTool>();
 		services.AddTransient<AddCustomLoggingTool>();
@@ -933,6 +962,7 @@ public class BindingsModule {
 		services.AddTransient<ClearThemesCacheCommand>();
 		services.AddTransient<ListThemesCommand>();
 		services.AddTransient<IThemeCatalog, ListThemesCommand>();
+		services.AddTransient<GetThemeCommand>();
 		services.AddTransient<CreateThemeCommand>();
 		services.AddTransient<UpdateThemeCommand>();
 		services.AddTransient<DeleteThemeCommand>();
@@ -1216,9 +1246,9 @@ public class BindingsModule {
 		services.AddTransient<LocalHelpViewer>();
 		services.AddTransient<WikiHelpViewer>();
 		
-		// The per-environment manager gets the SAME dependency set as the DI-resolved one. A provider-only
-		// manager would silently skip the authenticated DataService probe, so every command reached through
-		// this factory would keep reporting a rejected read as an empty success (the defect issue #1222 fixes).
+		// The per-environment manager gets the SAME dependency set as the DI-resolved one - in particular
+		// the ClassifyingDataProvider wrapper, without which every command reached through this factory
+		// would keep reporting a rejected read as an empty success (the defect issue #1222 fixes).
 		// The client stays lazy, so building the factory result costs no HTTP call on its own.
 		//
 		// EVERY DEPENDENCY IS RESOLVED HERE, EAGERLY, AND THE RETURNED DELEGATE CAPTURES THE INSTANCES
@@ -1248,6 +1278,15 @@ public class BindingsModule {
 			return envSettings => BuildEnvironmentScopedSysSettingsManager(
 				envSettings, reauthExecutor, workingDirectoriesProvider, clioFileSystem, fileSystem, logger);
 		});
+
+		// The container-bound ICompilationHistoryPoller closes over the PROCESS-ACTIVE environment (see the
+		// IDataProvider registration in RegisterActiveEnvironmentServices). Any caller that compiles a
+		// DIFFERENT environment - env-manage-ui clones settings per menu selection - therefore has to build
+		// its own, or it reads compilation history from the wrong stand. Since the completion rule decides
+		// the exit code from those rows, reading the wrong stand's history does not degrade the output: it
+		// reports a successful build as a transport failure.
+		services.AddTransient<Func<EnvironmentSettings, ICompilationHistoryPoller>>(_ =>
+			BuildEnvironmentScopedCompilationHistoryPoller);
 
 		RegisterFluentValidators(services);
 		return settingsRepository;
@@ -1302,8 +1341,8 @@ public class BindingsModule {
 
 	/// <summary>
 	/// Builds a <see cref="SysSettingsManager"/> for one environment with the same dependency set the
-	/// DI-resolved manager gets, so a read rejected by authentication is reported as a failure rather
-	/// than as an empty success.
+	/// DI-resolved manager gets - including the <see cref="ClassifyingDataProvider"/> wrapper, so a read
+	/// rejected by authentication is reported as a failure rather than as an empty success.
 	/// </summary>
 	/// <remarks>
 	/// Takes the already-resolved collaborators instead of an <see cref="IServiceProvider"/> ON PURPOSE.
@@ -1337,12 +1376,22 @@ public class BindingsModule {
 		return new SysSettingsManager(
 			applicationClient,
 			new ServiceUrlBuilder(envSettings),
-			BuildRemoteDataProvider(envSettings),
+			new ClassifyingDataProvider(BuildRemoteDataProvider(envSettings)),
 			workingDirectoriesProvider,
 			clioFileSystem,
 			fileSystem,
 			logger);
 	}
+
+	/// <summary>
+	/// Builds a compilation-history poller bound to <paramref name="envSettings"/> rather than to the
+	/// process-active environment.
+	/// </summary>
+	/// <param name="envSettings">The environment whose <c>CompilationHistory</c> is to be read.</param>
+	/// <returns>A poller reading that environment.</returns>
+	private static ICompilationHistoryPoller BuildEnvironmentScopedCompilationHistoryPoller(
+		EnvironmentSettings envSettings) =>
+		new CompilationHistoryPoller(BuildRemoteDataProvider(envSettings));
 
 	/// <summary>
 	/// True when the environment authenticates with a token rather than with a login and password: an
@@ -1390,7 +1439,12 @@ public class BindingsModule {
 	private static void RegisterActiveEnvironmentServices(
 		IServiceCollection services, EnvironmentSettings activeSettings) {
 		services.AddSingleton(activeSettings);
-		services.AddTransient<IDataProvider>(_ => new LazyDataProvider(() => BuildRemoteDataProvider(activeSettings)));
+		// ClassifyingDataProvider is NOT optional decoration: without it an ATF response whose Success is
+		// false reaches the caller as an empty collection and the command reports success (issue #1222).
+		// The SAME wrapping is applied in BuildEnvironmentScopedSysSettingsManager - that per-environment
+		// path is a second construction site, and a provider left raw there is unprotected.
+		services.AddTransient<IDataProvider>(_ =>
+			new ClassifyingDataProvider(new LazyDataProvider(() => BuildRemoteDataProvider(activeSettings))));
 		// Bearer-first; AccessToken must never reach the "Supervisor" fallback below
 		// (multi-tenant safety, ENG-93208 B1).
 		// Keep the directly resolvable compatibility service separate from the adapter's transport.

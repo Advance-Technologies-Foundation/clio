@@ -144,13 +144,16 @@ internal abstract class BaseBusinessRuleService(
 		return AddonService.DeleteRules(addonRequest, ruleNames);
 	}
 
+	/// <summary>
+	/// Validates the target identity (package + schema) and reports EVERY missing field in one message.
+	/// Reporting them one at a time costs the caller a failed round trip per field, which for an agent-facing
+	/// tool is the difference between one call and three (issue #1305, point 3).
+	/// </summary>
 	protected static void RequireSchemaFields(string packageName, string schemaName, string schemaFieldName) {
-		if (string.IsNullOrWhiteSpace(packageName)) {
-			throw new ArgumentException("package-name is required.");
-		}
-
-		if (string.IsNullOrWhiteSpace(schemaName)) {
-			throw new ArgumentException($"{schemaFieldName} is required.");
+		string? missingFieldsError =
+			BusinessRuleBatchValidation.MissingSchemaFieldsError(packageName, schemaName, schemaFieldName);
+		if (missingFieldsError is not null) {
+			throw new ArgumentException(missingFieldsError);
 		}
 	}
 }

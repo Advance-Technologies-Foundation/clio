@@ -13,7 +13,7 @@ registry cache from the academy.creatio.com CDN.
 
 The component-registry-refresh command force-pulls one or more Freedom UI
 component-registry payloads from the academy.creatio.com CDN regardless of
-the 24-hour cache TTL applied by the MCP get-component-info tool. This is
+the five-minute registry cache TTL applied by the MCP get-component-info tool. This is
 useful when a user needs to pick up a newly published platform GA without
 waiting for the natural refresh window.
 
@@ -50,8 +50,8 @@ whose working directory is not your shell's, so a relative path is resolved agai
 a directory you did not choose and the override silently misses.
 
 When set, every `get-component-info` call reads the file directly and reports
-`source=local` — the CDN, the on-disk cache, and the embedded snapshot are all
-bypassed. The env variable is read on every call, so edits are visible to a
+`source=local` — the registry's on-disk cache and CDN tiers are bypassed.
+The env variable is read on every call, so edits are visible to a
 long-running `clio mcp serve` without restarting it.
 
 The override also covers the long-form documentation the registry points at.
