@@ -39,18 +39,30 @@ FLOW_TYPE_DEFAULT = 1
 def collect_flow_elements(node, out):
     """Appends every flow-element dict under an ELEMENTS_KEY list, sub-process children included."""
     if isinstance(node, dict):
-        for key, value in node.items():
-            if key == ELEMENTS_KEY and isinstance(value, list):
-                for item in value:
-                    if isinstance(item, dict):
-                        out.append(item)
-                    # Unconditional, and equivalent: this call is a no-op on anything that is neither
-                    # a dict nor a list, so a non-dict entry costs a call and changes nothing.
-                    collect_flow_elements(item, out)
-            else:
-                collect_flow_elements(value, out)
+        _collect_from_dict(node, out)
     elif isinstance(node, list):
         for item in node:
+            collect_flow_elements(item, out)
+
+
+def _collect_from_dict(node, out):
+    """The dict half of the walk: ELEMENTS_KEY holds flow elements, every other value is walked through.
+
+    Split out because the single function scored 20 against a cognitive-complexity limit of 15, and the
+    cost was nesting rather than logic - four levels deep, each one multiplying the price of the branch
+    inside it. The traversal ORDER is unchanged, which is the part that matters: callers key dictionaries
+    by element id (last write wins) and take the first N captions as samples, so a reordering would move
+    published figures without failing anything.
+    """
+    for key, value in node.items():
+        if key != ELEMENTS_KEY or not isinstance(value, list):
+            collect_flow_elements(value, out)
+            continue
+        for item in value:
+            if isinstance(item, dict):
+                out.append(item)
+            # Unconditional, and equivalent: this call is a no-op on anything that is neither
+            # a dict nor a list, so a non-dict entry costs a call and changes nothing.
             collect_flow_elements(item, out)
 
 
