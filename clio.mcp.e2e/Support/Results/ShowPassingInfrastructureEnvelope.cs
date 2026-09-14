@@ -77,7 +77,7 @@ internal static class ShowPassingInfrastructureResultParser
 			return contentEnvelope!;
 		}
 
-		throw new InvalidOperationException($"Could not parse show-passing-infrastructure MCP result: {McpResultDiagnostics.Describe(callResult, diagnostics)}");
+		throw new InvalidOperationException(McpResultDiagnostics.DescribePrefixed("Could not parse show-passing-infrastructure MCP result: ", callResult, diagnostics));
 	}
 
 	private static bool TrySerializeToJsonElement(object? value, out JsonElement element)
@@ -141,7 +141,7 @@ internal static class ShowPassingInfrastructureResultParser
 		// The array-wrapper rule lives in McpParseDiagnostics.RecordDeserializeAttempt: a bare MCP
 		// content-item array reaching this last-resort attempt must not be recorded as "JSON was present"
 		// nor contribute its always-doomed exception to the failure message.
-		bool isMeaningfulJsonCandidate = diagnostics.RecordDeserializeAttempt(element);
+		bool isMeaningfulJsonCandidate = diagnostics.RecordDeserializeAttempt(element, typeof(ShowPassingInfrastructureEnvelope));
 		try
 		{
 			envelope = JsonSerializer.Deserialize<ShowPassingInfrastructureEnvelope>(

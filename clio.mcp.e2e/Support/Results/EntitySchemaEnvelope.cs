@@ -39,14 +39,11 @@ internal static class EntitySchemaStructuredResultParser {
         McpParseDiagnostics diagnostics) {
         string prefix = $"Could not parse {expectedTypeName} MCP result: {DescribeFailureShape(diagnostics)}. ";
 
-        // The payload description is asked for a REDUCED budget rather than being truncated a second time
-        // after the prefix is prepended. Truncating twice made the length note describe the already-cut
-        // text — a three-megabyte payload was reported as "4114 characters" — and a note that lies about
-        // the size is worse than no note.
-        return prefix + McpResultDiagnostics.Describe(
-            callResult,
-            diagnostics.LastJsonException,
-            McpResultDiagnostics.PayloadDiagnosticLimit - prefix.Length);
+        // DescribePrefixed pays for the prefix out of the budget rather than truncating a second time
+        // after it is prepended. Truncating twice made the length note describe the already-cut text — a
+        // three-megabyte payload was reported as "4114 characters" — and a note that lies about the size
+        // is worse than no note.
+        return McpResultDiagnostics.DescribePrefixed(prefix, callResult, diagnostics);
     }
 
     /// <summary>
@@ -64,6 +61,9 @@ internal static class EntitySchemaStructuredResultParser {
         exception is null ? null : new JsonException(SensitiveErrorTextRedactor.Redact(exception.Message));
 
     private static string DescribeFailureShape(McpParseDiagnostics diagnostics) {
+        // SawValidJson, not SawAnyJson, and BEFORE the text branch: a text block that parsed as valid
+        // JSON of the wrong shape is a shape mismatch, not "text present but not JSON". SawAnyJson is
+        // true for the MCP content-item wrapper as well, so it cannot carry that distinction.
         if (diagnostics.SawValidJson) {
             return "JSON present but not shaped like the expected type";
         }
@@ -72,9 +72,9 @@ internal static class EntitySchemaStructuredResultParser {
             return "text content present but not JSON";
         }
 
-        // SawAnyJson, not SawValidJson: an array-shaped StructuredContent sets only the former, and
-        // claiming "no structured content ... at all" directly beside a dump of that array contradicts
-        // the very text printed next to it.
+        // SawAnyJson, not SawValidJson: an array-shaped StructuredContent handed to an object-shaped
+        // parser sets only the former, and claiming "no structured content ... at all" directly beside a
+        // dump of that array contradicts the very text printed next to it.
         if (diagnostics.SawAnyJson) {
             return "JSON present but not shaped like the expected type";
         }
@@ -129,7 +129,7 @@ internal static class EntitySchemaStructuredResultParser {
         // The array-wrapper rule lives in McpParseDiagnostics.RecordDeserializeAttempt, which every sibling
         // parser now shares: the attempt is still made, but a bare content-item array must not be recorded
         // as "JSON was present" nor contribute its always-doomed JsonException.
-        bool isMeaningfulJsonCandidate = diagnostics.RecordDeserializeAttempt(element);
+        bool isMeaningfulJsonCandidate = diagnostics.RecordDeserializeAttempt(element, typeof(T));
         try {
             envelope = JsonSerializer.Deserialize<T>(
                 element.GetRawText(),

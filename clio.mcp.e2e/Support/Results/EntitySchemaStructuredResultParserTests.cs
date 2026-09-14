@@ -159,4 +159,26 @@ public sealed class EntitySchemaStructuredResultParserTests {
 		exception.Message.Should().Contain("[redacted-path]",
 			because: "the redactor replaces an absolute path with its stable placeholder rather than dropping the whole message");
 	}
+
+	[Test]
+	[Description("Still suppresses the doomed wrapper exception for an object-shaped T, so the array-shaped fix does not reintroduce blaming the content-item wrapper.")]
+	public void Extract_ShouldSuppressTheWrapperJsonError_WhenTheExpectedTypeIsObjectShaped() {
+		// Arrange
+		CallToolResult callResult = new() {
+			IsError = false,
+			StructuredContent = JsonDocument.Parse("[{\"Code\":\"not-a-number\"}]").RootElement.Clone()
+		};
+
+		// Act
+		Action act = () => EntitySchemaStructuredResultParser.Extract<SampleEnvelope>(callResult);
+
+		// Assert
+		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
+				because: "an array cannot satisfy an object-shaped envelope")
+			.Which;
+		exception.Message.Should().NotContain("LastJsonError=",
+			because: "the array here is the MCP content-item wrapper falling through, and its always-doomed exception must not be blamed for a mismatch the real payload caused");
+		exception.Message.Should().Contain("JSON present but not shaped like the expected type",
+			because: "suppressing the blame must not make the parser claim there was no JSON beside a dump of that very array");
+	}
 }

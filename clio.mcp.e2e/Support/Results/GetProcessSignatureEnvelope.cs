@@ -34,7 +34,7 @@ internal static class GetProcessSignatureResultParser {
 			return contentEnvelope!;
 		}
 
-		throw new InvalidOperationException($"Could not parse get-process-signature MCP result: {McpResultDiagnostics.Describe(callResult, diagnostics)}");
+		throw new InvalidOperationException(McpResultDiagnostics.DescribePrefixed("Could not parse get-process-signature MCP result: ", callResult, diagnostics));
 	}
 
 	private static bool TrySerializeToJsonElement(object? value, out JsonElement element) {
@@ -80,7 +80,7 @@ internal static class GetProcessSignatureResultParser {
 		// The array-wrapper rule lives in McpParseDiagnostics.RecordDeserializeAttempt: a bare MCP
 		// content-item array reaching this last-resort attempt must not be recorded as "JSON was present"
 		// nor contribute its always-doomed exception to the failure message.
-		bool isMeaningfulJsonCandidate = diagnostics.RecordDeserializeAttempt(element);
+		bool isMeaningfulJsonCandidate = diagnostics.RecordDeserializeAttempt(element, typeof(GetProcessSignatureEnvelope));
 		try {
 			if (element.ValueKind != JsonValueKind.Object) {
 				envelope = null;

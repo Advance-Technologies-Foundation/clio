@@ -512,6 +512,36 @@ public sealed class McpResultDiagnosticsTests {
 			because: "this harness duplicates the production key list, so a key added to SensitiveErrorTextRedactor and not here would leak through the e2e payload dump unnoticed");
 	}
 
+	[Test]
+	[Description("Names every key this harness carries that production does not, so the duplicate list cannot drift in the OTHER direction unnoticed either.")]
+	public void CredentialKeyCore_ShouldNotCarryKeysProductionHasDropped() {
+		// Arrange
+		// The reverse of the test above. That one only catches "production grew a key"; a key REMOVED
+		// from production, or one this harness invented, stayed invisible - and the harness copy then
+		// over-redacts against a rule nothing states any more. This test does not fail on a difference:
+		// it PINS the accepted set, so any change on either side has to be looked at once.
+		// The two keys this harness deliberately carries ahead of production. Both are OAuth/service-
+		// account key names that reach an MCP payload dump and that SensitiveErrorTextRedactor does not
+		// know yet; #1493 is the open PR against that redactor. When they land there, this array shrinks
+		// to empty and the test says so instead of the drift going unnoticed.
+		string[] knownHarnessOnlyKeys = ["client[_-]?id", "private[_-]?key"];
+		GeneratedRegexAttribute productionRule = typeof(SensitiveErrorTextRedactor)
+			.GetMethod("CredentialPairRegex", BindingFlags.NonPublic | BindingFlags.Static)!
+			.GetCustomAttribute<GeneratedRegexAttribute>()!;
+		string productionKeyAlternation = Regex.Match(productionRule.Pattern, @"\\b\((?<keys>[^)]*)\)\\b").Groups["keys"].Value;
+		string[] harnessKeys = McpResultDiagnostics.CredentialKeyCore.Split('|', StringSplitOptions.RemoveEmptyEntries);
+
+		// Act
+		string[] harnessOnlyKeys = [.. harnessKeys.Where(key =>
+			!productionKeyAlternation.Contains(key, StringComparison.Ordinal))];
+
+		// Assert
+		harnessKeys.Should().NotBeEmpty(
+			because: "the oracle is worthless if it silently extracts nothing from the harness pattern");
+		harnessOnlyKeys.Should().BeEquivalentTo(knownHarnessOnlyKeys,
+			because: "a key this harness carries alone means the duplicate redaction rule has drifted from the one it mirrors - either production dropped it, or it was invented here; both need a decision, not silence");
+	}
+
 	/// <summary>
 	/// A content collection whose enumeration throws, standing in for any payload whose serialization
 	/// fails on this path (a lazily materialized list, a cyclic graph, a throwing property getter).
@@ -546,5 +576,61 @@ public sealed class McpResultDiagnosticsTests {
 		public bool Remove(ContentBlock item) => throw new NotSupportedException();
 
 		public void RemoveAt(int index) => throw new NotSupportedException();
+	}
+
+	[Test]
+	[Description("Keeps a JSON array as a meaningful candidate when the expected type is array-shaped, so the parsers whose target genuinely is an array still get a LastJsonError.")]
+	public void RecordDeserializeAttempt_ShouldKeepTheArray_WhenTheExpectedTypeIsArrayShaped() {
+		// Arrange
+		McpParseDiagnostics diagnostics = new();
+		JsonElement array = JsonDocument.Parse("[{\"Name\":\"dev\"}]").RootElement;
+		JsonException failure = new("deserialization failed");
+
+		// Act
+		bool isMeaningful = diagnostics.RecordDeserializeAttempt(array, typeof(ShowWebAppListEnvironmentEnvelope[]));
+		diagnostics.RecordJsonException(failure, isMeaningful);
+
+		// Assert
+		isMeaningful.Should().BeTrue(
+			because: "for ShowWebAppListEnvelope.TryDeserialize and Extract<T> with a collection T, an array IS the expected shape, not the MCP content-item wrapper falling through");
+		diagnostics.LastJsonException.Should().BeSameAs(failure,
+			because: "suppressing it there reproduced the swallowed-exception state issue #1384 exists to remove - a malformed environment entry failed with no LastJsonError=");
+		diagnostics.SawValidJson.Should().BeTrue(
+			because: "the array was a plausible candidate for the expected type, so the failure shape must read as a shape mismatch rather than as no JSON");
+	}
+
+	[Test]
+	[Description("Still discards the doomed content-item wrapper exception when the expected type is object-shaped, so the array-shaped fix does not reintroduce blaming the wrapper.")]
+	public void RecordDeserializeAttempt_ShouldDiscardTheArray_WhenTheExpectedTypeIsObjectShaped() {
+		// Arrange
+		McpParseDiagnostics diagnostics = new();
+		JsonElement array = JsonDocument.Parse("[{\"type\":\"text\",\"text\":\"{}\"}]").RootElement;
+
+		// Act
+		bool isMeaningful = diagnostics.RecordDeserializeAttempt(array, typeof(ShowWebAppListEnvironmentEnvelope));
+		diagnostics.RecordJsonException(new JsonException("doomed"), isMeaningful);
+
+		// Assert
+		isMeaningful.Should().BeFalse(
+			because: "an array reaching an object-shaped parser is the already-unpacked content-item wrapper, known not to match");
+		diagnostics.LastJsonException.Should().BeNull(
+			because: "the wrapper's always-doomed exception must not be blamed for a mismatch the real payload caused");
+		diagnostics.SawAnyJson.Should().BeTrue(
+			because: "suppressing the blame must not make the parser claim there was no JSON beside a dump of that very array");
+	}
+
+	[Test]
+	[Description("A string is enumerable but deserializes from a JSON string, so it must not count as array-shaped.")]
+	public void RecordDeserializeAttempt_ShouldNotTreatStringAsArrayShaped() {
+		// Arrange
+		McpParseDiagnostics diagnostics = new();
+		JsonElement array = JsonDocument.Parse("[\"a\"]").RootElement;
+
+		// Act
+		bool isMeaningful = diagnostics.RecordDeserializeAttempt(array, typeof(string));
+
+		// Assert
+		isMeaningful.Should().BeFalse(
+			because: "string implements IEnumerable but is deserialized from a JSON string, so an array reaching it is still the wrapper");
 	}
 }

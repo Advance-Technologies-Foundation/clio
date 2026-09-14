@@ -29,7 +29,7 @@ internal static class ShowWebAppListResultParser
 			return contentResult;
 		}
 
-		throw new InvalidOperationException($"Could not parse show-webApp-list MCP result: {McpResultDiagnostics.Describe(callResult, diagnostics)}");
+		throw new InvalidOperationException(McpResultDiagnostics.DescribePrefixed("Could not parse show-webApp-list MCP result: ", callResult, diagnostics));
 	}
 
 	/// <summary>
@@ -48,7 +48,7 @@ internal static class ShowWebAppListResultParser
 			return content.GetRawText();
 		}
 
-		throw new InvalidOperationException($"Could not read the show-webApp-list MCP result payload: {McpResultDiagnostics.Describe(callResult)}");
+		throw new InvalidOperationException(McpResultDiagnostics.DescribePrefixed("Could not read the show-webApp-list MCP result payload: ", callResult, lastJsonException: null));
 	}
 
 	private static bool TrySerializeToJsonElement(object? value, out JsonElement element)
@@ -121,7 +121,7 @@ internal static class ShowWebAppListResultParser
 		// The array-wrapper rule lives in McpParseDiagnostics.RecordDeserializeAttempt: a bare MCP
 		// content-item array reaching this last-resort attempt must not be recorded as "JSON was present"
 		// nor contribute its always-doomed exception to the failure message.
-		bool isMeaningfulJsonCandidate = diagnostics.RecordDeserializeAttempt(element);
+		bool isMeaningfulJsonCandidate = diagnostics.RecordDeserializeAttempt(element, typeof(ShowWebAppListEnvironmentEnvelope[]));
 		try
 		{
 			ShowWebAppListEnvironmentEnvelope[]? deserialized = JsonSerializer.Deserialize<ShowWebAppListEnvironmentEnvelope[]>(

@@ -180,7 +180,7 @@ internal static class ApplicationResultParser {
 			return envelope!;
 		}
 
-		throw new InvalidOperationException($"Could not parse list-apps MCP result: {McpResultDiagnostics.Describe(callResult, diagnostics)}");
+		throw new InvalidOperationException(McpResultDiagnostics.DescribePrefixed("Could not parse list-apps MCP result: ", callResult, diagnostics));
 	}
 
 	public static ApplicationContextResponseEnvelope ExtractInfo(CallToolResult callResult) {
@@ -189,7 +189,7 @@ internal static class ApplicationResultParser {
 			return envelope!;
 		}
 
-		throw new InvalidOperationException($"Could not parse get-app-info MCP result: {McpResultDiagnostics.Describe(callResult, diagnostics)}");
+		throw new InvalidOperationException(McpResultDiagnostics.DescribePrefixed("Could not parse get-app-info MCP result: ", callResult, diagnostics));
 	}
 
 	public static ApplicationDeleteResponseEnvelope ExtractDelete(CallToolResult callResult) {
@@ -198,7 +198,7 @@ internal static class ApplicationResultParser {
 			return envelope!;
 		}
 
-		throw new InvalidOperationException($"Could not parse delete-app MCP result: {McpResultDiagnostics.Describe(callResult, diagnostics)}");
+		throw new InvalidOperationException(McpResultDiagnostics.DescribePrefixed("Could not parse delete-app MCP result: ", callResult, diagnostics));
 	}
 
 	public static ApplicationSectionContextResponseEnvelope ExtractSectionCreate(CallToolResult callResult) {
@@ -207,7 +207,7 @@ internal static class ApplicationResultParser {
 			return envelope!;
 		}
 
-		throw new InvalidOperationException($"Could not parse create-app-section MCP result: {McpResultDiagnostics.Describe(callResult, diagnostics)}");
+		throw new InvalidOperationException(McpResultDiagnostics.DescribePrefixed("Could not parse create-app-section MCP result: ", callResult, diagnostics));
 	}
 
 	public static ApplicationSectionUpdateContextResponseEnvelope ExtractSectionUpdate(CallToolResult callResult) {
@@ -216,7 +216,7 @@ internal static class ApplicationResultParser {
 			return envelope!;
 		}
 
-		throw new InvalidOperationException($"Could not parse update-app-section MCP result: {McpResultDiagnostics.Describe(callResult, diagnostics)}");
+		throw new InvalidOperationException(McpResultDiagnostics.DescribePrefixed("Could not parse update-app-section MCP result: ", callResult, diagnostics));
 	}
 
 	public static ApplicationSectionDeleteContextResponseEnvelope ExtractSectionDelete(CallToolResult callResult) {
@@ -225,7 +225,7 @@ internal static class ApplicationResultParser {
 			return envelope!;
 		}
 
-		throw new InvalidOperationException($"Could not parse delete-app-section MCP result: {McpResultDiagnostics.Describe(callResult, diagnostics)}");
+		throw new InvalidOperationException(McpResultDiagnostics.DescribePrefixed("Could not parse delete-app-section MCP result: ", callResult, diagnostics));
 	}
 
 	public static ApplicationSectionListContextResponseEnvelope ExtractSectionList(CallToolResult callResult) {
@@ -234,7 +234,7 @@ internal static class ApplicationResultParser {
 			return envelope!;
 		}
 
-		throw new InvalidOperationException($"Could not parse list-app-sections MCP result: {McpResultDiagnostics.Describe(callResult, diagnostics)}");
+		throw new InvalidOperationException(McpResultDiagnostics.DescribePrefixed("Could not parse list-app-sections MCP result: ", callResult, diagnostics));
 	}
 
 	private static bool TryExtract<T>(CallToolResult callResult, Func<T?, bool> validator, out T? result, McpParseDiagnostics diagnostics) {
@@ -295,7 +295,7 @@ internal static class ApplicationResultParser {
 		// The array-wrapper rule lives in McpParseDiagnostics.RecordDeserializeAttempt: a bare MCP
 		// content-item array reaching this last-resort attempt must not be recorded as "JSON was present"
 		// nor contribute its always-doomed exception to the failure message.
-		bool isMeaningfulJsonCandidate = diagnostics.RecordDeserializeAttempt(element);
+		bool isMeaningfulJsonCandidate = diagnostics.RecordDeserializeAttempt(element, typeof(T));
 		try {
 			result = JsonSerializer.Deserialize<T>(
 				element.GetRawText(),

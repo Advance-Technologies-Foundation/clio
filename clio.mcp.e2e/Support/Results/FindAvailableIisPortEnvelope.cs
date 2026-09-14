@@ -30,7 +30,7 @@ internal static class FindAvailableIisPortResultParser
 			return contentEnvelope!;
 		}
 
-		throw new InvalidOperationException($"Could not parse find-empty-iis-port MCP result: {McpResultDiagnostics.Describe(callResult, diagnostics)}");
+		throw new InvalidOperationException(McpResultDiagnostics.DescribePrefixed("Could not parse find-empty-iis-port MCP result: ", callResult, diagnostics));
 	}
 
 	private static bool TrySerializeToJsonElement(object? value, out JsonElement element)
@@ -94,7 +94,7 @@ internal static class FindAvailableIisPortResultParser
 		// The array-wrapper rule lives in McpParseDiagnostics.RecordDeserializeAttempt: a bare MCP
 		// content-item array reaching this last-resort attempt must not be recorded as "JSON was present"
 		// nor contribute its always-doomed exception to the failure message.
-		bool isMeaningfulJsonCandidate = diagnostics.RecordDeserializeAttempt(element);
+		bool isMeaningfulJsonCandidate = diagnostics.RecordDeserializeAttempt(element, typeof(FindAvailableIisPortEnvelope));
 		try
 		{
 			envelope = JsonSerializer.Deserialize<FindAvailableIisPortEnvelope>(

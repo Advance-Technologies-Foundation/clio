@@ -51,7 +51,7 @@ internal static class AssertInfrastructureResultParser
 			return contentEnvelope!;
 		}
 
-		throw new InvalidOperationException($"Could not parse assert-infrastructure structured MCP result: {McpResultDiagnostics.Describe(callResult, diagnostics)}");
+		throw new InvalidOperationException(McpResultDiagnostics.DescribePrefixed("Could not parse assert-infrastructure structured MCP result: ", callResult, diagnostics));
 	}
 
 	private static bool TrySerializeToJsonElement(object? value, out JsonElement element)
@@ -115,7 +115,7 @@ internal static class AssertInfrastructureResultParser
 		// The array-wrapper rule lives in McpParseDiagnostics.RecordDeserializeAttempt: a bare MCP
 		// content-item array reaching this last-resort attempt must not be recorded as "JSON was present"
 		// nor contribute its always-doomed exception to the failure message.
-		bool isMeaningfulJsonCandidate = diagnostics.RecordDeserializeAttempt(element);
+		bool isMeaningfulJsonCandidate = diagnostics.RecordDeserializeAttempt(element, typeof(AssertInfrastructureEnvelope));
 		try
 		{
 			envelope = JsonSerializer.Deserialize<AssertInfrastructureEnvelope>(

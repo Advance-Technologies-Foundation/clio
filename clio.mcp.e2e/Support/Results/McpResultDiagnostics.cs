@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -192,6 +193,39 @@ internal static partial class McpResultDiagnostics {
         McpParseDiagnostics diagnostics,
         int limit = PayloadDiagnosticLimit) =>
         Describe(callResult, diagnostics.LastJsonException, limit);
+
+    /// <summary>
+    /// Composes <paramref name="prefix"/> with the payload description, paying for the prefix OUT OF the
+    /// budget rather than on top of it.
+    /// </summary>
+    /// <remarks>
+    /// Every parser in this folder prepends its own "Could not parse &lt;tool&gt; MCP result: " sentence.
+    /// Passing the default limit alongside a prefix is what <see cref="Describe(CallToolResult, JsonException, int)"/>'s
+    /// own contract tells callers not to do: the emitted message then runs past the cap by the prefix
+    /// length, and the "truncated to fit N" note inside it states a number smaller than the message's own
+    /// length. Doing the subtraction here means no call site can forget it.
+    /// </remarks>
+    /// <param name="prefix">The caller's own sentence, already ending in whatever separator it wants.</param>
+    /// <param name="callResult">The tool result that could not be parsed, or <c>null</c> when none was available.</param>
+    /// <param name="lastJsonException">The last <see cref="JsonException"/> raised while parsing, when the caller tracks one.</param>
+    public static string DescribePrefixed(
+        string prefix,
+        CallToolResult? callResult,
+        JsonException? lastJsonException = null) =>
+        prefix + Describe(callResult, lastJsonException, PayloadDiagnosticLimit - prefix.Length);
+
+    /// <summary>
+    /// Composes <paramref name="prefix"/> with the payload description, taking the last
+    /// <see cref="JsonException"/> from the diagnostics a parser accumulated.
+    /// </summary>
+    /// <param name="prefix">The caller's own sentence, already ending in whatever separator it wants.</param>
+    /// <param name="callResult">The tool result that could not be parsed, or <c>null</c> when none was available.</param>
+    /// <param name="diagnostics">The diagnostics accumulated while every accepted shape was tried.</param>
+    public static string DescribePrefixed(
+        string prefix,
+        CallToolResult? callResult,
+        McpParseDiagnostics diagnostics) =>
+        DescribePrefixed(prefix, callResult, diagnostics.LastJsonException);
 
     /// <summary>
     /// Truncates <paramref name="text"/> to <paramref name="limit"/> characters and states both the kept
@@ -392,43 +426,68 @@ internal sealed class McpParseDiagnostics {
     /// included.
     /// </summary>
     /// <remarks>
-    /// Separate from <see cref="SawValidJson"/> on purpose. The array-wrapper suppression below is about
-    /// whose exception to BLAME; it must not make the parser claim there was no JSON. Without this flag a
-    /// result whose StructuredContent is a JSON array reported "no structured content and no text content
-    /// at all" directly beside a dump of that very array.
+    /// The array-wrapper suppression below is about whose exception to BLAME; it must not make the
+    /// parser claim there was no JSON. Without this flag a result whose StructuredContent is a JSON
+    /// array reported "no structured content and no text content at all" directly beside a dump of that
+    /// very array.
     /// </remarks>
     public bool SawAnyJson { get; private set; }
 
-    /// <summary>Whether a JSON value that is a plausible candidate for the expected type was handed to a deserialize attempt.</summary>
+    /// <summary>
+    /// Whether a JSON value that is a plausible candidate FOR THE EXPECTED TYPE was handed to a
+    /// deserialize attempt.
+    /// </summary>
+    /// <remarks>
+    /// Narrower than <see cref="SawAnyJson"/>, and not redundant with it: the MCP content-item wrapper is
+    /// itself a non-empty array, so <see cref="SawAnyJson"/> is true on every result that carries any
+    /// content at all - including a plain text block that is not JSON. Only this flag can tell a caller
+    /// that the shape mismatch is about the payload rather than about the wrapper, which is why the
+    /// failure-shape description tests it before the text-payload branch.
+    /// </remarks>
     public bool SawValidJson { get; private set; }
 
     /// <summary>The last <see cref="JsonException"/> raised while parsing text as JSON or deserializing JSON as the expected type.</summary>
     public JsonException? LastJsonException { get; private set; }
 
     /// <summary>
-    /// Records that <paramref name="element"/> is about to be deserialized as the expected type, and
-    /// reports whether it is a MEANINGFUL candidate.
+    /// Records that <paramref name="element"/> is about to be deserialized as <paramref name="expectedType"/>,
+    /// and reports whether it is a MEANINGFUL candidate.
     /// </summary>
     /// <remarks>
-    /// A JSON array reaching a deserialize call is, for every envelope type in this folder that is not
-    /// itself array-shaped, the raw MCP content-item wrapper falling through (already unpacked, and known
-    /// not to match) rather than a genuine candidate. The attempt is still made — it is the only path
-    /// that could recognize a genuinely array-shaped type, and what counts as a successful parse must not
-    /// change — but its doomed exception must not be blamed for a mismatch the real payload caused.
-    /// The cost is deliberate and small: for the two list-returning parsers an array IS the expected
-    /// shape, so a genuine array-shaped mismatch there yields no <c>LastJsonError</c> — the payload dump,
-    /// which is what issue #1384 is actually about, still shows what came back.
+    /// A JSON array reaching a deserialize call is, for an OBJECT-shaped expected type, the raw MCP
+    /// content-item wrapper falling through (already unpacked, and known not to match) rather than a
+    /// genuine candidate. The attempt is still made — it is the only path that could recognize a
+    /// genuinely array-shaped type, and what counts as a successful parse must not change — but its
+    /// doomed exception must not be blamed for a mismatch the real payload caused.
+    /// <para>
+    /// When the expected type IS array-shaped (<c>ShowWebAppListEnvelope.TryDeserialize</c>, and
+    /// <c>EntitySchemaStructuredResultParser.Extract&lt;T&gt;</c> with a collection <c>T</c>) an array is
+    /// exactly the shape that parser wants, so its exception is the real one and is kept. Suppressing it
+    /// there reproduced, for those two parsers, the very swallowed-exception state issue #1384 exists to
+    /// remove: a malformed environment entry in <c>show-webApp-list</c> failed with no <c>LastJsonError=</c>.
+    /// </para>
     /// </remarks>
-    public bool RecordDeserializeAttempt(JsonElement element) {
-        bool isMeaningfulJsonCandidate = element.ValueKind != JsonValueKind.Array;
+    /// <param name="element">The JSON value about to be deserialized.</param>
+    /// <param name="expectedType">The type the caller is deserializing into.</param>
+    public bool RecordDeserializeAttempt(JsonElement element, Type expectedType) {
+        bool isMeaningfulJsonCandidate =
+            element.ValueKind != JsonValueKind.Array || IsArrayShaped(expectedType);
         // An EMPTY array is the "no content at all" case, not a payload: Content = [] serializes to [],
         // and counting it as JSON would make an empty result claim a shape mismatch it never saw.
-        SawAnyJson |= isMeaningfulJsonCandidate || element.GetArrayLength() > 0;
-        if (isMeaningfulJsonCandidate) {
-            SawValidJson = true;
-        }
+        SawAnyJson |= element.ValueKind != JsonValueKind.Array || element.GetArrayLength() > 0;
+        SawValidJson |= isMeaningfulJsonCandidate;
 
         return isMeaningfulJsonCandidate;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="type"/> deserializes FROM a JSON array — an array, or any non-string
+    /// enumerable such as <c>IReadOnlyList&lt;T&gt;</c>. <see cref="string"/> is excluded because it is
+    /// enumerable but deserializes from a JSON string.
+    /// </summary>
+    private static bool IsArrayShaped(Type type) {
+        Type target = Nullable.GetUnderlyingType(type) ?? type;
+        return target != typeof(string) && typeof(IEnumerable).IsAssignableFrom(target);
     }
 
     /// <summary>Keeps <paramref name="exception"/> as the last parse failure, unless the attempt was the doomed array-wrapper one.</summary>
