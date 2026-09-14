@@ -223,6 +223,22 @@ public class SetActiveProcessVersionToolTests {
 				+ "is excluded concludes that rolling back to the original is impossible");
 		description.Should().NotContain("not the family root",
 			because: "that is the retracted claim, and it is wrong about the platform - the call succeeds");
+
+		// The ARGUMENT descriptions, which an MCP client renders beside each field and which no test read.
+		// D9 was a description defect with no code behind it, so these strings are the changed behaviour:
+		// restoring "of the VERSION to make actual" on either property left the whole suite green.
+		foreach (string property in new[] { nameof(SetActiveProcessVersionArgs.VersionName),
+			nameof(SetActiveProcessVersionArgs.VersionUid) }) {
+			string argument = ((System.ComponentModel.DescriptionAttribute)typeof(SetActiveProcessVersionArgs)
+				.GetProperty(property)!
+				.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false).Single())
+				.Description;
+			argument.Should().Contain("the root included",
+				because: $"{property} is rendered beside the field an agent fills in, and it carried the same "
+					+ "exclusion the method description has now retracted");
+			argument.Should().NotContain("of the VERSION",
+				because: $"{property} naming a VERSION is the retracted claim in the place a client shows it");
+		}
 	}
 
 	[Test]

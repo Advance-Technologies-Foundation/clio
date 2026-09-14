@@ -31,18 +31,19 @@ Story 19 shipping in a released clio. The field exists only on this branch.
 
 ## Source
 
-The review of story 21 removed `packageName` from the `versions[]` field list. It had been documented
-as a present field with an ABSENT rule — "absent when the package could not be named, and the warning
-says so" — while no released clio returns it at all. On every current environment the agent would have
-read the shape of the response as a reported failure, which is the same wrong-by-a-version claim D4
-was: a guidance article describing a build that does not exist yet.
+The review of story 21 rewrote the `versions[]` entry for `packageName` from a TEMPORAL claim into a
+CONDITIONAL one. It had been documented as a present field with an ABSENT rule — "absent when the
+package could not be named, and the warning says so" — while no released clio returns it at all, so on
+every current environment an agent would have read the shape of the response as a reported failure.
+That is the same wrong-by-a-version claim D4 was, from the other direction.
 
-The article currently states that no shipped build carries the name and tells the agent to resolve it
-rather than read a GUID aloud. That is correct today and becomes wrong the day story 19 ships.
+The field is still documented, conditionally: use a name when one is there, resolve it yourself when
+it is not, and read `versionReadWarning` first. What is missing is the BOUNDARY — which build starts
+returning it — and that cannot be written before one does.
 
 ## Acceptance Criteria
 
-- [ ] **AC-01** — Given the `versions[]` field list, when the build that first returns `packageName` is released, then the field is documented with a clio boundary naming that build, in the same shape as the block-level boundary the other version fields already carry
+- [ ] **AC-01** — Given the `versions[]` field list, when the build that first returns `packageName` is released, then the conditional wording gains a clio BOUNDARY naming that build, in the same shape as the block-level boundary the other version fields already carry
 - [ ] **AC-02** — Given that entry, when it is read, then it says to name the package by `packageName` and that `packageUId` is the identity rather than the answer to the question
 - [ ] **AC-03** — Given the ABSENT rule, when it is read, then it separates "this build does not return it" from "the package could not be named", and only the second is tied to `versionReadWarning`
 - [ ] **AC-04** — Given the sentence telling the agent to resolve the name itself, when the field ships, then it is scoped to builds below the boundary rather than left standing

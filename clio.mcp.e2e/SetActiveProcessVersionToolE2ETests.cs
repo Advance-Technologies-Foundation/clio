@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -71,12 +72,12 @@ public sealed class SetActiveProcessVersionToolE2ETests {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildDescriptor(processName)
 		});
-		await CallToolExpectingSuccessAsync(context, VersionToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
-			["package-name"] = "Custom"
-		});
-		string versionName = $"{processName}Custom1";
+		string versionName = VersionNameFrom(await CallToolExpectingSuccessAsync(context, VersionToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["package-name"] = "Custom"
+			}));
 
 		// Act
 		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
@@ -133,12 +134,12 @@ public sealed class SetActiveProcessVersionToolE2ETests {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildDescriptor(processName)
 		});
-		await CallToolExpectingSuccessAsync(context, VersionToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
-			["package-name"] = "Custom"
-		});
-		string versionName = $"{processName}Custom1";
+		string versionName = VersionNameFrom(await CallToolExpectingSuccessAsync(context, VersionToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["package-name"] = "Custom"
+			}));
 		await CallToolExpectingSuccessAsync(context, ToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["version-name"] = versionName
@@ -200,12 +201,12 @@ public sealed class SetActiveProcessVersionToolE2ETests {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildDescriptor(processName)
 		});
-		await CallToolExpectingSuccessAsync(context, VersionToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
-			["package-name"] = "Custom"
-		});
-		string versionName = $"{processName}Custom1";
+		string versionName = VersionNameFrom(await CallToolExpectingSuccessAsync(context, VersionToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["package-name"] = "Custom"
+			}));
 		var activateArgs = new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["version-name"] = versionName
@@ -242,6 +243,24 @@ public sealed class SetActiveProcessVersionToolE2ETests {
 	}
 
 	#region Methods: Private
+
+	/// <summary>
+	/// The version's code, read out of the response that created it.
+	/// </summary>
+	/// <remarks>
+	/// Never composed as <c>$"{processName}Custom1"</c>. The platform allocates both the number and the
+	/// composed name, and the shipped guidance states that neither is predictable or choosable - a test that
+	/// predicts it asserts a rule the contract refuses to make, and would pass or fail for reasons unrelated
+	/// to what it covers.
+	/// </remarks>
+	private static string VersionNameFrom(CallToolResult created) {
+		string reported = JsonSerializer.Serialize(created);
+		Match name = Regex.Match(reported, @"[Vv]ersion(?: \d+)? \u0027(?<name>[A-Za-z0-9_]+)\u0027 created");
+		name.Success.Should().BeTrue(
+			because: "the created version's code is only knowable from the response that created it, and the "
+				+ $"envelope did not carry the sentence that names it: {reported}");
+		return name.Groups["name"].Value;
+	}
 
 	private static string BuildDescriptor(string processName) =>
 		$$"""

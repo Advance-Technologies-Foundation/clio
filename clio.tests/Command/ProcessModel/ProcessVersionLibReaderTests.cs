@@ -292,8 +292,10 @@ public sealed class ProcessVersionLibReaderTests {
 			because: "the version facts came from the view, which answered - the packages are a separate read");
 		facts.Versions.Should().OnlyContain(v => v.PackageName == null,
 			because: "no name was established for any member");
-		facts.Warning.Should().Contain("package names could not be read",
-			because: "a whole-table failure is the case where the caller has to say WHY it is answering in UIds");
+		facts.Warning.Should().Be(
+			"the package names could not be read, so those facts were not established",
+			because: "the gap was deliberately rephrased to compose with the shared tail without a doubled "
+				+ "'so' and without claiming the version facts were lost - a Contain cannot see either");
 	}
 
 	[Test]
@@ -575,13 +577,40 @@ public sealed class ProcessVersionLibReaderTests {
 	}
 
 	[Test]
-	[Description("The slice is bounded by what is LEFT, not by a fraction of the total. The package read starts only after the family read, so a third of the TOTAL on top of a family read that already spent most of it pushes past the outer bound - the outer wait expires and discards version facts that were computed. Reverting PackageReadBudget to the slice alone reddens this and nothing else.")]
-	public void Read_Should_KeepTheVersionFacts_When_TheFamilyReadAlreadySpentMostOfTheBudget() {
+	[Description("The by-UId entry point measures the identity query too. That overload pays a lookup BEFORE the family read, and a clock started after it leaves that time unmeasured - the package read then computes its share against a budget already partly spent and can outlast the outer wait, discarding version facts that were in hand. This is the path describe takes for process-name and process-uid, so the row-overload test alone does not cover it.")]
+	public void Read_Should_KeepTheVersionFacts_When_TheIdentityQueryAlreadySpentPartOfTheBudget() {
 		// Arrange
 		using BlockingSchemaDataProvider provider = new(ViewRows(), PackageSchemaName) {
 			DelayBeforeViewAnswer = TimeSpan.FromMilliseconds(1600)
 		};
-		ProcessVersionLibReader sut = new(provider, TimeSpan.FromSeconds(2));
+		ProcessVersionLibReader sut = new(provider, TimeSpan.FromSeconds(4));
+
+		// Act
+		// The by-UId overload, so the delay is paid TWICE - once for the identity query and once for the
+		// family - which is exactly the term a stopwatch started inside FactsForRow would miss.
+		ProcessVersionFacts facts = sut.Read(RootUId.ToString());
+
+		// Assert
+		facts.Version.Should().Be(0,
+			because: "both view reads finished inside the budget, so the standing is established");
+		facts.Warning.Should().Contain("package names could not be read",
+			because: "only the names may be lost to a stalled package table");
+		facts.Warning.Should().NotContain("did not complete within",
+			because: "that is the OUTER expiry, and reaching it means the identity query's time went "
+				+ "unmeasured - the version facts are then discarded after being computed");
+	}
+
+	[Test]
+	[Description("The slice is bounded by what is LEFT, not by a fraction of the total. The package read starts only after the family read, so a third of the TOTAL on top of a family read that already spent most of it pushes past the outer bound - the outer wait expires and discards version facts that were computed. Reverting PackageReadBudget to the slice alone reddens this and nothing else.")]
+	public void Read_Should_KeepTheVersionFacts_When_TheFamilyReadAlreadySpentMostOfTheBudget() {
+		// Arrange
+		using BlockingSchemaDataProvider provider = new(ViewRows(), PackageSchemaName) {
+			DelayBeforeViewAnswer = TimeSpan.FromMilliseconds(3200)
+		};
+		// 4 s against a 3.2 s delay, not 2 s against 1.6 s: the fixture is Parallelizable and already holds
+		// two pool threads, and ~200 ms of slack for two Task.Run scheduling hops flakes as `Version` null
+		// plus "did not complete within" - the test reporting the very defect it exists to disprove.
+		ProcessVersionLibReader sut = new(provider, TimeSpan.FromSeconds(4));
 
 		// Act
 		// The ROW entry point, so the view is read once: the by-UId overload also pays the identity query,
@@ -753,8 +782,9 @@ public sealed class ProcessVersionLibReaderTests {
 		public IExecuteProcessResponse ExecuteProcess(IExecuteProcessRequest request) => null;
 
 		public void Dispose() {
+			// Set only. Disposing while the abandoned reader thread is still inside Wait() is a race of its
+			// own, and the gate is a per-test object the GC can take.
 			_release.Set();
-			_release.Dispose();
 		}
 	}
 

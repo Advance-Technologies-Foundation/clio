@@ -154,8 +154,9 @@ public sealed class DescribeProcessToolTests {
 		description.Should().Contain("that single absence is SILENT",
 			because: "a lone unresolved name raises no warning, and a contract that promises one teaches the "
 				+ "agent to read silence as completeness");
-		description.Should().Contain("failed OUTRIGHT",
-			because: "only the whole-table failure is announced, and the two cases have different remedies");
+		description.Should().Contain("answered for NO member",
+			because: "only the whole-table case is announced, and the two have different remedies - the phrase "
+				+ "also has to cover a stall and an empty result, not just an outright refusal");
 	}
 
 	[Test]

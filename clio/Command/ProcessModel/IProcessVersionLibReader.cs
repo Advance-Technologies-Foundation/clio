@@ -131,7 +131,15 @@ public sealed record ProcessVersionFacts {
 	/// </summary>
 	public string ActiveVersionSource { get; init; }
 
-	/// <summary>Why the facts could not be established, or <c>null</c> when they were.</summary>
+	/// <summary>
+	/// What could NOT be established, or <c>null</c> when everything could.
+	/// </summary>
+	/// <remarks>
+	/// Not "why the facts are absent": a warning can stand beside established values. The whole-read failure
+	/// is one shape; a read that answered while leaving one fact unsettled - no member flagged active, two
+	/// flagged, a NULL column, a package table that did not answer - is another, and those publish what they
+	/// did establish alongside it. See the remarks on this type for the invariant.
+	/// </remarks>
 	public string Warning { get; init; }
 }
 
@@ -217,12 +225,18 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 		if (!Guid.TryParse(schemaUId, out Guid uid)) {
 			return NotEstablished($"'{schemaUId}' is not a schema UId");
 		}
+		// Started HERE, before the first provider touch, and not inside FactsForRow. This overload also pays
+		// an identity query, and a clock started after it leaves that time unmeasured - the package read then
+		// computes "remaining" against a budget that has already been partly spent elsewhere and can outlast
+		// the outer wait, which discards version facts that were in hand. This is the dominant path: the name
+		// and uid arms of describe both come through here.
+		Stopwatch elapsed = Stopwatch.StartNew();
 		return WithinBudget(() => ProcessLibRead.Guarded(() => {
 			IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_dataProvider);
 			VwProcessLib row = ctx.Models<VwProcessLib>().FirstOrDefault(p => p.UId == uid);
 			return row is null
 				? NotEstablished($"the process library has no row for schema '{uid}'")
-				: FactsForRow(ctx, row);
+				: FactsForRow(ctx, row, elapsed);
 		}, ReadFailed));
 	}
 
@@ -231,8 +245,10 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 		if (row is null) {
 			return NotEstablished("no process-library row was supplied");
 		}
+		Stopwatch elapsed = Stopwatch.StartNew();
 		return WithinBudget(() => ProcessLibRead.Guarded(
-			() => FactsForRow(AppDataContextFactory.GetAppDataContext(_dataProvider), row), ReadFailed));
+			() => FactsForRow(AppDataContextFactory.GetAppDataContext(_dataProvider), row, elapsed),
+			ReadFailed));
 	}
 
 	/// <summary>
@@ -254,14 +270,13 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 			.Take(FamilyCap + 1)
 			.ToList();
 
-	private ProcessVersionFacts FactsForRow(IAppDataContext ctx, VwProcessLib row) {
+	private ProcessVersionFacts FactsForRow(IAppDataContext ctx, VwProcessLib row, Stopwatch elapsed) {
 		// The family key is the one column this feature left non-nullable, and it is used as an IDENTITY.
 		// A defaulted value would not select a family: it would select every row that also defaulted, and
 		// publish an unrelated process as the version to launch.
 		if (row.VersionParentUId == Guid.Empty) {
 			return NotEstablished($"the process library reports no version family key for schema '{row.UId}'");
 		}
-		Stopwatch elapsed = Stopwatch.StartNew();
 		List<VwProcessLib> family = ReadFamily(ctx, row.VersionParentUId);
 		return BuildFacts(row, family, () => ReadPackageNames(ctx, elapsed));
 	}
@@ -316,15 +331,17 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 	/// field is the worse trade.
 	/// </para>
 	/// <para>
-	/// No rows is NOT an answer either. A Creatio environment always carries packages, so an empty set is
-	/// not a legitimate "read, nothing to name" - and reporting it as read would publish every member with
-	/// no package name and no warning, the one combination the contract on
-	/// <see cref="ProcessVersionFamilyMember.PackageName"/> says cannot occur. This arm is a guard rather
-	/// than the expected path: the registered <c>IDataProvider</c> is wrapped in
-	/// <c>ClassifyingDataProvider</c>, which turns ATF's swallow-and-report failure (<c>Success=false</c>
-	/// with an empty payload, never a throw) into an exception the guard above already catches. So a
-	/// genuinely refused read arrives as a failure, and zero rows should only be reachable through a
-	/// provider that is not wrapped - which is exactly the case worth refusing to interpret.
+	/// No rows is NOT an answer either, and this arm is a REAL refusal shape rather than a defensive guard.
+	/// A Creatio environment always carries packages, so an empty set cannot be "read, nothing to name".
+	/// Which failure arrives how is recorded in
+	/// <c>docs/knowledge/Common/remotedataprovider-swallows-every-failure-into-success-false.md</c>: a
+	/// DataService FAULT envelope - the shape a server-side rejection of a restricted-NUI object like
+	/// <c>SysPackage</c> takes - parses without error, its <c>success</c> field is ignored, and it yields
+	/// zero rows under <c>Success = true</c>. Only a transport or parse fault becomes <c>Success = false</c>,
+	/// and that is the one <c>ClassifyingDataProvider</c> turns into an exception the guard above catches.
+	/// So both shapes exist and this arm is how the first one is caught. Deleting it as unreachable would
+	/// publish every member with no name and NO warning - the one combination the contract on
+	/// <see cref="ProcessVersionFamilyMember.PackageName"/> forbids.
 	/// </para>
 	/// <para>
 	/// Unfiltered on purpose. The filter that belongs here is "the UIds this family uses", and expressing it
@@ -336,8 +353,16 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 	/// hundred rows of scalars, inside the slice of the budget this read is given.
 	/// </para>
 	/// </remarks>
-	private Dictionary<Guid, string> ReadPackageNames(IAppDataContext ctx, Stopwatch elapsed) =>
-		ProcessLibRead.WithinBudget(PackageReadBudget(elapsed),
+	private Dictionary<Guid, string> ReadPackageNames(IAppDataContext ctx, Stopwatch elapsed) {
+		TimeSpan budget = PackageReadBudget(elapsed);
+		// Refused rather than issued: WithinBudget starts the read before it waits, so a zero budget would
+		// send a full unfiltered select at an environment that is by definition already stalling and abandon
+		// it on arrival. The names are lost either way; the round trip need not be.
+		return budget <= TimeSpan.Zero ? null : ReadPackageNamesWithin(ctx, budget);
+	}
+
+	private Dictionary<Guid, string> ReadPackageNamesWithin(IAppDataContext ctx, TimeSpan budget) =>
+		ProcessLibRead.WithinBudget(budget,
 			() => ProcessLibRead.Guarded<Dictionary<Guid, string>>(
 				() => {
 					List<SysPackage> rows = ctx.Models<SysPackage>().ToList();
@@ -421,15 +446,6 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 	private static string Unestablished(VwProcessLib row, List<VwProcessLib> flagged,
 		List<VwProcessLib> published, bool truncated, bool packagesRead) {
 		List<string> gaps = [];
-		// Reported once for the whole read rather than per member: when the package table did not answer,
-		// EVERY member loses its name at once, and a caller that says nothing renders raw GUIDs at a builder
-		// who asked which package a version lives in.
-		if (!packagesRead) {
-			// Phrased to survive the shared ", so those facts were not established" tail this method appends.
-			// The earlier wording carried its own "so" clause and composed into a doubled conjunction whose
-			// closing claim was false: the version facts WERE established and are published beside it.
-			gaps.Add("the package names could not be read");
-		}
 		if (row.Version is null) {
 			gaps.Add("the view established no version number for this schema");
 		}
@@ -454,6 +470,18 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 			// version that is not among the members published beside it.
 			gaps.Add($"the active version '{flagged[0].Name}' fell outside the {FamilyCap} members reported");
 		}
+		// LAST, because it is the one clause that is not about the version standing - a reader takes the
+		// opening of this warning as the reason the standing is unknown, and the package names are not that.
+		// Reported once for the whole read rather than per member: when the package table did not answer,
+		// EVERY member loses its name at once, and silence renders raw GUIDs at a builder who asked which
+		// package a version lives in.
+		//
+		// Phrased to survive the shared tail below. The earlier wording carried its own "so" clause and
+		// composed into a doubled conjunction whose closing claim was false: the version facts WERE
+		// established and are published beside it.
+		if (!packagesRead) {
+			gaps.Add("the package names could not be read");
+		}
 		return gaps.Count == 0 ? null : $"{string.Join("; ", gaps)}, so those facts were not established";
 	}
 
@@ -466,9 +494,14 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 			IsActiveVersion = p.IsActiveVersion,
 			IsRoot = p.UId == p.VersionParentUId,
 			PackageUId = p.PackageUId.ToString(),
-			PackageName = packageNames is not null && packageNames.TryGetValue(p.PackageUId, out string name)
-				? name
-				: null,
+			// Guid.Empty is excluded explicitly: PackageUId is non-nullable, so an unresolved package arrives
+			// as the default, and a SysPackage row carrying an empty UId would then hand that member somebody
+			// else's name - the one outcome this field exists to prevent.
+			PackageName = p.PackageUId != Guid.Empty
+				&& packageNames is not null
+				&& packageNames.TryGetValue(p.PackageUId, out string name)
+					? name
+					: null,
 			Enabled = p.Enabled
 		};
 
