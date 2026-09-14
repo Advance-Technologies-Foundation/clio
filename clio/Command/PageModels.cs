@@ -909,6 +909,31 @@ public sealed class PageAppendProjection {
 /// </summary>
 [DataContract]
 public sealed class PageUpdateResponse {
+
+	/// <summary>
+	/// Marks a FAILED response as the outcome of a dry run, so it stays distinguishable from a failed real
+	/// save. A no-op on success and on a real save.
+	/// </summary>
+	/// <remarks>
+	/// Lives on the response rather than in either caller because there are TWO entry points with their own
+	/// failure exits - <c>PageUpdateCommand.TryUpdatePage</c> for the CLI, and the MCP <c>update-page</c>
+	/// tool, which returns from its own pre-execution validation (body-file load, empty body, the full-config
+	/// append rejection, JS syntax, content rules, AST lint) BEFORE the command is ever called. Stamping only
+	/// the first left the MCP path returning `dryRun: false` for exactly the failure the tool contract
+	/// promises carries `dryRun: true`, which is the shape a caller uses to decide whether anything was
+	/// written. One helper, called at both exits, is what keeps that promise true on both surfaces.
+	/// </remarks>
+	/// <param name="dryRun">Whether the originating call was a dry run.</param>
+	/// <param name="schemaName">Schema name to fill in when the failure envelope carries none.</param>
+	/// <returns>The same instance, so it can be returned inline.</returns>
+	public PageUpdateResponse MarkDryRunFailure(bool dryRun, string schemaName) {
+		if (Success || !dryRun) {
+			return this;
+		}
+		DryRun = true;
+		SchemaName ??= schemaName;
+		return this;
+	}
 	/// <summary>
 	/// Gets or sets a value indicating whether the request succeeded.
 	/// </summary>

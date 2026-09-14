@@ -527,15 +527,6 @@ internal static class PageBodyMerger {
 	private readonly record struct OperationIdentity(string Operation, string Name, bool TargetsProperties);
 
 	/// <summary>
-	/// Actionable warning for a current entry dropped because the incoming fragment superseded an identity
-	/// the current body carried more than once.
-	/// </summary>
-	/// <remarks>
-	/// Only the FIRST occurrence is replaced; a later one cannot also be kept, because the differ applies a
-	/// group in array order and the stale values would then re-apply after the caller's replacement. The
-	/// message names what to do about it, since the caller cannot see the server body they just overwrote.
-	/// </remarks>
-	/// <summary>
 	/// The verb half of an identity, rendered once for every consumer. An absent verb is NAMED rather than
 	/// blanked (it is a real, distinct identity in the merge), and a <c>properties</c>-targeting variant is
 	/// marked, because <c>remove X</c> and <c>remove(properties) X</c> are two different identities that
@@ -548,6 +539,15 @@ internal static class PageBodyMerger {
 				? $"{identity.Operation}(properties)"
 				: identity.Operation;
 
+	/// <summary>
+	/// Actionable warning for a current entry dropped because the incoming fragment superseded an identity
+	/// the current body carried more than once.
+	/// </summary>
+	/// <remarks>
+	/// Only the FIRST occurrence is replaced; a later one cannot also be kept, because the differ applies a
+	/// group in array order and the stale values would then re-apply after the caller's replacement. The
+	/// message names what to do about it, since the caller cannot see the server body they just overwrote.
+	/// </remarks>
 	private static string BuildSupersededDropMessage(OperationIdentity identity) {
 		return $"Component '{identity.Name}' carried more than one '{VerbLabel(identity)}' operation in the page's own body, " +
 			"and the appended fragment supersedes that operation. Only the first occurrence was replaced; every " +

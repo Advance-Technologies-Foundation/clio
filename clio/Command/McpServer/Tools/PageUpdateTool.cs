@@ -108,7 +108,11 @@ public sealed class PageUpdateTool(
 				server,
 				cancellationToken);
 		if (earlyFailure != null)
-			return earlyFailure;
+			// These exits never reach PageUpdateCommand.TryUpdatePage, so its stamp cannot cover them. Without
+			// this the tool contract's promise that a failed append dry run carries `dryRun: true` was false
+			// for the most common case an agent hits - a full-config incoming body, rejected by
+			// TryValidateAppendBodyForm above.
+			return earlyFailure.MarkDryRunFailure(options.DryRun, options.SchemaName);
 		(string metaFilePath, bool baselineArmed, string baselineWarning) =
 			pageBaselineGuard.TryArm(options, args.OutputDirectory);
 		PageUpdateResponse response = ExecuteWithCleanLog(options, () => {
@@ -142,7 +146,9 @@ public sealed class PageUpdateTool(
 				lintWarnings),
 			BaselineWarnings(baselineWarning, refreshWarning));
 		response.Warnings = mergedWarnings.Count > 0 ? mergedWarnings : null;
-		return response;
+		// Idempotent for anything TryUpdatePage already stamped; this catches the ResolveCommand failure
+		// envelope, which is built here and never passes through the command.
+		return response.MarkDryRunFailure(options.DryRun, options.SchemaName);
 	}
 
 	private async Task<(PageUpdateResponse Failure,

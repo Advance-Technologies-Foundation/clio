@@ -95,14 +95,32 @@ public static class SchemaValidationService
 	};
 
 	/// <summary>
-	/// Every marker an append fragment may legitimately carry - the required set plus BOTH spellings of each
-	/// alternate pair. Deliberately a superset of what the merge reads: the full-config spellings are
-	/// recognized here so that a body carrying only those reaches
-	/// <see cref="PageBodyMerger.UsesUnsupportedFullConfigForm(string, out string)"/> and gets its precise
-	/// "use --mode replace" message, instead of being pre-empted by the generic unrecognizable-body error.
+	/// The markers that make an append fragment meaningful: the six sections <c>PageBodyMerger.MergeWeb</c>
+	/// actually reads from an incoming body, plus BOTH full-config spellings.
 	/// </summary>
-	private static readonly string[] RecognizedSectionMarkerNames =
-		RequiredMarkerNames.Concat(AlternateMarkerPairs.SelectMany(pair => pair)).ToArray();
+	/// <remarks>
+	/// <c>SCHEMA_DEPS</c> and <c>SCHEMA_ARGS</c> are deliberately EXCLUDED even though they are required
+	/// markers elsewhere. They belong to the AMD envelope, the merge never reads them from the incoming body,
+	/// and nothing downstream rejects them - so a fragment whose only pair was one of those passed this rule
+	/// and still hit the exact silent discard it exists to close (reproduced on a live stand:
+	/// `success: true, incomingOperationCount: 0`).
+	///
+	/// The full-config spellings are the opposite case and ARE included: the merge does not read them either,
+	/// but <see cref="PageBodyMerger.UsesUnsupportedFullConfigForm(string, out string)"/> rejects such a body
+	/// downstream with a precise "use --mode replace" message. Recognizing them here keeps that message
+	/// instead of pre-empting it with this generic one. Narrowing this set to "only what the merge reads"
+	/// would silently degrade that diagnosis - a test pins it.
+	/// </remarks>
+	private static readonly string[] RecognizedSectionMarkerNames = {
+		SchemaViewConfigDiff,
+		SchemaViewModelConfigDiff,
+		"SCHEMA_MODEL_CONFIG_DIFF",
+		SchemaHandlersMarker,
+		SchemaConvertersMarker,
+		SchemaValidatorsMarker,
+		SchemaViewModelConfig,
+		"SCHEMA_MODEL_CONFIG"
+	};
 
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
 

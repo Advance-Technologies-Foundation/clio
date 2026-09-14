@@ -179,23 +179,21 @@
 		public bool TryUpdatePage(PageUpdateOptions options, out PageUpdateResponse response) {
 			bool succeeded = TryUpdatePageCore(options, out response);
 			// GH-1150: stamped HERE rather than at each failure site, because the failure sites upstream of the
-			// dry-run branch outnumber the ones inside it - required-field, common-input, context-resolution,
-			// external-modification and input validation all return before the mode is ever branched on, and the
-			// catch below returns a bare envelope. Stamping them individually is a rule someone has to remember
-			// at every new exit; stamping the one exit they all funnel through is not. Without it a failed
-			// `--dry-run` is byte-identical to a failed real save and the caller cannot tell whether anything
-			// was written - which is the property this ticket exists to establish, so establishing it for only
-			// the downstream half would be worse than not claiming it.
-			if (!succeeded && options.DryRun && response != null) {
-				response.DryRun = true;
-				response.SchemaName ??= options.SchemaName;
-			}
+			// dry-run branch outnumber the ones inside it - body-file load, required-field, common-input,
+			// context resolution, external-modification and input validation all return before the mode is ever
+			// branched on, and TryUpdatePageCore's catch returns a bare envelope. Stamping them individually is
+			// a rule someone has to remember at every new exit; stamping the one exit they all funnel through is
+			// not. Without it a failed `--dry-run` is byte-identical to a failed real save and the caller cannot
+			// tell whether anything was written - the property this ticket exists to establish.
+			// The MCP tool has its OWN pre-execution exits that never reach here and stamps them with the same
+			// helper; see PageUpdateResponse.MarkDryRunFailure.
+			response?.MarkDryRunFailure(options.DryRun, options.SchemaName);
 			return succeeded;
 		}
 
 		/// <summary>
 		/// The body of <see cref="TryUpdatePage"/>. Split out so every failure exit is stamped in one place;
-		/// see the remarks there.
+		/// see the comment in that method's body.
 		/// </summary>
 		private bool TryUpdatePageCore(PageUpdateOptions options, out PageUpdateResponse response) {
 			try {
@@ -392,7 +390,11 @@
 			if (projection.SupersededDropWarnings is { Count: > 0 }) {
 				(warnings ??= []).AddRange(projection.SupersededDropWarnings);
 			}
-			if (!projection.ViewConfigDiffApplied) {
+			// Gated on the fragment actually carrying viewConfigDiff operations. A handlers-only fragment
+			// against a body with no SCHEMA_VIEW_CONFIG_DIFF pair merges and lands correctly - warning that
+			// "EVERY viewConfigDiff operation is discarded" would describe a loss that did not happen and
+			// send the caller to --mode replace for a write that succeeded.
+			if (!projection.ViewConfigDiffApplied && projection.IncomingOperationCount > 0) {
 				(warnings ??= []).Add(
 					"The page's current body has no SCHEMA_VIEW_CONFIG_DIFF marker pair, so the merged " +
 					"viewConfigDiff array cannot be written back and EVERY viewConfigDiff operation in the " +

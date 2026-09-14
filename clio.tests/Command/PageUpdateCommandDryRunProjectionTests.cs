@@ -70,6 +70,21 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 			.Returns($$"""{"success": true, "schema": {"body": {{escaped}}, "name": "{{SchemaName}}" } }""");
 	}
 
+	/// <summary>
+	/// Stubs the server's stored body together with its registered <c>localizableStrings</c>. This is the
+	/// only shape that distinguishes the save's authoritative caption gate from the fragment-scoped check it
+	/// replaced: with an empty registration set both consult the same data and agree by accident.
+	/// </summary>
+	private void StubCurrentBodyWithRegisteredString(string body, string resourceKey) {
+		string escaped = Newtonsoft.Json.JsonConvert.ToString(body);
+		_applicationClient.ExecutePostRequest(
+				GetSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns($$"""
+				{"success": true, "schema": {"body": {{escaped}}, "name": "{{SchemaName}}",
+				 "localizableStrings": [{"name": "{{resourceKey}}", "value": "Already registered"}] } }
+				""");
+	}
+
 	private static PageUpdateOptions AppendDryRun(string incomingViewConfigDiff) =>
 		new() {
 			SchemaName = SchemaName,
@@ -528,4 +543,153 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 		response.AppendProjection.ProjectedOperationCount.Should().Be(2,
 			because: "the rule rejects unreadable bodies, and must not narrow what a valid append can do");
 	}
+	[Test]
+	[Description("A caption bound to a string ALREADY registered on the server does not warn on a dry run.")]
+	public void TryUpdatePage_ShouldNotWarnAboutTheCaption_WhenTheKeyIsAlreadyRegisteredOnTheServer() {
+		// Arrange - the direction that actually proves the gates were unified. The OLD dry-run check resolved
+		// only against the resources passed on the call, so a key the server already carries looked
+		// unregistered and warned, while the save accepted it. Same fragment, no explicit resources.
+		const string resourceKey = "ProbeLabel_caption";
+		StubCurrentBodyWithRegisteredString(WebBody("[]"), resourceKey);
+		string insertBoundToRegisteredKey =
+			"[{\"operation\":\"insert\",\"name\":\"ProbeLabel\",\"parentName\":\"Main\","
+			+ "\"values\":{\"type\":\"crt.Label\",\"caption\":\"#ResourceString(" + resourceKey + ")#\"}}]";
+
+		// Act
+		bool result = _command.TryUpdatePage(AppendDryRun(insertBoundToRegisteredKey), out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "the caption resolves against a string the server already registers");
+		(response.Warnings ?? []).Should().NotContain(w => w.Contains("unregistered localizable strings"),
+			because: "warning here is the false positive the old fragment-scoped check produced, and the save never agreed with it");
+		AssertNothingWasSaved();
+	}
+
+	[Test]
+	[Description("The dry run forwards the save's caption error verbatim, not merely similar wording.")]
+	public void TryUpdatePage_ShouldForwardTheSaveCaptionErrorVerbatim_WhenAppendDryRun() {
+		// Arrange - "in the save's own words" is the claim; a substring match on both sides would still pass
+		// if the two paths drifted into differently-worded messages that happen to share a phrase.
+		StubCurrentBody(WebBody("[]"));
+		const string insertWithUnregisteredCaption =
+			"""[{"operation":"insert","name":"ProbeLabel","parentName":"Main","values":{"type":"crt.Label","caption":"#ResourceString(ProbeLabel_caption)#"}}]""";
+
+		// Act
+		_command.TryUpdatePage(AppendDryRun(insertWithUnregisteredCaption), out PageUpdateResponse dryRunResponse);
+		_command.TryUpdatePage(
+			new PageUpdateOptions { SchemaName = SchemaName, Body = WebBody(insertWithUnregisteredCaption), Mode = "append" },
+			out PageUpdateResponse saveResponse);
+
+		// Assert
+		saveResponse.Success.Should().BeFalse(because: "the save refuses an unregistered caption");
+		dryRunResponse.Warnings.Should().ContainSingle(w => w == saveResponse.Error,
+			because: "BuildCaptionGateWarnings forwards the gate's Error unchanged, so the two can never drift apart");
+	}
+
+	[Test]
+	[Description("A mobile append is unaffected by the marker-recognizability rule, which is web-only.")]
+	public void TryUpdatePage_ShouldProjectAndNotRefuse_WhenAppendDryRunTargetsAMobilePage() {
+		// Arrange - a mobile body is a JSON object and carries NO markers at all, so if the recognizability
+		// rule were ever lifted out of ValidateWebInput into the shared ValidateInput, every mobile append
+		// would start failing. Nothing else in the suite would catch that.
+		StubCurrentBody("""{"viewConfigDiff":[{"operation":"merge","name":"UsrPanel","values":{"title":"Old"}}]}""");
+		PageUpdateOptions options = new() {
+			SchemaName = SchemaName,
+			Body = """{"viewConfigDiff":[{"operation":"merge","name":"UsrOther","values":{"title":"New"}}]}""",
+			Mode = "append",
+			DryRun = true
+		};
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "a markerless mobile fragment is the normal shape, not a malformed body");
+		(response.Warnings ?? []).Should().NotContain(w => w.Contains("no recognizable page section"),
+			because: "the rule is web-only by placement, and that placement is what this pins");
+		AssertNothingWasSaved();
+	}
+
+	[Test]
+	[Description("A fragment whose only marker is an AMD-envelope section is refused, not silently discarded.")]
+	public void TryUpdatePage_ShouldRefuse_WhenTheAppendBodyCarriesOnlyAnAmdEnvelopeSection() {
+		// Arrange - SCHEMA_DEPS is a REQUIRED marker but the merge never reads it from an incoming body, so
+		// the first version of the recognizability rule accepted this and still discarded everything.
+		// Reproduced on a live stand before this was narrowed: `success: true, incomingOperationCount: 0`.
+		StubCurrentBody(WebBody("""[{"operation":"merge","name":"UsrPanel","values":{"title":"Old"}}]"""));
+		PageUpdateOptions options = new() {
+			SchemaName = SchemaName,
+			Body = """define("X", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function(){ return {}; });""",
+			Mode = "append",
+			DryRun = true
+		};
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "recognizability must mean 'the merge can read something from it', not 'it has any marker'");
+		response.Error.Should().Contain("no recognizable page section",
+			because: "asserting only the failure would also pass for a syntax or merge error");
+		AssertNothingWasSaved();
+	}
+
+	[Test]
+	[Description("A full-config append body keeps its own precise error rather than the generic one.")]
+	public void TryUpdatePage_ShouldKeepTheFullConfigError_WhenTheAppendBodyIsFullConfigOnly() {
+		// Arrange - the reason the recognized set deliberately includes the full-config spellings the merge
+		// does NOT read. Narrowing it to "only what the merge reads" would swap this precise, actionable
+		// message for the generic unrecognizable-body one, and nothing else would notice.
+		StubCurrentBody(WebBody("[]"));
+		PageUpdateOptions options = new() {
+			SchemaName = SchemaName,
+			Body = """define("X", function(){ return { viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{}/**SCHEMA_VIEW_MODEL_CONFIG*/ }; });""",
+			Mode = "append",
+			DryRun = true
+		};
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "append cannot merge a full-config body");
+		response.Error.Should().NotContain("no recognizable page section",
+			because: "the generic rule must not pre-empt the specific diagnosis that names --mode replace");
+		AssertNothingWasSaved();
+	}
+
+	[Test]
+	[Description("A handlers-only fragment does not get the 'everything discarded' warning when it lands.")]
+	public void TryUpdatePage_ShouldNotWarnAboutDiscardedOperations_WhenTheFragmentCarriesNoViewConfigDiffOps() {
+		// Arrange - a current body with no SCHEMA_VIEW_CONFIG_DIFF pair sets ViewConfigDiffApplied=false, but a
+		// handlers-only fragment merges and lands correctly. The warning used to fire anyway and sent the
+		// caller to --mode replace for a write that had succeeded.
+		StubCurrentBody(HandlersOnlyBody("[]"));
+		PageUpdateOptions options = new() {
+			SchemaName = SchemaName,
+			Body = HandlersOnlyBody("[{request:\"crt.SaveRecordRequest\",handler:()=>null}]"),
+			Mode = "append",
+			DryRun = true
+		};
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "a handlers-only append is valid and its handlers do land");
+		(response.Warnings ?? []).Should().NotContain(w => w.Contains("EVERY viewConfigDiff operation"),
+			because: "describing a loss that did not happen sends the caller to fix a write that succeeded");
+		AssertNothingWasSaved();
+	}
+
+	/// <summary>
+	/// A body with NO SCHEMA_VIEW_CONFIG_DIFF marker pair, used to drive ViewConfigDiffApplied=false while the
+	/// handlers section still merges normally.
+	/// </summary>
+	private static string HandlersOnlyBody(string handlersInner) =>
+		"define(\"" + SchemaName + "\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+		"handlers: /**SCHEMA_HANDLERS*/" + handlersInner + "/**SCHEMA_HANDLERS*/, " +
+		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 }

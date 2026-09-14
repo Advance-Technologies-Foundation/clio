@@ -6382,4 +6382,46 @@ public class PageToolsTests
 			Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
 	}
 
+	[Test]
+	[Description("update-page: a dry-run append rejected by the MCP tool's OWN pre-execution guard still reports dryRun: true.")]
+	public async System.Threading.Tasks.Task PageUpdateTool_ShouldReportTheFailureAsADryRun_WhenTheAppendGuardRejectsBeforeTheCommandRuns() {
+		// Arrange - the tool's TryValidateAppendBodyForm rejects a full-config incoming body offline, BEFORE
+		// PageUpdateCommand.TryUpdatePage is ever called, so the command's own exit stamp cannot cover it.
+		// This is the failure the curated contract tells an agent will carry dryRun: true, and it is the
+		// likeliest one an agent hits (it is what re-sending get-page's body verbatim produces).
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		PageUpdateTool tool = BuildAppendGuardTool(applicationClient);
+		PageUpdateArgs args = new("UsrX_FormPage", FullConfigWebBody, null, true, SkipSampling: true, Mode: "append")
+			{ EnvironmentName = "dev" };
+
+		// Act
+		PageUpdateResponse response = await tool.UpdatePage(args, null);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "append cannot merge a full-config incoming body");
+		response.DryRun.Should().BeTrue(
+			because: "a failed dry run must stay distinguishable from a failed real save on EVERY entry point, "
+				+ "not just the CLI command - the contract promises it for this exact rejection");
+	}
+
+	[Test]
+	[Description("update-page: the same pre-execution rejection on a real save is NOT mislabelled as a dry run.")]
+	public async System.Threading.Tasks.Task PageUpdateTool_ShouldNotReportTheFailureAsADryRun_WhenTheAppendGuardRejectsARealSave() {
+		// Arrange - pairs with the test above: the stamp is conditional on the caller's dry-run flag, so
+		// stamping unconditionally would make every failed save claim nothing was written.
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		PageUpdateTool tool = BuildAppendGuardTool(applicationClient);
+		PageUpdateArgs args = new("UsrX_FormPage", FullConfigWebBody, null, false, SkipSampling: true, Mode: "append")
+			{ EnvironmentName = "dev" };
+
+		// Act
+		PageUpdateResponse response = await tool.UpdatePage(args, null);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "append cannot merge a full-config incoming body");
+		response.DryRun.Should().BeFalse(
+			because: "a real save that failed must never borrow the safety a dry run implies");
+	}
+
+
 }
