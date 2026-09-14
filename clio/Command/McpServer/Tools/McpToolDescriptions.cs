@@ -47,11 +47,9 @@ internal static class McpToolDescriptions {
 		"See get-guidance `page-schema-resources` for the full rule.";
 
 	/// <summary>
-	/// Appended to <see cref="PageResources"/> on <c>update-page</c> ONLY. It deliberately does NOT go on
-	/// <c>sync-pages</c>: that tool's own pre-pass gate still validates the body offline and therefore
-	/// still requires persisted keys to be repeated, so advertising the additive rule there would promise
-	/// behaviour the tool does not have (see
-	/// <c>docs/knowledge/McpServer/web-page-body-validation-is-wired-per-tool.md</c>). It must not go on
+	/// Appended to <see cref="PageResources"/> on the two WRITE tools, <c>update-page</c> and
+	/// <c>sync-pages</c> — both of their pre-execution gates now consult the keys already persisted on the
+	/// schema, so both honour the additive rule (issues #1320, #1464). It must not go on
 	/// the shared
 	/// constant either: that constant is also served by a resident tool, and the resident tools/list payload
 	/// is held under a hard byte budget by

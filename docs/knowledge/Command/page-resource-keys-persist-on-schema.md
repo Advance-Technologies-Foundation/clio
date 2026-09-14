@@ -1,13 +1,14 @@
 ---
-description: update-page resource keys persist in the schema's localizableStrings; the resources argument is additions/overrides, never the full registered set - and sync-pages is NOT covered, its own offline gate still demands the keys
+description: update-page and sync-pages resource keys persist in the schema's localizableStrings; the resources argument is additions/overrides, never the full registered set
 applies-to:
   - clio/Command/PageUpdateOptions.cs
+  - clio/Command/PersistedResourceKeyReader.cs
   - clio/Command/McpServer/Tools/PageUpdateTool.cs
   - clio/Command/McpServer/Tools/PageSyncTool.cs
   - clio/Command/SchemaValidationService.cs
   - clio/Command/ResourceStringHelper.cs
-ticket: GH-1320
-date: 2026-09-03
+ticket: GH-1320, GH-1464
+date: 2026-09-12
 ---
 
 **What is true** — a resource key registered by an `update-page` call is written into the page
@@ -21,22 +22,30 @@ The label-resource validators (`ValidateInsertedFieldSelfConsistency`,
 `ValidateStandardFieldBindings`) only see the submitted body and the `resources` argument. Both are
 driven through one entry point, `SchemaValidationService.ValidateFieldLabelResources`, which takes a
 `Func<IReadOnlySet<string>>` supplying the persisted key set and invokes it **only after the
-inserted-field validator has rejected the body** — the one verdict a persisted key can change. A
+inserted-field validator has rejected the body with
+`SchemaValidationErrorKind.UnresolvedLabelResource`** — the one verdict a persisted key can change.
+The gate reads that error KIND, not the diagnostic sentence: it used to substring-match
+`UnresolvedLabelResourceClause`, so rewording the message, appending a hint to it, or localizing it
+would have disarmed the rescue with nothing to notice. The sentence still exists and is unchanged;
+only `AddError` sets the kind, so text alone can never imply it. A
 clean body must not pay an extra `GetSchema` round-trip, and a structurally broken body must report
 its own error rather than a network error from an eager fetch. A warning does not trigger the
 rescue, so a persisted key can still be named by the standard-field label *warning* — noise, not a
 block; nor does a standard-field ERROR, which is about attribute bindings and never about resources.
 
-**Three** write-path gates validate the same body, and only two of them are wired to the provider:
-the MCP pre-execution gate in `PageUpdateTool` and the command-level gate in `PageUpdateCommand`.
-**Both** of those must pass it, which is why they share one helper — when only the command-level
-gate had it, the tool still rejected the save before the command ever ran. The third,
-`PageSyncTool.ValidateBody`, still calls the raw validators with no provider, so **the additive rule
-holds for `update-page` only**: `sync-pages` continues to reject the second and every later save of
-a page whose label resource is only persisted, and its caller must still repeat the key (or pass
-`validate: false`). That scoping is deliberate for now — see
-`docs/knowledge/McpServer/web-page-body-validation-is-wired-per-tool.md` for why each tool wires its
-own set — and it is why `McpToolDescriptions.PageResourcesAdditive` is on `update-page` alone.
+**Four** write-path gates validate the same body, and **every** one of them must be wired to the
+provider: the MCP pre-execution gate in `PageUpdateTool`, the command-level gate in
+`PageUpdateCommand`, and — for `sync-pages` — both its deterministic pre-pass gate and the per-page
+re-validation it runs again inside the tenant lock. When only the command-level gate had it, each
+tool still rejected the save before the command ever ran. `PageSyncTool` was the last unwired one,
+which is why the additive rule held for `update-page` alone until GH-1464; it is now on both write
+tools, and so is `McpToolDescriptions.PageResourcesAdditive`.
+
+The read itself is owned by `IPersistedResourceKeyReader`, not by any gate and not by the request
+DTO. The gates hand it a delegate; it runs that delegate at most once per (environment, schema)
+inside a scope opened at the tool/command entry point. Without that, `sync-pages` pays THREE
+hierarchy resolutions for one rescued page — it builds a fresh `PageUpdateOptions` per page and its
+first gate runs before any options exist, so the old memo-on-the-DTO could not serve it at all.
 
 The `ResolveSyntaxFailure` path passes `offlineOnly: true` and therefore no provider: that path
 promises no Creatio I/O for a body that cannot parse. A body already blocked by a standard-field

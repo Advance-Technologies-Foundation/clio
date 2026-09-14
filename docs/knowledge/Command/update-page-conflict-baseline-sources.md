@@ -4,8 +4,9 @@ applies-to:
   - clio/Command/PageBaselineGuard.cs
   - clio/Command/McpServer/Tools/PageBaselineStore.cs
   - clio/Command/McpServer/Tools/PageUpdateTool.cs
-ticket: GH-1320
-date: 2026-09-03
+  - clio/Command/McpServer/Tools/PageSyncTool.cs
+ticket: GH-1320, GH-1464
+date: 2026-09-12
 ---
 
 **What is true** — what `PageBaselineGuard.TryArm` arms depends on how the save was addressed, and
@@ -55,12 +56,13 @@ write when it names the existing package and fails safe with a checksum conflict
 another schema. With no explicit pin, the write is only unverifiable, so the warning is not
 `conflict: true` and does not send the caller into a retry loop.
 
-**One scope limit is still open:** the remedy is on `update-page`
-only. `sync-pages` is the tool clio calls the canonical page write path (`update-page` even carries a
-`ToolDeprecation` saying so), and `PageSyncPageInput` has no `checksum` member — `BuildUpdateRequest`
-never sets `ExpectedChecksum`, so every `sync-pages` write is on the unpinned path with `force: true`
-as its only escape. An agent following clio's own guidance takes that path. Extending the
-checksum contract to `sync-pages` is deliberately out of scope here and needs its own change.
+**`sync-pages` carries the same contract.** `PageSyncPageInput` has a per-page `checksum`, and
+`BuildUpdateRequest` passes it VERBATIM into `PageUpdateOptions.ExpectedChecksum` — `TryArm` is the
+single normalization chokepoint (it trims, and collapses whitespace-only to "not supplied"), so a
+second trim at the mapper could only drift from `update-page`'s rule. Every case above therefore
+applies per page. Until GH-1464 that tool — the one clio calls the canonical write path, and the one
+`update-page`'s own `ToolDeprecation` points callers at — had no checksum member at all, so every
+`sync-pages` write was on the unpinned path with `force: true` as its only escape.
 
 **A pinned save always leaves a trace.** On the non-redirected path (a redirect returns its own
 warning before any of this runs), `TryArm` warns whenever the caller pinned a checksum and no

@@ -63,7 +63,7 @@ public sealed class PageUpdateToolBaselineTests
 		hierarchyClient.GetParentSchemas(SchemaUId, "test-pkg-uid").Returns([
 			new PageDesignerHierarchySchema { UId = SchemaUId, Name = SchemaName, PackageUId = "test-pkg-uid" }
 		]);
-		PageUpdateCommand command = new(_applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
+		PageUpdateCommand command = new(_applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		_fileSystem = new MockFileSystem();
@@ -86,7 +86,7 @@ public sealed class PageUpdateToolBaselineTests
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			_webComponentCatalog,
 			Substitute.For<IPageBodySamplingService>(),
-			new PageBaselineGuard(_fileSystem),
+			new PageBaselineGuard(_fileSystem), new PersistedResourceKeyReader(),
 			resolverFactory, settingsRepository);
 	}
 

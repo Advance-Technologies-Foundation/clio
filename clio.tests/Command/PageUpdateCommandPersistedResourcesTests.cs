@@ -101,7 +101,7 @@ public sealed class PageUpdateCommandPersistedResourcesTests {
 			new PageDesignerHierarchySchema { UId = SchemaUId, Name = SchemaName, PackageUId = "test-pkg-uid" }
 		]);
 		_command = new PageUpdateCommand(
-			_applicationClient, serviceUrlBuilder, _logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
+			_applicationClient, serviceUrlBuilder, _logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient);
 	}
 
 	/// <summary>Stubs the GetSchema round-trip with the given persisted localizable-string keys.</summary>
@@ -171,14 +171,15 @@ public sealed class PageUpdateCommandPersistedResourcesTests {
 		cleanResponse.Success.Should().BeTrue(because: "the control save must succeed for its call count to be a valid baseline");
 		cleanSaveGetSchemaCalls.Should().BeGreaterThan(0, because: "a zero baseline would make the comparison below vacuous");
 		saved.Should().BeTrue(because: "the rescued save must still go through");
-		response.Success.Should().BeTrue();
+		response.Success.Should().BeTrue(
+			because: "the rescued save must report success, not merely avoid throwing");
 		rescuedSaveGetSchemaCalls.Should().Be(cleanSaveGetSchemaCalls + 1,
 			because: "the rescue is one cached GetSchema on the failure path - one per validator, or one per key, would multiply the cost of every later save of a page with stored resources");
 	}
 
 	[Test]
-	[Description("A CLEAN TryResolveContext refusal is a COMPLETED read attempt (PR #1356 review): leaving the tri-state carrier at 'not read yet' let the second gate re-resolve the hierarchy and judge the same request from a different snapshot, and swallowing the failure left the caller with the misleading 'neither auto-provided nor registered' message issue #1320 opened with.")]
-	public void TryGetPersistedResourceKeys_ShouldMarkTheCarrierAndWarn_WhenContextResolutionFailsCleanly() {
+	[Description("A CLEAN TryResolveContext refusal is a COMPLETED read attempt (PR #1356 review): swallowing it left the caller with the misleading 'neither auto-provided nor registered' message issue #1320 opened with, and the reason now travels on the typed read result instead of a carrier field on the request DTO (issue #1464).")]
+	public void ReadPersistedResourceKeys_ShouldReportTheReason_WhenContextResolutionFailsCleanly() {
 		// Arrange - SelectQuery answers successfully with NO rows, so the resolution fails cleanly
 		// rather than throwing, which is the exit the catch block never sees.
 		_applicationClient.ExecutePostRequest(
@@ -187,57 +188,78 @@ public sealed class PageUpdateCommandPersistedResourcesTests {
 		PageUpdateOptions options = CreateOptions(BuildPersistedResourcePageBody());
 
 		// Act
-		IReadOnlySet<string> keys = _command.TryGetPersistedResourceKeys(options);
+		PersistedResourceKeyRead read = _command.ReadPersistedResourceKeys(options);
 
 		// Assert
-		keys.Should().BeEmpty(
+		read.Keys.Should().BeEmpty(
 			because: "an unreadable schema must restore the previous, stricter verdict rather than let a body through");
-		options.PersistedResourceKeysRead.Should().BeTrue(
-			because: "the read attempt completed - recording it is what stops the second gate re-resolving from a fresh snapshot");
-		options.PersistedResourceKeysSnapshot.Should().BeNull(
-			because: "read-but-nothing-available is stored as true plus a null snapshot");
+		read.FailureWarning.Should().Contain("Persisted resource keys could not be read",
+			because: "the reason must reach an MCP caller on the typed result - the log channel does not");
 		_logger.Received().WriteWarning(Arg.Is<string>(message =>
 			message.Contains("Persisted resource keys could not be read")));
 	}
 
 	[Test]
 	[Description("The THIRD failure exit, and the last silent one (PR #1356 gate-3 re-review): TryGetSchema returns false with the designer service's own message whenever it answers success:false - schema not found, access denied, a redirected target UId - and discarding that reason through `out _` handed the caller back the misleading 'neither auto-provided nor registered' that issue #1320 opened with, one layer down.")]
-	public void TryGetPersistedResourceKeys_ShouldWarn_WhenTheSchemaReadIsRefusedCleanly() {
+	public void ReadPersistedResourceKeys_ShouldReportTheReason_WhenTheSchemaReadIsRefusedCleanly() {
 		// Arrange - resolution succeeds, then GetSchema answers success:false rather than throwing.
 		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>())
 			.Returns("""{"success": false, "errorInfo": {"message": "Access denied to schema"}}""");
 		PageUpdateOptions options = CreateOptions(BuildPersistedResourcePageBody());
 
 		// Act
-		IReadOnlySet<string> keys = _command.TryGetPersistedResourceKeys(options);
+		PersistedResourceKeyRead read = _command.ReadPersistedResourceKeys(options);
 
 		// Assert
-		keys.Should().BeEmpty(
+		read.Keys.Should().BeEmpty(
 			because: "a refused read must restore the previous, stricter verdict rather than let a body through");
-		options.PersistedResourceKeysRead.Should().BeTrue(
-			because: "the read attempt completed, so the second gate must not re-issue it from a fresh snapshot");
+		read.FailureWarning.Should().Contain("Access denied to schema",
+			because: "the designer service's own message is the closest thing to the actual cause");
 		_logger.Received().WriteWarning(Arg.Is<string>(message =>
 			message.Contains("Persisted resource keys could not be read")
 			&& message.Contains("Access denied to schema")));
 	}
 
 	[Test]
-	[Description("Non-vacuity twin for the carrier: once a clean resolution failure is recorded, a second call answers from the carrier and issues no further remote call - the memoization the PersistedResourceKeysRead remarks promise, on the failure path too.")]
-	public void TryGetPersistedResourceKeys_ShouldNotResolveAgain_WhenACleanFailureWasAlreadyRecorded() {
+	[Description("The read is memoized by the OWNING MODULE keyed on (environment, schema), not on the identity of one options instance: a second gate of the same logical save - which for sync-pages carries a DIFFERENT options object for the same page - answers from the cache and issues no further remote call (issue #1464).")]
+	public void ReadPersistedResourceKeys_ShouldNotReadAgain_ForADifferentOptionsInstanceNamingTheSameSchema() {
 		// Arrange
-		_applicationClient.ExecutePostRequest(
-				SelectQueryUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("""{"success": true, "rows": []}""");
-		PageUpdateOptions options = CreateOptions(BuildPersistedResourcePageBody());
-		_command.TryGetPersistedResourceKeys(options);
+		StubSchemaWithPersistedKeys(PersistedResourceKey);
+		IPersistedResourceKeyReader reader = new PersistedResourceKeyReader();
+		using System.IDisposable scope = reader.BeginRequestScope();
+		PageUpdateOptions firstGate = CreateOptions(BuildPersistedResourcePageBody());
+		reader.Read(firstGate, () => _command.ReadPersistedResourceKeys(firstGate));
 		_applicationClient.ClearReceivedCalls();
+		PageUpdateOptions secondGate = CreateOptions(BuildPersistedResourcePageBody());
 
 		// Act
-		IReadOnlySet<string> keys = _command.TryGetPersistedResourceKeys(options);
+		PersistedResourceKeyRead read = reader.Read(secondGate, () => _command.ReadPersistedResourceKeys(secondGate));
 
 		// Assert
-		keys.Should().BeEmpty(because: "the recorded answer is that no keys were available");
+		read.Keys.Should().Contain(PersistedResourceKey,
+			because: "the cached answer must be the one the first gate read, not an empty degradation");
+		GetSchemaCallCount().Should().Be(0,
+			because: "a second options instance naming the same (environment, schema) must not pay another GetSchema");
 		_applicationClient.DidNotReceive().ExecutePostRequest(
 			SelectQueryUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Non-vacuity twin for the cache: with NO scope open every read runs, so the zero above is the scope's doing and not a stub that simply stopped answering (issue #1464).")]
+	public void ReadPersistedResourceKeys_ShouldReadEveryTime_WhenNoScopeIsOpen() {
+		// Arrange
+		StubSchemaWithPersistedKeys(PersistedResourceKey);
+		IPersistedResourceKeyReader reader = new PersistedResourceKeyReader();
+		PageUpdateOptions firstGate = CreateOptions(BuildPersistedResourcePageBody());
+		reader.Read(firstGate, () => _command.ReadPersistedResourceKeys(firstGate));
+		_applicationClient.ClearReceivedCalls();
+		PageUpdateOptions secondGate = CreateOptions(BuildPersistedResourcePageBody());
+
+		// Act
+		reader.Read(secondGate, () => _command.ReadPersistedResourceKeys(secondGate));
+
+		// Assert
+		GetSchemaCallCount().Should().BeGreaterThan(0,
+			because: "without a scope the reader must fall back to reading, so caching is the only thing the previous test can be measuring");
 	}
 }

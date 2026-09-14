@@ -22,9 +22,10 @@ namespace Clio.Command.McpServer.Tools;
 /// </summary>
 [McpServerToolType]
 [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
-	Justification = "DI composition root: sync-pages requires nine constructor-injected collaborators, including "
-		+ "the ILogger added so the batch base-resolution path has the same diagnostic trail as update-page and the "
-		+ "interprocess file gate that serialises its .clio-pages writes against other clio processes. A "
+	Justification = "DI composition root: sync-pages requires ten constructor-injected collaborators, including "
+		+ "the ILogger added so the batch base-resolution path has the same diagnostic trail as update-page, the "
+		+ "interprocess file gate that serialises its .clio-pages writes against other clio processes, and the "
+		+ "persisted-resource-key reader that keeps the label-resource rescue to one schema read per page. A "
 		+ "parameter object would obscure the tool's injected contract; this mirrors the S107 suppressions on other "
 		+ "MCP entry points in this assembly.")]
 public sealed class PageSyncTool(
@@ -34,6 +35,10 @@ public sealed class PageSyncTool(
 	IComponentInfoCatalog webComponentCatalog,
 	IPageBodySamplingService samplingService,
 	IPageBaselineGuard pageBaselineGuard,
+	// Owns the persisted-resource-key read for the whole batch. REQUIRED, not optional-with-null: an
+	// absent reader is invisible to every existing test construction, and a null would silently restore
+	// the per-gate duplicate hierarchy resolutions this collaborator exists to remove.
+	IPersistedResourceKeyReader persistedResourceKeyReader,
 	IPlatformVersionResolverFactory? resolverFactory = null,
 	// Injected by DI (Clio.Common.ILogger is registered in the container) so a failed mobile-base pre-resolution
 	// during a sync-pages batch leaves the same diagnostic trail update-page has (ENG-94418 review parity).
@@ -63,7 +68,7 @@ public sealed class PageSyncTool(
 	[Description("Updates multiple Freedom UI page schemas in a single call. " +
 	             "For each page: validates body client-side (optional), runs AI semantic review (optional), saves to Creatio, " +
 	             "and verifies the update (optional). Continues processing remaining pages on failure. " +
-		             "CONFLICT DETECTION: when get-page previously stored a checksum baseline in .clio-pages/{schema}/meta.json for the same environment, a page whose schema was modified outside this session fails with per-page `conflict: true` + `conflict-details` (other pages in the batch are unaffected). On a conflict: do NOT retry with the same body — re-run get-page for that schema, re-apply your change on top of the fresh body, then retry; inform the user about the external changes and set the per-page `force: true` ONLY after they explicitly confirm overwriting them. " +
+		             "CONFLICT DETECTION: pass the per-page `checksum` — the `editable.checksum` from the get-page that page's edit is based on — on every save that follows a get-page; it becomes the authoritative baseline for that page. Without it the check falls back to the baseline get-page stored in .clio-pages/{schema}/meta.json for the same environment, which is keyed by directory and schema name and can therefore describe a different body than the one you read. A page whose schema was modified outside this session fails with per-page `conflict: true` + `conflict-details` (other pages in the batch are unaffected). On a conflict: do NOT retry with the same body — re-run get-page for that schema, re-apply your change on top of the fresh body, then retry. Re-sending a conflict response's `actualChecksum` as `checksum` is NOT a resolution - it discards the external change exactly like force=true. Inform the user about the external changes and set the per-page `force: true` ONLY after they explicitly confirm overwriting them. " +
 		             "When verify=true, the read-back body is written to .clio-pages/{schema-name}/body.js, anchored at the workspace root (or the `output-directory` argument); see get-page for the anchoring rules. " +
 	             "Client-side validation, when enabled, also enforces VendorPrefix.Name format " +
 	             "(SCHEMA_CONVERTERS and SCHEMA_VALIDATORS keys; SCHEMA_HANDLERS entry `request` values). " +
@@ -81,6 +86,13 @@ public sealed class PageSyncTool(
 		[Required] PageSyncArgs args,
 		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
+		// Opened at the TOP of the entry point so every gate below runs inside ONE scope: the value flows
+		// DOWN to awaited callees, never back UP to the caller, so a scope opened inside a nested helper
+		// would cover that helper and nothing else. One batch = one cache, keyed by the target being read,
+		// so the three gates that can ask for a page's persisted keys - the deterministic pre-pass, the
+		// per-page re-validation inside the lock, and the command-level gate - resolve that page's schema
+		// hierarchy ONCE between them.
+		using IDisposable persistedResourceKeyScope = persistedResourceKeyReader.BeginRequestScope();
 		// Materialise the input list once so every downstream stage can index
 		// into a stable snapshot. The MCP contract types `Pages` as
 		// IEnumerable; without this snapshot a non-list source would be
@@ -249,6 +261,10 @@ public sealed class PageSyncTool(
 		// lock-protected SyncSinglePage path; this stage only triages web
 		// pages and bodies whose regex/lint result can be computed offline.
 		bool validate = args.Validate ?? true;
+		// Which schema names this pre-pass has already walked past. A REPEAT means an earlier page in the
+		// same batch writes the same schema, so this page's content verdict is not final here — see
+		// TryMaterialiseDeterministicFailure. Ordinal: schema names are identifiers, not display text.
+		HashSet<string> schemasSeenEarlier = new(StringComparer.Ordinal);
 		for (int i = 0; i < pages.Count; i++) {
 			PageSyncPrePassEntry entry = prePass.Entries[i];
 			PageSyncPageInput page = pages[i];
@@ -256,7 +272,9 @@ public sealed class PageSyncTool(
 				results.Add(BuildPrePassFailureResult(page, ResolvePrePassSyntaxFailureMessage(page, syntaxMsg, validate)));
 				continue;
 			}
-			PageSyncPageResult deterministicFailure = TryMaterialiseDeterministicFailure(page, entry, validate);
+			PageSyncPageResult deterministicFailure = TryMaterialiseDeterministicFailure(
+				page, entry, validate, args.EnvironmentName,
+				deferContentVerdict: !schemasSeenEarlier.Add(page.SchemaName ?? string.Empty));
 			if (deterministicFailure != null) {
 				results.Add(deterministicFailure);
 				continue;
@@ -450,20 +468,34 @@ public sealed class PageSyncTool(
 		};
 	}
 
-	private static PageSyncPageResult TryMaterialiseDeterministicFailure(
+	private PageSyncPageResult TryMaterialiseDeterministicFailure(
 		PageSyncPageInput page,
 		PageSyncPrePassEntry entry,
-		bool validate) {
+		bool validate,
+		string? environmentName,
+		bool deferContentVerdict) {
 		if (PageSchemaTypeExtensions.FromBody(page.Body) == PageSchemaType.Mobile) {
 			return null;
 		}
-		if (validate) {
-			PageSyncValidationResult validationResult = ValidateBody(page.Body, page.Resources);
+		// This whole pre-pass runs BEFORE any page in the batch is saved, so for a page whose schema an
+		// EARLIER page also targets, the content verdict here is computed against a schema state the batch
+		// is about to change: the earlier save can register exactly the label resource this page is about
+		// to be rejected for. Defer the content half to the in-lock gate, which runs after that save and
+		// re-runs the identical chain. The LINT half below still runs, because it is a pure function of
+		// the body and the in-lock path materialises lint warnings only (issue #1464 review).
+		if (validate && !deferContentVerdict) {
+			// THIS is the gate that used to reject the second save of a page whose label key is only
+			// persisted: it rejects a body before the command - whose own gate #1320 already fixed - is ever
+			// resolved, so the shared fix was unreachable from sync-pages (issue #1464). The provider is
+			// lazy: a clean body still pays no round trip.
+			PageSyncValidationResult validationResult = ValidateBody(
+				page.Body, page.Resources, BuildPersistedResourceKeyProvider(environmentName, page.SchemaName));
 			if (!validationResult.MarkersOk || !validationResult.JsSyntaxOk || !validationResult.ContentOk) {
 				return new PageSyncPageResult {
 					SchemaName = page.SchemaName,
 					Success = false,
-					Validation = validationResult,
+					Validation = AppendPersistedResourceKeyWarning(
+						validationResult, environmentName, page.SchemaName),
 					Error = "Client-side validation failed: " +
 						string.Join("; ", validationResult.Errors ?? Array.Empty<string>())
 				};
@@ -629,6 +661,7 @@ public sealed class PageSyncTool(
 		PageSyncPageInput page,
 		PageSamplingReview samplingReview,
 		(string? Vmc, string? Mc)? preResolvedMobileBase,
+		string? environmentName,
 		out PageSyncValidationResult validationResult) {
 		validationResult = null;
 		if (PageSchemaTypeExtensions.FromBody(page.Body) == PageSchemaType.Mobile) {
@@ -656,12 +689,20 @@ public sealed class PageSyncTool(
 					Error = "Mobile page validation failed: " + string.Join("; ", validationResult.Errors ?? [])
 				};
 		} else {
-			validationResult = ValidateBody(page.Body, page.Resources);
+			// Same provider as the pre-pass gate. A SUCCESSFUL read is cached for the scope, so this second
+			// run of the chain normally costs no additional Creatio round trip; a failed one is not cached,
+			// so a transient pre-pass failure still gets a fresh attempt here.
+			validationResult = ValidateBody(page.Body, page.Resources,
+				BuildPersistedResourceKeyProvider(environmentName, page.SchemaName));
 			if (!validationResult.MarkersOk || !validationResult.JsSyntaxOk || !validationResult.ContentOk)
 				return new PageSyncPageResult {
 					SchemaName = page.SchemaName,
 					Success = false,
-					Validation = validationResult,
+					// Consistent with the pre-pass and command-level rejections: a failed persisted-key read
+					// never changes this verdict, but leaving it unexplained is exactly the misleading
+					// "resource is neither auto-provided nor registered" issue #1320 opened with.
+					Validation = AppendPersistedResourceKeyWarning(
+						validationResult, environmentName, page.SchemaName),
 					SamplingReview = samplingReview,
 					Error = "Client-side validation failed: " +
 						string.Join("; ", validationResult.Errors ?? Array.Empty<string>())
@@ -690,7 +731,8 @@ public sealed class PageSyncTool(
 			// PageSyncOperationOptions and skip the second run.
 			PageSyncValidationResult validationResult = null;
 			if (opOptions.Validate) {
-				PageSyncPageResult validationFailure = TryValidatePage(page, opOptions.SamplingReview, opOptions.PreResolvedMobileBase, out validationResult);
+				PageSyncPageResult validationFailure = TryValidatePage(page, opOptions.SamplingReview,
+					opOptions.PreResolvedMobileBase, opOptions.EnvironmentName, out validationResult);
 				if (validationFailure != null)
 					return validationFailure;
 			}
@@ -723,13 +765,27 @@ public sealed class PageSyncTool(
 				return new PageSyncPageResult {
 					SchemaName = page.SchemaName,
 					Success = false,
-					Validation = validationResult,
+					// The command-level gate is the path where a failed persisted-key read is most
+					// misleading: its rejection reads "resource 'X' is neither auto-provided ... nor
+					// registered" with no hint that the rescue could not run.
+					Validation = AppendPersistedResourceKeyWarning(
+						validationResult, opOptions.EnvironmentName, page.SchemaName),
 					Error = updateResponse.Error,
 					Conflict = updateResponse.Conflict,
 					ConflictDetails = updateResponse.ConflictDetails
 				};
 			}
 			validationResult = AppendCommandWarnings(validationResult, updateResponse.Warnings);
+			// Appended AFTER the command has run, matching update-page (which appends it after
+			// ExecuteWithCleanLog): the COMMAND-level gate can be the first reader of a page's persisted
+			// keys - the before-save preprocessing pipeline can change the body between the tool gates and
+			// it - and reading the scope earlier would miss the reason that read recorded.
+			validationResult = AppendPersistedResourceKeyWarning(
+				validationResult, opOptions.EnvironmentName, page.SchemaName);
+			// The save REGISTERED keys, so any cached read of this schema is now stale. A second page on
+			// the same schema later in this batch would otherwise be validated against the pre-save key set
+			// and rejected for a key this save just created.
+			persistedResourceKeyReader.Invalidate(updateOptions);
 			if (opOptions.Verify && opOptions.GetCommand != null)
 				return VerifySavedPage(page, opOptions, updateResponse, validationResult);
 			if (refreshBaseline) {
@@ -774,6 +830,55 @@ public sealed class PageSyncTool(
 		};
 	}
 
+	/// <summary>
+	/// Builds the lazy persisted-resource-key provider for one page. The delegate is handed to the
+	/// content-validation chain and invoked ONLY for an unresolved label-resource rejection.
+	/// </summary>
+	/// <param name="environmentName">The batch's target environment; may be blank under credential passthrough.</param>
+	/// <param name="schemaName">The page whose schema is read.</param>
+	/// <returns>A provider that yields the persisted keys, or an empty set when the read failed.</returns>
+	/// <summary>
+	/// Builds the lazy persisted-resource-key provider for one page. The delegate is handed to the
+	/// content-validation chain and invoked ONLY for an unresolved label-resource rejection.
+	/// </summary>
+	/// <param name="environmentName">The batch's target environment; may be blank under credential passthrough.</param>
+	/// <param name="schemaName">The page whose schema is read.</param>
+	/// <returns>A provider that yields the persisted keys, or an empty set when the read failed.</returns>
+	/// <remarks>
+	/// The read runs OFF the per-tenant lock on the pre-pass path, deliberately — the same reason
+	/// <c>PreResolveMobileBases</c> resolves there: a network read inside the lock serialises every other
+	/// same-tenant page write on this one's latency. Fail-soft in the same shape as
+	/// <c>ResolvePlatformVersionAsync</c>: the resolver's own rejection (an unresolvable environment, a
+	/// mixed credential-passthrough input) becomes a recorded warning, never an exception that fails a
+	/// page whose body may well be valid — and a failed read is not cached, so the in-lock gate that runs
+	/// moments later still gets its own attempt.
+	/// </remarks>
+	private Func<IReadOnlySet<string>> BuildPersistedResourceKeyProvider(string? environmentName, string schemaName) {
+		PageUpdateOptions target = BuildPersistedResourceKeyTarget(environmentName, schemaName);
+		return McpPersistedResourceKeyGate.BuildProvider(
+			persistedResourceKeyReader, logger, target,
+			() => commandResolver.Resolve<PageUpdateCommand>(target));
+	}
+
+	// The options object is a CACHE KEY as much as a request: it must carry the same environment and
+	// schema the per-page save will, or the two gates would address different entries.
+	private static PageUpdateOptions BuildPersistedResourceKeyTarget(string? environmentName, string schemaName) =>
+		new() { Environment = environmentName, SchemaName = schemaName };
+
+	/// <summary>
+	/// Puts a failed persisted-key read for this page on its own validation warning channel. A failed read
+	/// only leaves the stricter verdict standing, so it is never an error — but without it the caller sees
+	/// only "resource 'X' is neither auto-provided ... nor registered" and never why the rescue was skipped.
+	/// </summary>
+	private PageSyncValidationResult AppendPersistedResourceKeyWarning(
+		PageSyncValidationResult validation, string? environmentName, string schemaName) {
+		string warning = persistedResourceKeyReader.GetFailureWarning(
+			BuildPersistedResourceKeyTarget(environmentName, schemaName));
+		return string.IsNullOrWhiteSpace(warning)
+			? validation
+			: AppendCommandWarnings(validation, [warning]);
+	}
+
 	private (string MetaFilePath, bool RefreshBaseline, string BaselineWarning, PageUpdateOptions UpdateOptions)
 		BuildUpdateRequest(
 		PageSyncPageInput page,
@@ -790,7 +895,11 @@ public sealed class PageSyncTool(
 			Environment = opOptions.EnvironmentName,
 			Force = page.Force ?? false,
 			Validate = opOptions.Validate,
-			NotifyDesignerPresence = false
+			NotifyDesignerPresence = false,
+			// Passed VERBATIM. TryArm is the single normalization chokepoint for a pinned checksum (it
+			// trims, and collapses whitespace-only to "not supplied"), so trimming here too would be a
+			// second copy of a rule that must not be able to diverge from update-page's.
+			ExpectedChecksum = page.Checksum
 		};
 		(string metaFilePath, bool refreshBaseline, string baselineWarning) =
 			pageBaselineGuard.TryArm(updateOptions, opOptions.OutputDirectory);
@@ -957,7 +1066,21 @@ public sealed class PageSyncTool(
 			.Select(PageBodyAstLinter.FormatFinding)
 			.ToArray();
 
-	private static PageSyncValidationResult ValidateBody(string body, string? resources) {
+	/// <summary>
+	/// Runs the deterministic content-validation chain for one page body.
+	/// </summary>
+	/// <param name="body">The page body being saved.</param>
+	/// <param name="resources">The page's <c>resources</c> argument.</param>
+	/// <param name="persistedResourceKeysProvider">
+	/// Supplies the resource keys already persisted on the target schema. Invoked ONLY for an unresolved
+	/// label-resource rejection — the one verdict a persisted key can change — so a clean body never pays
+	/// the round-trip. Pass <see langword="null"/> from a caller that must stay offline; that only makes
+	/// the verdict stricter.
+	/// </param>
+	/// <returns>The per-page validation envelope.</returns>
+	private static PageSyncValidationResult ValidateBody(
+		string body, string? resources,
+		Func<IReadOnlySet<string>>? persistedResourceKeysProvider = null) {
 		SchemaValidationResult markerResult = SchemaValidationService.ValidateMarkerIntegrity(body);
 		// The legacy brace-counter ValidateJsSyntax is intentionally NOT
 		// called here. Every web body reaching this method already parsed
@@ -971,10 +1094,13 @@ public sealed class PageSyncTool(
 		// BuildValidationResult below.
 		SchemaValidationResult contentResult = GetContentValidationResult(body, markerResult);
 		Dictionary<string, string>? explicitResources = TryParseExplicitResources(resources, contentResult);
-		SchemaValidationResult fieldResult = RunContentValidation(
-			contentResult, () => SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources));
-		SchemaValidationResult insertSelfConsistencyResult = RunContentValidation(
-			contentResult, () => SchemaValidationService.ValidateInsertedFieldSelfConsistency(body, explicitResources));
+		// ONE entry point for both label-resource validators, exactly as update-page and the command-level
+		// gate use: a key already stored in the schema's localizableStrings resolves at runtime whether or
+		// not this call repeats it in `resources`, and validating against `resources` alone rejected the
+		// second and every later save of the same page (issues #1320, #1464).
+		(SchemaValidationResult fieldResult, SchemaValidationResult insertSelfConsistencyResult) =
+			RunFieldLabelResourceValidation(
+				contentResult, body, explicitResources, persistedResourceKeysProvider);
 		SchemaValidationResult widgetCaptionResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateInsertedWidgetCaptionResources(body, explicitResources));
 		SchemaValidationResult localizableTextResult = RunContentValidation(
@@ -1071,6 +1197,21 @@ public sealed class PageSyncTool(
 		contentResult.Errors.Add("resources must be a valid JSON object string");
 		return null;
 	}
+
+	/// <summary>
+	/// Runs the two label-resource-aware field validators through their shared entry point, honouring the
+	/// same "only when the content chain is still clean" gate as every other check in this chain.
+	/// </summary>
+	private static (SchemaValidationResult StandardFields, SchemaValidationResult InsertedFields)
+		RunFieldLabelResourceValidation(
+			SchemaValidationResult contentResult,
+			string body,
+			IReadOnlyDictionary<string, string>? explicitResources,
+			Func<IReadOnlySet<string>>? persistedResourceKeysProvider) =>
+		contentResult.IsValid
+			? SchemaValidationService.ValidateFieldLabelResources(
+				body, explicitResources, persistedResourceKeysProvider)
+			: (new SchemaValidationResult { IsValid = true }, new SchemaValidationResult { IsValid = true });
 
 	private static SchemaValidationResult RunContentValidation(
 		SchemaValidationResult contentResult,
@@ -1204,14 +1345,17 @@ public sealed record PageSyncPageInput(
 	string Body,
 
 	[property: JsonPropertyName("resources")]
-	[property: Description(McpToolDescriptions.PageResources)]
+	[property: Description(McpToolDescriptions.PageResources + McpToolDescriptions.PageResourcesAdditive)]
 	string? Resources = null,
 	[property: JsonPropertyName("optional-properties")]
 	[property: Description("JSON array of {key, value} objects to merge into schema optionalProperties")]
 	string? OptionalProperties = null,
 	[property: JsonPropertyName("force")]
 	[property: Description("Skip the external-modification (checksum) conflict check for THIS page and deliberately overwrite out-of-band changes. Set true ONLY after the user explicitly confirms overwriting changes made outside this session. Default: false")]
-	bool? Force = null
+	bool? Force = null,
+	[property: JsonPropertyName("checksum")]
+	[property: Description("Optional. The `editable.checksum` from the get-page this page's edit is based on. It becomes the authoritative conflict baseline for THIS page; pass it on every save that follows a get-page. Re-sending a conflict response's `actualChecksum` here is NOT a resolution - it is equivalent to force=true and needs the same explicit user confirmation.")]
+	string? Checksum = null
 );
 
 /// <summary>
