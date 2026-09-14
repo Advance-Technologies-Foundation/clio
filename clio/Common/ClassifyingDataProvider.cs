@@ -46,7 +46,8 @@ namespace Clio.Common;
 /// in <c>ErrorMessage</c> after <c>GetItems</c> / <c>ExecuteProcess</c> swallowed it. None of the three
 /// is an <see cref="OperationCanceledException"/>, and none of them may be reported as one: doing so
 /// would hide every timeout from the operator and make <c>CompilationHistoryPoller</c>'s
-/// <c>exception is not OperationCanceledException</c> filter tolerate a dead environment forever.
+/// <c>exception is not OperationCanceledException || ct.IsCancellationRequested</c> filter tolerate a
+/// dead environment forever.
 /// </para>
 /// <para>
 /// <see cref="IDataProvider.GetSysSettingValue{T}"/> and <see cref="IDataProvider.GetFeatureEnabled"/>

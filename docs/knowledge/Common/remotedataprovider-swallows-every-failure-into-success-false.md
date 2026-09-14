@@ -116,7 +116,7 @@ Three consequences worth knowing before writing code against this:
 **What breaks if you ignore the timeout fact** — re-raising that text as an `OperationCanceledException`
 (the change issue #1377 originally proposed) would hide **every** timeout: the operator would be told a
 shutdown happened where a 30-minute select actually expired, and `CompilationHistoryPoller.TryPollOnce`,
-whose filter is `when (exception is not OperationCanceledException)`, would stop counting the round at
+whose filter is `when (exception is not OperationCanceledException || ct.IsCancellationRequested)`, would stop counting the round at
 all — so a stand that answers nothing would be polled forever instead of the poller giving up on its
 failure budget. The characterization tests in
 `clio.tests/Common/ClassifyingDataProviderTests.cs` (`*KeepASwallowedTimeout*`) exist to stop exactly
