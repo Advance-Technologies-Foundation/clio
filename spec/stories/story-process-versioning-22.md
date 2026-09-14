@@ -48,7 +48,8 @@ reason (1.6.1.1); `ProcessBuildHandler` never did.
 
 ## Verification
 
-Measured on a live stand (`creatio_2`, CrtProcessBuilder **1.6.2.3** cut from this branch, 2026-09-11),
+Measured on a live stand (`creatio_2`, CrtProcessBuilder cut from this branch, 2026-09-11; re-verified
+on 1.6.2.8 after the review rounds),
 over the real MCP path. `create-business-process` with a valid graph whose conditional flow names a
 parameter the process does not declare:
 
@@ -75,7 +76,7 @@ pins. Before is code plus tests; after is a stand.
 The wording of `DescribeRollback` is untouched: it was never wrong, it was being asked a question it
 could not be asked.
 
-**Restamped to 1.6.2.3 and cut**, once it was settled that the branch merges with a MERGE commit
-rather than a squash: the producing commit `d0af0fc` therefore stays reachable, which is the only
-thing that made cutting before the merge safe. Tagged `crtprocessbuilder-1.6.2.3`. Story 23 carries
-the clio side.
+**Restamped and cut**, once it was settled that the branch merges with a MERGE commit rather than a
+squash: the producing commit therefore stays reachable, which is the only thing that made cutting
+before the merge safe. The number moved with each review round — the current cut is **1.6.2.8**,
+tagged `crtprocessbuilder-1.6.2.8`. Story 23 carries the clio side and the rule for choosing it.

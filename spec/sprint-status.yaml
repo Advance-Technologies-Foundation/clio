@@ -3683,14 +3683,14 @@ stories:
     note: >-
       The message manual testing reported, raised separately by QA. ProcessBuildHandler never
       honoured the saveAttempted precondition ProcessVersionSaveHandler took in 1.6.1.1. Cut as
-      CrtProcessBuilder 1.6.2.3 and verified on a stand: a server-side pre-save refusal returns the
+      CrtProcessBuilder 1.6.2.8 (the number moved with every review round) and verified on a stand: a server-side pre-save refusal returns the
       reason alone, and SysSchema answers count 0 for the probe afterwards.
     depends_on: []
     blocks:
       - story-process-versioning-23
 
   - id: story-process-versioning-23
-    title: "Rebundle CrtProcessBuilder at 1.6.2.3 with the create-path fix"
+    title: "Rebundle CrtProcessBuilder with the create-path fix"
     feature: "process-versioning"
     jira: "ENG-94374"
     repo: "clio"
@@ -3701,7 +3701,7 @@ stories:
     adr: spec/adr/adr-process-versioning.md
     test_plan: spec/test-plans/tp-process-versioning.md
     note: >-
-      Done: cut at 1.6.2.3 from crt-process-builder d0af0fc, tagged crtprocessbuilder-1.6.2.3. The
+      Done: cut at 1.6.2.8 from crt-process-builder d1d42e6, tagged crtprocessbuilder-1.6.2.8. The
       feature branch is merged with a MERGE commit rather than squashed, so the producing commit stays
       reachable - which is what made cutting before the merge safe. 1.6.2.3 rather than 1.6.1.10:
       ENG-95986 is unmerged and has already cut 1.6.2.1/1.6.2.2, and a lower bundled version is

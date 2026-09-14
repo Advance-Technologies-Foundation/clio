@@ -281,11 +281,26 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 	/// Bounding it by the REMAINING time closes that: the package read can never be the reason the outer
 	/// budget is exceeded, only the reason it is reached slightly sooner.
 	/// </para>
+	/// <para>
+	/// HALF of what is left, not the whole of it. Spending exactly the remainder makes the two waits expire
+	/// together, and the outer one then reports a read that established nothing while the facts it would have
+	/// published were already in hand - the same loss, arriving by a race instead of by arithmetic. Half is
+	/// generous rather than precise on purpose: this bound only bites once the family read has already spent
+	/// more than two thirds of the budget, and in that tail the names are the cheap thing to give up.
+	/// </para>
+	/// <para>
+	/// In the ordinary case it changes nothing - a family read of a few hundred milliseconds against the
+	/// ten-second default leaves far more than twice the slice, so the slice is what applies.
+	/// </para>
 	/// </remarks>
 	private TimeSpan PackageReadBudget(Stopwatch elapsed) {
 		TimeSpan remaining = _readBudget - elapsed.Elapsed;
+		if (remaining <= TimeSpan.Zero) {
+			return TimeSpan.Zero;
+		}
+		TimeSpan usable = TimeSpan.FromTicks(remaining.Ticks / 2);
 		TimeSpan slice = TimeSpan.FromTicks(_readBudget.Ticks / 3);
-		return remaining <= TimeSpan.Zero ? TimeSpan.Zero : (slice < remaining ? slice : remaining);
+		return slice < usable ? slice : usable;
 	}
 
 	/// <summary>

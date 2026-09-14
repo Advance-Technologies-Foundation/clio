@@ -551,6 +551,56 @@ public sealed class ProcessVersionLibReaderTests {
 	}
 
 	[Test]
+	[Description("A SysPackage read that is merely SLOW loses the NAMES and nothing else. Guarded converts a package read that FAILS into an absent name but cannot convert one that is still running, so without a separate budget a stalled package table spends the version read's own time and the OUTER expiry discards facts that were already computed. Every other test here answers instantly, so the slice is unreachable from them: deleting the WithinBudget wrapper leaves them all green.")]
+	public void Read_Should_KeepTheVersionFacts_When_ThePackageReadStalls() {
+		// Arrange
+		using BlockingSchemaDataProvider provider = new(ViewRows(), PackageSchemaName);
+		ProcessVersionLibReader sut = new(provider, TimeSpan.FromSeconds(1));
+
+		// Act
+		ProcessVersionFacts facts = sut.Read(RootUId.ToString());
+
+		// Assert
+		facts.Version.Should().Be(0,
+			because: "the view answered; only the package table is stuck, and the two are separate reads");
+		facts.ActiveVersionSource.Should().Be("process-library-view",
+			because: "an authority answered, which is what separates this from a read that established nothing");
+		facts.Versions.Should().NotBeNull().And.OnlyContain(v => v.PackageName == null,
+			because: "the names are what the stall costs");
+		facts.Warning.Should().Contain("package names could not be read",
+			because: "the caller has to know WHY it is answering in UIds");
+		facts.Warning.Should().NotContain("did not complete within",
+			because: "that is the OUTER expiry - reporting it here would mean the version facts were lost too, "
+				+ "which is the failure the slice exists to prevent");
+	}
+
+	[Test]
+	[Description("The slice is bounded by what is LEFT, not by a fraction of the total. The package read starts only after the family read, so a third of the TOTAL on top of a family read that already spent most of it pushes past the outer bound - the outer wait expires and discards version facts that were computed. Reverting PackageReadBudget to the slice alone reddens this and nothing else.")]
+	public void Read_Should_KeepTheVersionFacts_When_TheFamilyReadAlreadySpentMostOfTheBudget() {
+		// Arrange
+		using BlockingSchemaDataProvider provider = new(ViewRows(), PackageSchemaName) {
+			DelayBeforeViewAnswer = TimeSpan.FromMilliseconds(1600)
+		};
+		ProcessVersionLibReader sut = new(provider, TimeSpan.FromSeconds(2));
+
+		// Act
+		// The ROW entry point, so the view is read once: the by-UId overload also pays the identity query,
+		// and two delays would expire the outer budget before the package read is ever reached - which is a
+		// different failure from the one under test.
+		ProcessVersionFacts facts = sut.Read(RowObject(RootUId, "InvoiceVisaProcess", 0, true, RootUId));
+
+		// Assert
+		facts.Version.Should().Be(0,
+			because: "the family read finished inside the budget, so its facts are established whatever the "
+				+ "package read then did with the little that was left");
+		facts.Warning.Should().Contain("package names could not be read",
+			because: "the names are the only thing a stalled package table may cost");
+		facts.Warning.Should().NotContain("did not complete within",
+			because: "a slice taken from the TOTAL rather than the REMAINING time is what pushes the whole read "
+				+ "past its bound, and that loss is the one under test");
+	}
+
+	[Test]
 	[Description("A read that is merely SLOW degrades exactly like one that failed. RemoteDataProvider is constructed with no timeout, so without a clio-side budget the only bound was the 120 s MCP read deadline — and by the time that fires the whole describe is lost along with the graph it had already built.")]
 	public void Read_Should_ReportNotEstablished_When_TheReadOutrunsItsBudget() {
 		// Arrange
@@ -654,5 +704,65 @@ public sealed class ProcessVersionLibReaderTests {
 
 		public IExecuteProcessResponse ExecuteProcess(IExecuteProcessRequest request) =>
 			inner.ExecuteProcess(request);
+	}
+
+	/// <summary>The canned view rows the budget tests read a family out of.</summary>
+	private static List<Dictionary<string, object>> ViewRows() => [
+		Row(RootUId, "InvoiceVisaProcess", version: 0, isActive: true, rootUId: RootUId)
+	];
+
+	/// <summary>
+	/// Answers the view from a canned set and BLOCKS one schema until disposal.
+	/// </summary>
+	/// <remarks>
+	/// The blocked read is what no other fixture here can produce: <see cref="DataProviderMock"/> answers
+	/// instantly, so a budget that is never reached is a budget no assertion can see - both the slice and its
+	/// remaining-time bound delete cleanly with the suite green.
+	/// <para>
+	/// A gate released on Dispose rather than a sleep-to-completion: the test asserts on the reader's own
+	/// expiry, so it must not also wait for the blocked call, and a fixed sleep would trade one timing
+	/// assumption for a slower one. <see cref="DelayBeforeViewAnswer"/> exists for the second case, where the
+	/// point is that the FAMILY read has already spent most of the budget before the package read starts.
+	/// </para>
+	/// </remarks>
+	private sealed class BlockingSchemaDataProvider(
+		List<Dictionary<string, object>> viewRows, string blockedSchemaName) : IDataProvider, IDisposable {
+		private readonly ManualResetEventSlim _release = new(false);
+
+		public TimeSpan DelayBeforeViewAnswer { get; init; } = TimeSpan.Zero;
+
+		public IItemsResponse GetItems(ISelectQuery selectQuery) {
+			if (string.Equals(selectQuery?.RootSchemaName, blockedSchemaName, StringComparison.OrdinalIgnoreCase)) {
+				_release.Wait();
+				return new CannedItemsResponse([]);
+			}
+			if (DelayBeforeViewAnswer > TimeSpan.Zero) {
+				_release.Wait(DelayBeforeViewAnswer);
+			}
+			return new CannedItemsResponse(viewRows);
+		}
+
+		public IDefaultValuesResponse GetDefaultValues(string schemaName) => null;
+
+		public IExecuteResponse BatchExecute(List<IBaseQuery> queries) => null;
+
+		public T GetSysSettingValue<T>(string sysSettingCode) => default;
+
+		public bool GetFeatureEnabled(string featureCode) => false;
+
+		public IExecuteProcessResponse ExecuteProcess(IExecuteProcessRequest request) => null;
+
+		public void Dispose() {
+			_release.Set();
+			_release.Dispose();
+		}
+	}
+
+	private sealed class CannedItemsResponse(List<Dictionary<string, object>> items) : IItemsResponse {
+		public bool Success => true;
+
+		public string ErrorMessage => null;
+
+		public List<Dictionary<string, object>> Items => items;
 	}
 }
