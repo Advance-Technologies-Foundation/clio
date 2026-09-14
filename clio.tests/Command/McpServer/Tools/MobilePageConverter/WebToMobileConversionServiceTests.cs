@@ -2981,6 +2981,43 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("O16: WithDeclaredElementLayouts folds a declared element's OWN layoutConfig into the placement map a positional (:top/:bottom) rule reads — the probed mobile template contributes nothing here (AnalyzeDeclaredElements never supplies mobileTemplateLayoutConfigs), so the row PlacePositionalGroups uses for the declared Tabs strip can only have come from the declaration's own values.")]
+	public void Analyze_ShouldPlaceSiblingsAgainstADeclaredElementsOwnLayoutConfig() {
+		// Arrange — Tabs is declared with its own layoutConfig (row 2); a positional pair anchors on it via the
+		// web CardContentWrapper container, and BottomSibling sits after CardContentWrapper in the same array.
+		JArray page = JArray.Parse("""
+			[ { "name": "MainContainer", "type": "crt.FlexContainer", "items": [
+			    { "name": "CardContentWrapper", "type": "crt.GridContainer", "items": [
+			        { "name": "GeneralInfoTab", "type": "crt.TabContainer", "items": [
+			            { "name": "NameField", "type": "crt.Input", "label": "Name" } ] } ] },
+			    { "name": "BottomSibling", "type": "crt.Input", "label": "Bottom" } ] } ]
+			""");
+		TemplateMappingRule rule = DeclaredElementsRuleWith(
+			declaredElements: new JsonArray(
+				new JsonObject {
+					["name"] = "Tabs", ["type"] = "crt.TabPanel", ["parentName"] = "MainContainer",
+					["values"] = new JsonObject {
+						["layoutConfig"] = new JsonObject { ["row"] = 2, ["column"] = 1, ["colSpan"] = 1, ["rowSpan"] = 1 }
+					}
+				},
+				new JsonObject { ["name"] = "GeneralInfoTab", ["type"] = "crt.TabContainer", ["parentName"] = "Tabs", ["index"] = 0 }),
+			containers: new JsonArray(
+				new JsonObject { ["web"] = "MainContainer", ["mobile"] = "MainContainer" },
+				new JsonObject { ["web"] = "GeneralInfoTab", ["mobile"] = "GeneralInfoTab" },
+				new JsonObject { ["web"] = "CardContentWrapper:bottom", ["mobile"] = "Tabs:bottom" }),
+			keepStripDeclarations: false);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule, webTemplateTree: new JArray());
+
+		// Assert
+		Declared(guide, "Tabs").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(2,
+			because: "the declared Tabs strip keeps the row its own declaration gave it — nothing is placed above it");
+		Element(guide, "BottomSibling").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(3,
+			because: "the sibling below a row-2 anchor takes row 3 — a value only WithDeclaredElementLayouts could have supplied, since the probed template contributes no layoutConfig at all in this helper");
+	}
+
+	[Test]
 	[Description("With NO mobile template probe the declarations are still emitted — creation does not depend on reading the template — and every containers pair is a merge onto them exactly as with the probe: the web Tabs merges onto the declared strip, the right profile area onto the declared right-panel tab whose synthesized Area receives the right-panel widget, and nothing is skipped. An unreadable template changes only the probe-dependent admission gates, never what the rule creates.")]
 	public void Analyze_ShouldEmitDeclaredElementsAndMergePairsOntoThem_WhenMobileTemplateWasNotProbed() {
 		// Arrange
@@ -3086,6 +3123,38 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "with its pair removed the right area is pruned as chrome and its widget falls back to the default placement");
 		guide.Constraints.Should().Contain(c => c.Contains(DeclaredElementsExtraTab) && c.Contains("already uses this name"),
 			because: "the skipped declaration is reported with its reason so the rule or the page can be renamed");
+	}
+
+	[Test]
+	[Description("O16: pairedOntoItself exempts a declared name from the page-name-collision check when a containers pair maps a web element of the SAME name onto it — the page's own element and the declared mobile element are the same conceptual element seen from two sides, not a naming conflict. Contrast with Analyze_ShouldSkipDeclaredElement_WhenPageOwnsTheName, where no such pair exists and the collision IS rejected.")]
+	public void Analyze_ShouldAdmitDeclaredElement_WhenPageOwnsTheNameButAContainersPairMapsItOntoItself() {
+		// Arrange — the page authors its own "SelfPaired" element, and the rule both declares a mobile "SelfPaired"
+		// under Tabs and pairs the web "SelfPaired" onto it by the SAME name.
+		JArray page = DeclaredElementsPage(withRightWidget: false, withPageTab: false);
+		JObject generalGrid = (JObject)page.SelectToken("$..[?(@.name == 'GridContainer_hq3ajyu')]")!;
+		((JArray)generalGrid["items"]!).Add(new JObject {
+			["name"] = "SelfPaired", ["type"] = "crt.Label", ["caption"] = "Self"
+		});
+		TemplateMappingRule rule = DeclaredElementsRuleWith(
+			declaredElements: new JsonArray(
+				new JsonObject { ["name"] = "SelfPaired", ["type"] = "crt.Label", ["parentName"] = "Tabs", ["index"] = 2 }),
+			containers: new JsonArray(
+				new JsonObject { ["web"] = "MainContainer", ["mobile"] = "MainContainer" },
+				new JsonObject { ["web"] = "CardContentWrapper", ["mobile"] = "MainContainer" },
+				new JsonObject { ["web"] = "Tabs", ["mobile"] = "Tabs" },
+				new JsonObject { ["web"] = "GeneralInfoTab", ["mobile"] = "GeneralInfoTab" },
+				new JsonObject { ["web"] = "SelfPaired", ["mobile"] = "SelfPaired" }));
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule);
+
+		// Assert
+		Declared(guide, "SelfPaired").Operation.Should().Be("insert",
+			because: "the same-name containers pair exempts it from the page-name-collision check, unlike a plain name clash");
+		WebElement(guide, "SelfPaired").Operation.Should().Be("merge",
+			because: "the page's own element merges onto the declaration by name, exactly like any other containers pair");
+		guide.Constraints.Should().NotContain(c => c.Contains("SelfPaired") && c.Contains("already uses this name"),
+			because: "pairedOntoItself means the two names are the same element seen from two sides, not a conflict to report");
 	}
 
 	[Test]
