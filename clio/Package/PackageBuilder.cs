@@ -120,9 +120,27 @@
 		/// </remarks>
 		private static void StopMonitoring(CancellationTokenSource cts, Thread pollThread, Task httpTask) {
 			cts.Cancel();
-			pollThread.Join();
+			JoinPollThread(pollThread);
 			ObserveCancelledRequest(httpTask, cts);
 		}
+
+		/// <summary>
+		/// Joins the poll thread under the same bound <see cref="CompilationActivityWatcher.StopJoinTimeout"/>
+		/// puts on its own poll thread.
+		/// </summary>
+		/// <remarks>
+		/// An UNBOUNDED join is the #1422 hang: <c>PollOnce</c> is a synchronous ATF.Repository call with no
+		/// timeout and no cancellation token, so a stand that accepts the connection and never answers pins
+		/// build-package past its own 10-minute timeout indefinitely. Cancelling the token does not help - it
+		/// is only read BETWEEN rounds. Issue #1376 extends the poll thread's failing lifetime from about
+		/// 10 s to about 93 s, which widens the window this can be observed in, so the bound
+		/// CompilationActivityWatcher already carries is ported across rather than walked past (PR #1477
+		/// review). A thread left behind is a background thread reading a cancelled token; it cannot keep the
+		/// process alive, and the compile itself is unaffected either way - the server keeps compiling.
+		/// </remarks>
+		/// <param name="pollThread">The history-poll thread to join.</param>
+		private static void JoinPollThread(Thread pollThread) =>
+			pollThread.Join(CompilationActivityWatcher.StopJoinTimeout);
 
 		/// <summary>
 		/// Reads the compilation-history baseline, degrading to <c>null</c> when the read fails.
@@ -172,17 +190,21 @@
 				Exception pollFault = Volatile.Read(ref pollFaultBox[0]);
 				if (pollFault is not null) {
 					StopMonitoring(cts, pollThread, httpTask);
-					//The carrier is CHAINED, not interpolated. Interpolating its message made
+					//The fault is CHAINED, not interpolated. Interpolating its message made
 					//DescribeOuterContext treat this wrapper's own text as redundant (outer.Message contains
 					//the carrier's) and drop it, so the line lost every mention of the compile - the wrappers'
-					//context was destroyed by the very interpolation meant to carry it.
+					//context was destroyed by the very interpolation meant to carry it. Chained, EVERY link
+					//prints: this wrapper names the operation and the poller's own wrapper below it carries
+					//the give-up window and the failed-round count. That middle link survives only because
+					//DescribeChainAboveCarrier walks the whole chain - before issue #1376 the renderer kept
+					//just the outermost message and this three-link shape lost its diagnosis silently.
 					throw new InvalidOperationException(
 						"Package compilation could not be monitored", pollFault);
 				}
 
 				if (httpTask.IsCompleted) {
 					cts.Cancel();
-					pollThread.Join();
+					JoinPollThread(pollThread);
 					httpTask.GetAwaiter().GetResult();
 					return;
 				}

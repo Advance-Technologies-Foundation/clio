@@ -98,3 +98,13 @@ Do not add a `using Clio.Command.McpServer;` to a file under `clio/Common`: the 
 `McpServer` → `Common`, never back. Two edges still run the wrong way, both older than issue #1333 and
 untouched by the move: `CreatioUninstaller`'s `Clio.Command.McpServer.Progress` import and
 `McpWorker/StaleWorkerRegistry`'s `Clio.Command.McpServer.Tools` import.
+
+**Update (issue #1376, PR #1477)** — `ExceptionReadableMessageExtension.ComposeWithInnerDetail` renders an
+inner exception's message into the console line through `UntrustedText.ForConsole`: scrubbed and capped,
+not fenced. The fence is for a field a MODEL reads as trusted content; this renderer's output is the CLI
+line a person reads, where "[untrusted-source-text begin] ... [end]" around an ordinary platform message
+reads as clio malfunctioning (the same reason `ISysSettingsManager` prints `ForConsole` on its
+`set-syssetting` error path). `CompilationHistoryPoller.Describe` uses `Fenced` for the opposite reason:
+its warning is captured by `CompileCreatioTool` into an MCP result. Both treatments are deliberate, and
+which one applies is decided by the SINK, not by the class of text.
+

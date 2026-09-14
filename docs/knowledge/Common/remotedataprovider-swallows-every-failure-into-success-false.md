@@ -74,9 +74,10 @@ Three consequences worth knowing before writing code against this:
   `new Thread(...)` from `PackageBuilder.CompileWithPolling`, and an unhandled exception on a dedicated
   thread terminates the whole clio process — so before the tolerance was added, one timed-out OData read
   would have killed clio mid-compile and skipped every cleanup step. `Poll` now retries and gives up
-  only after a run of consecutive failures; `PackageBuilder` additionally captures the fault inside the
-  thread lambda and observes it on the main thread. Any new background consumer of `IDataProvider` needs
-  the same two guards.
+  only once rounds have been failing for longer than `CompilationPollingOptions.GiveUpWindow` (90 s,
+  issue #1376 — a duration, not a round count, because the 1/2/5 s backoff makes a count meaningless);
+  `PackageBuilder` additionally captures the fault inside the thread lambda and observes it on the main
+  thread. Any new background consumer of `IDataProvider` needs the same two guards.
 
 - **The WRITE path is not this provider, and since issue #1378 it no longer degrades to it.**
   `SysSettingsManager`'s `InsertSysSettingRequest` / `PostSysSettingsValues` calls go through
