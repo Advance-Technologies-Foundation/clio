@@ -123,6 +123,12 @@ public sealed class SchemaConvergenceService(IToolCommandResolver commandResolve
 			return new SchemaConvergencePlan(SchemaConvergenceOutcome.Collision, [], [], existing.PackageName, message);
 		}
 
+		if (target.ExtendParent && !string.Equals(existing.ParentSchemaName, target.SchemaName, StringComparison.OrdinalIgnoreCase)) {
+			return new SchemaConvergencePlan(SchemaConvergenceOutcome.Collision, [], [], existing.PackageName,
+				$"Error: schema '{target.SchemaName}' already exists in package '{existing.PackageName}' but is not a same-name replacement. "
+				+ "Choose a different target package to create the replacement.");
+		}
+
 		// Same package: a mismatched immediate parent means the caller asked for a different kind of
 		// schema than what already exists (e.g. a BaseEntity-derived entity vs. the requested BaseLookup).
 		// Fail explicitly instead of reconciling lookup columns onto the wrong-kind schema. A replacement

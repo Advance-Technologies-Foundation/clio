@@ -3,12 +3,16 @@ description: clio reads column default values through EntitySchemaDesignerServic
 applies-to:
   - clio/Command/EntitySchemaDesigner/
 ticket: ENG-91318
-date: 2026-08-19
+date: 2026-09-11
 ---
 
-**What is true** — clio reads entity schema design items, column default values among them, through
+**What is true** — the package-scoped path reads entity schema design items, column default values among them, through
 the designer service (`GetSchemaDesignItem` and its siblings under
 `clio/Command/EntitySchemaDesigner/`). Nothing on the designer read path requests OData `$metadata`.
+Package-free discovery uses the merged `RuntimeEntitySchemaRequest` instead. Its SystemValue
+`defValue.value` can be the evaluated current user/contact/time; `valueSource` is the selector.
+Identify that selector using the native designer `GetSystemValues(dataValueTypeUId)` catalog,
+not an OData `SysValue` entity or the evaluated value. Verified on a disposable Creatio 10.1/.NET 8 stand.
 The recurring suggestion to switch defaults onto OData `$metadata`, because other teams read schema
 that way, was evaluated and rejected.
 

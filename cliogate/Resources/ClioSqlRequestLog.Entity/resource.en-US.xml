@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Resources Culture="en-US">
+	<Group Type="String">
+		<Items>
+			<Item Name="Caption" Value="Clio SQL request log" />
+			<Item Name="Columns.Completed.Caption" Value="Completed" />
+			<Item Name="Columns.DurationMs.Caption" Value="Duration (ms)" />
+			<Item Name="Columns.Error.Caption" Value="Error" />
+			<Item Name="Columns.Name.Caption" Value="Name" />
+			<Item Name="Columns.RowCount.Caption" Value="Row count" />
+			<Item Name="Columns.Sql.Caption" Value="SQL" />
+			<Item Name="EventsProcessSchema.Caption" Value="Business process" />
+		</Items>
+	</Group>
+</Resources>

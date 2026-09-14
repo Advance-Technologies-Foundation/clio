@@ -4,13 +4,13 @@ applies-to:
   - cliogate/Files/cs/SQLFunctions.cs
   - clio/Command/SqlScriptCommand.cs
 ticket: ENG-94402
-date: 2026-08-19
+date: 2026-09-11
 ---
 
 **What is true** — some Creatio stands refuse READ SQL through cliogate while still accepting writes. The server
 setting is `Terrasoft.Core.GlobalAppSettings.DenyCustomQueryApiUsage`; when it is on, `CustomQuery.ExecuteReader`
 throws and `clio execute-sql-script` reports
-`Usage of CustomQuery.ExecuteReader is denied by application security settings`. Writes are unaffected because
+`Usage of CustomQuery.ExecuteReader is denied by application security settings` as an error with exit code 1, including through MCP and in silent mode. Lowercase, unindented writes are unaffected because
 `SQLFunctions.ExecuteSQL` routes a script starting with `update` / `insert` / `delete` to `query.Execute()` and only
 everything else (i.e. `select`) to `ExecuteReader`.
 

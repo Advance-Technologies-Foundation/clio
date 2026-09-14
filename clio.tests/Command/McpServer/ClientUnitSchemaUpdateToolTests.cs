@@ -30,7 +30,7 @@ public class ClientUnitSchemaUpdateToolTests {
 
 		// Act
 		ClientUnitSchemaUpdateResponse response = tool.UpdateSchema(
-			new ClientUnitSchemaUpdateArgs("NetworkUtilities", "var x = 1;", null, false, "dev", null, null, null));
+			new ClientUnitSchemaUpdateArgs("NetworkUtilities", "var x = 1;", null, false) { EnvironmentName = "dev" });
 
 		// Assert
 		response.Success.Should().BeFalse(because: "the resolved command reported a failure");
@@ -58,7 +58,7 @@ public class ClientUnitSchemaUpdateToolTests {
 
 		// Act
 		ClientUnitSchemaUpdateResponse response = tool.UpdateSchema(
-			new ClientUnitSchemaUpdateArgs("NetworkUtilities", "var x = 1;", null, false, "dev", null, null, null));
+			new ClientUnitSchemaUpdateArgs("NetworkUtilities", "var x = 1;", null, false) { EnvironmentName = "dev" });
 
 		// Assert
 		response.Success.Should().BeFalse(because: "a resolution failure must surface as a failed response, not an exception");

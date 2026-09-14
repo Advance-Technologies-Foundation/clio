@@ -83,7 +83,7 @@ public sealed class CreateEntitySchemaTool(
 				 Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more. For the schema-design workflow call get-guidance with name app-modeling.
 				 """)]
 	public async Task<CommandExecutionResult> CreateEntitySchema(
-		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns, parent-schema-name (optional, defaults to BaseEntity unless extend-parent is true), extend-parent (optional, requires parent-schema-name when true)")] [Required] CreateEntitySchemaArgs args
+		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns, parent-schema-name (optional, defaults to schema-name for replacements or BaseEntity otherwise), extend-parent (optional; an explicit parent must match schema-name)")] [Required] CreateEntitySchemaArgs args
 	) {
 		ApplicationDataForgeResult? dataForge = enrichmentService is not null
 			? enrichmentService.Enrich(
@@ -597,16 +597,12 @@ public sealed class GetEntitySchemaColumnPropertiesTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Returns structured properties for the specified remote Creatio entity schema column. "
-		+ "Omit package-name to discover the column in the merged runtime schema across all packages; supply "
-		+ "package-name to preserve the exact package-scoped designer read. In merged mode, track-changes, "
-		+ "localizable-text, and do-not-control-integrity are null because the runtime endpoint does not expose "
-		+ "them, and source describes parent-schema inheritance rather than package ownership. "
-		+ "For a lookup column with a Const default, the returned default-value-config is enriched with "
-		+ "display-value (the referenced record's display value, resolved in the connected user's culture) "
-		+ "so the GUID can be verified without a second query. When the display value cannot be resolved, "
-		+ "record-resolution carries an honest marker (no-access, not-found-or-no-access, or "
-		+ "display-column-unavailable) and display-value is null.")]
+	[Description("Reads one column. Omit package-name for merged discovery; supply it for package-layer metadata. "
+		+ "Merged track-changes, localizable-text and do-not-control-integrity are null; source means inheritance. "
+		+ "default-value-config adds display-value for lookup Const records and native SystemValue source captions "
+		+ "on supported column types, preserving GUIDs. Unavailable captions carry record-resolution (Const) or "
+		+ "source-resolution (SystemValue); see get-tool-contract for markers. Captions identify sources, not "
+		+ "evaluated defaults. Before edits, read get-guidance name=existing-app-maintenance.")]
 	public EntitySchemaColumnPropertiesInfo GetEntitySchemaColumnProperties(
 		[Description("Parameters: environment-name, schema-name, and column-name are required; package-name is optional for merged discovery")] [Required]
 		GetEntitySchemaColumnPropertiesArgs args) {
@@ -777,11 +773,11 @@ public sealed record CreateEntitySchemaArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("parent-schema-name")]
-	[property: Description("Optional parent schema name. Defaults to BaseEntity when omitted (not applied with extend-parent); a parentless schema is not reachable over OData.")]
+	[property: Description("Optional parent schema name. Defaults to schema-name for replacements, or BaseEntity otherwise. An explicit replacement parent must match schema-name.")]
 	string? ParentSchemaName = null,
 
 	[property: JsonPropertyName("extend-parent")]
-	[property: Description("Create a replacement schema. Requires parent-schema-name.")]
+	[property: Description("Create a same-name replacement in the target package. Omitted parent-schema-name is inferred from schema-name; an existing replacement in this package is rejected.")]
 	bool ExtendParent = false,
 
 	IEnumerable<CreateEntitySchemaColumnArgs>? Columns = null
@@ -1254,15 +1250,15 @@ public sealed record GetEntitySchemaPropertiesArgs(
 	[property: Required]
 	string EnvironmentName,
 
-	[property: JsonPropertyName("package-name")]
-	[property: Description("Optional target package name. Omit to read the merged/effective schema with columns "
-		+ "from ALL packages (recommended for column discovery). Supply only to inspect a single package layer's slice.")]
-	string? PackageName,
-
 	[property: JsonPropertyName("schema-name")]
 	[property: Description("Entity schema name")]
 	[property: Required]
-	string SchemaName
+	string SchemaName,
+
+	[property: JsonPropertyName("package-name")]
+	[property: Description("Optional target package name. Omit to read the merged/effective schema with columns "
+		+ "from ALL packages (recommended for column discovery). Supply only to inspect a single package layer's slice.")]
+	string? PackageName = null
 );
 
 /// <summary>

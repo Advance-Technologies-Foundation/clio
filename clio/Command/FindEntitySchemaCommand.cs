@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Serialization;
+using System.Threading;
 using Clio.Common;
 using Clio.Package;
 using CommandLine;
@@ -107,18 +108,38 @@ public class FindEntitySchemaCommand : Command<FindEntitySchemaOptions>
 	/// </summary>
 	/// <param name="options">Search criteria and environment settings.</param>
 	/// <returns>Read-only list of matching entity schema search results.</returns>
-	public virtual IReadOnlyList<EntitySchemaSearchResult> FindSchemas(FindEntitySchemaOptions options) {
+	public virtual IReadOnlyList<EntitySchemaSearchResult> FindSchemas(FindEntitySchemaOptions options) =>
+		FindSchemas(options, Timeout.Infinite);
+
+	/// <summary>
+	/// Queries <c>SysSchema</c> on the remote environment with an explicit per-request timeout.
+	/// </summary>
+	/// <remarks>
+	/// The bounded overload exists for callers that run this search inside an already-failing operation - the
+	/// entity-schema designer builds its error message from it. There the default
+	/// <see cref="Timeout.Infinite"/> is the wrong contract: an environment that accepts the connection and
+	/// then stops answering would block the caller indefinitely inside a diagnostic, which in a long-lived
+	/// MCP server holds the tenant open with no way back. The interactive <c>find-entity-schema</c> command
+	/// keeps the unbounded behavior, so its transient re-send budget is unchanged.
+	/// </remarks>
+	/// <param name="options">Search criteria and environment settings.</param>
+	/// <param name="requestTimeoutMs">
+	/// Per-request timeout in milliseconds, or <see cref="Timeout.Infinite"/> for no bound.
+	/// </param>
+	/// <returns>Read-only list of matching entity schema search results.</returns>
+	public virtual IReadOnlyList<EntitySchemaSearchResult> FindSchemas(FindEntitySchemaOptions options,
+		int requestTimeoutMs) {
 		ArgumentNullException.ThrowIfNull(options);
 		Validate(options);
 		IReadOnlyList<EntitySchemaSearchResult> results = ExecuteFindSchemasQuery(
-			BuildFindSchemasQuery(options, includeSearchPattern: true));
+			BuildFindSchemasQuery(options, includeSearchPattern: true), requestTimeoutMs);
 		if (results.Count == 0 && !string.IsNullOrWhiteSpace(options.SearchPattern)) {
 			// Issue #1213: a just-created schema was visible by exact identity but not by the
 			// server-side contains filter. Cross-check only an empty pattern result and apply the
 			// advertised ordinal-ignore-case substring comparison locally.
 			string searchPattern = options.SearchPattern.Trim();
 			IReadOnlyList<EntitySchemaSearchResult> broaderResults = ExecuteFindSchemasQuery(
-				BuildFindSchemasQuery(options, includeSearchPattern: false));
+				BuildFindSchemasQuery(options, includeSearchPattern: false), requestTimeoutMs);
 			results = broaderResults
 				.Where(result => result.SchemaName.Contains(searchPattern, StringComparison.OrdinalIgnoreCase))
 				.ToList();
@@ -130,11 +151,12 @@ public class FindEntitySchemaCommand : Command<FindEntitySchemaOptions>
 		return results;
 	}
 
-	private IReadOnlyList<EntitySchemaSearchResult> ExecuteFindSchemasQuery(object query) {
+	private IReadOnlyList<EntitySchemaSearchResult> ExecuteFindSchemasQuery(object query, int requestTimeoutMs) {
 		FindSchemasResponse response = ExecuteSelectQuery<FindSchemasResponse>(
 			_applicationClient,
 			_serviceUrlBuilder,
-			query);
+			query,
+			requestTimeoutMs);
 		return response.Rows
 			.Select(row => new EntitySchemaSearchResult(
 				row.Name ?? string.Empty,

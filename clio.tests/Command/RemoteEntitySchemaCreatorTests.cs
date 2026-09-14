@@ -333,9 +333,13 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	[Description("Preserves virtual state inherited by a replacement schema when the caller omits the virtual option.")]
 	public void Create_ReplacementOfVirtualParent_PreservesInheritedVirtualState()
 	{
+		// Arrange
 		string saveBody = null;
 		bool saveDbStructureCalled = false;
 		SetupApplicationClient((url, body) => {
+			if (url.Contains("SelectQuery", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"rows\":[]}";
+			}
 			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
 			}

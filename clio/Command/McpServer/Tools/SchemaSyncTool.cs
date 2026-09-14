@@ -635,6 +635,10 @@ public sealed class SchemaSyncTool(
 		string parentSchemaName, bool extendParent, string operationName, string tenantKey, RetryBudget retryBudget) {
 		try {
 			string context = $"{operationName} operation for schema '{op.SchemaName}'";
+			if (extendParent && !string.IsNullOrWhiteSpace(parentSchemaName)
+				&& !string.Equals(op.SchemaName, parentSchemaName, StringComparison.OrdinalIgnoreCase)) {
+				throw new InvalidOperationException(CreateEntitySchemaOptions.ReplacementNameMismatchMessage);
+			}
 			IReadOnlyDictionary<string, string> titleLocalizations = EntitySchemaLocalizationContract.RequireTitleLocalizations(
 				op.TitleLocalizations,
 				op.LegacyTitle,
@@ -1467,11 +1471,11 @@ public sealed record SchemaSyncOperation(
 	Dictionary<string, string>? TitleLocalizations = null,
 
 	[property: JsonPropertyName("parent-schema-name")]
-	[property: Description("Parent schema name (for create-entity)")]
+	[property: Description("Parent schema name for create-entity. Defaults to schema-name when extend-parent is true, or BaseEntity otherwise. An explicit replacement parent must match schema-name.")]
 	string? ParentSchemaName = null,
 
 	[property: JsonPropertyName("extend-parent")]
-	[property: Description("Create a replacement schema (for create-entity)")]
+	[property: Description("Create or reconcile a same-name replacement in the target package (for create-entity). The parent defaults to schema-name.")]
 	bool ExtendParent = false,
 
 	[property: JsonPropertyName("columns")]

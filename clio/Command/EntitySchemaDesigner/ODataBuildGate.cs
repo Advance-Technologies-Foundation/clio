@@ -102,9 +102,21 @@ internal sealed class ODataBuildGate : IODataBuildGate
 			return;
 		}
 		if (isRunning is null) {
-			// Unknown, not idle: the server has no such method. Recorded so a second WaitUntilIdle on this
-			// gate returns without re-probing an environment that has already said it cannot answer.
+			// Unknown, not idle: the server did not answer this probe with JSON. Recorded so a second
+			// WaitUntilIdle on this gate returns without re-probing an environment that has already said it
+			// cannot answer.
+			//
+			// The warning is not optional. "No such method" is only one of the shapes that lands here - a
+			// markup body from a gateway, a WAF block or a transient server fault produces the same null, and
+			// self-disabling on those silently drops the wait for a running OData rebuild. Without a line in
+			// the log, a publish that then fails on a locked configuration file carries no hint that the gate
+			// was never able to run.
 			_statusMethodSupported = false;
+			_logger.WriteWarning(
+				"The OData entities build status could not be read - the environment did not answer " +
+				$"IsODataBuildRunning with a usable response. Starting '{operationName}' without waiting for " +
+				"a running build. If it fails on a locked configuration file, retry once the build has " +
+				"finished.");
 			return;
 		}
 		_statusMethodSupported = true;

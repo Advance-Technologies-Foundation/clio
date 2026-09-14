@@ -48,7 +48,7 @@ public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompila
 	public void Execute_ShouldReturnOne_WhenServiceThrowsException(){
 		// Arrange
 		const string expectedErrorMessage = "error";
-		_applicationClientMock.When(x => x.ExecuteGetRequest(Arg.Any<string>()))
+		_applicationClientMock.When(x => x.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>()))
 			.Do(x => throw new Exception(expectedErrorMessage));
 		LastCompilationLogCommand command = Container.GetRequiredService<LastCompilationLogCommand>();
 
@@ -70,7 +70,7 @@ public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompila
 		// Arrange
 		string desiredOutputContent = File.ReadAllText(expectedOutput);
 		string inputContent = File.ReadAllText(input);
-		_applicationClientMock.ExecuteGetRequest(Arg.Any<string>())
+		_applicationClientMock.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(inputContent);
 		LastCompilationLogCommand command = Container.GetRequiredService<LastCompilationLogCommand>();
 
@@ -92,7 +92,7 @@ public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompila
 	public void Execute_ShouldReturnRawJson_WhenRawOptionUsed(string input){
 		// Arrange
 		string inputContent = File.ReadAllText(input);
-		_applicationClientMock.ExecuteGetRequest(Arg.Any<string>())
+		_applicationClientMock.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(inputContent);
 		LastCompilationLogCommand command = Container.GetRequiredService<LastCompilationLogCommand>();
 
@@ -113,7 +113,7 @@ public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompila
 		const string input = """
 			{"errors":[],"buildResult":0,"success":true}
 			""";
-		_applicationClientMock.ExecuteGetRequest(Arg.Any<string>()).Returns(input);
+		_applicationClientMock.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>()).Returns(input);
 		LastCompilationLogCommand command = Container.GetRequiredService<LastCompilationLogCommand>();
 
 		// Act
@@ -123,7 +123,8 @@ public class LastCompilationLogCommandTestFixture : BaseCommandTests<LastCompila
 		response.success.Should().BeTrue(because: "the typed result must preserve Creatio's success flag");
 		response.errors.Should().BeEmpty(because: "the typed result must preserve the diagnostics collection");
 		_applicationClientMock.Received(1).ExecuteGetRequest(Arg.Is<string>(url =>
-			url.EndsWith("/api/ConfigurationStatus/GetLastCompilationResult", StringComparison.Ordinal)));
+				url.EndsWith("/api/ConfigurationStatus/GetLastCompilationResult", StringComparison.Ordinal)),
+			CompilationResultReader.ReadTimeoutMs, Arg.Any<int>(), Arg.Any<int>());
 	}
 
 }
