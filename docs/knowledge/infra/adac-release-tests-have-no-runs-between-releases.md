@@ -1,7 +1,8 @@
 ---
 description: The CAADT (ADAC Agents tests) TeamCity configurations run only on release days, so a regression between two releases has no CI measurement to date it
 applies-to:
-  - docs/knowledge/McpServer/copilot-cli-sampling-answers-only-from-its-tui.md
+  - clio/Command/McpServer/Tools/PageUpdateTool.cs
+  - clio/Command/McpServer/Tools/PageSyncTool.cs
 ticket: ENG-98526
 date: 2026-09-14
 ---
@@ -16,7 +17,6 @@ and the red run of 2026-09-14 (build 16023286) the WHOLE project ran zero builds
 600-1300 AI credits per configuration), so the suite is reserved for release validation.
 
 **What breaks if you ignore it** — "it worked on the 3rd and hung on the 14th" is an eleven-day
-blind window, not a date. ENG-98526 could not be attributed to any change on any side because of
-it: the harness revision was byte-identical, clio's two revisions behaved identically, and the
-client version was never recorded by the harness at all. When you need to date a behaviour flip in
-these tests, do not expect CI to bisect it — reproduce the client behaviour directly instead.
+blind window, not a date, and the harness does not record the Copilot CLI version either. When you
+need to date a behaviour flip seen in these tests, do not expect CI to bisect it — reproduce the
+client behaviour directly instead.

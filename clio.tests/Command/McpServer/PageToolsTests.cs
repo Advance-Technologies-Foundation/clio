@@ -2945,7 +2945,7 @@ public class PageToolsTests
 		response.Success.Should().BeFalse(
 			because: "the exact incident body that triggered ENG-89796 must NEVER pass — letting it through is a regression to the pre-fix behaviour update-page silently writing a broken page");
 		response.Error.Should().Contain("JavaScript syntax error",
-			because: "the failure message must name the actual class of problem so the operator does not chase a phantom marker / sampling issue when the parser rejected the body");
+			because: "the failure message must name the actual class of problem so the operator does not chase a phantom marker issue when the parser rejected the body");
 		response.Error.Should().Contain("NOT sent to Creatio",
 			because: "the operator must know the broken body did not reach the server (and therefore did not corrupt a saved page) without having to inspect logs");
 		applicationClient.ReceivedCalls().Should().BeEmpty(

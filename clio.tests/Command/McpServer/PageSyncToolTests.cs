@@ -360,7 +360,7 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A body with a JavaScript syntax error fails fast BEFORE the markers/sampling chain AND no remote save call is made — proves the deterministic gate short-circuits before TryUpdatePage by asserting ReceivedCalls on the IApplicationClient substitute is empty")]
+	[Description("A body with a JavaScript syntax error fails fast BEFORE the marker chain AND no remote save call is made — proves the deterministic gate short-circuits before TryUpdatePage by asserting ReceivedCalls on the IApplicationClient substitute is empty")]
 	public async Task SyncPages_Should_FailFast_WhenBodyHasJavaScriptSyntaxError() {
 		// Arrange — wire a real PageUpdateCommand so the IApplicationClient
 		// substitute behind it can confirm no remote save call was made.
@@ -387,7 +387,7 @@ public sealed class PageSyncToolTests {
 		response.Pages[0].Success.Should().BeFalse(
 			because: "the per-page result must mirror the overall failure");
 		response.Pages[0].Error.Should().Contain("JavaScript syntax error",
-			because: "the failure message must name the actual class of problem so the operator does not chase a phantom marker/sampling issue");
+			because: "the failure message must name the actual class of problem so the operator does not chase a phantom marker issue");
 		response.Pages[0].Error.Should().Contain("NOT sent to Creatio",
 			because: "the operator must know the broken body did not reach the server (and therefore did not corrupt a saved page) without having to read the code");
 		applicationClient.ReceivedCalls().Should().BeEmpty(

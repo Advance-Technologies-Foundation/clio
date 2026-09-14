@@ -22,7 +22,7 @@ namespace Clio.Command.McpServer.Tools;
 /// </summary>
 [McpServerToolType]
 [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
-	Justification = "DI composition root: sync-pages requires nine constructor-injected collaborators, including "
+	Justification = "DI composition root: sync-pages requires eight constructor-injected collaborators, including "
 		+ "the ILogger added so the batch base-resolution path has the same diagnostic trail as update-page and the "
 		+ "interprocess file gate that serialises its .clio-pages writes against other clio processes. A "
 		+ "parameter object would obscure the tool's injected contract; this mirrors the S107 suppressions on other "
@@ -1112,7 +1112,6 @@ public sealed record PageSyncArgs(
 	[property: JsonPropertyName("verify")]
 	[property: Description("Read back each page after saving to confirm the update. Default: false")]
 	bool? Verify = null,
-
 
 	[property: JsonPropertyName("output-directory")]
 	[property: Description("Optional. Directory to anchor verified-page .clio-pages output under — typically your project/workspace root. When omitted, the workspace root is auto-detected by walking up for .clio/workspaceSettings.json; if running from the home directory with no workspace found, output falls back to the clio home root rather than $HOME. Only relevant when verify=true.")]

@@ -53,7 +53,7 @@ actually declare tools. The declaration count of 189 is unaffected and reproduce
 `BudgetPolicy` follows `Location` and `Lifetime` exactly: it is `none` on all 36 in-process rows,
 `parent-kill (extended)` on all 7 sticky rows, `terminal-stage` on the 2 `deploy`-family rows and
 `parent-kill (default)` on the remaining 144. `RequiresClientRequests` is `progress` on 15 rows and
-`sampling` on 2 (§5.2); `SharedFileResource` is non-`none` on 8 rows (§5.3).
+`sampling` on 0 since ENG-98526 (§5.2); `SharedFileResource` is non-`none` on 8 rows (§5.3).
 
 The worker count moved by −4 net, from **six** `Location` corrections in the same direction (five tools that
 turned out never to resolve an environment: `add-data-binding-row`, `remove-data-binding-row`,
@@ -90,8 +90,9 @@ over 35 commits. The census reproduces; it is not stale.
   sticky ones; `terminal-stage` for `deploy-creatio` / `uninstall-creatio`, where ClioRing waits for the
   authoritative terminal stage and a generic kill could leave a half-installed environment (rule 4);
   `none` in-process.
-- **`RequiresClientRequests`** — `sampling` where the tool calls `server.SampleAsync`; `progress` where it
-  emits `notifications/progress` or stage events. Both mean the relay must be full-duplex for that call.
+- **`RequiresClientRequests`** — `sampling` where the tool calls `server.SampleAsync` (no tool does since
+  ENG-98526); `progress` where it emits `notifications/progress` or stage events. Both mean the relay must
+  be full-duplex for that call.
 - **`SharedFileResource`** — the concrete artifact two processes could now corrupt (rule 8).
 
 **Cross-field invariants (enforced by the Stage 1 coverage test, TC-U-108).** The rules above constrain each
@@ -184,9 +185,11 @@ found while annotating and did not exist as a checked invariant before.
 
 ### 5.2 Full-duplex requirement
 
-- **Sampling — exactly two callers:** `update-page` and `sync-pages`, both via `PageBodySamplingService`
-  (`PageBodySamplingService.cs:130`). A relay that is not full-duplex degrades these to `Skipped=true`
-  silently — no error, just a quietly worse answer (rule 1). **Confirmed unchanged** by per-tool review.
+- **Sampling — no callers left.** This row read "exactly two callers: `update-page` and `sync-pages`, both
+  via `PageBodySamplingService`" until ENG-98526 removed the page semantic review; both tools now declare
+  `RequiresClientRequests = None` and no production code calls `server.SampleAsync`. The relay's
+  full-duplex sampling bridge is kept, but it now guards a capability nothing exercises, so rule 1's silent
+  degradation can no longer be reached from a clio tool.
 - **Progress / stage events — 15 tools** (corrected from the Stage-0 count of 14): `compile-creatio`,
   `create-app`, `create-app-section`, `delete-app-section`, `deploy-creatio`, `get-app-info`,
   `install-process-builder`, `list-app-sections`, `restart-by-credentials`, `restart-by-environment-name`,
@@ -581,8 +584,9 @@ it declares. That is expected while stages 7 and 8 are unbuilt, but it means a w
 five degrades nothing today and will degrade something later, without a test noticing. The coverage
 test asserts presence, not correctness, and cannot close this.
 
-`RequiresClientRequests` was nonetheless verified correct: exactly one production sampling call site,
-consumed by exactly the two tools that declare `Sampling`; and the fifteen `Progress` declarations map
+`RequiresClientRequests` was nonetheless verified correct at the time: exactly one production sampling call
+site, consumed by exactly the two tools that declared `Sampling` (both removed by ENG-98526); and the
+fifteen `Progress` declarations map
 onto exactly the emit sites, including the two that call the notification API directly rather than
 through the heartbeat, and the two that forward stage events.
 
