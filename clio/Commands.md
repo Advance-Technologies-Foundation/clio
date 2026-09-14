@@ -619,6 +619,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="uninstall-creatio"></a>
 <a id="uc"></a>
 - [`uninstall-creatio`](docs/commands/uninstall-creatio.md) - Uninstall by registered EnvironmentPath with all-site and shared-pool-safe IIS cleanup, `uc`
+<a id="uninstall-identity"></a>
+- [`uninstall-identity`](docs/commands/uninstall-identity.md) - Remove the recorded local IdentityService while preserving Creatio and its database
 <a id="upload-license"></a>
 <a id="license"></a>
 <a id="load-license"></a>
