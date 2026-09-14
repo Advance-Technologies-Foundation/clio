@@ -264,9 +264,9 @@ public class ExceptionReadableMessageExtensionTestCase
 			because: "the JSON-quoted shape is the one issue #1505 measured - it must not reach the console");
 		result.Should().NotContain("db.internal",
 			because: "the connection-string host is redacted in the JSON shape exactly as in the bare shape");
-		result.Should().Contain("password=[redacted]",
+		result.Should().Contain("\"password\":\"[redacted]\"",
 			because: "the key is kept so the line still reads sensibly while the value is replaced");
-		result.Should().Contain("server=[redacted]",
+		result.Should().Contain("\"server\":\"[redacted]\"",
 			because: "the same placeholder policy as the MCP path (ClioRunTool.RedactFailureContent) applies");
 	}
 
