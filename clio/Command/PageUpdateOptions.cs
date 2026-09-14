@@ -213,7 +213,7 @@
 				PageUpdateResponse validationError = ValidateInput(
 					options, context.SchemaType, explicitResources,
 					() => _persistedResourceKeyReader
-						.Read(options, () => ReadPersistedResourceKeys(options, context)).Keys);
+						.Read(options, () => ReadPersistedResourceKeys(context)).Keys);
 				if (validationError != null) { response = validationError; return false; }
 				return options.DryRun
 					? TryCompleteDryRun(options, context, explicitResources, out response)
@@ -292,7 +292,7 @@
 					// misleading "resource is neither auto-provided nor registered" (issue #1320).
 					return LogPersistedResourceKeyFailure(resolutionFailure?.Error);
 				}
-				return ReadPersistedResourceKeys(options, context);
+				return ReadPersistedResourceKeys(context);
 			} catch (Exception ex) when (ex is not OperationCanceledException) {
 				return LogPersistedResourceKeyFailure(ex.Message);
 			}
@@ -302,7 +302,6 @@
 		/// Reads the resource keys already persisted on the schema's <c>localizableStrings</c>, for a
 		/// caller that has ALREADY resolved the target schema context.
 		/// </summary>
-		/// <param name="options">The pending write request. Used for logging context only.</param>
 		/// <param name="context">The resolved target schema.</param>
 		/// <returns>The keys, and the reason when the read produced none.</returns>
 		/// <remarks>
@@ -319,8 +318,7 @@
 		/// being read rather than by the identity of one options instance (issue #1464).
 		/// </para>
 		/// </remarks>
-		private PersistedResourceKeyRead ReadPersistedResourceKeys(
-			PageUpdateOptions options, EditableSchemaContext context) {
+		private PersistedResourceKeyRead ReadPersistedResourceKeys(EditableSchemaContext context) {
 			try {
 				if (context.IsCreateReplacing) {
 					// Nothing is persisted yet on a schema this save is about to create.
