@@ -2995,6 +2995,39 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A declaration skipped because the PROBED mobile template already provides that element does NOT take the containers pair targeting it down with it: the template element exists, so the pair stays a valid merge twin and the web content walks into the template element instead of falling back to the default placement. Only a skip whose mobile side will not exist removes its pairs.")]
+	public void Analyze_ShouldKeepPair_WhenSkippedDeclarationCollidesWithTheTemplateElementItTargets() {
+		// Arrange — a stale declaration of AreaProfileContainer (an element BaseMobilePageTemplateTree() genuinely has)
+		// left in the rule alongside a pair that maps the web right area onto that same template element.
+		JArray page = DeclaredElementsPage(withRightWidget: true, withPageTab: false);
+		TemplateMappingRule rule = DeclaredElementsRuleWith(
+			new JsonArray(
+				new JsonObject { ["name"] = "AreaProfileContainer", ["type"] = "crt.GridContainer", ["parentName"] = "MainContainer" }),
+			new JsonArray(
+				new JsonObject { ["web"] = "MainContainer", ["mobile"] = "MainContainer" },
+				new JsonObject { ["web"] = "CardContentWrapper", ["mobile"] = "MainContainer" },
+				new JsonObject { ["web"] = "Tabs", ["mobile"] = "Tabs" },
+				new JsonObject { ["web"] = "GeneralInfoTab", ["mobile"] = "GeneralInfoTab" },
+				new JsonObject { ["web"] = "RightAreaProfileContainer", ["mobile"] = "AreaProfileContainer" }));
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule);
+
+		// Assert
+		guide.ElementMap.Should().NotContain(e => e.DeclaredByRule,
+			because: "the only declaration collides with a template element and is skipped");
+		guide.Constraints.Should().Contain(c => c.Contains("AreaProfileContainer") && c.Contains("template element wins"),
+			because: "the skip is still reported so the stale declaration can be removed from the rule");
+		ElementMapEntry rightArea = DeclaredElement(guide, "RightAreaProfileContainer");
+		rightArea.Operation.Should().Be("merge",
+			because: "the pair survives the skip: its mobile side is a real template element, so the web area is a merge twin");
+		rightArea.MobileName.Should().Be("AreaProfileContainer",
+			because: "the pair still names the template element as its mobile side");
+		DeclaredElement(guide, DeclaredElementsRightWidget).ParentName.Should().Be("AreaProfileContainer",
+			because: "the right-panel content walks into the template element through the kept pair, not into the default placement");
+	}
+
+	[Test]
 	[Description("A declared element whose parent is neither on the probed mobile template nor created by the conversion (no pair, no page element, no other declaration) is skipped with a reason instead of being emitted with a dangling parent; a declaration whose parent is the skipped one is skipped with it.")]
 	public void Analyze_ShouldSkipDeclaredElement_WhenParentExistsNowhere() {
 		// Arrange
@@ -3178,9 +3211,12 @@ public sealed class WebToMobileConversionServiceTests {
 	/// The bundled right-area rule with its <c>declaredElements</c> replaced — through the JSON contract, so the
 	/// test states the declaration exactly as a rules file would.
 	/// </summary>
-	private static TemplateMappingRule DeclaredElementsRuleWith(JsonArray declaredElements) {
+	private static TemplateMappingRule DeclaredElementsRuleWith(JsonArray declaredElements, JsonArray containers = null) {
 		JsonObject rule = JsonSerializer.SerializeToNode(DeclaredElementsBundledRule())!.AsObject();
 		rule["declaredElements"] = declaredElements;
+		if (containers is not null) {
+			rule["containers"] = containers;
+		}
 		return rule.Deserialize<TemplateMappingRule>()!;
 	}
 

@@ -146,11 +146,12 @@ public static class WebToMobileAnalysisService {
 		bool templateProbeAvailable = mobileTemplateTypesByName is { Count: > 0 };
 		// The declarations are ADMITTED before the fold. One that cannot be applied is skipped here, and every pair
 		// naming it as its mobile side is removed with it (so the web content falls back to the default placement
-		// instead of merging onto, or being created under, a name that will not exist on the mobile page): a
-		// duplicate name, a type the mobile registry does not know, a parent that is neither on the probed template
-		// nor created by this conversion, or a name the source page already uses for an element of its own. Every
-		// skip is reported as one guide constraint; an incomplete entry (no name, type or parent) is not, because
-		// it cannot even be named.
+		// instead of merging onto, or being created under, a name that will not exist on the mobile page): a type
+		// the mobile registry does not know, a parent that is neither on the probed template nor created by this
+		// conversion, or a name the source page already uses for an element of its own. A declaration the probed
+		// template already provides is skipped WITHOUT removing its pairs — that element exists, so the pair is an
+		// ordinary merge target. Every skip is reported as one guide constraint; an incomplete entry (no name, type
+		// or parent) is not, because it cannot even be named.
 		DeclaredElementSelection declaredSelection = SelectDeclaredElements(templateRule, mobileTypes,
 			bundle.ViewConfig, map, templateComponentNames, mobileTypesByName, templateProbeAvailable);
 		IReadOnlyList<DeclaredElementRule> declaredElements = declaredSelection.Accepted;
@@ -2191,7 +2192,8 @@ public static class WebToMobileAnalysisService {
 	/// this name (the template element wins — the rule declares only what the template lacks, it never redefines
 	/// what the template has; decided only when the template was probed, for the same reason as the parent check
 	/// below) — this is the same precedence <see cref="WithDeclaredElements"/> documents for its own maps, enforced
-	/// here so a real template element is never shadowed by a stale or mistaken declaration at emission time; its
+	/// here so a real template element is never shadowed by a stale or mistaken declaration at emission time; a
+	/// <c>containers</c> pair targeting that name is KEPT, since the template element it merges onto exists; its
 	/// type is not a registered mobile component (nothing downstream would catch the typo — the guide would tell
 	/// the caller to insert a component that does not exist); its parent is neither an element of the PROBED mobile
 	/// template, nor another admitted declaration, nor an element this conversion creates (a <c>containers</c>
@@ -2227,9 +2229,10 @@ public static class WebToMobileAnalysisService {
 				continue;
 			}
 			if (templateProbeAvailable && probedTypesByName.ContainsKey(declared.Name)) {
+				// NOT added to removedNames: the template genuinely has this element, so a pair targeting it is a valid
+				// merge target — unlike the skips below, where the mobile side will not exist.
 				skipped.Add($"{declared.Name}: the probed mobile template already has an element with this name "
 					+ "(the template element wins; the rule declares only what the template lacks)");
-				removedNames.Add(declared.Name);
 				continue;
 			}
 			if (!mobileTypes.Contains(declared.Type)) {
