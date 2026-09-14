@@ -4107,29 +4107,27 @@ public static class WebToMobileAnalysisService {
 	/// The producer registers some named types per component rather than globally, so reading only the global
 	/// bag resolves such a type to null — indeterminate — and the caller falls into its degraded branch. This
 	/// mirrors <c>ChartWidgetValidation.MergeChartTypeDefinitions</c>, which is the established precedent in
-	/// this tool family. Returns the global bag unchanged when the component carries none, so the common case
-	/// allocates nothing.
+	/// this tool family. Always rebuilt, never returned unchanged: the bags arrive off the deserializer with
+	/// its case-sensitive comparer, so handing one back would resolve a named type that differs only in case
+	/// from its own key to null — the indeterminate lookup this method exists to remove.
 	/// </remarks>
 	private static IReadOnlyDictionary<string, JsonElement> MergeTypeDefinitions(
 		IReadOnlyDictionary<string, JsonElement> global,
 		IReadOnlyDictionary<string, JsonElement> perComponent) {
-		if (perComponent is null || perComponent.Count == 0) {
-			return global;
-		}
-		if (global is null || global.Count == 0) {
-			return perComponent;
-		}
-		// Indexer assignment, not the copy constructor: the two bags arrive straight off the deserializer with
-		// their own (case-sensitive) comparers, so a case-only collision must overwrite rather than throw.
+		// Indexer assignment, not the copy constructor: a case-only collision between the two bags must
+		// overwrite rather than throw.
 		var merged = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
-		foreach (KeyValuePair<string, JsonElement> pair in global) {
+		foreach (KeyValuePair<string, JsonElement> pair in global ?? EmptyTypeDefinitions) {
 			merged[pair.Key] = pair.Value;
 		}
-		foreach (KeyValuePair<string, JsonElement> pair in perComponent) {
+		foreach (KeyValuePair<string, JsonElement> pair in perComponent ?? EmptyTypeDefinitions) {
 			merged[pair.Key] = pair.Value;
 		}
 		return merged;
 	}
+
+	private static readonly IReadOnlyDictionary<string, JsonElement> EmptyTypeDefinitions =
+		new Dictionary<string, JsonElement>(0);
 
 	/// <summary>Reads <c>type</c>/<c>default</c> from a wrapped-registry input descriptor JSON element.</summary>
 	private static JsonValueKind? ShapeFromDescriptor(JsonElement descriptor,

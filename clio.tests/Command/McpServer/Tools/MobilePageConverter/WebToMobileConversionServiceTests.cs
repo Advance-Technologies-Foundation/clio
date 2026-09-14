@@ -3333,6 +3333,50 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("ENG-91859: a named type resolves case-insensitively even when only ONE type-definition bag is populated. The registry arrives off System.Text.Json with its default case-sensitive comparer, so a merge that returns a bag unchanged whenever the other side is empty - the common case, since per-component named types are registered only sometimes - keeps that comparer and misses a type differing from its key only in case. That miss lands in the same indeterminate branch that ships an array into a single-config slot and renders the list with no row.")]
+	public void Analyze_NamedSlotType_ResolvesCaseInsensitively_WhenOnlyTheGlobalBagIsPopulated() {
+		// Arrange — crt.List carries NO per-component bag, so the merge sees one populated side only.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "SimilarLeadList", "type": "crt.List", "items": "$SimilarLeadList",
+				  "itemLayout": [ { "name": "Row", "type": "crt.ListItem", "title": "$DS_LeadName" } ] } ] } ]
+			""");
+		var mobileByType = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
+			["crt.List"] = new ComponentRegistryEntry {
+				ComponentType = "crt.List",
+				Inputs = new Dictionary<string, JsonElement> {
+					["items"] = JsonSerializer.SerializeToElement(new { type = "string" }),
+					// Declared in a different case from the key that defines it.
+					["itemLayout"] = JsonSerializer.SerializeToElement(new { type = "mobilelistitemconfig" })
+				}
+			},
+			["crt.ListItem"] = new ComponentRegistryEntry { ComponentType = "crt.ListItem" }
+		};
+		var webByType = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
+			["crt.FlexContainer"] = new ComponentRegistryEntry { ComponentType = "crt.FlexContainer", Container = true }
+		};
+		// Ordinal, not OrdinalIgnoreCase: this is the comparer the deserialized registry actually carries.
+		var globalTypeDefinitions = new Dictionary<string, JsonElement>(StringComparer.Ordinal) {
+			["MobileListItemConfig"] = JsonSerializer.SerializeToElement(new {
+				fields = new { title = new { type = "string" } }
+			})
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: webByType, mobileByType: mobileByType,
+			mobileTypes: Names("crt.FlexContainer", "crt.List", "crt.ListItem"),
+			mobileTypeDefinitions: globalTypeDefinitions);
+
+		// Assert
+		JsonObject values = Element(guide, "SimilarLeadList").MobileValues!.AsObject();
+		values["itemLayout"]!.GetValueKind().Should().Be(JsonValueKind.Object,
+			because: "the slot's named type differs from its definition key only in case, so resolution must "
+				+ "not depend on which bag happened to be populated - a case-sensitive lookup answers "
+				+ "indeterminate and ships the web array wrapper into a slot that holds one config");
+	}
+
+	[Test]
 	[Description("ENG-91859: the grid-to-list verdict guarded end-to-end by MobilePageConversionGuideSandboxE2ETests runs here too, against a SYNTHETIC mobile template bundle pushed through the same production collectors LoadMobileTemplateProbe uses (CollectComponentTypesByName + CollectSlotElementsByOwner). The sandbox test can only assert on a seeded page that converts a grid, and on a stand without one it calls Assert.Ignore - which reads as a pass - so before this test the only end-to-end guard for the change had never executed. Re-derives the three sandbox assertions: no grid-shaped inputs on the crt.List, the row is its own merge entry on the template's element, and no itemLayout inside the parent List's merge.")]
 	public void Analyze_StructuralTwin_FromASyntheticTemplateProbe_SatisfiesTheSandboxVerdict() {
 		// Arrange — the mobile template exactly as the probe would read it off a bundle.
