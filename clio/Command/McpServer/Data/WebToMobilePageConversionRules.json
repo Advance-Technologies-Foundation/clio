@@ -64,7 +64,6 @@
     {
       "web": "PageWithRightAreaAndTabsFreedomTemplate",
       "mobile": "BaseMobilePageTemplate",
-      "note": "Right-area record page onto the base mobile record page, which has NO tab strip. Creation is always explicit here: the strip (Tabs) and its general tab are DECLARED, and the web Tabs / GeneralInfoTab pairs merge onto the declared elements by name; the right profile area becomes a second declared tab. A containers pair never creates an element on its own. The declared strip carries the mobile standard for a converted tab strip (scrollable, transparent body) as its own values.",
       "declaredElements": [
         {
           "name": "Tabs",
@@ -98,6 +97,34 @@
         { "web": "Tabs", "mobile": "Tabs" },
         { "web": "GeneralInfoTab", "mobile": "GeneralInfoTab" },
         { "web": "RightAreaProfileContainer", "mobile": "RightPanelTab" }
+      ]
+    },
+    {
+      "web": "PageWithTopAreaAndTabsFreedomTemplate",
+      "mobile": "BaseMobilePageTemplate",
+      "note": "Top-area record page onto the base mobile record page, which has NO tab strip. The strip (Tabs) and its general tab are DECLARED and the web Tabs / GeneralInfoTab pairs merge onto them by name, exactly as for the right-area template. The web TopAreaProfileContainer has NO pair on purpose: it is pruned as web-template chrome and whatever the page put into it falls back to the default MainContainer placement. A containers pair never creates an element on its own.",
+      "declaredElements": [
+        {
+          "name": "Tabs",
+          "type": "crt.TabPanel",
+          "parentName": "MainContainer",
+          "propertyName": "items",
+          "values": { "scrollable": true, "bodyBackgroundColor": "transparent" }
+        },
+        {
+          "name": "GeneralInfoTab",
+          "type": "crt.TabContainer",
+          "parentName": "Tabs",
+          "propertyName": "items",
+          "index": 0,
+          "values": { "iconPosition": "only-text" },
+          "captionResource": { "key": "GeneralInfoTab_caption", "value": "General information" }
+        }
+      ],
+      "containers": [
+        { "web": "MainContainer", "mobile": "MainContainer" },
+        { "web": "Tabs", "mobile": "Tabs" },
+        { "web": "GeneralInfoTab", "mobile": "GeneralInfoTab" }
       ]
     },
     {

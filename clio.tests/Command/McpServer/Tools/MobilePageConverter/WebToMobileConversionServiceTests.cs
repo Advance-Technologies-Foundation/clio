@@ -3317,7 +3317,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	private static MobilePageConversionGuide AnalyzeDeclaredElements(JArray page, bool mobileTemplateProbed = true,
-		TemplateMappingRule templateRule = null) {
+		TemplateMappingRule templateRule = null, JArray webTemplateTree = null, string webTemplateName = null) {
+		webTemplateName ??= DeclaredElementsWebTemplate;
 		var bundle = new PageBundleInfo {
 			ViewConfig = JsonNode.Parse(page.ToString())!.AsArray(),
 			ViewModelConfig = new JsonObject(),
@@ -3328,13 +3329,14 @@ public sealed class WebToMobileConversionServiceTests {
 					["UsrName_label"] = new JsonObject { ["en-US"] = "Name" },
 					["UsrRightLabel_caption"] = new JsonObject { ["en-US"] = "Right widget" },
 					["UsrExtraTab_caption"] = new JsonObject { ["en-US"] = "Extra" },
-					["UsrExtraField_label"] = new JsonObject { ["en-US"] = "Extra field" }
+					["UsrExtraField_label"] = new JsonObject { ["en-US"] = "Extra field" },
+					["UsrTopWidget_caption"] = new JsonObject { ["en-US"] = "Top widget" }
 				}
 			}
 		};
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
-		templateRule ??= DeclaredElementsBundledRule();
-		JsonArray webTemplate = JsonNode.Parse(DeclaredElementsWebTemplateTree().ToString())!.AsArray();
+		templateRule ??= BundledRule(webTemplateName);
+		JsonArray webTemplate = JsonNode.Parse((webTemplateTree ?? DeclaredElementsWebTemplateTree()).ToString())!.AsArray();
 		Dictionary<string, JObject> webBaselineNodes = WebToMobileAnalysisService.CollectComponentNodesByName(webTemplate);
 		JsonArray mobileTemplate = BaseMobilePageTemplateTree();
 
@@ -3342,7 +3344,7 @@ public sealed class WebToMobileConversionServiceTests {
 			bundle, LiveMobileComponentTypes(), new HashSet<string>(StringComparer.OrdinalIgnoreCase),
 			webByType: new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
 			mobileByType: null, rules, templateRule,
-			sourcePage: "UsrRightArea_FormPage", sourceTemplate: DeclaredElementsWebTemplate,
+			sourcePage: "UsrRightArea_FormPage", sourceTemplate: webTemplateName,
 			suggestedTarget: "UsrRightArea_MobileFormPage",
 			containerNameMap: MobilePageConversionGuideTool.BuildContainerNameMap(templateRule),
 			componentNameMap: MobilePageConversionGuideTool.BuildComponentNameMap(templateRule),
@@ -3357,8 +3359,10 @@ public sealed class WebToMobileConversionServiceTests {
 			webTemplateBaselineNodes: webBaselineNodes);
 	}
 
-	private static TemplateMappingRule DeclaredElementsBundledRule() => WebToMobilePageConversionRulesCatalog.LoadBundled().Templates
-		.Single(t => string.Equals(t.Web, DeclaredElementsWebTemplate, StringComparison.OrdinalIgnoreCase));
+	private static TemplateMappingRule DeclaredElementsBundledRule() => BundledRule(DeclaredElementsWebTemplate);
+
+	private static TemplateMappingRule BundledRule(string webTemplate) => WebToMobilePageConversionRulesCatalog.LoadBundled().Templates
+		.Single(t => string.Equals(t.Web, webTemplate, StringComparison.OrdinalIgnoreCase));
 
 	/// <summary>
 	/// The bundled right-area rule with its <c>declaredElements</c> replaced — through the JSON contract, so the
@@ -3420,6 +3424,133 @@ public sealed class WebToMobileConversionServiceTests {
 		int at = guide.ElementMap.ToList().FindIndex(e => IsWebElement(e, name));
 		at.Should().BeGreaterThanOrEqualTo(0, because: $"web element '{name}' must be in the element map before its position can be compared");
 		return at;
+	}
+
+	// ── PageWithTopAreaAndTabsFreedomTemplate: the same declared strip, no profile-area pair ─────────
+	//
+	// A web record page on PageWithTopAreaAndTabsFreedomTemplate converted to BaseMobilePageTemplate. The web
+	// template holds a profile area ABOVE the tab strip, both directly in a flex MainContainer (no
+	// CardContentWrapper). The bundled rule declares Tabs and GeneralInfoTab exactly like the right-area rule
+	// and pairs the web strip and general tab onto them; TopAreaProfileContainer is deliberately unpaired, so it
+	// is pruned as web-template chrome and the page's widgets in it fall back to MainContainer.
+	// The template shape is hand-written from the live template (get-page on Lock_AS, 2026-09-14).
+
+	private const string TopAreaWebTemplate = "PageWithTopAreaAndTabsFreedomTemplate";
+	private const string TopAreaWidget = "UsrTopWidget";
+
+	[Test]
+	[Description("On PageWithTopAreaAndTabsFreedomTemplate the bundled rule declares the strip and the general tab like the right-area rule: Tabs is a declared crt.TabPanel insert into MainContainer carrying the declared standard, GeneralInfoTab a declared insert at index 0, the web Tabs / GeneralInfoTab are merge twins onto them, the template's general grid is pruned as chrome and the page's field lands in the declared tab's synthesized Area.")]
+	public void Analyze_TopArea_ShouldDeclareTabStripAndGeneralTab_AndHoistGeneralContentIntoTheDeclaredTab() {
+		// Arrange
+		JArray page = TopAreaPage(withTopWidget: false, withPageTab: false);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, webTemplateTree: TopAreaWebTemplateTree(), webTemplateName: TopAreaWebTemplate);
+
+		// Assert
+		ElementMapEntry tabs = Declared(guide, "Tabs");
+		tabs.Operation.Should().Be("insert", because: "the mobile template has no Tabs, so the rule declares one and it is created");
+		tabs.MobileType.Should().Be("crt.TabPanel", because: "the type comes from the declaration");
+		tabs.ParentName.Should().Be("MainContainer", because: "the declaration puts the strip in the template's main container");
+		tabs.MobileValues!["scrollable"]!.GetValue<bool>().Should().BeTrue(because: "the declared values carry the mobile standard for a converted strip");
+		WebElement(guide, "Tabs").Operation.Should().Be("merge", because: "the web strip merges onto the declared one; a pair never creates");
+		WebElement(guide, "Tabs").MobileName.Should().Be("Tabs", because: "the pair names the declared strip as its mobile side");
+
+		ElementMapEntry generalTab = Declared(guide, "GeneralInfoTab");
+		generalTab.ParentName.Should().Be("Tabs", because: "a tab belongs to the strip it was declared in");
+		generalTab.Index.Should().Be(0, because: "the declaration puts General information first");
+		generalTab.CaptionResource!.Key.Should().Be("GeneralInfoTab_caption", because: "the caption key is the declared one");
+		WebElement(guide, "GeneralInfoTab").Operation.Should().Be("merge", because: "the web general tab merges onto the declared one by name");
+
+		guide.ElementMap.Should().NotContain(e => e.WebName == "GridContainer_uxln7d4",
+			because: "the template's general grid has no pair, so it is pruned as web-template chrome and never becomes an extra nesting level");
+		guide.TabAreaLayers.Should().ContainSingle(g => g.TabName == "GeneralInfoTab",
+				because: "the declared tab is an inserted crt.TabContainer and gets the designer's two-layer body")
+			.Which.MovedChildren.Should().Contain(DeclaredElementsGeneralField,
+				because: "the page's field is hoisted out of the pruned grid into the declared tab and stacked in its Area");
+		guide.Constraints.Should().NotContain(c => c.Contains("declaredElements") && c.Contains("skipped"),
+			because: "every bundled declaration is admitted on this template");
+		guide.Constraints.Should().NotContain(c => c.Contains("does not provide and the rule does not declare"),
+			because: "every pair of this rule targets a template element or a declaration");
+	}
+
+	[Test]
+	[Description("The web TopAreaProfileContainer has NO containers pair on purpose: it is pruned as inherited web-template chrome (the rule does not merge it onto the template's AreaProfileContainer and declares no tab for it), and a widget the page put into it falls back to the default MainContainer placement instead of being lost or merged somewhere the rule did not say.")]
+	public void Analyze_TopArea_ShouldPruneTopAreaAsChrome_AndPlaceItsWidgetInMainContainer() {
+		// Arrange
+		JArray page = TopAreaPage(withTopWidget: true, withPageTab: false);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, webTemplateTree: TopAreaWebTemplateTree(), webTemplateName: TopAreaWebTemplate);
+
+		// Assert
+		guide.ElementMap.Should().NotContain(e => e.WebName == "TopAreaProfileContainer",
+			because: "the unpaired template container is pruned as chrome and gets no entry of its own");
+		guide.ElementMap.Should().NotContain(e => e.MobileName == "AreaProfileContainer",
+			because: "nothing pairs onto the template's profile card, so no twin merges onto it");
+		ElementMapEntry widget = WebElement(guide, TopAreaWidget);
+		widget.Operation.Should().Be("insert", because: "the page-authored widget converts as itself");
+		widget.ParentName.Should().Be("MainContainer",
+			because: "with its container pruned the widget falls back to the nearest kept ancestor, the template's main container");
+	}
+
+	[Test]
+	[Description("A page-authored tab on PageWithTopAreaAndTabsFreedomTemplate is indexed after the declared general tab: the declared tab keeps index 0 and the page tab takes index 1, each with its own synthesized Area.")]
+	public void Analyze_TopArea_ShouldIndexPageTabAfterTheDeclaredGeneralTab() {
+		// Arrange
+		JArray page = TopAreaPage(withTopWidget: false, withPageTab: true);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, webTemplateTree: TopAreaWebTemplateTree(), webTemplateName: TopAreaWebTemplate);
+
+		// Assert
+		Declared(guide, "GeneralInfoTab").Index.Should().Be(0, because: "the declared general tab owns position 0");
+		ElementMapEntry pageTab = WebElement(guide, DeclaredElementsPageTab);
+		pageTab.ParentName.Should().Be("Tabs", because: "the page tab is inserted into the declared strip");
+		pageTab.Index.Should().Be(1, because: "converted tabs skip the position the declared tab claims and follow it; no right-panel tab reserves index 1 here");
+		guide.TabAreaLayers.Should().Contain(g => g.TabName == DeclaredElementsPageTab,
+			because: "a converted page tab gets its own two-layer body like the declared one");
+	}
+
+	/// <summary>The top-area web template's content subtree as merged on a live environment (header chrome omitted).</summary>
+	private static JArray TopAreaWebTemplateTree() => JArray.Parse("""
+		[
+		  { "name": "MainContainer", "type": "crt.FlexContainer", "direction": "column", "items": [
+		    { "name": "TopAreaProfileContainer", "type": "crt.GridContainer", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 }, "columns": ["minmax(64px, 1fr)"], "items": [] },
+		    { "name": "Tabs", "type": "crt.TabPanel", "layoutConfig": { "column": 1, "row": 2, "colSpan": 1, "rowSpan": 1 }, "items": [
+		      { "name": "GeneralInfoTab", "type": "crt.TabContainer", "caption": "#ResourceString(GeneralInfoTab_caption)#", "items": [
+		        { "name": "GridContainer_uxln7d4", "type": "crt.GridContainer", "columns": ["minmax(64px, 1fr)", "minmax(64px, 1fr)"], "items": [] }
+		      ] }
+		    ] }
+		  ] }
+		]
+		""");
+
+	/// <summary>The merged top-area page: the template tree plus the page's own delta.</summary>
+	private static JArray TopAreaPage(bool withTopWidget, bool withPageTab) {
+		JArray tree = TopAreaWebTemplateTree();
+		var generalGrid = (JObject)tree.SelectToken("$..[?(@.name == 'GridContainer_uxln7d4')]")!;
+		((JArray)generalGrid["items"]!).Add(new JObject {
+			["name"] = DeclaredElementsGeneralField, ["type"] = "crt.Input", ["label"] = "#ResourceString(UsrName_label)#",
+			["layoutConfig"] = new JObject { ["column"] = 1, ["row"] = 1, ["colSpan"] = 1, ["rowSpan"] = 1 }
+		});
+		if (withTopWidget) {
+			var topArea = (JObject)tree.SelectToken("$..[?(@.name == 'TopAreaProfileContainer')]")!;
+			((JArray)topArea["items"]!).Add(new JObject {
+				["name"] = TopAreaWidget, ["type"] = "crt.Label", ["caption"] = "#ResourceString(UsrTopWidget_caption)#",
+				["layoutConfig"] = new JObject { ["column"] = 1, ["row"] = 1, ["colSpan"] = 1, ["rowSpan"] = 1 }
+			});
+		}
+		if (withPageTab) {
+			var tabs = (JObject)tree.SelectToken("$..[?(@.name == 'Tabs')]")!;
+			((JArray)tabs["items"]!).Add(new JObject {
+				["name"] = DeclaredElementsPageTab, ["type"] = "crt.TabContainer", ["caption"] = "#ResourceString(UsrExtraTab_caption)#",
+				["items"] = new JArray(new JObject {
+					["name"] = DeclaredElementsPageTabField, ["type"] = "crt.Input", ["label"] = "#ResourceString(UsrExtraField_label)#"
+				})
+			});
+		}
+		return tree;
 	}
 
 	[Test]
