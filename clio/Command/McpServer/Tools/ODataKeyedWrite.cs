@@ -58,13 +58,18 @@ internal static class ODataKeyedWrite {
 	/// environment snapshot as the write itself. Resolving a second builder reloads the settings, so a
 	/// repointed environment could have validation read the type from environment B while the PATCH
 	/// still went to A: a field that exists only on B would pass and then be silently discarded by A,
-	/// with the tool reporting success.
+	/// with the tool reporting success. For the same reason the client and the builder come out of ONE
+	/// <see cref="IToolCommandResolver.ResolvePair{TFirst,TSecond}"/> call rather than two resolutions.
 	/// </remarks>
 	internal static (IApplicationClient client, IServiceUrlBuilder urlBuilder, string url) ResolveTarget(
 		IToolCommandResolver commandResolver, string environmentName, string entity, string id) {
 		EnvironmentOptions options = new() { Environment = environmentName };
-		IApplicationClient client = commandResolver.Resolve<IApplicationClient>(options);
-		IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
+		// ONE resolution, not two: IToolCommandResolver.ResolvePair reads the environment settings once
+		// and takes both services out of the container that snapshot selected. Two separate Resolve calls
+		// read the settings twice, so an environment repointed between them pairs A's authenticated
+		// client with B's url builder - the write then goes to B carrying A's session.
+		(IApplicationClient client, IServiceUrlBuilder urlBuilder) =
+			commandResolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(options);
 		string url = urlBuilder.Build(ODataKeyFormatter.KeyPath(entity, id));
 		return (client, urlBuilder, url);
 	}
