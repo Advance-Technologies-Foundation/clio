@@ -207,8 +207,8 @@ public sealed class TemplateMappingRule {
 /// <summary>
 /// One element a template rule declares on top of the mobile template (see
 /// <see cref="TemplateMappingRule.DeclaredElements"/>): its fixed element name, mobile component type (any
-/// registered mobile component or container), the parent slot it is inserted into (a template element OR an
-/// element the conversion itself creates, e.g. the web tab strip converted because the mobile template has
+/// registered mobile component or container), the parent slot it is inserted into (a probed mobile template
+/// element, OR another declaration of this same rule, e.g. the declared tab strip when the mobile template has
 /// none) and the mobile <c>values</c> it carries.
 /// </summary>
 public sealed class DeclaredElementRule {
@@ -220,7 +220,10 @@ public sealed class DeclaredElementRule {
 	[JsonPropertyName("type")]
 	public string Type { get; init; }
 
-	/// <summary>Mobile parent element name (template-provided or conversion-created, e.g. "Tabs").</summary>
+	/// <summary>
+	/// Mobile parent element name: either a probed mobile template element, or another declaration of this SAME
+	/// rule (e.g. "Tabs") — never a name that exists only on a specific page.
+	/// </summary>
 	[JsonPropertyName("parentName")]
 	public string ParentName { get; init; }
 

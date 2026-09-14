@@ -228,14 +228,13 @@ public static class WebToMobileAnalysisService {
 			?? new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase);
 		List<UnresolvedTargetRequest> unresolvedTargets = [];
 		List<string> pairsOntoMissingMobileSide = [];
-		List<string> declaredElementOrderingConflicts = [];
 		List<ElementMapEntry> elementMap = BuildElementMap(
 			tree, map, componentMap, mobileTypes, mobileByType, webByType, rules, attrToColumn, resources,
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns,
 			positionalParentByAnchor, positionalAnchorByWebAnchor,
 			mobileTypesByName, webBaselineNodes, webTemplateResources,
 			declaredElements,
-			actionTargets, unresolvedTargets, pairsOntoMissingMobileSide, declaredElementOrderingConflicts);
+			actionTargets, unresolvedTargets, pairsOntoMissingMobileSide);
 
 		// Removes components an excludedComponents rule bans from a host (type-agnostic — which
 		// type/host/property is banned comes entirely from the rules), in the two shapes a banned component
@@ -442,7 +441,6 @@ public static class WebToMobileAnalysisService {
 				skippedOverrideRules: componentPropertyOverrides.SkippedRulesWithoutFilters,
 				skippedDeclaredElements: skippedDeclaredElements,
 				pairsOntoMissingMobileSide: pairsOntoMissingMobileSide,
-				declaredElementOrderingConflicts: declaredElementOrderingConflicts,
 				retargetParentsOnTemplate: elementMap
 					.Where(e => e.ParentExistsOnTemplate == true && !string.IsNullOrEmpty(e.ParentName))
 					.Select(e => e.ParentName)
@@ -1888,8 +1886,7 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyList<string> retargetParentsOnTemplate = null,
 		IReadOnlyList<SkippedDeclaredElement> skippedDeclaredElements = null,
 		IReadOnlyList<UnresolvedTargetRequest> unresolvedTargetRequests = null,
-		IReadOnlyList<string> pairsOntoMissingMobileSide = null,
-		IReadOnlyList<string> declaredElementOrderingConflicts = null) {
+		IReadOnlyList<string> pairsOntoMissingMobileSide = null) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
@@ -2021,18 +2018,6 @@ public static class WebToMobileAnalysisService {
 				+ string.Join("; ", pairsOntoMissingMobileSide)
 				+ ". A containers pair only merges; declare the missing element in the rule's declaredElements.");
 		}
-		if (declaredElementOrderingConflicts is { Count: > 0 }) {
-			// A declared element's parent is a page-authored element the walk only creates partway through the
-			// tree, and content bound for the declaration (a containers pair, or a child walked into it) was
-			// already placed earlier — the map still applies (the entry was moved as early as that content
-			// requires), but its own parent may not exist yet at that point. Report it as a rules-file gap: the
-			// fix is to declare the parent itself, or to move the pair off content that precedes it in the tree.
-			constraints.Add(
-				"declaredElements produced insertion order the rule cannot guarantee is safe: "
-				+ string.Join("; ", declaredElementOrderingConflicts)
-				+ ". Apply elementMap in order as given; if the agent hits a missing parent, insert the declared "
-				+ "element first and report the rule for correction.");
-		}
 
 		// One constraint per report group the rules declared, in the wording the RULE carries — so a new
 		// standard is a rules-file entry and never another branch here. The legacy spacing group keeps a
@@ -2159,8 +2144,7 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, ActionTargetResolution> ActionTargets,
 		List<UnresolvedTargetRequest> UnresolvedTargetRequests,
 		IReadOnlyDictionary<string, string> DeclaredTypesByName,
-		List<string> PairsOntoMissingMobileSide,
-		List<string> DeclaredElementOrderingConflicts);
+		List<string> PairsOntoMissingMobileSide);
 
 	/// <summary>
 	/// The set of NON-CONVERTING scope container names — declared EXPLICITLY by the rules'
@@ -2205,8 +2189,7 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyList<DeclaredElementRule> declaredElements,
 		IReadOnlyDictionary<string, ActionTargetResolution> actionTargets,
 		List<UnresolvedTargetRequest> unresolvedTargetRequests,
-		List<string> pairsOntoMissingMobileSide,
-		List<string> declaredElementOrderingConflicts) {
+		List<string> pairsOntoMissingMobileSide) {
 		var declaredTypesByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		foreach (DeclaredElementRule declared in declaredElements ?? []) {
 			declaredTypesByName.TryAdd(declared.Name, declared.Type);
@@ -2225,9 +2208,9 @@ public static class WebToMobileAnalysisService {
 			CollectScopeContainerNames(rules),
 			ContentContainerTypesOf(rules),
 			actionTargets, unresolvedTargetRequests,
-			declaredTypesByName, pairsOntoMissingMobileSide ?? [], declaredElementOrderingConflicts ?? []);
-		WalkElements(ctx, tree, mobileParentName: null);
+			declaredTypesByName, pairsOntoMissingMobileSide ?? []);
 		EmitDeclaredElements(ctx, declaredElements);
+		WalkElements(ctx, tree, mobileParentName: null);
 		return ctx.Out;
 	}
 
@@ -2259,9 +2242,9 @@ public static class WebToMobileAnalysisService {
 		UnknownMobileType,
 		/// <summary>The source page already uses this name for an element of its own; any pair targeting the name falls back to the default placement.</summary>
 		PageNameCollision,
-		/// <summary>The declared parent is neither a probed template element, another admitted declaration, nor a page-authored element; any pair targeting the name falls back to the default placement.</summary>
+		/// <summary>The declared parent is neither a probed template element nor another admitted declaration; any pair targeting the name falls back to the default placement.</summary>
 		OrphanParent,
-		/// <summary>Its parent chain loops back to itself through other declarations of the same rule (no template element, no page-authored anchor breaks the chain); every element on the cycle is skipped, since a cycle has no valid parent-first emission order.</summary>
+		/// <summary>Its parent chain loops back to itself through other declarations of the same rule (no template element breaks the chain); every element on the cycle is skipped, since a cycle has no valid parent-first emission order.</summary>
 		CyclicParent
 	}
 
@@ -2282,7 +2265,7 @@ public static class WebToMobileAnalysisService {
 			DeclaredElementSkipReason.PageNameCollision =>
 				("page-name-collision", "the source page already uses this name for an element of its own — any containers pair targeting it fell back to the default placement"),
 			DeclaredElementSkipReason.OrphanParent =>
-				("orphan-parent", "its declared parent is neither a mobile template element nor an element this conversion creates — any containers pair targeting it fell back to the default placement"),
+				("orphan-parent", "its declared parent is neither a mobile template element nor another declared element — any containers pair targeting it fell back to the default placement"),
 			DeclaredElementSkipReason.CyclicParent =>
 				("cyclic-parent", "its declared parent chain loops back to itself through other declarations — a cycle has no valid creation order, so every element on it is skipped; any containers pair targeting it fell back to the default placement"),
 			_ => ("unknown", "skipped")
@@ -2396,16 +2379,13 @@ public static class WebToMobileAnalysisService {
 			}
 		}
 		if (templateProbeAvailable) {
-			// Page-authored elements convert under their own names; a web-template element does not (it is pruned
-			// as chrome or merged through its pair). A pair's mobile side is not a parent of its own (see the summary).
-			List<string> ownNamedPageElements = pageNames
-				.Where(n => !containerNameMap.ContainsKey(n))
-				.ToList();
+			// A declared element's parent must be a probed mobile template element or another admitted declaration
+			// of the same rule — the rule is shared across every page of the template and is written before any
+			// concrete page exists, so it cannot rely on a page's own element names.
 			bool changed = true;
 			while (changed) {
 				changed = false;
 				var known = new HashSet<string>(probedTypesByName.Keys, StringComparer.OrdinalIgnoreCase);
-				known.UnionWith(ownNamedPageElements);
 				known.UnionWith(accepted.Select(a => a.Name));
 				for (int i = accepted.Count - 1; i >= 0; i--) {
 					DeclaredElementRule declared = accepted[i];
@@ -2471,15 +2451,14 @@ public static class WebToMobileAnalysisService {
 	/// Emits the rule's declared elements — any mobile component or container, nothing here is
 	/// type-specific — as <c>insert</c> entries (no web counterpart; name conflicts with the page were already
 	/// removed by <see cref="SelectDeclaredElements"/>). Each entry is placed RIGHT AFTER its parent's own entry
-	/// when the parent is an element the conversion itself creates (another declaration of the same rule — e.g. a
-	/// declared tab under a declared tab strip — or a page-authored element converted under its own name), so
-	/// applying the map in order always creates the parent first; a parent the
-	/// template provides needs no such ordering and the entry goes to the front of the map, ahead of the content
-	/// that walks into it. Content mapped onto a declared element by a <c>containers</c> pair is walked as its
-	/// children (merge-by-name), so the entry must precede that content; when the parent-first slot would still
-	/// land after such content (a page-authored parent the walk only reaches partway through the tree), the
-	/// entry is clamped ahead of it instead and the conflict is reported via
-	/// <see cref="ElementMapContext.DeclaredElementOrderingConflicts"/>.
+	/// when the parent is another declaration of the same rule (e.g. a declared tab under a declared tab strip),
+	/// so applying the map in order always creates the parent first; a parent the template provides needs no such
+	/// ordering and the entry goes to the front of the map, ahead of the content that walks into it. Content
+	/// mapped onto a declared element by a <c>containers</c> pair is walked as its children (merge-by-name), so
+	/// the entry must precede that content — <see cref="SelectDeclaredElements"/> restricts a declaration's parent
+	/// to a template element or another declaration of the same rule, so this ordering can never land after such
+	/// content: a template-parented entry goes to the front, and a declaration-parented entry's parent is, by
+	/// <paramref name="extras"/>'s PARENT-FIRST order below, always emitted before any content could target it.
 	/// <paramref name="extras"/> is reordered PARENT-FIRST (see <see cref="OrderDeclaredElementsParentFirst"/>)
 	/// before emission, so a declaration whose parent is another declaration of the same rule is emitted correctly
 	/// regardless of which one the rules file lists first.
@@ -2552,22 +2531,6 @@ public static class WebToMobileAnalysisService {
 					&& string.Equals(ctx.Out[at].ParentName, extra.ParentName, StringComparison.OrdinalIgnoreCase)) {
 					at++;
 				}
-				// extra.ParentName can be a PAGE-AUTHORED element the walk only reaches partway through the tree
-				// (never another declaration — OrderDeclaredElementsParentFirst already guarantees that one is
-				// emitted first), and content bound for THIS declaration (a containers pair merging directly onto
-				// it, or a child carried under its mobile name) may already sit earlier in ctx.Out from that same
-				// walk. Inserting after the parent would then put the entry after content that needs it to exist
-				// first, so clamp to the earliest such dependent and flag it — the rule, not this placement, needs fixing.
-				int firstDependentAt = ctx.Out.FindIndex(e =>
-					string.Equals(e.ParentName, extra.Name, StringComparison.OrdinalIgnoreCase)
-					|| (string.Equals(e.Operation, "merge", StringComparison.Ordinal)
-						&& string.Equals(e.MobileName, extra.Name, StringComparison.OrdinalIgnoreCase)));
-				if (firstDependentAt >= 0 && firstDependentAt < at) {
-					at = firstDependentAt;
-					ctx.DeclaredElementOrderingConflicts.Add(
-						$"{SanitizeRuleIdentifier(extra.Name)} declared under {SanitizeRuleIdentifier(extra.ParentName)} "
-						+ "receives content the walk placed before that parent's own entry");
-				}
 			} else {
 				at = frontInsertAt++;
 			}
@@ -2581,8 +2544,8 @@ public static class WebToMobileAnalysisService {
 	/// first — <see cref="EmitDeclaredElements"/> processes the list in order and looks up the parent's entry
 	/// among what it has ALREADY emitted, so a forward reference (a child declared before its declared-element
 	/// parent) would otherwise find no parent entry yet and be misclassified as parented by the template. A
-	/// declaration whose parent is NOT another declaration of this rule (the common case — the template or a
-	/// page-authored element) is left in its original relative position. <see cref="SelectDeclaredElements"/>
+	/// declaration whose parent is NOT another declaration of this rule (the common case — a probed mobile
+	/// template element) is left in its original relative position. <see cref="SelectDeclaredElements"/>
 	/// rejects every element on a declaration-to-declaration cycle before this method ever runs, so <c>extras</c>
 	/// is cycle-free in practice; the cycle guard here (emitting each name at most once, in first-encountered
 	/// order, rather than looping forever) is a defensive backstop only, kept in case that invariant is ever
@@ -2759,7 +2722,8 @@ public static class WebToMobileAnalysisService {
 				// back to the web type (the pair is same-type for every other shipped entry).
 				bool twinIsDeclared = ctx.DeclaredTypesByName.TryGetValue(twinMobileName, out string declaredTwinType);
 				if (!twinIsDeclared && ctx.MobileTypesByName.Count > 0 && !ctx.MobileTypesByName.ContainsKey(twinMobileName)) {
-					ctx.PairsOntoMissingMobileSide.Add($"{name} -> {twinMobileName}");
+					ctx.PairsOntoMissingMobileSide.Add(
+						$"{SanitizeRuleIdentifier(name)} -> {SanitizeRuleIdentifier(twinMobileName)}");
 				}
 				var twinEntry = new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "merge", MobileName = twinMobileName,
@@ -5393,15 +5357,19 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Carries the shifted placement onto the anchor: patches the <c>merge</c> entry the conversion already
-	/// produced for it (a template twin), otherwise appends a synthesized merge that carries nothing else — so
-	/// the anchor is re-placed exactly once however the page reached it.
+	/// produced for it (a template twin) OR a <c>declaredElements</c> insert entry (the anchor is a rule-declared
+	/// element, not a template twin), otherwise appends a synthesized merge that carries nothing else — so the
+	/// anchor is re-placed exactly once however the page reached it, matching the DeclaredByRule-awareness every
+	/// other elementMap pass in this file already applies (RemoveEmptyContainers, CompactPositionalIndexes,
+	/// AssignConvertedTabIndexes).
 	/// </summary>
 	private static void SetAnchorPlacement(
 		List<ElementMapEntry> elementMap, string anchor, JsonObject placement, int above) {
 		string note = $"moved down {above} row(s): the page inserts {above} element(s) above it, and its parent "
 			+ "positions children by layoutConfig rather than by item order";
 		ElementMapEntry existing = elementMap.FirstOrDefault(e =>
-			string.Equals(e.Operation, "merge", StringComparison.Ordinal)
+			(string.Equals(e.Operation, "merge", StringComparison.Ordinal)
+				|| (e.DeclaredByRule && string.Equals(e.Operation, "insert", StringComparison.Ordinal)))
 			&& string.Equals(e.MobileName, anchor, StringComparison.OrdinalIgnoreCase));
 		if (existing is not null) {
 			// A merge payload is a JsonObject or null by construction (BuildTwinMergeValues / BuildDeltaTwinMergeValues).

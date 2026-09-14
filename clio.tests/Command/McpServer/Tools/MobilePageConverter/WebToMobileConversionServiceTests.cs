@@ -2925,12 +2925,11 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A declared element's parent can be a PAGE-AUTHORED element the walk only reaches partway through the tree (not another declaration — those are always emitted parent-first). When a containers pair merges directly onto the declaration from EARLIER in that same walk, inserting strictly after the parent (the ordinary rule) would put the declared entry after content that needs it to exist first. EmitDeclaredElements clamps the insertion point ahead of that content instead — applying the map in order never inserts content into a name that is not there yet — and reports the conflict as a constraint, since the declared element then lands ahead of its own declared parent.")]
-	public void Analyze_ShouldClampDeclaredElementOrdering_WhenPageAuthoredParentFollowsItsOwnContentInTheWalk() {
-		// Arrange — UsrEarlyWidget (paired onto the declared LeftPanelTab) sits BEFORE UsrHost (LeftPanelTab's
-		// declared parent) in document order, so the ordinary "right after the parent" placement would land the
-		// declaration after content that must precede it. An empty web template baseline means the whole tree
-		// converts as page-authored content, so UsrHost is a valid ("known") parent for the declaration.
+	[Description("A declared element's parent must be a probed mobile template element or another declaration of the same rule — a name that exists only on this specific page is not a valid parent, since the rule is shared across every page of the template and is written before any concrete page exists. Such a declaration is skipped as orphan-parent, the same way a declaration naming a nonexistent parent would be.")]
+	public void Analyze_ShouldSkipDeclaredElement_WhenParentIsAPageAuthoredElement() {
+		// Arrange — UsrHost is a real page element (not the mobile template, not another declaration), so naming it
+		// as LeftPanelTab's parentName no longer admits the declaration. An empty web template baseline means the
+		// whole tree converts as page-authored content.
 		JArray page = JArray.Parse("""
 			[
 			  { "name": "MainContainer", "type": "crt.FlexContainer", "direction": "column", "items": [
@@ -2953,22 +2952,18 @@ public sealed class WebToMobileConversionServiceTests {
 			webTemplateTree: new JArray(), webTemplateName: "UsrOrderingTestTemplate");
 
 		// Assert
-		int leftPanelAt = IndexOfDeclared(guide, "LeftPanelTab");
-		int earlyWidgetAt = IndexOfWebElement(guide, "UsrEarlyWidget");
-		leftPanelAt.Should().BeLessThan(earlyWidgetAt,
-			because: "the containers pair merges onto the declared element, so applying the map in order must create it before that merge is applied");
+		guide.ElementMap.Should().NotContain(e => e.DeclaredByRule && e.MobileName == "LeftPanelTab",
+			because: "a page-authored parent is not a valid ('known') parent, so the declaration is refused admission");
+		guide.Constraints.Should().ContainSingle(c => c.Contains("declaredElements") && c.Contains("skipped"),
+				because: "the skip is reported so the rule can be fixed to name a valid parent")
+			.Which.Should().Contain("LeftPanelTab [orphan-parent]",
+				because: "the report names the declaration and a machine-readable reason code instead of the raw rules-file parent name");
 
-		ElementMapEntry earlyWidget = WebElement(guide, "UsrEarlyWidget");
-		earlyWidget.Operation.Should().Be("merge", because: "the containers pair merges the web widget onto the declared element");
-		earlyWidget.MobileName.Should().Be("LeftPanelTab", because: "the pair names the declaration as its mobile side");
-
-		int hostAt = IndexOfWebElement(guide, "UsrHost");
-		leftPanelAt.Should().BeLessThan(hostAt,
-			because: "the parent lookup landed after content the declaration must precede, so the entry is clamped ahead of that content — even ahead of its own declared parent");
-
-		guide.Constraints.Should().ContainSingle(c => c.Contains("declaredElements produced insertion order"),
-				because: "the rule, not this placement, is what needs fixing — the conflict must be surfaced")
-			.Which.Should().Contain("LeftPanelTab").And.Contain("UsrHost");
+		guide.ElementMap.Should().NotContain(e =>
+				string.Equals(e.MobileName, "LeftPanelTab", StringComparison.OrdinalIgnoreCase),
+			because: "the containers pair targeting the skipped name is removed along with the declaration, so nothing is created under that name");
+		WebElement(guide, "UsrEarlyWidget").ParentName.Should().Be("MainContainer",
+			because: "with its pair removed, UsrEarlyWidget falls back to the default placement — its own natural parent from the page tree");
 	}
 
 	[Test]
@@ -3062,6 +3057,49 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the declared Tabs strip keeps the row its own declaration gave it — nothing is placed above it");
 		Element(guide, "BottomSibling").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(3,
 			because: "the sibling below a row-2 anchor takes row 3 — a value only WithDeclaredElementLayouts could have supplied, since the probed template contributes no layoutConfig at all in this helper");
+	}
+
+	[Test]
+	[Description("Review finding: SetAnchorPlacement's existing-entry lookup only matched a 'merge' entry, so an anchor that is ITSELF a declared element (declaredElements insert, no web twin) fell into the else-branch and would append a second, competing merge entry under the same mobile name instead of shifting the declaration's own row. With a sibling placed ABOVE the declared Tabs anchor (forcing SetAnchorPlacement to run), the anchor's OWN entry must be the one patched, and no duplicate entry may appear for it.")]
+	public void Analyze_ShouldShiftTheDeclaredAnchorsOwnRow_WhenAPositionalSiblingIsPlacedAboveIt() {
+		// Arrange — same declared Tabs (row 2) as the previous test, but TopSibling now sits BEFORE
+		// CardContentWrapper in MainContainer's items, so PlacePositionalGroups has content ABOVE the anchor
+		// (placedAbove > 0) and must shift the anchor's own row via SetAnchorPlacement.
+		JArray page = JArray.Parse("""
+			[ { "name": "MainContainer", "type": "crt.FlexContainer", "items": [
+			    { "name": "TopSibling", "type": "crt.Input", "label": "Top" },
+			    { "name": "CardContentWrapper", "type": "crt.GridContainer", "items": [
+			        { "name": "GeneralInfoTab", "type": "crt.TabContainer", "items": [
+			            { "name": "NameField", "type": "crt.Input", "label": "Name" } ] } ] } ] } ]
+			""");
+		TemplateMappingRule rule = DeclaredElementsRuleWith(
+			declaredElements: new JsonArray(
+				new JsonObject {
+					["name"] = "Tabs", ["type"] = "crt.TabPanel", ["parentName"] = "MainContainer",
+					["values"] = new JsonObject {
+						["layoutConfig"] = new JsonObject { ["row"] = 2, ["column"] = 1, ["colSpan"] = 1, ["rowSpan"] = 1 }
+					}
+				},
+				new JsonObject { ["name"] = "GeneralInfoTab", ["type"] = "crt.TabContainer", ["parentName"] = "Tabs", ["index"] = 0 }),
+			containers: new JsonArray(
+				new JsonObject { ["web"] = "MainContainer", ["mobile"] = "MainContainer" },
+				new JsonObject { ["web"] = "GeneralInfoTab", ["mobile"] = "GeneralInfoTab" },
+				new JsonObject { ["web"] = "CardContentWrapper:top", ["mobile"] = "Tabs:top" }),
+			keepStripDeclarations: false);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule, webTemplateTree: new JArray());
+
+		// Assert
+		guide.ElementMap.Count(e => string.Equals(e.MobileName, "Tabs", StringComparison.OrdinalIgnoreCase)).Should().Be(1,
+			because: "the declared Tabs entry must be patched in place, not doubled by a synthesized merge entry competing for the same mobile name");
+		ElementMapEntry anchor = Declared(guide, "Tabs");
+		anchor.MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(3,
+			because: "one sibling placed above the declared anchor moves its own row down by one, exactly as it would for a template-provided anchor");
+		anchor.Reason.Should().Contain("moved down",
+			because: "re-placing a declared element must be explained in the report just like a template-owned one");
+		Element(guide, "TopSibling").MobileValues!["layoutConfig"]!["row"]!.GetValue<int>().Should().Be(2,
+			because: "the sibling above takes the anchor's original row");
 	}
 
 	[Test]
