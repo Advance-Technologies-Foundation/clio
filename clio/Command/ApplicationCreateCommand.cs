@@ -31,12 +31,65 @@ public sealed class CreateAppOptions : EnvironmentOptions
 	[Option("with-mobile-pages", Required = false, Default = "true", HelpText = "Create mobile pages (_MobileFormPage, _MobileListPage) for the main entity in addition to web pages (default: true). Pass false for a web-only application.")]
 	public string? WithMobilePagesValue { get; set; }
 
+	[Option("entity-schema-name", Required = false, HelpText = "Name of an EXISTING entity schema the application's primary section is built over. The entity must already exist in the environment; Creatio then skips minting a new canonical entity.")]
+	public string? EntitySchemaName { get; set; }
+
+	[Option("app-section-description", Required = false, HelpText = "Description applied to the application's primary section.")]
+	public string? AppSectionDescription { get; set; }
+
 	/// <summary>
 	/// Gets a value indicating whether mobile pages should be generated for the main entity.
 	/// </summary>
 	public bool WithMobilePages {
 		get => string.Equals(WithMobilePagesValue ?? "true", "true", StringComparison.OrdinalIgnoreCase);
 		set => WithMobilePagesValue = value ? "true" : "false";
+	}
+
+	/// <summary>
+	/// Builds the optional CreateApp template payload from the CLI options, or returns
+	/// <see langword="null"/> when neither template option was supplied so the request stays
+	/// byte-identical to a call that predates these options.
+	/// </summary>
+	internal ApplicationOptionalTemplateData? BuildOptionalTemplateData() {
+		// A blank explicit value is a mistake, not an omission: silently treating
+		// --entity-schema-name "" as "not supplied" would mint a new canonical entity and its
+		// starter pages after a ~90 s round trip, which is exactly what passing the option was
+		// meant to avoid. Only an absent option means "no template data".
+		string? entitySchemaName = NormalizeTemplateOption(
+			EntitySchemaName,
+			"--entity-schema-name was supplied without a value. Pass the name of an entity schema that "
+			+ "already exists in the environment, or omit the option to let Creatio create a new entity.");
+		string? appSectionDescription = NormalizeTemplateOption(
+			AppSectionDescription,
+			"--app-section-description was supplied without a value. Pass the section description, or omit the option.");
+
+		if (entitySchemaName is null && appSectionDescription is null) {
+			return null;
+		}
+
+		// --entity-schema-name alone carries the intent, so useExistingEntitySchema is implied here
+		// instead of being a second flag the caller can contradict.
+		return new ApplicationOptionalTemplateData(
+			EntitySchemaName: entitySchemaName,
+			UseExistingEntitySchema: entitySchemaName is null ? null : true,
+			AppSectionDescription: appSectionDescription);
+	}
+
+	/// <summary>
+	/// Returns the trimmed option value, <see langword="null"/> when the option was not supplied at
+	/// all, and throws <paramref name="blankMessage"/> when it was supplied without a usable value.
+	/// </summary>
+	private static string? NormalizeTemplateOption(string? value, string blankMessage) {
+		if (value is null) {
+			return null;
+		}
+
+		string trimmed = value.Trim();
+		if (trimmed.Length == 0) {
+			throw new ArgumentException(blankMessage);
+		}
+
+		return trimmed;
 	}
 
 	internal static void ValidateMobilePagesOption(string? value) {
@@ -76,6 +129,7 @@ public sealed class CreateAppCommand(
 				options.TemplateCode,
 				options.IconId,
 				options.IconBackground,
+				OptionalTemplateData: options.BuildOptionalTemplateData(),
 				WithMobilePages: options.WithMobilePages);
 
 			ApplicationInfoResult result = applicationCreateService.CreateApplication(options.Environment, request);
