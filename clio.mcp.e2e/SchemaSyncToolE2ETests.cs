@@ -1362,7 +1362,9 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		string lookupSchemaName,
 		string lookupColumnName,
 		CancellationToken cancellationToken,
-		IProgress<ProgressNotificationValue>? progress = null) {
+		// Required and non-nullable: the 4-arg CallToolAsync overload below takes a non-nullable progress,
+		// so an optional null default would let null flow into it from any future caller.
+		IProgress<ProgressNotificationValue> progress) {
 		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
 		reachableToolNames.Should().Contain(ToolName,
 			because: "sync-schemas must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");

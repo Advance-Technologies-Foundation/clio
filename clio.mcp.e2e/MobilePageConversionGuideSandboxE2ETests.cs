@@ -1296,8 +1296,10 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	}
 
 
+	// The fixture enumerates and converts pages of the seeded application, so it stays on the CONFIGURED
+	// environment and never falls back: the fallback stand does not carry that seed application.
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
-		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
+		await ReachableSandboxEnvironment.ResolveConfiguredOrIgnoreAsync(
 			settings,
 			"mobile-page-conversion MCP E2E requires a configured sandbox environment: set Sandbox.EnvironmentName "
 				+ "in the MCP E2E settings to a registered clio environment that hosts the seed application.");

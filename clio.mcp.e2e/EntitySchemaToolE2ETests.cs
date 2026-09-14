@@ -1597,18 +1597,6 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		});
 	}
 
-	/// <summary>
-	/// Adds every plain "add a column and read it back" fixture column in ONE update-entity-schema batch,
-	/// once per fixture, and hands the same envelope to each test that asserts on one of them.
-	/// </summary>
-	/// <remarks>
-	/// Four tests each ran their own batch against the one shared schema, so the stand compiled the same
-	/// schema four times — about 25s apiece — to add columns that never interact. The batch is the tool's
-	/// own supported shape, so nothing about the operation under test changes; each test still reads back
-	/// and asserts only its own column. The trade-off is deliberate: a column type that fails to add now
-	/// fails all three tests at once rather than one, which is the cost of paying for the compile once.
-	/// The localized-text column stays outside this batch on purpose — see its test.
-	/// </remarks>
 	private static async Task<CommandExecutionEnvelope> ActBatchAddLocalizedTextColumnAsync(
 		EntitySchemaArrangeContext arrangeContext,
 		string columnName) {
@@ -1631,6 +1619,18 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		});
 	}
 
+	/// <summary>
+	/// Adds every plain "add a column and read it back" fixture column in ONE update-entity-schema batch,
+	/// once per fixture, and hands the same envelope to each test that asserts on one of them.
+	/// </summary>
+	/// <remarks>
+	/// Four tests each ran their own batch against the one shared schema, so the stand compiled the same
+	/// schema four times — about 25s apiece — to add columns that never interact. The batch is the tool's
+	/// own supported shape, so nothing about the operation under test changes; each test still reads back
+	/// and asserts only its own column. The trade-off is deliberate: a column type that fails to add now
+	/// fails all three tests at once rather than one, which is the cost of paying for the compile once.
+	/// The localized-text column stays outside this batch on purpose — see its test.
+	/// </remarks>
 	private async Task<CommandExecutionEnvelope> ActSharedBatchAddColumnsAsync(
 		EntitySchemaArrangeContext arrangeContext) {
 		if (_sharedBatchAddResult is not null) {

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Clio.Mcp.E2E.Support;
 using Clio.Mcp.E2E.Support.Configuration;
 
@@ -33,17 +34,17 @@ public abstract class McpContractFixtureBase {
 			_session = _ownedSession;
 			return;
 		}
-		// Not `ProcessWideSession ??= await StartAsync(...)`: that reads, awaits and assigns as three
+		// Not `_processWideSession ??= await StartAsync(...)`: that reads, awaits and assigns as three
 		// steps. Many fixtures carry [Parallelizable(ParallelScope.Self)] and the run uses two NUnit
 		// workers, so two of their [OneTimeSetUp] bodies do overlap — both would see null, both would
 		// start a child, and only the last assignment would ever be disposed, leaking a clio process
 		// onto the agent for the rest of the build.
-		await ProcessWideSessionGate.WaitAsync(startupCts.Token);
+		await _processWideSessionGate.WaitAsync(startupCts.Token);
 		try {
-			ProcessWideSession ??= await McpServerSession.StartAsync(settings, startupCts.Token);
-			_session = ProcessWideSession;
+			_processWideSession ??= await McpServerSession.StartAsync(settings, startupCts.Token);
+			_session = _processWideSession;
 		} finally {
-			ProcessWideSessionGate.Release();
+			_processWideSessionGate.Release();
 		}
 	}
 
@@ -78,31 +79,36 @@ public abstract class McpContractFixtureBase {
 	/// to remember to set.
 	/// </para>
 	/// </remarks>
-	private static McpServerSession? ProcessWideSession;
+	private static McpServerSession? _processWideSession;
 
-	private static readonly SemaphoreSlim ProcessWideSessionGate = new(1, 1);
+	private static readonly SemaphoreSlim _processWideSessionGate = new(1, 1);
 
 	private McpServerSession? _ownedSession;
 
+	// The answer is deterministic per derived type and never changes at runtime, so the reflection lookup
+	// runs once per fixture type instead of once per [OneTimeSetUp].
+	private static readonly ConcurrentDictionary<Type, bool> CustomizesSettingsCache = new();
+
 	private bool CustomizesServerSettings =>
-		GetType()
-			.GetMethod(
-				nameof(ConfigureMcpServerSettings),
-				System.Reflection.BindingFlags.Instance
-					| System.Reflection.BindingFlags.NonPublic
-					| System.Reflection.BindingFlags.Public)
-			?.DeclaringType != typeof(McpContractFixtureBase);
+		CustomizesSettingsCache.GetOrAdd(GetType(), static fixtureType =>
+			fixtureType
+				.GetMethod(
+					nameof(ConfigureMcpServerSettings),
+					System.Reflection.BindingFlags.Instance
+						| System.Reflection.BindingFlags.NonPublic
+						| System.Reflection.BindingFlags.Public)
+				?.DeclaringType != typeof(McpContractFixtureBase));
 
 	/// <summary>
 	/// Disposes the process-wide contract server. Called once, after every fixture has finished.
 	/// </summary>
 	/// <returns>A task that completes when the shared child has exited.</returns>
 	internal static async Task ReleaseProcessWideSessionAsync() {
-		if (ProcessWideSession is null) {
+		if (_processWideSession is null) {
 			return;
 		}
-		McpServerSession session = ProcessWideSession;
-		ProcessWideSession = null;
+		McpServerSession session = _processWideSession;
+		_processWideSession = null;
 		await session.DisposeAsync();
 	}
 

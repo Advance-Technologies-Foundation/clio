@@ -72,10 +72,17 @@ internal static class E2ETimingProbe {
 	/// </summary>
 	/// <returns>The report text.</returns>
 	public static string BuildReport() {
+		// Snapshot the counters through Volatile/Interlocked reads: they are mutated from concurrent test
+		// threads via Interlocked, so a plain read may be cached or reordered by the JIT. Reading once also
+		// keeps every line of the report consistent with the same snapshot.
+		int sessionStarts = Volatile.Read(ref _sessionStarts);
+		long sessionStartMilliseconds = Interlocked.Read(ref _sessionStartMilliseconds);
+		int sessionDisposals = Volatile.Read(ref _sessionDisposals);
+		long sessionDisposeMilliseconds = Interlocked.Read(ref _sessionDisposeMilliseconds);
 		StringBuilder report = new();
 		report.AppendLine("[e2e-timing] fixed arrange cost of this run");
-		report.AppendLine(Line("mcp server starts", _sessionStarts, _sessionStartMilliseconds));
-		report.AppendLine(Line("mcp server disposals", _sessionDisposals, _sessionDisposeMilliseconds));
+		report.AppendLine(Line("mcp server starts", sessionStarts, sessionStartMilliseconds));
+		report.AppendLine(Line("mcp server disposals", sessionDisposals, sessionDisposeMilliseconds));
 		long cliTotal = 0;
 		int cliCount = 0;
 		foreach ((string verb, (int Count, long Milliseconds) value) in CliInvocations.OrderByDescending(entry => entry.Value.Milliseconds)) {
@@ -84,11 +91,11 @@ internal static class E2ETimingProbe {
 			cliCount += value.Count;
 		}
 		report.AppendLine(Line("cli total", cliCount, cliTotal));
-		long overall = _sessionStartMilliseconds + _sessionDisposeMilliseconds + cliTotal;
-		report.AppendLine(Line("fixed cost total", _sessionStarts + _sessionDisposals + cliCount, overall));
-		report.AppendLine(Statistic("e2eMcpSessionStarts", _sessionStarts));
-		report.AppendLine(Statistic("e2eMcpSessionStartMs", _sessionStartMilliseconds));
-		report.AppendLine(Statistic("e2eMcpSessionDisposeMs", _sessionDisposeMilliseconds));
+		long overall = sessionStartMilliseconds + sessionDisposeMilliseconds + cliTotal;
+		report.AppendLine(Line("fixed cost total", sessionStarts + sessionDisposals + cliCount, overall));
+		report.AppendLine(Statistic("e2eMcpSessionStarts", sessionStarts));
+		report.AppendLine(Statistic("e2eMcpSessionStartMs", sessionStartMilliseconds));
+		report.AppendLine(Statistic("e2eMcpSessionDisposeMs", sessionDisposeMilliseconds));
 		report.AppendLine(Statistic("e2eCliInvocations", cliCount));
 		report.AppendLine(Statistic("e2eCliMs", cliTotal));
 		report.AppendLine(Statistic("e2eFixedCostMs", overall));

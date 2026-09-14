@@ -100,12 +100,14 @@ public sealed class ClearBrowserSessionToolE2ETests : McpContractFixtureBase {
 		return new ArrangeContext(session, cancellationTokenSource, environmentName);
 	}
 
+	// clear-browser-session mutates the stand it runs against, so it stays on the CONFIGURED environment and
+	// never falls back: a redirected clear would wipe cached sessions on an unrelated registered environment.
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
-		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
+		await ReachableSandboxEnvironment.ResolveConfiguredOrIgnoreAsync(
 			settings,
-			$"clear-browser-session MCP E2E requires a reachable environment. Configure McpE2E:Sandbox:EnvironmentName; "
-			+ $"configured sandbox environment '{settings.Sandbox.EnvironmentName}' was not reachable, and fallback "
-			+ $"environment '{ReachableSandboxEnvironment.FallbackEnvironmentName}' was also unavailable.");
+			$"clear-browser-session MCP E2E requires a reachable configured sandbox environment. Configure "
+			+ $"McpE2E:Sandbox:EnvironmentName; configured sandbox environment "
+			+ $"'{settings.Sandbox.EnvironmentName}' was absent or not reachable.");
 
 	private new sealed record ArrangeContext(
 		McpServerSession Session,

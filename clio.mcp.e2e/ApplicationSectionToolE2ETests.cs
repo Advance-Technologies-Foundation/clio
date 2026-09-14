@@ -764,7 +764,7 @@ public sealed class ApplicationSectionToolE2ETests {
 				because: $"every serialized concurrent create-app-section must ultimately succeed. Error: {response.Error}");
 			if (!string.IsNullOrWhiteSpace(response.Section?.Code)) {
 				createdSectionCodes.Add(response.Section!.Code);
-					RecordCreatedSection(response.Section.Code, environmentName);
+				RecordCreatedSection(response.Section.Code, environmentName);
 			}
 		}
 
@@ -1006,24 +1006,28 @@ public sealed class ApplicationSectionToolE2ETests {
 		}
 
 		string caption = $"E2E Custom {Guid.NewGuid():N}"[..24];
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
-		McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
-		await SeededApplicationResolver.ResolveOrIgnoreAsync(
-			session, cancellationTokenSource.Token, environmentName!, ApplicationCode);
 		MessageCollectingProgress progress = new();
-		CallToolResult callResult = await session.CallToolAsync(
-			SectionCreateToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName,
-					["application-code"] = ApplicationCode,
-					["caption"] = caption
-				}
-			},
-			progress,
-			cancellationTokenSource.Token);
-		ApplicationSectionContextResponseEnvelope response = ApplicationResultParser.ExtractSectionCreate(callResult);
-		cancellationTokenSource.Dispose();
+		CallToolResult callResult;
+		ApplicationSectionContextResponseEnvelope response;
+		// 'using' so a throw from the session start, the seeded-application resolve or the tool call still
+		// disposes the token source and cancels the timer it scheduled.
+		using (CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5))) {
+			McpServerSession session = await GetOrStartSharedSessionAsync(settings, cancellationTokenSource.Token);
+			await SeededApplicationResolver.ResolveOrIgnoreAsync(
+				session, cancellationTokenSource.Token, environmentName!, ApplicationCode);
+			callResult = await session.CallToolAsync(
+				SectionCreateToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["application-code"] = ApplicationCode,
+						["caption"] = caption
+					}
+				},
+				progress,
+				cancellationTokenSource.Token);
+			response = ApplicationResultParser.ExtractSectionCreate(callResult);
+		}
 		RecordCreatedSection(response.Section?.Code, environmentName);
 		_customEntitySection = new SharedCustomEntitySection(callResult, response, [.. progress.Messages]);
 		return _customEntitySection;
