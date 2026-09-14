@@ -61,6 +61,13 @@ public class PropsBuilder_Tests
 						</Reference>
 					</ItemGroup>
 				</When>
+				<Otherwise>
+					<ItemGroup>
+						<Reference Include=""Newtonsoft.Json"">
+							<HintPath>$(CoreLibPath)/Newtonsoft.Json.dll</HintPath>
+						</Reference>
+					</ItemGroup>
+				</Otherwise>
 			</Choose>
 		</Project>";
 
@@ -260,6 +267,25 @@ public class PropsBuilder_Tests
 			because: "the existing reference to it applies to net472 only");
 		netStandardProps.Should().Contain("Castle.Core",
 			because: "its reference lives in a Choose/When scoped to net472");
+	}
+
+	[Test]
+	[Description("An Otherwise carries no Condition attribute, so the ancestor walk sees nothing above the reference and would judge it to apply to net472 - the same defect as the When side, mirrored (PR #1496 review)")]
+	public void Build_ReferencesDll_When_ExistingReferenceIsInsideAnOtherwiseOfATargetFrameworkChoose(){
+		//Arrange
+		MockConditionalCsProjAndTemplateReads();
+		_fileSystem.GetFiles(Arg.Any<string>(), Arg.Is("*.dll"), Arg.Is(SearchOption.TopDirectoryOnly))
+			.Returns(ci => [
+				Path.Combine(ci.ArgAt<string>(0), "Newtonsoft.Json.dll"),
+				Path.Combine(ci.ArgAt<string>(0), "Terrasoft.Common.dll")
+			]);
+
+		//Act
+		_sut.Build(PackageName);
+
+		//Assert
+		CapturedPropsContent("net472").Should().Contain("Newtonsoft.Json",
+			because: "the Otherwise is the implicit negation of a net472 When, so its reference does NOT apply to net472 and suppressing it there is a compile error");
 	}
 
 	[Test]

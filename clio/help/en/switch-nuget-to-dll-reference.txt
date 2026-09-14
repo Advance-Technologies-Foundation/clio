@@ -27,7 +27,9 @@ NOTES
     The "already referenced" check honours the Condition of the <Reference> and
     of any enclosing <Choose>/<When>, so a reference scoped to one target
     framework no longer suppresses the dependency for the others. A condition
-    clio cannot evaluate keeps the dependency in the props file.
+    clio cannot evaluate keeps the dependency in the props file - and so does an
+    enclosing <Otherwise> whose sibling <When>s mention $(TargetFramework), since
+    an <Otherwise> carries no Condition of its own.
 
 EXAMPLES
     clio switch-nuget-to-dll-reference MyPackage

@@ -25,3 +25,13 @@ for `net472` and a `<PackageReference>` for `netstandard2.0` (`System.Text.Json`
 counts as "already referenced": the dll is written into no props file and copied into no
 `Files/Libs/netstandard`. Combined with `switch-nuget-to-dll-reference` commenting out the
 `PackageReference`, the netstandard build then has no source for the dependency at all.
+
+**`<Otherwise>` (PR #1496 review)** — an `<Otherwise>` carries NO `Condition` attribute; its condition is
+the implicit negation of its sibling `<When>`s. The ancestor walk reads `Condition` attributes only, so it
+found nothing above a reference inside `<Otherwise>`, concluded it applied unconditionally, and suppressed
+it from the props file of the very framework the sibling `<When>` excludes — the same defect as the
+`<When>` side, mirrored. An `<Otherwise>` whose `<Choose>` has a `<When>` mentioning `$(TargetFramework)`
+is therefore treated as unevaluable and the dependency is kept, on the same "a duplicate reference is a
+warning, a missing one is a compile error" rule as the complex-condition arm. An `<Otherwise>` under a
+`<Choose>` that says nothing about the target framework is left alone.
+

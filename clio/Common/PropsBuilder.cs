@@ -121,6 +121,10 @@ public class PropsBuilder : IPropsBuilder
 	#region Constants: Private
 
 	private const string ConditionTag = "Condition";
+
+	private const string OtherwiseTag = "Otherwise";
+
+	private const string WhenTag = "When";
 	private const string IncludeTag = "Include";
 	private const string Net472TargetFramework = "net472";
 	private const string NetStandardTargetFramework = "netstandard2.0";
@@ -230,6 +234,17 @@ public class PropsBuilder : IPropsBuilder
 	/// </remarks>
 	private static bool AppliesToTargetFramework(XElement element, string targetFramework){
 		for (XElement current = element; current is not null; current = current.Parent) {
+			//<Otherwise> carries NO Condition attribute - its condition is the implicit negation of its
+			//sibling <When>s, which this walk would otherwise never see. Reading "no condition above it" as
+			//"applies everywhere" is the same defect this method fixes on the <When> side, mirrored: a
+			//reference inside <Otherwise> would be judged to apply to net472 and suppressed from the net472
+			//props file even though the net472 <When> is what excludes it (PR #1496 review). Treated as
+			//unevaluable whenever a sibling <When> mentions $(TargetFramework), which lands on the same safe
+			//side as the complex-condition arm below - a duplicate reference is an MSBuild warning, a missing
+			//one is a compile error.
+			if (IsTargetFrameworkDependentOtherwise(current)) {
+				return false;
+			}
 			string condition = current.Attribute(ConditionTag)?.Value;
 			if (string.IsNullOrWhiteSpace(condition)) {
 				continue;
@@ -256,6 +271,24 @@ public class PropsBuilder : IPropsBuilder
 		}
 		return true;
 	}
+
+	/// <summary>
+	/// True when <paramref name="element"/> is an <c>&lt;Otherwise&gt;</c> whose <c>&lt;Choose&gt;</c> has at
+	/// least one <c>&lt;When&gt;</c> mentioning <c>$(TargetFramework)</c>.
+	/// </summary>
+	/// <remarks>
+	/// An <c>&lt;Otherwise&gt;</c> under a <c>&lt;Choose&gt;</c> whose <c>&lt;When&gt;</c>s say nothing about
+	/// the target framework is genuinely unconditional in the only dimension this builder reads, so it is
+	/// left alone rather than made unevaluable - that would suppress nothing but would stop honouring the
+	/// conditions the rest of the method does understand.
+	/// </remarks>
+	/// <param name="element">The ancestor being examined.</param>
+	private static bool IsTargetFrameworkDependentOtherwise(XElement element) =>
+		element.Name.LocalName.Equals(OtherwiseTag, StringComparison.OrdinalIgnoreCase)
+		&& element.Parent is { } choose
+		&& choose.Elements().Any(sibling =>
+			sibling.Name.LocalName.Equals(WhenTag, StringComparison.OrdinalIgnoreCase)
+			&& TargetFrameworkMentionRegex.IsMatch(sibling.Attribute(ConditionTag)?.Value ?? string.Empty));
 
 	private string GetPathTo(ItemType itemType, string packageName){
 		return itemType switch {

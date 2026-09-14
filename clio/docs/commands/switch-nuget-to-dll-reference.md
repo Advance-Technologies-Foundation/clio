@@ -40,7 +40,10 @@ no `<Import>` is added, because MSBuild fails the whole project when it imports 
 no root element. A warning names the skipped props file.
 
 A dependency that the csproj already declares is left out of the props file, and that check
-honours the `Condition` of the `<Reference>` and of any enclosing `<Choose>`/`<When>`. A
+honours the `Condition` of the `<Reference>` and of any enclosing `<Choose>`/`<When>`, and an
+enclosing `<Otherwise>` whose sibling `<When>`s mention `$(TargetFramework)` keeps the dependency
+(an `<Otherwise>` carries no `Condition` of its own — its condition is the implicit negation of
+those siblings, which clio does not evaluate). A
 `<Reference>` restricted to one target framework therefore no longer suppresses the dependency for
 the others — the shape clio's own package template uses for `System.Text.Json`,
 `Microsoft.Extensions.Http` and `Microsoft.Extensions.DependencyInjection`, which are a `net472`
