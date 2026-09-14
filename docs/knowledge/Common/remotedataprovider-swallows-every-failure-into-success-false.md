@@ -7,6 +7,7 @@ applies-to:
   - clio/Common/ISysSettingsManager.cs
   - clio/BindingsModule.cs
   - clio/Command/SysSettingsCommand.cs
+  - clio/Command/SysSettingFailureClassifier.cs
   - clio/Package/PackageBuilder.cs
 ticket: "#1371"
 date: 2026-09-03
@@ -56,7 +57,7 @@ block and a gateway error page all produce the byte-identical Newtonsoft message
 
 A corollary for anything running the provider on a background thread: a **thrown** transport fault is
 rethrown UNCHANGED (wrapping it erased the type and made the `"Network error …"` arms of
-`SysSettingsCommand.CategorizeError` and `SchemaNamePrefixTool` unreachable), and only the
+`SysSettingFailureClassifier.CategorizeError` and `SchemaNamePrefixTool` unreachable), and only the
 `Success == false` response — which has no original exception — is wrapped.
 
 Three consequences worth knowing before writing code against this:
@@ -77,6 +78,14 @@ Three consequences worth knowing before writing code against this:
   issue #1376 — a duration, not a round count, because the 1/2/5 s backoff makes a count meaningless);
   `PackageBuilder` additionally captures the fault inside the thread lambda and observes it on the main
   thread. Any new background consumer of `IDataProvider` needs the same two guards.
+
+- **The WRITE path is not this provider, and since issue #1378 it no longer degrades to it.**
+  `SysSettingsManager`'s `InsertSysSettingRequest` / `PostSysSettingsValues` calls go through
+  `IApplicationClient` and therefore still HOLD the response body. `ThrowIfSessionRejected` already
+  turned a proven login page into an authentication verdict there; every OTHER non-JSON answer — a
+  proxy, a WAF, a 404 page — is now diagnosed by the manager itself as `NonJsonWriteResponseException`
+  rather than escaping as a parser fault. So the write path's verdict is at least as informed as the
+  read path's `NonJsonPage`, never worse.
 
 **What breaks if you ignore it** — a command that reads through `IDataProvider` on a bypassed or raw
 provider reports **success with an empty result** on expired or rejected credentials: `get-syssetting`
