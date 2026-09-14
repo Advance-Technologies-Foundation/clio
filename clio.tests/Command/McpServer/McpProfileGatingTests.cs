@@ -71,7 +71,12 @@ public sealed class McpProfileGatingTests
 	/// not consume the byte budget; removing a <c>[FeatureToggle]</c> lands the tool's cost
 	/// on the ratchet at exactly the moment the deliberate budget decision is due.
 	/// </summary>
-	private static bool DefaultSurfaceEnabled(Type type) =>
+	/// <remarks>
+	/// <c>internal</c> so <see cref="ToolContractPayloadBudgetTests"/> ratchets the SAME surface instead
+	/// of re-implementing this predicate. Two copies would let the two fixtures' notions of "the default
+	/// surface" drift apart with nothing turning red (ENG-96389 review).
+	/// </remarks>
+	internal static bool DefaultSurfaceEnabled(Type type) =>
 		type.GetCustomAttribute<FeatureToggleAttribute>() is null;
 
 	private static Type[] EnabledToolTypes() =>
