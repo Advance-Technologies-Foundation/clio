@@ -55,6 +55,7 @@ public class RegWebAppTool(RegAppCommand command, ILogger logger) : BaseTool<Reg
 			Host = args.Host,
 			DevMode = args.DeveloperModeEnabled?.ToString(),
 			Safe = args.Safe?.ToString(),
+			IsNetCore = args.IsNetCore,
 			ClientId = args.ClientId,
 			ClientSecret = args.ClientSecret,
 			AuthAppUri = args.AuthAppUri,
@@ -131,5 +132,9 @@ public record RegWebAppArgs(
 
 	[property:JsonPropertyName("environment-path")]
 	[Description("Path to the Creatio application root folder.")]
-	string EnvironmentPath = null
+	string EnvironmentPath = null,
+
+	[property:JsonPropertyName("is-net-core")]
+	[Description("Runtime: true = .NET Core/NET8, false = .NET Framework. Omit to auto-detect.")]
+	bool? IsNetCore = null
 );
