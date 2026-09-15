@@ -202,7 +202,7 @@ public sealed class PageSyncToolBaselineTests
 	}
 
 	[Test]
-	[Description("sync-pages must refresh the meta.json baseline after a PINNED per-page save too. The refresh gate is shared with update-page (refreshBaseline || ConditionalBaselineApplied), so this pins the second writer against the issue #1538 regression: a pin that governs the conflict check must not suppress the post-save baseline refresh, or the caller's next UNPINNED sync of the same page conflicts with its own previous save.")]
+	[Description("CHARACTERIZATION, not a pin of the issue #1538 fix: sync-pages exposes no target-package-uid / target-schema-uid, so the selector branch that issue changes is unreachable from this tool and the ConditionalBaselineApplied half of the shared refresh gate is never exercised here. What this does pin is that a PINNED per-page save still refreshes meta.json through the refreshBaseline half - the property whose loss would reproduce the same symptom on this writer.")]
 	public async Task SyncPages_ShouldRefreshBaseline_WhenThePageCarriesAPinnedChecksum() {
 		// Arrange — the on-disk baseline is deliberately STALE; only the per-page pin matches the server,
 		// so the refresh can only be attributed to the pinned path.

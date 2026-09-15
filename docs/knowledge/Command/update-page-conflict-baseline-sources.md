@@ -77,13 +77,18 @@ applies per page. Until GH-1464 that tool — the one clio calls the canonical w
 `update-page`'s own `ToolDeprecation` points callers at — had no checksum member at all, so every
 `sync-pages` write was on the unpinned path with `force: true` as its only escape.
 
-**A pinned save always leaves a trace.** On the non-redirected path (a redirect returns its own
-warning before any of this runs), `TryArm` warns whenever the caller pinned a checksum and no
+**A pinned save always leaves a trace.** `TryArm` warns whenever the caller pinned a checksum and no
 on-disk baseline corroborates it - both when the baseline diverges and when none was matched at all
 for the anchor and environment. The second case is not exotic: an explicit `output-directory`, or an
 `--uri`/`--login` invocation that cannot satisfy `MatchesEnvironment`, both reach it, and the pin
 still governs the comparison there because `TryCheckForExternalModification` gates on
 `ExpectedChecksum` alone and never consults the armed flag.
+
+The selector path emits the SAME divergence trace, and that is a consequence of the refresh rule
+above rather than a cosmetic addition: once a pinned selector save can refresh `meta.json`, staying
+silent would let `RefreshOrDrop` overwrite the only local record that the pin ever diverged from the
+baseline - the bypass `AppendPinnedBaselineDivergenceWarnings` exists to expose. It also surfaces the
+corrupt-`meta.json` read warning the non-selector path already accumulated.
 
 **Why it is this way** — the on-disk baseline exists to protect plain CLI flows that have no way to
 carry state between two process invocations. It is a fallback, not the truth.

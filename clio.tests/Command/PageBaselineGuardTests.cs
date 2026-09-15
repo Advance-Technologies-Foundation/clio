@@ -392,11 +392,14 @@ public sealed class PageBaselineGuardTests {
 			because: "the recorded identity is what that later decision compares the resolved target against");
 		options.ExpectedSchemaUId.Should().BeNull(because: "the disk identity describes the auto-resolved schema");
 		options.ExpectedSchemaAbsent.Should().BeFalse(because: "a stale on-disk absence marker cannot veto a redirected write");
-		_fileGate.EnteredLockPaths.Should().NotBeEmpty(
-			because: "the baseline is now read under its lock even for a pinned selector save - its checksum still arms nothing, but its schema identity is the only way to tell a same-target save from a genuine redirect afterwards (issue #1538)");
-		warning.Should().NotBeNull();
+		_fileGate.EnteredLockPaths.Should().HaveCount(1,
+			because: "the baseline is now read under its lock even for a pinned selector save - its checksum still arms nothing, but its schema identity is the only way to tell a same-target save from a genuine redirect afterwards (issue #1538); a SECOND acquisition would mean the read was split and could interleave with another writer");
+		warning.Should().NotBeNull(
+			because: "a pinned selector save must leave a trace explaining which baseline decision was taken");
 		warning.Should().Contain("refreshed afterwards",
 			because: "with a readable baseline the trace must say it is consulted only for the refresh decision, never as a second conflict check (issue #1538)");
+		warning.Should().Contain("still compared",
+			because: "the caller must keep being told the pin itself remains an active guard against the resolved target - widening the read must not cost that statement");
 		warning.Should().NotContain("was ignored",
 			because: "the pin is NOT ignored on this path any more - saying so would describe the very fail-open this change removed");
 	}
@@ -444,6 +447,77 @@ public sealed class PageBaselineGuardTests {
 			because: "the target is resolved after the guard runs, so an unconditional refresh would stamp a redirected schema into the schema-name-keyed baseline");
 		warning.Should().Contain("refreshed afterwards",
 			because: "the trace must say the disk baseline is consulted only for the refresh decision, never as a second guard");
+	}
+
+	[Test]
+	[Description("End-to-end for issue #1538: TryArm -> the command's target match -> RefreshOrDrop. A PINNED save whose selector resolves to the schema the baseline describes must leave meta.json holding the POST-SAVE checksum, or the caller's next unpinned save conflicts with its own previous save. Both halves can be correct in isolation while the path and the flag drift apart, which is why this is asserted through the file, not through the flag.")]
+	public void TryArmThenRefreshOrDrop_ShouldMoveBaselineForward_WhenAPinnedSelectorSaveResolvesToTheBaselineSchema() {
+		// Arrange
+		AddMetaWithBaseline("dev", "pre-save-checksum");
+		PageUpdateOptions options = CreateOptions("dev");
+		options.ExpectedChecksum = "pre-save-checksum";
+		options.TargetPackageUId = "99999999-8888-7777-6666-555555555555";
+
+		// Act — arm, then stand in for the command's PromoteConditionalBaselineWhenTargetMatches deciding
+		// that the resolved target IS the schema the carried identity names, then refresh as the writers do.
+		(string metaFilePath, bool refreshBaseline, _) = _guard.TryArm(options, OutputDirectory);
+		refreshBaseline.Should().BeFalse(because: "the guard cannot decide this before the target is resolved");
+		options.ConditionalBaselineSchemaUId.Should().Be(SchemaUId,
+			because: "the identity the command compares the resolved target against has to survive the guard");
+		_guard.RefreshOrDrop(metaFilePath, options, new PageUpdateResponse {
+			Success = true,
+			SavedSchemaUId = SchemaUId,
+			NewChecksum = "post-save-checksum",
+			NewModifiedOn = "fresh-modified"
+		});
+
+		// Assert
+		PageMetaFileModel meta = JsonSerializer.Deserialize<PageMetaFileModel>(_fileSystem.GetFile(_metaPath).TextContents);
+		meta.Baseline.Checksum.Should().Be("post-save-checksum",
+			because: "this is the symptom issue #1538 reported: the baseline kept the superseded checksum and the next unpinned save was refused against the caller's own write");
+		meta.Baseline.EditableSchemaUId.Should().Be(SchemaUId,
+			because: "the refreshed baseline must still describe the schema it was keyed to, not a redirected one");
+	}
+
+	[Test]
+	[Description("The writer-level twin of the test above (issue #1538 AC-2): after this change metaFilePath is no longer null on the pinned selector path, so the boolean match is the ONLY thing standing between a genuine redirect and a corrupted schema-name-keyed baseline. A resolved target that is NOT the baseline's schema must leave meta.json byte-identical.")]
+	public void TryArmThenNoRefresh_ShouldLeaveTheBaselineUntouched_WhenAPinnedSelectorSaveResolvesElsewhere() {
+		// Arrange
+		AddMetaWithBaseline("dev", "pre-save-checksum");
+		string before = _fileSystem.GetFile(_metaPath).TextContents;
+		PageUpdateOptions options = CreateOptions("dev");
+		options.ExpectedChecksum = "pre-save-checksum";
+		options.TargetPackageUId = "99999999-8888-7777-6666-555555555555";
+
+		// Act — arm, then stand in for the command resolving to a DIFFERENT schema, which leaves
+		// ConditionalBaselineApplied false and so never calls RefreshOrDrop.
+		(_, bool refreshBaseline, _) = _guard.TryArm(options, OutputDirectory);
+		options.ConditionalBaselineApplied.Should().BeFalse(
+			because: "nothing has matched the carried identity, so no writer may refresh from this save");
+
+		// Assert
+		refreshBaseline.Should().BeFalse(because: "an unconditional refresh here is exactly the redirect corruption the guard exists to prevent");
+		_fileSystem.GetFile(_metaPath).TextContents.Should().Be(before,
+			because: "a redirected write must not move the baseline of the automatically resolved schema by even one field");
+	}
+
+	[Test]
+	[Description("A pinned selector save must surface the corrupt-meta.json read warning the non-selector path already accumulates. Widening the read to the pinned path widened the set of callers who would otherwise get silence about a meta.json that exists but cannot be deserialized.")]
+	public void TryArm_ShouldSurfaceTheReadWarning_WhenAPinnedSelectorSaveHitsUnreadableMeta() {
+		// Arrange
+		_fileSystem.AddFile(_metaPath, new MockFileData("{ this is not json"));
+		PageUpdateOptions options = CreateOptions("dev");
+		options.ExpectedChecksum = "caller-pinned-checksum";
+		options.TargetPackageUId = "99999999-8888-7777-6666-555555555555";
+
+		// Act
+		(_, _, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		warning.Should().NotBeNull(
+			because: "a meta.json that exists but cannot be read is a fact about the caller's workspace, not an internal detail");
+		warning.Should().Contain("meta.json",
+			because: "the trace has to name the file the caller has to look at");
 	}
 
 	[Test]
