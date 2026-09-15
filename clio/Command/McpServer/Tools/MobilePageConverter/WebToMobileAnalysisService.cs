@@ -1423,18 +1423,44 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>Builds the web→mobile container correspondence from the matched template rule.</summary>
+	/// <remarks>
+	/// Both names are checked against <see cref="SafeIdentifierPattern"/> and the pair is OMITTED when either
+	/// fails, rather than sanitized to the placeholder. The rules file is external input resolved at runtime
+	/// (env var -> local cache -> CDN), so a <c>containers</c> name is unbounded text until it passes that
+	/// check, and this is the one field that copies it to the caller verbatim — without the gate, whoever
+	/// publishes the rules file writes into the calling agent's context through <c>containerMap</c>.
+	/// <para>
+	/// Dropped rather than placeholdered because the entry has no meaning left either way: a name that is not
+	/// an identifier matches no element on the web page and names none on the mobile one, so the pair is
+	/// already inert everywhere else in the converter. <c>&lt;invalid-name&gt; -&gt; X</c> would be a
+	/// correspondence a reader could act on, asserting a mapping that does not exist.
+	/// </para>
+	/// <para>
+	/// <c>Note</c> is NOT emitted and must not become emitted: it is free prose authored in that same file,
+	/// and no allowlist constrains it. <see cref="ContainerMapEntry.Note"/> says so on the field itself.
+	/// </para>
+	/// </remarks>
 	private static IReadOnlyList<ContainerMapEntry> BuildContainerMap(TemplateMappingRule rule) {
 		if (rule?.Containers is null || rule.Containers.Count == 0) {
 			return [];
 		}
 		var entries = new List<ContainerMapEntry>();
 		foreach (ContainerMappingRule c in rule.Containers) {
-			if (!string.IsNullOrWhiteSpace(c?.Web) && !string.IsNullOrWhiteSpace(c.Mobile)) {
-				entries.Add(new ContainerMapEntry { Web = c.Web, Mobile = c.Mobile, Note = c.Note });
+			if (IsSafeRuleIdentifier(c?.Web) && IsSafeRuleIdentifier(c.Mobile)) {
+				entries.Add(new ContainerMapEntry { Web = c.Web, Mobile = c.Mobile });
 			}
 		}
 		return entries;
 	}
+
+	/// <summary>
+	/// True when a rules-file container name is one the converter's own syntax can produce — a bare
+	/// identifier, or the positional form <c>Identifier:anchor</c> the shipped tabbed rule uses
+	/// (<c>CardContentWrapper:top</c>) — and may therefore be copied to the caller as it stands.
+	/// </summary>
+	private static bool IsSafeRuleIdentifier(string value) =>
+		!string.IsNullOrWhiteSpace(value) && SafeContainerNamePattern.IsMatch(value);
+
 
 	private static List<string> CollectWebOnlySections(PageBundleInfo bundle) {
 		var sections = new List<string>();
@@ -1893,6 +1919,16 @@ public static class WebToMobileAnalysisService {
 	// reintroducing exactly the newline this check exists to keep out of agent-facing text.
 	private static readonly Regex SafeIdentifierPattern =
 		new(@"^[A-Za-z_][A-Za-z0-9_]*\z", RegexOptions.Compiled, RegexTimeout);
+
+	/// <summary>
+	/// <see cref="SafeIdentifierPattern"/> plus the positional <c>:anchor</c> suffix. Separate from it rather
+	/// than a widening of it: everywhere else that pattern guards an ELEMENT name, where a colon is not
+	/// legal, and one pattern serving both would quietly admit <c>Foo:bar</c> as an element name too.
+	/// </summary>
+	// \z, not $, for the same reason SafeIdentifierPattern uses it: .NET's $ also matches immediately
+	// before a single trailing newline.
+	private static readonly Regex SafeContainerNamePattern =
+		new(@"^[A-Za-z_][A-Za-z0-9_]*(:[A-Za-z_][A-Za-z0-9_]*)?\z", RegexOptions.Compiled, RegexTimeout);
 
 	/// <summary>
 	/// Returns <paramref name="value"/> unchanged when it is a safe identifier, otherwise a fixed placeholder —

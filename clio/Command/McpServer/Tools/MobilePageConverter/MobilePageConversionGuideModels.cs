@@ -96,16 +96,19 @@ public sealed record DataSectionConflict {
 /// A web→mobile container-name correspondence from the matched template pair. The model uses it
 /// to set each component's <c>parentName</c> to the correct mobile container.
 /// </summary>
+/// <remarks>
+/// Names only. The matching rules-file entry also carries a <c>note</c>, and this used to copy it here —
+/// free prose, authored in a file that resolves at runtime (env var → cache → CDN) and constrained by no
+/// allowlist, landing in the calling agent's context. <c>ContainerMappingRule.Note</c> says on the field
+/// itself that it has no reader and must not gain one; this was that reader. Both names are gated on the
+/// converter's own container-name syntax before they are copied, for the same reason.
+/// </remarks>
 public sealed class ContainerMapEntry {
 	[JsonPropertyName("web")]
 	public string Web { get; init; }
 
 	[JsonPropertyName("mobile")]
 	public string Mobile { get; init; }
-
-	[JsonPropertyName("note")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string Note { get; init; }
 }
 
 /// <summary>

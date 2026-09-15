@@ -199,11 +199,6 @@ public sealed class TemplateMappingRule {
 	public IReadOnlyList<ComponentMappingRule> Components { get; init; } = [];
 
 	/// <summary>
-	/// AUTHORING documentation for whoever edits this rules file — which web template this pair covers and
-	/// why. Deliberately has no reader: it is not projected onto the response, and must not become one. A
-	/// rules file resolves at runtime (env var → cache → CDN), so text from it reaching the wire would make
-	/// a rules author the writer of the calling agent's instructions.
-	/// </summary>
 	/// Elements the rule DECLARES on top of the mobile template — any mobile component or container the
 	/// template lacks but the conversion needs (a receiver such as one more tab in a converted tab strip, or a
 	/// plain component the mobile page should always carry). COMPONENT-AGNOSTIC: the mobile type, the parent
@@ -218,6 +213,12 @@ public sealed class TemplateMappingRule {
 	[JsonPropertyName("declaredElements")]
 	public IReadOnlyList<DeclaredElementRule> DeclaredElements { get; init; } = [];
 
+	/// <summary>
+	/// AUTHORING documentation for whoever edits this rules file — which web template this pair covers and
+	/// why. Deliberately has no reader: it is not projected onto the response, and must not become one. A
+	/// rules file resolves at runtime (env var → cache → CDN), so text from it reaching the wire would make
+	/// a rules author the writer of the calling agent's instructions.
+	/// </summary>
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
 }
