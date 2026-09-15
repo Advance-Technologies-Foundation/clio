@@ -14,10 +14,11 @@ for two independent reasons that are invisible at its own call site:
 1. `RemoveEmptyContainers` decides "is this container empty?" by the **absence** of the `items` slot
    (`IsEmptyRemovalCandidate`). Declare the slot before it runs and every container looks occupied,
    so the removal pass silently becomes a no-op.
-2. `BuildTabAreaLayers` is the only other pass that ADDS insert entries which other inserts then
-   target as parent (the synthesized tab-body grid and Area card). Run the slot pass before it and
-   those two layers ship with no declared slot — `SynthesizedLayerEntry` no longer compensates
-   inline, on purpose, so one pass covers converted and synthesized containers alike.
+2. `BuildTabAreaLayers` and `EmitDeclaredElements` are the other passes that ADD insert entries which
+   other inserts then target as parent (the synthesized tab-body grid/Area card, and a rule's
+   `declaredElements` respectively). Run the slot pass before either and those inserted containers
+   ship with no declared slot — `SynthesizedLayerEntry` no longer compensates inline, on purpose, so
+   one pass covers converted, synthesized, and declared containers alike.
 
 **Why it is this way** — `BuildMobileValues` deliberately never carries a child array as a value
 (children are emitted as their own element-map entries), and the Creatio differ resolves an insert's
