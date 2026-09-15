@@ -6,7 +6,7 @@ namespace Clio.Mcp.E2E.Support.Results;
 /// <summary>
 /// Unit test proving that <see cref="ApplicationResultParser.ExtractList"/> — one representative sibling
 /// of <see cref="EntitySchemaStructuredResultParser"/> (GitHub issue #1384) — now embeds the shared
-/// <see cref="McpResultDiagnostics.Describe"/> payload description in its parse-failure message instead of
+/// <see cref="McpResultDiagnostics.Describe"/> failure description in its parse-failure message instead of
 /// throwing the old bare "Could not parse list-apps MCP result." sentence, plus the two properties of the
 /// last-<see cref="System.Text.Json.JsonException"/> threading that the siblings gained with it: a real
 /// parse failure is named, and the doomed content-array attempt is not. Two sibling families are covered:
@@ -22,7 +22,7 @@ namespace Clio.Mcp.E2E.Support.Results;
 [Property("Module", "McpServer")]
 public sealed class ApplicationResultParserDiagnosticsTests {
 	[Test]
-	[Description("Includes the tool-specific prefix, IsError, and the payload's own text in the message thrown when list-apps returns an unparsable result.")]
+	[Description("Includes the tool-specific prefix and IsError in the message thrown when list-apps returns an unparsable result, and dumps the payload's own text to the file that message names.")]
 	public void ExtractList_ShouldThrowWithPayloadDiagnostics_WhenResultIsNotAValidListEnvelope() {
 		// Arrange
 		const string serverErrorText = "System.NullReferenceException: Object reference not set to an instance of an object.";
@@ -42,12 +42,14 @@ public sealed class ApplicationResultParserDiagnosticsTests {
 			because: "the tool-specific prefix must be preserved unchanged");
 		exception.Message.Should().Contain("IsError=True",
 			because: "an unhandled server exception is exactly the kind of failure IsError should surface");
-		exception.Message.Should().Contain(serverErrorText,
-			because: "the payload's own error text must be visible in the thrown message, not discarded as it was before this diagnostic was added");
+		exception.Message.Should().NotContain(serverErrorText,
+			because: "the payload no longer travels in the message; putting it there is what forced the bounding and redaction that collapsed the diagnostic under CI load (#1537)");
+		PayloadDumpReader.ReadAndDelete(exception.Message).Should().Contain(serverErrorText,
+			because: "the payload's own error text must still be recoverable from the dump the message names, not discarded as it was before this diagnostic was added");
 	}
 
 	[Test]
-	[Description("Names the last JsonException when a sibling parser's text payload is not JSON, instead of discarding it inside catch (JsonException) { }.")]
+	[Description("Names the last JsonException in the message when a sibling parser's text payload is not JSON, instead of discarding it inside catch (JsonException) { }, and dumps the page itself.")]
 	public void ExtractResponse_ShouldNameLastJsonError_WhenTextPayloadIsNotJson() {
 		// Arrange
 		const string loginPage = "<!DOCTYPE html><html><body><h1>Sign in</h1></body></html>";
@@ -65,8 +67,8 @@ public sealed class ApplicationResultParserDiagnosticsTests {
 			.Which;
 		exception.Message.Should().Contain("LastJsonError=",
 			because: "the sibling parsers now keep the JsonException their catch blocks used to swallow");
-		exception.Message.Should().Contain("Sign in",
-			because: "the page's own text must be visible too, so an authentication redirect is recognizable as one");
+		PayloadDumpReader.ReadAndDelete(exception.Message).Should().Contain("Sign in",
+			because: "the page's own text must be recoverable too, so an authentication redirect is recognizable as one");
 	}
 
 	[Test]
@@ -88,7 +90,7 @@ public sealed class ApplicationResultParserDiagnosticsTests {
 			.Which;
 		exception.Message.Should().NotContain("LastJsonError=",
 			because: "deserializing the raw content-item array into an object always fails and says nothing about the real payload, so blaming it would misdirect the reader");
-		exception.Message.Should().Contain("packages",
+		PayloadDumpReader.ReadAndDelete(exception.Message).Should().Contain("packages",
 			because: "the payload itself must still be dumped, which is what actually explains this failure");
 	}
 }
