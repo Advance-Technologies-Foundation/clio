@@ -45,4 +45,17 @@ internal static class McpToolDescriptions {
 		"(an unregistered inserted widget/metric title is REJECTED too), except for the rare controls whose " +
 		"property does not read a resource (e.g. crt.ImageInput.tooltip, which must stay a literal). " +
 		"See get-guidance `page-schema-resources` for the full rule.";
+
+	/// <summary>
+	/// Appended to <see cref="PageResources"/> on the two WRITE tools, <c>update-page</c> and
+	/// <c>sync-pages</c> — both of their pre-execution gates now consult the keys already persisted on the
+	/// schema, so both honour the additive rule (issues #1320, #1464). It must not go on
+	/// the shared
+	/// constant either: that constant is also served by a resident tool, and the resident tools/list payload
+	/// is held under a hard byte budget by
+	/// <c>McpFeatureToggleFilterTests.RegisterEnabledPrimitives_ShouldKeepToolsSerializedSizeWithinBudget_WhenCalled</c>.
+	/// </summary>
+	internal const string PageResourcesAdditive =
+		" Additions only: a key already stored on the schema stays registered and is NOT updated by " +
+		"re-sending it on a later save.";
 }

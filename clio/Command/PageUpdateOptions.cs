@@ -3,6 +3,7 @@
 	using System.Collections.Generic;
 	using System.IO;
 	using System.Linq;
+	using Clio.Command.McpServer;
 	using Clio.Common;
 	using CommandLine;
 	using Newtonsoft.Json;
@@ -116,11 +117,46 @@
 		public bool ExpectedSchemaAbsent { get; set; }
 
 		/// <summary>
+		/// Gets or sets the editable schema UId the on-disk baseline was captured for, when a
+		/// <c>target-package-uid</c> / <c>target-schema-uid</c> selector is present. MCP-internal.
+		/// </summary>
+		/// <remarks>
+		/// A selector is not by itself a redirect: naming the package that ALREADY owns the schema
+		/// resolves to exactly the schema the baseline describes, and dropping the baseline there let a
+		/// stale body overwrite a concurrent writer's save with <c>success: true</c>. The baseline
+		/// therefore travels as a CONDITIONAL one — it is promoted into
+		/// <see cref="ExpectedChecksum"/>/<see cref="ExpectedSchemaUId"/>/<see cref="ExpectedSchemaAbsent"/>
+		/// only once the target is resolved and turns out to be this very schema, and is otherwise
+		/// discarded exactly as before. Resolution happens after the guard runs, which is why the
+		/// decision cannot be taken inside it.
+		/// </remarks>
+		internal string? ConditionalBaselineSchemaUId { get; set; }
+
+		/// <summary>Gets or sets the conditional baseline's checksum. See <see cref="ConditionalBaselineSchemaUId"/>.</summary>
+		internal string? ConditionalBaselineChecksum { get; set; }
+
+		/// <summary>Gets or sets the conditional baseline's "no editable schema existed" marker. See <see cref="ConditionalBaselineSchemaUId"/>.</summary>
+		internal bool ConditionalBaselineSchemaAbsent { get; set; }
+
+		/// <summary>
+		/// Gets or sets a value indicating whether the conditional baseline was promoted because the
+		/// resolved target matched it. The save must then refresh the on-disk baseline like any other
+		/// armed save, or the next unpinned save auto-arms from a superseded checksum.
+		/// </summary>
+		internal bool ConditionalBaselineApplied { get; set; }
+
+		/// <summary>
 		/// Gets or sets a value indicating whether the successful save path should attempt a
 		/// best-effort Designer Presence push. Internal orchestration flag; not exposed as a CLI
 		/// option and enabled only by the dedicated <c>update-page</c> entry points.
 		/// </summary>
 		internal bool NotifyDesignerPresence { get; set; }
+
+		// The persisted-resource-key read used to be memoized on THIS type (PersistedResourceKeysRead /
+		// Snapshot / Failure). It is not any more: a cache keyed on options-INSTANCE identity cannot serve
+		// sync-pages, which builds a fresh options object per page and runs its first validation gate
+		// before any options exist. IPersistedResourceKeyReader owns the read and keys it by
+		// (environment, schema) instead (issue #1464).
 	}
 
 	/// <summary>
@@ -139,6 +175,7 @@
 		private readonly IPageDesignerHierarchyClient _hierarchyClient;
 		private readonly IPageDesignerPresenceNotifier? _pageDesignerPresenceNotifier;
 		private readonly IPageBaselineGuard _pageBaselineGuard;
+		private readonly IPersistedResourceKeyReader _persistedResourceKeyReader;
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="PageUpdateCommand"/> class.
@@ -152,6 +189,12 @@
 		/// protection as the MCP tools without passing <c>--expected-checksum</c> by hand. Injected as a
 		/// required dependency so a broken DI registration fails loudly at resolve time instead of
 		/// silently reverting to overwrite-without-checking.</param>
+		/// <param name="persistedResourceKeyReader">Required owner of the persisted-resource-key read. It
+		/// keys the read by (environment, schema) for the duration of one logical page write, so the three
+		/// validation gates that can ask for it resolve the schema hierarchy once between them instead of
+		/// once each. Injected as a REQUIRED dependency rather than an optional one: an absent reader is
+		/// invisible to every existing test construction, and silently reverting to an uncached read would
+		/// restore the duplicate round trips this collaborator exists to remove.</param>
 		/// <param name="hierarchyClient">Designer hierarchy client used to resolve replacing schemas.</param>
 		/// <param name="pageDesignerPresenceNotifier">Best-effort notifier used by the update-page
 		/// entry points to publish Designer Presence save events.</param>
@@ -160,6 +203,7 @@
 			IServiceUrlBuilder serviceUrlBuilder,
 			ILogger logger,
 			IPageBaselineGuard pageBaselineGuard,
+			IPersistedResourceKeyReader persistedResourceKeyReader,
 			IPageDesignerHierarchyClient hierarchyClient = null,
 			IPageDesignerPresenceNotifier? pageDesignerPresenceNotifier = null) {
 			_applicationClient = applicationClient;
@@ -168,6 +212,7 @@
 			_hierarchyClient = hierarchyClient;
 			_pageDesignerPresenceNotifier = pageDesignerPresenceNotifier;
 			_pageBaselineGuard = pageBaselineGuard;
+			_persistedResourceKeyReader = persistedResourceKeyReader;
 		}
 
 		/// <summary>
@@ -209,7 +254,14 @@
 				if (commonValidationError != null) { response = commonValidationError; return false; }
 				if (!TryResolveContext(options, out EditableSchemaContext context, out response)) return false;
 				if (!TryCheckForExternalModification(options, context, out response)) return false;
-				PageUpdateResponse validationError = ValidateInput(options, context.SchemaType, explicitResources);
+				// The context is already in hand here, so the read delegate reuses it and resolves NOTHING.
+				// Routing it through the reader is still what makes this gate free when an MCP pre-execution
+				// gate already read the same (environment, schema) earlier in the same call — and what makes
+				// the reason reachable through GetFailureWarning when this gate is the one that read.
+				PageUpdateResponse validationError = ValidateInput(
+					options, context.SchemaType, explicitResources,
+					() => _persistedResourceKeyReader
+						.Read(options, () => ReadPersistedResourceKeys(context)).Keys);
 				if (validationError != null) { response = validationError; return false; }
 				return options.DryRun
 					? TryCompleteDryRun(options, context, explicitResources, parsedOptionalProperties, out response)
@@ -336,6 +388,94 @@
 		}
 
 		/// <summary>
+		/// Reads the resource keys already persisted on the target schema, resolving the schema hierarchy
+		/// itself. The entry point for a caller that has NO resolved schema context of its own — the MCP
+		/// pre-execution gates of <c>update-page</c> and <c>sync-pages</c>.
+		/// </summary>
+		/// <param name="options">The pending write request identifying the schema and environment.</param>
+		/// <returns>
+		/// The keys, and the reason when the read produced none. Never throws and never <c>null</c>.
+		/// </returns>
+		/// <remarks>
+		/// Best-effort and intended for the FAILURE path only: it costs a hierarchy resolution plus a
+		/// <c>GetSchema</c> round-trip, and an empty result simply restores the previous, stricter
+		/// behaviour rather than letting an unvalidated body through. Route calls through
+		/// <see cref="IPersistedResourceKeyReader"/> so the resolution is paid once per (environment,
+		/// schema) across every gate of one logical save.
+		/// </remarks>
+		internal PersistedResourceKeyRead ReadPersistedResourceKeys(PageUpdateOptions options) {
+			try {
+				if (!TryResolveContext(options, out EditableSchemaContext context,
+					out PageUpdateResponse resolutionFailure)) {
+					// A CLEAN resolution failure produced no warning at all before, leaving the caller with the
+					// misleading "resource is neither auto-provided nor registered" (issue #1320).
+					return LogPersistedResourceKeyFailure(resolutionFailure?.Error);
+				}
+				return ReadPersistedResourceKeys(context);
+			} catch (Exception ex) when (ex is not OperationCanceledException) {
+				return LogPersistedResourceKeyFailure(ex.Message);
+			}
+		}
+
+		/// <summary>
+		/// Reads the resource keys already persisted on the schema's <c>localizableStrings</c>, for a
+		/// caller that has ALREADY resolved the target schema context.
+		/// </summary>
+		/// <param name="context">The resolved target schema.</param>
+		/// <returns>The keys, and the reason when the read produced none.</returns>
+		/// <remarks>
+		/// Used ONLY on the failure path of the label-resource validators, so the extra <c>GetSchema</c>
+		/// round-trip is not paid by a body that validates cleanly, and a body that fails on structure
+		/// still reports its own error rather than a network error. A key already stored on the schema
+		/// resolves at runtime whether or not the current call repeats it in <c>resources</c>; without
+		/// this the second and every later save of the same page was rejected unless the caller re-sent
+		/// every key it had ever registered (issue #1320). Best-effort: any failure degrades to an empty
+		/// set, which restores the previous, stricter behaviour instead of letting the save through.
+		/// <para>
+		/// PURE with respect to the request — the memo that used to live on <see cref="PageUpdateOptions"/>
+		/// is gone. Caching is <see cref="IPersistedResourceKeyReader"/>'s job, keyed by the thing actually
+		/// being read rather than by the identity of one options instance (issue #1464).
+		/// </para>
+		/// </remarks>
+		private PersistedResourceKeyRead ReadPersistedResourceKeys(EditableSchemaContext context) {
+			try {
+				if (context.IsCreateReplacing) {
+					// Nothing is persisted yet on a schema this save is about to create.
+					return PersistedResourceKeyRead.None;
+				}
+				// A CLEAN GetSchema refusal is the third way this read ends with no keys, and it used to be
+				// the only silent one: the designer service answers success:false (schema not found, access
+				// denied, a redirected target UId), TryGetSchema returns false with the server's own message,
+				// and discarding it through `out _` handed the caller back the misleading "resource 'X' is
+				// neither auto-provided ... nor registered" that issue #1320 opened with.
+				if (!TryGetSchema(context.TemplateSchemaUId, out JObject schema, out string schemaError)) {
+					return LogPersistedResourceKeyFailure(schemaError);
+				}
+				return PersistedResourceKeyRead.FromKeys(
+					ResourceStringHelper.GetExistingKeys(schema[LocalizableStringsKey] as JArray));
+			} catch (Exception ex) when (ex is not OperationCanceledException) {
+				return LogPersistedResourceKeyFailure(ex.Message);
+			}
+		}
+
+		/// <summary>
+		/// Records why the persisted-resource-key rescue could not read the schema, and returns the failed
+		/// result carrying that reason.
+		/// </summary>
+		/// <remarks>
+		/// The verdict deliberately stays unchanged - the caller falls back to the stricter one - but the
+		/// reason must not vanish. Without this, a 401, an unreachable environment or a failed hierarchy
+		/// resolution reaches the caller as "resource 'X' is neither auto-provided ... nor registered",
+		/// i.e. exactly the misleading cause issue #1320 opened with, one layer down. The log line is for
+		/// the CLI reader; the returned warning is what reaches an MCP caller's typed response.
+		/// </remarks>
+		private PersistedResourceKeyRead LogPersistedResourceKeyFailure(string detail) {
+			PersistedResourceKeyRead failure = PersistedResourceKeyRead.Failure(detail);
+			_logger?.WriteWarning(failure.FailureWarning);
+			return failure;
+		}
+
+		/// <summary>
 		/// Validates widget caption resource resolutions for a REPLACE dry run (web pages only), returning
 		/// advisory warnings. Weaker than the save's gate on purpose: without the server's
 		/// <c>localizableStrings</c> it can only resolve against the explicitly supplied resources, and
@@ -410,6 +550,7 @@
 		private static string BuildConflictErrorMessage(string schemaName) =>
 			$"Page schema '{schemaName}' was modified outside this session (external modification detected). " +
 			"Do NOT retry with the same body. Re-run get-page for this schema, re-apply your change on top of the fresh body, then retry. " +
+			"Re-sending this response's actualChecksum as the checksum argument is NOT a resolution - it discards the external change exactly like force=true and needs the same explicit user confirmation. " +
 			"Use force=true ONLY after the user explicitly confirms overwriting the external changes.";
 
 		/// <summary>
@@ -419,11 +560,40 @@
 		/// <see cref="PageUpdateOptions.Force"/> is set or no baseline information was supplied.
 		/// </summary>
 		/// <returns><c>true</c> when the write may proceed; <c>false</c> with a conflict response otherwise.</returns>
+		/// <summary>
+		/// Arms the baseline that <see cref="PageBaselineGuard"/> could not decide on, once the resolved
+		/// target turns out to be the very schema that baseline describes.
+		/// </summary>
+		/// <remarks>
+		/// The guard runs BEFORE the target is resolved, so a save carrying <c>target-package-uid</c> /
+		/// <c>target-schema-uid</c> cannot be told apart there from a genuine redirect. Treating every
+		/// selector as a redirect dropped the still-applicable baseline: passing the page's own existing
+		/// package as the target made a stale body save with <c>success: true</c> over a concurrent
+		/// writer's change, while the same call without the selector correctly reported a conflict.
+		/// A caller-pinned checksum still wins — it is the stronger, explicitly supplied witness — and a
+		/// target that resolves elsewhere still leaves the baseline dropped, which is the redirect case
+		/// the guard exists to handle.
+		/// </remarks>
+		private static void PromoteConditionalBaselineWhenTargetMatches(
+				PageUpdateOptions options, EditableSchemaContext context) {
+			if (string.IsNullOrWhiteSpace(options.ConditionalBaselineSchemaUId)
+				|| !string.IsNullOrWhiteSpace(options.ExpectedChecksum)
+				|| !string.Equals(options.ConditionalBaselineSchemaUId, context.EditableSchemaUId,
+					StringComparison.OrdinalIgnoreCase)) {
+				return;
+			}
+			options.ExpectedChecksum = options.ConditionalBaselineChecksum;
+			options.ExpectedSchemaUId = options.ConditionalBaselineSchemaUId;
+			options.ExpectedSchemaAbsent = options.ConditionalBaselineSchemaAbsent;
+			options.ConditionalBaselineApplied = true;
+		}
+
 		private bool TryCheckForExternalModification(
 				PageUpdateOptions options,
 				EditableSchemaContext context,
 				out PageUpdateResponse response) {
 			response = null;
+			PromoteConditionalBaselineWhenTargetMatches(options, context);
 			if (options.Force) return true;
 			bool hasChecksum = !string.IsNullOrWhiteSpace(options.ExpectedChecksum);
 			if (!hasChecksum && !options.ExpectedSchemaAbsent) return true;
@@ -431,6 +601,10 @@
 				if (context.IsCreateReplacing) return true;
 				response = CreateConflictResponse(options, new PageConflictDetails {
 					Reason = PageConflictReasons.SchemaCreatedExternally,
+					// Echoed so the refusal is diagnosable: it tells the caller which baseline the
+					// verdict was formed against instead of leaving "modified outside this session"
+					// as the only clue.
+					ExpectedChecksum = options.ExpectedChecksum,
 					ActualSchemaUId = context.EditableSchemaUId
 				});
 				return false;
@@ -598,19 +772,27 @@
 		/// <param name="options">Command options.</param>
 		/// <returns>Command exit code.</returns>
 		public override int Execute(PageUpdateOptions options) {
+			// One CLI invocation is one logical page write, so it gets one persisted-key caching scope. It
+			// changes no verdict — with no scope every read simply runs uncached — but it is what makes the
+			// failure reason reachable below, on the surface that has no MCP tool above it.
+			using IDisposable persistedResourceKeyScope = _persistedResourceKeyReader.BeginRequestScope();
 			options.NotifyDesignerPresence = true;
 			// Mirror the MCP tool: auto-discover the on-disk baseline so a CLI save (e.g. an AI agent
 			// running `clio update-page --body-file .clio-pages/<schema>/body.js`) is blocked when the
 			// schema was modified out-of-band, instead of silently overwriting the external edit.
-			(string metaFilePath, bool baselineArmed, string baselineWarning) =
+			(string metaFilePath, bool refreshBaseline, string baselineWarning) =
 				_pageBaselineGuard.TryArm(options, outputDirectory: null);
 			bool success = TryUpdatePage(options, out PageUpdateResponse response);
-			if (baselineArmed && success && !options.DryRun) {
+			if ((refreshBaseline || options.ConditionalBaselineApplied) && success && !options.DryRun) {
 				// A failed refresh cannot fail a save that already landed on the server, so it surfaces as a
 				// warning on the response instead (ENG-95262 AC-02).
 				AppendBaselineWarning(response, _pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response));
 			}
 			AppendBaselineWarning(response, baselineWarning);
+			// A failed persisted-key read never changes the verdict, but its reason must reach the caller
+			// on the response - not only the log - so a 401 or an unresolved hierarchy is not reported as
+			// "resource is neither auto-provided nor registered" (issue #1320).
+			AppendBaselineWarning(response, _persistedResourceKeyReader.GetFailureWarning(options));
 			_logger.WriteInfo(JsonConvert.SerializeObject(response));
 			return success ? 0 : 1;
 		}
@@ -1101,10 +1283,11 @@
 		private static PageUpdateResponse ValidateInput(
 			PageUpdateOptions options,
 			PageSchemaType schemaType,
-			Dictionary<string, string> explicitResources) {
+			Dictionary<string, string> explicitResources,
+			Func<IReadOnlySet<string>> persistedResourceKeysProvider = null) {
 			return schemaType == PageSchemaType.Mobile
 				? ValidateMobileInput(options)
-				: ValidateWebInput(options, explicitResources);
+				: ValidateWebInput(options, explicitResources, persistedResourceKeysProvider);
 		}
 
 		private static PageUpdateResponse ValidateMobileInput(PageUpdateOptions options) {
@@ -1131,7 +1314,8 @@
 
 		private static PageUpdateResponse ValidateWebInput(
 			PageUpdateOptions options,
-			Dictionary<string, string> explicitResources) {
+			Dictionary<string, string> explicitResources,
+			Func<IReadOnlySet<string>> persistedResourceKeysProvider = null) {
 			// Structural floor - marker integrity and JS syntax run even behind validate=false. A markerless
 			// body is valid JavaScript, so it would save, after which PageSchemaSectionReader can no longer
 			// extract sections and append-merge is dead on that page. ResolveSyntaxFailure already treats
@@ -1173,11 +1357,12 @@
 			if (!handlerResult.IsValid) {
 				return ContentValidationFailure($"Body contains invalid handlers: {string.Join("; ", handlerResult.Errors)}");
 			}
-			SchemaValidationResult semanticResult = SchemaValidationService.ValidateStandardFieldBindings(options.Body, explicitResources);
+			(SchemaValidationResult semanticResult, SchemaValidationResult insertSelfConsistencyResult) =
+				SchemaValidationService.ValidateFieldLabelResources(
+					options.Body, explicitResources, persistedResourceKeysProvider);
 			if (!semanticResult.IsValid) {
 				return ContentValidationFailure($"Body contains invalid form field bindings: {string.Join("; ", semanticResult.Errors)}");
 			}
-			SchemaValidationResult insertSelfConsistencyResult = SchemaValidationService.ValidateInsertedFieldSelfConsistency(options.Body, explicitResources);
 			if (!insertSelfConsistencyResult.IsValid) {
 				return ContentValidationFailure($"Body contains inserted field controls without required bindings or resources: {string.Join("; ", insertSelfConsistencyResult.Errors)}");
 			}

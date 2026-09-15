@@ -47,7 +47,8 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 		]);
 		_command = new PageUpdateCommand(
 			_applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(),
-			Substitute.For<IPageBaselineGuard>(), hierarchyClient);
+			Substitute.For<IPageBaselineGuard>(), Substitute.For<IPersistedResourceKeyReader>(),
+			hierarchyClient);
 	}
 
 	private static string WebBody(string viewConfigDiffInner) =>
