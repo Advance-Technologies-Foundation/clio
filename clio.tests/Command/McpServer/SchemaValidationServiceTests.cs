@@ -10458,4 +10458,71 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	#endregion
+	#region ValidateAppendFragmentIsRecognizable
+
+	[Test]
+	[Description("A bare list of operations carries no section marker and is rejected.")]
+	public void ValidateAppendFragmentIsRecognizable_ShouldReject_WhenTheBodyCarriesNoSectionMarker() {
+		// Arrange - valid JavaScript (an array literal), so the syntax gate passes it. Before this rule the
+		// merge read every section as empty and reported success while discarding the whole fragment.
+		const string bareOperationList = """[{"operation":"merge","name":"UsrPanel","values":{"title":"New"}}]""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateAppendFragmentIsRecognizable(bareOperationList);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a body with no marker pair contributes nothing, so accepting it would silently discard it");
+		string.Join(" ", result.Errors).Should().Contain("SCHEMA_VIEW_CONFIG_DIFF",
+			because: "the caller needs to be told the shape that would have worked, not just that theirs failed");
+	}
+
+	[Test]
+	[Description("One section marker is enough - append relaxes completeness, not recognizability.")]
+	public void ValidateAppendFragmentIsRecognizable_ShouldAccept_WhenTheBodyCarriesOnlyOneSection() {
+		// Arrange - a genuine fragment: it omits every other section on purpose, which is the point of append.
+		const string singleSectionFragment =
+			"""define("X", function() { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ }; });""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateAppendFragmentIsRecognizable(singleSectionFragment);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "requiring more than one section would re-impose the completeness rule append exists to relax");
+	}
+
+	[Test]
+	[Description("A full-config body stays recognizable so it reaches its own precise error.")]
+	public void ValidateAppendFragmentIsRecognizable_ShouldAccept_WhenTheBodyCarriesOnlyFullConfigSections() {
+		// Arrange - full-config append IS unsupported, but PageBodyMerger.UsesUnsupportedFullConfigForm says so
+		// downstream and names --mode replace. This rule must not pre-empt that with a vaguer message.
+		const string fullConfigBody =
+			"""define("X", function() { return { viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{}/**SCHEMA_VIEW_MODEL_CONFIG*/ }; });""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateAppendFragmentIsRecognizable(fullConfigBody);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the body IS recognizable; rejecting it here would replace a precise diagnosis with a generic one");
+	}
+
+	[Test]
+	[Description("An unclosed marker is not a pair, so it does not count as a section.")]
+	public void ValidateAppendFragmentIsRecognizable_ShouldReject_WhenTheMarkerIsNotClosed() {
+		// Arrange - PageSchemaSectionReader needs a PAIR; a lone opening marker reads as absent, which is the
+		// same silent-discard path as carrying no marker at all.
+		const string unclosedMarker =
+			"""define("X", function() { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[] }; });""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateAppendFragmentIsRecognizable(unclosedMarker);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the reader matches a pair, so a half-written marker discards the section just as silently");
+	}
+
+	#endregion
 }

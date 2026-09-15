@@ -18,7 +18,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(GetRelatedPageAddonTool.ToolName)]
 [NonParallelizable]
-public sealed class GetRelatedPageAddonToolE2ETests {
+public sealed class GetRelatedPageAddonToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = GetRelatedPageAddonTool.ToolName;
 
 	[Test]
@@ -140,20 +140,20 @@ public sealed class GetRelatedPageAddonToolE2ETests {
 			because: "the structured response should name the missing required field");
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync(TimeSpan timeout) {
+	private async Task<ArrangeContext> ArrangeAsync(TimeSpan timeout) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		CancellationTokenSource cancellationTokenSource = new(timeout);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		return new ArrangeContext(session, cancellationTokenSource);
 	}
 
-	private sealed record ArrangeContext(
+	private new sealed record ArrangeContext(
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 }

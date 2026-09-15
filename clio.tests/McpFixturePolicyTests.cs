@@ -269,6 +269,52 @@ public sealed class McpFixturePolicyTests {
 			because: "the opt-in has to be checked before the environment is resolved and before the first clio process is spawned, otherwise the guard runs after the damage");
 	}
 
+	[Test]
+	[Description("Pins the destructive-target decision: a fixture that gates on McpE2E:AllowDestructiveMcpTests must resolve its environment configured-only, never through the resolver that falls back to another registered stand.")]
+	public void DestructiveFixtures_ShouldResolveTheConfiguredEnvironment_NotTheFallback() {
+		// Arrange
+		string e2eProjectDirectory = Path.Combine(RepositoryRoot, "clio.mcp.e2e");
+		Directory.Exists(e2eProjectDirectory).Should().BeTrue(
+			because: $"this guard reads fixture sources from {e2eProjectDirectory}; a moved project must fail here rather than pass on an empty set");
+		string[] fixtureSourcePaths = Directory
+			.GetFiles(e2eProjectDirectory, "*E2ETests.cs", SearchOption.TopDirectoryOnly)
+			.OrderBy(path => path, StringComparer.Ordinal)
+			.ToArray();
+
+		// Act
+		// The scan is deliberately narrowed to the per-fixture ResolveReachableEnvironmentAsync helper.
+		// A read-only test may legitimately take the fallback inline - sync-pages has three that reject a
+		// body before any remote save - and pinning the whole file would forbid that too.
+		string[] offenders = fixtureSourcePaths
+			.Where(path => {
+				string source = File.ReadAllText(path);
+				if (!source.Contains("AllowDestructiveMcpTests", StringComparison.Ordinal)) {
+					return false;
+				}
+				int helperIndex = source.IndexOf(
+					"Task<string> ResolveReachableEnvironmentAsync", StringComparison.Ordinal);
+				if (helperIndex < 0) {
+					return false;
+				}
+				int nextMemberIndex = source.IndexOf("\n\tprivate static ", helperIndex + 1, StringComparison.Ordinal);
+				string helperBody = nextMemberIndex < 0
+					? source[helperIndex..]
+					: source[helperIndex..nextMemberIndex];
+				return helperBody.Contains(
+					"ReachableSandboxEnvironment.ResolveOrIgnoreAsync", StringComparison.Ordinal);
+			})
+			.Select(Path.GetFileName)
+			.ToArray()!;
+
+		// Assert
+		fixtureSourcePaths.Should().NotBeEmpty(
+			because: "an empty fixture set would make this guard pin nothing while still reporting green");
+		offenders.Should().BeEmpty(
+			because: "the destructive opt-in authorizes writes to the disposable stand named in McpE2E:Sandbox:EnvironmentName, "
+				+ "not to whatever other registered environment happens to answer; a fallback here lands persistent state "
+				+ "on an unrelated stand and nothing reports an error. Offenders: " + string.Join(", ", offenders));
+	}
+
 	private static bool HasCategory(IEnumerable<CategoryAttribute> attributes, string category) =>
 		attributes.Any(attribute => string.Equals(attribute.Name, category, StringComparison.Ordinal));
 }

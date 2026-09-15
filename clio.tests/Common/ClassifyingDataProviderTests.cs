@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Security.Authentication;
+using System.Threading.Tasks;
 using ATF.Repository;
 using ATF.Repository.Providers;
 using Clio.Common;
@@ -26,6 +27,27 @@ public class ClassifyingDataProviderTests {
 	private const string ExpiredPasswordError = "5: Your password has expired.";
 
 	private const string GenericProviderError = "SqlException: deadlock victim";
+
+	/// <summary>
+	/// What a request TIMEOUT looks like once ATF has swallowed it. Verified with ilspycmd against
+	/// creatio.client 2.0.2: the synchronous <c>CreatioClient.ExecutePostRequest</c> passes
+	/// <c>CancellationToken.None</c>, so the only cancellation source in the stack is
+	/// <c>CreateTimeout</c>'s <c>CancelAfter</c>. Reaching the authentication step's 100 000 ms cap
+	/// produces <c>WebException(WebExceptionStatus.Timeout)</c> whose message is the cancellation prose,
+	/// and <c>RemoteDataProvider.GetItems</c> concatenates the message with its inner message.
+	/// Reproduced live against a listener that accepts and never answers: after 100 s clio reported
+	/// <c>Failed reading records from entity schema 'VwWebServiceV2': The operation was canceled.The
+	/// operation was canceled.</c>
+	/// </summary>
+	private const string SwallowedTimeoutError = "The operation was canceled.The operation was canceled.";
+
+	/// <summary>
+	/// The other timeout wording: the request itself outlives its cap (1 800 000 ms for a select,
+	/// 600 000 ms for a batch), <c>ReadResponseBody</c> observes it through <c>Task.Result</c>, and the
+	/// resulting <c>AggregateException(TaskCanceledException)</c> is what ATF swallows.
+	/// </summary>
+	private const string SwallowedTaskCanceledError =
+		"One or more errors occurred. (A task was canceled.)A task was canceled.";
 
 	/// <summary>Mirrors ClassifyingDataProvider.MaxFailureDetailLength, which is private to it.</summary>
 	private const int MaxFailureDetailLength = 300;
@@ -307,7 +329,7 @@ public class ClassifyingDataProviderTests {
 	}
 
 	[Test]
-	[Description("Cancellation is the caller's own decision and must reach it unchanged rather than being rewritten into a diagnosis about credentials.")]
+	[Description("Cancellation is the caller's own decision and must reach it unchanged rather than being rewritten into a diagnosis about credentials. This guards the DECORATOR CONTRACT for a shape the production stack does not produce: IDataProvider takes no CancellationToken and the synchronous Creatio client passes CancellationToken.None, so no caller token can reach the transport (issue #1377).")]
 	public void GetItems_ShouldPropagateCancellationUnchanged() {
 		// Arrange
 		IDataProvider sut = new ClassifyingDataProvider(
@@ -319,6 +341,79 @@ public class ClassifyingDataProviderTests {
 		// Assert
 		act.Should().Throw<OperationCanceledException>(
 			because: "a co-operative shutdown is not a provider failure");
+	}
+
+	[Test]
+	[Description("An unsuccessful read whose text says the operation was canceled is a TRANSPORT TIMEOUT, not a caller cancellation, and must stay a data-provider failure (issue #1377).")]
+	public void GetItems_ShouldKeepASwallowedTimeoutAsAProviderFailure() {
+		// Arrange
+		IDataProvider sut = BuildFailing(SwallowedTimeoutError);
+
+		// Act
+		Action act = () => sut.GetItems(BuildSelectQuery("VwWebServiceV2"));
+
+		// Assert
+		Exception thrown = act.Should().Throw<DataProviderFailureException>(
+			because: "no caller token can reach this call - IDataProvider carries none and the synchronous CreatioClient.ExecutePostRequest passes CancellationToken.None, so CreateTimeout's CancelAfter is the only cancellation source and this text can only mean the 100 000 / 1 800 000 ms cap was reached").Which;
+		thrown.Should().NotBeAssignableTo<OperationCanceledException>(
+			because: "re-raising it as a cancellation would hide every timeout and make CompilationHistoryPoller's 'exception is not OperationCanceledException' filter tolerate a dead environment forever");
+		thrown.Message.Should().Contain("VwWebServiceV2",
+			because: "the operator still needs the failing read named");
+	}
+
+	[Test]
+	[Description("The same rule on the process path: a run that came back unsuccessful with cancellation prose timed out and must stay a data-provider failure (issue #1377).")]
+	public void ExecuteProcess_ShouldKeepASwallowedTimeoutAsAProviderFailure() {
+		// Arrange
+		IDataProvider sut = BuildFailing(SwallowedTimeoutError);
+		IExecuteProcessRequest request = Substitute.For<IExecuteProcessRequest>();
+		request.ProcessSchemaName.Returns("UsrTestProcess");
+
+		// Act
+		Action act = () => sut.ExecuteProcess(request);
+
+		// Assert
+		Exception thrown = act.Should().Throw<DataProviderFailureException>(
+			because: "RemoteDataProvider.ExecuteProcess catches every exception into Success = false exactly as GetItems does, and the cancellation prose there has the same single cause - an expired request cap").Which;
+		thrown.Should().NotBeAssignableTo<OperationCanceledException>(
+			because: "a timed-out process run is a failure the caller must see, not a shutdown it asked for");
+		thrown.Message.Should().Contain("UsrTestProcess",
+			because: "the failing process has to be named");
+	}
+
+	[Test]
+	[Description("The wording the request cap itself produces - AggregateException(TaskCanceledException) via Task.Result - is also a timeout and must not be reported as a cancellation (issue #1377).")]
+	public void GetItems_ShouldKeepASwallowedTaskCancellationAsAProviderFailure() {
+		// Arrange
+		IDataProvider sut = BuildFailing(SwallowedTaskCanceledError);
+
+		// Act
+		Action act = () => sut.GetItems(BuildSelectQuery("Contact"));
+
+		// Assert
+		act.Should().Throw<DataProviderFailureException>(
+			because: "ReadResponseBody observes the send through Task.Result, so a request that outlived its 1 800 000 ms cap reaches ErrorMessage in this shape - still a timeout")
+			.Which.Should().NotBeAssignableTo<OperationCanceledException>(
+				because: "the two timeout wordings must be classified identically");
+	}
+
+	[Test]
+	[Description("A thrown AggregateException(TaskCanceledException) - the shape Task.Result produces on the value-returning members - must travel out unchanged rather than being rewritten into a verdict about credentials (issue #1377).")]
+	public void GetSysSettingValue_ShouldNotRewriteAThrownTaskCancellationIntoAnAuthenticationVerdict() {
+		// Arrange
+		IDataProvider sut = new ClassifyingDataProvider(new ThrowingDataProvider(
+			() => new AggregateException(new TaskCanceledException("A task was canceled."))));
+
+		// Act
+		Action act = () => sut.GetSysSettingValue<string>("SchemaNamePrefix");
+
+		// Assert
+		Exception thrown = act.Should().Throw<AggregateException>(
+			because: "a transport fault is rethrown unchanged so the network arms of SysSettingsCommand.CategorizeFailure stay reachable").Which;
+		thrown.Should().NotBeAssignableTo<AuthenticationException>(
+			because: "nothing in a task-cancellation names a credential, and claiming one would send the operator to repair a working password");
+		thrown.Should().NotBeOfType<DataProviderFailureException>(
+			because: "there is an original exception to preserve here, so the non-JSON-page rewrite must not fire either");
 	}
 
 	[Test]

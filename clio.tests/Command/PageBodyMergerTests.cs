@@ -443,14 +443,14 @@ public class PageBodyMergerTests {
 		const string incoming = """[{"operation":"merge","name":"B","values":{"title":"new"}}]""";
 
 		// Act
-		string merged = PageBodyMerger.Merge(WebBody(current), WebBody(incoming), out IReadOnlyList<string> drops);
+		string merged = PageBodyMerger.Merge(WebBody(current), WebBody(incoming), out PageAppendProjection projection);
 
 		// Assert
-		drops.Should().ContainSingle(
+		projection.SupersededDropWarnings.Should().ContainSingle(
 			because: "exactly one current entry was dropped, so exactly one warning must reach the caller — silence here is the #1132 defect narrowed, not eliminated");
-		drops[0].Should().Contain("'B'",
+		projection.SupersededDropWarnings[0].Should().Contain("'B'",
 			because: "the caller cannot act on a warning that does not name the component");
-		drops[0].Should().Contain("get-page",
+		projection.SupersededDropWarnings[0].Should().Contain("get-page",
 			because: "the warning must say how to recover, not merely that something happened");
 		merged.Should().Contain("\"title\": \"new\"",
 			because: "the incoming value still wins — reporting the loss must not change the merge result");
@@ -464,11 +464,11 @@ public class PageBodyMergerTests {
 		const string incoming = """[{"operation":"insert","name":"UsrNew","values":{"type":"crt.Button"}}]""";
 
 		// Act
-		PageBodyMerger.Merge(WebBody(current), WebBody(incoming), out IReadOnlyList<string> drops);
+		PageBodyMerger.Merge(WebBody(current), WebBody(incoming), out PageAppendProjection projection);
 
 		// Assert
-		drops.Should().NotBeNull(because: "callers must be able to enumerate without a null check");
-		drops.Should().BeEmpty(because: "an append that preserves every existing operation has nothing to warn about");
+		projection.SupersededDropWarnings.Should().NotBeNull(because: "callers must be able to enumerate without a null check");
+		projection.SupersededDropWarnings.Should().BeEmpty(because: "an append that preserves every existing operation has nothing to warn about");
 	}
 
 	[Test]
@@ -481,10 +481,10 @@ public class PageBodyMergerTests {
 		const string incoming = """[{"operation":"merge","name":"B","values":{"title":"new"}}]""";
 
 		// Act
-		string merged = PageBodyMerger.Merge(WebBody(current), WebBody(incoming), out IReadOnlyList<string> drops);
+		string merged = PageBodyMerger.Merge(WebBody(current), WebBody(incoming), out PageAppendProjection projection);
 
 		// Assert
-		drops.Should().BeEmpty(
+		projection.SupersededDropWarnings.Should().BeEmpty(
 			because: "nothing was dropped — one entry was replaced in place. A warning here would be a false positive, and without this case a drop message escaping onto the replace branch would leave the whole suite green");
 		merged.Should().Contain("\"title\": \"new\"",
 			because: "the replacement still happened");
@@ -504,10 +504,10 @@ public class PageBodyMergerTests {
 		const string incoming = """[{"operation":"merge","name":"B","values":{"a":9}}]""";
 
 		// Act
-		PageBodyMerger.Merge(WebBody(current), WebBody(incoming), out IReadOnlyList<string> drops);
+		PageBodyMerger.Merge(WebBody(current), WebBody(incoming), out PageAppendProjection projection);
 
 		// Assert
-		drops.Should().ContainSingle(
+		projection.SupersededDropWarnings.Should().ContainSingle(
 			because: "two entries were dropped but they share one identity; emitting the same sentence twice is noise the caller cannot act on differently");
 	}
 

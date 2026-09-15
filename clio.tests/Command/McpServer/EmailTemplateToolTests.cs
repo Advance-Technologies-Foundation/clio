@@ -149,7 +149,7 @@ public sealed class EmailTemplateToolTests {
 				: Rows(),
 			_ => throw new InvalidOperationException($"Unexpected URL: {url}")
 		});
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), 30_000)
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), 30_000)
 			.Returns(_ => { rowExists = true; return string.Empty; });
 		EmailTemplateContentVariant absent = tool.Get(new EmailTemplateGetArgs {
 			EmailId = EmailId.ToString("D"), EnvironmentName = "dev"
@@ -170,7 +170,7 @@ public sealed class EmailTemplateToolTests {
 			tool.Get(new EmailTemplateGetArgs { EmailId = EmailId.ToString("D"), EnvironmentName = "dev" })
 				.Variants.Single(variant => variant.Format == "beefree").Checksum,
 			because: "the create receipt must describe the row Creatio stored, not the request values");
-		client.Received(1).ExecutePostRequest(
+		client.Received(1).ExecuteNonReplayablePostRequest(
 			Arg.Is<string>(url => url.EndsWith("odata/BfEmailTemplate", StringComparison.Ordinal)),
 			Arg.Is<string>(payload => payload.Contains("\"PageJson\":\"{new:true}\"")), 30_000);
 		client.DidNotReceive().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
@@ -201,7 +201,7 @@ public sealed class EmailTemplateToolTests {
 		response.Success.Should().BeFalse(because: "the supplied checksum does not describe current content");
 		response.Error.Should().Contain("changed after it was read",
 			because: "the caller needs an actionable optimistic-concurrency diagnostic");
-		client.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
+		client.DidNotReceive().ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
 		client.DidNotReceive().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
 	}
 
@@ -237,7 +237,7 @@ public sealed class EmailTemplateToolTests {
 		client.Received(1).ExecutePatchRequest(
 			Arg.Is<string>(url => url.EndsWith($"odata/EmailTemplate({EmailId:D})", StringComparison.Ordinal)),
 			Arg.Is<string>(payload => payload == "{\"Subject\":\"After\"}"), 30_000);
-		client.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
+		client.DidNotReceive().ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
 	}
 
 	[Test]
@@ -263,7 +263,7 @@ public sealed class EmailTemplateToolTests {
 				: Rows(),
 			_ => throw new InvalidOperationException($"Unexpected URL: {url}")
 		});
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), 30_000)
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), 30_000)
 			.Returns(_ => { rowExists = true; return string.Empty; });
 		EmailTemplateContentVariant absent = tool.Get(new EmailTemplateGetArgs {
 			EmailId = EmailId.ToString("D"), EnvironmentName = "dev", LanguageId = LanguageId.ToString("D")
@@ -280,7 +280,7 @@ public sealed class EmailTemplateToolTests {
 		// Assert
 		response.Success.Should().BeTrue(because: "the requested translation remained absent after the guarded read");
 		response.Created.Should().BeTrue(because: "EmailTemplateLang did not contain the requested language");
-		client.Received(1).ExecutePostRequest(
+		client.Received(1).ExecuteNonReplayablePostRequest(
 			Arg.Is<string>(url => url.EndsWith("odata/EmailTemplateLang", StringComparison.Ordinal)),
 			Arg.Is<string>(payload => payload.Contains($"\"LanguageId\":\"{LanguageId:D}\"")), 30_000);
 		client.DidNotReceive().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
@@ -364,7 +364,7 @@ public sealed class EmailTemplateToolTests {
 				: Rows(),
 			_ => throw new InvalidOperationException($"Unexpected URL: {url}")
 		});
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), 30_000)
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), 30_000)
 			.Returns(_ => { rowExists = true; return string.Empty; });
 		EmailTemplateContentVariant absent = tool.Get(new EmailTemplateGetArgs {
 			EmailId = EmailId.ToString("D"), EnvironmentName = "dev", LanguageId = LanguageId.ToString("D")
@@ -464,7 +464,7 @@ public sealed class EmailTemplateToolTests {
 		response.Success.Should().BeTrue(
 			because: "the resolved default row still matches the checksum the read returned");
 		response.Created.Should().BeFalse(because: "the default row already exists and must be edited in place");
-		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default);
+		client.DidNotReceiveWithAnyArgs().ExecuteNonReplayablePostRequest(default, default, default);
 		// because: posting here would leave the email with two default beefree rows
 		client.Received(1).ExecutePatchRequest(
 			Arg.Any<string>(),
@@ -509,7 +509,7 @@ public sealed class EmailTemplateToolTests {
 			because: "both tools document an empty language as the default variant, so the read must resolve it to the IsDefault row rather than to the literal empty language");
 		response.Success.Should().BeTrue(because: "the resolved default row still matches the checksum the read returned");
 		response.Created.Should().BeFalse(because: "the default row already exists and must be edited in place");
-		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default);
+		client.DidNotReceiveWithAnyArgs().ExecuteNonReplayablePostRequest(default, default, default);
 		// because: posting here would leave the email with two rows flagged IsDefault, and IsDefault decides which content the email sends
 	}
 
@@ -555,7 +555,7 @@ public sealed class EmailTemplateToolTests {
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
 		client.ExecuteGetRequest(Arg.Any<string>(), 30_000).Returns(call => response(call.Arg<string>()));
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), 30_000).Returns(string.Empty);
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), 30_000).Returns(string.Empty);
 		client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), 30_000).Returns(string.Empty);
 		return (client, new EmailTemplateTool(new EmailTemplateContentService(resolver)));
 	}
