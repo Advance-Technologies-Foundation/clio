@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Clio.Command.McpServer;
+using Clio.Common;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 
@@ -496,14 +497,12 @@ public sealed class McpResultDiagnosticsTests {
 	[Description("Covers every secret key the production redactor knows, so a key added there cannot silently go unredacted here.")]
 	public void CredentialKeyCore_ShouldCoverEveryProductionCredentialKey() {
 		// Arrange
-		GeneratedRegexAttribute productionRule = typeof(SensitiveErrorTextRedactor)
-			.GetMethod("CredentialPairRegex", BindingFlags.NonPublic | BindingFlags.Static)!
-			.GetCustomAttribute<GeneratedRegexAttribute>()!;
-		string productionKeyAlternation = Regex.Match(productionRule.Pattern, @"\\b\((?<keys>[^)]*)\)\\b").Groups["keys"].Value;
-		string[] productionKeys = productionKeyAlternation.Split('|', StringSplitOptions.RemoveEmptyEntries);
+		string productionKeyAlternation = ProductionCredentialKeyAlternation();
+		string[] productionKeys = SplitTopLevelAlternatives(productionKeyAlternation);
 
 		// Act
-		string[] missingKeys = [.. productionKeys.Where(key => !McpResultDiagnostics.CredentialKeyCore.Contains(key, StringComparison.Ordinal))];
+		string[] missingKeys = [.. productionKeys.Where(key =>
+			!McpResultDiagnostics.CredentialKeyCore.Contains(KeyCore(key), StringComparison.Ordinal))];
 
 		// Assert
 		productionKeys.Should().NotBeEmpty(
@@ -520,16 +519,14 @@ public sealed class McpResultDiagnosticsTests {
 		// from production, or one this harness invented, stayed invisible - and the harness copy then
 		// over-redacts against a rule nothing states any more. This test does not fail on a difference:
 		// it PINS the accepted set, so any change on either side has to be looked at once.
-		// The two keys this harness deliberately carries ahead of production. Both are OAuth/service-
-		// account key names that reach an MCP payload dump and that SensitiveErrorTextRedactor does not
-		// know yet; #1493 is the open PR against that redactor. When they land there, this array shrinks
-		// to empty and the test says so instead of the drift going unnoticed.
-		string[] knownHarnessOnlyKeys = ["client[_-]?id", "private[_-]?key"];
-		GeneratedRegexAttribute productionRule = typeof(SensitiveErrorTextRedactor)
-			.GetMethod("CredentialPairRegex", BindingFlags.NonPublic | BindingFlags.Static)!
-			.GetCustomAttribute<GeneratedRegexAttribute>()!;
-		string productionKeyAlternation = Regex.Match(productionRule.Pattern, @"\\b\((?<keys>[^)]*)\)\\b").Groups["keys"].Value;
-		string[] harnessKeys = McpResultDiagnostics.CredentialKeyCore.Split('|', StringSplitOptions.RemoveEmptyEntries);
+		// The keys this harness deliberately carries ahead of production. "client[_-]?id" and
+		// "private[_-]?key" used to live here: both are OAuth/service-account key names that reach an
+		// MCP payload dump, and the redactor did not know them. They landed in production with the
+		// Clio.Common move (#1473), so the array is empty again - which is exactly what this test is
+		// for: the drift is stated here rather than going unnoticed.
+		string[] knownHarnessOnlyKeys = [];
+		string productionKeyAlternation = ProductionCredentialKeyAlternation();
+		string[] harnessKeys = SplitTopLevelAlternatives(McpResultDiagnostics.CredentialKeyCore);
 
 		// Act
 		string[] harnessOnlyKeys = [.. harnessKeys.Where(key =>
@@ -540,6 +537,107 @@ public sealed class McpResultDiagnosticsTests {
 			because: "the oracle is worthless if it silently extracts nothing from the harness pattern");
 		harnessOnlyKeys.Should().BeEquivalentTo(knownHarnessOnlyKeys,
 			because: "a key this harness carries alone means the duplicate redaction rule has drifted from the one it mirrors - either production dropped it, or it was invented here; both need a decision, not silence");
+	}
+
+	/// <summary>
+	/// The key alternation of the production <c>CredentialPairRegex</c> - the text inside its first
+	/// <c>\b(...)\b</c> group - read off the compiled rule itself rather than copied.
+	/// </summary>
+	/// <remarks>
+	/// The group is located by counting parentheses instead of by a <c>[^)]*</c> match: the alternation
+	/// carries nested groups of its own (the optional OAuth qualifier in front of "token"), so a
+	/// non-nesting match stops at the first inner <c>)</c> and silently extracts nothing.
+	/// </remarks>
+	private static string ProductionCredentialKeyAlternation() {
+		GeneratedRegexAttribute productionRule = typeof(SensitiveErrorTextRedactor)
+			.GetMethod("CredentialPairRegex", BindingFlags.NonPublic | BindingFlags.Static)!
+			.GetCustomAttribute<GeneratedRegexAttribute>()!;
+		string pattern = productionRule.Pattern;
+		int openIndex = pattern.IndexOf(@"\b(", StringComparison.Ordinal);
+		openIndex.Should().BeGreaterThanOrEqualTo(0,
+			because: @"the production rule is expected to open with a \b(...) key group");
+		openIndex += 2;
+		int depth = 0;
+		for (int i = openIndex + 1; i < pattern.Length; i++) {
+			if (pattern[i] == '\\') {
+				i++;
+				continue;
+			}
+			if (pattern[i] == '[') {
+				while (i < pattern.Length && pattern[i] != ']') {
+					i += pattern[i] == '\\' ? 2 : 1;
+				}
+				continue;
+			}
+			if (pattern[i] == '(') {
+				depth++;
+			} else if (pattern[i] == ')') {
+				if (depth == 0) {
+					return pattern[(openIndex + 1)..i];
+				}
+				depth--;
+			}
+		}
+		throw new InvalidOperationException("The production credential key group is not closed.");
+	}
+
+	/// <summary>
+	/// Splits an alternation on the '|' separators that sit at the top level, leaving the ones inside a
+	/// nested group or character class alone.
+	/// </summary>
+	private static string[] SplitTopLevelAlternatives(string alternation) {
+		List<string> alternatives = [];
+		StringBuilder current = new();
+		int depth = 0;
+		for (int i = 0; i < alternation.Length; i++) {
+			char c = alternation[i];
+			if (c == '\\' && i + 1 < alternation.Length) {
+				current.Append(c).Append(alternation[++i]);
+				continue;
+			}
+			if (c == '[') {
+				while (i < alternation.Length) {
+					current.Append(alternation[i]);
+					if (alternation[i] == ']') {
+						break;
+					}
+					if (alternation[i] == '\\' && i + 1 < alternation.Length) {
+						current.Append(alternation[++i]);
+					}
+					i++;
+				}
+				continue;
+			}
+			if (c == '(') {
+				depth++;
+			} else if (c == ')') {
+				depth--;
+			} else if (c == '|' && depth == 0) {
+				alternatives.Add(current.ToString());
+				current.Clear();
+				continue;
+			}
+			current.Append(c);
+		}
+		alternatives.Add(current.ToString());
+		return [.. alternatives.Where(alternative => alternative.Length > 0)];
+	}
+
+	/// <summary>
+	/// The part of a production key that the harness list has to carry: the optional qualifier group in
+	/// front of it ("(?:access|refresh|...)?[_-]?token") only widens the spellings of the SAME key, and
+	/// the harness already wraps every key in "[\w.-]*?...[\w.-]*", so it matches those spellings
+	/// through the core alone.
+	/// </summary>
+	private static string KeyCore(string productionKey) {
+		string core = productionKey;
+		if (core.StartsWith("(?:", StringComparison.Ordinal)) {
+			int closeIndex = core.IndexOf(")?", StringComparison.Ordinal);
+			if (closeIndex >= 0) {
+				core = core[(closeIndex + 2)..];
+			}
+		}
+		return core.StartsWith("[_-]?", StringComparison.Ordinal) ? core["[_-]?".Length..] : core;
 	}
 
 	/// <summary>

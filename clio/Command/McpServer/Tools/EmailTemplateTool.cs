@@ -568,7 +568,10 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 		IReadOnlyDictionary<string, object> data) {
 		string payload = JsonSerializer.Serialize(data);
 		string response = string.IsNullOrWhiteSpace(recordId)
-			? client.ExecutePostRequest(urls.Build(ODataKeyFormatter.CollectionPath(entity)), payload, RequestTimeout)
+			// Both branches are record writes, so neither may be replayed by automatic
+			// re-authentication (GitHub #1313); PATCH refuses replay for the whole verb.
+			? client.ExecuteNonReplayablePostRequest(urls.Build(ODataKeyFormatter.CollectionPath(entity)),
+				payload, RequestTimeout)
 			: client.ExecutePatchRequest(urls.Build(ODataKeyFormatter.KeyPath(entity, recordId)), payload, RequestTimeout);
 		if (!string.IsNullOrWhiteSpace(response)) {
 			using JsonDocument document = JsonDocument.Parse(response);

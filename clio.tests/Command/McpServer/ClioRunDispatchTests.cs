@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.McpServer;
@@ -115,11 +116,71 @@ public sealed class ClioRunDispatchTests {
 
 		// Assert
 		string text = ErrorText(result);
-		result.IsError.Should().BeTrue(because: "clio-run must reject an incompatible target argument before invoking the tool");
+		result.IsError.Should().BeTrue(because: "clio-run must answer an incompatible target argument with an error result, and the tool body must never run");
 		text.Should().Contain("invalid-parameter-type", because: "the nested dispatch must use the MCP argument error contract");
 		text.Should().Contain("value", because: "the target argument name must be actionable");
 		text.Should().Contain("string", because: "the diagnostic must state the expected JSON type");
 		text.Should().NotContain("Cannot get the value of a token type", because: "the SDK implementation exception must not leak to the agent");
+	}
+
+	// A composite args record that counts its own deserializations, so a test can observe HOW MANY times
+	// a dispatched call binds the caller's JSON. System.Text.Json creates one instance per bind, so the
+	// counter is exactly the number of binds. Public because the SDK builds the tool over a public
+	// method whose parameter type it must be able to reach; the counter itself stays internal and is
+	// incremented atomically, since the SDK may bind on a thread pool thread.
+	public sealed class CountingArgs {
+		internal static int BindCount;
+
+		public CountingArgs() => Interlocked.Increment(ref BindCount);
+
+		[JsonPropertyName("value")]
+		public string? Value { get; set; }
+	}
+
+	[McpServerToolType]
+	private static class CountingToolType {
+		internal const string ToolName = "counting-tool";
+
+		internal static bool BodyRan;
+
+		[McpServerTool(Name = ToolName, Destructive = false)]
+		[System.ComponentModel.Description("Counts how often its arguments are bound.")]
+		public static string Run([System.ComponentModel.Description("payload")] CountingArgs args) {
+			BodyRan = true;
+			return $"ran:{args.Value}";
+		}
+	}
+
+	// The counting tool - unlike the older fixtures in this file, which keep JsonSerializerOptions.Default
+	// because their assertions are written against its property naming - is built with the PRODUCTION MCP
+	// serializer options, so the bind count it observes is the one the shipped server produces.
+	private static McpServerTool BuildCountingTool() =>
+		McpServerTool.Create(
+			typeof(CountingToolType).GetMethod(nameof(CountingToolType.Run))!,
+			target: null,
+			new McpServerToolCreateOptions { SerializerOptions = BindingsModule.CreateMcpSerializerOptions() });
+
+	[Test]
+	[Category("Unit")]
+	[Description("Binds a successfully dispatched clio-run argument exactly once, so the nested dispatch no longer deserializes the same JSON for a diagnostic it then discards.")]
+	public async Task RunAsync_ShouldBindDispatchedArgumentsOnce_WhenTheCallSucceeds() {
+		// Arrange
+		RegisterTool(CountingToolType.ToolName, BuildCountingTool(), destructive: false);
+		Interlocked.Exchange(ref CountingArgs.BindCount, 0);
+		CountingToolType.BodyRan = false;
+		JsonElement arguments = JsonDocument.Parse("{\"args\":{\"value\":\"payload\"}}").RootElement;
+
+		// Act
+		CallToolResult result = await _sut.RunAsync(
+			CountingToolType.ToolName, arguments, destructiveSurface: false, CallContext(), CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().NotBe(true,
+			because: "a well-formed dispatched call must succeed and reach the target tool body");
+		CountingToolType.BodyRan.Should().BeTrue(
+			because: "the dispatch must actually run the target tool, not short-circuit before it");
+		Volatile.Read(ref CountingArgs.BindCount).Should().Be(1,
+			because: "the SDK's own binding is the only deserialization a successful dispatch owes");
 	}
 
 	// A real SDK-built tool whose method throws, so InvokeAsync surfaces an exception (which the SDK

@@ -75,7 +75,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_dependencyResolver = Substitute.For<IEntitySchemaDependencyResolver>();
 		// Stubbed here, not per test: an unstubbed member returning a reference type answers with null, and a
 		// null resolution would fail the load path with a NullReferenceException before any assertion runs.
-		_dependencyResolver.Resolve(Arg.Any<string>(), Arg.Any<string>())
+		_dependencyResolver.Resolve(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>())
 			.Returns(EntitySchemaDependencyResolution.None);
 		_entitySchemaPublisher = Substitute.For<IEntitySchemaPublisher>();
 		_savedSchema = null;
@@ -2942,7 +2942,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	public void ModifyColumn_ShouldNotRetryTheDesignerLoad_WhenSchemaIsUnavailable() {
 		// Arrange
 		SetupUnavailableSchema();
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg")
+		_dependencyResolver.Resolve("UsrVehicle", Arg.Any<Guid>(), "UsrPkg")
 			.Returns(new EntitySchemaDependencyResolution(["UsrOwner"], 1, true, true));
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",
@@ -2964,7 +2964,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	public void ModifyColumn_ShouldThrowEnrichedError_WhenNoCandidateIsFound() {
 		// Arrange
 		SetupUnavailableSchema();
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg")
+		_dependencyResolver.Resolve("UsrVehicle", Arg.Any<Guid>(), "UsrPkg")
 			.Returns(EntitySchemaDependencyResolution.None);
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",
@@ -3026,7 +3026,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 		});
 
 		// Assert
-		_dependencyResolver.DidNotReceive().Resolve(Arg.Any<string>(), Arg.Any<string>());
+		_dependencyResolver.DidNotReceive().Resolve(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>());
 	}
 
 	[Test]
@@ -3043,7 +3043,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 		});
 
 		// Assert
-		_dependencyResolver.DidNotReceive().Resolve(Arg.Any<string>(), Arg.Any<string>());
+		_dependencyResolver.DidNotReceive().Resolve(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>());
 	}
 
 	[Test]
@@ -3201,7 +3201,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	public void ModifyColumn_ShouldNameRankedCandidatePackagesInTheError_WhenSchemaIsUnavailable() {
 		// Arrange
 		SetupMarkupSchemaResponse();
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg").Returns(
+		_dependencyResolver.Resolve("UsrVehicle", Arg.Any<Guid>(), "UsrPkg").Returns(
 			new EntitySchemaDependencyResolution(["CrtLeadOppMgmtApp", "SalesEnterprise", "CrtOpportunity"], 2, true, true));
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",
@@ -3232,7 +3232,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	public void ModifyColumn_ShouldClaimNoCause_WhenNoCandidatePackageWasFound() {
 		// Arrange
 		SetupMarkupSchemaResponse();
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg")
+		_dependencyResolver.Resolve("UsrVehicle", Arg.Any<Guid>(), "UsrPkg")
 			.Returns(EntitySchemaDependencyResolution.None);
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",
@@ -3253,11 +3253,11 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
-	[Description("Asks the resolver for candidates on a read path, so a read can name the fix; the lookup itself never changes the package on any path (issue #722).")]
+	[Description("Asks the resolver for candidates on a read path, so a read can name the fix; the lookup itself never changes the package on any path (issue #722). Passes the package identity the request was already scoped to, so the resolver does not re-resolve it by name (issue #1461).")]
 	public void GetSchemaProperties_ShouldRequestCandidates_WhenSchemaIsUnavailable() {
 		// Arrange
 		SetupMarkupSchemaResponse();
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg").Returns(
+		_dependencyResolver.Resolve("UsrVehicle", Arg.Any<Guid>(), "UsrPkg").Returns(
 			new EntitySchemaDependencyResolution(["CrtLeadOppMgmtApp"], 1, true, true));
 
 		// Act
@@ -3270,7 +3270,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 		act.Should().Throw<NonJsonServiceResponseException>()
 			.Which.Message.Should().Contain("CrtLeadOppMgmtApp",
 				because: "the read path carried no candidate information at all before, which is what made it unactionable");
-		_dependencyResolver.Received(1).Resolve("UsrVehicle", "UsrPkg");
+		_dependencyResolver.Received(1).Resolve("UsrVehicle", PackageUId, "UsrPkg");
 	}
 
 	[Test]
@@ -3284,7 +3284,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 				throw new SessionExpiredServiceResponseException(
 					"GetSchemaDesignItem was answered with the Creatio sign-in response instead of JSON. " +
 					"Verify the environment credentials."));
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg").Returns(
+		_dependencyResolver.Resolve("UsrVehicle", Arg.Any<Guid>(), "UsrPkg").Returns(
 			new EntitySchemaDependencyResolution(["CrtLeadOppMgmtApp"], 1, true, true));
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",
@@ -3302,7 +3302,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 			because: "a sign-in response says nothing about packages, so naming one would be a claim without evidence");
 		// The resolver is the only thing that can add a dependency, so proving it was never called is what
 		// proves an expired session cannot rewrite a package's dependency list.
-		_dependencyResolver.DidNotReceive().Resolve(Arg.Any<string>(), Arg.Any<string>());
+		_dependencyResolver.DidNotReceive().Resolve(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>());
 	}
 
 	[Test]
@@ -3320,7 +3320,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 			.Returns(_ => new Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> {
 				Success = true, Schema = null
 			});
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg").Returns(
+		_dependencyResolver.Resolve("UsrVehicle", Arg.Any<Guid>(), "UsrPkg").Returns(
 			new EntitySchemaDependencyResolution(["CrtLeadOppMgmtApp"], 1, true, true));
 
 		// Act
@@ -3361,7 +3361,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 			.Returns(_ => new Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> {
 				Success = true, Schema = null
 			});
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg")
+		_dependencyResolver.Resolve("UsrVehicle", Arg.Any<Guid>(), "UsrPkg")
 			.Returns(new EntitySchemaDependencyResolution(["CrtLeadOppMgmtApp"], 1, true, true));
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",
@@ -3383,7 +3383,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 			because: "naming candidates here would offer a fix for a problem the caller does not have");
 		// The lookup must not run at all on this path: it costs remote reads to build a diagnosis that is
 		// known to be wrong before it is computed.
-		_dependencyResolver.DidNotReceive().Resolve(Arg.Any<string>(), Arg.Any<string>());
+		_dependencyResolver.DidNotReceive().Resolve(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>());
 	}
 
 	[Test]
@@ -3391,7 +3391,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	public void ModifyColumn_ShouldReportTheFailedLookup_WhenTheCandidateSearchCouldNotComplete() {
 		// Arrange
 		SetupMarkupSchemaResponse();
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg")
+		_dependencyResolver.Resolve("UsrVehicle", Arg.Any<Guid>(), "UsrPkg")
 			.Returns(EntitySchemaDependencyResolution.LookupFailed("SelectQuery unreachable"));
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",
@@ -3418,7 +3418,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	public void ModifyColumn_ShouldCarryTheUnfilteredCaveatIntoTheError_WhenTheDependencyReadFailed() {
 		// Arrange
 		SetupMarkupSchemaResponse();
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg").Returns(
+		_dependencyResolver.Resolve("UsrVehicle", Arg.Any<Guid>(), "UsrPkg").Returns(
 			new EntitySchemaDependencyResolution(["CrtLeadOppMgmtApp", "SalesEnterprise"], 1, true, false));
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",
@@ -3443,7 +3443,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	public void ModifyColumn_ShouldNotClaimAmbiguity_WhenExactlyOneCandidateIsReported() {
 		// Arrange
 		SetupMarkupSchemaResponse();
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg").Returns(
+		_dependencyResolver.Resolve("UsrVehicle", Arg.Any<Guid>(), "UsrPkg").Returns(
 			new EntitySchemaDependencyResolution(["CrtLeadOppMgmtApp"], 1, true, true));
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",
@@ -3472,7 +3472,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 			"PkgFoxtrot", "PkgGolf", "PkgHotel"
 		];
 		SetupMarkupSchemaResponse();
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg")
+		_dependencyResolver.Resolve("UsrVehicle", Arg.Any<Guid>(), "UsrPkg")
 			.Returns(new EntitySchemaDependencyResolution(candidates, 3, true, true));
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",

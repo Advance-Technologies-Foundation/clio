@@ -71,7 +71,7 @@ public sealed class PackageBuilderLifetimeTests {
 		urlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>()).Returns("https://dev.creatio.com/build");
 		ICompilationHistoryPoller poller = Substitute.For<ICompilationHistoryPoller>();
 		poller.GetBaseline().Returns(new CompilationHistory { CreatedOn = DateTime.UtcNow.AddMinutes(-1) });
-		InvalidOperationException pollFault = new("Compilation history is unreachable after 10 rounds.");
+		InvalidOperationException pollFault = new("Compilation polling gave up after 93 s of rounds that all failed (give-up window 90 s, 21 failed rounds)");
 		poller.When(value => value.Poll(Arg.Any<DateTime>(), Arg.Any<CancellationToken>(),
 			Arg.Any<Action<CompilationHistory>>())).Do(_ => throw pollFault);
 		PackageBuilder sut = new(settings, factory, urlBuilder, Substitute.For<ILogger>(), poller);

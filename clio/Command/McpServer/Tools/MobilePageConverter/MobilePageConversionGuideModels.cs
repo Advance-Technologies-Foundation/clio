@@ -306,7 +306,9 @@ public static class ReasonCodes {
 	public const string DropInheritedChrome = "drop-inherited-chrome";
 
 	/// <summary>
-	/// The conversion target is absent from the mobile template, so the element could not be placed.
+	/// The conversion target is absent from the produced mobile page — either the mobile template never had
+	/// it, or this conversion removed it (a <c>declaredElements</c> receiver that nothing landed in), which
+	/// are the same fact to a caller and have the same remedy.
 	/// Params: <c>missingParent</c>, <c>scope</c> — named <c>missingParent</c> rather than <c>target</c>
 	/// because it is the one parent name in the vocabulary that does NOT exist; reusing the key that
 	/// elsewhere names a parent that does exist is how it gets pasted into an operation.
@@ -598,10 +600,10 @@ internal static class ElementMapOperations {
 /// </summary>
 public sealed class ElementMapEntry {
 	/// <summary>
-	/// Source element name. Omitted for a SYNTHESIZED entry — a container the converter creates that has no
-	/// web counterpart (the tab-body / Area layers of a converted tab). Its absence IS the signal: a
-	/// synthesized entry converts, so it carries no reason of any kind, and it is applied exactly like any
-	/// other <c>insert</c>.
+	/// Source element name. Omitted for an entry with no web counterpart: a SYNTHESIZED container (the
+	/// tab-body / Area layers of a converted tab) or an element the template rule DECLARES
+	/// (<c>declaredElements</c>, see <see cref="DeclaredByRule"/>). A synthesized entry converts and carries
+	/// no reason of any kind; either way it is applied exactly like any other <c>insert</c>.
 	/// </summary>
 	public string WebName { get; init; }
 
@@ -683,6 +685,16 @@ public sealed class ElementMapEntry {
 
 	/// <summary>For an <c>insert</c> of a named element with a localizable caption.</summary>
 	public CaptionResource CaptionResource { get; init; }
+
+	/// <summary>
+	/// True for the entry of an element DECLARED by the template rule's <c>declaredElements</c> (no web counterpart,
+	/// so <see cref="WebName"/> is null) — its <c>insert</c>, or the <c>drop</c> that replaces it when nothing lands in
+	/// it. Converter bookkeeping only — it lets the empty-container pass treat the
+	/// declared container like a converted one (removed when nothing lands in it), which a synthesized tab-body
+	/// layer must never be. Not part of the guide contract; the entry's <c>reason</c> says where it came from.
+	/// </summary>
+	[JsonIgnore]
+	internal bool DeclaredByRule { get; init; }
 
 	/// <summary>
 	/// The prebuilt, ready-to-paste mobile component <c>values</c>. For an <c>insert</c> it carries the
