@@ -97,6 +97,7 @@ public sealed class PageSyncToolBaselineTests
 			commandResolver, fileSystem,
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			Substitute.For<IComponentInfoCatalog>(),
+			Substitute.For<IPageBodySamplingService>(),
 			new PageBaselineGuard(fileSystem), new PersistedResourceKeyReader(),
 			fileGate: fileGate);
 	}
@@ -133,10 +134,11 @@ public sealed class PageSyncToolBaselineTests
 				new PageSyncPageInput("UsrOther_FormPage", ValidPageBody)
 			],
 			Validate: false,
+			SkipSampling: true,
 			OutputDirectory: "/ws");
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Success.Should().BeFalse(because: "one page in the batch hit an external-modification conflict");
@@ -160,10 +162,11 @@ public sealed class PageSyncToolBaselineTests
 			"dev",
 			[new PageSyncPageInput(SchemaName, ValidPageBody, Force: true)],
 			Validate: false,
+			SkipSampling: true,
 			OutputDirectory: "/ws");
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Pages[0].Success.Should().BeTrue(because: "per-page force=true deliberately bypasses the conflict check");
@@ -183,10 +186,11 @@ public sealed class PageSyncToolBaselineTests
 			"dev",
 			[new PageSyncPageInput(SchemaName, ValidPageBody)],
 			Validate: false,
+			SkipSampling: true,
 			OutputDirectory: "/ws");
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Pages[0].Success.Should().BeTrue(because: "a matching baseline allows the save to proceed");
@@ -209,10 +213,11 @@ public sealed class PageSyncToolBaselineTests
 			"dev",
 			[new PageSyncPageInput(SchemaName, ValidPageBody, Checksum: "server-checksum")],
 			Validate: false,
+			SkipSampling: true,
 			OutputDirectory: "/ws");
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Pages[0].Success.Should().BeTrue(
@@ -233,10 +238,11 @@ public sealed class PageSyncToolBaselineTests
 			"dev",
 			[new PageSyncPageInput(SchemaName, ValidPageBody)],
 			Validate: false,
+			SkipSampling: true,
 			OutputDirectory: "/ws");
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Pages[0].Success.Should().BeTrue(because: "a failed post-save metadata query must not fail the save");
@@ -258,10 +264,11 @@ public sealed class PageSyncToolBaselineTests
 			[new PageSyncPageInput(SchemaName, ValidPageBody)],
 			Validate: false,
 			Verify: true,
+			SkipSampling: true,
 			OutputDirectory: "/ws");
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Pages[0].Success.Should().BeTrue(because: "the verified save must succeed");
@@ -339,10 +346,11 @@ public sealed class PageSyncToolBaselineTests
 			[new PageSyncPageInput(SchemaName, ValidPageBody)],
 			Validate: false,
 			Verify: true,
+			SkipSampling: true,
 			OutputDirectory: "/ws");
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Pages[0].Success.Should().BeTrue(because: "a concurrent local writer must not fail a save that landed on the server");
@@ -370,10 +378,11 @@ public sealed class PageSyncToolBaselineTests
 			[new PageSyncPageInput(SchemaName, ValidPageBody)],
 			Validate: false,
 			Verify: true,
+			SkipSampling: true,
 			OutputDirectory: "/ws");
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Pages[0].Success.Should().BeTrue(because: "the verified save must succeed for its gate usage to be meaningful");

@@ -33,9 +33,8 @@ public interface IParentMcpSession {
 	/// <remarks>
 	/// The relay mirrors this onto the child leg's <c>initialize</c>. Advertising sampling to the child
 	/// when the client cannot serve it would make the child issue requests the relay can only refuse,
-	/// so the child would pay a wasted round trip before degrading. No clio tool calls
-	/// <c>SampleAsync</c> today (ENG-98526 removed the page semantic review, its only caller), so this
-	/// mirrors a capability nothing currently exercises.
+	/// which degrades the page semantic review to <c>Skipped=true</c> after a wasted round trip instead
+	/// of before it.
 	/// </remarks>
 	bool SupportsSampling { get; }
 
@@ -59,8 +58,8 @@ public interface IParentMcpSession {
 	/// <param name="cancellationToken">Cancels the request.</param>
 	/// <returns>The client's answer, which the relay returns into the child's pending request.</returns>
 	// MCP9005: the sampling payload types are deprecated in SDK 2.2.0 (SEP-2577). Suppressed WITH this
-	// justification rather than silently, following the other suppression sites in this repo
-	// (BindingsModule, McpLogNotifier, McpServerParentSession): the feature still works and ADR rule 1
+	// justification rather than silently, following the three existing sites in this repo
+	// (BindingsModule, McpLogNotifier, PageBodySamplingService): the feature still works and ADR rule 1
 	// depends on it, and OQ-6 tracks the migration to InputRequest / ResolveInputRequestsAsync. Nothing
 	// new may be built on it in the meantime.
 #pragma warning disable MCP9005
@@ -85,10 +84,8 @@ public sealed record WorkerRelayOptions {
 	/// This default is the measured one, not a guess. The relay spike that proved sampling relays to the
 	/// real client (121/121 runs on SDK 2.2.0) and that <c>_meta.clioStageEvent</c> survives
 	/// byte-identically negotiated exactly this revision. Raising it to <c>2026-07-28</c> is not a
-	/// cosmetic change: sampling is deprecated as of that revision (ADR §3.1a), and the relay's sampling
-	/// bridge would then be relaying a feature the negotiated revision no longer defines. Since ENG-98526
-	/// removed the page semantic review, no clio tool calls <c>SampleAsync</c> at all — the bridge is
-	/// infrastructure with no production consumer, so any change here is unmeasurable against real traffic.
+	/// cosmetic change: sampling is deprecated as of that revision (ADR §3.1a), and clio's own
+	/// <c>PageBodySamplingService</c> already documents its sampling path as the legacy-initialize one.
 	/// </para>
 	/// <para>
 	/// Any change here must be re-measured against the two silent failures — a dropped sampling round

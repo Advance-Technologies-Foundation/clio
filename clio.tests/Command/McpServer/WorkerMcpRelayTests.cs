@@ -332,7 +332,7 @@ public class WorkerMcpRelayTests {
 		// Assert
 		parent.SamplingRequests.Should().HaveCount(1,
 			"because update-page and sync-pages call SampleAsync mid-tool: a relay that drops it degrades "
-			+ "the child's answer with no error anywhere");
+			+ "the semantic review to Skipped=true with no error anywhere");
 		JsonRpcResponse answer = transport.SentResponses.Single(response => response.Id.Equals(childRequestId));
 		answer.Result["model"].GetValue<string>().Should().Be(RecordingParentSession.SampledModel,
 			"because the client's own answer must come back down to the child that asked");
