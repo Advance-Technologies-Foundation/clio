@@ -117,6 +117,35 @@
 		public bool ExpectedSchemaAbsent { get; set; }
 
 		/// <summary>
+		/// Gets or sets the editable schema UId the on-disk baseline was captured for, when a
+		/// <c>target-package-uid</c> / <c>target-schema-uid</c> selector is present. MCP-internal.
+		/// </summary>
+		/// <remarks>
+		/// A selector is not by itself a redirect: naming the package that ALREADY owns the schema
+		/// resolves to exactly the schema the baseline describes, and dropping the baseline there let a
+		/// stale body overwrite a concurrent writer's save with <c>success: true</c>. The baseline
+		/// therefore travels as a CONDITIONAL one — it is promoted into
+		/// <see cref="ExpectedChecksum"/>/<see cref="ExpectedSchemaUId"/>/<see cref="ExpectedSchemaAbsent"/>
+		/// only once the target is resolved and turns out to be this very schema, and is otherwise
+		/// discarded exactly as before. Resolution happens after the guard runs, which is why the
+		/// decision cannot be taken inside it.
+		/// </remarks>
+		internal string? ConditionalBaselineSchemaUId { get; set; }
+
+		/// <summary>Gets or sets the conditional baseline's checksum. See <see cref="ConditionalBaselineSchemaUId"/>.</summary>
+		internal string? ConditionalBaselineChecksum { get; set; }
+
+		/// <summary>Gets or sets the conditional baseline's "no editable schema existed" marker. See <see cref="ConditionalBaselineSchemaUId"/>.</summary>
+		internal bool ConditionalBaselineSchemaAbsent { get; set; }
+
+		/// <summary>
+		/// Gets or sets a value indicating whether the conditional baseline was promoted because the
+		/// resolved target matched it. The save must then refresh the on-disk baseline like any other
+		/// armed save, or the next unpinned save auto-arms from a superseded checksum.
+		/// </summary>
+		internal bool ConditionalBaselineApplied { get; set; }
+
+		/// <summary>
 		/// Gets or sets a value indicating whether the successful save path should attempt a
 		/// best-effort Designer Presence push. Internal orchestration flag; not exposed as a CLI
 		/// option and enabled only by the dedicated <c>update-page</c> entry points.
@@ -372,11 +401,40 @@
 		/// <see cref="PageUpdateOptions.Force"/> is set or no baseline information was supplied.
 		/// </summary>
 		/// <returns><c>true</c> when the write may proceed; <c>false</c> with a conflict response otherwise.</returns>
+		/// <summary>
+		/// Arms the baseline that <see cref="PageBaselineGuard"/> could not decide on, once the resolved
+		/// target turns out to be the very schema that baseline describes.
+		/// </summary>
+		/// <remarks>
+		/// The guard runs BEFORE the target is resolved, so a save carrying <c>target-package-uid</c> /
+		/// <c>target-schema-uid</c> cannot be told apart there from a genuine redirect. Treating every
+		/// selector as a redirect dropped the still-applicable baseline: passing the page's own existing
+		/// package as the target made a stale body save with <c>success: true</c> over a concurrent
+		/// writer's change, while the same call without the selector correctly reported a conflict.
+		/// A caller-pinned checksum still wins — it is the stronger, explicitly supplied witness — and a
+		/// target that resolves elsewhere still leaves the baseline dropped, which is the redirect case
+		/// the guard exists to handle.
+		/// </remarks>
+		private static void PromoteConditionalBaselineWhenTargetMatches(
+				PageUpdateOptions options, EditableSchemaContext context) {
+			if (string.IsNullOrWhiteSpace(options.ConditionalBaselineSchemaUId)
+				|| !string.IsNullOrWhiteSpace(options.ExpectedChecksum)
+				|| !string.Equals(options.ConditionalBaselineSchemaUId, context.EditableSchemaUId,
+					StringComparison.OrdinalIgnoreCase)) {
+				return;
+			}
+			options.ExpectedChecksum = options.ConditionalBaselineChecksum;
+			options.ExpectedSchemaUId = options.ConditionalBaselineSchemaUId;
+			options.ExpectedSchemaAbsent = options.ConditionalBaselineSchemaAbsent;
+			options.ConditionalBaselineApplied = true;
+		}
+
 		private bool TryCheckForExternalModification(
 				PageUpdateOptions options,
 				EditableSchemaContext context,
 				out PageUpdateResponse response) {
 			response = null;
+			PromoteConditionalBaselineWhenTargetMatches(options, context);
 			if (options.Force) return true;
 			bool hasChecksum = !string.IsNullOrWhiteSpace(options.ExpectedChecksum);
 			if (!hasChecksum && !options.ExpectedSchemaAbsent) return true;
@@ -566,7 +624,7 @@
 			(string metaFilePath, bool refreshBaseline, string baselineWarning) =
 				_pageBaselineGuard.TryArm(options, outputDirectory: null);
 			bool success = TryUpdatePage(options, out PageUpdateResponse response);
-			if (refreshBaseline && success && !options.DryRun) {
+			if ((refreshBaseline || options.ConditionalBaselineApplied) && success && !options.DryRun) {
 				// A failed refresh cannot fail a save that already landed on the server, so it surfaces as a
 				// warning on the response instead (ENG-95262 AC-02).
 				AppendBaselineWarning(response, _pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response));

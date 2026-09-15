@@ -134,7 +134,7 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 		// identity into the schema-name-keyed baseline, so the next ordinary save was refused too.
 		if (!string.IsNullOrWhiteSpace(options.TargetPackageUId)
 			|| !string.IsNullOrWhiteSpace(options.TargetSchemaUId)) {
-			return ArmForRedirectedWrite(options, callerPinnedChecksum);
+			return ArmForSelectorTargetedWrite(options, outputDirectory, callerPinnedChecksum);
 		}
 		string metaFilePath;
 		string resolveWarning;
@@ -269,11 +269,23 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 	}
 
 	/// <summary>
-	/// Arms nothing from disk for a write that <c>--target-package-uid</c> / <c>--target-schema-uid</c>
-	/// redirects, and decides whether a caller-supplied checksum survives it.
+	/// Handles a write carrying <c>--target-package-uid</c> / <c>--target-schema-uid</c>: arms nothing
+	/// from disk directly, carries the on-disk baseline forward as a CONDITIONAL one, and decides whether
+	/// a caller-supplied checksum survives.
 	/// </summary>
-	private static (string MetaFilePath, bool RefreshBaseline, string Warning) ArmForRedirectedWrite(
-		PageUpdateOptions options, bool callerPinnedChecksum) {
+	/// <remarks>
+	/// A selector is not proof of a redirect. Naming the package that ALREADY owns the schema resolves to
+	/// exactly the schema the baseline describes, and dropping the baseline there removed the conflict
+	/// protection every unpinned caller relies on: the same stale body that was correctly refused without
+	/// the selector saved with <c>success: true</c> with it, losing the other writer's change. The target
+	/// is resolved after this method returns, so the decision cannot be taken here - the baseline is
+	/// instead handed over as <see cref="PageUpdateOptions.ConditionalBaselineSchemaUId"/> and promoted by
+	/// the update command only once the resolved schema turns out to be that same one. A target that
+	/// resolves elsewhere still leaves everything dropped, which is the redirect case this method exists
+	/// for.
+	/// </remarks>
+	private (string MetaFilePath, bool RefreshBaseline, string Warning) ArmForSelectorTargetedWrite(
+		PageUpdateOptions options, string outputDirectory, bool callerPinnedChecksum) {
 		// A redirect makes the on-disk baseline inapplicable, but it must not make an explicit checksum
 		// disappear. The command resolves the target after this method returns; retaining the pin lets
 		// TryCheckForExternalModification compare it with the actual resolved schema. That preserves the
@@ -286,6 +298,28 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 		// schema's identity into the schema-name-keyed baseline, refusing the next ordinary save too.
 		options.ExpectedSchemaUId = null;
 		options.ExpectedSchemaAbsent = false;
+		string metaFilePath = null;
+		if (!callerPinnedChecksum) {
+			// Best-effort: a baseline that cannot be located or read simply leaves the pre-existing
+			// behaviour (nothing armed) rather than failing a save.
+			metaFilePath = TryResolveMetaFilePath(options, outputDirectory);
+			PageBaselineInfo baseline = metaFilePath is null
+				? null
+				: PageBaselineStore.TryReadBaseline(_fileSystem, _fileGate, metaFilePath, out string _);
+			if (baseline is not null
+				&& PageBaselineStore.MatchesEnvironment(baseline, options.Environment, options.Uri)
+				&& !string.IsNullOrWhiteSpace(baseline.EditableSchemaUId)) {
+				options.ConditionalBaselineSchemaUId = baseline.EditableSchemaUId;
+				options.ConditionalBaselineChecksum = baseline.Checksum;
+				options.ConditionalBaselineSchemaAbsent = !baseline.EditableSchemaExists;
+				return (metaFilePath, false,
+					$"target-package-uid / target-schema-uid were supplied for '{options.SchemaName}', so "
+					+ "the .clio-pages baseline is applied only if the write resolves to the schema it "
+					+ $"describes ({baseline.EditableSchemaUId}); if it resolves elsewhere, the write "
+					+ "proceeds unchecked, because get-page always reads the automatically resolved schema "
+					+ "and has no redirect of its own.");
+			}
+		}
 		if (callerPinnedChecksum) {
 			// The pin stays and still governs the save: TryCheckForExternalModification gates on
 			// ExpectedChecksum alone. Nothing local corroborates it, which is what the trace says.
@@ -297,11 +331,35 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 				+ "compared with the resolved target; if it came from another schema, the save is refused. "
 				+ PinnedChecksumMergeAdvice);
 		}
-		return (null, false,
+		return (metaFilePath, false,
 			$"External-modification detection did not run for this save of '{options.SchemaName}': "
 				+ "target-package-uid / target-schema-uid redirect the write to a schema the .clio-pages "
 				+ "baseline does not describe, because get-page always reads the automatically resolved "
 				+ "schema and has no redirect of its own. The write proceeds unchecked.");
+	}
+
+	/// <summary>
+	/// Resolves the <c>meta.json</c> anchor, returning <c>null</c> instead of throwing. Used on the
+	/// selector path, where a baseline that cannot be located must simply leave the save unchecked.
+	/// </summary>
+	private string TryResolveMetaFilePath(PageUpdateOptions options, string outputDirectory) {
+		try {
+			// Same serialization rationale as the main path: the process-global cwd is read here and the
+			// MCP workspace tools pin it.
+			lock (McpToolExecutionLock.CwdLock) {
+				return PageBaselineStore.ResolveMetaFilePath(
+					_fileSystem,
+					_fileSystem.Directory.GetCurrentDirectory(),
+					Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+					ClioRuntimePaths.Home,
+					outputDirectory,
+					options.BodyFile,
+					options.SchemaName,
+					out string _);
+			}
+		} catch (Exception) {
+			return null;
+		}
 	}
 
 	private static void AddWarning(List<string> warnings, string warning) {

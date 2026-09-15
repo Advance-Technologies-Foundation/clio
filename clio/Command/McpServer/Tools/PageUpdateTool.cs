@@ -156,7 +156,8 @@ public sealed class PageUpdateTool(
 		// discovery and the refresh diagnostics travel on the response's warning channel (ENG-95262 AC-02).
 		// Runs on the hinted response: the hint changes only the error wording, never Success, so it cannot
 		// alter whether the refresh is due.
-		string refreshWarning = refreshBaseline && response.Success && !options.DryRun
+		string refreshWarning = (refreshBaseline || options.ConditionalBaselineApplied)
+				&& response.Success && !options.DryRun
 			? pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response)
 			: null;
 		response.SamplingReview = samplingReview;

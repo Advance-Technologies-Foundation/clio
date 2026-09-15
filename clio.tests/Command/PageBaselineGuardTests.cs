@@ -341,9 +341,9 @@ public sealed class PageBaselineGuardTests {
 	}
 
 	[Test]
-	[Description("TryArm_ShouldNotArmAnythingAndNotTouchDisk_WhenTheWriteIsRedirectedByTargetPackageUId — the .clio-pages baseline is keyed by schema name and get-page has no redirect option, so it describes the automatically resolved schema, never the one --target-package-uid sends the write to. Arming from it refused the redirected save, and reporting armed let RefreshOrDrop stamp the redirected schema's identity into the schema-name-keyed baseline, breaking the next ordinary save too (PR #1356 gate-3 review).")]
-	public void TryArm_ShouldNotArmAnythingAndNotTouchDisk_WhenTheWriteIsRedirectedByTargetPackageUId() {
-		// Arrange — a matching baseline IS on disk, so the test would pass for the wrong reason without it.
+	[Description("TryArm_ShouldCarryTheBaselineAsConditional_WhenTargetPackageUIdIsSupplied — a selector is not proof of a redirect. The .clio-pages baseline is keyed by schema name and get-page has no redirect option, so it cannot describe a DIFFERENT target; but naming the package that already owns the schema resolves to the very schema the baseline describes, and dropping it there let a stale body overwrite a concurrent writer with success: true (PR #1356 review). Nothing is armed here, because the target is resolved after the guard runs — the baseline travels as a conditional one instead.")]
+	public void TryArm_ShouldCarryTheBaselineAsConditional_WhenTargetPackageUIdIsSupplied() {
+		// Arrange
 		AddMetaWithBaseline("dev", "disk-checksum");
 		PageUpdateOptions options = CreateOptions("dev");
 		options.TargetPackageUId = "99999999-8888-7777-6666-555555555555";
@@ -353,16 +353,20 @@ public sealed class PageBaselineGuardTests {
 
 		// Assert
 		armed.Should().BeFalse(
-			because: "reporting armed would let RefreshOrDrop write the redirected schema's UId and checksum into the baseline keyed by the schema NAME, so the next non-redirected save would be refused as schema-uid-mismatch");
-		metaFilePath.Should().BeNull(because: "there is nothing to refresh, so no baseline path is reported");
-		options.ExpectedChecksum.Should().BeNull(because: "the baseline checksum describes the auto-resolved schema, not the redirect target");
-		options.ExpectedSchemaUId.Should().BeNull(because: "the baseline schema identity describes the auto-resolved schema, not the redirect target");
-		options.ExpectedSchemaAbsent.Should().BeFalse(because: "an absence marker about another schema is not evidence about this one");
-		_fileGate.EnteredLockPaths.Should().BeEmpty(
-			because: "an inapplicable baseline must not be read at all - taking the gate would mean the guard still consulted disk");
-		warning.Should().NotBeNull(because: "a save that reaches the server with no external-modification check must say so");
+			because: "reporting armed unconditionally would let RefreshOrDrop write a redirected schema's UId and checksum into the baseline keyed by the schema NAME; the refresh is decided later, only if the resolved target matched");
+		options.ExpectedChecksum.Should().BeNull(because: "nothing may be armed before the target is resolved");
+		options.ExpectedSchemaUId.Should().BeNull(because: "nothing may be armed before the target is resolved");
+		options.ExpectedSchemaAbsent.Should().BeFalse(because: "nothing may be armed before the target is resolved");
+		options.ConditionalBaselineSchemaUId.Should().Be(SchemaUId,
+			because: "the baseline still applies if the selector resolves to the schema it was captured for, and only the caller of the resolved target can tell");
+		options.ConditionalBaselineChecksum.Should().Be("disk-checksum",
+			because: "the checksum is what protects the unpinned caller against a concurrent writer");
+		options.ConditionalBaselineSchemaAbsent.Should().BeFalse(because: "the baseline recorded an existing editable schema");
+		_fileSystem.Path.GetFullPath(metaFilePath).Should().Be(_fileSystem.Path.GetFullPath(_metaPath),
+			because: "the refresh that follows a promoted baseline needs the path the baseline was read from");
+		warning.Should().NotBeNull(because: "a save whose check depends on the resolved target must say so");
 		warning.Should().Contain("target-package-uid",
-			because: "the trace has to name the option that made the baseline inapplicable");
+			because: "the trace has to name the option that made the baseline conditional");
 	}
 
 	[Test]

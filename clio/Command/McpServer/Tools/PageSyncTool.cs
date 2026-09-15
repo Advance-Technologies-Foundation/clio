@@ -789,7 +789,7 @@ public sealed class PageSyncTool(
 			persistedResourceKeyReader.Invalidate(updateOptions);
 			if (opOptions.Verify && opOptions.GetCommand != null)
 				return VerifySavedPage(page, opOptions, updateResponse, validationResult);
-			if (refreshBaseline) {
+			if (refreshBaseline || updateOptions.ConditionalBaselineApplied) {
 				// The save already landed on the server, so a failed refresh surfaces as a per-page warning
 				// rather than turning this page's result into a failure (ENG-95262 AC-02).
 				string refreshWarning = pageBaselineGuard.RefreshOrDrop(metaFilePath, updateOptions, updateResponse);
