@@ -117,6 +117,51 @@ public sealed class ComponentRegistryCacheStoreTests {
 			because: "and no '..json'-style escape is possible either");
 	}
 
+	[Test]
+	[Description("ENG-91859: a cache entry written from a staging CDN prefix is NOT served to a reader whose effective base URL is production. The cache is keyed on the sanitised version alone, and the ticket's own validation procedure is to point CLIO_COMPONENT_REGISTRY_CDN_BASE_URL at a latest-mobile-preview/ prefix — which writes the staging catalog into the very latest.json slot a later run with the variable unset reads back, for the whole TTL and with nothing in the payload saying so.")]
+	public async Task TryReadAsync_Refuses_An_Entry_Written_From_A_Different_Cdn_Base_Url() {
+		// Arrange
+		const string stagingBase = "https://academy.creatio.com/api/mcp/latest-mobile-preview/";
+		const string productionBase = "https://academy.creatio.com/api/mcp/";
+		MockFileSystem fileSystem = new();
+		ComponentRegistryCacheStore store = CreateStore(fileSystem, new FakeTimeProvider());
+		await store.WriteAsync("latest", Encoding.UTF8.GetBytes(SamplePayloadJson), etag: null, lastModified: null,
+			sourceUrl: stagingBase + "latest/MobileComponentRegistry.json");
+
+		// Act
+		ComponentRegistryCacheReadResult? fromStaging = await store.TryReadAsync("latest", stagingBase);
+		ComponentRegistryCacheReadResult? fromProduction = await store.TryReadAsync("latest", productionBase);
+
+		// Assert
+		fromStaging.Should().NotBeNull(
+			because: "the reader whose base URL produced the entry must still get its own cache hit — the guard "
+				+ "isolates prefixes, it does not disable caching whenever an override is in effect");
+		fromProduction.Should().BeNull(
+			because: "the staging payload occupies the same 'latest' slot, so a production reader served from it "
+				+ "would ship a preview catalog as the released one with no signal at all");
+	}
+
+	[Test]
+	[Description("ENG-91859: the prefix guard is a match on the recorded SourceUrl, not a blanket refusal — a reader that supplies no prefix, and one whose prefix is exactly the recorded base, are answered as before. Without this assertion the guard would be indistinguishable from disabling the cache.")]
+	public async Task TryReadAsync_Serves_The_Entry_When_The_Prefix_Matches_Or_Is_Not_Supplied() {
+		// Arrange
+		const string baseUrl = "https://academy.creatio.com/api/mcp/";
+		MockFileSystem fileSystem = new();
+		ComponentRegistryCacheStore store = CreateStore(fileSystem, new FakeTimeProvider());
+		await store.WriteAsync("8.2.1", Encoding.UTF8.GetBytes(SamplePayloadJson), etag: null, lastModified: null,
+			sourceUrl: baseUrl + "8.2.1/ComponentRegistry.json");
+
+		// Act
+		ComponentRegistryCacheReadResult? unfiltered = await store.TryReadAsync("8.2.1");
+		ComponentRegistryCacheReadResult? matching = await store.TryReadAsync("8.2.1", baseUrl);
+
+		// Assert
+		unfiltered.Should().NotBeNull(
+			because: "a caller that supplies no prefix (diagnostics, cache inspection) accepts any recorded source");
+		matching.Should().NotBeNull(
+			because: "the recorded SourceUrl starts with the reader's own base URL, which is the ordinary hit");
+	}
+
 	private static ComponentRegistryCacheStore CreateStore(MockFileSystem fileSystem, TimeProvider clock) {
 		return new ComponentRegistryCacheStore(fileSystem, clock, "/cache");
 	}

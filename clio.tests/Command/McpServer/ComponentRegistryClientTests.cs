@@ -342,6 +342,32 @@ public sealed class ComponentRegistryClientTests {
 			because: "cancellation during the first backoff must prevent the second fetch attempt");
 	}
 
+	[Test]
+	[Description("ENG-91859: a cache entry written under one CDN base URL is not served to a client configured with another. The client must pass its effective base URL into TryReadAsync — the cache slot is the sanitised version alone, so pointing CLIO_COMPONENT_REGISTRY_CDN_BASE_URL at a staging prefix (the ticket's declared validation step) otherwise leaves the staging catalog sitting in 'latest' for the next production read.")]
+	public async Task GetAsync_Does_Not_Serve_A_Payload_Cached_From_Another_Cdn_Base_Url() {
+		// Arrange — the cached entry came from a staging prefix; this client points at production.
+		const string stagingBase = "https://cdn.test/api/mcp/latest-mobile-preview/";
+		FakeRegistryCacheStore cache = new();
+		cache.Seed("latest", SamplePayload, isFresh: true,
+			sourceUrl: stagingBase + "latest/ComponentRegistry.json");
+		FakeHttpHandler handler = new();
+		handler.Enqueue("latest/ComponentRegistry.json", HttpStatusCode.OK, SamplePayload);
+		ComponentRegistryClient client = CreateClient(cache, handler);
+
+		// Act
+		ComponentRegistryFetchResult result = await client.GetAsync("latest");
+
+		// Assert
+		result.Source.Should().Be(ComponentRegistrySource.Cdn,
+			because: "the fresh entry in the 'latest' slot was fetched from a different base URL, so it is a "
+				+ "different catalog and must be refused rather than returned as this client's own");
+		cache.ReadPrefixes.Should().AllSatisfy(prefix => prefix.Should().Be(CdnBaseUrl),
+			because: "the client has to hand the store its effective base URL; reading the slot blind is the "
+				+ "defect itself");
+		handler.Requests.Should().NotBeEmpty(
+			because: "refusing the foreign entry must fall through to a real fetch, not to an empty result");
+	}
+
 	private static ComponentRegistryClient CreateClient(
 		FakeRegistryCacheStore cache,
 		HttpMessageHandler handler,
@@ -403,15 +429,37 @@ public sealed class ComponentRegistryClientTests {
 	}
 
 	private sealed class FakeRegistryCacheStore : IComponentRegistryCacheStore {
-		private readonly Dictionary<string, (byte[] Payload, bool IsFresh)> _entries = new(StringComparer.OrdinalIgnoreCase);
+		private readonly Dictionary<string, (byte[] Payload, bool IsFresh, string SourceUrl)> _entries =
+			new(StringComparer.OrdinalIgnoreCase);
 		public List<string> WrittenVersions { get; } = new();
 
-		public void Seed(string version, string payload, bool isFresh) {
-			_entries[version] = (Encoding.UTF8.GetBytes(payload), isFresh);
+		public void Seed(string version, string payload, bool isFresh) =>
+			Seed(version, payload, isFresh, sourceUrl: string.Empty);
+
+		/// <summary>
+		/// Seeds an entry that records WHERE it came from, so a test can prove the client refuses a cached
+		/// payload written under a different CDN base URL. An empty <paramref name="sourceUrl"/> models a
+		/// pre-guard entry and is accepted by every prefix — the tests that predate the guard rely on it.
+		/// </summary>
+		public void Seed(string version, string payload, bool isFresh, string sourceUrl) {
+			_entries[version] = (Encoding.UTF8.GetBytes(payload), isFresh, sourceUrl);
 		}
 
-		public Task<ComponentRegistryCacheReadResult?> TryReadAsync(string version, CancellationToken cancellationToken = default) {
-			if (!_entries.TryGetValue(version, out (byte[] Payload, bool IsFresh) entry)) {
+		// Records the prefix the client asked with, so a test can assert the client actually passes its
+		// effective base URL rather than reading the slot blind.
+		public List<string?> ReadPrefixes { get; } = new();
+
+		public Task<ComponentRegistryCacheReadResult?> TryReadAsync(string version, string? expectedCdnBaseUrl = null,
+			CancellationToken cancellationToken = default) {
+			ReadPrefixes.Add(expectedCdnBaseUrl);
+			if (!_entries.TryGetValue(version, out (byte[] Payload, bool IsFresh, string SourceUrl) entry)) {
+				return Task.FromResult<ComponentRegistryCacheReadResult?>(null);
+			}
+			// Delegates to the production predicate rather than re-implementing it, so this double cannot
+			// drift from the store it stands in for (an empty SourceUrl models a pre-guard entry, which the
+			// tests that predate the guard rely on, so it is exempted here rather than in the store).
+			if (!string.IsNullOrEmpty(entry.SourceUrl)
+				&& !ComponentRegistryCacheStore.IsFromCdnBase(entry.SourceUrl, expectedCdnBaseUrl)) {
 				return Task.FromResult<ComponentRegistryCacheReadResult?>(null);
 			}
 			return Task.FromResult<ComponentRegistryCacheReadResult?>(new ComponentRegistryCacheReadResult(
@@ -421,7 +469,7 @@ public sealed class ComponentRegistryClientTests {
 		}
 
 		public Task WriteAsync(string version, byte[] payload, System.Net.Http.Headers.EntityTagHeaderValue? etag, DateTimeOffset? lastModified, string sourceUrl, CancellationToken cancellationToken = default) {
-			_entries[version] = (payload, IsFresh: true);
+			_entries[version] = (payload, IsFresh: true, sourceUrl);
 			WrittenVersions.Add(version);
 			WrittenSourceUrls[version] = sourceUrl;
 			return Task.CompletedTask;

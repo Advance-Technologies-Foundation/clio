@@ -1140,11 +1140,17 @@ public sealed class ComponentRegistryEnvelope {
 	public RegistryGlobalReferences? References { get; init; }
 
 	/// <summary>
-	/// Captures any top-level producer field clio has not mapped yet. Always
-	/// expected to be empty against the live snapshot — the
-	/// <c>Live_Registry_Snapshot_Should_Have_No_Unmapped_Fields</c> guard test
-	/// fails when this dictionary is non-empty. The bucket exists so deserialise
-	/// does NOT throw under strict mode; the test does the bookkeeping.
+	/// Captures any top-level producer field clio has not mapped yet. The bucket
+	/// exists so deserialise does NOT throw under strict mode.
+	/// <para>
+	/// Nothing downstream reads it: <c>ComponentInfoCatalog</c> keeps the envelope's
+	/// <c>Components</c> / <c>References</c> / <c>Composites</c> and drops the envelope, and
+	/// <c>ComponentCatalogState</c> has no field for it. So the bookkeeping is done by the
+	/// snapshot guards reading the envelope DIRECTLY
+	/// (<c>ComponentRegistrySnapshotTests.EnvelopeUnmappedKeys</c>) — the per-entry and
+	/// per-references assertions in those tests cannot see this dictionary at all, which is
+	/// what this comment used to claim they did.
+	/// </para>
 	/// </summary>
 	[JsonExtensionData]
 	public IDictionary<string, JsonElement>? UnmappedExtensions { get; init; }
