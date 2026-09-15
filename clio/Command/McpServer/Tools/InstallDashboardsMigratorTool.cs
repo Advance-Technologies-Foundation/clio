@@ -117,7 +117,7 @@ public sealed class InstallDashboardsMigratorTool(
 		} catch (McpResponseDeadlineExceededException) {
 			callerAlreadyAnswered.Value = true;
 			return CommandExecutionResult.FromInfo(
-				$"The {BundledPackages.DashboardsMigratorPackageName} install on '{args.EnvironmentName}' is still "
+				$"The {DashboardsMigratorDistribution.PackageName} install on '{args.EnvironmentName}' is still "
 				+ "running server-side: the target is compiling the package and will restart. This is NOT a "
 				+ "verdict — nothing is confirmed yet, and the install may still fail. Do NOT call "
 				+ $"{InstallDashboardsMigratorToolName} again: while this one runs a second call is refused, and "

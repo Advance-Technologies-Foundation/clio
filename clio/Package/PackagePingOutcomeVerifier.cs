@@ -8,8 +8,8 @@ using Clio.Common;
 namespace Clio.Package;
 
 /// <summary>
-/// Verifies a bundled package's outcome by asking the package's own ungated <c>Ping</c> operation whether its
-/// code is serving on the target. One implementation for every bundled package: <see cref="BundledPackages.PingRouteOf"/>
+/// Verifies a package's outcome by asking the package's own ungated <c>Ping</c> operation whether its code is
+/// serving on the target. One implementation for every package clio installs by name: <see cref="RouteOf"/>
 /// maps the package name to the route it exposes, so the interface auto-registration stays a single binding.
 /// </summary>
 /// <remarks>
@@ -33,7 +33,7 @@ namespace Clio.Package;
 /// compile references, so a successful build on the target already implies they are present.
 /// </para>
 /// </remarks>
-public class BundledPackagePingOutcomeVerifier : IPackageInstallOutcomeVerifier {
+public class PackagePingOutcomeVerifier : IPackageInstallOutcomeVerifier {
 
 	#region Constants: Private
 
@@ -81,15 +81,46 @@ public class BundledPackagePingOutcomeVerifier : IPackageInstallOutcomeVerifier 
 
 	#endregion
 
+	#region Fields: Private
+
+	// Package name -> the ungated Ping route its install is verified through. The ONE place this pairing
+	// lives: the install commands quote it to the operator and this verifier probes it, so a route stated
+	// twice could send someone to check a URL nobody called.
+	private static readonly IReadOnlyDictionary<string, ServiceUrlBuilder.KnownRoute> PingRoutes =
+		new Dictionary<string, ServiceUrlBuilder.KnownRoute>(StringComparer.OrdinalIgnoreCase) {
+			[BundledPackages.ProcessBuilderPackageName] = ServiceUrlBuilder.KnownRoute.ProcessBuilderPing,
+			[DashboardsMigratorDistribution.PackageName] = ServiceUrlBuilder.KnownRoute.DashboardsMigratorPing
+		};
+
+	#endregion
+
+	#region Methods: Public
+
+	/// <summary>
+	/// Returns the Ping route a package's install is verified through.
+	/// </summary>
+	/// <param name="packageName">A package clio installs by name.</param>
+	/// <exception cref="ArgumentException">No route is known — a programming error, not a verdict.</exception>
+	public static ServiceUrlBuilder.KnownRoute RouteOf(string packageName) {
+		if (packageName is not null && PingRoutes.TryGetValue(packageName, out ServiceUrlBuilder.KnownRoute route)) {
+			return route;
+		}
+		throw new ArgumentException(
+			$"No Ping route is known for package '{packageName}'; only packages clio installs can be verified.",
+			nameof(packageName));
+	}
+
+	#endregion
+
 	#region Constructors: Public
 
 	/// <summary>
-	/// Initializes a new instance of the <see cref="BundledPackagePingOutcomeVerifier"/> class.
+	/// Initializes a new instance of the <see cref="PackagePingOutcomeVerifier"/> class.
 	/// </summary>
 	/// <param name="applicationClient">Client used to call the service on the target environment.</param>
 	/// <param name="serviceUrlBuilder">Builder for the package's Ping route.</param>
 	/// <param name="logger">Logger used to report why a probe failed.</param>
-	public BundledPackagePingOutcomeVerifier(
+	public PackagePingOutcomeVerifier(
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,
 		ILogger logger) {
@@ -120,8 +151,8 @@ public class BundledPackagePingOutcomeVerifier : IPackageInstallOutcomeVerifier 
 	/// </remarks>
 	public bool IsPackageOperational(string packageName, out string diagnosis) {
 		diagnosis = null;
-		// Throws for a name that is not a bundled package: a programming error at the call site, not a verdict.
-		ServiceUrlBuilder.KnownRoute route = BundledPackages.PingRouteOf(packageName);
+		// Throws for a name this verifier knows no route for: a programming error at the call site, not a verdict.
+		ServiceUrlBuilder.KnownRoute route = RouteOf(packageName);
 		string url = null;
 		try {
 			url = _serviceUrlBuilder.Build(route);

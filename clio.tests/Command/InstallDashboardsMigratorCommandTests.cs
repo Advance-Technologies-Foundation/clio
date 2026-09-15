@@ -1,4 +1,4 @@
-using System.IO;
+using System;
 using System.Linq;
 using Clio.Command;
 using Clio.Common;
@@ -6,141 +6,102 @@ using Clio.Package;
 using Clio.Project.NuGet;
 using CommandLine;
 using FluentAssertions;
-using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using NUnit.Framework;
-using IFileSystem = Clio.Common.IFileSystem;
 
 namespace Clio.Tests.Command;
 
 /// <summary>
-/// Pins only what distinguishes this verb from <c>install-process-builder</c>: which package the shared
-/// install flow is pointed at, and the attributes on its options type. The flow itself — refusals, readiness
-/// wait, outcome check — is exercised by <see cref="InstallProcessBuilderCommandTests"/> through the common
-/// base class.
+/// Guards what is specific to installing the dashboards migrator: it is fetched from a feed rather than
+/// shipped inside clio, and the verdict rests on the app answering afterwards.
 /// </summary>
 [TestFixture]
+[Category("Unit")]
 [Property("Module", "Command")]
-public class InstallDashboardsMigratorCommandTests : BaseCommandTests<InstallDashboardsMigratorOptions> {
+public class InstallDashboardsMigratorCommandTests {
 
 	#region Fields: Private
 
-	private const string ClioRoot = "clio-root";
-
-	private IPackageInstaller _packageInstaller;
-	private IBundledPackageCatalog _bundledPackageCatalog;
-	private IPackageInstallOutcomeVerifier _outcomeVerifier;
+	private IInstallNugetPackage _installNugetPackage;
 	private IServerReadinessWaiter _serverReadinessWaiter;
+	private IPackageInstallOutcomeVerifier _outcomeVerifier;
 	private IRequiredPackageChecker _requiredPackageChecker;
+	private IInstalledAppVersions _installedAppVersions;
 	private ILogger _logger;
 	private InstallDashboardsMigratorCommand _command;
-
-	#endregion
-
-	#region Properties: Private
-
-	private static string ExpectedPackagePath => Path.Combine(
-		ClioRoot, BundledPackages.DashboardsMigratorPackageName, BundledPackages.DashboardsMigratorArchiveFileName);
-
-	#endregion
-
-	#region Methods: Protected
-
-	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
-		base.AdditionalRegistrations(containerBuilder);
-		_packageInstaller = Substitute.For<IPackageInstaller>();
-		_outcomeVerifier = Substitute.For<IPackageInstallOutcomeVerifier>();
-		_serverReadinessWaiter = Substitute.For<IServerReadinessWaiter>();
-		_requiredPackageChecker = Substitute.For<IRequiredPackageChecker>();
-		_logger = Substitute.For<ILogger>();
-		IWorkingDirectoriesProvider workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
-		workingDirectoriesProvider.ExecutingDirectory.Returns(ClioRoot);
-		IFileSystem fileSystem = Substitute.For<IFileSystem>();
-		fileSystem.ExistsFile(Arg.Any<string>()).Returns(true);
-		_packageInstaller
-			.Install(Arg.Any<string>(), Arg.Any<EnvironmentSettings>(), null, null, true)
-			.Returns(true);
-		_serverReadinessWaiter.WaitForReady(Arg.Any<ServerReadinessOptions>()).Returns(true);
-		_outcomeVerifier
-			.IsPackageOperational(Arg.Any<string>(), out string _)
-			.Returns(call => {
-				call[1] = null;
-				return true;
-			});
-		_bundledPackageCatalog = Substitute.For<IBundledPackageCatalog>();
-		_bundledPackageCatalog.GetArchivePath(BundledPackages.DashboardsMigratorPackageName)
-			.Returns(ExpectedPackagePath);
-		_bundledPackageCatalog.ArchiveExists(BundledPackages.DashboardsMigratorPackageName).Returns(true);
-		_bundledPackageCatalog
-			.TryGetVersion(BundledPackages.DashboardsMigratorPackageName, out Arg.Any<PackageVersion>(),
-				out Arg.Any<string>())
-			.Returns(call => {
-				call[1] = PackageVersion.ParseVersion("1.1.4.0");
-				call[2] = null;
-				return true;
-			});
-		containerBuilder.AddSingleton(_packageInstaller);
-		containerBuilder.AddSingleton(workingDirectoriesProvider);
-		containerBuilder.AddSingleton(_bundledPackageCatalog);
-		containerBuilder.AddSingleton(_requiredPackageChecker);
-		containerBuilder.AddSingleton(fileSystem);
-		containerBuilder.AddSingleton(_outcomeVerifier);
-		containerBuilder.AddSingleton(_serverReadinessWaiter);
-		containerBuilder.AddSingleton(_logger);
-	}
 
 	#endregion
 
 	#region Methods: Public
 
 	[SetUp]
-	public void Setup() {
-		_command = Container.GetRequiredService<InstallDashboardsMigratorCommand>();
-	}
-
-	[TearDown]
-	public void TearDown() {
-		_packageInstaller.ClearReceivedCalls();
-		_outcomeVerifier.ClearReceivedCalls();
-		_requiredPackageChecker.ClearReceivedCalls();
+	public void SetUp() {
+		_installNugetPackage = Substitute.For<IInstallNugetPackage>();
+		_serverReadinessWaiter = Substitute.For<IServerReadinessWaiter>();
+		_outcomeVerifier = Substitute.For<IPackageInstallOutcomeVerifier>();
+		_requiredPackageChecker = Substitute.For<IRequiredPackageChecker>();
+		_installedAppVersions = Substitute.For<IInstalledAppVersions>();
+		_logger = Substitute.For<ILogger>();
+		_serverReadinessWaiter.WaitForReady(Arg.Any<ServerReadinessOptions>()).Returns(true);
+		_outcomeVerifier.IsPackageOperational(Arg.Any<string>(), out Arg.Any<string>()).Returns(true);
+		_command = new InstallDashboardsMigratorCommand(new EnvironmentSettings(), _installNugetPackage,
+			_serverReadinessWaiter, _outcomeVerifier, _requiredPackageChecker, _installedAppVersions, _logger);
 	}
 
 	[Test]
-	[Description("Points the shared install flow at the dashboards-migrator archive and asks the outcome verifier about that package, so the verifier probes DashboardsMigratorService rather than ProcessDesignService.")]
-	public void Execute_ShouldInstallTheDashboardsMigratorArchive_AndVerifyThatPackage() {
+	[Description("Fetches the app from the default feed when the caller names none, so 'install the migrator' needs no feed knowledge.")]
+	public void Execute_ShouldFetchFromTheDefaultFeed_WhenNoSourceIsGiven() {
 		// Arrange
-		InstallDashboardsMigratorOptions options = new() { Environment = "env" };
+		InstallDashboardsMigratorOptions options = new() { EnvironmentName = "env" };
 
 		// Act
-		int result = _command.Execute(options);
+		int exitCode = _command.Execute(options);
 
 		// Assert
-		result.Should().Be(0, because: "the archive is present, installs, the instance comes back and the package answers");
-		_packageInstaller.Received(1).Install(ExpectedPackagePath, Arg.Any<EnvironmentSettings>(), null, null, true);
-		_outcomeVerifier.Received(1).IsPackageOperational(BundledPackages.DashboardsMigratorPackageName, out string _);
-		_requiredPackageChecker.Received(1).GetInstalledVersion(BundledPackages.DashboardsMigratorPackageName);
+		exitCode.Should().Be(0);
+		_installNugetPackage.Received(1).Install(DashboardsMigratorDistribution.PackageName, null,
+			DashboardsMigratorDistribution.DefaultFeedUrl);
 	}
 
 	[Test]
-	[Description("Declares the verb and its update alias, and none of the gates that would make the installer unreachable — the same absences InstallProcessBuilderCommandTests pins for the other bundled package.")]
-	public void InstallDashboardsMigratorOptions_ShouldDeclareVerb_AndNoSelfDefeatingGate() {
-		// Arrange & Act
-		VerbAttribute verb = typeof(InstallDashboardsMigratorOptions)
-			.GetCustomAttributes(typeof(VerbAttribute), false)
-			.Cast<VerbAttribute>()
-			.Single();
+	[Description("Fails when the app does not answer after the install, because an accepted package that never compiled looks identical to a healthy one.")]
+	public void Execute_ShouldFail_WhenThePackageDoesNotAnswer() {
+		// Arrange
+		_outcomeVerifier.IsPackageOperational(Arg.Any<string>(), out Arg.Any<string>()).Returns(false);
+
+		// Act
+		int exitCode = _command.Execute(new InstallDashboardsMigratorOptions { EnvironmentName = "env" });
 
 		// Assert
-		verb.Name.Should().Be("install-dashboards-migrator", because: "the docs, help and MCP tool name this verb");
-		verb.Aliases.Should().BeEquivalentTo(["update-dashboards-migrator"],
-			because: "the update alias mirrors install-process-builder's, and nothing else is promised");
-		RequiresCreatioVersionAttribute.IsDefinedOn(typeof(InstallDashboardsMigratorOptions)).Should().BeFalse(
-			because: "that attribute compares the CORE version (10.x on an 8.3 stand), so the package's "
-				+ "RequiredPlatformVersion 8.3.1 cannot be expressed with it and a floor there would always pass");
-		RequiresPackageAttribute.IsDefinedOn(typeof(InstallDashboardsMigratorOptions)).Should().BeFalse(
-			because: "a self-gated installer could never install the package it is gated on");
-		typeof(InstallDashboardsMigratorOptions).GetCustomAttributes(typeof(FeatureToggleAttribute), true)
-			.Should().BeEmpty(because: "a gated options type is filtered out of the verb parse array");
+		exitCode.Should().Be(1);
+		_installedAppVersions.DidNotReceive().Record(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Records the version read back from the environment, so clio info names the build that is serving rather than the one that was asked for.")]
+	public void Execute_ShouldRecordTheVersionReadFromTheEnvironment() {
+		// Arrange
+		_requiredPackageChecker.GetInstalledVersion(DashboardsMigratorDistribution.PackageName)
+			.Returns(PackageVersion.ParseVersion("1.1.4.7"));
+
+		// Act
+		_command.Execute(new InstallDashboardsMigratorOptions { EnvironmentName = "env", Version = "1.1.4" });
+
+		// Assert
+		_installedAppVersions.Received(1).Record(DashboardsMigratorDistribution.DisplayName, "1.1.4.7");
+	}
+
+	[Test]
+	[Description("Keeps the verb and its aliases, which scripts and the MCP tool call by name.")]
+	public void Options_ShouldKeepTheVerbAndItsAliases() {
+		// Arrange
+		VerbAttribute verb = typeof(InstallDashboardsMigratorOptions)
+			.GetCustomAttributes(typeof(VerbAttribute), inherit: false).Cast<VerbAttribute>().Single();
+
+		// Act & Assert
+		verb.Name.Should().Be("install-dashboards-migrator");
+		verb.Aliases.Should().Contain("update-dashboards-migrator",
+			because: "an update is the same operation and callers already use this name");
 	}
 
 	#endregion

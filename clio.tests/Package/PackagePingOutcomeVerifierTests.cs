@@ -11,7 +11,7 @@ namespace Clio.Tests.Package;
 [TestFixture]
 [Category("Unit")]
 [Property("Module", "Package")]
-public class BundledPackagePingOutcomeVerifierTests {
+public class PackagePingOutcomeVerifierTests {
 
 	#region Constants: Private
 
@@ -26,7 +26,7 @@ public class BundledPackagePingOutcomeVerifierTests {
 	private IApplicationClient _applicationClient;
 	private IServiceUrlBuilder _serviceUrlBuilder;
 	private ILogger _logger;
-	private BundledPackagePingOutcomeVerifier _verifier;
+	private PackagePingOutcomeVerifier _verifier;
 
 	#endregion
 
@@ -53,7 +53,7 @@ public class BundledPackagePingOutcomeVerifierTests {
 		_serviceUrlBuilder
 			.Build(ServiceUrlBuilder.KnownRoute.ProcessBuilderPing)
 			.Returns(PingUrl);
-		_verifier = new BundledPackagePingOutcomeVerifier(_applicationClient, _serviceUrlBuilder, _logger);
+		_verifier = new PackagePingOutcomeVerifier(_applicationClient, _serviceUrlBuilder, _logger);
 	}
 
 	[TearDown]
@@ -337,7 +337,7 @@ public class BundledPackagePingOutcomeVerifierTests {
 		ArrangeResponse(PingResponse());
 
 		// Act
-		bool operational = _verifier.IsPackageOperational(BundledPackages.DashboardsMigratorPackageName, out string _);
+		bool operational = _verifier.IsPackageOperational(DashboardsMigratorDistribution.PackageName, out string _);
 
 		// Assert
 		operational.Should().BeTrue(because: "the migrator's own Ping answered in the expected envelope");
@@ -361,14 +361,14 @@ public class BundledPackagePingOutcomeVerifierTests {
 	public void Constructor_ShouldRejectNullCollaborators() {
 		// Arrange, Act & Assert
 		Assert.Throws<ArgumentNullException>(
-			() => new BundledPackagePingOutcomeVerifier(null, _serviceUrlBuilder, _logger),
+			() => new PackagePingOutcomeVerifier(null, _serviceUrlBuilder, _logger),
 			"the verifier cannot answer anything without a client, and failing here names the missing "
 			+ "dependency instead of throwing a NullReferenceException after the package is already installed");
 		Assert.Throws<ArgumentNullException>(
-			() => new BundledPackagePingOutcomeVerifier(_applicationClient, null, _logger),
+			() => new PackagePingOutcomeVerifier(_applicationClient, null, _logger),
 			"without a url builder there is no route to probe");
 		Assert.Throws<ArgumentNullException>(
-			() => new BundledPackagePingOutcomeVerifier(_applicationClient, _serviceUrlBuilder, null),
+			() => new PackagePingOutcomeVerifier(_applicationClient, _serviceUrlBuilder, null),
 			"without a logger the cause of a failed probe would be lost");
 	}
 

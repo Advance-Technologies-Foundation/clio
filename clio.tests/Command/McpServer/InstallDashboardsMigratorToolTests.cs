@@ -74,7 +74,7 @@ public sealed class InstallDashboardsMigratorToolTests {
 			because: "a sequential re-run installs again or hits the same refusal; both converge");
 		typeof(InstallDashboardsMigratorTool).GetCustomAttributes(typeof(FeatureToggleAttribute), true)
 			.Should().BeEmpty(because: "a gated primitive is filtered out of MCP registration");
-		description.Should().Contain(BundledPackages.DashboardsMigratorPackageName,
+		description.Should().Contain(DashboardsMigratorDistribution.PackageName,
 			because: "the description names the package the tool installs");
 		description.Should().Contain("Ping",
 			because: "the description discloses HOW the outcome is checked");
@@ -92,9 +92,9 @@ public sealed class InstallDashboardsMigratorToolTests {
 		private readonly int _exitCode;
 
 		public FakeInstallDashboardsMigratorCommand(int exitCode)
-			: base(new EnvironmentSettings(), Substitute.For<Clio.Package.IPackageInstaller>(),
-				Substitute.For<IBundledPackageCatalog>(), Substitute.For<Clio.Package.IPackageInstallOutcomeVerifier>(),
-				Substitute.For<IServerReadinessWaiter>(), Substitute.For<IRequiredPackageChecker>(),
+			: base(new EnvironmentSettings(), Substitute.For<Clio.Project.NuGet.IInstallNugetPackage>(),
+				Substitute.For<IServerReadinessWaiter>(), Substitute.For<Clio.Package.IPackageInstallOutcomeVerifier>(),
+				Substitute.For<IRequiredPackageChecker>(), Substitute.For<IInstalledAppVersions>(),
 				Substitute.For<ILogger>()) {
 			_exitCode = exitCode;
 		}
