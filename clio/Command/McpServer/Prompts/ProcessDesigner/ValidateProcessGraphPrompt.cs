@@ -33,7 +33,10 @@ public static class ValidateProcessGraphPrompt {
 		3. Call `validate-process-graph` with your planned `nodes` and `edges`. Resolve every
 		   `error`-severity finding before building. Most `warning` findings are advisory - but one is not:
 		   an R13 warning about a conditional flow that carries no condition names a refusal the build path
-		   makes every time, so give that flow a condition (or make it `sequence`) before going on. Treating
+		   makes every time, so give that flow a condition (or make it `sequence`) before going on - UNLESS
+		   the branch is decided by an activity RESULT, where neither fix is wanted: a formula is
+		   unmaintainable on such a source and `sequence` deletes the branch. Declare the selection as the
+		   edge's `results` instead and the warning goes away. Treating
 		   it as optional buys a failed `create-business-process` one round trip later.
 		4. Only after a clean validation, build the process with `create-business-process` (or edit an
 		   existing one with `modify-business-process`) — clio builds and saves it server-side in one call.

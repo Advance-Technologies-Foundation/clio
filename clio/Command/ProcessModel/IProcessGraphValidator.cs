@@ -39,8 +39,18 @@ public enum ProcessFlowKind {
 /// <para>Without the field the validator could not see any of the three, so the check could only live on
 /// the server, where it is found one save later.</para>
 /// </param>
+/// <param name="Results">
+/// The ACTIVITY RESULTS that select this branch, when it is decided by a result selection rather than
+/// by <paramref name="Condition"/> - the other of a conditional flow's two disjoint predicate slots.
+/// <para>Present so R13 can tell a planned branch that is FINISHED from one that is not. Without it a
+/// caller planning the selection dialect is warned that the build path refuses their flow and told to
+/// add a condition or re-kind it to 'sequence' - and BOTH of those destroy the branch, the first by
+/// writing a formula the designer will not render on such a source, the second by removing the branch
+/// altogether. The rule's read-back caveat did not cover this: that one is about a graph describe
+/// produced, this is about a graph the caller is about to build.</para>
+/// </param>
 public sealed record ProcessGraphEdge(string Source, string Target, ProcessFlowKind FlowKind,
-	string Condition = null);
+	string Condition = null, IReadOnlyList<string> Results = null);
 
 /// <summary>
 /// A planned process graph: the nodes and the flows between them.
