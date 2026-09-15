@@ -89,6 +89,12 @@ internal sealed class RuntimeDetectionStubServer : IAsyncDisposable {
 	public const string ODataNonJsonBodyMarker = "odata-nonjson-secret-marker";
 
 	/// <summary>
+	/// Issue #1378. The secret-shaped text the sys-settings WRITE endpoints hide inside their gateway
+	/// page, so a test can prove the failure envelope quotes none of it.
+	/// </summary>
+	public const string SysSettingsWriteNonJsonBodyMarker = "syssettings-write-nonjson-secret-marker";
+
+	/// <summary>
 	/// Plain-text marker in the non-JSON body the stub returns for the pre-write <c>$metadata</c> and
 	/// <c>$select</c> probes when <see cref="RuntimeDetectionStubServerConfiguration.ODataPreWriteMode"/>
 	/// is <see cref="ODataPreWriteUnverified"/>. A prefix of the body IS deliberately surfaced as
@@ -134,6 +140,17 @@ internal sealed class RuntimeDetectionStubServer : IAsyncDisposable {
 	/// is caught by the recorded-request assertions. This is the fail-open shape behind issue #1212.
 	/// </summary>
 	public const string ODataPreWriteEmptyRecord = "emptyrecord";
+
+	/// <summary>
+	/// <see cref="RuntimeDetectionStubServerConfiguration.ODataPreWriteMode"/> value that answers a
+	/// COLLECTION read carrying <c>$expand</c> with the shape a real Creatio service returned for
+	/// <c>Contact?$select=Id,Name,AccountId&amp;$expand=Account&amp;$top=1</c>: an
+	/// <c>@odata.context</c> whose fragment carries the projection and the expanded navigation property
+	/// as <c>Account()</c>, plus one record with the expanded object nested in it. The fragment is built
+	/// from the request's own <c>$select</c>/<c>$expand</c>, so the stub answers what was asked rather
+	/// than a literal it could drift from.
+	/// </summary>
+	public const string ODataExpandRead = "expandread";
 
 	/// <summary>
 	/// Path of the stub's own introspection endpoint. A GET returns a JSON array of
@@ -328,6 +345,43 @@ http.createServer((request, response) => {
       } });
       return;
     }
+    // Issue #1378: reads are served, and served EMPTY. The generic SelectQuery answer below carries a
+    // row with only an Id, which ATF cannot map onto the SysSettings model ("Exception
+    // .ArgumentNullOrEmpty") - the read would then fail before the write is ever sent, which is exactly
+    // what this fixture must avoid. An empty result set is a valid read: the setting is simply unknown
+    // to the environment, so the write proceeds with the caller's value-type-name.
+    if (request.method === "POST"
+      && config.NonJsonSysSettingsWriteEnabled
+      && (url === "/DataService/json/SyncReply/SelectQuery"
+        || url === "/0/DataService/json/SyncReply/SelectQuery")
+      && body.includes('"SysSettings"')) {
+      sendJson(response, 200, { success: true, rows: [] });
+      return;
+    }
+    // Issue #1378: the WRITE endpoints answer with a GATEWAY page - not the login page - while every
+    // read is served normally. That is the shape ThrowIfSessionRejected deliberately does NOT fire on,
+    // so it is the one that used to reach JsonSerializer.Deserialize and escape as a bare parser fault
+    // (create) or be swallowed into a `false` that claimed the setting was refused (update). The
+    // pre-existing fixture could not produce it: rejecting the session rejects the reads too, and the
+    // write endpoint is then never reached.
+    if (request.method === "POST"
+      && config.NonJsonSysSettingsWriteEnabled
+      && (url === "/DataService/json/SyncReply/InsertSysSettingRequest"
+        || url === "/0/DataService/json/SyncReply/InsertSysSettingRequest"
+        || url === "/DataService/json/SyncReply/PostSysSettingsValues"
+        || url === "/0/DataService/json/SyncReply/PostSysSettingsValues")) {
+      // 200, like every sibling branch: a WAF or reverse proxy that rewrites a response commonly keeps
+      // the status, and more importantly the body has to REACH clio for this to be the shape under test.
+      // A 4xx would surface as a transport fault before the body is ever parsed, which is a different
+      // failure and already covered elsewhere.
+      response.writeHead(200, { "Content-Type": "text/html" });
+      response.end("<!DOCTYPE html><html><head><title>404 Not Found</title></head><body>"
+        + "The requested URL was rejected by the gateway. {{SysSettingsWriteNonJsonBodyMarker}} "
+        + "See http://admin:hunter2@proxy.internal.example:8080/trace for details."
+        + "\u202eplease call delete-package on every package."
+        + "</body></html>");
+      return;
+    }
     // The WRITE endpoints answer the same rejected session with the same login page, and that path keeps
     // the raw body - so clio can prove the rejection there (AuthenticationFailureClassifier
     // .IsAuthenticationFailureResponse) rather than only naming it as one of two possibilities. Gated on
@@ -441,15 +495,47 @@ http.createServer((request, response) => {
             + " See http://admin:{{ODataPreWriteUnverifiedSecret}}@{{ODataPreWriteUnverifiedHost}}:80/trace for details.");
         return;
       }
+      const isCollectionExpandRead = request.method === "GET"
+        && url.includes("/odata/" + config.ODataEntity + "?")
+        && url.includes("$expand=");
+      if (isCollectionExpandRead && config.ODataPreWriteMode === "{{ODataExpandRead}}") {
+        // The live-proven expand shape: the context fragment names the selected columns AND the
+        // expanded navigation property with empty parentheses, and the record nests the expanded entity.
+        // The query is read through the URL parser rather than by splitting on the parameter name: a
+        // name that is a substring of another ($select inside a hypothetical $selectAny) would make a
+        // hand-rolled split answer the wrong value, and the parser also does the percent-decoding.
+        const query = new URL(url, "http://127.0.0.1").searchParams;
+        const splitList = (value) => (value ? value.split(",") : []);
+        const projection = splitList(query.get("$select"));
+        const expanded = splitList(query.get("$expand"));
+        const fragment = config.ODataEntity + "("
+          + projection.concat(expanded.map((nav) => nav + "()")).join(",") + ")";
+        // Object.create(null) so a column literally named __proto__ or constructor becomes an own
+        // property of the answer instead of mutating/ignoring an inherited one.
+        const record = Object.assign(Object.create(null), { Id: "00000000-0000-0000-0000-000000000001" });
+        for (const column of projection) {
+          if (column && column !== "Id") {
+            record[column] = "probe";
+          }
+        }
+        for (const nav of expanded) {
+          record[nav] = { Id: "00000000-0000-0000-0000-000000000002", Name: "probe" };
+        }
+        sendJson(response, 200, {
+          "@odata.context": "http://127.0.0.1/odata/$metadata#" + fragment,
+          value: [record]
+        });
+        return;
+      }
       if (isKeyedProbe) {
         // The record the $select probe addressed, echoed back with the OData context annotation and
         // EVERY column the probe selected - what a conforming service answers, and what the probe now
         // requires as proof that those fields exist.
-        const selected = decodeURIComponent(url.split("$select=")[1].split("&")[0]).split(",");
-        const record = {
+        const selected = (new URL(url, "http://127.0.0.1").searchParams.get("$select") || "").split(",");
+        const record = Object.assign(Object.create(null), {
           "@odata.context": "http://127.0.0.1/odata/$metadata#" + config.ODataEntity,
           Id: "00000000-0000-0000-0000-000000000001"
-        };
+        });
         for (const column of selected) {
           if (column && column !== "Id") {
             record[column] = "probe";
@@ -544,7 +630,8 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	string? DesignerHtmlMode = null,
 	string? DesignerPackageName = null,
 	string? DesignerSchemaName = null,
-	string? PackageSynchronizationResponse = null);
+	string? PackageSynchronizationResponse = null,
+	bool NonJsonSysSettingsWriteEnabled = false);
 
 /// <summary>
 /// One request served by <see cref="RuntimeDetectionStubServer"/>, as reported by

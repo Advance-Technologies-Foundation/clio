@@ -17,6 +17,23 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public class SetLogoToolTests {
 
+	/// <summary>
+	/// Builds the command and its classifier over ONE logger. Two substitutes would make any future
+	/// assertion on a log line pass vacuously - the line would be written to the instance the test never
+	/// looks at.
+	/// </summary>
+	/// <param name="manager">The sys-settings manager the command reads and writes through.</param>
+	/// <param name="fileSystem">The file system, or <see langword="null"/> for an inert substitute.</param>
+	/// <param name="logger">The shared sink, or <see langword="null"/> for an inert substitute.</param>
+	/// <returns>A command whose classifier writes to the same logger it does.</returns>
+	private static SysSettingsCommand BuildCommand(ISysSettingsManager manager, IFileSystem fileSystem = null,
+		ILogger logger = null) {
+		ILogger sink = logger ?? Substitute.For<ILogger>();
+		return new SysSettingsCommand(manager, sink, fileSystem ?? Substitute.For<IFileSystem>(),
+			new OperationCorrelationIdProvider(),
+			new SysSettingFailureClassifier(sink, new OperationCorrelationIdProvider()));
+	}
+
 	private const string LogoFile = "C:/brand/logo.svg";
 
 	/// <summary>An arbitrary package the fake command reports back; the tool only relays whatever it resolved.</summary>
@@ -518,8 +535,7 @@ public class SetLogoToolTests {
 
 		public FakeSetLogoCommand(SetLogoResult result = null)
 			: base(Substitute.For<IApplicationClient>(), new EnvironmentSettings(),
-				new SysSettingsCommand(Substitute.For<ISysSettingsManager>(), Substitute.For<ILogger>(),
-					Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider()),
+				BuildCommand(Substitute.For<ISysSettingsManager>()),
 				Substitute.For<IPackageDataBinder>(), Substitute.For<IFileSystem>()) {
 			_result = result ?? SetLogoResult.Successful(["logo"], BoundPackageName, []);
 		}
