@@ -6,6 +6,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Clio.Common;
 using McpServer.Resources;
 
 public static class SchemaValidationService
@@ -1652,7 +1653,19 @@ public static class SchemaValidationService
 	/// Unbounded by design: <see cref="JsonDocument"/> rejects a body deeper than its own 64-level limit before
 	/// this ever runs, so the recursion is bounded by the parser rather than by a second limit to keep in step.
 	/// </remarks>
-	private static bool DeclaresScaffold(JsonElement element) {
+	private static bool DeclaresScaffold(JsonElement element) => DeclaresScaffold(element, depth: 0);
+
+	/// <remarks>
+	/// Bounded by <see cref="JsonReaderLimits.MaxParseDepth"/>, which the parse this element came out of
+	/// already enforced — so the budget is unreachable and returning false at it decides nothing. It is here
+	/// to SAY that, because the alternative is an unbounded-looking recursion over caller-supplied JSON whose
+	/// only real bound is a BCL default nothing in the file mentions. The sibling walk in
+	/// <c>ExcludedComponentsPass</c> leans on the same ceiling and now names the same constant.
+	/// </remarks>
+	private static bool DeclaresScaffold(JsonElement element, int depth) {
+		if (depth > JsonReaderLimits.MaxParseDepth) {
+			return false;
+		}
 		switch (element.ValueKind) {
 			case JsonValueKind.Object:
 				if (element.TryGetProperty(TypePropertyName, out JsonElement type)
@@ -1660,9 +1673,9 @@ public static class SchemaValidationService
 					&& string.Equals(type.GetString(), ScaffoldComponentType, StringComparison.Ordinal)) {
 					return true;
 				}
-				return element.EnumerateObject().Any(property => DeclaresScaffold(property.Value));
+				return element.EnumerateObject().Any(property => DeclaresScaffold(property.Value, depth + 1));
 			case JsonValueKind.Array:
-				return element.EnumerateArray().Any(DeclaresScaffold);
+				return element.EnumerateArray().Any(item => DeclaresScaffold(item, depth + 1));
 			default:
 				return false;
 		}

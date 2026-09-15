@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Clio.Common;
 using JsonNode = System.Text.Json.Nodes.JsonNode;
 using JsonArray = System.Text.Json.Nodes.JsonArray;
 using JsonObject = System.Text.Json.Nodes.JsonObject;
@@ -67,18 +68,17 @@ internal static class ExcludedComponentsPass {
 	/// is the same defence in depth <c>WebToMobileAnalysisService.MaxTemplateDepth</c> takes.
 	/// </summary>
 	/// <remarks>
-	/// Set to the JSON readers' OWN ceiling (64 for both <c>System.Text.Json</c> and Newtonsoft 13), which
-	/// makes abandoning a branch unreachable rather than merely unlikely: a document deep enough to exhaust
-	/// this budget cannot be parsed in the first place. That matters because <c>depth</c> counts JSON NODES,
-	/// not components — the recursion descends into both the array and the object at every level, so a
-	/// component nested N levels in <c>items</c> costs ~2N. At the previous budget of 32 the cut-off landed
-	/// around component depth 16, which a genuinely deep page can reach, and the outcome was silent: a banned
-	/// component below the cut-off stays on the page and produces no <c>drop</c> entry (ENG-95827). Do NOT
-	/// raise this past the readers' ceiling — the value's whole
-	/// point is that the parser refuses before the budget does. Deliberately NOT unified with
-	/// <c>MaxTemplateDepth</c>, which bounds a different walk and carries no such reporting.
+	/// Set to the JSON readers' OWN ceiling — <see cref="JsonReaderLimits.MaxParseDepth"/>, not a literal 64,
+	/// so the coupling is visible from both ends — which makes abandoning a branch unreachable rather than
+	/// merely unlikely: a document deep enough to exhaust this budget cannot be parsed in the first place.
+	/// That matters because <c>depth</c> counts JSON NODES, not components — the recursion descends into both
+	/// the array and the object at every level, so a component nested N levels in <c>items</c> costs ~2N. At
+	/// the previous budget of 32 the cut-off landed around component depth 16, which a genuinely deep page
+	/// can reach, and the outcome was silent: a banned component below the cut-off stays on the page and
+	/// produces no <c>drop</c> entry (ENG-95827). Deliberately NOT unified with <c>MaxTemplateDepth</c>,
+	/// which bounds a different walk and carries no such reporting.
 	/// </remarks>
-	private const int MaxSearchDepth = 64;
+	private const int MaxSearchDepth = JsonReaderLimits.MaxParseDepth;
 
 	/// <summary>The slot a child entry occupies when its <c>PropertyName</c> names none — the element-map default.</summary>
 	private const string DefaultSlotName = "items";

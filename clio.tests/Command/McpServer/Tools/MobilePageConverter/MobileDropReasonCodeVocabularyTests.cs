@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -117,6 +118,113 @@ public sealed class MobileDropReasonCodeVocabularyTests {
 			because: "the code is the only part of a drop a caller may branch on, so it must stay a stable token "
 				+ "rather than anything a reader could reasonably reformat");
 	}
+
+	[Test]
+	[Description("Every reason code the converter MINTS comes from the vocabulary constants. Pinning the ReasonCodes set says what the vocabulary is, not that the emitting code uses it: a call site that passes a bare string literal ships a code no article decodes and no caller can branch on, and both guards on the set stay green because neither of them ever looks at an emission. The closed vocabulary is a claim about the wire, so it has to be checked where the wire is written.")]
+	public void Emissions_ShouldMintEveryReasonCodeFromTheVocabularyConstants() {
+		// Arrange — Reason(code, params...) is the only factory (pinned by the test below), so its call sites
+		// are every code that can reach any of the five collections. Reading the SOURCE rather than the
+		// assembly is deliberate: a const string is inlined at compile time, so in IL a literal and a constant
+		// reference are the same bytes — which is precisely the distinction under test.
+		string[] sources = ConverterSources();
+
+		// Act
+		List<string> literalEmissions = [];
+		int callSites = 0;
+		foreach (string file in sources) {
+			foreach (string code in FirstArgumentsOfReasonCalls(File.ReadAllText(file))) {
+				callSites++;
+				if (StringLiteral.IsMatch(code)) {
+					literalEmissions.Add($"{Path.GetFileName(file)}: Reason({Condense(code)}, ...)");
+				}
+			}
+		}
+
+		// Assert
+		callSites.Should().BeGreaterThan(DeclaredCodes().Count,
+			because: "the scan has to actually find the emissions — a pattern that matched nothing would make the "
+				+ "assertion below pass on a converter that emitted raw strings everywhere, which is the one "
+				+ "failure this test exists to catch");
+		literalEmissions.Should().BeEmpty(
+			because: "a code built from a string literal is outside the vocabulary by construction: the set guard "
+				+ "cannot see it, the clio-knowledge article has no block decoding it, and a caller meeting it is "
+				+ "told by that article to report an unexplained loss. Offenders: "
+				+ string.Join("; ", literalEmissions));
+	}
+
+	[Test]
+	[Description("Exactly one place builds a ReasonCode — the Reason(code, params) factory. The guard above scans that factory's call sites, so a ReasonCode constructed directly anywhere else would be invisible to it and would bypass the single point at which the code is required to be a vocabulary constant.")]
+	public void Emissions_ShouldBuildEveryReasonCodeThroughTheSharedFactory() {
+		// Arrange
+		string[] sources = ConverterSources();
+
+		// Act
+		List<string> constructions = [.. sources.SelectMany(file =>
+			ReasonCodeConstruction.Matches(File.ReadAllText(file))
+				.Select(_ => Path.GetFileName(file)))];
+
+		// Assert
+		constructions.Should().ContainSingle(
+			because: "being the SINGLE construction is what lets one guard cover every emission; a second "
+				+ "`new ReasonCode { Code = ... }` anywhere reopens the gap silently, and zero would mean the "
+				+ "pattern stopped matching the factory and this guard had quietly become vacuous. Found: "
+				+ string.Join("; ", constructions));
+	}
+
+	private static string[] ConverterSources() => [.. Directory.EnumerateFiles(
+		Path.Combine(RepositoryRoot, "clio", "Command", "McpServer", "Tools", "MobilePageConverter"),
+		"*.cs", SearchOption.AllDirectories)];
+
+	/// <summary>
+	/// The first argument of every <c>Reason(</c> call in <paramref name="source"/>, extracted with balanced
+	/// delimiters so a <c>switch</c> expression picking among constants comes back whole instead of being cut
+	/// at its first comma. The factory's own DECLARATION is skipped — its first "argument" is the parameter
+	/// list's <c>string code</c>, which is not an emission.
+	/// </summary>
+	private static IEnumerable<string> FirstArgumentsOfReasonCalls(string source) {
+		foreach (Match call in ReasonCallStart.Matches(source)) {
+			int i = call.Index + call.Length;
+			int depth = 0;
+			int from = i;
+			for (; i < source.Length; i++) {
+				char c = source[i];
+				if (c is '(' or '[' or '{') {
+					depth++;
+				} else if (c is ')' or ']' or '}') {
+					if (depth == 0) {
+						break;
+					}
+					depth--;
+				} else if (c == ',' && depth == 0) {
+					break;
+				}
+			}
+			string argument = source[from..i];
+			if (!argument.Contains("string code", StringComparison.Ordinal)) {
+				yield return argument;
+			}
+		}
+	}
+
+	private static string Condense(string code) =>
+		Whitespace.Replace(code, " ").Trim();
+
+	/// <summary>A <c>Reason(</c> call — not <c>.Reason(</c>, and not a longer identifier ending in it.</summary>
+	private static readonly Regex ReasonCallStart =
+		new(@"(?<![\w.])Reason\(", RegexOptions.Compiled);
+
+	/// <summary>A double-quoted literal, including a verbatim or raw one.</summary>
+	private static readonly Regex StringLiteral =
+		new(@"@?""", RegexOptions.Compiled);
+
+	/// <summary>A <c>ReasonCode</c> built directly.</summary>
+	private static readonly Regex ReasonCodeConstruction =
+		new(@"new\s+ReasonCode\s*[({]", RegexOptions.Compiled);
+
+	private static readonly Regex Whitespace = new(@"\s+", RegexOptions.Compiled);
+
+	private static readonly string RepositoryRoot = Path.GetFullPath(
+		Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
 
 	/// <summary>Reads the vocabulary off the production constants, so the pin cannot drift from the source.</summary>
 	private static IReadOnlyCollection<string> DeclaredCodes() =>

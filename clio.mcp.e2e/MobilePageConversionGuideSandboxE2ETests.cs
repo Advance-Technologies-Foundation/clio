@@ -824,7 +824,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	[AllureTag(ToolName)]
 	[AllureName("get-mobile-page-conversion-guide returns an element map the Creatio differ applies cleanly")]
 	[AllureDescription("Starts the real clio MCP server, converts every seeded page of the AutoTestClioMcp application, assembles each guide's insert entries into a mobile body viewConfigDiff and applies it through MobileDiffApplyValidator (the faithful JsonDiffApplier clone) — reproducing at the full MCP path the differ acceptance the unit tier covers in MobileDiffApplyValidatorTests, and asserting every parent-targeted insert declares the child slot its own children are inserted through.")]
-	public async Task MobilePageConversionGuideTool_Should_Return_ElementMap_The_Differ_Applies_Cleanly() {
+	public async Task MobilePageConversionGuideTool_Should_Return_ViewConfigDiff_The_Differ_Applies_Cleanly() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
