@@ -808,6 +808,95 @@ public sealed class SensitiveErrorTextRedactorTests {
 			because: "no cut is needed, so no ellipsis may appear");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("RedactCredentials keeps a URI without userinfo byte-identical, host, port, path and query included (#1505).")]
+	[TestCase("Cannot connect to http://ts1-core-dev04:88/sae_m_seeenu_16009960_0914/0/DataService")]
+	[TestCase("Probe https://ts1-core-dev04:88?u=john@acme.com answered 404")]
+	[TestCase("Endpoint https://host.example.com has no path")]
+	public void RedactCredentials_ShouldLeaveAUriWithoutUserInfo_Untouched(string text) {
+		// Act
+		string result = SensitiveErrorTextRedactor.RedactCredentials(text);
+
+		// Assert
+		result.Should().Be(text,
+			because: "the console variant redacts credentials only; the operator's own endpoint is the diagnosis, not a leak - and an '@' inside the query must not be mistaken for userinfo");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("RedactCredentials removes only the userinfo of a URI and keeps the host - including a password that contains '@' (#1505).")]
+	[TestCase("Request to https://user:pw@host.example.com/x failed", "Request to https://[redacted]@host.example.com/x failed")]
+	[TestCase("Request to https://user:p@ss@host.example.com/x failed", "Request to https://[redacted]@host.example.com/x failed")]
+	[TestCase("Request to https://user@host.example.com/x failed", "Request to https://[redacted]@host.example.com/x failed")]
+	public void RedactCredentials_ShouldStripUriUserInfo_AndKeepTheHost(string text, string expected) {
+		// Act
+		string result = SensitiveErrorTextRedactor.RedactCredentials(text);
+
+		// Assert
+		result.Should().Be(expected,
+			because: "the authority ends at the first '/', '?' or '#', and the last '@' inside the authority is the userinfo delimiter, so a password containing '@' is still removed whole");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("RedactCredentials leaves local paths, host:port pairs and e-mail addresses alone - only the console's own reader sees them (#1505).")]
+	public void RedactCredentials_ShouldLeaveLocalPathsHostPortsAndEmails_Untouched() {
+		// Arrange
+		const string text = "Could not find a part of the path '/Users/x/y.json'. Connection refused (localhost:1616). Contact john.doe@acme.com.";
+
+		// Act
+		string result = SensitiveErrorTextRedactor.RedactCredentials(text);
+
+		// Assert
+		result.Should().Be(text,
+			because: "the path, host:port and e-mail rules are deliberately not part of the console variant");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("RedactCredentials is idempotent: the AggregateException arm of the CLI renderer scrubs twice (#1505).")]
+	public void RedactCredentials_ShouldBeIdempotent() {
+		// Arrange
+		const string text = "SelectQuery failed: password=s3cr3t token Bearer eyJabc.def.ghi at https://user:pw@host/x";
+
+		// Act
+		string once = SensitiveErrorTextRedactor.RedactCredentials(text);
+		string twice = SensitiveErrorTextRedactor.RedactCredentials(once);
+
+		// Assert
+		once.Should().NotContain("s3cr3t").And.NotContain("eyJabc").And.NotContain("user:pw",
+			because: "the credential pair, the bearer token and the URI userinfo are the console variant's whole job");
+		twice.Should().Be(once,
+			because: "a second pass must find nothing new to replace");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description(
+		"Issue #1505: a SERIALIZED JSON body puts the key's closing quote between the key and the colon "
+		+ "({\"password\":\"s3cr3t\"}), which the credential pair pattern used to miss. Both the MCP Redact "
+		+ "path and the console RedactCredentials path share that pattern, so both are pinned here.")]
+	public void RedactAndRedactCredentials_ShouldRedactJsonQuotedCredentialKey() {
+		// Arrange
+		const string text = "backend echoed {\"password\":\"s3cr3t\",\"server\":\"db.internal\"}";
+
+		// Act
+		string mcp = SensitiveErrorTextRedactor.Redact(text);
+		string console = SensitiveErrorTextRedactor.RedactCredentials(text);
+
+		// Assert
+		mcp.Should().NotContain("s3cr3t",
+			because: "the JSON-quoted shape is the one issue #1505 measured on the MCP path too");
+		console.Should().NotContain("s3cr3t",
+			because: "the console variant reuses the same pair pattern and must fail closed on the same shape");
+		console.Should().Contain("\"password\":\"[redacted]\"",
+			because: "the key is kept so the line still reads sensibly while the value is replaced - and the "
+				+ "JSON property rule keeps it in the spelling it was written in, so the echoed body still parses");
+		console.Should().Contain("\"server\":\"[redacted]\"",
+			because: "a connection-string host echoed by the server is redacted alongside the password");
+	}
+
 	private static int CountOccurrences(string text, string token) {
 		int count = 0;
 		int index = text.IndexOf(token, StringComparison.OrdinalIgnoreCase);
