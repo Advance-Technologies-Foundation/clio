@@ -10936,4 +10936,31 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	#endregion
+	[Test]
+	[Category("Unit")]
+	[Description("A failed WEB-catalog fetch must not turn every web-only component into 'a misspelled or invented type'. The caller builds the web set from `webTask.Result ?? []`, so that failure yields an empty set while the mobile set stays populated from cache - and the only fail-open guard was on the MOBILE set. In that state the new neither-registry branch fires for components that ARE in the web registry and says they will not render, which is false; before this branch the same combination produced no message at all.")]
+	public void ValidateMobileComponentTypes_ShouldStaySilent_WhenTheWebRegistryFailedToLoad() {
+		// Arrange - crt.ScrollableContainer is a real WEB component; the empty set stands for a failed fetch.
+		const string body = """
+			{ "viewConfigDiff": [ { "operation": "insert", "name": "X",
+			   "values": { "type": "crt.ScrollableContainer" } } ] }
+			""";
+		IReadOnlySet<string> mobile = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.Input" };
+
+		// Act
+		SchemaValidationResult webLoaded = SchemaValidationService.ValidateMobileComponentTypes(
+			body, mobile, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.ScrollableContainer" });
+		SchemaValidationResult webFailed = SchemaValidationService.ValidateMobileComponentTypes(
+			body, mobile, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+		// Assert
+		webLoaded.Warnings.Should().ContainSingle(because: "with both catalogs loaded this is a web-only type")
+			.Which.Should().Contain("exists in the web registry",
+				because: "that is the accurate diagnosis when the web set is trustworthy");
+		webFailed.Warnings.Should().BeEmpty(
+			because: "with no web set there is no evidence the type is absent from the web registry, and the "
+				+ "neither-registry wording asserts exactly that evidence - saying a real component 'will not "
+				+ "render' sends the caller to replace something that works");
+	}
+
 }

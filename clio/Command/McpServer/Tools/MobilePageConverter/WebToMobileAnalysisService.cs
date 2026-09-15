@@ -1446,7 +1446,7 @@ public static class WebToMobileAnalysisService {
 		}
 		var entries = new List<ContainerMapEntry>();
 		foreach (ContainerMappingRule c in rule.Containers) {
-			if (IsSafeRuleIdentifier(c?.Web) && IsSafeRuleIdentifier(c.Mobile)) {
+			if (c is not null && IsSafeRuleIdentifier(c.Web) && IsSafeRuleIdentifier(c.Mobile)) {
 				entries.Add(new ContainerMapEntry { Web = c.Web, Mobile = c.Mobile });
 			}
 		}
@@ -2723,6 +2723,13 @@ public static class WebToMobileAnalysisService {
 						WalkElements(ctx, items, target, sourceAncestors: Append(sourceAncestors, name),
 							hostableParentName: NearestHostable(ctx, target, hostableParentName));
 					}
+					// The OTHER child slots go the same way as `items`. This was the last branch still walking
+					// `items` alone: a container with no mobile equivalent that carried `tools` or `menuItems`
+					// lost those children with no operation AND no droppedElements entry, because a
+					// relocate-children entry carries no values and its own record says nothing about a slot it
+					// did not carry. Hoisted into the target's `items` for the reason below — the target is a
+					// DIFFERENT element, and it does not have the slot this node declared them in.
+					HoistChildArraysInto(ctx, node, target, type, Append(sourceAncestors, name));
 					continue;
 				}
 
@@ -2762,7 +2769,7 @@ public static class WebToMobileAnalysisService {
 						// the container's own drop is the only record and it says nothing about what was inside
 						// a slot it did not carry. That is the silent class drop-non-converting-scope exists to
 						// close, and the scope branch above has always recursed for exactly this reason.
-						RecurseChildArrays(ctx, node, ResolveParent(ctx, mobileParentName), type,
+						HoistChildArraysInto(ctx, node, ResolveParent(ctx, mobileParentName), type,
 							Append(sourceAncestors, name));
 						continue;
 					}
@@ -2782,7 +2789,7 @@ public static class WebToMobileAnalysisService {
 						// the container's own drop is the only record and it says nothing about what was inside
 						// a slot it did not carry. That is the silent class drop-non-converting-scope exists to
 						// close, and the scope branch above has always recursed for exactly this reason.
-						RecurseChildArrays(ctx, node, ResolveParent(ctx, mobileParentName), type,
+						HoistChildArraysInto(ctx, node, ResolveParent(ctx, mobileParentName), type,
 							Append(sourceAncestors, name));
 						continue;
 					}
@@ -2902,6 +2909,40 @@ public static class WebToMobileAnalysisService {
 			// rather than nesting them under the moved element.
 			RecurseChildArrays(ctx, node, name, leafMobileType, Append(sourceAncestors, name),
 				inNonConvertingScope: leafRetargeted);
+		}
+	}
+
+	/// <summary>
+	/// Hoists the node's non-<c>items</c> child arrays into a DIFFERENT parent — the walk parent, when the node
+	/// itself is not recreated on mobile (dropped chrome, a retarget whose target is missing, a container type
+	/// with no mobile equivalent).
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Unlike <see cref="RecurseChildArrays"/> this does NOT keep the source slot name. That method walks a node's
+	/// own slots into the node itself, where <c>tools</c> means the slot this very element declares. Here the
+	/// element is gone and the children are going somewhere else, so carrying <c>propertyName: "tools"</c> across
+	/// would name a slot on an element that never declared one: the emitted insert reads
+	/// <c>{ parentName: "MainContainer", propertyName: "tools" }</c>, the differ answers
+	/// <c>Item "MainContainer" is not a container for other items</c>, and it rejects the ENTIRE pasted
+	/// <c>viewConfigDiff</c> rather than that one operation.
+	/// </para>
+	/// <para>
+	/// They go into the receiver's <c>items</c> instead — the slot every container has, and the same slot the
+	/// node's own <c>items</c> children are hoisted into by the <c>WalkElements</c> call beside each call site.
+	/// The children keep their own entries either way, which is the point: the alternative is losing them
+	/// silently.
+	/// </para>
+	/// </remarks>
+	private static void HoistChildArraysInto(ElementMapContext ctx, JObject node, string mobileParentName,
+		string mobileType, IReadOnlyList<string> childAncestors) {
+		foreach (JProperty prop in node.Properties()) {
+			if (string.Equals(prop.Name, ItemsPropertyName, StringComparison.OrdinalIgnoreCase)) {
+				continue;
+			}
+			if (IsChildElementArray(ctx, mobileType, prop.Name, prop.Value, childAncestors)) {
+				WalkElements(ctx, (JArray)prop.Value, mobileParentName, ItemsPropertyName, childAncestors);
+			}
 		}
 	}
 

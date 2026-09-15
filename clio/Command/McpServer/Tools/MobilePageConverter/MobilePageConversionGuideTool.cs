@@ -30,7 +30,11 @@ namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 [FeatureToggle("mobile-page-converter")]
 [SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null", Justification = "The best-effort probe helpers return null to signal 'not read' (distinct from 'read, empty'); the caller treats null as skip.")]
 [SuppressMessage("Minor Code Smell", "S3267:Loops should be simplified with LINQ", Justification = "Explicit loops that build registry maps with side effects read more clearly than a LINQ rewrite here.")]
-public sealed class MobilePageConversionGuideTool {
+// NOT sealed, and ReadPageUnderTenantLock below is virtual, purely so the two hard-stop refusals can be
+// tested where they actually live. Asserting RejectUnobtainableMobileTemplate / RejectUnobtainableWebTemplate
+// directly only proves the helpers answer correctly; deleting the `if (rejection is not null) return` at their
+// call sites left the whole suite green, which is the state this seam exists to make impossible.
+public class MobilePageConversionGuideTool {
 	private readonly IToolCommandResolver _commandResolver;
 	private readonly ILogger _logger;
 	private readonly IMobileComponentInfoCatalog _mobileCatalog;
@@ -330,7 +334,7 @@ public sealed class MobilePageConversionGuideTool {
 	/// disposed while this call is acquiring it.
 	/// </para>
 	/// </remarks>
-	internal PageGetResponse ReadPageUnderTenantLock(PageGetOptions options) {
+	internal virtual PageGetResponse ReadPageUnderTenantLock(PageGetOptions options) {
 		string tenantKey = _commandResolver.GetTenantKey(options);
 		lock (McpToolExecutionLock.GetLock(tenantKey)) {
 			McpToolExecutionLock.MarkInUse(tenantKey);
@@ -619,17 +623,20 @@ public sealed class MobilePageConversionGuideTool {
 				Password = args.Password
 			};
 			PageGetResponse templateResponse = ReadPageUnderTenantLock(options);
-			if (templateResponse?.Success == true && templateResponse.Bundle is { } bundle) {
-				IReadOnlyDictionary<string, string> parents = emptyParents;
-				IReadOnlyDictionary<string, string> types = emptyTypes;
-				IReadOnlyDictionary<string, JsonObject> placements = emptyPlacements;
-				if (bundle.ViewConfig is { } viewConfig) {
-					parents = WebToMobileAnalysisService.CollectParentByName(viewConfig);
-					types = WebToMobileAnalysisService.CollectComponentTypesByName(viewConfig);
-					placements = WebToMobileAnalysisService.CollectLayoutConfigByName(viewConfig);
-				}
-				return new MobileTemplateProbe(parents, placements, bundle.ViewModelConfig, bundle.ModelConfig,
-					Unavailable: false, TypesByName: types);
+			// Gated on the VIEW CONFIG, not merely on a bundle, so this mirror agrees with the web one at
+			// LoadWebTemplateBaseline. A read that succeeds but carries no viewConfig leaves parents, types and
+			// placements all empty — which is the exact state the refusal exists for: with an empty
+			// TypesByName the automatic same-name twin is never detected and the page ships a DUPLICATE of a
+			// native element, and RetargetTargetMissing fails open. Reporting that as "available" put the one
+			// unreadable case the gate was written for on the far side of the gate.
+			if (templateResponse?.Success == true && templateResponse.Bundle is { } bundle
+				&& bundle.ViewConfig is { } viewConfig) {
+				return new MobileTemplateProbe(
+					WebToMobileAnalysisService.CollectParentByName(viewConfig),
+					WebToMobileAnalysisService.CollectLayoutConfigByName(viewConfig),
+					bundle.ViewModelConfig, bundle.ModelConfig,
+					Unavailable: false,
+					TypesByName: WebToMobileAnalysisService.CollectComponentTypesByName(viewConfig));
 			}
 		} catch (Exception) {
 			// Best-effort: a failed mobile-template read falls back to defaults; Unavailable flags it below.

@@ -1,4 +1,4 @@
-using Clio.Command;
+﻿using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.MobilePageConverter;
 using FluentAssertions;
@@ -213,7 +213,11 @@ public sealed class MobilePageConversionGuideToolTests {
 
 		// Assert
 		fallback.Should().BeNull(
-			because: "the default is rules-file data, not a hardcoded name — and when it is absent the root-merge degradation is reported with cause no-template-base instead");
+			because: "the default is rules-file data, not a hardcoded name: clio must not send create-page at a "
+				+ "schema a partner rules file never declared. Note what this costs — with no rule matched AND "
+				+ "no default, templateRule?.Mobile is null, the mobile probe reports Unavailable and the TOOL "
+				+ "REFUSES. Returning null here is therefore a decision about tool availability, not merely "
+				+ "about the recommendation; RejectUnobtainableMobileTemplate names the rules file as the fix");
 	}
 
 	[Test]

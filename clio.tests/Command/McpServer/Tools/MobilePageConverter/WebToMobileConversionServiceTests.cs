@@ -971,22 +971,37 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("Container detection uses the registry container flag; an unknown type falls back to a name-suffix heuristic.")]
-	public void Analyze_ContainerDetection_UsesRegistryFlagThenNameSuffix() {
+	[Description("Container detection: the registry flag decides a known type, the TREE decides anything that carries children, and only a childless unknown reaches the name-suffix heuristic. The three sources were previously exercised by one fixture in which every unknown carried children, so the case labelled 'name-suffix fallback' was settled by the tree and the heuristic had no coverage at all.")]
+	public void Analyze_ContainerDetection_UsesRegistryFlagThenTreeThenNameSuffix() {
+		// Arrange — ExtraPanel carries a child (the TREE settles it); EmptyPanel and EmptyWidget are both
+		// childless unknowns, so only their NAME can decide, which is the heuristic under test.
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Wrapper", "type": "crt.SomeNewContainer", "items": [
 				{ "name": "Field", "type": "crt.SomeField" },
+				{ "name": "EmptyPanel", "type": "usr.Unknown" },
+				{ "name": "EmptyWidget", "type": "usr.Unknown" },
 				{ "name": "ExtraPanel", "type": "usr.Unknown", "items": [
 					{ "name": "Inner", "type": "usr.Widget" } ] } ] } ]
 			""");
 		var web = Reg(("crt.SomeNewContainer", true), ("crt.SomeField", false));
 
+		// Act
 		MobilePageConversionGuide guide = Analyze(bundle, webByType: web);
 
-		guide.SourceStructure.Single(s => s.Name == "Wrapper").IsContainer.Should().BeTrue(because: "registry flag");
-		guide.SourceStructure.Single(s => s.Name == "Field").IsContainer.Should().BeFalse(because: "registry flag");
-		guide.SourceStructure.Single(s => s.Name == "ExtraPanel").IsContainer.Should().BeTrue(because: "name-suffix fallback");
-		guide.SourceStructure.Single(s => s.Name == "Inner").IsContainer.Should().BeFalse();
+		// Assert
+		guide.SourceStructure.Single(s => s.Name == "Wrapper").IsContainer.Should().BeTrue(
+			because: "the registry publishes container:true for its type, which outranks everything else");
+		guide.SourceStructure.Single(s => s.Name == "Field").IsContainer.Should().BeFalse(
+			because: "the registry publishes container:false for its type");
+		guide.SourceStructure.Single(s => s.Name == "ExtraPanel").IsContainer.Should().BeTrue(
+			because: "it carries a child, so the tree settles it without consulting the name at all");
+		guide.SourceStructure.Single(s => s.Name == "Inner").IsContainer.Should().BeFalse(
+			because: "a childless leaf whose name suggests nothing is not a container");
+		guide.SourceStructure.Single(s => s.Name == "EmptyPanel").IsContainer.Should().BeTrue(
+			because: "childless and of an unknown type, so the name suffix is the ONLY signal left - this is "
+				+ "the case the old fixture never reached, because its every unknown carried children");
+		guide.SourceStructure.Single(s => s.Name == "EmptyWidget").IsContainer.Should().BeFalse(
+			because: "same shape, name that suggests no container - the negative half of the heuristic");
 	}
 
 	// ── elementMap (instance-level mapping) ───────────────────────────────────────────────────
@@ -4599,6 +4614,55 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "a placement merged onto the removed anchor would name an element the produced page does "
 				+ "not have, and the applier refuses the whole array over one such operation rather than "
 				+ "skipping it - the caller's paste fails entirely, with no way to tell which entry did it");
+	}
+
+	[Test]
+	[Description("A container with no mobile equivalent hoists the children of EVERY slot, not just items. The relocate-children branch was the last one still walking items alone: a wrapper carrying a tools strip lost those buttons with no operation AND no droppedElements entry, because a relocate-children entry carries no values and its own record says nothing about a slot it did not carry. That is the silent class the whole droppedElements contract exists to make impossible.")]
+	public void Analyze_RelocatedContainer_HoistsEveryChildSlot_NotOnlyItems() {
+		// Arrange - crt.UnknownWrapper is a container the mobile registry does not know, so it relocates
+		// rather than converting. It carries one child in items and one in tools.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Wrapper", "type": "crt.UnknownWrapper",
+			    "items": [ { "name": "ItemsField", "type": "crt.Input", "label": "In items" } ],
+			    "tools": [ { "name": "ToolsField", "type": "crt.Input", "label": "In tools" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle,
+			webByType: Reg(("crt.UnknownWrapper", true), ("crt.Input", false)));
+
+		// Assert
+		string[] accountedFor = [.. OperationNames(guide), .. DroppedNames(guide)];
+		accountedFor.Should().Contain("ItemsField",
+			because: "the items child was always hoisted - it is the control for the one below");
+		accountedFor.Should().Contain("ToolsField",
+			because: "a child of ANY slot must reach the caller as an operation or as a dropped element; "
+				+ "vanishing with its container is the one outcome the response cannot express, and it is "
+				+ "indistinguishable from a page that never had the element");
+	}
+
+	[Test]
+	[Description("A hoisted child goes into the receiver's items, never into the slot its old parent declared. RecurseChildArrays forwards the source property name, which is right when the node walks into ITSELF and wrong when the node is gone and the children are going somewhere else: the emitted insert then reads parentName the grandparent + propertyName \"tools\", and a crt.GridContainer MainContainer has no tools slot, so the differ answers 'not a container for other items' and rejects the ENTIRE pasted array rather than that one operation.")]
+	public void Analyze_HoistedChild_GoesIntoTheReceiversItems_NotTheSlotItsOldParentDeclared() {
+		// Arrange - same shape as the test above: the wrapper relocates, so both of its slots are hoisted
+		// into the receiver. Here the assertion is about WHICH SLOT the tools child lands in.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Wrapper", "type": "crt.UnknownWrapper",
+			    "items": [ { "name": "ItemsField", "type": "crt.Input", "label": "In items" } ],
+			    "tools": [ { "name": "ToolsField", "type": "crt.Input", "label": "In tools" } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle,
+			webByType: Reg(("crt.UnknownWrapper", true), ("crt.Input", false)));
+
+		// Assert
+		ViewConfigDiffOperation hoisted = Element(guide, "ToolsField");
+		hoisted.PropertyName.Should().Be("items",
+			because: "the receiver is a DIFFERENT element and never declared a tools slot; carrying the source "
+				+ "slot name across names a slot on an element that does not have one");
+		hoisted.ParentName.Should().NotBe("Wrapper",
+			because: "the wrapper is not recreated on mobile, so nothing may be inserted into it");
 	}
 
 	/// <summary>

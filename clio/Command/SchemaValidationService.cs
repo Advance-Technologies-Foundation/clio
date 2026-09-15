@@ -43,6 +43,7 @@ public static class SchemaValidationService
 	private const string InsertOperationName = "insert";
 	private const string SetOperationName = "set";
 	private const string MergeOperationName = "merge";
+	private const string NamePropertyName = "name";
 	private const string ParentNamePropertyName = "parentName";
 	private const string PropertyNamePropertyName = "propertyName";
 	private const string ScaffoldElementName = "Scaffold";
@@ -673,11 +674,18 @@ public static class SchemaValidationService
 						"Do NOT use web-only or unknown components on a mobile page without explicit approval from the user. " +
 						"If this is a custom mobile component with the same type name, ignore this warning; " +
 						"otherwise use get-component-info to find a supported mobile alternative.");
-				} else {
+				} else if (webOnlyTypes.Count > 0) {
 					// The previously SILENT case: a type in NEITHER registry produced no diagnostic at all, so a
 					// misspelled or invented component type reached the save indistinguishable from a legitimate
 					// custom one (ENG-95827). It stays a warning rather than an error because a genuinely custom
 					// mobile component is also absent from both registries — but it is no longer unreported.
+					//
+					// Gated on the WEB set being non-empty, which is this branch's fail-open. The caller builds
+					// it from `webTask.Result ?? []`, so a web-catalog fetch failure yields an empty set while
+					// the mobile set stays populated from cache — and every genuinely web-only component then
+					// falls in here and is reported as "a misspelled or invented type" that "will not render",
+					// which is false. The mobile-set guard at the top of the method does not cover it: the two
+					// catalogs fail independently.
 					result.Warnings.Add(
 						$"Component type '{type}' is in NEITHER the mobile nor the web registry. " +
 						"If it is a custom mobile component registered in your package, ignore this warning; " +
@@ -710,14 +718,14 @@ public static class SchemaValidationService
 			return;
 		}
 		bool hasOperation = entry.TryGetProperty(OperationPropertyName, out _);
-		bool hasName = entry.TryGetProperty("name", out _);
+		bool hasName = entry.TryGetProperty(NamePropertyName, out _);
 		if (hasOperation && hasName) {
 			return;
 		}
 		result.IsValid = false;
 		var missing = new List<string>(2);
 		if (!hasOperation) missing.Add(OperationPropertyName);
-		if (!hasName) missing.Add("name");
+		if (!hasName) missing.Add(NamePropertyName);
 		result.Errors.Add(
 			$"viewConfigDiff entry at index {index} is missing required " +
 			$"{(missing.Count == 1 ? "property" : "properties")}: {string.Join(", ", missing)}.");
@@ -824,7 +832,7 @@ public static class SchemaValidationService
 		bool typeIsScaffold = string.Equals(GetMobileEntryType(entry), ScaffoldComponentType, StringComparison.Ordinal)
 			|| (entry.TryGetProperty(ValuesPropertyName, out JsonElement values) && DeclaresScaffold(values));
 		bool nameIsScaffold = isInsert
-			&& TryGetStringProperty(entry, "name", out string name)
+			&& TryGetStringProperty(entry, NamePropertyName, out string name)
 			&& string.Equals(name, ScaffoldElementName, StringComparison.Ordinal);
 		if (!typeIsScaffold && !nameIsScaffold) {
 			return;
@@ -1127,7 +1135,7 @@ public static class SchemaValidationService
 			|| values.ValueKind != JsonValueKind.Object) {
 			return;
 		}
-		bool targetsScaffold = TryGetStringProperty(entry, "name", out string mergeTarget)
+		bool targetsScaffold = TryGetStringProperty(entry, NamePropertyName, out string mergeTarget)
 			&& string.Equals(mergeTarget, ScaffoldElementName, StringComparison.Ordinal);
 		string subject = DescribeViewConfigDiffEntry(entry, index);
 		int advisoryReported = 0;
@@ -1260,7 +1268,7 @@ public static class SchemaValidationService
 	/// </summary>
 	private static bool TryGetItemConfigName(JsonElement item, out string name) {
 		name = null;
-		if (!item.TryGetProperty("name", out JsonElement nameElement)) {
+		if (!item.TryGetProperty(NamePropertyName, out JsonElement nameElement)) {
 			return false;
 		}
 		switch (nameElement.ValueKind) {
@@ -1295,7 +1303,7 @@ public static class SchemaValidationService
 	/// that would read as an alias.
 	/// </summary>
 	private static string DescribeViewConfigDiffEntry(JsonElement entry, int index) =>
-		TryGetStringProperty(entry, "name", out string name)
+		TryGetStringProperty(entry, NamePropertyName, out string name)
 			? $"viewConfigDiff entry '{Sanitize(name)}'"
 			: $"viewConfigDiff entry at index {index}";
 
@@ -1493,7 +1501,7 @@ public static class SchemaValidationService
 	}
 
 	private static string GetMobileEntryName(JsonElement entry, JsonElement values) {
-		if (TryGetStringProperty(entry, "name", out string name)) {
+		if (TryGetStringProperty(entry, NamePropertyName, out string name)) {
 			return name;
 		}
 		return TryGetStringProperty(values, "name", out string valuesName) ? valuesName : "(unnamed)";
@@ -5143,7 +5151,7 @@ public static class SchemaValidationService
 
 	private static bool TryGetDataTableColumns(JsonElement item, out JsonElement columns) {
 		columns = default;
-		return item.TryGetProperty("name", out JsonElement nameElement)
+		return item.TryGetProperty(NamePropertyName, out JsonElement nameElement)
 			&& string.Equals(nameElement.GetString(), "DataTable", StringComparison.Ordinal)
 			&& item.TryGetProperty(ValuesPropertyName, out JsonElement values)
 			&& values.TryGetProperty("columns", out columns)
