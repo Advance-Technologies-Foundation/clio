@@ -104,6 +104,42 @@ public sealed class MobilePageConversionGuideToolE2ETests : McpContractFixtureBa
 		response.Error.Should().NotBeNullOrWhiteSpace(
 			because: "a failed conversion guide must carry an actionable diagnostic explaining the read failure");
 	}
+
+	[Test]
+	[Description("ENG-95827: a REFUSAL reaches the caller as a structured result carrying the source schema name and a remedy, not as a transport error — so an agent can tell 'clio refused for a stated reason' from 'the tool crashed'. The branch now fails rather than degrading (an unobtainable template would ship inserts duplicating native elements), which makes the refusal envelope part of the tool's contract.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide refusals arrive as structured results")]
+	[AllureDescription("Calls get-mobile-page-conversion-guide through the real MCP server so it cannot obtain the templates it needs, and verifies the refusal is a readable structured envelope naming the schema and a remedy rather than a protocol-level error.")]
+	public async Task MobilePageConversionGuideTool_Should_Deliver_Refusals_As_Structured_Results() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+		const string schemaName = "UsrRefusalProbe_FormPage";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = schemaName,
+					["environment-name"] = $"missing-refusal-env-{Guid.NewGuid():N}"
+				}
+			},
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a refusal is a decision the tool made, so it must travel as a result the caller can parse — never as a protocol fault, which an agent cannot distinguish from a crash");
+		MobilePageConversionGuideResponse response =
+			EntitySchemaStructuredResultParser.Extract<MobilePageConversionGuideResponse>(callResult);
+		response.Success.Should().BeFalse(
+			because: "the guide could not be produced, and the caller must not proceed to build a mobile page from it");
+		response.SourceSchemaName.Should().Be(schemaName,
+			because: "the refusal has to say WHICH page it is about — an agent converting several pages correlates on this");
+		response.Error.Should().NotBeNullOrWhiteSpace(
+			because: "every refusal states its cause and what to do about it; that is the whole reason failing beats returning a degraded guide");
+		response.Guide.Should().BeNull(
+			because: "a refused conversion must carry no guide at all — a partial one is exactly the degraded guide this branch replaced, and a caller might apply it");
+	}
 }
 
 /// <summary>
