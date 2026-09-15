@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
 using Clio.Workspaces;
@@ -124,7 +125,14 @@ public class PropsBuilder : IPropsBuilder
 
 	#region Constants: Private
 
+	private const string ConditionTag = "Condition";
+
+	private const string OtherwiseTag = "Otherwise";
+
+	private const string WhenTag = "When";
 	private const string IncludeTag = "Include";
+	private const string Net472TargetFramework = "net472";
+	private const string NetStandardTargetFramework = "netstandard2.0";
 	private const string ProjExtension = ".csproj";
 	private const string PropsExtension = ".props";
 	private const string ReferenceTag = "Reference";
@@ -132,6 +140,26 @@ public class PropsBuilder : IPropsBuilder
 	#endregion
 
 	#region Fields: Private
+
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+
+	//Matches a whole condition that is a single $(TargetFramework) comparison, in either
+	//operand order: '$(TargetFramework)' == 'net472' and 'net472' != '$(TargetFramework)'
+	private static readonly Regex SimpleTargetFrameworkConditionRegex = new(
+		@"^\s*(?:'\$\(TargetFramework\)'\s*(?<operator>==|!=)\s*'(?<framework>[^']*)'"
+		+ @"|'(?<framework2>[^']*)'\s*(?<operator2>==|!=)\s*'\$\(TargetFramework\)')\s*$",
+		RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout);
+
+	//Used to tell "no opinion" from "an expression clio cannot evaluate". The [^)]* tail deliberately
+	//matches the WHOLE TargetFramework* family, not just $(TargetFramework): $(TargetFrameworks),
+	//$(TargetFrameworkVersion) and $(TargetFrameworkIdentifier) all qualify (PR #1496 review). None of
+	//them is the property SimpleTargetFrameworkConditionRegex evaluates, so a condition built on one is
+	//unevaluable here and the dependency is KEPT - the safe side, same as And/Or/negation. Widening the
+	//family costs a duplicate reference (an MSBuild warning); narrowing it to the exact property would
+	//let a classic '$(TargetFrameworkVersion)' == 'v4.7.2' read as "no opinion" and suppress a dll that
+	//is genuinely needed. See the knowledge record for the materialization knock-on that follows.
+	private static readonly Regex TargetFrameworkMentionRegex = new(
+		@"\$\(TargetFramework[^)]*\)", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout);
 
 	private readonly IFileSystem _fileSystem;
 	private readonly ILogger _logger;
@@ -261,6 +289,95 @@ public class PropsBuilder : IPropsBuilder
 		_fileSystem.WriteAllTextToFile(propsFilePath, propsContent);
 		return true;
 	}
+	/// <summary>
+	/// Decides whether a csproj element applies to the target framework being built.
+	/// </summary>
+	/// <param name="element">Element to inspect, usually a Reference.</param>
+	/// <param name="targetFramework">Target framework being built: net472 or netstandard2.0.</param>
+	/// <remarks>
+	/// A Reference restricted to one target framework - directly, or through an enclosing
+	/// Choose/When - says nothing about the others. Treating it as "already referenced"
+	/// everywhere drops the dependency from the props file of every other target framework,
+	/// and the package then fails to compile for them.
+	/// Only a condition that is a single $(TargetFramework) comparison is interpreted. A
+	/// condition that mentions the property inside something more complex - And, Or, a negation,
+	/// a property function - is treated as NOT applying, so the dll is written into the props
+	/// file. That direction is deliberate: a duplicate reference is an MSBuild warning, while a
+	/// missing one is a compile error. A condition that does not mention $(TargetFramework) at
+	/// all is assumed to apply, as before.
+	/// </remarks>
+	private static bool AppliesToTargetFramework(XElement element, string targetFramework){
+		for (XElement current = element; current is not null; current = current.Parent) {
+			//<Otherwise> carries NO Condition attribute - its condition is the implicit negation of its
+			//sibling <When>s, which this walk would otherwise never see. Reading "no condition above it" as
+			//"applies everywhere" is the same defect this method fixes on the <When> side, mirrored: a
+			//reference inside <Otherwise> would be judged to apply to net472 and suppressed from the net472
+			//props file even though the net472 <When> is what excludes it (PR #1496 review). Treated as
+			//unevaluable whenever a sibling <When> mentions $(TargetFramework), which lands on the same safe
+			//side as the complex-condition arm below - a duplicate reference is an MSBuild warning, a missing
+			//one is a compile error.
+			if (IsTargetFrameworkDependentOtherwise(current)) {
+				return false;
+			}
+			string condition = current.Attribute(ConditionTag)?.Value;
+			if (string.IsNullOrWhiteSpace(condition)) {
+				continue;
+			}
+			if (!ConditionAllowsTargetFramework(condition, targetFramework)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/// <summary>
+	/// Evaluates ONE <c>Condition</c> attribute against the target framework being built.
+	/// </summary>
+	/// <remarks>
+	/// Split out of <see cref="AppliesToTargetFramework"/> so the ancestor walk reads as a walk: the loop
+	/// says which elements are consulted, this says what one condition means.
+	/// </remarks>
+	/// <param name="condition">The raw <c>Condition</c> attribute value.</param>
+	/// <param name="targetFramework">Target framework being built: net472 or netstandard2.0.</param>
+	/// <returns>
+	/// <see langword="false"/> when the condition excludes this target framework, or mentions the property
+	/// in a form clio cannot evaluate; <see langword="true"/> when it admits it or says nothing about it.
+	/// </returns>
+	private static bool ConditionAllowsTargetFramework(string condition, string targetFramework){
+		Match match = SimpleTargetFrameworkConditionRegex.Match(condition);
+		if (!match.Success) {
+			//A mention clio cannot evaluate: not applying, so the dll stays in the props file
+			return !TargetFrameworkMentionRegex.IsMatch(condition);
+		}
+		string comparisonOperator = match.Groups["operator"].Success
+			? match.Groups["operator"].Value
+			: match.Groups["operator2"].Value;
+		string framework = match.Groups["framework"].Success
+			? match.Groups["framework"].Value
+			: match.Groups["framework2"].Value;
+		bool negated = comparisonOperator == "!=";
+		bool matchesFramework = string.Equals(framework, targetFramework, StringComparison.OrdinalIgnoreCase);
+		return matchesFramework != negated;
+	}
+
+	/// <summary>
+	/// True when <paramref name="element"/> is an <c>&lt;Otherwise&gt;</c> whose <c>&lt;Choose&gt;</c> has at
+	/// least one <c>&lt;When&gt;</c> mentioning <c>$(TargetFramework)</c>.
+	/// </summary>
+	/// <remarks>
+	/// An <c>&lt;Otherwise&gt;</c> under a <c>&lt;Choose&gt;</c> whose <c>&lt;When&gt;</c>s say nothing about
+	/// the target framework is genuinely unconditional in the only dimension this builder reads, so it is
+	/// left alone rather than made unevaluable - that would suppress nothing but would stop honouring the
+	/// conditions the rest of the method does understand.
+	/// </remarks>
+	/// <param name="element">The ancestor being examined.</param>
+	private static bool IsTargetFrameworkDependentOtherwise(XElement element) =>
+		element.Name.LocalName.Equals(OtherwiseTag, StringComparison.OrdinalIgnoreCase)
+		&& element.Parent is { } choose
+		&& choose.Elements().Any(sibling =>
+			sibling.Name.LocalName.Equals(WhenTag, StringComparison.OrdinalIgnoreCase)
+			&& TargetFrameworkMentionRegex.IsMatch(sibling.Attribute(ConditionTag)?.Value ?? string.Empty));
+
 	private string GetPathTo(ItemType itemType, string packageName){
 		return itemType switch {
 			ItemType.NugetFolder => FilePathGetter(_workspacePathBuilder.NugetFolderPath),
@@ -314,8 +431,10 @@ public class PropsBuilder : IPropsBuilder
 		_fileSystem.CreateOrOverwriteExistsDirectoryIfNeeded(destinationFolder, true);
 		foreach (string dll in enumerableDlls) {
 			string dllName = Path.GetFileNameWithoutExtension(dll);
+			string targetFramework = moniker == Moniker.net472 ? Net472TargetFramework : NetStandardTargetFramework;
 			bool isReferenced = csproj
 				.Descendants(ReferenceTag)
+				.Where(e => AppliesToTargetFramework(e, targetFramework))
 				.Any(e => e.Attribute(IncludeTag)?.Value == dllName);
 
 			if (isReferenced) {

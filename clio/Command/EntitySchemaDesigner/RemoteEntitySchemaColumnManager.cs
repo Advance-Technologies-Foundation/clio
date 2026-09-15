@@ -1254,7 +1254,10 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			// Runs on the READ paths too - the lookup never writes anything. Without it the read paths
 			// reported the bare transport failure and named no package at all, which is what made
 			// `get-entity-schema-properties --package <app>` unactionable for the caller (issue #722).
-			resolution = _dependencyResolver.Resolve(schemaName, packageName);
+			// The UId is passed as well as the name: the resolver reads the package's declared dependencies,
+			// and the request above already resolved the package, so resolving it again by name would cost an
+			// extra full installed-package round-trip on a path that is already failing.
+			resolution = _dependencyResolver.Resolve(schemaName, packageUId, packageName);
 		}
 		if (schemaUnavailable) {
 			try {

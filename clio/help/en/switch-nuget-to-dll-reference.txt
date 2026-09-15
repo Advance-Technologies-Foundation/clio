@@ -34,6 +34,15 @@ NOTES
     A package folder, or the .nuget helper folder of the package, that is a
     symbolic link or a junction is refused: the command exits with code 1 without
     writing or deleting anything through it.
+    The "already referenced" check honours the Condition of the <Reference> and
+    of any enclosing <Choose>/<When>, so a reference scoped to one target
+    framework no longer suppresses the dependency for the others. A condition
+    clio cannot evaluate keeps the dependency in the props file - and so does an
+    enclosing <Otherwise> whose sibling <When>s mention $(TargetFramework), since
+    an <Otherwise> carries no Condition of its own. A condition built on a
+    neighbouring property ($(TargetFrameworks), $(TargetFrameworkVersion),
+    $(TargetFrameworkIdentifier)) counts as unevaluable too, so it keeps the
+    dependency in both props files.
 
 EXAMPLES
     clio switch-nuget-to-dll-reference MyPackage

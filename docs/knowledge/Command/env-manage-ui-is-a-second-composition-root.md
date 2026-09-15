@@ -43,3 +43,13 @@ either and the command waits out the full 60-minute deadline instead.
 The poller is built once and shared by the command (which takes the baseline from it) and the activity
 watcher (which counts rows against that baseline). Two pollers for two environments is the same defect
 in a different place.
+
+**Update (issue #1376, PR #1477)** — `CompilationHistoryPoller` grew three more constructor collaborators
+(`ILogger`, `TimeProvider`, `ICancellableDelay`) for the tolerance window, and
+`BuildEnvironmentScopedCompilationHistoryPoller` in `clio/BindingsModule.cs` now hardcodes them
+(`ConsoleLogger.Instance`, `TimeProvider.System`, `new CancellableDelay()`). Only the data provider is
+environment-scoped, so the hardcoding is correct as written — none of the three captures environment
+settings. It is recorded here because this factory is the second composition root and hand-writing
+collaborators into it is exactly how the original defect arrived: whoever adds the NEXT constructor
+parameter has to ask whether it captures settings, and there is no compiler error to prompt the question.
+
