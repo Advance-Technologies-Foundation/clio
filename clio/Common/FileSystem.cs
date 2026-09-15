@@ -244,6 +244,64 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 		throw new ArgumentOutOfRangeException(nameof(path), $"Path {path} does not exist");
 	}
 
+	public bool HasLinkWithin(string confinementRoot, string path) {
+		if (string.IsNullOrWhiteSpace(confinementRoot) || string.IsNullOrWhiteSpace(path)) {
+			return false;
+		}
+		string fullRoot = msFileSystem.Path.GetFullPath(confinementRoot);
+		string current = msFileSystem.Path.GetFullPath(path);
+		string rootPrefix = fullRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+			+ Path.DirectorySeparatorChar;
+		if (!PathsEqual(current, fullRoot)
+			&& !current.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase)) {
+			//Not under this root, so this root does not confine it - the caller's lexical check owns
+			//that case. Walking up anyway would probe every ancestor up to the filesystem root.
+			return false;
+		}
+		while (true) {
+			if (IsLink(current)) {
+				return true;
+			}
+			if (PathsEqual(current, fullRoot)) {
+				return false;
+			}
+			string parent = msFileSystem.Path.GetDirectoryName(current);
+			if (string.IsNullOrEmpty(parent) || PathsEqual(parent, current)) {
+				//The walk left the root without meeting it, so nothing here proves the path is confined.
+				return true;
+			}
+			current = parent;
+		}
+	}
+
+	private static bool PathsEqual(string left, string right) =>
+		string.Equals(left.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+			right.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+			StringComparison.OrdinalIgnoreCase);
+
+	/// <summary>
+	/// Tells whether the path itself is a link. A link whose target is gone still answers true:
+	/// a write through it creates the target outside the confined folder.
+	/// </summary>
+	private bool IsLink(string path) {
+		try {
+			Ms.IFileSystemInfo info = msFileSystem.Directory.Exists(path)
+				? msFileSystem.DirectoryInfo.New(path)
+				: msFileSystem.FileInfo.New(path);
+			if (info.LinkTarget is not null) {
+				return true;
+			}
+			//Attributes of a path that does not exist come back as (FileAttributes)(-1), which carries
+			//every bit including ReparsePoint, so existence has to be settled before they are read.
+			return info.Exists && (info.Attributes & FileAttributes.ReparsePoint) != 0;
+		}
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+			or ArgumentException or NotSupportedException or NotImplementedException) {
+			//Nothing could be read about this segment, so nothing proves it is a real directory.
+			return true;
+		}
+	}
+
 	public void DeleteDirectory(string directoryPath) {
 		DeleteDirectory(directoryPath, false);
 	}

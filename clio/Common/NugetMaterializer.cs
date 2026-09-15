@@ -4,6 +4,7 @@ using System.Diagnostics.Contracts;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Xml;
 using System.Xml.Linq;
 using Clio.Project.NuGet;
 using Clio.Workspaces;
@@ -38,7 +39,8 @@ public class NugetMaterializer : INugetMaterializer
 	private const string NetStandardTargetFramework = "netstandard2.0";
 	private const string NugetHelperFolderName = ".nuget";
 
-	//The Import attribute that names the props file this csproj pulls in.
+	//The Import element and the attribute that names the props file this csproj pulls in.
+	private const string ImportTag = "Import";
 	private const string ProjectAttribute = "Project";
 
 	#endregion
@@ -176,6 +178,35 @@ public class NugetMaterializer : INugetMaterializer
 	private string BuildNugetProjectFolderPath(string packageName) =>
 		Path.Combine(_workspacePathBuilder.RootPath, NugetHelperFolderName, packageName);
 
+	private string BuildNugetHelperRootPath() =>
+		Path.Combine(_workspacePathBuilder.RootPath, NugetHelperFolderName);
+
+	/// <summary>
+	/// Reports whether the path stays inside the confinement root without passing through a link,
+	/// and names the offending segment when it does not.
+	/// </summary>
+	/// <remarks>
+	/// The canonical string-prefix check next to it is lexical, so it still follows a link that already
+	/// exists: a <c>packages/Good</c> or <c>.nuget/Good</c> symlink pointing somewhere else makes the
+	/// later template, csproj, backup and props writes - and the recursive bin/obj delete - land outside
+	/// the workspace.
+	/// </remarks>
+	private bool IsConfined(string confinementRoot, string path){
+		if (!_fileSystem.HasLinkWithin(confinementRoot, path)) {
+			return true;
+		}
+		_logger.WriteError($"The {path} path resolves through a symbolic link or a junction. "
+			+ "No package reference was converted");
+		return false;
+	}
+
+	//The csproj, its backup and the props files all live inside the package folder.
+	private bool IsPackagePathConfined(string path) =>
+		IsConfined(_workspacePathBuilder.PackagesFolderPath, path);
+
+	private bool IsHelperPathConfined(string path) =>
+		IsConfined(BuildNugetHelperRootPath(), path);
+
 	/// <summary>
 	/// Writes the helper project from the template and drops the output of the previous run.
 	/// </summary>
@@ -186,19 +217,33 @@ public class NugetMaterializer : INugetMaterializer
 	/// dependency removed from the real csproj kept its DLL and its import. Recreating the project
 	/// and clearing the output makes every run describe the references the csproj declares now.
 	/// </remarks>
-	private void CreateNugetProject(string packageName){
+	/// <returns>True when the helper project was written; false when its path is not confined.</returns>
+	private bool CreateNugetProject(string packageName){
 		string nugetProjectFolderPath = BuildNugetProjectFolderPath(packageName);
+		string nugetCsprojPath = Path.Combine(nugetProjectFolderPath, $"{packageName}.csproj");
+		if (!IsHelperPathConfined(nugetProjectFolderPath)) {
+			return false;
+		}
 		_fileSystem.CreateDirectoryIfNotExists(nugetProjectFolderPath);
 
 		string baseDir = AppDomain.CurrentDomain.BaseDirectory;
 		string templatePath = Path.Combine(baseDir, "tpl", "NugetProject.csproj.tpl");
 		string templateContent = _fileSystem.ReadAllText(templatePath);
-		string nugetCsprojPath = Path.Combine(nugetProjectFolderPath, $"{packageName}.csproj");
+		//The file, not only its folder: a link left in its place would carry the write to its target.
+		if (!IsHelperPathConfined(nugetCsprojPath)) {
+			return false;
+		}
 		_fileSystem.WriteAllTextToFile(nugetCsprojPath, templateContent);
 
 		foreach (string staleOutputFolder in StaleHelperOutputFolders) {
-			_fileSystem.DeleteDirectoryIfExists(Path.Combine(nugetProjectFolderPath, staleOutputFolder));
+			string staleOutputPath = Path.Combine(nugetProjectFolderPath, staleOutputFolder);
+			//Re-checked immediately before the recursive delete, the destructive step of this method.
+			if (!IsHelperPathConfined(staleOutputPath)) {
+				return false;
+			}
+			_fileSystem.DeleteDirectoryIfExists(staleOutputPath);
 		}
+		return true;
 	}
 
 	/// <summary>
@@ -251,7 +296,9 @@ public class NugetMaterializer : INugetMaterializer
 		return csProjContent;
 	}
 
-	private void UpdateCsProjFile(string packageName, IEnumerable<XElement> xElements, PropsBuildResult propsBuildResult){
+	/// <returns>True when the csproj is in its intended state; false when it could not be written.</returns>
+	private bool UpdateCsProjFile(string packageName, IEnumerable<XElement> xElements,
+		PropsBuildResult propsBuildResult){
 		bool needsBackUp = false;
 		
 		//Comment out only the PackageReference elements that were actually materialized.
@@ -275,11 +322,11 @@ public class NugetMaterializer : INugetMaterializer
 		needsBackUp |= AddPropsImport(packageName, NetStandardMoniker, propsBuildResult.NetStandardPropsCreated);
 
 		if (!needsBackUp) {
-			return;
+			return true;
 		}
 		
 		//A conversion snapshots the project as it is right now, replacing any earlier snapshot.
-		SaveCsProjFile(true);
+		return SaveCsProjFile(true);
 	}
 
 	/// <summary>
@@ -294,8 +341,15 @@ public class NugetMaterializer : INugetMaterializer
 	/// False for the stale-import repair: it must keep the pre-conversion copy it repairs after,
 	/// since copying the already-converted csproj over it destroys the only recovery copy.
 	/// </param>
-	private void SaveCsProjFile(bool refreshBackup){
+	/// <returns>True when the csproj was written; false when its path is not confined.</returns>
+	private bool SaveCsProjFile(bool refreshBackup){
 		string backupPath = $"{_csprojPath}.bak";
+		//Re-checked immediately before the write: this is the only step that overwrites the developer's
+		//own project file and its recovery copy. The backup is a leaf of its own - CopyFile follows a
+		//link left in its place and overwrites whatever it points at.
+		if (!IsPackagePathConfined(_csprojPath) || !IsPackagePathConfined(backupPath)) {
+			return false;
+		}
 		if (!refreshBackup && _fileSystem.ExistsFile(backupPath)) {
 			_logger.WriteInfo($"Keeping the existing csproj backup file {backupPath}");
 		} else {
@@ -303,6 +357,7 @@ public class NugetMaterializer : INugetMaterializer
 			_fileSystem.CopyFile(_csprojPath, backupPath, true);
 		}
 		_fileSystem.WriteAllTextToFile(_csprojPath, BuildCsProjText());
+		return true;
 	}
 
 	/// <summary>
@@ -329,31 +384,98 @@ public class NugetMaterializer : INugetMaterializer
 	/// A clio version before the empty-props fix could leave such an import behind, and MSBuild
 	/// then fails the whole project with "Root element is missing" on every build.
 	/// </summary>
+	/// <param name="packageName">Package whose csproj is repaired.</param>
 	private void RepairUnusablePropsImports(string packageName){
 		if (_csproj is null) {
 			//The csproj is empty or could not be parsed; there is nothing to repair here
 			return;
 		}
 		
-		bool repaired = false;
+		List<string> propsFileNames = [];
+		List<string> propsFilePaths = [];
 		foreach (string moniker in new[] {Net472Moniker, NetStandardMoniker}) {
-			string propsFileName = WorkspacePathBuilder.BuildPackagePropsFileName(packageName, moniker);
-			string propsFilePath = _workspacePathBuilder.BuildPackagePropsPath(packageName, moniker);
+			propsFileNames.Add(WorkspacePathBuilder.BuildPackagePropsFileName(packageName, moniker));
+			propsFilePaths.Add(_workspacePathBuilder.BuildPackagePropsPath(packageName, moniker));
+		}
+		//Everything this method can write or delete is confined up front: refusing halfway through
+		//would leave the csproj importing a props file this run has already deleted, which is the
+		//MSB4019 failure the method exists to prevent.
+		if (!IsPackagePathConfined(_csprojPath) || propsFilePaths.Any(p => !IsPackagePathConfined(p))) {
+			return;
+		}
+		
+		bool repaired = false;
+		for (int i = 0; i < propsFileNames.Count; i++) {
+			string propsFilePath = propsFilePaths[i];
 			bool propsFileUsable = _fileSystem.ExistsFile(propsFilePath)
 				&& !string.IsNullOrWhiteSpace(_fileSystem.ReadAllText(propsFilePath));
 			if (propsFileUsable) {
 				continue;
 			}
 			_fileSystem.DeleteFileIfExists(propsFilePath);
-			repaired |= RemovePropsImport(propsFileName);
+			repaired |= RemovePropsImport(propsFileNames[i]);
 		}
 		
 		if (!repaired) {
 			return;
 		}
+
+		//Only when no props import is left. With one moniker still importing usable props, restoring the
+		//references would put a PackageReference and the dll reference that replaced it in one project,
+		//and the build fails on the duplicate assembly. That this run removed a props import is also what
+		//identifies the comments as an earlier conversion's work rather than a developer's own edit.
+		bool anyPropsImportLeft = _csproj.Descendants(ImportTag)
+			.Any(e => propsFileNames.Contains(e.Attribute(ProjectAttribute)?.Value));
+		if (!anyPropsImportLeft) {
+			RestoreCommentedPackageReferences();
+		}
 		
 		//The repair runs after a conversion, so the pre-conversion snapshot must survive it.
-		SaveCsProjFile(false);
+		if (!SaveCsProjFile(false)) {
+			_logger.WriteError($"The {_csprojPath} file still imports props files that were removed, "
+				+ "so the project will not load. Restore it from its .bak copy");
+		}
+	}
+
+	/// <summary>
+	/// Turns the PackageReference comments a previous conversion wrote back into elements.
+	/// </summary>
+	/// <remarks>
+	/// A conversion replaces a materialized PackageReference with a comment holding the element text,
+	/// so a comment that parses as a PackageReference with an Include attribute is that work. A
+	/// reference a developer commented out by hand is indistinguishable from it, and restoring it is
+	/// accepted here: this runs only after a props import this tool wrote has just been removed and
+	/// none is left, so the alternative is a project that keeps building without its dependencies.
+	/// </remarks>
+	private void RestoreCommentedPackageReferences(){
+		List<XComment> comments = _csproj.DescendantNodes().OfType<XComment>().ToList();
+		foreach (XComment comment in comments) {
+			XElement packageReference = ParsePackageReferenceComment(comment.Value);
+			if (packageReference is null) {
+				continue;
+			}
+			comment.ReplaceWith(packageReference);
+			_logger.WriteInfo($"Restored the {packageReference.Attribute("Include")?.Value} package reference "
+				+ $"in the {_csprojPath} file, because the props file that replaced it is gone");
+		}
+	}
+
+	/// <summary>
+	/// Reads a comment back as a PackageReference element, or reports that it is an ordinary comment.
+	/// </summary>
+	private static XElement ParsePackageReferenceComment(string commentText){
+		if (string.IsNullOrWhiteSpace(commentText)) {
+			return null;
+		}
+		try {
+			XElement element = XElement.Parse(commentText.Trim());
+			return element.Name.LocalName == Tag && element.Attribute("Include") is not null
+				? element
+				: null;
+		} catch (XmlException) {
+			//Prose, not an element this tool wrote.
+			return null;
+		}
 	}
 
 	/// <summary>
@@ -361,7 +483,7 @@ public class NugetMaterializer : INugetMaterializer
 	/// </summary>
 	/// <returns>True when the csproj was modified.</returns>
 	private bool RemovePropsImport(string propsFileName){
-		List<XElement> staleImports = _csproj.Descendants("Import")
+		List<XElement> staleImports = _csproj.Descendants(ImportTag)
 			.Where(e => e.Attribute(ProjectAttribute)?.Value == propsFileName)
 			.ToList();
 		
@@ -394,7 +516,7 @@ public class NugetMaterializer : INugetMaterializer
 			return RemovePropsImport(propsFileName);
 		}
 		
-		bool importExists = _csproj.Descendants("Import")
+		bool importExists = _csproj.Descendants(ImportTag)
 			.Any(e => e.Attribute(ProjectAttribute)?.Value == propsFileName
 				&& e.Attribute("Condition")?.Value == condition);
 		
@@ -403,7 +525,7 @@ public class NugetMaterializer : INugetMaterializer
 			return false;
 		}
 		
-		XElement importElement = new("Import");
+		XElement importElement = new(ImportTag);
 		importElement.SetAttributeValue("Condition", condition);
 		importElement.SetAttributeValue(ProjectAttribute, propsFileName);
 		
@@ -430,8 +552,9 @@ public class NugetMaterializer : INugetMaterializer
 	/// The name arrives from the command line and reaches file reads, writes, builds and deletes -
 	/// the props files, the csproj and its .bak, and the helper project. A rooted name, or one
 	/// carrying a separator or a dot segment, resolves outside
-	/// <see cref="IWorkspacePathBuilder.PackagesFolderPath"/>, so the check runs before the first
-	/// filesystem call rather than inside each caller.
+	/// <see cref="IWorkspacePathBuilder.PackagesFolderPath"/>, so the check runs here rather than
+	/// inside each caller. The lexical checks run first and touch nothing; only a name that passes
+	/// them reaches the link probe, which is what the string comparison cannot see.
 	/// </remarks>
 	public bool IsPackageNameWithinPackagesFolder(string packageName){
 		if (string.IsNullOrWhiteSpace(packageName)) {
@@ -458,7 +581,7 @@ public class NugetMaterializer : INugetMaterializer
 				+ $"{packagesFolderPath} packages folder");
 			return false;
 		}
-		return true;
+		return IsConfined(packagesFolderPath, packagePath);
 	}
 
 	public int Materialize(string packageName){
@@ -475,7 +598,9 @@ public class NugetMaterializer : INugetMaterializer
 			return 1;
 		}
 
-		CreateNugetProject(packageName);
+		if (!CreateNugetProject(packageName)) {
+			return 1;
+		}
 		if (!AddNugetReferences(packageName, xElements) || !BuildNugetProject(packageName)) {
 			return 1;
 		}
@@ -488,8 +613,7 @@ public class NugetMaterializer : INugetMaterializer
 			RepairUnusablePropsImports(packageName);
 			return 1;
 		}
-		UpdateCsProjFile(packageName, xElements, propsBuildResult);
-		return 0;
+		return UpdateCsProjFile(packageName, xElements, propsBuildResult) ? 0 : 1;
 	}
 
 	#endregion
