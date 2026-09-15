@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -15,6 +16,11 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 [McpServerToolType]
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+	Justification = "DI composition root: update-page requires ten constructor-injected collaborators, the "
+		+ "tenth being the persisted-resource-key reader that keeps the label-resource rescue to one schema "
+		+ "read per (environment, schema) across this tool's gate and the command-level gate. A parameter "
+		+ "object would obscure the tool's injected contract; this mirrors the S107 suppression on PageSyncTool.")]
 public sealed class PageUpdateTool(
 	PageUpdateCommand command,
 	ILogger logger,
@@ -23,6 +29,7 @@ public sealed class PageUpdateTool(
 	IComponentInfoCatalog webComponentCatalog,
 	IPageBodySamplingService samplingService,
 	IPageBaselineGuard pageBaselineGuard,
+	IPersistedResourceKeyReader persistedResourceKeyReader,
 	IPlatformVersionResolverFactory? resolverFactory = null,
 	ISettingsRepository? settingsRepository = null)
 	: BaseTool<PageUpdateOptions>(command, logger, commandResolver) {
@@ -98,6 +105,11 @@ public sealed class PageUpdateTool(
 		[Required] PageUpdateArgs args,
 		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
+		// Opened at the TOP of the entry point so both gates below run inside ONE scope: the value flows
+		// DOWN to awaited callees, never back UP to the caller, so a scope opened inside a nested helper
+		// would cover that helper and nothing else. One call = one persisted-key cache, so the tool gate
+		// and the command-level gate resolve the schema hierarchy once between them.
+		using IDisposable persistedResourceKeyScope = persistedResourceKeyReader.BeginRequestScope();
 		PageUpdateOptions options = BuildOptions(args);
 		(PageUpdateResponse earlyFailure,
 			IReadOnlyList<string> validationWarnings,
@@ -107,9 +119,19 @@ public sealed class PageUpdateTool(
 				args,
 				server,
 				cancellationToken);
-		if (earlyFailure != null)
-			return earlyFailure;
-		(string metaFilePath, bool baselineArmed, string baselineWarning) =
+		if (earlyFailure != null) {
+			// The label-resource validators are the ONLY consumer of the persisted-key rescue, so its
+			// failure reason is produced on exactly the path that returns here - before the warning merge
+			// at the end of this method. Without this the caller sees only the validator's own
+			// "resource ... is neither auto-provided nor registered" and never why the rescue was skipped.
+			AppendPersistedResourceKeyWarning(earlyFailure, options);
+			// These exits never reach PageUpdateCommand.TryUpdatePage, so its stamp cannot cover them. Without
+			// this the tool contract's promise that a failed append dry run carries `dryRun: true` was false
+			// for the most common case an agent hits - a full-config incoming body, rejected by
+			// TryValidateAppendBodyForm above.
+			return earlyFailure.MarkDryRunFailure(options.DryRun, options.SchemaName);
+		}
+		(string metaFilePath, bool refreshBaseline, string baselineWarning) =
 			pageBaselineGuard.TryArm(options, args.OutputDirectory);
 		PageUpdateResponse response = ExecuteWithCleanLog(options, () => {
 			PageUpdateCommand resolvedCommand;
@@ -123,6 +145,12 @@ public sealed class PageUpdateTool(
 				TryVerifyPage(args, inner);
 			return inner;
 		});
+		// A save REGISTERS keys, so any cached read of this schema is now stale. One update-page call
+		// makes at most one save, so nothing in THIS call reads it again - the drop keeps the rule stated
+		// in one place rather than making the two write tools differ on when a cache entry survives.
+		if (response.Success) {
+			persistedResourceKeyReader.Invalidate(options);
+		}
 		// The command layer marks a content-rule failure but does not word the hint - `validate` is
 		// MCP-only, so the CLI-reachable command must not tell its users to re-run with a flag their
 		// parser does not accept. This is the MCP side of that split.
@@ -132,7 +160,8 @@ public sealed class PageUpdateTool(
 		// discovery and the refresh diagnostics travel on the response's warning channel (ENG-95262 AC-02).
 		// Runs on the hinted response: the hint changes only the error wording, never Success, so it cannot
 		// alter whether the refresh is due.
-		string refreshWarning = baselineArmed && response.Success && !options.DryRun
+		string refreshWarning = (refreshBaseline || options.ConditionalBaselineApplied)
+				&& response.Success && !options.DryRun
 			? pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response)
 			: null;
 		response.SamplingReview = samplingReview;
@@ -142,7 +171,24 @@ public sealed class PageUpdateTool(
 				lintWarnings),
 			BaselineWarnings(baselineWarning, refreshWarning));
 		response.Warnings = mergedWarnings.Count > 0 ? mergedWarnings : null;
-		return response;
+		AppendPersistedResourceKeyWarning(response, options);
+		// Idempotent for anything TryUpdatePage already stamped; this catches the ResolveCommand failure
+		// envelope, which is built here and never passes through the command.
+		return response.MarkDryRunFailure(options.DryRun, options.SchemaName);
+	}
+
+	// Puts a failed persisted-key read on the response's warning channel. A failed read only leaves the
+	// stricter verdict standing, so it is never an error - but it must be visible, because the log
+	// channel it is also written to does not reach an MCP caller of this typed-response tool. The reason
+	// is read back from the scope, so it surfaces whichever gate performed the read.
+	private void AppendPersistedResourceKeyWarning(PageUpdateResponse response, PageUpdateOptions options) {
+		string failure = persistedResourceKeyReader.GetFailureWarning(options);
+		if (response is null || string.IsNullOrWhiteSpace(failure)) {
+			return;
+		}
+		List<string> warnings = response.Warnings?.ToList() ?? [];
+		warnings.Add(failure);
+		response.Warnings = warnings;
 	}
 
 	private async Task<(PageUpdateResponse Failure,
@@ -252,7 +298,8 @@ public sealed class PageUpdateTool(
 	// ENG-92049 constraint (honored here): only OFFLINE validators run on this path. No HTTP
 	// signature resolution (ValidateRunProcessButtons resolves process signatures over the wire and
 	// deliberately stays on the success path); the run-process STRUCTURAL check below is a pure
-	// regex over the body. The environment check resolves the command, which is offline up to the
+	// regex over the body. ValidateBody is called with offlineOnly:true for the same reason, which
+	// withholds the persisted-resource-key rescue and its GetSchema round-trip (issue #1320). The environment check resolves the command, which is offline up to the
 	// EnvironmentResolutionException throw (the unknown-environment / missing-settings guard runs
 	// before any network call); the resolved command is discarded, so a body that cannot parse
 	// triggers no Creatio I/O even in dry-run.
@@ -282,7 +329,7 @@ public sealed class PageUpdateTool(
 		if (SchemaValidationService.ValidateMarkerIntegrity(options.Body).IsValid) {
 			// Offline syntax-failure path: chart validation is version-scoped, but no environment
 			// probe runs here, so validate against the 'latest' superset (requestedVersion: null).
-			(PageUpdateResponse contentFailure, _) = ValidateBody(options, requestedVersion: null);
+			(PageUpdateResponse contentFailure, _) = ValidateBody(options, requestedVersion: null, offlineOnly: true);
 			if (contentFailure != null) {
 				return contentFailure;
 			}
@@ -411,7 +458,7 @@ public sealed class PageUpdateTool(
 	/// write instead of only proving the validator returns an error.
 	/// </summary>
 	internal (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateBody(
-		PageUpdateOptions options, string? requestedVersion) {
+		PageUpdateOptions options, string? requestedVersion, bool offlineOnly = false) {
 		if (PageSchemaTypeExtensions.FromBody(options.Body) == PageSchemaType.Mobile) {
 			// Mobile body validation requires async catalogs (CDN+cache) AND the
 			// parsed-resources lookup master added in ENG-89649. PageUpdateTool runs
@@ -454,7 +501,12 @@ public sealed class PageUpdateTool(
 		// whose label is provided in `resources` is falsely rejected here, before the
 		// resource-aware post-resolution validation runs (matches PageUpdateOptions / PageSyncTool / PageValidateTool).
 		SchemaValidationService.TryParseResources(options.Resources, out Dictionary<string, string>? explicitResources, out _);
-		(string bodyError, IReadOnlyList<string> webWarnings) = ValidateWebPageBody(options.Body, explicitResources);
+		// offlineOnly is the ResolveSyntaxFailure path: it promises no Creatio I/O for a body that cannot
+		// even parse, so the persisted-resource-key rescue (a hierarchy resolution plus GetSchema) must not
+		// be offered there. Dropping it only makes that path stricter, and it is already reporting a failure.
+		(string bodyError, IReadOnlyList<string> webWarnings) = ValidateWebPageBody(
+			options.Body, explicitResources,
+			offlineOnly ? null : () => TryGetPersistedResourceKeys(options));
 		if (bodyError != null) {
 			return (new PageUpdateResponse { Success = false, Error = bodyError }, null);
 		}
@@ -493,7 +545,11 @@ public sealed class PageUpdateTool(
 		return (null, samplingReview);
 	}
 
-	private static PageUpdateOptions BuildOptions(PageUpdateArgs args) =>
+	/// <summary>
+	/// Maps the MCP tool arguments onto the command options. Internal so the argument-to-option mapping
+	/// (notably the caller-supplied conflict <c>checksum</c>) can be asserted directly by unit tests.
+	/// </summary>
+	internal static PageUpdateOptions BuildOptions(PageUpdateArgs args) =>
 		new() {
 			SchemaName = args.SchemaName,
 			Body = args.Body,
@@ -510,6 +566,11 @@ public sealed class PageUpdateTool(
 			Login = args.Login,
 			Password = args.Password,
 			Force = args.Force ?? false,
+			// Trimmed: the arming predicate in PageBaselineGuard is whitespace-tolerant
+			// (!string.IsNullOrWhiteSpace) while the comparison is a strict Ordinal one, so a padded
+			// "  4f3374af  " would arm the check and then fail it, reporting a checksum-mismatch that
+			// did not happen. Empty and whitespace-only stay equivalent to "not supplied".
+			ExpectedChecksum = args.Checksum?.Trim(),
 			NotifyDesignerPresence = true
 		};
 
@@ -648,8 +709,20 @@ public sealed class PageUpdateTool(
 		}
 	}
 
+	/// <summary>
+	/// Reads the resource keys already stored on the target schema, resolving the command lazily.
+	/// Used only when a label-resource validator has already failed, so the extra round-trips are never
+	/// paid by a body that validates cleanly, and never more than once per target for this call's
+	/// sequential gates. Shared with <c>sync-pages</c> through <see cref="McpPersistedResourceKeyGate"/>.
+	/// </summary>
+	private IReadOnlySet<string> TryGetPersistedResourceKeys(PageUpdateOptions options) =>
+		McpPersistedResourceKeyGate.ReadKeys(
+			persistedResourceKeyReader, _logger, options, () => ResolveCommand<PageUpdateCommand>(options));
+
 	private static (string Error, IReadOnlyList<string> Warnings) ValidateWebPageBody(
-		string body, IReadOnlyDictionary<string, string>? explicitResources = null) {
+		string body,
+		IReadOnlyDictionary<string, string>? explicitResources = null,
+		Func<IReadOnlySet<string>> persistedResourceKeysProvider = null) {
 		var errors = new List<string>();
 		Collect(SchemaValidationService.ValidateMarkerContent(body), errors);
 		Collect(SchemaValidationService.ValidateLocalizableTextLiterals(body), errors);
@@ -665,8 +738,11 @@ public sealed class PageUpdateTool(
 		Collect(SchemaValidationService.ValidateHandlerStructure(body), errors);
 		Collect(SchemaValidationService.ValidateRunProcessButtonStructure(body), errors);
 		Collect(SchemaValidationService.ValidateValidatorDeclarations(body), errors);
-		CollectWithPrefix(SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources), "invalid form field bindings", errors);
-		CollectWithPrefix(SchemaValidationService.ValidateInsertedFieldSelfConsistency(body, explicitResources), "invalid form field bindings", errors);
+		(SchemaValidationResult standardFieldResult, SchemaValidationResult insertedFieldResult) =
+			SchemaValidationService.ValidateFieldLabelResources(
+				body, explicitResources, persistedResourceKeysProvider);
+		CollectWithPrefix(standardFieldResult, "invalid form field bindings", errors);
+		CollectWithPrefix(insertedFieldResult, "invalid form field bindings", errors);
 		var warnings = new List<string>();
 		warnings.AddRange(SchemaValidationService.ValidateSchemaDepsCompleteness(body).Warnings);
 		warnings.AddRange(SchemaValidationService.ValidateContextAccessAwait(body).Warnings);
@@ -714,11 +790,11 @@ public sealed record PageUpdateArgs(
 	string? Body = null,
 
 	[property: JsonPropertyName("resources")]
-	[property: Description(McpToolDescriptions.PageResources)]
+	[property: Description(McpToolDescriptions.PageResources + McpToolDescriptions.PageResourcesAdditive)]
 	string? Resources = null,
 
 	[property: JsonPropertyName("dry-run")]
-	[property: Description("If true, validate without saving. Default: false")]
+	[property: Description("If true, validate without saving. Default: false. With mode=append this resolves the current body and runs the real merge, returning `appendProjection` (what the write would change) and applying the body warnings to the merged body rather than to your fragment; an append the save could not merge fails here too, with dryRun: true.")]
 	bool? DryRun = null,
 
 	[property: JsonPropertyName("skip-sampling")]
@@ -734,7 +810,7 @@ public sealed record PageUpdateArgs(
 	[property: Description("Absolute path to a file containing the page body. Used when `body` is empty. Enables passing large bodies without inline JSON escaping.")]
 	string? BodyFile = null,
 	[property: JsonPropertyName("mode")]
-	[property: Description("Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming body fragment with the schema's current body on the server — viewConfigDiff entries are replaced only when BOTH `operation` and `name` match — and, for a `remove`, whether it targets `properties` — with incoming winning in place. Every existing operation the fragment does not collide with is preserved, including a second operation on the same component. The one exception: a FURTHER existing entry of an identity the fragment already superseded is dropped rather than re-applied after the replacement. Handlers dedupe by `request`. SCHEMA_CONVERTERS and SCHEMA_VALIDATORS entries merge by type key and incoming wins, and the final merged web body is rejected when a custom validator reference has no matching SCHEMA_VALIDATORS declaration. Use 'append' when adding a component without clobbering existing customizations. Append requires the diff form; a full-config body (SCHEMA_VIEW_MODEL_CONFIG / SCHEMA_MODEL_CONFIG, or mobile viewModelConfig / modelConfig) is rejected up-front — use 'replace' for those. Separately, at APPLY time (not append-specific — a 'replace' body produces it too): the differ applies whole operation GROUPS in a fixed order (merges, then removes/inserts/moves, `set` last), never in viewConfigDiff array order, so a `merge`, `move`, or element `remove` beside an `insert` for one `name` — or a `move` whose name the same body also element-removes — resolves against a base without that component and is silently dropped. The same holds for any two operations whose groups run in sequence for one name: a `merge` beside an element `remove` or a `set`, and a property `remove` beside an element `remove` or beside a `set`. The response carries an advisory `warnings` entry naming the component; fold the transform's values into the `insert`, or use `set`.")]
+	[property: Description("Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming body fragment with the schema's current body on the server — viewConfigDiff entries are replaced only when BOTH `operation` and `name` match — and, for a `remove` or a `set`, whether it targets `properties` — with incoming winning in place. Every existing operation the fragment does not collide with is preserved, including a second operation on the same component. The one exception: a FURTHER existing entry of an identity the fragment already superseded is dropped rather than re-applied after the replacement. Handlers dedupe by `request`. SCHEMA_CONVERTERS and SCHEMA_VALIDATORS entries merge by type key and incoming wins, and the final merged web body is rejected when a custom validator reference has no matching SCHEMA_VALIDATORS declaration. Use 'append' when adding a component without clobbering existing customizations. Append requires the diff form; a full-config body (SCHEMA_VIEW_MODEL_CONFIG / SCHEMA_MODEL_CONFIG, or mobile viewModelConfig / modelConfig) is rejected up-front — use 'replace' for those. Separately, at APPLY time (not append-specific — a 'replace' body produces it too): the differ applies whole operation GROUPS in a fixed order (merges, then removes/inserts/moves, `set` last), never in viewConfigDiff array order, so a `merge`, `move`, or element `remove` beside an `insert` for one `name` — or a `move` whose name the same body also element-removes — resolves against a base without that component and is silently dropped. The same holds for any two operations whose groups run in sequence for one name: a `merge` beside an element `remove` or a `set`, and a property `remove` beside an element `remove` or beside a `set`. The response carries an advisory `warnings` entry naming the component; fold the transform's values into the `insert`, or use `set`.")]
 	string? Mode = null,
 	[property: JsonPropertyName("target-package-uid")]
 	[property: Description("Explicit target package UId for the replacing schema. Overrides automatic design-package resolution. Required when multiple apps replace the same platform page and automatic resolution would land the edit in the wrong app's design package.")]
@@ -748,6 +824,9 @@ public sealed record PageUpdateArgs(
 	[property: JsonPropertyName("output-directory")]
 	[property: Description("Optional. Directory that anchors the .clio-pages baseline lookup — pass the same value that was passed to get-page when it differs from the auto-detected workspace root. Used only for conflict-baseline discovery; does not change where the page is saved.")]
 	string? OutputDirectory = null,
+	[property: JsonPropertyName("checksum")]
+	[property: Description("Optional. The `editable.checksum` from the get-page this edit is based on. It becomes the authoritative conflict baseline; pass it on every save that follows a get-page. Re-sending a conflict response's `actualChecksum` here is NOT a resolution - it is equivalent to force=true and needs the same explicit user confirmation.")]
+	string? Checksum = null,
 	[property: JsonPropertyName("validate")]
 	[property: Description("Run client-side content and run-process validation before saving. Default: true. Set false only as an explicit escape hatch for a pre-existing page defect; JavaScript syntax, AST loadability, replace-mode marker integrity, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. It stays combinable with force=true - the two flags are orthogonal (one gates content checks, the other the baseline/conflict guard) - and the response then warns that both are relaxed.")]
 	bool? Validate = null

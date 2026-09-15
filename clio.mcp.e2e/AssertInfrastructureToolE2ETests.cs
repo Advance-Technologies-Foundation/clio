@@ -23,8 +23,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("assert")]
-public sealed class AssertInfrastructureToolE2ETests
-{
+public sealed class AssertInfrastructureToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = AssertInfrastructureTool.AssertInfrastructureToolName;
 
 	[Test]
@@ -47,13 +46,13 @@ public sealed class AssertInfrastructureToolE2ETests
 		AssertDatabaseCandidatesAreNormalized(actResult);
 	}
 
-	private static async Task<AssertInfrastructureArrangeContext> ArrangeAsync()
+	private async Task<AssertInfrastructureArrangeContext> ArrangeAsync()
 	{
 		return await AllureApi.Step("Arrange assert-infrastructure MCP session", async () =>
 		{
 			McpE2ESettings settings = TestConfiguration.Load();
 			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			McpServerSession session = Session;
 			return new AssertInfrastructureArrangeContext(session, cancellationTokenSource);
 		});
 	}
@@ -135,10 +134,10 @@ public sealed class AssertInfrastructureToolE2ETests
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable
 	{
-		public async ValueTask DisposeAsync()
+		public ValueTask DisposeAsync()
 		{
-			await Session.DisposeAsync();
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 

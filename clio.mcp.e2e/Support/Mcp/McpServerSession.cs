@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using Clio.Command.McpServer.Knowledge;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
+using Clio.Mcp.E2E.Support.Diagnostics;
 using Clio.Mcp.E2E.Support.Results;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol;
@@ -70,8 +71,13 @@ internal sealed class McpServerSession : IAsyncDisposable {
 			WorkingDirectory = process.WorkingDirectory,
 			EnvironmentVariables = settings.ProcessEnvironmentVariables,
 			Name = "clio-mcp-e2e",
-			// SDK waits the full window on dispose even after the child exits (~0.05s measured on CI); 40x margin.
-			ShutdownTimeout = TimeSpan.FromSeconds(2),
+			// The SDK never closes the child's stdin on dispose: StdioClientTransport.DisposeProcess goes
+			// straight to KillTree(ShutdownTimeout), so this window is spent in full on EVERY disposal
+			// regardless of how fast the server would have exited on its own (measured: 2035ms out of a
+			// 2s setting, 280ms out of 250ms). clio's own EOF shutdown is not the bottleneck — a manual
+			// stdin close makes the server exit in 0.27s. The window therefore only has to cover
+			// KillTree itself, so keep it small; raising it costs the whole delta on every fixture.
+			ShutdownTimeout = TimeSpan.FromMilliseconds(500),
 			StandardErrorLines = standardErrorLines
 		}, NullLoggerFactory.Instance);
 
@@ -89,11 +95,13 @@ internal sealed class McpServerSession : IAsyncDisposable {
 			options.Handlers = new McpClientHandlers { ElicitationHandler = elicitationHandler };
 		}
 
+		long startedAt = Stopwatch.GetTimestamp();
 		McpClient client = await McpClient.CreateAsync(
 			transport,
 			options,
 			NullLoggerFactory.Instance,
 			cancellationToken);
+		E2ETimingProbe.RecordSessionStart(Stopwatch.GetElapsedTime(startedAt));
 
 		return new McpServerSession(client, transport);
 	}
@@ -335,13 +343,18 @@ internal sealed class McpServerSession : IAsyncDisposable {
 		string toolName,
 		IReadOnlyDictionary<string, object?> arguments,
 		CancellationToken cancellationToken) {
-		if (await IsToolAdvertisedAsync(toolName, cancellationToken)) {
-			return await Client.CallToolAsync(toolName, arguments, cancellationToken: cancellationToken);
+		long startedAt = Stopwatch.GetTimestamp();
+		try {
+			if (await IsToolAdvertisedAsync(toolName, cancellationToken)) {
+				return await Client.CallToolAsync(toolName, arguments, cancellationToken: cancellationToken);
+			}
+			return await Client.CallToolAsync(
+				ClioRunTool.ToolName,
+				BuildClioRunArguments(toolName, arguments),
+				cancellationToken: cancellationToken);
+		} finally {
+			E2ETimingProbe.RecordToolCall(toolName, Stopwatch.GetElapsedTime(startedAt));
 		}
-		return await Client.CallToolAsync(
-			ClioRunTool.ToolName,
-			BuildClioRunArguments(toolName, arguments),
-			cancellationToken: cancellationToken);
 	}
 
 	/// <summary>
@@ -358,14 +371,19 @@ internal sealed class McpServerSession : IAsyncDisposable {
 		IReadOnlyDictionary<string, object?> arguments,
 		IProgress<ProgressNotificationValue> progress,
 		CancellationToken cancellationToken) {
-		if (await IsToolAdvertisedAsync(toolName, cancellationToken)) {
-			return await Client.CallToolAsync(toolName, arguments, progress: progress, cancellationToken: cancellationToken);
+		long startedAt = Stopwatch.GetTimestamp();
+		try {
+			if (await IsToolAdvertisedAsync(toolName, cancellationToken)) {
+				return await Client.CallToolAsync(toolName, arguments, progress: progress, cancellationToken: cancellationToken);
+			}
+			return await Client.CallToolAsync(
+				ClioRunTool.ToolName,
+				BuildClioRunArguments(toolName, arguments),
+				progress: progress,
+				cancellationToken: cancellationToken);
+		} finally {
+			E2ETimingProbe.RecordToolCall(toolName, Stopwatch.GetElapsedTime(startedAt));
 		}
-		return await Client.CallToolAsync(
-			ClioRunTool.ToolName,
-			BuildClioRunArguments(toolName, arguments),
-			progress: progress,
-			cancellationToken: cancellationToken);
 	}
 
 	/// <summary>
@@ -513,6 +531,8 @@ internal sealed class McpServerSession : IAsyncDisposable {
 		if (_logCaptureRegistration is not null) {
 			await _logCaptureRegistration.DisposeAsync();
 		}
+		long startedAt = Stopwatch.GetTimestamp();
 		await Client.DisposeAsync();
+		E2ETimingProbe.RecordSessionDispose(Stopwatch.GetElapsedTime(startedAt));
 	}
 }

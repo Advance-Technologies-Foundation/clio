@@ -422,33 +422,17 @@ public sealed class PageCreateToolE2ETests : McpContractFixtureBase {
 	}
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
-		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
-			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
-			return configuredEnvironmentName;
+		// The opt-in is consulted BEFORE the environment is resolved, so neither a clio process nor the
+		// stand is reached while it is off. Every caller is a sandbox test that creates a real schema on
+		// the environment, which is exactly what this switch authorizes.
+		if (!DestructiveStandAuthorization.IsAuthorized(true, settings.AllowDestructiveMcpTests)) {
+			Assert.Ignore(DestructiveStandAuthorization.MissingOptInMessage);
 		}
-
-		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
-			return fallbackEnvironmentName;
-		}
-
-		Assert.Ignore(
-			$"create-page MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
-		return string.Empty;
-	}
-
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		using CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
-		try {
-			ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-				settings,
-				["ping-app", "-e", environmentName],
-				cancellationToken: cts.Token);
-			return result.ExitCode == 0;
-		} catch (OperationCanceledException) {
-			return false;
-		}
+		// Configured-only: the opt-in authorizes writes to the disposable stand named in settings, never
+		// to a fallback environment that merely answers.
+		return await ReachableSandboxEnvironment.ResolveConfiguredOrIgnoreAsync(
+			settings,
+			$"create-page MCP E2E requires the configured sandbox environment '{settings.Sandbox.EnvironmentName}' to be set and reachable.");
 	}
 
 }
