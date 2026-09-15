@@ -1,4 +1,4 @@
-#Requires -Version 7.0
+#Requires
 <#
 .SYNOPSIS
     Puts a new version of the bundled CrtDashboardsMigratorApp archive into this clio checkout, from the
@@ -24,17 +24,12 @@
 .PARAMETER BuildZip
     The SDLC build zip, e.g. \\tscrm.com\dfs-ts\ComposableApps\CrtDashboardsMigratorApp\1.1.4\CrtDashboardsMigratorApp_1.1.4.zip
 
-.PARAMETER Version
-    The build's FULL version from its SDLC page (four parts, e.g. 1.1.4.6). Must be higher than the version
-    clio currently ships.
-
 .EXAMPLE
-    ./rebundle-dashboards-migrator.ps1 -BuildZip '\\tscrm.com\dfs-ts\ComposableApps\CrtDashboardsMigratorApp\1.1.4\CrtDashboardsMigratorApp_1.1.4.zip' -Version 1.1.4.6 -Configuration Debug -Framework net8.0
+    ./rebundle-dashboards-migrator.ps1 -BuildZip '\\tscrm.com\dfs-ts\ComposableApps\CrtDashboardsMigratorApp\1.1.4\CrtDashboardsMigratorApp_1.1.4.zip' -Configuration Debug -Framework net8.0
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string] $BuildZip,
-    [Parameter(Mandatory = $true)][string] $Version,
     [ValidateSet('Debug','Release')][string] $Configuration,
     [string] $Framework
 )
@@ -55,10 +50,6 @@ function Ok  ([string] $text) { Write-Host "    $text" -ForegroundColor Green }
 function Die ([string] $text) { Write-Host "`n$text`n" -ForegroundColor Red; throw 'Rebundle aborted - see the message above.' }
 
 if (-not (Test-Path -LiteralPath $BuildZip)) { Die "Build zip not found: $BuildZip" }
-$parsedNew = [version] $null
-if (-not [version]::TryParse($Version, [ref] $parsedNew) -or $parsedNew.Revision -lt 0) {
-    Die "-Version must be a four-part number (the build's full version), got '$Version'."
-}
 
 # Which clio build output to drive and refresh - the one an install would resolve the archive from.
 $outputs = @(Get-ChildItem -LiteralPath (Join-Path $clioRoot 'clio\bin') -Directory -ErrorAction SilentlyContinue |
@@ -93,9 +84,6 @@ try {
     # The app names its own version, and that is the number clio reports and Marketplace shows. Nothing here
     # stamps a version into the package: the build is taken as it is.
     $appVersion = (Get-Content -LiteralPath (Join-Path $packageDir 'Filespp-descriptor.json') -Raw | ConvertFrom-Json).Version
-    if (-not $Version.StartsWith("$appVersion.")) {
-        Die "-Version $Version does not extend the app version $appVersion in Files/app-descriptor.json; the build's full version always does."
-    }
     $shipped = ([regex]::Match((Get-Content -LiteralPath $pinsFile -Raw), 'ExpectedArchiveVersion = "([^"]*)"')).Groups[1].Value
     $parsedApp = [version] $null
     $parsedShipped = [version] $null
@@ -105,7 +93,7 @@ try {
     }
     $descriptorJson = Get-Content -LiteralPath (Join-Path $packageDir 'descriptor.json') -Raw
     $stamp = ([regex]::Match($descriptorJson, '"ModifiedOnUtc"\s*:\s*"([^"]*)"')).Groups[1].Value.Replace('\/', '/')
-    Ok "app version $appVersion (clio ships $shipped), build $Version, ModifiedOnUtc $stamp"
+    Ok "app version $appVersion (clio ships $shipped), ModifiedOnUtc $stamp"
 
     Step '3. Pack into the clio checkout'
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $archive) | Out-Null
@@ -156,11 +144,11 @@ try {
 }
 
 Write-Host "`n=== Done. Nothing was committed." -ForegroundColor Cyan
-Write-Host "    version   $Version`n    build zip $sourceSha`n    archive   $sha"
+Write-Host "    version   $appVersion`n    build zip $sourceSha`n    archive   $sha"
 Write-Host @"
 
     Next, by hand:
       * dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&Module=Common"
       * install onto a stand and confirm Ping answers
-      * commit the archive and the pins together; name the SDLC build ($Version) in the message
+      * commit the archive and the pins together; name the build zip SHA-256 in the message
 "@

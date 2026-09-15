@@ -55,11 +55,11 @@ Nothing is built on the bundling machine, so the procedure below — build, test
 `Files/Bin` — does NOT apply to it. Its whole procedure is one script:
 
 ```powershell
-pwsh ./rebundle-dashboards-migrator.ps1 -BuildZip '\\tscrm.com\dfs-ts\ComposableApps\CrtDashboardsMigratorApp\<X.Y.Z>\CrtDashboardsMigratorApp_<X.Y.Z>.zip' -Version <the build's full version, X.Y.Z.N>
+pwsh ./rebundle-dashboards-migrator.ps1 -BuildZip '\\tscrm.com\dfs-ts\ComposableApps\CrtDashboardsMigratorApp\<X.Y.Z>\CrtDashboardsMigratorApp_<X.Y.Z>.zip'
 ```
 
-It unpacks the build, checks the version extends the app version and is higher than what clio ships, stamps
-the descriptor with `clio set-pkg-version`, packs with `--skip-pdb`, verifies the inventory (exactly the two
+It unpacks the build, reads the app version from `Files/app-descriptor.json` and refuses a build whose app
+version is lower than the one clio ships, packs with `--skip-pdb`, verifies the inventory (exactly the two
 package assemblies, `Data/` allowed because its bound rows only register the migration page and its permission,
 no `SqlScripts/`, the `DashboardsMigratorPingService` schema present),
 rewrites the pins in `clio.tests/Common/BundledDashboardsMigratorPackageTests.cs` and rebuilds clio. The
