@@ -2,11 +2,12 @@
 description: update-page conflict baseline comes from .clio-pages/meta.json unless the caller pins one; the MCP checksum argument is what makes the caller's get-page read authoritative
 applies-to:
   - clio/Command/PageBaselineGuard.cs
+  - clio/Command/PageUpdateOptions.cs
   - clio/Command/McpServer/Tools/PageBaselineStore.cs
   - clio/Command/McpServer/Tools/PageUpdateTool.cs
   - clio/Command/McpServer/Tools/PageSyncTool.cs
-ticket: GH-1320, GH-1464
-date: 2026-09-12
+ticket: GH-1320, GH-1464, GH-1538
+date: 2026-09-15
 ---
 
 **What is true** — what `PageBaselineGuard.TryArm` arms depends on how the save was addressed, and
@@ -14,9 +15,10 @@ there are three cases. On the UNPINNED, non-redirected path all three fields com
 `.clio-pages/{schema}/meta.json`: the checksum, `ExpectedSchemaUId`, and the schema-absent marker
 `ExpectedSchemaAbsent`. On a PINNED save (CLI `--expected-checksum`, MCP `checksum`) the caller's
 checksum alone governs the comparison — neither identity field is armed from disk. On a REDIRECTED
-save (`target-package-uid` / `target-schema-uid`) the disk baseline is not even read, and a caller pin
-is retained for comparison with the resolved target; the response warns that the disk baseline did
-not apply. That
+save (`target-package-uid` / `target-schema-uid`) the disk baseline is READ but arms nothing: its
+schema identity travels as `ConditionalBaselineSchemaUId` and the comparison is decided only after
+the target is resolved, and a caller pin is retained for comparison with that resolved target; the
+response warns that the disk baseline did not apply directly. That
 on-disk baseline is keyed by **(anchor directory, schema name)** only — not by schema UId — and the
 anchor is resolved from the process cwd unless `output-directory` overrides it. It is rewritten both
 by `get-page` and, post-save, by `RefreshOrDrop`.
@@ -56,6 +58,17 @@ write when it names the existing package and fails safe with a checksum conflict
 another schema. With no explicit pin, the write is only unverifiable, so the warning is not
 `conflict: true` and does not send the caller into a retry loop.
 
+**A selector that resolves to the page's OWN schema is not a redirect, and the refresh decision is
+separate from the conflict decision.** `PromoteConditionalBaselineWhenTargetMatches` compares
+`ConditionalBaselineSchemaUId` with the resolved `EditableSchemaUId` and, on a match, sets
+`ConditionalBaselineApplied` — which is what the post-save `refreshBaseline || ConditionalBaselineApplied`
+gate reads in all three writers. On a match with NO caller pin the disk baseline is also promoted to
+govern the conflict check; with a pin the pin keeps that role and the match decides only the refresh.
+Tying the two together (GH-1538) meant a successful PINNED same-target save left `meta.json` holding a
+superseded checksum, and the caller's next UNPINNED save of the same page conflicted with its own
+previous save. The cost of the fix is one baseline read under its lock on a pinned selector save — the
+same read the unpinned selector path already performed.
+
 **`sync-pages` carries the same contract.** `PageSyncPageInput` has a per-page `checksum`, and
 `BuildUpdateRequest` passes it VERBATIM into `PageUpdateOptions.ExpectedChecksum` — `TryArm` is the
 single normalization chokepoint (it trims, and collapses whitespace-only to "not supplied"), so a
@@ -64,13 +77,18 @@ applies per page. Until GH-1464 that tool — the one clio calls the canonical w
 `update-page`'s own `ToolDeprecation` points callers at — had no checksum member at all, so every
 `sync-pages` write was on the unpinned path with `force: true` as its only escape.
 
-**A pinned save always leaves a trace.** On the non-redirected path (a redirect returns its own
-warning before any of this runs), `TryArm` warns whenever the caller pinned a checksum and no
+**A pinned save always leaves a trace.** `TryArm` warns whenever the caller pinned a checksum and no
 on-disk baseline corroborates it - both when the baseline diverges and when none was matched at all
 for the anchor and environment. The second case is not exotic: an explicit `output-directory`, or an
 `--uri`/`--login` invocation that cannot satisfy `MatchesEnvironment`, both reach it, and the pin
 still governs the comparison there because `TryCheckForExternalModification` gates on
 `ExpectedChecksum` alone and never consults the armed flag.
+
+The selector path emits the SAME divergence trace, and that is a consequence of the refresh rule
+above rather than a cosmetic addition: once a pinned selector save can refresh `meta.json`, staying
+silent would let `RefreshOrDrop` overwrite the only local record that the pin ever diverged from the
+baseline - the bypass `AppendPinnedBaselineDivergenceWarnings` exists to expose. It also surfaces the
+corrupt-`meta.json` read warning the non-selector path already accumulated.
 
 **Why it is this way** — the on-disk baseline exists to protect plain CLI flows that have no way to
 carry state between two process invocations. It is a fallback, not the truth.
