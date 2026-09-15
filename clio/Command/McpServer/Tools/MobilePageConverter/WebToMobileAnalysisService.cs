@@ -2378,26 +2378,35 @@ public static class WebToMobileAnalysisService {
 				}
 			}
 		}
-		if (templateProbeAvailable) {
-			// A declared element's parent must be a probed mobile template element or another admitted declaration
-			// of the same rule — the rule is shared across every page of the template and is written before any
-			// concrete page exists, so it cannot rely on a page's own element names.
-			bool changed = true;
-			while (changed) {
-				changed = false;
-				var known = new HashSet<string>(probedTypesByName.Keys, StringComparer.OrdinalIgnoreCase);
-				known.UnionWith(accepted.Select(a => a.Name));
-				for (int i = accepted.Count - 1; i >= 0; i--) {
-					DeclaredElementRule declared = accepted[i];
-					if (known.Contains(declared.ParentName)
-						&& !string.Equals(declared.ParentName, declared.Name, StringComparison.OrdinalIgnoreCase)) {
+		// Always runs, probe or not: self-parenting and "my parent was rejected by this same cascade" are both
+		// provable without the probe. Only "my parent is absent from the template" needs one — so template names
+		// join `known` ONLY when probed; without a probe, an unresolved name that is neither self nor a name this
+		// cascade already rejected is assumed to be a genuine (unprobed) template element and left alone, matching
+		// the no-probe contract every other admission gate above already follows.
+		bool changed = true;
+		while (changed) {
+			changed = false;
+			var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			if (templateProbeAvailable) {
+				known.UnionWith(probedTypesByName.Keys);
+			}
+			known.UnionWith(accepted.Select(a => a.Name));
+			for (int i = accepted.Count - 1; i >= 0; i--) {
+				DeclaredElementRule declared = accepted[i];
+				bool selfParented = string.Equals(declared.ParentName, declared.Name, StringComparison.OrdinalIgnoreCase);
+				if (!selfParented) {
+					if (templateProbeAvailable) {
+						if (known.Contains(declared.ParentName)) {
+							continue;
+						}
+					} else if (!removedNames.Contains(declared.ParentName)) {
 						continue;
 					}
-					skipped.Add(new SkippedDeclaredElement(declared.Name, DeclaredElementSkipReason.OrphanParent));
-					removedNames.Add(declared.Name);
-					accepted.RemoveAt(i);
-					changed = true;
 				}
+				skipped.Add(new SkippedDeclaredElement(declared.Name, DeclaredElementSkipReason.OrphanParent));
+				removedNames.Add(declared.Name);
+				accepted.RemoveAt(i);
+				changed = true;
 			}
 		}
 		IReadOnlyDictionary<string, string> map = removedNames.Count == 0
@@ -3096,16 +3105,20 @@ public static class WebToMobileAnalysisService {
 		&& !ctx.MobileTypesByName.ContainsKey(parentName);
 
 	/// <summary>
-	/// True when the mobile template PROVIDES the retarget parent (its name is in the probed template's resolved
-	/// tree) — the exact inverse of <see cref="RetargetTargetMissing"/> over the same probed-names condition, so the
-	/// two never drift. Drives <c>elementMap[].parentExistsOnTemplate</c>: when true the caller inserts ONLY the
-	/// children and never re-declares the template-provided parent. Like its inverse it decides membership ONLY when
-	/// template names were probed; with none probed (template unavailable/unknown) it returns false and the flag is
-	/// omitted rather than asserted on missing information.
+	/// True when the mobile TEMPLATE ITSELF provides the retarget parent: its name is in the probed resolved tree
+	/// AND it is not a name <c>declaredElements</c> folded into that same map. Drives
+	/// <c>elementMap[].parentExistsOnTemplate</c>: when true the caller inserts ONLY the children and never
+	/// re-declares the parent — which would be wrong for a declared parent, since THIS conversion creates it. No
+	/// longer the exact inverse of <see cref="RetargetTargetMissing"/> for that reason: a declared parent correctly
+	/// reads false here (do not skip re-declaring it) while <see cref="RetargetTargetMissing"/> correctly reads it
+	/// as not missing (it is a valid retarget target). Like its sibling it decides membership ONLY when template
+	/// names were probed; with none probed it returns false and the flag is omitted rather than asserted on
+	/// missing information.
 	/// </summary>
 	private static bool ParentProvidedByTemplate(ElementMapContext ctx, string parentName) =>
 		ctx.MobileTypesByName is { Count: > 0 } && !string.IsNullOrEmpty(parentName)
-		&& !RetargetTargetMissing(ctx, parentName);
+		&& !RetargetTargetMissing(ctx, parentName)
+		&& !ctx.DeclaredTypesByName.ContainsKey(parentName);
 
 	/// <summary>
 	/// True when a source element a conversion template would RETARGET is INHERITED FROM THE WEB TEMPLATE baseline

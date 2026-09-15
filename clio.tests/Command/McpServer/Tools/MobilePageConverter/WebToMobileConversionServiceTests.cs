@@ -3134,6 +3134,85 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A self-parented declaredElements entry (parentName == its own name) is rejected as orphan-parent even when the mobile template was not probed — self-parenting is provable from the rule alone and must not depend on the probe, the same way an ordinary orphan-parent needs it.")]
+	public void Analyze_ShouldSkipDeclaredElement_WhenSelfParented_EvenWithoutProbe() {
+		// Arrange
+		JArray page = DeclaredElementsPage(withRightWidget: false, withPageTab: false);
+		var rule = new TemplateMappingRule {
+			Web = DeclaredElementsWebTemplate, Mobile = "BaseMobilePageTemplate",
+			DeclaredElements = [new DeclaredElementRule { Name = "UsrSelfLoop", Type = "crt.Label", ParentName = "UsrSelfLoop" }]
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, mobileTemplateProbed: false, templateRule: rule);
+
+		// Assert
+		guide.ElementMap.Should().NotContain(e => e.DeclaredByRule && e.MobileName == "UsrSelfLoop",
+			because: "a declaration parented on itself must never be admitted, probe or not — nothing may be inserted into itself");
+		guide.Constraints.Should().ContainSingle(c => c.Contains("declaredElements") && c.Contains("skipped"),
+				because: "the self-parent rejection must be reported the same way any other orphan-parent skip is")
+			.Which.Should().Contain("UsrSelfLoop [orphan-parent]",
+				because: "self-parenting is provable without a probe and gets the same reason code as an ordinary orphan parent");
+	}
+
+	[Test]
+	[Description("A declaration whose parent was rejected for an unrelated reason (an unregistered mobile type) cascades to reject the child too, even without a probe — that cascade is provable from the rule's own rejections and must not silently depend on template access.")]
+	public void Analyze_ShouldCascadeRejection_WhenDeclaredParentWasRejectedForAnotherReason_EvenWithoutProbe() {
+		// Arrange
+		JArray page = DeclaredElementsPage(withRightWidget: false, withPageTab: false);
+		var rule = new TemplateMappingRule {
+			Web = DeclaredElementsWebTemplate, Mobile = "BaseMobilePageTemplate",
+			DeclaredElements = [
+				new DeclaredElementRule { Name = "UsrBadType", Type = "usr.NotARegisteredType", ParentName = "MainContainer" },
+				new DeclaredElementRule { Name = "UsrChildOfBadType", Type = "crt.Label", ParentName = "UsrBadType" }
+			]
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, mobileTemplateProbed: false, templateRule: rule);
+
+		// Assert
+		guide.ElementMap.Should().NotContain(e => e.DeclaredByRule && (e.MobileName == "UsrBadType" || e.MobileName == "UsrChildOfBadType"),
+			because: "the parent's own rejection (unknown mobile type) must cascade to its declared child even without a probe to confirm the parent is absent from the template");
+		guide.Constraints.Should().ContainSingle(c => c.Contains("declaredElements") && c.Contains("skipped"),
+				because: "both the root cause and the cascade must be reported")
+			.Which.Should()
+				.Contain("UsrBadType [unknown-mobile-type]", because: "the root cause is reported with its own reason code")
+				.And.Contain("UsrChildOfBadType [orphan-parent]",
+					because: "the cascade is reported distinctly from its parent's reason, proving it without needing the probe");
+	}
+
+	[Test]
+	[Description("A conversion-template retarget landing on a DECLARED parent (not a template-provided one) must not be flagged parentExistsOnTemplate:true — that flag tells the caller never to re-declare the parent, which is wrong here: THIS conversion creates the parent via declaredElements, so the caller must still insert it.")]
+	public void Analyze_ShouldNotFlagParentExistsOnTemplate_WhenRetargetLandsOnADeclaredParent() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Root", "type": "crt.FlexContainer", "items": [
+				{ "name": "Toolbar", "type": "crt.FlexContainer", "items": [
+					{ "name": "Fld", "type": "crt.Input" } ] } ] } ]
+			""");
+		var templateRule = new TemplateMappingRule {
+			Web = "UsrUnused", Mobile = "BaseMobilePageTemplate",
+			DeclaredElements = [new DeclaredElementRule { Name = "Tabs", Type = "crt.TabPanel", ParentName = "MainContainer" }]
+		};
+
+		// Act — the container-retarget rule sends "Toolbar" into "Tabs", a name only declaredElements creates here.
+		MobilePageConversionGuide guide = Analyze(bundle,
+			mobileTypes: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.FlexContainer", "crt.Input", "crt.TabPanel" },
+			rules: ContainerRetargetRule("Tabs", "Root"),
+			templateRule: templateRule,
+			mobileTemplateTypesByName: MobileTypesByName(("MainContainer", "crt.FlexContainer")));
+
+		// Assert
+		ElementMapEntry toolbar = Element(guide, "Toolbar");
+		toolbar.ParentName.Should().Be("Tabs", because: "the rule retargets the container into the declared Tabs strip");
+		toolbar.ParentExistsOnTemplate.Should().NotBe(true,
+			because: "Tabs is created BY declaredElements in this same conversion, not provided by the mobile template — " +
+				"flagging it true would wrongly tell the caller to skip re-declaring (i.e. inserting) it");
+		Declared(guide, "Tabs").Operation.Should().Be("insert", because: "the declared strip must still be created for the retarget to have anywhere to land");
+	}
+
+	[Test]
 	[Description("A containers pair whose mobile side is NEITHER on the probed mobile template NOR declared stays a merge onto that name — the converter never creates a mobile element from a web element under the pair's name. Creation is the rule's job, stated in declaredElements; a pair alone never creates.")]
 	public void Analyze_ShouldKeepPairAsMerge_WhenMobileSideIsNeitherOnTemplateNorDeclared() {
 		// Arrange — the bundled containers pairs, but NO declarations at all: Tabs -> Tabs targets a name the base
