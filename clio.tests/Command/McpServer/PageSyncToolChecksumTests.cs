@@ -87,7 +87,6 @@ public sealed class PageSyncToolChecksumTests {
 			commandResolver, fileSystem,
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			Substitute.For<IComponentInfoCatalog>(),
-			Substitute.For<IPageBodySamplingService>(),
 			new PageBaselineGuard(fileSystem),
 			new PersistedResourceKeyReader());
 	}
@@ -96,7 +95,6 @@ public sealed class PageSyncToolChecksumTests {
 		new("dev",
 			[new PageSyncPageInput(SchemaName, ValidPageBody, Force: force, Checksum: checksum)],
 			Validate: false,
-			SkipSampling: true,
 			OutputDirectory: "/ws");
 
 	private void AssertNoSave() => _applicationClient.DidNotReceive().ExecutePostRequest(
@@ -110,7 +108,7 @@ public sealed class PageSyncToolChecksumTests {
 		PageSyncTool tool = CreateTool();
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(BuildArgs(ServerChecksum), null);
+		PageSyncResponse response = await tool.SyncPages(BuildArgs(ServerChecksum));
 
 		// Assert
 		PageSyncPageResult page = response.Pages.Should().ContainSingle().Subject;
@@ -125,7 +123,7 @@ public sealed class PageSyncToolChecksumTests {
 		PageSyncTool tool = CreateTool();
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(BuildArgs("00000000000000000000000000000000"), null);
+		PageSyncResponse response = await tool.SyncPages(BuildArgs("00000000000000000000000000000000"));
 
 		// Assert
 		PageSyncPageResult page = response.Pages.Should().ContainSingle().Subject;
@@ -148,7 +146,7 @@ public sealed class PageSyncToolChecksumTests {
 
 		// Act
 		PageSyncResponse response = await tool.SyncPages(
-			BuildArgs("00000000000000000000000000000000", force: true), null);
+			BuildArgs("00000000000000000000000000000000", force: true));
 
 		// Assert
 		PageSyncPageResult page = response.Pages.Should().ContainSingle().Subject;
@@ -164,7 +162,7 @@ public sealed class PageSyncToolChecksumTests {
 		PageSyncTool tool = CreateTool();
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(BuildArgs(blankChecksum), null);
+		PageSyncResponse response = await tool.SyncPages(BuildArgs(blankChecksum));
 
 		// Assert
 		PageSyncPageResult page = response.Pages.Should().ContainSingle().Subject;
@@ -179,7 +177,7 @@ public sealed class PageSyncToolChecksumTests {
 		PageSyncTool tool = CreateTool();
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(BuildArgs("  " + ServerChecksum + "\n"), null);
+		PageSyncResponse response = await tool.SyncPages(BuildArgs("  " + ServerChecksum + "\n"));
 
 		// Assert
 		PageSyncPageResult page = response.Pages.Should().ContainSingle().Subject;
@@ -200,11 +198,10 @@ public sealed class PageSyncToolChecksumTests {
 				new PageSyncPageInput("UsrOther_FormPage", ValidPageBody)
 			],
 			Validate: false,
-			SkipSampling: true,
 			OutputDirectory: "/ws");
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args, null);
+		PageSyncResponse response = await tool.SyncPages(args);
 
 		// Assert
 		response.Pages.Should().HaveCount(2,

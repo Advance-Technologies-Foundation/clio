@@ -225,8 +225,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 							["body"] = inlinePlaceholderBody
 						}
 					},
-					["validate"] = false,
-					["skip-sampling"] = true
+					["validate"] = false
 				}
 			},
 			context.CancellationTokenSource.Token);
@@ -269,8 +268,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 							["force"] = true
 						}
 					},
-					["validate"] = false,
-					["skip-sampling"] = true
+					["validate"] = false
 				}
 			},
 			context.CancellationTokenSource.Token);
@@ -340,10 +338,10 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("sync-pages fails fast at the JavaScript-syntax gate BEFORE sampling and BEFORE any remote save when a body contains an `await X = Y` assignment shape (the actual production incident). Verifies the gate runs end-to-end through the real MCP transport per the AC.")]
+	[Description("sync-pages fails fast at the JavaScript-syntax gate BEFORE any remote save when a body contains an `await X = Y` assignment shape (the actual production incident). Verifies the gate runs end-to-end through the real MCP transport per the AC.")]
 	[AllureTag(ToolName)]
-	[AllureName("sync-pages fails fast on JavaScript syntax error before sampling")]
-	[AllureDescription("Starts the real clio MCP server, sends a single-page sync-pages call with the incident body (`await request.$context.X = Y`), and verifies that the per-page result carries the JavaScript-syntax-error message and the 'NOT sent to Creatio' assurance — without sampling tokens spent and without any remote save attempted.")]
+	[AllureName("sync-pages fails fast on JavaScript syntax error before any remote save")]
+	[AllureDescription("Starts the real clio MCP server, sends a single-page sync-pages call with the incident body (`await request.$context.X = Y`), and verifies that the per-page result carries the JavaScript-syntax-error message and the 'NOT sent to Creatio' assurance — without any remote save attempted.")]
 	public async Task PageSyncTool_Should_FailFast_When_Body_Has_JavaScript_Syntax_Error() {
 		await using ArrangeContext context = await ArrangeAsync();
 		// `await` cannot be an assignment target; no environment-name because the
@@ -370,8 +368,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 							["schema-name"] = $"UsrSyntaxIncident_{Guid.NewGuid():N}",
 							["body"] = nonValidBody
 						}
-					},
-					["skip-sampling"] = true
+					}
 				}
 			},
 			context.CancellationTokenSource.Token);
@@ -386,13 +383,13 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		response.Pages[0].Success.Should().BeFalse(
 			because: "the per-page result must mirror the overall failure");
 		response.Pages[0].Error.Should().Contain("JavaScript syntax error",
-			because: "the agent-facing error must name the actual class of problem (parser rejection) so the caller does not chase a phantom environment / marker / sampling failure");
+			because: "the agent-facing error must name the actual class of problem (parser rejection) so the caller does not chase a phantom environment or marker failure");
 		response.Pages[0].Error.Should().Contain("NOT sent to Creatio",
 			because: "the operator must know the broken body did not reach the server without inspecting logs, even when the failure surfaces through the MCP wire");
 	}
 
 	[Test]
-	[Description("sync-pages fails fast at the AST lint gate when a custom converter uses the reserved `crt.*` prefix — the lint rule `converter-crt-prefix-reserved` is unique to the AST pass (the regex layer treats `crt.*` as a valid vendor prefix), so this body is what proves the lint pass surfaces through the real MCP transport, no sampling and no remote save attempted.")]
+	[Description("sync-pages fails fast at the AST lint gate when a custom converter uses the reserved `crt.*` prefix — the lint rule `converter-crt-prefix-reserved` is unique to the AST pass (the regex layer treats `crt.*` as a valid vendor prefix), so this body is what proves the lint pass surfaces through the real MCP transport, with no remote save attempted.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-pages fails fast on converter-crt-prefix-reserved lint error")]
 	[AllureDescription("Starts the real clio MCP server and submits a body whose `converters` section registers a custom converter under the reserved `crt.*` namespace. The existing regex validators accept the body (their shape checks explicitly skip `crt.*` keys); verifying the per-page response carries `Page body lint failed` confirms the AST lint pass surfaces end-to-end through the real MCP wire.")]
@@ -420,8 +417,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 							["schema-name"] = $"UsrLintCrtConverter_{Guid.NewGuid():N}",
 							["body"] = crtPrefixConverterBody
 						}
-					},
-					["skip-sampling"] = true
+					}
 				}
 			},
 			context.CancellationTokenSource.Token);
@@ -436,7 +432,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		response.Pages[0].Success.Should().BeFalse(
 			because: "the per-page result must mirror the overall failure");
 		response.Pages[0].Error.Should().Contain("Page body lint failed",
-			because: "the canonical lint error prefix is the contract surface the agent keys on to distinguish lint rejection from syntax / sampling rejection");
+			because: "the canonical lint error prefix is the contract surface the agent keys on to distinguish lint rejection from syntax rejection");
 		response.Pages[0].Error.Should().Contain("converter-crt-prefix-reserved",
 			because: "the rule id must be visible in the wire response so the agent can map the failure back to the guidance doc that describes the anti-pattern");
 		response.Pages[0].Error.Should().Contain("NOT sent to Creatio",
@@ -879,8 +875,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 						["schema-name"] = SavePage,
 						["body"] = outOfBandBody,
 						["environment-name"] = environmentName,
-						["output-directory"] = outOfBandDir,
-						["skip-sampling"] = true
+						["output-directory"] = outOfBandDir
 					}
 				},
 				context.CancellationTokenSource.Token);
@@ -901,7 +896,6 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 							}
 						},
 						["validate"] = true,
-						["skip-sampling"] = true,
 						["output-directory"] = sessionDir
 					}
 				},
@@ -934,7 +928,6 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 							}
 						},
 						["validate"] = true,
-						["skip-sampling"] = true,
 						["output-directory"] = sessionDir
 					}
 				},
@@ -1392,8 +1385,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 							["body"] = mobileBodyWithConverters
 						}
 					},
-					["validate"] = true,
-					["skip-sampling"] = true
+					["validate"] = true
 				}
 			},
 			context.CancellationTokenSource.Token);
@@ -1446,8 +1438,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 							["body"] = mobileBody
 						}
 					},
-					["validate"] = true,
-					["skip-sampling"] = true
+					["validate"] = true
 				}
 			},
 			context.CancellationTokenSource.Token);
