@@ -209,11 +209,10 @@ public sealed class PageSyncToolBaselineTests
 			"dev",
 			[new PageSyncPageInput(SchemaName, ValidPageBody, Checksum: "server-checksum")],
 			Validate: false,
-			SkipSampling: true,
 			OutputDirectory: "/ws");
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args, null);
+		PageSyncResponse response = await tool.SyncPages(args);
 
 		// Assert
 		response.Pages[0].Success.Should().BeTrue(
