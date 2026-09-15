@@ -737,22 +737,7 @@ public sealed class PageSyncTool(
 				if (validationFailure != null)
 					return validationFailure;
 			}
-			validationResult = AppendCommandWarnings(validationResult, GetLintWarningMessages(opOptions.LintFindings));
-			// Both guards off is allowed but never silent - update-page emits the same advisory, and the
-			// `validate` contract promises it on this path too. sync-pages calls TryUpdatePage directly, so
-			// it never passes through PageUpdateTool where update-page emits it.
-			if (!opOptions.Validate && page.Force == true) {
-				validationResult = AppendCommandWarnings(validationResult, [PageUpdateTool.ForceValidateAdvisory]);
-			}
-			if (opOptions.MobileBaseResolutionDegraded) {
-				// The mobile base could not be pre-resolved, so the body was validated against the permissive seeded
-				// stub — surface that in the per-page result so a degraded validation is not read as a clean pass.
-				validationResult = AppendCommandWarnings(validationResult, [
-					$"Mobile validation base for '{page.SchemaName}' could not be resolved; the body was validated against "
-						+ "a permissive seeded base, so a template-owned-array error may not have been caught. Re-run when "
-						+ "the environment/credentials are available to validate against the real base."
-				]);
-			}
+			validationResult = AppendPreSaveWarnings(validationResult, page, opOptions);
 			PageSyncPageResult samplingFailure = CreateSamplingFailure(page, opOptions.SamplingReview, validationResult);
 			if (samplingFailure != null)
 				return samplingFailure;
@@ -814,6 +799,35 @@ public sealed class PageSyncTool(
 		}
 	}
 
+	/// <summary>
+	/// Appends the pre-save command-level warnings (lint findings, the force-without-validate advisory and
+	/// the degraded mobile-base notice) onto the per-page validation envelope.
+	/// </summary>
+	/// <param name="validationResult">The envelope built so far; may be <c>null</c>.</param>
+	/// <param name="page">The page being saved.</param>
+	/// <param name="opOptions">The batch options carrying the lint findings and the degraded-base flag.</param>
+	/// <returns>The envelope with every applicable warning appended.</returns>
+	private static PageSyncValidationResult AppendPreSaveWarnings(PageSyncValidationResult validationResult,
+		PageSyncPageInput page, PageSyncOperationOptions opOptions) {
+		validationResult = AppendCommandWarnings(validationResult, GetLintWarningMessages(opOptions.LintFindings));
+		// Both guards off is allowed but never silent - update-page emits the same advisory, and the
+		// `validate` contract promises it on this path too. sync-pages calls TryUpdatePage directly, so
+		// it never passes through PageUpdateTool where update-page emits it.
+		if (!opOptions.Validate && page.Force == true) {
+			validationResult = AppendCommandWarnings(validationResult, [PageUpdateTool.ForceValidateAdvisory]);
+		}
+		if (opOptions.MobileBaseResolutionDegraded) {
+			// The mobile base could not be pre-resolved, so the body was validated against the permissive seeded
+			// stub — surface that in the per-page result so a degraded validation is not read as a clean pass.
+			validationResult = AppendCommandWarnings(validationResult, [
+				$"Mobile validation base for '{page.SchemaName}' could not be resolved; the body was validated against "
+					+ "a permissive seeded base, so a template-owned-array error may not have been caught. Re-run when "
+					+ "the environment/credentials are available to validate against the real base."
+			]);
+		}
+		return validationResult;
+	}
+
 	private PageSyncPageResult CreateSamplingFailure(
 		PageSyncPageInput page,
 		PageSamplingReview samplingReview,
@@ -831,13 +845,6 @@ public sealed class PageSyncTool(
 		};
 	}
 
-	/// <summary>
-	/// Builds the lazy persisted-resource-key provider for one page. The delegate is handed to the
-	/// content-validation chain and invoked ONLY for an unresolved label-resource rejection.
-	/// </summary>
-	/// <param name="environmentName">The batch's target environment; may be blank under credential passthrough.</param>
-	/// <param name="schemaName">The page whose schema is read.</param>
-	/// <returns>A provider that yields the persisted keys, or an empty set when the read failed.</returns>
 	/// <summary>
 	/// Builds the lazy persisted-resource-key provider for one page. The delegate is handed to the
 	/// content-validation chain and invoked ONLY for an unresolved label-resource rejection.
