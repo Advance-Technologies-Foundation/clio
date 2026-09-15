@@ -139,9 +139,11 @@
 		internal bool ConditionalBaselineSchemaAbsent { get; set; }
 
 		/// <summary>
-		/// Gets or sets a value indicating whether the conditional baseline was promoted because the
-		/// resolved target matched it. The save must then refresh the on-disk baseline like any other
+		/// Gets or sets a value indicating whether the resolved target turned out to be the very schema the
+		/// conditional baseline describes. The save must then refresh the on-disk baseline like any other
 		/// armed save, or the next unpinned save auto-arms from a superseded checksum.
+		/// Set whether or not the baseline was also promoted to govern the conflict check: a caller-pinned
+		/// checksum keeps that role, but the target still matched, so the refresh is still due.
 		/// </summary>
 		internal bool ConditionalBaselineApplied { get; set; }
 
@@ -574,18 +576,50 @@
 		/// target that resolves elsewhere still leaves the baseline dropped, which is the redirect case
 		/// the guard exists to handle.
 		/// </remarks>
+		/// <summary>
+		/// Compares two schema UIds by VALUE rather than by spelling.
+		/// </summary>
+		/// <remarks>
+		/// The two sides reach this comparison from different places and are written by different people.
+		/// The left one comes off disk, in whatever form clio recorded; the right one can be the raw
+		/// <c>--target-schema-uid</c> the caller typed, which <c>TryResolveContext</c> uses verbatim. GUIDs
+		/// have several legal spellings, and a braced <c>{xxxxxxxx-…}</c> selector against a bare recorded
+		/// UId is the same schema written two ways. A plain string comparison read that as a redirect and
+		/// silently skipped the post-save refresh — the very failure issue #1538 is about, reintroduced for
+		/// one input shape. Only a value that does not parse as a GUID at all falls back to the string
+		/// comparison, so nothing that used to match stops matching.
+		/// </remarks>
+		/// <param name="recordedSchemaUId">The schema UId carried over from the on-disk baseline.</param>
+		/// <param name="resolvedSchemaUId">The schema UId the write actually resolved to.</param>
+		/// <returns><c>true</c> when both name the same schema.</returns>
+		private static bool SchemaUIdsMatch(string recordedSchemaUId, string resolvedSchemaUId) {
+			if (string.IsNullOrWhiteSpace(recordedSchemaUId) || string.IsNullOrWhiteSpace(resolvedSchemaUId)) {
+				return false;
+			}
+			if (Guid.TryParse(recordedSchemaUId, out Guid recorded) && Guid.TryParse(resolvedSchemaUId, out Guid resolved)) {
+				return recorded == resolved;
+			}
+			return string.Equals(recordedSchemaUId, resolvedSchemaUId, StringComparison.OrdinalIgnoreCase);
+		}
+
 		private static void PromoteConditionalBaselineWhenTargetMatches(
 				PageUpdateOptions options, EditableSchemaContext context) {
-			if (string.IsNullOrWhiteSpace(options.ConditionalBaselineSchemaUId)
-				|| !string.IsNullOrWhiteSpace(options.ExpectedChecksum)
-				|| !string.Equals(options.ConditionalBaselineSchemaUId, context.EditableSchemaUId,
-					StringComparison.OrdinalIgnoreCase)) {
+			if (!SchemaUIdsMatch(options.ConditionalBaselineSchemaUId, context.EditableSchemaUId)) {
+				return;
+			}
+			// The write landed on the very schema the on-disk baseline describes, so that baseline is the
+			// one a successful save must rewrite - independently of which witness governed the conflict
+			// check. Leaving this false for a pinned save left the baseline holding a superseded checksum,
+			// and the caller's next UNPINNED save then conflicted with its own previous one (issue #1538).
+			options.ConditionalBaselineApplied = true;
+			if (!string.IsNullOrWhiteSpace(options.ExpectedChecksum)) {
+				// A caller-pinned checksum is the stronger, explicitly supplied witness: it keeps governing
+				// the conflict check, and the match decides only the post-save refresh.
 				return;
 			}
 			options.ExpectedChecksum = options.ConditionalBaselineChecksum;
 			options.ExpectedSchemaUId = options.ConditionalBaselineSchemaUId;
 			options.ExpectedSchemaAbsent = options.ConditionalBaselineSchemaAbsent;
-			options.ConditionalBaselineApplied = true;
 		}
 
 		private bool TryCheckForExternalModification(
@@ -618,7 +652,7 @@
 				return false;
 			}
 			if (!string.IsNullOrWhiteSpace(options.ExpectedSchemaUId)
-				&& !string.Equals(options.ExpectedSchemaUId, context.EditableSchemaUId, StringComparison.OrdinalIgnoreCase)) {
+				&& !SchemaUIdsMatch(options.ExpectedSchemaUId, context.EditableSchemaUId)) {
 				response = CreateConflictResponse(options, new PageConflictDetails {
 					Reason = PageConflictReasons.SchemaUIdMismatch,
 					ExpectedChecksum = options.ExpectedChecksum,

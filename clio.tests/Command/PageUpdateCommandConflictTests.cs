@@ -266,6 +266,109 @@ public sealed class PageUpdateCommandConflictTests
 	}
 
 	[Test]
+	[Description("TryUpdatePage must mark the conditional baseline as matched when a PINNED save's selector resolves to the schema the baseline describes, so the successful save refreshes it - without that, the caller's next UNPINNED save conflicted with its own previous save (issue #1538).")]
+	public void TryUpdatePage_ShouldMarkTheBaselineMatched_WhenAPinnedSaveResolvesToTheBaselineSchema() {
+		// Arrange — the caller pins the checksum the server currently holds, so the save proceeds.
+		StubChecksumRow("server-checksum");
+		PageUpdateOptions options = CreateOptions();
+		options.ExpectedChecksum = "server-checksum";
+		options.TargetPackageUId = "test-pkg-uid";
+		options.ConditionalBaselineSchemaUId = SchemaUId;
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "the pinned checksum matches the server's, so nothing was modified externally");
+		response.Success.Should().BeTrue(because: "the save must land");
+		options.ConditionalBaselineApplied.Should().BeTrue(
+			because: "the write landed on the very schema the on-disk baseline describes, so that baseline now holds a superseded checksum and must be refreshed");
+		options.ExpectedChecksum.Should().Be("server-checksum",
+			because: "the caller's explicit pin is the stronger witness and must keep governing the conflict check, unchanged by the refresh decision");
+	}
+
+	[Test]
+	[Description("The target match compares schema UIds by VALUE, not by spelling: a braced --target-schema-uid against a bare recorded UId is the same schema written two ways, and reading it as a redirect reintroduces the issue #1538 stale baseline for that one input shape.")]
+	public void TryUpdatePage_ShouldMarkTheBaselineMatched_WhenTheRecordedUIdIsSpelledDifferently() {
+		// Arrange — the recorded baseline carries the braced spelling; the resolved schema carries the bare one.
+		StubChecksumRow("server-checksum");
+		PageUpdateOptions options = CreateOptions();
+		options.ExpectedChecksum = "server-checksum";
+		options.TargetPackageUId = "test-pkg-uid";
+		options.ConditionalBaselineSchemaUId = "{" + SchemaUId + "}";
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "the pin matches the server, so the save proceeds");
+		response.Success.Should().BeTrue(because: "nothing about GUID spelling makes this an external modification");
+		options.ConditionalBaselineApplied.Should().BeTrue(
+			because: "both spellings name the same schema, so the baseline describing it is still the one this save must refresh");
+	}
+
+	[Test]
+	[Description("The downstream identity check must use the same VALUE comparison: an UNPINNED save promotes the recorded spelling into ExpectedSchemaUId, and comparing that braced spelling to the bare resolved UId as raw strings reported schema-uid-mismatch for one and the same schema (PR #1540 review, P3).")]
+	public void TryUpdatePage_ShouldNotReportUIdMismatch_WhenAnUnpinnedSaveCarriesADifferentlySpelledUId() {
+		// Arrange — no ExpectedChecksum: the promoted conditional baseline is the only witness, and it
+		// carries the braced spelling of the very schema the selector resolves to.
+		StubChecksumRow("server-checksum");
+		PageUpdateOptions options = CreateOptions();
+		options.TargetPackageUId = "test-pkg-uid";
+		options.ConditionalBaselineSchemaUId = "{" + SchemaUId + "}";
+		options.ConditionalBaselineChecksum = "server-checksum";
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "the promoted baseline matches the server checksum, so the save proceeds");
+		response.Success.Should().BeTrue(
+			because: "two spellings of the same GUID are the same schema — the identity check must not read them as a redirect");
+		options.ConditionalBaselineApplied.Should().BeTrue(
+			because: "the write landed on the schema the on-disk baseline describes, so that baseline must be refreshed");
+	}
+
+	[Test]
+	[Description("The value comparison must not turn into a loose one: a recorded UId that is not a GUID at all still falls back to an exact string comparison, so a non-matching value is not quietly accepted.")]
+	public void TryUpdatePage_ShouldNotMarkTheBaselineMatched_WhenTheRecordedUIdIsNotAGuid() {
+		// Arrange
+		StubChecksumRow("server-checksum");
+		PageUpdateOptions options = CreateOptions();
+		options.ExpectedChecksum = "server-checksum";
+		options.TargetPackageUId = "test-pkg-uid";
+		options.ConditionalBaselineSchemaUId = "not-a-guid";
+
+		// Act
+		_command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		response.Conflict.Should().BeFalse(because: "the pin matches the resolved target's checksum");
+		options.ConditionalBaselineApplied.Should().BeFalse(
+			because: "an unparseable recorded value that differs from the resolved UId is not evidence the write landed on the baseline's page");
+	}
+
+	[Test]
+	[Description("TryUpdatePage must NOT mark the conditional baseline as matched when a PINNED save's selector resolves to a different schema - the genuine redirect, where refreshing would stamp another schema's identity into the schema-name-keyed baseline (issue #1538 AC-2).")]
+	public void TryUpdatePage_ShouldNotMarkTheBaselineMatched_WhenAPinnedSaveResolvesElsewhere() {
+		// Arrange
+		StubChecksumRow("server-checksum");
+		PageUpdateOptions options = CreateOptions();
+		options.ExpectedChecksum = "server-checksum";
+		options.TargetPackageUId = "other-pkg-uid";
+		options.ConditionalBaselineSchemaUId = "11111111-0000-0000-0000-000000000000";
+
+		// Act
+		_command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		response.Conflict.Should().BeFalse(
+			because: "the pin matches the resolved target's checksum, so nothing was modified externally");
+		options.ConditionalBaselineApplied.Should().BeFalse(
+			because: "the baseline describes another schema, so refreshing it from this write would corrupt the schema-name-keyed baseline");
+	}
+
+	[Test]
 	[Description("TryUpdatePage must DISCARD the conditional baseline when the selector resolves to a different schema than the one it was captured for - that is the genuine redirect, where the baseline describes nothing about the write's target.")]
 	public void TryUpdatePage_ShouldIgnoreTheConditionalBaseline_WhenTheResolvedTargetIsADifferentSchema() {
 		// Arrange
