@@ -769,7 +769,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	[Test]
 	[Description("setFlowResults writes an activity-result SELECTION and describe reads it back as the same "
 		+ "captions - the round trip that makes the write verifiable. Ignored, NOT passed, on a sandbox whose "
-		+ "deployed CrtProcessBuilder predates 1.6.2.16, because the operation does not exist there.")]
+		+ "deployed CrtProcessBuilder predates 1.6.2.18, because the operation does not exist there.")]
 	[AllureTag(ToolName)]
 	[AllureName("setFlowResults writes a selection that describe reads back unchanged")]
 	public async Task ModifyBusinessProcess_Should_WriteAnActivityResultSelection() {
@@ -814,7 +814,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "the flag and the values have to agree");
 	}
 
-	// The test above needs a package that HAS the selection surface. A sandbox below 1.6.2.16 answers with
+	// The test above needs a package that HAS the selection surface. A sandbox below 1.6.2.18 answers with
 	// an unknown-operation refusal, and letting that read as a pass would be worse than not running: the whole
 	// point of the test is that the selection round-trips. Ignored with the reason named, the
 	// same convention SkipWhenPackagePredatesTheElement follows for the accessRights block.
@@ -825,7 +825,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 					|| payload.Contains("Unknown operation", StringComparison.OrdinalIgnoreCase))) {
 			Assert.Ignore(
 				$"The sandbox's deployed CrtProcessBuilder does not accept {what} for an activity-result "
-				+ "selection, so it predates 1.6.2.16. This test is Ignored, NOT passing; the rebundle and a "
+				+ "selection, so it predates 1.6.2.18. This test is Ignored, NOT passing; the rebundle and a "
 				+ "deploy are what make it meaningful.");
 		}
 	}

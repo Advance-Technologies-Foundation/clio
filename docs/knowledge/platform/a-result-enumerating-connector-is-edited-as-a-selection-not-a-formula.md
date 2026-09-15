@@ -60,7 +60,7 @@ all come back clean:
   says WHICH results decide it.
 
 **What closed it** - this record was written while clio could write only the formula, and that half is
-no longer true. `CrtProcessBuilder` 1.6.2.16 writes the selection, and clio reaches it through
+no longer true. `CrtProcessBuilder` 1.6.2.18 writes the selection, and clio reaches it through
 `flows[].results` on the build path and `setFlowResults` on the modify path, with `describe` reading it
 back as `results` + `resultsActivity`. What did NOT change is everything above: the designer still
 picks the editor the same way, a formula there still runs invisibly, and nothing refuses one - the

@@ -76,7 +76,7 @@ public sealed class ToolContractPayloadBudgetTests {
 	// get-tool-contract call with more than the ENTIRE tools/list budget, for one tool. Pinning the
 	// MAXIMUM rather than the sum keeps the guard on what ONE fetch costs, which is what an agent pays.
 	// Measured 34165 bytes (create-business-process) at 14e2dd5a9 plus this branch's round-2 fixes;
-	// 136 * 256 = 34816 per the next-256 convention, re-pinned from 134 when CrtProcessBuilder 1.6.2.16
+	// 136 * 256 = 34816 per the next-256 convention, re-pinned from 134 when CrtProcessBuilder 1.6.2.18
 	// added the activity-result selection: modify-business-process gained the setFlowResults operation and
 	// create-business-process the flows[].results field, and the Approval paragraph in the latter had to be
 	// rewritten because it instructed the dialect that produces an unmaintainable branch.

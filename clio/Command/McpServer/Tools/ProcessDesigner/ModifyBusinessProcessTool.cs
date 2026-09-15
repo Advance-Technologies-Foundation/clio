@@ -88,7 +88,7 @@ public class ModifyBusinessProcessTool(
 		 + "on a connector whose source enumerates activity results but has no selection YET. That branch runs "
 		 + "and is unmaintainable - the designer edits such a connector as a result selection and shows no "
 		 + "formula field - and nothing stops you writing it, so use setFlowResults there instead), "
-		 + "setFlowResults (from 1.6.2.16; with 'source' and 'target' naming an EXISTING flow, plus a "
+		 + "setFlowResults (from 1.6.2.18; with 'source' and 'target' naming an EXISTING flow, plus a "
 		 + "non-empty 'results' - the RESULT CAPTIONS selecting this branch, or their record ids, e.g. "
 		 + "['Positive'] on an Approval. This is a conditional flow's OTHER predicate slot, not a spelling of "
 		 + "setFlowCondition: which slot a connector takes is decided by its SOURCE, not by you. The two are "
