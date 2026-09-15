@@ -67,15 +67,16 @@ public sealed class PageSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
-			Substitute.For<IComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(), Substitute.For<IPageBodySamplingService>(),
 			new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrMobile_FormPage", MobileBodyWithHandlers)],
-			Validate: false);
+			Validate: false,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Pages[0].Success.Should().BeTrue(
@@ -95,15 +96,16 @@ public sealed class PageSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
-			Substitute.For<IComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(), Substitute.For<IPageBodySamplingService>(),
 			new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrMobile_FormPage", MobileBodyWithHandlers)],
-			Validate: true);
+			Validate: true,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Pages[0].Success.Should().BeFalse(
@@ -122,15 +124,16 @@ public sealed class PageSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
-			Substitute.For<IComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(), Substitute.For<IPageBodySamplingService>(),
 			new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", MarkerlessWebBody)],
-			Validate: false);
+			Validate: false,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Pages[0].Success.Should().BeFalse(
@@ -153,7 +156,7 @@ public sealed class PageSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
-			Substitute.For<IComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(), Substitute.For<IPageBodySamplingService>(),
 			new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		PageSyncArgs args = new(
 			"dev",
@@ -161,10 +164,11 @@ public sealed class PageSyncToolTests {
 				new PageSyncPageInput("UsrForced_FormPage", ValidPageBody, Force: true),
 				new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)
 			],
-			Validate: false);
+			Validate: false,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Pages.Single(page => page.SchemaName == "UsrForced_FormPage").Success.Should().BeTrue(
@@ -197,14 +201,15 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
-			Validate: false);
+			Validate: false,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -237,15 +242,16 @@ public sealed class PageSyncToolTests {
 		IPlatformVersionResolverFactory resolverFactory = Substitute.For<IPlatformVersionResolverFactory>();
 		resolverFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
-			webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(),
+			webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(),
 			resolverFactory);
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
-			Validate: true);
+			Validate: true,
+			SkipSampling: true);
 
 		// Act
-		await tool.SyncPages(args);
+		await tool.SyncPages(args, null);
 
 		// Assert — the merged chart type definitions are resolved once per batch on the async entry,
 		// so the catalog must be loaded against the version resolved from the environment, not 'latest'.
@@ -267,17 +273,18 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		PageSyncArgs args = new(
 			"dev",
 			[
 				new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody),
 				new PageSyncPageInput("UsrTodo_ListPage", ValidPageBody)
 			],
-			Validate: false);
+			Validate: false,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -301,17 +308,18 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		PageSyncArgs args = new(
 			"dev",
 			[
 				new PageSyncPageInput("UsrBroken_FormPage", ValidPageBody),
 				new PageSyncPageInput("UsrWorking_ListPage", ValidPageBody)
 			],
-			Validate: false);
+			Validate: false,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -332,7 +340,7 @@ public sealed class PageSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		// Body parses as valid JavaScript so the upstream PageBodySyntaxValidator
 		// gate (ENG-89796) passes; the markers validator then catches the missing
 		// SCHEMA_* envelope and reports the failure.
@@ -340,10 +348,11 @@ public sealed class PageSyncToolTests {
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrBad_FormPage", bodyWithMissingMarkers)],
-			Validate: true);
+			Validate: true,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -360,7 +369,7 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A body with a JavaScript syntax error fails fast BEFORE the marker chain AND no remote save call is made — proves the deterministic gate short-circuits before TryUpdatePage by asserting ReceivedCalls on the IApplicationClient substitute is empty")]
+	[Description("A body with a JavaScript syntax error fails fast BEFORE the markers/sampling chain AND no remote save call is made — proves the deterministic gate short-circuits before TryUpdatePage by asserting ReceivedCalls on the IApplicationClient substitute is empty")]
 	public async Task SyncPages_Should_FailFast_WhenBodyHasJavaScriptSyntaxError() {
 		// Arrange — wire a real PageUpdateCommand so the IApplicationClient
 		// substitute behind it can confirm no remote save call was made.
@@ -369,17 +378,18 @@ public sealed class PageSyncToolTests {
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		// `define('BadPage', {})}` has a stray closing brace at the end → SyntaxError.
 		// The PageBodySyntaxValidator must surface this before the markers validator
 		// runs and no SaveSchema request should ever leave the process.
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrBad_FormPage", "define('BadPage', {})}")],
-			Validate: false);
+			Validate: false,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -387,7 +397,7 @@ public sealed class PageSyncToolTests {
 		response.Pages[0].Success.Should().BeFalse(
 			because: "the per-page result must mirror the overall failure");
 		response.Pages[0].Error.Should().Contain("JavaScript syntax error",
-			because: "the failure message must name the actual class of problem so the operator does not chase a phantom marker issue");
+			because: "the failure message must name the actual class of problem so the operator does not chase a phantom marker/sampling issue");
 		response.Pages[0].Error.Should().Contain("NOT sent to Creatio",
 			because: "the operator must know the broken body did not reach the server (and therefore did not corrupt a saved page) without having to read the code");
 		applicationClient.ReceivedCalls().Should().BeEmpty(
@@ -404,17 +414,18 @@ public sealed class PageSyncToolTests {
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		PageSyncArgs args = new(
 			"dev",
 			[
 				new PageSyncPageInput("UsrPage_FormPage", "define('Dup', {})}"),
 				new PageSyncPageInput("UsrPage_FormPage", ValidPageBody)
 			],
-			Validate: false);
+			Validate: false,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Pages.Should().HaveCount(2,
@@ -433,6 +444,76 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("AC4: when the body passes the deterministic syntax + lint pre-pass and the caller did not opt out via skip-sampling, the LLM semantic-review (sampling) MUST be invoked with the schema name, body, and resources — proves that the new gates did not displace sampling on the canonical happy path.")]
+	public async Task SyncPages_Should_Invoke_Sampling_For_Valid_Body() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommandWithClient(out IApplicationClient applicationClient);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		// Wire a recording sampling service. Returning `null` keeps the
+		// downstream `samplingReview is { Ok: false ... }` check inert so we
+		// observe invocation without forcing a sampling-block outcome.
+		IPageBodySamplingService samplingService = Substitute.For<IPageBodySamplingService>();
+		samplingService
+			.TrySamplingReviewAsync(Arg.Any<McpServerLib.McpServer>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+			.Returns((PageSamplingReview)null);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, samplingService, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrValid_FormPage", ValidPageBody, Resources: "{\"caption\":\"Hello\"}")],
+			Validate: true,
+			SkipSampling: false);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the body passes every deterministic gate so the sync must complete successfully when no sampling issues are surfaced");
+		await samplingService.Received(1).TrySamplingReviewAsync(
+			Arg.Any<McpServerLib.McpServer>(),
+			Arg.Is<string>(name => name == "UsrValid_FormPage"),
+			Arg.Is<string>(body => body == ValidPageBody),
+			Arg.Is<string?>(resources => resources == "{\"caption\":\"Hello\"}"),
+			Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("AC4 negative path: when the body fails the deterministic syntax pre-pass, sampling is NOT invoked — proves the gates short-circuit BEFORE LLM tokens are spent on a doomed body.")]
+	public async Task SyncPages_Should_NotInvoke_Sampling_When_Syntax_Fails() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommandWithClient(out _);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		IPageBodySamplingService samplingService = Substitute.For<IPageBodySamplingService>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, samplingService, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrBad_FormPage", "define('BadPage', {})}")],
+			Validate: true,
+			SkipSampling: false);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Pages[0].Success.Should().BeFalse(
+			because: "the syntax gate must reject the body");
+		await samplingService.DidNotReceive().TrySamplingReviewAsync(
+			Arg.Any<McpServerLib.McpServer>(),
+			Arg.Any<string>(),
+			Arg.Any<string>(),
+			Arg.Any<string?>(),
+			Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Mixed batch: a syntactically broken page is rejected and a valid page is saved in the same call — exactly one save round-trip happens for the valid page, not one per page or none at all. Pins per-page fail-fast semantics that no other test currently covers.")]
 	public async Task SyncPages_Should_Save_Only_Valid_Page_When_Batch_Contains_One_Broken_And_One_Valid() {
 		// Arrange
@@ -441,17 +522,18 @@ public sealed class PageSyncToolTests {
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		PageSyncArgs args = new(
 			"dev",
 			[
 				new PageSyncPageInput("UsrBad_FormPage", "define('BadPage', {})}"),
 				new PageSyncPageInput("UsrGood_FormPage", ValidPageBody)
 			],
-			Validate: false);
+			Validate: false,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Pages.Should().HaveCount(2,
@@ -479,14 +561,15 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrPage", ValidPageBody)],
-			Validate: false);
+			Validate: false,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -505,16 +588,17 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		string bodyWithHandler = ValidPageBody.Replace(
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
 			"/**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithHandler)],
-			Validate: true);
+			Validate: true,
+			SkipSampling: true);
 
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		response.Success.Should().BeTrue(
 			because: "handler markers may contain JavaScript and should not fail content validation");
@@ -536,7 +620,7 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		string bodyWithConverterAndValidator = ValidPageBody
 			.Replace(
 				"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
@@ -549,7 +633,7 @@ public sealed class PageSyncToolTests {
 			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithConverterAndValidator)],
 			Validate: true);
 
-		PageSyncResponse response = tool.SyncPages(args).Result;
+		PageSyncResponse response = tool.SyncPages(args, null).Result;
 
 		response.Success.Should().BeTrue(
 			because: "sync-pages should not reject function-based converter and validator sections as JSON errors");
@@ -571,7 +655,7 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		string bodyWithUndeclaredBindings = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
 			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$PDS_UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
@@ -583,9 +667,10 @@ public sealed class PageSyncToolTests {
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithUndeclaredBindings)],
-			Validate: true);
+			Validate: true,
+			SkipSampling: true);
 
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		response.Success.Should().BeFalse(
 			because: "sync-pages must surface insert operations that would render fields with no data source and a blank caption");
@@ -601,7 +686,7 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		string bodyWithParentMerge = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"$Resources.Strings.PDS_UsrStatus\",\"control\":\"$PDS_UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
@@ -613,9 +698,10 @@ public sealed class PageSyncToolTests {
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithParentMerge)],
-			Validate: true);
+			Validate: true,
+			SkipSampling: true);
 
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		response.Success.Should().BeTrue(
 			because: "merge operations target existing parent-provided controls whose binding attribute and resource may legitimately live in the parent schema, so the inserted-field contract does NOT apply");
@@ -631,7 +717,7 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		string bodyWithExplicitFieldCaption = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrStatus\",\"values\":{\"type\":\"crt.ComboBox\",\"label\":\"#ResourceString(UsrStatus_caption)#\",\"control\":\"$UsrStatus\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
@@ -643,9 +729,10 @@ public sealed class PageSyncToolTests {
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithExplicitFieldCaption, "{\"UsrStatus_caption\":\"Status\"}")],
-			Validate: true);
+			Validate: true,
+			SkipSampling: true);
 
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		response.Success.Should().BeTrue(
 			because: "explicit resources keep the custom field caption pattern non-blocking");
@@ -691,7 +778,7 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		string bodyWithResource = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{ values: { caption: \"#ResourceString(UsrTitle)#\" } }]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
@@ -703,10 +790,11 @@ public sealed class PageSyncToolTests {
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithResource, "{\"UsrTitle\":\"Title\"}")],
-			Validate: false);
+			Validate: false,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -774,15 +862,16 @@ public sealed class PageSyncToolTests {
 		MockFileSystem mockFs = new();
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, mockFs, mobileCatalog, webCatalog, new PageBaselineGuard(mockFs), new PersistedResourceKeyReader());
+		PageSyncTool tool = new(commandResolver, mockFs, mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(mockFs), new PersistedResourceKeyReader());
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
 			Validate: false,
-			Verify: true);
+			Verify: true,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -821,15 +910,16 @@ public sealed class PageSyncToolTests {
 			.Returns(getCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
 			Validate: false,
-			Verify: true);
+			Verify: true,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -849,14 +939,15 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", MergeUsrNameBody)],
-			Validate: false);
+			Validate: false,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Pages[0].Success.Should().BeTrue(
@@ -967,14 +1058,15 @@ public sealed class PageSyncToolTests {
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		commandResolver.Resolve<PageGetCommand>(Arg.Do<Clio.EnvironmentOptions>(o => capturedGetOptions = o)).Returns(getCommand);
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
-			Substitute.For<IComponentInfoCatalog>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+			Substitute.For<IComponentInfoCatalog>(), Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrLeads_MobileFormPage", mobileBody)],
-			Validate: true);
+			Validate: true,
+			SkipSampling: true);
 
 		// Act
-		await tool.SyncPages(args);
+		await tool.SyncPages(args, null);
 
 		// Assert
 		capturedGetOptions.Should().BeOfType<PageGetOptions>(
@@ -1011,15 +1103,16 @@ public sealed class PageSyncToolTests {
 		string capturedWarning = null;
 		logger.When(l => l.WriteWarning(Arg.Any<string>())).Do(ci => capturedWarning = ci.Arg<string>());
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
-			Substitute.For<IComponentInfoCatalog>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(),
+			Substitute.For<IComponentInfoCatalog>(), Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(),
 			logger: logger);
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrLeads_MobileFormPage", mobileBody)],
-			Validate: true);
+			Validate: true,
+			SkipSampling: true);
 
 		// Act
-		await tool.SyncPages(args);
+		await tool.SyncPages(args, null);
 
 		// Assert
 		capturedWarning.Should().NotBeNull(
@@ -1049,14 +1142,15 @@ public sealed class PageSyncToolTests {
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		commandResolver.Resolve<PageGetCommand>(Arg.Any<Clio.EnvironmentOptions>()).Returns(getCommand);
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
-			Substitute.For<IComponentInfoCatalog>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+			Substitute.For<IComponentInfoCatalog>(), Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrLeads_MobileFormPage", mobileBody)],
-			Validate: true);
+			Validate: true,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Pages.Should().ContainSingle(
@@ -1217,7 +1311,7 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		string mobileBody = """
 			{
 			  "viewConfigDiff": [],
@@ -1228,10 +1322,11 @@ public sealed class PageSyncToolTests {
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrMobile_FormPage", mobileBody)],
-			Validate: true);
+			Validate: true,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -1257,7 +1352,7 @@ public sealed class PageSyncToolTests {
 			.Returns(updateCommand);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		string mobileBodyWithConverters = """
 			{
 			  "viewConfigDiff": [],
@@ -1267,10 +1362,11 @@ public sealed class PageSyncToolTests {
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrMobile_FormPage", mobileBodyWithConverters)],
-			Validate: true);
+			Validate: true,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Pages[0].Success.Should().BeFalse(
@@ -1311,14 +1407,15 @@ public sealed class PageSyncToolTests {
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog,
-			new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), resolverFactory);
+			Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), resolverFactory);
 		PageSyncArgs args = new(
 			null,
 			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
-			Validate: true);
+			Validate: true,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert — the resolver call is the discriminator: the old blank-name guard returned null
 		// WITHOUT ever calling Resolve<EnvironmentSettings>, so this Received() assertion fails against
@@ -1354,14 +1451,15 @@ public sealed class PageSyncToolTests {
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog,
-			new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), resolverFactory);
+			Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), resolverFactory);
 		PageSyncArgs args = new(
 			"dev-named-registered-env",
 			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
-			Validate: true);
+			Validate: true,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -1407,14 +1505,15 @@ public sealed class PageSyncToolTests {
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog,
-			new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+			Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
 		PageSyncArgs args = new(
 			null,
 			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
-			Validate: false);
+			Validate: false,
+			SkipSampling: true);
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Success.Should().BeFalse(

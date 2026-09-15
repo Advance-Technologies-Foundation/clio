@@ -89,6 +89,7 @@ public sealed class PageSyncToolPersistedResourcesTests {
 			commandResolver, fileSystem ?? new MockFileSystem(),
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			Substitute.For<IComponentInfoCatalog>(),
+			Substitute.For<IPageBodySamplingService>(),
 			new PageBaselineGuard(fileSystem ?? new MockFileSystem()),
 			new PersistedResourceKeyReader());
 	}
@@ -141,7 +142,7 @@ public sealed class PageSyncToolPersistedResourcesTests {
 		""";
 
 	private static PageSyncArgs BuildArgs(params PageSyncPageInput[] pages) =>
-		new("dev", pages, Validate: true);
+		new("dev", pages, Validate: true, SkipSampling: true);
 
 	private int HierarchyResolutionCount() => _hierarchyClient.ReceivedCalls().Count(call =>
 		call.GetMethodInfo().Name == nameof(IPageDesignerHierarchyClient.GetDesignPackageUId));
@@ -159,7 +160,7 @@ public sealed class PageSyncToolPersistedResourcesTests {
 			new PageSyncPageInput(SchemaName, BuildLabelResourcePageBody(PersistedResourceKey)));
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Pages.Should().ContainSingle().Which.Success.Should().BeTrue(
@@ -177,7 +178,7 @@ public sealed class PageSyncToolPersistedResourcesTests {
 			new PageSyncPageInput(SchemaName, BuildLabelResourcePageBody("NeverRegistered_label")));
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		PageSyncPageResult page = response.Pages.Should().ContainSingle().Subject;
@@ -200,7 +201,7 @@ public sealed class PageSyncToolPersistedResourcesTests {
 		PageSyncArgs args = BuildArgs(new PageSyncPageInput(SchemaName, unparsableBody));
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Pages.Should().ContainSingle().Which.Success.Should().BeFalse(
@@ -217,7 +218,7 @@ public sealed class PageSyncToolPersistedResourcesTests {
 		// future change to how many times the SAVE resolves.
 		PageSyncTool cleanTool = CreateTool();
 		await cleanTool.SyncPages(
-			BuildArgs(new PageSyncPageInput(SchemaName, BuildDiffBackedPageBody("[]", "[]"))));
+			BuildArgs(new PageSyncPageInput(SchemaName, BuildDiffBackedPageBody("[]", "[]"))), null);
 		int cleanSaveResolutions = HierarchyResolutionCount();
 		int cleanSaveSchemaReads = SchemaReadCount();
 		_hierarchyClient.ClearReceivedCalls();
@@ -227,7 +228,7 @@ public sealed class PageSyncToolPersistedResourcesTests {
 			new PageSyncPageInput(SchemaName, BuildLabelResourcePageBody(PersistedResourceKey)));
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		cleanSaveResolutions.Should().BeGreaterThan(0,
@@ -254,7 +255,7 @@ public sealed class PageSyncToolPersistedResourcesTests {
 				new PageSyncPageInput(SchemaName, body, Resources: "{\"" + PersistedResourceKey + "\": \"Probe label\"}"),
 				new PageSyncPageInput(SchemaName, body)
 			],
-			Validate: true);
+			Validate: true, SkipSampling: true);
 		// Page 1's save registers the key; from that moment the schema reports it as persisted.
 		_applicationClient
 			.When(client => client.ExecutePostRequest(
@@ -263,7 +264,7 @@ public sealed class PageSyncToolPersistedResourcesTests {
 			.Do(_ => StubSchemaWithPersistedKeys(PersistedResourceKey));
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Pages.Should().HaveCount(2,
@@ -287,7 +288,7 @@ public sealed class PageSyncToolPersistedResourcesTests {
 					Resources: "{\"" + secondResourceKey + "\": \"Second label\"}"),
 				new PageSyncPageInput(SchemaName, BuildLabelResourcePageBody(secondResourceKey))
 			],
-			Validate: true);
+			Validate: true, SkipSampling: true);
 		_applicationClient
 			.When(client => client.ExecutePostRequest(
 				Arg.Is<string>(url => url.Contains("SaveSchema")), Arg.Any<string>(),
@@ -295,7 +296,7 @@ public sealed class PageSyncToolPersistedResourcesTests {
 			.Do(_ => StubSchemaWithPersistedKeys(PersistedResourceKey, secondResourceKey));
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Pages.Should().HaveCount(2,
@@ -316,7 +317,7 @@ public sealed class PageSyncToolPersistedResourcesTests {
 			new PageSyncPageInput(SchemaName, BuildLabelResourcePageBody("NeverRegistered_label")));
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		response.Pages.Should().HaveCount(2,
@@ -339,7 +340,7 @@ public sealed class PageSyncToolPersistedResourcesTests {
 			new PageSyncPageInput(SchemaName, BuildLabelResourcePageBody(PersistedResourceKey)));
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args);
+		PageSyncResponse response = await tool.SyncPages(args, null);
 
 		// Assert
 		PageSyncPageResult page = response.Pages.Should().ContainSingle().Subject;

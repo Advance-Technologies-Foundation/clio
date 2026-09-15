@@ -6,7 +6,7 @@ using System.IO;
 /// <summary>
 /// Resolves the page body for <c>update-page</c> when the caller supplies <c>--body-file</c>
 /// instead of an inline <c>--body</c>. Centralized so the CLI command path and the MCP tool
-/// path both apply pre-save validation against the resolved body content.
+/// path both apply pre-save validation and sampling against the resolved body content.
 /// </summary>
 internal static class PageUpdateBodyLoader {
 

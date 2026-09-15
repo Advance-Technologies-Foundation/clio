@@ -88,9 +88,9 @@ public sealed class WorkerMcpRelay(ILogger logger) : IWorkerMcpRelay {
 /// <b>The two guarantees that fail silently.</b> Notifications are forwarded from INSIDE the single read
 /// loop and awaited one at a time, so the client observes the child's own order (ADR rule 12); and a
 /// child <c>sampling/createMessage</c> is answered by the REAL client through
-/// <see cref="IParentMcpSession.SampleAsync"/>, because a relay that refused it would silently degrade the
-/// child's answer with no error anywhere (ADR rule 1). No clio tool issues a sampling request since
-/// ENG-98526 removed the page semantic review, so this path guards a capability nothing exercises today.
+/// <see cref="IParentMcpSession.SampleAsync"/>, because a relay that refused it would silently degrade
+/// <c>update-page</c> / <c>sync-pages</c> semantic review to <c>Skipped=true</c> with no error anywhere
+/// (ADR rule 1).
 /// </para>
 /// <para>
 /// <b>Why child→parent requests are answered off the loop</b> while notifications are not: sampling waits
