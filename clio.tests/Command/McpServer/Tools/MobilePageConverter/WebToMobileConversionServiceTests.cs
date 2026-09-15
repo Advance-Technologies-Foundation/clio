@@ -3709,7 +3709,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 	[Test]
 	[Description("D8 regression: a declared element with NO containers pair pointed at it and no content of its own is removed as empty exactly like any other declared element, but its removal touches no web name anywhere — not its own (declaredElements has none) and not a merge twin's (no pair names it) — so the empty-container constraint must not depend on a web name having been recorded. RightPanelTab is re-declared and kept alive by real right-widget content so its own (unrelated) empty-removal never contributes a web name either.")]
-	public void Analyze_ShouldReportEmptyContainerConstraint_WhenOnlyADeclaredElementWithNoTwinWasRemovedAsEmpty() {
+	public void Analyze_ShouldRemoveEmptyDeclaredElement_WhenItHasNoTwinToRecordAWebName() {
 		// Arrange
 		JArray page = DeclaredElementsPage(withRightWidget: true, withPageTab: false);
 		TemplateMappingRule rule = DeclaredElementsRuleWith(new JsonArray(
@@ -3725,13 +3725,15 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule);
 
 		// Assert
-		OperationNames(guide).Should().NotContain("OrphanEmptyTab",
-			because: "nothing is mapped into it and no containers pair merges onto it");
-		guide.ViewConfigDiff.Should().NotContain(operation => operation.Name == "OrphanEmptyTab",
-			because: "no containers pair names this declaration, so its removal has no twin to also drop");
-		DroppedNames(guide).Should().NotContain("OrphanEmptyTab",
-			because: "a declared receiver removed as empty was never ON the source page, so nothing of the page's was "
-				+ "lost - reporting it as a dropped element would name an element the caller never had");
+		ShouldBeAbsentEntirely(guide, "OrphanEmptyTab",
+			because: "a declared element with no pair is removed when nothing lands in it, exactly like one with "
+				+ "a pair - and having never been ON the source page it is not reported as a dropped element "
+				+ "either, which would name an element the caller never had");
+		InsertedNames(guide).Should().Contain(DeclaredElementsExtraTab,
+			because: "the re-declared RightPanelTab is kept alive by the right-widget content this fixture exists "
+				+ "to supply. Without it every assertion above holds on an empty response, which is the whole "
+				+ "point of the D8 regression: the removal must work when it touches no web name ANYWHERE, and a "
+				+ "conversion that produced nothing touches no web name either");
 	}
 
 	[Test]
@@ -3996,10 +3998,20 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule);
 
 		// Assert
-		Declared(guide, "SelfPaired").Operation.Should().Be("insert",
+		ViewConfigDiffOperation selfPaired = Declared(guide, "SelfPaired");
+		selfPaired.ParentName.Should().Be("Tabs",
+			because: "the DECLARATION is what created it - the page's own SelfPaired lives in the content grid, "
+				+ "so the parent is the only thing that tells 'declaration admitted, page element merged onto "
+				+ "it' apart from 'declaration rejected, page element converted alone'; both leave exactly one "
+				+ "operation on this name, which is all the assertion below can see");
+		selfPaired.Index.Should().Be(2,
+			because: "the declared index came with the declaration and no page element carries one here");
+		selfPaired.Operation.Should().Be("insert",
 			because: "the same-name containers pair exempts it from the page-name-collision check, unlike a plain name clash");
-		WebElement(guide, "SelfPaired").Operation.Should().Be("insert",
-			because: "the page's own element merges onto the declaration by name, exactly like any other containers pair");
+		WebElement(guide, "SelfPaired").Should().BeSameAs(selfPaired,
+			because: "the page's own element merges onto the declaration by name, exactly like any other "
+				+ "containers pair, and adds nothing over it - so the payload-free twin is dropped and the "
+				+ "source name resolves to the declaration's own insert");
 	}
 
 	[Test]
@@ -4110,7 +4122,13 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		ViewConfigDiffOperation hint = Declared(guide, "UsrHint");
-		hint.Values!.AsObject().Should().NotContainKey("caption", because: "no caption property is written when the key is rejected");
+		hint.Values!.AsObject().Should().NotContainKey("caption",
+			because: "no caption property is written when the key is rejected");
+		(guide.ResourceStrings ?? new Dictionary<string, string>()).Keys.Should().NotContain(
+			key => key.Contains(' ') || key.Contains(')'),
+			because: "the other half of the promise: a rejected key is not REGISTERED either. resourceStrings is "
+				+ "written verbatim through update-page, so a malformed rules-file key reaching it reaches a "
+				+ "write path with no diagnostic");
 	}
 
 	[Test]
@@ -4183,6 +4201,9 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		InsertedNames(guide).Should().NotContain("UsrNoParent",
 			because: "an entry with no parentName has nowhere to be inserted and must not be admitted");
+		InsertedNames(guide).Should().Contain(["Tabs", "GeneralInfoTab"],
+			because: "ONE entry is refused, not the array: a gate that aborted the whole declaredElements list "
+				+ "would satisfy the assertion above while silently dropping the tab strip with it");
 	}
 
 	[Test]
@@ -4200,6 +4221,9 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		InsertedNames(guide).Should().NotContain("UsrBadSlot",
 			because: "an unsafe propertyName must not be admitted, even though the name and parent are otherwise fine");
+		InsertedNames(guide).Should().Contain(["Tabs", "GeneralInfoTab"],
+			because: "ONE entry is refused, not the array: a gate that aborted the whole declaredElements list "
+				+ "would satisfy the assertion above while silently dropping the tab strip with it");
 	}
 
 	[Test]
@@ -4316,6 +4340,14 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		ViewConfigDiffOperation declared = Declared(guide, DeclaredElementsExtraTab);
+		TypeOf(declared).Should().Be("crt.TabContainer",
+			because: "the EARLIER declaration stands: the repeat declares the same name as a crt.GridContainer "
+				+ "in MainContainer, so a last-wins dedupe would still leave exactly one insert under this name "
+				+ "- the shape is the only thing that says which of the two it is");
+		declared.ParentName.Should().Be("Tabs",
+			because: "the earlier declaration puts it in the strip; the repeat puts it in MainContainer");
+		declared.Index.Should().Be(1,
+			because: "the earlier declaration carries the index; the repeat carries none");
 		WebElement(guide, "RightAreaProfileContainer").Name.Should().Be(DeclaredElementsExtraTab,
 			because: "the pair still targets the surviving declaration");
 	}
@@ -4415,7 +4447,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	private static MobilePageConversionGuide AnalyzeDeclaredElements(JArray page, bool mobileTemplateProbed = true,
-		TemplateMappingRule templateRule = null, JArray webTemplateTree = null, string webTemplateName = null) {
+		TemplateMappingRule templateRule = null, JArray webTemplateTree = null, string webTemplateName = null,
+		JsonArray excludedComponents = null) {
 		webTemplateName ??= DeclaredElementsWebTemplate;
 		var bundle = new PageBundleInfo {
 			ViewConfig = JsonNode.Parse(page.ToString())!.AsArray(),
@@ -4433,6 +4466,14 @@ public sealed class WebToMobileConversionServiceTests {
 			}
 		};
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+		if (excludedComponents is not null) {
+			// Re-parsed through the production parser rather than copied onto a new instance, for the reason
+			// WithoutExcludedComponents documents: a hand-copied rule set silently loses any property added to
+			// the class later, and stays green while comparing something other than what the test names.
+			JsonObject withExclusions = JsonSerializer.SerializeToNode(rules)!.AsObject();
+			withExclusions["excludedComponents"] = excludedComponents;
+			rules = withExclusions.Deserialize<WebToMobilePageConversionRules>()!;
+		}
 		templateRule ??= BundledRule(webTemplateName);
 		JsonArray webTemplate = JsonNode.Parse((webTemplateTree ?? DeclaredElementsWebTemplateTree()).ToString())!.AsArray();
 		Dictionary<string, JObject> webBaselineNodes = WebToMobileAnalysisService.CollectComponentNodesByName(webTemplate);
@@ -4491,10 +4532,75 @@ public sealed class WebToMobileConversionServiceTests {
 		return rule.Deserialize<TemplateMappingRule>()!;
 	}
 
-	/// <summary>
-	/// A declared element's own entry (declaredElements; no web name), by its mobile name. A web twin that a pair
-	/// MERGES onto the same name (web Tabs -> declared Tabs) is a different entry — see <see cref="WebElement"/>.
-	/// </summary>
+	[Test]
+	[Description("No dropped element reaches the caller without a webName, whichever pass dropped it. webName and webType are omitted when null, so such an entry serializes as a reason attached to nothing: it cannot be looked up in sourceStructure, cannot be re-added, and cannot be told apart from a serialization fault. The elements this can happen to - a declaredElements receiver, a synthesized layer - were never on the source page, so excluding them loses the caller nothing. Asserted over the WHOLE response of a conversion that exercises both insert-to-drop rewrites, because the projection used to key on DeclaredByRule, a flag each rewrite has to carry by hand, and ExcludedComponentsPass has two that do not.")]
+	public void Analyze_ShouldNeverReportADroppedElementWithNoName_HoweverItWasDropped() {
+		// Arrange - the filter bans the declared GeneralInfoTab by its own type under the declared Tabs strip's
+		// type. That routes a DECLARED element through ExcludedComponentsPass, which rebuilds the entry as a
+		// drop WITHOUT carrying DeclaredByRule - unlike RemoveEmptyContainers, which does carry it, and which
+		// is therefore the wrong pass to drive this from.
+		JArray page = DeclaredElementsPage(withRightWidget: true, withPageTab: false);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page,
+			excludedComponents: new JsonArray(new JsonObject {
+				["filters"] = new JsonArray(new JsonObject {
+					["type"] = "crt.TabContainer", ["parentType"] = "crt.TabPanel"
+				})
+			}));
+
+		// Assert
+		InsertedNames(guide).Should().NotContain("GeneralInfoTab",
+			because: "the filter bans it, so the declaration's insert became a drop - without this the "
+				+ "assertion below has no subject and passes on a conversion that excluded nothing");
+		(guide.DroppedElements ?? []).Should().OnlyContain(
+			dropped => !string.IsNullOrEmpty(dropped.WebName),
+			because: "a drop with nothing to name is unactionable: webName and webType are omitted when null, "
+				+ "so it reaches the caller as a reason attached to no element. Everything that can reach this "
+				+ "state was absent from the source page, so its removal is not a loss the caller needs told");
+	}
+
+	[Test]
+	[Description("A positional group anchored on a DECLARED container that was then removed as empty must not have its placement merged onto that name. The anchor's insert became a drop, so neither branch of SetAnchorPlacement's lookup finds it and the fallback would append a merge onto a name the produced page does not have. A merge resolves by name alone and the applier validates every operation before applying any, so one such entry makes it refuse the WHOLE viewConfigDiff, with nothing in the response saying which entry caused it.")]
+	public void Analyze_ShouldNotPlaceOntoADeclaredAnchor_ThatWasRemovedAsEmpty() {
+		// Arrange - the shape of Analyze_ShouldShiftTheDeclaredAnchorsOwnRow_WhenAPositionalSiblingIsPlacedAboveIt
+		// with ONE change: no GeneralInfoTab declaration and no pair onto it, so nothing converts into the
+		// declared Tabs strip and it is removed as empty. TopSibling still sits before CardContentWrapper, so
+		// the positional pass still has content above the anchor and still reaches for the anchor's entry.
+		JArray page = JArray.Parse("""
+			[ { "name": "MainContainer", "type": "crt.FlexContainer", "items": [
+			    { "name": "TopSibling", "type": "crt.Input", "label": "Top" },
+			    { "name": "CardContentWrapper", "type": "crt.GridContainer", "items": [
+			        { "name": "NameField", "type": "crt.Input", "label": "Name" } ] } ] } ]
+			""");
+		TemplateMappingRule rule = DeclaredElementsRuleWith(
+			declaredElements: new JsonArray(new JsonObject {
+				["name"] = "Tabs", ["type"] = "crt.TabPanel", ["parentName"] = "MainContainer",
+				["values"] = new JsonObject {
+					["layoutConfig"] = new JsonObject { ["row"] = 2, ["column"] = 1, ["colSpan"] = 1, ["rowSpan"] = 1 }
+				}
+			}),
+			containers: new JsonArray(
+				new JsonObject { ["web"] = "MainContainer", ["mobile"] = "MainContainer" },
+				new JsonObject { ["web"] = "CardContentWrapper:top", ["mobile"] = "Tabs:top" }),
+			keepStripDeclarations: false);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, templateRule: rule,
+			webTemplateTree: new JArray());
+
+		// Assert
+		InsertedNames(guide).Should().NotContain("Tabs",
+			because: "nothing converted into the declared strip, so it is removed as empty");
+		Element(guide, "TopSibling").Values!["layoutConfig"].Should().NotBeNull(
+			because: "the sibling above the anchor must actually be PLACED - that placement is what makes the "
+				+ "pass reach for the anchor's own entry, and without it the assertion below is vacuous");
+		guide.ViewConfigDiff.Should().NotContain(operation => operation.Name == "Tabs",
+			because: "a placement merged onto the removed anchor would name an element the produced page does "
+				+ "not have, and the applier refuses the whole array over one such operation rather than "
+				+ "skipping it - the caller's paste fails entirely, with no way to tell which entry did it");
+	}
+
 	/// <summary>
 	/// The operation that CREATES a rule-declared element, by the mobile name the declaration gives it.
 	/// </summary>

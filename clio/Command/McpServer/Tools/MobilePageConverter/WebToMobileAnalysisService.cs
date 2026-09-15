@@ -5329,6 +5329,16 @@ public static class WebToMobileAnalysisService {
 			values["layoutConfig"] = placement;
 			return;
 		}
+		// Nothing on the page carries this name any more. That happens when the anchor was DECLARED and then
+		// removed as empty (declaredElements + a positional `Anchor:top` pair, both of which the rules file
+		// supports): RemoveEmptyContainers turned its insert into a drop, so neither branch of the lookup above
+		// matches it. Synthesizing the merge anyway would put an operation on a name the produced page does not
+		// have, and a merge resolves by name alone — the applier validates every operation before applying any,
+		// so it refuses the WHOLE array and nothing in the response says why.
+		if (elementMap.Any(e => IsDrop(e)
+			&& string.Equals(e.Name, anchor, StringComparison.OrdinalIgnoreCase))) {
+			return;
+		}
 		elementMap.Add(new ElementMapEntry {
 			Operation = ElementMapOperations.Merge,
 			Name = anchor,
@@ -5468,11 +5478,18 @@ public static class WebToMobileAnalysisService {
 	/// </remarks>
 	private static IReadOnlyList<DroppedElement> ProjectDroppedElements(List<ElementMapEntry> elementMap) {
 		List<DroppedElement> dropped = [.. elementMap
-			// A DeclaredByRule drop is excluded on purpose: the rules file declared that receiver, the source page
-			// never had it, and nothing of the page's was lost when it came back out empty. It would reach the
-			// wire as a drop with NO webName — an entry naming nothing, which a caller cannot act on. What the
-			// page actually lost is the twins that merged onto it, and each of those carries its own entry.
-			.Where(entry => (IsDrop(entry) && !entry.DeclaredByRule) || IsRelocateChildren(entry))
+			// A drop with no webName is excluded because it NAMES NOTHING: webName and webType are both omitted
+			// when null, so it would serialize as a bare reason the caller cannot act on. Every such entry is an
+			// element the source page never had — a rules-file declaredElements receiver, or a synthesized layer
+			// — so nothing of the caller's was lost with it. What the page actually loses when a declared
+			// receiver is removed is the twins that merged onto it, and each of those carries its own entry.
+			//
+			// Keyed on the ABSENCE OF A NAME rather than on DeclaredByRule, which is what this used to test.
+			// That flag has to be carried by hand through every pass that rewrites an insert into a drop, and
+			// ExcludedComponentsPass has two such rewrites that did not carry it — so a declared element banned
+			// by an excludedComponents filter reached the wire as exactly the nameless entry this excludes.
+			// "Has nothing to name" is a property of the entry itself and cannot be dropped in transit.
+			.Where(entry => (IsDrop(entry) && entry.WebName is { Length: > 0 }) || IsRelocateChildren(entry))
 			.Select(entry => new DroppedElement {
 				WebName = entry.WebName,
 				WebType = entry.WebType,
