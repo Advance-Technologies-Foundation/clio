@@ -576,11 +576,35 @@
 		/// target that resolves elsewhere still leaves the baseline dropped, which is the redirect case
 		/// the guard exists to handle.
 		/// </remarks>
+		/// <summary>
+		/// Compares two schema UIds by VALUE rather than by spelling.
+		/// </summary>
+		/// <remarks>
+		/// The two sides reach this comparison from different places and are written by different people.
+		/// The left one comes off disk, in whatever form clio recorded; the right one can be the raw
+		/// <c>--target-schema-uid</c> the caller typed, which <c>TryResolveContext</c> uses verbatim. GUIDs
+		/// have several legal spellings, and a braced <c>{xxxxxxxx-…}</c> selector against a bare recorded
+		/// UId is the same schema written two ways. A plain string comparison read that as a redirect and
+		/// silently skipped the post-save refresh — the very failure issue #1538 is about, reintroduced for
+		/// one input shape. Only a value that does not parse as a GUID at all falls back to the string
+		/// comparison, so nothing that used to match stops matching.
+		/// </remarks>
+		/// <param name="recordedSchemaUId">The schema UId carried over from the on-disk baseline.</param>
+		/// <param name="resolvedSchemaUId">The schema UId the write actually resolved to.</param>
+		/// <returns><c>true</c> when both name the same schema.</returns>
+		private static bool SchemaUIdsMatch(string recordedSchemaUId, string resolvedSchemaUId) {
+			if (string.IsNullOrWhiteSpace(recordedSchemaUId) || string.IsNullOrWhiteSpace(resolvedSchemaUId)) {
+				return false;
+			}
+			if (Guid.TryParse(recordedSchemaUId, out Guid recorded) && Guid.TryParse(resolvedSchemaUId, out Guid resolved)) {
+				return recorded == resolved;
+			}
+			return string.Equals(recordedSchemaUId, resolvedSchemaUId, StringComparison.OrdinalIgnoreCase);
+		}
+
 		private static void PromoteConditionalBaselineWhenTargetMatches(
 				PageUpdateOptions options, EditableSchemaContext context) {
-			if (string.IsNullOrWhiteSpace(options.ConditionalBaselineSchemaUId)
-				|| !string.Equals(options.ConditionalBaselineSchemaUId, context.EditableSchemaUId,
-					StringComparison.OrdinalIgnoreCase)) {
+			if (!SchemaUIdsMatch(options.ConditionalBaselineSchemaUId, context.EditableSchemaUId)) {
 				return;
 			}
 			// The write landed on the very schema the on-disk baseline describes, so that baseline is the
