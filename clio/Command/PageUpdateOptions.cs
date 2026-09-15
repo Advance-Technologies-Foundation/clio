@@ -222,6 +222,25 @@
 		/// <param name="response">Structured command response.</param>
 		/// <returns><c>true</c> when the page was updated successfully; otherwise <c>false</c>.</returns>
 		public bool TryUpdatePage(PageUpdateOptions options, out PageUpdateResponse response) {
+			bool succeeded = TryUpdatePageCore(options, out response);
+			// GH-1150: stamped HERE rather than at each failure site, because the failure sites upstream of the
+			// dry-run branch outnumber the ones inside it - body-file load, required-field, common-input,
+			// context resolution, external-modification and input validation all return before the mode is ever
+			// branched on, and TryUpdatePageCore's catch returns a bare envelope. Stamping them individually is
+			// a rule someone has to remember at every new exit; stamping the one exit they all funnel through is
+			// not. Without it a failed `--dry-run` is byte-identical to a failed real save and the caller cannot
+			// tell whether anything was written - the property this ticket exists to establish.
+			// The MCP tool has its OWN pre-execution exits that never reach here and stamps them with the same
+			// helper; see PageUpdateResponse.MarkDryRunFailure.
+			response?.MarkDryRunFailure(options.DryRun, options.SchemaName);
+			return succeeded;
+		}
+
+		/// <summary>
+		/// The body of <see cref="TryUpdatePage"/>. Split out so every failure exit is stamped in one place;
+		/// see the comment in that method's body.
+		/// </summary>
+		private bool TryUpdatePageCore(PageUpdateOptions options, out PageUpdateResponse response) {
 			try {
 				if (!TryLoadBodyFromFile(options, out response)) return false;
 				// Single chokepoint for update-page, sync-pages, and the CLI: run the registered before-save
@@ -245,7 +264,7 @@
 						.Read(options, () => ReadPersistedResourceKeys(context)).Keys);
 				if (validationError != null) { response = validationError; return false; }
 				return options.DryRun
-					? TryCompleteDryRun(options, context, explicitResources, out response)
+					? TryCompleteDryRun(options, context, explicitResources, parsedOptionalProperties, out response)
 					: TrySaveValidatedPage(options, context, explicitResources, parsedOptionalProperties, out response);
 			} catch (Exception ex) {
 				response = new PageUpdateResponse { Success = false, Error = ex.Message };
@@ -253,25 +272,97 @@
 			}
 		}
 
+		/// <summary>
+		/// Everything a write needs, resolved once: the schema DTO with the new body and the final
+		/// <c>localizableStrings</c> already merged in, the body that would be written, the append
+		/// projection, the resource keys the save would register, and the outcome of every body check.
+		/// </summary>
+		/// <remarks>
+		/// A dry run and a save differ only in what they DO with this, which is the point. Before
+		/// ENG-96262 they assembled their own validation independently and drifted: the save ran the
+		/// authoritative caption gate against the merged body and the final registration set, while the dry
+		/// run ran an advisory variant against the caller's fragment and the explicit resources alone. That
+		/// disagreed in both directions - a caption bound to a string already registered on the server
+		/// warned on the dry run and passed the save, and a caption the save would REJECT was invisible to
+		/// the dry run. A preview that can disagree with the commit is the defect this ticket exists to
+		/// remove, so there is now one gate, on one body, and severity is the only per-path difference.
+		/// </remarks>
+		private sealed record PreparedWrite(
+			JObject Schema,
+			string BodyToWrite,
+			PageAppendProjection Projection,
+			List<string> RegisteredKeys,
+			IReadOnlyList<string> DowngradeWarnings,
+			IReadOnlyList<string> InertWarnings,
+			PageUpdateResponse CaptionGateFailure);
+
+		/// <summary>
+		/// Resolves the write both paths would perform, WITHOUT saving anything. Read-only against the
+		/// environment: it fetches the schema and mutates an in-memory DTO; nothing reaches the server until
+		/// <see cref="TrySaveSchema"/>, which a dry run never calls.
+		/// </summary>
+		/// <returns><c>true</c> when the write could be resolved; <c>false</c> with a failure response.</returns>
+		private bool TryPrepareWrite(
+			PageUpdateOptions options,
+			EditableSchemaContext context,
+			Dictionary<string, string> explicitResources,
+			JArray parsedOptionalProperties,
+			out PreparedWrite prepared,
+			out PageUpdateResponse response) {
+			prepared = null;
+			if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
+			if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite,
+				out PageAppendProjection projection, out response)) return false;
+			// Captured BEFORE UpdateSchemaBody overwrites `body` with the resolved one.
+			IReadOnlyList<string> downgradeWarnings =
+				PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
+			IReadOnlyList<string> inertWarnings = PageInertOperationDetector.Detect(bodyToWrite);
+			List<string> registeredKeys = UpdateSchemaBody(
+				schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
+			PageUpdateResponse captionGateFailure =
+				ValidateInsertedWidgetCaptionsResolve(options, schemaToSave, bodyToWrite, context.SchemaType);
+			prepared = new PreparedWrite(schemaToSave, bodyToWrite, projection, registeredKeys,
+				downgradeWarnings, inertWarnings, captionGateFailure);
+			return true;
+		}
+
 		private bool TryCompleteDryRun(
 			PageUpdateOptions options,
 			EditableSchemaContext context,
 			Dictionary<string, string> explicitResources,
+			JArray parsedOptionalProperties,
 			out PageUpdateResponse response) {
-			if (string.Equals(options.Mode, AppendMode, StringComparison.OrdinalIgnoreCase)) {
-				if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject currentSchema, out response)) return false;
-				if (!TryResolveBodyToWrite(currentSchema, options, out _, out _, out response)) return false;
+			if (!IsAppendMode(options)) {
+				// A replace dry run stays OFFLINE. That is a deliberate pre-existing guarantee, asserted by
+				// TryUpdatePage_WhenDryRun_SkipsDesignerServiceCalls: replace writes the body verbatim, so
+				// there is nothing to merge and no reason to reach the server. It keeps the advisory
+				// fragment-scoped caption check, which is all that is available without the server's
+				// localizableStrings - a known, narrower divergence from the save's authoritative gate, and
+				// one that cannot be closed without making this path networked too.
+				response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
+				response.Warnings = CombineWarnings(
+					BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources),
+					PageInertOperationDetector.Detect(options.Body));
+				return true;
 			}
+			// ENG-96262 / GH-1150: append used to return before the merge, so a dry run reported `success`
+			// while naming nothing the write would change, and its caption gate read the caller's fragment
+			// while the save read the merged body and the final registration set - disagreeing in BOTH
+			// directions. Append already fetches the schema, so it now resolves exactly the write the save
+			// would perform and runs the save's own gate, with severity the only difference.
+			// A failure here needs no stamping: TryUpdatePage marks every dry-run failure on the way out.
+			if (!TryPrepareWrite(options, context, explicitResources, parsedOptionalProperties,
+				out PreparedWrite prepared, out response)) return false;
 			response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
-			// A dry run is exactly the call that asks "is this body right before I write it?", and the
-			// inert-operation check is a pure function of one body, so it belongs here too. Honest limit: in
-			// append mode the projected merge result IS computed just above but deliberately discarded
-			// (`out _`), so this still sees only the INCOMING fragment - a pair formed by the server's insert
-			// plus your merge surfaces on the real save. Feeding the projected body in is ENG-96262's job,
-			// not a change to smuggle into a merge resolution.
+			response.AppendProjection = prepared.Projection;
+			// The same four sources the save reports, against the same body. The caption gate is the one that
+			// changes SEVERITY rather than content: blocking on a save, advisory here, because a dry run's job
+			// is to tell you what would happen rather than to refuse.
 			response.Warnings = CombineWarnings(
-				BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources),
-				PageInertOperationDetector.Detect(options.Body));
+				BuildCaptionGateWarnings(prepared.CaptionGateFailure),
+				BuildProjectedLossWarnings(prepared.Projection),
+				prepared.DowngradeWarnings,
+				prepared.InertWarnings);
 			return true;
 		}
 
@@ -281,17 +372,16 @@
 			Dictionary<string, string> explicitResources,
 			JArray parsedOptionalProperties,
 			out PageUpdateResponse response) {
-			if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
-			if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite,
-				out IReadOnlyList<string> mergeWarnings, out response)) return false;
-			IReadOnlyList<string> downgradeWarnings = PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
-			IReadOnlyList<string> inertWarnings = PageInertOperationDetector.Detect(bodyToWrite);
-			List<string> registeredKeys = UpdateSchemaBody(schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
-			PageUpdateResponse captionError = ValidateInsertedWidgetCaptionsResolve(options, schemaToSave, bodyToWrite, context.SchemaType);
-			if (captionError != null) { response = captionError; return false; }
-			if (!TrySaveSchema(schemaToSave, out response)) return false;
-			response = CreateSuccessResponse(options, dryRun: false, registeredKeys);
-			response.Warnings = CombineWarnings(mergeWarnings, downgradeWarnings, inertWarnings);
+			if (!TryPrepareWrite(options, context, explicitResources, parsedOptionalProperties,
+				out PreparedWrite prepared, out response)) return false;
+			if (prepared.CaptionGateFailure != null) { response = prepared.CaptionGateFailure; return false; }
+			if (!TrySaveSchema(prepared.Schema, out response)) return false;
+			response = CreateSuccessResponse(options, dryRun: false, prepared.RegisteredKeys);
+			// The save reports the same projection: a caller who skipped the dry run has no other place to
+			// learn what the merge did.
+			response.AppendProjection = prepared.Projection;
+			response.Warnings = CombineWarnings(
+				BuildProjectedLossWarnings(prepared.Projection), prepared.DowngradeWarnings, prepared.InertWarnings);
 			PopulatePostSaveChecksum(options, context, response);
 			AppendDesignerPresenceWarning(options, response);
 			return true;
@@ -383,6 +473,75 @@
 			PersistedResourceKeyRead failure = PersistedResourceKeyRead.Failure(detail);
 			_logger?.WriteWarning(failure.FailureWarning);
 			return failure;
+		}
+
+		/// <summary>
+		/// Validates widget caption resource resolutions for a REPLACE dry run (web pages only), returning
+		/// advisory warnings. Weaker than the save's gate on purpose: without the server's
+		/// <c>localizableStrings</c> it can only resolve against the explicitly supplied resources, and
+		/// fetching them would cost this path its offline guarantee. An append dry run does not use this -
+		/// it already has the schema, so it runs the authoritative gate instead.
+		/// </summary>
+		/// <returns>Warning messages for unresolved captions, or <c>null</c> if none.</returns>
+		private static List<string> BuildDryRunWidgetCaptionWarnings(
+				string body, PageSchemaType schemaType, Dictionary<string, string> explicitResources) {
+			if (schemaType == PageSchemaType.Mobile) {
+				return null;
+			}
+			SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(body, explicitResources);
+			return result.IsValid ? null : new List<string>(result.Errors);
+		}
+
+		/// <summary>
+		/// Renders the authoritative caption gate's rejection as an advisory warning for an append dry run,
+		/// so the preview states exactly what the save would refuse, in the save's own words.
+		/// </summary>
+		private static IReadOnlyList<string> BuildCaptionGateWarnings(PageUpdateResponse captionGateFailure) =>
+			captionGateFailure is null ? null : [captionGateFailure.Error];
+
+		/// <summary>
+		/// Whether the caller asked for the incoming body to be merged with the schema's current body
+		/// rather than written verbatim. One predicate, because three separate call sites now branch on it -
+		/// whether the merge runs, whether marker integrity is validated, and whether a dry run fetches the
+		/// server's body at all - and they have to stay in lockstep.
+		/// </summary>
+		private static bool IsAppendMode(PageUpdateOptions options) =>
+			string.Equals(options.Mode, AppendMode, StringComparison.OrdinalIgnoreCase);
+
+		/// <summary>
+		/// Turns the losses an append merge can inflict on the <c>viewConfigDiff</c> array into advisory
+		/// warnings: the per-identity superseded-drop sentences the merge itself produced, and the case
+		/// where the merged array never reaches the written body at all.
+		/// </summary>
+		/// <remarks>
+		/// Two channels warn, a third deliberately does not. A REPLACEMENT is not a loss - the operation
+		/// survives carrying the caller's values - and warning on it would fire on most appends. A
+		/// COLLAPSED INCOMING entry is a real loss that is still not warned about; that reasoning has one
+		/// owner, on <see cref="PageAppendProjection.CollapsedIncomingOperations"/>.
+		/// The superseded-drop sentences are built by the merge rather than rebuilt here, so the wording
+		/// and the one-per-identity rule live in one place.
+		/// </remarks>
+		private static IReadOnlyList<string> BuildProjectedLossWarnings(PageAppendProjection projection) {
+			if (projection is null) {
+				return null;
+			}
+			List<string> warnings = null;
+			if (projection.SupersededDropWarnings is { Count: > 0 }) {
+				(warnings ??= []).AddRange(projection.SupersededDropWarnings);
+			}
+			// Gated on the fragment actually carrying viewConfigDiff operations. A handlers-only fragment
+			// against a body with no SCHEMA_VIEW_CONFIG_DIFF pair merges and lands correctly - warning that
+			// "EVERY viewConfigDiff operation is discarded" would describe a loss that did not happen and
+			// send the caller to --mode replace for a write that succeeded.
+			if (!projection.ViewConfigDiffApplied && projection.IncomingOperationCount > 0) {
+				(warnings ??= []).Add(
+					"The page's current body has no SCHEMA_VIEW_CONFIG_DIFF marker pair, so the merged " +
+					"viewConfigDiff array cannot be written back and EVERY viewConfigDiff operation in the " +
+					"fragment is discarded - the counts in appendProjection describe an array the write throws " +
+					"away. Use --mode replace with a body that carries the marker pair. " +
+					"See docs://mcp/guides/page-modification.");
+			}
+			return warnings;
 		}
 
 		/// <summary>
@@ -565,15 +724,15 @@
 		}
 
 		private static bool TryResolveBodyToWrite(JObject schemaToSave, PageUpdateOptions options,
-			out string bodyToWrite, out IReadOnlyList<string> mergeWarnings, out PageUpdateResponse response) {
-			mergeWarnings = null;
+			out string bodyToWrite, out PageAppendProjection projection, out PageUpdateResponse response) {
+			projection = null;
 			bodyToWrite = options.Body;
 			response = null;
-			if (string.Equals(options.Mode, AppendMode, StringComparison.OrdinalIgnoreCase)) {
+			if (IsAppendMode(options)) {
 				string currentBody = schemaToSave["body"]?.ToString();
 				if (!string.IsNullOrWhiteSpace(currentBody)) {
 					try {
-						bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body, out mergeWarnings);
+						bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body, out projection);
 					} catch (Exception ex) {
 						// A full-config rejection (identified by its dedicated exception type, not by re-parsing the
 						// message) is already a complete, self-contained sentence — it names the offending body
@@ -590,7 +749,7 @@
 					}
 				}
 			}
-			if (!string.Equals(options.Mode, AppendMode, StringComparison.OrdinalIgnoreCase) ||
+			if (!IsAppendMode(options) ||
 				PageSchemaTypeExtensions.FromBody(bodyToWrite) == PageSchemaType.Mobile) {
 				return true;
 			}
@@ -834,20 +993,6 @@
 		/// present in that final set nor auto-provided by a DS-bound attribute
 		/// </summary>
 		/// <returns>A failure response when a saved inserted widget caption would render raw; otherwise <c>null</c>.</returns>
-		/// <summary>
-		/// Validates widget caption resource resolutions during dry-run (web pages only) and returns
-		/// advisory warnings to surface potential issues that a real save might reject.
-		/// </summary>
-		/// <returns>Warning messages for unresolved captions, or <c>null</c> if none.</returns>
-		private static List<string> BuildDryRunWidgetCaptionWarnings(
-				string body, PageSchemaType schemaType, Dictionary<string, string> explicitResources) {
-			if (schemaType == PageSchemaType.Mobile) {
-				return null;
-			}
-			SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(body, explicitResources);
-			return result.IsValid ? null : new List<string>(result.Errors);
-		}
-
 		private static PageUpdateResponse ValidateInsertedWidgetCaptionsResolve(
 				PageUpdateOptions options, JObject schemaToSave, string body, PageSchemaType schemaType) {
 			// validate=false is the explicit escape hatch for a pre-existing page defect: skip the
@@ -1175,8 +1320,20 @@
 			// body is valid JavaScript, so it would save, after which PageSchemaSectionReader can no longer
 			// extract sections and append-merge is dead on that page. ResolveSyntaxFailure already treats
 			// markers as the "is this still a recognizable page" test for the same reason.
-			bool isAppendMode = string.Equals(options.Mode, AppendMode, StringComparison.OrdinalIgnoreCase);
-			if (!isAppendMode) {
+			bool isAppendMode = IsAppendMode(options);
+			if (isAppendMode) {
+				// Append relaxes COMPLETENESS, not recognizability. A fragment may omit sections; a body that
+				// carries none at all is always a mistake, and accepting it meant reporting success for a merge
+				// that discarded the caller's whole fragment. See ValidateAppendFragmentIsRecognizable.
+				SchemaValidationResult fragmentResult =
+					SchemaValidationService.ValidateAppendFragmentIsRecognizable(options.Body);
+				if (!fragmentResult.IsValid) {
+					return new PageUpdateResponse {
+						Success = false,
+						Error = $"Append body carries no recognizable page section: {string.Join("; ", fragmentResult.Errors)}"
+					};
+				}
+			} else {
 				SchemaValidationResult integrityResult = SchemaValidationService.ValidateMarkerIntegrity(options.Body);
 				if (!integrityResult.IsValid) {
 					return new PageUpdateResponse {
