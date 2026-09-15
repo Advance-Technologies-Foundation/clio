@@ -139,9 +139,11 @@
 		internal bool ConditionalBaselineSchemaAbsent { get; set; }
 
 		/// <summary>
-		/// Gets or sets a value indicating whether the conditional baseline was promoted because the
-		/// resolved target matched it. The save must then refresh the on-disk baseline like any other
+		/// Gets or sets a value indicating whether the resolved target turned out to be the very schema the
+		/// conditional baseline describes. The save must then refresh the on-disk baseline like any other
 		/// armed save, or the next unpinned save auto-arms from a superseded checksum.
+		/// Set whether or not the baseline was also promoted to govern the conflict check: a caller-pinned
+		/// checksum keeps that role, but the target still matched, so the refresh is still due.
 		/// </summary>
 		internal bool ConditionalBaselineApplied { get; set; }
 
@@ -577,15 +579,23 @@
 		private static void PromoteConditionalBaselineWhenTargetMatches(
 				PageUpdateOptions options, EditableSchemaContext context) {
 			if (string.IsNullOrWhiteSpace(options.ConditionalBaselineSchemaUId)
-				|| !string.IsNullOrWhiteSpace(options.ExpectedChecksum)
 				|| !string.Equals(options.ConditionalBaselineSchemaUId, context.EditableSchemaUId,
 					StringComparison.OrdinalIgnoreCase)) {
+				return;
+			}
+			// The write landed on the very schema the on-disk baseline describes, so that baseline is the
+			// one a successful save must rewrite - independently of which witness governed the conflict
+			// check. Leaving this false for a pinned save left the baseline holding a superseded checksum,
+			// and the caller's next UNPINNED save then conflicted with its own previous one (issue #1538).
+			options.ConditionalBaselineApplied = true;
+			if (!string.IsNullOrWhiteSpace(options.ExpectedChecksum)) {
+				// A caller-pinned checksum is the stronger, explicitly supplied witness: it keeps governing
+				// the conflict check, and the match decides only the post-save refresh.
 				return;
 			}
 			options.ExpectedChecksum = options.ConditionalBaselineChecksum;
 			options.ExpectedSchemaUId = options.ConditionalBaselineSchemaUId;
 			options.ExpectedSchemaAbsent = options.ConditionalBaselineSchemaAbsent;
-			options.ConditionalBaselineApplied = true;
 		}
 
 		private bool TryCheckForExternalModification(

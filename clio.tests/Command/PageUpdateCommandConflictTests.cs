@@ -266,6 +266,48 @@ public sealed class PageUpdateCommandConflictTests
 	}
 
 	[Test]
+	[Description("TryUpdatePage must mark the conditional baseline as matched when a PINNED save's selector resolves to the schema the baseline describes, so the successful save refreshes it - without that, the caller's next UNPINNED save conflicted with its own previous save (issue #1538).")]
+	public void TryUpdatePage_ShouldMarkTheBaselineMatched_WhenAPinnedSaveResolvesToTheBaselineSchema() {
+		// Arrange — the caller pins the checksum the server currently holds, so the save proceeds.
+		StubChecksumRow("server-checksum");
+		PageUpdateOptions options = CreateOptions();
+		options.ExpectedChecksum = "server-checksum";
+		options.TargetPackageUId = "test-pkg-uid";
+		options.ConditionalBaselineSchemaUId = SchemaUId;
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "the pinned checksum matches the server's, so nothing was modified externally");
+		response.Success.Should().BeTrue(because: "the save must land");
+		options.ConditionalBaselineApplied.Should().BeTrue(
+			because: "the write landed on the very schema the on-disk baseline describes, so that baseline now holds a superseded checksum and must be refreshed");
+		options.ExpectedChecksum.Should().Be("server-checksum",
+			because: "the caller's explicit pin is the stronger witness and must keep governing the conflict check, unchanged by the refresh decision");
+	}
+
+	[Test]
+	[Description("TryUpdatePage must NOT mark the conditional baseline as matched when a PINNED save's selector resolves to a different schema - the genuine redirect, where refreshing would stamp another schema's identity into the schema-name-keyed baseline (issue #1538 AC-2).")]
+	public void TryUpdatePage_ShouldNotMarkTheBaselineMatched_WhenAPinnedSaveResolvesElsewhere() {
+		// Arrange
+		StubChecksumRow("server-checksum");
+		PageUpdateOptions options = CreateOptions();
+		options.ExpectedChecksum = "server-checksum";
+		options.TargetPackageUId = "other-pkg-uid";
+		options.ConditionalBaselineSchemaUId = "11111111-0000-0000-0000-000000000000";
+
+		// Act
+		_command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		response.Conflict.Should().BeFalse(
+			because: "the pin matches the resolved target's checksum, so nothing was modified externally");
+		options.ConditionalBaselineApplied.Should().BeFalse(
+			because: "the baseline describes another schema, so refreshing it from this write would corrupt the schema-name-keyed baseline");
+	}
+
+	[Test]
 	[Description("TryUpdatePage must DISCARD the conditional baseline when the selector resolves to a different schema than the one it was captured for - that is the genuine redirect, where the baseline describes nothing about the write's target.")]
 	public void TryUpdatePage_ShouldIgnoreTheConditionalBaseline_WhenTheResolvedTargetIsADifferentSchema() {
 		// Arrange

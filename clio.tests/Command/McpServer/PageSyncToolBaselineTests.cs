@@ -202,6 +202,32 @@ public sealed class PageSyncToolBaselineTests
 	}
 
 	[Test]
+	[Description("sync-pages must refresh the meta.json baseline after a PINNED per-page save too. The refresh gate is shared with update-page (refreshBaseline || ConditionalBaselineApplied), so this pins the second writer against the issue #1538 regression: a pin that governs the conflict check must not suppress the post-save baseline refresh, or the caller's next UNPINNED sync of the same page conflicts with its own previous save.")]
+	public async Task SyncPages_ShouldRefreshBaseline_WhenThePageCarriesAPinnedChecksum() {
+		// Arrange — the on-disk baseline is deliberately STALE; only the per-page pin matches the server,
+		// so the refresh can only be attributed to the pinned path.
+		MockFileSystem fileSystem = CreateFileSystemWithBaseline("stale-on-disk");
+		PageUpdateCommand updateCommand = CreateUpdateCommand(ChecksumRow("server-checksum"), ChecksumRow("fresh-after-pinned-save"));
+		PageSyncTool tool = CreateTool(updateCommand, fileSystem);
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput(SchemaName, ValidPageBody, Checksum: "server-checksum")],
+			Validate: false,
+			SkipSampling: true,
+			OutputDirectory: "/ws");
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Pages[0].Success.Should().BeTrue(
+			because: "the pin matches the server, so the stale on-disk baseline must not veto the save");
+		PageMetaFileModel meta = JsonSerializer.Deserialize<PageMetaFileModel>(fileSystem.GetFile(MetaPath).TextContents);
+		meta.Baseline.Checksum.Should().Be("fresh-after-pinned-save",
+			because: "leaving the superseded checksum on disk is exactly what makes the caller's next unpinned sync conflict with its own previous save");
+	}
+
+	[Test]
 	[Description("sync-pages must drop the baseline when the post-save checksum query fails (fail toward no-check).")]
 	public async Task SyncPages_ShouldDropBaseline_WhenPostSaveChecksumUnavailable() {
 		// Arrange

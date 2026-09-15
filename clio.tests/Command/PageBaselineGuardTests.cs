@@ -386,13 +386,17 @@ public sealed class PageBaselineGuardTests {
 			because: "--target-schema-uid names the write target outright, so the pin describes exactly the schema being written and must still govern the save");
 		refreshBaseline.Should().BeFalse(
 			because: "the schema-name-keyed baseline describes the auto-resolved schema, so it must not be moved forward from a redirected write");
-		metaFilePath.Should().BeNull(because: "there is nothing to refresh, so no baseline path is reported");
+		metaFilePath.Should().Be(_metaPath,
+			because: "the path is reported so a refresh can still run if the resolved target turns out to BE the baseline's schema; whether it runs is decided after resolution, not here (issue #1538)");
+		options.ConditionalBaselineSchemaUId.Should().Be(SchemaUId,
+			because: "the recorded identity is what that later decision compares the resolved target against");
 		options.ExpectedSchemaUId.Should().BeNull(because: "the disk identity describes the auto-resolved schema");
 		options.ExpectedSchemaAbsent.Should().BeFalse(because: "a stale on-disk absence marker cannot veto a redirected write");
-		_fileGate.EnteredLockPaths.Should().BeEmpty(because: "an inapplicable baseline must not be read at all");
+		_fileGate.EnteredLockPaths.Should().NotBeEmpty(
+			because: "the baseline is now read under its lock even for a pinned selector save - its checksum still arms nothing, but its schema identity is the only way to tell a same-target save from a genuine redirect afterwards (issue #1538)");
 		warning.Should().NotBeNull();
-		warning.Should().Contain("could not be corroborated locally",
-			because: "the pin governs the save while nothing local backs it, and the caller has to be able to tell that apart from a fully corroborated check");
+		warning.Should().Contain("refreshed afterwards",
+			because: "with a readable baseline the trace must say it is consulted only for the refresh decision, never as a second conflict check (issue #1538)");
 		warning.Should().NotContain("was ignored",
 			because: "the pin is NOT ignored on this path any more - saying so would describe the very fail-open this change removed");
 	}
@@ -416,8 +420,8 @@ public sealed class PageBaselineGuardTests {
 	}
 
 	[Test]
-	[Description("A --target-package-uid redirect keeps a caller-supplied checksum: the resolved target is checked after hierarchy resolution, so an existing same-package target remains protected and a pin from another target fails safe with a checksum conflict.")]
-	public void TryArm_ShouldKeepThePinAndWarn_WhenTheWriteIsRedirectedByTargetPackageUIdOnly() {
+	[Description("A --target-package-uid redirect keeps a caller-supplied checksum: the resolved target is checked after hierarchy resolution, so an existing same-package target remains protected and a pin from another target fails safe with a checksum conflict. With a readable on-disk baseline the guard ALSO carries that baseline's schema identity, so a successful same-target save can refresh it (issue #1538).")]
+	public void TryArm_ShouldKeepThePinAndCarryTheBaselineIdentity_WhenTheWriteIsRedirectedByTargetPackageUIdOnly() {
 		// Arrange
 		AddMetaWithBaseline("dev", "disk-checksum");
 		PageUpdateOptions options = CreateOptions("dev");
@@ -425,16 +429,43 @@ public sealed class PageBaselineGuardTests {
 		options.TargetPackageUId = "11111111-2222-3333-4444-555555555555";
 
 		// Act
-		(_, bool refreshBaseline, string warning) = _guard.TryArm(options, OutputDirectory);
+		(string metaFilePath, bool refreshBaseline, string warning) = _guard.TryArm(options, OutputDirectory);
 
 		// Assert
 		options.ExpectedChecksum.Should().Be("caller-pinned-checksum",
 			because: "the resolved target is the only authoritative comparison surface, so dropping the pin would allow a same-package target to overwrite a concurrent edit");
+		options.ConditionalBaselineSchemaUId.Should().Be(SchemaUId,
+			because: "the command can only decide whether this write landed on the baseline's own page if the guard hands the recorded identity over");
+		options.ConditionalBaselineChecksum.Should().BeNull(
+			because: "a pinned save must not gain a second, disk-derived conflict witness - the pin alone governs the check");
+		metaFilePath.Should().Be(_metaPath,
+			because: "a refresh decided after resolution still needs the file to write, and returning null here is exactly what left the baseline stale");
+		refreshBaseline.Should().BeFalse(
+			because: "the target is resolved after the guard runs, so an unconditional refresh would stamp a redirected schema into the schema-name-keyed baseline");
+		warning.Should().Contain("refreshed afterwards",
+			because: "the trace must say the disk baseline is consulted only for the refresh decision, never as a second guard");
+	}
+
+	[Test]
+	[Description("The pinned redirect must keep saying the pin is uncorroborated when NO on-disk baseline is readable - the non-vacuity twin of the test above, so widening the read does not quietly change the trace for the case it does not cover.")]
+	public void TryArm_ShouldReportThePinUncorroborated_WhenRedirectedAndNoBaselineIsReadable() {
+		// Arrange
+		PageUpdateOptions options = CreateOptions("dev");
+		options.ExpectedChecksum = "caller-pinned-checksum";
+		options.TargetPackageUId = "11111111-2222-3333-4444-555555555555";
+
+		// Act
+		(string metaFilePath, bool refreshBaseline, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		options.ExpectedChecksum.Should().Be("caller-pinned-checksum",
+			because: "an absent baseline changes nothing about the caller's own pin");
+		options.ConditionalBaselineSchemaUId.Should().BeNull(
+			because: "there is no recorded identity to hand over, so no refresh may be decided from one");
+		metaFilePath.Should().BeNull(because: "there is no baseline file to refresh");
 		refreshBaseline.Should().BeFalse(because: "nothing governs a redirected write, so nothing may be moved forward after it");
 		warning.Should().Contain("still compared",
-			because: "the trace must make clear that the explicit pin remains an active guard even though the disk baseline is skipped");
-		warning.Should().Contain("target",
-			because: "the trace must explain that the retained pin is compared with the resolved target");
+			because: "the trace must make clear that the explicit pin remains an active guard even though no disk baseline corroborates it");
 	}
 
 	[Test]

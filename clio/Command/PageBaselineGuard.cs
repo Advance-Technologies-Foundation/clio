@@ -298,27 +298,40 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 		// schema's identity into the schema-name-keyed baseline, refusing the next ordinary save too.
 		options.ExpectedSchemaUId = null;
 		options.ExpectedSchemaAbsent = false;
-		string metaFilePath = null;
-		if (!callerPinnedChecksum) {
-			// Best-effort: a baseline that cannot be located or read simply leaves the pre-existing
-			// behaviour (nothing armed) rather than failing a save.
-			metaFilePath = TryResolveMetaFilePath(options, outputDirectory);
-			PageBaselineInfo baseline = metaFilePath is null
-				? null
-				: PageBaselineStore.TryReadBaseline(_fileSystem, _fileGate, metaFilePath, out string _);
-			if (baseline is not null
-				&& PageBaselineStore.MatchesEnvironment(baseline, options.Environment, options.Uri)
-				&& !string.IsNullOrWhiteSpace(baseline.EditableSchemaUId)) {
-				options.ConditionalBaselineSchemaUId = baseline.EditableSchemaUId;
-				options.ConditionalBaselineChecksum = baseline.Checksum;
-				options.ConditionalBaselineSchemaAbsent = !baseline.EditableSchemaExists;
+		// Read the on-disk baseline for a PINNED save too. Its checksum must not arm anything - the pin is
+		// the stronger, explicitly supplied witness and keeps governing the conflict check - but its schema
+		// identity is what tells the command, after the target is resolved, whether this write landed on
+		// the very page the baseline describes. Without that the baseline was left untouched by a
+		// successful pinned same-target save and the caller's NEXT unpinned save conflicted with its own
+		// previous one (issue #1538).
+		string metaFilePath = TryResolveMetaFilePath(options, outputDirectory);
+		// Best-effort: a baseline that cannot be located or read simply leaves the pre-existing
+		// behaviour (nothing armed) rather than failing a save.
+		PageBaselineInfo baseline = metaFilePath is null
+			? null
+			: PageBaselineStore.TryReadBaseline(_fileSystem, _fileGate, metaFilePath, out string _);
+		bool baselineDescribesAKnownSchema = baseline is not null
+			&& PageBaselineStore.MatchesEnvironment(baseline, options.Environment, options.Uri)
+			&& !string.IsNullOrWhiteSpace(baseline.EditableSchemaUId);
+		if (baselineDescribesAKnownSchema) {
+			options.ConditionalBaselineSchemaUId = baseline.EditableSchemaUId;
+			if (callerPinnedChecksum) {
 				return (metaFilePath, false,
-					$"target-package-uid / target-schema-uid were supplied for '{options.SchemaName}', so "
-					+ "the .clio-pages baseline is applied only if the write resolves to the schema it "
-					+ $"describes ({baseline.EditableSchemaUId}); if it resolves elsewhere, the write "
-					+ "proceeds unchecked, because get-page always reads the automatically resolved schema "
-					+ "and has no redirect of its own.");
+					$"The checksum pinned for '{options.SchemaName}' governs this save; the .clio-pages "
+					+ $"baseline describes schema {baseline.EditableSchemaUId} and is used only to decide "
+					+ "whether it is refreshed afterwards, never to arm a second conflict check. If the "
+					+ "write resolves elsewhere, the baseline is left untouched, because get-page always "
+					+ "reads the automatically resolved schema and has no redirect of its own. "
+					+ PinnedChecksumMergeAdvice);
 			}
+			options.ConditionalBaselineChecksum = baseline.Checksum;
+			options.ConditionalBaselineSchemaAbsent = !baseline.EditableSchemaExists;
+			return (metaFilePath, false,
+				$"target-package-uid / target-schema-uid were supplied for '{options.SchemaName}', so "
+				+ "the .clio-pages baseline is applied only if the write resolves to the schema it "
+				+ $"describes ({baseline.EditableSchemaUId}); if it resolves elsewhere, the write "
+				+ "proceeds unchecked, because get-page always reads the automatically resolved schema "
+				+ "and has no redirect of its own.");
 		}
 		if (callerPinnedChecksum) {
 			// The pin stays and still governs the save: TryCheckForExternalModification gates on
