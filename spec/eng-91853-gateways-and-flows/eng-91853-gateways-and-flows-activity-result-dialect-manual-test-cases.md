@@ -224,6 +224,10 @@ and an empty result selection. A user in the `Sales team` role can approve.
 
 ### `TC-09` Completing the selection in the designer makes the connector valid
 
+> Still the route a HUMAN takes, and still the one to test here. Since `CrtProcessBuilder` 1.6.2.16 it
+> is no longer the only one - `setFlowResults` writes the same selection - but this case exists to prove
+> the connector becomes valid once the results are ticked, which is a designer behaviour either way.
+
 **Preconditions:**
 The state left by TC-01 — formula present, selection empty, connector invalid.
 

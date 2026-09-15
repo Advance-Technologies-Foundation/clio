@@ -1,5 +1,5 @@
 ---
-description: A conditional flow whose source enumerates activity results is edited in the designer as a CHECKBOX SELECTION (GV2) and never as a formula - clio can only write the formula (CI3), which runs but is invisible and marks the connector invalid
+description: A conditional flow whose source enumerates activity results is edited in the designer as a CHECKBOX SELECTION (GV2) and never as a formula - a formula written there (CI3) runs, is invisible, and marks the connector invalid; write the selection with flows[].results or setFlowResults
 applies-to:
   - clio/Command/ProcessModel/ProcessGraphValidator.cs
   - clio/Command/McpServer/Tools/ProcessDesigner/
@@ -52,9 +52,22 @@ all come back clean:
   clio never writes it false. From the first save after that open the designer raises `Required fields
   of some elements are not filled in` naming the connector. A green designer save is therefore not
   evidence a branch is finished.
-- `describe-business-process` reports `kind: "conditional"` with the `condition` text in BOTH states,
-  so the text alone never says which one you are in. `branchesOnActivityResult` is the only
-  discriminator, and `false` there means "the selection is empty", not "a formula belongs here".
+- Do NOT read `condition` to tell the two apart. The slots are disjoint in practice as well as in
+  principle: of the 344 conditional flows in the shipped 7.8.0 corpus that carry no formula, 337 are
+  selection branches, and every conditional flow there carries a formula OR a result set, never both
+  (the census is in `ProcessGraphValidator`). `branchesOnActivityResult` says THAT a selection decides
+  the branch - `false` means "the selection is empty", not "a formula belongs here" - and `results`
+  says WHICH results decide it.
+
+**What closed it** - this record was written while clio could write only the formula, and that half is
+no longer true. `CrtProcessBuilder` 1.6.2.16 writes the selection, and clio reaches it through
+`flows[].results` on the build path and `setFlowResults` on the modify path, with `describe` reading it
+back as `results` + `resultsActivity`. What did NOT change is everything above: the designer still
+picks the editor the same way, a formula there still runs invisibly, and nothing refuses one - the
+responsibility moved to the caller rather than disappearing. Two limits remain: a gateway-sourced
+connector is refused by the package though the designer edits it as a selection, and `Send email` is
+refused deliberately because its server-side schema declares results while its properties page shows a
+formula field.
 
 Measured on `UsrOrder_Handle` (Approval element `Approve order`) on a dev stand, 2026-09-15. The
 shipped guidance was corrected in `clio-knowledge` PR #171; the manual suite is TC-01..TC-12 in the
