@@ -1518,7 +1518,9 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			return contentPayload;
 		}
 
-		throw new InvalidOperationException("Could not parse SchemaSyncResponse MCP result.");
+		throw new InvalidOperationException(
+			"Could not parse SchemaSyncResponse MCP result: "
+			+ McpResultDiagnostics.Describe(callResult));
 	}
 
 	private static bool TryExtractSchemaSyncResponse(object? value, out JsonElement payload) {

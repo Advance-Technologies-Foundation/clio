@@ -13,8 +13,12 @@ public class ClearRedisTool(
 	internal const string ClearRedisByCredentialsToolName = "clear-redis-db-by-credentials";
 	internal const string ClearRedisByEnvironmentName = "clear-redis-db-by-environment";
 	
+	// This tool and ClearRedisByCredentials below do the same thing and differ ONLY in how the target is
+	// identified, so each description must name its own selector: the first sentence is what the
+	// get-tool-contract compact index shows, and two identical one-liners leave an agent unable to pick.
+	// See docs/knowledge/McpServer/first-sentence-of-a-description-becomes-the-compact-index-purpose.md
 	[McpServerTool(Name = ClearRedisByEnvironmentName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
-	 Description("Empties redis database used by creatio instance")]
+	 Description("Empties the redis database used by a creatio instance identified by its REGISTERED ENVIRONMENT NAME. Use clear-redis-db-by-credentials when the instance is not registered and you have its url and login instead.")]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,
@@ -36,7 +40,7 @@ public class ClearRedisTool(
 	}
 
 	[McpServerTool(Name = ClearRedisByCredentialsToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
-	 Description("Empties redis database used by creatio instance")]
+	 Description("Empties the redis database used by a creatio instance identified by RAW CREDENTIALS - url, username and password. Use clear-redis-db-by-environment when the instance is already registered as a clio environment.")]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,

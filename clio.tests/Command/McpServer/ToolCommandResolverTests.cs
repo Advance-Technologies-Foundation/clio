@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO.Abstractions.TestingHelpers;
 using Clio.Command;
 using Clio.Command.McpServer;
@@ -83,7 +83,7 @@ public class ToolCommandResolverTests {
 			null,
 			null,
 			0,
-			[new SettingsIssue("settings-file-unreadable", "appsettings.json is unreadable.")],
+			[new SettingsIssue(SettingsBootstrapService.SettingsFileUnreadableCode, "appsettings.json is unreadable.")],
 			[],
 			true,
 			false));
@@ -123,7 +123,7 @@ public class ToolCommandResolverTests {
 			null,
 			null,
 			0,
-			[new SettingsIssue("settings-file-unreadable", "appsettings.json is unreadable.")],
+			[new SettingsIssue(SettingsBootstrapService.SettingsFileUnreadableCode, "appsettings.json is unreadable.")],
 			[],
 			true,
 			false));
@@ -588,5 +588,133 @@ public class ToolCommandResolverTests {
 			because: "the access token must never leak into error text (FR-11)");
 		exception.Message.Should().Contain("Bearer",
 			because: "the error must name the real constraint (only Bearer is supported)");
+	}
+
+	[Test]
+	[Description("ResolvePair takes both services out of ONE environment snapshot: an environment repointed between the two would-be resolutions cannot pair one environment's client with another environment's URL builder.")]
+	[Category("Unit")]
+	public void ResolvePair_Should_Resolve_Both_Services_From_One_Environment_Snapshot() {
+		// Arrange - FindEnvironment answers a DIFFERENT uri on each call, which is what a repointed
+		// environment looks like to the resolver: ResolveSettingsAndKey re-reads the settings on every
+		// resolution, by design (ENG-94529).
+		System.IO.Abstractions.IFileSystem originalFileSystem = SettingsRepository.FileSystem;
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		SettingsRepository.FileSystem = fileSystem;
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		ISettingsBootstrapService settingsBootstrapService = Substitute.For<ISettingsBootstrapService>();
+		settingsBootstrapService.GetReport().Returns(new SettingsBootstrapReport(
+			"healthy", SettingsRepository.AppSettingsFile, "dev", "dev", 1, [], [], true, true));
+		settingsRepository.IsEnvironmentExists("dev").Returns(true);
+		settingsRepository.FindEnvironment("dev").Returns(
+			new EnvironmentSettings { Uri = "http://first.creatio", Login = "Supervisor", Password = "Supervisor" },
+			new EnvironmentSettings { Uri = "http://repointed.creatio", Login = "Supervisor", Password = "Supervisor" });
+		ToolCommandResolver resolver = CreateResolver(settingsRepository, settingsBootstrapService);
+		EnvironmentOptions options = new() { Environment = "dev" };
+
+		try {
+			// Act
+			(IApplicationClient _, IServiceUrlBuilder pairedUrlBuilder) =
+				resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(options);
+			// The control: two separate resolutions on the SAME repointed repository, which is what the
+			// keyed writes used to do. Without it, a single Received(1) would also hold for a resolver that
+			// simply never re-reads the settings, and the assertion would prove nothing about pairing.
+			IServiceUrlBuilder separatelyResolved = resolver.Resolve<IServiceUrlBuilder>(options);
+
+			// Assert
+			// ONE read belongs to the pair and ONE to the separate control resolution. Three reads would
+			// mean the pair itself straddled two snapshots, which is the defect under test.
+			settingsRepository.Received(2).FindEnvironment("dev");
+			pairedUrlBuilder.Build("odata/Contact").Should().StartWith("http://first.creatio",
+				because: "both services of the pair must come from the snapshot the single settings read selected");
+			separatelyResolved.Build("odata/Contact").Should().StartWith("http://repointed.creatio",
+				because: "a second, independent resolution re-reads the settings and lands on the repointed environment - the divergence ResolvePair exists to remove");
+		}
+		finally {
+			SettingsRepository.FileSystem = originalFileSystem;
+		}
+	}
+
+	[Test]
+	[Description("Tells the caller to restart the MCP session - not to repair the file - when the bootstrap failed on a shape mismatch, because the settings file is valid.")]
+	[Category("Unit")]
+	public void Resolve_Should_Say_Restart_The_Session_When_Bootstrap_Reports_A_Shape_Mismatch() {
+		// Arrange
+		System.IO.Abstractions.IFileSystem originalFileSystem = SettingsRepository.FileSystem;
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		SettingsRepository.FileSystem = fileSystem;
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		ISettingsBootstrapService settingsBootstrapService = Substitute.For<ISettingsBootstrapService>();
+		settingsBootstrapService.GetReport().Returns(new SettingsBootstrapReport(
+			"broken",
+			SettingsRepository.AppSettingsFile,
+			null,
+			null,
+			0,
+			[new SettingsIssue(SettingsBootstrapService.SettingsShapeMismatchCode,
+				"appsettings.json is valid JSON, but this clio version (0.0.0.0) cannot bind the "
+				+ "following member(s): autoupdate.clio.enabled. A newer clio has written the file. Do "
+				+ "NOT edit it - restart the resident process (the MCP session) so it runs the new clio "
+				+ "build, or update this one with 'clio update-cli' when there is no session to restart.")],
+			[],
+			true,
+			false));
+		ToolCommandResolver resolver = CreateResolver(settingsRepository, settingsBootstrapService);
+		EnvironmentOptions options = new() { Environment = "dev" };
+
+		try {
+			// Act
+			Action act = () => resolver.Resolve<CreateEntitySchemaCommand>(options);
+
+			// Assert
+			EnvironmentResolutionException exception = act.Should().Throw<EnvironmentResolutionException>(
+					because: "an unusable bootstrap is still a caller-actionable resolution failure")
+				.Which;
+			exception.Message.Should().Contain("restart the resident process",
+				because: "restarting the resident process is the only thing that fixes a version skew");
+			exception.Message.Should().NotContain("clio settings bootstrap is broken",
+				because: "the file is valid, so the broken-bootstrap sentence would be false");
+			exception.Message.Should().NotContain($"Repair {SettingsRepository.AppSettingsFile}",
+				because: "sending the user to repair a file that is valid JSON is the misleading advice issue #1462 reported");
+		}
+		finally {
+			SettingsRepository.FileSystem = originalFileSystem;
+		}
+	}
+
+	[Test]
+	[Description("Keeps the repair-the-file wording for a genuinely unreadable settings file.")]
+	[Category("Unit")]
+	public void Resolve_Should_Keep_Repair_Wording_When_Settings_File_Is_Unreadable() {
+		// Arrange
+		System.IO.Abstractions.IFileSystem originalFileSystem = SettingsRepository.FileSystem;
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		SettingsRepository.FileSystem = fileSystem;
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		ISettingsBootstrapService settingsBootstrapService = Substitute.For<ISettingsBootstrapService>();
+		settingsBootstrapService.GetReport().Returns(new SettingsBootstrapReport(
+			"broken",
+			SettingsRepository.AppSettingsFile,
+			null,
+			null,
+			0,
+			[new SettingsIssue(SettingsBootstrapService.SettingsFileUnreadableCode, "appsettings.json is unreadable.")],
+			[],
+			true,
+			false));
+		ToolCommandResolver resolver = CreateResolver(settingsRepository, settingsBootstrapService);
+		EnvironmentOptions options = new() { Environment = "dev" };
+
+		try {
+			// Act
+			Action act = () => resolver.Resolve<CreateEntitySchemaCommand>(options);
+
+			// Assert
+			act.Should().Throw<EnvironmentResolutionException>()
+				.Which.Message.Should().Contain($"Repair {SettingsRepository.AppSettingsFile}",
+					because: "a damaged file is exactly the case where repairing that file IS the fix");
+		}
+		finally {
+			SettingsRepository.FileSystem = originalFileSystem;
+		}
 	}
 }
