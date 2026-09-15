@@ -16,7 +16,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("database template pruning")]
-public sealed class DbTemplatePruneToolE2ETests {
+public sealed class DbTemplatePruneToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[Description("Discovers both template-pruning tools and returns a structured configuration failure for an unknown server.")]
 	[AllureTag(DbTemplatePruneTool.ListDbTemplatesToolName)]
@@ -27,8 +27,7 @@ public sealed class DbTemplatePruneToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		using CancellationTokenSource cancellation = new(TimeSpan.FromMinutes(2));
-		await using McpServerSession session = await AllureApi.Step("Arrange MCP server session", async () =>
-			await McpServerSession.StartAsync(settings, cancellation.Token));
+		McpServerSession session = Session;
 
 		// Act
 		IReadOnlyCollection<string> names = await AllureApi.Step("Act by discovering reachable tools", async () =>
@@ -62,8 +61,7 @@ public sealed class DbTemplatePruneToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		using CancellationTokenSource cancellation = new(TimeSpan.FromMinutes(2));
-		await using McpServerSession session = await AllureApi.Step("Arrange MCP server session", async () =>
-			await McpServerSession.StartAsync(settings, cancellation.Token));
+		McpServerSession session = Session;
 
 		// Act
 		CallToolResult result = await AllureApi.Step("Act by calling destructive tool through raw name", async () =>
@@ -92,8 +90,7 @@ public sealed class DbTemplatePruneToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		using CancellationTokenSource cancellation = new(TimeSpan.FromMinutes(2));
-		await using McpServerSession session = await AllureApi.Step("Arrange MCP server session", async () =>
-			await McpServerSession.StartAsync(settings, cancellation.Token));
+		McpServerSession session = Session;
 
 		// Act
 		CallToolResult result = await AllureApi.Step("Act by calling approved executor with empty selection", async () =>
@@ -119,7 +116,7 @@ public sealed class DbTemplatePruneToolE2ETests {
 [NonParallelizable]
 [AllureNUnit]
 [AllureFeature("database template pruning")]
-public sealed class DbTemplatePruneSandboxE2ETests {
+public sealed class DbTemplatePruneSandboxE2ETests : McpContractFixtureBase {
 	[Test]
 	[Description("Inventories and deletes an explicitly named managed template through the approved MCP path on an opt-in PostgreSQL sandbox.")]
 	[AllureTag(DbTemplatePruneTool.PruneDbTemplatesToolName)]
@@ -146,7 +143,7 @@ public sealed class DbTemplatePruneSandboxE2ETests {
 				await CreateManagedTemplateAsync(builder.ConnectionString, gatedName);
 			});
 			using CancellationTokenSource cancellation = new(TimeSpan.FromMinutes(3));
-			await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellation.Token);
+			McpServerSession session = Session;
 			DbTemplateInventoryResult inventory = await AllureApi.Step("Act by inventorying sandbox templates", async () => {
 				CallToolResult result = await session.CallToolAsync(DbTemplatePruneTool.ListDbTemplatesToolName,
 					new Dictionary<string, object?> {

@@ -28,6 +28,23 @@ namespace Clio.Tests.Command;
 [Property("Module", "Command")]
 public sealed class ApplyEnvironmentManifestCommandTests {
 
+	/// <summary>
+	/// Builds the command and its classifier over ONE logger. Two substitutes would make any future
+	/// assertion on a log line pass vacuously - the line would be written to the instance the test never
+	/// looks at.
+	/// </summary>
+	/// <param name="manager">The sys-settings manager the command reads and writes through.</param>
+	/// <param name="fileSystem">The file system, or <see langword="null"/> for an inert substitute.</param>
+	/// <param name="logger">The shared sink, or <see langword="null"/> for an inert substitute.</param>
+	/// <returns>A command whose classifier writes to the same logger it does.</returns>
+	private static SysSettingsCommand BuildCommand(ISysSettingsManager manager, IFileSystem fileSystem = null,
+		ILogger logger = null) {
+		ILogger sink = logger ?? Substitute.For<ILogger>();
+		return new SysSettingsCommand(manager, sink, fileSystem ?? Substitute.For<IFileSystem>(),
+			new OperationCorrelationIdProvider(),
+			new SysSettingFailureClassifier(sink, new OperationCorrelationIdProvider()));
+	}
+
 	private const string ManifestPath = "manifest.yaml";
 
 	private IEnvironmentManager _environmentManager;
@@ -80,7 +97,7 @@ public sealed class ApplyEnvironmentManifestCommandTests {
 			Substitute.For<FeatureCommand>(
 				Substitute.For<IApplicationClient>(), environmentSettings, provider,
 				Substitute.For<IServiceUrlBuilder>(), Substitute.For<IFeatureStateService>()),
-			new SysSettingsCommand(_sysSettingsManager, _logger, Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider()),
+			BuildCommand(_sysSettingsManager, null, _logger),
 			_setWebServiceUrlCommand,
 			provider,
 			environmentSettings) {

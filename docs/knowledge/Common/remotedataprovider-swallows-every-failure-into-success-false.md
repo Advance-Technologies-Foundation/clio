@@ -7,8 +7,9 @@ applies-to:
   - clio/Common/ISysSettingsManager.cs
   - clio/BindingsModule.cs
   - clio/Command/SysSettingsCommand.cs
+  - clio/Command/SysSettingFailureClassifier.cs
   - clio/Package/PackageBuilder.cs
-ticket: "#1371"
+ticket: "#1371, #1377"
 date: 2026-09-03
 ---
 
@@ -21,6 +22,9 @@ date: 2026-09-03
   .Models<T>()` resolves through `LoadDataCollection`, which is literally
   `(items != null && items.Success) ? items.Items : new List<Dictionary<string, object>>()`.
 - `GetDefaultValues` is a stub that returns a hardcoded `Success = true` and never contacts the server.
+- The catch is **not uniform**: `GetItems` and `ExecuteProcess` catch `Exception`, but `BatchExecute`
+  catches only `WebException` — anything else thrown there ESCAPES as an exception instead of becoming
+  `Success = false`.
 - `GetSysSettingValue<T>` and `GetFeatureEnabled` return a plain value with **no** `Success` flag, and
   they do **not** catch: a failure reaches the caller as the raw `JsonReaderException` /
   `WebException`.
@@ -34,6 +38,29 @@ date: 2026-09-03
 `BindingsModule` — the active-environment `IDataProvider` registration and the per-environment
 `Func<EnvironmentSettings, ISysSettingsManager>` factory — and is the single barrier that turns those
 two failure shapes into an `AuthenticationException` or an `InvalidOperationException`.
+
+**A `Success == false` that says "canceled" is a TIMEOUT, never a caller cancellation** — verified with
+`ilspycmd` against `creatio.client` 2.0.2 (issue #1377):
+
+- `ATF.Repository.Providers.RemoteDataProvider` → `CreatioClientAdapter.ExecutePostRequest(url, data,
+  timeout)` → the **synchronous** `Creatio.Client.CreatioClient.ExecutePostRequest`, which hardcodes
+  `CancellationToken.None` when calling `ExecutePostRequestAsync`. `IDataProvider` takes no
+  `CancellationToken` either, so a caller-owned token has **no channel** into the transport. The only
+  cancellation source in the whole stack is `CreatioClient.CreateTimeout(timeout, token)`, which does
+  `CancellationTokenSource.CreateLinkedTokenSource(None)` + `CancelAfter(timeout)`.
+- Three caps are in play: **100 000 ms** on the authentication step (`EnsureAuthenticatedAsync`),
+  **1 800 000 ms** on a select (`GetItems`, `ExecuteProcess`), **600 000 ms** on a batch
+  (`BatchExecute`, `GetSysSettingValue<T>`, `GetFeatureEnabled`).
+- The authentication cap is converted by `ExecuteLegacyWebRequest`, which catches
+  `OperationCanceledException` and rethrows `new WebException(msg, ex, WebExceptionStatus.Timeout,
+  null)`. The request cap reaches clio through `ReadResponseBody`'s `Task.Result`, i.e. as
+  `AggregateException(TaskCanceledException)`. **Neither is an `OperationCanceledException`**, so
+  `ClassifyingDataProvider.Guard`'s `catch (OperationCanceledException) { throw; }` is unreachable in
+  production — it is a decorator-contract guard, kept for a future consumer that owns a token.
+- Reproduced live (2026-09-11) against a local listener that accepts the connection and never answers:
+  after exactly 100 s `clio save-state` printed
+  `Failed reading records from entity schema 'VwWebServiceV2': The operation was canceled.The operation
+  was canceled.` — a `Success == false` carrying cancellation prose with no token anywhere.
 
 **Why it is this way** — the provider is a third-party assembly and its swallow-and-report contract
 cannot be changed from clio. An earlier attempt (PR #1233) put a second DataService probe request in
@@ -56,7 +83,7 @@ block and a gateway error page all produce the byte-identical Newtonsoft message
 
 A corollary for anything running the provider on a background thread: a **thrown** transport fault is
 rethrown UNCHANGED (wrapping it erased the type and made the `"Network error …"` arms of
-`SysSettingsCommand.CategorizeError` and `SchemaNamePrefixTool` unreachable), and only the
+`SysSettingFailureClassifier.CategorizeError` and `SchemaNamePrefixTool` unreachable), and only the
 `Success == false` response — which has no original exception — is wrapped.
 
 Three consequences worth knowing before writing code against this:
@@ -73,9 +100,27 @@ Three consequences worth knowing before writing code against this:
   `new Thread(...)` from `PackageBuilder.CompileWithPolling`, and an unhandled exception on a dedicated
   thread terminates the whole clio process — so before the tolerance was added, one timed-out OData read
   would have killed clio mid-compile and skipped every cleanup step. `Poll` now retries and gives up
-  only after a run of consecutive failures; `PackageBuilder` additionally captures the fault inside the
-  thread lambda and observes it on the main thread. Any new background consumer of `IDataProvider` needs
-  the same two guards.
+  only once rounds have been failing for longer than `CompilationPollingOptions.GiveUpWindow` (90 s,
+  issue #1376 — a duration, not a round count, because the 1/2/5 s backoff makes a count meaningless);
+  `PackageBuilder` additionally captures the fault inside the thread lambda and observes it on the main
+  thread. Any new background consumer of `IDataProvider` needs the same two guards.
+
+- **The WRITE path is not this provider, and since issue #1378 it no longer degrades to it.**
+  `SysSettingsManager`'s `InsertSysSettingRequest` / `PostSysSettingsValues` calls go through
+  `IApplicationClient` and therefore still HOLD the response body. `ThrowIfSessionRejected` already
+  turned a proven login page into an authentication verdict there; every OTHER non-JSON answer — a
+  proxy, a WAF, a 404 page — is now diagnosed by the manager itself as `NonJsonWriteResponseException`
+  rather than escaping as a parser fault. So the write path's verdict is at least as informed as the
+  read path's `NonJsonPage`, never worse.
+
+**What breaks if you ignore the timeout fact** — re-raising that text as an `OperationCanceledException`
+(the change issue #1377 originally proposed) would hide **every** timeout: the operator would be told a
+shutdown happened where a 30-minute select actually expired, and `CompilationHistoryPoller.TryPollOnce`,
+whose filter is `when (exception is not OperationCanceledException || ct.IsCancellationRequested)`, would stop counting the round at
+all — so a stand that answers nothing would be polled forever instead of the poller giving up on its
+failure budget. The characterization tests in
+`clio.tests/Common/ClassifyingDataProviderTests.cs` (`*KeepASwallowedTimeout*`) exist to stop exactly
+that change.
 
 **What breaks if you ignore it** — a command that reads through `IDataProvider` on a bypassed or raw
 provider reports **success with an empty result** on expired or rejected credentials: `get-syssetting`

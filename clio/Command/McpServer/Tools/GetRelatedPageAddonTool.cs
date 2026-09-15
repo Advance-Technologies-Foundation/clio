@@ -25,7 +25,7 @@ public sealed class GetRelatedPageAddonTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Read an object's current RelatedPage configuration: which Freedom UI pages are bound as the default and the add page, per audience (role) and per record type. " +
+	[Description("Read an object's current RelatedPage configuration: which Freedom UI pages are bound as the default and the add page, per audience (role) and per record type.  Returns entitySchemaUId as the base/root entity identity resolved by Creatio, shared across replacing layers." +
 		"Returns each entry's page-schema-uid + resolved page-schema-name, the role uid + resolved role-name (for the standard 'All employees' / 'All external users' audiences), the is-default / is-add / is-ssp-default flags, and any type-column-value, plus the top-level type-column-uid. " +
 		"Read-only — makes no changes. Use this BEFORE create-related-page-addon for a safe read-modify-write: create REPLACES the whole configuration, so read the current pages first, modify, then send the full set back (otherwise the omitted entries are lost). " +
 		"Prefer environment-name; keep direct connection args for emergency fallback only.")]

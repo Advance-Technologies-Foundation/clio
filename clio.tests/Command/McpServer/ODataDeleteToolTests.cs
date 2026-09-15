@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
@@ -37,6 +37,8 @@ public sealed class ODataDeleteToolTests {
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
 		ODataDeleteTool tool = new(resolver);
 
@@ -59,6 +61,8 @@ public sealed class ODataDeleteToolTests {
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		ODataDeleteTool tool = new(resolver);
 
 		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
@@ -114,6 +118,8 @@ public sealed class ODataDeleteToolTests {
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
 		client.ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("<html><head><title>401 - Unauthorized: Access is denied due to invalid credentials.</title></head></html>");
@@ -127,6 +133,9 @@ public sealed class ODataDeleteToolTests {
 		// Assert
 		response.Success.Should().BeFalse(because: "an HTML error page proves the request never reached Creatio's OData pipeline");
 		response.Error.Should().Contain("was not JSON", because: "the diagnostic must point at the transport layer, not the request's OData/ESQ shape");
+		response.Error.Should().Contain("HTTP 401 error page",
+			because: "the write transport neither throws nor exposes a status, so naming the status the page states "
+				+ "is the only way the caller learns this was an auth hop rather than a routing miss");
 	}
 
 	[Test]
@@ -139,6 +148,8 @@ public sealed class ODataDeleteToolTests {
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
 		client.ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(string.Empty);
@@ -163,6 +174,8 @@ public sealed class ODataDeleteToolTests {
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
 		client.ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"error\":{\"code\":\"\",\"message\":\"The DELETE request violates a foreign key constraint\"}}");

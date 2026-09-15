@@ -8,6 +8,7 @@ using System.Text.Json.Serialization;
 using Clio.Command;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Common;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
@@ -352,6 +353,11 @@ public sealed class ToolContractGetToolTests {
 			because: "the curated contract must advertise every argument the real stdio binder accepts and no stale arguments");
 		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain("total-count",
 			because: "a requested total must be discoverable separately from page count");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain("status-code",
+			because: "odata-read is long-tail, so this curated entry is the whole description a caller gets - a "
+				+ "response member the caller cannot learn about from tools/list has to be pinned here");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain("entity",
+			because: "the failure echoes the entity set back and a contract-following caller must be able to expect it");
 		contract.Aliases.Should().Contain(alias => alias.Alias == "filter" && alias.Status == "rejected",
 			because: "the removed raw filter must be explicitly rejected in the discoverable contract");
 	}
@@ -3737,7 +3743,7 @@ public sealed class ToolContractGetToolTests {
 			because: "#1222 requires a correlation ID so the caller can point an operator at the log line");
 		// PR #1373 review (Blocker) - the field-name assertions above could not catch the drift that shipped: the
 		// error-category DESCRIPTION enumerated the branch values and had already lost `Configuration`, the value
-		// CategorizeFailure returns for every EnvironmentResolutionException. Reflected over the constants so the
+		// ISysSettingFailureClassifier.Categorize returns for every EnvironmentResolutionException. Reflected over the constants so the
 		// next category cannot reopen it.
 		string errorCategoryDescription = contract.OutputContract.Fields
 			.Single(field => field.Name == "error-category").Description;
@@ -3752,7 +3758,7 @@ public sealed class ToolContractGetToolTests {
 				because: $"an agent branching on error-category meets '{category}' at runtime, and an undeclared value sends it down its generic path - the looping behaviour issue #1329 exists to remove");
 		}
 		// PR #1373 review - the cause field must NOT advertise a trust label the classifier does not keep:
-		// CategorizeFailure's ProviderFailure arm sets Cause from the provider's message, which is built from the
+		// ISysSettingFailureClassifier.Categorize's ProviderFailure arm sets Cause from the provider's message, which is built from the
 		// environment's HTTP response.
 		string causeDescription = contract.OutputContract.Fields
 			.Single(field => field.Name == "cause").Description;
@@ -3805,5 +3811,163 @@ public sealed class ToolContractGetToolTests {
 			.OutputContract.Fields.Single(field => field.Name == "warnings");
 		warningsField.Description.Should().Contain("never retry on a warning",
 			because: "these findings are advisory and the save already succeeded; an agent that reads a warning as a failure will re-save and can trip conflict detection");
+	}
+
+	// Synthetic input, deliberately NOT a production description. Driving these cases through a real
+	// tool's [Description] would pin the rules to prose that a reword silently removes: only `e.g.`
+	// occurs in any description today, so `i.e.` and `vs.` would have no coverage at all, and — measured
+	// — both production tools whose purpose the abbreviation fix repaired end at the 120-char truncation
+	// rather than at a sentence, so an assertion over them cannot tell "the scan resumed correctly" from
+	// "the scan abandoned the description and the cap cut it".
+	[Test]
+	[Category("Unit")]
+	[TestCase("Reads a value (e.g. A). Then stops.", "Reads a value (e.g. A).", TestName = "Purpose_ResumesAfter_EG")]
+	[TestCase("Reads a value (i.e. A). Then stops.", "Reads a value (i.e. A).", TestName = "Purpose_ResumesAfter_IE")]
+	[TestCase("Compares A vs. B. Then stops.", "Compares A vs. B.", TestName = "Purpose_ResumesAfter_VS")]
+	[TestCase("Reads a value (E.G. A). Then stops.", "Reads a value (E.G. A).", TestName = "Purpose_AbbreviationIsCaseInsensitive")]
+	[TestCase("Look at code.g. Then stops.", "Look at code.g.", TestName = "Purpose_WholeTokenGuard_NotAnAbbreviation")]
+	[TestCase("e.g. this opens with one. Then stops.", "e.g. this opens with one.", TestName = "Purpose_AbbreviationAtStartOfText")]
+	[TestCase("Ends with e.g.", "Ends with e.g.", TestName = "Purpose_AbbreviationAtEndOfText")]
+	[TestCase("Lists a, b, etc. Then stops.", "Lists a, b, etc.", TestName = "Purpose_EtcIsDeliberatelyNotSentenceSafe")]
+	[TestCase("Plain sentence. Second one.", "Plain sentence.", TestName = "Purpose_OrdinarySentenceBreakStillWins")]
+	[Description("The compact-index purpose ends at the first REAL sentence break: an abbreviation that is never sentence-final is skipped and the scan resumes, a whole-token lookalike is not, and the ambiguous 'etc.' deliberately still terminates.")]
+	public void BuildPurpose_ShouldEndAtTheFirstRealSentenceBreak_WhenDescriptionContainsAbbreviations(
+		string description, string expectedPurpose) {
+		// Arrange
+		// (synthetic description supplied by the test case)
+
+		// Act
+		string purpose = ToolContractCatalog.BuildPurpose(description);
+
+		// Assert
+		purpose.Should().Be(expectedPurpose,
+			because: "skipping an abbreviation must RESUME the scan, not abandon it - abandoning silently degrades every purpose to a 120-character truncation of the whole description, which reads as the same truncated thought the skip exists to prevent");
+	}
+
+	[Test]
+	[Category("Unit")]
+	// validate-process-graph is deliberately NOT in this list any more. ENG-96389 round 2 rewrote its
+	// first sentence into a self-contained purpose that fits the cap, which is the better repair: the
+	// abbreviation skip kept the example but only relocated the truncation to mid-identifier. Its
+	// one-liner is pinned exactly in the repaired-purpose table below instead. get-user-culture still
+	// leads with an example, so it remains the real-corpus guard for the skip itself.
+	[TestCase(GetUserCultureTool.ToolName, TestName = "AbbreviationSurvivesInPurpose_GetUserCulture")]
+	[Description("The production description whose compact-index purpose was cut at 'e.g.' now carries the example through, guarding the real corpus rather than a synthetic string.")]
+	public void GetToolContracts_ShouldCarryTheExampleIntoPurpose_WhenDescriptionUsesAnAbbreviation(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		string description = tool.GetToolContracts(new ToolContractGetArgs([toolName]))
+			.Tools!.Single().Description;
+
+		// Act
+		string purpose = ToolContractCatalog.BuildPurpose(description);
+		ToolContractIndexEntry entry = tool.GetToolContracts().Index!.Single(item => item.Name == toolName);
+
+		// Assert
+		// The falsifying assertion, and it must be the one under Assert: `purpose` is what the splitter
+		// produced, so a description reworded to move `e.g.` past the first sentence fails HERE. The
+		// index check below cannot carry that weight - once a purpose reaches the 120-character cap,
+		// NotEndWith holds for any text whatsoever (measured: both tools truncate), so on its own it is
+		// a vacuous pass dressed as a guard.
+		purpose.Should().Contain("e.g. ",
+			because: $"'{toolName}' must still carry its example through the first sentence the splitter reads; a reword that moves the abbreviation out of that sentence must fail here rather than silently disarm this test");
+		entry.Purpose.TrimEnd('…').TrimEnd().Should().NotEndWith("e.g.",
+			because: $"'{toolName}' index purpose '{entry.Purpose}' must not stop AT the marker it introduces - note this holds trivially for a purpose that reaches the cap, so it is a companion to the assertion above, never a substitute");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase(CreateBusinessProcessTool.CreateBusinessProcessToolName, TestName = "AccessRightsConsentSurvives_CreateBusinessProcess")]
+	[TestCase(ModifyBusinessProcessTool.ModifyBusinessProcessToolName, TestName = "AccessRightsConsentSurvives_ModifyBusinessProcess")]
+	[Description("The accessRights destructive-consent warning is still present in the served contract after ENG-96389 moved it out of first position, so a later trim cannot drop it unnoticed.")]
+	public void GetToolContracts_ShouldStillCarryTheAccessRightsConsentWarning_WhenContractIsResolved(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		string description = tool.GetToolContracts(new ToolContractGetArgs([toolName]))
+			.Tools!.Single().Description;
+
+		// Assert
+		// ENG-96389 demoted this warning from first position so the compact index could advertise what
+		// the tool DOES. Demoting it made it droppable: the purpose pins check only the FIRST sentence,
+		// so a later "trim this 30 000-character description" edit that keeps the opening line and loses
+		// the buried warning would pass every other guard here. The element changes who can read, edit
+		// or delete LIVE records and has no output parameters to report what it did, so the consent gate
+		// is the only thing standing between an agent and a silent permission change.
+		description.Should().Contain("BEFORE CALLING with an accessRights block",
+			because: $"'{toolName}' must keep its destructive-consent warning wherever it sits in the description; moving it off the first sentence must not make it deletable without a test noticing");
+		description.Should().Contain("get an explicit yes",
+			because: "the warning is only a gate if it still demands confirmation - keeping the heading while losing the instruction would satisfy a substring check and change nothing for the agent");
+	}
+
+	// NOTE: the "an ordinary sentence break still wins" claim is proven by the synthetic
+	// Purpose_OrdinarySentenceBreakStillWins case above, not by a production description. An earlier
+	// revision pinned page-validate's index line for this - but page-validate is CURATED, so that pin
+	// asserted ToolContractCatalog's handwritten string and said nothing about the attribute path this
+	// rule governs, while a copy-edit to unrelated curated wording would have failed a test whose name
+	// is about abbreviations and sent the next author to the wrong file.
+
+	// Pins the repaired one-liner for every tool ENG-96389 changed, mirroring the stop-creatio convention
+	// earlier in this fixture. The uniqueness guard below is NOT a substitute: reverting a single
+	// description restores the old warning-first purpose, which is still byte-distinct from every other
+	// one, so uniqueness stays green while the defect returns on exactly the tool it was found on.
+	//
+	// compile-creatio is in this table for the OPPOSITE reason. It is the one tool of the six that HAS a
+	// curated ToolContractCatalog entry, so its index line comes from the curated string and its
+	// [Description] attribute is never consulted - see
+	// docs/knowledge/McpServer/curated-tool-contract-wins-over-the-description-attribute.md. The expected
+	// value below is that CURATED sentence, which already reads as a purpose. Editing the attribute could
+	// not have moved it, and ENG-96389 initially did exactly that; pinning it here makes the inertness
+	// executable instead of something the next author has to rediscover.
+	[Test]
+	[Category("Unit")]
+	[TestCase(CreateBusinessProcessTool.CreateBusinessProcessToolName,
+		"Build a business process on a Creatio environment from a declarative JSON descriptor.",
+		TestName = "PurposePinned_CreateBusinessProcess")]
+	[TestCase(ModifyBusinessProcessTool.ModifyBusinessProcessToolName,
+		"Edit an EXISTING business process on a Creatio environment by applying an ordered JSON array of operations.",
+		TestName = "PurposePinned_ModifyBusinessProcess")]
+	[TestCase(ClearRedisTool.ClearRedisByEnvironmentName,
+		"Empties the redis database used by a creatio instance identified by its REGISTERED ENVIRONMENT NAME.",
+		TestName = "PurposePinned_ClearRedisByEnvironment")]
+	[TestCase(ClearRedisTool.ClearRedisByCredentialsToolName,
+		"Empties the redis database used by a creatio instance identified by RAW CREDENTIALS - url, username and password.",
+		TestName = "PurposePinned_ClearRedisByCredentials")]
+	[TestCase(CompileCreatioTool.CompileCreatioToolName,
+		"Recompiles a registered Creatio environment and forces a runtime reload.",
+		TestName = "PurposePinned_CompileCreatio_ComesFromTheCuratedContract")]
+	[TestCase(ValidateProcessGraphTool.ToolName,
+		"Checks a planned Creatio business-process graph against the BPMN connection rules before you build it.",
+		TestName = "PurposePinned_ValidateProcessGraph")]
+	[Description("Each tool whose compact-index one-liner ENG-96389 examined advertises that exact purpose, so reverting a single description fails here instead of hiding behind the uniqueness guard.")]
+	public void GetToolContracts_ShouldAdvertiseTheRepairedPurpose_WhenCompactIndexIsBuilt(
+		string toolName, string expectedPurpose) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractIndexEntry entry = tool.GetToolContracts().Index!.Single(item => item.Name == toolName);
+
+		// Assert
+		entry.Purpose.Should().Be(expectedPurpose,
+			because: $"'{toolName}' must lead with what it DOES on the only discovery surface a non-resident tool has; a warning-first or shared one-liner is the defect ENG-96389 removed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("No two tools share a compact-index purpose, so every tool is distinguishable on the only discovery surface a non-resident tool has.")]
+	public void GetToolContracts_ShouldGiveEveryToolADistinctPurpose_WhenCompactIndexIsBuilt() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractIndexEntry[] entries = tool.GetToolContracts().Index!.ToArray();
+
+		// Assert
+		entries.Should().NotBeEmpty(
+			because: "the compact index enumerates every tool this guard has to cover");
+		entries.Select(entry => entry.Purpose).Should().OnlyHaveUniqueItems(
+			because: "two tools sharing a byte-identical one-liner are indistinguishable in the index - which is what happened when create-business-process and modify-business-process both opened with the same accessRights warning, so a description must lead with what its tool DOES");
 	}
 }

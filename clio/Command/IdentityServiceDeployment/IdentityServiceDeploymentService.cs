@@ -371,7 +371,7 @@ public sealed class IdentityServiceDeploymentService : IIdentityServiceDeploymen
 		IIdentityServiceRoleGrantService roleGrantService,
 		IIdentityServiceSystemUserResolver systemUserResolver,
 		IDeploymentTargetReservation deploymentTargetReservation,
-		ILogger logger) {
+		ILogger logger, IIdentityServiceLifecycle identityLifecycle) {
 		_settingsRepository = settingsRepository ?? throw new ArgumentNullException(nameof(settingsRepository));
 		_archiveResolver = archiveResolver ?? throw new ArgumentNullException(nameof(archiveResolver));
 		_creatioClient = creatioClient ?? throw new ArgumentNullException(nameof(creatioClient));
@@ -386,7 +386,10 @@ public sealed class IdentityServiceDeploymentService : IIdentityServiceDeploymen
 		_deploymentTargetReservation = deploymentTargetReservation
 			?? throw new ArgumentNullException(nameof(deploymentTargetReservation));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
+		_identityLifecycle = identityLifecycle ?? throw new ArgumentNullException(nameof(identityLifecycle));
 	}
+
+	private readonly IIdentityServiceLifecycle _identityLifecycle;
 
 	/// <inheritdoc />
 	public IdentityServiceDeploymentResult Deploy(DeployIdentityOptions options) {
@@ -396,7 +399,8 @@ public sealed class IdentityServiceDeploymentService : IIdentityServiceDeploymen
 		string environmentName = _settingsRepository.GetActualEnvironmentName(options.Environment)
 			?? options.Environment
 			?? _settingsRepository.GetDefaultEnvironmentName();
-		EnvironmentSettings environment = _settingsRepository.FindEnvironment(environmentName)
+		using IDisposable environmentReservation = _deploymentTargetReservation.AcquireEnvironment(environmentName);
+		EnvironmentSettings environment = _settingsRepository.FindCurrentEnvironment(environmentName)
 			?? throw new InvalidOperationException($"Environment '{environmentName}' is not registered.");
 		string siteName = string.IsNullOrWhiteSpace(options.IdentitySiteName)
 			? $"{environmentName}-identity"
@@ -404,13 +408,19 @@ public sealed class IdentityServiceDeploymentService : IIdentityServiceDeploymen
 		ValidateSiteName(siteName);
 		string identityPath = ResolveIdentityPath(options, environment, siteName);
 		ValidateIdentityPath(identityPath);
-		int identitySitePort = ResolveIdentitySitePort(options);
+		int identitySitePort = !options.IdentitySitePort.HasValue && options.Overwrite
+			&& Uri.TryCreate(environment.IdentityService.Uri, UriKind.Absolute, out Uri recordedUri)
+			? recordedUri.Port : ResolveIdentitySitePort(options);
 		string identityUrl = $"http://localhost:{identitySitePort}";
 		string identityArchivePathInBundle = NormalizeIdentityArchivePathInBundle(options.IdentityArchivePathInBundle);
 
 		string zipFile = ResolveZipFile(options, environment, identityArchivePathInBundle);
 		string standaloneArchive = _archiveResolver.Resolve(zipFile, identityArchivePathInBundle);
 		using IDisposable targetReservation = _deploymentTargetReservation.Acquire(identityPath);
+		_identityLifecycle.RecordDeployment(environmentName, new IdentityServiceAttachment {
+			EnvironmentPath = Path.GetFullPath(identityPath), IisTarget = siteName,
+			ApplicationPool = siteName, Uri = identityUrl
+		}, options.Overwrite);
 		ExtractIdentityService(standaloneArchive, identityPath, options.Overwrite, environment);
 		GenerateCertificateIfScriptExists(identityPath);
 		CreateIisSite(identityPath, siteName, identitySitePort);
@@ -809,6 +819,12 @@ public sealed class IdentityServiceDeploymentService : IIdentityServiceDeploymen
 		if (normalizedMode is not "db-first" and not "rest") {
 			throw new NotSupportedException($"Unsupported configuration mode '{mode}'.");
 		}
+		//FAIL-CLOSED on the first unusable answer, by design (issue #1378). These three writes are
+		//sequential and each throws on a rejected session or on an answer that is not the expected
+		//DataService response, so the first such failure aborts the remaining two and the throw carries the
+		//diagnosis. That is deliberate: a half-configured OAuth client - a URL written but no client id or
+		//secret - is worse than none, and the `false` aggregation below covers only the case the
+		//environment actually REFUSED a value, where all three attempts are still worth making.
 		bool urlUpdated = _sysSettingsManager.UpdateSysSetting("OAuth20IdentityServerUrl", identityUrl, "Text");
 		bool clientUpdated = _sysSettingsManager.UpdateSysSetting("OAuth20IdentityServerClientId", DesignerClientId, "Text");
 		bool secretUpdated = _sysSettingsManager.UpdateSysSetting(

@@ -1,6 +1,8 @@
 ﻿using System;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Clio.Common;
 
@@ -41,7 +43,10 @@ internal enum CreatioResponseContext {
 
 }
 
-internal static class CreatioResponseError {
+internal static partial class CreatioResponseError {
+
+	/// <summary>Match timeout for the error-page title pattern, in milliseconds.</summary>
+	private const int RegexTimeoutMilliseconds = 1_000;
 
 	/// <summary>
 	/// The JSON property name carrying the human-readable error text across every envelope shape this
@@ -83,27 +88,89 @@ internal static class CreatioResponseError {
 	/// <summary>
 	/// Builds the failure text for a write response body that failed to parse as JSON.
 	/// </summary>
-	internal static string DescribeNonJsonResponse(string body) =>
-		$"Creatio did not return a JSON response. {NonJsonResponseHint} Response: {Truncate(body)}";
+	/// <remarks>
+	/// The HTTP status is named when the body is an error page that carries one in its title, because
+	/// the transport (<see cref="IApplicationClient"/>) never exposes the status itself and a caller
+	/// otherwise cannot tell a 404 (the entity has no OData controller) from a 405 or a 503. The
+	/// truncated body stays: unlike the read path, a write failure has an unverified side effect and
+	/// the raw tail is what lets a human confirm which hop answered.
+	/// </remarks>
+	internal static string DescribeNonJsonResponse(string body) {
+		string status = TryGetMarkupErrorStatusCode(body, out int statusCode)
+			? $" The server answered with an {MarkupStatusPhrase(statusCode)}."
+			: string.Empty;
+		return $"Creatio did not return a JSON response.{status} {NonJsonResponseHint} Response: {Truncate(body)}";
+	}
 
 	/// <summary>
-	/// Attempts to classify the IIS HTML 404 returned when an entity set has no OData controller.
+	/// The one noun phrase every caller uses to name an error page by the status its title states, so
+	/// the wording has a single source. It is vocabulary, not a diagnosis: what each caller says AROUND
+	/// it stays that caller's own text.
 	/// </summary>
-	/// <param name="body">The raw response body returned by the OData request.</param>
-	/// <param name="entityName">The requested OData entity set name.</param>
-	/// <param name="message">The actionable failure message when the body is an IIS 404.</param>
-	/// <returns><see langword="true"/> when the response is an IIS-style 404 page.</returns>
-	internal static bool TryDescribeMissingEntitySet(string body, string entityName, out string message) {
-		message = string.Empty;
-		if (!LooksLikeIisNotFoundPage(body)) {
+	/// <param name="statusCode">The status read out of the page title.</param>
+	internal static string MarkupStatusPhrase(int statusCode) => $"HTTP {statusCode} error page";
+
+	/// <summary>
+	/// Classifies a response body as an IIS/proxy-style HTML error page and, when its title states
+	/// one, reads the HTTP status out of it.
+	/// </summary>
+	/// <param name="body">The raw response body returned by the request.</param>
+	/// <param name="statusCode">
+	/// The HTTP status read out of the page title when the page carries one; otherwise
+	/// <see langword="null"/>.
+	/// </param>
+	/// <returns><see langword="true"/> when the response is an IIS-style HTML error page.</returns>
+	/// <remarks>
+	/// Only the classification and the three digits leave this class - never a fragment of the page,
+	/// because the caller's text lands in an MCP transcript that a model reads as trusted content. The
+	/// wording is composed by each caller on purpose: the read path, the pre-write probe and the write
+	/// path have to say different things about the same page, and the entity name such a message needs
+	/// is a caller concern that has no business in <c>Clio.Common</c>. The status is recovered from the
+	/// page rather than from the transport because <see cref="IApplicationClient"/> exposes only the
+	/// response body, never the HTTP status.
+	/// </remarks>
+	internal static bool TryClassifyMarkupError(string body, out int? statusCode) {
+		statusCode = null;
+		if (!IsMarkup(body)) {
 			return false;
 		}
-
-		message = $"OData entity set '{entityName}' could not be reached and may not be exposed over OData. "
-			+ "Use execute-esq to read schemas that do not have an OData entity set. "
-			+ "The server returned an IIS 404 page instead of an OData response.";
+		statusCode = TryGetMarkupErrorStatusCode(body, out int parsedStatusCode) ? parsedStatusCode : null;
 		return true;
 	}
+
+	/// <summary>
+	/// Reads the HTTP status out of an IIS-style error page title such as
+	/// <c>&lt;title&gt;404 - File or directory not found.&lt;/title&gt;</c>.
+	/// </summary>
+	/// <param name="body">The raw response body.</param>
+	/// <param name="statusCode">The parsed three-digit status when the title carries one.</param>
+	/// <returns><see langword="true"/> when a status could be read.</returns>
+	internal static bool TryGetMarkupErrorStatusCode(string body, out int statusCode) {
+		statusCode = 0;
+		if (string.IsNullOrEmpty(body)) {
+			return false;
+		}
+		Match titleMatch = MarkupErrorTitleStatusPattern().Match(body);
+		return titleMatch.Success
+			&& int.TryParse(titleMatch.Groups["status"].Value, NumberStyles.None, CultureInfo.InvariantCulture,
+				out statusCode);
+	}
+
+	/// <summary>
+	/// Matches the HTTP status an error page states at the start of its title, in the four shapes the
+	/// deployments in front of Creatio actually produce: the IIS short form
+	/// (<c>&lt;title&gt;404 - File or directory not found.&lt;/title&gt;</c>), the IIS detailed form
+	/// (<c>&lt;title&gt;HTTP Error 500.0 - Internal Server Error&lt;/title&gt;</c>), the nginx/Apache
+	/// form with no separator at all (<c>&lt;title&gt;502 Bad Gateway&lt;/title&gt;</c>), and a title
+	/// tag carrying attributes (<c>&lt;title lang="en"&gt;404 - ...</c>).
+	/// Only 4xx and 5xx are accepted: a page whose title starts with 200 or 302 is not stating the
+	/// status of a failure, and stamping it onto a failed read would make the member untrustworthy.
+	/// The bounded quantifiers keep a crafted body from turning this into a backtracking cost.
+	/// </summary>
+	[GeneratedRegex(
+		@"<title[^>]{0,64}>\s{0,8}(?:HTTP\s{1,4}Error\s{1,4})?(?<status>[45]\d{2})(?:\.\d{1,2})?(?=[\s\-–:<])",
+		RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
+	private static partial Regex MarkupErrorTitleStatusPattern();
 
 	/// <summary>
 	/// The fixed, locally authored diagnostic for a read whose body IS JSON and reports an error.
@@ -135,28 +202,20 @@ internal static class CreatioResponseError {
 	/// The extracted text is deliberately not an output. Callers that put their result into an MCP
 	/// transcript must use <see cref="DescribeServerReportedReadError"/> instead of
 	/// <see cref="TryDetect"/>, whose message carries server-controlled prose.
+	/// The routing miss is reported by the detector itself, not found by searching the formatted message
+	/// for the hint: the hint's wording would otherwise be part of this contract, and building
+	/// the message at all made a read materialize prose it discards - an OData v4 error body with no
+	/// string <c>message</c> member copied the entire <c>error</c> subtree out with
+	/// <c>GetRawText()</c> first.
 	/// </remarks>
 	internal static bool TryClassify(JsonElement root, CreatioResponseContext context,
-			out bool isUnregisteredEntity) {
-		isUnregisteredEntity = false;
-		if (!TryDetect(root, context, out string detected)) {
-			return false;
-		}
-		isUnregisteredEntity = detected.Contains(UnregisteredEntityHint, StringComparison.Ordinal);
-		return true;
-	}
+			out bool isUnregisteredEntity) =>
+		TryDetectCore(root, context, buildMessage: false, out string _, out isUnregisteredEntity);
 
 	internal static string DescribeNonJsonReadResponse() =>
 		"Creatio did not return a JSON OData response. This points to an IIS, proxy, routing, or session "
 		+ "problem rather than an OData query-shape problem; verify the environment and retry only after the "
 		+ "endpoint is returning JSON.";
-
-	private static bool LooksLikeIisNotFoundPage(string body) {
-		string trimmedBody = body.TrimStart();
-		return trimmedBody.StartsWith("<", StringComparison.Ordinal)
-		&& body.Contains("404", StringComparison.OrdinalIgnoreCase)
-		&& body.Contains("not found", StringComparison.OrdinalIgnoreCase);
-	}
 
 	/// <summary>Truncates a raw response body to a safe preview length for error messages.</summary>
 	internal static string Truncate(string value) {
@@ -178,8 +237,22 @@ internal static class CreatioResponseError {
 	/// routing error the unregistered-entity hint is appended); otherwise an empty string.
 	/// </param>
 	/// <returns><see langword="true"/> when <paramref name="root"/> is a recognized error body.</returns>
-	public static bool TryDetect(JsonElement root, CreatioResponseContext context, out string message) {
+	public static bool TryDetect(JsonElement root, CreatioResponseContext context, out string message) =>
+		TryDetectCore(root, context, buildMessage: true, out message, out bool _);
+
+	/// <summary>
+	/// The single detection pass behind <see cref="TryDetect"/> and <see cref="TryClassify"/>. It always
+	/// reports whether the matched shape is the unregistered-entity routing miss;
+	/// <paramref name="buildMessage"/> decides whether the caller-facing text is composed as well.
+	/// </summary>
+	/// <remarks>
+	/// The detection decisions themselves are identical either way - only the message formatting is
+	/// skipped - so a classification never depends on the prose it does not build.
+	/// </remarks>
+	private static bool TryDetectCore(JsonElement root, CreatioResponseContext context, bool buildMessage,
+			out string message, out bool isUnregisteredEntity) {
 		message = string.Empty;
+		isUnregisteredEntity = false;
 		if (root.ValueKind != JsonValueKind.Object) {
 			return false;
 		}
@@ -194,12 +267,18 @@ internal static class CreatioResponseError {
 		//invites a duplicate retry. Explicit error envelopes are unaffected: the DataService and OData
 		//v4 error shapes are checked before this and still win.
 		bool hasProvenODataIdentity = !isService && HasODataContextAnnotation(root);
-		return TryDetectDataServiceEnvelope(root, out message)
-			|| (isService && TryDetectBaseResponse(root, out message))
-			|| TryDetectODataV4Error(root, out message)
-			|| (!hasProvenODataIdentity
-				&& (TryDetectAspNetException(root, out message)
-					|| TryDetectRoutingError(root, context, out message)));
+		if (TryDetectDataServiceEnvelope(root, buildMessage, out message)
+			|| (isService && TryDetectBaseResponse(root, buildMessage, out message))
+			|| TryDetectODataV4Error(root, buildMessage, out message)) {
+			return true;
+		}
+		if (hasProvenODataIdentity) {
+			return false;
+		}
+		//Only the routing branch can be the unregistered-entity miss, so it is the only one that reports
+		//it. Every other recognized shape leaves the flag false.
+		return TryDetectAspNetException(root, buildMessage, out message)
+			|| TryDetectRoutingError(root, context, buildMessage, out message, out isUnregisteredEntity);
 	}
 
 	/// <summary>
@@ -288,7 +367,7 @@ internal static class CreatioResponseError {
 	// rejects a login as {"Code":1,...} the same way - which is why it needs detecting at all.
 	// Requiring BOTH a non-zero Code and a non-empty Exception/Message keeps a payload that merely
 	// happens to carry a `Code` column from being read as a failure.
-	private static bool TryDetectDataServiceEnvelope(JsonElement root, out string message) {
+	private static bool TryDetectDataServiceEnvelope(JsonElement root, bool buildMessage, out string message) {
 		message = string.Empty;
 		if (HasODataControlAnnotation(root)) {
 			return false;
@@ -303,7 +382,7 @@ internal static class CreatioResponseError {
 		if (string.IsNullOrWhiteSpace(detail)) {
 			return false;
 		}
-		message = $"Creatio returned error code {codeValue}: {detail}";
+		message = buildMessage ? $"Creatio returned error code {codeValue}: {detail}" : string.Empty;
 		return true;
 	}
 
@@ -313,7 +392,7 @@ internal static class CreatioResponseError {
 	// failure, wrote it to --destination and exited 0 - the same false success this contract removes
 	// for the other envelopes. Only an explicit boolean false counts, so a payload carrying
 	// success=true, or a `success` string column, is left alone.
-	private static bool TryDetectBaseResponse(JsonElement root, out string message) {
+	private static bool TryDetectBaseResponse(JsonElement root, bool buildMessage, out string message) {
 		message = string.Empty;
 		//No OData-payload guard here, unlike the loose Code/Message detector: ValueResponse<T> and the
 		//insert-derived BaseResponse DTOs keep `value` or `id` on a failure, so guarding on those
@@ -341,6 +420,9 @@ internal static class CreatioResponseError {
 		//success:true, are both left alone.
 		if (!explicitFailure && !(hasPopulatedErrorInfo && !explicitSuccess)) {
 			return false;
+		}
+		if (!buildMessage) {
+			return true;
 		}
 		detail ??= First(root, "errorMessage", "ErrorMessage", "message", MessagePropertyName);
 		message = string.IsNullOrWhiteSpace(detail)
@@ -382,10 +464,16 @@ internal static class CreatioResponseError {
 	}
 
 	// OData v4 error envelope: { "error": { "message": ... } }.
-	private static bool TryDetectODataV4Error(JsonElement root, out string message) {
+	private static bool TryDetectODataV4Error(JsonElement root, bool buildMessage, out string message) {
 		message = string.Empty;
 		if (!(root.TryGetProperty("error", out JsonElement error) && error.ValueKind == JsonValueKind.Object)) {
 			return false;
+		}
+		//GetRawText() copies the WHOLE error subtree into a new string, and a read classifies the body
+		//without ever using the text - an 8,388,631-character subtree cost an extra 16,777,264 bytes for
+		//prose that was discarded. Detection needs the `error` object, not its content.
+		if (!buildMessage) {
+			return true;
 		}
 		message = error.TryGetProperty("message", out JsonElement m) && m.ValueKind == JsonValueKind.String
 			? m.GetString()
@@ -403,7 +491,7 @@ internal static class CreatioResponseError {
 		&& context.ValueKind == JsonValueKind.String
 		&& !string.IsNullOrWhiteSpace(context.GetString());
 
-	private static bool TryDetectAspNetException(JsonElement root, out string message) {
+	private static bool TryDetectAspNetException(JsonElement root, bool buildMessage, out string message) {
 		message = string.Empty;
 		bool isAspNetError = root.TryGetProperty("ExceptionType", out _)
 			|| root.TryGetProperty("ExceptionMessage", out _)
@@ -419,7 +507,9 @@ internal static class CreatioResponseError {
 		// would have prevented - a probed record whose own columns are named ExceptionMessage /
 		// ExceptionType / StackTrace - is already handled upstream by
 		// ODataFieldValidation.IsSelectedRecord, which returns before TryDetect is ever reached.
-		message = First(root, "ExceptionMessage", MessagePropertyName) ?? "Creatio returned a server error.";
+		message = buildMessage
+			? First(root, "ExceptionMessage", MessagePropertyName) ?? "Creatio returned a server error."
+			: string.Empty;
 		return true;
 	}
 
@@ -438,8 +528,9 @@ internal static class CreatioResponseError {
 	// metadata=none by-key read is ever added, revisit this branch. The ASP.NET-exception branch
 	// deliberately carries NO such guard - see the note in TryDetectAspNetException.
 	private static bool TryDetectRoutingError(JsonElement root, CreatioResponseContext context,
-		out string message) {
+		bool buildMessage, out string message, out bool isUnregisteredEntity) {
 		message = string.Empty;
+		isUnregisteredEntity = false;
 		if (!(root.TryGetProperty(MessagePropertyName, out JsonElement bareMessage)
 			&& bareMessage.ValueKind == JsonValueKind.String
 			&& !HasNonRoutingErrorMembers(root))) {
@@ -459,7 +550,7 @@ internal static class CreatioResponseError {
 		string? detail = First(root, "MessageDetail");
 		string primary = !string.IsNullOrEmpty(detail) ? detail : bareMessage.GetString() ?? string.Empty;
 		if (string.IsNullOrEmpty(primary)) {
-			message = "Creatio returned an empty error response.";
+			message = buildMessage ? "Creatio returned an empty error response." : string.Empty;
 			return true;
 		}
 		// The unregistered-entity hint (wait-and-retry, not compile/restart) is tied to a CONTENT
@@ -467,9 +558,10 @@ internal static class CreatioResponseError {
 		// bodies can share that shape, and telling the agent to wait for an async rebuild on an
 		// unrelated, non-transient failure would delay correct diagnosis. Append it only for the
 		// genuine routing miss; otherwise surface the message alone (still success=false).
-		message = IsRoutingMiss(detail) || IsRoutingMiss(bareMessage.GetString())
-			? $"{primary} {UnregisteredEntityHint}"
-			: primary;
+		isUnregisteredEntity = IsRoutingMiss(detail) || IsRoutingMiss(bareMessage.GetString());
+		if (buildMessage) {
+			message = isUnregisteredEntity ? $"{primary} {UnregisteredEntityHint}" : primary;
+		}
 		return true;
 	}
 

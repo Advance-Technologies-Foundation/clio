@@ -1628,22 +1628,12 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		}
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
-		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
-			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
-			return configuredEnvironmentName;
-		}
-
-		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
-			return fallbackEnvironmentName;
-		}
-
-		Assert.Ignore(
-			$"update-page MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
-		return string.Empty;
-	}
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		// Destructive fixture: configured-only. The AllowDestructiveMcpTests opt-in authorizes writes to
+		// the disposable stand named in settings, never to a fallback environment that merely answers.
+		await ReachableSandboxEnvironment.ResolveConfiguredOrIgnoreAsync(
+			settings,
+			$"update-page MCP E2E requires the configured sandbox environment '{settings.Sandbox.EnvironmentName}' to be set and reachable.");
 
 	[Test]
 	[Description("Rejects a mobile JSON body that contains a 'validators' section without making any remote call.")]
@@ -1805,19 +1795,6 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			because: "a valid mobile body should produce a structured result even when dry-run fails because the schema doesn't exist");
 		response.Error.Should().NotContain("SCHEMA_",
 			because: "AMD marker errors must not appear when the body is a mobile JSON object");
-	}
-
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		using CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
-		try {
-			ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-				settings,
-				["ping-app", "-e", environmentName],
-				cancellationToken: cts.Token);
-			return result.ExitCode == 0;
-		} catch (OperationCanceledException) {
-			return false;
-		}
 	}
 
 	private sealed class DesignerPresenceListener : IAsyncDisposable {

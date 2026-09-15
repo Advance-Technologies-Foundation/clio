@@ -71,8 +71,11 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 		IServiceUrlBuilder urlBuilder;
 		try {
 			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
-			client = commandResolver.Resolve<IApplicationClient>(options);
-			urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
+			// ONE resolution for both, for the reason ODataKeyedWrite.ResolveTarget states: every
+			// resolution re-reads the settings, so an environment repointed between two of them would pair
+			// this client's authenticated session with the other environment's url - and odata-create uses
+			// the pair for a metadata read AND the POSTs that follow it.
+			(client, urlBuilder) = commandResolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(options);
 		} catch (Exception ex) {
 			return ODataCreateBatchResponse.RequestError(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
@@ -122,7 +125,10 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 					Error = zoneLessDateTime
 				};
 			}
-			string responseJson = client.ExecutePostRequest(url, row.GetRawText(), 30_000);
+			// Declared a write: automatic re-authentication must never re-issue this POST, or a
+			// false-positive expired-session classification of the OData echo creates the record
+			// twice (GitHub #1313).
+			string responseJson = client.ExecuteNonReplayablePostRequest(url, row.GetRawText(), 30_000);
 			return ParseCreated(responseJson, index);
 		} catch (Exception ex) {
 			// The request may have reached Creatio and been applied before the failure surfaced here, so the

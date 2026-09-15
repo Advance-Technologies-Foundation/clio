@@ -290,6 +290,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["delete-schema"] = PassthroughClassification.NotApplicable,
 			["delete-theme"] = PassthroughClassification.NotApplicable,
 			["deploy-identity"] = PassthroughClassification.NotApplicable,
+			["uninstall-identity"] = PassthroughClassification.NotApplicable, // BaseTool with per-environment command resolver.
 			["describe-business-process"] = PassthroughClassification.NotApplicable,
 			["describe-environment"] = PassthroughClassification.NotApplicable,
 			["download-configuration-by-build"] = PassthroughClassification.NotApplicable,

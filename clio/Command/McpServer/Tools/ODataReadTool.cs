@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
@@ -78,7 +79,8 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 		[Required]
 		ODataReadArgs args) {
 		try {
-			string? argumentError = ValidateArguments(args);
+			string? argumentError = ValidateAndNormalizeArguments(args, out string[]? selectColumns,
+				out string[]? expandColumns);
 			if (argumentError is not null) {
 				return ODataReadResponse.Failure(argumentError);
 			}
@@ -92,25 +94,43 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 				// An out-of-range top must NOT silently fall through to the default (which would
 				// return a page when the caller asked for 0, or be misread as "all" on negatives).
 				return ODataReadResponse.Failure(
-					$"top must be between {MinTop} and {MaxTop} (got {requestedTop}). Omit top to use the default of {DefaultTop}.");
+					$"top must be between {MinTop} and {MaxTop} (got {requestedTop}). Omit top to use the default of {DefaultTop}.",
+					entity: args.Entity.Trim());
 			}
 
 			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
 			IApplicationClient client = commandResolver.Resolve<IApplicationClient>(options);
 			IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
 
-			string queryString = BuildQueryString(args);
+			string queryString = BuildQueryString(args, selectColumns, expandColumns);
 			string path = $"odata/{args.Entity.Trim()}{queryString}";
 			string url = urlBuilder.Build(path);
 
 			string responseJson = client.ExecuteGetRequest(url, 30_000);
 			return ParseODataResponse(responseJson, args.Entity.Trim(), args.Count);
 		} catch (Exception ex) {
-			return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
+			return ODataReadResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message),
+				entity: string.IsNullOrWhiteSpace(args.Entity) ? null : args.Entity.Trim());
 		}
 	}
 
-	private static string? ValidateArguments(ODataReadArgs args) {
+	/// <summary>
+	/// Validates the supplied arguments and hands back the normalized column lists.
+	/// </summary>
+	/// <remarks>
+	/// The normalized lists are OUT parameters rather than members written back onto
+	/// <see cref="ODataReadArgs"/>: the args record is the caller's request, and a validator that
+	/// mutates it makes the bound request and the request that was executed two different things -
+	/// with no way for a test, a log or a second validation pass to tell which one it is looking at.
+	/// </remarks>
+	/// <param name="args">The bound tool arguments.</param>
+	/// <param name="selectColumns">The normalized $select list, or null when select was omitted.</param>
+	/// <param name="expandColumns">The normalized $expand list, or null when expand was omitted.</param>
+	/// <returns>The contract message when an argument is not accepted; otherwise null.</returns>
+	private static string? ValidateAndNormalizeArguments(ODataReadArgs args, out string[]? selectColumns,
+			out string[]? expandColumns) {
+		selectColumns = null;
+		expandColumns = null;
 		if (args.ExtensionData?.ContainsKey("filter") == true) {
 			return "Argument 'filter' is unsupported because raw filter strings are not accepted. " +
 				"Use a structured filter, for example: " +
@@ -126,6 +146,12 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 		}
 		if (args.Skip is < 0) {
 			return $"skip must be zero or greater (got {args.Skip}).";
+		}
+		if (!TryNormalizeColumnList(args.Select, "select", out selectColumns, out string? selectError)) {
+			return selectError;
+		}
+		if (!TryNormalizeColumnList(args.Expand, "expand", out expandColumns, out string? expandError)) {
+			return expandError;
 		}
 		if (args.FiltersProvided && args.Filters is null) {
 			return "filters must be a structured object containing at least one condition in all or any; null is not supported.";
@@ -157,6 +183,73 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 		}
 		return null;
 	}
+
+	/// <summary>
+	/// Accepts a column list in either shape the caller may reasonably send: a JSON array of strings,
+	/// or the comma-separated form OData itself uses in <c>$select</c>/<c>$expand</c>. Blank entries are
+	/// dropped so a trailing comma is not turned into an empty column.
+	/// </summary>
+	/// <remarks>
+	/// The argument is bound as a <see cref="JsonElement"/> rather than a <c>string[]</c> on purpose.
+	/// A typed array made the serializer reject the string form before the tool ever ran, so the caller
+	/// got "The JSON value could not be converted to System.String[]" - a serializer message about a
+	/// .NET type, not a statement about this tool's contract. Binding loosely and validating here is
+	/// what lets the contract message be written locally. Doing the split in a custom converter would
+	/// reintroduce the same defect, because a converter can only reject by throwing a JsonException.
+	/// </remarks>
+	/// <param name="value">The raw JSON value supplied for the argument, if any.</param>
+	/// <param name="argumentName">The argument name used in the contract message.</param>
+	/// <param name="columns">The normalized column list, or null when the argument was omitted or empty.</param>
+	/// <param name="error">The contract message when the shape is not accepted.</param>
+	/// <returns><see langword="false"/> when the supplied shape is not accepted.</returns>
+	internal static bool TryNormalizeColumnList(JsonElement? value, string argumentName,
+			out string[]? columns, out string? error) {
+		columns = null;
+		error = null;
+		if (value is not { } element || element.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null) {
+			return true;
+		}
+		List<string> parsed = [];
+		switch (element.ValueKind) {
+			case JsonValueKind.String:
+				string? raw = element.GetString();
+				if (!string.IsNullOrWhiteSpace(raw)) {
+					parsed.AddRange(raw.Split(',',
+						StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+				}
+				break;
+			case JsonValueKind.Array:
+				//An array element is taken as ONE column name, never split. The caller who writes
+				//["Id,Name"] has already chosen the array shape, so a comma inside an element is part of
+				//the name they asked for; splitting it would silently rewrite the request instead of
+				//letting the server reject the name the caller actually wrote.
+				foreach (JsonElement item in element.EnumerateArray()) {
+					if (item.ValueKind != JsonValueKind.String) {
+						error = ColumnListContractError(argumentName);
+						return false;
+					}
+					string? name = item.GetString();
+					if (!string.IsNullOrWhiteSpace(name)) {
+						parsed.Add(name.Trim());
+					}
+				}
+				break;
+			default:
+				error = ColumnListContractError(argumentName);
+				return false;
+		}
+		columns = parsed.Count > 0 ? parsed.ToArray() : null;
+		return true;
+	}
+
+	/// <summary>
+	/// The contract message for a select/expand value that is neither an array of names nor a
+	/// comma-separated string. Exposed to the tests so the wording is asserted from its single source
+	/// instead of being retyped and drifting on the next rewording.
+	/// </summary>
+	internal static string ColumnListContractError(string argumentName) =>
+		$"{argumentName} must be an array of column names or a comma-separated string, "
+		+ $"for example [\"Id\",\"Name\"] or \"Id,Name\".";
 
 	private static void AddConditions(
 		ICollection<(string Path, ODataFilterCondition? Condition)> destination,
@@ -271,7 +364,8 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 		return parts.Count > 0 ? string.Join(" and ", parts) : null;
 	}
 
-	private static string BuildQueryString(ODataReadArgs args) {
+	private static string BuildQueryString(ODataReadArgs args, string[]? selectColumns,
+			string[]? expandColumns) {
 		var parts = new List<string>();
 
 		string? effectiveFilter = args.Filters is not null ? BuildFilterFromStructured(args.Filters) : null;
@@ -279,12 +373,12 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			parts.Add($"$filter={Uri.EscapeDataString(effectiveFilter)}");
 		}
 
-		if (args.Select is { Length: > 0 }) {
-			parts.Add($"$select={Uri.EscapeDataString(string.Join(",", args.Select))}");
+		if (selectColumns is { Length: > 0 }) {
+			parts.Add($"$select={Uri.EscapeDataString(string.Join(",", selectColumns))}");
 		}
 
-		if (args.Expand is { Length: > 0 }) {
-			parts.Add($"$expand={Uri.EscapeDataString(string.Join(",", args.Expand))}");
+		if (expandColumns is { Length: > 0 }) {
+			parts.Add($"$expand={Uri.EscapeDataString(string.Join(",", expandColumns))}");
 		}
 
 		if (!string.IsNullOrWhiteSpace(args.OrderBy)) {
@@ -307,16 +401,53 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 		return $"?{string.Join("&", parts)}";
 	}
 
+	/// <summary>
+	/// The read path's wording for an HTML error page, composed from the two facts the classifier
+	/// returns: whether the body is such a page, and the HTTP status its title states.
+	/// </summary>
+	/// <remarks>
+	/// The text is built here rather than in <see cref="CreatioResponseError"/> because it is this
+	/// tool's contract - it names the entity the caller asked for and steers to execute-esq - while the
+	/// pre-write probe has to say something different about the very same page.
+	/// </remarks>
+	internal static string DescribeMarkupError(string entityName, int? statusCode) {
+		string entity = string.IsNullOrWhiteSpace(entityName) ? "<unnamed>" : entityName;
+		return statusCode switch {
+			(int)HttpStatusCode.NotFound =>
+				$"Entity '{entity}' is not exposed over OData on this environment (HTTP "
+				+ $"{(int)HttpStatusCode.NotFound}). {CreatioResponseError.UnregisteredEntityHint} Use "
+				+ "execute-esq to read schemas that never get an OData entity set.",
+			{ } knownStatus =>
+				$"The OData request for entity '{entity}' was answered with an "
+				+ $"{CreatioResponseError.MarkupStatusPhrase(knownStatus)} instead of an OData response. Verify the "
+				+ "environment URL, the authentication and any proxy.",
+			//No status in the title means no diagnosis beyond "this was not an OData response". Creatio's
+			//own outage page (<title>Request Error</title>) and an SSO/proxy login page both land here,
+			//and neither says anything about whether the entity has an OData controller - claiming it
+			//"may not be exposed" and steering the caller onto execute-esq would be a guess that costs
+			//them the actual cause (an outage, an expired session).
+			_ => CreatioResponseError.DescribeNonJsonReadResponse()
+		};
+	}
+
 	private static ODataReadResponse ParseODataResponse(string json, string entityName, bool countRequested) {
+		//Every failure from here on refers to a specific entity set, and a caller correlating several
+		//reads needs to know which one - so entity is stamped once, at the single exit point, instead of
+		//being remembered at each of the seven of them.
+		ODataReadResponse Fail(string message) => ODataReadResponse.Failure(message, entity: entityName);
 		// ExecuteGetRequest may return null (the interface permits it; reauth and proxy failures do produce
 		// it). The absence of a body has to be classified HERE: the IIS-404 probe below dereferences the
 		// string, so a null would raise an NRE that escapes the body-suppression invariant and reaches
 		// Read()'s outer catch as an opaque message. An empty body already resolved to this same failure.
 		if (string.IsNullOrWhiteSpace(json)) {
-			return ODataReadResponse.Failure(CreatioResponseError.DescribeNonJsonReadResponse());
+			return Fail(CreatioResponseError.DescribeNonJsonReadResponse());
 		}
-		if (CreatioResponseError.TryDescribeMissingEntitySet(json, entityName, out string missingEntitySetError)) {
-			return ODataReadResponse.Failure(missingEntitySetError);
+		if (CreatioResponseError.TryClassifyMarkupError(json, out int? markupStatusCode)) {
+			//The status travels as its own member, not only inside the prose: the documented async-gap
+			//retry after create-entity-schema/create-lookup has to key off "404" programmatically, and a
+			//caller cannot reliably do that by matching on a message it does not own.
+			return ODataReadResponse.Failure(DescribeMarkupError(entityName, markupStatusCode), markupStatusCode,
+				entityName);
 		}
 
 		try {
@@ -335,8 +466,10 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			//line breaks survive it, and this transcript is read as trusted content by a model.
 			if (!hasMatchingIdentity && CreatioResponseError.TryClassify(root,
 					CreatioResponseContext.ODataPayload, out bool isUnregisteredEntity)) {
-				return ODataReadResponse.Failure(
-					CreatioResponseError.DescribeServerReportedReadError(isUnregisteredEntity));
+				//entity travels even though status-code cannot: Creatio serves the JSON routing 404 with
+				//HTTP 200, so there is no status to report, but the failure still refers to a specific
+				//entity set and a caller correlating several reads needs to know which one.
+				return Fail(CreatioResponseError.DescribeServerReportedReadError(isUnregisteredEntity));
 			}
 
 			//A collection response carries `value` as an ARRAY. Accepting any `value` meant a proxy or
@@ -345,8 +478,8 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			if (root.TryGetProperty("value", out JsonElement valueEl)) {
 				return valueEl.ValueKind == JsonValueKind.Array
 					&& IsCollectionResponse(root, entityName)
-					? ParseCollectionResponse(root, valueEl, countRequested)
-					: ODataReadResponse.Failure(CreatioResponseError.DescribeNonJsonReadResponse());
+					? ParseCollectionResponse(root, valueEl, entityName, countRequested)
+					: Fail(CreatioResponseError.DescribeNonJsonReadResponse());
 			}
 
 			//Single-entity response (no value wrapper). Only OData identifies itself as one: the
@@ -354,7 +487,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			//was a successful record - {"detail":"private response marker"} included.
 			return IsSingleEntityResponse(root, entityName)
 				? new ODataReadResponse(true, null, 1, root.Clone(), null)
-				: ODataReadResponse.Failure(CreatioResponseError.DescribeNonJsonReadResponse());
+				: Fail(CreatioResponseError.DescribeNonJsonReadResponse());
 		} catch (Exception) {
 			// EVERY parse failure gets the same fixed diagnostic, carrying no fragment of the body. Testing
 			// the first character was not enough: a malformed body that still starts with '{' or '[' — a
@@ -362,7 +495,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			// proxy content into the MCP transcript. The redactor strips known secret shapes, not tenant
 			// data it has never seen, so the body cannot be quoted at all. The exception message is
 			// dropped with it: a parse position is of no use to a caller who cannot see the body anyway.
-			return ODataReadResponse.Failure(CreatioResponseError.DescribeNonJsonReadResponse());
+			return Fail(CreatioResponseError.DescribeNonJsonReadResponse());
 		}
 	}
 
@@ -497,6 +630,7 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 	private static ODataReadResponse ParseCollectionResponse(
 		JsonElement root,
 		JsonElement valueElement,
+		string entityName,
 		bool countRequested) {
 		int count = valueElement.ValueKind == JsonValueKind.Array ? valueElement.GetArrayLength() : 1;
 		long? totalCount = root.TryGetProperty("@odata.count", out JsonElement totalCountElement)
@@ -505,7 +639,8 @@ public sealed class ODataReadTool(IToolCommandResolver commandResolver) {
 			: null;
 		if (countRequested && !totalCount.HasValue) {
 			return ODataReadResponse.Failure(
-				"Creatio did not return @odata.count for count=true; total count cannot be verified.");
+				"Creatio did not return @odata.count for count=true; total count cannot be verified.",
+				entity: entityName);
 		}
 		string? nextLink = root.TryGetProperty("@odata.nextLink", out JsonElement nextLinkElement)
 			&& nextLinkElement.ValueKind == JsonValueKind.String
@@ -534,16 +669,18 @@ public sealed record ODataReadArgs {
 		"Fields to return ($select). Strongly recommended for performance. " +
 		"Include all fields used in filter. " +
 		"Use dataforge-get-table-columns to discover field names. " +
-		"Example: [\"Id\",\"Name\",\"AccountId\"]")]
-	public string[]? Select { get; init; }
+		"Accepts an array or a comma-separated string. " +
+		"Example: [\"Id\",\"Name\",\"AccountId\"] or \"Id,Name,AccountId\"")]
+	public JsonElement? Select { get; init; }
 
 	/// <summary>Navigation properties to expand ($expand).</summary>
 	[JsonPropertyName("expand")]
 	[Description(
 		"Navigation properties to expand ($expand). " +
 		"Remove 'Id' suffix from a lookup field to get the navigation name: AccountId → Account. " +
-		"Example: [\"Account\",\"Owner\"]")]
-	public string[]? Expand { get; init; }
+		"Accepts an array or a comma-separated string. " +
+		"Example: [\"Account\",\"Owner\"] or \"Account,Owner\"")]
+	public JsonElement? Expand { get; init; }
 
 	/// <summary>OData $orderby clause.</summary>
 	[JsonPropertyName("order-by")]
@@ -612,12 +749,12 @@ public sealed record ODataReadResponse(
 	[property: JsonPropertyName("count")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	[property: Description("Number of records returned.")]
-	int? Count,
+	int? Count = null,
 
 	[property: JsonPropertyName("value")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	[property: Description("Records returned by the OData query.")]
-	JsonElement? Value,
+	JsonElement? Value = null,
 
 	[property: JsonPropertyName("next-link")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -627,11 +764,24 @@ public sealed record ODataReadResponse(
 	[property: JsonPropertyName("total-count")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	[property: Description("Total number of records matching the filter before top/skip paging, present when count=true.")]
-	long? TotalCount = null) {
+	long? TotalCount = null,
+
+	[property: JsonPropertyName("status-code")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[property: Description("HTTP status behind the failure, present only when the response was an HTML error page that names its status in the title, for example 404 when the entity is not exposed over OData. A JSON routing 404 is served with HTTP 200 and therefore sets no status-code - it carries the wait-and-retry hint in error instead, so handle both.")]
+	int? StatusCode = null,
+
+	[property: JsonPropertyName("entity")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[property: Description("The OData entity set the failure refers to. Present on every failure raised once the requested entity name is known; an argument-level rejection (a bad or missing entity, an unsupported argument) is refused before that point and carries no entity.")]
+	string? Entity = null) {
 
 	/// <summary>Creates a failure response.</summary>
-	public static ODataReadResponse Failure(string message) =>
-		new(false, message, null, null);
+	/// <param name="message">The actionable failure text.</param>
+	/// <param name="statusCode">The HTTP status when one could be established; otherwise null.</param>
+	/// <param name="entity">The requested OData entity set name, when known.</param>
+	public static ODataReadResponse Failure(string message, int? statusCode = null, string? entity = null) =>
+		new(false, message, StatusCode: statusCode, Entity: entity);
 }
 
 /// <summary>
