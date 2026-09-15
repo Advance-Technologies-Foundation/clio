@@ -50,7 +50,7 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		CallToolResult result = await context.Session.CallToolAsync(ToolName,
 			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> {
 				["schema-name"] = "UsrBindingRemediation", ["body"] = body,
-				["mode"] = "append", ["dry-run"] = true, ["skip-sampling"] = true,
+				["mode"] = "append", ["dry-run"] = true,
 				["environment-name"] = "missing-binding-remediation-environment"
 			} }, context.CancellationTokenSource.Token);
 		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(result);
@@ -221,7 +221,7 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		response.Success.Should().BeFalse(
 			because: "the incident body must be rejected end-to-end via the real MCP transport — the unit test alone is not enough per AGENTS.md MCP e2e rule");
 		response.Error.Should().Contain("JavaScript syntax error",
-			because: "the agent-facing error must name the actual class of problem (parser rejection) so the caller does not chase a phantom environment / marker / sampling failure");
+			because: "the agent-facing error must name the actual class of problem (parser rejection) so the caller does not chase a phantom environment or marker failure");
 		response.Error.Should().Contain("NOT sent to Creatio",
 			because: "the operator must know the broken body did not reach the server without inspecting logs, even when the failure surfaces through the MCP wire");
 	}
@@ -529,7 +529,7 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		response.Success.Should().BeFalse(
 			because: "the reserved `crt.*` namespace is for Creatio built-in converters; the lint gate must catch the custom-name usage end-to-end via the real MCP transport per AGENTS.md MCP rule");
 		response.Error.Should().Contain("Page body lint failed",
-			because: "the canonical lint error prefix is the contract surface the agent keys on to distinguish lint rejection from syntax / sampling rejection");
+			because: "the canonical lint error prefix is the contract surface the agent keys on to distinguish lint rejection from syntax rejection");
 		response.Error.Should().Contain("converter-crt-prefix-reserved",
 			because: "the rule id must be visible in the wire response so the agent can map the failure back to the guidance doc that describes the anti-pattern");
 		response.Error.Should().Contain("NOT sent to Creatio",
@@ -1812,7 +1812,7 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			} else {
 				CallToolResult saved = await context.Session.CallToolAsync(PageSyncTool.ToolName,
 					new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> {
-						["environment-name"] = environmentName, ["validate"] = true, ["skip-sampling"] = true,
+						["environment-name"] = environmentName, ["validate"] = true,
 						["output-directory"] = outputDirectory,
 						["pages"] = new[] { new Dictionary<string, object?> { ["schema-name"] = schemaName, ["body"] = body } }
 					} }, context.CancellationTokenSource.Token);
@@ -1875,8 +1875,7 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			["schema-name"] = schemaName,
 			["body"] = body,
 			["environment-name"] = environmentName,
-			["output-directory"] = outputDirectory,
-			["skip-sampling"] = true
+			["output-directory"] = outputDirectory
 		};
 		if (force == true) {
 			args["force"] = true;

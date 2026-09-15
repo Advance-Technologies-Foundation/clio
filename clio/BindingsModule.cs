@@ -714,7 +714,6 @@ public class BindingsModule {
 		services.AddTransient<ImportSchemaTool>();
 		services.AddTransient<PageSyncTool>();
 		services.AddTransient<MobilePageConversionGuideTool>();
-		services.AddSingleton<IPageBodySamplingService, PageBodySamplingServiceImpl>();
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<KnowledgeManagementTools>();
 		services.AddSingleton<IEnvironmentKnowledgeBundleTrustStore, EnvironmentKnowledgeBundleTrustStore>();
