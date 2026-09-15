@@ -83,8 +83,9 @@ public sealed class ToolContractPayloadBudgetTests {
 	//
 	// The failure message asks whether the text belongs in a [Description] at all, and that question was
 	// answered rather than waved past: the first cut measured 35674, and roughly a kilobyte of it - the
-	// designer mechanics, why a formula there is invisible, what a human sees - moved to the
-	// process-branch-conditions guidance article, which owns that rule. What stayed inline is what a caller
+	// designer mechanics, why a formula there is invisible, what a human sees - moved to the guidance,
+	// where it now lives in process-activity-result-branches: that article was split out of
+	// process-branch-conditions later, and the text followed the rule rather than the file. What stayed inline is what a caller
 	// must decide at CALL time: which of the two predicate slots this connector takes, that they are
 	// mutually exclusive, and what each refusal is. That is the split ENG-96389 section 5 identified as the
 	// one that pays - cutting depth WITHIN a block, not relocating the block.
