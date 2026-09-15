@@ -96,6 +96,7 @@ public sealed class PageUpdateToolMobileTypePlacementTests {
 			commandResolver: Substitute.For<IToolCommandResolver>(),
 			mobileComponentCatalog: Substitute.For<IMobileComponentInfoCatalog>(),
 			webComponentCatalog: Substitute.For<IComponentInfoCatalog>(),
+			samplingService: Substitute.For<IPageBodySamplingService>(),
 			pageBaselineGuard: new PageBaselineGuard(Substitute.For<System.IO.Abstractions.IFileSystem>()), new PersistedResourceKeyReader());
 
 	[Test]
