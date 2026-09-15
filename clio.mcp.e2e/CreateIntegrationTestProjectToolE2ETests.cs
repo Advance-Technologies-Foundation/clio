@@ -13,7 +13,7 @@ namespace Clio.Mcp.E2E;
 [TestFixture, Category("McpE2E.NoEnvironment"), AllureNUnit]
 [AllureFeature(CreateIntegrationTestProjectTool.ToolName)]
 [NonParallelizable]
-public sealed class CreateIntegrationTestProjectToolE2ETests {
+public sealed class CreateIntegrationTestProjectToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[Description("Starts the real MCP server, creates a portable integration-test project in a temporary clio workspace, and verifies its files and solution registrations.")]
 	[AllureName("Integration-test scaffold is generated end to end")]
@@ -27,7 +27,7 @@ public sealed class CreateIntegrationTestProjectToolE2ETests {
 		await File.WriteAllTextAsync(Path.Combine(workspace, ".clio", "workspaceSettings.json"),
 			"{\"Packages\":[\"Acme\"],\"ApplicationVersion\":\"8.1.0\"}", cancellation.Token);
 		try {
-			await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellation.Token);
+			McpServerSession session = Session;
 
 			// Act
 			CallToolResult callResult = await session.CallToolAsync(

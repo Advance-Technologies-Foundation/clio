@@ -44,6 +44,12 @@ public sealed record ODataCreateBatchResponse {
 	[Description("Request-level error that prevented any row from being attempted.")]
 	public string? Error { get; init; }
 
+	/// <summary>Gets the identifier for this batch, present on success and on failure.</summary>
+	[JsonPropertyName("correlation-id")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[Description("Identifier for this batch, present on success and on failure. The same id tags any debug line written for it.")]
+	public string? CorrelationId { get; init; }
+
 	/// <summary>Builds a response from per-row outcomes.</summary>
 	public static ODataCreateBatchResponse From(IReadOnlyList<ODataRowResult> results) =>
 		new() {

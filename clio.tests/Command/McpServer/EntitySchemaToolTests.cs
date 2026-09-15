@@ -144,7 +144,8 @@ public sealed class EntitySchemaToolTests {
 			"dev",
 			"UsrPkg",
 			"UsrVehicle",
-			PrimaryDisplayColumn: "UsrName"));
+			PrimaryDisplayColumn: "UsrName",
+			TitleLocalizations: new Dictionary<string, string> { ["en-US"] = "Vehicle" }));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -161,6 +162,41 @@ public sealed class EntitySchemaToolTests {
 			because: "the schema name must be forwarded to the command");
 		resolvedCommand.CapturedOptions.PrimaryDisplayColumn.Should().Be("UsrName",
 			because: "the primary-display column argument must be forwarded to the command");
+		// This assertion is the entire test for the AC-3 hop from the MCP title-localizations argument to
+		// SetEntitySchemaPropertiesOptions.ParsedTitleLocalizations. Deleting the mapping expression in
+		// EntitySchemaTool.SetEntitySchemaProperties must make this test red.
+		resolvedCommand.CapturedOptions.ParsedTitleLocalizations.Should().NotBeNull(
+			because: "the title-localizations argument must be forwarded as the parsed caption map");
+		resolvedCommand.CapturedOptions.ParsedTitleLocalizations!.Should().ContainKey("en-US")
+			.WhoseValue.Should().Be("Vehicle",
+				because: "the caption for each supplied culture must reach the command unchanged");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Leaves the parsed caption map unset when set-entity-schema-properties supplies no title-localizations.")]
+	public void SetEntitySchemaProperties_Should_Not_Set_Parsed_Map_Without_Title_Localizations() {
+		// Arrange
+		FakeSetEntitySchemaPropertiesCommand defaultCommand = new();
+		FakeSetEntitySchemaPropertiesCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetEntitySchemaPropertiesCommand>(Arg.Any<SetEntitySchemaPropertiesOptions>())
+			.Returns(resolvedCommand);
+		SetEntitySchemaPropertiesTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.SetEntitySchemaProperties(new SetEntitySchemaPropertiesArgs(
+			"dev",
+			"UsrPkg",
+			"UsrVehicle",
+			PrimaryDisplayColumn: "UsrName",
+			TitleLocalizations: new Dictionary<string, string>()));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "an empty caption map is not an error - the primary-display column alone is a valid request");
+		resolvedCommand.CapturedOptions!.ParsedTitleLocalizations.Should().BeNull(
+			because: "an empty map must map to null so HasAnyPropertyToSet is not satisfied by an empty caption map");
 	}
 
 	[Test]

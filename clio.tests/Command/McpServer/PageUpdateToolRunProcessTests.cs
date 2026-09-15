@@ -45,7 +45,7 @@ public sealed class PageUpdateToolRunProcessTests {
 			mobileComponentCatalog: Substitute.For<IMobileComponentInfoCatalog>(),
 			webComponentCatalog: Substitute.For<IComponentInfoCatalog>(),
 			samplingService: Substitute.For<IPageBodySamplingService>(),
-			pageBaselineGuard: new PageBaselineGuard(Substitute.For<System.IO.Abstractions.IFileSystem>()));
+			pageBaselineGuard: new PageBaselineGuard(Substitute.For<System.IO.Abstractions.IFileSystem>()), new PersistedResourceKeyReader());
 		return (tool, resolver);
 	}
 
