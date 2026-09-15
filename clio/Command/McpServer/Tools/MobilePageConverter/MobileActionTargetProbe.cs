@@ -14,7 +14,7 @@ namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 
 /// <summary>
 /// Read-only environment probe that answers, for every action the source page fires, whether the thing it
-/// NAVIGATES TO exists on mobile (ENG-94839). Whether the request TYPE converts is a separate question,
+/// NAVIGATES TO exists on mobile. Whether the request TYPE converts is a separate question,
 /// already decided offline by <c>WebToMobileAnalysisService.IsRequestSupported</c>; this probe answers the
 /// second one. A <c>crt.OpenPageRequest</c> may convert perfectly and still open a schema that has no
 /// mobile page, and a <c>crt.CreateRecordRequest</c> may name an object with no default mobile edit page.
@@ -39,7 +39,7 @@ namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 /// survives an unreachable environment; only <see cref="KindEntityDefaultMobilePage"/> needs reads, and it
 /// is what <see cref="MobileActionTargetProbeResult.ProbeOk"/> reports on. Collapsing the two into one
 /// boolean is how a page carrying BOTH kinds used to lose its web-page verdict whenever the object reads
-/// failed, while the same verdict on a page carrying only web-page targets reported fine (ENG-94839).
+/// failed, while the same verdict on a page carrying only web-page targets reported fine.
 /// </para>
 /// </summary>
 public static class MobileActionTargetProbe {
@@ -58,6 +58,16 @@ public static class MobileActionTargetProbe {
 	internal const string KindEntityDefaultMobilePage = "entity-default-mobile-page";
 
 	private const string MobileRelatedPageAddonName = "MobileRelatedPage";
+
+	/// <summary>
+	/// The WEB counterpart of <see cref="MobileRelatedPageAddonName"/> — the same add-on shape, attached to the
+	/// same object, but the one <c>create-related-page-addon --schema-type web</c> writes. Read ONLY for a
+	/// target already classified <see cref="ActionTargetState.Missing"/>: it turns the object name into a
+	/// candidate WEB edit page the caller can offer to convert next, so a missing mobile default is not just
+	/// reported but points at something actionable.
+	/// </summary>
+	private const string RelatedPageAddonName = "RelatedPage";
+
 	private const string SysSchemaName = "SysSchema";
 	private const string RequestProperty = "request";
 	private const string ParamsProperty = "params";
@@ -85,6 +95,16 @@ public static class MobileActionTargetProbe {
 	/// because "not asked" must not read as "asked, and the answer was no".
 	/// </summary>
 	private const int MaxEntityAddonProbes = 8;
+
+	/// <summary>
+	/// Ceiling on the per-object candidate-page reads (one <c>RelatedPage</c> add-on <c>GetSchema</c> plus one
+	/// <c>SysSchema</c>-by-UId read, per verified-missing object) — counted SEPARATELY from
+	/// <see cref="MaxEntityAddonProbes"/> so a page whose object reads are all spent on classification cannot
+	/// silently also decide how many candidates get resolved. Overflowing it
+	/// fails OPEN, same as the classification ceiling: <see cref="UnresolvedTargetRequest.ResolvedCandidateSchemaName"/>
+	/// stays null past it, never a guess.
+	/// </summary>
+	private const int MaxCandidatePageProbes = 8;
 
 	/// <summary>
 	/// Row headroom per requested name: a schema appears as a base row plus one row per replacing layer, and
@@ -277,27 +297,32 @@ public static class MobileActionTargetProbe {
 	/// action's binding, as opposed to only reporting it. The single seam that decides it, so the rule lives
 	/// in one place instead of being re-derived at each consumer.
 	/// <para>
-	/// Only <see cref="KindWebPage"/> qualifies, and it qualifies because its verdict is DEFINITIONAL: the
-	/// value names a web page by construction, the Creatio Mobile app cannot open one, and no environment
-	/// read was involved — so the verdict cannot be wrong for a reason outside this process.
+	/// Always <see langword="false"/> — a deliberate policy: even a DEFINITIONAL absence —
+	/// <see cref="KindWebPage"/>, whose verdict needs no environment read and cannot be wrong for a reason
+	/// outside this process — is reported but never stripped. Removal used to qualify for this kind alone;
+	/// it no longer does, because a stripped binding is not just dead, it is GONE, with no mechanism that
+	/// restores it later, while the missing page it named may still get converted in the very same session
+	/// (the missing-target-page queue and its sequential-conversion offer, <c>requestConversions.missingTargetPages</c>).
+	/// Keeping the binding costs nothing at runtime a strip would have avoided — a Mobile app can open
+	/// neither a web page nor a page-less object's default page either way — but it leaves the action
+	/// visible, traceable to its target, and fixable (by hand in Mobile Designer, or by a future re-wire
+	/// pass once the target converts) instead of silently vanishing.
 	/// </para>
 	/// <para>
-	/// <see cref="KindEntityDefaultMobilePage"/> deliberately does NOT qualify, and NOT because the read is
-	/// unreliable — it answers its question correctly (see
-	/// <see cref="ClassifyEntityDefaultMobilePage"/>). It does not qualify because the
-	/// <c>MobileRelatedPage</c> add-on is not the ONLY place a default mobile page can come from: a legacy
-	/// default page can exist without ever being registered in the add-on. So "the add-on declares no default"
-	/// is a fact about the add-on, not proof that the action is dead — and an action that works must never be
-	/// removed on a diagnosis the report already delivers in full (ENG-94839; removal is ENG-96178 /
-	/// ENG-95084's scope).
+	/// <see cref="KindEntityDefaultMobilePage"/> was already exempt for a SEPARATE, still-standing reason:
+	/// the <c>MobileRelatedPage</c> add-on declaring no default page is a fact about the add-on, not proof
+	/// the action is dead — a legacy default page can exist without ever being registered there (see
+	/// <see cref="ClassifyEntityDefaultMobilePage"/>).
+	/// </para>
+	/// <para>
+	/// Kept as a per-kind seam rather than collapsed to a bare constant at every call site, so a future kind
+	/// whose absence is both definitional AND genuinely irreversible by design has exactly one place to opt
+	/// back in.
 	/// </para>
 	/// </summary>
-	/// <param name="kind">A rules-declared <c>targetKind</c>.</param>
-	/// <returns>Whether a verified absence of this kind removes the binding.</returns>
-	internal static bool StripsBindingOnMissing(string kind) =>
-		// Trimmed to match TargetKey, which trims the kind when it builds the key a resolution is stored
-		// under: an untrimmed Kind would otherwise be FOUND by the lookup and then silently not stripped.
-		string.Equals(kind?.Trim(), KindWebPage, StringComparison.OrdinalIgnoreCase);
+	/// <param name="kind">A rules-declared <c>targetKind</c>; unused today — see remarks.</param>
+	/// <returns>Always <see langword="false"/>.</returns>
+	internal static bool StripsBindingOnMissing(string kind) => false;
 
 	/// <summary>
 	/// Every place a target-carrying request appears in the page body. PURE — no environment, so the whole
@@ -441,6 +466,8 @@ public static class MobileActionTargetProbe {
 
 		int budget = MaxEntityAddonProbes;
 		bool budgetExhausted = false;
+		int candidateBudget = MaxCandidatePageProbes;
+		bool candidateBudgetExhausted = false;
 		foreach (string name in names) {
 			if (!uIdByName.TryGetValue(name, out string entityUId)) {
 				// No rows at all: the object does not exist, so the action is dead — unless the read may have
@@ -457,14 +484,32 @@ public static class MobileActionTargetProbe {
 				Record(into, KindEntityDefaultMobilePage, name, ActionTargetState.Unknown);
 				continue;
 			}
-			Record(into, KindEntityDefaultMobilePage, name,
-				ClassifyEntityDefaultMobilePage(context, entityUId, packageUId));
+			ActionTargetState state = ClassifyEntityDefaultMobilePage(context, entityUId, packageUId);
+			// Candidate resolution runs ONLY for a verified-missing verdict: Unknown/Resolved need no candidate,
+			// and attempting one on Unknown would spend the separate budget on a target that may not even be
+			// missing.
+			string candidate = null;
+			if (state == ActionTargetState.Missing) {
+				if (candidateBudget-- > 0) {
+					candidate = ResolveDefaultWebPage(context, entityUId, packageUId);
+				} else {
+					candidateBudgetExhausted = true;
+				}
+			}
+			RecordEntityResolution(into, name, state, candidate);
 		}
-		// Answered either way: the reads that ran did succeed. The note is what says some were never asked.
-		return new EntityTierOutcome(true, budgetExhausted
-			? $"Only the first {MaxEntityAddonProbes} object targets were checked; the rest are reported as "
-				+ "unverified. Check them manually."
-			: null);
+		// Answered either way: the reads that ran did succeed. The note is what says some were never asked —
+		// one sentence per ceiling, since a page can hit either independently of the other.
+		List<string> unaskedNotes = [];
+		if (budgetExhausted) {
+			unaskedNotes.Add($"Only the first {MaxEntityAddonProbes} object targets were checked; the rest are "
+				+ "reported as unverified. Check them manually.");
+		}
+		if (candidateBudgetExhausted) {
+			unaskedNotes.Add($"Only the first {MaxCandidatePageProbes} missing object target(s) were checked for a "
+				+ "candidate web page to convert; the rest report no candidate. Check them manually.");
+		}
+		return new EntityTierOutcome(true, unaskedNotes.Count > 0 ? string.Join(" ", unaskedNotes) : null);
 	}
 
 	/// <summary>
@@ -552,6 +597,65 @@ public static class MobileActionTargetProbe {
 	}
 
 	/// <summary>
+	/// Resolves the object's default WEB edit page — the candidate to offer converting next for a verified-
+	/// missing <see cref="KindEntityDefaultMobilePage"/> target. Reads the WEB
+	/// <see cref="RelatedPageAddonName"/> add-on (the mirror of <see cref="ClassifyEntityDefaultMobilePage"/>'s
+	/// mobile read) for the untyped default page's <c>PageSchemaUId</c>, then reverse-resolves that UId to its
+	/// schema NAME via <see cref="PageSchemaMetadataHelper.QueryPageSchemaNameByUId"/> — the same reverse lookup
+	/// <c>get-related-page-addon</c> uses. Fails open to <see langword="null"/> (never a guess): no add-on
+	/// configured, no untyped default, or either read failing all read the same as "no candidate found",
+	/// leaving the caller to decide manually rather than being told a wrong page name.
+	/// </summary>
+	private static string ResolveDefaultWebPage(ProbeContext context, string entitySchemaUId, Guid packageUId) {
+		if (!Guid.TryParse(entitySchemaUId, out Guid entityUId)) {
+			return null;
+		}
+		try {
+			AddonSchemaDto schema = context.AddonClient.GetSchema(new AddonGetRequestDto {
+				AddonName = RelatedPageAddonName,
+				TargetSchemaUId = entityUId,
+				TargetParentSchemaUId = Guid.Empty,
+				TargetPackageUId = packageUId,
+				TargetSchemaManagerName = EntitySchemaManagerName,
+				UseFullHierarchy = true
+			});
+			string pageSchemaUId = ExtractDefaultPageSchemaUId(schema?.MetaData);
+			return string.IsNullOrWhiteSpace(pageSchemaUId)
+				? null
+				: PageSchemaMetadataHelper.QueryPageSchemaNameByUId(context.Client, context.UrlBuilder, pageSchemaUId);
+		} catch (Exception) {
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// The untyped default page's <c>PageSchemaUId</c> out of a <c>RelatedPage</c>/<c>MobileRelatedPage</c>
+	/// add-on's <c>metaData</c> — the same "at least one default page, any package" reading
+	/// <see cref="ClassifyRelatedPageMetadata"/> applies to decide PRESENCE, but returning the UId to resolve
+	/// instead of a state. Null for every shape that classifies as anything other than a real untyped default:
+	/// blank/unparseable body, no <c>Pages</c> array, or a page set with no untyped <c>IsDefault</c> entry.
+	/// </summary>
+	internal static string ExtractDefaultPageSchemaUId(string metaData) {
+		if (string.IsNullOrWhiteSpace(metaData)) {
+			return null;
+		}
+		try {
+			if (JsonNode.Parse(metaData) is not JsonObject obj || obj["Pages"] is not JsonArray pages) {
+				return null;
+			}
+			foreach (JsonNode page in pages) {
+				if (page is JsonObject entry && Bool(entry, "IsDefault")
+					&& string.IsNullOrWhiteSpace(Str(entry, "TypeColumnValue"))) {
+					return Str(entry, "PageSchemaUId");
+				}
+			}
+			return null;
+		} catch (Exception) {
+			return null;
+		}
+	}
+
+	/// <summary>
 	/// Classifies <c>MobileRelatedPage</c> add-on metadata. A parsed body carrying a page set with no untyped
 	/// default is <see cref="ActionTargetState.Missing"/> — the mobile app has nothing to open.
 	/// </summary>
@@ -625,6 +729,19 @@ public static class MobileActionTargetProbe {
 		into[TargetKey(kind, target)] = new ActionTargetResolution { Kind = kind, Target = target, State = state };
 
 	/// <summary>
+	/// <see cref="Record"/> for an entity target, additionally carrying the candidate web page
+	/// <see cref="ResolveDefaultWebPage"/> resolved (null unless <paramref name="state"/> is
+	/// <see cref="ActionTargetState.Missing"/> and a candidate was actually found).
+	/// </summary>
+	private static void RecordEntityResolution(
+		IDictionary<string, ActionTargetResolution> into, string target, ActionTargetState state,
+		string resolvedCandidateSchemaName) =>
+		into[TargetKey(KindEntityDefaultMobilePage, target)] = new ActionTargetResolution {
+			Kind = KindEntityDefaultMobilePage, Target = target, State = state,
+			ResolvedCandidateSchemaName = resolvedCandidateSchemaName
+		};
+
+	/// <summary>
 	/// Composes a degradation note from a LOCALLY authored sentence plus, when there is one, the failure
 	/// detail neutralized as data.
 	/// </summary>
@@ -649,7 +766,7 @@ public static class MobileActionTargetProbe {
 	/// environment — a web-page target is dead by construction — is carried through, because a tier that
 	/// never needed the environment is not made doubtful by the environment failing. Dropping them was how a
 	/// page carrying one web-page target AND one object target silently lost the web-page warning that a page
-	/// carrying the web-page target alone reports fine (ENG-94839).
+	/// carrying the web-page target alone reports fine.
 	/// </summary>
 	/// <param name="occurrences">Where target-carrying requests appear on the page; collected offline.</param>
 	/// <param name="note">Why the object tier did not answer, for the caller's <c>targetsNote</c>.</param>

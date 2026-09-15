@@ -797,7 +797,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	}
 
 	[Test]
-	[Description("ENG-94839 end to end: a converted page whose actions navigate somewhere must report, against the LIVE environment, whether each target exists on mobile. Asserts the probe actually ran (targetsProbed), that every finding uses the declared vocabulary, that it names a control the element map really carries, and — the warn-only contract — that a verified-missing target never removes that control. A conversion failure always fails the test; only a seed with no navigating action degrades to Ignore.")]
+	[Description("End to end: a converted page whose actions navigate somewhere must report, against the LIVE environment, whether each target exists on mobile. Asserts the probe actually ran (targetsProbed), that every finding uses the declared vocabulary, that it names a control the element map really carries, and — the warn-only contract — that a verified-missing target never removes that control. A conversion failure always fails the test; only a seed with no navigating action degrades to Ignore.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-mobile-page-conversion-guide verifies each action's navigation target against the environment")]
 	[AllureDescription("Converts the seeded application's pages through the real clio MCP server until one carries an action whose request declares a navigation target, then asserts the guide reports the target verification as typed data and leaves the control in place.")]
@@ -873,6 +873,13 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				because: $"'{finding.ElementName}' on '{convertedSchemaName}' is reported as carrying an unreachable "
 					+ "target, so the CONTROL must still be on the converted page: naming a control the guide "
 					+ "already dropped would contradict its own element map");
+			// No kind strips a missing target's binding today, proven against the real MCP transport rather
+			// than only the hand-built unit fixtures — the wire field stays for contract stability, but must
+			// never actually fire.
+			finding.BindingRemoved.Should().BeFalse(
+				because: $"'{finding.ElementName}' on '{convertedSchemaName}' must keep its binding regardless of "
+					+ "how confidently its target is reported missing — stripping it would foreclose repointing "
+					+ "it once the target converts later in the same session");
 			if (finding.BindingRemoved) {
 				finding.State.Should().Be("missing",
 					because: "an action is only ever removed for an absence that was established, never for one "
@@ -882,7 +889,73 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 					because: "a removed binding is a dropped request, so the two collections must agree over the "
 						+ "real MCP transport and not only in unit tests");
 			}
+			// A resolved candidate is fail-open (null is a legitimate "none found"), but WHEN one
+			// comes back over the real MCP transport it must be well-formed and scoped to exactly the kind/state
+			// the feature targets — a null-vs-empty-string slip or a leak onto web-page/unknown findings would
+			// not show up in the hand-built unit fixtures.
+			if (!string.IsNullOrEmpty(finding.ResolvedCandidateSchemaName)) {
+				finding.TargetKind.Should().Be(MobileActionTargetProbe.KindEntityDefaultMobilePage,
+					because: $"'{finding.ElementName}' on '{convertedSchemaName}' carries a resolved candidate, "
+						+ "which only ever applies to an entity-default-mobile-page target");
+				finding.State.Should().Be("missing",
+					because: "a candidate is resolved only for a target verified missing, never for one the "
+						+ "environment could not answer for");
+			} else {
+				// Nothing to classify without a candidate — the classification pass must never invent one.
+				finding.ResolvedSourceType.Should().BeNull();
+				finding.RecommendedAction.Should().BeNull();
+			}
+			AssertClassificationIsWellFormed(finding.ResolvedSourceType, finding.RecommendedAction, convertedSchemaName);
 		}
+
+		// missingTargetPages queue: every web-page finding the LIVE environment produced must be
+		// reflected in the aggregated queue, and the queue must never carry any other kind — asserted against
+		// real transport data rather than only the hand-built unit fixtures.
+		IReadOnlyList<UnresolvedTargetRequest> webPageFindings = [.. conversions.UnresolvedTargetRequests
+			.Where(f => string.Equals(f.TargetKind, MobileActionTargetProbe.KindWebPage, StringComparison.OrdinalIgnoreCase))];
+		conversions.MissingTargetPages.Should().OnlyContain(
+			p => string.Equals(p.TargetKind, MobileActionTargetProbe.KindWebPage, StringComparison.OrdinalIgnoreCase),
+			because: $"on '{convertedSchemaName}' the queue must not yet offer an entity-default-mobile-page "
+				+ "target — resolving one into a candidate page needs a read this pass does not perform");
+		foreach (IGrouping<string, UnresolvedTargetRequest> group in
+			webPageFindings.GroupBy(f => f.Target, StringComparer.OrdinalIgnoreCase)) {
+			MissingTargetPage queued = conversions.MissingTargetPages.Should().ContainSingle(
+				p => string.Equals(p.Target, group.Key, StringComparison.OrdinalIgnoreCase),
+				because: $"'{group.Key}' was reported missing on '{convertedSchemaName}', so it must be queued "
+					+ "exactly once regardless of how many controls reference it").Subject;
+			foreach (UnresolvedTargetRequest finding in group) {
+				queued.References.Should().Contain(
+					r => r.ElementName == finding.ElementName && r.Binding == finding.Binding,
+					because: $"'{finding.ElementName}' on '{convertedSchemaName}' references the missing page and "
+						+ "must be traceable from the queue entry");
+			}
+			// The queue entry's own classification, read against the real environment.
+			AssertClassificationIsWellFormed(queued.ResolvedSourceType, queued.RecommendedAction, convertedSchemaName);
+		}
+	}
+
+	/// <summary>
+	/// A classification is either BOTH null (unclassified — the ceiling was hit, or the read
+	/// failed and the tool already reported it as <c>manual-candidate-not-found</c> with a null source type) or
+	/// BOTH set to one of the documented vocabularies, with the action actually DERIVED from the source type —
+	/// asserted against real transport data, which is the only way a mismatch introduced by a future edit to
+	/// either vocabulary would ever surface.
+	/// </summary>
+	private static void AssertClassificationIsWellFormed(string resolvedSourceType, string recommendedAction, string convertedSchemaName) {
+		if (resolvedSourceType is null) {
+			recommendedAction.Should().BeOneOf([null, MissingTargetCandidateAction.ManualCandidateNotFound],
+				because: $"on '{convertedSchemaName}' a null source type means either nothing was classified yet, "
+					+ "or the candidate could not be read at all");
+			return;
+		}
+		string expectedAction = resolvedSourceType switch {
+			WebToMobileAnalysisService.SourceTypeFreedomWeb => MissingTargetCandidateAction.ConvertDirectly,
+			"mobile" => MissingTargetCandidateAction.SkipAlreadyMobile,
+			_ => MissingTargetCandidateAction.ConvertClassicFirst
+		};
+		recommendedAction.Should().Be(expectedAction,
+			because: $"on '{convertedSchemaName}' the recommended action must be DERIVED from the resolved source "
+				+ "type, not an independent value that could drift from it");
 	}
 
 	/// <summary>

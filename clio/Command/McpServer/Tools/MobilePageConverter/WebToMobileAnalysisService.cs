@@ -89,7 +89,7 @@ public static class WebToMobileAnalysisService {
 	/// be read (no active environment, read failure) - the data-section diffs fall back to a single root merge
 	/// and an explicit constraint warns that template-owned arrays may be replaced wholesale.</param>
 	/// <param name="actionTargetsProbe">Read-only probe of whether each action's NAVIGATION TARGET exists on
-	/// mobile (ENG-94839), surfaced as <c>requestConversions.unresolvedTargetRequests</c>. Null - or a probe
+	/// mobile, surfaced as <c>requestConversions.unresolvedTargetRequests</c>. Null - or a probe
 	/// that could not reach the environment - leaves every target unknown and changes no conversion decision:
 	/// the report is a warning, nothing is dropped on target grounds.</param>
 		public static MobilePageConversionGuide Analyze(
@@ -222,7 +222,7 @@ public static class WebToMobileAnalysisService {
 		// from the map, and an absent key reads as Unknown. Gating on the flag instead threw away the verdicts
 		// the probe had ALREADY settled without the environment (a web-page target is dead by construction),
 		// so a page carrying one web-page target plus one object target silently lost the web-page warning
-		// that the same page without the object target reports fine (ENG-94839).
+		// that the same page without the object target reports fine.
 		IReadOnlyDictionary<string, ActionTargetResolution> actionTargets =
 			actionTargetsProbe?.TargetsByKey
 			?? new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase);
@@ -1787,16 +1787,19 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Adds the ENG-94839 action-target rules to <paramref name="constraints"/>. The tool's contract is that
+	/// Adds the action-target rules to <paramref name="constraints"/>. The tool's contract is that
 	/// the guide is self-describing — its own <c>constraints</c> carry the rules for applying THIS
 	/// conversion — so the findings must arrive with the instruction that acts on them, not only as data a
 	/// separate article explains.
 	/// <para>
-	/// The CONTROL is never removed, whatever the finding says: the developer decides whether to convert the
-	/// target page, repoint the action or leave it, and this tool is advisory — telling the caller to leave the
-	/// button out of the body it builds WOULD be the removal, so no wording here may. Three groups, because
-	/// three different things happened to the ACTION: a definitional absence had its binding removed, a read
-	/// that reported absence did NOT (it cannot prove absence), and an unverified target did not either.
+	/// Neither the CONTROL nor its ACTION is ever removed — a deliberate policy: the developer decides
+	/// whether to convert the target page, repoint the action, or leave it — this tool is advisory, and
+	/// stripping a binding would foreclose repointing it once its target converts later in the same session
+	/// (<c>requestConversions.missingTargetPages</c>). Three groups, because three different things are true
+	/// of the ACTION even though none of them get it removed: a web-page target is dead BY CONSTRUCTION (no
+	/// read involved, so it cannot be wrong for an external reason); an object target was READ absent, which
+	/// reports what the object declares today and is not proof the action is dead; and an unverified target
+	/// was never settled at all, so it may well still work.
 	/// </para>
 	/// </summary>
 	private static void AddUnresolvedTargetConstraints(
@@ -1804,8 +1807,6 @@ public static class WebToMobileAnalysisService {
 		if (unresolvedTargetRequests is not { Count: > 0 }) {
 			return;
 		}
-		// The kind travels with each entry because the two carry different remedies: a web-page reference has
-		// to be repointed or dropped, an object needs its default mobile page created.
 		string Describe(IEnumerable<UnresolvedTargetRequest> items) =>
 			string.Join(", ", items
 				.Select(r => $"{r.ElementName} -> {r.Target} ({r.TargetKind})")
@@ -1814,58 +1815,58 @@ public static class WebToMobileAnalysisService {
 		bool IsState(UnresolvedTargetRequest r, string state) =>
 			string.Equals(r.State, state, StringComparison.Ordinal);
 
-		// The remedy is a property of the KIND, so it is composed from the kinds actually in the group instead
-		// of asserted for all of them. Group membership is decided by StripsBindingOnMissing, which is the one
-		// place a second kind can be admitted — and on that day a hard-coded "a web-page target names a WEB
-		// page" would state a false reason for someone else's removal.
-		string Remedies(IEnumerable<UnresolvedTargetRequest> items) {
-			List<string> parts = [];
-			HashSet<string> kinds = new(
-				items.Select(r => r.TargetKind ?? string.Empty), StringComparer.OrdinalIgnoreCase);
-			if (kinds.Contains(MobileActionTargetProbe.KindWebPage)) {
-				parts.Add(
-					"A \"web-page\" target names a WEB page, and the Creatio Mobile app cannot open one at all — "
-					+ "offer to repoint the control at that page's converted mobile twin.");
-			}
-			if (kinds.Contains(MobileActionTargetProbe.KindEntityDefaultMobilePage)) {
-				parts.Add(
-					"An \"entity-default-mobile-page\" target is an object whose MobileRelatedPage add-on declares "
-					+ "no default mobile page. Say exactly that, NOT \"the page does not exist\": a LEGACY default "
-					+ "mobile page can exist without ever being registered in that add-on, so the action may work "
-					+ "already. If there is genuinely no mobile page for that object, converting its form page and "
-					+ "registering it is what makes every action pointing there work.");
-			}
-			return parts.Count == 0 ? string.Empty : " " + string.Join(" ", parts);
-		}
+		bool IsWebPageKind(UnresolvedTargetRequest r) =>
+			string.Equals(r.TargetKind, MobileActionTargetProbe.KindWebPage, StringComparison.OrdinalIgnoreCase);
 
-		List<UnresolvedTargetRequest> removed = [.. unresolvedTargetRequests.Where(r => r.BindingRemoved)];
-		if (removed.Count > 0) {
+		// web-page: settled OFFLINE, by construction — a distinct epistemic status from every other kind, so
+		// it gets its own sentence rather than sharing the "READ as absent" wording below, which would
+		// misstate how this verdict was reached.
+		List<UnresolvedTargetRequest> webPageMissing = [..
+			unresolvedTargetRequests.Where(r => IsState(r, UnresolvedTargetRequest.StateMissing) && IsWebPageKind(r))];
+		if (webPageMissing.Count > 0) {
 			constraints.Add(
 				"requestConversions.unresolvedTargetRequests reports action(s) whose target CANNOT exist on the "
-				+ "Creatio Mobile app: " + Describe(removed)
-				+ ". Their bindings are ALREADY REMOVED from elementMap[].mobileValues and also listed in "
-				+ "droppedRequests. Build each element exactly as its entry says — the control renders and does "
-				+ "nothing — and KEEP the control (a button, a menu item, whatever fired the action): only the dead "
-				+ "action was dropped. Name each control and its lost target at the conversion gate."
-				+ Remedies(removed));
+				+ "Creatio Mobile app: " + Describe(webPageMissing)
+				+ ". A web page cannot open on the Mobile app by construction, so this verdict needed no "
+				+ "environment read and cannot be wrong for an external reason. The binding is nonetheless KEPT, "
+				+ "not removed: stripping it now would foreclose repointing it once you convert that page. Build "
+				+ "each element exactly as its elementMap entry says, name the control and its dead target at the "
+				+ "conversion gate, and offer to repoint it at the page's converted mobile twin once one exists.");
 		}
-		// Explicitly NOT r.BindingRemoved, so the three groups are exclusive by construction rather than by an
-		// invariant enforced elsewhere: one entry told both "ALREADY REMOVED" and "KEPT" is a contradiction an
-		// agent cannot recover from.
-		List<UnresolvedTargetRequest> reportedMissing = [..
-			unresolvedTargetRequests.Where(r => IsState(r, UnresolvedTargetRequest.StateMissing) && !r.BindingRemoved)];
-		if (reportedMissing.Count > 0) {
+		// Every OTHER kind whose target is missing (today: entity-default-mobile-page) — the verdict came from
+		// a READ, which reports what the target declares now and is not proof the action is dead, so the
+		// remedy text differs from the web-page group above.
+		List<UnresolvedTargetRequest> readMissing = [..
+			unresolvedTargetRequests.Where(r => IsState(r, UnresolvedTargetRequest.StateMissing) && !IsWebPageKind(r))];
+		if (readMissing.Count > 0) {
+			// A resolved candidate is an ADDITIONAL fact about SOME of these findings, never a
+			// reason to change what was already said above — the absence is still only READ, not proven, so the
+			// candidate is offered as the next step to propose, not as license to act without the user.
+			List<UnresolvedTargetRequest> withCandidates =
+				[.. readMissing.Where(r => !string.IsNullOrWhiteSpace(r.ResolvedCandidateSchemaName))];
+			string candidateNote = withCandidates.Count == 0
+				? string.Empty
+				: " A default WEB edit page was found for the object(s) missing a mobile default: "
+					+ string.Join(", ", withCandidates
+						.Select(r => $"{r.Target} -> {r.ResolvedCandidateSchemaName}")
+						.Distinct(StringComparer.OrdinalIgnoreCase))
+					+ ". Offer converting that page next — it becomes the object's default mobile edit page once "
+					+ "registered — rather than inventing a page name yourself.";
 			constraints.Add(
 				"requestConversions.unresolvedTargetRequests reports action(s) whose target was READ as absent on "
-				+ "mobile: " + Describe(reportedMissing)
+				+ "mobile: " + Describe(readMissing)
 				+ ". These bindings were KEPT and convert normally, and the request was not modified at all — the "
 				+ "read reports what the target DECLARES, which is not the same as proving the action is dead, so "
-				+ "nothing was removed. Build each element exactly as its elementMap entry says, name the control "
-				+ "and its target at the conversion gate as something to CHECK, and let the user decide."
-				+ Remedies(reportedMissing));
+				+ "nothing was removed. An object whose MobileRelatedPage add-on declares no default mobile page "
+				+ "may still work: a LEGACY default page can exist without ever being registered in that add-on. "
+				+ "Build each element exactly as its elementMap entry says, name the control and its target at the "
+				+ "conversion gate as something to CHECK, and let the user decide. If there is genuinely no mobile "
+				+ "page for an object, converting its form page and registering it is what makes every action "
+				+ "pointing there work."
+				+ candidateNote);
 		}
 		List<UnresolvedTargetRequest> unknown = [..
-			unresolvedTargetRequests.Where(r => IsState(r, UnresolvedTargetRequest.StateUnknown) && !r.BindingRemoved)];
+			unresolvedTargetRequests.Where(r => IsState(r, UnresolvedTargetRequest.StateUnknown))];
 		if (unknown.Count > 0) {
 			constraints.Add(
 				"requestConversions.unresolvedTargetRequests reports action(s) whose target could NOT be verified: "
@@ -4425,9 +4426,12 @@ public static class WebToMobileAnalysisService {
 				ActionTargetResolution target = ResolvedTargetOf(ctx, rule, source);
 				if (target is { State: ActionTargetState.Missing or ActionTargetState.Unknown }) {
 					bool missing = target.State == ActionTargetState.Missing;
-					// Removed only for a DEFINITIONAL absence (a web page cannot open on mobile, and no
-					// environment read was involved). An object's add-on verdict is a report, never a removal:
-					// it cannot prove absence, and stripping on it would cost a working action.
+					// Never removed today (MobileActionTargetProbe.StripsBindingOnMissing — a deliberate policy):
+					// a missing target's binding is always KEPT and reported, not stripped — even a definitional
+					// absence (a web page cannot open on mobile) forecloses nothing this way, so the same target
+					// converting later in the same session (the missing-target-page queue) still has an action
+					// worth re-pointing instead of one that vanished. canRemoveBinding stays as the writer-side
+					// guard it always was, for the day a kind opts back into removal.
 					bool removed = missing
 						&& canRemoveBinding
 						&& MobileActionTargetProbe.StripsBindingOnMissing(target.Kind);
@@ -4435,7 +4439,8 @@ public static class WebToMobileAnalysisService {
 						ElementName = elementName, Binding = binding, WebRequest = webRequest,
 						TargetKind = target.Kind, Target = target.Target,
 						State = missing ? UnresolvedTargetRequest.StateMissing : UnresolvedTargetRequest.StateUnknown,
-						BindingRemoved = removed
+						BindingRemoved = removed,
+						ResolvedCandidateSchemaName = target.ResolvedCandidateSchemaName
 					});
 					if (removed) {
 						ctx.DroppedRequests.Add(new DroppedRequest {
@@ -4555,8 +4560,34 @@ public static class WebToMobileAnalysisService {
 			// Carried whenever the probe set one, not only on total failure: a check that ran but hit its
 			// per-object ceiling is incomplete in a way TargetsProbed alone cannot express. Redacted at the
 			// point it is built.
-			TargetsNote = actionTargetsProbe?.Note
+			TargetsNote = actionTargetsProbe?.Note,
+			MissingTargetPages = BuildMissingTargetPages(unresolvedTargets)
 		};
+	}
+
+	/// <summary>
+	/// Deduplicates <see cref="UnresolvedTargetRequest"/> entries into the caller-facing conversion queue.
+	/// Scoped to <c>web-page</c> only — see <see cref="RequestConversionInfo.MissingTargetPages"/>
+	/// for why <c>entity-default-mobile-page</c> is deliberately excluded here. Grouped case-insensitively so
+	/// two references that differ only by casing collapse into one candidate.
+	/// </summary>
+	private static List<MissingTargetPage> BuildMissingTargetPages(
+		IReadOnlyList<UnresolvedTargetRequest> unresolvedTargets) {
+		if (unresolvedTargets is not { Count: > 0 }) {
+			return [];
+		}
+		return [.. unresolvedTargets
+			.Where(r => string.Equals(r.TargetKind, MobileActionTargetProbe.KindWebPage, StringComparison.OrdinalIgnoreCase)
+				&& !string.IsNullOrWhiteSpace(r.Target))
+			.GroupBy(r => r.Target, StringComparer.OrdinalIgnoreCase)
+			.Select(g => new MissingTargetPage {
+				Target = g.Key,
+				TargetKind = MobileActionTargetProbe.KindWebPage,
+				References = [.. g
+					.Select(r => (r.ElementName, r.Binding))
+					.Distinct()
+					.Select(t => new MissingTargetPageReference { ElementName = t.ElementName, Binding = t.Binding })]
+			})];
 	}
 
 	/// <summary>

@@ -41,7 +41,8 @@ public sealed class MobileActionTargetProbeTests {
 
 	private static EnvironmentStub Environment(
 		Func<string, string> select,
-		string addonMetaData = null) {
+		string addonMetaData = null,
+		string webRelatedPageAddonMetaData = null) {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
 			.Returns(callInfo => select(callInfo.ArgAt<string>(1)));
@@ -50,9 +51,18 @@ public sealed class MobileActionTargetProbeTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns(callInfo => callInfo.Arg<string>());
 		urlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>()).Returns("/DataService/json/SyncReply/SelectQuery");
 
+		// Routed by AddonName: the MobileRelatedPage classification read (addonMetaData) and the WEB RelatedPage
+		// candidate read (webRelatedPageAddonMetaData) are two DIFFERENT add-ons on the same
+		// object, so a test exercising both must be able to answer them differently.
 		IAddonSchemaDesignerClient addonClient = Substitute.For<IAddonSchemaDesignerClient>();
 		addonClient.GetSchema(Arg.Any<AddonGetRequestDto>())
-			.Returns(new AddonSchemaDto { MetaData = addonMetaData ?? string.Empty });
+			.Returns(callInfo => {
+				string requestedAddon = callInfo.Arg<AddonGetRequestDto>().AddonName;
+				string metaData = string.Equals(requestedAddon, "RelatedPage", StringComparison.Ordinal)
+					? webRelatedPageAddonMetaData ?? string.Empty
+					: addonMetaData ?? string.Empty;
+				return new AddonSchemaDto { MetaData = metaData };
+			});
 
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
@@ -116,6 +126,11 @@ public sealed class MobileActionTargetProbeTests {
 		result.TargetsByKey.TryGetValue(MobileActionTargetProbe.TargetKey(kind, target), out ActionTargetResolution resolution)
 			? resolution.State
 			: ActionTargetState.Unknown;
+
+	private static string CandidateOf(MobileActionTargetProbeResult result, string kind, string target) =>
+		result.TargetsByKey.TryGetValue(MobileActionTargetProbe.TargetKey(kind, target), out ActionTargetResolution resolution)
+			? resolution.ResolvedCandidateSchemaName
+			: null;
 
 	private static MobileActionTargetProbeResult Probe(
 		EnvironmentStub environment, JsonArray viewConfig, WebToMobilePageConversionRules rules = null,
@@ -425,6 +440,122 @@ public sealed class MobileActionTargetProbeTests {
 				+ "equally the shape a request the server did not understand returns");
 	}
 
+	// ── Candidate web page resolution ───────────────────────────────────────────────────────────
+
+	[TestCase("", null, TestName = "ExtractDefaultPageSchemaUId_Blank_IsNull")]
+	[TestCase("{}", null, TestName = "ExtractDefaultPageSchemaUId_NoPagesKey_IsNull")]
+	[TestCase("not json", null, TestName = "ExtractDefaultPageSchemaUId_Unparseable_IsNull")]
+	[TestCase("{\"Pages\":[{\"PageSchemaUId\":\"" + PageSchemaUId + "\",\"IsDefault\":true,\"TypeColumnValue\":\"abc\"}]}",
+		null, TestName = "ExtractDefaultPageSchemaUId_OnlyTypedDefault_IsNull")]
+	[TestCase("{\"Pages\":[{\"PageSchemaUId\":\"" + PageSchemaUId + "\",\"IsDefault\":true}]}", PageSchemaUId,
+		TestName = "ExtractDefaultPageSchemaUId_UntypedDefault_ReturnsItsUId")]
+	[Description("The default page's PageSchemaUId is extracted under the same 'untyped default' rule ClassifyRelatedPageMetadata uses to decide presence, mirrored to return the UId to resolve instead of a state.")]
+	public void ExtractDefaultPageSchemaUId_ExtractsTheUntypedDefault(string metaData, string expected) {
+		// Arrange & Act
+		string pageSchemaUId = MobileActionTargetProbe.ExtractDefaultPageSchemaUId(metaData);
+
+		// Assert
+		pageSchemaUId.Should().Be(expected,
+			because: "only a real untyped default carries a UId worth resolving to a page name");
+	}
+
+	[Test]
+	[Description("An object verified missing its mobile default, whose WEB RelatedPage add-on declares an untyped default page, gets that page's NAME resolved as the candidate to convert next.")]
+	public void Probe_EntityMissingWithWebDefaultPage_ResolvesCandidateSchemaName() {
+		// Arrange — mobile add-on: no default (Missing). Web add-on: an untyped default page.
+		EnvironmentStub environment = Environment(
+			Route(Rows(PageRow("LeadProduct_FormPage", WebRoot, uId: PageSchemaUId)), Rows(EntityRow("LeadProduct"))),
+			addonMetaData: "{\"Pages\":[]}",
+			webRelatedPageAddonMetaData: $"{{\"Pages\":[{{\"PageSchemaUId\":\"{PageSchemaUId}\",\"IsDefault\":true}}]}}");
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(
+			environment, ViewConfig("crt.CreateRecordRequest", "entityName", "LeadProduct"));
+
+		// Assert
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct")
+			.Should().Be(ActionTargetState.Missing, because: "the mobile add-on still declares no default");
+		CandidateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct")
+			.Should().Be("LeadProduct_FormPage",
+				because: "the web RelatedPage add-on's default page is the candidate to convert next");
+		// NSubstitute's Received() carries no because overload: the candidate read must address the WEB
+		// add-on of the SAME object the mobile read classified.
+		environment.AddonClient.Received(1).GetSchema(
+			Arg.Is<AddonGetRequestDto>(request =>
+				request.AddonName == "RelatedPage" && request.TargetSchemaUId == Guid.Parse(EntitySchemaUId)));
+	}
+
+	[Test]
+	[Description("An object verified missing its mobile default, whose WEB RelatedPage add-on ALSO declares no default, resolves no candidate — never a guessed page name.")]
+	public void Probe_EntityMissingWithoutWebDefaultPage_ResolvedCandidateIsNull() {
+		// Arrange
+		EnvironmentStub environment = Environment(
+			Route(Rows(), Rows(EntityRow("LeadProduct"))),
+			addonMetaData: "{\"Pages\":[]}",
+			webRelatedPageAddonMetaData: "{\"Pages\":[]}");
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(
+			environment, ViewConfig("crt.CreateRecordRequest", "entityName", "LeadProduct"));
+
+		// Assert
+		CandidateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct")
+			.Should().BeNull(
+				because: "the object has no web edit page registered either, so there is nothing to offer");
+	}
+
+	[Test]
+	[Description("A RESOLVED object (mobile add-on already has a default) never triggers the candidate read — it is not missing anything to resolve a candidate for.")]
+	public void Probe_EntityResolved_DoesNotReadTheWebRelatedPageAddon() {
+		// Arrange
+		EnvironmentStub environment = Environment(
+			Route(Rows(), Rows(EntityRow("Opportunity"))),
+			addonMetaData: $"{{\"Pages\":[{{\"PageSchemaUId\":\"{DefaultMobilePageUId}\",\"IsDefault\":true}}]}}");
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(
+			environment, ViewConfig("crt.CreateRecordRequest", "entityName", "Opportunity"));
+
+		// Assert
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "Opportunity")
+			.Should().Be(ActionTargetState.Resolved);
+		environment.AddonClient.DidNotReceive().GetSchema(
+			Arg.Is<AddonGetRequestDto>(request => request.AddonName == "RelatedPage"));
+	}
+
+	[Test]
+	[Description("An UNKNOWN object (no base row to address reliably) never triggers the candidate read — the classification itself never ran to reach a Missing verdict.")]
+	public void Probe_EntityUnknown_DoesNotReadTheWebRelatedPageAddon() {
+		// Arrange
+		EnvironmentStub environment = Environment(
+			Route(Rows(), Rows(EntityRow("Opportunity", extendParent: true))));
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(
+			environment, ViewConfig("crt.CreateRecordRequest", "entityName", "Opportunity"));
+
+		// Assert
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "Opportunity")
+			.Should().Be(ActionTargetState.Unknown);
+		environment.AddonClient.DidNotReceive().GetSchema(
+			Arg.Is<AddonGetRequestDto>(request => request.AddonName == "RelatedPage"));
+	}
+
+	[Test]
+	[Description("A WEB-PAGE target never gets a candidate: candidate resolution only applies to entity-default-mobile-page findings.")]
+	public void Probe_WebPageTarget_NeverCarriesACandidate() {
+		// Arrange
+		EnvironmentStub environment = Environment(Route(Rows(), Rows()));
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(
+			environment, ViewConfig("crt.OpenPageRequest", "schemaName", "LegacyPage"));
+
+		// Assert
+		CandidateOf(result, MobileActionTargetProbe.KindWebPage, "LegacyPage").Should().BeNull(
+			because: "a web-page verdict is definitional and needs no candidate resolution at all");
+	}
+
 	[Test]
 	[Description("The object the page itself is bound to is not reported at all: creating its default mobile page IS this conversion's closing step, so neither 'missing' nor 'please verify' is a question worth asking.")]
 	public void Probe_TargetIsTheSourcePagesOwnObject_IsNotReported() {
@@ -621,7 +752,7 @@ public sealed class MobileActionTargetProbeTests {
 			$$"""[ { "type": "crt.FlexContainer", "name": "MainContainer", "items": [ {{items}} ] } ]""").AsArray();
 	}
 
-	// ── Per-tier degradation (ENG-94839) ───────────────────────────────────────────────────────
+	// ── Per-tier degradation ───────────────────────────────────────────────────────────────────
 
 	[Test]
 	[Description("An unreachable environment does not discard the web-page verdict the probe had already settled offline, even though the object tier on the SAME page could not answer.")]
@@ -745,22 +876,22 @@ public sealed class MobileActionTargetProbeTests {
 			because: "server prose must be fenced as data, or an agent reads it as instructions");
 	}
 
-	[TestCase(MobileActionTargetProbe.KindWebPage, true,
-		TestName = "StripsBindingOnMissing_WebPage_Strips")]
+	[TestCase(MobileActionTargetProbe.KindWebPage, false,
+		TestName = "StripsBindingOnMissing_WebPage_NeverStrips")]
 	[TestCase(MobileActionTargetProbe.KindEntityDefaultMobilePage, false,
-		TestName = "StripsBindingOnMissing_EntityDefaultMobilePage_ReportsOnly")]
-	[TestCase("some-future-kind", false, TestName = "StripsBindingOnMissing_UnknownKind_ReportsOnly")]
-	[TestCase(null, false, TestName = "StripsBindingOnMissing_NullKind_ReportsOnly")]
-	[Description("Only a DEFINITIONAL absence removes an action: a web page cannot open on mobile whatever the environment holds, while every kind whose verdict comes from a read is reported and left alone.")]
-	public void StripsBindingOnMissing_OnlyDefinitionalAbsenceStrips(string kind, bool expected) {
+		TestName = "StripsBindingOnMissing_EntityDefaultMobilePage_NeverStrips")]
+	[TestCase("some-future-kind", false, TestName = "StripsBindingOnMissing_UnknownKind_NeverStrips")]
+	[TestCase(null, false, TestName = "StripsBindingOnMissing_NullKind_NeverStrips")]
+	[Description("No kind ever strips a missing target's binding, not even the definitional web-page absence — stripping would foreclose repointing the action once its target converts later in the same session.")]
+	public void StripsBindingOnMissing_NoKindEverStrips(string kind, bool expected) {
 		// Arrange & Act
 		bool strips = MobileActionTargetProbe.StripsBindingOnMissing(kind);
 
 		// Assert
 		strips.Should().Be(expected,
-			because: "the object verdict comes from an add-on read whose body carrying no page set is equally "
-				+ "the shape a mis-addressed read returns, so removing a working action on it is not a trade "
-				+ "this tool makes");
+			because: "a stripped binding is gone with no mechanism that restores it, while the missing target it "
+				+ "named may still get converted later in the same session — keeping it costs nothing a strip "
+				+ "would have avoided");
 	}
 
 	// ── Fail-open ──────────────────────────────────────────────────────────────────────────────

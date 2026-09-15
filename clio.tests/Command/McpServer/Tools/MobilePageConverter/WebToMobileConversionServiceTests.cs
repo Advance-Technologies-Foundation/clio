@@ -4920,7 +4920,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 	#endregion
 
-	#region Action targets that do not exist on mobile (ENG-94839)
+	#region Action targets that do not exist on mobile
 
 	/// <summary>Rules whose OpenPage / CreateRecord requests declare a navigation target to verify.</summary>
 	private static readonly WebToMobilePageConversionRules TargetRules = new() {
@@ -4965,7 +4965,7 @@ public sealed class WebToMobileConversionServiceTests {
 	/// <summary>A probe result that resolved <paramref name="target"/> to <paramref name="state"/>.</summary>
 	private static MobileActionTargetProbeResult ProbeResult(
 		string elementName, string webRequest, string kind, string target, ActionTargetState state,
-		bool probeOk = true, string note = null) =>
+		bool probeOk = true, string note = null, string resolvedCandidateSchemaName = null) =>
 		new() {
 			ProbeOk = probeOk,
 			Note = note,
@@ -4976,8 +4976,10 @@ public sealed class WebToMobileConversionServiceTests {
 				}
 			],
 			TargetsByKey = new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase) {
-				[MobileActionTargetProbe.TargetKey(kind, target)] =
-					new ActionTargetResolution { Kind = kind, Target = target, State = state }
+				[MobileActionTargetProbe.TargetKey(kind, target)] = new ActionTargetResolution {
+					Kind = kind, Target = target, State = state,
+					ResolvedCandidateSchemaName = resolvedCandidateSchemaName
+				}
 			}
 		};
 
@@ -4988,8 +4990,8 @@ public sealed class WebToMobileConversionServiceTests {
 		ButtonBundle(buttonName, "crt.CreateRecordRequest", $$"""{ "entityName": "{{entityName}}" }""");
 
 	[Test]
-	[Description("An action whose target does not exist on mobile loses its BINDING but keeps its control: the element still converts, mobileValues carries no clicked, and the action is reported in both droppedRequests and unresolvedTargetRequests.")]
-	public void Analyze_TargetMissing_StripsTheBindingAndKeepsTheControl() {
+	[Description("An action whose target does not exist on mobile keeps BOTH its control and its binding — the element still converts, mobileValues still carries clicked pointing at the (currently dead) web schema, and the action is reported in unresolvedTargetRequests and converted normally, never dropped.")]
+	public void Analyze_TargetMissing_KeepsBothTheControlAndTheBinding() {
 		// Arrange
 		PageBundleInfo bundle = OpenPageButtonBundle("PostponeButton", "LegacyPage");
 		MobileActionTargetProbeResult probe = ProbeResult(
@@ -5012,18 +5014,19 @@ public sealed class WebToMobileConversionServiceTests {
 		finding.State.Should().Be("missing", because: "the absence was verified, not assumed");
 		guide.RequestConversions.TargetsProbed.Should().BeTrue(because: "the environment answered");
 		Element(guide, "PostponeButton").Operation.Should().NotBe("drop",
-			because: "a dead target costs the action, never the control");
-		ClickedOf(guide, "PostponeButton").Should().NotContainKey("clicked",
-			because: "the converted page must not ship an action that fails every time it is used");
-		guide.RequestConversions.DroppedRequests.Should().ContainSingle(
-			r => r.ElementName == "PostponeButton" && r.Reason.Contains("cannot exist"),
-			because: "a stripped binding is a dropped request, exactly as an unsupported request type is — and "
-				+ "the reason says CANNOT, because only a definitional absence gets this far");
-		guide.RequestConversions.ConvertedRequests.Should().NotContain(r => r.ElementName == "PostponeButton",
-			because: "an action that was removed was not converted");
-		finding.BindingRemoved.Should().BeTrue(
-			because: "the caller must be able to read WHAT HAPPENED off the finding rather than re-deriving the "
-				+ "per-kind rule that decided it");
+			because: "a dead target costs neither the action nor the control");
+		JsonObject clicked = ClickedOf(guide, "PostponeButton")["clicked"]!.AsObject();
+		clicked["request"]!.GetValue<string>().Should().Be("crt.OpenPageRequest",
+			because: "the request is kept verbatim, not stripped, so it can be repointed once the target converts");
+		clicked["params"]!["schemaName"]!.GetValue<string>().Should().Be("LegacyPage",
+			because: "the params survive untouched too");
+		guide.RequestConversions.DroppedRequests.Should().NotContain(r => r.ElementName == "PostponeButton",
+			because: "nothing was dropped — a missing target is never a reason to remove the action");
+		guide.RequestConversions.ConvertedRequests.Should().ContainSingle(r => r.ElementName == "PostponeButton",
+			because: "a kept action converted, so it belongs in convertedRequests");
+		finding.BindingRemoved.Should().BeFalse(
+			because: "no kind strips a missing target's binding, not even this definitional one — "
+				+ "stripping would foreclose repointing it once the target page converts in this session");
 	}
 
 	[Test]
@@ -5068,8 +5071,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A MENU ITEM nested in a button's menuItems is handled like a button: its dead action is reported and its binding removed, while the item itself stays as its own element-map entry. The ticket names buttons and menu items both, and the two reach the binding pass down different traversal paths.")]
-	public void Analyze_MenuItemTargetMissing_IsReportedAndStripped() {
+	[Description("A MENU ITEM nested in a button's menuItems is handled like a button: its dead action is reported and its binding KEPT, while the item itself stays as its own element-map entry. Buttons and menu items reach the binding pass down different traversal paths, so both need coverage.")]
+	public void Analyze_MenuItemTargetMissing_IsReportedAndKept() {
 		// Arrange — a real menuItems child, not a second button: the child-array traversal makes it its own
 		// element-map entry, which is the path this test exists to pin.
 		PageBundleInfo bundle = Bundle("""
@@ -5095,8 +5098,9 @@ public sealed class WebToMobileConversionServiceTests {
 		guide.RequestConversions!.UnresolvedTargetRequests
 			.Should().ContainSingle(r => r.ElementName == "OpenLegacyItem",
 				because: "a dead navigation is dead whichever component type fires it");
-		ClickedOf(guide, "OpenLegacyItem").Should().NotContainKey("clicked",
-			because: "the menu item stays on the page, its dead action does not");
+		ClickedOf(guide, "OpenLegacyItem").Should().ContainKey("clicked",
+			because: "the menu item stays on the page, and so does its action — a missing target is never a "
+				+ "reason to remove it");
 	}
 
 	[Test]
@@ -5121,7 +5125,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A verified-missing target adds a constraint telling the caller to KEEP the control and report it — the guide carries the instruction, and that instruction is never a removal.")]
+	[Description("A verified-missing web-page target adds a constraint stating the absence is DEFINITIONAL and the binding is KEPT, not removed — the guide carries the instruction, and that instruction is never a removal.")]
 	public void Analyze_TargetMissing_AddsAKeepAndReportConstraint() {
 		// Arrange
 		PageBundleInfo bundle = OpenPageButtonBundle("PostponeButton", "LegacyPage");
@@ -5135,10 +5139,13 @@ public sealed class WebToMobileConversionServiceTests {
 		string constraint = guide.Constraints.Should().ContainSingle(c => c.Contains("PostponeButton -> LegacyPage"),
 			because: "the tool's contract is that the guide's own constraints carry the rules for applying it, "
 				+ "so the finding must arrive with the instruction that acts on it").Subject;
-		constraint.Should().Contain("ALREADY REMOVED",
-			because: "the caller must not be told to re-add a binding the converter deliberately stripped");
-		constraint.Should().Contain("KEEP the control",
-			because: "only the action was dropped, and the instruction has to say which of the two");
+		constraint.Should().Contain("CANNOT exist",
+			because: "the absence is definitional (a web page cannot open on mobile), not a guess");
+		constraint.Should().Contain("KEPT, not removed",
+			because: "no kind strips a missing target's binding, so the caller must be told the action "
+				+ "is still there to repoint, not that it was already dropped");
+		constraint.Should().NotContainEquivalentOf("ALREADY REMOVED",
+			because: "that wording described the retired strip-on-missing behavior and must not come back");
 		// Scoped to THIS constraint on purpose: the base list legitimately says "do NOT add a second Scaffold",
 		// so a list-wide scan would couple this test to unrelated wording.
 		constraint.Should().NotContainEquivalentOf("do not add",
@@ -5375,6 +5382,187 @@ public sealed class WebToMobileConversionServiceTests {
 				+ "happened");
 		constraint.Should().NotContainEquivalentOf("ALREADY REMOVED",
 			because: "that wording belongs to the definitional-absence group alone");
+	}
+
+	[Test]
+	[Description("A missing entity-default-mobile-page target whose probe resolved a candidate web page carries that name on the finding AND in the constraint text, so the agent can offer it without inventing a page name.")]
+	public void Analyze_EntityTargetMissingWithResolvedCandidate_SurfacesItOnTheFindingAndConstraint() {
+		// Arrange
+		PageBundleInfo bundle = CreateRecordButtonBundle("ProductsAddButton", "LeadProduct");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"ProductsAddButton", "crt.CreateRecordRequest",
+			MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct", ActionTargetState.Missing,
+			resolvedCandidateSchemaName: "LeadProduct_FormPage");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		UnresolvedTargetRequest finding = guide.RequestConversions!.UnresolvedTargetRequests
+			.Should().ContainSingle().Subject;
+		finding.ResolvedCandidateSchemaName.Should().Be("LeadProduct_FormPage",
+			because: "the probe's resolved candidate must reach the finding the caller actually reads");
+		string constraint = guide.Constraints
+			.Should().ContainSingle(c => c.Contains("ProductsAddButton -> LeadProduct"),
+				because: "the same constraint that reports the absence carries the candidate").Subject;
+		constraint.Should().Contain("LeadProduct -> LeadProduct_FormPage",
+			because: "the agent must be told exactly which page to offer converting, not left to guess one");
+	}
+
+	[Test]
+	[Description("A missing entity-default-mobile-page target with NO resolved candidate gets no candidate sentence at all — the constraint must not claim a page that was never found.")]
+	public void Analyze_EntityTargetMissingWithoutCandidate_ConstraintOmitsCandidateSentence() {
+		// Arrange
+		PageBundleInfo bundle = CreateRecordButtonBundle("ProductsAddButton", "LeadProduct");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"ProductsAddButton", "crt.CreateRecordRequest",
+			MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct", ActionTargetState.Missing);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		guide.RequestConversions!.UnresolvedTargetRequests.Should().ContainSingle().Subject
+			.ResolvedCandidateSchemaName.Should().BeNull(
+				because: "no candidate was resolved, so the finding must not fabricate one");
+		string constraint = guide.Constraints
+			.Should().ContainSingle(c => c.Contains("ProductsAddButton -> LeadProduct")).Subject;
+		constraint.Should().NotContain("A default WEB edit page was found",
+			because: "the candidate sentence must appear only when a candidate was actually resolved");
+	}
+
+	[Test]
+	[Description("clio does NOT deduplicate entity-default-mobile-page findings the way it does missingTargetPages for web-page targets: two buttons creating the same missing object produce TWO unresolvedTargetRequests entries — but both share the identical resolvedCandidateSchemaName, which is the grouping key a caller (e.g. the mobile-page-conversion skill) must use to collapse them into one offer before proposing a conversion.")]
+	public void Analyze_TwoButtonsSameMissingEntity_ProduceSeparateFindingsSharingTheSameResolvedCandidate() {
+		// Arrange — two buttons, each creating a record for the same missing object.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "FirstAddButton", "type": "crt.Button", "caption": "First",
+				  "clicked": { "request": "crt.CreateRecordRequest", "params": { "entityName": "LeadProduct" } } },
+				{ "name": "SecondAddButton", "type": "crt.Button", "caption": "Second",
+				  "clicked": { "request": "crt.CreateRecordRequest", "params": { "entityName": "LeadProduct" } } }
+			] } ]
+			""");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"FirstAddButton", "crt.CreateRecordRequest",
+			MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct", ActionTargetState.Missing,
+			resolvedCandidateSchemaName: "LeadProduct_FormPage");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		guide.RequestConversions!.UnresolvedTargetRequests.Should().HaveCount(2,
+			because: "unlike missingTargetPages, clio reports one entity-default-mobile-page row per BUTTON, "
+				+ "not one per distinct target — the caller is responsible for grouping them");
+		guide.RequestConversions.UnresolvedTargetRequests.Should().OnlyContain(
+			r => r.Target == "LeadProduct" && r.ResolvedCandidateSchemaName == "LeadProduct_FormPage",
+			because: "both buttons name the SAME distinct target, so the probe resolves ONE candidate and both "
+				+ "findings must carry it identically — this is the grouping key a caller collapses on "
+				+ "(resolvedCandidateSchemaName when set, otherwise target)");
+		guide.RequestConversions.UnresolvedTargetRequests.Select(r => r.ElementName).Should().BeEquivalentTo(
+			["FirstAddButton", "SecondAddButton"],
+			because: "a caller grouping by resolvedCandidateSchemaName must still be able to recover every "
+				+ "control that referenced it");
+	}
+
+	[Test]
+	[Description("When no candidate is resolved, two buttons creating the same missing object still share the same (null) resolvedCandidateSchemaName AND the same target — the fallback grouping key a caller uses when there is no candidate name to group on.")]
+	public void Analyze_TwoButtonsSameMissingEntityNoCandidate_ShareTheSameTargetAsFallbackGroupingKey() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "FirstAddButton", "type": "crt.Button", "caption": "First",
+				  "clicked": { "request": "crt.CreateRecordRequest", "params": { "entityName": "LeadProduct" } } },
+				{ "name": "SecondAddButton", "type": "crt.Button", "caption": "Second",
+				  "clicked": { "request": "crt.CreateRecordRequest", "params": { "entityName": "LeadProduct" } } }
+			] } ]
+			""");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"FirstAddButton", "crt.CreateRecordRequest",
+			MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct", ActionTargetState.Missing);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		guide.RequestConversions!.UnresolvedTargetRequests.Should().HaveCount(2);
+		guide.RequestConversions.UnresolvedTargetRequests.Should().OnlyContain(
+			r => r.Target == "LeadProduct" && r.ResolvedCandidateSchemaName == null,
+			because: "with no candidate resolved, target is the only grouping key available — it must still be "
+				+ "identical across both findings, or a caller grouping by it would silently split one object "
+				+ "into two rows");
+	}
+
+	[Test]
+	[Description("A missing web-page target is queued into requestConversions.missingTargetPages so the caller can offer converting it next, without needing to re-derive the queue from unresolvedTargetRequests itself.")]
+	public void Analyze_WebPageTargetMissing_QueuesItInMissingTargetPages() {
+		// Arrange
+		PageBundleInfo bundle = OpenPageButtonBundle("PostponeButton", "LegacyPage");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"PostponeButton", "crt.OpenPageRequest", MobileActionTargetProbe.KindWebPage, "LegacyPage",
+			ActionTargetState.Missing);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		MissingTargetPage candidate = guide.RequestConversions!.MissingTargetPages
+			.Should().ContainSingle(because: "one distinct web-page target was found missing").Subject;
+		candidate.Target.Should().Be("LegacyPage", because: "the queue entry names the page to convert next");
+		candidate.TargetKind.Should().Be(MobileActionTargetProbe.KindWebPage,
+			because: "only web-page targets are aggregated by this pass");
+		candidate.References.Should().ContainSingle(
+			r => r.ElementName == "PostponeButton" && r.Binding == "clicked",
+			because: "the queue entry must name every control that references the missing page");
+	}
+
+	[Test]
+	[Description("Two elements referencing the same missing web page dedupe into ONE missingTargetPages entry carrying both references, so the same page is never offered for conversion twice.")]
+	public void Analyze_TwoElementsSameMissingTarget_DedupesIntoOneMissingTargetPage() {
+		// Arrange — two buttons, each opening the same missing web page.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "FirstButton", "type": "crt.Button", "caption": "First",
+				  "clicked": { "request": "crt.OpenPageRequest", "params": { "schemaName": "LegacyPage" } } },
+				{ "name": "SecondButton", "type": "crt.Button", "caption": "Second",
+				  "clicked": { "request": "crt.OpenPageRequest", "params": { "schemaName": "LegacyPage" } } }
+			] } ]
+			""");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"FirstButton", "crt.OpenPageRequest", MobileActionTargetProbe.KindWebPage, "LegacyPage",
+			ActionTargetState.Missing);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		MissingTargetPage candidate = guide.RequestConversions!.MissingTargetPages
+			.Should().ContainSingle(because: "both buttons name the same distinct target").Subject;
+		candidate.References.Should().HaveCount(2,
+			because: "the report must list every button that opens the missing page, for the conversion-report text");
+		candidate.References.Should().Contain(r => r.ElementName == "FirstButton");
+		candidate.References.Should().Contain(r => r.ElementName == "SecondButton");
+	}
+
+	[Test]
+	[Description("An entity-default-mobile-page target is reported in unresolvedTargetRequests but NOT aggregated into missingTargetPages: resolving an object name into a candidate web page needs a new environment read this pass does not perform.")]
+	public void Analyze_EntityTargetMissing_IsNotQueuedInMissingTargetPages() {
+		// Arrange
+		PageBundleInfo bundle = CreateRecordButtonBundle("ProductsAddButton", "LeadProduct");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"ProductsAddButton", "crt.CreateRecordRequest",
+			MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct", ActionTargetState.Missing);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		guide.RequestConversions!.UnresolvedTargetRequests.Should().ContainSingle(
+			because: "the object target is still reported");
+		guide.RequestConversions.MissingTargetPages.Should().BeEmpty(
+			because: "an entity-default-mobile-page target has no resolved candidate page yet, so it must not be "
+				+ "offered as one");
 	}
 
 	#endregion
