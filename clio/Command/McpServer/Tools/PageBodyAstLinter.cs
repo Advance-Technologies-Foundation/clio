@@ -8,7 +8,7 @@ namespace Clio.Command.McpServer.Tools;
 /// <summary>
 /// Deterministic AST lint pass applied to a Freedom UI page body AFTER
 /// <see cref="PageBodySyntaxValidator"/> succeeds and BEFORE the body reaches
-/// <see cref="PageBodySamplingService"/> or Creatio.
+/// Creatio.
 ///
 /// Background: the syntactic floor catches grammar errors
 /// but not the semantic anti-patterns described in the guidance resources

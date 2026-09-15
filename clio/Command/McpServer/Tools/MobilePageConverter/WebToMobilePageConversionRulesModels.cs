@@ -1,4 +1,4 @@
-namespace Clio.Command.McpServer.Tools.MobilePageConverter;
+﻿namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 
 using System.Collections.Generic;
 using System.Text.Json;
@@ -22,6 +22,19 @@ public sealed class WebToMobilePageConversionRules {
 	public IReadOnlyList<TemplateMappingRule> Templates { get; init; } = [];
 
 	/// <summary>
+	/// The mobile template to recommend when the source page's web template matches NO
+	/// <see cref="Templates"/> entry — a custom or unrecognised web template.
+	/// </summary>
+	/// <remarks>
+	/// Without it such a page got no mobile template at all, and the consequence was not just a missing
+	/// recommendation: with no template to read, clio had no base to diff the data sections against, so both
+	/// diffs degraded to a single root merge (ENG-95827). A generic mobile base is a far better answer than
+	/// none — it gives `create-page` a target and gives the differ a real base. The fallback deliberately
+	/// carries NO container or component correspondence: for an unrecognised web template clio knows no
+	/// name twins, and inventing them would misplace elements rather than leave them where the walk puts them.
+	/// </remarks>
+	[JsonPropertyName("defaultMobileTemplate")]
+	public string DefaultMobileTemplate { get; init; }
 	/// MOBILE base page templates that are edit/form (record) pages — e.g. <c>BaseMobilePageTemplate</c>,
 	/// <c>MobilePageWithTabsFreedomTemplate</c>. A converted page is a form page when the mobile template its
 	/// <see cref="Templates"/> rule targets is listed here; a list/section/blank target is simply absent. Kept
@@ -200,6 +213,12 @@ public sealed class TemplateMappingRule {
 	[JsonPropertyName("declaredElements")]
 	public IReadOnlyList<DeclaredElementRule> DeclaredElements { get; init; } = [];
 
+	/// <summary>
+	/// AUTHORING documentation for whoever edits this rules file — which web template this pair covers and
+	/// why. Deliberately has no reader: it is not projected onto the response, and must not become one. A
+	/// rules file resolves at runtime (env var → cache → CDN), so text from it reaching the wire would make
+	/// a rules author the writer of the calling agent's instructions.
+	/// </summary>
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
 }
@@ -551,7 +570,7 @@ public sealed class ExcludedComponentFilterRule {
 	/// Mobile type of the HOST element the search is confined to (e.g. <c>"crt.ExpansionPanel"</c>). The
 	/// host is found STRUCTURALLY, at any depth: an <c>elementMap</c> entry whose resolved <c>MobileType</c>
 	/// matches ANY ancestor on the banned entry's <c>parentName</c> chain (primary shape), or any
-	/// array-element object with this <c>type</c> nested anywhere inside an entry's <c>mobileValues</c>
+	/// array-element object with this <c>type</c> nested anywhere inside an entry's <c>values</c>
 	/// (fallback shape — a host buried in a verbatim-carried property, with no entry of its own). This is NOT
 	/// a direct-JSON-parent check either way: <see cref="Type"/> may sit several levels deeper inside one of
 	/// the host's properties.

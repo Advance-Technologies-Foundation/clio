@@ -14,7 +14,9 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool for creating one or more Creatio records via OData v4 (HTTP POST) in a single call.
 /// </summary>
 [McpServerToolType]
-public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
+public sealed class ODataCreateTool(
+	IToolCommandResolver commandResolver,
+	IOperationCorrelationIdProvider correlationIds) {
 
 	internal const string ToolName = "odata-create";
 
@@ -50,11 +52,20 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 		"re-sending such a row DUPLICATES it. On null, read the entity back and re-send only if absent — the " +
 		"row's 'retry-guidance' says so too, and the batch's 'unverified' count is how many rows are in that " +
 		"state. " +
+		"A response this tool returns - success or failure - carries a correlation-id, which matches this call to clio's own log lines; " +
+		"an exception that escapes the batch is answered by the MCP error envelope instead and carries none. " +
 		"Call get-tool-contract for odata-create to see usage examples and discovery workflow hints.")]
 	public ODataCreateBatchResponse Create(
 		[Description("Parameters: entity, rows, environment-name (all required); stop-on-error (optional).")]
 		[Required]
 		ODataCreateArgs args) {
+		//Minted once and stamped on the single exit, so every response carries the correlation-id
+		//core-rules promises - request-level refusals included.
+		string correlationId = correlationIds.New();
+		return CreateCore(args) with { CorrelationId = correlationId };
+	}
+
+	private ODataCreateBatchResponse CreateCore(ODataCreateArgs args) {
 		if (string.IsNullOrWhiteSpace(args.Entity)) {
 			return ODataCreateBatchResponse.RequestError("entity is required.");
 		}

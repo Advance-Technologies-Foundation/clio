@@ -59,8 +59,4 @@ public abstract record PageEditToolArgs {
 	[JsonPropertyName("resources")]
 	[Description("JSON object string of explicit localizable string key-value pairs for page labels, captions, titles, validator messages, and #ResourceString(key)# macros.")]
 	public string? Resources { get; init; }
-
-	[JsonPropertyName("skip-sampling")]
-	[Description("If true, skip AI semantic review before saving. Default: false")]
-	public bool? SkipSampling { get; init; }
 }
