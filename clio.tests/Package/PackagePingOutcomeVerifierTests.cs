@@ -11,7 +11,7 @@ namespace Clio.Tests.Package;
 [TestFixture]
 [Category("Unit")]
 [Property("Module", "Package")]
-public class ProcessDesignServiceOutcomeVerifierTests {
+public class PackagePingOutcomeVerifierTests {
 
 	#region Constants: Private
 
@@ -26,7 +26,7 @@ public class ProcessDesignServiceOutcomeVerifierTests {
 	private IApplicationClient _applicationClient;
 	private IServiceUrlBuilder _serviceUrlBuilder;
 	private ILogger _logger;
-	private ProcessDesignServiceOutcomeVerifier _verifier;
+	private PackagePingOutcomeVerifier _verifier;
 
 	#endregion
 
@@ -53,7 +53,7 @@ public class ProcessDesignServiceOutcomeVerifierTests {
 		_serviceUrlBuilder
 			.Build(ServiceUrlBuilder.KnownRoute.ProcessBuilderPing)
 			.Returns(PingUrl);
-		_verifier = new ProcessDesignServiceOutcomeVerifier(_applicationClient, _serviceUrlBuilder, _logger);
+		_verifier = new PackagePingOutcomeVerifier(_applicationClient, _serviceUrlBuilder, _logger);
 	}
 
 	[TearDown]
@@ -328,18 +328,47 @@ public class ProcessDesignServiceOutcomeVerifierTests {
 	}
 
 	[Test]
+	[Description("Probes the dashboards-migrator Ping route when asked about that package: the name selects the route, so one verifier serves both bundled packages.")]
+	public void IsPackageOperational_ShouldProbeTheDashboardsMigratorRoute_ForThatPackage() {
+		// Arrange
+		_serviceUrlBuilder
+			.Build(ServiceUrlBuilder.KnownRoute.DashboardsMigratorPing)
+			.Returns("http://localhost/0/rest/DashboardsMigratorService/Ping");
+		ArrangeResponse(PingResponse());
+
+		// Act
+		bool operational = _verifier.IsPackageOperational(DashboardsMigratorDistribution.PackageName, out string _);
+
+		// Assert
+		operational.Should().BeTrue(because: "the migrator's own Ping answered in the expected envelope");
+		_serviceUrlBuilder.Received(1).Build(ServiceUrlBuilder.KnownRoute.DashboardsMigratorPing);
+		_serviceUrlBuilder.DidNotReceive().Build(ServiceUrlBuilder.KnownRoute.ProcessBuilderPing);
+	}
+
+	[Test]
+	[Description("Throws for a package name that is not bundled: an answer about some other package's route would be a wrong verdict, and the caller passed a name only a programming error can produce.")]
+	public void IsPackageOperational_ShouldThrow_ForAnUnknownPackage() {
+		// Arrange, Act & Assert
+		Assert.Throws<ArgumentException>(
+			() => _verifier.IsPackageOperational("NotBundled", out string _),
+			"the route map covers exactly the bundled packages, so an unknown name has no route to probe");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
 	[Description("Rejects null collaborators, so a misconfigured DI graph fails at construction rather than mid-install.")]
 	public void Constructor_ShouldRejectNullCollaborators() {
 		// Arrange, Act & Assert
 		Assert.Throws<ArgumentNullException>(
-			() => new ProcessDesignServiceOutcomeVerifier(null, _serviceUrlBuilder, _logger),
+			() => new PackagePingOutcomeVerifier(null, _serviceUrlBuilder, _logger),
 			"the verifier cannot answer anything without a client, and failing here names the missing "
 			+ "dependency instead of throwing a NullReferenceException after the package is already installed");
 		Assert.Throws<ArgumentNullException>(
-			() => new ProcessDesignServiceOutcomeVerifier(_applicationClient, null, _logger),
+			() => new PackagePingOutcomeVerifier(_applicationClient, null, _logger),
 			"without a url builder there is no route to probe");
 		Assert.Throws<ArgumentNullException>(
-			() => new ProcessDesignServiceOutcomeVerifier(_applicationClient, _serviceUrlBuilder, null),
+			() => new PackagePingOutcomeVerifier(_applicationClient, _serviceUrlBuilder, null),
 			"without a logger the cause of a failed probe would be lost");
 	}
 
