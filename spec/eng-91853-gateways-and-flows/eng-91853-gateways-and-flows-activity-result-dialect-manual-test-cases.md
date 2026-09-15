@@ -182,13 +182,24 @@ checkboxes ticked, schema saved).
 2. Call `modify-business-process` with `setFlowCondition` against that flow, passing any valid
    condition.
 3. Call `modify-business-process` with `setFlow` against the same flow, passing `kind: "sequence"`.
+4. Repeat step 3 on a second fixture whose source's ONLY outgoing flow is that conditional one, or
+   which carries a second conditional sibling.
 
 **Expected result:**
 * Step 1 reports `branchesOnActivityResult: true` for that flow.
 * Step 2 is refused, with a message saying the flow branches on the preceding activity's result and a
   condition set here would be stored and then ignored at run time.
-* Step 3 is refused, with a message saying the selection would be discarded with no way back.
-* The stored selection is unchanged after both refusals.
+* Step 3 is refused, and WHICH refusal you get depends on the source's topology. Both are correct:
+  * the source has other outgoing flows and this is its last CONDITIONAL one — the STRUCTURAL guard
+    fires first, naming "the last conditional branch leaving `<element>`". `Approve order` on
+    `UsrOrder_Handle` is exactly this shape (one conditional beside one plain), so it always answers
+    this way and the selection-aware message is unreachable there.
+  * otherwise — the SELECTION-aware refusal, saying the selection would be discarded with no way back.
+  The order is deliberate: `ProcessGraphBuilder.SetFlow` tests `WouldDropTheLastBranch` before the
+  selection check, because losing the synthesized exclusive gateway is the worse outcome. Do NOT read
+  the structural message as "the selection is not protected" — step 4 is what proves it is.
+* Step 4 produces the selection-aware refusal.
+* The stored selection is unchanged after every refusal.
 
 ---
 
