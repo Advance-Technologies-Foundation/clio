@@ -20,6 +20,16 @@ TC-01..TC-06 and TC-10 establish WHICH connectors take the designer's result-sel
 TC-07..TC-09 cover surrounding behaviour that must not regress. TC-11..TC-12 cover the separate
 `validate-process-graph` argument defect.
 
+**ON A VERSIONED PROCESS THE NAME IS NOT THE IDENTITY, and this suite creates versions.** Each saved
+version is a separate schema (`<name><PackageName><n>`), and `describe-business-process
+--process-name X` resolves that name against ONE schema — the root, version 0 — while the designer
+edits, and the runtime executes, whichever is active. A designer save can leave the root behind. So
+before trusting any graph, read `version` / `isActiveVersion` / `activeVersionName` in the response,
+address the active schema by `--process-uid` or by its versioned name, and RECORD the schema UId you
+actually measured in the run identity block. The 2026-09-15 run measured version 0 throughout and
+reported TC-07/TC-09 as defects on that basis; both CONFIRM on the active version. See
+`docs/knowledge/ProcessModel/describe-business-process-reads-the-base-version-not-the-active-one.md`.
+
 ---
 
 ### `TC-01` Approval connector — the formula is never shown, and this always happens
@@ -135,6 +145,29 @@ selection.
   gateway's.
 * The connector is marked invalid.
 * Inserting a gateway is therefore not a workaround; guidance must not present it as one.
+
+---
+
+### `TC-06b` TWO chained gateways DO escape the editor
+
+**Preconditions:**
+A process where an Approval or Perform task feeds a plain sequence flow into an exclusive gateway,
+that gateway feeds a plain sequence flow into a SECOND exclusive gateway, and the second gateway has
+an outgoing conditional flow with a formula condition and no result selection.
+
+**Steps:**
+
+1. Open the process in the designer.
+2. Select the conditional connector leaving the SECOND gateway.
+3. Read the properties panel.
+
+**Expected result:**
+
+* The panel shows the FORMULA field, not a checkbox list.
+* The connector is not marked invalid.
+* The walk back to the activity is therefore one hop only. This is the boundary of TC-06 and the only
+  known topology that escapes; it is not a remedy for a connector that already carries a selection,
+  which is resolved by the stored UId and keeps its editor regardless of topology (TC-07).
 
 ---
 
