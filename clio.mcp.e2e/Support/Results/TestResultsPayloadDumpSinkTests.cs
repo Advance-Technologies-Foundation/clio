@@ -49,6 +49,8 @@ public sealed class TestResultsPayloadDumpSinkTests {
 		result.Succeeded.Should().BeTrue(
 			because: $"the write must succeed in a normal checkout, and it reported: {result.FailureReason}");
 		Track(result);
+		File.ReadAllBytes(result.Path!).Should().StartWith(payload.Take(1).Select(c => (byte)c),
+			because: "the file must open as plain JSON: Encoding.UTF8 would prepend a byte-order mark that jq and JSON.parse both reject");
 		File.ReadAllText(result.Path!).Should().Be(payload,
 			because: "the dump is deliberately exempt from redaction and bounding; anything else makes it a worse record than the log it replaced");
 	}
@@ -107,8 +109,10 @@ public sealed class TestResultsPayloadDumpSinkTests {
 
 		results.Select(result => result.Path).Should().OnlyHaveUniqueItems(
 			because: "the suite runs two NUnit workers, so a name built from a per-second stamp alone would let one failure's dump overwrite another's");
-		results.Should().AllSatisfy(result => result.Succeeded.Should().BeTrue(),
-			because: "every write must land, not merely the first");
+		results.Should().AllSatisfy(
+			result => result.Succeeded.Should().BeTrue(
+				because: "every write must land, not merely the first"),
+			because: "a sink that silently stops writing after the first call would hide every later failure's payload");
 	}
 
 	private void Track(McpPayloadDumpResult result) {

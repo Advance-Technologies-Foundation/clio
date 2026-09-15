@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text.Json;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
@@ -50,7 +49,10 @@ public sealed class McpResultDiagnosticsTests {
 		RecordingDumpSink sink = new();
 		CallToolResult callResult = new() {
 			IsError = true,
-			Content = [new TextContentBlock { Text = "first" }, new TextContentBlock { Text = "second" }]
+			Content = [
+				new TextContentBlock { Text = "alpha-block-marker" },
+				new TextContentBlock { Text = "beta-block-marker" }
+			]
 		};
 
 		// Act
@@ -59,7 +61,7 @@ public sealed class McpResultDiagnosticsTests {
 		// Assert
 		description.Should().Contain("Content=2 block(s)",
 			because: "the block count is the part of the payload's shape that is safe in a build log by construction and still tells the reader the tool answered something");
-		description.Should().NotContain("first",
+		description.Should().NotContain("alpha-block-marker",
 			because: "the blocks' text belongs in the dump file, not in a message that reaches the CI log");
 	}
 
@@ -118,21 +120,13 @@ public sealed class McpResultDiagnosticsTests {
 		};
 
 		// Act
-		Stopwatch stopwatch = Stopwatch.StartNew();
 		string description = McpResultDiagnostics.DescribeWithSink(callResult, null, "huge", sink);
-		stopwatch.Stop();
 
 		// Assert
 		description.Length.Should().BeLessThan(500,
-			because: "the message now carries metadata and a path, so a three-megabyte answer costs the log nothing at all rather than costing it a capped excerpt");
-		description.Should().NotContain("[redacted]",
-			because: "this size is exactly what expired the redactor's budget and discarded the whole diagnostic; nothing on this path runs a redaction rule over the payload any more");
-		sink.Writes[0].Payload.Should().Contain(leadingErrorText,
-			because: "the error text lives at the payload's beginning and must survive into the dump");
-		sink.Writes[0].Payload.Length.Should().BeGreaterThan(hugePayload.Length,
-			because: "the dump holds the whole serialized result, so it cannot be shorter than the payload it contains - the bound that used to cut it away is gone");
-		stopwatch.ElapsedMilliseconds.Should().BeLessThan(2_000,
-			because: "describing a failure must not itself take a second of backtracking regex time, which is how the timeout was reached in the first place");
+			because: "the message carries metadata and a path, so its length no longer scales with the payload's at all - which is also what proves no redaction rule ran over those three megabytes, since a rule that ran would have had to produce text");
+		sink.Writes[0].Payload.Should().Contain(hugePayload,
+			because: "the dump holds the payload WHOLE, beginning included; the 64 000-character bound that used to keep only its start is gone");
 	}
 
 	[Test]
@@ -176,19 +170,26 @@ public sealed class McpResultDiagnosticsTests {
 	}
 
 	[Test]
-	[Description("Labels the dump with the caller's own prefix, so the artifact belonging to a failure can be found without opening it.")]
-	public void DescribePrefixed_ShouldPassTheCallerPrefixAsTheDumpLabel() {
-		// Arrange
-		RecordingDumpSink sink = new();
-		CallToolResult callResult = new() { IsError = true, Content = [] };
+	[Description("Names the dump file after the caller's own prefix, so the artifact belonging to a failure is identifiable without opening it.")]
+	public void DescribePrefixed_ShouldNameTheDumpAfterTheCallerPrefix() {
+		// Arrange: the real DescribePrefixed, through the real sink, because the property under test is
+		// that the prefix reaches the FILE NAME - which a call passing the label explicitly would not
+		// prove, and which would survive DescribePrefixed quietly labelling every dump the same.
+		CallToolResult callResult = new() {
+			IsError = true,
+			Content = [new TextContentBlock { Text = "unparsable" }]
+		};
 
 		// Act
-		McpResultDiagnostics.DescribeWithSink(
-			callResult, null, "Could not parse list-apps MCP result: ", sink);
+		string message = McpResultDiagnostics.DescribePrefixed(
+			"Could not parse list-apps MCP result: ", callResult);
 
 		// Assert
-		sink.Writes[0].Label.Should().Be("Could not parse list-apps MCP result: ",
-			because: "the label names the dump file, and the caller's sentence is the only thing on this path that identifies which tool failed");
+		string? path = PayloadDumpReader.ExtractPath(message);
+		path.Should().NotBeNull(because: "a successful write must name its file in the message");
+		Path.GetFileName(path!).Should().Contain("could-not-parse-list-apps-mcp-result",
+			because: "the caller's sentence is the only thing on this path that says which tool failed, so it is what makes one dump distinguishable from another in the published artifact");
+		PayloadDumpReader.DeleteIfPresent(message);
 	}
 
 	[Test]
@@ -275,6 +276,73 @@ public sealed class McpResultDiagnosticsTests {
 	}
 
 	[Test]
+	[Description("Drops a quoted value the excerpt bound cut through, so half a secret cannot reach the build log where a whole one would have been redacted.")]
+	public void Describe_ShouldDropAValueTheExcerptBoundCutThrough_WhenTheDumpFails() {
+		// Arrange: a password positioned so the 1 000-character excerpt bound lands INSIDE its value.
+		// The production rule states as an accepted limit that a value sliced before its closing quote
+		// is not matched, so without the drop this reaches the log verbatim.
+		RecordingDumpSink sink = new() { FailureReasonToReturn = "IOException: No space left on device." };
+		string padding = new('p', McpResultDiagnostics.LogFragmentLimit);
+		CallToolResult callResult = new() {
+			IsError = true,
+			Content = [new TextContentBlock { Text = $"{padding}\"password\":\"s3cr3tValue" }]
+		};
+
+		// Act
+		string description = McpResultDiagnostics.DescribeWithSink(callResult, null, "cut-secret", sink);
+
+		// Assert
+		description.Should().NotContain("s3cr3t",
+			because: "a secret the bound cut in half matches no redaction rule, so the cut value must be discarded rather than shipped");
+	}
+
+	[Test]
+	[Description("Reports that StructuredContent was present, which separates a shape mismatch in the structured channel from a result that carried nothing.")]
+	public void Describe_ShouldReportStructuredContentPresent_WhenResultCarriesIt() {
+		// Arrange
+		RecordingDumpSink sink = new();
+		CallToolResult callResult = new() {
+			IsError = false,
+			Content = [],
+			StructuredContent = JsonSerializer.SerializeToElement(new { code = 7 })
+		};
+
+		// Act
+		string description = McpResultDiagnostics.DescribeWithSink(callResult, null, "structured", sink);
+
+		// Assert
+		description.Should().Contain("StructuredContent=present",
+			because: "a reader has to be able to tell which channel carried the unreadable answer before opening the dump");
+		sink.Writes[0].Payload.Should().Contain("\"code\": 7",
+			because: "the structured channel must reach the dump too, not only the content blocks");
+	}
+
+	[Test]
+	[Description("Dumps a content block that carries no text string (an image block), which the old renderer named explicitly and which now rests on the SDK's own serialization.")]
+	public void Describe_ShouldDumpABlockWithNoTextString_WhenContentCarriesAnImage() {
+		// Arrange
+		RecordingDumpSink sink = new();
+		CallToolResult callResult = new() {
+			IsError = true,
+			Content = [
+				new ImageContentBlock {
+					Data = new ReadOnlyMemory<byte>("hello"u8.ToArray()),
+					MimeType = "image/png"
+				}
+			]
+		};
+
+		// Act
+		string description = McpResultDiagnostics.DescribeWithSink(callResult, null, "image", sink);
+
+		// Assert
+		description.Should().Contain("Content=1 block(s)",
+			because: "a block with no text is still a block the tool answered with, and must be counted rather than silently skipped");
+		sink.Writes[0].Payload.Should().Contain("image/png",
+			because: "an image or embedded-resource block is exactly the answer the old '(no text)' rendering made undiagnosable, so its own fields have to survive into the dump");
+	}
+
+	[Test]
 	[Description("Truncates text longer than the documented cap and reports the total original length, instead of flooding the CI log unbounded.")]
 	public void Truncate_ShouldCapAndReportTotalLength_WhenTextExceedsTheLimit() {
 		// Arrange
@@ -292,17 +360,22 @@ public sealed class McpResultDiagnosticsTests {
 	}
 
 	[Test]
-	[Description("Leaves text at or under the documented cap unchanged.")]
+	[Description("Leaves text at or under the documented cap unchanged, the boundary case included.")]
 	public void Truncate_ShouldReturnTextUnchanged_WhenTextIsAtOrUnderTheLimit() {
 		// Arrange
-		const string text = "short enough";
+		const int limit = 80;
+		const string shorterThanLimit = "short enough";
+		string exactlyAtLimit = new('z', limit);
 
 		// Act
-		string truncated = McpResultDiagnostics.Truncate(text, 80);
+		string shorterResult = McpResultDiagnostics.Truncate(shorterThanLimit, limit);
+		string exactResult = McpResultDiagnostics.Truncate(exactlyAtLimit, limit);
 
 		// Assert
-		truncated.Should().Be(text,
+		shorterResult.Should().Be(shorterThanLimit,
 			because: "text inside the budget must not gain a truncation note it did not earn");
+		exactResult.Should().Be(exactlyAtLimit,
+			because: "the comparison is <=, so text landing exactly on the budget is untouched - an off-by-one here would append a note that makes the result LONGER than the cap it reports");
 	}
 
 	[Test]

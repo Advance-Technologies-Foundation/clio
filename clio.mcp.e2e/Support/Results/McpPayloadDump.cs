@@ -78,6 +78,8 @@ internal sealed class TestResultsPayloadDumpSink : IMcpPayloadDumpSink {
 	/// <summary>Characters of the GUID kept to make a file name unique.</summary>
 	private const int UniqueSuffixLength = 8;
 
+	private static readonly UTF8Encoding DumpEncoding = new(encoderShouldEmitUTF8Identifier: false);
+
 	/// <inheritdoc />
 	public McpPayloadDumpResult Write(string label, string rawPayload) {
 		try {
@@ -94,7 +96,9 @@ internal sealed class TestResultsPayloadDumpSink : IMcpPayloadDumpSink {
 			string fileName = $"{DateTime.UtcNow:yyyyMMdd'T'HHmmss'Z'}-{Slugify(label)}-{uniqueSuffix}.json";
 			string path = Path.Combine(directory, fileName);
 
-			File.WriteAllText(path, rawPayload, Encoding.UTF8);
+			// No BOM. Encoding.UTF8 emits one, and the dump is an artifact people open with jq,
+			// JSON.parse and ordinary editors - all of which choke on a leading byte-order mark.
+			File.WriteAllText(path, rawPayload, DumpEncoding);
 			return new McpPayloadDumpResult(path, null);
 		}
 		catch (Exception exception) {

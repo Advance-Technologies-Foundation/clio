@@ -164,6 +164,14 @@ internal static class McpResultDiagnostics {
 	/// which is exactly the state issue #1384 removed. A read-only directory, a full disk or a path length
 	/// the Windows agent rejects must degrade the diagnostic, not erase it.
 	/// <para>
+	/// ACCEPTED LIMIT: the serialized result is held whole in memory and written in one call, with no size
+	/// bound at all — the 64 000-character bound the old design used is gone on purpose, because a bounded
+	/// dump is not a full-fidelity record. A pathological result (hundreds of blocks of hundreds of
+	/// kilobytes) therefore costs its own size twice over on a path that is only reporting someone else's
+	/// failure. That is deliberate and has not been observed: e2e payloads are tool answers from a sandbox
+	/// stand, and the alternative reintroduces the very trade-off issue #1537 removed.
+	/// </para>
+	/// <para>
 	/// "Raw" here means the result as it stands after the MCP SDK deserialized it: the original bytes are
 	/// no longer available at this layer, and re-serializing the <see cref="CallToolResult"/> is the
 	/// closest faithful record of what arrived. Nothing is bounded, filtered or redacted on the way to the
@@ -199,12 +207,57 @@ internal static class McpResultDiagnostics {
 	}
 
 	/// <summary>
-	/// Bounds a fragment destined for the build log and passes it through the production redaction rules.
+	/// Bounds a fragment destined for the build log, drops a value the bound cut through, and passes the
+	/// result through the production redaction rules.
 	/// </summary>
+	/// <remarks>
+	/// The middle step is not cosmetic. Bounding has to come FIRST — redacting megabytes is the cost this
+	/// class exists to avoid — but the production rule states as an accepted limit that "a value sliced by
+	/// an input cap before its closing quote is NOT matched"
+	/// (<see cref="SensitiveErrorTextRedactor"/>'s <c>JsonCredentialPropertyRegex</c>). So a fragment cut
+	/// as <c>…{"password":"s3c</c> would reach the log with the first characters of a real secret in it,
+	/// matching no rule at all. Discarding the unterminated value closes that without asking the redactor
+	/// to reason about a truncated document.
+	/// </remarks>
 	private static string RedactLogFragment(string? text) =>
 		string.IsNullOrEmpty(text)
 			? string.Empty
-			: SensitiveErrorTextRedactor.Redact(Truncate(text, LogFragmentLimit));
+			: SensitiveErrorTextRedactor.Redact(
+				Truncate(text, LogFragmentLimit, DropValueCutByTheBound));
+
+	/// <summary>
+	/// Removes a trailing quoted value the bound cut through, so half a secret cannot ship where a whole
+	/// one would have been redacted.
+	/// </summary>
+	/// <remarks>
+	/// Counts unescaped quotes rather than matching a pattern: an odd count means the fragment ends INSIDE
+	/// a JSON string, and everything from that opening quote on is an unterminated value. A single scan,
+	/// with no backtracking and therefore none of the timeout exposure that motivated this whole redesign.
+	/// </remarks>
+	private static string DropValueCutByTheBound(string fragment) {
+		int lastOpeningQuote = -1;
+		bool insideString = false;
+		for (int index = 0; index < fragment.Length; index++) {
+			char character = fragment[index];
+			if (character == '\\') {
+				index++;
+				continue;
+			}
+
+			if (character != '"') {
+				continue;
+			}
+
+			insideString = !insideString;
+			if (insideString) {
+				lastOpeningQuote = index;
+			}
+		}
+
+		return insideString && lastOpeningQuote >= 0
+			? fragment[..lastOpeningQuote] + "\"(value cut by the excerpt bound, not shown)"
+			: fragment;
+	}
 
 	/// <summary>Redaction that cannot itself throw, for the last-resort message composed in a catch block.</summary>
 	private static string SafeRedact(string? text) {
@@ -222,7 +275,16 @@ internal static class McpResultDiagnostics {
 	/// cut never splits a surrogate pair, so an emoji near the boundary cannot leave invalid UTF-16 that
 	/// breaks whatever serializes the message next.
 	/// </summary>
-	public static string Truncate(string text, int limit = LogFragmentLimit) {
+	/// <param name="text">The text to bound.</param>
+	/// <param name="limit">Maximum length of the result, the note included.</param>
+	/// <param name="sanitizeCutText">
+	/// Applied to the kept text BEFORE the note is appended, for a caller that must also remove something
+	/// the cut itself created. Runs before the note so it cannot discard it.
+	/// </param>
+	public static string Truncate(
+		string text,
+		int limit = LogFragmentLimit,
+		Func<string, string>? sanitizeCutText = null) {
 		if (limit <= 0) {
 			return string.Empty;
 		}
@@ -235,9 +297,12 @@ internal static class McpResultDiagnostics {
 		// made the result limit + note characters. The note's own text depends only on the original length
 		// and the budget, never on the kept count, so it can be measured before the cut.
 		string note = $" … {text.Length} characters total, truncated to fit {limit}";
-		return note.Length >= limit
-			? note[..limit]
-			: TextUtilities.TruncateWithoutSplittingSurrogatePair(text, limit - note.Length) + note;
+		if (note.Length >= limit) {
+			return note[..limit];
+		}
+
+		string kept = TextUtilities.TruncateWithoutSplittingSurrogatePair(text, limit - note.Length);
+		return (sanitizeCutText is null ? kept : sanitizeCutText(kept)) + note;
 	}
 }
 

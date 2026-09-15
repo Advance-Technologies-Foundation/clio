@@ -12,7 +12,11 @@ namespace Clio.Mcp.E2E.Support.Results;
 /// one run's artifacts be mistaken for the next run's evidence.
 /// </remarks>
 internal static partial class PayloadDumpReader {
-	[GeneratedRegex(@"Payload=(?<path>\S.*?)(?=\s(?:[A-Z]\w*=)|$)", RegexOptions.CultureInvariant)]
+	// The negative lookahead matters: on a failed write the message reads
+	// Payload=(dump failed: <reason>) PayloadExcerpt="...", and without it the lazy group stops at
+	// " PayloadExcerpt=" and hands back "(dump failed: ...)" as though it were a path.
+	[GeneratedRegex(@"Payload=(?!\(dump failed:)(?<path>\S.*?)(?=\s(?:[A-Z]\w*=)|$)",
+		RegexOptions.CultureInvariant)]
 	private static partial Regex DumpPathRegex();
 
 	/// <summary>
