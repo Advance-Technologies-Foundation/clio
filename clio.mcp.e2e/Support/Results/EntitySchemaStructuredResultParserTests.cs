@@ -30,10 +30,12 @@ public sealed class EntitySchemaStructuredResultParserTests {
 		Action act = () => EntitySchemaStructuredResultParser.Extract<SampleEnvelope>(callResult);
 
 		// Assert
-		act.Should().Throw<InvalidOperationException>(
+		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
 				because: "there is no structured content and no text content to parse")
-			.WithMessage("*no structured content and no text content at all*",
-				because: "the message must name the exact shape mismatch observed");
+			.Which;
+		exception.Message.Should().Match("*no structured content and no text content at all*",
+			because: "the message must name the exact shape mismatch observed");
+		PayloadDumpReader.DeleteIfPresent(exception.Message);
 	}
 
 	[Test]
@@ -59,6 +61,7 @@ public sealed class EntitySchemaStructuredResultParserTests {
 			because: "an authentication rejection is exactly the kind of failure IsError should surface");
 		exception.InnerException.Should().BeOfType<JsonException>(
 			because: "the JsonException raised while trying to parse the HTML as JSON must be preserved, not discarded");
+		PayloadDumpReader.DeleteIfPresent(exception.Message);
 	}
 
 	[Test]
@@ -88,11 +91,12 @@ public sealed class EntitySchemaStructuredResultParserTests {
 			because: "the kept JsonException names the offending JSON path, which is what turns a shape mismatch into an actionable report");
 		exception.Message.Should().MatchRegex(@"LineNumber: \d+",
 			because: "the kept JsonException also names where in the payload the mismatch is, rather than only that one happened");
+		PayloadDumpReader.DeleteIfPresent(exception.Message);
 	}
 
 	[Test]
-	[Description("Includes the actual payload text (an unhandled-exception message forwarded verbatim) in the thrown message so the failure is self-explaining without re-running the call.")]
-	public void Extract_ShouldIncludePayloadText_WhenContentCarriesAnErrorMessage() {
+	[Description("Dumps the actual payload text (an unhandled-exception message forwarded verbatim) to the file the thrown message names, so the failure is self-explaining without re-running the call.")]
+	public void Extract_ShouldDumpPayloadText_WhenContentCarriesAnErrorMessage() {
 		// Arrange
 		const string serverErrorText = "System.NullReferenceException: Object reference not set to an instance of an object.";
 		CallToolResult callResult = new() {
@@ -104,15 +108,16 @@ public sealed class EntitySchemaStructuredResultParserTests {
 		Action act = () => EntitySchemaStructuredResultParser.Extract<SampleEnvelope>(callResult);
 
 		// Assert
-		act.Should().Throw<InvalidOperationException>(
+		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
 				because: "the server's unhandled-exception text is not JSON")
-			.WithMessage("*NullReferenceException*",
-				because: "the whole point of this diagnostic is that the payload's own error text must be visible in the thrown message, not discarded");
+			.Which;
+		PayloadDumpReader.ReadAndDelete(exception.Message).Should().Contain("NullReferenceException",
+			because: "the whole point of this diagnostic is that the payload's own error text survives the failure; since #1537 it survives in the dump the message names rather than in the message itself");
 	}
 
 	[Test]
-	[Description("Truncates a very long payload to the documented cap and reports the total original length, instead of flooding the CI log unbounded.")]
-	public void Extract_ShouldTruncatePayload_WhenTextContentIsVeryLong() {
+	[Description("Keeps a very long payload out of the thrown message entirely, dumping it whole instead of flooding the CI log or cutting it down to a fragment.")]
+	public void Extract_ShouldKeepTheMessageSmall_WhenTextContentIsVeryLong() {
 		// Arrange
 		string hugeText = new string('a', 10_000);
 		CallToolResult callResult = new() {
@@ -127,19 +132,15 @@ public sealed class EntitySchemaStructuredResultParserTests {
 		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
 				because: "the 10,000-character payload is not JSON")
 			.Which;
-		exception.Message.Length.Should().BeLessThan(hugeText.Length,
-			because: "the composed message must be capped rather than embedding the full 10,000-character payload");
-		exception.Message.Should().Contain("truncated",
-			because: "the cap must be explicit, not a silent cut");
-		exception.Message.Should().MatchRegex(@"… \d+ characters total, truncated to fit \d+$",
-			because: "the note must report both the kept and the original character count, not just say 'truncated'");
-		exception.Message.Length.Should().BeLessThanOrEqualTo(McpResultDiagnostics.PayloadDiagnosticLimit,
-			because: "the prefix is paid for out of the budget handed to Describe, so the COMPOSED message stays inside the cap instead of exceeding it and then reporting a second, meaningless total");
+		exception.Message.Length.Should().BeLessThan(1_000,
+			because: "the message carries metadata and a path now, so its length no longer scales with the payload's at all");
+		PayloadDumpReader.ReadAndDelete(exception.Message).Should().Contain(hugeText,
+			because: "the dump holds the payload WHOLE - the cap that used to keep only its beginning is gone, and with it the redaction pass whose one-second budget the cap existed to protect (#1537)");
 	}
 
 	[Test]
-	[Description("Redacts an absolute file path embedded in the payload text before it is surfaced in the thrown message.")]
-	public void Extract_ShouldRedactSensitiveText_WhenPayloadCarriesAnAbsolutePath() {
+	[Description("Does not redact the payload on its way to the dump, which is a file rather than the build log.")]
+	public void Extract_ShouldNotRedactTheDumpedPayload_WhenPayloadCarriesAnAbsolutePath() {
 		// Arrange
 		const string sensitiveText = "Failed reading /Users/alex/secrets/credentials.json: invalid format";
 		CallToolResult callResult = new() {
@@ -155,9 +156,9 @@ public sealed class EntitySchemaStructuredResultParserTests {
 				because: "the payload is not JSON")
 			.Which;
 		exception.Message.Should().NotContain("/Users/alex/secrets/credentials.json",
-			because: "an absolute path must be redacted before it reaches the thrown message, same as any other MCP-surfaced text");
-		exception.Message.Should().Contain("[redacted-path]",
-			because: "the redactor replaces an absolute path with its stable placeholder rather than dropping the whole message");
+			because: "the message reaches the build log and carries no payload text at all any more");
+		PayloadDumpReader.ReadAndDelete(exception.Message).Should().Contain(sensitiveText,
+			because: "the dump is a full-fidelity record of what the tool returned; redacting it is what the design deliberately dropped (#1537)");
 	}
 
 	[Test]
@@ -180,5 +181,6 @@ public sealed class EntitySchemaStructuredResultParserTests {
 			because: "the array here is the MCP content-item wrapper falling through, and its always-doomed exception must not be blamed for a mismatch the real payload caused");
 		exception.Message.Should().Contain("JSON present but not shaped like the expected type",
 			because: "suppressing the blame must not make the parser claim there was no JSON beside a dump of that very array");
+		PayloadDumpReader.DeleteIfPresent(exception.Message);
 	}
 }
