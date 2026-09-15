@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -294,8 +294,9 @@ public class ExceptionReadableMessageExtensionTestCase
 			because: "a JWT surfaced by an inner exception must not reach the console in the clear");
 		result.Should().Contain("[redacted]",
 			because: "the token has to be replaced by the redactor's stable placeholder");
-		result.Should().StartWith("Request rejected with",
-			because: "redaction must not change which arm is taken nor the surrounding prose");
+		result.Should().StartWith("SelectQuery failed: Request rejected with",
+			because: "redaction must not change which arm is taken nor the surrounding prose - the "
+			+ "ComposeWithInnerDetail arm leads with the wrapper's own message and appends the scrubbed inner");
 	}
 
 	[Test]
