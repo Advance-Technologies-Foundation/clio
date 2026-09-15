@@ -308,6 +308,28 @@ public sealed class PageUpdateCommandConflictTests
 	}
 
 	[Test]
+	[Description("The downstream identity check must use the same VALUE comparison: an UNPINNED save promotes the recorded spelling into ExpectedSchemaUId, and comparing that braced spelling to the bare resolved UId as raw strings reported schema-uid-mismatch for one and the same schema (PR #1540 review, P3).")]
+	public void TryUpdatePage_ShouldNotReportUIdMismatch_WhenAnUnpinnedSaveCarriesADifferentlySpelledUId() {
+		// Arrange — no ExpectedChecksum: the promoted conditional baseline is the only witness, and it
+		// carries the braced spelling of the very schema the selector resolves to.
+		StubChecksumRow("server-checksum");
+		PageUpdateOptions options = CreateOptions();
+		options.TargetPackageUId = "test-pkg-uid";
+		options.ConditionalBaselineSchemaUId = "{" + SchemaUId + "}";
+		options.ConditionalBaselineChecksum = "server-checksum";
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "the promoted baseline matches the server checksum, so the save proceeds");
+		response.Success.Should().BeTrue(
+			because: "two spellings of the same GUID are the same schema — the identity check must not read them as a redirect");
+		options.ConditionalBaselineApplied.Should().BeTrue(
+			because: "the write landed on the schema the on-disk baseline describes, so that baseline must be refreshed");
+	}
+
+	[Test]
 	[Description("The value comparison must not turn into a loose one: a recorded UId that is not a GUID at all still falls back to an exact string comparison, so a non-matching value is not quietly accepted.")]
 	public void TryUpdatePage_ShouldNotMarkTheBaselineMatched_WhenTheRecordedUIdIsNotAGuid() {
 		// Arrange

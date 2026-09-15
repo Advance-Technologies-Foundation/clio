@@ -652,7 +652,7 @@
 				return false;
 			}
 			if (!string.IsNullOrWhiteSpace(options.ExpectedSchemaUId)
-				&& !string.Equals(options.ExpectedSchemaUId, context.EditableSchemaUId, StringComparison.OrdinalIgnoreCase)) {
+				&& !SchemaUIdsMatch(options.ExpectedSchemaUId, context.EditableSchemaUId)) {
 				response = CreateConflictResponse(options, new PageConflictDetails {
 					Reason = PageConflictReasons.SchemaUIdMismatch,
 					ExpectedChecksum = options.ExpectedChecksum,
