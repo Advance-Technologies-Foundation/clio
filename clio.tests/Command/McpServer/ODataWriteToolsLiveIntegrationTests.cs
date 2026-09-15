@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -105,6 +105,10 @@ public sealed class ODataWriteToolsLiveIntegrationTests {
 		public TCommand Resolve<TCommand>(EnvironmentOptions options) {
 			LastResolvedTenantKey = GetTenantKey(options);
 			return serviceProvider.GetRequiredService<TCommand>();
+		}
+		public (TFirst First, TSecond Second) ResolvePair<TFirst, TSecond>(EnvironmentOptions options) {
+			LastResolvedTenantKey = GetTenantKey(options);
+			return (serviceProvider.GetRequiredService<TFirst>(), serviceProvider.GetRequiredService<TSecond>());
 		}
 		public TCommand ResolveWithoutEnvironment<TCommand>(EnvironmentOptions options) =>
 			serviceProvider.GetRequiredService<TCommand>();

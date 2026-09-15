@@ -27,6 +27,34 @@ namespace Clio.Tests.Common;
 [Category("Unit")]
 public sealed class ServerProseInDiagnosticsTests {
 
+	/// <summary>
+	/// Builds the command and its classifier over ONE logger. Two substitutes would make any future
+	/// assertion on a log line pass vacuously - the line would be written to the instance the test never
+	/// looks at.
+	/// </summary>
+	/// <param name="manager">The sys-settings manager the command reads and writes through.</param>
+	/// <param name="fileSystem">The file system, or <see langword="null"/> for an inert substitute.</param>
+	/// <param name="logger">The shared sink, or <see langword="null"/> for an inert substitute.</param>
+	/// <returns>A command whose classifier writes to the same logger it does.</returns>
+	private static SysSettingsCommand BuildCommand(ISysSettingsManager manager, IFileSystem fileSystem = null,
+		ILogger logger = null) {
+		ILogger sink = logger ?? Substitute.For<ILogger>();
+		return new SysSettingsCommand(manager, sink, fileSystem ?? Substitute.For<IFileSystem>(),
+			new OperationCorrelationIdProvider(),
+			new SysSettingFailureClassifier(sink, new OperationCorrelationIdProvider()));
+	}
+
+	/// <summary>
+	/// The production classifier under a substituted logger. Issue #1379 moved these operations off
+	/// <c>SysSettingsCommand</c>'s statics and behind <see cref="ISysSettingFailureClassifier"/>; what is
+	/// asserted below is unchanged, only how the tests reach it is.
+	/// </summary>
+	/// <param name="logger">The sink to assert on, or <see langword="null"/> for an inert substitute.</param>
+	/// <returns>A classifier writing to <paramref name="logger"/>.</returns>
+	private static ISysSettingFailureClassifier BuildClassifier(ILogger logger = null) =>
+		new SysSettingFailureClassifier(logger ?? Substitute.For<ILogger>(),
+			new OperationCorrelationIdProvider());
+
 	/// <summary>A hostile ErrorCode=5 envelope: a token, an address, a bidi override and an instruction.</summary>
 	private const string HostileAuthenticationError =
 		"5: Your password has expired. token=eyJhbGciOiJIUzI1NiJ9.abcdefgh.ijklmnop "
@@ -137,8 +165,7 @@ public sealed class ServerProseInDiagnosticsTests {
 		List<string> debugLines = [];
 		logger.When(l => l.WriteError(Arg.Any<string>())).Do(call => errorLines.Add(call.Arg<string>()));
 		logger.When(l => l.WriteDebug(Arg.Any<string>())).Do(call => debugLines.Add(call.Arg<string>()));
-		SysSettingsCommand command = new(manager, logger, Substitute.For<IFileSystem>(),
-			new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(manager, null, logger);
 
 		// Act
 		SysSettingGetResult result = command.TryGetSysSetting(new GetSysSettingArgs("local", "MaxFileSize"));
@@ -168,8 +195,7 @@ public sealed class ServerProseInDiagnosticsTests {
 			.Returns(new SysSettingsManager.InsertSysSettingResponse(
 				new SysSettingsManager.ResponseStatus("1", HostileGenericError, null),
 				Guid.Empty, 0, false, false));
-		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(),
-			Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(manager);
 
 		// Act
 		SysSettingCreateResult result = command.TryCreateSysSetting(
@@ -199,8 +225,7 @@ public sealed class ServerProseInDiagnosticsTests {
 		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
 		manager.GetAllUsersDefaultWithType("UsrThing").Returns((null, "Text"));
 		manager.UpdateSysSetting("UsrThing", Arg.Any<object>(), Arg.Any<string>()).Returns(false);
-		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(),
-			Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(manager);
 
 		// Act
 		SysSettingUpdateResult result = command.TryUpdateSysSetting(
@@ -305,7 +330,7 @@ public sealed class ServerProseInDiagnosticsTests {
 			"5: Your password has expired.");
 
 		// Act
-		SysSettingFailure failure = SysSettingsCommand.CategorizeFailure(
+		SysSettingFailure failure = BuildClassifier().Categorize(
 			exception, "reading sys-setting 'SslCertificateThumbprint'", "abc123def456");
 
 		// Assert
@@ -366,8 +391,8 @@ public sealed class ServerProseInDiagnosticsTests {
 		Exception wrapped = new InvalidOperationException("Could not read the environment.", carrier);
 
 		// Act
-		SysSettingFailure failure = SysSettingsCommand.CategorizeAndLog(
-			wrapped, "reading sys-setting", logger, new OperationCorrelationIdProvider());
+		SysSettingFailure failure = BuildClassifier(logger).CategorizeAndLog(
+			wrapped, "reading sys-setting");
 
 		// Assert
 		debugLines.Should().Contain(line => line.Contains(failure.CorrelationId, StringComparison.Ordinal)
@@ -387,8 +412,8 @@ public sealed class ServerProseInDiagnosticsTests {
 			"reading records", "Column 'Name' is required on entity SysSettings.");
 
 		// Act
-		SysSettingFailure failure = SysSettingsCommand.CategorizeAndLog(
-			carrier, "reading sys-setting", logger, new OperationCorrelationIdProvider());
+		SysSettingFailure failure = BuildClassifier(logger).CategorizeAndLog(
+			carrier, "reading sys-setting");
 
 		// Assert
 		debugLines.Should().ContainSingle(line => line.Contains(failure.CorrelationId, StringComparison.Ordinal),
