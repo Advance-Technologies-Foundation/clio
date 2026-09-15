@@ -136,7 +136,8 @@ public sealed class PageWriteCaptionResourceGateTests {
 			commandResolver,
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			Substitute.For<IComponentInfoCatalog>(),
-			new PageBaselineGuard(new MockFileSystem()));
+			new PageBaselineGuard(new MockFileSystem()),
+			new PersistedResourceKeyReader());
 	}
 
 	private static PageSyncTool CreateSyncTool(PageUpdateCommand command) {
@@ -147,7 +148,8 @@ public sealed class PageWriteCaptionResourceGateTests {
 			new MockFileSystem(),
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			Substitute.For<IComponentInfoCatalog>(),
-			new PageBaselineGuard(new MockFileSystem()));
+			new PageBaselineGuard(new MockFileSystem()),
+			new PersistedResourceKeyReader());
 	}
 
 	private static int CountSaveSchemaCalls(IApplicationClient applicationClient) =>
@@ -183,6 +185,6 @@ public sealed class PageWriteCaptionResourceGateTests {
 		]);
 		return new PageUpdateCommand(
 			applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(),
-			Substitute.For<IPageBaselineGuard>(), hierarchyClient);
+			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient);
 	}
 }

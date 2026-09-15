@@ -1464,6 +1464,7 @@ public static class SchemaValidationService
 				declaredAttributes,
 				modelPaths,
 				explicitResources,
+				null,
 				new HashSet<string>(StringComparer.OrdinalIgnoreCase),
 				result);
 			ValidateFieldComponents(viewConfigDiff, in ctx);
@@ -2329,7 +2330,16 @@ public static class SchemaValidationService
 		result.Errors.Add($"Invalid JavaScript object section in {marker}: {string.Join("; ", syntaxResult.Errors)}");
 	}
 
-	private static void MergeResult(SchemaValidationResult target, SchemaValidationResult source) {
+	/// <summary>
+	/// Folds <paramref name="source"/> into <paramref name="target"/>: warnings always, and on a
+	/// rejection the errors together with their machine-readable identities.
+	/// </summary>
+	/// <remarks>
+	/// <c>internal</c> rather than <c>private</c> so the identity half can be pinned directly. Its only
+	/// production caller merges a validator that carries no identity today, so a behavioural test cannot
+	/// reach the rule — and a silently dropped identity is exactly the failure the kind exists to prevent.
+	/// </remarks>
+	internal static void MergeResult(SchemaValidationResult target, SchemaValidationResult source) {
 		target.Warnings.AddRange(source.Warnings);
 		if (source.IsValid) {
 			return;
@@ -2337,6 +2347,10 @@ public static class SchemaValidationService
 
 		target.IsValid = false;
 		target.Errors.AddRange(source.Errors);
+		// The identities travel with the messages. Copying only Errors silently strips the half a caller
+		// BRANCHES on, so a merged result would keep the unresolved-label sentence while the rescue - which
+		// reads the kind, not the text - no longer fires for it (issue #1464 review).
+		target.ErrorKinds.UnionWith(source.ErrorKinds);
 	}
 
 	public static SchemaValidationResult ValidateColumnBindings(string jsBody) {
@@ -2372,7 +2386,8 @@ public static class SchemaValidationService
 
 	public static SchemaValidationResult ValidateStandardFieldBindings(
 		string jsBody,
-		IReadOnlyDictionary<string, string>? explicitResources = null) {
+		IReadOnlyDictionary<string, string>? explicitResources = null,
+		IReadOnlySet<string>? persistedResourceKeys = null) {
 		var result = new SchemaValidationResult { IsValid = true };
 		if (string.IsNullOrEmpty(jsBody)) {
 			return result;
@@ -2390,6 +2405,7 @@ public static class SchemaValidationService
 			declaredAttributes,
 			modelPaths,
 			explicitResources,
+			persistedResourceKeys,
 			attributesWrittenByHandlers,
 			result);
 		using (viewConfigDocument) {
@@ -2399,6 +2415,60 @@ public static class SchemaValidationService
 			result.IsValid = false;
 		}
 		return result;
+	}
+
+	/// <summary>
+	/// Runs the two label-resource-aware field validators and, when the inserted-field one rejects the body
+	/// for an UNRESOLVED LABEL RESOURCE, re-runs both against the resource keys already persisted on the
+	/// target schema.
+	/// </summary>
+	/// <param name="jsBody">The page body being saved.</param>
+	/// <param name="explicitResources">The <c>resources</c> argument of the current call.</param>
+	/// <param name="persistedResourceKeysProvider">
+	/// Supplies the schema's persisted <c>localizableStrings</c> keys. Invoked ONLY for an unresolved
+	/// label-resource rejection, so no other body ever pays the round-trip, and a structurally broken body
+	/// reports its own error rather than a network error from an eager fetch.
+	/// Pass <c>null</c> from a caller that must stay offline.
+	/// A <c>null</c> provider, or one that yields nothing, leaves the first verdict standing.
+	/// </param>
+	/// <returns>The standard-field result (warnings) and the inserted-field result (errors).</returns>
+	/// <remarks>
+	/// Single definition shared by the command-level gate (<c>PageUpdateCommand</c>) and the MCP
+	/// pre-execution gate (<c>PageUpdateTool</c>). They validate the same body at two different points and
+	/// previously drifted: the command-level gate honoured persisted keys while the tool gate still
+	/// rejected the save before the command ever ran (issue #1320).
+	/// </remarks>
+	public static (SchemaValidationResult StandardFields, SchemaValidationResult InsertedFields)
+		ValidateFieldLabelResources(
+			string jsBody,
+			IReadOnlyDictionary<string, string>? explicitResources,
+			Func<IReadOnlySet<string>>? persistedResourceKeysProvider) {
+		SchemaValidationResult standardFields = ValidateStandardFieldBindings(jsBody, explicitResources);
+		SchemaValidationResult insertedFields = ValidateInsertedFieldSelfConsistency(jsBody, explicitResources);
+		// The rescue is gated on the UNRESOLVED-LABEL-RESOURCE rejection specifically - the only verdict a
+		// persisted resource key can change. Anything else must not spend a remote round-trip that cannot
+		// help it: a clean body, a body carrying only the standard-field label WARNING (noise, not a block
+		// - it can still name a key that is in fact persisted), or a rejection about attribute BINDINGS.
+		// A standard-field ERROR is checked first and separately: persisted keys are threaded into
+		// ValidateStandardFieldBindings only inside its warning branch, so they can never clear one. A body
+		// that trips both validators at once (a binding error plus an incidental label-resource error) would
+		// otherwise open the gate and pay a full GetSchema round-trip for a response it cannot change.
+		if (!standardFields.IsValid) {
+			return (standardFields, insertedFields);
+		}
+		// Keyed on the machine-readable KIND, not on a substring of the user-facing sentence: the sentence
+		// is a wording decision and every reword, appended hint or localization would silently disarm this
+		// gate with nothing to notice it (issue #1464).
+		if (!insertedFields.ErrorKinds.Contains(SchemaValidationErrorKind.UnresolvedLabelResource)) {
+			return (standardFields, insertedFields);
+		}
+		IReadOnlySet<string>? persistedResourceKeys = persistedResourceKeysProvider?.Invoke();
+		if (persistedResourceKeys is not { Count: > 0 }) {
+			return (standardFields, insertedFields);
+		}
+		return (
+			ValidateStandardFieldBindings(jsBody, explicitResources, persistedResourceKeys),
+			ValidateInsertedFieldSelfConsistency(jsBody, explicitResources, persistedResourceKeys));
 	}
 
 	/// <summary>
@@ -2420,7 +2490,8 @@ public static class SchemaValidationService
 	/// </remarks>
 	public static SchemaValidationResult ValidateInsertedFieldSelfConsistency(
 		string jsBody,
-		IReadOnlyDictionary<string, string>? explicitResources = null) {
+		IReadOnlyDictionary<string, string>? explicitResources = null,
+		IReadOnlySet<string>? persistedResourceKeys = null) {
 		var result = new SchemaValidationResult { IsValid = true };
 		if (string.IsNullOrEmpty(jsBody)) {
 			return result;
@@ -2439,7 +2510,8 @@ public static class SchemaValidationService
 				return result;
 			}
 			foreach (JsonElement entry in vcdDoc.RootElement.EnumerateArray()) {
-				ValidateInsertedFieldEntry(entry, declaredAttributes, properlyNestedAttributes, modelPaths, explicitResources, result);
+				ValidateInsertedFieldEntry(
+					entry, declaredAttributes, properlyNestedAttributes, modelPaths, explicitResources, persistedResourceKeys, result);
 			}
 		}
 		if (result.Errors.Count > 0) {
@@ -2916,12 +2988,13 @@ public static class SchemaValidationService
 		IReadOnlySet<string> properlyNestedAttributes,
 		IReadOnlyDictionary<string, string> modelPaths,
 		IReadOnlyDictionary<string, string>? explicitResources,
+		IReadOnlySet<string>? persistedResourceKeys,
 		SchemaValidationResult result) {
 		if (!TryGetInsertedFieldDescriptor(entry, out InsertedFieldDescriptor descriptor)) {
 			return;
 		}
 		AppendBindingDeclarationError(descriptor, declaredAttributes, properlyNestedAttributes, modelPaths, result);
-		AppendLabelResourceError(descriptor, modelPaths, explicitResources, result);
+		AppendLabelResourceError(descriptor, modelPaths, explicitResources, persistedResourceKeys, result);
 	}
 
 	private static bool TryGetInsertedFieldDescriptor(JsonElement entry, out InsertedFieldDescriptor descriptor) {
@@ -3011,24 +3084,43 @@ public static class SchemaValidationService
 			"Rule: " + InsertedFieldBindingClause + ".");
 	}
 
+	/// <summary>
+	/// The invariant clause of the unresolved-label-resource diagnostic — the human-facing half of the
+	/// rule whose machine-readable half is
+	/// <see cref="SchemaValidationErrorKind.UnresolvedLabelResource"/>. Nothing BRANCHES on this text any
+	/// more: <see cref="ValidateFieldLabelResources"/> gates its remote lookup on the kind, so a rejection
+	/// about attribute BINDINGS never spends a round-trip that cannot help it, and rewording this sentence
+	/// cannot disarm the rescue (issue #1464).
+	/// </summary>
+	internal const string UnresolvedLabelResourceClause =
+		"is neither auto-provided by a DS-bound attribute nor registered in the 'resources' parameter.";
+
 	private static void AppendLabelResourceError(
 		InsertedFieldDescriptor descriptor,
 		IReadOnlyDictionary<string, string> modelPaths,
 		IReadOnlyDictionary<string, string>? explicitResources,
+		IReadOnlySet<string>? persistedResourceKeys,
 		SchemaValidationResult result) {
 		if (!TryGetStringProperty(descriptor.Values, LabelPropertyName, out string labelExpression) ||
 		    !TryGetReactiveResourceKey(labelExpression, out string resourceKey)) {
 			return;
 		}
 		bool hasExplicit = explicitResources != null && explicitResources.ContainsKey(resourceKey);
+		// A key already stored in the schema's localizableStrings resolves at runtime whether or not the
+		// current call repeats it in 'resources'. Without this the second and every later save of the same
+		// page is blocked unless the caller re-sends every key it ever registered. See issue #1320.
+		bool isPersisted = persistedResourceKeys != null && persistedResourceKeys.Contains(resourceKey);
 		bool isAutoProvided = IsAutoProvidedLabelResourceKey(resourceKey, descriptor.BindingAttribute, modelPaths);
-		if (hasExplicit || isAutoProvided) {
+		if (hasExplicit || isPersisted || isAutoProvided) {
 			return;
 		}
 		string suggestion = BuildAutoProvideSuggestion(descriptor.BindingAttribute, modelPaths);
-		result.Errors.Add(
+		// AddError, not Errors.Add: this is the one rejection a persisted resource key can clear, and the
+		// rescue in ValidateFieldLabelResources branches on the KIND. The sentence is unchanged.
+		result.AddError(
+			SchemaValidationErrorKind.UnresolvedLabelResource,
 			$"Inserted field '{descriptor.DisplayName}' has label '$Resources.Strings.{resourceKey}' but resource '{resourceKey}' " +
-			$"is neither auto-provided by a DS-bound attribute nor registered in the 'resources' parameter. " +
+			UnresolvedLabelResourceClause + " " +
 			$"The label will render blank. {suggestion}; or register it by passing {{\"{resourceKey}\": \"<Display name>\"}} in 'resources'.");
 	}
 
@@ -3264,6 +3356,7 @@ public static class SchemaValidationService
 		IReadOnlySet<string> DeclaredAttributes,
 		IReadOnlyDictionary<string, string> ModelPaths,
 		IReadOnlyDictionary<string, string>? ExplicitResources,
+		IReadOnlySet<string>? PersistedResourceKeys,
 		IReadOnlySet<string> AttributesWrittenByHandlers,
 		SchemaValidationResult Result);
 
@@ -3362,6 +3455,7 @@ public static class SchemaValidationService
 		    TryGetReactiveResourceKey(labelExpression, out string resourceBindingKey) &&
 		    ctx.ExplicitResources != null &&
 		    !ctx.ExplicitResources.ContainsKey(resourceBindingKey) &&
+		    (ctx.PersistedResourceKeys == null || !ctx.PersistedResourceKeys.Contains(resourceBindingKey)) &&
 		    !IsAutoProvidedLabelResourceKey(resourceBindingKey, bindingAttribute, ctx.ModelPaths)) {
 			ctx.Result.Warnings.Add(
 				$"Standard field '{fieldDisplayName}' has label '{labelExpression}' but resource key '{resourceBindingKey}' is neither auto-provided by a DS-bound attribute nor in the provided resources — the label will render blank. " +
@@ -5292,9 +5386,53 @@ public static class SchemaValidationService
 	}
 }
 
+/// <summary>
+/// Stable, machine-readable identity of a validation rejection, for a caller that must BRANCH on the
+/// verdict rather than merely report it.
+/// </summary>
+/// <remarks>
+/// Added because the persisted-resource-key rescue was gated by substring-matching a user-facing
+/// diagnostic sentence (issue #1464). A sentence is a product of wording decisions — it is reworded for
+/// clarity, gets a hint appended, is localized — and every one of those edits silently disarms a gate
+/// keyed on it, with no compiler or test complaining. The sentence itself is unchanged and still says
+/// what a human needs; the kind is what a machine reads.
+/// </remarks>
+public enum SchemaValidationErrorKind {
+
+	/// <summary>
+	/// An inserted field declares a <c>$Resources.Strings.X</c> label whose key is neither auto-provided
+	/// by a DS-bound attribute nor registered in the current call's <c>resources</c>. The ONE verdict a
+	/// resource key already persisted on the schema can clear, which is why the remote persisted-key
+	/// lookup is gated on exactly this kind.
+	/// </summary>
+	UnresolvedLabelResource
+}
+
 public class SchemaValidationResult
 {
 	public bool IsValid { get; set; }
 	public List<string> Errors { get; set; } = new List<string>();
 	public List<string> Warnings { get; set; } = new List<string>();
+
+	/// <summary>
+	/// The machine-readable identities of the rejections in <see cref="Errors"/>.
+	/// </summary>
+	/// <remarks>
+	/// A SET, not a single code: one result routinely carries several rejections of different kinds —
+	/// an undeclared-attribute binding error and an unresolved label resource can be reported for the
+	/// same body — and a scalar would lose whichever one it did not win. Populated only by the
+	/// validators that have a caller branching on them; an empty set means "no caller-branchable
+	/// identity", never "valid".
+	/// </remarks>
+	public ISet<SchemaValidationErrorKind> ErrorKinds { get; } = new HashSet<SchemaValidationErrorKind>();
+
+	/// <summary>
+	/// Records a rejection together with its machine-readable identity.
+	/// </summary>
+	/// <param name="kind">The rejection's stable identity.</param>
+	/// <param name="message">The user-facing diagnostic.</param>
+	public void AddError(SchemaValidationErrorKind kind, string message) {
+		Errors.Add(message);
+		ErrorKinds.Add(kind);
+	}
 }
