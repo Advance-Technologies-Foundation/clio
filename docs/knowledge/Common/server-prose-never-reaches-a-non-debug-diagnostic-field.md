@@ -6,11 +6,13 @@ applies-to:
   - clio/Common/ISysSettingsManager.cs
   - clio/Common/SessionRejectedException.cs
   - clio/Common/DataProviderFailureException.cs
+  - clio/Common/NonJsonWriteResponseException.cs
   - clio/Command/SysSettingsCommand.cs
+  - clio/Command/SysSettingFailureClassifier.cs
   - clio/Common/SensitiveErrorTextRedactor.cs
   - clio/ExceptionReadableMessageExtension.cs
   - clio/Common/ServerReportedFailureText.cs
-ticket: GH-1333
+ticket: GH-1333, GH-1378
 date: 2026-09-03
 ---
 
@@ -72,7 +74,14 @@ So a failure composed from server prose carries **both** renderings and each sin
 a console-only sink reads the other one. Dropping the fence does **not** drop the neutralization: the
 console rendering is still scrubbed, flattened and length-capped.
 
-`SysSettingsCommand.WriteAndForwardFailureLine` is the one path that keeps the fence while writing to the
+`NonJsonWriteResponseException` (issue #1378) is the third carrier and does **not** implement
+`IConsoleRenderedFailure`: its `Message` holds no server text at all, so there is no agent fence for a
+terminal to drop. It does implement `IAuthoritativeErrorMessage` — without that marker
+`SurfacedExceptionMessage.Resolve` walks past it to the inner parser fault, and `System.Text.Json`
+quotes the offending JSON path and value in its own message, so server-chosen bytes reach an MCP
+envelope unfenced and uncapped. A carrier whose message is authoritative must say so.
+
+`SysSettingFailureClassifier.LogFailureLine` is the one path that keeps the fence while writing to the
 console, because the same line is forwarded to `McpLogNotifier` — it *is* MCP-visible. What changed there
 is only that `DescribeFailureForLog` no longer prints the same composed diagnostic as both `Error` and
 `Cause`, which used to put two fence pairs on one line.
@@ -89,3 +98,13 @@ Do not add a `using Clio.Command.McpServer;` to a file under `clio/Common`: the 
 `McpServer` → `Common`, never back. Two edges still run the wrong way, both older than issue #1333 and
 untouched by the move: `CreatioUninstaller`'s `Clio.Command.McpServer.Progress` import and
 `McpWorker/StaleWorkerRegistry`'s `Clio.Command.McpServer.Tools` import.
+
+**Update (issue #1376, PR #1477)** — `ExceptionReadableMessageExtension.ComposeWithInnerDetail` renders an
+inner exception's message into the console line through `UntrustedText.ForConsole`: scrubbed and capped,
+not fenced. The fence is for a field a MODEL reads as trusted content; this renderer's output is the CLI
+line a person reads, where "[untrusted-source-text begin] ... [end]" around an ordinary platform message
+reads as clio malfunctioning (the same reason `ISysSettingsManager` prints `ForConsole` on its
+`set-syssetting` error path). `CompilationHistoryPoller.Describe` uses `Fenced` for the opposite reason:
+its warning is captured by `CompileCreatioTool` into an MCP result. Both treatments are deliberate, and
+which one applies is decided by the SINK, not by the class of text.
+

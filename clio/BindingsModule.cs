@@ -1415,7 +1415,8 @@ public class BindingsModule {
 	/// <returns>A poller reading that environment.</returns>
 	private static ICompilationHistoryPoller BuildEnvironmentScopedCompilationHistoryPoller(
 		EnvironmentSettings envSettings) =>
-		new CompilationHistoryPoller(BuildRemoteDataProvider(envSettings));
+		new CompilationHistoryPoller(BuildRemoteDataProvider(envSettings), ConsoleLogger.Instance,
+			TimeProvider.System, new CancellableDelay());
 
 	/// <summary>
 	/// True when the environment authenticates with a token rather than with a login and password: an
@@ -1661,6 +1662,10 @@ public class BindingsModule {
 					// LoginDiagnostics holds per-adapter state (client correlation token, attempt
 					// counter); it is created by CreatioClientAdapter, not resolved from DI.
 					|| implementedInterface == typeof(ILoginDiagnostics)
+					// CreatioClientTransport wraps the adapter's own Lazy<CreatioClient>; like the two
+					// above it is per-adapter state created by CreatioClientAdapter, and its only
+					// constructor argument is that lazy client, which DI cannot supply.
+					|| implementedInterface == typeof(ICreatioClientTransport)
 					// Application-client implementations have ownership-sensitive constructors and
 					// are registered explicitly for the active environment. Auto-registration would
 					// either create an unbound adapter or introduce a circular ownership lease.

@@ -41,7 +41,7 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 		// Assert
 		switch (method) {
 			case "post":
-				applicationClient.Received(1).ExecutePostRequest("http://host/svc", "{\"id\":1}", 12_345, 1,
+				applicationClient.Received(1).ExecuteNonReplayablePostRequest("http://host/svc", "{\"id\":1}", 12_345, 1,
 					Arg.Any<int>());
 				break;
 			case "delete":
@@ -109,7 +109,7 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 		command.Execute(options);
 
 		// Assert
-		applicationClient.Received(1).ExecutePostRequest("http://host/svc", "{}", 12_345, 1, Arg.Any<int>());
+		applicationClient.Received(1).ExecuteNonReplayablePostRequest("http://host/svc", "{}", 12_345, 1, Arg.Any<int>());
 		// because: MaxAttempts carries no [Option] and its setter is internal, so a raised count can only
 		// come from plumbing - never from a caller who vouched for the endpoint being replayable
 	}
@@ -140,7 +140,7 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 			.ExecuteDeleteRequest("http://host/svc", "{\"id\":1}", Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		applicationClient
 			.DidNotReceive()
-			.ExecutePostRequest("http://host/svc", Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+			.ExecuteNonReplayablePostRequest("http://host/svc", Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]
@@ -165,7 +165,7 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 		// Assert
 		applicationClient
 			.Received(1)
-			.ExecutePostRequest("http://host/svc", "{}", Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+			.ExecuteNonReplayablePostRequest("http://host/svc", "{}", Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		applicationClient
 			.DidNotReceive()
 			.ExecuteDeleteRequest("http://host/svc", Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
@@ -198,7 +198,7 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 		applicationClient
 			.Received(1)
 			.ExecutePatchRequest("http://host/svc", "{\"id\":1}", 12_345, 1, 3);
-		applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+		applicationClient.DidNotReceiveWithAnyArgs().ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		applicationClient.DidNotReceiveWithAnyArgs().ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
@@ -231,7 +231,7 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 		applicationClient
 			.Received(1)
 			.ExecutePutRequest("http://host/svc", "{\"id\":1}", 54_321, 1, 2);
-		applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+		applicationClient.DidNotReceiveWithAnyArgs().ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		applicationClient.DidNotReceiveWithAnyArgs().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
@@ -262,7 +262,7 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 			  .Throw<ArgumentException>("because only GET/POST/DELETE/PATCH/PUT are supported")
 			  .WithParameterName("httpMethod")
 			  .WithMessage("Unsupported HTTP method 'options'*");
-		applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+		applicationClient.DidNotReceiveWithAnyArgs().ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		applicationClient.DidNotReceiveWithAnyArgs().ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
@@ -366,7 +366,7 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		serviceUrlBuilder.Build("odata/BulkEmailCategory").Returns("http://host/0/odata/BulkEmailCategory");
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+		applicationClient.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Code\":-1,\"Exception\":\"request failed\"}");
 
@@ -387,6 +387,45 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 		result.Should().Be(1,
 			"the error classification must fire on the POST dispatch branch, not only on GET");
 		fileSystem.DidNotReceive().WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Reports an expired session as its own failure instead of a generic HTML page when a write was not replayed")]
+	public void Execute_ShouldReportExpiredSession_WhenWriteResponseIsTheLoginPage() {
+		// Arrange - the client re-authenticated but deliberately did not replay the write, so the
+		// original login-page body reaches the command (GitHub #1313).
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		EnvironmentSettings settings = new();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("svc").Returns("http://host/svc");
+		applicationClient.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("<!DOCTYPE html><html><body><form action=\"/0/Login/NuiLogin.aspx\"></form></body></html>");
+
+		CallServiceCommand command = new(applicationClient, settings, serviceUrlBuilder, fileSystem) {
+			Logger = logger
+		};
+		CallServiceCommandOptions options = new() {
+			ServicePath = "svc",
+			HttpMethodName = "POST",
+			RequestBody = "{}",
+			ResultFileName = "result.json"
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "an unreplayed write never reached the service, so the command must not report success");
+		fileSystem.DidNotReceive().WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>());
+		logger.Received(1).WriteError(Arg.Is<string>(m => m.Contains("session had expired")
+			&& m.Contains("may or may not have been applied")));
+		// because: without its own classification the operator only sees "the response is an HTML page",
+		// with nothing pointing at the session - and the message must not claim the write was rejected,
+		// because the same ambiguity that forbids the automatic replay forbids claiming that
 	}
 
 	[Test]
@@ -634,7 +673,7 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 		serviceUrlBuilder.Build("odata/UsrThing").Returns("http://host/0/odata/UsrThing");
 		applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(responseBody);
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+		applicationClient.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
 			Arg.Any<int>()).Returns(responseBody);
 		applicationClient.ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
 			Arg.Any<int>()).Returns(responseBody);
@@ -721,5 +760,65 @@ public class CallServiceCommandDeleteTests : BaseCommandTests<CallServiceCommand
 			.ExecutePatchRequest("http://host/svc", "{\"id\":1}", 60_000, 1, 1);
 		// because: the command default this test pins is the TIMEOUT; a write the caller did not authorize
 		// replaying is still issued once, whatever the inherited attempt count says
+	}
+
+	[TestCase("select", TestName = "PostReplay_select")]
+	[TestCase("SELECT", TestName = "PostReplay_select_uppercase")]
+	[Description("dataservice -t select keeps the replayable POST, because SelectQuery is a read and must still recover from an expired session")]
+	public void Execute_Should_Allow_Post_Replay_For_DataService_Select(string operationType) {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		EnvironmentSettings settings = new();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns("http://host/DataService/json/SyncReply/SelectQuery");
+
+		DataServiceQuery command = new(applicationClient, settings, serviceUrlBuilder, fileSystem);
+		DataServiceQueryOptions options = new() {
+			OperationType = operationType,
+			RequestBody = "{}",
+			TimeOut = 12_345
+		};
+
+		// Act
+		command.Execute(options);
+
+		// Assert
+		applicationClient.Received(1).ExecutePostRequest(
+			"http://host/DataService/json/SyncReply/SelectQuery", "{}", 12_345, 1, Arg.Any<int>());
+		applicationClient.DidNotReceiveWithAnyArgs().ExecuteNonReplayablePostRequest(default, default, default,
+			default, default);
+		// because: a select changes nothing, so refusing the automatic re-authentication replay would turn a
+		// recoverable stale session into a failed read and prevent no duplicate write
+	}
+
+	[TestCase("insert", TestName = "PostNoReplay_insert")]
+	[TestCase("update", TestName = "PostNoReplay_update")]
+	[TestCase("delete", TestName = "PostNoReplay_delete")]
+	[Description("dataservice -t insert|update|delete posts as a write, so automatic re-authentication must never re-issue it")]
+	public void Execute_Should_Refuse_Post_Replay_For_DataService_Writes(string operationType) {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		EnvironmentSettings settings = new();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>()).Returns("http://host/DataService/write");
+
+		DataServiceQuery command = new(applicationClient, settings, serviceUrlBuilder, fileSystem);
+		DataServiceQueryOptions options = new() {
+			OperationType = operationType,
+			RequestBody = "{}",
+			TimeOut = 12_345
+		};
+
+		// Act
+		command.Execute(options);
+
+		// Assert
+		applicationClient.Received(1).ExecuteNonReplayablePostRequest("http://host/DataService/write", "{}", 12_345,
+			1, Arg.Any<int>());
+		applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
+		// because: the expired-session detector is body-based, so a committed InsertQuery whose response looks
+		// like the sign-in page would otherwise be posted a second time (GitHub #1313)
 	}
 }

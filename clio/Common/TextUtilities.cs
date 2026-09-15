@@ -108,6 +108,36 @@ namespace Clio.Common
 				or UnicodeCategory.ParagraphSeparator;
 		}
 
+		/// <summary>UTF-8 byte-order mark, which <see cref="char.IsWhiteSpace(char)"/> does not report as whitespace.</summary>
+		private const char ByteOrderMark = '\uFEFF';
+
+		/// <summary>
+		/// Returns whether the body starts with markup (an HTML page, an XML/SOAP fault, or a doctype),
+		/// skipping any leading whitespace and byte-order marks in any order so neither hides it. A single
+		/// chained trim would not do: a BOM followed by whitespace (<c>BOM + "  &lt;html&gt;"</c>) leaves the
+		/// post-BOM whitespace behind, misclassifying an HTML login page as a generic unparseable body.
+		/// </summary>
+		/// <remarks>
+		/// Lives here rather than in <c>Clio.Package.ServiceResponseJsonGuard</c>, where it started, because
+		/// <c>Clio.Common</c> needs it too (the sys-settings write path, issue #1378) and <c>Common</c> must
+		/// not depend on <c>Package</c>. The guard forwards to this method.
+		/// </remarks>
+		/// <param name="responseBody">Raw response body, which may be <see langword="null"/> or empty.</param>
+		/// <returns><see langword="true"/> when the body opens with markup.</returns>
+		public static bool LooksLikeMarkup(string responseBody) {
+			// Null-safe because callers reach this with whatever the application client returned, without a
+			// preceding emptiness gate.
+			if (string.IsNullOrEmpty(responseBody)) {
+				return false;
+			}
+			int index = 0;
+			while (index < responseBody.Length
+				&& (char.IsWhiteSpace(responseBody[index]) || responseBody[index] == ByteOrderMark)) {
+				index++;
+			}
+			return index < responseBody.Length && responseBody[index] == '<';
+		}
+
 		public static string SanitizeForDisplay(string text, int maxLength = 500) {
 			if (string.IsNullOrEmpty(text)) {
 				return text;

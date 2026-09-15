@@ -12,7 +12,7 @@ namespace Clio.Command.McpServer.Tools;
 /// </summary>
 [McpServerToolType]
 public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver,
-	IOperationCorrelationIdProvider correlationIds, ILogger logger) {
+	ISysSettingFailureClassifier failures) {
 
 	internal const string GetSchemaNamePrefixToolName = "get-schema-name-prefix";
 
@@ -44,7 +44,7 @@ public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver,
 			return new SchemaNamePrefixResult(true, prefix);
 		} catch (Exception ex) {
 			//One classifier, not two. These five hand-written arms disagreed with
-			//SysSettingsCommand.CategorizeFailure on three counts: a TLS handshake failure arrives as an
+			//ISysSettingFailureClassifier's classification on three counts: a TLS handshake failure arrives as an
 			//AuthenticationException and was reported as rejected credentials (sending the operator to
 			//repair a working login while the untrusted certificate stays untouched); an
 			//AggregateException - which is how the Creatio client surfaces a transport fault through
@@ -59,8 +59,7 @@ public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver,
 	/// cannot answer "was this a credential failure?" differently (issue #1329).
 	/// </summary>
 	private SchemaNamePrefixResult Failure(Exception ex) {
-		SysSettingFailure failure = SysSettingsCommand.CategorizeAndLog(ex, ReadOperationLabel, logger,
-			correlationIds);
+		SysSettingFailure failure = failures.CategorizeAndLog(ex, ReadOperationLabel);
 		return new SchemaNamePrefixResult(false, string.Empty, DescribeError(failure), failure.Category,
 			failure.Cause, failure.RecoveryAction, failure.CorrelationId);
 	}

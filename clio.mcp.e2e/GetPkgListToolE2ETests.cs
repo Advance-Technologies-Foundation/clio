@@ -19,7 +19,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature("list-packages")]
 [NonParallelizable]
-public sealed class GetPkgListToolE2ETests {
+public sealed class GetPkgListToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = GetPkgListTool.GetPkgListToolName;
 
 	[Test]
@@ -46,19 +46,19 @@ public sealed class GetPkgListToolE2ETests {
 		AssertStructuredPagesReturned(actResult);
 	}
 
-	private static async Task<GetPkgListArrangeContext> ArrangeAsync(McpE2ESettings settings) {
+	private async Task<GetPkgListArrangeContext> ArrangeAsync(McpE2ESettings settings) {
 		return await AllureApi.Step("Arrange list-packages MCP session", async () => {
 			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
 			await ClioCliCommandRunner.EnsureCliogateInstalledAsync(
 				settings,
 				settings.Sandbox.EnvironmentName!,
 				cancellationTokenSource.Token);
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			McpServerSession session = Session;
 			return new GetPkgListArrangeContext(session, cancellationTokenSource);
 		});
 	}
 
-	private static async Task<GetPkgListActResult> ActAsync(GetPkgListArrangeContext arrangeContext, string environmentName) {
+	private async Task<GetPkgListActResult> ActAsync(GetPkgListArrangeContext arrangeContext, string environmentName) {
 		return await AllureApi.Step("Act by invoking list-packages through MCP", async () => {
 			IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
 			tools.Select(tool => tool.Name).Should().Contain(ToolName,
@@ -177,9 +177,9 @@ public sealed class GetPkgListToolE2ETests {
 	private sealed record GetPkgListArrangeContext(
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 

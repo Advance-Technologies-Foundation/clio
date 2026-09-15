@@ -24,6 +24,9 @@ public class PackageDependencyManagerTests
 	private const string TargetPackageName = "MyApp";
 	private const string DependencyPackageName = "CrtLeadOppMgmtApp";
 
+	/// <summary>Bound the schema-designer diagnosis puts on this read; any positive value proves it travels.</summary>
+	private const int DiagnosticTimeoutMs = 30_000;
+
 	#endregion
 
 	#region Fields: Private
@@ -74,6 +77,20 @@ public class PackageDependencyManagerTests
 		_applicationClient
 			.ExecutePostRequest<PackagePropertiesResponse>(
 				Arg.Any<string>(), Arg.Do<string>(body => _loadRequestBody = body))
+			.Returns(new PackagePropertiesResponse { Success = true, Package = package });
+	}
+
+	/// <summary>
+	/// Same as <see cref="ArrangeGetPackageProperties(WorkspacePackageDto)"/> for the bounded read, whose
+	/// explicit timeout argument the default-argument stub above does not match.
+	/// </summary>
+	/// <param name="package">Package properties the server answers with.</param>
+	/// <param name="requestTimeoutMs">Timeout the call under test is expected to pass.</param>
+	private void ArrangeGetPackageProperties(WorkspacePackageDto package, int requestTimeoutMs) {
+		_applicationClient
+			.ExecutePostRequest<PackagePropertiesResponse>(
+				Arg.Any<string>(), Arg.Do<string>(body => _loadRequestBody = body), requestTimeoutMs,
+				Arg.Any<int>(), Arg.Any<int>())
 			.Returns(new PackagePropertiesResponse { Success = true, Package = package });
 	}
 
@@ -479,6 +496,63 @@ public class PackageDependencyManagerTests
 		// Assert
 		dependencies.Should().BeEmpty(
 			because: "a package with no declared dependencies is an ordinary state, not an error");
+	}
+
+	[Test]
+	[Description("Reads the declared dependencies straight from the package identity the caller already holds, without the installed-package listing, so the schema-designer diagnosis costs one round-trip instead of two (issue #1461).")]
+	public void GetDependenciesByUId_ShouldSkipThePackageListing_WhenTheCallerSuppliesTheIdentity() {
+		// Arrange
+		ArrangeInstalledPackages();
+		ArrangeGetPackageProperties(new WorkspacePackageDto {
+			UId = _targetUId,
+			Name = TargetPackageName,
+			DependsOnPackages = [
+				new WorkspacePackageDto { UId = _dependencyUId, Name = DependencyPackageName, Version = "8.2.1.999" }
+			]
+		}, DiagnosticTimeoutMs);
+
+		// Act
+		IReadOnlyList<string> dependencies =
+			_manager.GetDependencies(_targetUId, TargetPackageName, DiagnosticTimeoutMs);
+
+		// Assert
+		dependencies.Should().Equal([DependencyPackageName],
+			because: "the by-UId read must return the same declared dependency names as the by-name read");
+		_packageListProvider.DidNotReceiveWithAnyArgs().GetPackages(default, default);
+		_loadRequestBody.Should().Be(JsonConvert.SerializeObject(_targetUId),
+			because: "the properties request must carry the identity the caller supplied, unchanged");
+	}
+
+	[Test]
+	[Description("Refuses an empty package UId instead of asking the server about it, because GetPackageProperties answers that with a generic failure naming neither the mistake nor the package (issue #1461).")]
+	public void GetDependenciesByUId_ShouldThrow_WhenTheUIdIsEmpty() {
+		// Arrange
+		ArrangeGetPackageProperties(new WorkspacePackageDto { UId = _targetUId, Name = TargetPackageName },
+			DiagnosticTimeoutMs);
+
+		// Act
+		Action act = () => _manager.GetDependencies(Guid.Empty, TargetPackageName, DiagnosticTimeoutMs);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(
+			because: "an empty identifier is a caller mistake, and this overload exists to enrich an error message rather than add an unhelpful one");
+		_applicationClient.DidNotReceiveWithAnyArgs()
+			.ExecutePostRequest<PackagePropertiesResponse>(default, default);
+	}
+
+	[Test]
+	[Description("Applies the caller's timeout to the by-UId dependency read, so an environment that accepts the connection and then stops answering costs a bounded wait (issue #1461).")]
+	public void GetDependenciesByUId_ShouldBoundTheRead_WhenATimeoutIsSupplied() {
+		// Arrange
+		ArrangeGetPackageProperties(new WorkspacePackageDto { UId = _targetUId, Name = TargetPackageName },
+			DiagnosticTimeoutMs);
+
+		// Act
+		_manager.GetDependencies(_targetUId, TargetPackageName, DiagnosticTimeoutMs);
+
+		// Assert
+		_applicationClient.Received(1).ExecutePostRequest<PackagePropertiesResponse>(
+			Arg.Any<string>(), Arg.Any<string>(), DiagnosticTimeoutMs, Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]
