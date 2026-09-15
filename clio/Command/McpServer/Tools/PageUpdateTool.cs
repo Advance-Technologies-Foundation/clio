@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Acornima.Ast;
 using Clio.Common;
 using Clio.UserEnvironment;
+using McpServerLib = ModelContextProtocol.Server;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -26,6 +27,7 @@ public sealed class PageUpdateTool(
 	IToolCommandResolver commandResolver,
 	IMobileComponentInfoCatalog mobileComponentCatalog,
 	IComponentInfoCatalog webComponentCatalog,
+	IPageBodySamplingService samplingService,
 	IPageBaselineGuard pageBaselineGuard,
 	IPersistedResourceKeyReader persistedResourceKeyReader,
 	IPlatformVersionResolverFactory? resolverFactory = null,
@@ -36,6 +38,8 @@ public sealed class PageUpdateTool(
 	// parameters in the body instead makes the compiler capture them again alongside the base's copy (CS9107/CS9124).
 	private readonly ILogger _logger = logger;
 	private readonly IToolCommandResolver _commandResolver = commandResolver;
+
+	private readonly IPageBodySamplingService _samplingService = samplingService;
 
 	internal const string ToolName = "update-page";
 
@@ -76,15 +80,15 @@ public sealed class PageUpdateTool(
 		" See docs://mcp/guides/page-modification for the append diff-form contract.";
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	// Issues no client requests: the pre-save LLM semantic review (sampling) was removed in ENG-98526, so a
-	// half-duplex relay is sufficient. SharedFileResource is .clio-pages — the IPageBaselineGuard conflict
-	// baseline under .clio-pages/{schema}/meta.json, which two clio processes could otherwise race.
+	// One of the two sampling callers (PageBodySamplingService): a relay that is not full-duplex degrades the
+	// semantic review to skipped SILENTLY. SharedFileResource is .clio-pages — the IPageBaselineGuard
+	// conflict baseline under .clio-pages/{schema}/meta.json, which two clio processes could otherwise race.
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,
 		OperationFamily = McpToolOperationFamily.None,
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
-		RequiresClientRequests = McpToolClientRequests.None,
+		RequiresClientRequests = McpToolClientRequests.Sampling,
 		SharedFileResource = McpToolSharedFileResource.ClioPages)]
 	[Description("Update a Freedom UI page schema body. environment-name preferred; uri/login/password fallback only. " +
 		"In append mode, SCHEMA_CONVERTERS and SCHEMA_VALIDATORS are merged by type key with incoming entries winning; the final merged body is rejected if it contains a custom validator reference without a matching SCHEMA_VALIDATORS declaration. " +
@@ -99,6 +103,7 @@ public sealed class PageUpdateTool(
 		[Description("schema-name, body (required); resources, dry-run (optional); environment-name preferred; uri/login/password fallback only. " +
 			"Optional under credential passthrough — omit environment-name/uri/login/password so the header-supplied tenant is used; supplying any of them together with an active passthrough header is rejected, not silently honored.")]
 		[Required] PageUpdateArgs args,
+		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
 		// Opened at the TOP of the entry point so both gates below run inside ONE scope: the value flows
 		// DOWN to awaited callees, never back UP to the caller, so a scope opened inside a nested helper
@@ -108,9 +113,11 @@ public sealed class PageUpdateTool(
 		PageUpdateOptions options = BuildOptions(args);
 		(PageUpdateResponse earlyFailure,
 			IReadOnlyList<string> validationWarnings,
-			IReadOnlyList<string> lintWarnings) = await TryCreatePreExecutionFailureAsync(
+			IReadOnlyList<string> lintWarnings,
+			PageSamplingReview samplingReview) = await TryCreatePreExecutionFailureAsync(
 				options,
 				args,
+				server,
 				cancellationToken);
 		if (earlyFailure != null) {
 			// The label-resource validators are the ONLY consumer of the persisted-key rescue, so its
@@ -157,6 +164,7 @@ public sealed class PageUpdateTool(
 				&& response.Success && !options.DryRun
 			? pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response)
 			: null;
+		response.SamplingReview = samplingReview;
 		IReadOnlyList<string> mergedWarnings = MergeWarnings(
 			MergeWarnings(
 				MergeWarnings(validationWarnings, response.Warnings),
@@ -185,26 +193,28 @@ public sealed class PageUpdateTool(
 
 	private async Task<(PageUpdateResponse Failure,
 		IReadOnlyList<string> ValidationWarnings,
-		IReadOnlyList<string> LintWarnings)> TryCreatePreExecutionFailureAsync(
+		IReadOnlyList<string> LintWarnings,
+		PageSamplingReview SamplingReview)> TryCreatePreExecutionFailureAsync(
 			PageUpdateOptions options,
 			PageUpdateArgs args,
+			McpServerLib.McpServer server,
 			CancellationToken cancellationToken) {
 		(bool bodyLoaded, string bodyLoadError) = PageUpdateBodyLoader.TryLoadBodyFromFile(options);
 		if (!bodyLoaded)
-			return (new PageUpdateResponse { Success = false, Error = bodyLoadError }, null, null);
+			return (new PageUpdateResponse { Success = false, Error = bodyLoadError }, null, null, null);
 		if (string.IsNullOrWhiteSpace(options.Body)) {
 			return (new PageUpdateResponse {
 				Success = false,
 				Error = "Either 'body' or 'body-file' must provide page body content."
-			}, null, null);
+			}, null, null, null);
 		}
 		PageUpdateResponse appendFormFailure = TryValidateAppendBodyForm(options);
 		if (appendFormFailure != null) {
-			return (appendFormFailure, null, null);
+			return (appendFormFailure, null, null, null);
 		}
 		PageUpdateResponse syntaxFailure = TryValidateBodySyntax(options, out Script parsedAst);
 		if (syntaxFailure != null) {
-			return (ResolveSyntaxFailure(options, syntaxFailure, args.Validate ?? true), null, null);
+			return (ResolveSyntaxFailure(options, syntaxFailure, args.Validate ?? true), null, null, null);
 		}
 		// Both guards off is allowed but never silent - the caller sees in the response that this save ran
 		// with neither the content chain nor the baseline/conflict guard.
@@ -214,18 +224,20 @@ public sealed class PageUpdateTool(
 			string? requestedVersion = await ResolvePlatformVersionAsync(options, cancellationToken).ConfigureAwait(false);
 			(PageUpdateResponse validationFailure, IReadOnlyList<string> bodyValidationWarnings) = ValidateBody(options, requestedVersion);
 			if (validationFailure != null)
-				return (WithEscapeHatchHint(validationFailure), null, null);
+				return (WithEscapeHatchHint(validationFailure), null, null, null);
 			(PageUpdateResponse runProcessFailure, IReadOnlyList<string> runProcessWarnings) =
 				ValidateRunProcessButtons(options);
 			if (runProcessFailure != null)
-				return (WithEscapeHatchHint(runProcessFailure), null, null);
+				return (WithEscapeHatchHint(runProcessFailure), null, null, null);
 			validationWarnings = MergeWarnings(
 				validationWarnings, MergeWarnings(bodyValidationWarnings, runProcessWarnings));
 		}
 		(PageUpdateResponse lintFailure, IReadOnlyList<string> lintWarnings) = RunAstLintPass(parsedAst);
 		if (lintFailure != null)
-			return (lintFailure, null, null);
-		return (null, validationWarnings, lintWarnings);
+			return (lintFailure, null, null, null);
+		(PageUpdateResponse samplingFailure, PageSamplingReview samplingReview) =
+			await TryRunSamplingAsync(options, args, server, cancellationToken);
+		return (samplingFailure, validationWarnings, lintWarnings, samplingReview);
 	}
 
 	// Up-front (offline, no server round-trip) guard for append mode. `append` requires the incoming
@@ -254,9 +266,10 @@ public sealed class PageUpdateTool(
 		// Deterministic JavaScript syntax check (ENG-89796). Mobile bodies are
 		// JSON and are handled by their own validator below; for web bodies we
 		// parse the body with Acornima BEFORE invoking the regex-based content
-		// validators. A syntax error means the page would not load in the
-		// browser — failing fast surfaces the precise {line, column, message}
-		// to the operator without persisting a broken body. The parsed AST is
+		// validators or the sampling service. A syntax error means the page
+		// would not load in the browser — failing fast surfaces the precise
+		// {line, column, message} to the operator without sinking time into
+		// model-side review or persisting a broken body. The parsed AST is
 		// then fed into PageBodyAstLinter further down (AFTER the regex
 		// validators ran) so the established regex error messages still win
 		// on overlapping detections; lint findings only ADD detections.
@@ -514,6 +527,24 @@ public sealed class PageUpdateTool(
 		return (null, webWarnings);
 	}
 
+	private async Task<(PageUpdateResponse Failure, PageSamplingReview Review)> TryRunSamplingAsync(
+		PageUpdateOptions options, PageUpdateArgs args, McpServerLib.McpServer server, CancellationToken cancellationToken) {
+		if (options.DryRun || args.SkipSampling == true) {
+			return (null, null);
+		}
+		PageSamplingReview samplingReview = await _samplingService.TrySamplingReviewAsync(
+			server, args.SchemaName, options.Body, args.Resources, cancellationToken);
+		if (samplingReview is { Ok: false, Skipped: false } && samplingReview.Issues?.Count > 0) {
+			return (new PageUpdateResponse {
+				Success = false,
+				Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues)
+					+ ". Fix the page body and resubmit. Do NOT retry the same body with skip-sampling=true to bypass this check.",
+				SamplingReview = samplingReview
+			}, samplingReview);
+		}
+		return (null, samplingReview);
+	}
+
 	/// <summary>
 	/// Maps the MCP tool arguments onto the command options. Internal so the argument-to-option mapping
 	/// (notably the caller-supplied conflict <c>checksum</c>) can be asserted directly by unit tests.
@@ -766,6 +797,9 @@ public sealed record PageUpdateArgs(
 	[property: Description("If true, validate without saving. Default: false. With mode=append this resolves the current body and runs the real merge, returning `appendProjection` (what the write would change) and applying the body warnings to the merged body rather than to your fragment; an append the save could not merge fails here too, with dryRun: true.")]
 	bool? DryRun = null,
 
+	[property: JsonPropertyName("skip-sampling")]
+	[property: Description("Reserved escape hatch. Omit by default. Pre-condition for setting true: the immediately preceding user message in this turn contains an explicit instruction to skip the AI semantic review, OR the MCP host has reported sampling as unavailable in this session. Absent that evidence, omit this field. Default: false")]
+	bool? SkipSampling = null,
 	[property: JsonPropertyName("optional-properties")]
 	[property: Description("JSON array of {key, value} objects to merge into schema optionalProperties, e.g. '[{\"key\":\"entitySchemaName\",\"value\":\"UsrMyEntity\"}]'")]
 	string? OptionalProperties = null,

@@ -721,6 +721,27 @@ public sealed class PageParameterInfo {
 }
 
 /// <summary>
+/// Represents the result of an AI semantic review performed before saving a page body.
+/// </summary>
+public sealed class PageSamplingReview {
+
+	[JsonPropertyName("ok")]
+	public bool Ok { get; init; }
+
+	[JsonPropertyName("issues")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string> Issues { get; init; }
+
+	[JsonPropertyName("warnings")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string> Warnings { get; init; }
+
+	[JsonPropertyName("skipped")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+	public bool Skipped { get; init; }
+}
+
+/// <summary>
 /// What an append merge would do — or did — to a page's <c>viewConfigDiff</c> array.
 /// </summary>
 /// <remarks>
@@ -960,6 +981,11 @@ public sealed class PageUpdateResponse {
 	[JsonPropertyName("registeredResourceKeys")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public List<string> RegisteredResourceKeys { get; set; }
+
+	[JsonProperty("samplingReview", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("samplingReview")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public PageSamplingReview SamplingReview { get; set; }
 
 	[JsonProperty("warnings", NullValueHandling = NullValueHandling.Ignore)]
 	[JsonPropertyName("warnings")]
