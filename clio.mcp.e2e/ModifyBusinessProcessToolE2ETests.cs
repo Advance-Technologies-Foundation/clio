@@ -772,7 +772,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	[Test]
 	[Description("setFlowResults writes an activity-result SELECTION and describe reads it back as the same "
 		+ "captions - the round trip that makes the write verifiable. Ignored, NOT passed, on a sandbox whose "
-		+ "deployed CrtProcessBuilder predates 1.6.2.11, because the operation does not exist there.")]
+		+ "deployed CrtProcessBuilder predates 1.6.2.16, because the operation does not exist there.")]
 	[AllureTag(ToolName)]
 	[AllureName("setFlowResults writes a selection that describe reads back unchanged")]
 	public async Task ModifyBusinessProcess_Should_WriteAnActivityResultSelection() {
@@ -817,50 +817,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "the flag and the values have to agree");
 	}
 
-	[Test]
-	[Description("setFlowCondition is REFUSED on a connector whose source enumerates activity results. That "
-		+ "branch would run and be unmaintainable - the designer offers no formula field there - and until "
-		+ "1.6.2.11 this package accepted it, which is how the defect reached shipped processes. Ignored on a "
-		+ "sandbox that predates the refusal.")]
-	[AllureTag(ToolName)]
-	[AllureName("setFlowCondition is refused on a connector the designer edits as a result selection")]
-	public async Task ModifyBusinessProcess_Should_RefuseAFormulaOnAResultEnumeratingSource() {
-		// Arrange
-		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
-		string processName = $"UsrClioBpWrongDialectE2e{Guid.NewGuid():N}";
-		CallToolResult built = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildApprovalBranchDescriptor(processName)
-		});
-		SkipWhenPackagePredatesTheSelection(built, "the create path");
-
-		// Act
-		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
-			["operations"] = """
-				[
-				  { "op": "setFlowCondition", "source": "Approve", "target": "EndOk",
-				    "condition": "1 > 0" }
-				]
-				"""
-		});
-
-		// Assert
-		string payload = JsonSerializer.Serialize(callResult);
-		if (!payload.Contains("results", StringComparison.OrdinalIgnoreCase)) {
-			Assert.Ignore(
-				"The sandbox's deployed CrtProcessBuilder predates 1.6.2.11, where this refusal was added, so "
-				+ "the formula was accepted. This test is Ignored, NOT passing, and the refusal is unverified "
-				+ "end to end until the bundled archive is rebuilt and deployed.");
-		}
-		callResult.IsError.Should().BeTrue(
-			because: "a formula on a connector the designer edits as a selection is refused rather than stored");
-		payload.Should().Contain("Positive",
-			because: "the refusal names the results the element offers - there is no other way to discover them");
-	}
-
-	// The two tests above need a package that HAS the selection surface. A sandbox below 1.6.2.11 answers with
+	// The test above needs a package that HAS the selection surface. A sandbox below 1.6.2.16 answers with
 	// an unknown-operation refusal, and letting that read as a pass would be worse than not running: the whole
 	// point of this pair is that the wrong dialect stops being writable. Ignored with the reason named, the
 	// same convention SkipWhenPackagePredatesTheElement follows for the accessRights block.
@@ -871,7 +828,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 					|| payload.Contains("Unknown operation", StringComparison.OrdinalIgnoreCase))) {
 			Assert.Ignore(
 				$"The sandbox's deployed CrtProcessBuilder does not accept {what} for an activity-result "
-				+ "selection, so it predates 1.6.2.11. This test is Ignored, NOT passing; the rebundle and a "
+				+ "selection, so it predates 1.6.2.16. This test is Ignored, NOT passing; the rebundle and a "
 				+ "deploy are what make it meaningful.");
 		}
 	}

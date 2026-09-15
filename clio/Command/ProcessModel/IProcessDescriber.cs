@@ -1463,14 +1463,14 @@ public sealed class DescribedFlow {
 	/// </summary>
 	/// <summary>
 	/// WHICH results select this branch, by caption, or <c>null</c> when the flow decides on a formula.
-	/// <para>Reported from <c>CrtProcessBuilder</c> 1.6.2.11. These are the same captions the write surface
+	/// <para>Reported from <c>CrtProcessBuilder</c> 1.6.2.16. These are the same captions the write surface
 	/// takes - <c>flows[].results</c> on the build path, <c>setFlowResults</c> on the modify path - so a branch
 	/// reads back and writes back unchanged. Before this member <see cref="BranchesOnActivityResult"/> said only
 	/// THAT a selection exists, which left a selection unverifiable: a caller could write one and had no way to
 	/// confirm, diff or preserve it.</para>
 	/// <para>A result whose lookup row no longer resolves arrives as its raw UId rather than being dropped, so a
 	/// stale selection never reads as a SHORTER one. <c>null</c> rather than an empty array on a formula branch,
-	/// so the two dialects are distinguishable from the read alone. ABSENT on a package older than 1.6.2.11,
+	/// so the two dialects are distinguishable from the read alone. ABSENT on a package older than 1.6.2.16,
 	/// which is the same bytes as a formula branch - so an all-absent read is not evidence of anything.</para>
 	/// </summary>
 	[JsonPropertyName("results")]
