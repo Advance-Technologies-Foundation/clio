@@ -127,6 +127,16 @@ public class DataServiceQuery : BaseServiceCommand<DataServiceQueryOptions> {
 				};
 	}
 
+	/// <inheritdoc />
+	/// <remarks>
+	/// Only <c>-t select</c> is a read. It is a POST on the fixed <c>SelectQuery</c> route, it changes
+	/// nothing, and it must keep the expired-session recovery: refusing the replay there turns a
+	/// recoverable stale session into a failed read and buys nothing. <c>insert</c> / <c>update</c> /
+	/// <c>delete</c> are record writes and keep the base refusal (GitHub #1313).
+	/// </remarks>
+	private protected override bool AllowsPostReplay(DataServiceQueryOptions options) =>
+		string.Equals(options.OperationType, "SELECT", StringComparison.OrdinalIgnoreCase);
+
 	#endregion
 
 }
@@ -179,6 +189,15 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 			return true;
 		}
 
+		// Checked BEFORE the markup branch: the expired-session detector has two arms, and the second
+		// one is a JSON 401 envelope from the .svc endpoints, which is not markup at all. Leaving the
+		// check inside the markup branch classified that arm as "the service reported the request as
+		// failed", which says nothing about the session or about the request not having been replayed.
+		if (ReauthExecutor.IsSessionExpiredResponse(response)) {
+			classification = new ServiceResponseClassification(ServiceResponseFailure.ExpiredSession);
+			return false;
+		}
+
 		if (CreatioResponseError.IsMarkup(response)) {
 			//An HTML/XML body is never a successful service payload: the request did not reach the
 			//service intact. Recognizing the markup is what decides failure - the status line, the known
@@ -229,7 +248,19 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 		HttpErrorStatus,
 		KnownErrorPage,
 		NotAServicePayload,
-		ReportedFailure
+		ReportedFailure,
+
+		/// <summary>
+		/// The body is Creatio's sign-in page. Reported separately from
+		/// <see cref="NotAServicePayload"/> because it is the one markup failure whose cause the user
+		/// can name, and because a write is never replayed automatically (GitHub #1313) - without a
+		/// distinct message an expired session during a POST/PUT/PATCH/DELETE read as "the response is
+		/// an HTML page", with nothing pointing at the session. The message deliberately does NOT
+		/// promise the request was rejected: the same body-based ambiguity that forbids the automatic
+		/// replay forbids claiming it here, and telling the operator to just re-run would recreate the
+		/// duplicate write by hand.
+		/// </summary>
+		ExpiredSession
 	}
 
 	private readonly record struct ServiceResponseClassification(
@@ -321,6 +352,9 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 			ServiceResponseFailure.HttpErrorStatus => $"HTTP status {classification.StatusCode}",
 			ServiceResponseFailure.KnownErrorPage => "the response is an error page and carries no HTTP status",
 			ServiceResponseFailure.NotAServicePayload => "the response is an HTML page, not a service payload",
+			ServiceResponseFailure.ExpiredSession =>
+				"the Creatio session had expired; this response is the sign-in page, so the request may or "
+				+ "may not have been applied - verify the target before re-running the command",
 			ServiceResponseFailure.ReportedFailure => "the service reported the request as failed",
 			var _ => "the response could not be classified as a service payload"
 		};
@@ -369,9 +403,24 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 	/// </summary>
 	protected readonly record struct ServiceRequestOutcome(bool Succeeded, string ResponseBody);
 
+	/// <summary>
+	/// Whether a POST this command issues may be re-sent after a successful re-login.
+	/// </summary>
+	/// <remarks>
+	/// The answer is the call site's intent, not the verb: POST carries both reads and writes here.
+	/// The base answer is <see langword="false"/> because <c>call-service</c> posts to a user-supplied
+	/// service path whose response body is arbitrary, and the expired-session detector is body-based -
+	/// a service that answers a committed POST with markup mentioning <c>/Login/</c> would otherwise be
+	/// re-authenticated AND re-posted, writing the record twice (GitHub #1313). A subclass that knows a
+	/// particular POST is a read says so by overriding this.
+	/// </remarks>
+	/// <param name="options">The parsed options of the command being executed.</param>
+	private protected virtual bool AllowsPostReplay(T options) => false;
+
 	private protected ServiceRequestOutcome ExecuteServiceRequest(string url, string requestData,
 		string resultFileName = null, string httpMethod = "",
-		CreatioResponseContext responseContext = CreatioResponseContext.Service){
+		CreatioResponseContext responseContext = CreatioResponseContext.Service,
+		bool postReplayAllowed = false){
 		string normalizedMethod = string.IsNullOrWhiteSpace(httpMethod)
 			? "POST"
 			: httpMethod.ToUpperInvariant();
@@ -389,8 +438,16 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 		//replay risk with no corresponding capability.
 		int attempts = normalizedMethod == "GET" ? MaxAttempts : 1;
 		string jsonResult = normalizedMethod switch {
-					"POST" => ApplicationClient.ExecutePostRequest(url, requestData, RequestTimeout,
-						attempts, DelaySec),
+					//Non-replayable unless the command declared this POST a read (see AllowsPostReplay):
+					//the response body is arbitrary and the client's expired-session detector is body-based,
+					//so a service that legitimately answers a committed POST with HTML mentioning /Login/
+					//would otherwise be re-authenticated AND re-posted, writing the record twice
+					//(GitHub #1313). GET below always keeps replaying - it changes nothing.
+					"POST" => postReplayAllowed
+						? ApplicationClient.ExecutePostRequest(url, requestData, RequestTimeout, attempts,
+							DelaySec)
+						: ApplicationClient.ExecuteNonReplayablePostRequest(url, requestData, RequestTimeout,
+							attempts, DelaySec),
 					"GET" => ApplicationClient.ExecuteGetRequest(url, RequestTimeout, attempts, DelaySec),
 					"DELETE" => ApplicationClient.ExecuteDeleteRequest(url, requestData, RequestTimeout,
 						attempts, DelaySec),
@@ -462,7 +519,7 @@ public abstract class BaseServiceCommand<T> : RemoteCommand<T> where T : CallSer
 		}
 		ServiceRequestOutcome outcome = ExecuteServiceRequest(
 			BuildUrl(options), requestData, options.ResultFileName, options.HttpMethodName,
-			ResolveResponseContext(options));
+			ResolveResponseContext(options), AllowsPostReplay(options));
 		return outcome.Succeeded ? 0 : 1;
 	}
 

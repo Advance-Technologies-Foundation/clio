@@ -49,8 +49,31 @@ public class LegacyApplicationClientCompatibilityTests {
 			.WithMessage($"*{nameof(LegacyApplicationClient)}*");
 	}
 
+	[Test]
+	[Description("A client written before the non-replayable POST existed still answers it, by forwarding to its own POST with every argument preserved")]
+	public void LegacyImplementer_ShouldForwardNonReplayablePostToItsOwnPost_WhenCalled() {
+		// Arrange
+		LegacyApplicationClient legacy = new();
+		IApplicationClient client = legacy;
+
+		// Act
+		string result = client.ExecuteNonReplayablePostRequest("/x", "body", 7_000, 3, 5);
+
+		// Assert
+		result.Should().Be(LegacyApplicationClient.PostResult,
+			because: "the defaulted member must reach the implementer's own POST, not return a silent null");
+		legacy.LastPost.Should().Be(("/x", "body", 7_000, 3, 5),
+			because: "an implementer with no replay behaviour of its own is already correct with the default body, "
+				+ "but only if every argument survives the forward");
+	}
+
 	/// <summary>An IApplicationClient frozen at the shape it had before PUT was added.</summary>
 	private sealed class LegacyApplicationClient : IApplicationClient {
+
+		internal const string PostResult = "legacy-post";
+
+		/// <summary>Arguments the last POST arrived with, so the forwarding test can compare them.</summary>
+		internal (string Url, string Body, int Timeout, int MaxAttempts, int DelaySec) LastPost { get; private set; }
 
 		public event EventHandler<WebSocketState> ConnectionStateChanged;
 
@@ -68,7 +91,10 @@ public class LegacyApplicationClientCompatibilityTests {
 			int maxAttempts = 1, int delaySec = 1) => string.Empty;
 
 		public string ExecutePostRequest(string url, string requestData,
-			int requestTimeout = Timeout.Infinite, int maxAttempts = 1, int delaySec = 1) => string.Empty;
+			int requestTimeout = Timeout.Infinite, int maxAttempts = 1, int delaySec = 1) {
+			LastPost = (url, requestData, requestTimeout, maxAttempts, delaySec);
+			return PostResult;
+		}
 
 		public T ExecutePostRequest<T>(string url, string requestData,
 			int requestTimeout = Timeout.Infinite, int maxAttempts = 1, int delaySec = 1)
