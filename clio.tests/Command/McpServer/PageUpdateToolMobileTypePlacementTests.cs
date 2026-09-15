@@ -97,7 +97,7 @@ public sealed class PageUpdateToolMobileTypePlacementTests {
 			mobileComponentCatalog: Substitute.For<IMobileComponentInfoCatalog>(),
 			webComponentCatalog: Substitute.For<IComponentInfoCatalog>(),
 			samplingService: Substitute.For<IPageBodySamplingService>(),
-			pageBaselineGuard: new PageBaselineGuard(Substitute.For<System.IO.Abstractions.IFileSystem>()));
+			pageBaselineGuard: new PageBaselineGuard(Substitute.For<System.IO.Abstractions.IFileSystem>()), new PersistedResourceKeyReader());
 
 	[Test]
 	[Description("ENG-95429 on the write path: update-page refuses to save a mobile body whose insert carries its component type outside 'values', naming the element in the failure.")]
