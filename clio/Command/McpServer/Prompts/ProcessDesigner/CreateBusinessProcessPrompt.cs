@@ -43,6 +43,13 @@ public static class CreateBusinessProcessPrompt {
 		 and the two notifications (`notifyApprover` / `notifyAuthor`, each a nested object taking `emailTemplate`,
 		 the author one also taking a nested `recipient`); use
 		 that dedicated type rather than a generic `userTask` named ApprovalUserTask, which cannot carry any of it.
+		 BRANCHING on the verdict needs no gateway and is declared on the FLOW: give each outgoing flow
+		 `kind: "conditional"` plus `results` with the captions that select it - exactly `Positive`,
+		 `Negative` and `Canceled`, the final VisaStatus values, and all THREE, since a two-way split drops
+		 the canceled case. Do NOT use a `condition` formula there: the designer edits a connector leaving an
+		 approval as a result SELECTION and shows no formula field, so a formula runs and no human can read
+		 it. The same applies to every element that enumerates results - `performTask`, `preconfiguredPage`,
+		 `openEditPage` with results by column - see `get-guidance name=process-branch-conditions`, which routes on to the article that owns it.
 		 A notification switched on without a template, or `notifyAuthor` without a recipient, is refused — the
 		 runtime would report the element as configured and never send. To put PROCESS DATA in the body use the
 		 by-name macros the server resolves for you — `[[param:Name]]`, `[[element:Element.Output]]`, or

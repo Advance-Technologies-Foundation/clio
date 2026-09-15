@@ -557,14 +557,20 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 					+ "path refuses it, and reached any other way the platform stores it as the literal "
 					+ "'true' - a branch that always fires. Give it a condition, or pass 'true' explicitly "
 					+ "if a branch that always fires is what you mean.", edge.Source, edge));
-			} else if (edge.Condition is null) {
+			} else if (edge.Condition is null && (edge.Results is null || edge.Results.Count == 0)) {
+				// A branch decided by a result SELECTION carries no condition text and is complete without
+				// one, so `results` silences this. Before the field existed the rule fired on that shape and
+				// offered two remedies which both DESTROY it: a condition writes a formula the designer will
+				// not render on a result-enumerating source, and 'sequence' removes the branch. The read-back
+				// caveat in the message covers a graph describe produced, not one the caller is about to build.
 				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, "R13",
 					$"Conditional flow '{edge.Source}' -> '{edge.Target}' carries no condition. That is fine "
 					+ "for checking a graph's shape, but the BUILD path refuses it - give it a condition "
-					+ "before you build, or make the flow 'sequence'. Unless this graph was READ BACK and the "
-					+ "flow branches on the preceding activity's RESULT: 337 shipped flows do, their condition "
-					+ "is a result set rather than text, and neither fix above applies - describe-business-"
-					+ "process reports branchesOnActivityResult for those.", edge.Source, edge));
+					+ "before you build, or make the flow 'sequence'. Unless the branch is decided by an "
+					+ "activity RESULT rather than by text, in which case neither fix applies and neither is "
+					+ "wanted: pass the selection as 'results' on this edge and the warning goes away. 337 "
+					+ "shipped flows are that shape, and describe-business-process reports them with "
+					+ "branchesOnActivityResult and results.", edge.Source, edge));
 			}
 		}
 	}

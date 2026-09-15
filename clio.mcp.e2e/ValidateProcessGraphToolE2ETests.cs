@@ -307,6 +307,47 @@ public sealed class ValidateProcessGraphToolE2ETests {
 	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) =>
 		await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName);
 
+	[Test]
+	[Description("Over the real MCP path, an edge's RESULTS bind from the wire and silence R13. Same argument as the condition case beside it and the same blind spot: the unit tests construct ProcessGraphEdgeArg positionally in C#, so none of them touches the JSON binder, and the binder skips a member it cannot map in silence. Here the silence is worse than a missing value - a dropped 'results' key arrives null, R13 fires exactly as it did before the field existed, and its warning reads like ordinary advice while telling the caller to do one of two things that DESTROY the branch they planned. The sibling edge in the same graph carries neither predicate and must still be reported, so this cannot pass by R13 having stopped firing altogether.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-process-graph binds an edge result selection from the wire")]
+	public async Task ValidateProcessGraph_Should_BindEdgeResults_FromTheWire() {
+		// Arrange: two conditional branches off one activity - one decided by a result SELECTION, one
+		// carrying no predicate at all. R13 must name the second and only the second.
+		await using ArrangeContext arrangeContext = await ArrangeAsync();
+		string environmentName = await ResolveEnvironmentOrIgnoreAsync();
+		Dictionary<string, object?> graph = new() {
+			["environment-name"] = environmentName,
+			["nodes"] = new[] {
+				Node("s", "startEvent"), Node("approve", "activityUserTask"),
+				Node("selected", "activityUserTask"), Node("bare", "activityUserTask"), Node("e", "endEvent")
+			},
+			["edges"] = new[] {
+				Edge("s", "approve", "sequence"),
+				EdgeWithResults("approve", "selected", "Positive"),
+				Edge("approve", "bare", "conditional"),
+				Edge("selected", "e", "sequence"), Edge("bare", "e", "sequence")
+			}
+		};
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(arrangeContext, graph);
+		ValidateProcessGraphResponse response = EntitySchemaStructuredResultParser.Extract<ValidateProcessGraphResponse>(callResult);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the package is present, so the graph is validated and findings are returned");
+		response.Findings.Should().NotContain(
+			f => f.RuleId == "R13" && f.Message.Contains("'approve' -> 'selected'"),
+			because: "a result selection IS the predicate, so that branch is finished - and the rule can only "
+				+ "know it if the array itself crossed the wire; a dropped key arrives null and R13 would "
+				+ "warn, sending the caller to a condition the designer will not render or to deleting the branch");
+		response.Findings.Should().Contain(
+			f => f.RuleId == "R13" && f.Severity == "warning" && f.Message.Contains("'approve' -> 'bare'"),
+			because: "the sibling carries neither predicate and still has to be reported - without this the "
+				+ "test would pass on a build where R13 had stopped firing at all");
+	}
+
 	private static Dictionary<string, object?> Node(string name, string type) =>
 		new() { ["name"] = name, ["type"] = type };
 
@@ -319,6 +360,16 @@ public sealed class ValidateProcessGraphToolE2ETests {
 			string condition) =>
 		new() {
 			["source"] = source, ["target"] = target, ["flow-kind"] = flowKind, ["condition"] = condition
+		};
+
+	// Puts "results" ON THE WIRE. No other edge in this fixture carries it, so nothing else here would
+	// notice the binder dropping the key - and a dropped key is INVISIBLE in the reassuring direction:
+	// results arrives null, R13 fires exactly as it did before the field existed, and the warning reads
+	// like ordinary advice rather than like a defect.
+	private static Dictionary<string, object?> EdgeWithResults(string source, string target,
+			params string[] results) =>
+		new() {
+			["source"] = source, ["target"] = target, ["flow-kind"] = "conditional", ["results"] = results
 		};
 
 	private static async Task<CallToolResult> CallToolAsync(ArrangeContext arrangeContext, Dictionary<string, object?> graphArgs) {

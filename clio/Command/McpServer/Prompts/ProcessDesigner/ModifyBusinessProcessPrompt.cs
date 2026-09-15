@@ -28,7 +28,7 @@ public static class ModifyBusinessProcessPrompt {
 		 (3) supply a JSON `operations` array (applied in order) — each item has an `op`: `addElement`,
 		 `removeElement`, `addFlow`, `removeFlow`, `setFlow`, `setFlowCondition`, `addParameter`, `addMapping`,
 		 `setParameter`, `removeParameter`, `setFilter`, `clearFilter`, `setSignal`, `setElement`,
-		 `setConnections`, or `clearConnections`
+		 `setFlowResults`, `setConnections`, or `clearConnections`
 		 — plus that op's arguments (the element / parameter / mapping / filter / signal shapes match a build;
 		 `setParameter` updates a parameter in place, `removeParameter` is dependency-checked — over mappings,
 		 execution-context parameters AND conditional-flow conditions, sub-processes included; `setFlowCondition`
@@ -36,7 +36,24 @@ public static class ModifyBusinessProcessPrompt {
 		 place, keeping its position; `addFlow` takes `kind` (sequence | conditional | default) and, for a
 		 conditional one, `condition`, so a branch can be declared as the flow is added rather than in two steps;
 		 `setFlow` (`source` + `target` + `kind`, plus `condition` for a conditional one) changes an EXISTING
-		 flow's kind in either direction, also in place. Both also take `label` — the text drawn ON the
+		 flow's kind in either direction, also in place.
+		 A conditional branch has TWO predicate dialects and its SOURCE decides which, not you. Off an element
+		 that enumerates RESULTS - among the types you can build, `approval`, `performTask`, `preconfiguredPage`,
+		 `openEditPage` with results by column, User dialog and Auto-generated page, each only once CONFIGURED
+		 into it - the designer edits that connector as a CHECKBOX LIST and offers no formula field at all.
+		 The list is NOT closed - other platform and custom elements qualify - but `sendEmail` is NOT one
+		 despite its server-side schema declaring results, so branch it with a condition, so the branch is declared with `results`: the result captions (`["Positive"]` on an
+		 approval), written by `setFlowResults` (`source` + `target` + a non-empty `results`) or by `results`
+		 on `addFlow`. Everywhere else the dialect is a `condition` formula. A formula on a
+		 result-enumerating connector is NOT refused and it RUNS - but no human can read or edit it: every
+		 box reads unticked and the connector is marked invalid the first time its card is opened, so check
+		 the source element before reaching for `setFlowCondition`. The two slots are mutually exclusive on
+		 one flow and `results` clears any stored condition. There is no way to CLEAR a selection - a
+		 conditional flow carrying neither is stored as the literal `true` and always taken - so call
+		 `setFlowResults` again to change which results select the branch. An unknown caption is refused WITH
+		 the set the element offers, which is the only way to discover them, and `describe-business-process`
+		 reads a selection back as `results` + `resultsActivity`. `get-guidance
+		 name=process-branch-conditions` routes to the article that owns this rule. Both `addFlow` and `setFlow` also take `label` — the text drawn ON the
 		 connector — where omitting it keeps whatever is there, a non-empty value replaces it and `""` removes
 		 it; `describe-business-process` first, because a label is usually a person's own wording and a write
 		 that carries one overwrites it silently. Position decides precedence: sibling branches off one element are evaluated in
