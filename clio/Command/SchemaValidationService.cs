@@ -94,6 +94,34 @@ public static class SchemaValidationService
 		new[] { "SCHEMA_MODEL_CONFIG_DIFF", "SCHEMA_MODEL_CONFIG" }
 	};
 
+	/// <summary>
+	/// The markers that make an append fragment meaningful: the six sections <c>PageBodyMerger.MergeWeb</c>
+	/// actually reads from an incoming body, plus BOTH full-config spellings.
+	/// </summary>
+	/// <remarks>
+	/// <c>SCHEMA_DEPS</c> and <c>SCHEMA_ARGS</c> are deliberately EXCLUDED even though they are required
+	/// markers elsewhere. They belong to the AMD envelope, the merge never reads them from the incoming body,
+	/// and nothing downstream rejects them - so a fragment whose only pair was one of those passed this rule
+	/// and still hit the exact silent discard it exists to close (reproduced on a live stand:
+	/// `success: true, incomingOperationCount: 0`).
+	///
+	/// The full-config spellings are the opposite case and ARE included: the merge does not read them either,
+	/// but <see cref="PageBodyMerger.UsesUnsupportedFullConfigForm(string, out string)"/> rejects such a body
+	/// downstream with a precise "use --mode replace" message. Recognizing them here keeps that message
+	/// instead of pre-empting it with this generic one. Narrowing this set to "only what the merge reads"
+	/// would silently degrade that diagnosis - a test pins it.
+	/// </remarks>
+	private static readonly string[] RecognizedSectionMarkerNames = {
+		SchemaViewConfigDiff,
+		SchemaViewModelConfigDiff,
+		"SCHEMA_MODEL_CONFIG_DIFF",
+		SchemaHandlersMarker,
+		SchemaConvertersMarker,
+		SchemaValidatorsMarker,
+		SchemaViewModelConfig,
+		"SCHEMA_MODEL_CONFIG"
+	};
+
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
 
 	private static readonly Regex SdkUsagePattern = new(@"\bsdk\s*[.\[]", RegexOptions.Compiled, RegexTimeout);
@@ -1741,6 +1769,45 @@ public static class SchemaValidationService
 
 	public static string BuildMarkerPattern(string markerName) {
 		return @"/\*\*" + Regex.Escape(markerName) + @"\*/(.*?)/\*\*" + Regex.Escape(markerName) + @"\*/";
+	}
+
+	/// <summary>
+	/// Rejects an append fragment that carries NO recognizable page section at all.
+	/// </summary>
+	/// <remarks>
+	/// Full marker integrity is deliberately NOT required in append mode - the incoming body is a fragment
+	/// and may legitimately omit sections. But that skip used to be all-or-nothing, so a body with no marker
+	/// pairs whatsoever was accepted: every section read as empty (PageBodyMerger.ReadJsonArray returns an
+	/// empty JArray when the marker is absent), the merge became a no-op, and the call reported success while
+	/// silently discarding the caller's entire fragment. A bare JSON array is the easy way to hit this,
+	/// because it is valid JavaScript and so clears the syntax gate too. Found by manual testing on a live
+	/// stand, not by the unit suite.
+	///
+	/// The rule is deliberately the weakest one that closes it: ONE recognized marker pair is enough. Anything
+	/// stricter would re-impose the completeness requirement that append exists to relax.
+	/// </remarks>
+	/// <param name="jsBody">The caller's incoming append fragment.</param>
+	/// <returns>A failed result when the body carries no recognizable section; otherwise a valid result.</returns>
+	public static SchemaValidationResult ValidateAppendFragmentIsRecognizable(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			result.IsValid = false;
+			result.Errors.Add("JS body is null or empty.");
+			return result;
+		}
+		bool carriesAnySection = RecognizedSectionMarkerNames.Any(markerName =>
+			Regex.IsMatch(jsBody, BuildMarkerPattern(markerName), RegexOptions.Singleline, RegexTimeout));
+		if (carriesAnySection) {
+			return result;
+		}
+		result.IsValid = false;
+		result.Errors.Add(
+			"an append body is a FRAGMENT of a page body, not a bare list of operations, so it must carry at " +
+			"least one section marker pair - for example " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[ ... ]/**SCHEMA_VIEW_CONFIG_DIFF*/. Without one, every section reads " +
+			"as empty and the merge would silently discard everything you sent. Recognized sections: " +
+			string.Join(", ", RecognizedSectionMarkerNames));
+		return result;
 	}
 
 	public static SchemaValidationResult ValidateMarkerIntegrity(string jsBody) {
