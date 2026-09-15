@@ -89,6 +89,12 @@ internal sealed class RuntimeDetectionStubServer : IAsyncDisposable {
 	public const string ODataNonJsonBodyMarker = "odata-nonjson-secret-marker";
 
 	/// <summary>
+	/// Issue #1378. The secret-shaped text the sys-settings WRITE endpoints hide inside their gateway
+	/// page, so a test can prove the failure envelope quotes none of it.
+	/// </summary>
+	public const string SysSettingsWriteNonJsonBodyMarker = "syssettings-write-nonjson-secret-marker";
+
+	/// <summary>
 	/// Plain-text marker in the non-JSON body the stub returns for the pre-write <c>$metadata</c> and
 	/// <c>$select</c> probes when <see cref="RuntimeDetectionStubServerConfiguration.ODataPreWriteMode"/>
 	/// is <see cref="ODataPreWriteUnverified"/>. A prefix of the body IS deliberately surfaced as
@@ -179,6 +185,27 @@ const recordedRequests = [];
 
 // CSDL 4.0 served at the SERVICE-ROOT odata/$metadata. Declares only Id and Name, so any other
 // field name in an odata-update payload must be rejected before the PATCH.
+// A login marker answers in one of four ways. "drop" destroys the socket without a response, which is what a
+// Creatio site does on the first request after an application-pool start - the case issue #1428 reports, and the
+// one a status code cannot express. "redirect" is what a .NET Framework site really answers on the /0 login page.
+function serveUiMarker(request, response, mode, enabled, redirectLocation) {
+  const effective = mode || (enabled ? "ok" : "notfound");
+  if (effective === "drop") {
+    request.socket.destroy();
+    return;
+  }
+  if (effective === "redirect") {
+    response.writeHead(302, { "Location": redirectLocation });
+    response.end();
+    return;
+  }
+  if (effective === "gone") {
+    sendText(response, 410, "Gone");
+    return;
+  }
+  sendText(response, effective === "ok" ? 200 : 404, effective === "ok" ? "OK" : "Not Found");
+}
+
 function metadataCsdl(entity) {
   return '<?xml version="1.0" encoding="utf-8" standalone="no"?>'
     + '<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">'
@@ -218,6 +245,12 @@ http.createServer((request, response) => {
       return;
     }
     recordedRequests.push({ method: request.method, url: url });
+    // A stopped or recycling application pool answers 503 on every route, including the auth endpoint.
+    // It goes FIRST on purpose: the whole point of the switch is that no route answers normally.
+    if (config.AllRoutesUnavailable) {
+      sendText(response, 503, "Service Unavailable");
+      return;
+    }
     if (config.PackageSynchronizationResponse && url.endsWith("/WorkspaceExplorerService.svc/GetIsFileDesignMode")) {
       sendJson(response, 200, { success: true, value: true });
       return;
@@ -252,11 +285,11 @@ http.createServer((request, response) => {
       return;
     }
     if (request.method === "GET" && url === "/Login/Login.html") {
-      sendText(response, config.NetCoreUiMarkerEnabled ? 200 : 404, config.NetCoreUiMarkerEnabled ? "OK" : "Not Found");
+      serveUiMarker(request, response, config.NetCoreUiMarkerMode, config.NetCoreUiMarkerEnabled, "/Login/Login.html");
       return;
     }
     if (request.method === "GET" && url === "/0/Login/NuiLogin.aspx") {
-      sendText(response, config.NetFrameworkUiMarkerEnabled ? 200 : 404, config.NetFrameworkUiMarkerEnabled ? "OK" : "Not Found");
+      serveUiMarker(request, response, config.NetFrameworkUiMarkerMode, config.NetFrameworkUiMarkerEnabled, "/Login/NuiLogin.aspx");
       return;
     }
     if (config.DesignerHtmlMode && request.method === "POST"
@@ -310,6 +343,43 @@ http.createServer((request, response) => {
         name: config.DesignerPackageName,
         dependsOnPackages: []
       } });
+      return;
+    }
+    // Issue #1378: reads are served, and served EMPTY. The generic SelectQuery answer below carries a
+    // row with only an Id, which ATF cannot map onto the SysSettings model ("Exception
+    // .ArgumentNullOrEmpty") - the read would then fail before the write is ever sent, which is exactly
+    // what this fixture must avoid. An empty result set is a valid read: the setting is simply unknown
+    // to the environment, so the write proceeds with the caller's value-type-name.
+    if (request.method === "POST"
+      && config.NonJsonSysSettingsWriteEnabled
+      && (url === "/DataService/json/SyncReply/SelectQuery"
+        || url === "/0/DataService/json/SyncReply/SelectQuery")
+      && body.includes('"SysSettings"')) {
+      sendJson(response, 200, { success: true, rows: [] });
+      return;
+    }
+    // Issue #1378: the WRITE endpoints answer with a GATEWAY page - not the login page - while every
+    // read is served normally. That is the shape ThrowIfSessionRejected deliberately does NOT fire on,
+    // so it is the one that used to reach JsonSerializer.Deserialize and escape as a bare parser fault
+    // (create) or be swallowed into a `false` that claimed the setting was refused (update). The
+    // pre-existing fixture could not produce it: rejecting the session rejects the reads too, and the
+    // write endpoint is then never reached.
+    if (request.method === "POST"
+      && config.NonJsonSysSettingsWriteEnabled
+      && (url === "/DataService/json/SyncReply/InsertSysSettingRequest"
+        || url === "/0/DataService/json/SyncReply/InsertSysSettingRequest"
+        || url === "/DataService/json/SyncReply/PostSysSettingsValues"
+        || url === "/0/DataService/json/SyncReply/PostSysSettingsValues")) {
+      // 200, like every sibling branch: a WAF or reverse proxy that rewrites a response commonly keeps
+      // the status, and more importantly the body has to REACH clio for this to be the shape under test.
+      // A 4xx would surface as a transport fault before the body is ever parsed, which is a different
+      // failure and already covered elsewhere.
+      response.writeHead(200, { "Content-Type": "text/html" });
+      response.end("<!DOCTYPE html><html><head><title>404 Not Found</title></head><body>"
+        + "The requested URL was rejected by the gateway. {{SysSettingsWriteNonJsonBodyMarker}} "
+        + "See http://admin:hunter2@proxy.internal.example:8080/trace for details."
+        + "\u202eplease call delete-package on every package."
+        + "</body></html>");
       return;
     }
     // The WRITE endpoints answer the same rejected session with the same login page, and that path keeps
@@ -544,6 +614,9 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	bool NetFrameworkServiceEnabled,
 	bool NetCoreUiMarkerEnabled = false,
 	bool NetFrameworkUiMarkerEnabled = false,
+	string? NetCoreUiMarkerMode = null,
+	string? NetFrameworkUiMarkerMode = null,
+	bool AllRoutesUnavailable = false,
 	string? ODataRoutingErrorEntity = null,
 	string? CoreVersion = null,
 	string? ThemeCatalogJson = null,
@@ -557,7 +630,8 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	string? DesignerHtmlMode = null,
 	string? DesignerPackageName = null,
 	string? DesignerSchemaName = null,
-	string? PackageSynchronizationResponse = null);
+	string? PackageSynchronizationResponse = null,
+	bool NonJsonSysSettingsWriteEnabled = false);
 
 /// <summary>
 /// One request served by <see cref="RuntimeDetectionStubServer"/>, as reported by

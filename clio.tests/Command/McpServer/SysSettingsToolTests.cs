@@ -17,8 +17,37 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class SysSettingsToolTests {
 
+	/// <summary>
+	/// Builds the command and its classifier over ONE logger. Two substitutes would make any future
+	/// assertion on a log line pass vacuously - the line would be written to the instance the test never
+	/// looks at.
+	/// </summary>
+	/// <param name="manager">The sys-settings manager the command reads and writes through.</param>
+	/// <param name="fileSystem">The file system, or <see langword="null"/> for an inert substitute.</param>
+	/// <param name="logger">The shared sink, or <see langword="null"/> for an inert substitute.</param>
+	/// <returns>A command whose classifier writes to the same logger it does.</returns>
+	private static SysSettingsCommand BuildCommand(ISysSettingsManager manager, IFileSystem fileSystem = null,
+		ILogger logger = null) {
+		ILogger sink = logger ?? Substitute.For<ILogger>();
+		return new SysSettingsCommand(manager, sink, fileSystem ?? Substitute.For<IFileSystem>(),
+			new OperationCorrelationIdProvider(),
+			new SysSettingFailureClassifier(sink, new OperationCorrelationIdProvider()));
+	}
+
+	/// <summary>
+	/// The production classifier under a substituted logger. Issue #1379 moved these operations off
+	/// <c>SysSettingsCommand</c>'s statics and behind <see cref="ISysSettingFailureClassifier"/>; what is
+	/// asserted below is unchanged, only how the tools receive the capability is.
+	/// </summary>
+	/// <param name="logger">The sink to assert on, or <see langword="null"/> for an inert substitute.</param>
+	/// <returns>A classifier writing to <paramref name="logger"/>.</returns>
+	private static ISysSettingFailureClassifier BuildClassifier(ILogger logger = null) =>
+		new SysSettingFailureClassifier(logger ?? Substitute.For<ILogger>(),
+			new OperationCorrelationIdProvider());
+
 	private static IToolCommandResolver BuildResolver(ISysSettingsManager manager, IFileSystem fileSystem = null) {
-		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(), fileSystem ?? Substitute.For<IFileSystem>(), new OperationCorrelationIdProvider());
+		ILogger logger = Substitute.For<ILogger>();
+		SysSettingsCommand command = BuildCommand(manager, fileSystem ?? Substitute.For<IFileSystem>(), logger);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
 		return commandResolver;
@@ -47,7 +76,7 @@ public sealed class SysSettingsToolTests {
 	public void GetSysSetting_Should_Return_AllUsers_Default_Value_From_Environment() {
 		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
 		manager.GetAllUsersDefaultWithType("MaxFileSize").Returns(("10485760", "Integer"));
-		SysSettingGetTool tool = new(BuildResolver(manager), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingGetTool tool = new(BuildResolver(manager), BuildClassifier());
 
 		SysSettingGetResult result = tool.GetSysSetting(new GetSysSettingArgs("local", "MaxFileSize"));
 
@@ -70,7 +99,7 @@ public sealed class SysSettingsToolTests {
 		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
 		manager.GetAllUsersDefaultWithType("UsrApiSecret")
 			.Returns(("ENCRYPTED_CIPHERTEXT_BASE64", "SecureText"));
-		SysSettingGetTool tool = new(BuildResolver(manager), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingGetTool tool = new(BuildResolver(manager), BuildClassifier());
 
 		SysSettingGetResult result = tool.GetSysSetting(new GetSysSettingArgs("local", "UsrApiSecret"));
 
@@ -88,7 +117,7 @@ public sealed class SysSettingsToolTests {
 	public void GetSysSetting_Should_Return_Empty_For_Unconfigured_SecureText() {
 		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
 		manager.GetAllUsersDefaultWithType("UsrEmptySecret").Returns((string.Empty, "SecureText"));
-		SysSettingGetTool tool = new(BuildResolver(manager), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingGetTool tool = new(BuildResolver(manager), BuildClassifier());
 
 		SysSettingGetResult result = tool.GetSysSetting(new GetSysSettingArgs("local", "UsrEmptySecret"));
 
@@ -102,7 +131,7 @@ public sealed class SysSettingsToolTests {
 	public void GetSysSetting_Should_Return_Empty_When_Setting_Is_Not_Configured() {
 		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
 		manager.GetAllUsersDefaultWithType("UnknownCode").Returns((string.Empty, (string)null));
-		SysSettingGetTool tool = new(BuildResolver(manager), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingGetTool tool = new(BuildResolver(manager), BuildClassifier());
 
 		SysSettingGetResult result = tool.GetSysSetting(new GetSysSettingArgs("local", "UnknownCode"));
 
@@ -117,7 +146,7 @@ public sealed class SysSettingsToolTests {
 	[Description("get-sys-setting short-circuits with a validation failure when the caller omits the required code argument.")]
 	public void GetSysSetting_Should_Fail_When_Code_Is_Missing() {
 		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
-		SysSettingGetTool tool = new(BuildResolver(manager), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingGetTool tool = new(BuildResolver(manager), BuildClassifier());
 
 		SysSettingGetResult result = tool.GetSysSetting(new GetSysSettingArgs("local", ""));
 
@@ -131,7 +160,7 @@ public sealed class SysSettingsToolTests {
 	[Category("Unit")]
 	[Description("get-sys-setting maps HttpRequestException raised during environment resolution to a 'Network error' diagnostic message.")]
 	public void GetSysSetting_Should_Categorize_Network_Errors() {
-		SysSettingGetTool tool = new(BuildResolverThatThrows(new HttpRequestException("Connection refused.")), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingGetTool tool = new(BuildResolverThatThrows(new HttpRequestException("Connection refused.")), BuildClassifier());
 
 		SysSettingGetResult result = tool.GetSysSetting(new GetSysSettingArgs("offline", "MaxFileSize"));
 
@@ -149,7 +178,7 @@ public sealed class SysSettingsToolTests {
 	[Category("Unit")]
 	[Description("get-sys-setting reports a transport failure whose text merely contains the digits 401 as a network error, not as rejected credentials.")]
 	public void GetSysSetting_Should_Not_Categorize_Incidental401Digits_As_Authentication_Failure(string message) {
-		SysSettingGetTool tool = new(BuildResolverThatThrows(new HttpRequestException(message)), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingGetTool tool = new(BuildResolverThatThrows(new HttpRequestException(message)), BuildClassifier());
 
 		SysSettingGetResult result = tool.GetSysSetting(new GetSysSettingArgs("local", "MaxFileSize"));
 
@@ -163,7 +192,8 @@ public sealed class SysSettingsToolTests {
 	[Description("get-sys-setting reads the typed status of an HttpRequestException, so a 401 is recognized even when the message does not spell it out.")]
 	public void GetSysSetting_Should_Categorize_TypedUnauthorizedStatus_As_Authentication_Failure() {
 		SysSettingGetTool tool = new(BuildResolverThatThrows(
-			new HttpRequestException("The request failed.", null, HttpStatusCode.Unauthorized)), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+			new HttpRequestException("The request failed.", null, HttpStatusCode.Unauthorized)),
+			BuildClassifier());
 
 		SysSettingGetResult result = tool.GetSysSetting(new GetSysSettingArgs("local", "MaxFileSize"));
 
@@ -177,7 +207,8 @@ public sealed class SysSettingsToolTests {
 	[Description("get-sys-setting maps an HTTP 401 raised during environment resolution to an authentication diagnostic instead of a generic network failure.")]
 	public void GetSysSetting_Should_Categorize_Http401_As_Authentication_Failure() {
 		SysSettingGetTool tool = new(BuildResolverThatThrows(new HttpRequestException(
-			"Response status code does not indicate success: 401 (Unauthorized).")), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+			"Response status code does not indicate success: 401 (Unauthorized).")),
+			BuildClassifier());
 
 		SysSettingGetResult result = tool.GetSysSetting(new GetSysSettingArgs("local", "MaxFileSize"));
 
@@ -205,7 +236,7 @@ public sealed class SysSettingsToolTests {
 	[Category("Unit")]
 	[Description("list-sys-settings maps unexpected exceptions raised during resolution to a generic 'Failed listing' diagnostic.")]
 	public void ListSysSettings_Should_Categorize_Generic_Failures() {
-		SysSettingsListTool tool = new(BuildResolverThatThrows(new TimeoutException("read timed out")), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingsListTool tool = new(BuildResolverThatThrows(new TimeoutException("read timed out")), BuildClassifier());
 
 		SysSettingsListResult result = tool.ListSysSettings(new ListSysSettingsArgs("local"));
 
@@ -222,7 +253,8 @@ public sealed class SysSettingsToolTests {
 	[Description("list-sys-settings maps a Creatio authentication rejection to a structured authentication diagnostic instead of returning a successful empty catalog.")]
 	public void ListSysSettings_Should_Categorize_Authentication_Failures() {
 		SysSettingsListTool tool = new(BuildResolverThatThrows(new System.Security.Authentication.AuthenticationException(
-			"Authentication failed while listing sys-settings: Your password has expired.")), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+			"Authentication failed while listing sys-settings: Your password has expired.")),
+			BuildClassifier());
 
 		SysSettingsListResult result = tool.ListSysSettings(new ListSysSettingsArgs("local"));
 
@@ -239,7 +271,8 @@ public sealed class SysSettingsToolTests {
 	[Description("list-sys-settings maps an HTTP 401 raised during environment resolution to an authentication diagnostic instead of a generic network failure.")]
 	public void ListSysSettings_Should_Categorize_Http401_As_Authentication_Failure() {
 		SysSettingsListTool tool = new(BuildResolverThatThrows(new HttpRequestException(
-			"Response status code does not indicate success: 401 (Unauthorized).")), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+			"Response status code does not indicate success: 401 (Unauthorized).")),
+			BuildClassifier());
 
 		SysSettingsListResult result = tool.ListSysSettings(new ListSysSettingsArgs("local"));
 
@@ -266,7 +299,7 @@ public sealed class SysSettingsToolTests {
 	[Description("create-sys-setting short-circuits with a validation failure when a required field (code) is empty.")]
 	public void CreateSysSetting_Should_Reject_Missing_Required_Fields() {
 		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
-		SysSettingCreateTool tool = new(BuildResolver(manager), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingCreateTool tool = new(BuildResolver(manager), BuildClassifier());
 
 		SysSettingCreateResult result = tool.CreateSysSetting(
 			new CreateSysSettingArgs("local", "", "Display", "Integer"));
@@ -282,7 +315,7 @@ public sealed class SysSettingsToolTests {
 	[Description("create-sys-setting refuses unknown value-type-names to keep the tool surface aligned with Creatio's internal type registry.")]
 	public void CreateSysSetting_Should_Reject_Unsupported_Value_Type() {
 		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
-		SysSettingCreateTool tool = new(BuildResolver(manager), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingCreateTool tool = new(BuildResolver(manager), BuildClassifier());
 
 		SysSettingCreateResult result = tool.CreateSysSetting(
 			new CreateSysSettingArgs("local", "MyCode", "MyName", "UnsupportedType"));
@@ -305,7 +338,7 @@ public sealed class SysSettingsToolTests {
 			.Returns(new SysSettingsManager.InsertSysSettingResponse(
 				new SysSettingsManager.ResponseStatus(string.Empty, string.Empty, Array.Empty<object>()),
 				Guid.NewGuid(), 1, false, true));
-		SysSettingCreateTool tool = new(BuildResolver(manager), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingCreateTool tool = new(BuildResolver(manager), BuildClassifier());
 
 		// Act
 		SysSettingCreateResult result = tool.CreateSysSetting(
@@ -324,7 +357,7 @@ public sealed class SysSettingsToolTests {
 	[Category("Unit")]
 	[Description("create-sys-setting maps UnauthorizedAccessException raised during environment resolution to an 'Authentication error' diagnostic.")]
 	public void CreateSysSetting_Should_Categorize_Authentication_Errors() {
-		SysSettingCreateTool tool = new(BuildResolverThatThrows(new UnauthorizedAccessException("Forbidden")), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingCreateTool tool = new(BuildResolverThatThrows(new UnauthorizedAccessException("Forbidden")), BuildClassifier());
 
 		SysSettingCreateResult result = tool.CreateSysSetting(
 			new CreateSysSettingArgs("local", "MyCode", "MyName", "Text"));
@@ -348,7 +381,7 @@ public sealed class SysSettingsToolTests {
 				Guid.NewGuid(), 1, false, true));
 		manager.UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>()).Returns(true);
 		manager.GetAllUsersDefaultByCode("UsrApiSecret").Returns("ENCRYPTED_CIPHERTEXT_BASE64");
-		SysSettingCreateTool tool = new(BuildResolver(manager), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingCreateTool tool = new(BuildResolver(manager), BuildClassifier());
 
 		SysSettingCreateResult result = tool.CreateSysSetting(
 			new CreateSysSettingArgs("local", "UsrApiSecret", "API secret", "SecureText", Value: "plaintext"));
@@ -376,7 +409,7 @@ public sealed class SysSettingsToolTests {
 	[Description("update-sys-setting short-circuits with a validation failure when the caller omits the required code argument.")]
 	public void UpdateSysSetting_Should_Reject_Missing_Code() {
 		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
-		SysSettingUpdateTool tool = new(BuildResolver(manager), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingUpdateTool tool = new(BuildResolver(manager), BuildClassifier());
 
 		SysSettingUpdateResult result = tool.UpdateSysSetting(
 			new UpdateSysSettingArgs("local", "", "x"));
@@ -391,7 +424,7 @@ public sealed class SysSettingsToolTests {
 	[Category("Unit")]
 	[Description("update-sys-setting maps HttpRequestException raised during environment resolution to a 'Network error' diagnostic message.")]
 	public void UpdateSysSetting_Should_Categorize_Network_Errors() {
-		SysSettingUpdateTool tool = new(BuildResolverThatThrows(new HttpRequestException("Connection refused.")), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingUpdateTool tool = new(BuildResolverThatThrows(new HttpRequestException("Connection refused.")), BuildClassifier());
 
 		SysSettingUpdateResult result = tool.UpdateSysSetting(
 			new UpdateSysSettingArgs("offline", "MaxFileSize", "10485760"));
@@ -410,7 +443,7 @@ public sealed class SysSettingsToolTests {
 		manager.UpdateSysSetting("UsrApiSecret", Arg.Any<object>(), Arg.Any<string>()).Returns(true);
 		manager.GetAllUsersDefaultWithType("UsrApiSecret")
 			.Returns(("ENCRYPTED_CIPHERTEXT_BASE64", "SecureText"));
-		SysSettingUpdateTool tool = new(BuildResolver(manager), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingUpdateTool tool = new(BuildResolver(manager), BuildClassifier());
 
 		SysSettingUpdateResult result = tool.UpdateSysSetting(
 			new UpdateSysSettingArgs("local", "UsrApiSecret", "plaintext", "SecureText"));
@@ -437,7 +470,7 @@ public sealed class SysSettingsToolTests {
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		fileSystem.ExistsFile("logo.png").Returns(true);
 		fileSystem.OpenReadStream("logo.png").Returns(_ => new MemoryStream(bytes));
-		SysSettingUpdateTool tool = new(BuildResolver(manager, fileSystem), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingUpdateTool tool = new(BuildResolver(manager, fileSystem), BuildClassifier());
 
 		// Act
 		SysSettingUpdateResult result = tool.UpdateSysSetting(
@@ -457,7 +490,7 @@ public sealed class SysSettingsToolTests {
 	public void UpdateSysSetting_Should_Reject_Both_Value_And_FilePath() {
 		// Arrange
 		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
-		SysSettingUpdateTool tool = new(BuildResolver(manager), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingUpdateTool tool = new(BuildResolver(manager), BuildClassifier());
 
 		// Act
 		SysSettingUpdateResult result = tool.UpdateSysSetting(
@@ -480,7 +513,7 @@ public sealed class SysSettingsToolTests {
 		manager.GetAllUsersDefaultWithType("SchemaNamePrefix").Returns(("Usr", "Text"));
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		fileSystem.ExistsFile("logo.png").Returns(true);
-		SysSettingUpdateTool tool = new(BuildResolver(manager, fileSystem), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingUpdateTool tool = new(BuildResolver(manager, fileSystem), BuildClassifier());
 
 		// Act
 		SysSettingUpdateResult result = tool.UpdateSysSetting(
@@ -504,7 +537,7 @@ public sealed class SysSettingsToolTests {
 		manager.GetAllUsersDefaultWithType("UsrNope").Returns((string.Empty, (string)null));
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		fileSystem.ExistsFile("logo.png").Returns(true);
-		SysSettingUpdateTool tool = new(BuildResolver(manager, fileSystem), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingUpdateTool tool = new(BuildResolver(manager, fileSystem), BuildClassifier());
 
 		// Act
 		SysSettingUpdateResult result = tool.UpdateSysSetting(
@@ -529,7 +562,7 @@ public sealed class SysSettingsToolTests {
 			FileSecurityMode.DenyList, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "exe", "svg" }, true));
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		fileSystem.ExistsFile("payload.svg").Returns(true);
-		SysSettingUpdateTool tool = new(BuildResolver(manager, fileSystem), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingUpdateTool tool = new(BuildResolver(manager, fileSystem), BuildClassifier());
 
 		// Act
 		SysSettingUpdateResult result = tool.UpdateSysSetting(
@@ -553,7 +586,7 @@ public sealed class SysSettingsToolTests {
 		manager.GetAllUsersDefaultWithType("LogoImage").Returns((string.Empty, "Binary"));
 		manager.GetFileSecurityPolicy().Returns(new FileSecurityPolicy(
 			FileSecurityMode.AllowList, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "png" }, false));
-		SysSettingUpdateTool tool = new(BuildResolver(manager), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingUpdateTool tool = new(BuildResolver(manager), BuildClassifier());
 
 		// Act
 		SysSettingUpdateResult result = tool.UpdateSysSetting(
@@ -577,7 +610,7 @@ public sealed class SysSettingsToolTests {
 		manager.GetFileSecurityPolicy().Returns(FileSecurityPolicy.UnknownPolicy);
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		fileSystem.ExistsFile("logo.png").Returns(true);
-		SysSettingUpdateTool tool = new(BuildResolver(manager, fileSystem), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingUpdateTool tool = new(BuildResolver(manager, fileSystem), BuildClassifier());
 
 		// Act
 		SysSettingUpdateResult result = tool.UpdateSysSetting(
@@ -602,7 +635,7 @@ public sealed class SysSettingsToolTests {
 		manager.GetFileSecurityPolicy().Returns(FileSecurityPolicy.DisabledPolicy);
 		manager.TryValidateBinaryValue(Arg.Any<string>(), out Arg.Any<string>())
 			.Returns(call => { call[1] = "Binary value exceeds the 10,485,760-byte limit."; return false; });
-		SysSettingUpdateTool tool = new(BuildResolver(manager), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingUpdateTool tool = new(BuildResolver(manager), BuildClassifier());
 
 		// Act
 		SysSettingUpdateResult result = tool.UpdateSysSetting(
@@ -636,7 +669,7 @@ public sealed class SysSettingsToolTests {
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		fileSystem.ExistsFile("logo.png").Returns(true);
 		fileSystem.OpenReadStream("logo.png").Returns(_ => new MemoryStream(bytes));
-		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(), fileSystem, new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(manager, fileSystem);
 
 		// Act
 		command.UpdateSysSetting(new SysSettingsOptions { Code = "LogoImage", Value = "logo.png", Type = "Binary" });
@@ -655,7 +688,7 @@ public sealed class SysSettingsToolTests {
 		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		fileSystem.ExistsFile(Arg.Any<string>()).Returns(false);
-		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(), fileSystem, new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(manager, fileSystem);
 
 		// Act
 		Action act = () => command.UpdateSysSetting(
@@ -681,7 +714,7 @@ public sealed class SysSettingsToolTests {
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		fileSystem.ExistsFile("big.png").Returns(true);
 		fileSystem.OpenReadStream("big.png").Returns(oversized);
-		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(), fileSystem, new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(manager, fileSystem);
 
 		// Act
 		Action act = () => command.UpdateSysSetting(
@@ -705,7 +738,7 @@ public sealed class SysSettingsToolTests {
 			FileSecurityMode.DenyList, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "exe" }, true));
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		fileSystem.ExistsFile("QUJD").Returns(false); // an inline Base64 value, not a file
-		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(), fileSystem, new OperationCorrelationIdProvider());
+		SysSettingsCommand command = BuildCommand(manager, fileSystem);
 
 		// Act
 		Action act = () => command.UpdateSysSetting(
@@ -730,7 +763,7 @@ public sealed class SysSettingsToolTests {
 		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
 		manager.GetFileSecurityPolicy().Returns(new FileSecurityPolicy(
 			FileSecurityMode.DenyList, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "exe" }, true));
-		SysSettingCreateTool tool = new(BuildResolver(manager), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+		SysSettingCreateTool tool = new(BuildResolver(manager), BuildClassifier());
 
 		// Act
 		SysSettingCreateResult result = tool.CreateSysSetting(
@@ -757,7 +790,7 @@ public sealed class SysSettingsToolTests {
 		// Arrange
 		SysSettingGetTool tool = new(
 			BuildResolverThatThrows(new UnauthorizedAccessException("denied")),
-			new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+			BuildClassifier());
 
 		// Act
 		SysSettingGetResult result = tool.GetSysSetting(new GetSysSettingArgs("local", "MaxFileSize"));
@@ -782,7 +815,7 @@ public sealed class SysSettingsToolTests {
 		// Arrange
 		SysSettingsListTool tool = new(
 			BuildResolverThatThrows(new HttpRequestException("Connection refused.")),
-			new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+			BuildClassifier());
 
 		// Act
 		SysSettingsListResult result = tool.ListSysSettings(new ListSysSettingsArgs("offline"));
@@ -803,7 +836,7 @@ public sealed class SysSettingsToolTests {
 		// Arrange
 		SysSettingCreateTool tool = new(
 			BuildResolverThatThrows(new UnauthorizedAccessException("denied")),
-			new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+			BuildClassifier());
 
 		// Act
 		SysSettingCreateResult result = tool.CreateSysSetting(
@@ -825,7 +858,7 @@ public sealed class SysSettingsToolTests {
 		// Arrange
 		SysSettingUpdateTool tool = new(
 			BuildResolverThatThrows(new HttpRequestException("Connection refused.")),
-			new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
+			BuildClassifier());
 
 		// Act
 		SysSettingUpdateResult result = tool.UpdateSysSetting(
@@ -855,17 +888,18 @@ public sealed class SysSettingsToolTests {
 		ILogger logger = Substitute.For<ILogger>();
 		List<string> lines = [];
 		logger.When(l => l.WriteError(Arg.Any<string>())).Do(call => lines.Add(call.Arg<string>()));
-		IOperationCorrelationIdProvider ids = new OperationCorrelationIdProvider();
+		ISysSettingFailureClassifier classifier =
+			new SysSettingFailureClassifier(logger, new OperationCorrelationIdProvider());
 
 		// Act
 		string correlationId = tool switch {
-			"get" => new SysSettingGetTool(resolver, ids, logger)
+			"get" => new SysSettingGetTool(resolver, classifier)
 				.GetSysSetting(new GetSysSettingArgs("local", "MaxFileSize")).CorrelationId,
-			"list" => new SysSettingsListTool(resolver, ids, logger)
+			"list" => new SysSettingsListTool(resolver, classifier)
 				.ListSysSettings(new ListSysSettingsArgs("local")).CorrelationId,
-			"create" => new SysSettingCreateTool(resolver, ids, logger)
+			"create" => new SysSettingCreateTool(resolver, classifier)
 				.CreateSysSetting(new CreateSysSettingArgs("local", "UsrThing", "Thing", "Text")).CorrelationId,
-			var _ => new SysSettingUpdateTool(resolver, ids, logger)
+			var _ => new SysSettingUpdateTool(resolver, classifier)
 				.UpdateSysSetting(new UpdateSysSettingArgs("local", "UsrThing", "1")).CorrelationId
 		};
 
