@@ -1,8 +1,8 @@
 ---
 description: GitHub Copilot CLI advertises the MCP sampling capability in every mode but answers sampling/createMessage only from its interactive TUI; `-p` never responds at all
 applies-to:
-  - clio/Command/McpServer/Tools/PageUpdateTool.cs
-  - clio/Command/McpServer/Tools/PageSyncTool.cs
+  - clio/Command/McpServer/Relay/McpServerParentSession.cs
+  - clio/Command/McpServer/Relay/IWorkerMcpRelay.cs
 ticket: ENG-98526
 date: 2026-09-14
 ---
