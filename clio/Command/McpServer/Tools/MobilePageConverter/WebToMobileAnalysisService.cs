@@ -1720,11 +1720,13 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// The same conservative allowlist already used for resource names (<see cref="ResourceStringsRefPattern"/>),
-	/// reused to sanitize any <c>declaredElements</c> identifier (element name, parent name) before it is
-	/// interpolated into agent-facing text. <c>constraints</c>/<c>Reason</c> are documented as closed to
-	/// everything outside this binary (see the summary on <see cref="BuildConstraints"/>); the rules file is
-	/// external input resolved at runtime (env var -> local cache -> CDN), so an identifier is unbounded and may
-	/// contain arbitrary text (including newlines) until it passes this check.
+	/// reused to sanitize a <c>declaredElements</c> identifier (element name, parent name) before it is
+	/// interpolated into agent-facing text. <c>constraints</c> is documented as closed to everything outside this
+	/// binary (see the summary on <see cref="AppendNormalizationLines"/>) — <c>Reason</c> is NOT: a component-twin
+	/// or dropped-request <c>Reason</c> may carry a rule's <c>note</c> verbatim (see <see cref="ComponentTwinReason"/>),
+	/// so this sanitizer is this identifier's only protection on either channel. The rules file is external input
+	/// resolved at runtime (env var -> local cache -> CDN), so an identifier is unbounded and may contain arbitrary
+	/// text (including newlines) until it passes this check.
 	/// </summary>
 	// \z, not $: .NET's $ also matches immediately before a single trailing \n, so "Foo\n" would otherwise pass —
 	// reintroducing exactly the newline this check exists to keep out of agent-facing text.
@@ -2245,7 +2247,9 @@ public static class WebToMobileAnalysisService {
 		/// <summary>The declared parent is neither a probed template element nor another admitted declaration; any pair targeting the name falls back to the default placement.</summary>
 		OrphanParent,
 		/// <summary>Its parent chain loops back to itself through other declarations of the same rule (no template element breaks the chain); every element on the cycle is skipped, since a cycle has no valid parent-first emission order.</summary>
-		CyclicParent
+		CyclicParent,
+		/// <summary>Its type/parent is missing, or one of its identifiers (name, parent, property, caption-resource property) is not a safe identifier; any pair targeting the name falls back to the default placement.</summary>
+		InvalidIdentifier
 	}
 
 	/// <summary>
@@ -2268,10 +2272,28 @@ public static class WebToMobileAnalysisService {
 				("orphan-parent", "its declared parent is neither a mobile template element nor another declared element — any containers pair targeting it fell back to the default placement"),
 			DeclaredElementSkipReason.CyclicParent =>
 				("cyclic-parent", "its declared parent chain loops back to itself through other declarations — a cycle has no valid creation order, so every element on it is skipped; any containers pair targeting it fell back to the default placement"),
+			DeclaredElementSkipReason.InvalidIdentifier =>
+				("invalid-identifier", "its type/parent is missing, or one of its identifiers is not a safe name (most commonly a missing parentName, the one field with no default) — any containers pair targeting it fell back to the default placement"),
 			_ => ("unknown", "skipped")
 		};
 		return $"{SanitizeRuleIdentifier(skip.Name)} [{code}]: {text}";
 	}
+
+	/// <summary>
+	/// True when a declaration's identifiers are admissible: <see cref="DeclaredElementRule.Type"/> and
+	/// <see cref="DeclaredElementRule.ParentName"/> are present, and every identifier the entry carries — name,
+	/// parent, property (when given; it defaults to <c>"items"</c>), caption-resource property (when given) — is
+	/// a safe element/property name. Checked at ADMISSION, not only when later rendered into agent-facing text:
+	/// <see cref="DeclaredElementRule.Name"/> becomes the actual mobile element name the caller writes into the
+	/// page, which <see cref="SanitizeRuleIdentifier"/> alone never protects (it only guards prose).
+	/// </summary>
+	private static bool IsValidDeclaredElementShape(DeclaredElementRule declared) =>
+		!string.IsNullOrWhiteSpace(declared.Type)
+		&& !string.IsNullOrWhiteSpace(declared.ParentName)
+		&& SafeIdentifierPattern.IsMatch(declared.Name)
+		&& SafeIdentifierPattern.IsMatch(declared.ParentName)
+		&& (string.IsNullOrEmpty(declared.PropertyName) || SafeIdentifierPattern.IsMatch(declared.PropertyName))
+		&& (declared.CaptionResource?.Property is not { Length: > 0 } prop || SafeIdentifierPattern.IsMatch(prop));
 
 	/// <summary>
 	/// Admits the rule's <c>declaredElements</c>; each rejection is a <see cref="DeclaredElementSkipReason"/> (see
@@ -2297,14 +2319,19 @@ public static class WebToMobileAnalysisService {
 			pageNames.ExceptWith(webTemplateComponentNames);
 		}
 		foreach (DeclaredElementRule declared in rule?.DeclaredElements ?? []) {
-			if (declared is null
-				|| string.IsNullOrWhiteSpace(declared.Name)
-				|| string.IsNullOrWhiteSpace(declared.Type)
-				|| string.IsNullOrWhiteSpace(declared.ParentName)) {
-				continue;
+			if (declared is null || string.IsNullOrWhiteSpace(declared.Name)) {
+				continue; // nothing nameable to report the entry against
 			}
 			if (!seen.Add(declared.Name)) {
 				skipped.Add(new SkippedDeclaredElement(declared.Name, DeclaredElementSkipReason.DuplicateName));
+				continue;
+			}
+			if (!IsValidDeclaredElementShape(declared)) {
+				// Was a silent `continue` (most commonly a missing parentName — the one field with no default):
+				// no skip, no removedNames entry, so a containers pair targeting the name stayed a merge onto
+				// nothing with zero diagnostic. Same admission-refusal treatment as every other gate below.
+				skipped.Add(new SkippedDeclaredElement(declared.Name, DeclaredElementSkipReason.InvalidIdentifier));
+				removedNames.Add(declared.Name);
 				continue;
 			}
 			if (templateProbeAvailable && probedTypesByName.ContainsKey(declared.Name)) {
@@ -2558,7 +2585,10 @@ public static class WebToMobileAnalysisService {
 	/// rejects every element on a declaration-to-declaration cycle before this method ever runs, so <c>extras</c>
 	/// is cycle-free in practice; the cycle guard here (emitting each name at most once, in first-encountered
 	/// order, rather than looping forever) is a defensive backstop only, kept in case that invariant is ever
-	/// bypassed — it is not this method's job to decide what a cycle means.
+	/// bypassed — it is not this method's job to decide what a cycle means. The recursion is additionally bounded
+	/// by <see cref="MaxDeclaredElementsChainDepth"/>, the same way <c>MaxTemplateDepth</c>/<c>MaxSearchDepth</c>
+	/// bound the other rules-file-driven recursions in this file: a rules-file parent chain is external input, so
+	/// an absurdly long one degrades the ordering past the budget rather than risking a stack overflow.
 	/// </summary>
 	private static IReadOnlyList<DeclaredElementRule> OrderDeclaredElementsParentFirst(
 		IReadOnlyList<DeclaredElementRule> extras) {
@@ -2570,21 +2600,28 @@ public static class WebToMobileAnalysisService {
 			.ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 		var ordered = new List<DeclaredElementRule>(extras.Count);
 		var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		void Visit(DeclaredElementRule extra) {
+		void Visit(DeclaredElementRule extra, int depth) {
 			if (!visited.Add(extra.Name)) {
 				return; // already emitted earlier in this pass, or a cycle unwinding back onto itself — stop either way
 			}
-			if (byName.TryGetValue(extra.ParentName, out DeclaredElementRule parent)
+			if (depth < MaxDeclaredElementsChainDepth
+				&& byName.TryGetValue(extra.ParentName, out DeclaredElementRule parent)
 				&& !string.Equals(parent.Name, extra.Name, StringComparison.OrdinalIgnoreCase)) {
-				Visit(parent);
+				Visit(parent, depth + 1);
 			}
 			ordered.Add(extra);
 		}
 		foreach (DeclaredElementRule extra in extras) {
-			Visit(extra);
+			Visit(extra, 0);
 		}
 		return ordered;
 	}
+
+	/// <summary>Bounds <see cref="OrderDeclaredElementsParentFirst"/>'s recursion over a rules-file parent chain —
+	/// external input, like the templates/searches <c>MaxTemplateDepth</c>/<c>ExcludedComponentsPass.MaxSearchDepth</c>
+	/// already bound. No real rules file nests declarations this deep; a chain longer than this degrades ordering
+	/// for the tail instead of risking a stack overflow.</summary>
+	private const int MaxDeclaredElementsChainDepth = 32;
 
 	private static void WalkElements(ElementMapContext ctx, JArray nodes, string mobileParentName,
 		string parentPropertyName = ItemsPropertyName, IReadOnlyList<string> sourceAncestors = null,
