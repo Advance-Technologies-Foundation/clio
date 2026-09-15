@@ -311,10 +311,14 @@ Three consequences worth knowing:
 - An append whose real save could not merge — a full-config current body, for instance — now **fails
   the dry run** with the same error, instead of reporting `success` and failing on the write. Every
   dry-run failure carries `dryRun: true`, so it stays distinguishable from a failed real save.
-- `--mode replace` is unaffected and stays a **pure offline check**: it writes the body verbatim, so
-  there is nothing to project, no server round-trip is made, and `appendProjection` is absent. The
-  trade-off is that its caption check can only resolve against the resources you pass, so it is weaker
-  than the save's — the one place a replace dry run can still differ from its save.
+- `--mode replace` is unaffected: it writes the body verbatim, so there is nothing to merge and
+  `appendProjection` is absent. Be precise about what it skips, because it is **not** an offline
+  check — do not plan a workflow around it running without a server. Resolving the schema context
+  happens before either mode is chosen and still queries `SysSchema`, the design package and the
+  parent schemas. What a replace dry run skips is the **designer `GetSchema` fetch of the current
+  body**, which is what `TryUpdatePage_WhenDryRun_SkipsDesignerServiceCalls` asserts. The trade-off
+  is that its caption check can only resolve against the resources you pass, so it is weaker than
+  the save's — the one place a replace dry run can still differ from its save.
 
 The same `appendProjection` is returned on a real append save, for the caller who skipped the dry
 run.

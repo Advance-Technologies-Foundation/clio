@@ -223,8 +223,10 @@ DESCRIPTION
     FAILS the dry run with the same error instead of reporting success (every
     dry-run failure carries dryRun: true, so it stays distinguishable from a
     failed real save); and --mode replace
-    is unaffected and stays a PURE OFFLINE check - it writes verbatim, so there
-    is nothing to project and no round-trip is made. Trade-off: its caption
+    is unaffected - it writes verbatim, so there is nothing to project. It is
+    NOT an offline check: resolving the schema context still queries the server
+    before either mode is chosen. What it skips is the designer GetSchema fetch
+    of the current body. Trade-off: its caption
     check resolves only against the resources you pass, so it is weaker than
     the save's. The same projection is returned on a real append
     save.

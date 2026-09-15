@@ -783,6 +783,21 @@ internal static class PageBodyMerger {
 		/// Built by the merge (not from the label lists) so the wording and the one-per-identity rule stay
 		/// in one place; <c>CombineWarnings</c> does not dedupe.
 		/// </summary>
+		/// <summary>
+		/// Records one superseded-drop sentence. Deliberately NOT capped, unlike the three named lists.
+		/// </summary>
+		/// <remarks>
+		/// Review has proposed capping this for consistency with <see cref="MaxNamedOperations"/>; do not.
+		/// The named lists are display labels and CAN be truncated because
+		/// <c>droppedOperationCount</c> still reports the true scale. These sentences are the opposite: each
+		/// one names a DIFFERENT component the caller has to go and re-read, and because
+		/// <c>droppedOperations</c> is itself capped at 25, they are the ONLY place a component past that cap
+		/// is named at all. Capping both would leave the response saying "30 were dropped" while five of those
+		/// components appear nowhere in it - an unrecoverable loss of exactly the information this projection
+		/// exists to surface. The list is bounded by the distinct identities in the caller's own fragment, so
+		/// it is self-inflicted rather than attacker-controlled.
+		/// <c>TryUpdatePage_ShouldKeepTheCountExact_WhenAppendDryRunDropsMoreThanTheNamingCap</c> pins this.
+		/// </remarks>
 		public void RecordSupersededDropWarning(string message) => _supersededDropWarnings.Add(message);
 
 		public void RecordAdded() => _added++;

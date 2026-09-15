@@ -304,6 +304,14 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 			because: "only the labels are capped, so a pathological body cannot bury the response while the count still reports the true scale");
 		response.Warnings.Should().HaveCount(30,
 			because: "the merge emits one actionable sentence per dropped IDENTITY, and all 30 identities are distinct here");
+		// The REASON the sentences must stay uncapped, pinned rather than left to a comment: a component past
+		// the naming cap is named in the warnings and NOWHERE else, so capping both would leave the response
+		// reporting 30 drops while five of those components appear nowhere in it. Review has already proposed
+		// capping this for symmetry with droppedOperations once.
+		response.AppendProjection.DroppedOperations.Should().NotContain(label => label.Contains("UsrPanel29"),
+			because: "the label list is truncated, so it is not where a component past the cap can be recovered");
+		response.Warnings.Should().Contain(warning => warning.Contains("UsrPanel29"),
+			because: "the sentences are the ONLY place a component past the naming cap is still named");
 		AssertNothingWasSaved();
 	}
 
@@ -692,4 +700,31 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 		"handlers: /**SCHEMA_HANDLERS*/" + handlersInner + "/**SCHEMA_HANDLERS*/, " +
 		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+	[Test]
+	[Description("The insert-downgrade detector is structurally inert on an append and stays silent.")]
+	public void TryUpdatePage_ShouldNotWarnAboutAnInsertDowngrade_WhenAppendReplacesAnInsertWithAnInsert() {
+		// Arrange - the shape that WOULD trip PageInsertDowngradeDetector if an append could produce it: the
+		// prior body introduces a component with an `insert`, and the final body no longer carries that
+		// insert. An append cannot produce it, because a current `insert X` is only ever replaced by an
+		// incoming entry of the SAME identity - another `insert X` - and every non-matching entry is carried
+		// over verbatim. The detector runs anyway: it lives in the shared TryPrepareWrite, where the replace
+		// save CAN trip it. This pins the claim that its presence on the append path is not coverage, so a
+		// future change to the merge identity that makes an append drop an insert fails here instead of
+		// silently gaining a warning nobody expected.
+		StubCurrentBody(WebBody(
+			"""[{"operation":"insert","name":"UsrWidget","parentName":"Main","values":{"type":"crt.Input","label":"Old"}}]"""));
+
+		// Act
+		bool result = _command.TryUpdatePage(
+			AppendDryRun("""[{"operation":"insert","name":"UsrWidget","parentName":"Main","values":{"type":"crt.Input","label":"New"}}]"""),
+			out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "replacing an insert with an insert of the same identity is a normal append");
+		response.AppendProjection.ReplacedOperationCount.Should().Be(1,
+			because: "the merge really did replace it - otherwise this test would prove nothing about the detector");
+		(response.Warnings ?? []).Should().NotContain(w => w.Contains("downgrade"),
+			because: "an append never drops an insert for a transform, so the detector must stay silent here");
+		AssertNothingWasSaved();
+	}
 }
