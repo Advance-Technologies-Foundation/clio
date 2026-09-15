@@ -25,7 +25,12 @@ public sealed record ODataWriteResponse(
 	[property: JsonPropertyName("record")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	[property: Description("The record returned by Creatio (populated by odata-create).")]
-	JsonElement? Record = null) {
+	JsonElement? Record = null,
+
+	[property: JsonPropertyName("correlation-id")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[property: Description("Identifier for this write, present on success and on failure. The same id tags any debug line written for it.")]
+	string? CorrelationId = null) {
 
 	/// <summary>Creates a failure response.</summary>
 	public static ODataWriteResponse Failure(string message) => new(false, message);
