@@ -54,20 +54,27 @@ and clamps at 300 characters, which is right for a platform fault excerpt and wr
 CLI line.
 
 So the third rendering exists: `UntrustedText.ScrubCredentials` →
-`SensitiveErrorTextRedactor.RedactCredentials`, which runs `UriRegex` (through a match evaluator that
-removes only `user:pass@` and keeps the host), `JwtRegex`, `BearerTokenRegex` and
-`CredentialPairRegex`, and does NOT run the path, `host:port` or e-mail rules. A secret-free message
-is byte-identical. The distinction is the SINK, not the text: the moment the same line is copied into
+`SensitiveErrorTextRedactor.RedactCredentials`, which runs `JsonCredentialPropertyRegex`,
+`UriRegex` (through a match evaluator that removes only `user:pass@` and keeps the host), `JwtRegex`,
+`BearerTokenRegex` and `CredentialPairRegex`, and does NOT run the path, `host:port` or e-mail
+rules. A secret-free message is byte-identical. The distinction is the SINK, not the text: the moment the same line is copied into
 an MCP envelope, a log an operator pastes into a ticket, or a third-party model's context, a path and
 a host ARE a leak and the full `Scrub`/`Fenced` rules apply. The debug path stays
 `exception.ToString()` unredacted.
 
-`CredentialPairRegex` tolerates a closing quote on the KEY (`"password":"s3cr3t"`), not only on the
-value. Issue #1505 measured the leak in serialized JSON, where that quote sits between the key and
-the colon and the pair therefore never matched; `SelectQueryHelper` uses
-`response.ErrorInfo?.Message ?? responseJson`, so the whole raw JSON body is the exception message
-whenever `errorInfo.message` is absent — the JSON shape is the fallback path, not an edge case. The
-pattern is shared, so the same change covers the MCP `Redact` path (`ClioRunTool.RedactFailureContent`).
+**The JSON shape is the fallback path, not an edge case, and `CredentialPairRegex` cannot reach it.**
+Issue #1505 measured the leak in serialized JSON (`{"password":"s3cr3t","server":"db.internal"}`), and
+`SelectQueryHelper` uses `response.ErrorInfo?.Message ?? responseJson`, so the whole raw JSON body
+becomes the exception message whenever `errorInfo.message` is absent. `CredentialPairRegex` needs
+`\b(key)\b\s*[=:]` and the key's own closing quote sits between the key and the colon, so it never
+matches that shape — and it is deliberately NOT loosened to tolerate the quote: it rewrites its match
+as `key=[redacted]`, which would cost the document its quotes and leave the JSON unparseable. The
+shape is covered instead by `JsonCredentialPropertyRegex`, which `RedactCredentials` runs FIRST, for
+the same ordering reason it runs first in `Redact` — see
+[json-credential-rules-run-first-in-redact.md](json-credential-rules-run-first-in-redact.md). It
+rewrites in place, `"password":"[redacted]"`, so the document still parses and the key still reads.
+That rule reached `Redact` (and with it the MCP path, `ClioRunTool.RedactFailureContent`) through
+GH-1497; this issue added it to the console-side `RedactCredentials`.
 
 The single exception is a plain `Success == false` whose `ErrorMessage` is the platform's own
 validation prose ("Column 'Name' is required") — no fixed sentence can replace it without destroying
