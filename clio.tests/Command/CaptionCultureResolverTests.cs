@@ -67,6 +67,27 @@ public sealed class CaptionCultureResolverTests
 	}
 
 	[Test]
+	[Description("A well-formed but non-existent culture tag is rejected, not manufactured into a fallback culture.")]
+	public void Resolve_ShouldThrow_WhenOverrideIsAWellFormedButInventedCulture()
+	{
+		// Arrange — distinct from Resolve_ShouldThrow_WhenOverrideIsInvalid on purpose: "not_a_culture!!"
+		// is MALFORMED and throws on the single-argument CultureInfo.GetCultureInfo overload too, so it
+		// cannot detect the loss of predefinedOnly: true. "xx-YY" is well-formed, and on ICU the
+		// single-argument overload MANUFACTURES a fallback culture for it rather than throwing — which
+		// would then be written as the caption culture of a published schema on a destructive write.
+		// Do not "simplify" the resolver back to the one-argument overload; this case is what stops it.
+		CaptionCultureResolver resolver = CreateResolver(CultureResolution.Resolved("en-US"));
+
+		// Act
+		Action act = () => resolver.Resolve(new CreateEntitySchemaOptions(), "xx-YY");
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>()
+			.WithMessage("*is not a valid culture name*",
+				because: "ICU manufactures a fallback culture for a well-formed but invented tag, so only predefinedOnly: true keeps it out of a published schema");
+	}
+
+	[Test]
 	[Description("With no override the resolved profile culture is returned.")]
 	public void Resolve_ShouldReturnProfileCulture_WhenResolvedAndNoOverride()
 	{

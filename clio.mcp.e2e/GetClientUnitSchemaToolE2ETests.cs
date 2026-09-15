@@ -162,36 +162,11 @@ public sealed class GetClientUnitSchemaToolE2ETests : McpContractFixtureBase {
 		return new ArrangeContext(Session, cancellationTokenSource, environmentName);
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
-		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
-			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
-			return configuredEnvironmentName;
-		}
-
-		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
-			return fallbackEnvironmentName;
-		}
-
-		Assert.Ignore(
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
+			settings,
 			$"get-client-unit-schema MCP E2E requires a reachable environment. Configured sandbox environment " +
-			$"'{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
-		return string.Empty;
-	}
-
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		using CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
-		try {
-			ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-				settings,
-				["ping-app", "-e", environmentName],
-				cancellationToken: cts.Token);
-			return result.ExitCode == 0;
-		} catch (OperationCanceledException) {
-			return false;
-		}
-	}
+			$"'{settings.Sandbox.EnvironmentName}' was not reachable, and fallback environment '{ReachableSandboxEnvironment.FallbackEnvironmentName}' was also unavailable.");
 
 	private new sealed record ArrangeContext(
 		McpServerSession Session,
