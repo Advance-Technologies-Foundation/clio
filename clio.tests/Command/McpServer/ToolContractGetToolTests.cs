@@ -362,6 +362,38 @@ public sealed class ToolContractGetToolTests {
 			because: "the removed raw filter must be explicitly rejected in the discoverable contract");
 	}
 
+	// PR #1356 review (d-krestov, Gate 3) - update-page has a CURATED contract, so
+	// TryResolveFullContract serves the hand-written ToolContractCatalog literal and never looks at
+	// PageUpdateArgs. A spot check for `checksum` therefore passes verbatim with PageUpdateArgs.Checksum
+	// DELETED, while the caller's baseline is silently dropped - precisely the failure issue #1320
+	// reports. This is the curated-vs-reflection parity oracle update-page was missing; it mirrors the
+	// ODataReadArgs and PageGetArgs oracles above.
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the curated update-page input contract set-EQUAL with every bound PageUpdateArgs JSON member, so deleting a bound argument (or leaving a new one unpublished) fails instead of passing on the hand-written catalog literal (PR #1356 review).")]
+	public void ToolContractGet_Should_Keep_PageUpdate_Input_Contract_In_Sync_With_Args() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		string[] boundArgumentNames = typeof(PageUpdateArgs)
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Where(property => property.GetCustomAttribute<JsonExtensionDataAttribute>() is null)
+			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
+			.ToArray();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName]));
+		ToolContractDefinition contract = result.Tools!.Single();
+
+		// Assert
+		boundArgumentNames.Should().NotBeEmpty(
+			because: "an empty reflected set would make the set-equality assertion below pass vacuously");
+		boundArgumentNames.Should().Contain("checksum",
+			because: "PageUpdateArgs must bind the conflict baseline the caller pins - if this member disappears the curated literal alone would keep advertising it, which is the silent drop issue #1320 reports");
+		contract.InputSchema.Properties.Select(property => property.Name).Should()
+			.BeEquivalentTo(boundArgumentNames,
+			because: "the curated update-page contract must advertise every argument the real stdio binder accepts and no stale ones - a curated literal that outlives its bound member advertises an argument that is silently dropped, and one that lags leaves a new argument undiscoverable");
+	}
+
 	// Pins the Codex #1 fix: the uncurated contract for a single-scalar env tool now derives from the real
 	// dispatched MCP input schema, exposing the `environmentName` property the lossy reflection fallback
 	// dropped. This is the exact mismatch the review flagged — advertised contract vs what clio-run accepts.
@@ -1624,6 +1656,9 @@ public sealed class ToolContractGetToolTests {
 				field.Name == "body" &&
 				field.Description.Contains("get-page.files.bodyFile"),
 			because: "update-page should advertise the materialized body file as the source of fallback single-page saves");
+		pageUpdateContract.InputSchema.Properties.Single(field => field.Name == "force").Description
+			.Should().Contain("explicit checksum is still compared",
+				because: "the contract must distinguish skipping the disk baseline from disabling a caller-pinned checksum on redirected writes");
 		// validate-page is the third consumer in the get-page handoff. Keep its explicit body-file input pinned so
 		// callers do not have to inline or re-escape the materialized page body.
 		ToolContractDefinition pageValidateContract = tool
@@ -3811,6 +3846,37 @@ public sealed class ToolContractGetToolTests {
 			.OutputContract.Fields.Single(field => field.Name == "warnings");
 		warningsField.Description.Should().Contain("never retry on a warning",
 			because: "these findings are advisory and the save already succeeded; an agent that reads a warning as a failure will re-save and can trip conflict detection");
+	}
+
+	// The sync-pages contract is curated too, and its per-page members live in the PROSE of the `pages`
+	// field rather than as top-level schema properties - so the set-equality oracle above has no
+	// equivalent here, and a new per-page argument can be bound and still be undiscoverable. issue #1464
+	// added `checksum` to PageSyncPageInput; without this the curated literal would keep describing a
+	// page item that has no way to pin a conflict baseline.
+	[Test]
+	[Category("Unit")]
+	[Description("Every bound PageSyncPageInput JSON member is named in the curated sync-pages `pages` description, so a per-page argument cannot be bound and left undiscoverable by the contract a lazy-mode client inspects before dispatch (issue #1464).")]
+	public void ToolContractGet_Should_Describe_Every_PageSyncPageInput_Member() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		string[] boundMemberNames = typeof(PageSyncPageInput)
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Where(property => property.GetCustomAttribute<JsonExtensionDataAttribute>() is null)
+			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
+			.ToArray();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageSyncTool.ToolName]));
+		string pagesDescription = result.Tools!.Single().InputSchema.Properties
+			.Single(property => property.Name == "pages").Description;
+
+		// Assert
+		boundMemberNames.Should().Contain("checksum",
+			because: "an empty or checksum-less reflected set would make the assertion below pass vacuously - and sync-pages without a per-page conflict baseline is the defect issue #1464 closes");
+		foreach (string memberName in boundMemberNames) {
+			pagesDescription.Should().Contain(memberName,
+				because: $"the curated sync-pages contract must name the bound per-page argument '{memberName}' - a client that cannot discover it cannot pass it");
+		}
 	}
 
 	// Synthetic input, deliberately NOT a production description. Driving these cases through a real

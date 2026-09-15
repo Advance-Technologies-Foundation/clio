@@ -134,6 +134,9 @@ DESCRIPTION
       is not registered via --resources and is not Usr*/DS-bound. A metric title
       #ResourceString(IndicatorWidget_<slug>_title)# is registered only when you
       pass it in --resources; otherwise it renders raw.
+    - Resource keys already stored on the schema count as registered: a later save
+      of the same page does NOT have to repeat every key that an earlier save
+      registered. --resources is additions/overrides on top of what is persisted.
     A malformed VendorPrefix.Name causes a Creatio runtime error:
       "Error when register X. Type property should have format VendorPrefix.TypeName"
     - Call `clio get-guidance --name page-schema-converters` for converter details
@@ -150,7 +153,9 @@ DESCRIPTION
         are needed — this is what protects AI-agent CLI flows that read a page
         with get-page and then save it with update-page.
       - explicitly, from --expected-checksum (takes precedence over the on-disk
-        baseline).
+        baseline). Over MCP the same value is passed as the `checksum` argument,
+        which should carry the `editable.checksum` returned by the get-page call
+        the edit is based on.
     Before saving, the baseline is compared against the current
     SysSchema.Checksum of the editable schema. On a mismatch the save is blocked
     with a structured conflict response (conflict: true + conflictDetails)
@@ -159,9 +164,14 @@ DESCRIPTION
     deliberately overwrite. After a successful save the on-disk baseline is
     refreshed automatically, so consecutive updates in the same session do not
     false-conflict. A small race window between the check and the save remains
-    (last write wins).
+	(last write wins).
 
-    WRITE MODES:
+	A write redirected with --target-package-uid or --target-schema-uid skips the
+	on-disk baseline and does not refresh meta.json. A caller-supplied checksum is
+	still compared with the resolved target; a mismatch remains a conflict. With no
+	explicit checksum, the redirected write proceeds unchecked and reports a warning.
+
+	WRITE MODES:
     --mode replace (default) saves the body verbatim. --mode append loads the
     current schema body from the server and merges your incoming fragment into it.
     An append body is a FRAGMENT OF A PAGE BODY, not a bare list of operations: it
