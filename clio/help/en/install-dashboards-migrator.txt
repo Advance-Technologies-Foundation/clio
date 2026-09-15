@@ -4,6 +4,11 @@ NAME
 SYNOPSIS
     clio install-dashboards-migrator [OPTIONS]
     clio update-dashboards-migrator [OPTIONS]
+    clio idm [OPTIONS]
+    clio udm [OPTIONS]
+
+ALIASES
+    update-dashboards-migrator, installdashboardsmigrator, idm, udm
 
 DESCRIPTION
     Installs the "CrtDashboardsMigratorApp" package - the Dashboards migrator app -

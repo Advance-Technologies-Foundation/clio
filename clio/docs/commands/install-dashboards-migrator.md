@@ -9,7 +9,11 @@ install-dashboards-migrator - Install the bundled dashboards-migrator package to
 ```bash
 clio install-dashboards-migrator [OPTIONS]
 clio update-dashboards-migrator [OPTIONS]
+clio idm [OPTIONS]
+clio udm [OPTIONS]
 ```
+
+Aliases: `update-dashboards-migrator`, `installdashboardsmigrator`, `idm`, `udm`.
 
 ## Description
 

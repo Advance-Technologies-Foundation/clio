@@ -47,11 +47,11 @@ pwsh ./rebundle-dashboards-migrator.ps1 -BuildZip '\\tscrm.com\dfs-ts\Composable
 It unpacks the build, checks the version extends the app version and is higher than what clio ships, stamps
 the descriptor with `clio set-pkg-version`, packs with `--skip-pdb`, verifies the inventory (exactly the two
 package assemblies, `Data/` allowed because its bound rows only register the migration page and its permission,
-no `SqlScripts/`, no `InstallScripts` in the descriptor, the `DashboardsMigratorService` schema present),
+no `SqlScripts/`, the `DashboardsMigratorService` schema present),
 rewrites the pins in `clio.tests/Common/BundledDashboardsMigratorPackageTests.cs` and rebuilds clio. The
 provenance pin is the SHA-256 of the build zip (`ExpectedSourceBuildSha256`); the commit is on the build's page
 in the SDLC app. Facts 1–3 below (UId, `ModifiedOnUtc`, installed-vs-serving) hold for it exactly as for the
-process builder; the package-side contract (Ping route and answer, no `InstallScripts`, both assemblies) is
+process builder; the package-side contract (Ping route and answer, both assemblies) is
 listed in that repository's `RELEASE.md`, step 8.
 
 ## Platform facts you must know first

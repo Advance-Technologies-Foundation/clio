@@ -14,7 +14,8 @@ namespace Clio.Command;
 /// floor cannot be expressed with it. An older core refuses the configuration build, and the outcome check
 /// reports that.
 /// </remarks>
-[Verb("install-dashboards-migrator", Aliases = ["update-dashboards-migrator"],
+[Verb("install-dashboards-migrator",
+	Aliases = ["update-dashboards-migrator", "installdashboardsmigrator", "idm", "udm"],
 	HelpText = "Install or update the bundled dashboards-migrator package in Creatio")]
 public class InstallDashboardsMigratorOptions : InstallBundledPackageOptions {
 

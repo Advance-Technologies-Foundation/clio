@@ -15,8 +15,8 @@
       3. stamps PackageVersion and ModifiedOnUtc with `clio set-pkg-version` (both fields, or the platform
          keeps the old recorded version — see docs/agent-instructions/bundled-packages.md, fact 2);
       4. packs with `clio compress --skip-pdb` into clio/CrtDashboardsMigratorApp/;
-      5. verifies the inventory: exactly the two package assemblies, no pdb, no SqlScripts, no InstallScripts,
-         the DashboardsMigratorService schema present;
+      5. verifies the inventory: exactly the two package assemblies, no pdb, no SqlScripts, the
+         DashboardsMigratorService schema present;
       6. rewrites the pins in clio.tests/Common/BundledDashboardsMigratorPackageTests.cs;
       7. rebuilds the chosen clio output, because an install resolves the archive from the BUILD OUTPUT.
 
@@ -104,9 +104,6 @@ try {
     Ok "app version $appVersion, clio ships $shipped"
 
     Step '3. Stamp PackageVersion and ModifiedOnUtc'
-    if ((Get-Content -LiteralPath (Join-Path $packageDir 'descriptor.json') -Raw) -match '"InstallScripts"') {
-        Die 'descriptor.json carries InstallScripts. The platform runs them before the package is compiled, which breaks a source install; the package applies its rights from an app-start listener instead. Refusing to bundle this build.'
-    }
     dotnet $clioDll set-pkg-version $packageDir --package-version $Version
     if ($LASTEXITCODE -ne 0) { Die 'set-pkg-version refused.' }
     $descriptorJson = Get-Content -LiteralPath (Join-Path $packageDir 'descriptor.json') -Raw

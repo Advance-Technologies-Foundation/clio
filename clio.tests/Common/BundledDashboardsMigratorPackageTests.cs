@@ -173,10 +173,10 @@ public class BundledDashboardsMigratorPackageTests {
 			because: "the shipped version is what clio info reports and what the downgrade check compares; pinning puts a version move on a reviewable line");
 		ExpectedArchiveVersion.Should().MatchRegex("^[0-9]+(\\.[0-9]+){3}$",
 			because: "four parts and no suffix: the install command refuses a suffixed distribution outright");
-		descriptor.TryGetProperty("InstallScripts", out JsonElement _).Should().BeFalse(
-			because: "the package applies its column rights from an app-start listener instead; an install script "
-				+ "would run before the target compiles a source package, and this archive must stay installable "
-				+ "either way");
+		descriptor.TryGetProperty("InstallScripts", out JsonElement _).Should().BeTrue(
+			because: "the package applies its column rights from an install script, and the platform can only run "
+				+ "one when the archive carries the assembly — which is what makes this package prebuilt rather "
+				+ "than a preference");
 	}
 
 	[Test]

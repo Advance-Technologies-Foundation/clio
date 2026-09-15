@@ -132,8 +132,10 @@ public class InstallDashboardsMigratorCommandTests : BaseCommandTests<InstallDas
 
 		// Assert
 		verb.Name.Should().Be("install-dashboards-migrator", because: "the docs, help and MCP tool name this verb");
-		verb.Aliases.Should().BeEquivalentTo(["update-dashboards-migrator"],
-			because: "the update alias mirrors install-process-builder's, and nothing else is promised");
+		verb.Aliases.Should().BeEquivalentTo(
+			["update-dashboards-migrator", "installdashboardsmigrator", "idm", "udm"],
+			because: "the update twin and the squashed form mirror install-process-builder and install-gate; "
+				+ "the initials are the short form the docs and the wiki anchors promise");
 		RequiresCreatioVersionAttribute.IsDefinedOn(typeof(InstallDashboardsMigratorOptions)).Should().BeFalse(
 			because: "that attribute compares the CORE version (10.x on an 8.3 stand), so the package's "
 				+ "RequiredPlatformVersion 8.3.1 cannot be expressed with it and a floor there would always pass");
