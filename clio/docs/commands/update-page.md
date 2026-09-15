@@ -226,8 +226,16 @@ can report a conflict against a page that has not actually changed. This edge fa
 `--mode replace` (default) saves the body verbatim. `--mode append` loads the current
 schema body from the server and merges your incoming fragment into it.
 
+An append body is a **fragment of a page body**, not a bare list of operations. It may omit
+sections — that is the point of append, and full marker integrity is deliberately not required —
+but it must carry **at least one** section marker pair, for example
+`/**SCHEMA_VIEW_CONFIG_DIFF*/[ ... ]/**SCHEMA_VIEW_CONFIG_DIFF*/`. A body carrying none is
+rejected. It used to be accepted: a bare JSON array is valid JavaScript, so it cleared the syntax
+gate, then every section read as empty, the merge became a no-op, and the call reported `success`
+with `incomingOperationCount: 0` — silently discarding the whole fragment while looking clean.
+
 A `viewConfigDiff` entry is replaced only when **both** `operation` and `name` match one of
-yours — and, for a `remove`, whether it targets `properties`. Incoming wins, and the replacement
+yours — and, for a `remove` or a `set`, whether it targets `properties`. Incoming wins, and the replacement
 keeps the existing entry's position. Every other existing operation is preserved verbatim and in
 place, including a second operation on a component you already target (a `move` and a `merge` for
 one name are both valid and both survive the merge — though "survive" means kept in the body, not
@@ -239,7 +247,7 @@ stale values *after* your replacement. When those two entries set disjoint keys,
 keys go with it. Handlers dedupe by `request`.
 
 `SCHEMA_CONVERTERS` and `SCHEMA_VALIDATORS` entries merge by type key, and incoming wins. The final merged web body is rejected when a custom validator reference has no matching
-`SCHEMA_VALIDATORS` declaration.
+`SCHEMA_VALIDATORS` declaration. Built-in `crt.*` validators need no local declaration.
 
 For an undeclared field binding, use `merge` in `viewConfigDiff` only if the component itself comes from a parent
 schema. For an own-body field, submit its complete original `insert` with the edited values and
@@ -267,9 +275,70 @@ changes nothing.
 
 The warning is advisory because it reads one schema body and cannot see the replacing chain: a
 parent schema that inserts the same name puts the component in the base and can make the transform
-apply after all. A `--dry-run` reports it too, so you can check a body before writing it — in append
-mode a dry run sees only your incoming fragment, so a pair formed by the server's `insert` plus your
-`merge` is reported on the real save.
+apply after all. A `--dry-run` reports it too, against the body that would actually be written — so
+in append mode it sees pairs formed between your fragment and the server's body, not only pairs
+inside your fragment.
+
+### What a `--dry-run` tells you about an append
+
+In append mode a dry run resolves the current server body and computes the merge, then returns
+without saving. It reports the outcome as `appendProjection`:
+
+| Field | Meaning |
+|---|---|
+| `currentOperationCount` | `viewConfigDiff` operations in the page's own body today |
+| `incomingOperationCount` | operations in your fragment |
+| `projectedOperationCount` | operations the merged body would carry — **compare this against the number you expect** |
+| `addedOperationCount` | incoming entries that introduce a new identity |
+| `replacedOperations` / `replacedOperationCount` | existing entries your fragment replaces in place; not a loss, the operation survives with your values |
+| `droppedOperations` / `droppedOperationCount` | entries from the **server** body the merge would not carry over — the further-duplicate exception above |
+| `collapsedIncomingOperations` / `collapsedIncomingOperationCount` | entries from **your own fragment** that a later entry in the same fragment supersedes — reported as data, never warned about |
+| `viewConfigDiffApplied` | `false` when the current body has no `SCHEMA_VIEW_CONFIG_DIFF` marker pair, so every count above describes an array the write discards |
+
+Three distinct loss channels, kept separate because the fix differs for each. **Two of them warn.**
+
+- A **dropped server entry** raises one advisory `warnings` entry per affected component, naming it
+  and telling you to re-read with `get-page`. Fix it by folding both entries into one incoming
+  operation.
+- An **unapplied section** (`viewConfigDiffApplied: false`) warns too, and is the one that makes a
+  clean-looking projection dangerous: every count above it describes an array the write throws away.
+  It is not a merge problem at all — use `--mode replace` with a body that carries the marker pair.
+- A **collapsed incoming entry** is reported as data only, with no warning. It is a real loss, but the
+  fragment is yours and you can read it, so a warning about your own input would be noise. It is
+  counted because without it the totals cannot be reconciled and the loss stays invisible.
+
+The named lists are capped in length; every count is always exact.
+
+`collapsedIncomingOperations` is the one most people will hit. Operations merge by
+`(operation, name, targets-properties)`, so a fragment that carries the same identity twice keeps only
+the last spelling — the earlier one is discarded with its values, and before this it went unreported
+anywhere.
+
+Three consequences worth knowing:
+
+- An append dry run runs the **same body checks the save runs, against the same body** — including the
+  save's own widget-caption gate, reported as a warning rather than a refusal. A dry run and a save
+  therefore cannot disagree about a caption, which they previously could in both directions.
+- An append whose real save could not merge — a full-config current body, for instance — now **fails
+  the dry run** with the same error, instead of reporting `success` and failing on the write. Every
+  dry-run failure carries `dryRun: true`, so it stays distinguishable from a failed real save.
+- `--mode replace` is unaffected: it writes the body verbatim, so there is nothing to merge and
+  `appendProjection` is absent. Be precise about what it skips, because it is **not** an offline
+  check — do not plan a workflow around it running without a server. Resolving the schema context
+  happens before either mode is chosen and still queries `SysSchema`, the design package and the
+  parent schemas. What a replace dry run skips is the **designer `GetSchema` fetch of the current
+  body**, which is what `TryUpdatePage_WhenDryRun_SkipsDesignerServiceCalls` asserts. The trade-off
+  is that its caption check can only resolve against the resources you pass, so it is weaker than
+  the save's — the one place a replace dry run can still differ from its save.
+
+The same `appendProjection` is returned on a real append save, for the caller who skipped the dry
+run.
+
+`appendProjection` speaks for `viewConfigDiff` only. The sibling `*_DIFF` arrays append
+unconditionally and cannot lose an entry, so they have nothing to report. Handlers are **not**
+covered: they dedupe by `request`, and the merge drops every current handler whose `request` appears
+in your fragment — so a current body that carries one `request` twice keeps neither and your fragment
+contributes one. Check the handlers section by hand when that shape is possible.
 
 Append requires the **diff form**. A full-config body — the `SCHEMA_VIEW_MODEL_CONFIG` /
 `SCHEMA_MODEL_CONFIG` markers (mobile: top-level `viewModelConfig` / `modelConfig`) instead
