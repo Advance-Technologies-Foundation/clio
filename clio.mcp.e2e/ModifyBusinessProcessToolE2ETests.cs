@@ -767,46 +767,39 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("BOTH write paths, in one process, because one of them is also the only usable version gate. "
-		+ "The build path declares a selection on the FIRST branch with flows[].results, which an older server "
-		+ "drops silently - unknown DataMembers are discarded, measured. Whether that branch reads back is "
-		+ "therefore what says which package the sandbox carries, and it is the ONLY discriminator available "
-		+ "without a package-version lookup this suite has no helper for: an unknown-operation refusal cannot "
-		+ "distinguish 'the package predates setFlowResults' from 'someone unregistered the strategy', and the "
-		+ "earlier gate Ignored both. Then setFlowResults writes the SECOND branch, and on a current package "
-		+ "its refusal FAILS rather than skips.")]
+	[Description("setFlowResults writes an activity-result SELECTION, describe reads it back, and THEN the "
+		+ "build path's flows[].results is exercised on a second process - in that order, because the order is "
+		+ "what makes the version gate work.\n"
+		+ "The gate cannot come from the build path, which was the first thing tried here and was wrong. An "
+		+ "older server DROPS flows[].results (unknown DataMembers are discarded, measured), leaving "
+		+ "kind:'conditional' with no condition - and FlowKindRules.EnsureConditionMatchesKind on the old "
+		+ "package throws 'requires a non-empty condition'. So a descriptor declaring the selection does not "
+		+ "merely lose it there, it fails the BUILD, and every sandbox today is old because nothing is "
+		+ "rebundled yet.\n"
+		+ "So the gate is setFlowResults itself, and the asymmetry is what carries it: an old package has "
+		+ "neither the operation nor the field, so the operation being ACCEPTED proves the package is current "
+		+ "while the field being absent proves nothing. Once accepted, the build-path case needs no gate of "
+		+ "its own and its failure is a real failure.\n"
+		+ "KNOWN RESIDUAL, stated rather than claimed closed: a regression that unregistered "
+		+ "SetFlowResultsOperation on a CURRENT package answers the same unknown-operation refusal as an old "
+		+ "one, and is Ignored. Separating those needs a package-version read this suite has no helper for.")]
 	[AllureTag(ToolName)]
-	[AllureName("both write paths put a selection on a branch that describe reads back unchanged")]
+	[AllureName("setFlowResults writes a selection, then the build path declares one")]
 	public async Task ModifyBusinessProcess_Should_WriteAnActivityResultSelection() {
 		// Arrange - an Approval element, the one source whose result set is never empty by configuration.
+		// Its flows are declared PLAIN: a descriptor carrying the selection cannot be built on the packages
+		// this test still has to run against, which is the whole reason the gate sits where it does.
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpResultsE2e{Guid.NewGuid():N}";
 		CallToolResult built = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildApprovalBranchDescriptor(processName)
+			["descriptor"] = BuildApprovalBranchDescriptor(processName, declareSelection: false)
 		});
 		built.IsError.Should().NotBeTrue(
-			because: "the descriptor uses only element types and fields that predate this feature apart from "
-				+ "flows[].results, which an older server DROPS rather than refusing - so a build error here "
-				+ "is a real failure and never the version gate");
+			because: "this descriptor uses nothing newer than the approval element, so a build failure here is "
+				+ "a real failure and never the version gate");
 
-		// THE VERSION GATE, and it reads the build path's own result rather than a refusal message. An older
-		// package accepted the descriptor and threw the field away, so the first branch describes with no
-		// selection; a current one wrote it.
-		DescribedFlow declaredOnBuild = (await DescribeBranchAsync(context, processName, "EndNo"));
-		if (declaredOnBuild.Results is null) {
-			Assert.Ignore(
-				"The sandbox's deployed CrtProcessBuilder dropped flows[].results on the build path, so it "
-				+ "predates 1.6.2.18. This test is Ignored, NOT passing; the rebundle and a deploy are what "
-				+ "make it meaningful.");
-		}
-		declaredOnBuild.Results.Should().Equal(new[] { "Negative" },
-			because: "flows[].results is a write surface in its own right and had no end-to-end coverage - "
-				+ "the build path is also the one that avoids saving a process with a connector the designer "
-				+ "already marks invalid");
-
-		// Act - the same selection through the OTHER path, on the other branch. A refusal here is now a
-		// failure: the gate above has already established that this package carries the surface.
+		// Act
 		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["process-name"] = processName,
@@ -817,12 +810,11 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				]
 				"""
 		});
+		SkipWhenTheOperationIsUnknown(callResult);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "the build path already proved this package carries the selection surface, so an "
-				+ "unknown-operation refusal here means the OPERATION is gone - a regression this test used to "
-				+ "Ignore and now fails on");
+			because: "writing a result selection onto an Approval branch must complete without a transport error");
 
 		DescribedFlow branch = await DescribeBranchAsync(context, processName, "EndOk");
 		branch.Results.Should().Equal(new[] { "Positive" },
@@ -832,6 +824,38 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "the read names the element whose results these are rather than leaving it assumed");
 		branch.BranchesOnActivityResult.Should().BeTrue(
 			because: "the flag and the values have to agree");
+
+		// The BUILD path, now that the operation above has proved this package carries the surface. It is the
+		// route the tool description tells callers to prefer - the two-step one leaves a window in which the
+		// process is saved carrying a connector the designer already marks invalid - and it had no end-to-end
+		// coverage at all. No gate here: a failure is a failure.
+		string declaredName = $"UsrClioBpResultsBuildE2e{Guid.NewGuid():N}";
+		CallToolResult declared = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildApprovalBranchDescriptor(declaredName, declareSelection: true)
+		});
+		declared.IsError.Should().NotBeTrue(
+			because: "flows[].results is a build-path field on a package that has just accepted the equivalent "
+				+ "operation, so a refusal here is the build wire and not the version");
+		DescribedFlow declaredBranch = await DescribeBranchAsync(context, declaredName, "EndNo");
+		declaredBranch.Results.Should().Equal(new[] { "Negative" },
+			because: "a selection declared WHERE THE FLOW IS has to reach the graph, which the modify path "
+				+ "above cannot show - they are different wires into the same builder");
+	}
+
+	// The version gate, and it is a NEGATIVE one - see the test's Description for what that does and does not
+	// establish. It sits after a successful build deliberately: on a process that failed to build, the
+	// operation is refused for not finding the process and this would never match.
+	private static void SkipWhenTheOperationIsUnknown(CallToolResult result) {
+		string payload = JsonSerializer.Serialize(result);
+		if (result.IsError is true
+				&& (payload.Contains("not supported", StringComparison.OrdinalIgnoreCase)
+					|| payload.Contains("Unknown operation", StringComparison.OrdinalIgnoreCase))) {
+			Assert.Ignore(
+				"The sandbox's deployed CrtProcessBuilder does not offer setFlowResults, so it predates "
+				+ "1.6.2.18. This test is Ignored, NOT passing; the rebundle and a deploy are what make it "
+				+ "meaningful.");
+		}
 	}
 
 	// Describes the process and returns the branch leaving the Approval for the named target.
@@ -844,8 +868,13 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		return described.Flows.Single(f => f.Source == "Approve" && f.Target == target);
 	}
 
-	/// <summary>An Approval branching two ways - the shape the selection dialect is for.</summary>
-	private static string BuildApprovalBranchDescriptor(string processName) => $$"""
+	/// <summary>
+	/// An Approval branching two ways - the shape the selection dialect is for. With
+	/// <paramref name="declareSelection"/> the second arm declares its selection on the BUILD path, which an
+	/// older package cannot build at all: it drops the unknown field and then refuses the conditional kind for
+	/// having no condition. Only call it that way behind the gate.
+	/// </summary>
+	private static string BuildApprovalBranchDescriptor(string processName, bool declareSelection) => $$"""
 		{
 		  "name": "{{processName}}",
 		  "caption": "Clio e2e activity-result selection",
@@ -859,7 +888,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		  "flows": [
 		    { "source": "Start1", "target": "Approve" },
 		    { "source": "Approve", "target": "EndOk" },
-		    { "source": "Approve", "target": "EndNo", "kind": "conditional", "results": ["Negative"] }
+		    { "source": "Approve", "target": "EndNo"{{(declareSelection ? ", \"kind\": \"conditional\", \"results\": [\"Negative\"]" : string.Empty)}} }
 		  ]
 		}
 		""";
