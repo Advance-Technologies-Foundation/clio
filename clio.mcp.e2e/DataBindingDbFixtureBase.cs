@@ -65,21 +65,42 @@ public abstract class DataBindingDbFixtureBase : McpContractFixtureBase {
 			.Should().Contain(text => text.Contains(expected), because: because);
 	}
 
+	/// <summary>
+	/// The production wiring of the destructive-opt-in gate: the real decision, NUnit's ignore, the
+	/// freshly built clio executable and the stand-pinging environment resolver.
+	/// </summary>
+	/// <remarks>
+	/// The arrange step routes every stand-touching call through <see cref="DestructiveArrangeGate"/>,
+	/// so the "opt-in first" order is executable code rather than the order in which the calls happen to
+	/// appear in this file; <c>Clio.Tests.McpDestructiveArrangeGateTests</c> runs it off-stand.
+	/// </remarks>
+	private static DestructiveArrangeSteps ProductionArrangeSteps() =>
+		new(
+			DestructiveStandAuthorization.IsAuthorized,
+			message => Assert.Ignore(message),
+			TestConfiguration.ResolveFreshClioProcessPath,
+			ResolveReachableEnvironmentAsync);
+
 	private protected async Task<DataBindingDbArrangeContext> ArrangeAsync(bool requireEnvironment) {
 		McpE2ESettings settings = TestConfiguration.Load();
-		//The destructive opt-in is checked here, before anything else, because everything past
-		//this line touches the configured stand: push-workspace, pkg-hotfix, the schema this
-		//fixture publishes, and the remote package the teardown deletes. [Explicit] and the CI
-		//guard only stop automatic selection - a developer selecting the fixture by hand reaches
-		//this code with the opt-in off.
-		if (!DestructiveStandAuthorization.IsAuthorized(requireEnvironment, settings.AllowDestructiveMcpTests)) {
-			Assert.Ignore(DestructiveStandAuthorization.MissingOptInMessage);
-		}
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string? environmentName = requireEnvironment
-			? await ResolveReachableEnvironmentAsync(settings)
-			: null;
+		//The destructive opt-in is checked by the gate, before anything else, because everything past it
+		//touches the configured stand: the environment probe, push-workspace, pkg-hotfix, the schema this
+		//fixture publishes, and the remote package the teardown deletes. [Explicit] and the CI guard only
+		//stop automatic selection - a developer selecting the fixture by hand reaches this code with the
+		//opt-in off.
+		return await DestructiveArrangeGate.RunAsync(
+			settings,
+			requireEnvironment,
+			ProductionArrangeSteps(),
+			environmentName => CreateWorkspaceAndPackageAsync(settings, requireEnvironment, environmentName));
+	}
 
+	/// <summary>
+	/// Creates the temporary workspace and the fixture package, and pushes them to the stand when the
+	/// fixture needs one. Runs only after <see cref="DestructiveArrangeGate"/> authorized the arrange step.
+	/// </summary>
+	private async Task<DataBindingDbArrangeContext> CreateWorkspaceAndPackageAsync(
+		McpE2ESettings settings, bool requireEnvironment, string? environmentName) {
 		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-db-binding-e2e-{System.Guid.NewGuid():N}");
 		Directory.CreateDirectory(rootDirectory);
 		string workspaceName = $"workspace-{System.Guid.NewGuid():N}";
