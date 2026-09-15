@@ -79,7 +79,22 @@ internal static class SysSettingFailureTexts {
 
 	internal const string NonJsonResponseRecovery =
 		"Check that the environment URL points at Creatio itself and that no gateway is intercepting the "
-		+ "request, then retry.";
+		+ "request, then retry. Rerun with --debug and quote the correlation ID to see the redacted "
+		+ "excerpt of what the environment actually answered.";
+
+	//PR review: the --debug advice lives HERE, not in the exception message. Only a handler that mints a
+	//correlation ID and writes ServerDetail can honour it, and the manager's write endpoints are also
+	//called by UnlockPackageCommand, ApplyEnvironmentManifestCommand, SetBackgroundImageCommand and
+	//IdentityServiceDeploymentService, which do neither - the sentence would be false there.
+	internal const string UnexpectedResponseShapeCause =
+		"Creatio answered with valid JSON that does not match the DataService response the operation "
+		+ "expects - the endpoint, the Creatio version, or the service behind the URL may not be the "
+		+ "expected one.";
+
+	internal const string UnexpectedResponseShapeRecovery =
+		"Confirm the environment URL addresses Creatio itself and that its version supports this "
+		+ "operation, then retry. Rerun with --debug and quote the correlation ID to see the redacted "
+		+ "excerpt of what the environment actually answered.";
 
 	internal const string ProviderFailureRecovery =
 		"Read the cause, correct the reported condition on the environment, and retry.";

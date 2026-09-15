@@ -7,8 +7,9 @@ ticket: ENG-90393
 date: 2026-08-19
 ---
 
-**What is true** — when `ReauthExecutor.Execute` detects an expired session it re-authenticates and
-retries the call without emitting a single log line. This is a deliberate design point, not an
+**What is true** — when `ReauthExecutor.Execute` detects an expired session it re-authenticates
+(and retries the call, when the caller allowed a replay — see
+`reauth-never-replays-a-write.md`) without emitting a single log line. This is a deliberate design point, not an
 oversight: an earlier version wrote `Detected expired Creatio session; re-authenticated and retrying
 the request.` as a warning, and that line was removed together with the whole logger plumbing.
 `ReauthExecutor` has no `ILogger` field and no logger constructor parameter, and

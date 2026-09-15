@@ -42,7 +42,7 @@ internal class CreatioClientAdapterLoginDiagnosticsTests {
 
 	private static IReauthExecutor CreatePassthroughExecutor() {
 		IReauthExecutor executor = Substitute.For<IReauthExecutor>();
-		executor.Execute(Arg.Any<Func<string>>(), Arg.Any<Func<string, bool>>())
+		executor.Execute(Arg.Any<Func<string>>(), Arg.Any<Func<string, bool>>(), Arg.Any<bool>())
 			.Returns(ci => ci.Arg<Func<string>>()());
 		return executor;
 	}
@@ -196,7 +196,7 @@ internal class CreatioClientAdapterLoginDiagnosticsTests {
 		// Assert
 		act.Should().Throw<UnauthorizedAccessException>(
 			because: "ServerReadinessWaiter, GetCreatioInfoCommand, SchemaNamePrefixTool and "
-				+ "SysSettingsCommand.CategorizeError all classify a refused credential by this type")
+				+ "SysSettingFailureClassifier.CategorizeError all classify a refused credential by this type")
 			.Which.Message.Should().Contain("clio-login",
 				because: "the diagnostic context is the deliverable and must reach the caller in the message");
 	}
