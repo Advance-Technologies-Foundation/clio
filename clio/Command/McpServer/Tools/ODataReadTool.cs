@@ -777,7 +777,7 @@ public sealed class ODataReadTool(
 			sentParts.Add($"expand: {string.Join(", ", expand)}");
 		}
 		if (!string.IsNullOrWhiteSpace(args.OrderBy)) {
-			sentParts.Add($"order-by: {args.OrderBy!.Trim()}");
+			sentParts.Add($"order-by: {args.OrderBy.Trim()}");
 		}
 		List<string> described = [];
 		if (sentParts.Count > 0) {
@@ -823,9 +823,9 @@ public sealed class ODataReadTool(
 		}
 		return new[] { args.Filters.All, args.Filters.Any }
 			.Where(group => group is not null)
-			.SelectMany(group => group!)
+			.SelectMany(group => group)
 			.Where(condition => condition is not null && !string.IsNullOrWhiteSpace(condition.Field))
-			.Select(condition => condition!.Field.Trim())
+			.Select(condition => condition.Field.Trim())
 			.Distinct(StringComparer.Ordinal)
 			.ToList();
 	}
