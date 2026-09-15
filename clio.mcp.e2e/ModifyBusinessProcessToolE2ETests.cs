@@ -767,11 +767,16 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("setFlowResults writes an activity-result SELECTION and describe reads it back as the same "
-		+ "captions - the round trip that makes the write verifiable. Ignored, NOT passed, on a sandbox whose "
-		+ "deployed CrtProcessBuilder predates 1.6.2.18, because the operation does not exist there.")]
+	[Description("BOTH write paths, in one process, because one of them is also the only usable version gate. "
+		+ "The build path declares a selection on the FIRST branch with flows[].results, which an older server "
+		+ "drops silently - unknown DataMembers are discarded, measured. Whether that branch reads back is "
+		+ "therefore what says which package the sandbox carries, and it is the ONLY discriminator available "
+		+ "without a package-version lookup this suite has no helper for: an unknown-operation refusal cannot "
+		+ "distinguish 'the package predates setFlowResults' from 'someone unregistered the strategy', and the "
+		+ "earlier gate Ignored both. Then setFlowResults writes the SECOND branch, and on a current package "
+		+ "its refusal FAILS rather than skips.")]
 	[AllureTag(ToolName)]
-	[AllureName("setFlowResults writes a selection that describe reads back unchanged")]
+	[AllureName("both write paths put a selection on a branch that describe reads back unchanged")]
 	public async Task ModifyBusinessProcess_Should_WriteAnActivityResultSelection() {
 		// Arrange - an Approval element, the one source whose result set is never empty by configuration.
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
@@ -780,10 +785,28 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildApprovalBranchDescriptor(processName)
 		});
-		SkipWhenPackagePredatesTheSelection(built, "the create path");
+		built.IsError.Should().NotBeTrue(
+			because: "the descriptor uses only element types and fields that predate this feature apart from "
+				+ "flows[].results, which an older server DROPS rather than refusing - so a build error here "
+				+ "is a real failure and never the version gate");
 
-		// Act - the branch is declared plain and then given its selection, which is the two-step shape the
-		// build-path field exists to avoid; exercised here because setFlowResults is what this tool owns.
+		// THE VERSION GATE, and it reads the build path's own result rather than a refusal message. An older
+		// package accepted the descriptor and threw the field away, so the first branch describes with no
+		// selection; a current one wrote it.
+		DescribedFlow declaredOnBuild = (await DescribeBranchAsync(context, processName, "EndNo"));
+		if (declaredOnBuild.Results is null) {
+			Assert.Ignore(
+				"The sandbox's deployed CrtProcessBuilder dropped flows[].results on the build path, so it "
+				+ "predates 1.6.2.18. This test is Ignored, NOT passing; the rebundle and a deploy are what "
+				+ "make it meaningful.");
+		}
+		declaredOnBuild.Results.Should().Equal(new[] { "Negative" },
+			because: "flows[].results is a write surface in its own right and had no end-to-end coverage - "
+				+ "the build path is also the one that avoids saving a process with a connector the designer "
+				+ "already marks invalid");
+
+		// Act - the same selection through the OTHER path, on the other branch. A refusal here is now a
+		// failure: the gate above has already established that this package carries the surface.
 		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["process-name"] = processName,
@@ -794,17 +817,14 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				]
 				"""
 		});
-		SkipWhenPackagePredatesTheSelection(callResult, "setFlowResults");
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "writing a result selection onto an Approval branch must complete without a transport error");
+			because: "the build path already proved this package carries the selection surface, so an "
+				+ "unknown-operation refusal here means the OPERATION is gone - a regression this test used to "
+				+ "Ignore and now fails on");
 
-		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
-			new Dictionary<string, object?> {
-				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
-			}));
-		DescribedFlow branch = described.Flows.Single(f => f.Source == "Approve" && f.Target == "EndOk");
+		DescribedFlow branch = await DescribeBranchAsync(context, processName, "EndOk");
 		branch.Results.Should().Equal(new[] { "Positive" },
 			because: "a selection has to read back as the captions it was written with, or a caller cannot "
 				+ "verify, diff or preserve it");
@@ -814,20 +834,14 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "the flag and the values have to agree");
 	}
 
-	// The test above needs a package that HAS the selection surface. A sandbox below 1.6.2.18 answers with
-	// an unknown-operation refusal, and letting that read as a pass would be worse than not running: the whole
-	// point of the test is that the selection round-trips. Ignored with the reason named, the
-	// same convention SkipWhenPackagePredatesTheElement follows for the accessRights block.
-	private static void SkipWhenPackagePredatesTheSelection(CallToolResult result, string what) {
-		string payload = JsonSerializer.Serialize(result);
-		if (result.IsError is true
-				&& (payload.Contains("not supported", StringComparison.OrdinalIgnoreCase)
-					|| payload.Contains("Unknown operation", StringComparison.OrdinalIgnoreCase))) {
-			Assert.Ignore(
-				$"The sandbox's deployed CrtProcessBuilder does not accept {what} for an activity-result "
-				+ "selection, so it predates 1.6.2.18. This test is Ignored, NOT passing; the rebundle and a "
-				+ "deploy are what make it meaningful.");
-		}
+	// Describes the process and returns the branch leaving the Approval for the named target.
+	private static async Task<DescribedFlow> DescribeBranchAsync(ArrangeContext context, string processName,
+			string target) {
+		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
+			}));
+		return described.Flows.Single(f => f.Source == "Approve" && f.Target == target);
 	}
 
 	/// <summary>An Approval branching two ways - the shape the selection dialect is for.</summary>
@@ -845,7 +859,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		  "flows": [
 		    { "source": "Start1", "target": "Approve" },
 		    { "source": "Approve", "target": "EndOk" },
-		    { "source": "Approve", "target": "EndNo" }
+		    { "source": "Approve", "target": "EndNo", "kind": "conditional", "results": ["Negative"] }
 		  ]
 		}
 		""";
