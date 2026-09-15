@@ -37,6 +37,12 @@ for the package's schemas and the restart still happen. It goes through the same
 process builder (`install-dashboards-migrator`, `InstallBundledPackageCommand`), so the downgrade refusals,
 the restart wait and the ungated `Ping` outcome check (`/rest/DashboardsMigratorPingService/Ping`) apply unchanged.
 
+**Its version comes from the app, not from clio.** This package is a composable app, so it declares its
+version in `Files/app-descriptor.json` — the number Marketplace and the App Hub show (1.1.3, 1.1.4). clio
+reports that number and pins it, the same way it reports the version a knowledge bundle or a toolkit plugin
+declares for itself. Nothing stamps `PackageVersion` into the package descriptor; the process builder, which
+is a plain package and not an app, still carries one and is read from there.
+
 **Prebuilt is a requirement here, not a preference.** The package carries an `InstallScripts.AfterInstall`
 entry that seeds the `DashboardMigrationLog` column rights, and the platform resolves an install script's class
 from the package's OWN assembly: `PackageInstallUtilities.ResolveInstallScriptAssemblyPath` looks for

@@ -57,12 +57,15 @@ public class BundledDashboardsMigratorPackageTests {
 	private const string ExpectedArchiveSha256 =
 		"0000000000000000000000000000000000000000000000000000000000000000";
 
-	/// <summary>Version in the shipped descriptor; a test-side pin, no runtime consumer (see the ADR).</summary>
-	private const string ExpectedArchiveVersion = "0.0.0.0";
+	/// <summary>
+	/// The app version the archive declares in <c>Files/app-descriptor.json</c> — the number Marketplace and
+	/// the App Hub show, and the one <c>clio info</c> reports. Pinned so a version move is a reviewable line.
+	/// </summary>
+	private const string ExpectedArchiveVersion = "0.0.0";
 
 	/// <summary>
-	/// SHA-256 of the SDLC build zip the archive was cut from. The build's full version equals
-	/// <see cref="ExpectedArchiveVersion"/>; the commit is recorded on the build's page in the SDLC app.
+	/// SHA-256 of the SDLC build zip the archive was cut from. That build's full version extends
+	/// <see cref="ExpectedArchiveVersion"/> with a build number; the commit is on the build's page in the SDLC app.
 	/// </summary>
 	private const string ExpectedSourceBuildSha256 =
 		"0000000000000000000000000000000000000000000000000000000000000000";
@@ -166,13 +169,12 @@ public class BundledDashboardsMigratorPackageTests {
 		descriptor.GetProperty("UId").GetString().Should().Be(ExpectedPackageUId,
 			because: "Creatio identifies a package by UId; a changed UId installs a SECOND package instead of upgrading");
 		descriptor.GetProperty("ModifiedOnUtc").GetString().Should().Be(ExpectedDescriptorModifiedOnUtc,
-			because: "Creatio rewrites the SysPackage row only when this field changes, never because PackageVersion did");
-		ExpectedDescriptorModifiedOnUtc.Should().EndWith("000)/",
-			because: "whole seconds are the provenance oracle: milliseconds mean the descriptor was written by hand with a wrong tool");
+			because: "this stamp is what Creatio keys the SysPackage row on, and pinning it makes a descriptor change visible in review");
 		ReadBundledVersionThroughTheCatalog().ToString().Should().Be(ExpectedArchiveVersion,
-			because: "the shipped version is what clio info reports and what the downgrade check compares; pinning puts a version move on a reviewable line");
-		ExpectedArchiveVersion.Should().MatchRegex("^[0-9]+(\\.[0-9]+){3}$",
-			because: "four parts and no suffix: the install command refuses a suffixed distribution outright");
+			because: "this is the number clio info reports, and it must be the app's own version — the one its "
+				+ "users already know from Marketplace — not a number clio stamped");
+		ExpectedArchiveVersion.Should().MatchRegex("^[0-9]+(\\.[0-9]+){2}$",
+			because: "the app declares three parts and no suffix; a suffixed distribution is refused outright");
 		descriptor.TryGetProperty("InstallScripts", out JsonElement _).Should().BeTrue(
 			because: "the package applies its column rights from an install script, and the platform can only run "
 				+ "one when the archive carries the assembly — which is what makes this package prebuilt rather "

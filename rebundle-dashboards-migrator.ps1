@@ -10,15 +10,13 @@
     (Files/Bin/netstandard). Nothing is built here. The script:
 
       1. unpacks the build zip and the package .gz inside it;
-      2. checks -Version extends the app version in Files/app-descriptor.json and is higher than the
-         version clio ships today;
-      3. stamps PackageVersion and ModifiedOnUtc with `clio set-pkg-version` (both fields, or the platform
-         keeps the old recorded version — see docs/agent-instructions/bundled-packages.md, fact 2);
-      4. packs with `clio compress --skip-pdb` into clio/CrtDashboardsMigratorApp/;
-      5. verifies the inventory: exactly the two package assemblies, no pdb, no SqlScripts, the
+      2. reads the app version from Files/app-descriptor.json - the number clio reports and Marketplace
+         shows - and refuses a build whose app version is lower than the one clio ships today;
+      3. packs with `clio compress --skip-pdb` into clio/CrtDashboardsMigratorApp/;
+      4. verifies the inventory: exactly the two package assemblies, no pdb, no SqlScripts, the
          DashboardsMigratorPingService schema present;
-      6. rewrites the pins in clio.tests/Common/BundledDashboardsMigratorPackageTests.cs;
-      7. rebuilds the chosen clio output, because an install resolves the archive from the BUILD OUTPUT.
+      5. rewrites the pins in clio.tests/Common/BundledDashboardsMigratorPackageTests.cs;
+      6. rebuilds the chosen clio output, because an install resolves the archive from the BUILD OUTPUT.
 
     The producing commit is on the build's page in the SDLC app; the pin that ties the archive to it is the
     SHA-256 of the build zip.
@@ -91,33 +89,31 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $packageDir 'descriptor.json'))) { Die "No $Package/descriptor.json in the build." }
     Ok "build zip sha256 $sourceSha"
 
-    Step "2. Check the version ($Version)"
-    $appVersion = (Get-Content -LiteralPath (Join-Path $packageDir 'Files\app-descriptor.json') -Raw | ConvertFrom-Json).Version
+    Step "2. Read the app version and check it moves forward"
+    # The app names its own version, and that is the number clio reports and Marketplace shows. Nothing here
+    # stamps a version into the package: the build is taken as it is.
+    $appVersion = (Get-Content -LiteralPath (Join-Path $packageDir 'Filespp-descriptor.json') -Raw | ConvertFrom-Json).Version
     if (-not $Version.StartsWith("$appVersion.")) {
         Die "-Version $Version does not extend the app version $appVersion in Files/app-descriptor.json; the build's full version always does."
     }
     $shipped = ([regex]::Match((Get-Content -LiteralPath $pinsFile -Raw), 'ExpectedArchiveVersion = "([^"]*)"')).Groups[1].Value
+    $parsedApp = [version] $null
     $parsedShipped = [version] $null
-    if ([version]::TryParse($shipped, [ref] $parsedShipped) -and $parsedNew -le $parsedShipped) {
-        Die "-Version $Version is not higher than the version clio already ships ($shipped). An equal version is offered to nobody who has the package; a lower one is a downgrade."
+    if (-not [version]::TryParse($appVersion, [ref] $parsedApp)) { Die "app-descriptor.json Version '$appVersion' is not a version number." }
+    if ([version]::TryParse($shipped, [ref] $parsedShipped) -and $parsedApp -lt $parsedShipped) {
+        Die "The build's app version $appVersion is lower than the version clio already ships ($shipped); that is a downgrade."
     }
-    Ok "app version $appVersion, clio ships $shipped"
-
-    Step '3. Stamp PackageVersion and ModifiedOnUtc'
-    dotnet $clioDll set-pkg-version $packageDir --package-version $Version
-    if ($LASTEXITCODE -ne 0) { Die 'set-pkg-version refused.' }
     $descriptorJson = Get-Content -LiteralPath (Join-Path $packageDir 'descriptor.json') -Raw
     $stamp = ([regex]::Match($descriptorJson, '"ModifiedOnUtc"\s*:\s*"([^"]*)"')).Groups[1].Value.Replace('\/', '/')
-    if ($stamp -notmatch '^/Date\(\d+000\)/$') { Die "ModifiedOnUtc '$stamp' is not whole seconds; set-pkg-version did not write it." }
-    Ok "ModifiedOnUtc $stamp"
+    Ok "app version $appVersion (clio ships $shipped), build $Version, ModifiedOnUtc $stamp"
 
-    Step '4. Pack into the clio checkout'
+    Step '3. Pack into the clio checkout'
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $archive) | Out-Null
     dotnet $clioDll compress $packageDir --skip-pdb -d $archive
     if ($LASTEXITCODE -ne 0) { Die 'compress failed.' }
     Ok $archive
 
-    Step '5. Verify the archive inventory'
+    Step '4. Verify the archive inventory'
     $check = Join-Path $work 'check'
     dotnet $clioDll extract-pkg-zip $archive -d $check | Out-Null
     if ($LASTEXITCODE -ne 0) { Die 'extract-pkg-zip failed on the produced archive.' }
@@ -136,13 +132,13 @@ try {
     }
     Ok "$($entries.Count) entries, both package assemblies, no pdb, $requiredSchema present"
 
-    Step '6. Refresh the pins'
+    Step '5. Refresh the pins'
     $sha = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToUpperInvariant()
     $text = Get-Content -LiteralPath $pinsFile -Raw
     foreach ($pin in @(
         @{ Name = 'ExpectedArchiveSha256';           Value = $sha },
         @{ Name = 'ExpectedSourceBuildSha256';       Value = $sourceSha },
-        @{ Name = 'ExpectedArchiveVersion';          Value = $parsedNew.ToString() },
+        @{ Name = 'ExpectedArchiveVersion';          Value = $appVersion },
         @{ Name = 'ExpectedDescriptorModifiedOnUtc'; Value = $stamp })) {
         $pattern = '(?s)(' + $pin.Name + '\s*=\s*)"[^"]*";'
         if ([regex]::Matches($text, $pattern).Count -ne 1) { Die "Expected exactly one $($pin.Name) in $pinsFile." }
@@ -151,7 +147,7 @@ try {
     }
     [IO.File]::WriteAllText($pinsFile, $text)
 
-    Step '7. Rebuild clio (an install resolves the archive from the build output)'
+    Step '6. Rebuild clio (an install resolves the archive from the build output)'
     dotnet build (Join-Path $clioRoot 'clio\clio.csproj') -c $outputs[0].Configuration -f $outputs[0].Framework --nologo -v q
     if ($LASTEXITCODE -ne 0) { Die 'Rebuild failed; until it succeeds every local install ships the previous archive.' }
     Ok 'rebuilt'

@@ -101,6 +101,26 @@ public class BundledPackageCatalog : IBundledPackageCatalog {
 	// Path of the descriptor inside a Creatio package archive, relative to the package root.
 	private const string DescriptorEntryPath = "descriptor.json";
 
+	// Path of a composable app's own manifest inside the package archive. An app names its version here,
+	// and that is the number its users see — on Marketplace, in the App Hub — so it is the number clio
+	// reports rather than one clio stamps.
+	private const string AppDescriptorEntryPath = "Files/app-descriptor.json";
+
+	#endregion
+
+	#region Enums: Private
+
+	// Where a bundled artifact declares the version clio reports for it.
+	private enum VersionSource {
+
+		// A plain package: Descriptor.PackageVersion in descriptor.json.
+		PackageDescriptor,
+
+		// A composable app: Version in Files/app-descriptor.json — the number its users see.
+		AppDescriptor
+
+	}
+
 	#endregion
 
 	#region Fields: Private
@@ -111,13 +131,14 @@ public class BundledPackageCatalog : IBundledPackageCatalog {
 	// cliogate is deliberately absent. It ships an archive too, but its version story is a separate
 	// mechanism (a prebuilt assembly, version.txt, and Program.CheckApiVersion) that this catalog does not
 	// model; folding it in is noted as out of scope in the ADR so the asymmetry stays deliberate.
-	private static readonly IReadOnlyDictionary<string, (string Folder, string FileName)> BundledArchives =
-		new Dictionary<string, (string, string)>(StringComparer.OrdinalIgnoreCase) {
-			[BundledPackages.ProcessBuilderPackageName] =
-				(BundledPackages.ProcessBuilderPackageName, BundledPackages.ProcessBuilderArchiveFileName),
-			[BundledPackages.DashboardsMigratorPackageName] =
-				(BundledPackages.DashboardsMigratorPackageName, BundledPackages.DashboardsMigratorArchiveFileName)
-		};
+	private static readonly IReadOnlyDictionary<string, (string Folder, string FileName, VersionSource Version)>
+		BundledArchives =
+			new Dictionary<string, (string, string, VersionSource)>(StringComparer.OrdinalIgnoreCase) {
+				[BundledPackages.ProcessBuilderPackageName] = (BundledPackages.ProcessBuilderPackageName,
+					BundledPackages.ProcessBuilderArchiveFileName, VersionSource.PackageDescriptor),
+				[BundledPackages.DashboardsMigratorPackageName] = (BundledPackages.DashboardsMigratorPackageName,
+					BundledPackages.DashboardsMigratorArchiveFileName, VersionSource.AppDescriptor)
+			};
 
 	private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 	private readonly IFileSystem _fileSystem;
@@ -167,6 +188,18 @@ public class BundledPackageCatalog : IBundledPackageCatalog {
 			? content.AsMemory(3)
 			: content.AsMemory();
 
+	private static bool TryReadVersionFromAppDescriptor(byte[] appDescriptor, out PackageVersion version) {
+		version = null;
+		using JsonDocument document = JsonDocument.Parse(StripBom(appDescriptor));
+		// Same ValueKind discipline as the package descriptor below, and for the same reason.
+		if (document.RootElement.ValueKind != JsonValueKind.Object
+			|| !document.RootElement.TryGetProperty("Version", out JsonElement versionElement)
+			|| versionElement.ValueKind != JsonValueKind.String) {
+			return false;
+		}
+		return PackageVersion.TryParseVersion(versionElement.GetString(), out version);
+	}
+
 	private static bool TryReadVersionFromDescriptor(byte[] descriptor, out PackageVersion version) {
 		version = null;
 		using JsonDocument document = JsonDocument.Parse(StripBom(descriptor));
@@ -199,7 +232,8 @@ public class BundledPackageCatalog : IBundledPackageCatalog {
 
 	public string GetArchivePath(string packageName) {
 		if (string.IsNullOrWhiteSpace(packageName)
-			|| !BundledArchives.TryGetValue(packageName, out (string Folder, string FileName) archive)) {
+			|| !BundledArchives.TryGetValue(packageName,
+				out (string Folder, string FileName, VersionSource Version) archive)) {
 			throw new ArgumentException(
 				$"Package '{packageName}' does not ship inside the clio distribution.", nameof(packageName));
 		}
@@ -221,10 +255,16 @@ public class BundledPackageCatalog : IBundledPackageCatalog {
 				+ $"'{archivePath}'. Reinstall or update clio itself.";
 			return false;
 		}
+		// Which file inside the archive declares the version, and under which name. A composable app names its
+		// own version in its manifest; a plain package has only the package descriptor.
+		BundledArchives.TryGetValue(packageName, out (string Folder, string FileName, VersionSource Version) entry);
+		bool fromAppDescriptor = entry.Version == VersionSource.AppDescriptor;
+		string entryPath = fromAppDescriptor ? AppDescriptorEntryPath : DescriptorEntryPath;
+		string fieldName = fromAppDescriptor ? "Version" : "Descriptor.PackageVersion";
 		byte[] descriptor;
 		bool found;
 		try {
-			found = _compressionUtilities.TryReadFileFromGZip(archivePath, DescriptorEntryPath, out descriptor);
+			found = _compressionUtilities.TryReadFileFromGZip(archivePath, entryPath, out descriptor);
 		} catch (Exception e) {
 			// Anything the reader can throw — a truncated gzip member, an unreadable file — means the same
 			// thing to the caller, so it is reported as one condition with the cause appended rather than as
@@ -239,20 +279,23 @@ public class BundledPackageCatalog : IBundledPackageCatalog {
 			// false only for a cleanly-read archive that genuinely has no such entry. Collapsing the two would
 			// tell an operator their archive lacks a descriptor when in fact it is truncated.
 			diagnosis =
-				$"The bundled {packageName} archive at '{archivePath}' contains no {DescriptorEntryPath}, so "
+				$"The bundled {packageName} archive at '{archivePath}' contains no {entryPath}, so "
 				+ "the version it carries cannot be determined. Reinstall or update clio itself.";
 			return false;
 		}
 		try {
-			if (!TryReadVersionFromDescriptor(descriptor, out version)) {
+			bool read = fromAppDescriptor
+				? TryReadVersionFromAppDescriptor(descriptor, out version)
+				: TryReadVersionFromDescriptor(descriptor, out version);
+			if (!read) {
 				diagnosis =
-					$"The bundled {packageName} archive at '{archivePath}' has a {DescriptorEntryPath} without a "
-					+ "readable Descriptor.PackageVersion. Reinstall or update clio itself.";
+					$"The bundled {packageName} archive at '{archivePath}' has a {entryPath} without a "
+					+ $"readable {fieldName}. Reinstall or update clio itself.";
 				return false;
 			}
 		} catch (JsonException e) {
 			diagnosis =
-				$"The bundled {packageName} archive at '{archivePath}' has a malformed {DescriptorEntryPath} "
+				$"The bundled {packageName} archive at '{archivePath}' has a malformed {entryPath} "
 				+ $"({Flatten(e.Message)}). Reinstall or update clio itself.";
 			return false;
 		}
