@@ -67,7 +67,7 @@ public static class DescribeProcessPrompt {
 		`results` then names WHICH results select the branch, by caption, and `resultsActivity` the element
 		whose results they are - usually the flow's source, but for a connector leaving a GATEWAY an element
 		upstream of it, so narrate the activity `resultsActivity` names rather than assuming the source.
-		Both are ABSENT on an environment whose `CrtProcessBuilder` predates 1.6.2.16, which reads exactly
+		Both are ABSENT on a package cut from a line that never carried them, which reads exactly
 		like a formula branch - so an all-absent read is not evidence that no process here branches on a
 		result; `branchesOnActivityResult` is the older field to fall back on.
 		So never narrate a condition as "what decides this branch" without checking `kind` and

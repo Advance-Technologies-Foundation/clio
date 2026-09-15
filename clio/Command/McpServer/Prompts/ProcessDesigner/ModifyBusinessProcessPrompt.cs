@@ -38,9 +38,10 @@ public static class ModifyBusinessProcessPrompt {
 		 `setFlow` (`source` + `target` + `kind`, plus `condition` for a conditional one) changes an EXISTING
 		 flow's kind in either direction, also in place.
 		 A conditional branch has TWO predicate dialects and its SOURCE decides which, not you. Off an element
-		 that enumerates RESULTS - an `approval`, a `performTask`, a `preconfiguredPage`, an `openEditPage`
-		 with results by column - the designer edits that connector as a CHECKBOX LIST and offers no formula
-		 field at all, so the branch is declared with `results`: the result captions (`["Positive"]` on an
+		 that enumerates RESULTS - a closed set of six: `approval`, `performTask`, `preconfiguredPage`,
+		 `openEditPage` with results by column, User dialog and Auto-generated page, each only once CONFIGURED
+		 into it - the designer edits that connector as a CHECKBOX LIST and offers no formula field at all.
+		 `sendEmail` is NOT one despite its server-side schema declaring results, so branch it with a condition, so the branch is declared with `results`: the result captions (`["Positive"]` on an
 		 approval), written by `setFlowResults` (`source` + `target` + a non-empty `results`) or by `results`
 		 on `addFlow`. Everywhere else the dialect is a `condition` formula. A formula on a
 		 result-enumerating connector is NOT refused and it RUNS - but no human can read or edit it: every
