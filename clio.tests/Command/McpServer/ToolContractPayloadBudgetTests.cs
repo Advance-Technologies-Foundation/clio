@@ -76,7 +76,18 @@ public sealed class ToolContractPayloadBudgetTests {
 	// get-tool-contract call with more than the ENTIRE tools/list budget, for one tool. Pinning the
 	// MAXIMUM rather than the sum keeps the guard on what ONE fetch costs, which is what an agent pays.
 	// Measured 34165 bytes (create-business-process) at 14e2dd5a9 plus this branch's round-2 fixes;
-	// 134 * 256 = 34304 per the next-256 convention.
+	// 136 * 256 = 34816 per the next-256 convention, re-pinned from 134 when CrtProcessBuilder 1.6.2.11
+	// added the activity-result selection: modify-business-process gained the setFlowResults operation and
+	// create-business-process the flows[].results field, and the Approval paragraph in the latter had to be
+	// rewritten because it instructed the dialect that produces an unmaintainable branch.
+	//
+	// The failure message asks whether the text belongs in a [Description] at all, and that question was
+	// answered rather than waved past: the first cut measured 35674, and roughly a kilobyte of it - the
+	// designer mechanics, why a formula there is invisible, what a human sees - moved to the
+	// process-branch-conditions guidance article, which owns that rule. What stayed inline is what a caller
+	// must decide at CALL time: which of the two predicate slots this connector takes, that they are
+	// mutually exclusive, and what each refusal is. That is the split ENG-96389 section 5 identified as the
+	// one that pays - cutting depth WITHIN a block, not relocating the block.
 	//
 	// Be honest about what 139 bytes of headroom means rather than claiming a wording fix passes: the
 	// default JSON encoder escapes every non-ASCII character and apostrophe as a six-byte unicode
@@ -87,7 +98,7 @@ public sealed class ToolContractPayloadBudgetTests {
 	// so an author who edited a different one is not sent to the wrong file. If it starts firing on
 	// edits that are NOT budget decisions, re-pin it deliberately and say so here — never widen it in
 	// passing.
-	private const int MaxToolContractSerializedBytes = 134 * 256;
+	private const int MaxToolContractSerializedBytes = 136 * 256;
 
 	[Test]
 	[Category("Unit")]

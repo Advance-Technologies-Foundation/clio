@@ -1461,6 +1461,31 @@ public sealed class DescribedFlow {
 	/// server that said nothing: a caller reading it would conclude the condition IS evaluated. Absent
 	/// stays absent instead, and a caller that finds no key knows to check the package version.</para>
 	/// </summary>
+	/// <summary>
+	/// WHICH results select this branch, by caption, or <c>null</c> when the flow decides on a formula.
+	/// <para>Reported from <c>CrtProcessBuilder</c> 1.6.2.11. These are the same captions the write surface
+	/// takes - <c>flows[].results</c> on the build path, <c>setFlowResults</c> on the modify path - so a branch
+	/// reads back and writes back unchanged. Before this member <see cref="BranchesOnActivityResult"/> said only
+	/// THAT a selection exists, which left a selection unverifiable: a caller could write one and had no way to
+	/// confirm, diff or preserve it.</para>
+	/// <para>A result whose lookup row no longer resolves arrives as its raw UId rather than being dropped, so a
+	/// stale selection never reads as a SHORTER one. <c>null</c> rather than an empty array on a formula branch,
+	/// so the two dialects are distinguishable from the read alone. ABSENT on a package older than 1.6.2.11,
+	/// which is the same bytes as a formula branch - so an all-absent read is not evidence of anything.</para>
+	/// </summary>
+	[JsonPropertyName("results")]
+	public string[] Results { get; set; }
+
+	/// <summary>
+	/// The element whose results <see cref="Results"/> names, or <c>null</c> when the flow carries no selection.
+	/// <para>Usually the flow's own source, and reported anyway because it is NOT always: the designer keys the
+	/// selection on the deciding ACTIVITY, which for a connector leaving a gateway is an element UPSTREAM of it.
+	/// A caller that assumed the source and wrote the selection back would silently re-key it onto the gateway,
+	/// changing which activity's result decides the branch.</para>
+	/// </summary>
+	[JsonPropertyName("resultsActivity")]
+	public string ResultsActivity { get; set; }
+
 	[JsonPropertyName("branchesOnActivityResult")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public bool? BranchesOnActivityResult { get; set; }

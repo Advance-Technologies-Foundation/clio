@@ -768,6 +768,134 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 
 	// The gate, in one place so both tests read the same way. A CrtProcessBuilder predating the element rejects
 	// the element TYPE outright, before anything this fixture is about, so such an environment can exercise
+
+	[Test]
+	[Description("setFlowResults writes an activity-result SELECTION and describe reads it back as the same "
+		+ "captions - the round trip that makes the write verifiable. Ignored, NOT passed, on a sandbox whose "
+		+ "deployed CrtProcessBuilder predates 1.6.2.11, because the operation does not exist there.")]
+	[AllureTag(ToolName)]
+	[AllureName("setFlowResults writes a selection that describe reads back unchanged")]
+	public async Task ModifyBusinessProcess_Should_WriteAnActivityResultSelection() {
+		// Arrange - an Approval element, the one source whose result set is never empty by configuration.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpResultsE2e{Guid.NewGuid():N}";
+		CallToolResult built = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildApprovalBranchDescriptor(processName)
+		});
+		SkipWhenPackagePredatesTheSelection(built, "the create path");
+
+		// Act - the branch is declared plain and then given its selection, which is the two-step shape the
+		// build-path field exists to avoid; exercised here because setFlowResults is what this tool owns.
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """
+				[
+				  { "op": "setFlowResults", "source": "Approve", "target": "EndOk",
+				    "results": ["Positive"] }
+				]
+				"""
+		});
+		SkipWhenPackagePredatesTheSelection(callResult, "setFlowResults");
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "writing a result selection onto an Approval branch must complete without a transport error");
+
+		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
+			}));
+		DescribedFlow branch = described.Flows.Single(f => f.Source == "Approve" && f.Target == "EndOk");
+		branch.Results.Should().Equal(new[] { "Positive" },
+			because: "a selection has to read back as the captions it was written with, or a caller cannot "
+				+ "verify, diff or preserve it");
+		branch.ResultsActivity.Should().Be("Approve",
+			because: "the read names the element whose results these are rather than leaving it assumed");
+		branch.BranchesOnActivityResult.Should().BeTrue(
+			because: "the flag and the values have to agree");
+	}
+
+	[Test]
+	[Description("setFlowCondition is REFUSED on a connector whose source enumerates activity results. That "
+		+ "branch would run and be unmaintainable - the designer offers no formula field there - and until "
+		+ "1.6.2.11 this package accepted it, which is how the defect reached shipped processes. Ignored on a "
+		+ "sandbox that predates the refusal.")]
+	[AllureTag(ToolName)]
+	[AllureName("setFlowCondition is refused on a connector the designer edits as a result selection")]
+	public async Task ModifyBusinessProcess_Should_RefuseAFormulaOnAResultEnumeratingSource() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpWrongDialectE2e{Guid.NewGuid():N}";
+		CallToolResult built = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildApprovalBranchDescriptor(processName)
+		});
+		SkipWhenPackagePredatesTheSelection(built, "the create path");
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """
+				[
+				  { "op": "setFlowCondition", "source": "Approve", "target": "EndOk",
+				    "condition": "1 > 0" }
+				]
+				"""
+		});
+
+		// Assert
+		string payload = JsonSerializer.Serialize(callResult);
+		if (!payload.Contains("results", StringComparison.OrdinalIgnoreCase)) {
+			Assert.Ignore(
+				"The sandbox's deployed CrtProcessBuilder predates 1.6.2.11, where this refusal was added, so "
+				+ "the formula was accepted. This test is Ignored, NOT passing, and the refusal is unverified "
+				+ "end to end until the bundled archive is rebuilt and deployed.");
+		}
+		callResult.IsError.Should().BeTrue(
+			because: "a formula on a connector the designer edits as a selection is refused rather than stored");
+		payload.Should().Contain("Positive",
+			because: "the refusal names the results the element offers - there is no other way to discover them");
+	}
+
+	// The two tests above need a package that HAS the selection surface. A sandbox below 1.6.2.11 answers with
+	// an unknown-operation refusal, and letting that read as a pass would be worse than not running: the whole
+	// point of this pair is that the wrong dialect stops being writable. Ignored with the reason named, the
+	// same convention SkipWhenPackagePredatesTheElement follows for the accessRights block.
+	private static void SkipWhenPackagePredatesTheSelection(CallToolResult result, string what) {
+		string payload = JsonSerializer.Serialize(result);
+		if (result.IsError is true
+				&& (payload.Contains("not supported", StringComparison.OrdinalIgnoreCase)
+					|| payload.Contains("Unknown operation", StringComparison.OrdinalIgnoreCase))) {
+			Assert.Ignore(
+				$"The sandbox's deployed CrtProcessBuilder does not accept {what} for an activity-result "
+				+ "selection, so it predates 1.6.2.11. This test is Ignored, NOT passing; the rebundle and a "
+				+ "deploy are what make it meaningful.");
+		}
+	}
+
+	/// <summary>An Approval branching two ways - the shape the selection dialect is for.</summary>
+	private static string BuildApprovalBranchDescriptor(string processName) => $$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio e2e activity-result selection",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "Start1", "type": "startEvent" },
+		    { "name": "Approve", "type": "approval", "caption": "Approve order" },
+		    { "name": "EndOk", "type": "endEvent" },
+		    { "name": "EndNo", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "Start1", "target": "Approve" },
+		    { "source": "Approve", "target": "EndOk" },
+		    { "source": "Approve", "target": "EndNo" }
+		  ]
+		}
+		""";
+
 	// neither direction. It is Ignored rather than failed - but named, so an ignored run is not mistaken for
 	// coverage: the rebundle is the follow-up that makes these two tests meaningful.
 	private static void SkipWhenPackagePredatesTheElement(CallToolResult built) {
