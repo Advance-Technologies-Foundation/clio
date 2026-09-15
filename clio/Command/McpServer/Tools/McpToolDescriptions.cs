@@ -23,6 +23,13 @@ internal static class McpToolDescriptions {
 	/// <summary>Terse description for the <c>environment-name</c> connection argument.</summary>
 	internal const string EnvironmentName = "Registered clio environment name. Preferred.";
 
+	/// <summary>
+	/// The correlation-id promise, stated identically by every odata-* tool so the three
+	/// <c>[Description]</c> attributes cannot drift into three different promises.
+	/// </summary>
+	internal const string CorrelationIdOnEveryResponse =
+		"Every response - success or failure - carries a correlation-id, which matches this call to clio's own log lines. ";
+
 	/// <summary>Terse description for the <c>uri</c> direct-connection argument.</summary>
 	internal const string Uri = "Direct Creatio URL; emergency/bootstrap fallback. Prefer environment-name.";
 
