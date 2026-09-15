@@ -106,7 +106,7 @@ public class InstallDashboardsMigratorCommandTests : BaseCommandTests<InstallDas
 	}
 
 	[Test]
-	[Description("Points the shared install flow at the dashboards-migrator archive and asks the outcome verifier about that package, so the verifier probes DashboardsMigratorService rather than ProcessDesignService.")]
+	[Description("Points the shared install flow at the dashboards-migrator archive and asks the outcome verifier about that package, so the verifier probes DashboardsMigratorPingService rather than ProcessDesignService.")]
 	public void Execute_ShouldInstallTheDashboardsMigratorArchive_AndVerifyThatPackage() {
 		// Arrange
 		InstallDashboardsMigratorOptions options = new() { Environment = "env" };

@@ -35,7 +35,7 @@ carrying `Files/Bin/CrtDashboardsMigratorApp.dll` (net472) and `Files/Bin/netsta
 (.NET). The target loads the assembly for its runtime instead of compiling the package; its configuration build
 for the package's schemas and the restart still happen. It goes through the same install command as the
 process builder (`install-dashboards-migrator`, `InstallBundledPackageCommand`), so the downgrade refusals,
-the restart wait and the ungated `Ping` outcome check (`/rest/DashboardsMigratorService/Ping`) apply unchanged.
+the restart wait and the ungated `Ping` outcome check (`/rest/DashboardsMigratorPingService/Ping`) apply unchanged.
 
 **Prebuilt is a requirement here, not a preference.** The package carries an `InstallScripts.AfterInstall`
 entry that seeds the `DashboardMigrationLog` column rights, and the platform resolves an install script's class
@@ -55,7 +55,7 @@ pwsh ./rebundle-dashboards-migrator.ps1 -BuildZip '\\tscrm.com\dfs-ts\Composable
 It unpacks the build, checks the version extends the app version and is higher than what clio ships, stamps
 the descriptor with `clio set-pkg-version`, packs with `--skip-pdb`, verifies the inventory (exactly the two
 package assemblies, `Data/` allowed because its bound rows only register the migration page and its permission,
-no `SqlScripts/`, the `DashboardsMigratorService` schema present),
+no `SqlScripts/`, the `DashboardsMigratorPingService` schema present),
 rewrites the pins in `clio.tests/Common/BundledDashboardsMigratorPackageTests.cs` and rebuilds clio. The
 provenance pin is the SHA-256 of the build zip (`ExpectedSourceBuildSha256`); the commit is on the build's page
 in the SDLC app. Facts 1–3 below (UId, `ModifiedOnUtc`, installed-vs-serving) hold for it exactly as for the

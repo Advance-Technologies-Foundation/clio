@@ -38,7 +38,7 @@ public class BundledDashboardsMigratorPackageTests {
 	private const string ExpectedPackageUId = "a1576367-2b6f-4060-a4e6-0dffc16fc579";
 
 	/// <summary>The Source Code schema whose ungated Ping the install command probes.</summary>
-	private const string PingSchemaName = "DashboardsMigratorService";
+	private const string PingSchemaName = "DashboardsMigratorPingService";
 
 	private static readonly string[] AllowedTopLevelEntries = [
 		"descriptor.json", "Files", "Schemas", "Resources", "Data"

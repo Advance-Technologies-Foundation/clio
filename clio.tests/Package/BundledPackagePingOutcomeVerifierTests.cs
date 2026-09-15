@@ -333,7 +333,7 @@ public class BundledPackagePingOutcomeVerifierTests {
 		// Arrange
 		_serviceUrlBuilder
 			.Build(ServiceUrlBuilder.KnownRoute.DashboardsMigratorPing)
-			.Returns("http://localhost/0/rest/DashboardsMigratorService/Ping");
+			.Returns("http://localhost/0/rest/DashboardsMigratorPingService/Ping");
 		ArrangeResponse(PingResponse());
 
 		// Act

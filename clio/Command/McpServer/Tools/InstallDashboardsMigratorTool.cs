@@ -67,7 +67,7 @@ public sealed class InstallDashboardsMigratorTool(
 	             yourself - the platform recycles itself on .NET Framework, the installer issues it on .NET -
 	             and the tool waits for the instance to come back before judging it. It then checks the
 	             OUTCOME rather than the install call: it asks the package's own service whether it is serving
-	             (DashboardsMigratorService Ping, ungated) and fails unless it answers, so a package that was
+	             (DashboardsMigratorPingService Ping, ungated) and fails unless it answers, so a package that was
 	             accepted but is not serving is reported instead of looking like success. Note the limit: the
 	             check is liveness, not identity, so on an UPGRADE a stale assembly that still answers will
 	             pass. Treat a successful install of a NEW version as authoritative only after the migration

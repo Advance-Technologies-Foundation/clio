@@ -16,7 +16,7 @@
          keeps the old recorded version — see docs/agent-instructions/bundled-packages.md, fact 2);
       4. packs with `clio compress --skip-pdb` into clio/CrtDashboardsMigratorApp/;
       5. verifies the inventory: exactly the two package assemblies, no pdb, no SqlScripts, the
-         DashboardsMigratorService schema present;
+         DashboardsMigratorPingService schema present;
       6. rewrites the pins in clio.tests/Common/BundledDashboardsMigratorPackageTests.cs;
       7. rebuilds the chosen clio output, because an install resolves the archive from the BUILD OUTPUT.
 
@@ -50,7 +50,7 @@ $archive   = Join-Path $clioRoot "clio\$Package\$Package.gz"
 $pinsFile  = Join-Path $clioRoot 'clio.tests\Common\BundledDashboardsMigratorPackageTests.cs'
 $expectedDlls = @("Files/Bin/$Package.dll", "Files/Bin/netstandard/$Package.dll")
 $allowedTopLevel = @('descriptor.json', 'Files', 'Schemas', 'Resources', 'Data')
-$requiredSchema = 'DashboardsMigratorService'
+$requiredSchema = 'DashboardsMigratorPingService'
 
 function Step([string] $text) { Write-Host "`n=== $text" -ForegroundColor Cyan }
 function Ok  ([string] $text) { Write-Host "    $text" -ForegroundColor Green }

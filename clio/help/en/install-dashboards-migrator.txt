@@ -30,7 +30,7 @@ DESCRIPTION
     check before checking the result.
 
     After a successful install the command asks the package's own service whether
-    it is serving - DashboardsMigratorService Ping, ungated - and fails unless it
+    it is serving - DashboardsMigratorPingService Ping, ungated - and fails unless it
     answers, so a package that was accepted but is not serving is reported instead
     of looking like success. The check is liveness, not identity: on an UPGRADE a
     stale assembly that still answers passes, so after an upgrade treat the

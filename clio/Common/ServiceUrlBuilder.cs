@@ -414,7 +414,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.BuildProcess, "/rest/ProcessDesignService/BuildProcess"},
 		{KnownRoute.ListUserTasks, "/rest/ProcessDesignService/ListUserTasks"},
 		{KnownRoute.ProcessBuilderPing, "/rest/ProcessDesignService/Ping"},
-		{KnownRoute.DashboardsMigratorPing, "/rest/DashboardsMigratorService/Ping"},
+		{KnownRoute.DashboardsMigratorPing, "/rest/DashboardsMigratorPingService/Ping"},
 		{KnownRoute.FindSchemaLayers, "/rest/CreatioApiGateway/FindSchemaLayers"},
 		{KnownRoute.ExportSchema, "/rest/CreatioApiGateway/ExportSchema"},
 		{KnownRoute.ImportSchema, "/rest/CreatioApiGateway/ImportSchema"},

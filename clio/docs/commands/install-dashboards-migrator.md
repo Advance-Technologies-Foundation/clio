@@ -32,7 +32,7 @@ platform recycles itself on .NET Framework, the package installer issues the res
 command waits for the instance to answer its health check before checking the result.
 
 After a successful install the command asks the package's own service whether it is serving —
-`DashboardsMigratorService/Ping`, ungated — and fails unless it answers, so a package that was accepted
+`DashboardsMigratorPingService/Ping`, ungated — and fails unless it answers, so a package that was accepted
 but is not serving is reported instead of looking like success. The check is **liveness, not identity**:
 on an upgrade a stale assembly that still answers passes, so after an upgrade treat the migration working
 as the proof.

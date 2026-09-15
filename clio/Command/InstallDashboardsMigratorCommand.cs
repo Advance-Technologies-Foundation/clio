@@ -23,7 +23,7 @@ public class InstallDashboardsMigratorOptions : InstallBundledPackageOptions {
 
 /// <summary>
 /// Installs the bundled dashboards-migrator package (the "Dashboards migrator" app that converts 7.x
-/// dashboards to Freedom UI), making <c>DashboardsMigratorService</c> reachable on the target.
+/// dashboards to Freedom UI), making <c>DashboardsMigratorPingService</c> reachable on the target.
 /// </summary>
 public class InstallDashboardsMigratorCommand : InstallBundledPackageCommand<InstallDashboardsMigratorOptions> {
 

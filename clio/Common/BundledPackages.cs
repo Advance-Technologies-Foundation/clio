@@ -85,7 +85,7 @@ public static class BundledPackages {
 
 	/// <summary>
 	/// Package name of the bundled dashboards-migrator package (the "Dashboards migrator" app), which
-	/// migrates 7.x dashboards to Freedom UI and serves <c>DashboardsMigratorService</c> as its probe.
+	/// migrates 7.x dashboards to Freedom UI and serves <c>DashboardsMigratorPingService</c> as its probe.
 	/// </summary>
 	/// <remarks>
 	/// Same byte-for-byte contract with the archive's <c>descriptor.json</c> as
