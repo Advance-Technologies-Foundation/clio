@@ -1447,21 +1447,6 @@ public sealed class DescribedFlow {
 	public string Condition { get; set; }
 
 	/// <summary>
-	/// <c>true</c> when this flow's branch is decided by the RESULT of the preceding activity - which buttons it
-	/// was completed with - and NOT by <see cref="Condition"/>.
-	/// <para>The two are indistinguishable without it, and the difference is total: the platform reads the result
-	/// map FIRST and only falls back to the expression when it is empty, so on such a flow the condition text is
-	/// stored, reported, and never evaluated. <c>setFlowCondition</c> refuses to write one; before this field a
-	/// caller verifying their change read the OLD text and took it as proof the change landed.</para>
-	/// <para>NULLABLE on purpose, and it is the same reassuring-direction argument the field itself exists
-	/// for. <c>describe</c> is allowed on an environment whose package predates this field - its
-	/// <c>[RequiresPackage]</c> is presence-only, with no version literal - and such a server simply never
-	/// sends it. A non-nullable <c>bool</c> would leave <c>default(bool)</c>, which
-	/// <c>WhenWritingNull</c> cannot omit, so the payload would assert <c>false</c> for every flow on a
-	/// server that said nothing: a caller reading it would conclude the condition IS evaluated. Absent
-	/// stays absent instead, and a caller that finds no key knows to check the package version.</para>
-	/// </summary>
-	/// <summary>
 	/// WHICH results select this branch, by caption, or <c>null</c> when the flow decides on a formula.
 	/// <para>Reported from <c>CrtProcessBuilder</c> 1.6.2.16. These are the same captions the write surface
 	/// takes - <c>flows[].results</c> on the build path, <c>setFlowResults</c> on the modify path - so a branch
@@ -1486,6 +1471,21 @@ public sealed class DescribedFlow {
 	[JsonPropertyName("resultsActivity")]
 	public string ResultsActivity { get; set; }
 
+	/// <summary>
+	/// <c>true</c> when this flow's branch is decided by the RESULT of the preceding activity - which buttons it
+	/// was completed with - and NOT by <see cref="Condition"/>.
+	/// <para>The two are indistinguishable without it, and the difference is total: the platform reads the result
+	/// map FIRST and only falls back to the expression when it is empty, so on such a flow the condition text is
+	/// stored, reported, and never evaluated. <c>setFlowCondition</c> refuses to write one; before this field a
+	/// caller verifying their change read the OLD text and took it as proof the change landed.</para>
+	/// <para>NULLABLE on purpose, and it is the same reassuring-direction argument the field itself exists
+	/// for. <c>describe</c> is allowed on an environment whose package predates this field - its
+	/// <c>[RequiresPackage]</c> is presence-only, with no version literal - and such a server simply never
+	/// sends it. A non-nullable <c>bool</c> would leave <c>default(bool)</c>, which
+	/// <c>WhenWritingNull</c> cannot omit, so the payload would assert <c>false</c> for every flow on a
+	/// server that said nothing: a caller reading it would conclude the condition IS evaluated. Absent
+	/// stays absent instead, and a caller that finds no key knows to check the package version.</para>
+	/// </summary>
 	[JsonPropertyName("branchesOnActivityResult")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public bool? BranchesOnActivityResult { get; set; }

@@ -766,9 +766,6 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
 	}
 
-	// The gate, in one place so both tests read the same way. A CrtProcessBuilder predating the element rejects
-	// the element TYPE outright, before anything this fixture is about, so such an environment can exercise
-
 	[Test]
 	[Description("setFlowResults writes an activity-result SELECTION and describe reads it back as the same "
 		+ "captions - the round trip that makes the write verifiable. Ignored, NOT passed, on a sandbox whose "
@@ -819,7 +816,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 
 	// The test above needs a package that HAS the selection surface. A sandbox below 1.6.2.16 answers with
 	// an unknown-operation refusal, and letting that read as a pass would be worse than not running: the whole
-	// point of this pair is that the wrong dialect stops being writable. Ignored with the reason named, the
+	// point of the test is that the selection round-trips. Ignored with the reason named, the
 	// same convention SkipWhenPackagePredatesTheElement follows for the accessRights block.
 	private static void SkipWhenPackagePredatesTheSelection(CallToolResult result, string what) {
 		string payload = JsonSerializer.Serialize(result);
@@ -853,6 +850,8 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		}
 		""";
 
+	// The gate, in one place so both tests read the same way. A CrtProcessBuilder predating the element rejects
+	// the element TYPE outright, before anything this fixture is about, so such an environment can exercise
 	// neither direction. It is Ignored rather than failed - but named, so an ignored run is not mistaken for
 	// coverage: the rebundle is the follow-up that makes these two tests meaningful.
 	private static void SkipWhenPackagePredatesTheElement(CallToolResult built) {
