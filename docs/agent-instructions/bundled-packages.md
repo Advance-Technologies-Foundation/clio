@@ -37,6 +37,14 @@ for the package's schemas and the restart still happen. It goes through the same
 process builder (`install-dashboards-migrator`, `InstallBundledPackageCommand`), so the downgrade refusals,
 the restart wait and the ungated `Ping` outcome check (`/rest/DashboardsMigratorService/Ping`) apply unchanged.
 
+**Prebuilt is a requirement here, not a preference.** The package carries an `InstallScripts.AfterInstall`
+entry that seeds the `DashboardMigrationLog` column rights, and the platform resolves an install script's class
+from the package's OWN assembly: `PackageInstallUtilities.ResolveInstallScriptAssemblyPath` looks for
+`<package>.dll` and throws `AssemblyPathNotFound` ("Please compile package") when it is absent. Install scripts
+run before the configuration build, so a source-only archive has no assembly to run them from — observed on a
+stand as a failed install. An archive of this package without `Files/Bin` therefore installs without ever
+applying the rights, which is why the guard fixture requires both the assemblies and the install script.
+
 Nothing is built on the bundling machine, so the procedure below — build, tests, `git archive`, stripping
 `Files/Bin` — does NOT apply to it. Its whole procedure is one script:
 
