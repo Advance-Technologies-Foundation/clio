@@ -26,7 +26,8 @@ empty ones. Parse the value and count keys other than `$type`.
 **1 061** over every schema and **1 023** when it first drops schemas whose `ManagerName` is not
 `ProcessSchemaManager`. The excluded 38 are all conditional flows inside PAGE schemas
 (`PageSchemaManager` — `CrtBase/BaseModuleEditPage` 11, `BaseGridPage` 7, `ImportSettingsPage` 7,
-`BaseModulePage` 5, and six more), and **all 38 carry a formula**, which is why the two deltas are the
+`BaseModulePage` 5, and eight more across five schemas; 36 in `CrtBase` and 2 in
+`CrtProcessDesigner`), and **all 38 carry a formula**, which is why the two deltas are the
 same number: 1 405 → 1 367 conditional flows and 1 061 → 1 023 formula-carrying. Neither figure is
 wrong; they answer different questions. Say which population a number is over, every time it is
 written down. (This is the same phenomenon as
