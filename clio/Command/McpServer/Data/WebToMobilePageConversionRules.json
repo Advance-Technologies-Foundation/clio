@@ -97,13 +97,12 @@
         { "web": "CardContentWrapper", "mobile": "MainContainer" },
         { "web": "Tabs", "mobile": "Tabs" },
         { "web": "GeneralInfoTab", "mobile": "GeneralInfoTab" },
-        { "web": "RightAreaProfileContainer", "mobile": "RightPanelTab" }
+        { "web": "RightModulesContainer", "mobile": "RightPanelTab" }
       ]
     },
     {
       "web": "PageWithTopAreaAndTabsFreedomTemplate",
       "mobile": "BaseMobilePageTemplate",
-      "note": "Top-area record page onto the base mobile record page, which has NO tab strip. The strip (Tabs) and its general tab are DECLARED and the web Tabs / GeneralInfoTab pairs merge onto them by name, exactly as for the right-area template. The web TopAreaProfileContainer has NO pair on purpose: it is pruned as web-template chrome and whatever the page put into it falls back to the default MainContainer placement. A containers pair never creates an element on its own.",
       "declaredElements": [
         {
           "name": "Tabs",
@@ -125,7 +124,8 @@
       "containers": [
         { "web": "MainContainer", "mobile": "MainContainer" },
         { "web": "Tabs", "mobile": "Tabs" },
-        { "web": "GeneralInfoTab", "mobile": "GeneralInfoTab" }
+        { "web": "GeneralInfoTab", "mobile": "GeneralInfoTab" },
+        { "web": "TopAreaProfileContainer", "mobile": "AreaProfileContainer" }
       ]
     },
     {

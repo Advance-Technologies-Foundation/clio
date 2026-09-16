@@ -3642,10 +3642,10 @@ public sealed class WebToMobileConversionServiceTests {
 		extraAt.Should().BeLessThan(widgetAt,
 			because: "the content mapped into the declared tab is emitted after it, so applying the map in order never inserts into a missing parent");
 
-		ViewConfigDiffOperation rightArea = WebElement(guide, "RightAreaProfileContainer");
+		ViewConfigDiffOperation rightArea = WebElement(guide, "RightModulesContainer");
 		rightArea.Should().BeSameAs(extra,
-			because: "the web card is not recreated - the pair merges onto the declared tab, carries no delta over it, "
-				+ "and the payload-free twin is dropped, so the source name resolves to the declaration's own insert");
+			because: "the web card's wrapper is not recreated - the pair merges onto the declared tab, carries no delta "
+				+ "over it, and the payload-free twin is dropped, so the source name resolves to the declaration's own insert");
 		rightArea.Name.Should().Be(DeclaredElementsExtraTab, because: "the pair names the declared tab as its mobile side");
 
 		TabAreaLayerGroup extraBody = guide.TabAreaLayers.Should()
@@ -3712,12 +3712,12 @@ public sealed class WebToMobileConversionServiceTests {
 				+ "source page, so there is no dropped element to report either");
 		guide.TabAreaLayers.Should().NotContain(g => g.TabName == DeclaredElementsExtraTab,
 			because: "a dropped tab never gets body layers synthesized");
-		OperationNames(guide).Should().NotContain("RightAreaProfileContainer",
+		OperationNames(guide).Should().NotContain("RightModulesContainer",
 			because: "the web twin merged onto the removed declaration has no target left; a dangling merge would also "
 				+ "be a candidate for the adaptive pass once the declared insert is gone");
-		DroppedNames(guide).Should().Contain("RightAreaProfileContainer",
+		DroppedNames(guide).Should().Contain("RightModulesContainer",
 			because: "the twin IS a source element, so unlike the declaration its loss is the caller's to hear about");
-		Codes(Dropped(guide, "RightAreaProfileContainer")).Should().Equal(["drop-target-missing"],
+		Codes(Dropped(guide, "RightModulesContainer")).Should().Equal(["drop-target-missing"],
 			because: "its merge target is absent from the produced page — the same fact, and the same remedy, as a "
 				+ "target the mobile template never had");
 	}
@@ -3846,7 +3846,7 @@ public sealed class WebToMobileConversionServiceTests {
 		OperationNames(guide).Count(name => name == "Tabs").Should().Be(1,
 			because: "with or without the probe the pair merges onto the declaration and adds nothing, so the "
 				+ "payload-free twin is dropped and one operation carries the name");
-		WebElement(guide, "RightAreaProfileContainer").Name.Should().Be(DeclaredElementsExtraTab,
+		WebElement(guide, "RightModulesContainer").Name.Should().Be(DeclaredElementsExtraTab,
 			because: "the pair names the declared tab as its mobile side; nothing is recreated from the web card");
 		guide.TabAreaLayers.Should().ContainSingle(g => g.TabName == DeclaredElementsExtraTab,
 				because: "the declared tab is an inserted crt.TabContainer and gets its body without a probe")
@@ -3947,7 +3947,7 @@ public sealed class WebToMobileConversionServiceTests {
 	[Test]
 	[Description("A declared element whose parent is only a containers pair's MOBILE SIDE — a name nothing declares and the probed template lacks — is skipped: a pair merges and creates nothing, so its mobile side is not a parent anything can be inserted into. The pair itself stays a merge (onto nothing) and is reported as such.")]
 	public void Analyze_ShouldSkipDeclaredElement_WhenParentIsOnlyAPairsMobileSide() {
-		// Arrange — no strip declarations; the bundled pair RightAreaProfileContainer -> RightPanelTab is present but
+		// Arrange — no strip declarations; the bundled pair RightModulesContainer -> RightPanelTab is present but
 		// RightPanelTab is NOT declared, and UsrHint names it as its parent.
 		JArray page = DeclaredElementsPage(withRightWidget: true, withPageTab: false);
 		TemplateMappingRule rule = DeclaredElementsRuleWith(new JsonArray(new JsonObject {
@@ -3961,7 +3961,7 @@ public sealed class WebToMobileConversionServiceTests {
 		// Assert
 		InsertedNames(guide).Should().NotContain("UsrHint",
 			because: "a pair's mobile side is not created by the conversion, so a declaration parented there would dangle");
-		WebElement(guide, "RightAreaProfileContainer").Operation.Should().Be("merge",
+		WebElement(guide, "RightModulesContainer").Operation.Should().Be("merge",
 			because: "the pair stays a merge — it never became a parent by being named as one");
 	}
 
@@ -4363,7 +4363,7 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "the earlier declaration puts it in the strip; the repeat puts it in MainContainer");
 		declared.Index.Should().Be(1,
 			because: "the earlier declaration carries the index; the repeat carries none");
-		WebElement(guide, "RightAreaProfileContainer").Name.Should().Be(DeclaredElementsExtraTab,
+		WebElement(guide, "RightModulesContainer").Name.Should().Be(DeclaredElementsExtraTab,
 			because: "the pair still targets the surviving declaration");
 	}
 
@@ -4740,13 +4740,14 @@ public sealed class WebToMobileConversionServiceTests {
 		DroppedNames(guide).Should().NotContain(name, because);
 	}
 
-	// ── PageWithTopAreaAndTabsFreedomTemplate: the same declared strip, no profile-area pair ─────────
+	// ── PageWithTopAreaAndTabsFreedomTemplate: the same declared strip, plus a profile-area pair ─────
 	//
 	// A web record page on PageWithTopAreaAndTabsFreedomTemplate converted to BaseMobilePageTemplate. The web
 	// template holds a profile area ABOVE the tab strip, both directly in a flex MainContainer (no
 	// CardContentWrapper). The bundled rule declares Tabs and GeneralInfoTab exactly like the right-area rule
-	// and pairs the web strip and general tab onto them; TopAreaProfileContainer is deliberately unpaired, so it
-	// is pruned as web-template chrome and the page's widgets in it fall back to MainContainer.
+	// and pairs the web strip and general tab onto them; TopAreaProfileContainer pairs onto the mobile
+	// template's own AreaProfileContainer card, so the page's widgets in it land inside that card instead of
+	// falling back to MainContainer.
 	// The template shape is hand-written from the live template (get-page on Lock_AS, 2026-09-14).
 
 	private const string TopAreaWebTemplate = "PageWithTopAreaAndTabsFreedomTemplate";
@@ -4784,8 +4785,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("The web TopAreaProfileContainer has NO containers pair on purpose: it is pruned as inherited web-template chrome (the rule does not merge it onto the template's AreaProfileContainer and declares no tab for it), and a widget the page put into it falls back to the default MainContainer placement instead of being lost or merged somewhere the rule did not say.")]
-	public void Analyze_TopArea_ShouldPruneTopAreaAsChrome_AndPlaceItsWidgetInMainContainer() {
+	[Description("The web TopAreaProfileContainer has a containers pair onto the mobile template's own AreaProfileContainer card: the web card is not recreated (the pair merges, carrying no delta of its own), and a widget the page put into it walks into the template's profile card instead of falling back to MainContainer.")]
+	public void Analyze_TopArea_ShouldMergeTopAreaOntoTheTemplatesProfileCard_AndWalkItsWidgetIntoIt() {
 		// Arrange
 		JArray page = TopAreaPage(withTopWidget: true, withPageTab: false);
 
@@ -4793,14 +4794,15 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeDeclaredElements(page, webTemplateTree: TopAreaWebTemplateTree(), webTemplateName: TopAreaWebTemplate);
 
 		// Assert
-		ShouldBeAbsentEntirely(guide, "TopAreaProfileContainer",
-			because: "the unpaired template container is pruned as chrome and gets no entry of its own");
-		OperationNames(guide).Should().NotContain("AreaProfileContainer",
-			because: "nothing pairs onto the template's profile card, so no twin merges onto it");
+		ViewConfigDiffOperation topArea = WebElement(guide, "TopAreaProfileContainer");
+		topArea.Name.Should().Be("AreaProfileContainer",
+			because: "the pair names the template's own profile card as the web card's mobile side");
+		topArea.Operation.Should().Be("merge",
+			because: "the web card carries no delta of its own, so it merges onto the template card rather than recreating it");
 		ViewConfigDiffOperation widget = WebElement(guide, TopAreaWidget);
 		widget.Operation.Should().Be("insert", because: "the page-authored widget converts as itself");
-		widget.ParentName.Should().Be("MainContainer",
-			because: "with its container pruned the widget falls back to the nearest kept ancestor, the template's main container");
+		widget.ParentName.Should().Be("AreaProfileContainer",
+			because: "the pair walks the widget into the template's own profile card rather than the default MainContainer placement");
 	}
 
 	[Test]
