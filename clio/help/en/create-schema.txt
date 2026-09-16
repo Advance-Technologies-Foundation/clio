@@ -18,6 +18,11 @@ DESCRIPTION
     The schema-name must start with a letter and contain only letters, digits,
     or underscores. The name must be unique within the environment.
 
+    The command validator reports missing schema-name/package-name and invalid
+    schema-name errors together.
+    MCP validates names before environment resolution and lists valid arguments.
+    Use schema-name and package-name, not name and package.
+
 OPTIONS
     --body                             Optional initial C# source; must not be empty if supplied
 

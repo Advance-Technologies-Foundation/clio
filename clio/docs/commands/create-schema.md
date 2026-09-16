@@ -25,6 +25,9 @@ Creation saves the source but does not compile it. Use `get-schema` to read the 
 The schema-name must start with a letter and contain only letters, digits, or underscores.
 The name must be unique within the environment.
 
+Missing schema-name/package-name and invalid schema-name errors are returned together by the command validator.
+MCP validates these arguments before resolving the environment and includes a valid-argument hint; use `schema-name` and `package-name`, not `name` and `package`.
+
 ## Synopsis
 
 ```bash
