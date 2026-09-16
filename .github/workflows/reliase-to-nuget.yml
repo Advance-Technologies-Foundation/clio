@@ -73,38 +73,57 @@ jobs:
           echo "Extracted version: $version"
         shell: powershell
 
-      - name: Test Solution
+      # The release is tag-only and is cut from a master commit that the `Build` workflow (build.yml) has
+      # already tested: the same clio.tests suite, sharded across GitHub-hosted runners, plus the
+      # ConflictResolver, analyzer, .NET 8 and integration jobs. Re-running the whole unit suite here on a
+      # single self-hosted runner (with Coverlet instrumentation whose output nothing consumed) cost 6-9
+      # minutes of a 9-17 minute release. Instead, confirm that the `Build` run for the tagged commit is
+      # green, and refuse to publish otherwise. A tag that races the master push is tolerated: the step
+      # waits for an in-flight run rather than failing on it.
+      - name: Verify Build workflow is green for the tagged commit
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: powershell
         run: |
-            $ErrorActionPreference = 'Stop'
-            $version = "${{ steps.extract_version.outputs.VERSION }}"
-            echo "Testing clio with version: $version"
-            dotnet test .\clio.tests\clio.tests.csproj --framework net10.0 -nowarn:none `
-            /p:CollectCoverage=true /p:CoverletOutputFormat=opencover `
-            /p:CoverletOutput=".\..\TestResults\coverage.opencover.xml" `
-            /p:AssemblyVersion=$version /p:FileVersion=$version /p:Version=$version;
+          $ErrorActionPreference = 'Stop'
+          $sha = "${{ github.sha }}"
+          $repo = "${{ github.repository }}"
+          $headers = @{
+            Authorization = "Bearer $env:GITHUB_TOKEN"
+            Accept        = "application/vnd.github+json"
+            "User-Agent"  = "clio-release-to-nuget"
+          }
+          $deadline = (Get-Date).AddMinutes(30)
+          $pollSeconds = 30
 
-#      - name: Build and analyze
-#        env:
-#          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
-#          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-#          SONAR_URL: ${{ secrets.SONAR_URL }}
-#        shell: powershell
-#        run: |
-#          dotnet build-server shutdown;
-#          dotnet build .\Clio.Analyzers\Clio.Analyzers.csproj
-#          $version = "${{ steps.extract_version.outputs.VERSION }}"
-#          echo "Building clio with version: $version"
-#          C:\Tools\dotnet-coverage.exe collect "dotnet test .\clio.tests\clio.tests.csproj" -f xml -o "coverage.xml";
-#          dotnet sonarscanner begin /k:"clio" /d:sonar.host.url="${{ secrets.SONAR_URL }}" `
-#          /d:sonar.login="${{ secrets.SONAR_TOKEN }}" `
-#          /d:sonar.cs.vscoveragexml.reportsPaths=coverage.xml;
-#          dotnet build .\clio\clio.csproj -c Release --no-incremental /p:AssemblyVersion=$version /p:FileVersion=$version /p:Version=$version;
-#          dotnet sonarscanner end /d:sonar.login="${{ secrets.SONAR_TOKEN }}";
-#          dotnet build-server shutdown;
+          while ($true) {
+            $uri = "https://api.github.com/repos/$repo/actions/runs?head_sha=$sha&per_page=50"
+            $response = Invoke-RestMethod -Uri $uri -Headers $headers -Method Get
+            $buildRuns = @($response.workflow_runs | Where-Object { $_.path -eq '.github/workflows/build.yml' })
+
+            if ($buildRuns.Count -eq 0) {
+              throw "No 'Build' workflow run found for commit $sha. Tag a master commit that build.yml has tested, or push it first."
+            }
+
+            # The newest run is authoritative: a re-run supersedes an earlier failed attempt.
+            $latest = $buildRuns | Sort-Object { [datetime]$_.created_at } -Descending | Select-Object -First 1
+            Write-Host "Build run $($latest.id) for $sha : status=$($latest.status) conclusion=$($latest.conclusion) ($($latest.html_url))"
+
+            if ($latest.status -eq 'completed') {
+              if ($latest.conclusion -eq 'success') {
+                Write-Host "Build workflow is green for $sha. Proceeding with the release."
+                break
+              }
+              throw "Build workflow for $sha finished with conclusion '$($latest.conclusion)'. Fix master (or re-run $($latest.html_url)) and then re-run this release workflow."
+            }
+
+            if ((Get-Date) -ge $deadline) {
+              throw "Build workflow for $sha is still '$($latest.status)' after 30 minutes. Re-run this release workflow once $($latest.html_url) is green."
+            }
+
+            Write-Host "Build workflow not finished yet; checking again in $pollSeconds s."
+            Start-Sleep -Seconds $pollSeconds
+          }
 
       - name: Pack clio with release version
         run: |
