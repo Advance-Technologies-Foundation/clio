@@ -274,38 +274,6 @@ public static class MobileActionTargetProbe {
 		|| string.Equals(kind, KindEntityDefaultMobilePage, StringComparison.OrdinalIgnoreCase);
 
 	/// <summary>
-	/// Whether a <see cref="ActionTargetState.Missing"/> verdict on this kind is strong enough to REMOVE the
-	/// action's binding, as opposed to only reporting it. The single seam that decides it, so the rule lives
-	/// in one place instead of being re-derived at each consumer.
-	/// <para>
-	/// Always <see langword="false"/> — a deliberate policy: even a DEFINITIONAL absence —
-	/// <see cref="KindWebPage"/>, whose verdict needs no environment read and cannot be wrong for a reason
-	/// outside this process — is reported but never stripped. Removal used to qualify for this kind alone;
-	/// it no longer does, because a stripped binding is not just dead, it is GONE, with no mechanism that
-	/// restores it later, while the missing page it named may still get converted in the very same session
-	/// (the missing-target-page queue and its sequential-conversion offer, <c>requestConversions.missingTargetPages</c>).
-	/// Keeping the binding costs nothing at runtime a strip would have avoided — a Mobile app can open
-	/// neither a web page nor a page-less object's default page either way — but it leaves the action
-	/// visible, traceable to its target, and fixable (by hand in Mobile Designer, or by a future re-wire
-	/// pass once the target converts) instead of silently vanishing.
-	/// </para>
-	/// <para>
-	/// <see cref="KindEntityDefaultMobilePage"/> was already exempt for a SEPARATE, still-standing reason:
-	/// the <c>MobileRelatedPage</c> add-on declaring no default page is a fact about the add-on, not proof
-	/// the action is dead — a legacy default page can exist without ever being registered there (see
-	/// <see cref="ClassifyEntityDefaultMobilePage"/>).
-	/// </para>
-	/// <para>
-	/// Kept as a per-kind seam rather than collapsed to a bare constant at every call site, so a future kind
-	/// whose absence is both definitional AND genuinely irreversible by design has exactly one place to opt
-	/// back in.
-	/// </para>
-	/// </summary>
-	/// <param name="kind">A rules-declared <c>targetKind</c>; unused today — see remarks.</param>
-	/// <returns>Always <see langword="false"/>.</returns>
-	internal static bool StripsBindingOnMissing(string kind) => false;
-
-	/// <summary>
 	/// Every place a target-carrying request appears in the page body. PURE — no environment, so the whole
 	/// collection rule is unit-testable offline. A binding is recognized STRUCTURALLY (an object property
 	/// whose value is an object carrying a non-empty string <c>request</c>), the same test

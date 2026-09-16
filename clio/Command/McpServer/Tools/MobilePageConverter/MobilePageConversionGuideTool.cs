@@ -261,12 +261,11 @@ public class MobilePageConversionGuideTool {
 
 		// Missing-target candidates are deliberately left unclassified here (ResolvedSourceType /
 		// RecommendedAction stay null): classifying one needs its own environment read, and it used to run
-		// inside this call under a fixed per-guide-call read ceiling (see
-		// adr-mobile-conversion-candidate-delegation.md). The caller now performs this classification itself,
-		// per the mandatory guidance procedure, using its own tools (get-page / list-pages /
-		// find-entity-schema) with no artificial ceiling — mirroring how KindWebPage targets were already
-		// never probed server-side. This also lets the caller check for an existing mobile equivalent under a
-		// different name, a search this tool never performed.
+		// inside this call under a fixed per-guide-call read ceiling. The caller now performs this
+		// classification itself, per the mandatory guidance procedure, using its own tools (get-page /
+		// list-pages / find-entity-schema) with no artificial ceiling — mirroring how KindWebPage targets
+		// were already never probed server-side. This also lets the caller check for an existing mobile
+		// equivalent under a different name, a search this tool never performed.
 
 		return new MobilePageConversionGuideResponse {
 			Success = true,

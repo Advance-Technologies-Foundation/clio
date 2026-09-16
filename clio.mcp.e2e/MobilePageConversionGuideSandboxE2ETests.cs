@@ -1098,22 +1098,6 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				because: $"'{finding.ElementName}' on '{convertedSchemaName}' is reported as carrying an unreachable "
 					+ "target, so the CONTROL must still be on the converted page: naming a control the guide "
 					+ "already dropped would contradict its own element map");
-			// No kind strips a missing target's binding today, proven against the real MCP transport rather
-			// than only the hand-built unit fixtures — the wire field stays for contract stability, but must
-			// never actually fire.
-			finding.BindingRemoved.Should().BeFalse(
-				because: $"'{finding.ElementName}' on '{convertedSchemaName}' must keep its binding regardless of "
-					+ "how confidently its target is reported missing — stripping it would foreclose repointing "
-					+ "it once the target converts later in the same session");
-			if (finding.BindingRemoved) {
-				finding.State.Should().Be("missing",
-					because: "an action is only ever removed for an absence that was established, never for one "
-						+ "the environment could not answer for");
-				conversions.DroppedRequests.Should().Contain(
-					r => r.ElementName == finding.ElementName && r.Binding == finding.Binding,
-					because: "a removed binding is a dropped request, so the two collections must agree over the "
-						+ "real MCP transport and not only in unit tests");
-			}
 			// A resolved candidate is fail-open (null is a legitimate "none found"), but WHEN one
 			// comes back over the real MCP transport it must be well-formed and scoped to exactly the kind/state
 			// the feature targets — a null-vs-empty-string slip or a leak onto web-page/unknown findings would
@@ -1127,9 +1111,9 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 						+ "environment could not answer for");
 			}
 			// The guide never classifies a candidate itself — regardless of whether a name was resolved,
-			// ResolvedSourceType/RecommendedAction always come back null; classification moved to the caller
-			// (see adr-mobile-conversion-candidate-delegation.md). Asserted over the real MCP transport, not
-			// only the hand-built unit fixtures, so a reintroduced classification pass cannot go unnoticed.
+			// ResolvedSourceType/RecommendedAction always come back null; classification moved to the caller.
+			// Asserted over the real MCP transport, not only the hand-built unit fixtures, so a reintroduced
+			// classification pass cannot go unnoticed.
 			finding.ResolvedSourceType.Should().BeNull(
 				because: $"'{convertedSchemaName}' guide must never classify a candidate itself");
 			finding.RecommendedAction.Should().BeNull(
@@ -1158,8 +1142,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 						+ "must be traceable from the queue entry");
 			}
 			// The queue entry never gets classified by the guide either — asserted against the real
-			// environment so a reintroduced classification pass cannot go unnoticed (see
-			// adr-mobile-conversion-candidate-delegation.md).
+			// environment so a reintroduced classification pass cannot go unnoticed.
 			queued.ResolvedSourceType.Should().BeNull(
 				because: $"'{convertedSchemaName}' guide must never classify a queued candidate itself");
 			queued.RecommendedAction.Should().BeNull(

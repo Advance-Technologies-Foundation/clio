@@ -70,7 +70,6 @@ public sealed class MobileDropReasonCodeVocabularyTests {
 		// a request binding: lost with its element, or lost on its own
 		"drop-request-chrome-native",
 		"drop-request-unsupported",
-		"drop-request-target-missing",
 		"drop-request-element-empty-container",
 		"drop-request-element-excluded",
 		"flag-request-unmapped",

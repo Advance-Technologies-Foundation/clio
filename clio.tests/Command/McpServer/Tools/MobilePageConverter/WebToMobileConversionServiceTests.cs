@@ -6062,9 +6062,6 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "nothing was dropped — a missing target is never a reason to remove the action");
 		guide.RequestConversions.ConvertedRequests.Should().ContainSingle(r => r.ElementName == "PostponeButton",
 			because: "a kept action converted, so it belongs in convertedRequests");
-		finding.BindingRemoved.Should().BeFalse(
-			because: "no kind strips a missing target's binding, not even this definitional one — "
-				+ "stripping would foreclose repointing it once the target page converts in this session");
 	}
 
 	[Test]
@@ -6185,16 +6182,13 @@ public sealed class WebToMobileConversionServiceTests {
 			.Subject;
 		finding.State.Should().Be("missing",
 			because: "the absence was verified, and the state is what separates a report from a guess");
-		finding.BindingRemoved.Should().BeFalse(
-			because: "no kind strips a missing target's binding, not even this definitional one — "
-				+ "stripping would foreclose repointing it once the target page converts in this session");
 		Element(guide, "PostponeButton").Operation.Should().NotBe("drop",
 			because: "a broken destination costs neither the action nor the control — the developer decides what "
 				+ "to do about the target, and stripping now would foreclose repointing it later");
 	}
 
 	[Test]
-	[Description("An unverified target reports the opposite: the control is kept AND so is the binding. State and bindingRemoved are separate fields because they answer different questions — how confidently the target was judged, and what was actually done about it.")]
+	[Description("An unverified target reports the control AND its binding as kept — same as a verified absence, since neither state ever removes anything.")]
 	public void Analyze_TargetUnknown_ReportsTheBindingKeptAsWellAsTheControl() {
 		// Arrange
 		PageBundleInfo bundle = OpenPageButtonBundle("OpenButton", "MaybePage");
@@ -6211,8 +6205,6 @@ public sealed class WebToMobileConversionServiceTests {
 		finding.State.Should().Be("unknown",
 			because: "an unverified target must never be reported as a verified break — that would send the "
 				+ "user chasing a page that may well already exist");
-		finding.BindingRemoved.Should().BeFalse(
-			because: "an unverified absence cannot justify removing a working action");
 		ClickedOf(guide, "OpenButton").Should().ContainKey("clicked",
 			because: "the binding the finding says was kept has to actually be in the operation");
 		guide.RequestConversions.DroppedRequests.Should().NotContain(r => r.ElementName == "OpenButton",
@@ -6285,7 +6277,8 @@ public sealed class WebToMobileConversionServiceTests {
 	[Test]
 	[Description("A note the probe set despite succeeding IS surfaced: a check that ran but left some targets unasked is incomplete in a way targetsProbed alone cannot express.")]
 	public void Analyze_ProbedSuccessfullyWithANote_SurfacesIt() {
-		// Arrange — the shape the probe returns when its per-object read ceiling was reached.
+		// Arrange — an arbitrary note the probe set despite the reads succeeding (TargetsProbed stays true;
+		// only the pass-through of a non-null Note is under test here).
 		PageBundleInfo bundle = OpenPageButtonBundle("OpenButton", "LegacyPage");
 		MobileActionTargetProbeResult probe = ProbeResult(
 			"OpenButton", "crt.OpenPageRequest", MobileActionTargetProbe.KindWebPage, "LegacyPage",
@@ -6334,10 +6327,6 @@ public sealed class WebToMobileConversionServiceTests {
 		UnresolvedTargetRequest finding = guide.RequestConversions!.UnresolvedTargetRequests
 			.Should().ContainSingle(because: "the diagnosis is the whole value here").Subject;
 		finding.State.Should().Be("missing", because: "the add-on was read and declared no default page");
-		finding.BindingRemoved.Should().BeFalse(
-			because: "the add-on read addresses the add-on more cheaply than RelatedPageAddonService does, so a "
-				+ "body carrying no page set is equally the shape a mis-addressed read returns — removing a "
-				+ "working action on that is not a trade this tool makes");
 		JsonObject clicked = ClickedOf(guide, "ProductsAddButton")["clicked"]!.AsObject();
 		clicked["request"]!.GetValue<string>().Should().Be("crt.CreateRecordRequest",
 			because: "the request itself is not modified at all — the add-on declaring no default page is a "
@@ -6393,9 +6382,6 @@ public sealed class WebToMobileConversionServiceTests {
 		twin.Operation.Should().Be("merge", because: "a same-component twin merges onto the template element");
 		UnresolvedTargetRequest finding = guide.RequestConversions!.UnresolvedTargetRequests
 			.Should().ContainSingle(because: "the dead target is still worth reporting on a twin").Subject;
-		finding.BindingRemoved.Should().BeFalse(
-			because: "a merge payload cannot remove anything — an omitted key means the mobile element keeps "
-				+ "its own value, so 'ALREADY REMOVED' would be a claim about a write that never happened");
 		guide.RequestConversions.DroppedRequests.Should().NotContain(r => r.ElementName == "Feed",
 			because: "a droppedRequests entry saying 'the component still renders' would contradict a merge "
 				+ "whose payload never carried the binding");
@@ -6419,9 +6405,6 @@ public sealed class WebToMobileConversionServiceTests {
 				because: "the finding names the control and the object, which is what the remedy is about")
 			.Subject;
 		finding.State.Should().Be("missing", because: "the read did return an absence verdict");
-		finding.BindingRemoved.Should().BeFalse(
-			because: "an agent told the binding was removed would either re-add it or report a loss that never "
-				+ "happened — removal belongs to the definitional-absence group alone");
 		guide.RequestConversions.DroppedRequests.Should().NotContain(r => r.ElementName == "ProductsAddButton",
 			because: "a binding that was kept is not a dropped request");
 	}
@@ -6601,9 +6584,8 @@ public sealed class WebToMobileConversionServiceTests {
 	[Test]
 	[Description("Analyze never classifies a missing-target candidate itself: ResolvedSourceType/RecommendedAction "
 		+ "stay null on both a web-page missingTargetPages entry and an entity-default-mobile-page finding, even "
-		+ "when the latter carries a resolved candidate schema name — classification is delegated to the caller "
-		+ "(see adr-mobile-conversion-candidate-delegation.md), and this pure analysis pass performs no "
-		+ "environment read that could fill them.")]
+		+ "when the latter carries a resolved candidate schema name — classification is delegated to the caller, "
+		+ "and this pure analysis pass performs no environment read that could fill them.")]
 	public void Analyze_MissingTargetCandidates_NeverClassifiesSourceTypeOrRecommendedAction() {
 		// Arrange — a web-page target (aggregated into missingTargetPages) and an entity-kind target whose
 		// candidate schema name IS already resolved (by the probe, not by Analyze).

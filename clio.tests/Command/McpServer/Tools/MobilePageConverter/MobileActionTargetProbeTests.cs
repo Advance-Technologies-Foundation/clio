@@ -877,24 +877,6 @@ public sealed class MobileActionTargetProbeTests {
 			because: "server prose must be fenced as data, or an agent reads it as instructions");
 	}
 
-	[TestCase(MobileActionTargetProbe.KindWebPage, false,
-		TestName = "StripsBindingOnMissing_WebPage_NeverStrips")]
-	[TestCase(MobileActionTargetProbe.KindEntityDefaultMobilePage, false,
-		TestName = "StripsBindingOnMissing_EntityDefaultMobilePage_NeverStrips")]
-	[TestCase("some-future-kind", false, TestName = "StripsBindingOnMissing_UnknownKind_NeverStrips")]
-	[TestCase(null, false, TestName = "StripsBindingOnMissing_NullKind_NeverStrips")]
-	[Description("No kind ever strips a missing target's binding, not even the definitional web-page absence — stripping would foreclose repointing the action once its target converts later in the same session.")]
-	public void StripsBindingOnMissing_NoKindEverStrips(string kind, bool expected) {
-		// Arrange & Act
-		bool strips = MobileActionTargetProbe.StripsBindingOnMissing(kind);
-
-		// Assert
-		strips.Should().Be(expected,
-			because: "a stripped binding is gone with no mechanism that restores it, while the missing target it "
-				+ "named may still get converted later in the same session — keeping it costs nothing a strip "
-				+ "would have avoided");
-	}
-
 	// ── Fail-open ──────────────────────────────────────────────────────────────────────────────
 
 	[Test]
