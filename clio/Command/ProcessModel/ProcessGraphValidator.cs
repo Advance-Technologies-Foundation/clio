@@ -503,7 +503,9 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 				// selection and never the expression once the map is non-empty, so a flow carrying both
 				// stores text nothing evaluates. The server refuses it; this said nothing, because
 				// `blankCondition` is false and `Condition` is not null, so the edge fell between both arms.
-				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R19",
+				// R20 rather than a second R19: the two are different mistakes with different remedies, and a
+				// caller looking an id up in the rule catalog must land on the one it actually hit.
+				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R20",
 					$"Conditional flow '{edge.Source}' -> '{edge.Target}' carries both a condition and "
 					+ "'results'. A branch decides one way or the other: the platform reads the selection and "
 					+ "never the expression, so the condition would be stored and never evaluated. The build "

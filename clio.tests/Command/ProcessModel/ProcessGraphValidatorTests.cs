@@ -468,8 +468,8 @@ public sealed class ProcessGraphValidatorTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("R19: a conditional flow carrying BOTH a condition and 'results' is an ERROR. The two predicate slots are mutually exclusive in the metadata - the platform reads the selection and never the expression once the map is non-empty - and the server refuses the pair. R13 fell between its own two arms on this shape: blankCondition is false because the condition is real, and the no-predicate arm needs Condition to be null, so nothing fired and validate reported clean.")]
-	public void Validate_ShouldReturnR19Error_WhenAConditionalFlowCarriesBothPredicates() {
+	[Description("R20: a conditional flow carrying BOTH a condition and 'results' is an ERROR. The two predicate slots are mutually exclusive in the metadata - the platform reads the selection and never the expression once the map is non-empty - and the server refuses the pair. R13 fell between its own two arms on this shape: blankCondition is false because the condition is real, and the no-predicate arm needs Condition to be null, so nothing fired and validate reported clean.")]
+	public void Validate_ShouldReturnR20Error_WhenAConditionalFlowCarriesBothPredicates() {
 		// Arrange
 		List<ProcessGraphNode> nodes = [Node("s", "startEvent"), Node("a", "activityUserTask"),
 			Node("yes", "endEvent"), Node("no", "endEvent")];
@@ -482,7 +482,7 @@ public sealed class ProcessGraphValidatorTests {
 
 		// Assert
 		result.Findings.Should().Contain(
-			f => f.RuleId == "R19" && f.Severity == ProcessGraphSeverity.Error
+			f => f.RuleId == "R20" && f.Severity == ProcessGraphSeverity.Error
 				&& f.Message.Contains("never the expression"),
 			because: "the caller has to learn WHICH of the two is ignored, or the obvious fix - drop the "
 				+ "selection and keep the text they can read - is the one that changes the branch");
