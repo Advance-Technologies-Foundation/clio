@@ -208,6 +208,54 @@ public sealed class ValidateProcessGraphToolE2ETests {
 	}
 
 	[Test]
+
+	[Description("Over the real MCP path, SEVERAL SIGNAL starts validate clean while a SECOND SIMPLE start is an R3 error (ENG-98559). The cap is per KIND: a process may react to as many triggers as it has signals - the shape PublishDraftToArticle ships with - but only one simple start, which is the manual launch. Both halves travel in one case because the rule is the pair, and a build that relaxed the count for every kind would pass a test that only checked the signal half.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-process-graph accepts several signal starts and reports a second simple start")]
+	public async Task ValidateProcessGraph_Should_AcceptSeveralSignalStarts_AndReportASecondSimpleStart() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync();
+		string environmentName = await ResolveEnvironmentOrIgnoreAsync();
+		Dictionary<string, object?> severalSignalStarts = new() {
+			["environment-name"] = environmentName,
+			["nodes"] = new[] {
+				Node("added", "signalStart"), Node("changed", "signalStart"),
+				Node("r", "readDataUserTask"), Node("e", "endEvent")
+			},
+			["edges"] = new[] {
+				Edge("added", "r", "sequence"), Edge("changed", "r", "sequence"), Edge("r", "e", "sequence")
+			}
+		};
+		Dictionary<string, object?> twoSimpleStarts = new() {
+			["environment-name"] = environmentName,
+			["nodes"] = new[] {
+				Node("s1", "startEvent"), Node("s2", "startEvent"),
+				Node("r", "readDataUserTask"), Node("e", "endEvent")
+			},
+			["edges"] = new[] {
+				Edge("s1", "r", "sequence"), Edge("s2", "r", "sequence"), Edge("r", "e", "sequence")
+			}
+		};
+
+		// Act
+		CallToolResult signalResult = await CallToolAsync(arrangeContext, severalSignalStarts);
+		ValidateProcessGraphResponse signalResponse =
+			EntitySchemaStructuredResultParser.Extract<ValidateProcessGraphResponse>(signalResult);
+		CallToolResult simpleResult = await CallToolAsync(arrangeContext, twoSimpleStarts);
+		ValidateProcessGraphResponse simpleResponse =
+			EntitySchemaStructuredResultParser.Extract<ValidateProcessGraphResponse>(simpleResult);
+
+		// Assert
+		signalResponse.Success.Should().BeTrue(because: "the package is present, so the graph is validated");
+		signalResponse.Findings.Should().NotContain(f => f.RuleId == "R3",
+			because: "one signal per trigger the process reacts to is the shape the platform itself ships (ENG-98559)");
+		signalResponse.HasErrors.Should().BeFalse(
+			because: "each start has a single outgoing flow and every node lies on a start-to-end path, so nothing else is wrong with the graph either");
+		simpleResponse.Findings.Should().Contain(f => f.RuleId == "R3" && f.Severity == "error",
+			because: "two simple starts are two manual launches of one process with nothing to choose between them");
+	}
+
+	[Test]
 	[Description("Over the real MCP path, an unknown flow-kind is REFUSED by the tool rather than validated as a plain flow. The refusal travels back through the MCP envelope, which is the only place a caller sees it: a silent coercion would return success:true with findings about a graph the caller never described, and nothing in the envelope would say so.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-process-graph refuses an unknown flow-kind")]
