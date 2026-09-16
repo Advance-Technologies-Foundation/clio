@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
+using Clio.Common;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
@@ -52,7 +53,7 @@ public sealed class McpToolErrorFilterTests
 		// Arrange
 		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
 			McpToolErrorFilter.HandleCallToolErrors((_, _) => throw new AssertionException("tool body must not run"));
-		ODataReadTool toolInstance = new(Substitute.For<IToolCommandResolver>());
+		ODataReadTool toolInstance = new(Substitute.For<IToolCommandResolver>(), new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
 		MethodInfo method = typeof(ODataReadTool).GetMethod(nameof(ODataReadTool.Read), BindingFlags.Public | BindingFlags.Instance)!;
 		RequestContext<CallToolRequestParams> context = CreateContext(
 			"odata-read",

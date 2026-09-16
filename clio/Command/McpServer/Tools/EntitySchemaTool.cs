@@ -318,6 +318,19 @@ public sealed class UpdateEntitySchemaTool(
 	internal const string UpdateEntitySchemaToolName = "update-entity-schema";
 
 	/// <summary>
+	/// Explains the missing <c>operations</c> argument, including where schema-level (non-column)
+	/// changes such as the schema caption actually belong.
+	/// </summary>
+	internal const string MissingOperationsError =
+		"update-entity-schema requires a non-empty 'operations' array - it applies COLUMN operations " +
+		"(add/modify/remove) only. Pass at least one operation, for example " +
+		"[{\"action\":\"add\",\"column-name\":\"UsrCode\",\"data-value-type\":\"Text\"," +
+		"\"title-localizations\":{\"en-US\":\"Code\"}}]. " +
+		"To change SCHEMA-level properties such as the schema caption or the primary display column, " +
+		"use set-entity-schema-properties (title-localizations / primary-display-column) instead - " +
+		"'title-localizations' on this tool is a per-COLUMN property and is ignored at schema level.";
+
+	/// <summary>
 	/// Applies a batch of add/modify/remove column operations to a remote entity schema.
 	/// </summary>
 	[McpServerTool(Name = UpdateEntitySchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false,
@@ -336,6 +349,11 @@ public sealed class UpdateEntitySchemaTool(
 	public async Task<CommandExecutionResult> UpdateEntitySchema(
 		[Description("Parameters: environment-name, package-name, schema-name, operations (all required)")] [Required] UpdateEntitySchemaArgs args) {
 		ApplicationDataForgeResult? dataForge = null;
+		if (args.Operations is null || !args.Operations.Any()) {
+			// Without this, Enumerable.Select later throws the opaque "Value cannot be null. (Parameter
+			// 'source')", which tells the caller nothing about what is missing. See issue #1320.
+			return new CommandExecutionResult(1, [new ErrorMessage(MissingOperationsError)], null, null);
+		}
 		try {
 			if (enrichmentService is not null) {
 				dataForge = enrichmentService.Enrich(
@@ -471,13 +489,22 @@ public sealed class GetEntitySchemaPropertiesTool(
 		+ "an empty column list from a single-package read does NOT prove a column is absent. "
 		+ "Supply package-name to inspect one package layer and to read schema-level fields that the merged view returns as null "
 		+ "(parent-schema-name, indexes-count, ssp-available, use-record-deactivation, use-deny-record-rights, use-live-editing). "
-		+ "The result always includes virtual so callers can verify whether the schema has a physical database table.")]
+		+ "The result always includes virtual so callers can verify whether the schema has a physical database table. "
+		+ "Set required-only=true to return only columns marked required in schema metadata; column counts remain unfiltered. "
+		+ "This does not evaluate dynamic business rules or whether a required column has a default value.")]
 	public EntitySchemaPropertiesInfo GetEntitySchemaProperties(
-		[Description("environment-name, schema-name (required); package-name (optional — omit for the merged all-packages view)")] [Required] GetEntitySchemaPropertiesArgs args) {
+		[Description("environment-name, schema-name (required); package-name (optional — omit for the merged all-packages view); required-only (optional boolean, default false)")] [Required] GetEntitySchemaPropertiesArgs args) {
+		string? argumentError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".",
+			"Valid: environment-name, schema-name, package-name, required-only.");
+		if (argumentError is not null) {
+			throw new ArgumentException(argumentError);
+		}
 		GetEntitySchemaPropertiesOptions options = new() {
 			Environment = args.EnvironmentName,
 			Package = args.PackageName,
-			SchemaName = args.SchemaName
+			SchemaName = args.SchemaName,
+			RequiredOnly = args.RequiredOnly
 		};
 
 		GetEntitySchemaPropertiesCommand resolvedCommand = ResolveCommand<GetEntitySchemaPropertiesCommand>(options);
@@ -508,22 +535,26 @@ public sealed class SetEntitySchemaPropertiesTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Sets schema-level properties on a remote Creatio entity schema. "
-		+ "Currently supports primary-display-column: the column (own or inherited, resolved by name) shown as the "
-		+ "record's display value in lookups and links. The change is saved and published like the other "
-		+ "entity-schema tools; the primary-display column does not appear in the OData contract, so setting it "
-		+ "never triggers an OData entities rebuild. The write is verified by reading the schema back — a target "
-		+ "that does not persist the primary-display column is reported as an error rather than a silent no-op. "
-		+ "Read the set value back with get-entity-schema-properties (primary-display-column-name).")]
+	[Description("Sets schema-level properties on a remote Creatio entity schema: primary-display-column (the own or "
+		+ "inherited column, resolved by name, shown as the record's display value in lookups and links) and "
+		+ "title-localizations (the SCHEMA caption, per culture). The ONLY way to rename an existing schema's caption "
+		+ "— update-entity-schema is per-COLUMN — which is what fixes a duplicate caption breaking a "
+		+ "[#Lookup.<Caption>.<Value>#] process macro. Saved and published; neither property appears in the OData "
+		+ "contract, so setting them never triggers an OData entities rebuild. The write is verified by readback — a "
+		+ "target that does not persist the value is reported as an error rather than a silent no-op. "
+		+ "Read the values back with get-entity-schema-properties.")]
 	public CommandExecutionResult SetEntitySchemaProperties(
-		[Description("Parameters: environment-name, package-name, schema-name (all required); primary-display-column (optional)")] [Required]
+		[Description("Parameters: environment-name, package-name, schema-name (all required); primary-display-column and title-localizations optional, one required")] [Required]
 		SetEntitySchemaPropertiesArgs args) {
 		try {
 			SetEntitySchemaPropertiesOptions options = new() {
 				Environment = args.EnvironmentName,
 				Package = args.PackageName,
 				SchemaName = args.SchemaName,
-				PrimaryDisplayColumn = args.PrimaryDisplayColumn
+				PrimaryDisplayColumn = args.PrimaryDisplayColumn,
+				ParsedTitleLocalizations = args.TitleLocalizations is { Count: > 0 }
+					? args.TitleLocalizations
+					: null
 			};
 			return InternalExecute<SetEntitySchemaPropertiesCommand>(options);
 		} catch (Exception exception) {
@@ -1277,8 +1308,18 @@ public sealed record GetEntitySchemaPropertiesArgs(
 	[property: JsonPropertyName("package-name")]
 	[property: Description("Optional target package name. Omit to read the merged/effective schema with columns "
 		+ "from ALL packages (recommended for column discovery). Supply only to inspect a single package layer's slice.")]
-	string? PackageName = null
-);
+	string? PackageName = null,
+
+	[property: JsonPropertyName("required-only")]
+	[property: Description("Return only columns marked required in schema metadata. Default false. Schema column counts remain unfiltered; dynamic business rules and default values are not evaluated.")]
+	bool RequiredOnly = false
+) {
+	/// <summary>
+	/// Captures unsupported arguments so the tool can reject them with the valid field names.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}
 
 /// <summary>
 /// Arguments for the <c>set-entity-schema-properties</c> MCP tool.
@@ -1290,7 +1331,11 @@ public sealed record SetEntitySchemaPropertiesArgs(
 
 	[property: JsonPropertyName("primary-display-column")]
 	[property: Description("Column name (own or inherited) to set as the schema's primary-display column")]
-	string? PrimaryDisplayColumn = null
+	string? PrimaryDisplayColumn = null,
+
+	[property: JsonPropertyName("title-localizations")]
+	[property: Description("New SCHEMA caption per culture, e.g. {\"en-US\":\"Mention language\"}. Unlisted cultures keep their caption. At least one settable property is required.")]
+	IReadOnlyDictionary<string, string>? TitleLocalizations = null
 ) : EntitySchemaTargetArgsBase(EnvironmentName, PackageName, SchemaName);
 
 /// <summary>

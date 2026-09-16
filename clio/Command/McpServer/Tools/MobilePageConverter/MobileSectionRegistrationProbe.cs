@@ -123,11 +123,18 @@ public static class MobileSectionRegistrationProbe {
 				ProbeOk = true,
 				RegistrationActions = BuildActions(sysModuleId, Str(module, "Code"), mobileRegistered, availableMobile, isFormPage)
 			};
-		} catch (Exception ex) {
+		} catch (Exception) {
+			// The exception MESSAGE deliberately does not reach the wire. It used to be interpolated here,
+			// so a caller received a raw System.Text.Json parser complaint ("The input does not contain any
+			// JSON tokens … BytePositionInLine: 0") as the explanation of a registration probe — unactionable
+			// to a caller, and it made the response's content depend on an internal type's phrasing. probeOk
+			// plus the absent flags carry everything the caller can act on: the environment did not answer,
+			// so nothing here was established (ENG-95827).
 			return new SectionRegistrationInfo {
 				IsFormPage = isFormPage,
 				ProbeOk = false,
-				Note = $"Could not query the environment for section registration ({ex.Message}). Verify section / workplace registration manually.",
+				Note = "The environment could not be queried for section registration, so none of these "
+					+ "flags was established. Verify section / workplace registration manually.",
 				RegistrationActions = [ManualEditPageActionOrSkip(isFormPage)]
 			};
 		}

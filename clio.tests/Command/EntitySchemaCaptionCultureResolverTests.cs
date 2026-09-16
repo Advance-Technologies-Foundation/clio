@@ -63,6 +63,27 @@ internal sealed class EntitySchemaCaptionCultureResolverTests
 	}
 
 	[Test]
+	[Description("A well-formed but non-existent culture tag is rejected, not manufactured into a fallback culture.")]
+	public void ResolveEffectiveCulture_ShouldThrow_WhenOverrideIsAWellFormedButInventedCulture() {
+		// Arrange — distinct from ResolveEffectiveCulture_ShouldThrow_WhenOverrideIsInvalid on purpose:
+		// that one uses a 90-character name, past the platform culture-name limit, which throws on the
+		// single-argument CultureInfo.GetCultureInfo overload too and so cannot detect the loss of
+		// predefinedOnly: true. "xx-YY" is well-formed, and on ICU the single-argument overload
+		// MANUFACTURES a fallback culture for it rather than throwing — which would then be written as the
+		// caption culture of a published schema. Do not "simplify" the resolver back to the one-argument
+		// overload; this case is what stops it.
+		const string wellFormedButInventedCulture = "xx-YY";
+
+		// Act
+		Action act = () => _resolver.ResolveEffectiveCulture(new RemoteCommandOptions(), wellFormedButInventedCulture);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>()
+			.WithMessage("*is not a valid culture name*",
+				because: "ICU manufactures a fallback culture for a well-formed but invented tag, so only predefinedOnly: true keeps it out of a published schema");
+	}
+
+	[Test]
 	[Description("Returns the resolved profile culture when no override is supplied and resolution succeeds.")]
 	public void ResolveEffectiveCulture_ShouldReturnProfileCulture_WhenResolvedAndNoOverride() {
 		// Arrange
