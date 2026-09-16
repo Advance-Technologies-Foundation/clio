@@ -87,7 +87,7 @@ public class ModifyBusinessProcessTool(
 		 + "condition written onto one is stored and never evaluated. ALSO refused whenever the SOURCE "
 		 + "enumerates results at all: the designer offers no formula field there, so a condition would run "
 		 + "while the card opened empty. The refusal names the deciding activity and what to pass instead), "
-		 + "setFlowResults (from 1.6.2.22; with 'source' and 'target' naming an EXISTING flow, plus a "
+		 + "setFlowResults (from 1.6.2.23; with 'source' and 'target' naming an EXISTING flow, plus a "
 		 + "non-empty 'results' - the RESULT CAPTIONS selecting this branch, or their record ids, e.g. "
 		 + "['Positive'] on an Approval. This is a conditional flow's OTHER predicate slot, not a spelling of "
 		 + "setFlowCondition: which slot a connector takes is decided by its SOURCE, not by you. The two are "
