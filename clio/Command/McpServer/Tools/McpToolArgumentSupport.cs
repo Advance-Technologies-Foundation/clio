@@ -184,7 +184,19 @@ internal static class McpToolArgumentSupport {
 	/// <summary>
 	/// Joins already-rendered caller-key fragments, capped at <see cref="MaxEchoedKeys"/> with an
 	/// "and N more" tail. Without the cap a payload of many distinct keys costs a proportional
-	/// <c>string.Join</c> and then a regex pass per redaction pattern, for a call that never reaches a tool.
+	/// <c>string.Join</c> and an equally proportional response, for a call that never reaches a tool.
+	/// <para>
+	/// The cap applies PER LIST, so a message carrying both halves can name up to twice
+	/// <see cref="MaxEchoedKeys"/>. That is deliberate: the two lists answer different questions - which
+	/// keys to rename and which are unknown - and truncating them against one shared budget would let a
+	/// long rename list hide every unknown key, which is the half the caller cannot guess.
+	/// </para>
+	/// <para>
+	/// Note what is NOT a reason here: the neighbouring <c>McpToolErrorFilter.DescribeCallerKeys</c> also
+	/// cites a regex pass per redaction pattern, which is true of that sink and NOT of this one - this
+	/// text goes into <c>CommandExecutionResult.FromValidationError</c> or a typed response's error field,
+	/// and neither is routed through <c>SensitiveErrorTextRedactor</c>.
+	/// </para>
 	/// </summary>
 	/// <param name="renderedKeys">Fragments produced from <see cref="DescribeCallerKey"/>.</param>
 	private static string JoinCallerKeys(IReadOnlyList<string> renderedKeys) {

@@ -740,9 +740,10 @@ public static class McpToolErrorFilter
 	}
 
 	/// <summary>Most caller-supplied key names echoed back in one refusal.</summary>
-	/// <remarks>ENG-98566 moved the value itself to <see cref="McpToolArgumentSupport.MaxEchoedKeys"/>
-	/// so the overflow-bag echo path is bounded by the SAME number, rather than by a second copy that
-	/// can drift away from this one.</remarks>
+	/// <remarks>ENG-98566 moved the value itself to <see cref="McpToolArgumentSupport.MaxEchoedKeys"/> so
+	/// the overflow-bag echo path is bounded by the SAME constant, rather than by a second copy that can
+	/// drift away from this one. The CONSTANT is shared; the per-message total is not - this path caps one
+	/// list, while BuildLegacyAliasError caps its rename and unknown lists separately.</remarks>
 	private const int MaxEchoedKeys = McpToolArgumentSupport.MaxEchoedKeys;
 
 	/// <summary>Longest single caller-supplied key name echoed back.</summary>

@@ -25,8 +25,11 @@ namespace Clio.Tests.Command.McpServer;
 /// cannot be added without DECLARING the guard's parts. They do NOT prove the guard is invoked - deleting
 /// the BuildLegacyAliasError call from a tool leaves every assertion here green, because a declaration is
 /// not a call. That proposition belongs to
-/// <see cref="ProcessDesignerUnknownArgumentRefusalTests"/>, which exercises all eight tools through their
-/// real entry points; this fixture is the tripwire for the declaration, not the oracle for the behaviour.
+/// <see cref="ProcessDesignerUnknownArgumentRefusalTests"/>, which exercises the other SEVEN tools through
+/// their real entry points - validate-process-graph's own behavioural guard tests live beside its other
+/// cases in ValidateProcessGraphToolTests. This fixture is the tripwire for the declaration, not the oracle
+/// for the behaviour; saying "all eight" here would send the next reader to a file that does not hold the
+/// eighth.
 /// Keeping the two apart is deliberate - stating the stronger claim here is how a fixture ends up trusted
 /// for something it never checked.
 /// </para>
