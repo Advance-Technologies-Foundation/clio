@@ -98,6 +98,13 @@
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</Content>
 
+		<!-- The bundled dashboards-migrator package, installed by `install-dashboards-migrator`; same
+		     resolution and packing rules as the process builder above. -->
+		<None Include="CrtDashboardsMigratorApp\**"/>
+		<Content Include="CrtDashboardsMigratorApp\**" Pack="false">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</Content>
+
 		<Compile Remove="Wiki\**" />
 		<Content Include="Wiki\**">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>

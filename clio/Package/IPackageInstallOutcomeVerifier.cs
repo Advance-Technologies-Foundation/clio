@@ -32,13 +32,10 @@ public interface IPackageInstallOutcomeVerifier {
 	/// Determines whether the implementation's OWN package is serving on the target environment.
 	/// </summary>
 	/// <param name="packageName">
-	/// The package the caller is asking about, used to name it in <paramref name="diagnosis"/>. It does NOT
-	/// select what gets probed: an implementation answers for the one package it was written for, and the
-	/// only one today probes <c>ProcessDesignService.Ping</c> unconditionally. So passing a name this
-	/// implementation does not serve yields an answer about ITS package, not about the one named — say what
-	/// you mean by resolving the right implementation, not by the argument. Stated because the summary used
-	/// to read as though the name dispatched, and a second bundled package will need a keyed or explicit
-	/// registration rather than the assembly scan that registers this one.
+	/// The bundled package the caller is asking about. It selects what gets probed — the implementation maps
+	/// it to the package's own Ping route — and names the package in <paramref name="diagnosis"/>. A name the
+	/// implementation cannot map is a programming error and throws, rather than answering about some other
+	/// package.
 	/// </param>
 	/// <param name="diagnosis">
 	/// The caller-facing explanation when the verifier can name a cause the caller could not guess; otherwise
