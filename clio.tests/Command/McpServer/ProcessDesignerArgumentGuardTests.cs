@@ -1,0 +1,168 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Clio.Command.McpServer.Tools.ProcessDesigner;
+using FluentAssertions;
+using NUnit.Framework;
+
+namespace Clio.Tests.Command.McpServer;
+
+/// <summary>
+/// ENG-98566. Family-wide lock-in for the unknown-argument guard on the process-designer MCP tools.
+/// <para>
+/// The MCP binder copies <c>McpJsonUtilities.DefaultOptions</c> WITHOUT
+/// <c>JsonUnmappedMemberHandling.Disallow</c>, so a JSON field matching no <c>[JsonPropertyName]</c> is
+/// discarded by System.Text.Json with no error. The flat-argument classifier in <c>McpToolErrorFilter</c>
+/// catches that for a FLAT payload only - an already-wrapped <c>{"args":{...}}</c> call is passed through
+/// untouched - so the wrapped shape, which is the one the published schema asks for, still loses the key.
+/// The remedy is per-tool: a <c>[JsonExtensionData]</c> overflow bag PLUS a check over it.
+/// </para>
+/// <para>
+/// These tests are deliberately reflective rather than per-tool behavioural: the point is that a NEW
+/// process-designer tool cannot be added without the guard, which is the failure this ticket is the third
+/// recorded instance of. A bag with no check is the failure mode, not the fix, so the presence of the bag
+/// alone is not asserted on its own - each tool must also publish the field list its check echoes back.
+/// </para>
+/// </summary>
+[TestFixture]
+[Property("Module", "McpServer")]
+public sealed class ProcessDesignerArgumentGuardTests {
+
+	private const string ProcessDesignerNamespace = "Clio.Command.McpServer.Tools.ProcessDesigner";
+
+	private static IReadOnlyList<Type> ArgumentRecords() =>
+		typeof(ValidateProcessGraphArgs).Assembly
+			.GetTypes()
+			.Where(type => type.Namespace == ProcessDesignerNamespace
+				&& type.Name.EndsWith("Args", StringComparison.Ordinal))
+			.OrderBy(type => type.Name, StringComparer.Ordinal)
+			.ToList();
+
+	private static IReadOnlyList<Type> ToolTypes() =>
+		typeof(ValidateProcessGraphTool).Assembly
+			.GetTypes()
+			.Where(type => type.Namespace == ProcessDesignerNamespace
+				&& type.Name.EndsWith("Tool", StringComparison.Ordinal))
+			.OrderBy(type => type.Name, StringComparer.Ordinal)
+			.ToList();
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every process-designer argument record carries a [JsonExtensionData] overflow bag, so a key "
+		+ "the binder cannot match survives long enough for the tool to name it. Discovered by reflection "
+		+ "rather than listed, so a tool added later is covered without anyone remembering to extend a list.")]
+	public void EveryArgumentRecord_ShouldDeclareAnOverflowBag() {
+		// Arrange
+		IReadOnlyList<Type> records = ArgumentRecords();
+
+		// Act
+		List<string> withoutBag = records
+			.Where(type => type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+				.All(property => property.GetCustomAttribute<JsonExtensionDataAttribute>() is null))
+			.Select(type => type.Name)
+			.ToList();
+
+		// Assert
+		records.Should().NotBeEmpty(
+			because: "the reflection filter must actually find the process-designer argument records, "
+				+ "otherwise this test passes vacuously and guards nothing");
+		withoutBag.Should().BeEmpty(
+			because: "without the bag an unknown key is dropped by the serializer before the tool runs, and "
+				+ "the tool answers a caller mistake with a plausible success - the ENG-98566 failure");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The overflow bag is typed so the shared McpToolArgumentSupport.BuildLegacyAliasError helper "
+		+ "can read it. A bag of the wrong element type would compile and capture nothing useful, which is "
+		+ "the quiet way to reintroduce the defect while looking guarded.")]
+	public void EveryOverflowBag_ShouldBeReadableByTheSharedGuardHelper() {
+		// Arrange
+		IReadOnlyList<Type> records = ArgumentRecords();
+
+		// Act
+		List<string> wrongType = records
+			.Select(type => new {
+				type.Name,
+				Bag = type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+					.FirstOrDefault(property => property.GetCustomAttribute<JsonExtensionDataAttribute>() is not null)
+			})
+			.Where(entry => entry.Bag is not null
+				&& !typeof(IReadOnlyDictionary<string, JsonElement>).IsAssignableFrom(entry.Bag.PropertyType))
+			.Select(entry => entry.Name)
+			.ToList();
+
+		// Assert
+		wrongType.Should().BeEmpty(
+			because: "BuildLegacyAliasError takes IReadOnlyDictionary<string, JsonElement>; a bag it cannot "
+				+ "accept leaves the tool with a captured key it never reports");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every process-designer tool publishes the canonical field list its guard echoes back. This is "
+		+ "the half that distinguishes a wired guard from a bag nobody reads: the constant exists only "
+		+ "because the tool calls BuildLegacyAliasError with it, and a caller who mis-keys an argument needs "
+		+ "the valid names to fix the call without guessing a second time.")]
+	public void EveryTool_ShouldPublishItsCanonicalFieldList() {
+		// Arrange
+		IReadOnlyList<Type> tools = ToolTypes();
+
+		// Act
+		List<string> missing = tools
+			.Where(type => type.GetField("ValidArgsHint",
+				BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static) is null)
+			.Select(type => type.Name)
+			.ToList();
+		List<string> blank = tools
+			.Select(type => new {
+				type.Name,
+				Field = type.GetField("ValidArgsHint",
+					BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
+			})
+			.Where(entry => entry.Field is not null
+				&& string.IsNullOrWhiteSpace(entry.Field.GetRawConstantValue() as string))
+			.Select(entry => entry.Name)
+			.ToList();
+
+		// Assert
+		tools.Should().NotBeEmpty(
+			because: "the reflection filter must find the process-designer tools for this test to mean anything");
+		missing.Should().BeEmpty(
+			because: "a tool with a bag but no field list has captured the unknown key without telling the "
+				+ "caller what the valid keys are");
+		blank.Should().BeEmpty(
+			because: "an empty hint is the same as no hint once it reaches the caller");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Each tool's field list names environment-name. Every process-designer tool is "
+		+ "environment-scoped, and environment-name is the argument agents mis-spell most often - it is the "
+		+ "one the shared EnvironmentNameAliases map exists for - so omitting it from the hint would leave "
+		+ "the commonest mistake unanswered by the very sentence written to answer it.")]
+	public void EveryFieldList_ShouldNameEnvironmentName() {
+		// Arrange
+		IReadOnlyList<Type> tools = ToolTypes();
+
+		// Act
+		List<string> withoutEnvironment = tools
+			.Select(type => new {
+				type.Name,
+				Hint = type.GetField("ValidArgsHint",
+					BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
+					?.GetRawConstantValue() as string
+			})
+			.Where(entry => entry.Hint is null
+				|| !entry.Hint.Contains("environment-name", StringComparison.Ordinal))
+			.Select(entry => entry.Name)
+			.ToList();
+
+		// Assert
+		withoutEnvironment.Should().BeEmpty(
+			because: "a hint that omits the argument most often mis-spelled cannot resolve the commonest call");
+	}
+}

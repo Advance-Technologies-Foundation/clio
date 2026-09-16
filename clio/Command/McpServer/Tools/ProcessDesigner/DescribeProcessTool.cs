@@ -4,6 +4,8 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
+using System.Collections.Generic;
+using System.Text.Json;
 
 namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 
@@ -21,6 +23,9 @@ public sealed class DescribeProcessTool(
 	/// <summary>Stable MCP tool name.</summary>
 	internal const string ToolName = "describe-business-process";
 
+	/// <summary>The canonical field list echoed back when an unknown argument key is refused (ENG-98566).</summary>
+	internal const string ValidArgsHint = "Valid: environment-name, process-name, process-uid, process-caption, culture.";
+
 	/// <summary>
 	/// Reads the identified process and returns its structured graph (elements, flows, parameters).
 	/// </summary>
@@ -37,6 +42,15 @@ public sealed class DescribeProcessTool(
 		[Description("describe-business-process parameters")]
 		[Required]
 		DescribeProcessArgs args) {
+		// ENG-98566. An unknown key inside the WRAPPED payload ({"args":{...}}) never reaches the
+		// flat-argument classifier - McpToolErrorFilter leaves an already-wrapped call untouched - so the
+		// serializer drops it at bind time and the tool answers a caller mistake with a plausible success.
+		string argumentError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args?.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".", ValidArgsHint);
+		if (!string.IsNullOrWhiteSpace(argumentError)) {
+			return CommandExecutionResult.FromError(argumentError);
+		}
+
 		DescribeProcessOptions options = new() {
 			ProcessName = args.ProcessName,
 			ProcessUid = args.ProcessUid,
@@ -77,4 +91,13 @@ public sealed record DescribeProcessArgs(
 	[property: JsonPropertyName("culture")]
 	[property: Description("Optional culture used to resolve localized captions (default en-US).")]
 	string? Culture = null
-);
+) {
+
+	/// <summary>
+	/// Overflow bag for top-level keys the SDK could not bind to a declared argument (ENG-98566).
+	/// Inspected by the tool so a mis-keyed argument is named back to the caller; a bag that is
+	/// never read is the failure mode, not the fix.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> ExtensionData { get; init; }
+}

@@ -773,4 +773,139 @@ public sealed class ValidateProcessGraphToolTests {
 				+ "null, an empty-condition error and the omitted-condition warning both go silent while "
 				+ "the tool reports on a graph that has no conditions at all");
 	}
+	/// <summary>
+	/// Builds args carrying an overflow bag, the shape the SDK produces for a WRAPPED payload whose inner
+	/// object holds a key no declared argument matches.
+	/// </summary>
+	private static ValidateProcessGraphArgs ArgsWithUnknown(string key, string value,
+			List<ProcessGraphNodeArg> nodes = null)
+		=> new(EnvName, nodes, null) {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				[key] = JsonDocument.Parse($"\"{value}\"").RootElement
+			}
+		};
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-98566: an unrecognized argument is NAMED back to the caller instead of being dropped at "
+		+ "bind time. The measured failure was 'process-name' - the key an agent carries over from "
+		+ "describe-business-process - producing a byte-identical answer to a call that supplied nothing at "
+		+ "all. The response must refuse, not report findings, because a finding about a graph the tool was "
+		+ "never given reads as authoritative and was acted on twice.")]
+	public void Validate_ShouldRefuseAnUnknownArgument_AndNameIt() {
+		// Arrange
+		ValidateProcessGraphArgs args = ArgsWithUnknown("process-name", "UsrOrder_Handle");
+
+		// Act
+		ValidateProcessGraphResponse response = _tool.Validate(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an argument the tool cannot bind is a caller mistake, not a validated graph");
+		response.Error.Should().Contain("'process-name'",
+			because: "naming the offending key is the whole remedy - the caller cannot see the drop otherwise");
+		response.Error.Should().Contain(ValidateProcessGraphTool.ValidArgsHint,
+			because: "the canonical field list is what lets the caller fix the call without guessing again");
+		response.Findings.Should().BeNull(
+			because: "no graph was validated, so any finding here would be about something the tool never read");
+		response.HasErrors.Should().BeNull(
+			because: "has-errors is absent on every path where the graph was never validated");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-98566: the unknown-argument refusal happens BEFORE the required-package check, so a "
+		+ "malformed call is answered without touching Creatio at all. Ordering matters beyond speed: a "
+		+ "caller whose environment lacks CrtProcessBuilder would otherwise be told about the package and "
+		+ "never learn that their argument was also wrong.")]
+	public void Validate_ShouldNotResolveThePackageChecker_WhenAnArgumentIsUnknown() {
+		// Arrange
+		ValidateProcessGraphArgs args = ArgsWithUnknown("process-name", "UsrOrder_Handle");
+
+		// Act
+		_tool.Validate(args);
+
+		// Assert
+		_commandResolver.DidNotReceive().Resolve<IRequiredPackageChecker>(Arg.Any<EnvironmentOptions>());
+		_checker.DidNotReceive().EnsureRequirements(Arg.Any<object>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A known camelCase mis-spelling of environment-name produces a RENAME hint rather than the "
+		+ "generic unknown-argument list, because the caller's intent is unambiguous there and the shared "
+		+ "EnvironmentNameAliases map exists to say so in one sentence.")]
+	public void Validate_ShouldReportARenameHint_ForAKnownEnvironmentNameAlias() {
+		// Arrange
+		ValidateProcessGraphArgs args = ArgsWithUnknown("environmentName", "dev");
+
+		// Act
+		ValidateProcessGraphResponse response = _tool.Validate(args);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a mis-spelled required argument bound to nothing");
+		response.Error.Should().Contain("'environmentName' -> 'environment-name'",
+			because: "a recognized alias deserves the exact rename rather than being listed as unknown");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-98566: a call that supplies NO nodes is a missing argument, not a graph that fails R3. "
+		+ "Running the rules over an empty node set returned 'Process has no start event.' - a real rule id "
+		+ "and a plausible message about a process the tool never read, which is the single worst finding to "
+		+ "fabricate because it reads as a structural defect in the CALLER's process.")]
+	public void Validate_ShouldRefuseTheCall_WhenNoNodesAreSupplied() {
+		// Arrange
+		ValidateProcessGraphArgs args = new(EnvName, null, null);
+
+		// Act
+		ValidateProcessGraphResponse response = _tool.Validate(args);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "there is no graph to validate, so nothing succeeded");
+		response.Error.Should().Be(ValidateProcessGraphTool.NoGraphSuppliedError,
+			because: "the refusal must say no graph was supplied, in the tool's own words");
+		response.Error.Should().Contain("describe-business-process",
+			because: "the caller who omits nodes is usually reaching for the tool that DOES read a process");
+		response.Findings.Should().BeNull(
+			because: "R3 over an empty node set is exactly the false statement this change removes");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An explicitly EMPTY nodes array is refused identically to an omitted one. Both say the same "
+		+ "thing - there is no graph here - and distinguishing them would only let one of the two spellings "
+		+ "reach the rules and answer about nothing.")]
+	public void Validate_ShouldRefuseTheCall_WhenNodesIsAnEmptyList() {
+		// Arrange
+		ValidateProcessGraphArgs args = new(EnvName, [], []);
+
+		// Act
+		ValidateProcessGraphResponse response = _tool.Validate(args);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "an empty node set describes no graph");
+		response.Error.Should().Be(ValidateProcessGraphTool.NoGraphSuppliedError,
+			because: "omitted and empty are the same caller state and must not diverge");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The guard must not cost the rule its reach: a graph that REALLY has no start event still "
+		+ "returns R3. This is the half of the acceptance criteria that keeps the change from being a "
+		+ "silencer - only the empty-input path stopped producing R3, never a described graph.")]
+	public void Validate_ShouldStillReportR3_ForADescribedGraphWithNoStartEvent() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("r", "readDataUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("r", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a described graph is validated, however wrong it is");
+		response.HasErrors.Should().BeTrue(because: "a process with no start event violates R3");
+		response.Findings.Should().Contain(f => f.RuleId == "R3" && f.Severity == "error",
+			because: "R3 keeps firing for the shape it was written for - a real graph that lacks a start");
+	}
 }

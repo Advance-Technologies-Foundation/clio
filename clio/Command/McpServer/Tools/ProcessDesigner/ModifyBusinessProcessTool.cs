@@ -3,6 +3,8 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
+using System.Collections.Generic;
+using System.Text.Json;
 
 namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 
@@ -15,6 +17,9 @@ public class ModifyBusinessProcessTool(
 	IToolCommandResolver commandResolver) : BaseTool<ModifyBusinessProcessOptions>(command, logger, commandResolver) {
 
 	internal const string ModifyBusinessProcessToolName = "modify-business-process";
+
+	/// <summary>The canonical field list echoed back when an unknown argument key is refused (ENG-98566).</summary>
+	internal const string ValidArgsHint = "Valid: environment-name, process-name, process-uid, operations.";
 
 	/// <summary>
 	/// Applies an inline JSON operations array to an existing process (identified by name or uid).
@@ -325,6 +330,15 @@ public class ModifyBusinessProcessTool(
 	public CommandExecutionResult ModifyBusinessProcess(
 		[Description("modify-business-process parameters")] [Required] ModifyBusinessProcessArgs args
 	) {
+		// ENG-98566. An unknown key inside the WRAPPED payload ({"args":{...}}) never reaches the
+		// flat-argument classifier - McpToolErrorFilter leaves an already-wrapped call untouched - so the
+		// serializer drops it at bind time and the tool answers a caller mistake with a plausible success.
+		string argumentError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args?.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".", ValidArgsHint);
+		if (!string.IsNullOrWhiteSpace(argumentError)) {
+			return CommandExecutionResult.FromError(argumentError);
+		}
+
 		if (string.IsNullOrWhiteSpace(args?.EnvironmentName)) {
 			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
 		}
@@ -386,4 +400,13 @@ public sealed record ModifyBusinessProcessArgs(
 
 	[property: JsonPropertyName("process-uid")]
 	[property: Description("Process schema UId to edit; provide exactly one of process-name or process-uid.")]
-	string? ProcessUid = null);
+	string? ProcessUid = null) {
+
+	/// <summary>
+	/// Overflow bag for top-level keys the SDK could not bind to a declared argument (ENG-98566).
+	/// Inspected by the tool so a mis-keyed argument is named back to the caller; a bag that is
+	/// never read is the failure mode, not the fix.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> ExtensionData { get; init; }
+}

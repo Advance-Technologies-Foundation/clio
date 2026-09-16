@@ -24,6 +24,9 @@ public sealed class RunProcessTool(
 
 	internal const string ToolName = "run-process";
 
+	/// <summary>The canonical field list echoed back when an unknown argument key is refused (ENG-98566).</summary>
+	internal const string ValidArgsHint = "Valid: environment-name, process-name, parameters, result-parameters, timeout, uri, login, password.";
+
 	internal const string StillRunningStatus = "still-running";
 
 	// Test seam; null in production, where the default deadline applies.
@@ -69,6 +72,15 @@ public sealed class RunProcessTool(
 		global::ModelContextProtocol.Server.McpServer server = null,
 		RequestContext<CallToolRequestParams> requestContext = null,
 		CancellationToken cancellationToken = default) {
+		// ENG-98566. An unknown key inside the WRAPPED payload ({"args":{...}}) never reaches the
+		// flat-argument classifier - McpToolErrorFilter leaves an already-wrapped call untouched - so the
+		// serializer drops it at bind time and the tool answers a caller mistake with a plausible success.
+		string argumentError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args?.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".", ValidArgsHint);
+		if (!string.IsNullOrWhiteSpace(argumentError)) {
+			return new RunProcessResponse { Error = argumentError };
+		}
+
 		RunProcessOptions options = new() {
 			ProcessName = args.ProcessName,
 			Parameters = args.Parameters,
@@ -128,6 +140,14 @@ public sealed class RunProcessTool(
 }
 
 public sealed record RunProcessArgs {
+
+	/// <summary>
+	/// Overflow bag for top-level keys the SDK could not bind to a declared argument (ENG-98566).
+	/// Inspected by the tool so a mis-keyed argument is named back to the caller; a bag that is
+	/// never read is the failure mode, not the fix.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> ExtensionData { get; init; }
 
 	[JsonPropertyName("process-name")]
 	[Description("Process CODE (schema Name), e.g. 'MigrateDashboardsProcess', naming ONE version of a "
