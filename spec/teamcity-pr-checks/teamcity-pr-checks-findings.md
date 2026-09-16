@@ -168,6 +168,10 @@ Wired the same way as e2e, not via TeamCity branch tracking:
   `.github/scripts/queue-teamcity-build.ps1` is shared with e2e and takes the config-specific build
   properties from `TC_EXTRA_PROPERTIES` (the unit-tests trigger sends none).
 - Status name on the PR: `CLIO Unit Tests (ATF)`. Advisory; `build.yml` stays the required check.
+- Same day, the config was widened to mirror every `build.yml` lane as five steps (clio.tests,
+  Clio.Analyzers.Tests, Creatio.ConflictResolver.Tests on net8.0, cliogate.tests on net472, clio
+  net8.0 compatibility build), each with `execute_always` so one red step does not hide the rest.
+  Step table: `docs/knowledge/infra/clio-unit-tests-teamcity-config-is-hand-maintained.md`.
 
 Why it existed red for a month first: PR #1075 (2026-08-14) dropped `net8.0` from `clio.tests.csproj`
 while the step still ran `--framework net8.0` / required SDK 8 (`NETSDK1005` on SDK 10 agents, an

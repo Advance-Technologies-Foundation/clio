@@ -8,12 +8,14 @@
 # config's Commit Status Publisher (GitHub App "TeamCity ATF") posts the result
 # onto the PR head SHA as the `CLIO Unit Tests (ATF)` commit status.
 #
-# Team_Atf_ClioUnitTests runs the whole clio.tests project (unit and integration
-# categories, ~13.6k tests) on one TeamCity agent in about 5 minutes, which is the
-# same time-to-result as the 7 hosted-runner shards in build.yml. It is advisory:
-# build.yml stays the required check, and this status is the TeamCity-side
-# comparison run that the ENG-92669 fast-follow asked for. TeamCity keeps the
-# per-test failure history (first failed build, mutes), which build.yml does not.
+# Team_Atf_ClioUnitTests mirrors every test lane of build.yml in one build on one
+# TeamCity agent: clio.tests (unit and integration categories, ~13.6k tests, ~5 min),
+# then Clio.Analyzers.Tests, Creatio.ConflictResolver.Tests (net8.0),
+# cliogate.tests (net472) and the net8.0 compatibility build of clio, each as a
+# step that runs even when an earlier step failed. It is advisory: build.yml stays
+# the required check, and this status is the TeamCity-side comparison run that the
+# ENG-92669 fast-follow asked for. TeamCity keeps the per-test failure history
+# (first failed build, mutes), which build.yml does not.
 #
 # The dedicated VCS root of Team_Atf_ClioUnitTests checks out
 # refs/heads/%BranchNameClio% (default master); its VCS trigger still builds master
@@ -28,9 +30,8 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     branches: [master]
-    # Everything clio.tests compiles against: it references clio and clio.mcp.e2e,
-    # which pull in the analyzers, ConflictResolver and the process fixture.
-    # Docs-only PRs are skipped.
+    # Every project one of the TeamCity steps builds or tests. Docs-only PRs are
+    # skipped.
     paths:
       - 'clio/**'
       - '!clio/docs/**'
@@ -40,7 +41,11 @@ on:
       - 'clio.mcp.e2e/**'
       - 'clio.process.fixture/**'
       - 'Clio.Analyzers/**'
+      - 'Clio.Analyzers.Tests/**'
       - 'Creatio.ConflictResolver/**'
+      - 'Creatio.ConflictResolver.Tests/**'
+      - 'cliogate/**'
+      - 'cliogate.tests/**'
       - 'Directory.Packages.props'
       # The trigger tests itself: a change to this workflow or to the shared queue
       # script runs here for the price of one ~5-min TeamCity build. The e2e
