@@ -258,3 +258,29 @@ one this ticket built, not an adjustment to it.
 caller does not get is a sentence naming the parameter that moved, on the one path where they most want
 one. The manual test cases cover it at the level where it IS observable: TC-03 and TC-04 read the element
 in the designer and run it.
+
+---
+
+## DQ-11 - a review judgement I made and had to reverse
+
+**Question.** The security lens found that the retarget refusal rendered its dependent-name list without
+`SafeText.Sanitize`, unlike the three sibling call sites, and gave a CR/LF log-forging scenario. I applied
+the fix but then argued the finding DOWN: `MetaItem`'s `Name` property setter refuses anything outside
+`[A-Za-z][A-Za-z0-9_.]*`, so I judged the scenario unreproducible and shipped no test for it.
+
+**Decision.** Wrong, and reversed in round 2. The sanitize call is the control.
+
+**Reason.** `MetaItem.ApplyMetaDataValue` writes the BACKING FIELD -
+`case NamePropertyName: _name = reader.GetStringValue();` - so the identifier check is an API-surface
+invariant and not a storage one. Every schema this package touches is deserialized from metadata, so a
+stored element name really can carry CR/LF, and the refusal message is returned verbatim as the
+operation's `errorMessage` and rendered into the platform log through the exception. The round-2 reviewer
+caught it; I verified it in the platform source before reversing.
+
+**What it cost, and what it is worth recording for.** I checked the property setter and stopped there.
+The failure mode is specific and worth naming: a public setter's validation says nothing about what is in
+the store, because deserialization routinely bypasses setters. The test now reproduces the state the way
+the platform produces it, by writing the field, and a mutation check confirms that removing the sanitize
+call fails it.
+
+**What would flip it.** Nothing. This one is settled by the platform source.

@@ -213,7 +213,10 @@ authorization-gate call-site count at exactly **5**
 must ride the existing modify path, not a new endpoint. *(An earlier draft of this document said 5 and
 3; those were the numbers two research passes reported, and both were wrong. Read the file.)*
 
-**T-26** `ProcessSchemaSubProcess(ProcessSchemaSubProcess source)` assigns `SchemaUId = source.SchemaUId`
+**T-26 — MEASURED, does not reproduce; see the banner at the top.** The mechanism below is right and the
+conclusion is wrong: `MetaItem(MetaItem source)` copies `ParentMetaSchema` across before the setter runs, so
+the copy finds the host schema. The paragraph is kept as written because the banner cites it.
+`ProcessSchemaSubProcess(ProcessSchemaSubProcess source)` assigns `SchemaUId = source.SchemaUId`
 at `:46`, i.e. the copy constructor fires the setter on an element that is not attached to anything —
 so `Clone()` hits T-1 for the same reason a naive `Create()` does. Note also that
 `ProcessSchemaBaseElement(ProcessSchema)` sets only `ProcessSchema`, never `ParentMetaSchema`
