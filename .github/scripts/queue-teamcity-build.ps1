@@ -6,6 +6,12 @@
 #
 # Consumed environment (set by .github/workflows/teamcity-mcp-e2e.yml):
 #   TC_URL, TC_TOKEN, BUILD_TYPE, HEAD_REF, HEAD_SHA, PR_NUMBER, RUNNER_LABEL
+#   TEST_FILTER (optional) - the `dotnet test --filter` expression chosen by
+#            Select-McpE2eTestFilter.ps1; sent as the McpE2eTestFilter build property, which
+#            the TeamCity step "Run MCP e2e tests (.NET)" reads as --filter "%McpE2eTestFilter%".
+#            Empty means the parameter's default (the full suite) applies.
+#   TEST_SELECTION_MODE (optional) - "full" or "subset", recorded in the build comment so a
+#            subset run is distinguishable from a full one on the TeamCity side.
 #
 # Step outputs:
 #   runner - the runner this attempt ran on, so the gate job can name it.
@@ -133,15 +139,31 @@ foreach ($lookupUri in $lookups) {
 # exist as refs/heads/<head.ref>); fork PRs are filtered out by the job-level `if:` in
 # the workflow, so BranchNameClio is always a branch that exists in the main repo.
 $shaSuffix = if ([string]::IsNullOrWhiteSpace($env:HEAD_SHA)) { '' } else { " @ $env:HEAD_SHA" }
+$properties = @(
+  @{ name = 'BranchNameClio';                        value = $env:HEAD_REF }
+  @{ name = 'DeployCreatioBuild';                    value = 'true' }
+  @{ name = 'env.McpE2E__AllowDestructiveMcpTests';  value = 'true' }
+  @{ name = 'ProductName';                           value = 'Studio' }
+)
+$selectionSuffix = ''
+$testFilter = [string]$env:TEST_FILTER
+if (-not [string]::IsNullOrWhiteSpace($testFilter)) {
+  # Same allowed set as Select-McpE2eTestFilter.ps1 enforces; repeated here so that a modified
+  # selection script cannot hand TeamCity anything but a `dotnet test --filter` expression.
+  if ($testFilter -notmatch '^[A-Za-z0-9_.~=!&|()]*$') {
+    throw "TEST_FILTER contains characters outside the dotnet test filter grammar: $testFilter"
+  }
+  # The filter is the whole selection: a subset names its fixtures, a full run only excludes the
+  # tiers that run elsewhere. Anything TeamCity receives here is what `dotnet test` gets verbatim.
+  $properties += @{ name = 'McpE2eTestFilter'; value = $testFilter }
+  $selectionMode = if ([string]::IsNullOrWhiteSpace($env:TEST_SELECTION_MODE)) { 'filtered' } else { $env:TEST_SELECTION_MODE }
+  $selectionSuffix = " - selection: $selectionMode"
+  Write-Host "Test filter for this run: $testFilter"
+}
 $body = @{
   buildType  = @{ id = $env:BUILD_TYPE }
-  properties = @{ property = @(
-    @{ name = 'BranchNameClio';                        value = $env:HEAD_REF }
-    @{ name = 'DeployCreatioBuild';                    value = 'true' }
-    @{ name = 'env.McpE2E__AllowDestructiveMcpTests';  value = 'true' }
-    @{ name = 'ProductName';                           value = 'Studio' }
-  ) }
-  comment    = @{ text = "clio PR #$env:PR_NUMBER ($env:HEAD_REF$shaSuffix) - MCP e2e via GitHub Actions" }
+  properties = @{ property = $properties }
+  comment    = @{ text = "clio PR #$env:PR_NUMBER ($env:HEAD_REF$shaSuffix) - MCP e2e via GitHub Actions$selectionSuffix" }
 } | ConvertTo-Json -Depth 6
 
 # moveToTop: jump the queue so the advisory e2e starts promptly rather than waiting

@@ -45,6 +45,33 @@ and call `TeamCityRunGuard.IgnoreIfRunningUnderTeamCityOrGitHubActions` before s
 server. They use a fixture-owned temporary `CLIO_HOME`. Do not add these fixtures to a GitHub or
 TeamCity automatic lane.
 
+## Pull-request selection (what runs on TeamCity for a PR)
+
+A pull request does not run the whole suite on TeamCity. `.github/workflows/teamcity-mcp-e2e.yml`
+runs `.github/scripts/Select-McpE2eTestFilter.ps1`, which maps the changed files to fixtures using
+`TestSelection/mcp-e2e-selection.json` and sends the resulting `--filter` to TeamCity as the
+`McpE2eTestFilter` build property. Shared infrastructure (`clio/Common/**`, McpServer root files,
+`Support/**`, `cliogate/**`, package versions) runs everything; a change to
+`clio/Command/McpServer/Tools/X.cs` runs the fixtures that reference `X`; a change to another
+`clio/**/*.cs` runs the fixtures of the tools that consume it, but only when nothing outside the tools
+consumes it too. If every selected fixture is NoEnvironment-only, no TeamCity build is queued at all.
+Master builds keep the full default. The `McpE2E.NoEnvironment` tier runs on GitHub-hosted runners (`build.yml`, job
+`mcp-e2e-noenvironment`) and is excluded from pull-request runs on TeamCity.
+
+What a fixture must satisfy so that it is selected when the code it tests changes
+(`clio.tests/McpE2eSelectionCoverageTests.cs` fails the unit lane otherwise):
+
+- Declare it in a top-level `clio.mcp.e2e/*.cs` file (several fixtures per file are fine).
+- Reference the tool it exercises by its class (`PageSyncTool.ToolName`) or by the tool-name literal
+  (`"sync-pages"`), or name it `<ToolClass>*E2ETests`. A fixture that exercises tool B but only
+  names tool A is selected by changes to A - the guard cannot see intent.
+- Do not give it a name that is a prefix of another fixture's name; the filter is a substring match.
+- A fixture that tests server-level behaviour rather than one tool (startup, shutdown, workers, HTTP
+  routing, progress relay) belongs in `fullRunOnlyFixtures` of the manifest: its code lives under
+  `fullRunPaths`, so it runs in every full run and no tool file can select it.
+
+See `spec/mcp-e2e-plan-split/` for the rules in full and the measured baseline.
+
 ## Default rule
 
 - Every new or updated MCP tool must add or update coverage in this project.
