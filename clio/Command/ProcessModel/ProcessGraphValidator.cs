@@ -177,19 +177,27 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		return (outgoing, incoming);
 	}
 
-	// R3 — at least one start event.
+	// R3 — at least one start event, and at most one SIMPLE start.
 	//
-	// The COUNT is deliberately not capped (ENG-98559). This rule used to report every start after the first as
-	// an error, and CrtProcessBuilder's build-path guard refused such a graph for parity with it — so between
-	// them they refused a shape the platform ships: PublishDraftToArticle (CrtKnowledgeManagementVersions)
-	// carries two start signals, the designer draws them, and a two-start process assembled through
-	// modify-business-process runs on both signals. What each start must still satisfy is unchanged and lives in
-	// R1 (no incoming flow, exactly one outgoing) and in the reachability rules, which are per-node and therefore
-	// hold however many starts a graph has.
+	// The count is capped per KIND (ENG-98559). This rule used to report every start after the first as an error,
+	// and CrtProcessBuilder's build-path guard refused such a graph for parity with it — so between them they
+	// refused a shape the platform ships: PublishDraftToArticle (CrtKnowledgeManagementVersions) carries two
+	// start signals, the designer draws them, and a two-signal process assembled through modify-business-process
+	// runs on both signals. A TRIGGERED start (signal, timer, message) is one trigger the process reacts to, and a
+	// process may react to several; the SIMPLE start is the manual launch, and a second one is a second way to
+	// start the same process by hand with nothing to tell them apart. What every start must satisfy regardless is
+	// unchanged: R1 (no incoming flow, exactly one outgoing) and the reachability rules, both per node.
 	private static void CheckStartCount(IReadOnlyList<ProcessGraphNode> startNodes, List<ProcessGraphFinding> findings) {
 		if (startNodes.Count == 0) {
 			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R3", "Process has no start event."));
+			return;
 		}
+		List<ProcessGraphNode> simpleStarts = startNodes
+			.Where(node => TypeOf(node) == EventType.StartEvent).ToList();
+		findings.AddRange(simpleStarts.Skip(1).Select(extraStart => new ProcessGraphFinding(
+			ProcessGraphSeverity.Error, "R3",
+			$"Process has more than one simple start event ('{extraStart.Name}'); only one is allowed — "
+			+ "signal, timer and message starts may be several.", extraStart.Name)));
 	}
 
 	// R1 — start: no incoming, exactly one outgoing. R2 — end: no outgoing, at least one incoming.

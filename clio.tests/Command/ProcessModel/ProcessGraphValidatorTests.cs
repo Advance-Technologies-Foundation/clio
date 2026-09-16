@@ -183,9 +183,28 @@ public sealed class ProcessGraphValidatorTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("R3: a graph with more than one start event is accepted (ENG-98559) — the shape the platform ships and the designer draws.")]
-	public void Validate_ShouldNotReturnR3Error_WhenMoreThanOneStartEvent() {
-		// Arrange — two starts, each with its own single outgoing flow, both reaching the same activity
+	[Description("R3: several SIGNAL starts are accepted (ENG-98559) — one per trigger the process reacts to, the shape PublishDraftToArticle ships with.")]
+	public void Validate_ShouldNotReturnR3Error_WhenSeveralSignalStarts() {
+		// Arrange — two signal starts, each with its own single outgoing flow, both reaching the same activity
+		List<ProcessGraphNode> nodes =
+			[Node("added", "signalStart"), Node("changed", "signalStart"), Node("r", "readDataUserTask"), Node("e", "endEvent")];
+		List<ProcessGraphEdge> edges = [Seq("added", "r"), Seq("changed", "r"), Seq("r", "e")];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.Findings.Should().NotContain(f => f.RuleId == "R3",
+			because: "a process may react to as many triggers as it has signals (ENG-98559)");
+		result.HasErrors.Should().BeFalse(
+			because: "nothing else about this graph is invalid — each start has one outgoing flow and every node lies on a start→end path");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R3: a SECOND SIMPLE start is still an error — the per-kind cap (ENG-98559) allows several triggers but one manual launch.")]
+	public void Validate_ShouldReturnR3Error_WhenMoreThanOneSimpleStart() {
+		// Arrange
 		List<ProcessGraphNode> nodes =
 			[Node("s1", "startEvent"), Node("s2", "startEvent"), Node("r", "readDataUserTask"), Node("e", "endEvent")];
 		List<ProcessGraphEdge> edges = [Seq("s1", "r"), Seq("s2", "r"), Seq("r", "e")];
@@ -194,10 +213,25 @@ public sealed class ProcessGraphValidatorTests {
 		ProcessGraphValidationResult result = Validate(nodes, edges);
 
 		// Assert
+		result.Findings.Should().Contain(f => f.RuleId == "R3" && f.Severity == ProcessGraphSeverity.Error,
+			because: "two simple starts are two manual launches of one process with nothing to choose between them");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R3: a simple start BESIDE a signal start is accepted — the cap is per kind, not on the total (ENG-98559).")]
+	public void Validate_ShouldNotReturnR3Error_WhenOneSimpleStartBesideASignalStart() {
+		// Arrange
+		List<ProcessGraphNode> nodes =
+			[Node("byHand", "startEvent"), Node("onAdd", "signalStart"), Node("r", "readDataUserTask"), Node("e", "endEvent")];
+		List<ProcessGraphEdge> edges = [Seq("byHand", "r"), Seq("onAdd", "r"), Seq("r", "e")];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
 		result.Findings.Should().NotContain(f => f.RuleId == "R3",
-			because: "the start COUNT is no longer capped: PublishDraftToArticle ships with two start signals (ENG-98559)");
-		result.HasErrors.Should().BeFalse(
-			because: "nothing else about this graph is invalid — each start has one outgoing flow and every node lies on a start→end path");
+			because: "one manual entry point next to a trigger is within the per-kind cap");
 	}
 
 	[Test]
