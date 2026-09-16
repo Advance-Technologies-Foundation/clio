@@ -315,12 +315,12 @@ one and an install run from them ships it. It names them all at the end.
 What it does beyond running the steps below:
 
 - refreshes all four pins in the same run, so "the pins are stale" stops being a
-  reachable state — **except that it does not, today: measured on two consecutive cuts (1.6.2.12 and
-  1.6.2.13, 2026-09-16) it refreshed `ExpectedArchiveVersion`, `ExpectedDescriptorModifiedOnUtc` and
-  `ExpectedProducingCommit` and left `ExpectedArchiveSha256` on the previous value.
-  `BundledArchive_ShouldMatchThePinnedHash` then fails exactly as its own comment predicts. Until the
-  script is fixed, set that pin by hand from `shasum -a 256 clio/CrtProcessBuilder/CrtProcessBuilder.gz`
-  (uppercase) and re-run the guard fixture before committing**;
+  reachable state — **with one deliberate exception: under `-SkipTests` the SHA pin is left alone**
+  (`rebundle-process-builder.ps1:623-634`, and the run says so in yellow). Refreshing it is what makes a
+  rebundle reviewable by diff, and refreshing it after a run that skipped the package's own gate tests
+  would leave nothing red anywhere — so the stale pin IS the signal. Set it by hand from
+  `shasum -a 256 clio/CrtProcessBuilder/CrtProcessBuilder.gz` (uppercase) once you have run those tests
+  yourself, and say in the commit message what you ran;
 - reads the archive back and checks the inventory — exactly two DLLs and both from `Files/Libs`, the compile
   marker present, the package's own assembly absent, and nothing outside the allowed top-level set (in
   particular no `SqlScripts/` or `Data/`, which the target EXECUTES at install time). The guard fixture now
