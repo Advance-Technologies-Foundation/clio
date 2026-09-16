@@ -207,15 +207,28 @@ selection in the same call.
 * Step 4: `results` is REFUSED and the designer shows a formula field. One hop, no recursion, on both
   sides — the limit is the designer's and the tool matches it rather than being cleverer.
 
-> **Step 3 is the one assertion in this case that the API cannot substitute for, and it is UNVERIFIED as
-> of the stand runs so far — prioritise it.** Every other step proves we WROTE the map we intended.
-> Step 3 is the only one that proves the designer can READ it when the key is not the flow's source: it
-> resolves the element by the map key, so a gateway-keyed selection is a different code path from the
-> one TC-W02 covers. Two attempts failed for want of a clickable target — this gateway's outgoing
-> connector carries no caption in the accessibility tree before selection, so `find` has nothing to
-> grab, and coordinate clicks landed on the canvas instead. If it resists automation again, have a
-> human open the connector; the panel heading should name the APPROVAL, not the gateway, and that
-> heading is itself the second piece of evidence because it is rendered from the resolved activity.
+> **Step 3 VERIFIED** on schemaUId `5f533dd1-5dd4-48bd-92f7-2e27497d99b7`, by a human opening the
+> connector after two automated attempts failed. Panel "Conditional flow", headed *"What is the result
+> of an element 'Approve order'?"* — the APPROVAL's name, not the gateway's — with Positive ticked.
+> That heading is the second piece of evidence in the same view: it is rendered from the resolved
+> activity, so it confirms the designer followed the map key one hop back rather than reading the
+> flow's own source.
+>
+> Why this step cannot be substituted by the API ones, in case a future run is tempted to skip it:
+> every other step proves we WROTE the map we intended. This is the only one that proves the designer
+> can READ it when the key is not the flow's source — getProcessActivityBySelectedResults resolves the
+> element BY the map key, a different path through the client than the one TC-W02 covers.
+>
+> AUTOMATION HAZARD, recorded so the next run does not lose time to it: this gateway's outgoing
+> connector carries no caption in the accessibility tree BEFORE selection, so find-by-label has nothing
+> to grab and coordinate clicks land on the canvas. The Approve—EndOk/EndNo connectors do not behave
+> this way. If it resists again, have a human open it rather than spending stand time on coordinates.
+>
+> OBSERVED IN THE SAME SCREENSHOT, worth knowing: the canvas draws a **`Positive` caption on the
+> connector line itself**, so a gateway-keyed selection is legible from the diagram without opening the
+> panel. The toolkit does not write that caption — `ApplySelection` never touches Caption or Label —
+> so it is rendered by the designer from the selection. Do not mistake it for a stored `label`, and do
+> not assume writing a `label` would replace it.
 
 ### TC-W13 A formula on a result-enumerating connector is REFUSED
 
