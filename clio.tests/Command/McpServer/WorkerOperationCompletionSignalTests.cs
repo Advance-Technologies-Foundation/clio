@@ -235,13 +235,13 @@ public sealed class WorkerOperationCompletionSignalTests {
 
 		// Assert
 		sticky.Should().BeEquivalentTo(
-			["compile-creatio", "compile-status", "create-app-section", "install-process-builder",
-				"restart-by-credentials", "restart-by-environment-name", "restart-status"],
+			["compile-creatio", "compile-status", "create-app-section", "install-dashboards-migrator",
+				"install-process-builder", "restart-by-credentials", "restart-by-environment-name", "restart-status"],
 			because: "these are the tools whose worker outlives the response, and the sweep this fix rests "
 				+ "on covered exactly them");
 		owedASignal.Should().BeEquivalentTo(
-			["compile-creatio", "create-app-section", "install-process-builder", "restart-by-credentials",
-				"restart-by-environment-name"],
+			["compile-creatio", "create-app-section", "install-dashboards-migrator", "install-process-builder",
+				"restart-by-credentials", "restart-by-environment-name"],
 			because: "only a tool that STARTS an operation owns a worker to reap; the two status polls are "
 				+ "sticky but must never signal");
 	}

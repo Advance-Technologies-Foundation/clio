@@ -12,6 +12,7 @@ applies-to:
   - clio/Common/SensitiveErrorTextRedactor.cs
   - clio/ExceptionReadableMessageExtension.cs
   - clio/Common/ServerReportedFailureText.cs
+  - clio/Command/McpServer/Tools/ODataReadTool.cs
 ticket: GH-1333, GH-1378
 date: 2026-09-03
 ---

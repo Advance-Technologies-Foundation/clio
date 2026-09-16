@@ -1,5 +1,6 @@
 {
   "version": "latest",
+  "defaultMobileTemplate": "BaseMobilePageTemplate",
   "mobileFormPageTemplates": ["BaseMobilePageTemplate", "MobilePageWithTabsFreedomTemplate"],
   "templates": [
     {

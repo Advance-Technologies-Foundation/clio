@@ -11,7 +11,9 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool for deleting a single Creatio record via OData v4 (HTTP DELETE).
 /// </summary>
 [McpServerToolType]
-public sealed class ODataDeleteTool(IToolCommandResolver commandResolver) {
+public sealed class ODataDeleteTool(
+	IToolCommandResolver commandResolver,
+	IOperationCorrelationIdProvider correlationIds) {
 
 	internal const string ToolName = "odata-delete";
 
@@ -28,12 +30,20 @@ public sealed class ODataDeleteTool(IToolCommandResolver commandResolver) {
 		"Delete a single Creatio record via OData v4 (DELETE). " +
 		"Requires the record's GUID id; this tool never performs a keyless mass delete. " +
 		"This is a destructive operation: it requires confirm=true to proceed. " +
+		McpToolDescriptions.CorrelationIdOnEveryResponse +
 		"Use odata-read to find the record by its fields and obtain its Id. " +
 		"Call get-tool-contract for odata-delete to see usage examples and discovery workflow hints.")]
 	public ODataWriteResponse Delete(
 		[Description("Parameters: entity, id, environment-name (all required).")]
 		[Required]
 		ODataDeleteArgs args) {
+		//Minted once and stamped on the single exit, so every response carries the correlation-id
+		//core-rules promises - refusals and validation failures included.
+		string correlationId = correlationIds.New();
+		return DeleteCore(args) with { CorrelationId = correlationId };
+	}
+
+	private ODataWriteResponse DeleteCore(ODataDeleteArgs args) {
 		try {
 			ODataWriteResponse invalidTarget = ODataKeyedWrite.ValidateTarget(args.Entity, args.Id, "delete");
 			if (invalidTarget is not null) {

@@ -26,6 +26,12 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 	private const int MaxTimeoutMs = 120_000;
 	internal const int MaxResponseSizeBytes = 200_000;
 	internal const string ResultTooLargeErrorClass = "result-too-large";
+	private const string QueryShapeExample =
+		" Supply the SelectQuery in the 'query' argument; schema-name, columns and row-count are not top-level arguments. " +
+		"Minimal clio-run call (replace <environment-name>):\n" +
+		"{\"command\":\"execute-esq\",\"args\":{\"environment-name\":\"<environment-name>\",\n" +
+		"\"query\":{\"rootSchemaName\":\"Contact\",\"operationType\":0,\"allColumns\":false,\"rowCount\":1," +
+		"\"columns\":{\"items\":{\"Id\":{\"expression\":{\"expressionType\":0,\"columnPath\":\"Id\"}}}}}}}";
 
 	/// <summary>Executes a raw ESQ SelectQuery and returns the resulting rows.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
@@ -49,13 +55,13 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 		ExecuteEsqArgs args) {
 		try {
 			if (!TryNormalizeQuery(args.Query, out JsonElement query, out string queryError)) {
-				return ExecuteEsqResponse.Failure(queryError);
+				return ExecuteEsqResponse.Failure(queryError + QueryShapeExample);
 			}
 			if (!query.TryGetProperty("rootSchemaName", out JsonElement rootSchema)
 				|| rootSchema.ValueKind != JsonValueKind.String
 				|| string.IsNullOrWhiteSpace(rootSchema.GetString())) {
 				return ExecuteEsqResponse.Failure(
-					"query must be a SelectQuery object with a non-empty 'rootSchemaName'. See the 'esq' guidance for the envelope.");
+					"query must be a SelectQuery object with a non-empty 'rootSchemaName'." + QueryShapeExample);
 			}
 			if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
 				return ExecuteEsqResponse.Failure("environment-name is required.");

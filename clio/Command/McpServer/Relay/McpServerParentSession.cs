@@ -25,8 +25,10 @@ namespace Clio.Command.McpServer.Relay;
 /// <para>
 /// <b>Why the MCP9005 suppressions live here and nowhere else.</b> Sampling is deprecated as of protocol
 /// revision <c>2026-07-28</c> (SEP-2577) and every member it needs is <c>[Obsolete]</c> in SDK 2.2.0. It
-/// still works — 121/121 relayed runs — so ADR rule 1 is implementable today, and the semantic review in
-/// <c>update-page</c> / <c>sync-pages</c> depends on it. Confining the suppression to this adapter keeps
+/// still works — 121/121 relayed runs — so ADR rule 1 is implementable today. Since ENG-98526 removed the
+/// page semantic review, no clio tool calls <c>SampleAsync</c>, so this bridge currently has no production
+/// consumer and is kept only so a relayed child can never be the reason sampling fails. That makes the
+/// suppression cheaper to retire, not more urgent. Confining the suppression to this adapter keeps
 /// the deprecation visible and countable: when OQ-6 migrates to <c>InputRequest</c> /
 /// <c>ResolveInputRequestsAsync</c>, this file is the whole change. Do not build anything new on it.
 /// </para>
@@ -57,9 +59,9 @@ public readonly struct McpServerParentSession : IParentMcpSession, IEquatable<Mc
 	public Task SendMessageAsync(JsonRpcMessage message, CancellationToken cancellationToken) =>
 		Server().SendMessageAsync(message, cancellationToken);
 
-	// MCP9005: forwarding the child's sampling request to the REAL client. Without this the page semantic
-	// review degrades to Skipped=true with no error anywhere (ADR rule 1); see the remarks above for why
-	// the deprecation is accepted rather than suppressed silently (OQ-6).
+	// MCP9005: forwarding the child's sampling request to the REAL client. Without this a child that issues
+	// sampling would be refused by the relay rather than answered (ADR rule 1). No clio tool issues one
+	// today; see the remarks above for why the deprecation is accepted rather than suppressed silently (OQ-6).
 #pragma warning disable MCP9005
 	/// <inheritdoc/>
 	public ValueTask<CreateMessageResult> SampleAsync(CreateMessageRequestParams requestParams,

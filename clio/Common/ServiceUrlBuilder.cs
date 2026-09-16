@@ -321,7 +321,13 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		///     read from afterwards. It carries no timestamp, which is why it is only trusted once the reload
 		///     that ends the build has been observed.
 		/// </remarks>
-		LastCompilationResult = 92
+		LastCompilationResult = 92,
+
+		/// <summary>
+		///     Answers whether the bundled dashboards-migrator package's own code is serving — the same
+		///     liveness-only, ungated probe as <see cref="ProcessBuilderPing"/>, for the other bundled package.
+		/// </summary>
+		DashboardsMigratorPing = 93
 
 	}
 
@@ -408,6 +414,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.BuildProcess, "/rest/ProcessDesignService/BuildProcess"},
 		{KnownRoute.ListUserTasks, "/rest/ProcessDesignService/ListUserTasks"},
 		{KnownRoute.ProcessBuilderPing, "/rest/ProcessDesignService/Ping"},
+		{KnownRoute.DashboardsMigratorPing, "/rest/DashboardsMigratorPingService/Ping"},
 		{KnownRoute.FindSchemaLayers, "/rest/CreatioApiGateway/FindSchemaLayers"},
 		{KnownRoute.ExportSchema, "/rest/CreatioApiGateway/ExportSchema"},
 		{KnownRoute.ImportSchema, "/rest/CreatioApiGateway/ImportSchema"},

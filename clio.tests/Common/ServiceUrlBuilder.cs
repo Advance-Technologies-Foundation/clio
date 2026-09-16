@@ -220,6 +220,12 @@ internal class ServiceUrlBuilderCommandTests
 			yield return new TestCaseDataWithKnownRoutes(true, "http://localhost",
 				ServiceUrlBuilder.KnownRoute.GetEntitySchemaDesignItem,
 				"http://localhost/ServiceModel/EntitySchemaDesignerService.svc/GetSchemaDesignItem");
+			yield return new TestCaseDataWithKnownRoutes(false, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.DashboardsMigratorPing,
+				"http://localhost/0/rest/DashboardsMigratorPingService/Ping");
+			yield return new TestCaseDataWithKnownRoutes(true, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.DashboardsMigratorPing,
+				"http://localhost/rest/DashboardsMigratorPingService/Ping");
 			// Pinned because this one route decides install-process-builder's exit code. A typo in the path —
 			// CreatioApiGatewayService instead of ProcessDesignService, or Pong for Ping — yields an IIS HTML
 			// page, which the verifier correctly reads as "nothing is serving". So the command would return 1
