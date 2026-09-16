@@ -34,9 +34,17 @@ resolves to the family ROOT, which is not what the designer edits or the runtime
 `version` / `isActiveVersion` / `activeVersionName` in every response and address the active schema by
 `--process-uid` when they disagree. Record the schema UId you acted on in each case.
 
-WHEN CHECKING RUNTIME: start the process, then read `SysProcessLog` for the run and look at which
-elements executed. A process parked on a human step is not stuck — complete that step's `Activity`
-record (odata update its status to Completed) and it resumes.
+WHEN CHECKING RUNTIME, read the RIGHT TABLE. `SysProcessLog` logs the ROOT row only, so it tells you a
+process started and nothing about which elements ran. The per-element trace is **`SysProcessElementLog`**
+(`SchemaElementUId`, `Caption`, `StatusId`, `StartDate`, `CompleteDate`, `SysProcessId`), and that is the
+only thing that proves WHICH branch was taken. Every runtime assertion below means that table.
+
+AND DO NOT READ A PARKED PROCESS AS A HUNG ONE. A root `SysProcessLog` row with no `CompleteDate` is the
+NORMAL state of a graph waiting on a human step, and of one waiting for an approval verdict. It is not a
+fault, and reading it as one cost a whole round of this suite: an approval that has not been decided yet
+looks exactly like a broken engine. Confirm with `SysProcessElementLog` which elements completed, and
+with the `Activity` table that the human step really has a record to complete. A process parked on a
+human step resumes when you complete that step's `Activity` (odata update its status to Completed).
 
 Do NOT auto-open a browser to "verify" a successful write. Where a case says to look in the designer,
 open it deliberately and report what is on screen.
@@ -89,7 +97,7 @@ and two end events `EndOk` / `EndNo`, both connected by PLAIN flows. Nothing els
 **Steps:**
 1. Start the process against a record.
 2. Approve the visa.
-3. Read `SysProcessLog` for that run.
+3. Read `SysProcessElementLog` for that run — NOT `SysProcessLog`, which carries the root row only.
 4. Repeat from step 1 with a fresh record, and REJECT the visa instead.
 
 **Expected result:**
@@ -104,7 +112,7 @@ and two end events `EndOk` / `EndNo`, both connected by PLAIN flows. Nothing els
 
 **Steps:**
 1. Start the process, then CANCEL the approval rather than approving or rejecting it.
-2. Read `SysProcessLog`.
+2. Read `SysProcessElementLog`.
 3. Now add a third branch with `results: ["Canceled"]` to its own end, and repeat.
 
 **Expected result:**
@@ -281,8 +289,10 @@ into offering results:
 ## Reporting
 
 For every case give: the schema UId you acted on, the exact refusal text where one was expected, and a
-screenshot of the designer panel wherever the case names one. For runtime cases give the `SysProcessLog`
-rows showing which elements ran.
+screenshot of the designer panel wherever the case names one. For runtime cases give the
+`SysProcessElementLog` rows showing which elements ran, by Caption — a `SysProcessLog` row is not an
+answer to "which branch was taken", and quoting one as if it were is how this suite produced a false
+engine-fault report.
 
 If any case shows the designer rendering a formula field where these expectations say checkboxes, stop
 and report it as a BLOCKER — that is the original defect reappearing from the other direction.
