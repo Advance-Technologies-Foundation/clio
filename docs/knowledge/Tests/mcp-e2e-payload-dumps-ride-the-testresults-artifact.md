@@ -30,6 +30,13 @@ agent load (#1537).
 `TestResults/` still passes every local test, because locally the file is right there on disk. On the
 agent the dump is written, the test reports its path, the path is correct, and the file is
 unreachable — so the failure is undiagnosable exactly when a diagnosis is needed, which is the state
-issue #1384 existed to remove. The sink's repository-root walk requires BOTH `clio.slnx` and
-`TestResults/` to be present for the same reason: a checkout that matched on the solution file alone
-could resolve to a directory the job does not publish.
+issue #1384 existed to remove.
+
+**The root walk matches on `clio.slnx` alone**, and `TestResults/` is created on write rather than
+required as a second marker. Requiring it to already exist was the more defensive-looking rule and the
+wrong one: the walk starts at `AppContext.BaseDirectory`, the test assembly's `bin` folder inside the
+real checkout, so the first ancestor carrying the solution file IS the published checkout and a nested
+sample repository an e2e fixture creates is never an ancestor of it. What the extra marker did achieve
+was to downgrade EVERY dump to an unpublished temp file whenever the agent's working directory had been
+cleaned, a Swabra sweep had run, or the export carried no committed `.gitkeep` — the silent CI-only
+failure this record exists to warn about, introduced by the guard against it.

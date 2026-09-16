@@ -58,10 +58,34 @@ internal interface IMcpPayloadDumpSink {
 /// </remarks>
 internal sealed class TestResultsPayloadDumpSink : IMcpPayloadDumpSink {
 	/// <summary>
-	/// Both markers must be present for a directory to count as the repository root. <c>clio.slnx</c>
-	/// alone is not enough — a checkout laid out differently, or a nested sample repository created by an
-	/// e2e fixture, can carry a solution file without being the checkout whose <c>TestResults</c> the CI
-	/// job publishes.
+	/// Where this instance writes, when it must not write where every other instance does.
+	/// </summary>
+	/// <remarks>
+	/// A constructor parameter rather than a settable static: fixtures in this assembly run in parallel,
+	/// so a swappable shared target would let one test's override catch an unrelated test's genuine parse
+	/// failure. Production call sites use the parameterless form and share
+	/// <see cref="DumpDirectory"/>; the only user of the override is the test that has to provoke a real
+	/// write failure, which it does by pointing the sink at a path something else already occupies.
+	/// </remarks>
+	private readonly string? _directoryOverride;
+
+	/// <summary>Writes into the repository's published <c>TestResults</c> directory.</summary>
+	public TestResultsPayloadDumpSink()
+		: this(null) { }
+
+	/// <summary>Writes into <paramref name="directoryOverride"/> instead of the shared dump directory.</summary>
+	internal TestResultsPayloadDumpSink(string? directoryOverride) {
+		_directoryOverride = directoryOverride;
+	}
+
+	/// <summary>
+	/// The marker that identifies the checkout root. The solution file alone is enough: the walk starts at
+	/// <see cref="AppContext.BaseDirectory"/> — the test assembly's <c>bin</c> folder inside the real
+	/// checkout — so the first ancestor carrying it IS the published checkout, and a nested sample
+	/// repository an e2e fixture creates is never an ancestor of that. Requiring an already-existing
+	/// <c>TestResults</c> as a second marker bought nothing and cost everything: a cleaned agent working
+	/// directory or a Swabra sweep would silently downgrade every dump to an unpublished temp file, which
+	/// is the CI-only failure this design exists to remove.
 	/// </summary>
 	private const string SolutionMarker = "clio.slnx";
 
@@ -80,10 +104,28 @@ internal sealed class TestResultsPayloadDumpSink : IMcpPayloadDumpSink {
 
 	private static readonly UTF8Encoding DumpEncoding = new(encoderShouldEmitUTF8Identifier: false);
 
+	/// <summary>
+	/// The resolved dump directory, computed once per process.
+	/// </summary>
+	/// <remarks>
+	/// The answer is immutable for the process lifetime, but finding it walks every ancestor of the test
+	/// assembly's directory up to the drive root doing a filesystem probe per level. A burst of dumps — a
+	/// poll loop, or the sink's own repeated-write test — repeated that whole walk per write. The
+	/// directory is only resolved here; it is still created on every write, so a run that cleans its
+	/// working directory midway does not turn every later dump into a failure.
+	/// </remarks>
+	private static readonly Lazy<string> DumpDirectoryPath = new(ResolveDumpDirectory);
+
+	/// <summary>
+	/// Where this sink writes. Exposed so <see cref="PayloadDumpReader"/> can refuse to touch a path that
+	/// did not come from here — the message a path is recovered from also carries server-supplied text.
+	/// </summary>
+	internal static string DumpDirectory => DumpDirectoryPath.Value;
+
 	/// <inheritdoc />
 	public McpPayloadDumpResult Write(string label, string rawPayload) {
 		try {
-			string directory = ResolveDumpDirectory();
+			string directory = _directoryOverride ?? DumpDirectory;
 
 			// Created on every write rather than once: a run that cleans its working directory midway
 			// would otherwise turn every later dump into a write failure for no reason.
@@ -112,20 +154,33 @@ internal sealed class TestResultsPayloadDumpSink : IMcpPayloadDumpSink {
 	/// </summary>
 	private static string ResolveDumpDirectory() {
 		string? repositoryRoot = FindRepositoryRoot(AppContext.BaseDirectory);
-		return repositoryRoot is null
-			? Path.Combine(Path.GetTempPath(), "clio-mcp-e2e-payloads-not-published", DumpDirectoryName)
-			: Path.Combine(repositoryRoot, TestResultsDirectoryName, DumpDirectoryName);
+		if (repositoryRoot is not null) {
+			return Path.Combine(repositoryRoot, TestResultsDirectoryName, DumpDirectoryName);
+		}
+
+		// Out-of-checkout fallback. CreateTempSubdirectory, not a fixed shared name: the temp directory is
+		// world-readable on Linux and macOS agents and nothing ever sweeps these files, so a predictable
+		// name would leave every run's payloads readable by any other account on the box. The prefix keeps
+		// the directory self-identifying, so a reader can tell "published nowhere" from "in the artifact".
+		try {
+			return Directory.CreateTempSubdirectory("clio-mcp-e2e-payloads-not-published-").FullName;
+		}
+		catch (Exception) {
+			// Resolution must not throw: Write's own catch would turn this into a dump failure for every
+			// call, and a shared fallback directory is still better than no diagnostic at all.
+			return Path.Combine(Path.GetTempPath(), "clio-mcp-e2e-payloads-not-published", DumpDirectoryName);
+		}
 	}
 
 	/// <summary>
 	/// Walks up from the test assembly's own directory looking for the checkout root — the directory
-	/// carrying BOTH the solution and the <c>TestResults</c> the CI job publishes.
+	/// carrying the solution file. <c>TestResults</c> itself is created on write rather than required
+	/// here, so a missing one relocates nothing.
 	/// </summary>
 	private static string? FindRepositoryRoot(string startDirectory) {
 		DirectoryInfo? candidate = new(startDirectory);
 		while (candidate is not null) {
-			if (File.Exists(Path.Combine(candidate.FullName, SolutionMarker)) &&
-				Directory.Exists(Path.Combine(candidate.FullName, TestResultsDirectoryName))) {
+			if (File.Exists(Path.Combine(candidate.FullName, SolutionMarker))) {
 				return candidate.FullName;
 			}
 

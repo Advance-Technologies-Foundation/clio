@@ -102,8 +102,8 @@ public sealed class McpResultDiagnosticsTests {
 		string description = McpResultDiagnostics.DescribeWithSink(callResult, null, "named", sink);
 
 		// Assert
-		description.Should().Contain("Payload=/tmp/TestResults/mcp-payloads/dump.json",
-			because: "naming the file is the whole mechanism by which the payload stays reachable while staying out of the log");
+		description.Should().Contain("Payload=\"/tmp/TestResults/mcp-payloads/dump.json\"",
+			because: "naming the file is the whole mechanism by which the payload stays reachable while staying out of the log, and quoting it is what lets a caller append its own text after the description without making the path unrecoverable");
 	}
 
 	[Test]
@@ -184,12 +184,17 @@ public sealed class McpResultDiagnosticsTests {
 		string message = McpResultDiagnostics.DescribePrefixed(
 			"Could not parse list-apps MCP result: ", callResult);
 
-		// Assert
-		string? path = PayloadDumpReader.ExtractPath(message);
-		path.Should().NotBeNull(because: "a successful write must name its file in the message");
-		Path.GetFileName(path!).Should().Contain("could-not-parse-list-apps-mcp-result",
-			because: "the caller's sentence is the only thing on this path that says which tool failed, so it is what makes one dump distinguishable from another in the published artifact");
-		PayloadDumpReader.DeleteIfPresent(message);
+		// Assert: cleanup in a finally, not after the assertions - FluentAssertions throws on the first
+		// failure, and a delete placed below them is skipped on exactly the runs whose artifact matters.
+		try {
+			string? path = PayloadDumpReader.ExtractPath(message);
+			path.Should().NotBeNull(because: "a successful write must name its file in the message");
+			Path.GetFileName(path!).Should().Contain("could-not-parse-list-apps-mcp-result",
+				because: "the caller's sentence is the only thing on this path that says which tool failed, so it is what makes one dump distinguishable from another in the published artifact");
+		}
+		finally {
+			PayloadDumpReader.DeleteIfPresent(message);
+		}
 	}
 
 	[Test]
@@ -313,7 +318,7 @@ public sealed class McpResultDiagnosticsTests {
 		// Assert
 		description.Should().Contain("StructuredContent=present",
 			because: "a reader has to be able to tell which channel carried the unreadable answer before opening the dump");
-		sink.Writes[0].Payload.Should().Contain("\"code\": 7",
+		sink.Writes[0].Payload.Should().Contain("\"code\":7",
 			because: "the structured channel must reach the dump too, not only the content blocks");
 	}
 
@@ -396,6 +401,24 @@ public sealed class McpResultDiagnosticsTests {
 			because: "the cut fell inside a surrogate pair, so exactly one orphaned half must have been dropped - if it were not, this test would pass without testing anything");
 		char.IsHighSurrogate(kept[^1]).Should().BeFalse(
 			because: "a lone high surrogate is invalid UTF-16 and makes whatever serializes the message next throw instead of reporting the failure");
+	}
+
+	[Test]
+	[Description("Keeps the documented cap even when the sanitizer lengthens the kept text rather than only shortening it.")]
+	public void Truncate_ShouldStillCapTheResult_WhenTheSanitizerGrowsTheKeptText() {
+		// Arrange: a sanitizer that appends more than it removes, which is what the only real one does -
+		// DropValueCutByTheBound swaps an unterminated value for a 42-character marker.
+		const int limit = 120;
+		string text = new('z', 500);
+
+		// Act
+		string truncated = McpResultDiagnostics.Truncate(text, limit, kept => kept + new string('!', 200));
+
+		// Assert
+		truncated.Length.Should().Be(limit,
+			because: "the limit is documented as the maximum length of the RESULT, so a sanitizer that grows the kept text must be re-cut rather than allowed to overflow the bound that keeps payload-shaped text inside the redaction pass's cheap range");
+		truncated.Should().EndWith($" … {text.Length} characters total, truncated to fit {limit}",
+			because: "the note must survive the second cut; trimming it away would leave a silent truncation");
 	}
 
 	/// <summary>

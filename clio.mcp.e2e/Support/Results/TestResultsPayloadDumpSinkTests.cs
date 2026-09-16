@@ -11,11 +11,10 @@ namespace Clio.Mcp.E2E.Support.Results;
 /// repository's published <c>TestResults</c> directory is invisible on CI, which is the failure mode this
 /// design exists to remove. They clean up after themselves and use no OS-specific paths.
 /// <para>
-/// The sink's write-failure branch is not exercised here. Forcing a real write to fail needs either a
-/// permission state or a filesystem layout that cannot be arranged portably across macOS, Linux and the
-/// Windows agent, and a test that reproduced the sink's own try/catch in the test file would assert the
-/// copy rather than the sink. What matters to a reader — that a failed dump degrades the diagnostic
-/// instead of erasing it — is covered from the caller's side in
+/// The write-failure branch is provoked without permission games: the sink is pointed at a directory whose
+/// parent is an ordinary file, which makes <c>Directory.CreateDirectory</c> throw on every OS this suite
+/// runs on. That drives the sink's OWN catch rather than a copy of it; how a failed dump degrades the diagnostic is covered from the
+/// caller's side in
 /// <c>McpResultDiagnosticsTests.Describe_ShouldFallBackToAnExcerpt_WhenTheDumpCannotBeWritten</c>.
 /// </para>
 /// </remarks>
@@ -113,6 +112,32 @@ public sealed class TestResultsPayloadDumpSinkTests {
 			result => result.Succeeded.Should().BeTrue(
 				because: "every write must land, not merely the first"),
 			because: "a sink that silently stops writing after the first call would hide every later failure's payload");
+	}
+
+	[Test]
+	[Description("Reports a write failure instead of throwing, so the diagnostic path never replaces the parse failure it exists to explain.")]
+	public void Write_ShouldReportTheFailure_WhenItsDirectoryCannotBeCreated() {
+		// Arrange: a FILE standing where the sink's directory has to be. Directory.CreateDirectory throws
+		// on every OS this suite runs on, and it needs no permission state the runner may or may not have.
+		string blocker = Path.Combine(Path.GetTempPath(), $"clio-dump-blocker-{Guid.NewGuid():N}");
+		File.WriteAllText(blocker, "not a directory");
+		try {
+			TestResultsPayloadDumpSink sink = new(Path.Combine(blocker, "mcp-payloads"));
+
+			// Act
+			McpPayloadDumpResult result = sink.Write("failure branch", "{}");
+
+			// Assert
+			result.Succeeded.Should().BeFalse(
+				because: "a write that cannot happen must be reported, not pretended");
+			result.FailureReason.Should().NotBeNullOrWhiteSpace(
+				because: "a caller that gets neither a path nor a reason cannot tell a silent no-op from a successful dump");
+			result.Path.Should().BeNull(
+				because: "naming a file that does not exist sends the reader hunting a missing artifact");
+		}
+		finally {
+			File.Delete(blocker);
+		}
 	}
 
 	private void Track(McpPayloadDumpResult result) {

@@ -21,6 +21,32 @@ namespace Clio.Mcp.E2E.Support.Results;
 [Category("McpE2E.NoEnvironment")]
 [Property("Module", "McpServer")]
 public sealed class ApplicationResultParserDiagnosticsTests {
+	/// <summary>
+	/// Messages whose dump must be removed however the test ends.
+	/// </summary>
+	/// <remarks>
+	/// Cleanup lives in <c>[TearDown]</c>, not at the end of the Assert block. FluentAssertions throws on
+	/// the first failed assertion, so a delete placed after the assertions is skipped on exactly the runs
+	/// that matter — the failing ones, whose artifact has to be readable — and the leftovers are then
+	/// mistaken for the dump belonging to the failure under investigation.
+	/// </remarks>
+	private readonly List<string> _messagesWithDumps = [];
+
+	[TearDown]
+	public void TearDown() {
+		foreach (string message in _messagesWithDumps) {
+			PayloadDumpReader.DeleteIfPresent(message);
+		}
+
+		_messagesWithDumps.Clear();
+	}
+
+	/// <summary>Registers a failure message so its dump is removed even if an assertion above fails.</summary>
+	private string TrackDump(string message) {
+		_messagesWithDumps.Add(message);
+		return message;
+	}
+
 	[Test]
 	[Description("Includes the tool-specific prefix and IsError in the message thrown when list-apps returns an unparsable result, and dumps the payload's own text to the file that message names.")]
 	public void ExtractList_ShouldThrowWithPayloadDiagnostics_WhenResultIsNotAValidListEnvelope() {
@@ -38,6 +64,7 @@ public sealed class ApplicationResultParserDiagnosticsTests {
 		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
 				because: "the server's unhandled-exception text does not deserialize into ApplicationListResponseEnvelope")
 			.Which;
+		TrackDump(exception.Message);
 		exception.Message.Should().StartWith("Could not parse list-apps MCP result:",
 			because: "the tool-specific prefix must be preserved unchanged");
 		exception.Message.Should().Contain("IsError=True",
@@ -65,6 +92,7 @@ public sealed class ApplicationResultParserDiagnosticsTests {
 		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
 				because: "an HTML login page does not deserialize into GetPkgListResponseEnvelope")
 			.Which;
+		TrackDump(exception.Message);
 		exception.Message.Should().Contain("LastJsonError=",
 			because: "the sibling parsers now keep the JsonException their catch blocks used to swallow");
 		PayloadDumpReader.ReadAndDelete(exception.Message).Should().Contain("Sign in",
@@ -88,6 +116,7 @@ public sealed class ApplicationResultParserDiagnosticsTests {
 		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
 				because: "an envelope with no packages array is rejected by the parser's own validity check")
 			.Which;
+		TrackDump(exception.Message);
 		exception.Message.Should().NotContain("LastJsonError=",
 			because: "deserializing the raw content-item array into an object always fails and says nothing about the real payload, so blaming it would misdirect the reader");
 		PayloadDumpReader.ReadAndDelete(exception.Message).Should().Contain("packages",

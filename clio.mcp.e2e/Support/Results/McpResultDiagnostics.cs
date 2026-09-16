@@ -183,14 +183,23 @@ internal static class McpResultDiagnostics {
 		McpPayloadDumpResult dump = sink.Write(label, rawPayload);
 
 		if (dump.Succeeded) {
-			return $"Payload={dump.Path}";
+			// Quoted, and therefore self-delimiting. A caller may append its own text after this
+			// description (ApplicationToolE2ETests re-throws as "{message} Raw result: {description}"),
+			// so a path that ended at the next whitespace-delimited token or at end-of-string could not
+			// be recovered from the wrapped form. See PayloadDumpReader.
+			return $"Payload=\"{dump.Path}\"";
 		}
 
 		return $"Payload=(dump failed: {dump.FailureReason}) "
 			+ $"PayloadExcerpt=\"{RedactLogFragment(rawPayload)}\"";
 	}
 
-	private static readonly JsonSerializerOptions RawDumpOptions = new() { WriteIndented = true };
+	/// <summary>
+	/// Compact on purpose. Indenting inflated an already-unbounded payload — materially larger in memory,
+	/// on disk and in the published artifact — for no gain: the dump is a file people open with <c>jq</c>
+	/// or an editor, both of which pretty-print it themselves.
+	/// </summary>
+	private static readonly JsonSerializerOptions RawDumpOptions = new();
 
 	/// <summary>
 	/// Renders how many content blocks arrived, rather than their text. The count is what distinguishes
@@ -301,8 +310,17 @@ internal static class McpResultDiagnostics {
 			return note[..limit];
 		}
 
-		string kept = TextUtilities.TruncateWithoutSplittingSurrogatePair(text, limit - note.Length);
-		return (sanitizeCutText is null ? kept : sanitizeCutText(kept)) + note;
+		int keptBudget = limit - note.Length;
+		string kept = TextUtilities.TruncateWithoutSplittingSurrogatePair(text, keptBudget);
+		if (sanitizeCutText is not null) {
+			// Re-applied AFTER sanitizing, because a sanitizer may GROW the text rather than only shrink
+			// it: DropValueCutByTheBound replaces the tail from an unterminated opening quote with a
+			// 42-character marker, which overflows the documented limit when the cut quote sits near the
+			// end of the fragment. Cutting again keeps the invariant this method states for itself.
+			kept = TextUtilities.TruncateWithoutSplittingSurrogatePair(sanitizeCutText(kept), keptBudget);
+		}
+
+		return kept + note;
 	}
 }
 
