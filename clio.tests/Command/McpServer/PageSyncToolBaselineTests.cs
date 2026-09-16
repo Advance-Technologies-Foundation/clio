@@ -77,7 +77,7 @@ public sealed class PageSyncToolBaselineTests
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("""{"success": true}""");
 		return new PageUpdateCommand(
-			applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), Substitute.For<IPageBaselineGuard>(), CreateHierarchyClient());
+			applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), CreateHierarchyClient());
 	}
 
 	private static string ChecksumRow(string checksum) =>
@@ -97,8 +97,7 @@ public sealed class PageSyncToolBaselineTests
 			commandResolver, fileSystem,
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			Substitute.For<IComponentInfoCatalog>(),
-			Substitute.For<IPageBodySamplingService>(),
-			new PageBaselineGuard(fileSystem),
+			new PageBaselineGuard(fileSystem), new PersistedResourceKeyReader(),
 			fileGate: fileGate);
 	}
 
@@ -134,11 +133,10 @@ public sealed class PageSyncToolBaselineTests
 				new PageSyncPageInput("UsrOther_FormPage", ValidPageBody)
 			],
 			Validate: false,
-			SkipSampling: true,
 			OutputDirectory: "/ws");
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args, null);
+		PageSyncResponse response = await tool.SyncPages(args);
 
 		// Assert
 		response.Success.Should().BeFalse(because: "one page in the batch hit an external-modification conflict");
@@ -162,11 +160,10 @@ public sealed class PageSyncToolBaselineTests
 			"dev",
 			[new PageSyncPageInput(SchemaName, ValidPageBody, Force: true)],
 			Validate: false,
-			SkipSampling: true,
 			OutputDirectory: "/ws");
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args, null);
+		PageSyncResponse response = await tool.SyncPages(args);
 
 		// Assert
 		response.Pages[0].Success.Should().BeTrue(because: "per-page force=true deliberately bypasses the conflict check");
@@ -186,11 +183,10 @@ public sealed class PageSyncToolBaselineTests
 			"dev",
 			[new PageSyncPageInput(SchemaName, ValidPageBody)],
 			Validate: false,
-			SkipSampling: true,
 			OutputDirectory: "/ws");
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args, null);
+		PageSyncResponse response = await tool.SyncPages(args);
 
 		// Assert
 		response.Pages[0].Success.Should().BeTrue(because: "a matching baseline allows the save to proceed");
@@ -199,6 +195,31 @@ public sealed class PageSyncToolBaselineTests
 			because: "consecutive syncs in the same session must compare against the post-save checksum");
 		meta.FetchedAt.Should().Be("2026-06-12T10:00:00Z",
 			because: "the refresh must not touch the get-page snapshot fields");
+	}
+
+	[Test]
+	[Description("CHARACTERIZATION, not a pin of the issue #1538 fix: sync-pages exposes no target-package-uid / target-schema-uid, so the selector branch that issue changes is unreachable from this tool and the ConditionalBaselineApplied half of the shared refresh gate is never exercised here. What this does pin is that a PINNED per-page save still refreshes meta.json through the refreshBaseline half - the property whose loss would reproduce the same symptom on this writer.")]
+	public async Task SyncPages_ShouldRefreshBaseline_WhenThePageCarriesAPinnedChecksum() {
+		// Arrange — the on-disk baseline is deliberately STALE; only the per-page pin matches the server,
+		// so the refresh can only be attributed to the pinned path.
+		MockFileSystem fileSystem = CreateFileSystemWithBaseline("stale-on-disk");
+		PageUpdateCommand updateCommand = CreateUpdateCommand(ChecksumRow("server-checksum"), ChecksumRow("fresh-after-pinned-save"));
+		PageSyncTool tool = CreateTool(updateCommand, fileSystem);
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput(SchemaName, ValidPageBody, Checksum: "server-checksum")],
+			Validate: false,
+			OutputDirectory: "/ws");
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args);
+
+		// Assert
+		response.Pages[0].Success.Should().BeTrue(
+			because: "the pin matches the server, so the stale on-disk baseline must not veto the save");
+		PageMetaFileModel meta = JsonSerializer.Deserialize<PageMetaFileModel>(fileSystem.GetFile(MetaPath).TextContents);
+		meta.Baseline.Checksum.Should().Be("fresh-after-pinned-save",
+			because: "leaving the superseded checksum on disk is exactly what makes the caller's next unpinned sync conflict with its own previous save");
 	}
 
 	[Test]
@@ -212,11 +233,10 @@ public sealed class PageSyncToolBaselineTests
 			"dev",
 			[new PageSyncPageInput(SchemaName, ValidPageBody)],
 			Validate: false,
-			SkipSampling: true,
 			OutputDirectory: "/ws");
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args, null);
+		PageSyncResponse response = await tool.SyncPages(args);
 
 		// Assert
 		response.Pages[0].Success.Should().BeTrue(because: "a failed post-save metadata query must not fail the save");
@@ -238,11 +258,10 @@ public sealed class PageSyncToolBaselineTests
 			[new PageSyncPageInput(SchemaName, ValidPageBody)],
 			Validate: false,
 			Verify: true,
-			SkipSampling: true,
 			OutputDirectory: "/ws");
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args, null);
+		PageSyncResponse response = await tool.SyncPages(args);
 
 		// Assert
 		response.Pages[0].Success.Should().BeTrue(because: "the verified save must succeed");
@@ -320,11 +339,10 @@ public sealed class PageSyncToolBaselineTests
 			[new PageSyncPageInput(SchemaName, ValidPageBody)],
 			Validate: false,
 			Verify: true,
-			SkipSampling: true,
 			OutputDirectory: "/ws");
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args, null);
+		PageSyncResponse response = await tool.SyncPages(args);
 
 		// Assert
 		response.Pages[0].Success.Should().BeTrue(because: "a concurrent local writer must not fail a save that landed on the server");
@@ -352,11 +370,10 @@ public sealed class PageSyncToolBaselineTests
 			[new PageSyncPageInput(SchemaName, ValidPageBody)],
 			Validate: false,
 			Verify: true,
-			SkipSampling: true,
 			OutputDirectory: "/ws");
 
 		// Act
-		PageSyncResponse response = await tool.SyncPages(args, null);
+		PageSyncResponse response = await tool.SyncPages(args);
 
 		// Assert
 		response.Pages[0].Success.Should().BeTrue(because: "the verified save must succeed for its gate usage to be meaningful");

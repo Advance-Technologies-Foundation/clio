@@ -142,6 +142,17 @@ internal sealed class RuntimeDetectionStubServer : IAsyncDisposable {
 	public const string ODataPreWriteEmptyRecord = "emptyrecord";
 
 	/// <summary>
+	/// <see cref="RuntimeDetectionStubServerConfiguration.ODataPreWriteMode"/> value that answers a
+	/// COLLECTION read carrying <c>$expand</c> with the shape a real Creatio service returned for
+	/// <c>Contact?$select=Id,Name,AccountId&amp;$expand=Account&amp;$top=1</c>: an
+	/// <c>@odata.context</c> whose fragment carries the projection and the expanded navigation property
+	/// as <c>Account()</c>, plus one record with the expanded object nested in it. The fragment is built
+	/// from the request's own <c>$select</c>/<c>$expand</c>, so the stub answers what was asked rather
+	/// than a literal it could drift from.
+	/// </summary>
+	public const string ODataExpandRead = "expandread";
+
+	/// <summary>
 	/// Path of the stub's own introspection endpoint. A GET returns a JSON array of
 	/// <c>{ "method": ..., "url": ... }</c> for every request the stub has served, letting a test prove
 	/// which URL the pre-write validation actually requested and that no PATCH was issued.
@@ -484,15 +495,47 @@ http.createServer((request, response) => {
             + " See http://admin:{{ODataPreWriteUnverifiedSecret}}@{{ODataPreWriteUnverifiedHost}}:80/trace for details.");
         return;
       }
+      const isCollectionExpandRead = request.method === "GET"
+        && url.includes("/odata/" + config.ODataEntity + "?")
+        && url.includes("$expand=");
+      if (isCollectionExpandRead && config.ODataPreWriteMode === "{{ODataExpandRead}}") {
+        // The live-proven expand shape: the context fragment names the selected columns AND the
+        // expanded navigation property with empty parentheses, and the record nests the expanded entity.
+        // The query is read through the URL parser rather than by splitting on the parameter name: a
+        // name that is a substring of another ($select inside a hypothetical $selectAny) would make a
+        // hand-rolled split answer the wrong value, and the parser also does the percent-decoding.
+        const query = new URL(url, "http://127.0.0.1").searchParams;
+        const splitList = (value) => (value ? value.split(",") : []);
+        const projection = splitList(query.get("$select"));
+        const expanded = splitList(query.get("$expand"));
+        const fragment = config.ODataEntity + "("
+          + projection.concat(expanded.map((nav) => nav + "()")).join(",") + ")";
+        // Object.create(null) so a column literally named __proto__ or constructor becomes an own
+        // property of the answer instead of mutating/ignoring an inherited one.
+        const record = Object.assign(Object.create(null), { Id: "00000000-0000-0000-0000-000000000001" });
+        for (const column of projection) {
+          if (column && column !== "Id") {
+            record[column] = "probe";
+          }
+        }
+        for (const nav of expanded) {
+          record[nav] = { Id: "00000000-0000-0000-0000-000000000002", Name: "probe" };
+        }
+        sendJson(response, 200, {
+          "@odata.context": "http://127.0.0.1/odata/$metadata#" + fragment,
+          value: [record]
+        });
+        return;
+      }
       if (isKeyedProbe) {
         // The record the $select probe addressed, echoed back with the OData context annotation and
         // EVERY column the probe selected - what a conforming service answers, and what the probe now
         // requires as proof that those fields exist.
-        const selected = decodeURIComponent(url.split("$select=")[1].split("&")[0]).split(",");
-        const record = {
+        const selected = (new URL(url, "http://127.0.0.1").searchParams.get("$select") || "").split(",");
+        const record = Object.assign(Object.create(null), {
           "@odata.context": "http://127.0.0.1/odata/$metadata#" + config.ODataEntity,
           Id: "00000000-0000-0000-0000-000000000001"
-        };
+        });
         for (const column of selected) {
           if (column && column !== "Id") {
             record[column] = "probe";
@@ -520,6 +563,45 @@ http.createServer((request, response) => {
       // GET, PATCH, and DELETE alike.
       response.writeHead(200, { "Content-Type": "text/html" });
       response.end("<!DOCTYPE html><html><head><title>404 - File or directory not found.</title></head><body>{{ODataNonJsonBodyMarker}}</body></html>");
+      return;
+    }
+    if (request.method === "GET" && config.ODataInvalidQueryEntity && url.includes("/odata/" + config.ODataInvalidQueryEntity)) {
+      // GH-1407: the two shapes Creatio answers an unresolvable filter member with, observed on a real
+      // .NET Framework stand. A raw foreign-key column hides the cause two levels down under
+      // innererror/internalexception and puts "An error has occurred." in the headline; an unknown
+      // property names itself in the headline. Both are served with HTTP 200.
+      // The literals are the two fixture filters in ODataReadRoutingErrorE2ETests: the raw foreign-key
+      // column SysSettingsId, and the unknown property 'Nope'. Change them together with that fixture.
+      if (url.indexOf("SysSettingsId") >= 0) {
+        sendJson(response, 200, {
+          error: {
+            code: "",
+            message: "An error has occurred.",
+            innererror: {
+              message: "The 'ObjectContent`1' type failed to serialize the response body for content type 'application/json'.",
+              type: "",
+              stacktrace: "",
+              internalexception: {
+                message: "Column by path SysSettingsId not found in schema " + config.ODataInvalidQueryEntity + ".",
+                type: "",
+                stacktrace: ""
+              }
+            }
+          }
+        });
+        return;
+      }
+      sendJson(response, 200, {
+        error: {
+          code: "",
+          message: "The query specified in the URI is not valid. Could not find a property named 'Nope' on type 'Terrasoft.Configuration.OData." + config.ODataInvalidQueryEntity + "'.",
+          innererror: {
+            message: "Could not find a property named 'Nope' on type 'Terrasoft.Configuration.OData." + config.ODataInvalidQueryEntity + "'.",
+            type: "",
+            stacktrace: ""
+          }
+        }
+      });
       return;
     }
     if ((request.method === "GET" || request.method === "POST") && config.ODataRoutingErrorEntity && (url.includes("/odata/" + config.ODataRoutingErrorEntity + "?") || url.endsWith("/odata/" + config.ODataRoutingErrorEntity))) {
@@ -581,6 +663,7 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	string? ThemeCssContent = null,
 	string? HtmlSelectQuerySchemaName = null,
 	string? ODataNonJsonEntity = null,
+	string? ODataInvalidQueryEntity = null,
 	string? ODataEntity = null,
 	string? ODataPreWriteMode = null,
 	string? AuthRejectedSelectQuerySchemaName = null,

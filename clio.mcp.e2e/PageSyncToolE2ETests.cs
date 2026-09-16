@@ -225,8 +225,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 							["body"] = inlinePlaceholderBody
 						}
 					},
-					["validate"] = false,
-					["skip-sampling"] = true
+					["validate"] = false
 				}
 			},
 			context.CancellationTokenSource.Token);
@@ -269,8 +268,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 							["force"] = true
 						}
 					},
-					["validate"] = false,
-					["skip-sampling"] = true
+					["validate"] = false
 				}
 			},
 			context.CancellationTokenSource.Token);
@@ -340,10 +338,10 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("sync-pages fails fast at the JavaScript-syntax gate BEFORE sampling and BEFORE any remote save when a body contains an `await X = Y` assignment shape (the actual production incident). Verifies the gate runs end-to-end through the real MCP transport per the AC.")]
+	[Description("sync-pages fails fast at the JavaScript-syntax gate BEFORE any remote save when a body contains an `await X = Y` assignment shape (the actual production incident). Verifies the gate runs end-to-end through the real MCP transport per the AC.")]
 	[AllureTag(ToolName)]
-	[AllureName("sync-pages fails fast on JavaScript syntax error before sampling")]
-	[AllureDescription("Starts the real clio MCP server, sends a single-page sync-pages call with the incident body (`await request.$context.X = Y`), and verifies that the per-page result carries the JavaScript-syntax-error message and the 'NOT sent to Creatio' assurance — without sampling tokens spent and without any remote save attempted.")]
+	[AllureName("sync-pages fails fast on JavaScript syntax error before any remote save")]
+	[AllureDescription("Starts the real clio MCP server, sends a single-page sync-pages call with the incident body (`await request.$context.X = Y`), and verifies that the per-page result carries the JavaScript-syntax-error message and the 'NOT sent to Creatio' assurance — without any remote save attempted.")]
 	public async Task PageSyncTool_Should_FailFast_When_Body_Has_JavaScript_Syntax_Error() {
 		await using ArrangeContext context = await ArrangeAsync();
 		// `await` cannot be an assignment target; no environment-name because the
@@ -370,8 +368,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 							["schema-name"] = $"UsrSyntaxIncident_{Guid.NewGuid():N}",
 							["body"] = nonValidBody
 						}
-					},
-					["skip-sampling"] = true
+					}
 				}
 			},
 			context.CancellationTokenSource.Token);
@@ -386,13 +383,13 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		response.Pages[0].Success.Should().BeFalse(
 			because: "the per-page result must mirror the overall failure");
 		response.Pages[0].Error.Should().Contain("JavaScript syntax error",
-			because: "the agent-facing error must name the actual class of problem (parser rejection) so the caller does not chase a phantom environment / marker / sampling failure");
+			because: "the agent-facing error must name the actual class of problem (parser rejection) so the caller does not chase a phantom environment or marker failure");
 		response.Pages[0].Error.Should().Contain("NOT sent to Creatio",
 			because: "the operator must know the broken body did not reach the server without inspecting logs, even when the failure surfaces through the MCP wire");
 	}
 
 	[Test]
-	[Description("sync-pages fails fast at the AST lint gate when a custom converter uses the reserved `crt.*` prefix — the lint rule `converter-crt-prefix-reserved` is unique to the AST pass (the regex layer treats `crt.*` as a valid vendor prefix), so this body is what proves the lint pass surfaces through the real MCP transport, no sampling and no remote save attempted.")]
+	[Description("sync-pages fails fast at the AST lint gate when a custom converter uses the reserved `crt.*` prefix — the lint rule `converter-crt-prefix-reserved` is unique to the AST pass (the regex layer treats `crt.*` as a valid vendor prefix), so this body is what proves the lint pass surfaces through the real MCP transport, with no remote save attempted.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-pages fails fast on converter-crt-prefix-reserved lint error")]
 	[AllureDescription("Starts the real clio MCP server and submits a body whose `converters` section registers a custom converter under the reserved `crt.*` namespace. The existing regex validators accept the body (their shape checks explicitly skip `crt.*` keys); verifying the per-page response carries `Page body lint failed` confirms the AST lint pass surfaces end-to-end through the real MCP wire.")]
@@ -420,8 +417,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 							["schema-name"] = $"UsrLintCrtConverter_{Guid.NewGuid():N}",
 							["body"] = crtPrefixConverterBody
 						}
-					},
-					["skip-sampling"] = true
+					}
 				}
 			},
 			context.CancellationTokenSource.Token);
@@ -436,7 +432,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		response.Pages[0].Success.Should().BeFalse(
 			because: "the per-page result must mirror the overall failure");
 		response.Pages[0].Error.Should().Contain("Page body lint failed",
-			because: "the canonical lint error prefix is the contract surface the agent keys on to distinguish lint rejection from syntax / sampling rejection");
+			because: "the canonical lint error prefix is the contract surface the agent keys on to distinguish lint rejection from syntax rejection");
 		response.Pages[0].Error.Should().Contain("converter-crt-prefix-reserved",
 			because: "the rule id must be visible in the wire response so the agent can map the failure back to the guidance doc that describes the anti-pattern");
 		response.Pages[0].Error.Should().Contain("NOT sent to Creatio",
@@ -504,8 +500,12 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run sync-pages validation E2E.");
 		}
-		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
-			Assert.Ignore($"sync-pages validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
+		// The resolver may fall back to another registered stand, so its ANSWER is the environment
+		// the test must use. Discarding it and keeping the configured name sent the call to a stand
+		// already known to be unreachable, turning a skip into a failure.
+		environmentName = await ReachableSandboxEnvironment.ResolveAsync(settings);
+		if (environmentName is null) {
+			Assert.Ignore($"sync-pages validation E2E requires a reachable sandbox environment. '{settings.Sandbox.EnvironmentName}' was not reachable.");
 		}
 
 		await using ArrangeContext context = await ArrangeAsync();
@@ -824,22 +824,12 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		}
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
-		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
-			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
-			return configuredEnvironmentName;
-		}
-
-		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
-			return fallbackEnvironmentName;
-		}
-
-		Assert.Ignore(
-			$"sync-pages MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
-		return string.Empty;
-	}
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		// Destructive fixture: configured-only. The AllowDestructiveMcpTests opt-in authorizes writes to
+		// the disposable stand named in settings, never to a fallback environment that merely answers.
+		await ReachableSandboxEnvironment.ResolveConfiguredOrIgnoreAsync(
+			settings,
+			$"sync-pages MCP E2E requires the configured sandbox environment '{settings.Sandbox.EnvironmentName}' to be set and reachable.");
 
 	[Test]
 	[Description("ENG-91317: sync-pages surfaces a per-page conflict for a stale-baseline page after an out-of-band modification, and the per-page force flag overwrites it deliberately (restoring the seed body).")]
@@ -885,8 +875,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 						["schema-name"] = SavePage,
 						["body"] = outOfBandBody,
 						["environment-name"] = environmentName,
-						["output-directory"] = outOfBandDir,
-						["skip-sampling"] = true
+						["output-directory"] = outOfBandDir
 					}
 				},
 				context.CancellationTokenSource.Token);
@@ -907,7 +896,6 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 							}
 						},
 						["validate"] = true,
-						["skip-sampling"] = true,
 						["output-directory"] = sessionDir
 					}
 				},
@@ -940,7 +928,6 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 							}
 						},
 						["validate"] = true,
-						["skip-sampling"] = true,
 						["output-directory"] = sessionDir
 					}
 				},
@@ -1227,8 +1214,12 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run sync-pages semantic validation E2E.");
 		}
-		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
-			Assert.Ignore($"sync-pages semantic validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
+		// The resolver may fall back to another registered stand, so its ANSWER is the environment
+		// the test must use. Discarding it and keeping the configured name sent the call to a stand
+		// already known to be unreachable, turning a skip into a failure.
+		environmentName = await ReachableSandboxEnvironment.ResolveAsync(settings);
+		if (environmentName is null) {
+			Assert.Ignore($"sync-pages semantic validation E2E requires a reachable sandbox environment. '{settings.Sandbox.EnvironmentName}' was not reachable.");
 		}
 
 		await using ArrangeContext context = await ArrangeAsync();
@@ -1286,8 +1277,12 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run sync-pages semantic validation E2E.");
 		}
-		if (!await CanReachEnvironmentAsync(settings, environmentName!)) {
-			Assert.Ignore($"sync-pages semantic validation E2E requires a reachable sandbox environment. '{environmentName}' was not reachable.");
+		// The resolver may fall back to another registered stand, so its ANSWER is the environment
+		// the test must use. Discarding it and keeping the configured name sent the call to a stand
+		// already known to be unreachable, turning a skip into a failure.
+		environmentName = await ReachableSandboxEnvironment.ResolveAsync(settings);
+		if (environmentName is null) {
+			Assert.Ignore($"sync-pages semantic validation E2E requires a reachable sandbox environment. '{settings.Sandbox.EnvironmentName}' was not reachable.");
 		}
 
 		await using ArrangeContext context = await ArrangeAsync();
@@ -1334,13 +1329,6 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 				because: "the failure should identify both the wrong param and the required param name");
 	}
 
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-			settings,
-			["ping-app", "-e", environmentName]);
-		return result.ExitCode == 0;
-	}
-
 	private async Task<ArrangeContext> ArrangeAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -1349,10 +1337,11 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		string workspaceName = $"workspace-{Guid.NewGuid():N}";
 		string workspacePath = Path.Combine(rootDirectory, workspaceName);
 		CancellationTokenSource cancellationTokenSource = new(System.TimeSpan.FromMinutes(5));
-		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
-			settings,
-			["create-workspace", workspaceName, "--empty", "--directory", rootDirectory],
-			cancellationToken: cancellationTokenSource.Token);
+		// No create-workspace here. Every test in this fixture calls sync-pages with an explicit
+		// environment-name and page bodies; none reads WorkspacePath and none pushes or restores a
+		// workspace, so the clio CLI round trip that used to build one per test (25 invocations, about
+		// 43s of the run) produced a directory nothing then looked at.
+		Directory.CreateDirectory(workspacePath);
 		McpServerSession session = Session;
 		return new ArrangeContext(rootDirectory, workspacePath, session, cancellationTokenSource);
 	}
@@ -1396,8 +1385,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 							["body"] = mobileBodyWithConverters
 						}
 					},
-					["validate"] = true,
-					["skip-sampling"] = true
+					["validate"] = true
 				}
 			},
 			context.CancellationTokenSource.Token);
@@ -1450,8 +1438,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 							["body"] = mobileBody
 						}
 					},
-					["validate"] = true,
-					["skip-sampling"] = true
+					["validate"] = true
 				}
 			},
 			context.CancellationTokenSource.Token);
@@ -1533,5 +1520,279 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 			}
 			return ValueTask.CompletedTask;
 		}
+	}
+
+	[Test]
+	[Description("The served sync-pages contract exposes the per-page `checksum` conflict baseline and states that `resources` is additions on top of the keys already persisted on the schema - the two contract changes for issue #1464, asserted over the real MCP surface rather than only in unit reflection. Both landed on update-page in #1356 while sync-pages - the tool update-page's own ToolDeprecation points callers at - kept neither.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages contract exposes the per-page checksum baseline and additive resources")]
+	[AllureDescription("Fetches the sync-pages contract via get-tool-contract over the real clio MCP server and asserts the served `pages` description carries the per-page checksum conflict-baseline argument and the additive-resources wording introduced for issue #1464.")]
+	public async Task PageSyncTool_Contract_Should_Expose_PerPage_Checksum_And_Additive_Resources() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+
+		// Act
+		CallToolResult contractResult = await context.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { ToolName }
+				}
+			},
+			context.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+
+		// Assert
+		ToolContractDefinition contract = contracts.Tools!.Single(definition => definition.Name == ToolName);
+		string pagesDescription = contract.InputSchema.Properties
+			.Single(field => field.Name == "pages").Description;
+		pagesDescription.Should().Contain("checksum",
+			because: "without a per-page checksum the caller on the CANONICAL write path had only force:true to get past a baseline that describes a different body (issue #1464)");
+		pagesDescription.Should().Contain("get-page",
+			because: "the served contract must tell the caller which value to pass as the per-page conflict baseline");
+		pagesDescription.Should().Contain("Additions only",
+			because: "a caller who reads `resources` as a full replacement set re-sends every key on every save, which is the behaviour issue #1320 reports and #1464 closes on sync-pages");
+		pagesDescription.Should().Contain("NOT updated by re-sending",
+			because: "a key already stored on the schema is never rewritten by CleanAndMerge, so promising overrides turns a corrected caption into a silent no-op reported as success");
+	}
+
+	[Test]
+	[Description("AC-1 behavioural round trip on the CANONICAL write path (issue #1464): get-page's `editable.checksum` is passed verbatim as a per-page `checksum` and the save proceeds; a stale pin is refused with per-page conflict:true / checksum-mismatch and lands nothing; the same stale pin plus per-page force:true overwrites deliberately. #1356 proved this on update-page only, where PageSyncPageInput had no checksum member at all.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages round-trips get-page's checksum through a per-page pin")]
+	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave on a real stand: (1) get-page captures editable.checksum; (2) sync-pages pins that value as the page's `checksum` and must save with conflict:false; (3) re-sending the now-stale pin must fail with per-page conflict:true / checksum-mismatch without landing a save; (4) the stale pin plus force:true must overwrite, restoring the original body (built-in cleanup).")]
+	public async Task PageSyncTool_Should_RoundTrip_GetPage_Checksum_Through_A_PerPage_Pin() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive sync-pages checksum round-trip test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext context = await ArrangeAsync();
+		// A DEDICATED anchor with no .clio-pages baseline in it: the pin must be the only thing arming the
+		// check, otherwise an on-disk baseline could carry the assertions and the argument under test would
+		// not be exercised at all.
+		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-sync-checksum-").FullName;
+		string originalBody = null;
+		try {
+			PageGetResponse firstGet = await ReadSeededPageAsync(context, environmentName, sessionDir);
+			string firstChecksum = firstGet.Editable.Checksum;
+			firstChecksum.Should().NotBeNullOrWhiteSpace(
+				because: "an empty baseline would make every pinned assertion below vacuous");
+			originalBody = await File.ReadAllTextAsync(firstGet.Files.BodyFile);
+
+			// Act 1: pin the checksum get-page just returned, verbatim.
+			PageSyncResponse pinnedSave = await SyncSeededPageAsync(
+				context, environmentName, sessionDir,
+				BodyWithSyncContainer(originalBody, "UsrE2ESyncPinContainerA"), firstChecksum);
+
+			// Assert 1
+			pinnedSave.Pages.Should().ContainSingle().Which.Success.Should().BeTrue(
+				because: $"the checksum came straight from get-page, so the pinned save must go through. Error: {pinnedSave.Pages.FirstOrDefault()?.Error}");
+			pinnedSave.Pages[0].Conflict.Should().BeFalse(
+				because: "a baseline that matches the server state is not a conflict");
+
+			// Act 2: non-vacuity - re-send the now-stale pin.
+			PageSyncResponse staleSave = await SyncSeededPageAsync(
+				context, environmentName, sessionDir,
+				BodyWithSyncContainer(originalBody, "UsrE2ESyncPinContainerB"), firstChecksum);
+
+			// Assert 2: the pin actually bites, so the success above is not "the check never runs".
+			staleSave.Pages.Should().ContainSingle().Which.Success.Should().BeFalse(
+				because: "a pin naming a superseded checksum must be refused, otherwise the success above proves nothing");
+			staleSave.Pages[0].Conflict.Should().BeTrue(
+				because: "the refusal must carry the per-page conflict marker through the real MCP transport");
+			staleSave.Pages[0].ConflictDetails.Should().NotBeNull(
+				because: "the per-page conflict must explain itself with structured details the caller can branch on");
+			staleSave.Pages[0].ConflictDetails.Reason.Should().Be("checksum-mismatch",
+				because: "the stale pin differs from the server checksum, which is precisely the checksum-mismatch reason");
+
+			// Act 3: force keeps its meaning alongside a pin. The stale pin is deliberately re-sent, so a
+			// success here can only come from force.
+			PageSyncResponse forcedSave = await SyncSeededPageAsync(
+				context, environmentName, sessionDir,
+				BodyWithSyncContainer(originalBody, "UsrE2ESyncPinContainerC"), firstChecksum, force: true);
+
+			// Assert 3
+			forcedSave.Pages.Should().ContainSingle().Which.Success.Should().BeTrue(
+				because: $"per-page force:true must bypass the conflict check after explicit user confirmation. Error: {forcedSave.Pages.FirstOrDefault()?.Error}");
+			forcedSave.Pages[0].Conflict.Should().BeFalse(
+				because: "a forced overwrite reports no conflict");
+		} finally {
+			// In the finally block, not on the happy path: an assertion failure above must not leave the
+			// SHARED seeded page carrying this test's probe containers for every later run.
+			if (!string.IsNullOrWhiteSpace(originalBody)) {
+				await SyncSeededPageAsync(context, environmentName, sessionDir, originalBody, checksum: null, force: true);
+			}
+			TryDeleteDirectory(sessionDir);
+		}
+	}
+
+	[Test]
+	[Description("AC-2 behavioural round trip on the CANONICAL write path (issue #1464): a sync-pages save registers a label resource key, and the NEXT sync-pages save of the same page does NOT repeat that key and must still be accepted. Before this the tool's own pre-execution gate rejected the second save before the command - whose gate #1356 already fixed - was ever resolved.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages accepts a later save whose label key is only persisted on the schema")]
+	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave on a real stand: (0) the body - an INSERTED FIELD (crt.Input with a label and a control bound to a differently named declared attribute, the only shape that produces the UnresolvedLabelResource rejection) - is saved with the key registered nowhere and must be REFUSED, which is what makes the rest non-vacuous; (1) the same body is saved with <key> registered through `resources`; (2) the SAME body is saved again with `resources` omitted entirely - the key now exists only in the schema's localizableStrings - and must be accepted. The original body is restored with force:true in cleanup.")]
+	public async Task PageSyncTool_Should_Accept_A_Later_Save_Whose_Label_Key_Is_Only_Persisted() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive sync-pages persisted-resource test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext context = await ArrangeAsync();
+		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-sync-resources-").FullName;
+		string originalBody = null;
+		try {
+			PageGetResponse firstGet = await ReadSeededPageAsync(context, environmentName, sessionDir);
+			originalBody = await File.ReadAllTextAsync(firstGet.Files.BodyFile);
+			const string resourceKey = "UsrE2ESyncPersistedField_label";
+			string labelledBody = BodyWithLabelledField(originalBody, resourceKey);
+
+			// Act 0: the same body with the key registered NOWHERE. Non-vacuity for the whole test - if the
+			// body shape did not actually trip the label-resource validator, every assertion below would
+			// pass on the pre-fix build too.
+			PageSyncResponse unregisteredSave = await SyncSeededPageAsync(
+				context, environmentName, sessionDir, labelledBody, checksum: null);
+
+			// Assert 0
+			PageSyncPageResult unregistered = unregisteredSave.Pages.Should().ContainSingle().Subject;
+			unregistered.Success.Should().BeFalse(
+				because: "the key is neither passed in `resources` nor stored on the schema yet, so the label would render blank");
+			(unregistered.Error ?? string.Empty).Should().Contain(
+				"is neither auto-provided by a DS-bound attribute nor registered",
+				because: "this exact rejection is the one a persisted key must later clear - without it the test measures nothing");
+
+			// Act 1: register the key.
+			PageSyncResponse firstSave = await SyncSeededPageAsync(
+				context, environmentName, sessionDir, labelledBody, checksum: null,
+				resources: "{\"" + resourceKey + "\": \"Persisted label\"}");
+
+			// Assert 1
+			firstSave.Pages.Should().ContainSingle().Which.Success.Should().BeTrue(
+				because: $"the first save carries the key in `resources`, so it must be accepted on any build. Error: {firstSave.Pages.FirstOrDefault()?.Error}");
+
+			// Act 2: save again WITHOUT re-sending the key.
+			PageSyncResponse secondSave = await SyncSeededPageAsync(
+				context, environmentName, sessionDir, labelledBody, checksum: null);
+
+			// Assert 2: this is the whole point - on the base build this save is refused.
+			secondSave.Pages.Should().ContainSingle().Which.Success.Should().BeTrue(
+				because: $"a key stored in the schema's localizableStrings resolves at runtime whether or not this call repeats it, so sync-pages must not demand it again (issue #1464). Error: {secondSave.Pages.FirstOrDefault()?.Error}");
+			(secondSave.Pages[0].Error ?? string.Empty).Should().NotContain(
+				"is neither auto-provided by a DS-bound attribute nor registered",
+				because: "the unresolved-label rejection is exactly the one a persisted key must clear");
+		} finally {
+			if (!string.IsNullOrWhiteSpace(originalBody)) {
+				await SyncSeededPageAsync(context, environmentName, sessionDir, originalBody, checksum: null, force: true);
+			}
+			TryDeleteDirectory(sessionDir);
+		}
+	}
+
+	private async Task<PageGetResponse> ReadSeededPageAsync(
+		ArrangeContext context, string environmentName, string sessionDir) {
+		CallToolResult getResult = await context.Session.CallToolAsync(
+			PageGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = SavePage,
+					["environment-name"] = environmentName,
+					["output-directory"] = sessionDir
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageGetResponse getResponse = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(getResult);
+		getResponse.Success.Should().BeTrue(
+			because: $"get-page must load the seeded page '{SavePage}'. Error: {getResponse.Error}");
+		getResponse.Editable.Should().NotBeNull(
+			because: "the editable state carries the checksum these tests round-trip");
+		return getResponse;
+	}
+
+	private async Task<PageSyncResponse> SyncSeededPageAsync(
+		ArrangeContext context, string environmentName, string sessionDir, string body,
+		string checksum, bool? force = null, string resources = null) {
+		Dictionary<string, object?> page = new() {
+			["schema-name"] = SavePage,
+			["body"] = body
+		};
+		if (checksum is not null) {
+			page["checksum"] = checksum;
+		}
+		if (force is not null) {
+			page["force"] = force;
+		}
+		if (resources is not null) {
+			page["resources"] = resources;
+		}
+		CallToolResult syncResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] { page },
+					["validate"] = true,
+					["skip-sampling"] = true,
+					["output-directory"] = sessionDir
+				}
+			},
+			context.CancellationTokenSource.Token);
+		return EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(syncResult);
+	}
+
+	private static string BodyWithSyncContainer(string body, string containerName) =>
+		body.Replace(
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"" + containerName +
+			"\",\"values\":{\"type\":\"crt.FlexContainer\",\"direction\":\"row\",\"items\":[]},\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+
+	/// <summary>
+	/// Returns <paramref name="body"/> with an INSERTED FIELD whose label points at
+	/// <paramref name="resourceKey"/> while its control binds to a differently named declared attribute,
+	/// so the platform cannot auto-provide the caption.
+	/// </summary>
+	/// <remarks>
+	/// The shape is load-bearing and mirrors <c>PageUpdateToolE2ETests.BodyWithLabelResource</c>. The
+	/// <c>UnresolvedLabelResource</c> rejection is produced only by <c>AppendLabelResourceError</c>, which
+	/// runs after <c>TryGetInsertedFieldDescriptor</c> — and that requires a STANDARD FIELD component
+	/// type, a <c>control</c> binding and a <c>label</c> property. A container with a <c>caption</c> is
+	/// checked by the separate inserted-widget-caption rule, which <c>sync-pages</c> reports as a WARNING;
+	/// a test written that way passes on the pre-fix build too and proves nothing.
+	/// </remarks>
+	private static string BodyWithLabelledField(string body, string resourceKey) {
+		string withField = ReplaceEmptyMarker(
+			body, "SCHEMA_VIEW_CONFIG_DIFF",
+			"[{\"operation\":\"insert\",\"name\":\"UsrE2ESyncPersistedField\"," +
+			"\"values\":{\"type\":\"crt.Input\",\"label\":\"$Resources.Strings." + resourceKey +
+			"\",\"control\":\"$UsrE2ESyncPersistedAttribute\"}," +
+			"\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0}]");
+		return ReplaceEmptyMarker(
+			withField, "SCHEMA_VIEW_MODEL_CONFIG_DIFF",
+			"[{\"operation\":\"merge\",\"path\":[\"attributes\"]," +
+			"\"values\":{\"UsrE2ESyncPersistedAttribute\":{\"value\":\"\"}}}]");
+	}
+
+	/// <summary>
+	/// Substitutes <paramref name="content"/> between the named marker pair, accepting only an EMPTY
+	/// current content so the helper never discards authoring the seeded page already carries. Throws
+	/// instead of returning the body unchanged: a silent no-op would make every assertion below run
+	/// against a body that does not carry the shape under test.
+	/// </summary>
+	private static string ReplaceEmptyMarker(string body, string markerName, string content) {
+		string marker = $"/**{markerName}*/";
+		Match match = Regex.Match(
+			body,
+			$@"{Regex.Escape(marker)}\s*(\[\s*\]|\{{\s*\}})?\s*{Regex.Escape(marker)}",
+			RegexOptions.CultureInvariant);
+		if (!match.Success) {
+			throw new InvalidOperationException(
+				$"The seeded page's {marker} section is missing or not empty, so the probe body cannot be built "
+				+ "without discarding existing authoring.");
+		}
+		return body.Remove(match.Index, match.Length).Insert(match.Index, marker + content + marker);
 	}
 }

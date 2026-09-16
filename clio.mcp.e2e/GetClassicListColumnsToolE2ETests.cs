@@ -264,32 +264,10 @@ public sealed class GetClassicListColumnsToolE2ETests : McpContractFixtureBase {
 		return new ArrangeContext(Session, cancellationTokenSource, environmentName);
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
-		string? environmentName = settings.Sandbox.EnvironmentName;
-		if (string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run get-classic-list-columns MCP E2E.");
-			return string.Empty;
-		}
-		if (await CanReachEnvironmentAsync(settings, environmentName)) {
-			return environmentName;
-		}
-		Assert.Ignore($"Configured MCP sandbox environment '{environmentName}' is not reachable.");
-		return string.Empty;
-	}
-
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromSeconds(30));
-		try {
-			ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-				settings,
-				["ping-app", "-e", environmentName],
-				cancellationToken: cancellationTokenSource.Token);
-			return result.ExitCode == 0;
-		}
-		catch (OperationCanceledException) {
-			return false;
-		}
-	}
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
+			settings,
+			"Configure McpE2E:Sandbox:EnvironmentName to run get-classic-list-columns MCP E2E.");
 
 	private new sealed record ArrangeContext(
 		McpServerSession Session,

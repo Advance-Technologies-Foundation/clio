@@ -1,4 +1,4 @@
-namespace Clio.Command.McpServer.Tools.MobilePageConverter;
+﻿namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 
 using System.Collections.Generic;
 using System.Text.Json;
@@ -20,6 +20,34 @@ public sealed class WebToMobilePageConversionRules {
 	/// <summary>Group: base page template (schema) equivalence between web and mobile.</summary>
 	[JsonPropertyName("templates")]
 	public IReadOnlyList<TemplateMappingRule> Templates { get; init; } = [];
+
+	/// <summary>
+	/// The mobile template to recommend when the source page's web template matches NO
+	/// <see cref="Templates"/> entry — a custom or unrecognised web template.
+	/// </summary>
+	/// <remarks>
+	/// Without it such a page got no mobile template at all, and the consequence was not just a missing
+	/// recommendation: with no template to read, clio had no base to diff the data sections against, so both
+	/// diffs degraded to a single root merge (ENG-95827). A generic mobile base is a far better answer than
+	/// none — it gives `create-page` a target and gives the differ a real base. The fallback deliberately
+	/// carries NO container or component correspondence: for an unrecognised web template clio knows no
+	/// name twins, and inventing them would misplace elements rather than leave them where the walk puts them.
+	/// </remarks>
+	[JsonPropertyName("defaultMobileTemplate")]
+	public string DefaultMobileTemplate { get; init; }
+	/// MOBILE base page templates that are edit/form (record) pages — e.g. <c>BaseMobilePageTemplate</c>,
+	/// <c>MobilePageWithTabsFreedomTemplate</c>. A converted page is a form page when the mobile template its
+	/// <see cref="Templates"/> rule targets is listed here; a list/section/blank target is simply absent. Kept
+	/// at the root, keyed by the MOBILE template, because form-ness is a property of the page the conversion
+	/// PRODUCES, not of each web→mobile pair — several web templates map onto one mobile template and they all
+	/// share its answer. Exists only to tailor the read-only section-registration advice (the default mobile
+	/// edit page is a manual step), never to drive container/component mapping. See
+	/// <see cref="MobilePageConversionGuideTool.IsFormPage"/>. Empty or absent (an OLD CDN copy of the rules
+	/// file) does NOT switch the advice off: the bundled list is used instead, the way
+	/// <see cref="ContentContainerTypes"/> falls back.
+	/// </summary>
+	[JsonPropertyName("mobileFormPageTemplates")]
+	public IReadOnlyList<string> MobileFormPageTemplates { get; init; } = [];
 
 	/// <summary>
 	/// Group: equivalent components. An entry is EITHER a type-equivalence (web↔mobile mapping that is not a
@@ -170,8 +198,92 @@ public sealed class TemplateMappingRule {
 	[JsonPropertyName("components")]
 	public IReadOnlyList<ComponentMappingRule> Components { get; init; } = [];
 
+	/// <summary>
+	/// Elements the rule DECLARES on top of the mobile template — any mobile component or container the
+	/// template lacks but the conversion needs (a receiver such as one more tab in a converted tab strip, or a
+	/// plain component the mobile page should always carry). COMPONENT-AGNOSTIC: the mobile type, the parent
+	/// slot, the position, the values and the optional caption all come from the entry; the converter adds no
+	/// type-specific behaviour of its own (a declared <c>crt.TabContainer</c> gets the tab body only because the
+	/// type-driven <c>tabAreaLayers</c> pass treats every inserted tab alike). Each entry is inserted into the
+	/// mobile page as if the template already had it, and a <see cref="Containers"/> pair may name it as its
+	/// <c>mobile</c> side; the web content mapped onto it then walks into it by merge-by-name, exactly like a
+	/// template-provided twin. A declared layout container that receives no surviving content is removed like
+	/// any other empty converter-created container; a declared leaf component is kept as declared.
+	/// </summary>
+	[JsonPropertyName("declaredElements")]
+	public IReadOnlyList<DeclaredElementRule> DeclaredElements { get; init; } = [];
+
+	/// <summary>
+	/// AUTHORING documentation for whoever edits this rules file — which web template this pair covers and
+	/// why. Deliberately has no reader: it is not projected onto the response, and must not become one. A
+	/// rules file resolves at runtime (env var → cache → CDN), so text from it reaching the wire would make
+	/// a rules author the writer of the calling agent's instructions.
+	/// </summary>
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
+}
+
+/// <summary>
+/// One element a template rule declares on top of the mobile template (see
+/// <see cref="TemplateMappingRule.DeclaredElements"/>): its fixed element name, mobile component type (any
+/// registered mobile component or container), the parent slot it is inserted into (a probed mobile template
+/// element, OR another declaration of this same rule, e.g. the declared tab strip when the mobile template has
+/// none) and the mobile <c>values</c> it carries.
+/// </summary>
+public sealed class DeclaredElementRule {
+	/// <summary>Fixed mobile element name (e.g. "RightPanelTab"); <c>containers[].mobile</c> may reference it.</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; init; }
+
+	/// <summary>Mobile component type (e.g. "crt.TabContainer", "crt.GridContainer", "crt.Label").</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; init; }
+
+	/// <summary>
+	/// Mobile parent element name: either a probed mobile template element, or another declaration of this SAME
+	/// rule (e.g. "Tabs") — never a name that exists only on a specific page.
+	/// </summary>
+	[JsonPropertyName("parentName")]
+	public string ParentName { get; init; }
+
+	/// <summary>Parent child-collection slot; defaults to <c>items</c>.</summary>
+	[JsonPropertyName("propertyName")]
+	public string PropertyName { get; init; } = "items";
+
+	/// <summary>Optional 0-based position within the parent's slot; appended when omitted.</summary>
+	[JsonPropertyName("index")]
+	public int? Index { get; init; }
+
+	/// <summary>
+	/// Extra mobile values carried verbatim onto the inserted element (e.g. <c>iconPosition</c>). The
+	/// <c>type</c> and the caption token are added by the converter; a child collection is never declared here.
+	/// </summary>
+	[JsonPropertyName("values")]
+	public IReadOnlyDictionary<string, JsonElement> Values { get; init; } = new Dictionary<string, JsonElement>();
+
+	/// <summary>
+	/// Optional localizable text: the element gets <c>&lt;property&gt;: #ResourceString(key)#</c> (property
+	/// <c>caption</c> unless the entry says otherwise — a field would use <c>label</c>) and the guide's
+	/// <c>resourceStrings</c> carries key → value so the caller registers it on the mobile page.
+	/// </summary>
+	[JsonPropertyName("captionResource")]
+	public DeclaredElementCaptionRule CaptionResource { get; init; }
+
+	[JsonPropertyName("note")]
+	public string Note { get; init; }
+}
+
+/// <summary>Localizable text of a declared element: resource key, its text and the property that references it.</summary>
+public sealed class DeclaredElementCaptionRule {
+	[JsonPropertyName("key")]
+	public string Key { get; init; }
+
+	[JsonPropertyName("value")]
+	public string Value { get; init; }
+
+	/// <summary>Element property that carries the resource token; defaults to <c>caption</c>.</summary>
+	[JsonPropertyName("property")]
+	public string Property { get; init; } = "caption";
 }
 
 /// <summary>
@@ -458,7 +570,7 @@ public sealed class ExcludedComponentFilterRule {
 	/// Mobile type of the HOST element the search is confined to (e.g. <c>"crt.ExpansionPanel"</c>). The
 	/// host is found STRUCTURALLY, at any depth: an <c>elementMap</c> entry whose resolved <c>MobileType</c>
 	/// matches ANY ancestor on the banned entry's <c>parentName</c> chain (primary shape), or any
-	/// array-element object with this <c>type</c> nested anywhere inside an entry's <c>mobileValues</c>
+	/// array-element object with this <c>type</c> nested anywhere inside an entry's <c>values</c>
 	/// (fallback shape — a host buried in a verbatim-carried property, with no entry of its own). This is NOT
 	/// a direct-JSON-parent check either way: <see cref="Type"/> may sit several levels deeper inside one of
 	/// the host's properties.
