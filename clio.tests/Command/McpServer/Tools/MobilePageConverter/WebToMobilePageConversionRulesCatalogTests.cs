@@ -126,7 +126,7 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		ComponentEquivalenceRule grid = rules.Components.Single(c => c.Filters.Any(f => f.Type == "crt.DataGrid"));
 		grid.Filters.Select(f => f.Type).Should().BeEquivalentTo(new[] { "crt.DataGrid", "crt.DataTable" },
 			because: "a filter naming only crt.DataGrid would leave a crt.DataTable list without a row");
-		ViewConfigTemplateRule template = grid.ViewConfigTemplates.Single();
+		ViewConfigTemplateRule template = grid.ViewConfigTemplates.Single(t => t.Operation is null);
 		template.ParentName.Should().Be("{{ diff.parentName }}",
 			because: "the list row stays where the walk places it, so the template ECHOES the computed parent — "
 				+ "echoing keeps the walked placement (only a DIFFERENT value would retarget, as the FAB rule does)");
@@ -143,6 +143,52 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 				+ "there renders an empty Title column while the body rows still look correct");
 		skeleton.Should().Contain("\"$each\": \"source.columns[1:]\"",
 			because: "every column after the leading one becomes its own body entry");
+	}
+
+	[Test]
+	[Description("The bundled grid entry declares its row for the MERGE path as data too: a second template with operation=merge targets the crt.ListItem the mobile list template provides under the twin, carrying title (first column, a plain string binding) and body (the rest). It declares no type of its own and no placement — a merge resolves by name — so one rules file drives both paths without clio inferring one from the other.")]
+	public void LoadBundled_GridEntryDeclaresTheRowMergeTemplate_OntoTheListItemByType() {
+		// Arrange & Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Assert
+		ComponentEquivalenceRule grid = rules.Components.Single(c => c.Filters.Any(f => f.Type == "crt.DataGrid"));
+		grid.ViewConfigTemplates.Should().HaveCount(2, because: "one template per path: the insert skeleton and the merge payload");
+		ViewConfigTemplateRule row = grid.ViewConfigTemplates.Single(t => t.Operation == "merge");
+		row.Target.Should().NotBeNull(because: "the row lands on a sub-element, not on the List twin itself");
+		row.Target!.Type.Should().Be("crt.ListItem",
+			because: "located by TYPE under the twin, so the rule does not depend on what a mobile template names its row element");
+		string payload = row.Value!.Value.GetRawText();
+		payload.Should().Contain("\"title\": \"${{ source.columns[0].code }}\"",
+			because: "the row leads with the first column as a plain string binding — the { value } shape renders an empty Title column");
+		payload.Should().Contain("\"$each\": \"source.columns[1:]\"",
+			because: "every other column becomes a body entry, in source order");
+		payload.Should().NotContain("\"type\"",
+			because: "a merge template declares no type: its value is the target's payload, and a type here would be read as the twin's by a binary that ignored the discriminator");
+		row.ParentName.Should().BeNull(because: "a merge resolves by name; placement fields are insert-only and are not declared");
+		row.PropertyName.Should().BeNull(because: "same — no slot on a merge");
+		row.PreserveSourceProperties.Should().BeFalse(because: "there is no source copy to preserve on a merge; the switch is insert-only");
+	}
+
+	[Test]
+	[Description("The rules model round-trips the operation discriminator and the target: an absent operation deserialises to null (the converter, not the parser, reads that as insert, so an old rules file is byte-for-byte what it was), and a merge template's target type is read verbatim.")]
+	public void ParseStream_ReadsOperationAndTarget_AndLeavesAnAbsentOperationNull() {
+		// Arrange
+		Stream json = JsonStream("""
+			{ "components": [ { "filters": [ { "type": "crt.DataGrid" } ], "viewConfigTemplates": [
+				{ "value": { "type": "crt.List" } },
+				{ "operation": "merge", "target": { "type": "crt.ListItem" }, "value": { "title": "$X" } } ] } ] }
+			""");
+
+		// Act
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.ParseStream(json);
+
+		// Assert
+		IReadOnlyList<ViewConfigTemplateRule> templates = rules!.Components.Single().ViewConfigTemplates;
+		templates[0].Operation.Should().BeNull(because: "absent stays absent at the parser — defaulting happens where the meaning is decided");
+		templates[0].Target.Should().BeNull(because: "an insert template names no target");
+		templates[1].Operation.Should().Be("merge", because: "the discriminator is read verbatim");
+		templates[1].Target!.Type.Should().Be("crt.ListItem", because: "the target type is read verbatim");
 	}
 
 	[Test]

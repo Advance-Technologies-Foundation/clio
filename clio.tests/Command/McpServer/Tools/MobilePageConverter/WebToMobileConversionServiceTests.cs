@@ -50,6 +50,36 @@ public sealed class WebToMobileConversionServiceTests {
 			""").RootElement.Clone()
 	};
 
+	/// <summary>
+	/// The shipped grid → list ROW template for the MERGE path: when the mobile template already provides the
+	/// List/ListItem pair, the row is declared as its own merge onto the crt.ListItem under the twin.
+	/// </summary>
+	private static readonly ViewConfigTemplateRule ListRowMergeTemplate = MergeTemplate("""
+		{
+		  "title": "${{ source.columns[0].code }}",
+		  "body": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } }
+		}
+		""", targetType: "crt.ListItem");
+
+	/// <summary>A merge template with the given payload — onto the twin itself, or onto the sub-element of <paramref name="targetType"/>.</summary>
+	private static ViewConfigTemplateRule MergeTemplate(string valueJson, string targetType = null) => new() {
+		Operation = "merge",
+		Target = targetType is null ? null : new ViewConfigTemplateTargetRule { Type = targetType },
+		Value = JsonDocument.Parse(valueJson).RootElement.Clone()
+	};
+
+	/// <summary>The fixture rules with the grid entry carrying EXACTLY these templates, in this order.</summary>
+	private static WebToMobilePageConversionRules GridRules(params ViewConfigTemplateRule[] templates) => new() {
+		Templates = Rules.Templates,
+		Components = [
+			new ComponentEquivalenceRule {
+				Web = ["crt.DataGrid", "crt.DataTable"], Mobile = ["crt.List"], Category = "AlternativeAvailable",
+				Filters = [new ElementFilterRule { Type = "crt.DataGrid" }, new ElementFilterRule { Type = "crt.DataTable" }],
+				ViewConfigTemplates = [.. templates]
+			}
+		]
+	};
+
 	private static readonly WebToMobilePageConversionRules Rules = new() {
 		Templates = [
 			new TemplateMappingRule {
@@ -67,7 +97,7 @@ public sealed class WebToMobileConversionServiceTests {
 				Web = ["crt.DataGrid", "crt.DataTable"], Mobile = ["crt.List"],
 				Category = "AlternativeAvailable",
 				Filters = [new ElementFilterRule { Type = "crt.DataGrid" }, new ElementFilterRule { Type = "crt.DataTable" }],
-				ViewConfigTemplates = [ListTemplate]
+				ViewConfigTemplates = [ListTemplate, ListRowMergeTemplate]
 			},
 			new ComponentEquivalenceRule {
 				Web = ["crt.FolderTree", "crt.FolderTreeActions"], Mobile = ["crt.FolderTreeActions"],
@@ -5085,8 +5115,9 @@ public sealed class WebToMobileConversionServiceTests {
 		// No duplicate insert for the grid; the conversion detail lives in the general components rule.
 		guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == "DataTable" && e.Operation == "insert");
 		guide.ComponentSuggestions.Should().Contain(s => s.SourceType == "crt.DataGrid");
-		// No ListItem in THIS mobile template, so there is no element for the row to merge onto and none is
-		// invented — see Analyze_StructuralTwin_* below for the shipped template, which does provide one.
+		// The grid's rule DECLARES its row as a merge template onto a crt.ListItem — but THIS mobile template
+		// provides none under List, so the target fails closed and nothing is emitted for it. See
+		// Analyze_StructuralTwin_* below for the shipped template, which does provide one.
 		guide.ViewConfigDiff.Should().NotContain(e => e.Name == "ListItem");
 	}
 
@@ -5118,7 +5149,8 @@ public sealed class WebToMobileConversionServiceTests {
 
 	/// <summary>The shipped list page as clio sees it: a web grid the template maps onto the mobile List.</summary>
 	private static MobilePageConversionGuide AnalyzeListPage(
-		IReadOnlyDictionary<string, string> mobileTypes, IReadOnlyDictionary<string, string> mobileParents) {
+		IReadOnlyDictionary<string, string> mobileTypes, IReadOnlyDictionary<string, string> mobileParents,
+		WebToMobilePageConversionRules rules = null) {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "ListContainer", "type": "crt.FlexContainer", "items": [
 				{ "name": "DataTable", "type": "crt.DataGrid", "columns": [
@@ -5136,7 +5168,24 @@ public sealed class WebToMobileConversionServiceTests {
 				["DataTable"] = new ComponentMappingRule { Web = "DataTable", Mobile = "List", Note = "Primary list component." }
 			},
 			mobileTemplateTypesByName: mobileTypes,
-			mobileContainerParents: mobileParents);
+			mobileContainerParents: mobileParents,
+			rules: rules);
+	}
+
+	/// <summary>A page-authored grid nothing name-maps, so the walk takes the INSERT path.</summary>
+	private static MobilePageConversionGuide AnalyzeGridInsert(WebToMobilePageConversionRules rules) {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "UsrGrid", "type": "crt.DataGrid", "columns": [
+					{ "code": "PDS_Name" }, { "code": "PDS_Status" } ] } ] } ]
+			""");
+		return Analyze(bundle,
+			webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)),
+			containerNameMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				["MainContainer"] = "MainContainer"
+			},
+			mobileTemplateTypesByName: MobileTypesByName(("MainContainer", "crt.FlexContainer")),
+			rules: rules);
 	}
 
 	[Test]
@@ -5219,6 +5268,246 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "nothing provides the element, so there is nothing to merge onto");
 		ShouldCarryNoDelta(Element(guide, "DataTable"),
 			because: "itemLayout must never travel inside a merge of the parent List");
+	}
+
+	[Test]
+	[Description("A structural twin whose type declares NO merge template gets no row: nothing is inferred from the insert template's shape. The insert template still nests a crt.ListItem under itemLayout, and the mobile template still provides a ListItem under List — the only thing missing is the declaration, and that is exactly what must be missing for nothing to happen. This is the test the shape-inference implementation this replaces would fail.")]
+	public void Analyze_StructuralTwin_WithoutAMergeTemplate_EmitsNoRow_NothingIsInferredFromTheInsertTemplate() {
+		// Arrange
+		(IReadOnlyDictionary<string, string> types, IReadOnlyDictionary<string, string> parents) = MobileListTemplateGraph();
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeListPage(types, parents, GridRules(ListTemplate));
+
+		// Assert
+		guide.ViewConfigDiff.Should().NotContain(e => e.Name == "ListItem",
+			because: "the row reaches a template-provided element only through a merge template the rule DECLARES; "
+				+ "the insert template's nested crt.ListItem is insert-path structure and says nothing about the merge path");
+		ShouldCarryNoDelta(Element(guide, "DataTable"),
+			because: "a structural twin has no delta of its own, and no merge template declared one");
+	}
+
+	[Test]
+	[Description("A template with no `operation` is an INSERT template, byte for byte as before the discriminator existed: on the insert path it shapes the element (crt.List with its row under itemLayout). An explicit \"insert\" is the same template spelled out.")]
+	public void Analyze_MergeTemplate_AbsentOperation_IsAnInsertTemplate() {
+		// Arrange
+		var spelledOut = new ViewConfigTemplateRule {
+			Operation = "insert", PreserveSourceProperties = true, Value = ListTemplate.Value
+		};
+
+		// Act
+		MobilePageConversionGuide implicitInsert = AnalyzeGridInsert(GridRules(ListTemplate));
+		MobilePageConversionGuide explicitInsert = AnalyzeGridInsert(GridRules(spelledOut));
+
+		// Assert
+		foreach (MobilePageConversionGuide guide in new[] { implicitInsert, explicitInsert }) {
+			ViewConfigDiffOperation grid = Element(guide, "UsrGrid");
+			grid.Operation.Should().Be("insert", because: "a page-authored grid nothing name-maps is inserted");
+			TypeOf(grid).Should().Be("crt.List", because: "the insert template's value.type is what the grid resolves to");
+			grid.Values!["itemLayout"]!["title"]!.GetValue<string>().Should().Be("$PDS_Name",
+				because: "the insert template builds the row into the element's own values, exactly as before");
+		}
+	}
+
+	[Test]
+	[Description("A merge template with no `target` lays its rendered keys OVER the twin's own merge — one operation per name, never a second merge on the same element, since two payload-bearing merges on one name is the conflict the projection refuses to resolve. Its `name`/`type` keys are stripped (identity is the merge's own business), and the insert-only fields — preserveSourceProperties, parentName, propertyName — are ignored: no source property is copied and the merge is not retargeted.")]
+	public void Analyze_MergeTemplate_TargetOmitted_LaysItsValuesOverTheTwinsOwnMerge() {
+		// Arrange
+		var ontoTheTwin = new ViewConfigTemplateRule {
+			Operation = "merge",
+			PreserveSourceProperties = true, ParentName = "Elsewhere", PropertyName = "tools",
+			Value = JsonDocument.Parse("""
+				{ "name": "Renamed", "type": "crt.Other", "leadColumn": "{{ source.columns[0].code }}", "scrollable": true }
+				""").RootElement.Clone()
+		};
+		(IReadOnlyDictionary<string, string> types, IReadOnlyDictionary<string, string> parents) = MobileListTemplateGraph();
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeListPage(types, parents, GridRules(ListTemplate, ontoTheTwin));
+
+		// Assert
+		guide.ViewConfigDiff.Where(e => e.Name == "List").Should().ContainSingle(
+			because: "the payload joins the twin's own merge; a second operation on the same name would leave the caller choosing between two");
+		ViewConfigDiffOperation list = Element(guide, "DataTable");
+		list.Operation.Should().Be("merge", because: "the twin stays a merge onto the template-provided List");
+		JsonObject values = list.Values!.AsObject();
+		values["leadColumn"]!.GetValue<string>().Should().Be("PDS_LeadName", because: "the template's rendered key lands on the twin");
+		values["scrollable"]!.GetValue<bool>().Should().BeTrue(because: "every rendered key lands, templated or literal");
+		values.ContainsKey("name").Should().BeFalse(because: "identity is stripped — a merge names its target");
+		values.ContainsKey("type").Should().BeFalse(because: "a merge re-declares no type; the template owns it");
+		values.ContainsKey("columns").Should().BeFalse(because: "preserveSourceProperties is an insert-only switch; a merge template copies no source property");
+		list.ParentName.Should().BeNull(because: "parentName/propertyName drive INSERT placement; a merge resolves by name and is never retargeted");
+		guide.ViewConfigDiff.Should().NotContain(e => e.Name == "Elsewhere" || e.ParentName == "Elsewhere",
+			because: "the ignored placement fields must leave no trace anywhere in the diff");
+	}
+
+	[Test]
+	[Description("On the INSERT path a merge template is invisible: the inserted crt.List carries its row under itemLayout from the insert template, gains no top-level title/body from the merge template, and no merge is emitted for a sub-element — the merge template describes an element the mobile template provides, and on this path nothing is provided. This holds even for a merge template whose payload carries the element's own type: `type` matching is the INSERT gate, and a merge template must be refused before that gate ever looks at it.")]
+	public void Analyze_MergeTemplate_IsIgnoredOnTheInsertPath() {
+		// Arrange — a merge onto the twin itself whose payload names the very type the grid resolves to.
+		var ontoTheListItself = MergeTemplate("""{ "type": "crt.List", "fromMergeTemplate": true }""");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeGridInsert(GridRules(ListTemplate, ListRowMergeTemplate, ontoTheListItself));
+
+		// Assert
+		ViewConfigDiffOperation grid = Element(guide, "UsrGrid");
+		grid.Operation.Should().Be("insert", because: "nothing name-maps the grid, so it is inserted");
+		JsonObject values = grid.Values!.AsObject();
+		values["itemLayout"].Should().NotBeNull(because: "the insert template still builds the row into the element");
+		values.ContainsKey("title").Should().BeFalse(because: "the merge template's payload is for a template-provided ListItem, not for the inserted list");
+		values.ContainsKey("body").Should().BeFalse(because: "same — a merge template never shapes an insert");
+		values.ContainsKey("fromMergeTemplate").Should().BeFalse(
+			because: "a merge template whose value.type happens to equal the resolved type would pass the insert TYPE gate; "
+				+ "it must be refused as a merge template before that gate, or a payload meant for the twin lands on every insert");
+		guide.ViewConfigDiff.Should().NotContain(e => e.Operation == "merge" && e.Name != "MainContainer",
+			because: "no template-provided sub-element exists on the insert path, so no merge is emitted for one");
+	}
+
+	[Test]
+	[Description("A merge template listed FIRST does not change the type the insert resolves to, even when its payload carries a `type` key: the resolved type is the first INSERT template's value.type, and a merge template is skipped explicitly rather than trusted to lack a type. Without the skip a rules author's row payload would silently retype the list.")]
+	public void Analyze_MergeTemplate_ListedFirst_DoesNotChangeTheResolvedInsertType() {
+		// Arrange — a merge payload that (wrongly, but plausibly) carries a type key.
+		var rowWithAType = MergeTemplate("""{ "type": "crt.Toggle", "title": "${{ source.columns[0].code }}" }""", "crt.ListItem");
+		(IReadOnlyDictionary<string, string> types, IReadOnlyDictionary<string, string> parents) = MobileListTemplateGraph();
+
+		// Act
+		MobilePageConversionGuide inserted = AnalyzeGridInsert(GridRules(rowWithAType, ListTemplate));
+		MobilePageConversionGuide merged = AnalyzeListPage(types, parents, GridRules(rowWithAType, ListTemplate));
+
+		// Assert
+		TypeOf(Element(inserted, "UsrGrid")).Should().Be("crt.List",
+			because: "the resolved type comes from the first INSERT template; a merge template listed before it declares no type of the element's and must be skipped, not read");
+		Element(inserted, "UsrGrid").Values!["itemLayout"].Should().NotBeNull(because: "the insert template is still applied");
+		ViewConfigDiffOperation row = merged.ViewConfigDiff.Single(e => e.Name == "ListItem");
+		row.Values!.AsObject().ContainsKey("type").Should().BeFalse(because: "on the merge path the stray type key is stripped as identity — the template owns the target's type");
+	}
+
+	[Test]
+	[Description("An unknown `operation` is neither insert nor merge, so the template is skipped on BOTH paths: its value.type is never read as the element's type, its keys never land on an insert, and it never emits a merge. A newer rules file therefore degrades to silence on an older binary rather than being misread.")]
+	public void Analyze_MergeTemplate_UnknownOperation_IsSkippedOnBothPaths() {
+		// Arrange
+		var unknownInsertLike = new ViewConfigTemplateRule {
+			Operation = "set", PreserveSourceProperties = true,
+			Value = JsonDocument.Parse("""{ "type": "crt.Toggle", "surprise": true }""").RootElement.Clone()
+		};
+		var unknownRowLike = new ViewConfigTemplateRule {
+			Operation = "set", Target = new ViewConfigTemplateTargetRule { Type = "crt.ListItem" },
+			Value = JsonDocument.Parse("""{ "surprise": true }""").RootElement.Clone()
+		};
+		(IReadOnlyDictionary<string, string> types, IReadOnlyDictionary<string, string> parents) = MobileListTemplateGraph();
+
+		// Act
+		MobilePageConversionGuide inserted = AnalyzeGridInsert(GridRules(unknownInsertLike, ListTemplate));
+		MobilePageConversionGuide merged = AnalyzeListPage(types, parents, GridRules(ListTemplate, unknownRowLike));
+
+		// Assert
+		TypeOf(Element(inserted, "UsrGrid")).Should().Be("crt.List",
+			because: "an unknown operation's value.type is never read as the element's type");
+		Element(inserted, "UsrGrid").Values!.AsObject().ContainsKey("surprise").Should().BeFalse(
+			because: "an unknown operation is never applied on the insert path");
+		merged.ViewConfigDiff.Should().NotContain(e => e.Name == "ListItem",
+			because: "and never applied on the twin path either");
+	}
+
+	[Test]
+	[Description("A merge template whose payload renders to nothing emits nothing. The applier accepts an empty merge as a legal no-op, so an entry with no payload would only LOOK like a decision — and a path that resolves to nothing drops its key, which is how a template can legitimately end up empty.")]
+	public void Analyze_MergeTemplate_EmptyRenderedPayload_EmitsNoMerge() {
+		// Arrange
+		var unresolvable = MergeTemplate("""{ "caption": "{{ source.noSuchProperty }}" }""", "crt.ListItem");
+		(IReadOnlyDictionary<string, string> types, IReadOnlyDictionary<string, string> parents) = MobileListTemplateGraph();
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeListPage(types, parents, GridRules(ListTemplate, unresolvable));
+
+		// Assert
+		guide.ViewConfigDiff.Should().NotContain(e => e.Name == "ListItem",
+			because: "nothing rendered, so there is no payload and therefore no merge — not an empty one");
+	}
+
+	[Test]
+	[Description("Two merge templates naming the same sub-element accumulate into ONE merge carrying both payloads. A rules file must never be able to manufacture two payload-bearing merges on one name — that is the genuine conflict the projection deliberately refuses to resolve.")]
+	public void Analyze_MergeTemplate_TwoTemplatesOnOneTarget_ProduceOneMerge() {
+		// Arrange
+		var alsoOntoTheRow = MergeTemplate("""{ "showEmptyValues": false }""", "crt.ListItem");
+		(IReadOnlyDictionary<string, string> types, IReadOnlyDictionary<string, string> parents) = MobileListTemplateGraph();
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeListPage(types, parents, GridRules(ListTemplate, ListRowMergeTemplate, alsoOntoTheRow));
+
+		// Assert
+		ViewConfigDiffOperation row = guide.ViewConfigDiff.Should().ContainSingle(e => e.Name == "ListItem",
+			because: "one target, one merge — however many templates contributed").Subject;
+		row.Values!["title"]!.GetValue<string>().Should().Be("$PDS_LeadName", because: "the first template's payload is there");
+		row.Values["showEmptyValues"]!.GetValue<bool>().Should().BeFalse(because: "and the second template's key joined the same payload");
+	}
+
+	[Test]
+	[Description("A merge template rides on an AUTOMATIC same-name twin exactly as on a name-mapped one: the rule is branch-agnostic — it applies to whatever merge the walk emits for its source node — and it is laid OVER the twin's own delta, not in place of it.")]
+	public void Analyze_MergeTemplate_AppliesToAnAutomaticSameNameTwin() {
+		// Arrange — mirrors Analyze_AutoComponentTwin_SameName_CarriesPageDelta, plus a merge template on crt.Feed.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "FeedTabContainer", "type": "crt.TabContainer", "items": [
+				{ "name": "Feed", "type": "crt.Feed", "dataSourceName": "LeadDS", "entitySchemaName": "Lead" } ] } ]
+			""");
+		var rules = new WebToMobilePageConversionRules {
+			Components = [
+				new ComponentEquivalenceRule {
+					Filters = [new ElementFilterRule { Type = "crt.Feed" }],
+					ViewConfigTemplates = [MergeTemplate("""{ "feedSource": "{{ source.dataSourceName }}" }""")]
+				}
+			]
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle,
+			webByType: Reg(("crt.TabContainer", true), ("crt.Feed", false)),
+			containerNameMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["FeedTabContainer"] = "FeedContainer" },
+			templateComponentNames: Names("FeedTabContainer", "Feed"),
+			mobileTemplateTypesByName: MobileTypesByName(("FeedContainer", "crt.TabContainer"), ("Feed", "crt.Feed")),
+			webTemplateBaselineNodes: BaselineNodes("""
+				[ { "name": "Feed", "type": "crt.Feed", "dataSourceName": "ParentDS", "entitySchemaName": "Lead" } ]
+				"""),
+			rules: rules);
+
+		// Assert
+		ViewConfigDiffOperation feed = guide.ViewConfigDiff.Single(e => SourceNameOf(guide, e) == "Feed");
+		feed.Operation.Should().Be("merge", because: "the mobile template provides Feed under the same name and type — an automatic twin");
+		feed.Values!["feedSource"]!.GetValue<string>().Should().Be("LeadDS",
+			because: "the merge template's payload lands on the automatic twin's merge — no branch is exempt");
+		feed.Values["dataSourceName"]!.GetValue<string>().Should().Be("LeadDS",
+			because: "the twin's own delta stays underneath; the template is laid over it, never in place of it");
+	}
+
+	[Test]
+	[Description("A merge template rides on a `containers` pair twin too. A containers pair is a payload-free merge on its own — the pair says only that the two elements are one — and a merge template of the container's type is the one declarative way a rule gives that merge a payload.")]
+	public void Analyze_MergeTemplate_AppliesToAContainerTwin() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ListContainer", "type": "crt.FlexContainer", "gap": "small", "items": [
+				{ "name": "UsrField", "type": "crt.Input", "control": "$PDS_Name" } ] } ]
+			""");
+		var rules = new WebToMobilePageConversionRules {
+			Components = [
+				new ComponentEquivalenceRule {
+					Filters = [new ElementFilterRule { Type = "crt.FlexContainer" }],
+					ViewConfigTemplates = [MergeTemplate("""{ "gap": "{{ source.gap }}" }""")]
+				}
+			]
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle,
+			webByType: Reg(("crt.FlexContainer", true), ("crt.Input", false)),
+			containerNameMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["ListContainer"] = "ListContainer" },
+			mobileTemplateTypesByName: MobileTypesByName(("ListContainer", "crt.FlexContainer")),
+			rules: rules);
+
+		// Assert
+		ViewConfigDiffOperation twin = Element(guide, "ListContainer");
+		twin.Operation.Should().Be("merge", because: "a containers pair is always a merge onto the template's element");
+		twin.Values!["gap"]!.GetValue<string>().Should().Be("small",
+			because: "the merge template's payload lands on the container twin's merge — the rule is branch-agnostic");
 	}
 
 	[Test]
