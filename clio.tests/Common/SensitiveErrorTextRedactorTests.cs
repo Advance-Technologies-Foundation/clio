@@ -13,6 +13,57 @@ namespace Clio.Tests.Common;
 [Property("Module", "Common")]
 public sealed class SensitiveErrorTextRedactorTests {
 
+	[TestCase("!")]
+	[TestCase("$")]
+	[TestCase("&")]
+	[TestCase("'")]
+	[TestCase("(")]
+	[TestCase(")")]
+	[TestCase("*")]
+	[TestCase("+")]
+	[TestCase(",")]
+	[TestCase(";")]
+	[TestCase("=")]
+	[TestCase(":")]
+	[TestCase("%29")]
+	[TestCase("-._~")]
+	[Category("Unit")]
+	[Description("Redacts legal URI userinfo punctuation without consuming the surrounding prose parentheses.")]
+	public void Redact_ShouldRemoveWholeUserInfo_WhenCredentialsContainLegalPunctuation(string punctuation) {
+		// Arrange
+		string message = $"Request (URL: https://us{punctuation}er:pa{punctuation}ss@host.example/x).";
+		const string expected = "Request (URL: [redacted-uri]).";
+
+		// Act
+		string result = SensitiveErrorTextRedactor.Redact(message);
+		string console = SensitiveErrorTextRedactor.RedactForConsoleOrNull(message);
+
+		// Assert
+		result.Should().Be(expected, because: "the complete authority must be removed while the message stays readable");
+		console.Should().Be(expected, because: "console rendering must remove the same complete credential");
+	}
+
+	[TestCase(")")]
+	[TestCase("(")]
+	[TestCase("%27")]
+	[TestCase("&secret)")]
+	[TestCase("'secret)")]
+	[TestCase("+secret)")]
+	[Category("Unit")]
+	[Description("Keeps a serialized diagnostic parseable while removing credentials with URI punctuation.")]
+	public void Redact_ShouldPreserveJson_WhenUserInfoContainsPunctuation(string punctuation) {
+		// Arrange
+		string message = $"Request to \"https://user:pa{punctuation}ss@host.example/x\" failed.";
+		string serialized = JsonSerializer.Serialize(message);
+
+		// Act
+		string result = SensitiveErrorTextRedactor.Redact(serialized);
+
+		// Assert
+		JsonSerializer.Deserialize<string>(result).Should().Be("Request to \"[redacted-uri]\" failed.",
+			because: "MCP text must retain complete JSON escapes around the redacted URI");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Returns an empty string for null/empty input so callers can concatenate the result unconditionally.")]
