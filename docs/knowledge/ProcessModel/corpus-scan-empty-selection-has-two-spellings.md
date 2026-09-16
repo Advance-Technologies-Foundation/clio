@@ -45,6 +45,15 @@ a `key = value` format (`Case/branches/7.8.0/Schemas/Case/metadata.json` is one)
 contain conditional flows: they pass a substring pre-filter and then fail `json.loads`. A scan that
 `continue`s on a parse error skips them without a word.
 
+**2a. And that pre-filter matches CODE BODIES, not only element graphs.** A schema's `metadata.json`
+carries its stored C# source, so a bare `"ProcessSchemaConditionalFlow" in raw` also fires on a source
+line like `} else if (ManagerName == "ProcessSchemaConditionalFlow") {`. Corpus-wide: **535** files
+match the bare substring, **3** contain no fully-qualified
+`"Terrasoft.Core.Process.ProcessSchemaConditionalFlow"` element at all, and **1** of those three is
+valid JSON — `CrtProcessDesigner/.../BaseProcessParametersEditPage`, which therefore reaches a
+histogram with a count of zero and looks like a tenth schema that has none. Pre-filter on the
+fully-qualified name, and never count a row whose value is 0.
+
 **Why it is this way** — `GV2` is a serialized .NET dictionary, and the serializer emits the type tag
 whether or not there are entries; the bare `{}` is what a different writer produced. Neither is
 canonical and nothing converts one into the other. The non-JSON files are an older metadata format
