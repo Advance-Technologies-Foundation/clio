@@ -1,4 +1,4 @@
-namespace Clio.Command;
+﻿namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
@@ -6,6 +6,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Clio.Common;
 using McpServer.Resources;
 
 public static class SchemaValidationService
@@ -42,9 +43,11 @@ public static class SchemaValidationService
 	private const string InsertOperationName = "insert";
 	private const string SetOperationName = "set";
 	private const string MergeOperationName = "merge";
+	private const string NamePropertyName = "name";
 	private const string ParentNamePropertyName = "parentName";
 	private const string PropertyNamePropertyName = "propertyName";
 	private const string ScaffoldElementName = "Scaffold";
+	private const string ScaffoldComponentType = "crt.Scaffold";
 	private const string ScaffoldActionsSlot = "actions";
 	private const string ScaffoldLeadingSlot = "leading";
 	private const string ScaffoldItemsSlot = "items";
@@ -92,6 +95,34 @@ public static class SchemaValidationService
 	public static readonly string[][] AlternateMarkerPairs = {
 		new[] { SchemaViewModelConfigDiff, SchemaViewModelConfig },
 		new[] { "SCHEMA_MODEL_CONFIG_DIFF", "SCHEMA_MODEL_CONFIG" }
+	};
+
+	/// <summary>
+	/// The markers that make an append fragment meaningful: the six sections <c>PageBodyMerger.MergeWeb</c>
+	/// actually reads from an incoming body, plus BOTH full-config spellings.
+	/// </summary>
+	/// <remarks>
+	/// <c>SCHEMA_DEPS</c> and <c>SCHEMA_ARGS</c> are deliberately EXCLUDED even though they are required
+	/// markers elsewhere. They belong to the AMD envelope, the merge never reads them from the incoming body,
+	/// and nothing downstream rejects them - so a fragment whose only pair was one of those passed this rule
+	/// and still hit the exact silent discard it exists to close (reproduced on a live stand:
+	/// `success: true, incomingOperationCount: 0`).
+	///
+	/// The full-config spellings are the opposite case and ARE included: the merge does not read them either,
+	/// but <see cref="PageBodyMerger.UsesUnsupportedFullConfigForm(string, out string)"/> rejects such a body
+	/// downstream with a precise "use --mode replace" message. Recognizing them here keeps that message
+	/// instead of pre-empting it with this generic one. Narrowing this set to "only what the merge reads"
+	/// would silently degrade that diagnosis - a test pins it.
+	/// </remarks>
+	private static readonly string[] RecognizedSectionMarkerNames = {
+		SchemaViewConfigDiff,
+		SchemaViewModelConfigDiff,
+		"SCHEMA_MODEL_CONFIG_DIFF",
+		SchemaHandlersMarker,
+		SchemaConvertersMarker,
+		SchemaValidatorsMarker,
+		SchemaViewModelConfig,
+		"SCHEMA_MODEL_CONFIG"
 	};
 
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
@@ -187,8 +218,9 @@ public static class SchemaValidationService
 		"via operation:\"insert\" in viewConfigDiff are validated for self-consistency in the SAME " +
 		"update-page call: (a) " + InsertedFieldBindingClause + "; and (b) " + InsertedFieldLabelClause +
 		". Violations are rejected at update-page validation time; the diagnostic names the offending " +
-		"field, attribute, and section. This contract does NOT apply to operation:\"merge\" — a parent " +
-		"schema or the current body may legitimately provide the attribute and resource.";
+		"field, attribute, and section. This contract does NOT apply to operation:\"merge\". " +
+		"Use merge in viewConfigDiff for parent-introduced components; for an own-body component, " +
+		"edit its complete insert and include its attribute declaration in the submitted body.";
 
 	/// <summary>
 	/// Canonical native-first custom-CSS policy (ENG-92541). Authored ONCE here and reused verbatim by
@@ -364,6 +396,9 @@ public static class SchemaValidationService
 		SchemaValidationResult typePlacementResult = ValidateMobileInsertTypePlacement(body);
 		if (!typePlacementResult.IsValid) errors.AddRange(typePlacementResult.Errors);
 		warnings.AddRange(typePlacementResult.Warnings);
+
+		SchemaValidationResult secondScaffoldResult = ValidateMobileSingleScaffoldRoot(body);
+		if (!secondScaffoldResult.IsValid) errors.AddRange(secondScaffoldResult.Errors);
 
 		SchemaValidationResult buttonSlotResult = ValidateMobileButtonSlotPlacement(body);
 		warnings.AddRange(buttonSlotResult.Warnings);
@@ -639,6 +674,23 @@ public static class SchemaValidationService
 						"Do NOT use web-only or unknown components on a mobile page without explicit approval from the user. " +
 						"If this is a custom mobile component with the same type name, ignore this warning; " +
 						"otherwise use get-component-info to find a supported mobile alternative.");
+				} else if (webOnlyTypes.Count > 0) {
+					// The previously SILENT case: a type in NEITHER registry produced no diagnostic at all, so a
+					// misspelled or invented component type reached the save indistinguishable from a legitimate
+					// custom one (ENG-95827). It stays a warning rather than an error because a genuinely custom
+					// mobile component is also absent from both registries — but it is no longer unreported.
+					//
+					// Gated on the WEB set being non-empty, which is this branch's fail-open. The caller builds
+					// it from `webTask.Result ?? []`, so a web-catalog fetch failure yields an empty set while
+					// the mobile set stays populated from cache — and every genuinely web-only component then
+					// falls in here and is reported as "a misspelled or invented type" that "will not render",
+					// which is false. The mobile-set guard at the top of the method does not cover it: the two
+					// catalogs fail independently.
+					result.Warnings.Add(
+						$"Component type '{type}' is in NEITHER the mobile nor the web registry. " +
+						"If it is a custom mobile component registered in your package, ignore this warning; " +
+						"otherwise it is a misspelled or invented type and will not render — " +
+						"use get-component-info with schema-type \"mobile\" to find the supported type.");
 				}
 			}
 		}
@@ -666,14 +718,14 @@ public static class SchemaValidationService
 			return;
 		}
 		bool hasOperation = entry.TryGetProperty(OperationPropertyName, out _);
-		bool hasName = entry.TryGetProperty("name", out _);
+		bool hasName = entry.TryGetProperty(NamePropertyName, out _);
 		if (hasOperation && hasName) {
 			return;
 		}
 		result.IsValid = false;
 		var missing = new List<string>(2);
 		if (!hasOperation) missing.Add(OperationPropertyName);
-		if (!hasName) missing.Add("name");
+		if (!hasName) missing.Add(NamePropertyName);
 		result.Errors.Add(
 			$"viewConfigDiff entry at index {index} is missing required " +
 			$"{(missing.Count == 1 ? "property" : "properties")}: {string.Join(", ", missing)}.");
@@ -729,6 +781,68 @@ public static class SchemaValidationService
 	/// </returns>
 	public static SchemaValidationResult ValidateMobileInsertTypePlacement(string body) =>
 		ScanMobileViewConfigDiffEntries(body, ValidateMobileInsertTypePlacementEntry);
+
+	/// <summary>
+	/// Validates that a mobile page body does not author a SECOND <c>crt.Scaffold</c>. Every mobile template
+	/// already provides the Scaffold root, and it is the page's only permitted one: authoring another shadows
+	/// the native element, so the top navigation bar and the page body silently come from the wrong element.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Two shapes are rejected, both decidable from the body alone: an <c>insert</c> / <c>set</c> whose resolved
+	/// component type is <c>crt.Scaffold</c>, and an <c>insert</c> of an element NAMED <c>Scaffold</c> whatever
+	/// its declared type — the template already owns that element name, so the insert collides regardless.
+	/// </para>
+	/// <para>
+	/// A <c>merge</c> onto <c>Scaffold</c> is the SUPPORTED way to patch the template's own root and is left
+	/// alone here; <see cref="ValidateMobileMergeSlotAuthoring"/> owns the rule for merging into its slots.
+	/// </para>
+	/// <para>
+	/// The type test looks at the whole <c>values</c> SUBTREE, not just its root: a page authoring
+	/// <c>{ type: "crt.FlexContainer", items: [{ type: "crt.Scaffold" }] }</c> adds the same second root by a
+	/// longer route, and a rule stated page-wide that only inspects the top level is one a caller can satisfy
+	/// while still shipping the defect.
+	/// </para>
+	/// <para>
+	/// This exists because the invariant otherwise travels only as prose — the mobile registry's own
+	/// <c>crt.Scaffold</c> description states it, and prose enforces nothing.
+	/// </para>
+	/// </remarks>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> carrying one error per entry that authors a second Scaffold.
+	/// </returns>
+	public static SchemaValidationResult ValidateMobileSingleScaffoldRoot(string body) =>
+		ScanMobileViewConfigDiffEntries(body, ValidateMobileSingleScaffoldRootEntry);
+
+	/// <summary>
+	/// Applies the single-Scaffold rule to one <c>viewConfigDiff</c> entry. See
+	/// <see cref="ValidateMobileSingleScaffoldRoot"/> for the two rejected shapes and why a merge is exempt.
+	/// </summary>
+	private static void ValidateMobileSingleScaffoldRootEntry(
+		JsonElement entry, int index, SchemaValidationResult result) {
+		if (entry.ValueKind != JsonValueKind.Object
+			|| !TryGetStringProperty(entry, OperationPropertyName, out string operation)) {
+			return;
+		}
+		bool isInsert = string.Equals(operation, InsertOperationName, StringComparison.Ordinal);
+		if (!isInsert && !string.Equals(operation, SetOperationName, StringComparison.Ordinal)) {
+			return;
+		}
+		bool typeIsScaffold = string.Equals(GetMobileEntryType(entry), ScaffoldComponentType, StringComparison.Ordinal)
+			|| (entry.TryGetProperty(ValuesPropertyName, out JsonElement values) && DeclaresScaffold(values));
+		bool nameIsScaffold = isInsert
+			&& TryGetStringProperty(entry, NamePropertyName, out string name)
+			&& string.Equals(name, ScaffoldElementName, StringComparison.Ordinal);
+		if (!typeIsScaffold && !nameIsScaffold) {
+			return;
+		}
+		result.IsValid = false;
+		result.Errors.Add(
+			$"viewConfigDiff[{index}] authors a second '{ScaffoldComponentType}'. The mobile template already "
+			+ "provides the Scaffold root and a page may not add another — it would shadow the native element. "
+			+ $"Use operation 'merge' on '{ScaffoldElementName}' to patch the template's own root instead.");
+	}
 
 	/// <summary>
 	/// Shared scaffolding for the per-entry <c>viewConfigDiff</c> rules: parse the body, locate the array, and hand
@@ -1021,7 +1135,7 @@ public static class SchemaValidationService
 			|| values.ValueKind != JsonValueKind.Object) {
 			return;
 		}
-		bool targetsScaffold = TryGetStringProperty(entry, "name", out string mergeTarget)
+		bool targetsScaffold = TryGetStringProperty(entry, NamePropertyName, out string mergeTarget)
 			&& string.Equals(mergeTarget, ScaffoldElementName, StringComparison.Ordinal);
 		string subject = DescribeViewConfigDiffEntry(entry, index);
 		int advisoryReported = 0;
@@ -1154,7 +1268,7 @@ public static class SchemaValidationService
 	/// </summary>
 	private static bool TryGetItemConfigName(JsonElement item, out string name) {
 		name = null;
-		if (!item.TryGetProperty("name", out JsonElement nameElement)) {
+		if (!item.TryGetProperty(NamePropertyName, out JsonElement nameElement)) {
 			return false;
 		}
 		switch (nameElement.ValueKind) {
@@ -1189,7 +1303,7 @@ public static class SchemaValidationService
 	/// that would read as an alias.
 	/// </summary>
 	private static string DescribeViewConfigDiffEntry(JsonElement entry, int index) =>
-		TryGetStringProperty(entry, "name", out string name)
+		TryGetStringProperty(entry, NamePropertyName, out string name)
 			? $"viewConfigDiff entry '{Sanitize(name)}'"
 			: $"viewConfigDiff entry at index {index}";
 
@@ -1387,7 +1501,7 @@ public static class SchemaValidationService
 	}
 
 	private static string GetMobileEntryName(JsonElement entry, JsonElement values) {
-		if (TryGetStringProperty(entry, "name", out string name)) {
+		if (TryGetStringProperty(entry, NamePropertyName, out string name)) {
 			return name;
 		}
 		return TryGetStringProperty(values, "name", out string valuesName) ? valuesName : "(unnamed)";
@@ -1435,6 +1549,7 @@ public static class SchemaValidationService
 				declaredAttributes,
 				modelPaths,
 				explicitResources,
+				null,
 				new HashSet<string>(StringComparer.OrdinalIgnoreCase),
 				result);
 			ValidateFieldComponents(viewConfigDiff, in ctx);
@@ -1565,6 +1680,42 @@ public static class SchemaValidationService
 		}
 		// Distinguish assignment '=' from comparison '=='/'===' and arrow '=>', which are reads.
 		return i + 1 >= jsBody.Length || (jsBody[i + 1] != '=' && jsBody[i + 1] != '>');
+	}
+
+	/// <summary>
+	/// True when <paramref name="element"/> declares a <c>crt.Scaffold</c> anywhere in its subtree — a nested
+	/// child authors the same second root as a top-level one.
+	/// </summary>
+	/// <remarks>
+	/// Unbounded by design: <see cref="JsonDocument"/> rejects a body deeper than its own 64-level limit before
+	/// this ever runs, so the recursion is bounded by the parser rather than by a second limit to keep in step.
+	/// </remarks>
+	private static bool DeclaresScaffold(JsonElement element) => DeclaresScaffold(element, depth: 0);
+
+	/// <remarks>
+	/// Bounded by <see cref="JsonReaderLimits.MaxParseDepth"/>, which the parse this element came out of
+	/// already enforced — so the budget is unreachable and returning false at it decides nothing. It is here
+	/// to SAY that, because the alternative is an unbounded-looking recursion over caller-supplied JSON whose
+	/// only real bound is a BCL default nothing in the file mentions. The sibling walk in
+	/// <c>ExcludedComponentsPass</c> leans on the same ceiling and now names the same constant.
+	/// </remarks>
+	private static bool DeclaresScaffold(JsonElement element, int depth) {
+		if (depth > JsonReaderLimits.MaxParseDepth) {
+			return false;
+		}
+		switch (element.ValueKind) {
+			case JsonValueKind.Object:
+				if (element.TryGetProperty(TypePropertyName, out JsonElement type)
+					&& type.ValueKind == JsonValueKind.String
+					&& string.Equals(type.GetString(), ScaffoldComponentType, StringComparison.Ordinal)) {
+					return true;
+				}
+				return element.EnumerateObject().Any(property => DeclaresScaffold(property.Value, depth + 1));
+			case JsonValueKind.Array:
+				return element.EnumerateArray().Any(item => DeclaresScaffold(item, depth + 1));
+			default:
+				return false;
+		}
 	}
 
 	private static string? GetMobileEntryType(JsonElement entry) {
@@ -1740,6 +1891,45 @@ public static class SchemaValidationService
 
 	public static string BuildMarkerPattern(string markerName) {
 		return @"/\*\*" + Regex.Escape(markerName) + @"\*/(.*?)/\*\*" + Regex.Escape(markerName) + @"\*/";
+	}
+
+	/// <summary>
+	/// Rejects an append fragment that carries NO recognizable page section at all.
+	/// </summary>
+	/// <remarks>
+	/// Full marker integrity is deliberately NOT required in append mode - the incoming body is a fragment
+	/// and may legitimately omit sections. But that skip used to be all-or-nothing, so a body with no marker
+	/// pairs whatsoever was accepted: every section read as empty (PageBodyMerger.ReadJsonArray returns an
+	/// empty JArray when the marker is absent), the merge became a no-op, and the call reported success while
+	/// silently discarding the caller's entire fragment. A bare JSON array is the easy way to hit this,
+	/// because it is valid JavaScript and so clears the syntax gate too. Found by manual testing on a live
+	/// stand, not by the unit suite.
+	///
+	/// The rule is deliberately the weakest one that closes it: ONE recognized marker pair is enough. Anything
+	/// stricter would re-impose the completeness requirement that append exists to relax.
+	/// </remarks>
+	/// <param name="jsBody">The caller's incoming append fragment.</param>
+	/// <returns>A failed result when the body carries no recognizable section; otherwise a valid result.</returns>
+	public static SchemaValidationResult ValidateAppendFragmentIsRecognizable(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			result.IsValid = false;
+			result.Errors.Add("JS body is null or empty.");
+			return result;
+		}
+		bool carriesAnySection = RecognizedSectionMarkerNames.Any(markerName =>
+			Regex.IsMatch(jsBody, BuildMarkerPattern(markerName), RegexOptions.Singleline, RegexTimeout));
+		if (carriesAnySection) {
+			return result;
+		}
+		result.IsValid = false;
+		result.Errors.Add(
+			"an append body is a FRAGMENT of a page body, not a bare list of operations, so it must carry at " +
+			"least one section marker pair - for example " +
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[ ... ]/**SCHEMA_VIEW_CONFIG_DIFF*/. Without one, every section reads " +
+			"as empty and the merge would silently discard everything you sent. Recognized sections: " +
+			string.Join(", ", RecognizedSectionMarkerNames));
+		return result;
 	}
 
 	public static SchemaValidationResult ValidateMarkerIntegrity(string jsBody) {
@@ -2261,7 +2451,16 @@ public static class SchemaValidationService
 		result.Errors.Add($"Invalid JavaScript object section in {marker}: {string.Join("; ", syntaxResult.Errors)}");
 	}
 
-	private static void MergeResult(SchemaValidationResult target, SchemaValidationResult source) {
+	/// <summary>
+	/// Folds <paramref name="source"/> into <paramref name="target"/>: warnings always, and on a
+	/// rejection the errors together with their machine-readable identities.
+	/// </summary>
+	/// <remarks>
+	/// <c>internal</c> rather than <c>private</c> so the identity half can be pinned directly. Its only
+	/// production caller merges a validator that carries no identity today, so a behavioural test cannot
+	/// reach the rule — and a silently dropped identity is exactly the failure the kind exists to prevent.
+	/// </remarks>
+	internal static void MergeResult(SchemaValidationResult target, SchemaValidationResult source) {
 		target.Warnings.AddRange(source.Warnings);
 		if (source.IsValid) {
 			return;
@@ -2269,6 +2468,10 @@ public static class SchemaValidationService
 
 		target.IsValid = false;
 		target.Errors.AddRange(source.Errors);
+		// The identities travel with the messages. Copying only Errors silently strips the half a caller
+		// BRANCHES on, so a merged result would keep the unresolved-label sentence while the rescue - which
+		// reads the kind, not the text - no longer fires for it (issue #1464 review).
+		target.ErrorKinds.UnionWith(source.ErrorKinds);
 	}
 
 	public static SchemaValidationResult ValidateColumnBindings(string jsBody) {
@@ -2304,7 +2507,8 @@ public static class SchemaValidationService
 
 	public static SchemaValidationResult ValidateStandardFieldBindings(
 		string jsBody,
-		IReadOnlyDictionary<string, string>? explicitResources = null) {
+		IReadOnlyDictionary<string, string>? explicitResources = null,
+		IReadOnlySet<string>? persistedResourceKeys = null) {
 		var result = new SchemaValidationResult { IsValid = true };
 		if (string.IsNullOrEmpty(jsBody)) {
 			return result;
@@ -2322,6 +2526,7 @@ public static class SchemaValidationService
 			declaredAttributes,
 			modelPaths,
 			explicitResources,
+			persistedResourceKeys,
 			attributesWrittenByHandlers,
 			result);
 		using (viewConfigDocument) {
@@ -2331,6 +2536,60 @@ public static class SchemaValidationService
 			result.IsValid = false;
 		}
 		return result;
+	}
+
+	/// <summary>
+	/// Runs the two label-resource-aware field validators and, when the inserted-field one rejects the body
+	/// for an UNRESOLVED LABEL RESOURCE, re-runs both against the resource keys already persisted on the
+	/// target schema.
+	/// </summary>
+	/// <param name="jsBody">The page body being saved.</param>
+	/// <param name="explicitResources">The <c>resources</c> argument of the current call.</param>
+	/// <param name="persistedResourceKeysProvider">
+	/// Supplies the schema's persisted <c>localizableStrings</c> keys. Invoked ONLY for an unresolved
+	/// label-resource rejection, so no other body ever pays the round-trip, and a structurally broken body
+	/// reports its own error rather than a network error from an eager fetch.
+	/// Pass <c>null</c> from a caller that must stay offline.
+	/// A <c>null</c> provider, or one that yields nothing, leaves the first verdict standing.
+	/// </param>
+	/// <returns>The standard-field result (warnings) and the inserted-field result (errors).</returns>
+	/// <remarks>
+	/// Single definition shared by the command-level gate (<c>PageUpdateCommand</c>) and the MCP
+	/// pre-execution gate (<c>PageUpdateTool</c>). They validate the same body at two different points and
+	/// previously drifted: the command-level gate honoured persisted keys while the tool gate still
+	/// rejected the save before the command ever ran (issue #1320).
+	/// </remarks>
+	public static (SchemaValidationResult StandardFields, SchemaValidationResult InsertedFields)
+		ValidateFieldLabelResources(
+			string jsBody,
+			IReadOnlyDictionary<string, string>? explicitResources,
+			Func<IReadOnlySet<string>>? persistedResourceKeysProvider) {
+		SchemaValidationResult standardFields = ValidateStandardFieldBindings(jsBody, explicitResources);
+		SchemaValidationResult insertedFields = ValidateInsertedFieldSelfConsistency(jsBody, explicitResources);
+		// The rescue is gated on the UNRESOLVED-LABEL-RESOURCE rejection specifically - the only verdict a
+		// persisted resource key can change. Anything else must not spend a remote round-trip that cannot
+		// help it: a clean body, a body carrying only the standard-field label WARNING (noise, not a block
+		// - it can still name a key that is in fact persisted), or a rejection about attribute BINDINGS.
+		// A standard-field ERROR is checked first and separately: persisted keys are threaded into
+		// ValidateStandardFieldBindings only inside its warning branch, so they can never clear one. A body
+		// that trips both validators at once (a binding error plus an incidental label-resource error) would
+		// otherwise open the gate and pay a full GetSchema round-trip for a response it cannot change.
+		if (!standardFields.IsValid) {
+			return (standardFields, insertedFields);
+		}
+		// Keyed on the machine-readable KIND, not on a substring of the user-facing sentence: the sentence
+		// is a wording decision and every reword, appended hint or localization would silently disarm this
+		// gate with nothing to notice it (issue #1464).
+		if (!insertedFields.ErrorKinds.Contains(SchemaValidationErrorKind.UnresolvedLabelResource)) {
+			return (standardFields, insertedFields);
+		}
+		IReadOnlySet<string>? persistedResourceKeys = persistedResourceKeysProvider?.Invoke();
+		if (persistedResourceKeys is not { Count: > 0 }) {
+			return (standardFields, insertedFields);
+		}
+		return (
+			ValidateStandardFieldBindings(jsBody, explicitResources, persistedResourceKeys),
+			ValidateInsertedFieldSelfConsistency(jsBody, explicitResources, persistedResourceKeys));
 	}
 
 	/// <summary>
@@ -2352,7 +2611,8 @@ public static class SchemaValidationService
 	/// </remarks>
 	public static SchemaValidationResult ValidateInsertedFieldSelfConsistency(
 		string jsBody,
-		IReadOnlyDictionary<string, string>? explicitResources = null) {
+		IReadOnlyDictionary<string, string>? explicitResources = null,
+		IReadOnlySet<string>? persistedResourceKeys = null) {
 		var result = new SchemaValidationResult { IsValid = true };
 		if (string.IsNullOrEmpty(jsBody)) {
 			return result;
@@ -2371,7 +2631,8 @@ public static class SchemaValidationService
 				return result;
 			}
 			foreach (JsonElement entry in vcdDoc.RootElement.EnumerateArray()) {
-				ValidateInsertedFieldEntry(entry, declaredAttributes, properlyNestedAttributes, modelPaths, explicitResources, result);
+				ValidateInsertedFieldEntry(
+					entry, declaredAttributes, properlyNestedAttributes, modelPaths, explicitResources, persistedResourceKeys, result);
 			}
 		}
 		if (result.Errors.Count > 0) {
@@ -2385,10 +2646,11 @@ public static class SchemaValidationService
 	/// page body's <c>viewConfigDiff</c> are authored as localizable-string bindings rather than inline
 	/// literals. Walks every <c>insert</c>/<c>merge</c> entry's <c>values</c> subtree (including nested
 	/// child components) so a panel title, tab caption, or input placeholder set as a plain string is
-	/// rejected at any nesting depth — with two whole-subtree exemptions: <c>_designOptions</c>, and a
+	/// rejected at any nesting depth, except for <c>_designOptions</c> and a
 	/// component's own data descriptor (a <c>data</c> object carrying the platform's <c>typeName</c>
 	/// marker on a node that declares a component type — see <see cref="ComponentDataPropertyName"/>).
-	/// Both are platform-written metadata rather than page-authored text.
+	/// These are platform-written metadata rather than page-authored text. A Gallery's direct
+	/// <c>itemConfig.templateValuesMapping</c> is also excluded because its values name record attributes.
 	/// </summary>
 	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema (marker-delimited).</param>
 	/// <returns>
@@ -2397,7 +2659,7 @@ public static class SchemaValidationService
 	/// expression) and any value that references a <c>#ResourceString(Key)#</c> macro — bare,
 	/// concatenated, or wrapped (e.g. <c>#MacrosTemplateString(#ResourceString(Key)#)#</c>) — are
 	/// accepted; non-string and empty values are ignored. Anything inside an exempt subtree
-	/// (<c>_designOptions</c>, a component data descriptor) is not examined at all, at any depth.
+	/// (<c>_designOptions</c>, a component data descriptor, or Gallery's template mapping) is not examined.
 	/// </returns>
 	public static SchemaValidationResult ValidateLocalizableTextLiterals(string jsBody) {
 		var result = new SchemaValidationResult { IsValid = true };
@@ -2671,7 +2933,8 @@ public static class SchemaValidationService
 	// same-name sibling insert's type for a bare merge). It is applied ONLY when this object has no "type" of
 	// its own AND is the entry root; nested children are recursed with an empty entryRootType so a nested
 	// non-exempt node can never inherit an ancestor's exemption.
-	private static void ScanNodeForTextLiterals(JsonElement node, string ownerName, string entryRootType, SchemaValidationResult result) {
+	private static void ScanNodeForTextLiterals(JsonElement node, string ownerName, string entryRootType,
+		SchemaValidationResult result, bool isGalleryItemConfig = false) {
 		switch (node.ValueKind) {
 			case JsonValueKind.Object:
 				string currentName = TryGetNodeName(node, out string nodeName) ? nodeName : ownerName;
@@ -2683,11 +2946,14 @@ public static class SchemaValidationService
 				// for the entry root — see the entryRootType note above).
 				string currentType = TryGetComponentType(node, out string nodeType) ? nodeType : entryRootType;
 				foreach (JsonProperty property in node.EnumerateObject()) {
-					if (IsExemptFromTextScan(currentType, property)) {
+					// Gallery template slots map to record attribute names, not displayed captions.
+					// Carry this context only across the direct Gallery -> itemConfig edge.
+					if (IsExemptFromTextScan(currentType, property, isGalleryItemConfig)) {
 						continue;
 					}
 					ScanTextPropertyForLiterals(currentName, currentType, property, result);
-					ScanNodeForTextLiterals(property.Value, currentName, string.Empty, result);
+					ScanNodeForTextLiterals(property.Value, currentName, string.Empty, result,
+						currentType == "crt.Gallery" && property.NameEquals("itemConfig"));
 				}
 				break;
 			case JsonValueKind.Array:
@@ -2746,13 +3012,14 @@ public static class SchemaValidationService
 		return false;
 	}
 
-	// Single predicate for "this subtree is not page-authored text", so the two conditions cannot drift
+	// Single predicate for "this subtree is not page-authored text", so the exemptions cannot drift
 	// apart at the call sites (the file extracts FormatOwnerNode and ResolveEntryRootType for the same
 	// reason). Used by the literal scanners only - the inserted-widget-caption engine intentionally
-	// applies neither exemption, because it also backs the blocking save gate.
-	private static bool IsExemptFromTextScan(string componentType, JsonProperty property) =>
+	// applies only the designer-metadata exemption, because it also backs the blocking save gate.
+	private static bool IsExemptFromTextScan(string componentType, JsonProperty property, bool isGalleryItemConfig) =>
 		string.Equals(property.Name, DesignOptionsPropertyName, StringComparison.Ordinal) ||
-		IsComponentDescriptorProperty(componentType, property);
+		IsComponentDescriptorProperty(componentType, property) ||
+		(isGalleryItemConfig && property.NameEquals("templateValuesMapping"));
 
 	// True when the property is the data descriptor of a node that declares a component type (see
 	// ComponentDataPropertyName). Callers skip the subtree entirely: it is component metadata, never
@@ -2842,12 +3109,13 @@ public static class SchemaValidationService
 		IReadOnlySet<string> properlyNestedAttributes,
 		IReadOnlyDictionary<string, string> modelPaths,
 		IReadOnlyDictionary<string, string>? explicitResources,
+		IReadOnlySet<string>? persistedResourceKeys,
 		SchemaValidationResult result) {
 		if (!TryGetInsertedFieldDescriptor(entry, out InsertedFieldDescriptor descriptor)) {
 			return;
 		}
 		AppendBindingDeclarationError(descriptor, declaredAttributes, properlyNestedAttributes, modelPaths, result);
-		AppendLabelResourceError(descriptor, modelPaths, explicitResources, result);
+		AppendLabelResourceError(descriptor, modelPaths, explicitResources, persistedResourceKeys, result);
 	}
 
 	private static bool TryGetInsertedFieldDescriptor(JsonElement entry, out InsertedFieldDescriptor descriptor) {
@@ -2929,29 +3197,51 @@ public static class SchemaValidationService
 			"the body does not declare attribute '" + attr + "' in viewModelConfigDiff. " +
 			"The control will have no data source. Add a viewModelConfigDiff entry such as " +
 			canonicalEntry + " so the control binds to the entity column. " +
-			"If the attribute is already provided by a parent schema or the current body, " +
-			"use operation 'merge' for the viewConfigDiff entry instead of 'insert'. " +
+			"Use operation 'merge' in viewConfigDiff only when the component itself is introduced by a parent schema. " +
+			"If this page's own body introduces the component, keep its complete 'insert' operation " +
+			"and edit its values; include the attribute declaration in the submitted viewModelConfigDiff, " +
+			"even when it is already in the stored body. Append replaces a matching insert as a whole. " +
+			"A separate 'merge' beside an own-body insert can be inert and does not patch that insert. " +
 			"Rule: " + InsertedFieldBindingClause + ".");
 	}
+
+	/// <summary>
+	/// The invariant clause of the unresolved-label-resource diagnostic — the human-facing half of the
+	/// rule whose machine-readable half is
+	/// <see cref="SchemaValidationErrorKind.UnresolvedLabelResource"/>. Nothing BRANCHES on this text any
+	/// more: <see cref="ValidateFieldLabelResources"/> gates its remote lookup on the kind, so a rejection
+	/// about attribute BINDINGS never spends a round-trip that cannot help it, and rewording this sentence
+	/// cannot disarm the rescue (issue #1464).
+	/// </summary>
+	internal const string UnresolvedLabelResourceClause =
+		"is neither auto-provided by a DS-bound attribute nor registered in the 'resources' parameter.";
 
 	private static void AppendLabelResourceError(
 		InsertedFieldDescriptor descriptor,
 		IReadOnlyDictionary<string, string> modelPaths,
 		IReadOnlyDictionary<string, string>? explicitResources,
+		IReadOnlySet<string>? persistedResourceKeys,
 		SchemaValidationResult result) {
 		if (!TryGetStringProperty(descriptor.Values, LabelPropertyName, out string labelExpression) ||
 		    !TryGetReactiveResourceKey(labelExpression, out string resourceKey)) {
 			return;
 		}
 		bool hasExplicit = explicitResources != null && explicitResources.ContainsKey(resourceKey);
+		// A key already stored in the schema's localizableStrings resolves at runtime whether or not the
+		// current call repeats it in 'resources'. Without this the second and every later save of the same
+		// page is blocked unless the caller re-sends every key it ever registered. See issue #1320.
+		bool isPersisted = persistedResourceKeys != null && persistedResourceKeys.Contains(resourceKey);
 		bool isAutoProvided = IsAutoProvidedLabelResourceKey(resourceKey, descriptor.BindingAttribute, modelPaths);
-		if (hasExplicit || isAutoProvided) {
+		if (hasExplicit || isPersisted || isAutoProvided) {
 			return;
 		}
 		string suggestion = BuildAutoProvideSuggestion(descriptor.BindingAttribute, modelPaths);
-		result.Errors.Add(
+		// AddError, not Errors.Add: this is the one rejection a persisted resource key can clear, and the
+		// rescue in ValidateFieldLabelResources branches on the KIND. The sentence is unchanged.
+		result.AddError(
+			SchemaValidationErrorKind.UnresolvedLabelResource,
 			$"Inserted field '{descriptor.DisplayName}' has label '$Resources.Strings.{resourceKey}' but resource '{resourceKey}' " +
-			$"is neither auto-provided by a DS-bound attribute nor registered in the 'resources' parameter. " +
+			UnresolvedLabelResourceClause + " " +
 			$"The label will render blank. {suggestion}; or register it by passing {{\"{resourceKey}\": \"<Display name>\"}} in 'resources'.");
 	}
 
@@ -3187,6 +3477,7 @@ public static class SchemaValidationService
 		IReadOnlySet<string> DeclaredAttributes,
 		IReadOnlyDictionary<string, string> ModelPaths,
 		IReadOnlyDictionary<string, string>? ExplicitResources,
+		IReadOnlySet<string>? PersistedResourceKeys,
 		IReadOnlySet<string> AttributesWrittenByHandlers,
 		SchemaValidationResult Result);
 
@@ -3285,6 +3576,7 @@ public static class SchemaValidationService
 		    TryGetReactiveResourceKey(labelExpression, out string resourceBindingKey) &&
 		    ctx.ExplicitResources != null &&
 		    !ctx.ExplicitResources.ContainsKey(resourceBindingKey) &&
+		    (ctx.PersistedResourceKeys == null || !ctx.PersistedResourceKeys.Contains(resourceBindingKey)) &&
 		    !IsAutoProvidedLabelResourceKey(resourceBindingKey, bindingAttribute, ctx.ModelPaths)) {
 			ctx.Result.Warnings.Add(
 				$"Standard field '{fieldDisplayName}' has label '{labelExpression}' but resource key '{resourceBindingKey}' is neither auto-provided by a DS-bound attribute nor in the provided resources — the label will render blank. " +
@@ -4859,7 +5151,7 @@ public static class SchemaValidationService
 
 	private static bool TryGetDataTableColumns(JsonElement item, out JsonElement columns) {
 		columns = default;
-		return item.TryGetProperty("name", out JsonElement nameElement)
+		return item.TryGetProperty(NamePropertyName, out JsonElement nameElement)
 			&& string.Equals(nameElement.GetString(), "DataTable", StringComparison.Ordinal)
 			&& item.TryGetProperty(ValuesPropertyName, out JsonElement values)
 			&& values.TryGetProperty("columns", out columns)
@@ -5215,9 +5507,53 @@ public static class SchemaValidationService
 	}
 }
 
+/// <summary>
+/// Stable, machine-readable identity of a validation rejection, for a caller that must BRANCH on the
+/// verdict rather than merely report it.
+/// </summary>
+/// <remarks>
+/// Added because the persisted-resource-key rescue was gated by substring-matching a user-facing
+/// diagnostic sentence (issue #1464). A sentence is a product of wording decisions — it is reworded for
+/// clarity, gets a hint appended, is localized — and every one of those edits silently disarms a gate
+/// keyed on it, with no compiler or test complaining. The sentence itself is unchanged and still says
+/// what a human needs; the kind is what a machine reads.
+/// </remarks>
+public enum SchemaValidationErrorKind {
+
+	/// <summary>
+	/// An inserted field declares a <c>$Resources.Strings.X</c> label whose key is neither auto-provided
+	/// by a DS-bound attribute nor registered in the current call's <c>resources</c>. The ONE verdict a
+	/// resource key already persisted on the schema can clear, which is why the remote persisted-key
+	/// lookup is gated on exactly this kind.
+	/// </summary>
+	UnresolvedLabelResource
+}
+
 public class SchemaValidationResult
 {
 	public bool IsValid { get; set; }
 	public List<string> Errors { get; set; } = new List<string>();
 	public List<string> Warnings { get; set; } = new List<string>();
+
+	/// <summary>
+	/// The machine-readable identities of the rejections in <see cref="Errors"/>.
+	/// </summary>
+	/// <remarks>
+	/// A SET, not a single code: one result routinely carries several rejections of different kinds —
+	/// an undeclared-attribute binding error and an unresolved label resource can be reported for the
+	/// same body — and a scalar would lose whichever one it did not win. Populated only by the
+	/// validators that have a caller branching on them; an empty set means "no caller-branchable
+	/// identity", never "valid".
+	/// </remarks>
+	public ISet<SchemaValidationErrorKind> ErrorKinds { get; } = new HashSet<SchemaValidationErrorKind>();
+
+	/// <summary>
+	/// Records a rejection together with its machine-readable identity.
+	/// </summary>
+	/// <param name="kind">The rejection's stable identity.</param>
+	/// <param name="message">The user-facing diagnostic.</param>
+	public void AddError(SchemaValidationErrorKind kind, string message) {
+		Errors.Add(message);
+		ErrorKinds.Add(kind);
+	}
 }

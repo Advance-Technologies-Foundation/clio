@@ -70,6 +70,47 @@ public class CredentialPassthroughClientIdentityTests {
 	// instance reachable from the root object graph. Used for IDataProvider, whose bearer-vs-login
 	// difference lives inside the ATF RemoteDataProvider's private client field; navigating by type
 	// (not hardcoded ATF field names) keeps the assertion resilient to ATF internals.
+	/// <summary>
+	/// Walks whatever <see cref="IDataProvider"/> decorators the container installed - the classifying
+	/// decorator, the lazy one - until it reaches the provider that actually holds a transport.
+	/// </summary>
+	/// <remarks>
+	/// Field-name-agnostic on purpose. Pinning <c>_inner</c> / <c>_lazy</c> made this test fail whenever a
+	/// decorator was added or a field renamed, which says nothing about the property under test (that the
+	/// caller's bearer token reaches the DB/ESQ path). Any private field holding an
+	/// <see cref="IDataProvider"/> is followed, and any <see cref="Lazy{T}"/> is forced.
+	/// </remarks>
+	private static object UnwrapToRealDataProvider(object provider) {
+		for (int depth = 0; depth < 8 && provider is not null; depth++) {
+			object next = null;
+			foreach (FieldInfo field in provider.GetType()
+					.GetFields(BindingFlags.Instance | BindingFlags.NonPublic)) {
+				object value = field.GetValue(provider);
+				if (value is null) {
+					continue;
+				}
+				if (value is IDataProvider nestedProvider) {
+					next = nestedProvider;
+					break;
+				}
+				//A Lazy<IDataProvider> has to be forced before its value can be followed; forcing it is
+				//also what builds the RemoteDataProvider whose client this test inspects.
+				Type valueType = value.GetType();
+				if (valueType.IsGenericType && valueType.GetGenericTypeDefinition() == typeof(Lazy<>)
+						&& typeof(IDataProvider).IsAssignableFrom(valueType.GetGenericArguments()[0])) {
+					next = valueType.GetProperty("Value", BindingFlags.Instance | BindingFlags.Public)!
+						.GetValue(value);
+					break;
+				}
+			}
+			if (next is null) {
+				return provider;
+			}
+			provider = next;
+		}
+		return provider;
+	}
+
 	private static IReadOnlyList<CreatioClient> FindCreatioClients(object root, int maxDepth = 8) {
 		List<CreatioClient> found = new();
 		HashSet<object> visited = new(ReferenceEqualityComparer.Instance);
@@ -150,13 +191,11 @@ public class CredentialPassthroughClientIdentityTests {
 		// Arrange
 		IServiceProvider container = BuildBearerPassthroughContainer();
 
-		// Act — resolve the IDataProvider and force the LazyDataProvider to build the real
-		// RemoteDataProvider, then locate the underlying CreatioClient by type.
+		// Act — resolve the IDataProvider, unwrap whatever decorators wrap it, then locate the underlying
+		// CreatioClient by type. The unwrapping is deliberately field-name-agnostic: this test is about the
+		// TOKEN reaching the DB/ESQ path, so it must not fail because a decorator renamed a private field.
 		IDataProvider dataProvider = container.GetRequiredService<IDataProvider>();
-		object lazy = GetPrivateField<object>(dataProvider, "_lazy");
-		object realProvider = lazy.GetType()
-			.GetProperty("Value", BindingFlags.Instance | BindingFlags.Public)!
-			.GetValue(lazy);
+		object realProvider = UnwrapToRealDataProvider(dataProvider);
 		IReadOnlyList<CreatioClient> clients = FindCreatioClients(realProvider);
 
 		// Assert
@@ -175,7 +214,7 @@ public class CredentialPassthroughClientIdentityTests {
 		CreatioClient compatibilityClient = container.GetRequiredService<CreatioClient>();
 		IApplicationClient applicationClient = container.GetRequiredService<IApplicationClient>();
 		((ICreatioApplicationClient)applicationClient).ExportSessionCookies();
-		Lazy<CreatioClient> adapterClient = GetPrivateField<Lazy<CreatioClient>>(applicationClient, "_lazyClient");
+		Lazy<CreatioClient> adapterClient = GetAdapterLazyClient(applicationClient);
 		SetPrivateField(applicationClient, "_listenerStarted", true);
 
 		try {
@@ -201,7 +240,7 @@ public class CredentialPassthroughClientIdentityTests {
 		IServiceProvider container = BuildFormsContainer();
 		IApplicationClient applicationClient = container.GetRequiredService<IApplicationClient>();
 		((ICreatioApplicationClient)applicationClient).ExportSessionCookies();
-		CreatioClient adapterClient = GetPrivateField<Lazy<CreatioClient>>(applicationClient, "_lazyClient").Value;
+		CreatioClient adapterClient = GetAdapterLazyClient(applicationClient).Value;
 
 		// Act
 		((IDisposable)container).Dispose();
@@ -212,5 +251,12 @@ public class CredentialPassthroughClientIdentityTests {
 		// Assert
 		await act.Should().ThrowAsync<ObjectDisposedException>(
 			because: "the adapter must remain the sole owner and release a request-only forms transport at provider teardown");
+	}
+
+	// The adapter holds its Creatio client behind the ICreatioClientTransport seam (GitHub #1313), so
+	// the lazy client is one hop further in than it used to be.
+	private static Lazy<CreatioClient> GetAdapterLazyClient(IApplicationClient applicationClient) {
+		object transport = GetPrivateField<object>(applicationClient, "_transport");
+		return GetPrivateField<Lazy<CreatioClient>>(transport, "_lazyClient");
 	}
 }

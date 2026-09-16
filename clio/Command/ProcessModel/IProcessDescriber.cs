@@ -193,6 +193,7 @@ public sealed class ServerProcessDescriber(
 			IsActiveVersion = member.IsActiveVersion,
 			IsRoot = member.IsRoot,
 			PackageUId = member.PackageUId,
+			PackageName = member.PackageName,
 			Enabled = member.Enabled
 		};
 
@@ -427,6 +428,19 @@ public sealed class DescribedProcessVersion {
 	/// <summary>UId of the package this version lives in.</summary>
 	[JsonPropertyName("packageUId")]
 	public string PackageUId { get; set; }
+
+	/// <summary>
+	/// Name of that package, absent when it could not be resolved.
+	/// </summary>
+	/// <remarks>
+	/// Published because a builder asking which package a version lives in is asking for the name — the UId
+	/// alone renders as a raw GUID in the answer they read (reported by manual testing on ENG-94374).
+	/// <see cref="PackageUId"/> stays the authority and is always present; this is read from
+	/// <c>SysPackage</c> beside the family, so absence means the package could not be NAMED, never that the
+	/// version has no package.
+	/// </remarks>
+	[JsonPropertyName("packageName")]
+	public string PackageName { get; set; }
 
 	/// <summary>
 	/// Whether the process is enabled. This is FAMILY state, not per-version state: the platform keys
@@ -1431,6 +1445,31 @@ public sealed class DescribedFlow {
 	/// </remarks>
 	[JsonPropertyName("condition")]
 	public string Condition { get; set; }
+
+	/// <summary>
+	/// WHICH results select this branch, by caption, or <c>null</c> when the flow decides on a formula.
+	/// <para>Reported from <c>CrtProcessBuilder</c> 1.6.2.23. These are the same captions the write surface
+	/// takes - <c>flows[].results</c> on the build path, <c>setFlowResults</c> on the modify path - so a branch
+	/// reads back and writes back unchanged. Before this member <see cref="BranchesOnActivityResult"/> said only
+	/// THAT a selection exists, which left a selection unverifiable: a caller could write one and had no way to
+	/// confirm, diff or preserve it.</para>
+	/// <para>A result whose lookup row no longer resolves arrives as its raw UId rather than being dropped, so a
+	/// stale selection never reads as a SHORTER one. <c>null</c> rather than an empty array on a formula branch,
+	/// so the two dialects are distinguishable from the read alone. ABSENT on a package older than 1.6.2.23,
+	/// which is the same bytes as a formula branch - so an all-absent read is not evidence of anything.</para>
+	/// </summary>
+	[JsonPropertyName("results")]
+	public string[] Results { get; set; }
+
+	/// <summary>
+	/// The element whose results <see cref="Results"/> names, or <c>null</c> when the flow carries no selection.
+	/// <para>Usually the flow's own source, and reported anyway because it is NOT always: the designer keys the
+	/// selection on the deciding ACTIVITY, which for a connector leaving a gateway is an element UPSTREAM of it.
+	/// A caller that assumed the source and wrote the selection back would silently re-key it onto the gateway,
+	/// changing which activity's result decides the branch.</para>
+	/// </summary>
+	[JsonPropertyName("resultsActivity")]
+	public string ResultsActivity { get; set; }
 
 	/// <summary>
 	/// <c>true</c> when this flow's branch is decided by the RESULT of the preceding activity - which buttons it

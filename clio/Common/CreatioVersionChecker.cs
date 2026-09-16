@@ -119,8 +119,8 @@ public sealed class CreatioVersionChecker : ICreatioVersionChecker
 
 		Version currentVersion = resolution.Version;
 
-		// Dev-build bypass: a development build satisfies every requirement.
-		if (IsDevBuild(currentVersion)) {
+		// Security-sensitive requirements can require a verifiable version instead of the usual dev-build bypass.
+		if (IsDevBuild(currentVersion) && triggered.All(requirement => requirement.AllowDevelopmentBuild)) {
 			return resolution;
 		}
 

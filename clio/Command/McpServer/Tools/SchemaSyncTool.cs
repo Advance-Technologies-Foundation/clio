@@ -102,6 +102,8 @@ public sealed class SchemaSyncTool(
 		Idempotent = false, OpenWorld = false)]
 	[Description("Executes a batch of schema operations in a single call: " +
 		"create lookups, create entities, seed data, update entities. " +
+		"Date and Time column types are write-time aliases of DateTime; readback reports DateTime. " +
+		"For date-only Freedom UI fields, explicitly set crt.DateTimePicker pickerType to date. " +
 		"For create-entity, set is-virtual to true only when the schema must not have a physical database table; it defaults to false. " +
 		"Before setting is-virtual to true, call get-guidance with name virtual-entities and follow its schema-before-executor, bounded-provider, authorization, and version-gated write rules. " +
 		"Reduces MCP round-trips and lock overhead compared to individual tool calls. " +
@@ -633,6 +635,10 @@ public sealed class SchemaSyncTool(
 		string parentSchemaName, bool extendParent, string operationName, string tenantKey, RetryBudget retryBudget) {
 		try {
 			string context = $"{operationName} operation for schema '{op.SchemaName}'";
+			if (extendParent && !string.IsNullOrWhiteSpace(parentSchemaName)
+				&& !string.Equals(op.SchemaName, parentSchemaName, StringComparison.OrdinalIgnoreCase)) {
+				throw new InvalidOperationException(CreateEntitySchemaOptions.ReplacementNameMismatchMessage);
+			}
 			IReadOnlyDictionary<string, string> titleLocalizations = EntitySchemaLocalizationContract.RequireTitleLocalizations(
 				op.TitleLocalizations,
 				op.LegacyTitle,
@@ -1465,11 +1471,11 @@ public sealed record SchemaSyncOperation(
 	Dictionary<string, string>? TitleLocalizations = null,
 
 	[property: JsonPropertyName("parent-schema-name")]
-	[property: Description("Parent schema name (for create-entity)")]
+	[property: Description("Parent schema name for create-entity. Defaults to schema-name when extend-parent is true, or BaseEntity otherwise. An explicit replacement parent must match schema-name.")]
 	string? ParentSchemaName = null,
 
 	[property: JsonPropertyName("extend-parent")]
-	[property: Description("Create a replacement schema (for create-entity)")]
+	[property: Description("Create or reconcile a same-name replacement in the target package (for create-entity). The parent defaults to schema-name.")]
 	bool ExtendParent = false,
 
 	[property: JsonPropertyName("columns")]

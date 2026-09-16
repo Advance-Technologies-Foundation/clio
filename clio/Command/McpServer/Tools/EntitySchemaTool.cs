@@ -83,7 +83,7 @@ public sealed class CreateEntitySchemaTool(
 				 Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more. For the schema-design workflow call get-guidance with name app-modeling.
 				 """)]
 	public async Task<CommandExecutionResult> CreateEntitySchema(
-		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns, parent-schema-name (optional, defaults to BaseEntity unless extend-parent is true), extend-parent (optional, requires parent-schema-name when true)")] [Required] CreateEntitySchemaArgs args
+		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns, parent-schema-name (optional, defaults to schema-name for replacements or BaseEntity otherwise), extend-parent (optional; an explicit parent must match schema-name)")] [Required] CreateEntitySchemaArgs args
 	) {
 		ApplicationDataForgeResult? dataForge = enrichmentService is not null
 			? enrichmentService.Enrich(
@@ -318,6 +318,19 @@ public sealed class UpdateEntitySchemaTool(
 	internal const string UpdateEntitySchemaToolName = "update-entity-schema";
 
 	/// <summary>
+	/// Explains the missing <c>operations</c> argument, including where schema-level (non-column)
+	/// changes such as the schema caption actually belong.
+	/// </summary>
+	internal const string MissingOperationsError =
+		"update-entity-schema requires a non-empty 'operations' array - it applies COLUMN operations " +
+		"(add/modify/remove) only. Pass at least one operation, for example " +
+		"[{\"action\":\"add\",\"column-name\":\"UsrCode\",\"data-value-type\":\"Text\"," +
+		"\"title-localizations\":{\"en-US\":\"Code\"}}]. " +
+		"To change SCHEMA-level properties such as the schema caption or the primary display column, " +
+		"use set-entity-schema-properties (title-localizations / primary-display-column) instead - " +
+		"'title-localizations' on this tool is a per-COLUMN property and is ignored at schema level.";
+
+	/// <summary>
 	/// Applies a batch of add/modify/remove column operations to a remote entity schema.
 	/// </summary>
 	[McpServerTool(Name = UpdateEntitySchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false,
@@ -336,6 +349,11 @@ public sealed class UpdateEntitySchemaTool(
 	public async Task<CommandExecutionResult> UpdateEntitySchema(
 		[Description("Parameters: environment-name, package-name, schema-name, operations (all required)")] [Required] UpdateEntitySchemaArgs args) {
 		ApplicationDataForgeResult? dataForge = null;
+		if (args.Operations is null || !args.Operations.Any()) {
+			// Without this, Enumerable.Select later throws the opaque "Value cannot be null. (Parameter
+			// 'source')", which tells the caller nothing about what is missing. See issue #1320.
+			return new CommandExecutionResult(1, [new ErrorMessage(MissingOperationsError)], null, null);
+		}
 		try {
 			if (enrichmentService is not null) {
 				dataForge = enrichmentService.Enrich(
@@ -471,13 +489,22 @@ public sealed class GetEntitySchemaPropertiesTool(
 		+ "an empty column list from a single-package read does NOT prove a column is absent. "
 		+ "Supply package-name to inspect one package layer and to read schema-level fields that the merged view returns as null "
 		+ "(parent-schema-name, indexes-count, ssp-available, use-record-deactivation, use-deny-record-rights, use-live-editing). "
-		+ "The result always includes virtual so callers can verify whether the schema has a physical database table.")]
+		+ "The result always includes virtual so callers can verify whether the schema has a physical database table. "
+		+ "Set required-only=true to return only columns marked required in schema metadata; column counts remain unfiltered. "
+		+ "This does not evaluate dynamic business rules or whether a required column has a default value.")]
 	public EntitySchemaPropertiesInfo GetEntitySchemaProperties(
-		[Description("environment-name, schema-name (required); package-name (optional — omit for the merged all-packages view)")] [Required] GetEntitySchemaPropertiesArgs args) {
+		[Description("environment-name, schema-name (required); package-name (optional — omit for the merged all-packages view); required-only (optional boolean, default false)")] [Required] GetEntitySchemaPropertiesArgs args) {
+		string? argumentError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".",
+			"Valid: environment-name, schema-name, package-name, required-only.");
+		if (argumentError is not null) {
+			throw new ArgumentException(argumentError);
+		}
 		GetEntitySchemaPropertiesOptions options = new() {
 			Environment = args.EnvironmentName,
 			Package = args.PackageName,
-			SchemaName = args.SchemaName
+			SchemaName = args.SchemaName,
+			RequiredOnly = args.RequiredOnly
 		};
 
 		GetEntitySchemaPropertiesCommand resolvedCommand = ResolveCommand<GetEntitySchemaPropertiesCommand>(options);
@@ -508,22 +535,26 @@ public sealed class SetEntitySchemaPropertiesTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Sets schema-level properties on a remote Creatio entity schema. "
-		+ "Currently supports primary-display-column: the column (own or inherited, resolved by name) shown as the "
-		+ "record's display value in lookups and links. The change is saved and published like the other "
-		+ "entity-schema tools; the primary-display column does not appear in the OData contract, so setting it "
-		+ "never triggers an OData entities rebuild. The write is verified by reading the schema back — a target "
-		+ "that does not persist the primary-display column is reported as an error rather than a silent no-op. "
-		+ "Read the set value back with get-entity-schema-properties (primary-display-column-name).")]
+	[Description("Sets schema-level properties on a remote Creatio entity schema: primary-display-column (the own or "
+		+ "inherited column, resolved by name, shown as the record's display value in lookups and links) and "
+		+ "title-localizations (the SCHEMA caption, per culture). The ONLY way to rename an existing schema's caption "
+		+ "— update-entity-schema is per-COLUMN — which is what fixes a duplicate caption breaking a "
+		+ "[#Lookup.<Caption>.<Value>#] process macro. Saved and published; neither property appears in the OData "
+		+ "contract, so setting them never triggers an OData entities rebuild. The write is verified by readback — a "
+		+ "target that does not persist the value is reported as an error rather than a silent no-op. "
+		+ "Read the values back with get-entity-schema-properties.")]
 	public CommandExecutionResult SetEntitySchemaProperties(
-		[Description("Parameters: environment-name, package-name, schema-name (all required); primary-display-column (optional)")] [Required]
+		[Description("Parameters: environment-name, package-name, schema-name (all required); primary-display-column and title-localizations optional, one required")] [Required]
 		SetEntitySchemaPropertiesArgs args) {
 		try {
 			SetEntitySchemaPropertiesOptions options = new() {
 				Environment = args.EnvironmentName,
 				Package = args.PackageName,
 				SchemaName = args.SchemaName,
-				PrimaryDisplayColumn = args.PrimaryDisplayColumn
+				PrimaryDisplayColumn = args.PrimaryDisplayColumn,
+				ParsedTitleLocalizations = args.TitleLocalizations is { Count: > 0 }
+					? args.TitleLocalizations
+					: null
 			};
 			return InternalExecute<SetEntitySchemaPropertiesCommand>(options);
 		} catch (Exception exception) {
@@ -597,16 +628,12 @@ public sealed class GetEntitySchemaColumnPropertiesTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Returns structured properties for the specified remote Creatio entity schema column. "
-		+ "Omit package-name to discover the column in the merged runtime schema across all packages; supply "
-		+ "package-name to preserve the exact package-scoped designer read. In merged mode, track-changes, "
-		+ "localizable-text, and do-not-control-integrity are null because the runtime endpoint does not expose "
-		+ "them, and source describes parent-schema inheritance rather than package ownership. "
-		+ "For a lookup column with a Const default, the returned default-value-config is enriched with "
-		+ "display-value (the referenced record's display value, resolved in the connected user's culture) "
-		+ "so the GUID can be verified without a second query. When the display value cannot be resolved, "
-		+ "record-resolution carries an honest marker (no-access, not-found-or-no-access, or "
-		+ "display-column-unavailable) and display-value is null.")]
+	[Description("Reads one column. Omit package-name for merged discovery; supply it for package-layer metadata. "
+		+ "Merged track-changes, localizable-text and do-not-control-integrity are null; source means inheritance. "
+		+ "default-value-config adds display-value for lookup Const records and native SystemValue source captions "
+		+ "on supported column types, preserving GUIDs. Unavailable captions carry record-resolution (Const) or "
+		+ "source-resolution (SystemValue); see get-tool-contract for markers. Captions identify sources, not "
+		+ "evaluated defaults. Before edits, read get-guidance name=existing-app-maintenance.")]
 	public EntitySchemaColumnPropertiesInfo GetEntitySchemaColumnProperties(
 		[Description("Parameters: environment-name, schema-name, and column-name are required; package-name is optional for merged discovery")] [Required]
 		GetEntitySchemaColumnPropertiesArgs args) {
@@ -777,11 +804,11 @@ public sealed record CreateEntitySchemaArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("parent-schema-name")]
-	[property: Description("Optional parent schema name. Defaults to BaseEntity when omitted (not applied with extend-parent); a parentless schema is not reachable over OData.")]
+	[property: Description("Optional parent schema name. Defaults to schema-name for replacements, or BaseEntity otherwise. An explicit replacement parent must match schema-name.")]
 	string? ParentSchemaName = null,
 
 	[property: JsonPropertyName("extend-parent")]
-	[property: Description("Create a replacement schema. Requires parent-schema-name.")]
+	[property: Description("Create a same-name replacement in the target package. Omitted parent-schema-name is inferred from schema-name; an existing replacement in this package is rejected.")]
 	bool ExtendParent = false,
 
 	IEnumerable<CreateEntitySchemaColumnArgs>? Columns = null
@@ -862,7 +889,10 @@ public sealed record CreateEntitySchemaColumnArgs(
 	[property: Description("""
 						  Column type. Supported values:
 						  Guid, Text, ShortText, MediumText, LongText, MaxSizeText,
+						  Text50, Text250, Text500, TextUnlimited, RichText, PhoneNumber, WebLink,
 						  Integer, Float, Boolean, DateTime, Lookup,
+						  Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8,
+						  Currency0, Currency1, Currency2, Currency3,
 						  Binary, Image, ImageLookup, File, SecureText, Email, Color.
 						  Case-insensitive.
 						  Date and Time are accepted but are ALIASES of DateTime: Creatio stores the column as
@@ -875,6 +905,14 @@ public sealed record CreateEntitySchemaColumnArgs(
 						  EmailAddress is accepted as an alias for Email.
 						  Money is accepted as an alias for Currency2 (the normal two-decimal Creatio money column),
 						  and Decimal for Decimal2 (same as Float).
+						  Most canonical names reported by the read tools (dataforge-get-table-columns, get-app-info)
+						  are accepted here too: Float0-Float4/Float8 = Decimal0-Decimal4/Decimal8,
+						  Money0/Money1/Money3 = Currency0/Currency1/Currency3,
+						  PhoneText = PhoneNumber, WebText = WebLink, EmailText = Email.
+						  Three read names mean a DIFFERENT type here, so do not echo a read value blindly:
+						  'Float' (reported for the unbounded float, dataValueType 5) resolves to Decimal2, and
+						  'Date'/'Time' resolve to DateTime. Read names of non-writable types (Enum, HashText,
+						  Collection, Entity, StageIndicator, FileLocator, ...) are rejected outright.
 						  For image/photo fields rendered by the crt.ImageInput Freedom UI component,
 						  use ImageLookup ("Image link") — NOT the binary Image type, which crt.ImageInput
 						  cannot read or write. ImageLookup references the SysImage schema automatically.
@@ -1022,6 +1060,14 @@ public abstract record ColumnModificationArgsBase(
 						   DateTime and reads it back as DateTime, so date-only or time-only intent is NOT preserved.
 						   Money is accepted as an alias for Currency2 (the normal two-decimal Creatio money column),
 						   and Decimal for Decimal2 (same as Float).
+						   Most canonical names reported by the read tools (dataforge-get-table-columns, get-app-info)
+						   are accepted here too: Float0-Float4/Float8 = Decimal0-Decimal4/Decimal8,
+						   Money0/Money1/Money3 = Currency0/Currency1/Currency3,
+						   PhoneText = PhoneNumber, WebText = WebLink, EmailText = Email.
+						   Three read names mean a DIFFERENT type here, so do not echo a read value blindly:
+						   'Float' (reported for the unbounded float, dataValueType 5) resolves to Decimal2, and
+						   'Date'/'Time' resolve to DateTime. Read names of non-writable types (Enum, HashText,
+						   Collection, Entity, StageIndicator, FileLocator, ...) are rejected outright.
 						   Color stores a hex color string (e.g. #RRGGBB) and is not a text column:
 						   text-only options (multiline / accent-insensitive / format-validated / masked) do not apply.
 						   Encrypted and Password are accepted as aliases for SecureText.
@@ -1254,16 +1300,26 @@ public sealed record GetEntitySchemaPropertiesArgs(
 	[property: Required]
 	string EnvironmentName,
 
-	[property: JsonPropertyName("package-name")]
-	[property: Description("Optional target package name. Omit to read the merged/effective schema with columns "
-		+ "from ALL packages (recommended for column discovery). Supply only to inspect a single package layer's slice.")]
-	string? PackageName,
-
 	[property: JsonPropertyName("schema-name")]
 	[property: Description("Entity schema name")]
 	[property: Required]
-	string SchemaName
-);
+	string SchemaName,
+
+	[property: JsonPropertyName("package-name")]
+	[property: Description("Optional target package name. Omit to read the merged/effective schema with columns "
+		+ "from ALL packages (recommended for column discovery). Supply only to inspect a single package layer's slice.")]
+	string? PackageName = null,
+
+	[property: JsonPropertyName("required-only")]
+	[property: Description("Return only columns marked required in schema metadata. Default false. Schema column counts remain unfiltered; dynamic business rules and default values are not evaluated.")]
+	bool RequiredOnly = false
+) {
+	/// <summary>
+	/// Captures unsupported arguments so the tool can reject them with the valid field names.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}
 
 /// <summary>
 /// Arguments for the <c>set-entity-schema-properties</c> MCP tool.
@@ -1275,7 +1331,11 @@ public sealed record SetEntitySchemaPropertiesArgs(
 
 	[property: JsonPropertyName("primary-display-column")]
 	[property: Description("Column name (own or inherited) to set as the schema's primary-display column")]
-	string? PrimaryDisplayColumn = null
+	string? PrimaryDisplayColumn = null,
+
+	[property: JsonPropertyName("title-localizations")]
+	[property: Description("New SCHEMA caption per culture, e.g. {\"en-US\":\"Mention language\"}. Unlisted cultures keep their caption. At least one settable property is required.")]
+	IReadOnlyDictionary<string, string>? TitleLocalizations = null
 ) : EntitySchemaTargetArgsBase(EnvironmentName, PackageName, SchemaName);
 
 /// <summary>

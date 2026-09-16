@@ -56,6 +56,10 @@ public sealed class RequiresCreatioVersionAttribute : Attribute
 	/// </summary>
 	public string MinVersion { get; }
 
+	/// <summary>Whether an unversioned development build may satisfy this requirement. Defaults to true.</summary>
+	/// <remarks>Set false when the version proves a security property that cannot be assumed on a development build.</remarks>
+	public bool AllowDevelopmentBuild { get; set; } = true;
+
 	/// <summary>
 	/// Gets or sets free-text, actionable guidance shown to the user when the requirement is unmet
 	/// (for example, how to update Creatio). When <c>null</c> or empty no hint is appended to the

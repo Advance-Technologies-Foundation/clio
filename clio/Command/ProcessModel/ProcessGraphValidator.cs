@@ -495,6 +495,36 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 	// method does - which is exactly why the broader name is the right one on this side.
 	private static void CheckConditionalFlows(IReadOnlyList<ProcessGraphEdge> edges,
 			IReadOnlyDictionary<string, ProcessGraphNode> nodeByName, List<ProcessGraphFinding> findings) {
+		// OUTSIDE the conditional filter below, and that is the whole point of it being here. R13 was the
+		// only rule reading `results`, and it only ever looked at conditional edges - so the two shapes the
+		// server refuses OUTRIGHT passed this tool clean, which is the validate-says-clean / build-refuses
+		// fork the rule exists to close. Both became expressible only when `results` was added, so the gap
+		// arrived with the field.
+		foreach (ProcessGraphEdge edge in edges.Where(e => e.Results is { Count: > 0 })) {
+			if (edge.FlowKind != ProcessFlowKind.Conditional) {
+				// FlowKindRules.EnsureConditionMatchesKind throws "A '<kind>' flow cannot carry 'results'".
+				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R19",
+					$"Flow '{edge.Source}' -> '{edge.Target}' carries 'results' but is not a conditional flow. "
+					+ "A result selection IS the branch's predicate, so only a conditional flow can hold one - "
+					+ "the build refuses this outright. Set 'flow-kind' to 'conditional', or drop 'results'.",
+					edge.Source, edge));
+				continue;
+			}
+			if (!string.IsNullOrWhiteSpace(edge.Condition)) {
+				// The two predicate slots are mutually exclusive in the metadata: the platform reads the
+				// selection and never the expression once the map is non-empty, so a flow carrying both
+				// stores text nothing evaluates. The server refuses it; this said nothing, because
+				// `blankCondition` is false and `Condition` is not null, so the edge fell between both arms.
+				// R20 rather than a second R19: the two are different mistakes with different remedies, and a
+				// caller looking an id up in the rule catalog must land on the one it actually hit.
+				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R20",
+					$"Conditional flow '{edge.Source}' -> '{edge.Target}' carries both a condition and "
+					+ "'results'. A branch decides one way or the other: the platform reads the selection and "
+					+ "never the expression, so the condition would be stored and never evaluated. The build "
+					+ "refuses it - keep 'results' and drop the condition, or the other way round.",
+					edge.Source, edge));
+			}
+		}
 		foreach (ProcessGraphEdge edge in edges.Where(e => e.FlowKind == ProcessFlowKind.Conditional)) {
 			// A WARNING, not an error, and the corpus is why. Measured over 1711 shipped schemas, four
 			// conditional flows leave an event: two a start event (CrtBase
@@ -569,14 +599,20 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 					+ "path refuses it, and reached any other way the platform stores it as the literal "
 					+ "'true' - a branch that always fires. Give it a condition, or pass 'true' explicitly "
 					+ "if a branch that always fires is what you mean.", edge.Source, edge));
-			} else if (edge.Condition is null) {
+			} else if (edge.Condition is null && (edge.Results is null || edge.Results.Count == 0)) {
+				// A branch decided by a result SELECTION carries no condition text and is complete without
+				// one, so `results` silences this. Before the field existed the rule fired on that shape and
+				// offered two remedies which both DESTROY it: a condition writes a formula the designer will
+				// not render on a result-enumerating source, and 'sequence' removes the branch. The read-back
+				// caveat in the message covers a graph describe produced, not one the caller is about to build.
 				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, "R13",
 					$"Conditional flow '{edge.Source}' -> '{edge.Target}' carries no condition. That is fine "
 					+ "for checking a graph's shape, but the BUILD path refuses it - give it a condition "
-					+ "before you build, or make the flow 'sequence'. Unless this graph was READ BACK and the "
-					+ "flow branches on the preceding activity's RESULT: 337 shipped flows do, their condition "
-					+ "is a result set rather than text, and neither fix above applies - describe-business-"
-					+ "process reports branchesOnActivityResult for those.", edge.Source, edge));
+					+ "before you build, or make the flow 'sequence'. Unless the branch is decided by an "
+					+ "activity RESULT rather than by text, in which case neither fix applies and neither is "
+					+ "wanted: pass the selection as 'results' on this edge and the warning goes away. 337 "
+					+ "shipped flows are that shape, and describe-business-process reports them with "
+					+ "branchesOnActivityResult and results.", edge.Source, edge));
 			}
 		}
 	}

@@ -9,7 +9,8 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool surface for reading a single Creatio system setting by code.
 /// </summary>
 [McpServerToolType]
-public sealed class SysSettingGetTool(IToolCommandResolver commandResolver) {
+public sealed class SysSettingGetTool(IToolCommandResolver commandResolver,
+	ISysSettingFailureClassifier failures) {
 
 	internal const string GetSysSettingToolName = "get-sys-setting";
 
@@ -23,7 +24,7 @@ public sealed class SysSettingGetTool(IToolCommandResolver commandResolver) {
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Reads the value of a Creatio system setting by code. Returns the raw string value for the All Users default. " +
-	             "Returns empty value when the setting is not configured. Use list-sys-settings to discover available codes.")]
+	             "Returns empty value when the setting is not configured - an empty value always arrives with success:true; a rejected session is reported as success:false with an authentication error instead. Use list-sys-settings to discover available codes.")]
 	public SysSettingGetResult GetSysSetting(
 		[Description("Parameters: environment-name (required), code (required)")]
 		[Required]
@@ -33,8 +34,9 @@ public sealed class SysSettingGetTool(IToolCommandResolver commandResolver) {
 			command = commandResolver.Resolve<SysSettingsCommand>(
 				new EnvironmentOptions { Environment = args.EnvironmentName });
 		} catch (Exception ex) {
-			return new SysSettingGetResult(false, args.Code ?? string.Empty, string.Empty,
-				SysSettingsCommand.CategorizeError(ex, "reading sys-setting"));
+			SysSettingFailure failure = failures.CategorizeAndLog(ex, "reading sys-setting");
+			return new SysSettingGetResult(false, args.Code ?? string.Empty, string.Empty, failure.Error,
+				failure.Category, failure.Cause, failure.RecoveryAction, failure.CorrelationId);
 		}
 		return command.TryGetSysSetting(args);
 	}
@@ -44,7 +46,8 @@ public sealed class SysSettingGetTool(IToolCommandResolver commandResolver) {
 /// MCP tool surface for listing all Creatio system settings with their default values.
 /// </summary>
 [McpServerToolType]
-public sealed class SysSettingsListTool(IToolCommandResolver commandResolver) {
+public sealed class SysSettingsListTool(IToolCommandResolver commandResolver,
+	ISysSettingFailureClassifier failures) {
 
 	internal const string ListSysSettingsToolName = "list-sys-settings";
 
@@ -69,8 +72,9 @@ public sealed class SysSettingsListTool(IToolCommandResolver commandResolver) {
 			command = commandResolver.Resolve<SysSettingsCommand>(
 				new EnvironmentOptions { Environment = args.EnvironmentName });
 		} catch (Exception ex) {
-			return new SysSettingsListResult(false, Array.Empty<SysSettingItem>(),
-				SysSettingsCommand.CategorizeError(ex, "listing sys-settings"));
+			SysSettingFailure failure = failures.CategorizeAndLog(ex, "listing sys-settings");
+			return new SysSettingsListResult(false, Array.Empty<SysSettingItem>(), failure.Error,
+				failure.Category, failure.Cause, failure.RecoveryAction, failure.CorrelationId);
 		}
 		return command.TryListSysSettings(args);
 	}
@@ -80,7 +84,8 @@ public sealed class SysSettingsListTool(IToolCommandResolver commandResolver) {
 /// MCP tool surface for creating a Creatio system setting.
 /// </summary>
 [McpServerToolType]
-public sealed class SysSettingCreateTool(IToolCommandResolver commandResolver) {
+public sealed class SysSettingCreateTool(IToolCommandResolver commandResolver,
+	ISysSettingFailureClassifier failures) {
 
 	internal const string CreateSysSettingToolName = "create-sys-setting";
 
@@ -98,7 +103,7 @@ public sealed class SysSettingCreateTool(IToolCommandResolver commandResolver) {
 	             "MediumText (Text 250), LongText (Text 500), SecureText (Encrypted string), MaxSizeText (Unlimited), " +
 	             "Boolean, DateTime, Date, Time, Integer, Money (Currency), Float (Decimal), Lookup, Binary. " +
 	             "Aliases accepted: Currency = Money, Decimal = Float. " +
-	             "For a Binary setting (e.g. the logo), set the value via update-sys-setting value-file-path; MCP does not read it back. " +
+	             "For a Binary setting (e.g. the logo), set the value via update-sys-setting value-file-path; download exact bytes via clio-run command=download-sys-setting-file with a required file-name. " +
 	             "For Lookup type, reference-schema-name is required.")]
 	public SysSettingCreateResult CreateSysSetting(
 		[Description("Parameters: environment-name, code, name, value-type-name (required); value, description, is-cacheable, is-personal (optional)")]
@@ -109,8 +114,10 @@ public sealed class SysSettingCreateTool(IToolCommandResolver commandResolver) {
 			command = commandResolver.Resolve<SysSettingsCommand>(
 				new EnvironmentOptions { Environment = args.EnvironmentName });
 		} catch (Exception ex) {
+			SysSettingFailure failure = failures.CategorizeAndLog(ex, "creating sys-setting");
 			return new SysSettingCreateResult(false, args.Code ?? string.Empty, args.ValueTypeName ?? string.Empty,
-				null, SysSettingsCommand.CategorizeError(ex, "creating sys-setting"));
+				null, failure.Error, Warning: null, failure.Category, failure.Cause, failure.RecoveryAction,
+				failure.CorrelationId);
 		}
 		return command.TryCreateSysSetting(args);
 	}
@@ -120,7 +127,8 @@ public sealed class SysSettingCreateTool(IToolCommandResolver commandResolver) {
 /// MCP tool surface for updating the value of an existing Creatio system setting.
 /// </summary>
 [McpServerToolType]
-public sealed class SysSettingUpdateTool(IToolCommandResolver commandResolver) {
+public sealed class SysSettingUpdateTool(IToolCommandResolver commandResolver,
+	ISysSettingFailureClassifier failures) {
 
 	internal const string UpdateSysSettingToolName = "update-sys-setting";
 
@@ -145,8 +153,9 @@ public sealed class SysSettingUpdateTool(IToolCommandResolver commandResolver) {
 			command = commandResolver.Resolve<SysSettingsCommand>(
 				new EnvironmentOptions { Environment = args.EnvironmentName });
 		} catch (Exception ex) {
-			return new SysSettingUpdateResult(false, args.Code ?? string.Empty, null,
-				SysSettingsCommand.CategorizeError(ex, "updating sys-setting"));
+			SysSettingFailure failure = failures.CategorizeAndLog(ex, "updating sys-setting");
+			return new SysSettingUpdateResult(false, args.Code ?? string.Empty, null, failure.Error,
+				failure.Category, failure.Cause, failure.RecoveryAction, failure.CorrelationId);
 		}
 		return command.TryUpdateSysSetting(args);
 	}

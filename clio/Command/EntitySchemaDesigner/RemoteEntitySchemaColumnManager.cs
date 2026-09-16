@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Clio.Common;
@@ -44,7 +45,7 @@ public interface IRemoteEntitySchemaColumnManager
 	void ModifyColumn(ModifyEntitySchemaColumnOptions options);
 
 	/// <summary>
-	/// Sets schema-level properties (v1: the primary-display column) on a remote entity schema and persists
+	/// Sets schema-level properties (the primary-display column and the schema caption per culture) on a remote entity schema and persists
 	/// the result through the shared save/publish pipeline, verifying that the change was applied.
 	/// </summary>
 	/// <param name="options">Options identifying the package, schema, environment, and the properties to set.</param>
@@ -121,7 +122,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 		ModifyEntitySchemaColumnOptions rootOperation = operations[0];
 		PackageInfo package = ResolvePackage(rootOperation.Package);
-		EntityDesignSchemaDto schema = LoadSchema(rootOperation.SchemaName, package.Descriptor.UId, package.Descriptor.Name, rootOperation, allowDependencyResolution: true);
+		EntityDesignSchemaDto schema = LoadSchema(rootOperation.SchemaName, package.Descriptor.UId, package.Descriptor.Name, rootOperation, DependencyDiagnosis.Report);
 		EnsureBatchTargetsSingleSchema(operations, rootOperation);
 		string effectiveCultureName = ResolveEffectiveCultureName(rootOperation);
 		// Captured BEFORE the mutation loop: the names this package's layer already had. The loop mutates the
@@ -170,23 +171,38 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		// the publish both succeeded. Measured on a stand: only the item being changed is missing, for about
 		// nine seconds, while every other schema keeps answering. A probe that can fail that way cannot prove
 		// availability, and the reload below already proves the save round-trips.
+		// DependencyDiagnosis.Skip, unlike the load at the top of the write. SaveSchema, SaveSchemaDbStructure
+		// and the publish have all just succeeded into THIS package, so a reload that cannot see the schema is
+		// the platform's own refresh window (see the note above) and cannot be a missing dependency. Running
+		// the candidate lookup here would produce a message telling the caller to add a dependency for a write
+		// that already persisted - the same unevidenced cause this change exists to remove, on the one path
+		// where clio positively knows the cause is something else.
 		return LoadSchema(schema.Name, package.Descriptor.UId, package.Descriptor.Name, options,
-			allowDependencyResolution: true);
+			DependencyDiagnosis.Skip);
 	}
 
 	public void SetSchemaProperties(SetEntitySchemaPropertiesOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
-		if (string.IsNullOrWhiteSpace(options.PrimaryDisplayColumn)) {
+		if (!options.HasAnyPropertyToSet) {
 			throw new EntitySchemaDesignerException(SetEntitySchemaPropertiesOptions.NoPropertyToSetError);
 		}
 		PackageInfo package = ResolvePackage(options.Package);
 		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId,
-			package.Descriptor.Name, options, allowDependencyResolution: true);
-		string requestedColumnName = options.PrimaryDisplayColumn.Trim();
-		// Resolve by name against own then inherited columns (modern server contract: the primary-display
-		// column is matched by the column's uId object, NOT a legacy flat primaryDisplayColumnUId).
-		(EntitySchemaColumnDto targetColumn, _) = FindColumnForRead(schema, requestedColumnName);
-		schema.PrimaryDisplayColumn = targetColumn;
+			package.Descriptor.Name, options, DependencyDiagnosis.Report);
+		string requestedColumnName = string.IsNullOrWhiteSpace(options.PrimaryDisplayColumn)
+			? null
+			: options.PrimaryDisplayColumn.Trim();
+		if (requestedColumnName != null) {
+			// Resolve by name against own then inherited columns (modern server contract: the primary-display
+			// column is matched by the column's uId object, NOT a legacy flat primaryDisplayColumnUId).
+			(EntitySchemaColumnDto targetColumn, _) = FindColumnForRead(schema, requestedColumnName);
+			schema.PrimaryDisplayColumn = targetColumn;
+		}
+		// The culture is resolved LAZILY: only a scalar --title needs a culture to anchor to, and resolving
+		// it eagerly would add a profile-culture lookup (a remote call) to the pre-existing
+		// primary-display-column-only invocation, which never made one.
+		IReadOnlyDictionary<string, string> requestedTitles = ApplySchemaCaption(schema, options,
+			() => _captionCultureResolver.ResolveEffectiveCulture(options, options.CaptionCulture));
 
 		// The primary-display column is a designer-level property; it appears nowhere in the OData contract,
 		// so setting it never needs the entities assembly rebuilt.
@@ -194,14 +210,90 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			schema, package, options, "schema properties were saved", ODataContractImpact.Unchanged);
 		// The server performs no validation and silently no-ops if a target version expects the legacy
 		// primaryDisplayColumnUId; verify the readback so that silent no-op becomes a clear failure.
-		if (!string.Equals(reloadedSchema.PrimaryDisplayColumn?.Name, requestedColumnName,
-			StringComparison.OrdinalIgnoreCase)) {
+		if (requestedColumnName != null && !string.Equals(reloadedSchema.PrimaryDisplayColumn?.Name,
+			requestedColumnName, StringComparison.OrdinalIgnoreCase)) {
 			throw new EntitySchemaDesignerException(
 				$"Primary-display column '{requestedColumnName}' was not persisted for schema '{schema.Name}'. " +
 				"The target environment may not support setting the primary-display column through this API.");
 		}
-		_logger.WriteInfo(
-			$"Primary-display column set to '{requestedColumnName}' for schema '{options.SchemaName}'.");
+		VerifySchemaCaption(reloadedSchema, requestedTitles, options.SchemaName);
+		if (requestedColumnName != null) {
+			_logger.WriteInfo(
+				$"Primary-display column set to '{requestedColumnName}' for schema '{options.SchemaName}'.");
+		}
+		// ApplySchemaCaption returns ReadOnlyDictionary.Empty, never null (Sonar S1168), so a null-coalesce
+		// here was a dead branch that also allocated on every caption-less save.
+		foreach (KeyValuePair<string, string> localization in requestedTitles) {
+			_logger.WriteInfo(
+				$"Schema caption set to '{localization.Value}' ({localization.Key}) for schema '{options.SchemaName}'.");
+		}
+	}
+
+	/// <summary>
+	/// Merges the requested schema caption into the design schema's localizable caption, leaving cultures
+	/// the caller did not mention untouched. A scalar <c>--title</c> is anchored to the culture produced by
+	/// <paramref name="effectiveCultureNameProvider"/>, which is invoked only in that case.
+	/// </summary>
+	/// <remarks>
+	/// The map wins over the scalar here, but the two can no longer arrive together:
+	/// <see cref="SetEntitySchemaPropertiesCommand.ValidateOptions"/> rejects that combination, so this
+	/// precedence is a defensive fallback rather than a documented behaviour a caller can rely on.
+	/// </remarks>
+	/// <returns>The culture-to-caption map that must be verified after the save; EMPTY when no caption
+	/// change was requested. Empty rather than <see langword="null"/> (Sonar S1168) - the only consumer,
+	/// <see cref="VerifySchemaCaption"/>, iterates it, so an empty map already means "verify nothing".</returns>
+	private static IReadOnlyDictionary<string, string> ApplySchemaCaption(EntityDesignSchemaDto schema,
+		SetEntitySchemaPropertiesOptions options, Func<string> effectiveCultureNameProvider) {
+		IReadOnlyDictionary<string, string> localizations =
+			options.ParsedTitleLocalizations is { Count: > 0 } ? options.ParsedTitleLocalizations : null;
+		if (localizations is null && !string.IsNullOrWhiteSpace(options.Title)) {
+			string effectiveCulture = effectiveCultureNameProvider();
+			// ENG-91044: the scalar --title is stored under the EFFECTIVE culture, exactly like the map
+			// entries, so it needs the same script guard. ValidateOptions normalizes only
+			// TitleLocalizations / ParsedTitleLocalizations, so without this line
+			// `--title "Мова згадки"` against an en-US profile wrote Cyrillic under en-US on a published,
+			// destructive write, while the equivalent `--title-localizations {"en-US":"Мова згадки"}` was
+			// correctly rejected. Same guard ClientUnitSchemaCreate, PageCreateOptions, SchemaDesignerHelper
+			// and the application-section commands apply to their scalar captions.
+			CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(effectiveCulture, options.Title.Trim(), "title");
+			localizations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				[effectiveCulture] = options.Title.Trim()
+			};
+		}
+		if (localizations is not { Count: > 0 }) {
+			return ReadOnlyDictionary<string, string>.Empty;
+		}
+		schema.Caption ??= [];
+		foreach (KeyValuePair<string, string> localization in localizations) {
+			// Per-culture merge (not ReplaceLocalizableValues): renaming the English caption must not
+			// silently drop the captions the schema already carries for other cultures.
+			EntitySchemaDesignerSupport.SetLocalizableValue(schema.Caption, localization.Value, localization.Key);
+		}
+		return localizations;
+	}
+
+	/// <summary>
+	/// Confirms the requested caption survived the round-trip, so an environment that silently ignores the
+	/// caption fails loudly instead of reporting success on an unchanged schema.
+	/// </summary>
+	private static void VerifySchemaCaption(EntityDesignSchemaDto reloadedSchema,
+		IReadOnlyDictionary<string, string> requestedTitles, string schemaName) {
+		if (requestedTitles is not { Count: > 0 }) {
+			return;
+		}
+		foreach (KeyValuePair<string, string> localization in requestedTitles) {
+			// Exact culture match, NOT GetLocalizableValue: that helper falls back to en-US and then to the
+			// first entry, so a server that persisted only en-US would return the en-US value for a uk-UA
+			// lookup and this check would pass on the very per-culture no-op it exists to catch.
+			string persisted = reloadedSchema?.Caption?
+				.FirstOrDefault(value => string.Equals(
+					value.CultureName, localization.Key, StringComparison.OrdinalIgnoreCase))?.Value;
+			if (!string.Equals(persisted, localization.Value, StringComparison.Ordinal)) {
+				throw new EntitySchemaDesignerException(
+					$"Schema caption '{localization.Value}' ({localization.Key}) was not persisted for schema " +
+					$"'{schemaName}'. The server returned '{persisted ?? "<none>"}'.");
+			}
+		}
 	}
 
 	public EntitySchemaColumnPropertiesInfo GetColumnProperties(GetEntitySchemaColumnPropertiesOptions options) {
@@ -210,12 +302,13 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			return GetMergedColumnProperties(options);
 		}
 		PackageInfo package = ResolvePackage(options.Package);
-		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId, package.Descriptor.Name, options, allowDependencyResolution: false);
+		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId, package.Descriptor.Name, options, DependencyDiagnosis.Report);
 		(EntitySchemaColumnDto column, string source) = FindColumnForRead(schema, options.ColumnName);
 		string cultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
 		EntitySchemaDefaultValueConfig? defaultValueConfig = EntitySchemaDesignerSupport.CreateDefaultValueConfig(
 			column.DefValue);
 		defaultValueConfig = EnrichLookupConstDefaultValue(defaultValueConfig, column, options);
+		defaultValueConfig = EnrichSystemValueDefault(defaultValueConfig, column.DataValueType, options);
 		return new EntitySchemaColumnPropertiesInfo(
 			schema.Name,
 			schema.Package?.Name ?? options.Package,
@@ -276,6 +369,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		EntitySchemaDefaultValueConfig? defaultValueConfig =
 			EntitySchemaDesignerSupport.CreateDefaultValueConfig(defaultValue);
 		defaultValueConfig = EnrichLookupConstDefaultValue(defaultValueConfig, enrichmentColumn, options);
+		defaultValueConfig = EnrichSystemValueDefault(defaultValueConfig, runtimeColumn.DataValueType, options);
 
 		return new EntitySchemaColumnPropertiesInfo(
 			schema.Name,
@@ -343,6 +437,44 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		return config.WithDisplay(resolution.DisplayValue, resolution.RecordResolution);
 	}
 
+	private EntitySchemaDefaultValueConfig? EnrichSystemValueDefault(
+		EntitySchemaDefaultValueConfig? config, int? dataValueType,
+		GetEntitySchemaColumnPropertiesOptions options) {
+		if (config?.Source != "SystemValue") {
+			return config;
+		}
+		if (!Guid.TryParse(config.ValueSource, out Guid sourceId) || sourceId == Guid.Empty) {
+			return config.WithSourceDisplay(null, "invalid-source");
+		}
+		// Read the actual platform type even where the write contract does not expose SystemValue defaults.
+		Guid? dataValueTypeUId = dataValueType switch {
+			8 => new Guid("603d4960-a1a2-45e9-b232-206a54421b01"), // Date
+			9 => new Guid("04cc757b-8f06-482c-8a1a-0c0e171d2410"), // Time
+			16 => new Guid("b039feb0-ee7c-4884-8aa6-d6d45d84316f"), // ImageLookup
+			18 => new Guid("dafb71f9-ee9f-4e0b-a4d7-37aa15987155"), // Color
+			int type when EntitySchemaDesignerSupport.RuntimeDataValueTypeUIdMap.TryGetValue(type, out Guid uId) => uId,
+			_ => null
+		};
+		if (dataValueTypeUId is null) {
+			return config.WithSourceDisplay(null, "unsupported-type");
+		}
+		try {
+			SystemValueLookupValueDto? value = _entitySchemaDesignerClient.GetSystemValues(dataValueTypeUId.Value, options)
+				.SingleOrDefault(item => item.Value == sourceId);
+			if (value is null) {
+				return config.WithSourceDisplay(null, "not-found-for-type");
+			}
+			return string.IsNullOrWhiteSpace(value.DisplayValue)
+				? config.WithSourceDisplay(null, "caption-unavailable")
+				: config.WithSourceDisplay(value.DisplayValue, null);
+		} catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException
+				or WebException or TaskCanceledException or JsonException or Newtonsoft.Json.JsonException) {
+			// Catalog failures say nothing about the stored selector. Preserve the readback and do not
+			// expose raw responses (which can contain environment details) through the resolution marker.
+			return config.WithSourceDisplay(null, "catalog-unavailable");
+		}
+	}
+
 	public void PrintColumnProperties(GetEntitySchemaColumnPropertiesOptions options) {
 		EntitySchemaColumnPropertiesInfo column = GetColumnProperties(options);
 		WriteInfo("Entity schema column properties");
@@ -366,6 +498,9 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		if (column.DefaultValueConfig?.RecordResolution != null) {
 			WriteInfo($"Default value record resolution: {column.DefaultValueConfig.RecordResolution}");
 		}
+		if (column.DefaultValueConfig?.SourceResolution != null) {
+			WriteInfo($"Default value source resolution: {column.DefaultValueConfig.SourceResolution}");
+		}
 		WriteInfo($"Simple lookup: {FormatBoolean(column.SimpleLookup)}");
 		WriteInfo($"Cascade: {FormatBoolean(column.Cascade)}");
 		WriteInfo($"Do not control integrity: {FormatBoolean(column.DoNotControlIntegrity)}");
@@ -384,7 +519,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			return GetMergedSchemaProperties(options);
 		}
 		PackageInfo package = ResolvePackage(options.Package);
-		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId, package.Descriptor.Name, options, allowDependencyResolution: false);
+		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId, package.Descriptor.Name, options, DependencyDiagnosis.Report);
 		string cultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
 		List<EntitySchemaColumnDto> ownColumns = schema.Columns?.ToList() ?? [];
 		List<EntitySchemaColumnDto> inheritedColumns = schema.InheritedColumns?.ToList() ?? [];
@@ -1170,8 +1305,27 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			+ "required, so prefix a distinguishing word rather than reusing this one.");
 	}
 
+	/// <summary>
+	/// What <see cref="LoadSchema"/> may say about the cause when the designer cannot open the schema.
+	/// </summary>
+	private enum DependencyDiagnosis
+	{
+		/// <summary>
+		/// Run the candidate lookup and report what it found. The default for every load whose outcome is
+		/// genuinely unknown.
+		/// </summary>
+		Report,
+
+		/// <summary>
+		/// State no dependency diagnosis at all, because the caller already knows the cause is something
+		/// else - the post-save verification reload, where the write into this very package has just
+		/// succeeded.
+		/// </summary>
+		Skip
+	}
+
 	private EntityDesignSchemaDto LoadSchema(string schemaName, Guid packageUId, string packageName,
-		RemoteCommandOptions options, bool allowDependencyResolution) {
+		RemoteCommandOptions options, DependencyDiagnosis diagnosis) {
 		GetSchemaDesignItemRequestDto request = new() {
 			Name = schemaName,
 			PackageUId = packageUId,
@@ -1180,22 +1334,177 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		DesignerResponse<EntityDesignSchemaDto>? response =
 			_entitySchemaDesignerClient.TryGetSchemaDesignItem(request, options);
 		bool schemaUnavailable = response == null || response.Schema == null;
-		if (allowDependencyResolution && schemaUnavailable && _dependencyResolver.TryAutoResolve(schemaName, packageName)) {
-			_logger.WriteInfo(
-				$"Retrying GetSchemaDesignItem for '{schemaName}' after auto-dependency resolution...");
-			response = _entitySchemaDesignerClient.TryGetSchemaDesignItem(request, options);
-			schemaUnavailable = response == null || response.Schema == null;
+		EntitySchemaDependencyResolution resolution = EntitySchemaDependencyResolution.None;
+		if (schemaUnavailable && diagnosis == DependencyDiagnosis.Report) {
+			// Runs on the READ paths too - the lookup never writes anything. Without it the read paths
+			// reported the bare transport failure and named no package at all, which is what made
+			// `get-entity-schema-properties --package <app>` unactionable for the caller (issue #722).
+			// The UId is passed as well as the name: the resolver reads the package's declared dependencies,
+			// and the request above already resolved the package, so resolving it again by name would cost an
+			// extra full installed-package round-trip on a path that is already failing.
+			resolution = _dependencyResolver.Resolve(schemaName, packageUId, packageName);
 		}
 		if (schemaUnavailable) {
-			response = _entitySchemaDesignerClient.GetSchemaDesignItem(request, options);
+			try {
+				response = _entitySchemaDesignerClient.GetSchemaDesignItem(request, options);
+			} catch (NonJsonServiceResponseException nonJsonException)
+				when (nonJsonException is not SessionExpiredServiceResponseException) {
+				// Rethrown as the SAME type, not as EntitySchemaDesignerException: NonJsonServiceResponseException
+				// carries IAuthoritativeErrorMessage, and SurfacedExceptionMessage.Resolve stops at the outermost
+				// exception that carries it - so the enriched text below is what the MCP boundary surfaces, with
+				// the transport failure preserved as the inner exception for diagnostics. A session-expiry response
+				// is excluded by the filter: it carries no information about the schema or the package, so
+				// attaching a missing-dependency diagnosis to it would be a claim with no evidence behind it.
+				throw new NonJsonServiceResponseException(
+					BuildSchemaUnavailableMessage(schemaName, packageName, resolution,
+						SummariseTransportFailure(nonJsonException), diagnosis),
+					nonJsonException);
+			}
 		}
+		// The same enriched text on the OTHER "unavailable" shape: a well-formed envelope whose schema is null.
+		// It reaches here rather than through the catch above, and reporting it bare would throw away the
+		// candidate lookup that has already run.
 		EntityDesignSchemaDto schema = response!.Schema
 			?? throw new EntitySchemaDesignerException(
-				$"GetSchemaDesignItem returned no schema for '{schemaName}'.");
+				BuildSchemaUnavailableMessage(schemaName, packageName, resolution,
+					$"GetSchemaDesignItem returned no schema for '{schemaName}'.", diagnosis));
 		schema.Columns = schema.Columns?.ToList() ?? [];
 		schema.InheritedColumns = schema.InheritedColumns?.ToList() ?? [];
 		schema.Indexes = schema.Indexes?.ToList() ?? [];
 		return schema;
+	}
+
+	/// <summary>Upper bound on the candidate packages named in the schema-unavailable message.</summary>
+	private const int MaxReportedDependencyCandidates = 8;
+
+	/// <summary>Upper bound on the transport-failure summary appended to the schema-unavailable message.</summary>
+	private const int MaxTransportSummaryLength = 300;
+
+	/// <summary>
+	/// Reduces a classified transport failure to its first sentence, which carries the method and the
+	/// endpoint URL.
+	/// </summary>
+	/// <remarks>
+	/// The full text is deliberately NOT appended. It ends with "clio has not established WHY the server
+	/// answered this way and states no cause" - correct for the transport layer, which has looked nothing up,
+	/// but a direct contradiction of the diagnosis this method builds on top of it. The complete message
+	/// stays reachable as the inner exception.
+	/// </remarks>
+	/// <param name="transportFailure">The classified transport failure.</param>
+	/// <returns>The bounded summary to append.</returns>
+	private static string SummariseTransportFailure(Exception transportFailure) {
+		string message = transportFailure.Message;
+		int sentenceEnd = message.IndexOf(". ", StringComparison.Ordinal);
+		string summary = sentenceEnd > 0 ? message[..(sentenceEnd + 1)] : message;
+		return summary.Length > MaxTransportSummaryLength
+			? summary[..MaxTransportSummaryLength] + "…"
+			: summary;
+	}
+
+	/// <summary>
+	/// Builds the caller-facing message for a schema the designer could not open in the target package.
+	/// </summary>
+	/// <remarks>
+	/// The missing-dependency cause is asserted ONLY when candidate packages were actually found, and it
+	/// then names them. When nothing was found the message says so instead of inventing a cause - the text
+	/// this replaced asserted "a stale database table left by a previously deleted package" as a second
+	/// cause on every HTML response, with no check anywhere producing evidence for it (issue #722). A
+	/// candidate search that did not complete is reported as such rather than as an empty result, and the
+	/// post-save reload gets its own branch that asserts no cause at all.
+	/// </remarks>
+	/// <param name="schemaName">Entity schema that could not be opened.</param>
+	/// <param name="packageName">Package the request was scoped to.</param>
+	/// <param name="resolution">Candidates found for that schema, ranked, and how far the lookup got.</param>
+	/// <param name="transportSummary">Bounded summary of the underlying failure, kept for diagnostics.</param>
+	/// <param name="diagnosis">Whether a dependency diagnosis may be stated on this path at all.</param>
+	/// <returns>The error message to surface.</returns>
+	private static string BuildSchemaUnavailableMessage(string schemaName, string packageName,
+		EntitySchemaDependencyResolution resolution, string transportSummary, DependencyDiagnosis diagnosis) {
+		if (diagnosis == DependencyDiagnosis.Skip) {
+			// The post-save verification reload. Everything the caller asked for has already persisted, so the
+			// only correct report is that the write succeeded and the read-back has not caught up yet. Naming
+			// a dependency here would tell the caller to fix a package whose write just worked, and an agent
+			// reading a failure would repeat the mutation it has already applied.
+			return $"Schema '{schemaName}' was saved and published successfully in package '{packageName}', " +
+				"but the verification reload could not read it back yet. Publishing refreshes the schema " +
+				"manager in two steps and the schema being changed is briefly missing while that runs - " +
+				"measured at about nine seconds on a stand. Nothing needs to be added or repaired: do NOT " +
+				"repeat the write and do NOT add a package dependency. Re-read the schema (for example " +
+				"get-entity-schema-properties) to confirm the change, and if it is still missing after a " +
+				$"minute check the Creatio server log for this endpoint. Underlying failure: {transportSummary}";
+		}
+		StringBuilder message = new();
+		message.Append($"Schema '{schemaName}' could not be opened in package '{packageName}'. ");
+		if (!resolution.LookupSucceeded) {
+			// Distinct from "found nothing": the search never completed, so there is no finding of fact to
+			// report. Reporting the two identically pointed the caller at a wrong schema name when the real
+			// condition was that the environment had stopped answering.
+			message.Append(
+				"clio could not complete the lookup of the packages that contribute " +
+				$"'{schemaName}', so it has NO evidence about the cause and states none. The lookup failed " +
+				$"with: {resolution.LookupFailureReason}. Retry once the environment answers again, and " +
+				"check the Creatio server log for the failed request. ");
+		} else if (resolution.Candidates.Count == 0) {
+			message.Append(
+				$"clio found no other package that contributes '{schemaName}' and that '{packageName}' does " +
+				"not already depend on, so it has NO evidence about the cause and states none. Confirm the " +
+				"schema name and the target package with find-entity-schema and list-packages, and check the " +
+				"Creatio server log for the failed request. ");
+		} else {
+			AppendCandidateGuidance(message, schemaName, packageName, resolution);
+		}
+		message.Append(
+			"Do NOT write into the owning (managed) package and do NOT fall back to raw SQL/OData/DataService. " +
+			$"Underlying failure: {transportSummary}");
+		return message.ToString();
+	}
+
+	/// <summary>
+	/// Appends the missing-dependency diagnosis and the ranked candidate list to
+	/// <paramref name="message"/>.
+	/// </summary>
+	/// <param name="message">Message under construction.</param>
+	/// <param name="schemaName">Entity schema that could not be opened.</param>
+	/// <param name="packageName">Package the request was scoped to.</param>
+	/// <param name="resolution">Candidates found for that schema, ranked, and how far the lookup got.</param>
+	private static void AppendCandidateGuidance(StringBuilder message, string schemaName, string packageName,
+		EntitySchemaDependencyResolution resolution) {
+		IReadOnlyList<string> reported = resolution.Candidates.Count > MaxReportedDependencyCandidates
+			? resolution.Candidates.Take(MaxReportedDependencyCandidates).ToList()
+			: resolution.Candidates;
+		string overflow = resolution.Candidates.Count > reported.Count
+			? $" (+{resolution.Candidates.Count - reported.Count} more, see find-entity-schema --schema-name {schemaName})"
+			: string.Empty;
+		message.Append(
+			$"The usual cause is that '{packageName}' has no dependency on the package that owns the " +
+			$"layer of '{schemaName}' it is trying to extend. These packages contribute '{schemaName}'");
+		// Only claim the already-declared dependencies were filtered out when that read actually succeeded.
+		// On a failed read the subtraction was a no-op, and the caveat has to travel in THIS text: the
+		// warning that carries it goes to the log, which an MCP client never sees.
+		message.Append(resolution.DependenciesKnown
+			? $" and are not already dependencies of '{packageName}'"
+			: string.Empty);
+		message.Append(resolution.ApplicationCandidateCount > 0
+			? $", installed applications first: {string.Join(", ", reported)}{overflow}. "
+			: $": {string.Join(", ", reported)}{overflow}. ");
+		if (!resolution.DependenciesKnown) {
+			message.Append(
+				$"clio could not read the dependencies '{packageName}' already declares, so this list is " +
+				"NOT filtered - some of these may already be dependencies. Adding one that is already " +
+				"declared is a no-op, so this costs nothing, but it also fixes nothing: if the package you " +
+				"add was already there, the cause lies elsewhere. ");
+		}
+		message.Append(
+			$"Add the owning one with: clio add-package-dependency --package-name {packageName} " +
+			"--dependencies <PACKAGE>. ");
+		// With a single candidate the "more than one can be valid" sentence contradicts the list the caller
+		// is looking at, so it is only stated when the list actually holds a choice.
+		message.Append(resolution.Candidates.Count > 1
+			? "clio does not choose for you - more than one of these can be a valid dependency and adding " +
+				"the wrong one changes the package for real; the order above is a ranking hint, not an " +
+				"answer. "
+			: "clio does not add it for you - adding a dependency changes the package for real, and this " +
+				"failure does not prove a missing dependency is the cause. ");
 	}
 
 	private static int ParseSupportedType(string typeName, string actionName) {

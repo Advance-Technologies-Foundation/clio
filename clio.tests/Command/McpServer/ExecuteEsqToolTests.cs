@@ -16,6 +16,45 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class ExecuteEsqToolTests {
 
+	[TestCase(null)]
+	[TestCase("null")]
+	[TestCase("[]")]
+	[TestCase("42")]
+	[TestCase("true")]
+	[TestCase("\"invalid-json\"")]
+	[TestCase("\"[]\"")]
+	[TestCase("{}")]
+	[TestCase("{\"rootSchemaName\":\" \"}")]
+	[Category("Unit")]
+	[Description("Invalid query shapes return a copyable clio-run example without contacting Creatio.")]
+	public void Execute_ShouldProvideRunnableExample_WhenQueryShapeIsInvalid(string? rawQuery) {
+		// Arrange
+		(ExecuteEsqTool tool, IApplicationClient client, _) = BuildTool("{\"success\":true,\"rows\":[]}");
+		ExecuteEsqArgs args = new() {
+			EnvironmentName = "dev",
+			Query = rawQuery is null ? default : Json(rawQuery)
+		};
+
+		// Act
+		ExecuteEsqResponse response = tool.Execute(args);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "invalid query shapes must be rejected locally");
+		client.ReceivedCalls().Should().BeEmpty(because: "query validation must precede all remote requests");
+		response.Error.Should().Contain("'query' argument", because: "the error must identify the argument carrying the SelectQuery");
+		response.Hint.Should().Contain("esq-filters", because: "the detailed guidance remains available for complex queries");
+		using JsonDocument example = JsonDocument.Parse(response.Error![(response.Error.IndexOf('\n') + 1)..]);
+		example.RootElement.GetProperty("command").GetString().Should().Be(ExecuteEsqTool.ToolName,
+			because: "the example must be a complete clio-run call");
+		ExecuteEsqArgs exampleArgs = example.RootElement.GetProperty("args").Deserialize<ExecuteEsqArgs>()!;
+		tool.Execute(exampleArgs with { EnvironmentName = "dev" }).Success.Should().BeTrue(
+			because: "the example must bind to the existing tool and pass query validation");
+		exampleArgs.Query.GetProperty("rowCount").GetInt32().Should().Be(1,
+			because: "the recovery example must keep the read bounded");
+		exampleArgs.Query.GetProperty("allColumns").GetBoolean().Should().BeFalse(
+			because: "the recovery example must not retrieve binary or unrelated fields");
+	}
+
 	private static JsonElement Json(string raw) => JsonDocument.Parse(raw).RootElement.Clone();
 
 	private static (ExecuteEsqTool tool, IApplicationClient client, IServiceUrlBuilder urlBuilder) BuildTool(string responseJson) {

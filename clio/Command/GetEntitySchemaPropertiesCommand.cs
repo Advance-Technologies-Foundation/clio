@@ -27,6 +27,12 @@ public class GetEntitySchemaPropertiesOptions : RemoteCommandOptions
 	[Option("schema-name", Required = false, HelpText = "Entity schema name")]
 	public string SchemaName { get; set; }
 
+	/// <summary>
+	/// Gets or sets whether only columns marked required in schema metadata are returned.
+	/// </summary>
+	[Option("required-only", Default = false, HelpText = "Return only columns marked required. Schema column counts remain unfiltered.")]
+	public bool RequiredOnly { get; set; }
+
 	[Option("name", Required = false, Hidden = true, HelpText = "Alias for --schema-name")]
 	public string? SchemaNameAlias {
 		get => SchemaName;
@@ -62,13 +68,16 @@ public class GetEntitySchemaPropertiesCommand : Command<GetEntitySchemaPropertie
 
 	internal virtual EntitySchemaPropertiesInfo GetSchemaProperties(GetEntitySchemaPropertiesOptions options) {
 		Validate(options);
-		return _columnManager.GetSchemaProperties(options);
+		EntitySchemaPropertiesInfo properties = _columnManager.GetSchemaProperties(options);
+		return options.RequiredOnly
+			? properties with { Columns = properties.Columns?.Where(column => column.Required).ToArray() ?? [] }
+			: properties;
 	}
 
 	private static void Validate(GetEntitySchemaPropertiesOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
-			throw new ArgumentException("Schema name is required.", nameof(options.SchemaName));
+			throw new ArgumentException("schema-name is required.");
 		}
 	}
 

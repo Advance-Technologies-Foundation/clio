@@ -49,10 +49,6 @@ clio get-identity-service-config -e c-dev
 
 ## Notes
 
-This command is experimental and hidden by default. Enable it before use:
-
-```
-clio experimental --name deploy-identity --enable
-```
+This command is available by default in both CLI and MCP. It operates through remote APIs and does not require access to the Creatio server filesystem or database.
 
 This command is read-only; it does not modify Creatio or clio settings.

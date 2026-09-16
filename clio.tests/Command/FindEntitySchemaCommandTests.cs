@@ -196,18 +196,28 @@ internal class FindEntitySchemaCommandTests : BaseCommandTests<FindEntitySchemaO
 			"empty parent schema name should be normalized to null");
 	}
 
-	[Test]
+	[TestCase(null)]
+	[TestCase("")]
+	[TestCase(" \t")]
 	[Description("FindSchemas throws ArgumentException when none of schema-name, search-pattern, or uid is provided.")]
-	public void FindSchemas_ThrowsArgumentException_WhenNoSearchCriteriaProvided() {
+	public void FindSchemas_ShouldNameParameters_WhenNoSearchCriteriaProvided(string criterion) {
 		// Arrange
-		FindEntitySchemaOptions options = new();
+		FindEntitySchemaOptions options = new() {
+			SchemaName = criterion,
+			SearchPattern = criterion,
+			Uid = criterion
+		};
 
 		// Act
 		Action act = () => _command.FindSchemas(options);
 
 		// Assert
 		act.Should().Throw<ArgumentException>(
-			"at least one search criterion is required");
+			because: "at least one search criterion is required")
+			.WithMessage("At least one of 'schema-name', 'search-pattern', or 'uid' is required.",
+				because: "the shared diagnostic must name parameters usable by both CLI and MCP callers");
+		_applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "missing criteria must be rejected before contacting Creatio");
 	}
 
 	[Test]

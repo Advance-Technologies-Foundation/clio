@@ -25,9 +25,14 @@ public class CreateBusinessProcessTool(
 	/// <returns>The command execution result with the created schema identity in the log output.</returns>
 	[McpServerTool(Name = CreateBusinessProcessToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		 OpenWorld = false),
-	 Description("BEFORE CALLING with an accessRights block: that block changes who can read, edit or delete LIVE records. Show the user the target object, the element record filter that decides WHICH records are affected, and every grantee with its operations and level - calling out level:delegate as onward re-sharing, level:restrict as the platform Deny level, which is DESTRUCTIVE rather than inert: it DOWNGRADES an existing Allow row for that grantee to Deny, and on a fresh insert denies the two operations you did not name, so it deserves the same confirmation as a remove, a remove entry as a revoke, and a supplied add/remove as a REPLACEMENT that drops every entry it does not restate - and get an explicit yes. The element has no output parameters, so nothing at run time will report what it did. "
-		 + "Build a business process on a Creatio environment from a declarative JSON descriptor. The "
-		 + "descriptor is an object with: name (schema code), caption, packageName, elements[] "
+	 // The FIRST sentence is what the get-tool-contract compact index shows as this tool's one-line
+	 // purpose, and that index is the only discovery surface a non-resident tool has. It must therefore
+	 // say what the tool DOES; the accessRights warning below is no less binding for standing second,
+	 // because an agent reads the full contract before calling. See
+	 // docs/knowledge/McpServer/first-sentence-of-a-description-becomes-the-compact-index-purpose.md
+	 Description("Build a business process on a Creatio environment from a declarative JSON descriptor. "
+		 + "BEFORE CALLING with an accessRights block: that block changes who can read, edit or delete LIVE records. Show the user the target object, the element record filter that decides WHICH records are affected, and every grantee with its operations and level - calling out level:delegate as onward re-sharing, level:restrict as the platform Deny level, which is DESTRUCTIVE rather than inert: it DOWNGRADES an existing Allow row for that grantee to Deny, and on a fresh insert denies the two operations you did not name, so it deserves the same confirmation as a remove, a remove entry as a revoke, and a supplied add/remove as a REPLACEMENT that drops every entry it does not restate - and get an explicit yes. The element has no output parameters, so nothing at run time will report what it did. "
+		 + "The descriptor is an object with: name (schema code), caption, packageName, elements[] "
 		 + "({name (the element handle/local code), type:startEvent|signalStart|endEvent|userTask|sendEmail|approval|exclusiveGateway|parallelGateway|"
 		 + "openEditPage|preconfiguredPage (aliases readData/changeData/changeAccessRights/performTask), caption, userTaskName?, "
 		 + "approval? (approval elements only — the designer's Approval element, which requests a visa on a record: "
@@ -60,12 +65,18 @@ public class CreateBusinessProcessTool(
 		 + "that AUTHOR is a misnomer from the designer's caption — the runtime does NOT resolve the process or "
 		 + "record author; it reads only the address this field writes, and sends nothing when it is empty. THREE parameters are DERIVED from 'object' server-side and never accepted as input — the visa "
 		 + "schema, its master column and the section — with the platform's SysApproval fallback when the object has "
-		 + "no approval settings. BRANCHING on the outcome takes a SECOND call, not a gateway: this build path "
-		 + "refuses flows[].kind, so build the outgoing flows plain and then give each its condition with "
-		 + "modify-business-process setFlowCondition, reading the verdict from the element's ResultParameter as "
-		 + "[#[Element:{elementUid}].[Parameter:{parameterUid}]#]. The outcome set is THREE values — a two-way "
-		 + "Approved/Rejected split drops the canceled case. Formula and system-setting value "
-		 + "sources are not offered. get-guidance name=process-approval owns this block's full contract), "
+		 + "no approval settings. BRANCHING on the outcome needs no gateway and is declared WHERE THE FLOW "
+		 + "IS: flows[].kind 'conditional' plus flows[].results with the verdict captions, which are exactly "
+		 + "'Positive', 'Negative' and 'Canceled' - the final VisaStatus values, NOT 'Approved'/'Rejected', "
+		 + "which the server does not accept. Do NOT use a formula here, and this is the instruction on this "
+		 + "element most likely to be got wrong because it was the advice given until CrtProcessBuilder "
+		 + "1.6.2.23: a connector leaving an Approval has no formula field in the designer at all, so a "
+		 + "condition set there would RUN while no human could read or edit it - which is why it is now "
+		 + "REFUSED, with the refusal listing the results to pass instead. Use all THREE outcomes: a two-way "
+		 + "split drops the canceled case. describe "
+		 + "reads the selection back as flows[].results with flows[].resultsActivity naming the deciding "
+		 + "element. Formula and system-setting value sources are not offered. get-guidance "
+		 + "name=process-approval owns this block's full contract), "
 		 + "openEditPage? (openEditPage elements only — the \"Open edit page\" element, which shows a record's edit "
 		 + "page to a user. It is the DEFAULT choice whenever a user fills in COLUMNS of a record; of the other two "
 		 + "page elements, Auto-generated page is NOT buildable here and Pre-configured page IS (see preconfiguredPage "
@@ -183,7 +194,7 @@ public class CreateBusinessProcessTool(
 		 + "do not declare them. "
 		 + "useBackgroundMode? (element-level: every element supports it; true runs it asynchronously via the "
 		 + "background scheduler — omit to keep the element kind's default, e.g. a signalStart defaults to true), signal?, "
-		 + "filter?}), flows[] ({source, target, kind?, condition?, label?} of "
+		 + "filter?}), flows[] ({source, target, kind?, condition?, results?, label?} of "
 		 + "element names; kind is sequence (default) | conditional | default, and a conditional flow REQUIRES a "
 		 + "condition — a boolean formula, validated by the platform at the pre-save gate. REFERENCE A PARAMETER BY "
 		 + "NAME here: [#Amount#] for a process parameter and [#ElementName.ParameterName#] for an element's "
@@ -238,7 +249,7 @@ public class CreateBusinessProcessTool(
 		 + "and still belongs to the modify step. The capability, not the wording of a refusal, is what this "
 		 + "floor buys. "
 		 + "(Shared with modify-business-process. A conditional branch IS built here, through flows[].kind and "
-		 + "flows[].condition above; what cannot be built here is a branch on an activity RESULT.) "
+		 + "flows[].condition above; a branch on an activity RESULT is built here too, from 1.6.2.23, with flows[].results.) "
 		 + "The formula itself: ONE line, "
 		 + "its result must fit the target's "
 		 + "DECLARED type (an Integer target refuses a fractional result), every [#…#] parameter reference must "

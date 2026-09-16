@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -885,6 +885,31 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("ENG-96840: the environment-scoped resolver must be awaited INSIDE its using — a non-async caller that returned the resolve Task unawaited disposed the owned application client while the probe was still running on its Task.Run thread, so every call degraded to probe-error.")]
+	public async Task ComponentInfoTool_Should_Not_Dispose_Resolver_Before_Async_Probe_Completes() {
+		// Arrange
+		ComponentInfoCatalog catalog = new(new InMemoryRegistryClient(TestRegistryJson));
+		InMemoryMobileCatalog mobileCatalog = new(TestMobileRegistryJson);
+		AsyncDisposalTrackingResolver resolver = new(
+			new PlatformVersionResolution("8.2.1", VersionResolutionSource.Environment));
+		IPlatformVersionResolverFactory factory = Substitute.For<IPlatformVersionResolverFactory>();
+		factory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
+			.Returns(new EnvironmentSettings { Uri = "http://prod-stand" });
+		ComponentInfoTool tool = new(catalog, mobileCatalog, new FakeDocsClient(), factory, commandResolver);
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(EnvironmentName: "prod-stand"));
+
+		// Assert
+		resolver.DisposedBeforeResolveCompleted.Should().BeFalse(
+			because: "the owned application client must stay alive until the async probe completes; disposing it mid-probe made every environment-scoped get-component-info throw ObjectDisposedException and degrade to probe-error (ENG-96840)");
+		response.ResolvedFrom.Should().Be("environment",
+			because: "with the resolver alive through the probe, the environment version resolves cleanly instead of latest-fallback");
+	}
+
+	[Test]
 	[Description("AC-02: passing uri (with no environment-name) is also a hasEnvironment call — it routes version resolution through IToolCommandResolver.Resolve<EnvironmentSettings>, not just the environment-name spelling.")]
 	public async Task ComponentInfoTool_Should_Resolve_Version_From_Passed_Uri() {
 		// Arrange
@@ -1302,6 +1327,49 @@ public sealed class ComponentInfoToolTests {
 		response.Mode.Should().Be("composite", because: "the not-found response stays in composite mode");
 		response.Error.Should().Contain(expectedFragment,
 			because: $"an empty catalog with isMobile={isMobile} must emit the matching guidance");
+	}
+
+	[Test]
+	[Description("container is TRI-STATE on the wire and the distinction is carried by WhenWritingNull, so it can only be asserted on the SERIALIZED response. A published false must reach the caller as container:false; an absent key must omit the field. The projection changed from `entry.Container ? true : null` to `entry.Container` in this branch and no assertion could see it: the two existing checks are BeTrue() and NotBe(false), which pass identically under bool? whether the field ships or is dropped, and no live registry entry publishes the key at all.")]
+	[TestCase(true, "\"container\":true", TestName = "Container_PublishedTrue_ReachesTheWire")]
+	[TestCase(false, "\"container\":false", TestName = "Container_PublishedFalse_ReachesTheWire")]
+	public void ComponentInfoTool_Detail_Should_Carry_APublishedContainerFlag_OntoTheWire(
+		bool published, string expected) {
+		// Arrange
+		ComponentRegistryEntry entry = new() { ComponentType = "crt.Probe", Container = published };
+
+		// Act
+		ComponentInfoResponse response = ComponentInfoTool.CreateDetailResponse(
+			entry, resolvedTargetVersion: "latest", resolvedFrom: "latest-fallback",
+			documentation: null, globalReferences: null);
+		string json = JsonSerializer.Serialize(response);
+
+		// Assert
+		response.Container.Should().Be(published,
+			because: "the projection passes the entry's own value straight through");
+		json.Replace(" ", string.Empty).Should().Contain(expected,
+			because: "a published false is a FACT about the component - that it is not a container - and "
+				+ "dropping it made it indistinguishable from a registry that says nothing, which is what "
+				+ "the caller has to branch on");
+	}
+
+	[Test]
+	[Description("The other half of the tri-state, and the half that cannot be asserted from the typed response alone: an entry that publishes no container key must OMIT the field rather than ship a default. Without this the test above passes on a wire that always writes container.")]
+	public void ComponentInfoTool_Detail_Should_OmitContainer_WhenTheRegistryPublishesNoFlag() {
+		// Arrange
+		ComponentRegistryEntry entry = new() { ComponentType = "crt.Probe" };
+
+		// Act
+		ComponentInfoResponse response = ComponentInfoTool.CreateDetailResponse(
+			entry, resolvedTargetVersion: "latest", resolvedFrom: "latest-fallback",
+			documentation: null, globalReferences: null);
+		string json = JsonSerializer.Serialize(response);
+
+		// Assert
+		response.Container.Should().BeNull(because: "the registry said nothing, so the response says nothing");
+		json.Should().NotContain("\"container\"",
+			because: "WhenWritingNull is what makes the three states distinguishable on the wire; a field "
+				+ "written as null or as a defaulted false would collapse 'unknown' into 'no'");
 	}
 
 	[Test]
@@ -2060,6 +2128,36 @@ public sealed class ComponentInfoToolTests {
 			Task.FromResult(resolution);
 
 		public void Dispose() { }
+	}
+
+	/// <summary>
+	/// ENG-96840 regression double: its <see cref="ResolveAsync"/> completes ASYNCHRONOUSLY (it yields),
+	/// mirroring the real resolver whose probe runs on a <c>Task.Run</c> thread. If the
+	/// caller returns the resolve Task unawaited from inside its <c>using</c>, <see cref="Dispose"/> runs
+	/// before the continuation, and <see cref="DisposedBeforeResolveCompleted"/> latches <c>true</c> —
+	/// the exact premature-disposal race that made the real owned CreatioClient throw ObjectDisposedException.
+	/// </summary>
+	private sealed class AsyncDisposalTrackingResolver(PlatformVersionResolution resolution)
+		: IOwnedPlatformVersionResolver {
+		private volatile bool _resolveCompleted;
+
+		public bool DisposedBeforeResolveCompleted { get; private set; }
+
+		public async Task<PlatformVersionResolution> ResolveAsync(CancellationToken cancellationToken = default) {
+			// Task.Yield forces an asynchronous return: a buggy caller that returns this Task unawaited
+			// from inside its using disposes us at this point, before the line below runs.
+			await Task.Yield();
+			_resolveCompleted = true;
+			return resolution;
+		}
+
+		// Deterministic, timing-free: being disposed while the resolve has not completed means the
+		// caller returned the resolve Task unawaited from inside its using — the ENG-96840 race.
+		public void Dispose() {
+			if (!_resolveCompleted) {
+				DisposedBeforeResolveCompleted = true;
+			}
+		}
 	}
 
 	/// <summary>Test double that always reports a different resolved version than was requested.</summary>

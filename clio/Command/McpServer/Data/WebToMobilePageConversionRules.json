@@ -1,5 +1,7 @@
 {
   "version": "latest",
+  "defaultMobileTemplate": "BaseMobilePageTemplate",
+  "mobileFormPageTemplates": ["BaseMobilePageTemplate", "MobilePageWithTabsFreedomTemplate"],
   "templates": [
     {
       "web": "ListPageV3Template",
@@ -23,6 +25,24 @@
       ]
     },
     {
+      "web": "ListPageV2Template",
+      "mobile": "BaseMobileListTemplate",
+      "containers": [
+        { "web": "MainContainer", "mobile": "MainContainer" },
+        { "web": "LeftFilterContainer", "mobile": "HeaderContainer" },
+        { "web": "RightFilterContainer", "mobile": "HeaderContainer" }
+      ],
+      "components": [
+        { "web": "DataTable", "mobile": "List", "note": "Primary list component." },
+        {
+          "web": "FolderTree",
+          "mobile": "FolderTreeActions",
+          "mobileType": "crt.FolderTreeActions",
+          "carryProperties": ["sourceSchemaName", "rootSchemaName"]
+        }
+      ]
+    },
+    {
       "web": "PageWithTabsFreedomTemplate",
       "mobile": "MobilePageWithTabsFreedomTemplate",
       "note": "Tabbed record page (Tabs + Feed + Attachments). Preferred target for web tabbed record pages.",
@@ -40,6 +60,72 @@
       ],
       "components": [
         { "web": "AttachmentList", "mobile": "AttachmentFileList", "note": "Attachments detail. Same component on both sides (crt.FileList) under a different template name, so the page's delta over the web-template baseline — the object-specific link column recordColumnName included — merges onto the template-provided AttachmentFileList; an unchanged property is omitted so the mobile default (e.g. RecordId) stands." }
+      ]
+    },
+    {
+      "web": "PageWithRightAreaAndTabsFreedomTemplate",
+      "mobile": "BaseMobilePageTemplate",
+      "declaredElements": [
+        {
+          "name": "Tabs",
+          "type": "crt.TabPanel",
+          "parentName": "MainContainer",
+          "propertyName": "items",
+          "values": { "scrollable": true, "bodyBackgroundColor": "transparent" }
+        },
+        {
+          "name": "GeneralInfoTab",
+          "type": "crt.TabContainer",
+          "parentName": "Tabs",
+          "propertyName": "items",
+          "index": 0,
+          "values": { "iconPosition": "only-text" },
+          "captionResource": { "key": "GeneralInfoTab_caption", "value": "General information" }
+        },
+        {
+          "name": "RightPanelTab",
+          "type": "crt.TabContainer",
+          "parentName": "Tabs",
+          "propertyName": "items",
+          "index": 1,
+          "values": { "iconPosition": "only-text" },
+          "captionResource": { "key": "RightPanelTab_caption", "value": "Details" }
+        }
+      ],
+      "containers": [
+        { "web": "MainContainer", "mobile": "MainContainer" },
+        { "web": "CardContentWrapper", "mobile": "MainContainer" },
+        { "web": "Tabs", "mobile": "Tabs" },
+        { "web": "GeneralInfoTab", "mobile": "GeneralInfoTab" },
+        { "web": "RightAreaProfileContainer", "mobile": "RightPanelTab" }
+      ]
+    },
+    {
+      "web": "PageWithTopAreaAndTabsFreedomTemplate",
+      "mobile": "BaseMobilePageTemplate",
+      "note": "Top-area record page onto the base mobile record page, which has NO tab strip. The strip (Tabs) and its general tab are DECLARED and the web Tabs / GeneralInfoTab pairs merge onto them by name, exactly as for the right-area template. The web TopAreaProfileContainer has NO pair on purpose: it is pruned as web-template chrome and whatever the page put into it falls back to the default MainContainer placement. A containers pair never creates an element on its own.",
+      "declaredElements": [
+        {
+          "name": "Tabs",
+          "type": "crt.TabPanel",
+          "parentName": "MainContainer",
+          "propertyName": "items",
+          "values": { "scrollable": true, "bodyBackgroundColor": "transparent" }
+        },
+        {
+          "name": "GeneralInfoTab",
+          "type": "crt.TabContainer",
+          "parentName": "Tabs",
+          "propertyName": "items",
+          "index": 0,
+          "values": { "iconPosition": "only-text" },
+          "captionResource": { "key": "GeneralInfoTab_caption", "value": "General information" }
+        }
+      ],
+      "containers": [
+        { "web": "MainContainer", "mobile": "MainContainer" },
+        { "web": "Tabs", "mobile": "Tabs" },
+        { "web": "GeneralInfoTab", "mobile": "GeneralInfoTab" }
       ]
     },
     {

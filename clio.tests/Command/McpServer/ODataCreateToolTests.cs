@@ -41,14 +41,14 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(
 				"{\"Id\":\"11111111-1111-1111-1111-111111111111\",\"Name\":\"Acme\"}",
 				"{\"Id\":\"22222222-2222-2222-2222-222222222222\",\"Name\":\"Globex\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -65,7 +65,7 @@ public sealed class ODataCreateToolTests {
 		response.Results[1].Index.Should().Be(1, because: "per-row results preserve input order");
 		response.Results[1].Id.Should().Be("22222222-2222-2222-2222-222222222222", because: "the second created record Id is reported");
 		urlBuilder.Received(1).Build("odata/Account");
-		client.Received(2).ExecutePostRequest("http://creatio/odata/Account", Arg.Any<string>(), 30_000, 1, 1);
+		client.Received(2).ExecuteNonReplayablePostRequest("http://creatio/odata/Account", Arg.Any<string>(), 30_000, 1, 1);
 	}
 
 	[Test]
@@ -76,19 +76,23 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://env/odata/Account");
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		// Act
 		tool.Create(new ODataCreateArgs { EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Name\":\"A\"}]") });
 
 		// Assert
-		resolver.Received(1).Resolve<IApplicationClient>(Arg.Is<EnvironmentOptions>(o => o.Environment == "dev"));
-		resolver.Received(1).Resolve<IServiceUrlBuilder>(Arg.Is<EnvironmentOptions>(o => o.Environment == "dev"));
+		// because: one paired resolution is the point - two separate ones re-read the settings and could
+		// pair one environment's authenticated session with another environment's url
+		resolver.Received(1).ResolvePair<IApplicationClient, IServiceUrlBuilder>(
+			Arg.Is<EnvironmentOptions>(o => o.Environment == "dev"));
+		resolver.DidNotReceive().Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>());
+		resolver.DidNotReceive().Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>());
 	}
 
 	[Test]
@@ -97,7 +101,7 @@ public sealed class ODataCreateToolTests {
 	public void Create_Should_Fail_When_Entity_Missing() {
 		// Arrange
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -115,7 +119,7 @@ public sealed class ODataCreateToolTests {
 	public void Create_Should_Fail_When_Rows_Empty() {
 		// Arrange
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -135,12 +139,12 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"error\":{\"code\":\"\",\"message\":\"Column Name is required\"}}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -161,12 +165,12 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/AddressType");
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"An error has occurred.\",\"ExceptionMessage\":\"Object reference not set to an instance of an object.\",\"ExceptionType\":\"System.NullReferenceException\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -187,12 +191,12 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/0/odata/UsrCustomerStatus");
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"No HTTP resource was found that matches the request URI '.../0/odata/UsrCustomerStatus'.\",\"MessageDetail\":\"No type was found that matches the controller named 'UsrCustomerStatus'.\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -216,12 +220,12 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"Authorization has been denied for this request.\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -243,12 +247,12 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/EmailMessageData");
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"@odata.context\":\"http://creatio/odata/$metadata#EmailMessageData/$entity\",\"Id\":\"22222222-2222-2222-2222-222222222222\",\"Message\":\"Hello there\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -269,14 +273,14 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/UsrIntegrationLog");
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"@odata.context\":\"http://creatio/odata/$metadata#UsrIntegrationLog/$entity\","
 				+ "\"Id\":\"33333333-3333-3333-3333-333333333333\",\"Success\":false,"
 				+ "\"errorInfo\":null}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -298,13 +302,13 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Code\":-1,\"Exception\":\"Access to the entity is denied.\","
 				+ "\"Id\":\"44444444-4444-4444-4444-444444444444\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -326,12 +330,12 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/UsrThing");
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"@odata.context\":\"http://creatio/odata/$metadata#UsrThing/$entity\",\"Id\":\"33333333-3333-3333-3333-333333333333\",\"Code\":200,\"Message\":\"Created\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -352,12 +356,12 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://secret-host:88/prod-app/0/odata/UsrCustomerStatus");
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"No HTTP resource was found that matches the request URI 'http://secret-host:88/prod-app/0/odata/UsrCustomerStatus'.\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -377,12 +381,12 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"\",\"MessageDetail\":\"\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -403,14 +407,14 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		// A ModelState validation body carries a member beyond Message/MessageDetail, so TryDetect does
 		// not recognize it; with no Id it falls through to the id-missing fallback branch.
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"The request is invalid.\",\"ModelState\":{\"row\":[\"failed calling http://secret-host:88/prod-app/0/odata/Account\"]}}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -430,12 +434,12 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/NumberKeyed");
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Id\":42,\"Name\":\"Office\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -456,12 +460,12 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/AddressType");
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Name\":\"Office\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -481,14 +485,14 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(
 				"{\"error\":{\"code\":\"\",\"message\":\"bad row\"}}",
 				"{\"Id\":\"22222222-2222-2222-2222-222222222222\"}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -499,7 +503,7 @@ public sealed class ODataCreateToolTests {
 		response.Created.Should().Be(1, because: "the second row inserts even though the first failed");
 		response.Failed.Should().Be(1, because: "the first row failed");
 		response.Results.Should().HaveCount(2, because: "continue-on-error attempts every row");
-		client.Received(2).ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), 30_000, 1, 1);
+		client.Received(2).ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), 30_000, 1, 1);
 	}
 
 	[Test]
@@ -510,12 +514,12 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"error\":{\"code\":\"\",\"message\":\"bad row\"}}");
-		ODataCreateTool tool = new(resolver);
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -526,7 +530,7 @@ public sealed class ODataCreateToolTests {
 		// Assert
 		response.Failed.Should().Be(1, because: "the first row failed and aborted the batch");
 		response.Results.Should().HaveCount(1, because: "stop-on-error aborts before the second row");
-		client.Received(1).ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), 30_000, 1, 1);
+		client.Received(1).ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), 30_000, 1, 1);
 	}
 
 	#region record-created side-effect state
@@ -534,10 +538,10 @@ public sealed class ODataCreateToolTests {
 	private static ODataCreateTool BuildTool(IApplicationClient client) {
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
-		return new ODataCreateTool(resolver);
+		return new ODataCreateTool(resolver, new OperationCorrelationIdProvider());
 	}
 
 	[Test]
@@ -568,7 +572,7 @@ public sealed class ODataCreateToolTests {
 	public void Create_Should_Report_RecordCreated_True_On_Success() {
 		// Arrange
 		IApplicationClient client = Substitute.For<IApplicationClient>();
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
 		ODataCreateTool tool = BuildTool(client);
 
@@ -589,7 +593,7 @@ public sealed class ODataCreateToolTests {
 	public void Create_Should_Report_RecordCreated_Unknown_On_Server_Error() {
 		// Arrange
 		IApplicationClient client = Substitute.For<IApplicationClient>();
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"error\":{\"code\":\"\",\"message\":\"An error has occurred.\"}}");
 		ODataCreateTool tool = BuildTool(client);
 
@@ -624,7 +628,7 @@ public sealed class ODataCreateToolTests {
 		response.Results[0].RecordCreated.Should().BeFalse(
 			because: "the row never reached the server, so not-inserted is verified");
 		response.Unverified.Should().Be(0, because: "a locally rejected row is not an unknown outcome");
-		client.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(),
+		client.DidNotReceive().ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(),
 			Arg.Any<int>(), Arg.Any<int>());
 	}
 
@@ -634,7 +638,7 @@ public sealed class ODataCreateToolTests {
 	public void Create_Should_Report_RecordCreated_Unknown_On_Non_Json_Response() {
 		// Arrange
 		IApplicationClient client = Substitute.For<IApplicationClient>();
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("<html><head><title>404 - File or directory not found.</title></head></html>");
 		ODataCreateTool tool = BuildTool(client);
 
@@ -651,6 +655,9 @@ public sealed class ODataCreateToolTests {
 			because: "an unknown side effect must tell the caller to verify instead of retrying");
 		response.Results[0].Error.Should().Contain("was not JSON",
 			because: "the diagnostic must point at the transport layer, not the request's OData/ESQ shape");
+		response.Results[0].Error.Should().Contain("HTTP 404 error page",
+			because: "the write transport neither throws nor exposes a status, so naming the status the page states "
+				+ "is the only way the caller learns which hop answered");
 		response.Unverified.Should().Be(1, because: "the batch must surface how many rows are unverified");
 	}
 
@@ -660,7 +667,7 @@ public sealed class ODataCreateToolTests {
 	public void Create_Should_Report_RecordCreated_Unknown_On_Transport_Failure() {
 		// Arrange
 		IApplicationClient client = Substitute.For<IApplicationClient>();
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(_ => throw new HttpRequestException("connection reset"));
 		ODataCreateTool tool = BuildTool(client);
 
@@ -706,14 +713,14 @@ public sealed class ODataCreateToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(metadataBody);
-		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
-		return (new ODataCreateTool(resolver), client);
+		return (new ODataCreateTool(resolver, new OperationCorrelationIdProvider()), client);
 	}
 
 	[Test]
@@ -737,7 +744,7 @@ public sealed class ODataCreateToolTests {
 		response.Results[0].Error.Should().Contain("DueDate",
 			because: "the caller can only fix the row when the refusal names the offending field");
 		client.DidNotReceiveWithAnyArgs()
-			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+			.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]
@@ -757,7 +764,7 @@ public sealed class ODataCreateToolTests {
 		// Assert
 		response.Created.Should().Be(1,
 			because: "Name is Edm.String, so a date-shaped text value is a legitimate insert");
-		client.Received(1).ExecutePostRequest(
+		client.Received(1).ExecuteNonReplayablePostRequest(
 			"http://creatio/odata/Account", Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
@@ -781,7 +788,7 @@ public sealed class ODataCreateToolTests {
 				+ "turn a valid row into a failure");
 		response.Results[1].Success.Should().BeFalse(
 			because: "without a declared type the shape alone decides, and fail-closed is the honest answer");
-		client.Received(1).ExecutePostRequest(
+		client.Received(1).ExecuteNonReplayablePostRequest(
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
@@ -801,7 +808,7 @@ public sealed class ODataCreateToolTests {
 
 		// Assert
 		client.DidNotReceiveWithAnyArgs().ExecuteGetRequest(null, 0, 0, 0);
-		client.Received(3).ExecutePostRequest(
+		client.Received(3).ExecuteNonReplayablePostRequest(
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
@@ -846,7 +853,7 @@ public sealed class ODataCreateToolTests {
 				+ "so a throwing metadata endpoint must not turn a valid row into a failure");
 		response.Results[1].Success.Should().BeFalse(
 			because: "with no declared type the literal's shape alone decides, and fail-closed is the honest answer");
-		client.Received(1).ExecutePostRequest(
+		client.Received(1).ExecuteNonReplayablePostRequest(
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
@@ -865,10 +872,33 @@ public sealed class ODataCreateToolTests {
 		});
 
 		// Assert
+		// because: Received(1) is what pins the single-attempt budget - OptionalMetadataAttempts lives in
+		// the retry ABOVE the transport, while the argument the transport itself gets is TransportAttempts
 		client.Received(1).ExecuteGetRequest(
 			"http://creatio/odata/$metadata",
 			ODataFieldValidation.OptionalMetadataTimeoutMs,
-			ODataFieldValidation.OptionalMetadataAttempts,
+			ODataFieldValidation.TransportAttempts,
 			Arg.Any<int>());
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A request-level odata-create refusal still carries the correlation-id core-rules promises on every response.")]
+	public void Create_Should_Carry_A_Correlation_Id_On_A_Request_Level_Refusal() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider());
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = string.Empty, Rows = Arr("[{\"Name\":\"A\"}]")
+		});
+
+		// Assert
+		response.Error.Should().NotBeNullOrWhiteSpace(
+			because: "a missing entity name is refused before any row is attempted");
+		response.CorrelationId.Should().NotBeNullOrWhiteSpace(
+			because: "the id is minted before the work and stamped on the single exit, so a batch refused outright is traceable too");
+	}
+
 }

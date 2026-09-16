@@ -114,9 +114,10 @@ public sealed class DescribeProcessToolTests {
 			because: "the per-flow field list is what an agent reads to learn a flow's shape, and this prompt "
 				+ "does NOT defer that list to guidance - so a field missing from THIS enumeration is a field "
 				+ "no agent looks for, whatever else the prose mentions");
-		prompt.Should().Contain("`branchesOnActivityResult`",
-			because: "the last field of the enumeration continues on the next line and would otherwise fall "
-				+ "outside the fragment above");
+		prompt.Should().Contain("`branchesOnActivityResult`, `results` and `resultsActivity`",
+			because: "the enumeration continues on the next line and would otherwise fall outside the "
+				+ "fragment above - and `results` is the field that says WHICH results decide the branch, so "
+				+ "a reader who learns only the boolean can see THAT a selection exists and never read it");
 
 		// The TOOL description carries the same disambiguation, and an agent may read either one. Asserted
 		// on both because the inverse pin in BundledProcessBuilderPackageTests only forbids a VERSION -
@@ -134,6 +135,29 @@ public sealed class DescribeProcessToolTests {
 			because: "naming a version here would be worse than saying nothing: clio already refuses a "
 				+ "package older than the one it ships, so a high number reads as evidence the member is "
 				+ "present when it is no evidence at all");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The version-family entry advertises packageName, and separates the two absences the reader really produces: ONE package that did not resolve is silent, and only a package read that failed outright - which loses every name at once - reaches versionReadWarning. The first draft of this sentence promised a warning for both, which the reader's own test pins the opposite of; an agent reading it treats silence as proof the names are complete.")]
+	public void DescribeProcess_Description_ShouldAdvertisePackageNameAndScopeItsAbsence() {
+		// Arrange
+		MethodInfo method = typeof(DescribeProcessTool).GetMethod(nameof(DescribeProcessTool.DescribeProcess));
+
+		// Act
+		string description = ((System.ComponentModel.DescriptionAttribute)method!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false).Single()).Description;
+
+		// Assert
+		description.Should().Contain("packageName",
+			because: "the field is what a person asking which package a version lives in actually reads, and "
+				+ "nothing else in CI notices when it stops being advertised");
+		description.Should().Contain("that single absence is SILENT",
+			because: "a lone unresolved name raises no warning, and a contract that promises one teaches the "
+				+ "agent to read silence as completeness");
+		description.Should().Contain("answered for NO member",
+			because: "only the whole-table case is announced, and the two have different remedies - the phrase "
+				+ "also has to cover a stall and an empty result, not just an outright refusal");
 	}
 
 	[Test]

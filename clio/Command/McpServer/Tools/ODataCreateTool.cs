@@ -14,7 +14,9 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool for creating one or more Creatio records via OData v4 (HTTP POST) in a single call.
 /// </summary>
 [McpServerToolType]
-public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
+public sealed class ODataCreateTool(
+	IToolCommandResolver commandResolver,
+	IOperationCorrelationIdProvider correlationIds) {
 
 	internal const string ToolName = "odata-create";
 
@@ -50,11 +52,20 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 		"re-sending such a row DUPLICATES it. On null, read the entity back and re-send only if absent — the " +
 		"row's 'retry-guidance' says so too, and the batch's 'unverified' count is how many rows are in that " +
 		"state. " +
+		"A response this tool returns - success or failure - carries a correlation-id, which matches this call to clio's own log lines; " +
+		"an exception that escapes the batch is answered by the MCP error envelope instead and carries none. " +
 		"Call get-tool-contract for odata-create to see usage examples and discovery workflow hints.")]
 	public ODataCreateBatchResponse Create(
 		[Description("Parameters: entity, rows, environment-name (all required); stop-on-error (optional).")]
 		[Required]
 		ODataCreateArgs args) {
+		//Minted once and stamped on the single exit, so every response carries the correlation-id
+		//core-rules promises - request-level refusals included.
+		string correlationId = correlationIds.New();
+		return CreateCore(args) with { CorrelationId = correlationId };
+	}
+
+	private ODataCreateBatchResponse CreateCore(ODataCreateArgs args) {
 		if (string.IsNullOrWhiteSpace(args.Entity)) {
 			return ODataCreateBatchResponse.RequestError("entity is required.");
 		}
@@ -71,8 +82,11 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 		IServiceUrlBuilder urlBuilder;
 		try {
 			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
-			client = commandResolver.Resolve<IApplicationClient>(options);
-			urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
+			// ONE resolution for both, for the reason ODataKeyedWrite.ResolveTarget states: every
+			// resolution re-reads the settings, so an environment repointed between two of them would pair
+			// this client's authenticated session with the other environment's url - and odata-create uses
+			// the pair for a metadata read AND the POSTs that follow it.
+			(client, urlBuilder) = commandResolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(options);
 		} catch (Exception ex) {
 			return ODataCreateBatchResponse.RequestError(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
@@ -122,7 +136,10 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 					Error = zoneLessDateTime
 				};
 			}
-			string responseJson = client.ExecutePostRequest(url, row.GetRawText(), 30_000);
+			// Declared a write: automatic re-authentication must never re-issue this POST, or a
+			// false-positive expired-session classification of the OData echo creates the record
+			// twice (GitHub #1313).
+			string responseJson = client.ExecuteNonReplayablePostRequest(url, row.GetRawText(), 30_000);
 			return ParseCreated(responseJson, index);
 		} catch (Exception ex) {
 			// The request may have reached Creatio and been applied before the failure surfaced here, so the

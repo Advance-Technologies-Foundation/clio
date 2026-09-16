@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.EntitySchemaDesigner;
@@ -51,6 +52,8 @@ public sealed record RelatedPageAddonRequest(
 /// <summary>
 /// Outcome of a <see cref="IRelatedPageAddonService.Create"/> call.
 /// </summary>
+/// <param name="EntitySchemaUId">The base/root entity UId resolved by the add-on service, shared across
+/// replacing layers, rather than an unsaved designer or replacing schema's UId.</param>
 public sealed record RelatedPageAddonResult(
 	string EntitySchemaUId,
 	string PackageUId,
@@ -73,6 +76,8 @@ public sealed record RelatedPageAddonReadRequest(
 /// read the existing page set before a (replace-not-merge) <see cref="IRelatedPageAddonService.Create"/>,
 /// so a single page can be added or removed without losing the rest.
 /// </summary>
+/// <param name="EntitySchemaUId">The base/root entity UId resolved by the add-on service, shared across
+/// replacing layers, rather than an unsaved designer or replacing schema's UId.</param>
 public sealed record RelatedPageAddonReadResult(
 	string EntitySchemaName,
 	string EntitySchemaUId,
@@ -415,6 +420,7 @@ internal sealed class RelatedPageAddonService(
 		string addonName = AddonNameFor(request.SchemaType);
 		AddonGetRequestDto addonRequest = BuildAddonGetRequest(entitySchema, packageId, addonName);
 		AddonSchemaDto schema = addonSchemaDesignerClient.GetSchema(addonRequest);
+		string entitySchemaUId = ReadTargetSchemaUId(schema);
 		// Start from the FETCHED metadata and replace only the two keys this tool owns (Pages, TypeColumnUId), so
 		// any OTHER top-level field survives the write. The RelatedPage MetaData is exactly
 		// {"Pages":[...],"TypeColumnUId":...} today (verified backend contract), but preserving unknown top-level
@@ -441,7 +447,7 @@ internal sealed class RelatedPageAddonService(
 		string buildWarning = addonSchemaDesignerClient.BuildConfiguration();
 
 		return new RelatedPageAddonResult(
-			entitySchema.UId.ToString("D"), packageUId, pages.Count, addonName,
+			entitySchemaUId, packageUId, pages.Count, addonName,
 			CombineWarnings(typeColumnWarning, resetWarning, buildWarning));
 	}
 
@@ -461,11 +467,29 @@ internal sealed class RelatedPageAddonService(
 		AddonGetRequestDto addonRequest = BuildAddonGetRequest(entitySchema, packageId, addonName);
 		// Read-only: GetSchema returns the (server auto-provisioned) add-on with its current metadata; no save.
 		AddonSchemaDto schema = addonSchemaDesignerClient.GetSchema(addonRequest);
+		string entitySchemaUId = ReadTargetSchemaUId(schema);
 		IReadOnlyList<RelatedPageEntry> pages = DecodePages(schema.MetaData, out string typeColumnUId);
 
 		return new RelatedPageAddonReadResult(
-			request.EntitySchemaName, entitySchema.UId.ToString("D"), request.PackageName, packageUId,
+			request.EntitySchemaName, entitySchemaUId, request.PackageName, packageUId,
 			addonName, typeColumnUId, pages.Count, pages);
+	}
+
+	// Keep the fetched wire payload intact: the designer UId may identify an unsaved replacement,
+	// whereas the add-on service has already resolved its persisted root target.
+	private static string ReadTargetSchemaUId(AddonSchemaDto schema) {
+		if (schema.AdditionalData != null) {
+			foreach (var field in schema.AdditionalData) {
+				if (string.Equals(field.Key, "targetSchemaUId", StringComparison.OrdinalIgnoreCase)
+					&& field.Value.ValueKind == JsonValueKind.String
+					&& Guid.TryParse(field.Value.GetString(), out Guid targetUId)
+					&& targetUId != Guid.Empty) {
+					return targetUId.ToString("D");
+				}
+			}
+		}
+		throw new InvalidOperationException(
+			RelatedPageAddonMessages.TargetSchemaUIdInvalid);
 	}
 
 	/// <summary>
