@@ -7,6 +7,7 @@ using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
 
+/// <summary>Creates C# schemas after validating all independent name arguments locally.</summary>
 [McpServerToolType]
 public sealed class SchemaCreateTool(
 	SourceCodeSchemaCreateCommand command,
@@ -15,7 +16,13 @@ public sealed class SchemaCreateTool(
 	: BaseTool<SourceCodeSchemaCreateOptions>(command, logger, commandResolver) {
 
 	internal const string ToolName = "create-schema";
+	internal const string ValidArgumentsHint =
+		". Valid arguments: schema-name, package-name (required); caption, description (optional); " +
+		"environment-name or uri/login/password.";
 
+	/// <summary>Reports all name validation errors before resolving the target environment.</summary>
+	/// <param name="args">Schema metadata and connection arguments.</param>
+	/// <returns>The created schema metadata or an actionable validation failure.</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -38,16 +45,11 @@ public sealed class SchemaCreateTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
+		string validationError = SchemaDesignerHelper.ValidateCreateInput(options.SchemaName, options.PackageName);
+		if (validationError is not null) {
 			return new SourceCodeSchemaCreateResponse {
 				Success = false,
-				Error = "schema-name is required"
-			};
-		}
-		if (!PageSchemaMetadataHelper.IsValidSchemaName(options.SchemaName)) {
-			return new SourceCodeSchemaCreateResponse {
-				Success = false,
-				Error = PageSchemaMetadataHelper.SchemaNameFormatError
+				Error = validationError + ValidArgumentsHint
 			};
 		}
 		return ExecuteWithCleanLog(options, () => {
@@ -63,6 +65,9 @@ public sealed class SchemaCreateTool(
 	}
 }
 
+/// <summary>Metadata and connection arguments for creating a C# source-code schema.</summary>
+/// <param name="SchemaName">The new schema's canonical name.</param>
+/// <param name="PackageName">The package that will own the schema.</param>
 public sealed record SchemaCreateArgs(
 	[property: JsonPropertyName("schema-name")]
 	[property: Description("New C# source-code schema name, e.g. 'UsrMyHelper'. Must start with a letter; letters, digits and underscores only.")]
