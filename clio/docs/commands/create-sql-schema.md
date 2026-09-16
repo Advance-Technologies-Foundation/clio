@@ -19,6 +19,8 @@ workspace files are created.
 The schema-name must start with a letter and contain only letters, digits, or underscores.
 The name must be unique within the environment.
 
+Missing schema-name/package-name and invalid schema-name errors are returned together by the command validator.
+
 ## Synopsis
 
 ```bash

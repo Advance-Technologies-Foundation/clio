@@ -39,6 +39,27 @@ public sealed class SqlSchemaCreateCommandTests {
 			Substitute.For<Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver>());
 	}
 
+	[TestCase(null, null, "schema-name is required; package-name is required")]
+	[TestCase(" ", "\t", "schema-name is required; package-name is required")]
+	[TestCase("1BadName", null, "schema-name must start with a letter and contain only letters, digits, or underscores; package-name is required")]
+	[TestCase(null, "Custom", "schema-name is required")]
+	[TestCase("UsrValid", null, "package-name is required")]
+	[Description("Collects independent create-schema name failures without making remote calls, preserving individual error wording.")]
+	public void TryCreate_ShouldReportAllInputErrors_WhenNamesAreInvalid(string schemaName, string packageName, string expected) {
+		// Arrange
+		var options = new SqlSchemaCreateOptions { SchemaName = schemaName, PackageName = packageName };
+		_applicationClient.ClearReceivedCalls();
+
+		// Act
+		bool result = _command.TryCreate(options, out SqlSchemaCreateResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "invalid inputs cannot create a schema");
+		response.Success.Should().BeFalse(because: "the response must retain its failure envelope");
+		response.Error.Should().Be(expected, because: "all independent input failures belong in the same response");
+		_applicationClient.ReceivedCalls().Should().BeEmpty(because: "validation must finish before contacting Creatio");
+	}
+
 	[Test]
 	public void TryCreate_Rejects_Missing_Schema_Name() {
 		var options = new SqlSchemaCreateOptions { PackageName = "Custom" };

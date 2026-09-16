@@ -181,6 +181,7 @@ public sealed class McpWorkerCohort : IMcpWorkerCohort {
 	/// </remarks>
 	public static readonly IReadOnlyList<string> StageSevenSupportedButNotShippedNames = [
 		Tools.InstallProcessBuilderTool.InstallProcessBuilderToolName, // install-process-builder
+		Tools.InstallDashboardsMigratorTool.InstallDashboardsMigratorToolName, // install-dashboards-migrator, same shape
 		Tools.ApplicationSectionCreateTool.ApplicationSectionCreateToolName // create-app-section
 	];
 

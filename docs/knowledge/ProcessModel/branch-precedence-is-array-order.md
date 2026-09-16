@@ -36,3 +36,16 @@ ran", with nothing to point at:
   place it becomes visible is the DIAGRAM: the layout engine assigns branch lanes in flow declaration
   order, top lane first, so top-to-bottom lane order equals evaluation order. That is the only reason
   a human can audit it at all, and it is why the layout must not centre or re-order lanes either.
+
+**ACROSS the two dialects the platform partitions rather than ordering.** Array order is precedence
+*within* the formula dialect and says nothing about a source carrying both kinds of sibling.
+`FlowConditionalGateway.Accept` walks the source's outgoings once and puts every flow carrying
+`ExpressionText` into a SECOND list instead of evaluating it; the flows left - the SELECTION branches -
+are evaluated in that first pass, and on an exclusive gateway the first match returns before a single
+formula has been read.
+
+That rule was documented in `process-branch-conditions`, deleted during ENG-91853 when the dialect got
+its own article, and restored only after a review caught its absence. It was then nearly deleted a
+SECOND time, by me, on the grounds recorded above - array order - which is exactly the confusion this
+paragraph exists to prevent. The shipped guidance carries the rule; the provenance lives here, because
+an agent paying tokens for `get-guidance` should not be billed for our editing history.
