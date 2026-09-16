@@ -181,6 +181,14 @@
               "body": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } }
             }
           }
+        },
+        {
+          "operation": "merge",
+          "target": { "type": "crt.ListItem" },
+          "value": {
+            "title": "${{ source.columns[0].code }}",
+            "body": { "$each": "source.columns[1:]", "as": { "value": "${{ code }}" } }
+          }
         }
       ]
     },

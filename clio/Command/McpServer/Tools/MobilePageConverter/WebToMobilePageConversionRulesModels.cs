@@ -54,8 +54,11 @@ public sealed class WebToMobilePageConversionRules {
 	/// same-type match, e.g. crt.Checkbox→crt.Toggle) OR a template group (<c>filters</c> naming the source
 	/// elements it applies to plus the <c>viewConfigTemplates</c> that produce their mobile values, e.g. the
 	/// grid→list row). Both shapes live in one array because they answer the same question — "what does this
-	/// web component become on mobile" — and a template group also carries its own target type in
-	/// <c>viewConfigTemplates[].value.type</c>, so it needs no separate web/mobile pair.
+	/// web component become on mobile" — and a template group's INSERT templates carry their own target type in
+	/// <c>viewConfigTemplates[].value.type</c>, so it needs no separate web/mobile pair. A template group may also
+	/// declare <c>merge</c> templates (<see cref="ViewConfigTemplateRule.Operation"/>): payloads laid onto an element
+	/// the mobile template ALREADY provides, applied wherever the walk merges a matching source element rather than
+	/// inserting it.
 	/// </summary>
 	[JsonPropertyName("components")]
 	public IReadOnlyList<ComponentEquivalenceRule> Components { get; init; } = [];
@@ -340,9 +343,10 @@ public sealed class ComponentMappingRule {
 	/// DELTA over the web-template baseline is carried automatically — a property the page left at the
 	/// template default is omitted so the mobile element keeps its own default (no <c>type</c> is emitted — a
 	/// merge targets an element the template already owns). A twin whose web type has no mobile equivalent (a structural conversion, e.g.
-	/// <c>DataTable → List</c>, crt.DataGrid → crt.List) carries nothing and stays an advisory merge, with
-	/// the grid→row how-to left to the caller per <c>componentSuggestions</c>. Without a twin the web node
-	/// (inherited template chrome) is pruned and its values are lost.
+	/// <c>DataTable → List</c>, crt.DataGrid → crt.List) carries no delta of its own; what it does carry comes
+	/// from its TYPE's <c>merge</c> templates in <see cref="WebToMobilePageConversionRules.Components"/> (the
+	/// grid's row onto the template's list item). Without a twin the web node (inherited template chrome) is
+	/// pruned and its values are lost.
 	/// </summary>
 	[JsonPropertyName("carryProperties")]
 	public IReadOnlyList<string> CarryProperties { get; init; } = [];
@@ -721,10 +725,11 @@ public sealed class ComponentEquivalenceRule {
 	public IReadOnlyList<string> Path { get; init; } = [];
 
 	/// <summary>
-	/// Template-group entries only: the mobile values produced for a matching element, as data. Each template's
-	/// own <c>value.type</c> declares the target mobile type — which is also what gates it and, for an entry with
-	/// no <see cref="Mobile"/>, what the converter derives the element's mobile type from. Empty on a plain
-	/// type-equivalence entry.
+	/// Template-group entries only: the mobile values produced for a matching element, as data. An INSERT
+	/// template's own <c>value.type</c> declares the target mobile type — which is also what gates it and, for an
+	/// entry with no <see cref="Mobile"/>, what the converter derives the element's mobile type from. A MERGE
+	/// template (<see cref="ViewConfigTemplateRule.Operation"/>) declares no type of its own: it is a payload for an
+	/// element the mobile template already provides. Empty on a plain type-equivalence entry.
 	/// </summary>
 	[JsonPropertyName("viewConfigTemplates")]
 	public IReadOnlyList<ViewConfigTemplateRule> ViewConfigTemplates { get; init; } = [];
@@ -792,6 +797,16 @@ public sealed class ElementFilterRule {
 /// echoes, changes nothing. When a retarget names a parent the target mobile template does not provide, the
 /// converter drops the element with a diagnostic rather than emitting an unresolvable insert.
 /// </para>
+/// <para>
+/// <c>operation</c> decides WHICH operation the template shapes. Absent or <c>insert</c>: everything above — the
+/// template governs the element the converter inserts. <c>merge</c>: the template is a payload for an element the
+/// mobile template ALREADY provides, applied on the path where the source element is merged rather than inserted
+/// (a <c>containers</c> pair, a name-mapped component twin, an automatic same-name twin). It lands on the twin
+/// itself, or — with <c>target</c> — on the template's element of that TYPE directly under the twin (the grid's
+/// row onto the list's <c>crt.ListItem</c>). The same <c>filters</c>/<c>path</c> select the source node for
+/// both kinds; nothing about one kind is inferred from the other, so a type whose row must reach a
+/// template-provided element declares that in a merge template rather than relying on the insert template's shape.
+/// </para>
 /// </remarks>
 public sealed class ViewConfigTemplateRule {
 
@@ -831,6 +846,43 @@ public sealed class ViewConfigTemplateRule {
 	/// </summary>
 	[JsonPropertyName("preserveSourceProperties")]
 	public bool PreserveSourceProperties { get; init; }
+
+	/// <summary>
+	/// Which operation the template produces. Absent or <c>"insert"</c> (the default, so every rules file written
+	/// before this field existed keeps its meaning byte for byte): the template shapes the element the converter
+	/// INSERTS, gated by its <see cref="Value"/>'s <c>type</c>. <c>"merge"</c>: the template declares a payload laid
+	/// onto an element the mobile template ALREADY provides — the twin the source element merges onto, or a
+	/// sub-element of it named by <see cref="Target"/> — and it is applied wherever the walk emits a merge for a
+	/// matching source node, never on the insert path. A merge template has no type gate (its value is the target's
+	/// payload and carries no <c>type</c>), ignores <see cref="ParentName"/>/<see cref="PropertyName"/> (a merge
+	/// resolves by name) and <see cref="PreserveSourceProperties"/> (there is no source copy to preserve — the twin's
+	/// own carried delta is computed by the twin branch and the template is laid OVER it). Any other value is unknown
+	/// and the template is skipped on BOTH paths, so a newer rules file degrades to silence on an older binary rather
+	/// than being misread as an insert.
+	/// </summary>
+	[JsonPropertyName("operation")]
+	public string Operation { get; init; }
+
+	/// <summary>
+	/// Merge templates only: WHICH template-provided element receives the payload. Absent = the twin itself.
+	/// Present = the mobile template's element of <see cref="ViewConfigTemplateTargetRule.Type"/> sitting DIRECTLY
+	/// under the twin, located in the probed template — never assumed. Zero or more than one such element ⇒ nothing
+	/// is emitted, because guessing would silently configure a different element.
+	/// </summary>
+	[JsonPropertyName("target")]
+	public ViewConfigTemplateTargetRule Target { get; init; }
+}
+
+/// <summary>
+/// Locates the element a <c>merge</c> template's payload lands on, by mobile component TYPE directly under the twin
+/// (see <see cref="ViewConfigTemplateRule.Target"/>). By type rather than by name so that a TYPE rule stays
+/// independent of what any one mobile template happens to call its sub-element.
+/// </summary>
+public sealed class ViewConfigTemplateTargetRule {
+
+	/// <summary>Mobile component type of the target element, e.g. <c>"crt.ListItem"</c>.</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; init; }
 }
 
 
