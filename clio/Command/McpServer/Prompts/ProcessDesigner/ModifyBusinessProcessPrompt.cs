@@ -47,7 +47,7 @@ public static class ModifyBusinessProcessPrompt {
 		 (`["Positive"]` on an approval), written by `setFlowResults` (`source` + `target` + a non-empty
 		 `results`) or by `results` on `addFlow`. Everywhere else the dialect is a `condition` formula. A
 		 formula on a result-enumerating connector is REFUSED - it would run while the connector's card
-		 opened empty, which is a state the designer's own Change-type action cannot even produce - and the
+		 opened empty, a card the designer's own Change-type action offers no way to fill - and the
 		 refusal names the deciding activity and lists the results to pass instead.
 		 A connector leaving a GATEWAY takes a selection too, keyed on the activity BEHIND the gateway; one
 		 hop only, so two chained gateways take a formula. The two slots are mutually exclusive on

@@ -66,8 +66,11 @@ back as `results` + `resultsActivity`. What did NOT change is everything above: 
 picks the editor the same way, and a formula there still runs invisibly - which is why writing one is
 now REFUSED rather than left to the caller. The decisive evidence for that refusal is the designer's
 own: Change type -> Conditional flow on such a connector offers the checkbox list and no formula
-option, so the state is one the platform's UI cannot produce. A gateway-sourced connector is handled
-too, keyed on the activity behind the gateway, one hop. `Send email` is the exception: its server-side
+option, so nothing in the UI invites the state. It EXISTS anyway - the shipped corpus carries such
+flows - so the guard is authoring-only and existing content still describes and re-saves. Two
+independent scans of the corpus disagreed several-fold on how many, so no count is recorded here;
+re-measure before quoting one. A gateway-sourced connector is handled too, keyed on the activity
+behind the gateway, one hop. `Send email` is the exception: its server-side
 schema declares results while its properties page shows a formula field, so it takes a condition and
 the selection is refused there.
 
