@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.IO;
@@ -272,6 +272,7 @@ public sealed class WebToMobileConversionServiceTests {
 		JsonNode mobileTemplateViewModelConfig = null,
 		JsonNode mobileTemplateModelConfig = null,
 		IReadOnlyDictionary<string, string> mobileTemplateTypesByName = null,
+		IReadOnlyDictionary<string, string> mobileContainerParents = null,
 		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null,
 		JObject webTemplateResources = null,
 		IReadOnlySet<string> mobileTypes = null,
@@ -288,6 +289,7 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileTemplateViewModelConfig: mobileTemplateViewModelConfig,
 			mobileTemplateModelConfig: mobileTemplateModelConfig,
 			mobileTemplateTypesByName: mobileTemplateTypesByName,
+			mobileContainerParents: mobileContainerParents,
 			webTemplateBaselineNodes: webTemplateBaselineNodes,
 			webTemplateResources: webTemplateResources);
 
@@ -5081,6 +5083,140 @@ public sealed class WebToMobileConversionServiceTests {
 		// No duplicate insert for the grid; the conversion detail lives in the general components rule.
 		guide.ViewConfigDiff.Should().NotContain(e => SourceNameOf(guide, e) == "DataTable" && e.Operation == "insert");
 		guide.ComponentSuggestions.Should().Contain(s => s.SourceType == "crt.DataGrid");
+		// No ListItem in THIS mobile template, so there is no element for the row to merge onto and none is
+		// invented — see Analyze_StructuralTwin_* below for the shipped template, which does provide one.
+		guide.ViewConfigDiff.Should().NotContain(e => e.Name == "ListItem");
+	}
+
+	/// <summary>
+	/// The mobile side of the shipped list page: BaseMobileListTemplate provides ListContainer → List →
+	/// ListItem, the last of them inside the List's <c>itemLayout</c>. Read off the real template
+	/// (CrtUIPlatform, schema 011e7dda-a763-4535-9b9a-e09eddd047be), because the whole point of these tests is
+	/// that the row lands on the element the TEMPLATE owns.
+	/// </summary>
+	private static (IReadOnlyDictionary<string, string> Types, IReadOnlyDictionary<string, string> Parents)
+		MobileListTemplateGraph(params (string Name, string Type, string Parent)[] extra) {
+		var types = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["MainContainer"] = "crt.FlexContainer",
+			["ListContainer"] = "crt.GridContainer",
+			["List"] = "crt.List",
+			["ListItem"] = "crt.ListItem"
+		};
+		var parents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["ListContainer"] = "MainContainer",
+			["List"] = "ListContainer",
+			["ListItem"] = "List"
+		};
+		foreach ((string name, string type, string parent) in extra) {
+			types[name] = type;
+			parents[name] = parent;
+		}
+		return (types, parents);
+	}
+
+	/// <summary>The shipped list page as clio sees it: a web grid the template maps onto the mobile List.</summary>
+	private static MobilePageConversionGuide AnalyzeListPage(
+		IReadOnlyDictionary<string, string> mobileTypes, IReadOnlyDictionary<string, string> mobileParents) {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ListContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "DataTable", "type": "crt.DataGrid", "columns": [
+					{ "code": "PDS_LeadName" },
+					{ "code": "PDS_Status" },
+					{ "code": "PDS_CreatedOn" } ] } ] } ]
+			""");
+		return Analyze(bundle,
+			webByType: Reg(("crt.FlexContainer", true), ("crt.DataGrid", false)),
+			containerNameMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				["ListContainer"] = "ListContainer"
+			},
+			templateComponentNames: Names("ListContainer", "DataTable"),
+			componentNameMap: new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
+				["DataTable"] = new ComponentMappingRule { Web = "DataTable", Mobile = "List", Note = "Primary list component." }
+			},
+			mobileTemplateTypesByName: mobileTypes,
+			mobileContainerParents: mobileParents);
+	}
+
+	[Test]
+	[Description("Converting a grid onto a mobile template that ALREADY provides List + ListItem configures the row on the template's own ListItem: title is the first source column as a plain binding string, body is every other column in source order as { value } entries. This is the shipped list-page case, and it used to ship a single payload-free merge on List and nothing else — a list with no title and no body — while the very same page converted correctly whenever nothing name-mapped the grid, because that took the insert path.")]
+	public void Analyze_StructuralTwinOntoATemplateProvidedList_ConfiguresTheRowOnTheTemplatesOwnListItem() {
+		// Arrange
+		(IReadOnlyDictionary<string, string> types, IReadOnlyDictionary<string, string> parents) = MobileListTemplateGraph();
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeListPage(types, parents);
+
+		// Assert
+		ViewConfigDiffOperation row = guide.ViewConfigDiff.Single(e => e.Name == "ListItem");
+		row.Operation.Should().Be("merge",
+			because: "the template already owns the element; an insert would duplicate it, and an insert "
+				+ "addressing itemLayout as a child slot fails the whole schema build");
+		TypeOf(row).Should().BeNull(
+			because: "a merge re-declares no type — the template owns it, and the rendered row's synthesized "
+				+ "name/type are insert-path identity that would rename the template's element");
+		row.Values!["title"]!.GetValue<string>().Should().Be("$PDS_LeadName",
+			because: "the row leads with the FIRST source column, and a title is a plain binding STRING — the "
+				+ "{ value } shape renders an empty Title column while the body still looks correct");
+		row.Values["body"]!.AsArray().Select(entry => entry!["value"]!.GetValue<string>())
+			.Should().Equal(["$PDS_Status", "$PDS_CreatedOn"],
+				because: "every other column follows in SOURCE order, as { value } entries");
+		// The List merge itself stays advisory: the row is a separate element, not a value of its parent.
+		ShouldCarryNoDelta(Element(guide, "DataTable"),
+			because: "crt.List is not a container and itemLayout is an input — the row belongs to ListItem");
+	}
+
+	[Test]
+	[Description("The structural twin reports the type the MOBILE TEMPLATE declares for the element it merges onto, so the page's primary component is classified from what actually happened. Neither the rule (which declares no mobileType) nor the web type (crt.DataGrid is no mobile type) can name that target, so this used to be null — and a null contributes nothing to the emitted set, which shipped componentSuggestions[crt.DataGrid] as Unsupported with an empty suggestedMobileTypes, on a list that converted, in the entry the mandated article tells the caller to configure the row from.")]
+	public void Analyze_StructuralTwin_ReportsWhatTheTemplateDeclares_NotUnsupported() {
+		// Arrange
+		(IReadOnlyDictionary<string, string> types, IReadOnlyDictionary<string, string> parents) = MobileListTemplateGraph();
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeListPage(types, parents);
+
+		// Assert
+		ComponentSuggestion grid = ForType(guide, "crt.DataGrid");
+		grid.Category.Should().Be("AlternativeAvailable",
+			because: "the grid converted, under a type other than its own — that is what the category means");
+		grid.SuggestedMobileTypes.Should().BeEquivalentTo(["crt.List", "crt.ListItem"],
+			because: "both are types the finished diff actually emitted an operation for, so the caller can "
+				+ "look up a contract for each");
+	}
+
+	[Test]
+	[Description("A template that provides TWO elements of the introduced type under the twin gets no row at all. Emitting onto the wrong one would silently configure a different list, and nothing downstream could tell — so the ambiguity is left unresolved rather than guessed at.")]
+	public void Analyze_StructuralTwin_EmitsNoRow_WhenTheTemplateProvidesMoreThanOneCandidate() {
+		// Arrange
+		(IReadOnlyDictionary<string, string> types, IReadOnlyDictionary<string, string> parents) =
+			MobileListTemplateGraph(("SecondListItem", "crt.ListItem", "List"));
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeListPage(types, parents);
+
+		// Assert
+		guide.ViewConfigDiff.Should().NotContain(e => e.Name == "ListItem" || e.Name == "SecondListItem",
+			because: "two candidates under one twin is a choice this must not make for the caller");
+	}
+
+	[Test]
+	[Description("With no element of the introduced type under the twin, no row is emitted and — crucially — itemLayout is NOT folded into the parent List's merge instead. crt.List is not a container and itemLayout is an input, so the neighbouring mistake of addressing it as a child slot makes the client answer 'is not a container for other items' and the WHOLE schema fails to build.")]
+	public void Analyze_StructuralTwin_NeverFoldsTheRowIntoTheParentListsMerge() {
+		// Arrange: a template with List but no ListItem under it.
+		var types = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["ListContainer"] = "crt.GridContainer", ["List"] = "crt.List"
+		};
+		var parents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["List"] = "ListContainer"
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeListPage(types, parents);
+
+		// Assert
+		guide.ViewConfigDiff.Should().NotContain(e => e.Name == "ListItem",
+			because: "nothing provides the element, so there is nothing to merge onto");
+		ShouldCarryNoDelta(Element(guide, "DataTable"),
+			because: "itemLayout must never travel inside a merge of the parent List");
 	}
 
 	[Test]
