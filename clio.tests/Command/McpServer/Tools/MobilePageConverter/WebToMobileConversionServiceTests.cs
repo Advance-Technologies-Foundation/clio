@@ -6598,6 +6598,69 @@ public sealed class WebToMobileConversionServiceTests {
 				+ "offered as one");
 	}
 
+	[Test]
+	[Description("Analyze never classifies a missing-target candidate itself: ResolvedSourceType/RecommendedAction "
+		+ "stay null on both a web-page missingTargetPages entry and an entity-default-mobile-page finding, even "
+		+ "when the latter carries a resolved candidate schema name — classification is delegated to the caller "
+		+ "(see adr-mobile-conversion-candidate-delegation.md), and this pure analysis pass performs no "
+		+ "environment read that could fill them.")]
+	public void Analyze_MissingTargetCandidates_NeverClassifiesSourceTypeOrRecommendedAction() {
+		// Arrange — a web-page target (aggregated into missingTargetPages) and an entity-kind target whose
+		// candidate schema name IS already resolved (by the probe, not by Analyze).
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "PostponeButton", "type": "crt.Button", "caption": "Postpone",
+				  "clicked": { "request": "crt.OpenPageRequest", "params": { "schemaName": "LegacyPage" } } },
+				{ "name": "ProductsAddButton", "type": "crt.Button", "caption": "Add product",
+				  "clicked": { "request": "crt.CreateRecordRequest", "params": { "entityName": "LeadProduct" } } }
+			] } ]
+			""");
+		MobileActionTargetProbeResult probe = new() {
+			ProbeOk = true,
+			Occurrences = [
+				new ActionTargetOccurrence {
+					ElementName = "PostponeButton", Binding = "clicked", WebRequest = "crt.OpenPageRequest",
+					Kind = MobileActionTargetProbe.KindWebPage, Target = "LegacyPage"
+				},
+				new ActionTargetOccurrence {
+					ElementName = "ProductsAddButton", Binding = "clicked", WebRequest = "crt.CreateRecordRequest",
+					Kind = MobileActionTargetProbe.KindEntityDefaultMobilePage, Target = "LeadProduct"
+				}
+			],
+			TargetsByKey = new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase) {
+				[MobileActionTargetProbe.TargetKey(MobileActionTargetProbe.KindWebPage, "LegacyPage")] =
+					new ActionTargetResolution {
+						Kind = MobileActionTargetProbe.KindWebPage, Target = "LegacyPage", State = ActionTargetState.Missing
+					},
+				[MobileActionTargetProbe.TargetKey(MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct")] =
+					new ActionTargetResolution {
+						Kind = MobileActionTargetProbe.KindEntityDefaultMobilePage, Target = "LeadProduct",
+						State = ActionTargetState.Missing, ResolvedCandidateSchemaName = "LeadProduct_FormPage"
+					}
+			}
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		MissingTargetPage webPageCandidate = guide.RequestConversions!.MissingTargetPages
+			.Should().ContainSingle().Subject;
+		webPageCandidate.ResolvedSourceType.Should().BeNull(
+			because: "Analyze is a pure pass with no environment read — classification never happens here");
+		webPageCandidate.RecommendedAction.Should().BeNull(
+			because: "Analyze is a pure pass with no environment read — classification never happens here");
+
+		UnresolvedTargetRequest entityFinding = guide.RequestConversions.UnresolvedTargetRequests
+			.Should().ContainSingle(r => r.TargetKind == MobileActionTargetProbe.KindEntityDefaultMobilePage).Subject;
+		entityFinding.ResolvedCandidateSchemaName.Should().Be("LeadProduct_FormPage",
+			because: "the candidate NAME is resolved by the probe, independently of classification");
+		entityFinding.ResolvedSourceType.Should().BeNull(
+			because: "a resolved candidate NAME is not the same as a classified one — the caller classifies it");
+		entityFinding.RecommendedAction.Should().BeNull(
+			because: "a resolved candidate NAME is not the same as a classified one — the caller classifies it");
+	}
+
 	#endregion
 
 	#region Adaptive (per-breakpoint) layout

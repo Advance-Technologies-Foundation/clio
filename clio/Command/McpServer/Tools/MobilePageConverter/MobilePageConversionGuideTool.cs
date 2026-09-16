@@ -81,6 +81,11 @@ public class MobilePageConversionGuideTool {
 		+ "validate-page / update-page, and the ordered flow plus every standing rule live in the guidance "
 		+ "article. It FAILS rather than degrading when the mobile template cannot be read, because without it "
 		+ "the guide would insert duplicates of elements that template already provides. "
+		+ "requestConversions.missingTargetPages / unresolvedTargetRequests report candidate names ONLY — "
+		+ "resolvedSourceType/recommendedAction are always null. YOU must classify each distinct candidate "
+		+ "yourself (get-page for existence/schema-type; list-pages / find-entity-schema to check for an "
+		+ "existing mobile equivalent) before presenting a plan; a candidate matched under a mobile-styled "
+		+ "name that turns out to be Classic UI counts as NO existing mobile equivalent. "
 		+ "MANDATORY before acting on the guide: get-guidance name `freedom-page-web-to-mobile-conversion`.")]
 	public async Task<MobilePageConversionGuideResponse> GetMobilePageConversionGuide(
 		[Description("Parameters: schema-name (required, the source page); target-schema-name (optional suggested mobile page name); version (optional registry/Creatio version); environment-name preferred; uri/login/password emergency fallback only.")]
@@ -254,13 +259,14 @@ public class MobilePageConversionGuideTool {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}
 
-		// Read-only, best-effort post-pass: classify every missing-target candidate's source type, so the
-		// caller knows whether to offer converting it directly, run classic→freedom first, or skip
-		// an already-mobile degenerate case. Deliberately AFTER Analyze, which is pure (no I/O) — classifying a
-		// candidate needs its own page read, mirroring how LoadWebTemplateBaseline reads the web template.
-		// Never blocks or fails the guide: an exception here is swallowed, leaving the affected candidates
-		// unclassified (null), exactly like every other best-effort probe in this tool.
-		ClassifyMissingTargetCandidates(guide, args);
+		// Missing-target candidates are deliberately left unclassified here (ResolvedSourceType /
+		// RecommendedAction stay null): classifying one needs its own environment read, and it used to run
+		// inside this call under a fixed per-guide-call read ceiling (see
+		// adr-mobile-conversion-candidate-delegation.md). The caller now performs this classification itself,
+		// per the mandatory guidance procedure, using its own tools (get-page / list-pages /
+		// find-entity-schema) with no artificial ceiling — mirroring how KindWebPage targets were already
+		// never probed server-side. This also lets the caller check for an existing mobile equivalent under a
+		// different name, a search this tool never performed.
 
 		return new MobilePageConversionGuideResponse {
 			Success = true,
@@ -422,90 +428,6 @@ public class MobilePageConversionGuideTool {
 		// missing baseline as "the page changed everything" without a signal.
 		return new WebTemplateBaseline(
 			new HashSet<string>(StringComparer.OrdinalIgnoreCase), emptyNodes, Unavailable: true, Resources: null);
-	}
-
-	/// <summary>
-	/// Classifies every distinct missing-target candidate the guide names — <see cref="MissingTargetPage.Target"/>
-	/// (web-page kind, the aggregated queue) and <see cref="UnresolvedTargetRequest.ResolvedCandidateSchemaName"/>
-	/// (entity kind, the add-on read) alike — mutating their settable <c>ResolvedSourceType</c> /
-	/// <c>RecommendedAction</c> in place. One page read per DISTINCT candidate name (case-insensitive), never
-	/// throwing: a candidate whose read failed is left unclassified (null/null) rather than guessed.
-	/// </summary>
-	internal void ClassifyMissingTargetCandidates(MobilePageConversionGuide guide, MobilePageConversionGuideArgs args) {
-		RequestConversionInfo conversions = guide?.RequestConversions;
-		if (conversions is null) {
-			return;
-		}
-		var names = new List<string>();
-		var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		foreach (MissingTargetPage candidate in conversions.MissingTargetPages) {
-			if (!string.IsNullOrWhiteSpace(candidate.Target) && seen.Add(candidate.Target)) {
-				names.Add(candidate.Target);
-			}
-		}
-		foreach (UnresolvedTargetRequest finding in conversions.UnresolvedTargetRequests) {
-			if (!string.IsNullOrWhiteSpace(finding.ResolvedCandidateSchemaName)
-				&& seen.Add(finding.ResolvedCandidateSchemaName)) {
-				names.Add(finding.ResolvedCandidateSchemaName);
-			}
-		}
-		if (names.Count == 0) {
-			return;
-		}
-
-		var classifications =
-			new Dictionary<string, (string SourceType, string RecommendedAction)>(StringComparer.OrdinalIgnoreCase);
-		foreach (string name in names) {
-			classifications[name] = ClassifyCandidateSourceType(name, args);
-		}
-
-		foreach (MissingTargetPage candidate in conversions.MissingTargetPages) {
-			if (!string.IsNullOrWhiteSpace(candidate.Target)
-				&& classifications.TryGetValue(candidate.Target, out (string SourceType, string RecommendedAction) result)) {
-				candidate.ResolvedSourceType = result.SourceType;
-				candidate.RecommendedAction = result.RecommendedAction;
-			}
-		}
-		foreach (UnresolvedTargetRequest finding in conversions.UnresolvedTargetRequests) {
-			if (!string.IsNullOrWhiteSpace(finding.ResolvedCandidateSchemaName)
-				&& classifications.TryGetValue(
-					finding.ResolvedCandidateSchemaName, out (string SourceType, string RecommendedAction) result)) {
-				finding.ResolvedSourceType = result.SourceType;
-				finding.RecommendedAction = result.RecommendedAction;
-			}
-		}
-	}
-
-	/// <summary>
-	/// Reads one candidate schema and derives its <see cref="MissingTargetCandidateAction"/>: an unreadable
-	/// schema (renamed, deleted, or a transport failure) is reported as
-	/// <see cref="MissingTargetCandidateAction.ManualCandidateNotFound"/> with a null source type — never
-	/// guessed. Mirrors <see cref="LoadWebTemplateBaseline"/>'s best-effort, never-throws shape.
-	/// </summary>
-	internal (string SourceType, string RecommendedAction) ClassifyCandidateSourceType(
-		string schemaName, MobilePageConversionGuideArgs args) {
-		try {
-			PageGetOptions options = new() {
-				SchemaName = schemaName,
-				Environment = args.EnvironmentName,
-				Uri = args.Uri,
-				Login = args.Login,
-				Password = args.Password
-			};
-			PageGetResponse response = ReadPageUnderTenantLock(options);
-			if (response?.Success != true) {
-				return (null, MissingTargetCandidateAction.ManualCandidateNotFound);
-			}
-			string candidateSourceType = DetectSourceType(response.Page?.SchemaType);
-			string action = candidateSourceType switch {
-				WebToMobileAnalysisService.SourceTypeFreedomWeb => MissingTargetCandidateAction.ConvertDirectly,
-				"mobile" => MissingTargetCandidateAction.SkipAlreadyMobile,
-				_ => MissingTargetCandidateAction.ConvertClassicFirst
-			};
-			return (candidateSourceType, action);
-		} catch (Exception) {
-			return (null, MissingTargetCandidateAction.ManualCandidateNotFound);
-		}
 	}
 
 	/// <summary>

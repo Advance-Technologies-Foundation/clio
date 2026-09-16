@@ -1125,12 +1125,15 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				finding.State.Should().Be("missing",
 					because: "a candidate is resolved only for a target verified missing, never for one the "
 						+ "environment could not answer for");
-			} else {
-				// Nothing to classify without a candidate — the classification pass must never invent one.
-				finding.ResolvedSourceType.Should().BeNull();
-				finding.RecommendedAction.Should().BeNull();
 			}
-			AssertClassificationIsWellFormed(finding.ResolvedSourceType, finding.RecommendedAction, convertedSchemaName);
+			// The guide never classifies a candidate itself — regardless of whether a name was resolved,
+			// ResolvedSourceType/RecommendedAction always come back null; classification moved to the caller
+			// (see adr-mobile-conversion-candidate-delegation.md). Asserted over the real MCP transport, not
+			// only the hand-built unit fixtures, so a reintroduced classification pass cannot go unnoticed.
+			finding.ResolvedSourceType.Should().BeNull(
+				because: $"'{convertedSchemaName}' guide must never classify a candidate itself");
+			finding.RecommendedAction.Should().BeNull(
+				because: $"'{convertedSchemaName}' guide must never classify a candidate itself");
 		}
 
 		// missingTargetPages queue: every web-page finding the LIVE environment produced must be
@@ -1154,33 +1157,14 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 					because: $"'{finding.ElementName}' on '{convertedSchemaName}' references the missing page and "
 						+ "must be traceable from the queue entry");
 			}
-			// The queue entry's own classification, read against the real environment.
-			AssertClassificationIsWellFormed(queued.ResolvedSourceType, queued.RecommendedAction, convertedSchemaName);
+			// The queue entry never gets classified by the guide either — asserted against the real
+			// environment so a reintroduced classification pass cannot go unnoticed (see
+			// adr-mobile-conversion-candidate-delegation.md).
+			queued.ResolvedSourceType.Should().BeNull(
+				because: $"'{convertedSchemaName}' guide must never classify a queued candidate itself");
+			queued.RecommendedAction.Should().BeNull(
+				because: $"'{convertedSchemaName}' guide must never classify a queued candidate itself");
 		}
-	}
-
-	/// <summary>
-	/// A classification is either BOTH null (unclassified — the ceiling was hit, or the read
-	/// failed and the tool already reported it as <c>manual-candidate-not-found</c> with a null source type) or
-	/// BOTH set to one of the documented vocabularies, with the action actually DERIVED from the source type —
-	/// asserted against real transport data, which is the only way a mismatch introduced by a future edit to
-	/// either vocabulary would ever surface.
-	/// </summary>
-	private static void AssertClassificationIsWellFormed(string resolvedSourceType, string recommendedAction, string convertedSchemaName) {
-		if (resolvedSourceType is null) {
-			recommendedAction.Should().BeOneOf([null, MissingTargetCandidateAction.ManualCandidateNotFound],
-				because: $"on '{convertedSchemaName}' a null source type means either nothing was classified yet, "
-					+ "or the candidate could not be read at all");
-			return;
-		}
-		string expectedAction = resolvedSourceType switch {
-			WebToMobileAnalysisService.SourceTypeFreedomWeb => MissingTargetCandidateAction.ConvertDirectly,
-			"mobile" => MissingTargetCandidateAction.SkipAlreadyMobile,
-			_ => MissingTargetCandidateAction.ConvertClassicFirst
-		};
-		recommendedAction.Should().Be(expectedAction,
-			because: $"on '{convertedSchemaName}' the recommended action must be DERIVED from the resolved source "
-				+ "type, not an independent value that could drift from it");
 	}
 
 	/// <summary>

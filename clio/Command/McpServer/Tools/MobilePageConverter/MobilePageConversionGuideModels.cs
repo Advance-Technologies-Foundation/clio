@@ -1387,10 +1387,10 @@ public sealed class RequestConversionInfo {
 	public bool TargetsProbed { get; init; }
 
 	/// <summary>
-	/// What limited the check, when anything did: no environment, an unreadable response, rules that declare
-	/// no navigation targets, or a per-object read ceiling that left the remaining objects unasked. Null when
-	/// the check ran in full — so it can be present even with <see cref="TargetsProbed"/> true, and reporting
-	/// it is what lets the user tell "not asked" from "asked, and the answer was no".
+	/// What limited the check, when anything did: no environment, an unreadable response, or rules that
+	/// declare no navigation targets. Null when the check ran in full — so it can be present even with
+	/// <see cref="TargetsProbed"/> true, and reporting it is what lets the user tell "not asked" from "asked,
+	/// and the answer was no".
 	/// </summary>
 	[JsonPropertyName("targetsNote")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -1434,8 +1434,8 @@ public static class MissingTargetCandidateAction {
 	public const string SkipAlreadyMobile = "skip-already-mobile";
 
 	/// <summary>
-	/// The candidate schema could not be read at all (renamed, deleted, or the classification read ceiling was
-	/// reached) — surface it as unresolved and let the user decide manually rather than guessing.
+	/// The candidate schema could not be read at all (renamed, deleted, or unreachable) — surface it as
+	/// unresolved and let the user decide manually rather than guessing.
 	/// </summary>
 	public const string ManualCandidateNotFound = "manual-candidate-not-found";
 }
@@ -1470,13 +1470,13 @@ public sealed class MissingTargetPage {
 	public IReadOnlyList<MissingTargetPageReference> References { get; init; } = [];
 
 	/// <summary>
-	/// <see cref="Target"/>'s detected source type — the same <c>sourceType</c> vocabulary the
-	/// guide itself reports for the MAIN source page (<c>freedom-web</c>, <c>mobile</c>, or the schema's raw
-	/// type when neither, which covers Classic UI and anything unrecognized), read via a page lookup this
-	/// entry's aggregation step (Analyze) does not perform. Settable, like <see cref="ElementMapEntry.ParentName"/>:
-	/// filled by a POST-pass in the MCP tool after the pure analysis returns, because classifying a candidate
-	/// needs an environment read. Null until that pass runs, and still null afterward when the schema could not
-	/// be read at all or the per-guide-call classification ceiling was reached — never a guess.
+	/// <see cref="Target"/>'s detected source type — the same <c>sourceType</c> vocabulary the guide itself
+	/// reports for the MAIN source page (<c>freedom-web</c>, <c>mobile</c>, or the schema's raw type when
+	/// neither, which covers Classic UI and anything unrecognized). ALWAYS NULL on this response: the tool
+	/// no longer performs the environment read this needs (see
+	/// <c>adr-mobile-conversion-candidate-delegation.md</c>) — the caller classifies each distinct candidate
+	/// itself, per the mandatory guidance procedure, before presenting a plan. Settable so a caller MAY still
+	/// fill it locally for its own bookkeeping; the tool never writes it.
 	/// </summary>
 	[JsonPropertyName("resolvedSourceType")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -1484,8 +1484,8 @@ public sealed class MissingTargetPage {
 
 	/// <summary>
 	/// The next step to propose for <see cref="Target"/>, derived from <see cref="ResolvedSourceType"/> — one
-	/// of the <see cref="MissingTargetCandidateAction"/> constants. Settable for the same reason as
-	/// <see cref="ResolvedSourceType"/>; null until the classification pass runs.
+	/// of the <see cref="MissingTargetCandidateAction"/> constants. ALWAYS NULL on this response, for the same
+	/// reason as <see cref="ResolvedSourceType"/> — see there.
 	/// </summary>
 	[JsonPropertyName("recommendedAction")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -1629,9 +1629,8 @@ public sealed class UnresolvedTargetRequest {
 	/// <see cref="TargetKind"/> of <c>entity-default-mobile-page</c> whose <see cref="State"/> is
 	/// <see cref="StateMissing"/>. Offer converting this page next; it becomes the object's default mobile
 	/// edit page once the conversion registers it. Null when no candidate could be found (the object's web
-	/// <c>RelatedPage</c> add-on declares none, or the per-page candidate-read ceiling was reached) — never a
-	/// guessed name, so a null here means "the caller must find or ask for the source page", not "there is
-	/// none".
+	/// <c>RelatedPage</c> add-on declares none) — never a guessed name, so a null here means "the caller must
+	/// find or ask for the source page", not "there is none".
 	/// </summary>
 	[JsonPropertyName("resolvedCandidateSchemaName")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -1639,8 +1638,8 @@ public sealed class UnresolvedTargetRequest {
 
 	/// <summary>
 	/// <see cref="ResolvedCandidateSchemaName"/>'s detected source type — see
-	/// <see cref="MissingTargetPage.ResolvedSourceType"/> for the vocabulary and why this is settable. Always
-	/// null when <see cref="ResolvedCandidateSchemaName"/> itself is null: there is nothing to classify.
+	/// <see cref="MissingTargetPage.ResolvedSourceType"/> for the vocabulary. ALWAYS NULL on this response,
+	/// for the same reason as <see cref="MissingTargetPage.ResolvedSourceType"/> — see there.
 	/// </summary>
 	[JsonPropertyName("resolvedSourceType")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -1648,7 +1647,8 @@ public sealed class UnresolvedTargetRequest {
 
 	/// <summary>
 	/// The next step to propose for <see cref="ResolvedCandidateSchemaName"/> — one of the
-	/// <see cref="MissingTargetCandidateAction"/> constants. See <see cref="MissingTargetPage.RecommendedAction"/>.
+	/// <see cref="MissingTargetCandidateAction"/> constants. ALWAYS NULL on this response. See
+	/// <see cref="MissingTargetPage.RecommendedAction"/>.
 	/// </summary>
 	[JsonPropertyName("recommendedAction")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -1860,7 +1860,7 @@ public sealed class PageBusinessRuleProbeResult {
 /// </summary>
 public enum ActionTargetState {
 	/// <summary>
-	/// Not answered: not probed, not reachable, ambiguous, or past the per-object add-on read ceiling.
+	/// Not answered: not probed, not reachable, or ambiguous.
 	/// </summary>
 	Unknown = 0,
 
@@ -1954,9 +1954,8 @@ public sealed class MobileActionTargetProbeResult {
 
 	/// <summary>
 	/// Human-readable note about the COMPLETENESS of the check; null when it ran in full. Set when nothing
-	/// could be verified AND when only part could — e.g. the per-object read ceiling was reached — so it is
-	/// meaningful whatever <see cref="ProbeOk"/> says. Already redacted of environment detail at the point
-	/// it is built.
+	/// could be verified, so it is meaningful whatever <see cref="ProbeOk"/> says. Already redacted of
+	/// environment detail at the point it is built.
 	/// </summary>
 	public string Note { get; init; }
 
