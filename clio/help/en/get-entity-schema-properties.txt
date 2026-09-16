@@ -24,6 +24,7 @@ OPTIONS
     --package              Optional target package name. Omit for the merged all-packages
                            view; supply only to inspect a single package layer's slice.
     --schema-name          Entity schema name (required)
+    --required-only        Return only columns marked required (default false).
 
     Environment options are also available:
     -e, --Environment      Environment name from the registered configuration
@@ -38,7 +39,12 @@ EXAMPLES
     # Read a single package layer's slice
     clio get-entity-schema-properties -e dev --package Custom --schema-name UsrVehicle
 
+    # Read only required columns
+    clio get-entity-schema-properties -e dev --schema-name Contact --required-only
+
 NOTES
+    - required-only filters schema metadata, not dynamic business rules or default values.
+      Own/inherited column counts remain the totals for the unfiltered schema.
     - output is human-readable text, not JSON
     - the report includes own and inherited column counts plus grouped column lists
     - structured and MCP consumers should read the nested data.columns collection
