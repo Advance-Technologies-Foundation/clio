@@ -480,14 +480,24 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 	// master renamed this to CheckConditionalFlowOrigins, and that name does NOT survive the merge: on
 	// master the method checked origins only, while here it also checks the condition itself, so the
 	// narrower name would describe half of what runs. The rename's INTENT is kept - a name says what the
-	// method does - which is exactly why the broader name is the right one on this side.
+	// method does - which is exactly why the broader name is the right one on this side. Split into three
+	// helpers below (results shape, origin, condition) to keep each check's cognitive load independent.
 	private static void CheckConditionalFlows(IReadOnlyList<ProcessGraphEdge> edges,
 			IReadOnlyDictionary<string, ProcessGraphNode> nodeByName, List<ProcessGraphFinding> findings) {
-		// OUTSIDE the conditional filter below, and that is the whole point of it being here. R13 was the
-		// only rule reading `results`, and it only ever looked at conditional edges - so the two shapes the
-		// server refuses OUTRIGHT passed this tool clean, which is the validate-says-clean / build-refuses
-		// fork the rule exists to close. Both became expressible only when `results` was added, so the gap
-		// arrived with the field.
+		CheckConditionalFlowResultsShape(edges, findings);
+		foreach (ProcessGraphEdge edge in edges.Where(e => e.FlowKind == ProcessFlowKind.Conditional)) {
+			CheckConditionalFlowOrigin(edge, nodeByName, findings);
+			CheckConditionalFlowCondition(edge, findings);
+		}
+	}
+
+	// OUTSIDE the conditional filter in CheckConditionalFlows, and that is the whole point of it being a
+	// separate pass. R13 was the only rule reading `results`, and it only ever looked at conditional edges -
+	// so the two shapes the server refuses OUTRIGHT passed this tool clean, which is the
+	// validate-says-clean / build-refuses fork the rule exists to close. Both became expressible only when
+	// `results` was added, so the gap arrived with the field.
+	private static void CheckConditionalFlowResultsShape(IReadOnlyList<ProcessGraphEdge> edges,
+			List<ProcessGraphFinding> findings) {
 		foreach (ProcessGraphEdge edge in edges.Where(e => e.Results is { Count: > 0 })) {
 			if (edge.FlowKind != ProcessFlowKind.Conditional) {
 				// FlowKindRules.EnsureConditionMatchesKind throws "A '<kind>' flow cannot carry 'results'".
@@ -513,95 +523,99 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 					edge.Source, edge));
 			}
 		}
-		foreach (ProcessGraphEdge edge in edges.Where(e => e.FlowKind == ProcessFlowKind.Conditional)) {
-			// A WARNING, not an error, and the corpus is why. Measured over 1711 shipped schemas, four
-			// conditional flows leave an event: two a start event (CrtBase
-			// PushNotificationAboutAppUpdateAvailableProcess, CrtCustomer360AI SaveNewApiKey) and two an
-			// intermediate catch signal event. They ship and they run. The designer does not offer the
-			// connection, which is why this stays a finding at all - but an ERROR told an agent that the
-			// platform's own content is invalid, and CrtProcessBuilder builds it without complaint, so the
-			// error also promised a refusal that never comes.
-			if (nodeByName.TryGetValue(edge.Source, out ProcessGraphNode source)
-					&& RoleOf(source) is not (Role.Gateway or Role.Activity)) {
-				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, "R13",
-					$"Conditional flow leaves '{edge.Source}', which is neither a gateway nor an activity. "
-					+ "The designer cannot draw that connection, though four shipped flows have it and run.",
-					edge.Source, edge));
-			}
+	}
 
-			// A conditional flow with no condition is NOT an error the platform reports: it substitutes the
-			// literal "true", producing a branch that looks conditional and always fires.
-			//
-			// The corpus census, because two probes got this wrong in opposite directions and the number
-			// decides the severity. Over 1711 schemas, 1367 shipped ProcessSchemaConditionalFlow:
-			//
-			//     CI3 a real expression                    1023
-			//     CI3 absent or the string "null"           344   <- 3 absent, 341 the literal "null"
-			//     CI3 an EMPTY string                          0
-			//
-			// A probe that tested only for a missing key returned 3 and could not have returned 344. But 344
-			// is not "carries no condition" either, and that is the half a probe stopping at CI3 cannot see:
-			// GV2 (ProcessSchemaConditionalFlow.ProcessActivitiesSelectedResultsPropertyName) holds the
-			// ACTIVITY-RESULT set, and ConditionalSequenceFlow.CheckCondition dispatches on
-			// ResultParameterName - it never evaluates an expression. Splitting the 344 by GV2 entry count:
-			//
-			//     GV2 has entries (activity-result branch)   337   condition stored as a result set
-			//     GV2 empty too (nothing decides it)           7   RemoveSequenceFlowsTestProcess,
-			//                                                      UsrNonValidSubProcess, RND30540... - test
-			//                                                      schemas, one named NonValid
-			//
-			// The split is exact: every conditional flow carries a formula OR a result set, never both and
-			// never neither, except those 7. So the demotion rule - a shape the corpus contains in bulk is
-			// not an error - does not reach this rule at all, and the warning stands on 7 rather than 344.
-			//
-			// What the 337 DO cost: this tool's edge carries `condition` and nothing else, so an
-			// activity-result flow read back by describe-then-validate arrives here indistinguishable from a
-			// bare one and warns. The finding is still true for it - clio cannot build an activity-result
-			// condition either - but the REMEDIATION would destroy the branch, so the message names the case.
-			//
-			// BLANK is an error; OMITTED is a WARNING, and the split is deliberate rather than tidy.
-			//
-			// Omitted used to be SILENT, and that was a documented contract ("omitted is silent" in
-			// McpCapabilityMap) with a test behind it: omitting an optional field is not the same as
-			// supplying an empty one. What that missed is that `EnsureConditionMatchesKind` REFUSES a
-			// conditional flow with no condition, so silence recreated the validate-says-clean /
-			// build-refuses fork this ticket exists to close - and three surfaces added by this same ticket
-			// call the shape dangerous.
-			//
-			// The rule this ticket used elsewhere - "error iff the builder refuses" - does NOT settle this
-			// split, and it is worth being exact because it looks as though it does. FlowKindRules
-			// EnsureConditionMatchesKind tests `!string.IsNullOrWhiteSpace(condition)`, so the builder
-			// refuses BLANK and OMITTED alike; by that rule both would be errors. What separates them is
-			// whether the shape has a legitimate reading BEFORE any predicate exists. Omission does: this
-			// tool checks a PLAN, its own description says a passing graph is not necessarily buildable, and
-			// `condition` is optional on the wire precisely so a caller can check a graph's SHAPE first - an
-			// error there is a false block on the tool's primary use, while a warning tells the caller what
-			// the build will do and blocks nothing. Whitespace does not: nobody types "   " while deferring
-			// predicates, so it is a value the caller believes in, and it is the one of the two that ALSO
-			// has a consequence past the build - reached through the designer or a direct save, the platform
-			// substitutes the literal `true`, and the branch always fires with nothing to show it.
-			bool blankCondition = edge.Condition is { } supplied && supplied.Trim().Length == 0;
-			if (blankCondition) {
-				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R13",
-					$"Conditional flow '{edge.Source}' -> '{edge.Target}' has an empty condition. The BUILD "
-					+ "path refuses it, and reached any other way the platform stores it as the literal "
-					+ "'true' - a branch that always fires. Give it a condition, or pass 'true' explicitly "
-					+ "if a branch that always fires is what you mean.", edge.Source, edge));
-			} else if (edge.Condition is null && (edge.Results is null || edge.Results.Count == 0)) {
-				// A branch decided by a result SELECTION carries no condition text and is complete without
-				// one, so `results` silences this. Before the field existed the rule fired on that shape and
-				// offered two remedies which both DESTROY it: a condition writes a formula the designer will
-				// not render on a result-enumerating source, and 'sequence' removes the branch. The read-back
-				// caveat in the message covers a graph describe produced, not one the caller is about to build.
-				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, "R13",
-					$"Conditional flow '{edge.Source}' -> '{edge.Target}' carries no condition. That is fine "
-					+ "for checking a graph's shape, but the BUILD path refuses it - give it a condition "
-					+ "before you build, or make the flow 'sequence'. Unless the branch is decided by an "
-					+ "activity RESULT rather than by text, in which case neither fix applies and neither is "
-					+ "wanted: pass the selection as 'results' on this edge and the warning goes away. 337 "
-					+ "shipped flows are that shape, and describe-business-process reports them with "
-					+ "branchesOnActivityResult and results.", edge.Source, edge));
-			}
+	// A WARNING, not an error, and the corpus is why. Measured over 1711 shipped schemas, four
+	// conditional flows leave an event: two a start event (CrtBase
+	// PushNotificationAboutAppUpdateAvailableProcess, CrtCustomer360AI SaveNewApiKey) and two an
+	// intermediate catch signal event. They ship and they run. The designer does not offer the
+	// connection, which is why this stays a finding at all - but an ERROR told an agent that the
+	// platform's own content is invalid, and CrtProcessBuilder builds it without complaint, so the
+	// error also promised a refusal that never comes.
+	private static void CheckConditionalFlowOrigin(ProcessGraphEdge edge,
+			IReadOnlyDictionary<string, ProcessGraphNode> nodeByName, List<ProcessGraphFinding> findings) {
+		if (nodeByName.TryGetValue(edge.Source, out ProcessGraphNode source)
+				&& RoleOf(source) is not (Role.Gateway or Role.Activity)) {
+			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, "R13",
+				$"Conditional flow leaves '{edge.Source}', which is neither a gateway nor an activity. "
+				+ "The designer cannot draw that connection, though four shipped flows have it and run.",
+				edge.Source, edge));
+		}
+	}
+
+	// A conditional flow with no condition is NOT an error the platform reports: it substitutes the
+	// literal "true", producing a branch that looks conditional and always fires.
+	//
+	// The corpus census, because two probes got this wrong in opposite directions and the number
+	// decides the severity. Over 1711 schemas, 1367 shipped ProcessSchemaConditionalFlow:
+	//
+	//     CI3 a real expression                    1023
+	//     CI3 absent or the string "null"           344   <- 3 absent, 341 the literal "null"
+	//     CI3 an EMPTY string                          0
+	//
+	// A probe that tested only for a missing key returned 3 and could not have returned 344. But 344
+	// is not "carries no condition" either, and that is the half a probe stopping at CI3 cannot see:
+	// GV2 (ProcessSchemaConditionalFlow.ProcessActivitiesSelectedResultsPropertyName) holds the
+	// ACTIVITY-RESULT set, and ConditionalSequenceFlow.CheckCondition dispatches on
+	// ResultParameterName - it never evaluates an expression. Splitting the 344 by GV2 entry count:
+	//
+	//     GV2 has entries (activity-result branch)   337   condition stored as a result set
+	//     GV2 empty too (nothing decides it)           7   RemoveSequenceFlowsTestProcess,
+	//                                                      UsrNonValidSubProcess, RND30540... - test
+	//                                                      schemas, one named NonValid
+	//
+	// The split is exact: every conditional flow carries a formula OR a result set, never both and
+	// never neither, except those 7. So the demotion rule - a shape the corpus contains in bulk is
+	// not an error - does not reach this rule at all, and the warning stands on 7 rather than 344.
+	//
+	// What the 337 DO cost: this tool's edge carries `condition` and nothing else, so an
+	// activity-result flow read back by describe-then-validate arrives here indistinguishable from a
+	// bare one and warns. The finding is still true for it - clio cannot build an activity-result
+	// condition either - but the REMEDIATION would destroy the branch, so the message names the case.
+	//
+	// BLANK is an error; OMITTED is a WARNING, and the split is deliberate rather than tidy.
+	//
+	// Omitted used to be SILENT, and that was a documented contract ("omitted is silent" in
+	// McpCapabilityMap) with a test behind it: omitting an optional field is not the same as
+	// supplying an empty one. What that missed is that `EnsureConditionMatchesKind` REFUSES a
+	// conditional flow with no condition, so silence recreated the validate-says-clean /
+	// build-refuses fork this ticket exists to close - and three surfaces added by this same ticket
+	// call the shape dangerous.
+	//
+	// The rule this ticket used elsewhere - "error iff the builder refuses" - does NOT settle this
+	// split, and it is worth being exact because it looks as though it does. FlowKindRules
+	// EnsureConditionMatchesKind tests `!string.IsNullOrWhiteSpace(condition)`, so the builder
+	// refuses BLANK and OMITTED alike; by that rule both would be errors. What separates them is
+	// whether the shape has a legitimate reading BEFORE any predicate exists. Omission does: this
+	// tool checks a PLAN, its own description says a passing graph is not necessarily buildable, and
+	// `condition` is optional on the wire precisely so a caller can check a graph's SHAPE first - an
+	// error there is a false block on the tool's primary use, while a warning tells the caller what
+	// the build will do and blocks nothing. Whitespace does not: nobody types "   " while deferring
+	// predicates, so it is a value the caller believes in, and it is the one of the two that ALSO
+	// has a consequence past the build - reached through the designer or a direct save, the platform
+	// substitutes the literal `true`, and the branch always fires with nothing to show it.
+	private static void CheckConditionalFlowCondition(ProcessGraphEdge edge, List<ProcessGraphFinding> findings) {
+		bool blankCondition = edge.Condition is { } supplied && supplied.Trim().Length == 0;
+		if (blankCondition) {
+			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R13",
+				$"Conditional flow '{edge.Source}' -> '{edge.Target}' has an empty condition. The BUILD "
+				+ "path refuses it, and reached any other way the platform stores it as the literal "
+				+ "'true' - a branch that always fires. Give it a condition, or pass 'true' explicitly "
+				+ "if a branch that always fires is what you mean.", edge.Source, edge));
+		} else if (edge.Condition is null && (edge.Results is null || edge.Results.Count == 0)) {
+			// A branch decided by a result SELECTION carries no condition text and is complete without
+			// one, so `results` silences this. Before the field existed the rule fired on that shape and
+			// offered two remedies which both DESTROY it: a condition writes a formula the designer will
+			// not render on a result-enumerating source, and 'sequence' removes the branch. The read-back
+			// caveat in the message covers a graph describe produced, not one the caller is about to build.
+			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, "R13",
+				$"Conditional flow '{edge.Source}' -> '{edge.Target}' carries no condition. That is fine "
+				+ "for checking a graph's shape, but the BUILD path refuses it - give it a condition "
+				+ "before you build, or make the flow 'sequence'. Unless the branch is decided by an "
+				+ "activity RESULT rather than by text, in which case neither fix applies and neither is "
+				+ "wanted: pass the selection as 'results' on this edge and the warning goes away. 337 "
+				+ "shipped flows are that shape, and describe-business-process reports them with "
+				+ "branchesOnActivityResult and results.", edge.Source, edge));
 		}
 	}
 
