@@ -149,5 +149,9 @@ re-implementing the regexes in C#.
 2. This pull request: workflows, detector, manifest, guard, knowledge records.
 3. Watch the first pull-request runs: `MCP e2e NoEnvironment` duration and stability on hosted
    runners, and the TeamCity build comment showing `selection: subset` with the expected fixtures.
+   First hosted run (PR #1571): 8 min 38 s, 67 failures, all one cause — the tier silently depended on
+   the host's real clio settings having an active environment (`CanExecuteEnvTools`); the shared-home
+   fixture now seeds a loopback placeholder when none is registered
+   (`docs/knowledge/Tests/noenvironment-tier-needs-a-registered-active-environment.md`).
 4. Later: promote `mcp-e2e-noenvironment` into the required gate; add `explicitMappings` for the
    domains whose fixtures are known.
