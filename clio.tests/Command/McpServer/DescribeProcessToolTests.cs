@@ -114,9 +114,10 @@ public sealed class DescribeProcessToolTests {
 			because: "the per-flow field list is what an agent reads to learn a flow's shape, and this prompt "
 				+ "does NOT defer that list to guidance - so a field missing from THIS enumeration is a field "
 				+ "no agent looks for, whatever else the prose mentions");
-		prompt.Should().Contain("`branchesOnActivityResult`",
-			because: "the last field of the enumeration continues on the next line and would otherwise fall "
-				+ "outside the fragment above");
+		prompt.Should().Contain("`branchesOnActivityResult`, `results` and `resultsActivity`",
+			because: "the enumeration continues on the next line and would otherwise fall outside the "
+				+ "fragment above - and `results` is the field that says WHICH results decide the branch, so "
+				+ "a reader who learns only the boolean can see THAT a selection exists and never read it");
 
 		// The TOOL description carries the same disambiguation, and an agent may read either one. Asserted
 		// on both because the inverse pin in BundledProcessBuilderPackageTests only forbids a VERSION -

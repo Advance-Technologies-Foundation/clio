@@ -24,6 +24,12 @@ public sealed class ProcessGraphValidatorTests {
 
 	private static ProcessGraphEdge Def(string from, string to) => new(from, to, ProcessFlowKind.Default);
 
+	// A conditional flow decided by an activity-result SELECTION rather than by condition text -
+	// the other of the two disjoint predicate slots, and a FINISHED branch despite carrying no
+	// condition.
+	private static ProcessGraphEdge CondWithResults(string from, string to, params string[] results) =>
+		new(from, to, ProcessFlowKind.Conditional, null, results);
+
 	// A flow whose KIND is not conditional but which carries a condition anyway - the shape ModelBuilder
 	// and DescribeProcessPrompt both document as a trap, because the condition is dropped during flow-
 	// schema generation and the branch then runs unconditionally.
@@ -399,6 +405,87 @@ public sealed class ProcessGraphValidatorTests {
 		result.HasErrors.Should().BeFalse(
 			because: "which is the whole point: no error covers this shape, so the warning is the only "
 				+ "thing standing between an author and a fallback decided by flow order alone");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R13 does NOT fire on a conditional flow whose branch is decided by an activity-result selection. The rule reads the absence of condition TEXT as an unfinished branch, which was right while a condition was the only predicate a flow could carry. It is not any more, and the two remedies the warning offers both DESTROY this shape: a condition writes a formula the designer will not render on a result-enumerating source - the exact defect the selection dialect exists to remove - and 'sequence' removes the branch. The rule's existing read-back caveat does not cover this: that one is about a graph describe produced, while validate-process-graph is asked about a graph the caller is ABOUT TO BUILD.")]
+	public void Validate_ShouldNotReturnR13_WhenTheConditionalFlowCarriesResults() {
+		// Arrange
+		List<ProcessGraphNode> nodes = [Node("s", "startEvent"), Node("a", "activityUserTask"),
+			Node("yes", "endEvent"), Node("no", "endEvent")];
+		List<ProcessGraphEdge> edges =
+			[Seq("s", "a"), CondWithResults("a", "yes", "Positive"), Seq("a", "no")];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.Findings.Should().NotContain(f => f.RuleId == "R13",
+			because: "a selection IS the predicate, so the branch is finished - warning here would send the "
+				+ "caller to one of two fixes that each break the flow they planned");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R13 still fires on a conditional flow carrying NEITHER a condition nor results, which is the shape the rule exists for and the complement of the case above - without it 'results silences R13' could be implemented as 'R13 never fires' and both tests would stay green. The message also names 'results' as the third way out, because a caller who meant the selection dialect and did not pass it has no other hint that the field exists.")]
+	public void Validate_ShouldReturnR13Warning_WhenTheConditionalFlowCarriesNeither() {
+		// Arrange
+		List<ProcessGraphNode> nodes = [Node("s", "startEvent"), Node("a", "activityUserTask"),
+			Node("yes", "endEvent"), Node("no", "endEvent")];
+		List<ProcessGraphEdge> edges = [Seq("s", "a"), Cond("a", "yes"), Seq("a", "no")];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.Findings.Should().Contain(
+			f => f.RuleId == "R13" && f.Severity == ProcessGraphSeverity.Warning
+				&& f.Message.Contains("'results'"),
+			because: "a conditional flow with no predicate at all is stored as the literal 'true', and the "
+				+ "warning has to name every way out - including the one a caller cannot guess");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R19: 'results' on a flow that is NOT conditional is an ERROR, because the build refuses it outright - FlowKindRules.EnsureConditionMatchesKind throws \"a 'sequence' flow cannot carry 'results'\". R13 could never see this shape: it iterates conditional edges only, so it was the sole rule reading the field and the field arrived without a rule covering its misuse. That is the validate-says-clean / build-refuses fork this rule set exists to close, reopened by the very field that closed part of it.")]
+	public void Validate_ShouldReturnR19Error_WhenANonConditionalFlowCarriesResults() {
+		// Arrange
+		List<ProcessGraphNode> nodes = [Node("s", "startEvent"), Node("a", "activityUserTask"),
+			Node("yes", "endEvent")];
+		List<ProcessGraphEdge> edges =
+			[Seq("s", "a"), new ProcessGraphEdge("a", "yes", ProcessFlowKind.Sequence, null, ["Positive"])];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.Findings.Should().Contain(
+			f => f.RuleId == "R19" && f.Severity == ProcessGraphSeverity.Error,
+			because: "the server refuses this descriptor, so a clean validate would send the caller into a "
+				+ "build that cannot succeed - which is the one outcome this tool exists to prevent");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R20: a conditional flow carrying BOTH a condition and 'results' is an ERROR. The two predicate slots are mutually exclusive in the metadata - the platform reads the selection and never the expression once the map is non-empty - and the server refuses the pair. R13 fell between its own two arms on this shape: blankCondition is false because the condition is real, and the no-predicate arm needs Condition to be null, so nothing fired and validate reported clean.")]
+	public void Validate_ShouldReturnR20Error_WhenAConditionalFlowCarriesBothPredicates() {
+		// Arrange
+		List<ProcessGraphNode> nodes = [Node("s", "startEvent"), Node("a", "activityUserTask"),
+			Node("yes", "endEvent"), Node("no", "endEvent")];
+		List<ProcessGraphEdge> edges = [Seq("s", "a"),
+			new ProcessGraphEdge("a", "yes", ProcessFlowKind.Conditional, "1 > 0", ["Positive"]),
+			Seq("a", "no")];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.Findings.Should().Contain(
+			f => f.RuleId == "R20" && f.Severity == ProcessGraphSeverity.Error
+				&& f.Message.Contains("never the expression"),
+			because: "the caller has to learn WHICH of the two is ignored, or the obvious fix - drop the "
+				+ "selection and keep the text they can read - is the one that changes the branch");
 	}
 
 	[Test]
