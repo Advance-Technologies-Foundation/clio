@@ -83,7 +83,7 @@ try {
     Step "2. Read the app version and check it moves forward"
     # The app names its own version, and that is the number clio reports and Marketplace shows. Nothing here
     # stamps a version into the package: the build is taken as it is.
-    $appVersion = (Get-Content -LiteralPath (Join-Path $packageDir 'Filespp-descriptor.json') -Raw | ConvertFrom-Json).Version
+    $appVersion = (Get-Content -LiteralPath (Join-Path $packageDir 'Files\app-descriptor.json') -Raw | ConvertFrom-Json).Version
     $shipped = ([regex]::Match((Get-Content -LiteralPath $pinsFile -Raw), 'ExpectedArchiveVersion = "([^"]*)"')).Groups[1].Value
     $parsedApp = [version] $null
     $parsedShipped = [version] $null
