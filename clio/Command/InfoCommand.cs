@@ -57,6 +57,7 @@ namespace Clio.Command
 		private readonly IBundledPackageCatalog _bundledPackageCatalog;
 		private readonly IInstalledKnowledgeVersions _knowledgeVersions;
 		private readonly IInstalledToolkitVersions _toolkitVersions;
+		private readonly IInstalledAppVersions _appVersions;
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="InfoCommand"/> class.
@@ -68,7 +69,8 @@ namespace Clio.Command
 		/// <param name="knowledgeVersions">Reader for locally installed knowledge bundle versions.</param>
 		/// <param name="toolkitVersions">Reader for locally installed toolkit versions per agent.</param>
 		public InfoCommand(ILogger logger, IBundledPackageCatalog bundledPackageCatalog,
-			IInstalledKnowledgeVersions knowledgeVersions, IInstalledToolkitVersions toolkitVersions)
+			IInstalledKnowledgeVersions knowledgeVersions, IInstalledToolkitVersions toolkitVersions,
+			IInstalledAppVersions appVersions)
         {
 			logger.CheckArgumentNull(nameof(logger));
 			bundledPackageCatalog.CheckArgumentNull(nameof(bundledPackageCatalog));
@@ -76,6 +78,7 @@ namespace Clio.Command
 			_bundledPackageCatalog = bundledPackageCatalog;
 			_knowledgeVersions = knowledgeVersions ?? throw new ArgumentNullException(nameof(knowledgeVersions));
 			_toolkitVersions = toolkitVersions ?? throw new ArgumentNullException(nameof(toolkitVersions));
+			_appVersions = appVersions ?? throw new ArgumentNullException(nameof(appVersions));
 		}
 
 		// Reported from the archive rather than from a constant, so this line describes the bytes an install
@@ -126,6 +129,7 @@ namespace Clio.Command
 				// environment is behind — and it is the same value the convergence rule compares, because
 				// both read it from the archive.
 				_logger.WriteInfo($"process-builder:   {GetBundledProcessBuilderVersion()}");
+				WriteAppVersions();
 				WriteKnowledgeVersions();
 				foreach (KeyValuePair<string, string> toolkit in _toolkitVersions.Read()) {
 					_logger.WriteInfo($"toolkit ({TextUtilities.SanitizeForDisplay(toolkit.Key, maxLength: 128)}):   "
@@ -136,6 +140,15 @@ namespace Clio.Command
 				return 0;
 			}
 			return 1;
+		}
+
+		// Apps clio installs from a feed rather than carries: the number is what the last install put on an
+		// environment, so it answers "which version did clio deliver" without a feed call or an -e.
+		private void WriteAppVersions() {
+			foreach (KeyValuePair<string, string> app in _appVersions.Read()) {
+				_logger.WriteInfo($"{TextUtilities.SanitizeForDisplay(app.Key, maxLength: 128)}:   "
+					+ TextUtilities.SanitizeForDisplay(app.Value, maxLength: 128));
+			}
 		}
 
 		private void WriteKnowledgeVersions() {
