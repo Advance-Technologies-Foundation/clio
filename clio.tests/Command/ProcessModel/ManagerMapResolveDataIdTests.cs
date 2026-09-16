@@ -62,6 +62,11 @@ public sealed class ManagerMapResolveDataIdTests {
 	[TestCase("scriptTask", ManagerMap.EventType.ScriptTask)]
 	[TestCase("webService", ManagerMap.EventType.WebServiceTask)]
 	[TestCase("callActivity", ManagerMap.EventType.SubProcess)]
+	// The BUILD token for the same element, and the same trap as openEditPage above: "subprocess" does not end in
+	// the "usertask" suffix, so without an explicit arm a graph carrying an element create-business-process builds
+	// correctly resolves to Unknown and validate-process-graph reports a hard Error on it.
+	[TestCase("subProcess", ManagerMap.EventType.SubProcess)]
+	[TestCase("subprocess", ManagerMap.EventType.SubProcess)]
 	[TestCase("eventSubProcessExpanded", ManagerMap.EventType.EventSubProcess)]
 	public void ResolveDataId_ShouldReturnActivityEventType_WhenActivityDataId(string dataId, ManagerMap.EventType expected) {
 		// Act

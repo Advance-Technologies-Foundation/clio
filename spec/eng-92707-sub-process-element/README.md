@@ -14,7 +14,7 @@ one machine's paths.
 |---|---|---|
 | 1 | [platform-reference](eng-92707-sub-process-element-platform-reference.md) | **Who synchronizes the parameters** — the core algorithm, line by line, and what the classic designer does on top of it |
 | 2 | [serialization-capture](eng-92707-sub-process-element-serialization-capture.md) | AC4 — every metadata key, decoded, mined from 420 shipped elements |
-| 3 | [traps](eng-92707-sub-process-element-traps.md) | T-1…T-29, twenty-two of them **silent**, one a **Blocker** |
+| 3 | [traps](eng-92707-sub-process-element-traps.md) | T-1…T-29, twenty-two of them **silent**. Read its correction banner first: T-25 and T-26 did not survive measurement |
 | 4 | [plan](eng-92707-sub-process-element-plan.md) | Decisions D1–D12a, work packages S1–S8, verification V1–V8, estimate, Definition of Done |
 | 5 | [test-plan](eng-92707-sub-process-element-test-plan.md) | Harness, the mocking recipe that has to be *adapted* rather than referenced, TC-01…TC-36 |
 | 6 | [open-questions](eng-92707-sub-process-element-open-questions.md) | Q1–Q10 — **eight decided 2026-09-14** — plus the verification status: six of nine measurements closed |

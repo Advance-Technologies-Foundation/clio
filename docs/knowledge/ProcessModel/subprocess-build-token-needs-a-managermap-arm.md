@@ -1,5 +1,5 @@
 ---
-description: ManagerMap.ResolveDataId knows only the camelCase diagram data-id "callactivity"; a lowercase sub-process BUILD token with no arm resolves to EventType.Unknown and validate-process-graph rejects a graph the server builds correctly
+description: ManagerMap.ResolveDataId is the one place that accepts BOTH the camelCase diagram data-ids and the lowercase build tokens; a package-side token with no arm resolves to EventType.Unknown and validate-process-graph rejects a graph the server builds correctly
 applies-to:
   - clio/Command/ProcessModel/Schema.cs
   - clio/Command/ProcessModel/ProcessGraphValidator.cs
@@ -9,7 +9,7 @@ date: 2026-09-16
 ---
 
 **What is true** — `ManagerMap.ResolveDataId` maps `"callactivity"` (the diagram-js data-id) to
-`EventType.SubProcess`. It has **no** arm for a lowercase build token such as `"subprocess"`, and the
+`EventType.SubProcess`, and since ENG-92707 it carries `"subprocess"` on the same arm. The
 suffix arm it falls through to matches only names ending in `usertask`. Anything unmatched returns
 `EventType.Unknown`, and `ProcessGraphValidator.CheckUnknownTypes` turns that into a hard **Error**.
 

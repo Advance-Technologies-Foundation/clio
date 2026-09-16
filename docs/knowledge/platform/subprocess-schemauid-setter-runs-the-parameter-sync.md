@@ -22,8 +22,13 @@ process schema**, so a "stale" sub-process element is not a state the object mod
 Three ways it is a **silent** no-op (`GetCanSynchronizeParameters`): the host schema has no `UId`, the
 element has no `UId` yet, or `SchemaUId` equals the host schema's UId — a process calling itself.
 And assigning `SchemaUId` while the element is still detached throws, because
-`ClearParametersSourceValue` dereferences `ParentMetaSchema.UId` with no null guard; the copy
-constructor assigns it too, so `Clone()` throws for the same reason.
+`ClearParametersSourceValue` dereferences `ParentMetaSchema.UId` with no null guard.
+
+The copy constructor assigns `SchemaUId` in its own body too, and **that one does not throw** - measured
+2026-09-16, correcting T-26 in the analysis. `MetaItem(MetaItem source)` copies `ParentMetaSchema` from
+the source first, so `Clone()` is safe wherever the original was. Only a copy taken from an element that
+never had a `ParentMetaSchema` fails, and that is the detached case above rather than a copy-specific
+one.
 
 `ApplyMetaDataValue` writes the FIELD (`_schemaUId`), so deserializing metadata — and a whole-schema
 save through `ProcessSchemaManagerService.Post` — bypasses the setter and does **not** synchronize.
@@ -32,6 +37,9 @@ save through `ProcessSchemaManagerService.Post` — bypasses the setter and does
 parameters are unreachable through `GetSchemaParameters()`; a user task's `SchemaUId` points at the
 user-task schema. A sub-process references the callee through the element's own `SchemaUId`, so the
 platform's generic activity diff already has the right source collection.
+
+Measured by `CrtProcessBuilder.Tests/SubProcessPlatformProbeTests`, which pins the detached throw, the
+copy constructor NOT throwing, and the mechanism that separates them.
 
 **What breaks if you ignore it** — porting `PreconfiguredPageParameterSync` produces a second,
 divergent diff over the same data, and the platform's runs afterwards anyway on every read. Assigning

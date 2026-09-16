@@ -566,6 +566,18 @@ public sealed class DescribedElement {
 	public DescribedPreconfiguredPage PreconfiguredPage { get; set; }
 
 	/// <summary>
+	/// For a Sub-process element (a BPMN call activity): which process it calls, and whether the element still
+	/// mirrors that process's parameters. <c>null</c> for other element kinds and when the server (an older
+	/// <c>CrtProcessBuilder</c>) does not report it.
+	/// <para>Declared here for the same reason the page block is, and it is the only reason the block reaches a
+	/// caller at all: the describe output is re-serialized from this model, so a member the model does not declare
+	/// is dropped on the way out. Before this element existed the read-back carried no reference to the called
+	/// process whatsoever - the parameters came back, and nothing said whose they were.</para>
+	/// </summary>
+	[JsonPropertyName("subProcess")]
+	public DescribedSubProcess SubProcess { get; set; }
+
+	/// <summary>
 	/// The element's BOUND host-entity connections ("Connected to") — which records the Activity it creates is
 	/// attached to. <c>null</c> when the element has none, and also when the server is an older
 	/// <c>CrtProcessBuilder</c> that does not report them.
@@ -1012,6 +1024,60 @@ public sealed class DescribedEmail {
 	/// losslessly: a newer <c>CrtProcessBuilder</c> reporting something this build does not declare — a template
 	/// selection, a body format, an attachment list — reaches the command output verbatim instead of being
 	/// discarded without a trace. This block is where the next email feature lands, so it needs the bag most.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// Which process a Sub-process element calls, read back off the element. Mirrors the server's
+/// <c>DescribeSubProcessInfo</c> field for field.
+/// </summary>
+public sealed class DescribedSubProcess {
+	/// <summary>
+	/// The called process's schema NAME, or the raw UId when that process no longer resolves - describe never
+	/// fails over a dangling reference, it reports what the element actually stores. <c>null</c> when the element
+	/// calls nothing yet, which is a real state rather than a broken one.
+	/// </summary>
+	[JsonPropertyName("process")]
+	public string Process { get; set; }
+
+	/// <summary>The called process's schema UId, exactly as the element stores it.</summary>
+	[JsonPropertyName("processUId")]
+	public string ProcessUId { get; set; }
+
+	/// <summary>The called process's display caption, as the process library shows it; null when it does not resolve.</summary>
+	[JsonPropertyName("processCaption")]
+	public string ProcessCaption { get; set; }
+
+	/// <summary>
+	/// True when the element runs the called process once per item of a collection: it carries two collections and
+	/// three iteration counters instead of the called process's parameters, so the names a mapping would use
+	/// address nothing on it.
+	/// <para>Every write path that CONFIGURES such an element refuses it, which is what this flag lets a caller
+	/// see coming. An unrelated <c>setElement</c> is NOT refused - it is applied, the element's re-synchronization
+	/// is skipped, and a warning says so.</para>
+	/// <para>Nullable defensively, like <see cref="DescribedEmail.HasBody"/> and for the same reason: no shipped
+	/// server omits it, but a flag whose absence deserializes to <c>false</c> would read as "plain call activity,
+	/// safe to write" - the wrong side to fail toward on the one field that signals a refusal.</para>
+	/// </summary>
+	[JsonPropertyName("multiInstance")]
+	public bool? MultiInstance { get; set; }
+
+	/// <summary>
+	/// Whether the element still carries every parameter the called process declares. <c>null</c> means that
+	/// process could not be read, which is UNKNOWN and never "out of sync".
+	/// <para>Ordinarily true: the platform re-synchronizes every sub-process element on every design-time read, so
+	/// an element that has just been read has already converged. The informative value is <c>false</c>.</para>
+	/// </summary>
+	[JsonPropertyName("inSync")]
+	public bool? InSync { get; set; }
+
+	/// <summary>
+	/// Anything the server reports inside this block that this model does not declare. Every server-built
+	/// configuration block here carries one, and the reason is the failure this whole block exists to close one
+	/// level up: the describe output is re-serialized from this model, so a field a later CrtProcessBuilder adds
+	/// is dropped on the way to the caller with nothing logged and a read-back that looks complete.
 	/// </summary>
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement> AdditionalData { get; set; }
@@ -1565,6 +1631,16 @@ public sealed class DescribedParameter {
 	/// </summary>
 	[JsonPropertyName("isResult")]
 	public bool? IsResult { get; set; }
+
+	/// <summary>
+	/// True when the parameter's declaration marks it required. Omitted when the server (an older
+	/// <c>CrtProcessBuilder</c>) does not report it.
+	/// <para>It matters most on a SUB-PROCESS element, where nothing validates it: values cross by parameter NAME
+	/// and requiredness is never checked on either side, so a required input left unmapped is refused nowhere and
+	/// the called process simply runs without it.</para>
+	/// </summary>
+	[JsonPropertyName("isRequired")]
+	public bool? IsRequired { get; set; }
 
 	/// <summary>For a lookup parameter: the referenced object (entity schema) name (for example <c>City</c>); null otherwise.</summary>
 	[JsonPropertyName("referenceSchema")]

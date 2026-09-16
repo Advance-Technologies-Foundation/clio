@@ -180,7 +180,7 @@ public class ModifyBusinessProcessTool(
 		 + "element and its flows; partial update: omit on to keep the current change type, omit entity to keep the "
 		 + "current one (retargeting it clears any old-entity filter), omit changedColumns to clear column tracking; "
 		 + "changedColumns is valid only for on:modified), setElement (elementName + an 'elementUpdate':"
-		 + "{useBackgroundMode?, readData?, changeData?, accessRights?, email?, approval?, performer?, openEditPage?, preconfiguredPage?} — changes element-level fields IN PLACE, preserving the element and its "
+		 + "{useBackgroundMode?, readData?, changeData?, accessRights?, email?, approval?, performer?, openEditPage?, preconfiguredPage?, subProcess? (get-guidance name=process-element-catalog owns that block)} — changes element-level fields IN PLACE, preserving the element and its "
 		 + "flows; only the fields you pass change. useBackgroundMode applies to ANY element kind. readData "
 		 + "{source?, mode?:first, columns?, sort?:{column, direction?:asc|desc}} reconfigures a readData element's "
 		 + "data configuration: omit source to keep the current source object, omit columns/sort to keep the current "

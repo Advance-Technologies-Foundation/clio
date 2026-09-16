@@ -1,5 +1,17 @@
 # ENG-92707 — Sub-process element: traps
 
+> **Corrected by measurement, 2026-09-16.** Two entries below did not reproduce when they were finally
+> run as tests (`CrtProcessBuilder.Tests/SubProcessPlatformProbeTests`). **T-26** does not happen: the
+> copy constructor fires the setter on an unattached copy, but `MetaItem(MetaItem source)` carries
+> `ParentMetaSchema` across first, so `Clone()` is safe wherever the original was. **T-25** is real in
+> shape and wrong in consequence: the rebuild IS the platform's own idempotent refresh, the callee's
+> parameters come back as the collections' item properties, and `ProcessSchema.SynchronizeParameters`
+> runs it on every design-time read - so it cannot be the data loss described here. The refusal shipped
+> anyway, for the reason that survives: a multi-instance element carries none of the called process's
+> parameter NAMES, so every name this contract works in terms of addresses nothing on it. The full
+> account is in
+> [deferred-questions DQ-4](eng-92707-sub-process-element-deferred-questions.md). **T-1 is confirmed.**
+
 Every entry below is something that does **not** announce itself. "Silent" means the failure produces
 no exception, no notice and no log line at the moment it is caused — the damage surfaces somewhere
 else, or not at all.
@@ -30,8 +42,8 @@ else, or not at all.
 | T-22 | Verifying from the wrong clio build output | **Yes** | Old archive installed |
 | T-23 | Rebundling mid-review | No — throws | Reviewer blocked |
 | T-24 | A new `[OperationContract]` | No — pinned count | Both sides' tests |
-| **T-25** | **Any sync on an ALREADY multi-instance element flattens it** | **Yes** | **61 of 416 shipped elements** |
-| T-26 | `Clone()` / the copy constructor fires the setter detached | No — NRE | Copy-paste, `Clone` |
+| **T-25** | A sync REBUILDS a multi-instance element as two collections plus three counters. **Not data loss** — see the banner | **Yes** | **61 of 416 shipped elements** |
+| T-26 | ~~`Clone()` fires the setter detached~~ **DOES NOT REPRODUCE** — see the banner | n/a | n/a |
 | T-27 | A retarget strands a mapping row on an `IsDynamic` parameter | **Yes** | Saves green, dereferenced later |
 | T-28 | `ApplyMetaDataValue` writes `_schemaUId` directly | **Yes** | A whole-schema save does **not** sync |
 | T-29 | `odata-read` fails on `VwProcessLib`; `execute-esq` works | **Yes** | Looks like discovery is impossible |
@@ -40,7 +52,7 @@ else, or not at all.
 
 ## The six that will actually cost a day
 
-### T-25 — a sync on a multi-instance element destroys it — **Blocker**
+### T-25 — a sync rebuilds a multi-instance element — **corrected, see the banner**
 
 The self-reference / empty-UId guard does **not** protect a multi-instance element, because it is in
 the wrong method. The setter calls the explicit-interface member, which routes through

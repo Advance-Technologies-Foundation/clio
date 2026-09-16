@@ -1120,7 +1120,12 @@ public static class ManagerMap{
 			"formulatask" => EventType.FormulaTask,
 			"scripttask" => EventType.ScriptTask,
 			"webservice" => EventType.WebServiceTask,
-			"callactivity" => EventType.SubProcess,
+			// Two tokens, one element, two vocabularies. "callactivity" is the DIAGRAM data-id the canvas and
+			// the guidance emit; "subprocess" is the lowercase-collapsed BUILD token a descriptor carries
+			// (ProcessDesignConstants.ElementTypes.SubProcess), and it does not end in the "usertask" suffix the
+			// arm below matches on. Without this entry a graph containing a sub-process element the server builds
+			// correctly resolves to Unknown, and CheckUnknownTypes turns that into a hard validator Error.
+			"callactivity" or "subprocess" => EventType.SubProcess,
 			"eventsubprocessexpanded" => EventType.EventSubProcess,
 			// "sendemail", "approval" and "openeditpage" are the dedicated build/describe tokens for the Send email
 			// (EmailTemplateUserTask), Approval (ApprovalUserTask) and Open edit page (OpenEditPageUserTask)
