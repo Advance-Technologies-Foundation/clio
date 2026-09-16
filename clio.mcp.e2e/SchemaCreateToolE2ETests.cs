@@ -90,6 +90,38 @@ public sealed class SchemaCreateToolE2ETests : McpContractFixtureBase {
 		response.Error.Should().Contain("schema-name must start with a letter");
 	}
 
+	[TestCase(false)]
+	[TestCase(true)]
+	[Category("McpE2E.NoEnvironment")]
+	[Description("Returns all name validation errors in one real MCP response, including a large mis-keyed payload through clio-run.")]
+	[AllureTag(ToolName)]
+	public async Task CreateSchema_ShouldReportAllInputErrors_WhenArgumentsAreIncomplete(bool malformed) {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		var args = new Dictionary<string, object?> {
+			["environment-name"] = $"missing-{Guid.NewGuid():N}",
+			["package"] = PackageName,
+			["body"] = new string('x', 12 * 1024)
+		};
+		args[malformed ? "schema-name" : "name"] = malformed ? "1BadName" : "UsrProbe";
+		string expected = malformed ? "schema-name must start with a letter" : "schema-name is required";
+
+		// Act
+		CallToolResult result = await context.Session.CallToolRawAsync(
+			ClioRunTool.ToolName,
+			new Dictionary<string, object?> { ["command"] = ToolName, ["args"] = args },
+			context.CancellationTokenSource.Token);
+		SourceCodeSchemaCreateResponse response = EntitySchemaStructuredResultParser.Extract<SourceCodeSchemaCreateResponse>(result);
+
+		// Assert
+		result.IsError.Should().NotBeTrue(because: "input validation retains the structured failure envelope");
+		response.Success.Should().BeFalse(because: "both name arguments are invalid");
+		response.Error.Should().Contain(expected, because: "the schema-name failure must be included");
+		response.Error.Should().Contain("package-name is required", because: "the package failure must not require another call");
+		response.Error.Should().Contain(SchemaCreateTool.ValidArgumentsHint, because: "mis-keyed fields need canonical argument guidance");
+		response.Error.Should().NotContain("missing-", because: "local input validation must precede environment resolution");
+	}
+
 	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a C# source-code schema and verifies it exists in the environment.")]
@@ -123,6 +155,20 @@ public sealed class SchemaCreateToolE2ETests : McpContractFixtureBase {
 		createResponse.SchemaUId.Should().NotBeNullOrWhiteSpace();
 		createResponse.PackageName.Should().Be(PackageName);
 		createResponse.Caption.Should().Be("E2E test helper");
+
+		CallToolResult readResult = await arrangeContext.Session.CallToolAsync(
+			GetSchemaTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = schemaName,
+					["environment-name"] = environmentName
+				}
+			}, arrangeContext.CancellationTokenSource.Token);
+		GetSourceCodeSchemaResponse persisted = EntitySchemaStructuredResultParser.Extract<GetSourceCodeSchemaResponse>(readResult);
+		persisted.Success.Should().BeTrue(because: "creation must persist a schema that can be read back");
+		persisted.SchemaUId.Should().Be(createResponse.SchemaUId, because: "readback must identify the schema just created");
+		persisted.SchemaName.Should().Be(schemaName, because: "readback must preserve the requested name");
+		persisted.PackageName.Should().Be(PackageName, because: "the schema must persist in the requested package");
 	}
 
 	[Category("McpE2E.Sandbox")]
