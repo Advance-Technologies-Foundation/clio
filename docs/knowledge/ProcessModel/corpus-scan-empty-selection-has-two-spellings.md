@@ -22,6 +22,18 @@ Both of the first two rows are **empty**. A test of the shape `gv2.strip() not i
 classifies the `$type`-only spelling as *has a selection* and silently drops 885 flows — 83% of the
 empty ones. Parse the value and count keys other than `$type`.
 
+**1a. A third way to get two different right answers: say which POPULATION.** The same scan returns
+**1 061** over every schema and **1 023** when it first drops schemas whose `ManagerName` is not
+`ProcessSchemaManager`. The excluded 38 are all conditional flows inside PAGE schemas
+(`PageSchemaManager` — `CrtBase/BaseModuleEditPage` 11, `BaseGridPage` 7, `ImportSettingsPage` 7,
+`BaseModulePage` 5, and six more), and **all 38 carry a formula**, which is why the two deltas are the
+same number: 1 405 → 1 367 conditional flows and 1 061 → 1 023 formula-carrying. Neither figure is
+wrong; they answer different questions. Say which population a number is over, every time it is
+written down. (This is the same phenomenon as
+[`corpus-scan-must-index-nodes-outside-bk4`](corpus-scan-must-index-nodes-outside-bk4.md): page and
+entity schemas carry real process behaviour, so "a process schema" is not the same set as "a schema
+with a process in it".)
+
 **2. 64 `metadata.json` files under `PackageStore` are not JSON.** They open
 
 ```
@@ -47,9 +59,18 @@ platform.
 Trap 2 was in **both** scans and neither noticed, so every count of this corpus made so far is a
 floor, not a total.
 
-Practical rule: before arguing about a count, dump the **distinct shapes** of the field being counted
-and the number of files that failed to parse. Both are one line, and both would have ended this in the
-first exchange rather than the third.
+**The cheapest check runs before any scan at all: grep for a count the tree already asserts.** This
+number was already committed in this repository.
+`packages/CrtProcessBuilder/Files/src/cs/Formulas/ConditionParameterNames.cs` has said
+"932 of the 1 061 conditional flows that carry an expression" since `feae3ff`, 2026-09-06 — the same
+corpus and the same property, measured ten days before the argument, by a pass that then built a
+feature on the breakdown. `grep -rn "1 061" packages/` would have settled it in one command, and it
+would have settled it the RIGHT way round: a pre-existing measurement is a second instrument, so when
+a new scan disagrees with a shipped one, the new scan is the suspect. Neither of us ran it.
+
+Then, if there is still a disagreement: dump the **distinct shapes** of the field being counted, the
+**parse-failure count**, and the **population** the scan is over. All three are one line each, and any
+of them would have ended this in the first exchange rather than the fourth.
 
 Related: [`corpus-scan-must-index-nodes-outside-bk4`](corpus-scan-must-index-nodes-outside-bk4.md) —
 the other way this same scan answers plausibly and wrong, and
