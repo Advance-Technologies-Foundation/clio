@@ -357,7 +357,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`create-lookup`](docs/commands/create-lookup.md) - Create a lookup entity schema in a remote Creatio package
 <a id="create-schema"></a>
 <a id="schema-create"></a>
-- [`create-schema`](docs/commands/create-schema.md) - Create a new C# source-code schema on a remote Creatio environment, `schema-create`
+- [`create-schema`](docs/commands/create-schema.md) - Create a new C# source-code schema on a remote Creatio environment, optionally with `--body` or `--body-file`, `schema-create`
 <a id="create-sql-schema"></a>
 <a id="sql-schema-create"></a>
 - [`create-sql-schema`](docs/commands/create-sql-schema.md) - Create a new SQL script schema on a remote Creatio environment, `sql-schema-create`

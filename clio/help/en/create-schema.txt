@@ -19,6 +19,10 @@ DESCRIPTION
     or underscores. The name must be unique within the environment.
 
 OPTIONS
+    --body                             Optional initial C# source; must not be empty if supplied
+
+    --body-file                        UTF-8 source file; takes precedence over --body
+
     --schema-name                      New schema name (required)
 
     --package-name                     Target package name that will own the new schema (required)
@@ -42,6 +46,10 @@ OPTIONS
     --Maintainer             -m       Maintainer name
 
 EXAMPLES
+    clio create-schema --schema-name UsrMyHelper --package-name Custom --body-file ./UsrMyHelper.cs -e dev
+        Create with source loaded from a file. Omit both body options for the blank template.
+        Missing, unreadable, or empty files fail before schema creation.
+
     clio create-schema --schema-name UsrMyHelper --package-name Custom -e dev
         Create UsrMyHelper in the Custom package on the dev environment
 

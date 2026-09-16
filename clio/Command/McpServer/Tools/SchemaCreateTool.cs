@@ -24,13 +24,15 @@ public sealed class SchemaCreateTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Create a new C# source-code schema on a remote Creatio environment. The schema is saved directly to the server — no local workspace files are created. Prefer `environment-name`; keep direct connection args only for bootstrap flows.")]
+	[Description("Create a new C# source-code schema on a remote Creatio environment. Optional body or body-file supplies the initial C# source; body-file takes precedence and is read on the MCP server host. Omit both to keep the platform's blank template. The schema is saved directly to the server — no local workspace files are created. Prefer `environment-name`; keep direct connection args only for bootstrap flows.")]
 	public SourceCodeSchemaCreateResponse CreateSchema(
-		[Description("Parameters: schema-name, package-name (required); caption, description (optional); environment-name preferred; uri/login/password emergency fallback only.")]
+		[Description("Parameters: schema-name, package-name (required); body, body-file, caption, description (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] SchemaCreateArgs args) {
 		SourceCodeSchemaCreateOptions options = new() {
 			SchemaName = args.SchemaName,
 			PackageName = args.PackageName,
+			Body = args.Body,
+			BodyFile = args.BodyFile,
 			Caption = args.Caption,
 			Description = args.Description,
 			Environment = args.EnvironmentName,
@@ -73,4 +75,14 @@ public sealed record SchemaCreateArgs(
 	[property: Description("Target package name that will own the new schema.")]
 	[property: Required]
 	string PackageName
-) : SchemaCreateBaseArgs;
+) : SchemaCreateBaseArgs {
+	/// <summary>Gets the optional initial C# source body.</summary>
+	[JsonPropertyName("body")]
+	[Description("Optional initial C# source. Must not be empty when supplied; omit both body inputs to keep the platform template.")]
+	public string? Body { get; init; }
+
+	/// <summary>Gets a source-file path on the MCP server host; its content takes precedence over Body.</summary>
+	[JsonPropertyName("body-file")]
+	[Description("Optional absolute path to a UTF-8 C# file on the MCP server host. Takes precedence over body. Missing, unreadable, or empty files fail before schema creation.")]
+	public string? BodyFile { get; init; }
+}
