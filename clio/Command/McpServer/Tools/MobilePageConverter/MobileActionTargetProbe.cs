@@ -88,25 +88,6 @@ public static class MobileActionTargetProbe {
 	private const int TextDataValueType = 1;
 
 	/// <summary>
-	/// Ceiling on the per-object add-on reads (one <c>GetSchema</c> round trip each), so a page firing
-	/// create/update actions at many objects cannot turn one guide call into an unbounded fan of round trips.
-	/// Overflowing it fails OPEN: every object past the ceiling resolves to
-	/// <see cref="ActionTargetState.Unknown"/> and <see cref="MobileActionTargetProbeResult.Note"/> says so,
-	/// because "not asked" must not read as "asked, and the answer was no".
-	/// </summary>
-	private const int MaxEntityAddonProbes = 8;
-
-	/// <summary>
-	/// Ceiling on the per-object candidate-page reads (one <c>RelatedPage</c> add-on <c>GetSchema</c> plus one
-	/// <c>SysSchema</c>-by-UId read, per verified-missing object) — counted SEPARATELY from
-	/// <see cref="MaxEntityAddonProbes"/> so a page whose object reads are all spent on classification cannot
-	/// silently also decide how many candidates get resolved. Overflowing it
-	/// fails OPEN, same as the classification ceiling: <see cref="UnresolvedTargetRequest.ResolvedCandidateSchemaName"/>
-	/// stays null past it, never a guess.
-	/// </summary>
-	private const int MaxCandidatePageProbes = 8;
-
-	/// <summary>
 	/// Row headroom per requested name: a schema appears as a base row plus one row per replacing layer, and
 	/// there is no bound on how many layers an object carries. The read ORDERS base rows first
 	/// (<see cref="ClassicEntitySchemaQuery.ColumnOrderedAsc"/>), so this cap can no longer cost the base row
@@ -195,8 +176,8 @@ public static class MobileActionTargetProbe {
 				commandResolver, options,
 				commandResolver.Resolve<IApplicationClient>(options),
 				commandResolver.Resolve<IServiceUrlBuilder>(options),
-				// Resolved ONCE rather than per object: the add-on read runs up to MaxEntityAddonProbes times,
-				// and re-resolving inside that loop buys nothing but container work.
+				// Resolved ONCE rather than per object: the add-on read runs once per distinct object, and
+				// re-resolving inside that loop buys nothing but container work.
 				commandResolver.Resolve<IAddonSchemaDesignerClient>(options));
 
 			EntityTierOutcome outcome =
@@ -464,10 +445,6 @@ public static class MobileActionTargetProbe {
 		var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		bool truncated = ReadEntitySchemaRows(context, names, uIdByName, seenNames);
 
-		int budget = MaxEntityAddonProbes;
-		bool budgetExhausted = false;
-		int candidateBudget = MaxCandidatePageProbes;
-		bool candidateBudgetExhausted = false;
 		foreach (string name in names) {
 			if (!uIdByName.TryGetValue(name, out string entityUId)) {
 				// No rows at all: the object does not exist, so the action is dead — unless the read may have
@@ -478,38 +455,14 @@ public static class MobileActionTargetProbe {
 					seenNames.Contains(name) || truncated ? ActionTargetState.Unknown : ActionTargetState.Missing);
 				continue;
 			}
-			if (budget-- <= 0) {
-				// Fail open AND say so: an unasked target must not look like one the environment answered "no" to.
-				budgetExhausted = true;
-				Record(into, KindEntityDefaultMobilePage, name, ActionTargetState.Unknown);
-				continue;
-			}
 			ActionTargetState state = ClassifyEntityDefaultMobilePage(context, entityUId, packageUId);
-			// Candidate resolution runs ONLY for a verified-missing verdict: Unknown/Resolved need no candidate,
-			// and attempting one on Unknown would spend the separate budget on a target that may not even be
-			// missing.
-			string candidate = null;
-			if (state == ActionTargetState.Missing) {
-				if (candidateBudget-- > 0) {
-					candidate = ResolveDefaultWebPage(context, entityUId, packageUId);
-				} else {
-					candidateBudgetExhausted = true;
-				}
-			}
+			// Candidate resolution runs ONLY for a verified-missing verdict: Unknown/Resolved need no candidate.
+			string candidate = state == ActionTargetState.Missing
+				? ResolveDefaultWebPage(context, entityUId, packageUId)
+				: null;
 			RecordEntityResolution(into, name, state, candidate);
 		}
-		// Answered either way: the reads that ran did succeed. The note is what says some were never asked —
-		// one sentence per ceiling, since a page can hit either independently of the other.
-		List<string> unaskedNotes = [];
-		if (budgetExhausted) {
-			unaskedNotes.Add($"Only the first {MaxEntityAddonProbes} object targets were checked; the rest are "
-				+ "reported as unverified. Check them manually.");
-		}
-		if (candidateBudgetExhausted) {
-			unaskedNotes.Add($"Only the first {MaxCandidatePageProbes} missing object target(s) were checked for a "
-				+ "candidate web page to convert; the rest report no candidate. Check them manually.");
-		}
-		return new EntityTierOutcome(true, unaskedNotes.Count > 0 ? string.Join(" ", unaskedNotes) : null);
+		return new EntityTierOutcome(true, null);
 	}
 
 	/// <summary>

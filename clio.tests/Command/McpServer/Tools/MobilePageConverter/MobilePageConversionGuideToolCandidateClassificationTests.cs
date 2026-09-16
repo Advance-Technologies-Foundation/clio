@@ -307,9 +307,9 @@ public sealed class MobilePageConversionGuideToolCandidateClassificationTests {
 	}
 
 	[Test]
-	[Description("Past the classification read ceiling the remaining DISTINCT candidates are left unclassified rather than triggering an unbounded fan of page reads.")]
-	public void ClassifyMissingTargetCandidates_MoreCandidatesThanTheCeiling_LeavesTheRestUnclassified() {
-		// Arrange — nine distinct web-page candidates against a ceiling of eight.
+	[Description("There is no ceiling on the classification reads: every distinct candidate the guide names gets classified, however many there are.")]
+	public void ClassifyMissingTargetCandidates_ManyCandidates_ClassifiesEveryOne() {
+		// Arrange — nine distinct web-page candidates.
 		List<MissingTargetPage> candidates = [];
 		for (int i = 0; i < 9; i++) {
 			candidates.Add(new MissingTargetPage { Target = $"Page{i}", TargetKind = MobileActionTargetProbe.KindWebPage });
@@ -325,9 +325,7 @@ public sealed class MobilePageConversionGuideToolCandidateClassificationTests {
 		_sut.ClassifyMissingTargetCandidates(guide, Args());
 
 		// Assert
-		candidates.FindAll(c => c.ResolvedSourceType is not null).Should().HaveCount(8,
-			because: "the ceiling bounds the number of page reads issued for one guide call");
-		candidates.FindAll(c => c.ResolvedSourceType is null).Should().HaveCount(1,
-			because: "the candidate past the ceiling must stay unclassified rather than guessed");
+		candidates.FindAll(c => c.ResolvedSourceType is not null).Should().HaveCount(9,
+			because: "there is no ceiling that would leave a distinct candidate unread");
 	}
 }

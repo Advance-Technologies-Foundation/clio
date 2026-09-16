@@ -791,9 +791,9 @@ public sealed class MobileActionTargetProbeTests {
 	}
 
 	[Test]
-	[Description("Past the per-object read ceiling the remaining targets are unknown AND a note says they were never asked, so the caller can tell 'not asked' from 'asked, and the answer was no'.")]
-	public void Probe_MoreObjectTargetsThanTheCeiling_ReportsThemUnaskedInTheNote() {
-		// Arrange — nine objects, all present as base rows, against a ceiling of eight.
+	[Description("There is no ceiling on the per-object reads: every distinct object target on the page is checked, however many there are.")]
+	public void Probe_ManyObjectTargets_ChecksEveryOne() {
+		// Arrange — nine objects, all present as base rows.
 		string[] names = [.. Enumerable.Range(0, 9).Select(i => $"Object{i}")];
 		EnvironmentStub environment = Environment(
 			Route(Rows(), Rows([.. names.Select(n => EntityRow(n))])),
@@ -804,11 +804,12 @@ public sealed class MobileActionTargetProbeTests {
 
 		// Assert
 		result.ProbeOk.Should().BeTrue(because: "the reads that ran did succeed");
-		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, names[^1])
-			.Should().Be(ActionTargetState.Unknown,
-				because: "an unasked target must fail open, never present as a verified absence");
-		result.Note.Should().Contain("were checked",
-			because: "silence would leave the last target indistinguishable from one the environment answered for");
+		foreach (string name in names) {
+			StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, name)
+				.Should().Be(ActionTargetState.Resolved,
+					because: $"'{name}' has a default mobile page and there is no ceiling that would leave it unchecked");
+		}
+		result.Note.Should().BeNullOrWhiteSpace(because: "every target was actually asked, so there is nothing to caveat");
 	}
 
 	[Test]
@@ -823,8 +824,8 @@ public sealed class MobileActionTargetProbeTests {
 		Probe(environment, CreateRecordViewConfig("First", "Second"));
 
 		// Assert — NSubstitute's Received() carries no because overload, so the reason is stated here:
-		// the add-on read runs once per object up to the ceiling, and re-resolving the client inside that
-		// loop would turn a read budget into a container-resolution budget as well.
+		// the add-on read runs once per object, and re-resolving the client inside that loop would cost
+		// container work for nothing.
 		environment.Resolver.Received(1).Resolve<IAddonSchemaDesignerClient>(Arg.Any<EnvironmentOptions>());
 	}
 

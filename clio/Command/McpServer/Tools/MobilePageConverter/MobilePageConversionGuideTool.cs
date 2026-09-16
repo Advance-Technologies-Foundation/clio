@@ -402,22 +402,11 @@ public sealed class MobilePageConversionGuideTool {
 	}
 
 	/// <summary>
-	/// Ceiling on the per-guide-call candidate-classification reads (one page read per DISTINCT
-	/// missing-target candidate). Counted separately from every other per-object budget in this tool (e.g.
-	/// <c>MobileActionTargetProbe.MaxCandidatePageProbes</c>) — a page whose action-target probe already spent
-	/// its own ceiling resolving candidate NAMES must not also decide how many of those names get CLASSIFIED.
-	/// Overflowing it fails open: the remaining candidates keep <c>resolvedSourceType</c>/<c>recommendedAction</c>
-	/// null rather than a guess.
-	/// </summary>
-	private const int MaxCandidateClassificationReads = 8;
-
-	/// <summary>
 	/// Classifies every distinct missing-target candidate the guide names — <see cref="MissingTargetPage.Target"/>
 	/// (web-page kind, the aggregated queue) and <see cref="UnresolvedTargetRequest.ResolvedCandidateSchemaName"/>
 	/// (entity kind, the add-on read) alike — mutating their settable <c>ResolvedSourceType</c> /
-	/// <c>RecommendedAction</c> in place. One page read per DISTINCT candidate name (case-insensitive), bounded
-	/// by <see cref="MaxCandidateClassificationReads"/> and never throwing: a candidate past the ceiling, or one
-	/// whose read failed, is left unclassified (null/null) rather than guessed.
+	/// <c>RecommendedAction</c> in place. One page read per DISTINCT candidate name (case-insensitive), never
+	/// throwing: a candidate whose read failed is left unclassified (null/null) rather than guessed.
 	/// </summary>
 	internal void ClassifyMissingTargetCandidates(MobilePageConversionGuide guide, MobilePageConversionGuideArgs args) {
 		RequestConversionInfo conversions = guide?.RequestConversions;
@@ -443,11 +432,7 @@ public sealed class MobilePageConversionGuideTool {
 
 		var classifications =
 			new Dictionary<string, (string SourceType, string RecommendedAction)>(StringComparer.OrdinalIgnoreCase);
-		int budget = MaxCandidateClassificationReads;
 		foreach (string name in names) {
-			if (budget-- <= 0) {
-				break; // Fail open: the rest stay unclassified rather than an unbounded fan of page reads.
-			}
 			classifications[name] = ClassifyCandidateSourceType(name, args);
 		}
 
