@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+
 namespace Clio.Common;
 
 /// <summary>
@@ -79,6 +82,55 @@ public static class BundledPackages {
 	public const string ProcessBuilderInstallHint =
 		"Run 'clio install-process-builder -e <environment>' (or call the install-process-builder "
 		+ "MCP tool) to install or update " + ProcessBuilderPackageName + ".";
+
+	/// <summary>
+	/// Package name of the bundled dashboards-migrator package (the "Dashboards migrator" app), which
+	/// migrates 7.x dashboards to Freedom UI and serves <c>DashboardsMigratorPingService</c> as its probe.
+	/// </summary>
+	/// <remarks>
+	/// Same byte-for-byte contract with the archive's <c>descriptor.json</c> as
+	/// <see cref="ProcessBuilderPackageName"/>. Unlike the process builder this package ships PREBUILT, like
+	/// cliogate: the archive is the package's SDLC build and carries its assembly for both runtimes, so the
+	/// target loads it instead of compiling it. It still goes through the shared install command, because the
+	/// downgrade refusals, the restart wait and the Ping outcome check apply to it unchanged.
+	/// </remarks>
+	public const string DashboardsMigratorPackageName = "CrtDashboardsMigratorApp";
+
+	/// <summary>
+	/// File name of the bundled dashboards-migrator archive, inside the folder of the same name.
+	/// </summary>
+	public const string DashboardsMigratorArchiveFileName = DashboardsMigratorPackageName + ".gz";
+
+	#endregion
+
+	#region Fields: Private
+
+	// Package name -> the ungated Ping route its install is verified through. The ONE place this pairing
+	// lives: the install command quotes it to the operator and the outcome verifier probes it, so a route
+	// stated twice could send someone to check a URL nobody called.
+	private static readonly IReadOnlyDictionary<string, ServiceUrlBuilder.KnownRoute> PingRoutes =
+		new Dictionary<string, ServiceUrlBuilder.KnownRoute>(StringComparer.OrdinalIgnoreCase) {
+			[ProcessBuilderPackageName] = ServiceUrlBuilder.KnownRoute.ProcessBuilderPing,
+			[DashboardsMigratorPackageName] = ServiceUrlBuilder.KnownRoute.DashboardsMigratorPing
+		};
+
+	#endregion
+
+	#region Methods: Public
+
+	/// <summary>
+	/// Returns the Ping route of a bundled package.
+	/// </summary>
+	/// <param name="packageName">A package name from this class.</param>
+	/// <exception cref="ArgumentException">The package is not bundled — a programming error, not a verdict.</exception>
+	public static ServiceUrlBuilder.KnownRoute PingRouteOf(string packageName) {
+		if (packageName is not null && PingRoutes.TryGetValue(packageName, out ServiceUrlBuilder.KnownRoute route)) {
+			return route;
+		}
+		throw new ArgumentException(
+			$"No Ping route is known for package '{packageName}'; only bundled packages can be verified.",
+			nameof(packageName));
+	}
 
 	#endregion
 
