@@ -74,7 +74,7 @@ public class BundledProcessBuilderPackageTests {
 	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1</c> at
 	/// <see cref="ExpectedArchiveVersion"/> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-98559-allow-several-start-events</c>, tag <c>crtprocessbuilder-1.6.2.20</c>), at the commit
+	/// <c>feature/ENG-98559-allow-several-start-events</c>, tag <c>crtprocessbuilder-1.6.2.21</c>), at the commit
 	/// recorded mechanically in
 	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
 	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
@@ -191,7 +191,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"577E4B63E2251463513C5C31BC63A752461A886A30A388517153BDB387C993D1";
+		"2B069DB307F393149C363326C0EB2EC54D7A6A4A6620A44B5013E911EEC7FEC2";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -219,7 +219,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.2.20";
+	private const string ExpectedArchiveVersion = "1.6.2.21";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -231,7 +231,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "7941251d4f8976835236cd3f45efc760f6bf478f";
+	private const string ExpectedProducingCommit = "9834c570fdbee16ba615b8240efd5af6128b317b";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -257,7 +257,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789553072000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789553829000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
