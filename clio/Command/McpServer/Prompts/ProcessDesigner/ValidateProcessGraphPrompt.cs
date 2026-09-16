@@ -27,7 +27,8 @@ public static class ValidateProcessGraphPrompt {
 		clio makes no LLM call — you own the intent->BPMN translation. Follow this flow:
 		1. Call `get-guidance` with name `process-modeling` to load the element catalog, the connection
 		   rules (R1-R20), parameters/mapping/formulas, and the supported slice.
-		2. Translate the goal into a graph: one start event, the activities, the sequence/conditional
+		2. Translate the goal into a graph: a start event (several are allowed — one per trigger the
+		   process must react to), the activities, the sequence/conditional
 		   flows, and an end event. Use the catalog `data-id` strings for node types
 		   (e.g. startEvent, readDataUserTask, exclusiveGateway, endEvent).
 		3. Call `validate-process-graph` with your planned `nodes` and `edges`. Resolve every
