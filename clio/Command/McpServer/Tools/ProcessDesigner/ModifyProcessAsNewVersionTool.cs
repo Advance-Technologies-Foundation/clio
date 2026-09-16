@@ -94,28 +94,10 @@ public class ModifyProcessAsNewVersionTool(
 			return CommandExecutionResult.FromValidationError(NullArgsError);
 		}
 
-		// ENG-98566. This tool is LONG-TAIL - absent from McpCoreToolProfile - so McpToolErrorFilter's
-		// unknown-key classifier never runs on it in ANY payload shape: TryRefuseCallArgumentsCore bails at
-		// TryGetToolMethod because MatchedPrimitive is null for a tool that is not advertised. Even a
-		// RESIDENT tool is only classified in the FLAT shape - an already-wrapped {"args":{...}} call is
-		// passed through untouched. So the overflow bag plus this check is the ONLY thing standing between
-		// a mis-keyed call and a plausible success. Do not delete it because the normalizer exists.
-		string argumentError = McpToolArgumentSupport.BuildLegacyAliasError(
-			args.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".", ValidArgsHint);
-		if (!string.IsNullOrWhiteSpace(argumentError)) {
-			return CommandExecutionResult.FromValidationError(argumentError);
-		}
-
-		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
-			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
-		}
-
-		bool hasName = !string.IsNullOrWhiteSpace(args.ProcessName);
-		bool hasUid = !string.IsNullOrWhiteSpace(args.ProcessUid);
-		if (hasName == hasUid) {
-			return CommandExecutionResult.FromError(hasName
-				? "Provide only one of process-name or process-uid, not both."
-				: "one of process-name or process-uid is required.");
+		CommandExecutionResult targetError = ProcessTargetArguments.Validate(
+			args.ExtensionData, ValidArgsHint, args.EnvironmentName, args.ProcessName, args.ProcessUid);
+		if (targetError is not null) {
+			return targetError;
 		}
 
 		ModifyProcessAsNewVersionOptions options = new() {
