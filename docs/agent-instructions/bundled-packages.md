@@ -356,7 +356,12 @@ one and an install run from them ships it. It names them all at the end.
 What it does beyond running the steps below:
 
 - refreshes all four pins in the same run, so "the pins are stale" stops being a
-  reachable state;
+  reachable state — **with one deliberate exception: under `-SkipTests` the SHA pin is left alone**
+  (`rebundle-process-builder.ps1:623-634`, and the run says so in yellow). Refreshing it is what makes a
+  rebundle reviewable by diff, and refreshing it after a run that skipped the package's own gate tests
+  would leave nothing red anywhere — so the stale pin IS the signal. Set it by hand from
+  `shasum -a 256 clio/CrtProcessBuilder/CrtProcessBuilder.gz` (uppercase) once you have run those tests
+  yourself, and say in the commit message what you ran;
 - reads the archive back and checks the inventory — exactly two DLLs and both from `Files/Libs`, the compile
   marker present, the package's own assembly absent, and nothing outside the allowed top-level set (in
   particular no `SqlScripts/` or `Data/`, which the target EXECUTES at install time). The guard fixture now
@@ -369,11 +374,28 @@ What it does beyond running the steps below:
 It deliberately does NOT commit. Step 8 — committing both repositories and naming the producing commit
 in the clio message — is a judgement call and stays with you.
 
+### On macOS
+
+Three things the script needs that a Mac does not have by default. None is a reason to fall back to the
+manual steps — all three were settled on 2026-09-16 and the script then ran end to end.
+
+- **`pwsh` installs as a .NET global tool**: `dotnet tool install --global --version 7.4.6 PowerShell`
+  (the unpinned install fails with *"Settings file 'DotnetToolSettings.xml' was not found"*). So "a host
+  without PowerShell" is rarely the real situation on a Mac.
+- **Point PATH at an SDK that reads `.slnx`** (9.0.200+) before invoking it, or step 1 dies on
+  `MSBuild4068: The element <Solution> is unrecognized` while building the package solution.
+- **Step 1 builds and tests the PACKAGE**, and on a Mac that step needs the package repo's
+  `.application/<tfm>/core-bin` populated — see that repository's `CLAUDE.md`, which also records that the
+  suite runs under `-c dev-n8` (net8.0) and not under `-c dev-nf` (net472 → Mono → 1577 of 1729 fixtures
+  die in SetUp). If you run the suite yourself in that configuration, `-SkipTests` here is honest; say so
+  in the commit message along with what you ran instead.
+
 ### Without the script
 
-The script requires `pwsh`. The steps below are what it runs, and they are the fallback on a host without
-PowerShell — the same arrangement `AGENTS.md` uses for `cliogate`'s `build.ps1`. Read them anyway: they
-carry the REASONS, and a script that fails is only useful to someone who knows what each step protects.
+The script requires `pwsh` (see above — on macOS it is one `dotnet tool install`). The steps below are
+what it runs, and they are the fallback on a host without PowerShell — the same arrangement `AGENTS.md`
+uses for `cliogate`'s `build.ps1`. Read them anyway: they carry the REASONS, and a script that fails is
+only useful to someone who knows what each step protects.
 
 > **`X.Y.Z.W` means four plain numbers — no `-rc`, no `-dev`, no suffix of any kind.** The script cannot emit
 > one (`[version]::TryParse` rejects it); by hand you can, so the rule is enforced twice more downstream:
