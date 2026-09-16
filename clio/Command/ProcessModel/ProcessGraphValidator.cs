@@ -177,15 +177,19 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		return (outgoing, incoming);
 	}
 
-	// R3 — exactly one start event.
+	// R3 — at least one start event.
+	//
+	// The COUNT is deliberately not capped (ENG-98559). This rule used to report every start after the first as
+	// an error, and CrtProcessBuilder's build-path guard refused such a graph for parity with it — so between
+	// them they refused a shape the platform ships: PublishDraftToArticle (CrtKnowledgeManagementVersions)
+	// carries two start signals, the designer draws them, and a two-start process assembled through
+	// modify-business-process runs on both signals. What each start must still satisfy is unchanged and lives in
+	// R1 (no incoming flow, exactly one outgoing) and in the reachability rules, which are per-node and therefore
+	// hold however many starts a graph has.
 	private static void CheckStartCount(IReadOnlyList<ProcessGraphNode> startNodes, List<ProcessGraphFinding> findings) {
 		if (startNodes.Count == 0) {
 			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R3", "Process has no start event."));
-			return;
 		}
-		findings.AddRange(startNodes.Skip(1).Select(extraStart => new ProcessGraphFinding(
-			ProcessGraphSeverity.Error, "R3",
-			$"Process has more than one start event ('{extraStart.Name}').", extraStart.Name)));
 	}
 
 	// R1 — start: no incoming, exactly one outgoing. R2 — end: no outgoing, at least one incoming.

@@ -178,14 +178,14 @@ public sealed class ProcessGraphValidatorTests {
 
 		// Assert
 		result.Findings.Should().Contain(f => f.RuleId == "R3" && f.Severity == ProcessGraphSeverity.Error,
-			because: "a process must have exactly one start event (R3)");
+			because: "a process needs an entry point — the count is uncapped, but zero starts is still an error (R3)");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("R3: a graph with more than one start event is an error.")]
-	public void Validate_ShouldReturnR3Error_WhenMoreThanOneStartEvent() {
-		// Arrange
+	[Description("R3: a graph with more than one start event is accepted (ENG-98559) — the shape the platform ships and the designer draws.")]
+	public void Validate_ShouldNotReturnR3Error_WhenMoreThanOneStartEvent() {
+		// Arrange — two starts, each with its own single outgoing flow, both reaching the same activity
 		List<ProcessGraphNode> nodes =
 			[Node("s1", "startEvent"), Node("s2", "startEvent"), Node("r", "readDataUserTask"), Node("e", "endEvent")];
 		List<ProcessGraphEdge> edges = [Seq("s1", "r"), Seq("s2", "r"), Seq("r", "e")];
@@ -194,8 +194,10 @@ public sealed class ProcessGraphValidatorTests {
 		ProcessGraphValidationResult result = Validate(nodes, edges);
 
 		// Assert
-		result.Findings.Should().Contain(f => f.RuleId == "R3" && f.Severity == ProcessGraphSeverity.Error,
-			because: "a process must have exactly one top-level start event (R3)");
+		result.Findings.Should().NotContain(f => f.RuleId == "R3",
+			because: "the start COUNT is no longer capped: PublishDraftToArticle ships with two start signals (ENG-98559)");
+		result.HasErrors.Should().BeFalse(
+			because: "nothing else about this graph is invalid — each start has one outgoing flow and every node lies on a start→end path");
 	}
 
 	[Test]
