@@ -25,6 +25,22 @@ public sealed class ValidateProcessGraphTool {
 	internal const string ValidArgsHint = "Valid: environment-name, nodes, edges.";
 
 	/// <summary>
+	/// Refusal for a call whose whole argument object is absent (ENG-98566, Sonar S2259).
+	/// </summary>
+	/// <remarks>
+	/// The guard below reads <c>args.ExtensionData</c> and every check after it reads a real field, so
+	/// exactly one place may decide what a null <c>args</c> means - and it is this one. An <c>args?.</c>
+	/// on the first line followed by an unconditional dereference on the next READS as null-safe while
+	/// only moving the NullReferenceException three lines down. In the other seven tools that deref
+	/// precedes any try and the exception escapes as a raw transport fault; HERE it sits inside the try
+	/// below, so the catch-all turns it into "validate-process-graph failed: Object reference not set to
+	/// an instance of an object" - a message that blames the caller's graph JSON for a binder outcome,
+	/// which is worse than a crash because it reads like a diagnosis. Hard to reach behind [Required] and
+	/// the SDK missing-parameter error, but "hard to reach" is not the same as handled.
+	/// </remarks>
+	internal const string NullArgsError = "args is required: the call carried no argument object. " + ValidArgsHint;
+
+	/// <summary>
 	/// Refusal for a call that names no graph. Says WHY there is nothing to validate and points at the tool
 	/// that does read a process, because the argument an agent actually reached for was <c>process-name</c>.
 	/// </summary>
@@ -69,6 +85,10 @@ public sealed class ValidateProcessGraphTool {
 		+ "Nodes are given by data-id (e.g. startEvent/readDataUserTask/exclusiveGateway/endEvent; edges by flow-kind sequence|conditional|default - an omitted flow-kind is a plain sequence flow, an UNKNOWN one is refused rather than treated as plain; and results[], the activity-result CAPTIONS deciding a conditional branch when its predicate is a selection rather than text - pass it and R13 stops asking for a condition that branch neither needs nor can use) and are checked against rules R1-R20 (R18: a conditional flow may have at most ONE outgoing sibling that carries no condition - the platform drops one of them and runs the other beside the branch the condition chose). The graph is validated in-memory, but the tool requires the 'CrtProcessBuilder' package to be installed on the target environment (install it with install-process-builder) (named by environment-name). Returns structured findings (error/warning + ruleId). nodes is REQUIRED - a call supplying none is REFUSED, not validated as an empty graph, and this tool never reads a process from the environment (use describe-business-process for that). Call this BEFORE driving the designer. IMPORTANT: a passing graph is NOT necessarily buildable — the rules cover the full BPMN catalog (gateways, conditional/default flows, timers, sub-processes), while create-business-process / modify-business-process build only startEvent/signalStart/endEvent/userTask/sendEmail/approval/changeAccessRights elements plus exclusiveGateway and parallelGateway, and all three flow kinds declaratively (flows[].kind with flows[].condition). Still NOT buildable: inclusiveGateway, eventBasedGateway, timer/message starts, intermediate events, sub-processes, and formula and script tasks - so the fork narrows rather than closes. The activity-result dialect IS buildable now (flows[].results / setFlowResults), and a formula on such a connector is REFUSED by the build, so do not plan one; check the buildable slice in get-guidance name=process-modeling before promising a build; get-guidance name=process-formulas for an `expression` mapping source or a conditional-flow condition.")]
 	public ValidateProcessGraphResponse Validate([Required] ValidateProcessGraphArgs args) {
 		try {
+			if (args is null) {
+				return new ValidateProcessGraphResponse { Success = false, Error = NullArgsError };
+			}
+
 			// ENG-98566. Two exclusions stack here, and naming only the second one misleads the next reader.
 			// FIRST: this tool is LONG-TAIL - absent from McpCoreToolProfile - so McpToolErrorFilter's
 			// unknown-key classifier never runs on it in ANY payload shape (TryRefuseCallArgumentsCore bails
@@ -81,7 +101,7 @@ public sealed class ValidateProcessGraphTool {
 			// mcp-arg-records-swallow-unbound-fields.md prescribes; the bag alone is the failure mode.
 			// Checked BEFORE the package requirement so a caller mistake is answered without touching Creatio.
 			string argumentError = McpToolArgumentSupport.BuildLegacyAliasError(
-				args?.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".", ValidArgsHint);
+				args.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".", ValidArgsHint);
 			if (!string.IsNullOrWhiteSpace(argumentError)) {
 				return new ValidateProcessGraphResponse { Success = false, Error = argumentError };
 			}
@@ -89,7 +109,7 @@ public sealed class ValidateProcessGraphTool {
 			// An empty node set is a MISSING ARGUMENT, not a graph that fails R3. Running the rules over it
 			// returned "Process has no start event." - a real rule id and a plausible message about a process
 			// the tool never read, which is worse than silence because it reads as authoritative.
-			if (args?.Nodes is null || args.Nodes.Count == 0) {
+			if (args.Nodes is null || args.Nodes.Count == 0) {
 				return new ValidateProcessGraphResponse { Success = false, Error = NoGraphSuppliedError };
 			}
 

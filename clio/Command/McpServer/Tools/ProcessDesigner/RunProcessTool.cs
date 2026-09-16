@@ -27,6 +27,19 @@ public sealed class RunProcessTool(
 	/// <summary>The canonical field list echoed back when an unknown argument key is refused (ENG-98566).</summary>
 	internal const string ValidArgsHint = "Valid: environment-name, process-name, parameters, result-parameters, timeout, uri, login, password.";
 
+	/// <summary>
+	/// Refusal for a call whose whole argument object is absent (ENG-98566, Sonar S2259).
+	/// </summary>
+	/// <remarks>
+	/// The guard below reads <c>args.ExtensionData</c> and every check after it reads a real field, so
+	/// exactly one place may decide what a null <c>args</c> means - and it is this one. An <c>args?.</c>
+	/// on the first line followed by an unconditional dereference on the next READS as null-safe while
+	/// only moving the NullReferenceException three lines down, where it escapes as a raw transport
+	/// fault instead of an answer. Hard to reach behind [Required] and the SDK missing-parameter error,
+	/// but "hard to reach" is not the same as handled.
+	/// </remarks>
+	internal const string NullArgsError = "args is required: the call carried no argument object. " + ValidArgsHint;
+
 	internal const string StillRunningStatus = "still-running";
 
 	// Test seam; null in production, where the default deadline applies.
@@ -72,6 +85,10 @@ public sealed class RunProcessTool(
 		global::ModelContextProtocol.Server.McpServer server = null,
 		RequestContext<CallToolRequestParams> requestContext = null,
 		CancellationToken cancellationToken = default) {
+		if (args is null) {
+			return new RunProcessResponse { Error = NullArgsError };
+		}
+
 		// ENG-98566. This tool is LONG-TAIL - absent from McpCoreToolProfile - so McpToolErrorFilter's
 		// unknown-key classifier never runs on it in ANY payload shape: TryRefuseCallArgumentsCore bails at
 		// TryGetToolMethod because MatchedPrimitive is null for a tool that is not advertised. Even a
@@ -79,7 +96,7 @@ public sealed class RunProcessTool(
 		// passed through untouched. So the overflow bag plus this check is the ONLY thing standing between
 		// a mis-keyed call and a plausible success. Do not delete it because the normalizer exists.
 		string argumentError = McpToolArgumentSupport.BuildLegacyAliasError(
-			args?.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".", ValidArgsHint);
+			args.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".", ValidArgsHint);
 		if (!string.IsNullOrWhiteSpace(argumentError)) {
 			return new RunProcessResponse { Error = argumentError };
 		}

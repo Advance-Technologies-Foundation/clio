@@ -912,4 +912,25 @@ public sealed class ValidateProcessGraphToolTests {
 		response.Findings.Should().Contain(f => f.RuleId == "R3" && f.Severity == "error",
 			because: "R3 keeps firing for the shape it was written for - a real graph that lacks a start");
 	}
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-98566 / Sonar S2259: a call carrying no argument object is refused with a named reason "
+		+ "rather than reaching a field read. Here the dereference sat inside the try, so it degraded into "
+		+ "'validate-process-graph failed: Object reference not set...' - a message that blames the caller's "
+		+ "graph JSON for a binder outcome.")]
+	public void Validate_ShouldRefuseANullArgumentObject() {
+		// Arrange
+		// Nothing to arrange beyond SetUp: the point is the ABSENCE of an argument object.
+
+		// Act
+		ValidateProcessGraphResponse response = _tool.Validate(null);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "there are no arguments, so nothing was validated");
+		response.Error.Should().Contain("args is required",
+			because: "the refusal must name what is missing instead of surfacing a null-reference message");
+		response.Findings.Should().BeNull(because: "no graph was read, so no finding can be about one");
+		_commandResolver.ReceivedCalls().Should().BeEmpty(
+			because: "a call with no arguments cannot have earned an environment resolution");
+	}
 }

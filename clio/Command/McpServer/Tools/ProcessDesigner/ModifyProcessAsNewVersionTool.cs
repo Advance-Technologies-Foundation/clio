@@ -23,6 +23,19 @@ public class ModifyProcessAsNewVersionTool(
 	internal const string ValidArgsHint = "Valid: environment-name, process-name, process-uid, package-name, operations.";
 
 	/// <summary>
+	/// Refusal for a call whose whole argument object is absent (ENG-98566, Sonar S2259).
+	/// </summary>
+	/// <remarks>
+	/// The guard below reads <c>args.ExtensionData</c> and every check after it reads a real field, so
+	/// exactly one place may decide what a null <c>args</c> means - and it is this one. An <c>args?.</c>
+	/// on the first line followed by an unconditional dereference on the next READS as null-safe while
+	/// only moving the NullReferenceException three lines down, where it escapes as a raw transport
+	/// fault instead of an answer. Hard to reach behind [Required] and the SDK missing-parameter error,
+	/// but "hard to reach" is not the same as handled.
+	/// </remarks>
+	internal const string NullArgsError = "args is required: the call carried no argument object. " + ValidArgsHint;
+
+	/// <summary>
 	/// Applies an inline JSON operations array to a CLONE of an existing process and saves it as a new version.
 	/// </summary>
 	/// <param name="args">Source identity, optional target package, and the operations array.</param>
@@ -77,6 +90,10 @@ public class ModifyProcessAsNewVersionTool(
 		[Description("modify-business-process-as-new-version parameters")] [Required]
 		ModifyProcessAsNewVersionArgs args
 	) {
+		if (args is null) {
+			return CommandExecutionResult.FromValidationError(NullArgsError);
+		}
+
 		// ENG-98566. This tool is LONG-TAIL - absent from McpCoreToolProfile - so McpToolErrorFilter's
 		// unknown-key classifier never runs on it in ANY payload shape: TryRefuseCallArgumentsCore bails at
 		// TryGetToolMethod because MatchedPrimitive is null for a tool that is not advertised. Even a
@@ -84,12 +101,12 @@ public class ModifyProcessAsNewVersionTool(
 		// passed through untouched. So the overflow bag plus this check is the ONLY thing standing between
 		// a mis-keyed call and a plausible success. Do not delete it because the normalizer exists.
 		string argumentError = McpToolArgumentSupport.BuildLegacyAliasError(
-			args?.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".", ValidArgsHint);
+			args.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".", ValidArgsHint);
 		if (!string.IsNullOrWhiteSpace(argumentError)) {
 			return CommandExecutionResult.FromValidationError(argumentError);
 		}
 
-		if (string.IsNullOrWhiteSpace(args?.EnvironmentName)) {
+		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
 			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
 		}
 

@@ -172,4 +172,34 @@ public sealed class ProcessDesignerArgumentGuardTests {
 		withoutEnvironment.Should().BeEmpty(
 			because: "a hint that omits the argument most often mis-spelled cannot resolve the commonest call");
 	}
+	[Test]
+	[Category("Unit")]
+	[Description("Every process-designer tool declares a non-blank NullArgsError, so a tool added to this "
+		+ "folder later cannot omit the decision about a null argument object. The behavioural half cannot be "
+		+ "reflective - the seven return shapes differ - so it lives in "
+		+ "ProcessDesignerUnknownArgumentRefusalTests; this is the declaration tripwire, the same split as "
+		+ "ValidArgsHint above.")]
+	public void EveryTool_ShouldDeclareANullArgumentRefusal() {
+		// Arrange
+		IReadOnlyList<Type> tools = ToolTypes();
+
+		// Act
+		List<string> missingOrBlank = tools
+			.Select(type => new {
+				type.Name,
+				Field = type.GetField("NullArgsError",
+					BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
+			})
+			.Where(entry => entry.Field is null
+				|| string.IsNullOrWhiteSpace(entry.Field.GetRawConstantValue() as string))
+			.Select(entry => entry.Name)
+			.ToList();
+
+		// Assert
+		tools.Should().NotBeEmpty(
+			because: "the reflection filter must find the process-designer tools for this test to mean anything");
+		missingOrBlank.Should().BeEmpty(
+			because: "a tool with no null-args refusal dereferences the argument object it was never given, "
+				+ "which is the S2259 defect SonarCloud raised on three of these files");
+	}
 }

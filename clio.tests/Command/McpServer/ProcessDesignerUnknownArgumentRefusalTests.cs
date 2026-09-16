@@ -66,6 +66,19 @@ public sealed class ProcessDesignerUnknownArgumentRefusalTests {
 				+ "Creatio");
 	}
 
+	/// <summary>
+	/// Asserts a null-args refusal on a command-shaped tool. Checks the exit CODE as well as the message:
+	/// swapping FromValidationError for FromError leaves the text identical while changing the answer from
+	/// "your call is wrong" (1) to "clio itself broke" (-1), which consumers branch on.
+	/// </summary>
+	private static void AssertNullRefused(CommandExecutionResult result, string toolName) {
+		result.ExitCode.Should().Be(1,
+			because: toolName + " must report a missing argument object as a caller-actionable validation "
+				+ "error, not as an unexpected runtime failure");
+		TextOf(result).Should().Contain("args is required",
+			because: toolName + " must name what is missing rather than throw or blame something else");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("create-business-process names an unrecognized argument instead of dropping it and building "
@@ -197,5 +210,48 @@ public sealed class ProcessDesignerUnknownArgumentRefusalTests {
 			because: "the documented contract is that status is null when the call was rejected before launch");
 		_commandResolver.ReceivedCalls().Should().BeEmpty(
 			because: "no tenant key, no command and no heartbeat may be created for a refused call");
+	}
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-98566 / Sonar S2259: a call carrying no argument object at all is REFUSED with a named "
+		+ "reason, in every tool. Before this, three of them tolerated a null args in the guard and then "
+		+ "dereferenced it on the next statement, outside any try - so the NullReferenceException escaped as a "
+		+ "raw transport fault. Sonar derived the same three files independently from the null-flow model. "
+		+ "The point of the test is that the decision is now UNIFORM: one place per tool decides, and none of "
+		+ "them reaches a field read with null. This is a METHOD-contract test, not wire coverage: measured "
+		+ "over the real MCP server, {\"args\":null} is answered by the SDK itself with 'The arguments "
+		+ "dictionary is missing a value for the required parameter' and the tool body never runs, so there "
+		+ "is no e2e for this path to write.")]
+	public async Task EveryTool_ShouldRefuseANullArgumentObject() {
+		// Arrange
+		CreateBusinessProcessTool create = new(null, ConsoleLogger.Instance, _commandResolver);
+		DescribeProcessTool describe = new(null, ConsoleLogger.Instance, _commandResolver);
+		ModifyBusinessProcessTool modify = new(null, ConsoleLogger.Instance, _commandResolver);
+		ModifyProcessAsNewVersionTool modifyAsNew = new(null, ConsoleLogger.Instance, _commandResolver);
+		SetActiveProcessVersionTool setActive = new(null, ConsoleLogger.Instance, _commandResolver);
+		GetProcessSignatureTool signature = new(null, ConsoleLogger.Instance, _commandResolver);
+		RunProcessTool run = new(ConsoleLogger.Instance, _commandResolver);
+
+		// Act
+		CommandExecutionResult createResult = create.CreateBusinessProcess(null);
+		CommandExecutionResult describeResult = describe.DescribeProcess(null);
+		CommandExecutionResult modifyResult = modify.ModifyBusinessProcess(null);
+		CommandExecutionResult modifyAsNewResult = modifyAsNew.ModifyProcessAsNewVersion(null);
+		CommandExecutionResult setActiveResult = setActive.SetActiveProcessVersion(null);
+		GetProcessSignatureResponse signatureResponse = signature.GetProcessSignature(null);
+		RunProcessResponse runResponse = await run.RunProcess(null);
+
+		// Assert
+		AssertNullRefused(createResult, CreateBusinessProcessTool.CreateBusinessProcessToolName);
+		AssertNullRefused(describeResult, DescribeProcessTool.ToolName);
+		AssertNullRefused(modifyResult, ModifyBusinessProcessTool.ModifyBusinessProcessToolName);
+		AssertNullRefused(modifyAsNewResult, ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName);
+		AssertNullRefused(setActiveResult, SetActiveProcessVersionTool.SetActiveProcessVersionToolName);
+		signatureResponse.Error.Should().Contain("args is required",
+			because: "get-process-signature is the second file Sonar flagged, and answers in its own shape");
+		runResponse.Error.Should().Contain("args is required",
+			because: "run-process is the third file Sonar flagged, and answers through its error field");
+		_commandResolver.ReceivedCalls().Should().BeEmpty(
+			because: "a call with no arguments cannot have earned an environment resolution");
 	}
 }
