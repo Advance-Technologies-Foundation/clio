@@ -655,7 +655,6 @@ internal static class ToolContractCatalog {
 		"Accepted alias for 'page-schema-name' \u2014 the spelling every other page tool uses. Supply one of the two.";
 	private const string ResourcesFieldName = "resources";
 	private const string SelectFieldName = "select";
-	private const string SkipSamplingFieldName = "skip-sampling";
 	private const string StringType = "string";
 	private const string StatusFieldName = "status";
 	private const string SuccessFalseSignal = "success == false";
@@ -4901,7 +4900,8 @@ internal static class ToolContractCatalog {
 			"Returns a structured summary of entity schema metadata for read-before-write inspection and read-back verification. " +
 			"Omit package-name to read the merged/effective schema with columns from ALL packages (recommended for column " +
 			"discovery); supply it only to inspect a single package layer's slice, which reports that layer's own columns and " +
-			"treats everything else as inherited.",
+			"treats everything else as inherited. Set required-only=true to return only columns marked required in schema metadata; " +
+			"schema column counts remain unfiltered. Dynamic business rules and default values are not evaluated.",
 			// package-name is NOT required here: the emitted tool schema makes it optional and its own text
 			// recommends omitting it for column discovery. Spelling it as required in the curated contract is
 			// the exact divergence issue #965 reports — an agent that trusts get-tool-contract always sends a
@@ -4915,7 +4915,8 @@ internal static class ToolContractCatalog {
 					Field(PackageNameFieldName, StringType,
 						"Optional target package name. Omit to read the merged/effective schema with columns from ALL " +
 						"packages (recommended for column discovery). Supply only to inspect a single package layer's slice."),
-					Field(SchemaNameFieldName, StringType, EntitySchemaNameDescription)
+					Field(SchemaNameFieldName, StringType, EntitySchemaNameDescription),
+					Field("required-only", BooleanType, "Optional, default false. Return only columns whose required metadata is true; schema column counts remain unfiltered.")
 				]),
 			StructuredResultOutput(
 				Field("name", StringType, "Schema name."),
@@ -5314,8 +5315,7 @@ internal static class ToolContractCatalog {
 					Field("target-schema-uid", StringType, "Explicit schema UId to save into directly. Bypasses hierarchy resolution entirely \u2014 the UId is used as given, with no name resolution or existence check. With `mode: append` this is also the body a `dry-run` fetches and projects against, so an unintended UId is read, not just written to."),
 					Field("checksum", StringType, "Conflict baseline: the `editable.checksum` returned by the get-page call this edit is based on. When supplied it is the authoritative baseline, so the save is compared against the body you actually fetched rather than the on-disk .clio-pages baseline, which can be stale or anchored elsewhere."),
 					Field("force", BooleanType, "Skip the external-modification (checksum) conflict check and deliberately overwrite out-of-band changes. Set true ONLY after the user explicitly confirms overwriting changes made outside this session. A target-package-uid / target-schema-uid redirect skips only the on-disk baseline; an explicit checksum is still compared with the resolved target and a mismatch remains a conflict."),
-					Field("output-directory", StringType, "Optional. Directory that anchors the `.clio-pages` conflict-baseline lookup \u2014 pass the same value that was passed to get-page when it differs from the auto-detected workspace root. Used only for baseline discovery; it does NOT change where the page is saved."),
-					Field(SkipSamplingFieldName, BooleanType, "Reserved escape hatch for the AI semantic review; omit by default. Pre-condition for setting true: the immediately preceding user message explicitly instructs skipping the review, OR the MCP host has reported sampling as unavailable in this session.")),
+					Field("output-directory", StringType, "Optional. Directory that anchors the `.clio-pages` conflict-baseline lookup \u2014 pass the same value that was passed to get-page when it differs from the auto-detected workspace root. Used only for baseline discovery; it does NOT change where the page is saved.")),
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
 				SuccessFieldName,

@@ -100,6 +100,21 @@ DESCRIPTION
       then one "insert" per child. Both are merge-only: for insert/set
       the values object becomes the element, so children declared there
       are created.
+    - Rejected: an "insert"/"set" that declares crt.Scaffold ANYWHERE in
+      its values subtree (a nested child authors the same second root as
+      a top-level one), or an "insert" of an element NAMED Scaffold
+      whatever type it declares. Every mobile template provides the
+      Scaffold root and it is the page's only permitted one; a second
+      shadows the native element, so the top navigation bar and the page
+      body silently come from the wrong one. A "merge" onto Scaffold is
+      the SUPPORTED way to patch the template's own root and is allowed.
+    - Warned: a component type in NEITHER the mobile nor the web
+      registry. It may be a custom mobile component registered in your
+      own package, in which case ignore it; it is equally what a typo
+      looks like. Confirm with get-component-info using
+      schema-type "mobile". Advisory because clio cannot tell a custom
+      registration from a mistake, and refusing would block legitimate
+      packages.
     - Warned: no type anywhere while values carries element properties;
       two DIFFERENT types (the element still renders, as the values
       copy); an operation whose letter case does not match the differ's
