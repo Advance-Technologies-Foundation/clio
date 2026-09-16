@@ -42,12 +42,15 @@ public static class ModifyBusinessProcessPrompt {
 		 `openEditPage` with results by column, User dialog and Auto-generated page, each only once CONFIGURED
 		 into it - the designer edits that connector as a CHECKBOX LIST and offers no formula field at all.
 		 The list is NOT closed - other platform and custom elements qualify - but `sendEmail` is NOT one
-		 despite its server-side schema declaring results, so branch it with a condition, so the branch is declared with `results`: the result captions (`["Positive"]` on an
-		 approval), written by `setFlowResults` (`source` + `target` + a non-empty `results`) or by `results`
-		 on `addFlow`. Everywhere else the dialect is a `condition` formula. A formula on a
-		 result-enumerating connector is NOT refused and it RUNS - but no human can read or edit it: every
-		 box reads unticked and the connector is marked invalid the first time its card is opened, so check
-		 the source element before reaching for `setFlowCondition`. The two slots are mutually exclusive on
+		 despite its server-side schema declaring results, so branch that one with a condition.
+		 On a source that DOES enumerate them the branch is declared with `results`: the result captions
+		 (`["Positive"]` on an approval), written by `setFlowResults` (`source` + `target` + a non-empty
+		 `results`) or by `results` on `addFlow`. Everywhere else the dialect is a `condition` formula. A
+		 formula on a result-enumerating connector is REFUSED - it would run while the connector's card
+		 opened empty, which is a state the designer's own Change-type action cannot even produce - and the
+		 refusal names the deciding activity and lists the results to pass instead.
+		 A connector leaving a GATEWAY takes a selection too, keyed on the activity BEHIND the gateway; one
+		 hop only, so two chained gateways take a formula. The two slots are mutually exclusive on
 		 one flow and `results` clears any stored condition. There is no way to CLEAR a selection - a
 		 conditional flow carrying neither is stored as the literal `true` and always taken - so call
 		 `setFlowResults` again to change which results select the branch. An unknown caption is refused WITH

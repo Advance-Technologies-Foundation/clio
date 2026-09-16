@@ -63,11 +63,13 @@ all come back clean:
 no longer true. `CrtProcessBuilder` 1.6.2.18 writes the selection, and clio reaches it through
 `flows[].results` on the build path and `setFlowResults` on the modify path, with `describe` reading it
 back as `results` + `resultsActivity`. What did NOT change is everything above: the designer still
-picks the editor the same way, a formula there still runs invisibly, and nothing refuses one - the
-responsibility moved to the caller rather than disappearing. Two limits remain: a gateway-sourced
-connector is refused by the package though the designer edits it as a selection, and `Send email` is
-refused deliberately because its server-side schema declares results while its properties page shows a
-formula field.
+picks the editor the same way, and a formula there still runs invisibly - which is why writing one is
+now REFUSED rather than left to the caller. The decisive evidence for that refusal is the designer's
+own: Change type -> Conditional flow on such a connector offers the checkbox list and no formula
+option, so the state is one the platform's UI cannot produce. A gateway-sourced connector is handled
+too, keyed on the activity behind the gateway, one hop. `Send email` is the exception: its server-side
+schema declares results while its properties page shows a formula field, so it takes a condition and
+the selection is refused there.
 
 Measured on `UsrOrder_Handle` (Approval element `Approve order`) on a dev stand, 2026-09-15. The
 shipped guidance was corrected in `clio-knowledge` PR #171; the manual suite is TC-01..TC-12 in the

@@ -46,9 +46,9 @@ public static class CreateBusinessProcessPrompt {
 		 BRANCHING on the verdict needs no gateway and is declared on the FLOW: give each outgoing flow
 		 `kind: "conditional"` plus `results` with the captions that select it - exactly `Positive`,
 		 `Negative` and `Canceled`, the final VisaStatus values, and all THREE, since a two-way split drops
-		 the canceled case. Do NOT use a `condition` formula there: the designer edits a connector leaving an
-		 approval as a result SELECTION and shows no formula field, so a formula runs and no human can read
-		 it. The same applies to every element that enumerates results - `performTask`, `preconfiguredPage`,
+		 the canceled case. A `condition` formula there is REFUSED: the designer edits a connector leaving an
+		 approval as a result SELECTION and shows no formula field, so a formula would run while the card
+		 opened empty. The refusal lists the results to pass instead. The same applies to every element that enumerates results - `performTask`, `preconfiguredPage`,
 		 `openEditPage` with results by column - see `get-guidance name=process-branch-conditions`, which routes on to the article that owns it.
 		 A notification switched on without a template, or `notifyAuthor` without a recipient, is refused — the
 		 runtime would report the element as configured and never send. To put PROCESS DATA in the body use the

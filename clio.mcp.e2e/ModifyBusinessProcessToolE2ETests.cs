@@ -3209,6 +3209,472 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		[ { "op": "setConnections", "elementName": "Task1", "connections": [ { "column": "Account", "expression": "[#DateValue.2026-01-01#]" } ] } ]
 		""";
 
+	// ==== Scratch manual-QA drivers for ENG-91853 TC-W05..TC-W11 (spec/eng-91853-gateways-and-flows/
+	// eng-91853-gateways-and-flows-activity-result-selection-write-manual-test-prompt.md). Throwaway,
+	// not part of the PR - drives the real MCP surface against a live stand so the API-level half of
+	// each case can be checked programmatically instead of by hand. TestContext.WriteLine prints the
+	// schema UId / process name so the designer half can be checked afterwards in a real browser.
+
+	[Test]
+	[Category("ManualQaScratch")]
+	public async Task ManualQa_TCW05_ResultsClearsStoredCondition() {
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrQaTcw05{Guid.NewGuid():N}"[..30];
+		CallToolResult built = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildApprovalBranchDescriptor(processName, declareSelection: false)
+		});
+		built.IsError.Should().NotBeTrue(because: "arrange must build cleanly");
+
+		CallToolResult conditionSet = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "setFlowCondition", "source": "Approve", "target": "EndOk", "condition": "1 > 0" } ]"""
+		});
+		conditionSet.IsError.Should().NotBeTrue(because: "setFlowCondition on a plain flow with no selection must succeed");
+		DescribedFlow beforeResults = await DescribeBranchAsync(context, processName, "EndOk");
+		beforeResults.Condition.Should().Be("1 > 0", because: "the condition must be stored before setFlowResults runs");
+
+		CallToolResult resultsSet = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "setFlowResults", "source": "Approve", "target": "EndOk", "results": ["Positive"] } ]"""
+		});
+		SkipWhenTheOperationIsUnknown(resultsSet);
+		resultsSet.IsError.Should().NotBeTrue(because: "setFlowResults must overwrite a stored condition, not be refused by it");
+
+		DescribedFlow afterResults = await DescribeBranchAsync(context, processName, "EndOk");
+		afterResults.Condition.Should().BeNull(because: "TC-W05: results must CLEAR a stored condition, not park it beside the selection");
+		afterResults.Results.Should().Equal(new[] { "Positive" });
+		TestContext.WriteLine($"TCW05 processName={processName} schemaUId={await ReadSchemaUIdAsync(context, processName)}");
+	}
+
+	[Test]
+	[Category("ManualQaScratch")]
+	public async Task ManualQa_TCW06_ConditionOntoSelectionIsRefused() {
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrQaTcw06{Guid.NewGuid():N}"[..30];
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildApprovalBranchDescriptor(processName, declareSelection: false)
+		});
+		CallToolResult resultsSet = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "setFlowResults", "source": "Approve", "target": "EndOk", "results": ["Positive"] } ]"""
+		});
+		SkipWhenTheOperationIsUnknown(resultsSet);
+
+		CallToolResult conditionAttempt = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "setFlowCondition", "source": "Approve", "target": "EndOk", "condition": "1 > 0" } ]"""
+		});
+		McpCommandExecutionParser.Extract(conditionAttempt).ExitCode.Should().NotBe(0,
+			because: "TC-W06: a condition onto a connector that already carries a selection must be refused");
+		string payload = JsonSerializer.Serialize(conditionAttempt);
+		TestContext.WriteLine($"TCW06 refusal payload: {payload}");
+
+		DescribedFlow branch = await DescribeBranchAsync(context, processName, "EndOk");
+		branch.Results.Should().Equal(new[] { "Positive" }, because: "a refusal must not be a partial write");
+	}
+
+	[Test]
+	[Category("ManualQaScratch")]
+	public async Task ManualQa_TCW07_UnknownCaptionRefusedWithFullList() {
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrQaTcw07{Guid.NewGuid():N}"[..30];
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildApprovalBranchDescriptor(processName, declareSelection: false)
+		});
+		CallToolResult attempt = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "setFlowResults", "source": "Approve", "target": "EndOk", "results": ["Approved"] } ]"""
+		});
+		SkipWhenTheOperationIsUnknown(attempt);
+		McpCommandExecutionParser.Extract(attempt).ExitCode.Should().NotBe(0, because: "TC-W07: an unknown caption must be refused");
+		string payload = JsonSerializer.Serialize(attempt);
+		TestContext.WriteLine($"TCW07 refusal payload: {payload}");
+		payload.Should().Contain("Positive").And.Contain("Negative").And.Contain("Canceled",
+			because: "the refusal must list every caption the element actually offers");
+	}
+
+	[Test]
+	[Category("ManualQaScratch")]
+	public async Task ManualQa_TCW08_SiblingBranchesCannotClaimSameResult() {
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrQaTcw08{Guid.NewGuid():N}"[..30];
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildApprovalBranchDescriptor(processName, declareSelection: false)
+		});
+		CallToolResult first = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "setFlowResults", "source": "Approve", "target": "EndOk", "results": ["Positive"] } ]"""
+		});
+		SkipWhenTheOperationIsUnknown(first);
+
+		CallToolResult second = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "setFlowResults", "source": "Approve", "target": "EndNo", "results": ["Positive"] } ]"""
+		});
+		McpCommandExecutionParser.Extract(second).ExitCode.Should().NotBe(0, because: "TC-W08: two sibling branches may not claim the same result");
+		string payload = JsonSerializer.Serialize(second);
+		TestContext.WriteLine($"TCW08 refusal payload: {payload}");
+		TestContext.WriteLine($"TCW08 processName={processName} schemaUId={await ReadSchemaUIdAsync(context, processName)}");
+	}
+
+	[Test]
+	[Category("ManualQaScratch")]
+	public async Task ManualQa_TCW09_SendEmailRefused() {
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrQaTcw09{Guid.NewGuid():N}"[..30];
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildTwoWaySendEmailDescriptor(processName)
+		});
+		CallToolResult attempt = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "setFlowResults", "source": "SendEmail1", "target": "EndB", "results": ["Sent"] } ]"""
+		});
+		McpCommandExecutionParser.Extract(attempt).ExitCode.Should().NotBe(0, because: "TC-W09: sendEmail does not offer result values through this surface");
+		string payload = JsonSerializer.Serialize(attempt);
+		TestContext.WriteLine($"TCW09 refusal payload: {payload}");
+		payload.Should().Contain("condition", because: "the refusal must point at condition as the dialect to use");
+		TestContext.WriteLine($"TCW09 processName={processName} schemaUId={await ReadSchemaUIdAsync(context, processName)}");
+	}
+
+	[Test]
+	[Category("ManualQaScratch")]
+	public async Task ManualQa_TCW10_GatewayIsARefusedButKnownLimit() {
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrQaTcw10{Guid.NewGuid():N}"[..30];
+		CallToolResult built = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildApprovalIntoGatewayDescriptor(processName)
+		});
+		built.IsError.Should().NotBeTrue(because: "arrange must build cleanly");
+		CallToolResult attempt = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "setFlowResults", "source": "Decide", "target": "EndA", "results": ["Positive"] } ]"""
+		});
+		McpCommandExecutionParser.Extract(attempt).ExitCode.Should().NotBe(0,
+			because: "TC-W10: setFlowResults on a flow leaving a GATEWAY is refused - a known, narrower-than-the-designer limit");
+		string payload = JsonSerializer.Serialize(attempt);
+		TestContext.WriteLine($"TCW10 refusal payload: {payload}");
+		TestContext.WriteLine($"TCW10 processName={processName} schemaUId={await ReadSchemaUIdAsync(context, processName)}");
+	}
+
+	[Test]
+	[Category("ManualQaScratch")]
+	public async Task ManualQa_DumpTCW01Graph() {
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["process-uid"] = "11b36bed-7e63-4094-9d31-24c0951882e9"
+			}));
+		TestContext.WriteLine($"schemaUId={described.SchemaUId}");
+		foreach (var e in described.Elements) {
+			TestContext.WriteLine($"element name={e.Name} type={e.Type} caption={e.Caption}");
+			if (e.Approval != null) {
+				TestContext.WriteLine($"  approval object={e.Approval.Object} recordId={e.Approval.RecordId} approverType={e.Approval.ApproverType} approverEmployee={e.Approval.ApproverEmployee} approverRole={e.Approval.ApproverRole}");
+			}
+		}
+		foreach (var f in described.Flows) {
+			TestContext.WriteLine($"flow {f.Source} -> {f.Target} kind={f.Kind} results={(f.Results == null ? "null" : string.Join(",", f.Results))} resultsActivity={f.ResultsActivity} branchesOnActivityResult={f.BranchesOnActivityResult}");
+		}
+	}
+
+	private const string TCW01ProcessUId = "11b36bed-7e63-4094-9d31-24c0951882e9";
+
+	private static async Task<DescribedFlow> DescribeTCW01BranchAsync(ArrangeContext context, string target) {
+		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["process-uid"] = TCW01ProcessUId
+			}));
+		return described.Flows.Single(f => f.Source == "ApproveOrder" && f.Target == target);
+	}
+
+	[Test]
+	[Category("ManualQaScratch")]
+	public async Task ManualQa_TCW11_ReadBackWriteBackRoundTrips() {
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		DescribedFlow before = await DescribeTCW01BranchAsync(context, "EndOk");
+		before.Results.Should().NotBeNullOrEmpty(because: "TC-W01 must already have written a selection onto this flow");
+
+		CallToolResult writeBack = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-uid"] = TCW01ProcessUId,
+			["operations"] = JsonSerializer.Serialize(new object[] {
+				new Dictionary<string, object?> {
+					["op"] = "setFlowResults", ["source"] = "ApproveOrder", ["target"] = "EndOk",
+					["results"] = before.Results
+				}
+			})
+		});
+		McpCommandExecutionParser.Extract(writeBack).ExitCode.Should().Be(0, because: "TC-W11: writing back exactly what was read must succeed");
+
+		DescribedFlow after = await DescribeTCW01BranchAsync(context, "EndOk");
+		after.Results.Should().Equal(before.Results, because: "TC-W11: read-back-write-back must be byte-identical, same captions same order");
+		after.ResultsActivity.Should().Be(before.ResultsActivity);
+		TestContext.WriteLine($"TCW11 before=[{string.Join(",", before.Results)}] after=[{string.Join(",", after.Results)}]");
+	}
+
+	[Test]
+	[Category("ManualQaScratch")]
+	public async Task ManualQa_QuietDiscriminator_BuildBoth() {
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+
+		// Process A: plain -> setFlowCondition (modify path)
+		string processNameA = $"UsrQaQuietA{Guid.NewGuid():N}"[..30];
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildApprovalBranchDescriptor(processNameA, declareSelection: false)
+		});
+		CallToolResult aResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processNameA,
+			["operations"] = """[ { "op": "setFlowCondition", "source": "Approve", "target": "EndOk", "condition": "1 > 0" } ]"""
+		});
+		aResult.IsError.Should().NotBeTrue();
+
+		// Process B: declared conditional at build time (build path)
+		string processNameB = $"UsrQaQuietB{Guid.NewGuid():N}"[..30];
+		CallToolResult bResult = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = $$"""
+				{
+				  "name": "{{processNameB}}",
+				  "caption": "Clio QA quiet discriminator B",
+				  "packageName": "Custom",
+				  "elements": [
+				    { "name": "Start1", "type": "startEvent" },
+				    { "name": "Approve", "type": "approval", "caption": "Approve order" },
+				    { "name": "EndOk", "type": "endEvent" },
+				    { "name": "EndNo", "type": "endEvent" }
+				  ],
+				  "flows": [
+				    { "source": "Start1", "target": "Approve" },
+				    { "source": "Approve", "target": "EndOk", "kind": "conditional", "condition": "1 > 0" },
+				    { "source": "Approve", "target": "EndNo" }
+				  ]
+				}
+				"""
+		});
+		bResult.IsError.Should().NotBeTrue();
+
+		string schemaUIdA = await ReadSchemaUIdAsync(context, processNameA);
+		string schemaUIdB = await ReadSchemaUIdAsync(context, processNameB);
+		TestContext.WriteLine($"QUIET A processName={processNameA} schemaUId={schemaUIdA} (modify path, setFlowCondition)");
+		TestContext.WriteLine($"QUIET B processName={processNameB} schemaUId={schemaUIdB} (build path, condition declared at creation)");
+	}
+
+	[Test]
+	[Category("ManualQaScratch")]
+	public async Task ManualQa_BuildVanillaForDesignerTest() {
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrQaVanilla{Guid.NewGuid():N}"[..30];
+		CallToolResult built = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildApprovalBranchDescriptor(processName, declareSelection: false)
+		});
+		built.IsError.Should().NotBeTrue();
+		TestContext.WriteLine($"VANILLA processName={processName} schemaUId={await ReadSchemaUIdAsync(context, processName)}");
+	}
+
+	[Test]
+	[Category("ManualQaScratch")]
+	public async Task ManualQa_DumpB() {
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["process-uid"] = "62a7e403-3562-4876-a034-26af88cd266c"
+			}));
+		foreach (var f in described.Flows) {
+			TestContext.WriteLine($"B flow {f.Source} -> {f.Target} kind={f.Kind} condition={f.Condition} results=[{string.Join(",", f.Results ?? Array.Empty<string>())}] branchesOnActivityResult={f.BranchesOnActivityResult}");
+		}
+	}
+
+	[Test]
+	[Category("ManualQaScratch")]
+	public async Task ManualQa_Control_SetFlowConditionOnly() {
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrQaCtrl{Guid.NewGuid():N}"[..30];
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildApprovalBranchDescriptor(processName, declareSelection: false)
+		});
+		CallToolResult conditionSet = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "setFlowCondition", "source": "Approve", "target": "EndOk", "condition": "1 > 0" } ]"""
+		});
+		conditionSet.IsError.Should().NotBeTrue();
+		DescribedFlow after = await DescribeBranchAsync(context, processName, "EndOk");
+		TestContext.WriteLine($"CTRL kind={after.Kind} condition={after.Condition} results=[{string.Join(",", after.Results ?? Array.Empty<string>())}] branchesOnActivityResult={after.BranchesOnActivityResult}");
+		TestContext.WriteLine($"CTRL processName={processName} schemaUId={await ReadSchemaUIdAsync(context, processName)}");
+	}
+
+	[Test]
+	[Category("ManualQaScratch")]
+	public async Task ManualQa_TCW05_Repro2() {
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrQaTcw05b{Guid.NewGuid():N}"[..30];
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildApprovalBranchDescriptor(processName, declareSelection: false)
+		});
+		await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "setFlowCondition", "source": "Approve", "target": "EndOk", "condition": "1 > 0" } ]"""
+		});
+		CallToolResult resultsSet = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "setFlowResults", "source": "Approve", "target": "EndOk", "results": ["Positive"] } ]"""
+		});
+		SkipWhenTheOperationIsUnknown(resultsSet);
+		DescribedFlow after = await DescribeBranchAsync(context, processName, "EndOk");
+		TestContext.WriteLine($"TCW05b kind={after.Kind} results=[{string.Join(",", after.Results ?? Array.Empty<string>())}] condition={after.Condition} branchesOnActivityResult={after.BranchesOnActivityResult}");
+		TestContext.WriteLine($"TCW05b processName={processName} schemaUId={await ReadSchemaUIdAsync(context, processName)}");
+	}
+
+	[Test]
+	[Category("ManualQaScratch")]
+	public async Task ManualQa_BuildTrivialProcess() {
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrQaTrivial{Guid.NewGuid():N}"[..30];
+		CallToolResult built = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = $$"""
+				{
+				  "name": "{{processName}}",
+				  "caption": "Clio QA trivial",
+				  "packageName": "Custom",
+				  "elements": [
+				    { "name": "Start1", "type": "startEvent" },
+				    { "name": "Task1", "type": "performTask", "caption": "Do nothing" },
+				    { "name": "End1", "type": "endEvent" }
+				  ],
+				  "flows": [
+				    { "source": "Start1", "target": "Task1" },
+				    { "source": "Task1", "target": "End1" }
+				  ]
+				}
+				"""
+		});
+		McpCommandExecutionParser.Extract(built).ExitCode.Should().Be(0);
+		TestContext.WriteLine($"Trivial payload: {JsonSerializer.Serialize(built)}");
+	}
+
+	[Test]
+	[Category("ManualQaScratch")]
+	public async Task ManualQa_TCW03_BuildRuntimeProcess() {
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrQaRuntime{Guid.NewGuid():N}"[..30];
+		CallToolResult built = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = $$"""
+				{
+				  "name": "{{processName}}",
+				  "caption": "Clio QA runtime approval",
+				  "packageName": "Custom",
+				  "parameters": [ { "name": "RecordToApprove", "type": "Guid", "direction": "In" } ],
+				  "elements": [
+				    { "name": "Start1", "type": "startEvent" },
+				    { "name": "Approve", "type": "approval", "caption": "Approve order",
+				      "approval": { "object": "Contact", "recordId": { "processParameter": "RecordToApprove" },
+				        "approver": { "type": "user" } } },
+				    { "name": "TaskOk", "type": "performTask", "caption": "Reached OK" },
+				    { "name": "TaskNo", "type": "performTask", "caption": "Reached NO" },
+				    { "name": "EndOk", "type": "endEvent" },
+				    { "name": "EndNo", "type": "endEvent" }
+				  ],
+				  "flows": [
+				    { "source": "Start1", "target": "Approve" },
+				    { "source": "Approve", "target": "TaskOk", "kind": "conditional", "results": ["Positive"] },
+				    { "source": "Approve", "target": "TaskNo", "kind": "conditional", "results": ["Negative"] },
+				    { "source": "TaskOk", "target": "EndOk" },
+				    { "source": "TaskNo", "target": "EndNo" }
+				  ]
+				}
+				"""
+		});
+		McpCommandExecutionParser.Extract(built).ExitCode.Should().Be(0, because: "the runtime probe process must build cleanly");
+		string payload = JsonSerializer.Serialize(built);
+		TestContext.WriteLine($"TCW03 build payload: {payload}");
+	}
+
+	[Test]
+	[Category("ManualQaScratch")]
+	public async Task ManualQa_TCW03_PrepareNegativeBranch() {
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		CallToolResult result = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-uid"] = TCW01ProcessUId,
+			["operations"] = """[ { "op": "setFlowResults", "source": "ApproveOrder", "target": "EndNo", "results": ["Negative"] } ]"""
+		});
+		McpCommandExecutionParser.Extract(result).ExitCode.Should().Be(0, because: "TC-W03 needs EndNo wired to Negative before the runtime check");
+		DescribedFlow branch = await DescribeTCW01BranchAsync(context, "EndNo");
+		branch.Results.Should().Equal(new[] { "Negative" });
+	}
+
+	private static async Task<string> ReadSchemaUIdAsync(ArrangeContext context, string processName) {
+		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
+			}));
+		return described.SchemaUId ?? "(null)";
+	}
+
+	private static string BuildTwoWaySendEmailDescriptor(string processName) => $$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio QA sendEmail two-way",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "SendEmail1", "type": "sendEmail",
+		      "email": { "mode": "manual", "subject": "QA probe", "to": [ { "value": "first@example.com" } ] } },
+		    { "name": "EndA", "type": "endEvent" },
+		    { "name": "EndB", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "SendEmail1" },
+		    { "source": "SendEmail1", "target": "EndA", "kind": "default" },
+		    { "source": "SendEmail1", "target": "EndB", "kind": "conditional", "condition": "1 > 0" }
+		  ]
+		}
+		""";
+
+	private static string BuildApprovalIntoGatewayDescriptor(string processName) => $$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio QA approval into gateway",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "Start1", "type": "startEvent" },
+		    { "name": "Approve", "type": "approval", "caption": "Approve order" },
+		    { "name": "Decide", "type": "exclusiveGateway" },
+		    { "name": "EndA", "type": "endEvent" },
+		    { "name": "EndB", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "Start1", "target": "Approve" },
+		    { "source": "Approve", "target": "Decide" },
+		    { "source": "Decide", "target": "EndA", "kind": "conditional", "condition": "1 > 0" },
+		    { "source": "Decide", "target": "EndB", "kind": "conditional", "condition": "2 > 1" }
+		  ]
+		}
+		""";
+
 	private static DescribeProcessResult ParseDescribeResult(CallToolResult callResult) {
 		JsonSerializerOptions options = new() { PropertyNameCaseInsensitive = true };
 		JsonElement content = JsonSerializer.SerializeToElement(callResult.Content);

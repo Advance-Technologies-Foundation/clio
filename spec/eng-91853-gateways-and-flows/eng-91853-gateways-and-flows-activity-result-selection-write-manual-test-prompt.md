@@ -114,8 +114,10 @@ and two end events `EndOk` / `EndNo`, both connected by PLAIN flows. Nothing els
 
 ### TC-W05 `results` CLEARS a stored condition, and the designer stops showing one
 
-**Preconditions:** An Approval branch that already carries a formula condition (set it with
-`setFlowCondition` — this is still accepted while the connector has no selection).
+**Preconditions:** An Approval branch that ALREADY carries a formula condition. You cannot create one:
+writing a formula there is refused now, and the designer never offered the option. So this case needs
+LEGACY content — a process written before the refusal existed, which is what the clear is for. If the
+stand has none, report the case as NOT RUN and say why rather than arranging something else.
 
 **Steps:**
 1. `describe-business-process` and note `condition` is non-null.
@@ -183,23 +185,44 @@ and two end events `EndOk` / `EndNo`, both connected by PLAIN flows. Nothing els
   page offers no selection editor, and the refusal exists precisely so a selection is not written
   somewhere the designer would erase it on open.
 
-### TC-W10 A connector leaving a GATEWAY — a known limit, confirm it is the stated one
+### TC-W10 A connector leaving a GATEWAY — keyed on the activity BEHIND it
 
 **Preconditions:** A process where an Approval feeds an exclusive gateway by a PLAIN flow, and the
-gateway has two outgoing conditional flows.
+gateway has a `default` branch plus one more outgoing flow. Out of a deciding gateway a flow can only be
+conditional or default — there is no plain flow to convert later, so declare the branch with its
+selection in the same call.
 
 **Steps:**
-1. `setFlowResults` on one of the GATEWAY's outgoing flows.
-2. Open that connector in the designer.
-3. Tick a result in the designer, save, and `describe-business-process`.
+1. Declare the gateway's non-default branch with `kind: "conditional"` and `results: ["Positive"]`.
+2. `describe-business-process` and read that flow.
+3. Open the connector in the designer.
+4. Repeat the whole case with TWO chained gateways between the Approval and the branch.
 
 **Expected result:**
-* Step 1 is REFUSED.
-* Step 2: the designer DOES show the checkbox list there — it walks one hop back through the gateway to
-  the Approval. So the tool is narrower than the designer, deliberately and knowingly.
-* Step 3: the selection saves, and describe reports `results` with `resultsActivity` naming the
-  **Approval**, not the gateway. Confirm that read is correct — it is the field a caller must not assume.
-* Report this case as PASS if all three hold. It documents a gap, not a bug.
+* Step 1 succeeds.
+* Step 2: `resultsActivity` names the **Approval**, NOT the gateway. This is the field a caller must not
+  assume — writing the selection back onto the gateway would change which activity decides the branch.
+* Step 3: the checkbox list, `Positive` ticked. The designer walks one hop back through the gateway and
+  so does the tool.
+* Step 4: `results` is REFUSED and the designer shows a formula field. One hop, no recursion, on both
+  sides — the limit is the designer's and the tool matches it rather than being cleverer.
+
+### TC-W13 A formula on a result-enumerating connector is REFUSED
+
+**Preconditions:** TC-W01's process, with the `EndOk` branch still plain.
+
+**Steps:**
+1. `setFlowCondition` on `Approve order -> EndOk` with `1 > 0`.
+2. In the designer, select that connector and use **Change type — Conditional flow**.
+
+**Expected result:**
+* Step 1 is REFUSED, and the refusal names the deciding activity and lists `Canceled`, `Negative`,
+  `Positive`.
+* Step 2 — the evidence the refusal rests on: the designer's own action offers the checkbox list and
+  **no formula option at all**. There is no UI path to attach a raw condition to this connector, which is
+  why writing one is refused rather than permitted with a warning.
+* If step 1 SUCCEEDS that is a regression — report it as a BLOCKER, and check what the connector then
+  looks like in the designer. It should open as an empty panel, which is the state the refusal prevents.
 
 ### TC-W11 Read back, write back, nothing moves
 
