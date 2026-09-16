@@ -23,6 +23,8 @@ public sealed class EntitySchemaRequiredColumnsE2ETests : McpContractFixtureBase
 	[Category("McpE2E.NoEnvironment")]
 	[Description("Verifies the reported name alias resolves a single current contract rather than returning the entire catalogue.")]
 	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("Get tool contract resolves the name alias")]
+	[AllureDescription("Calls the real MCP server with flat and wrapped name aliases and verifies one named contract advertises required-only.")]
 	public async Task GetContract_ShouldReturnNamedContract_WhenNameAliasIsUsed(bool wrapped) {
 		// Arrange
 		using CancellationTokenSource timeout = new(TimeSpan.FromMinutes(2));
@@ -45,6 +47,8 @@ public sealed class EntitySchemaRequiredColumnsE2ETests : McpContractFixtureBase
 	[Category("McpE2E.Sandbox")]
 	[Description("Compares required-only output with the actual required metadata in merged and package-layer reads.")]
 	[AllureTag(ToolName)]
+	[AllureName("Required columns match actual Creatio metadata")]
+	[AllureDescription("Reads Contact through the real MCP process with default, false, and true required-only values in merged and package-layer modes.")]
 	public async Task GetProperties_ShouldFilterRequiredColumns_WhenRequested(string? package) {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -82,6 +86,8 @@ public sealed class EntitySchemaRequiredColumnsE2ETests : McpContractFixtureBase
 	[Category("McpE2E.NoEnvironment")]
 	[Description("Rejects unsupported fields and invalid boolean values through the real MCP process.")]
 	[AllureTag(ToolName)]
+	[AllureName("Schema properties rejects invalid arguments")]
+	[AllureDescription("Calls the real MCP process with an unsupported field or invalid boolean and checks actionable diagnostics before environment resolution.")]
 	public async Task GetProperties_ShouldRejectInvalidArguments_WhenWrapped(string key, string value) {
 		// Arrange
 		using CancellationTokenSource timeout = new(TimeSpan.FromMinutes(2));
