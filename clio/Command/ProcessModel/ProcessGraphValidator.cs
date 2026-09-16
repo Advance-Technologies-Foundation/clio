@@ -483,6 +483,34 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 	// method does - which is exactly why the broader name is the right one on this side.
 	private static void CheckConditionalFlows(IReadOnlyList<ProcessGraphEdge> edges,
 			IReadOnlyDictionary<string, ProcessGraphNode> nodeByName, List<ProcessGraphFinding> findings) {
+		// OUTSIDE the conditional filter below, and that is the whole point of it being here. R13 was the
+		// only rule reading `results`, and it only ever looked at conditional edges - so the two shapes the
+		// server refuses OUTRIGHT passed this tool clean, which is the validate-says-clean / build-refuses
+		// fork the rule exists to close. Both became expressible only when `results` was added, so the gap
+		// arrived with the field.
+		foreach (ProcessGraphEdge edge in edges.Where(e => e.Results is { Count: > 0 })) {
+			if (edge.FlowKind != ProcessFlowKind.Conditional) {
+				// FlowKindRules.EnsureConditionMatchesKind throws "A '<kind>' flow cannot carry 'results'".
+				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R19",
+					$"Flow '{edge.Source}' -> '{edge.Target}' carries 'results' but is not a conditional flow. "
+					+ "A result selection IS the branch's predicate, so only a conditional flow can hold one - "
+					+ "the build refuses this outright. Set 'flow-kind' to 'conditional', or drop 'results'.",
+					edge.Source, edge));
+				continue;
+			}
+			if (!string.IsNullOrWhiteSpace(edge.Condition)) {
+				// The two predicate slots are mutually exclusive in the metadata: the platform reads the
+				// selection and never the expression once the map is non-empty, so a flow carrying both
+				// stores text nothing evaluates. The server refuses it; this said nothing, because
+				// `blankCondition` is false and `Condition` is not null, so the edge fell between both arms.
+				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R19",
+					$"Conditional flow '{edge.Source}' -> '{edge.Target}' carries both a condition and "
+					+ "'results'. A branch decides one way or the other: the platform reads the selection and "
+					+ "never the expression, so the condition would be stored and never evaluated. The build "
+					+ "refuses it - keep 'results' and drop the condition, or the other way round.",
+					edge.Source, edge));
+			}
+		}
 		foreach (ProcessGraphEdge edge in edges.Where(e => e.FlowKind == ProcessFlowKind.Conditional)) {
 			// A WARNING, not an error, and the corpus is why. Measured over 1711 shipped schemas, four
 			// conditional flows leave an event: two a start event (CrtBase

@@ -448,6 +448,48 @@ public sealed class ProcessGraphValidatorTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("R19: 'results' on a flow that is NOT conditional is an ERROR, because the build refuses it outright - FlowKindRules.EnsureConditionMatchesKind throws \"a 'sequence' flow cannot carry 'results'\". R13 could never see this shape: it iterates conditional edges only, so it was the sole rule reading the field and the field arrived without a rule covering its misuse. That is the validate-says-clean / build-refuses fork this rule set exists to close, reopened by the very field that closed part of it.")]
+	public void Validate_ShouldReturnR19Error_WhenANonConditionalFlowCarriesResults() {
+		// Arrange
+		List<ProcessGraphNode> nodes = [Node("s", "startEvent"), Node("a", "activityUserTask"),
+			Node("yes", "endEvent")];
+		List<ProcessGraphEdge> edges =
+			[Seq("s", "a"), new ProcessGraphEdge("a", "yes", ProcessFlowKind.Sequence, null, ["Positive"])];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.Findings.Should().Contain(
+			f => f.RuleId == "R19" && f.Severity == ProcessGraphSeverity.Error,
+			because: "the server refuses this descriptor, so a clean validate would send the caller into a "
+				+ "build that cannot succeed - which is the one outcome this tool exists to prevent");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("R19: a conditional flow carrying BOTH a condition and 'results' is an ERROR. The two predicate slots are mutually exclusive in the metadata - the platform reads the selection and never the expression once the map is non-empty - and the server refuses the pair. R13 fell between its own two arms on this shape: blankCondition is false because the condition is real, and the no-predicate arm needs Condition to be null, so nothing fired and validate reported clean.")]
+	public void Validate_ShouldReturnR19Error_WhenAConditionalFlowCarriesBothPredicates() {
+		// Arrange
+		List<ProcessGraphNode> nodes = [Node("s", "startEvent"), Node("a", "activityUserTask"),
+			Node("yes", "endEvent"), Node("no", "endEvent")];
+		List<ProcessGraphEdge> edges = [Seq("s", "a"),
+			new ProcessGraphEdge("a", "yes", ProcessFlowKind.Conditional, "1 > 0", ["Positive"]),
+			Seq("a", "no")];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.Findings.Should().Contain(
+			f => f.RuleId == "R19" && f.Severity == ProcessGraphSeverity.Error
+				&& f.Message.Contains("never the expression"),
+			because: "the caller has to learn WHICH of the two is ignored, or the obvious fix - drop the "
+				+ "selection and keep the text they can read - is the one that changes the branch");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("R14: a default flow with no sibling conditional flow is an error where the source actually BRANCHES. The source is a DIVERGING activity, and that matters: this test used to arrange a single default flow out of an exclusive gateway, which is the CONVERGING shape 45 shipped gateways are in, and it asserted the rule that rejected them.")]
 	public void Validate_ShouldReturnR14Error_WhenDivergingSourceHasADefaultWithNoConditional() {
 		// Arrange
