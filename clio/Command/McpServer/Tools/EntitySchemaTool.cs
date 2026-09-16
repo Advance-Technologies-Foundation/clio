@@ -489,13 +489,22 @@ public sealed class GetEntitySchemaPropertiesTool(
 		+ "an empty column list from a single-package read does NOT prove a column is absent. "
 		+ "Supply package-name to inspect one package layer and to read schema-level fields that the merged view returns as null "
 		+ "(parent-schema-name, indexes-count, ssp-available, use-record-deactivation, use-deny-record-rights, use-live-editing). "
-		+ "The result always includes virtual so callers can verify whether the schema has a physical database table.")]
+		+ "The result always includes virtual so callers can verify whether the schema has a physical database table. "
+		+ "Set required-only=true to return only columns marked required in schema metadata; column counts remain unfiltered. "
+		+ "This does not evaluate dynamic business rules or whether a required column has a default value.")]
 	public EntitySchemaPropertiesInfo GetEntitySchemaProperties(
-		[Description("environment-name, schema-name (required); package-name (optional — omit for the merged all-packages view)")] [Required] GetEntitySchemaPropertiesArgs args) {
+		[Description("environment-name, schema-name (required); package-name (optional — omit for the merged all-packages view); required-only (optional boolean, default false)")] [Required] GetEntitySchemaPropertiesArgs args) {
+		string? argumentError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".",
+			"Valid: environment-name, schema-name, package-name, required-only.");
+		if (argumentError is not null) {
+			throw new ArgumentException(argumentError);
+		}
 		GetEntitySchemaPropertiesOptions options = new() {
 			Environment = args.EnvironmentName,
 			Package = args.PackageName,
-			SchemaName = args.SchemaName
+			SchemaName = args.SchemaName,
+			RequiredOnly = args.RequiredOnly
 		};
 
 		GetEntitySchemaPropertiesCommand resolvedCommand = ResolveCommand<GetEntitySchemaPropertiesCommand>(options);
@@ -1299,8 +1308,18 @@ public sealed record GetEntitySchemaPropertiesArgs(
 	[property: JsonPropertyName("package-name")]
 	[property: Description("Optional target package name. Omit to read the merged/effective schema with columns "
 		+ "from ALL packages (recommended for column discovery). Supply only to inspect a single package layer's slice.")]
-	string? PackageName = null
-);
+	string? PackageName = null,
+
+	[property: JsonPropertyName("required-only")]
+	[property: Description("Return only columns marked required in schema metadata. Default false. Schema column counts remain unfiltered; dynamic business rules and default values are not evaluated.")]
+	bool RequiredOnly = false
+) {
+	/// <summary>
+	/// Captures unsupported arguments so the tool can reject them with the valid field names.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}
 
 /// <summary>
 /// Arguments for the <c>set-entity-schema-properties</c> MCP tool.

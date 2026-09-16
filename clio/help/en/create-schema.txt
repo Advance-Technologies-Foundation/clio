@@ -18,7 +18,16 @@ DESCRIPTION
     The schema-name must start with a letter and contain only letters, digits,
     or underscores. The name must be unique within the environment.
 
+    The command validator reports missing schema-name/package-name and invalid
+    schema-name errors together.
+    MCP validates names before environment resolution and lists valid arguments.
+    Use schema-name and package-name, not name and package.
+
 OPTIONS
+    --body                             Optional initial C# source; must not be empty if supplied
+
+    --body-file                        UTF-8 source file; takes precedence over --body
+
     --schema-name                      New schema name (required)
 
     --package-name                     Target package name that will own the new schema (required)
@@ -42,6 +51,10 @@ OPTIONS
     --Maintainer             -m       Maintainer name
 
 EXAMPLES
+    clio create-schema --schema-name UsrMyHelper --package-name Custom --body-file ./UsrMyHelper.cs -e dev
+        Create with source loaded from a file. Omit both body options for the blank template.
+        Missing, unreadable, or empty files fail before schema creation.
+
     clio create-schema --schema-name UsrMyHelper --package-name Custom -e dev
         Create UsrMyHelper in the Custom package on the dev environment
 

@@ -178,13 +178,16 @@ internal static class SchemaDesignerHelper {
 			: (null, error);
 
 	internal static string ValidateCreateInput(string schemaName, string packageName) {
-		if (string.IsNullOrWhiteSpace(schemaName))
-			return "schema-name is required";
-		if (!PageSchemaMetadataHelper.IsValidSchemaName(schemaName))
-			return PageSchemaMetadataHelper.SchemaNameFormatError;
-		if (string.IsNullOrWhiteSpace(packageName))
-			return "package-name is required";
-		return null;
+		List<string> errors = [];
+		if (string.IsNullOrWhiteSpace(schemaName)) {
+			errors.Add("schema-name is required");
+		} else if (!PageSchemaMetadataHelper.IsValidSchemaName(schemaName)) {
+			errors.Add(PageSchemaMetadataHelper.SchemaNameFormatError);
+		}
+		if (string.IsNullOrWhiteSpace(packageName)) {
+			errors.Add("package-name is required");
+		}
+		return errors.Count == 0 ? null : string.Join("; ", errors);
 	}
 
 	internal static SchemaResolveResult ResolveSchemaUId(

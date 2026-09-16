@@ -48,7 +48,13 @@ internal static partial class SensitiveErrorTextRedactor {
 	// that accepts ')' consumed the closing bracket too, leaving the reader an unbalanced
 	// "(URL: [redacted-uri]". A URI whose path genuinely ends in ')' loses only that character, and it is
 	// redacted either way.
-	[GeneratedRegex(@"(?<!\\u?[0-9A-Fa-f]{0,3})(?:(?<=\\u[0-9A-Fa-f]{4})|\b)[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s""'<>)\\]+", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
+	// RFC 3986 userinfo has its own prefix: apostrophes and parentheses are legal BEFORE '@',
+	// even though they delimit prose in the tail. Otherwise a partial password survives the match.
+	// System.Text.Json escapes '&', apostrophe and '+'; accept those complete userinfo units too,
+	// but never the surrounding quote escape (\u0022).
+	[GeneratedRegex(@"(?<!\\u?[0-9A-Fa-f]{0,3})(?:(?<=\\u[0-9A-Fa-f]{4})|\b)[a-zA-Z][a-zA-Z0-9+.\-]*://"
+		+ @"(?:(?:[A-Za-z0-9._~!$&'()*+,;=:\-]|%[0-9A-Fa-f]{2}|\\u002[67bB])*@)?[^\s""'<>)\\]+",
+		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex UriRegex();
 
 	// Windows drive-rooted (C:\…) and UNC (\\host\share\…) absolute paths.

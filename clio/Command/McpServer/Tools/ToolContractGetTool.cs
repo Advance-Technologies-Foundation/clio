@@ -4900,7 +4900,8 @@ internal static class ToolContractCatalog {
 			"Returns a structured summary of entity schema metadata for read-before-write inspection and read-back verification. " +
 			"Omit package-name to read the merged/effective schema with columns from ALL packages (recommended for column " +
 			"discovery); supply it only to inspect a single package layer's slice, which reports that layer's own columns and " +
-			"treats everything else as inherited.",
+			"treats everything else as inherited. Set required-only=true to return only columns marked required in schema metadata; " +
+			"schema column counts remain unfiltered. Dynamic business rules and default values are not evaluated.",
 			// package-name is NOT required here: the emitted tool schema makes it optional and its own text
 			// recommends omitting it for column discovery. Spelling it as required in the curated contract is
 			// the exact divergence issue #965 reports — an agent that trusts get-tool-contract always sends a
@@ -4914,7 +4915,8 @@ internal static class ToolContractCatalog {
 					Field(PackageNameFieldName, StringType,
 						"Optional target package name. Omit to read the merged/effective schema with columns from ALL " +
 						"packages (recommended for column discovery). Supply only to inspect a single package layer's slice."),
-					Field(SchemaNameFieldName, StringType, EntitySchemaNameDescription)
+					Field(SchemaNameFieldName, StringType, EntitySchemaNameDescription),
+					Field("required-only", BooleanType, "Optional, default false. Return only columns whose required metadata is true; schema column counts remain unfiltered.")
 				]),
 			StructuredResultOutput(
 				Field("name", StringType, "Schema name."),
