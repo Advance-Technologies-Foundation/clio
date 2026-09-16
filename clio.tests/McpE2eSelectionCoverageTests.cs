@@ -280,8 +280,8 @@ internal sealed class McpE2eSelectionCoverageTests {
 		onlyToolConsumer.GetProperty("mode").GetString().Should().Be("subset",
 			because: "AlphaService is named only by AlphaTool.cs, so its blast radius is AlphaTool's fixtures");
 		onlyToolConsumer.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(
-			["AlphaToolE2ETests", "AlphaLiteralE2ETests", "AlphaContractE2ETests"],
-			because: "AlphaTool is selected by the fixture named after it, by the one that uses its tool-name literal and by the NoEnvironment contract fixture that names its class");
+			["AlphaToolE2ETests", "AlphaLiteralE2ETests", "AlphaContractE2ETests", "AlphaLegacyE2ETests"],
+			because: "AlphaTool is selected by the fixture named after it, by the ones that use its tool-name literal and by the NoEnvironment contract fixture that names its class");
 		outsideConsumer.GetProperty("mode").GetString().Should().Be("full",
 			because: "SharedHelper is also named by clio/Command/OtherCommand.cs, so consumers outside the tools exist and the closure is unknown");
 		noConsumer.GetProperty("mode").GetString().Should().Be("full",
@@ -289,12 +289,12 @@ internal sealed class McpE2eSelectionCoverageTests {
 		toolFile.GetProperty("mode").GetString().Should().Be("subset",
 			because: "a tool file resolves directly to the fixtures that reference it");
 		toolFile.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(
-			["AlphaToolE2ETests", "AlphaLiteralE2ETests", "AlphaContractE2ETests"],
+			["AlphaToolE2ETests", "AlphaLiteralE2ETests", "AlphaContractE2ETests", "AlphaLegacyE2ETests"],
 			because: "the class identifier, the tool-name literal and the naming convention all point at the same fixtures");
 	}
 
 	[Test]
-	[Description("In a synthetic repository, a tool file that no fixture references forces a full run instead of an empty subset, a registration file does not count as a consumer, an abstract base class in a fixture file is not emitted as a fixture, and a NoEnvironment-only subset becomes mode none unless that tier is kept on TeamCity.")]
+	[Description("In a synthetic repository, a tool file that no fixture references forces a full run instead of an empty subset, a registration file does not count as a consumer, an abstract base class in a fixture file is not emitted as a fixture, and a subset becomes mode none only when every fixture is positively NoEnvironment-only and that tier is not kept on TeamCity.")]
 	public void Script_ShouldForceFullRun_WhenToolFileSelectsNoFixture_AndSkipAbstractBases() {
 		// Arrange
 		using SyntheticRepository repo = SyntheticRepository.Create();
@@ -305,6 +305,7 @@ internal sealed class McpE2eSelectionCoverageTests {
 		JsonElement fixtureFile = RunSelection(["clio.mcp.e2e/AlphaToolE2ETests.cs"], includeNoEnvironment: false, repo.Root);
 		JsonElement noEnvironmentOnly = RunSelection(["clio.mcp.e2e/AlphaContractE2ETests.cs"], includeNoEnvironment: false, repo.Root);
 		JsonElement noEnvironmentKept = RunSelection(["clio.mcp.e2e/AlphaContractE2ETests.cs"], includeNoEnvironment: true, repo.Root);
+		JsonElement untieredOnly = RunSelection(["clio.mcp.e2e/AlphaLegacyE2ETests.cs"], includeNoEnvironment: false, repo.Root);
 
 		// Assert
 		unreferencedTool.GetProperty("mode").GetString().Should().Be("full",
@@ -321,6 +322,8 @@ internal sealed class McpE2eSelectionCoverageTests {
 			because: "mode none must not hand TeamCity any filter");
 		noEnvironmentKept.GetProperty("mode").GetString().Should().Be("subset",
 			because: "when the NoEnvironment tier stays on TeamCity the same fixture is a normal subset");
+		untieredOnly.GetProperty("mode").GetString().Should().Be("subset",
+			because: "a fixture with no McpE2E.* tier runs on TeamCity under the base filter and nowhere on GitHub, so the absence of a Sandbox marker must never be read as NoEnvironment coverage (review finding on PR #1571)");
 	}
 
 	private static JsonElement RunSelection(string[] changedFiles, bool includeNoEnvironment, string? repositoryRoot = null) =>
@@ -454,6 +457,9 @@ internal sealed class McpE2eSelectionCoverageTests {
 				"[TestFixture]\n[Category(\"McpE2E.NoEnvironment\")]\npublic sealed class AlphaContractE2ETests {\n\t[Test] public void Advertises() => Call(AlphaTool.ToolName);\n}");
 			Write("clio.mcp.e2e/UnrelatedE2ETests.cs",
 				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class UnrelatedE2ETests {\n\t[Test] public void Works() { }\n}");
+			// Carries no McpE2E.* tier at all, like DownloadSysSettingFileE2ETests in the live tree.
+			Write("clio.mcp.e2e/AlphaLegacyE2ETests.cs",
+				"[TestFixture]\n[Category(\"E2E\")]\npublic sealed class AlphaLegacyE2ETests {\n\t[Test] public void Works() => Call(\"alpha-run\");\n}");
 			return new SyntheticRepository(root);
 		}
 

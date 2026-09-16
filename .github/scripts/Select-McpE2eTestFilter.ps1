@@ -85,15 +85,18 @@ $fixtureRoot = Join-Path $root $manifest.fixtureRoot
 $fixtureDeclaration = '(?m)^(?:public|internal)(?:[ \t]+(?:sealed|static|partial))*[ \t]+class[ \t]+([A-Za-z_]\w*)\b'
 $fixtureSources = @{}     # fixture class name -> source text of its file
 $fixturesByFile = @{}     # file base name     -> fixture class names declared in it
-$fixtureHasSandbox = @{}  # fixture class name -> $true when its file declares any McpE2E.Sandbox test
+$fixtureNoEnvironmentOnly = @{}  # fixture class name -> $true when its file is positively NoEnvironment and has no Sandbox test
 foreach ($file in Get-ChildItem -LiteralPath $fixtureRoot -Filter '*.cs' -File) {
     $text = Read-Text $file.FullName
     if ($text -cnotmatch '\[\s*(Test|TestFixture|TestCase|TestCaseSource|Theory)\b') { continue }
     $classes = @([regex]::Matches($text, $fixtureDeclaration) | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
     if ($classes.Count -eq 0) { continue }
     $fixturesByFile[$file.BaseName] = $classes
+    # Positive classification only: a fixture that carries neither tier (bare Category("E2E")) runs on
+    # TeamCity under the base filter and nowhere on GitHub, so it must never be treated as covered.
     $hasSandbox = $text.Contains('McpE2E.Sandbox') -or $text.Contains('McpE2ECategories.Sandbox')
-    foreach ($class in $classes) { $fixtureSources[$class] = $text; $fixtureHasSandbox[$class] = $hasSandbox }
+    $hasNoEnvironment = $text.Contains('McpE2E.NoEnvironment') -or $text.Contains('McpE2ECategories.NoEnvironment')
+    foreach ($class in $classes) { $fixtureSources[$class] = $text; $fixtureNoEnvironmentOnly[$class] = ($hasNoEnvironment -and -not $hasSandbox) }
 }
 
 # --- tool inventory: what each Tools/**/*.cs declares ----------------------------------------------
@@ -264,9 +267,9 @@ if ($mode -eq 'subset' -and $fixtures.Count -gt [int]$manifest.maxSubsetFixtures
 }
 
 if ($mode -eq 'subset' -and -not $IncludeNoEnvironment) {
-    $withSandbox = @($fixtures | Where-Object { $fixtureHasSandbox[$_] })
-    if ($withSandbox.Count -eq 0) {
-        $decisions.Add('every selected fixture is NoEnvironment-only and that tier runs on GitHub -> nothing to run on TeamCity')
+    $needsTeamCity = @($fixtures | Where-Object { -not $fixtureNoEnvironmentOnly[$_] })
+    if ($needsTeamCity.Count -eq 0) {
+        $decisions.Add('every selected fixture is positively NoEnvironment-only and that tier runs on GitHub -> nothing to run on TeamCity')
         $mode = 'none'
     }
 }

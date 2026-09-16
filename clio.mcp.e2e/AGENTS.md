@@ -54,7 +54,7 @@ runs `.github/scripts/Select-McpE2eTestFilter.ps1`, which maps the changed files
 `Support/**`, `cliogate/**`, package versions) runs everything; a change to
 `clio/Command/McpServer/Tools/X.cs` runs the fixtures that reference `X`; a change to another
 `clio/**/*.cs` runs the fixtures of the tools that consume it, but only when nothing outside the tools
-consumes it too. If every selected fixture is NoEnvironment-only, no TeamCity build is queued at all.
+consumes it too. If every selected fixture is positively `McpE2E.NoEnvironment` (a fixture with no `McpE2E.*` tier still counts as needing TeamCity), no TeamCity build is queued at all.
 Master builds keep the full default. The `McpE2E.NoEnvironment` tier runs on GitHub-hosted runners (`build.yml`, job
 `mcp-e2e-noenvironment`) and is excluded from pull-request runs on TeamCity.
 

@@ -18,9 +18,10 @@
     "  7. anything else                      -> the whole suite runs",
     "A subset larger than maxSubsetFixtures also becomes a full run (command-line length; the NUnit",
     "adapter's 2000-test limit for non-category filters is far above this suite's size, revisit if it grows).",
-    "A subset whose fixtures have no McpE2E.Sandbox test becomes mode 'none': nothing is queued, because",
-    "the NoEnvironment tier runs on GitHub-hosted runners (.github/workflows/build.yml, job",
-    "mcp-e2e-noenvironment) and pull-request runs on TeamCity exclude it. The TeamCity step's default",
+    "A subset whose fixtures are ALL positively McpE2E.NoEnvironment (and none Sandbox) becomes mode 'none':",
+    "nothing is queued, because that tier runs on GitHub-hosted runners (.github/workflows/build.yml, job",
+    "mcp-e2e-noenvironment) and pull-request runs on TeamCity exclude it; a fixture with no McpE2E.* tier",
+    "still needs TeamCity. The TeamCity step's default",
     "filter is baseFilter; a full pull-request run sends baseFilter plus TestCategory!=McpE2E.NoEnvironment."
   ],
   "baseFilter": "TestCategory!=McpE2E.ProcessDesigner&TestCategory!=McpE2E.Manual",

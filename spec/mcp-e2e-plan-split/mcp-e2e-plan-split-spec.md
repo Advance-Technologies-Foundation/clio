@@ -85,7 +85,7 @@ subset-green and a full-green post the same commit status.
 One full-run file anywhere in the diff makes the whole run full. A subset larger than
 `maxSubsetFixtures` (60) becomes a full run (command-line length, and at that size the saving is gone).
 A diff with no relevant file also resolves to a full run: the safe default is everything, never nothing.
-A subset whose fixtures declare no `McpE2E.Sandbox` test becomes mode **none**: the NoEnvironment tier
+A subset whose fixtures are all positively `McpE2E.NoEnvironment` (and none `McpE2E.Sandbox`) becomes mode **none**: the NoEnvironment tier
 already ran on GitHub, so no TeamCity build is queued (a deploy for zero tests) and no
 `CLIO MCP e2e tests (ATF)` status appears on that pull request.
 
