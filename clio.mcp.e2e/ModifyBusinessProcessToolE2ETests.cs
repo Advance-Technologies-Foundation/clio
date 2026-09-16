@@ -3477,6 +3477,143 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 
 	[Test]
 	[Category("ManualQaScratch")]
+	public async Task ManualQa_TCW10_GatewayNowExercised() {
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+
+		// Single gateway: Approval -> Decide (plain) -> EndA (default) / EndB (conditional, results declared at build time)
+		string processName1 = $"UsrQaTcw10single{Guid.NewGuid():N}"[..30];
+		CallToolResult built1 = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = $$"""
+				{
+				  "name": "{{processName1}}",
+				  "caption": "Clio QA TCW10 single gateway",
+				  "packageName": "Custom",
+				  "elements": [
+				    { "name": "Start1", "type": "startEvent" },
+				    { "name": "Approve", "type": "approval", "caption": "Approve order" },
+				    { "name": "Decide", "type": "exclusiveGateway" },
+				    { "name": "EndA", "type": "endEvent" },
+				    { "name": "EndB", "type": "endEvent" }
+				  ],
+				  "flows": [
+				    { "source": "Start1", "target": "Approve" },
+				    { "source": "Approve", "target": "Decide" },
+				    { "source": "Decide", "target": "EndA", "kind": "default" },
+				    { "source": "Decide", "target": "EndB", "kind": "conditional", "results": ["Positive"] }
+				  ]
+				}
+				"""
+		});
+		McpCommandExecutionParser.Extract(built1).ExitCode.Should().Be(0,
+			because: "TC-W10 step 1: declaring the gateway's non-default branch with its selection at build time must succeed");
+		DescribeProcessResult described1 = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["process-name"] = processName1
+			}));
+		DescribedFlow branch1 = described1.Flows.Single(f => f.Source == "Decide" && f.Target == "EndB");
+		branch1.ResultsActivity.Should().Be("Approve",
+			because: "TC-W10 step 2: resultsActivity must name the Approval, not the gateway");
+		branch1.Results.Should().Equal(new[] { "Positive" });
+		TestContext.WriteLine($"TCW10-single processName={processName1} schemaUId={described1.SchemaUId} resultsActivity={branch1.ResultsActivity} results=[{string.Join(",", branch1.Results)}]");
+
+		// Chained gateways: Approval -> Decide1 -> Decide2 -> EndA(default)/EndB(conditional+results attempt, TWO hops from Approve)
+		string processName2 = $"UsrQaTcw10chain{Guid.NewGuid():N}"[..30];
+		CallToolResult built2 = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = $$"""
+				{
+				  "name": "{{processName2}}",
+				  "caption": "Clio QA TCW10 chained gateways",
+				  "packageName": "Custom",
+				  "elements": [
+				    { "name": "Start1", "type": "startEvent" },
+				    { "name": "Approve", "type": "approval", "caption": "Approve order" },
+				    { "name": "Decide1", "type": "exclusiveGateway" },
+				    { "name": "Decide2", "type": "exclusiveGateway" },
+				    { "name": "EndA", "type": "endEvent" },
+				    { "name": "EndB", "type": "endEvent" },
+				    { "name": "EndC", "type": "endEvent" }
+				  ],
+				  "flows": [
+				    { "source": "Start1", "target": "Approve" },
+				    { "source": "Approve", "target": "Decide1" },
+				    { "source": "Decide1", "target": "Decide2", "kind": "default" },
+				    { "source": "Decide1", "target": "EndC", "kind": "conditional", "results": ["Negative"] },
+				    { "source": "Decide2", "target": "EndA", "kind": "default" },
+				    { "source": "Decide2", "target": "EndB", "kind": "conditional", "results": ["Positive"] }
+				  ]
+				}
+				"""
+		});
+		string chainPayload = JsonSerializer.Serialize(built2);
+		TestContext.WriteLine($"TCW10-chain build attempt payload: {chainPayload}");
+		int chainExitCode = McpCommandExecutionParser.Extract(built2).ExitCode;
+		if (chainExitCode == 0) {
+			string schemaUId2 = await ReadSchemaUIdAsync(context, processName2);
+			TestContext.WriteLine($"TCW10-chain processName={processName2} schemaUId={schemaUId2} (build did NOT refuse - report this)");
+		} else {
+			TestContext.WriteLine("TCW10-chain build was refused, as expected for a two-hop gateway chain");
+		}
+	}
+
+	[Test]
+	[Category("ManualQaScratch")]
+	public async Task ManualQa_TCW05_UsingLegacyProcessA() {
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		DescribeProcessResult before = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["process-uid"] = "71ae77a1-43b8-4048-899b-4100ff2de1f8"
+			}));
+		DescribedFlow beforeFlow = before.Flows.Single(f => f.Source == "Approve" && f.Target == "EndOk");
+		beforeFlow.Condition.Should().NotBeNull(because: "TC-W05 needs legacy content: an Approval branch that ALREADY carries a formula condition");
+		TestContext.WriteLine($"TCW05 legacy-before condition={beforeFlow.Condition} kind={beforeFlow.Kind}");
+
+		CallToolResult resultsSet = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-uid"] = "71ae77a1-43b8-4048-899b-4100ff2de1f8",
+			["operations"] = """[ { "op": "setFlowResults", "source": "Approve", "target": "EndOk", "results": ["Positive"] } ]"""
+		});
+		McpCommandExecutionParser.Extract(resultsSet).ExitCode.Should().Be(0,
+			because: "TC-W05: setFlowResults on legacy formula content must succeed and clear the condition");
+
+		DescribeProcessResult after = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["process-uid"] = "71ae77a1-43b8-4048-899b-4100ff2de1f8"
+			}));
+		DescribedFlow afterFlow = after.Flows.Single(f => f.Source == "Approve" && f.Target == "EndOk");
+		afterFlow.Condition.Should().BeNull(because: "TC-W05: the expression must be GONE, not parked beside the selection");
+		afterFlow.Results.Should().Equal(new[] { "Positive" });
+		TestContext.WriteLine($"TCW05 legacy-after condition={afterFlow.Condition} results=[{string.Join(",", afterFlow.Results)}]");
+	}
+
+	[Test]
+	[Category("ManualQaScratch")]
+	public async Task ManualQa_TCW13_FormulaOnResultEnumeratingConnectorRefused() {
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrQaTcw13{Guid.NewGuid():N}"[..30];
+		CallToolResult built = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildApprovalBranchDescriptor(processName, declareSelection: false)
+		});
+		built.IsError.Should().NotBeTrue();
+		CallToolResult attempt = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "setFlowCondition", "source": "Approve", "target": "EndOk", "condition": "1 > 0" } ]"""
+		});
+		McpCommandExecutionParser.Extract(attempt).ExitCode.Should().NotBe(0,
+			because: "TC-W13: a formula onto a flow leaving a result-enumerating source must now be refused");
+		string payload = JsonSerializer.Serialize(attempt);
+		TestContext.WriteLine($"TCW13 refusal payload: {payload}");
+		DescribedFlow branch = await DescribeBranchAsync(context, processName, "EndOk");
+		branch.Condition.Should().BeNull(because: "a refusal must not be a partial write");
+		branch.Kind.Should().Be("sequence", because: "the flow must remain untouched by the refused operation");
+		TestContext.WriteLine($"TCW13 processName={processName} schemaUId={await ReadSchemaUIdAsync(context, processName)}");
+	}
+
+	[Test]
+	[Category("ManualQaScratch")]
 	public async Task ManualQa_BuildVanillaForDesignerTest() {
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrQaVanilla{Guid.NewGuid():N}"[..30];

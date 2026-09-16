@@ -207,6 +207,16 @@ selection in the same call.
 * Step 4: `results` is REFUSED and the designer shows a formula field. One hop, no recursion, on both
   sides — the limit is the designer's and the tool matches it rather than being cleverer.
 
+> **Step 3 is the one assertion in this case that the API cannot substitute for, and it is UNVERIFIED as
+> of the stand runs so far — prioritise it.** Every other step proves we WROTE the map we intended.
+> Step 3 is the only one that proves the designer can READ it when the key is not the flow's source: it
+> resolves the element by the map key, so a gateway-keyed selection is a different code path from the
+> one TC-W02 covers. Two attempts failed for want of a clickable target — this gateway's outgoing
+> connector carries no caption in the accessibility tree before selection, so `find` has nothing to
+> grab, and coordinate clicks landed on the canvas instead. If it resists automation again, have a
+> human open the connector; the panel heading should name the APPROVAL, not the gateway, and that
+> heading is itself the second piece of evidence because it is rendered from the resolved activity.
+
 ### TC-W13 A formula on a result-enumerating connector is REFUSED
 
 **Preconditions:** TC-W01's process, with the `EndOk` branch still plain.
