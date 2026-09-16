@@ -826,8 +826,12 @@ public sealed class ValidateProcessGraphToolTests {
 		_tool.Validate(args);
 
 		// Assert
-		_commandResolver.DidNotReceive().Resolve<IRequiredPackageChecker>(Arg.Any<EnvironmentOptions>());
-		_checker.DidNotReceive().EnsureRequirements(Arg.Any<object>());
+		_commandResolver.ReceivedCalls().Should().BeEmpty(
+			because: "a caller mistake must be answered without resolving the environment at all - "
+				+ "NSubstitute's DidNotReceive carries no because, so the call log is asserted instead");
+		_checker.ReceivedCalls().Should().BeEmpty(
+			because: "the package requirement is an environment round-trip, and a mis-keyed call has not "
+				+ "earned one");
 	}
 
 	[Test]

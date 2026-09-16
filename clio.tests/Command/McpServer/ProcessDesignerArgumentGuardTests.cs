@@ -21,10 +21,14 @@ namespace Clio.Tests.Command.McpServer;
 /// The remedy is per-tool: a <c>[JsonExtensionData]</c> overflow bag PLUS a check over it.
 /// </para>
 /// <para>
-/// These tests are deliberately reflective rather than per-tool behavioural: the point is that a NEW
-/// process-designer tool cannot be added without the guard, which is the failure this ticket is the third
-/// recorded instance of. A bag with no check is the failure mode, not the fix, so the presence of the bag
-/// alone is not asserted on its own - each tool must also publish the field list its check echoes back.
+/// These tests are deliberately reflective, and their scope is exactly that: a NEW process-designer tool
+/// cannot be added without DECLARING the guard's parts. They do NOT prove the guard is invoked - deleting
+/// the BuildLegacyAliasError call from a tool leaves every assertion here green, because a declaration is
+/// not a call. That proposition belongs to
+/// <see cref="ProcessDesignerUnknownArgumentRefusalTests"/>, which exercises all eight tools through their
+/// real entry points; this fixture is the tripwire for the declaration, not the oracle for the behaviour.
+/// Keeping the two apart is deliberate - stating the stronger claim here is how a fixture ends up trusted
+/// for something it never checked.
 /// </para>
 /// </summary>
 [TestFixture]
@@ -103,10 +107,10 @@ public sealed class ProcessDesignerArgumentGuardTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Every process-designer tool publishes the canonical field list its guard echoes back. This is "
-		+ "the half that distinguishes a wired guard from a bag nobody reads: the constant exists only "
-		+ "because the tool calls BuildLegacyAliasError with it, and a caller who mis-keys an argument needs "
-		+ "the valid names to fix the call without guessing a second time.")]
+	[Description("Every process-designer tool publishes the canonical field list its guard echoes back, so a "
+		+ "caller who mis-keys an argument gets the valid names and does not have to guess a second time. "
+		+ "This asserts the constant EXISTS and is non-blank; that the tool actually passes it to "
+		+ "BuildLegacyAliasError is a behavioural claim, checked in ProcessDesignerUnknownArgumentRefusalTests.")]
 	public void EveryTool_ShouldPublishItsCanonicalFieldList() {
 		// Arrange
 		IReadOnlyList<Type> tools = ToolTypes();

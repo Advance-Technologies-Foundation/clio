@@ -159,6 +159,40 @@ internal static class McpToolArgumentSupport {
 			["environment"] = "environment-name"
 		};
 
+	/// <summary>Most caller-supplied key names echoed back in one message.</summary>
+	/// <remarks>
+	/// ENG-98566. The single definition of these bounds, shared with
+	/// <c>McpToolErrorFilter.DescribeCallerKeys</c>, which acquired them first (ENG-95885 review round 9)
+	/// while this path - the one a NON-RESIDENT tool's overflow bag reaches, and the only unknown-key
+	/// defence such a tool has - was left unbounded. The two sinks are the same: caller-controlled key
+	/// names inside server-authored framing, in a TextContentBlock that reaches the hosting agent's
+	/// transcript.
+	/// </remarks>
+	public const int MaxEchoedKeys = 10;
+
+	/// <summary>Longest single caller-supplied key name echoed back. See <see cref="MaxEchoedKeys"/>.</summary>
+	public const int MaxEchoedKeyLength = 120;
+
+	/// <summary>
+	/// Renders ONE caller-supplied key name for a message: length-capped and sanitized, so a key carrying
+	/// a newline or an ESC sequence cannot forge lines that read as clio's own text.
+	/// </summary>
+	/// <param name="key">The raw key as the caller spelled it.</param>
+	public static string DescribeCallerKey(string key) =>
+		Clio.Common.TextUtilities.SanitizeForDisplay(key ?? string.Empty, MaxEchoedKeyLength);
+
+	/// <summary>
+	/// Joins already-rendered caller-key fragments, capped at <see cref="MaxEchoedKeys"/> with an
+	/// "and N more" tail. Without the cap a payload of many distinct keys costs a proportional
+	/// <c>string.Join</c> and then a regex pass per redaction pattern, for a call that never reaches a tool.
+	/// </summary>
+	/// <param name="renderedKeys">Fragments produced from <see cref="DescribeCallerKey"/>.</param>
+	private static string JoinCallerKeys(IReadOnlyList<string> renderedKeys) {
+		string shown = string.Join(", ", renderedKeys.Take(MaxEchoedKeys));
+		int hidden = renderedKeys.Count - Math.Min(renderedKeys.Count, MaxEchoedKeys);
+		return hidden > 0 ? $"{shown} and {hidden} more" : shown;
+	}
+
 	/// <summary>
 	/// Builds a single actionable rename hint from the fields an MCP arg record could not bind
 	/// (captured in its <c>[JsonExtensionData]</c> bag). Known camelCase/snake_case spellings are
@@ -182,17 +216,19 @@ internal static class McpToolArgumentSupport {
 		List<string> unknown = [];
 		foreach (string key in extensionData.Keys) {
 			if (aliases.TryGetValue(key, out string? canonical)) {
-				mapped.Add($"'{key}' -> '{canonical}'");
+				// The CANONICAL half is server-declared and therefore trusted and bounded; only the
+				// caller's own spelling is sanitized.
+				mapped.Add($"'{DescribeCallerKey(key)}' -> '{canonical}'");
 			} else {
-				unknown.Add($"'{key}'");
+				unknown.Add($"'{DescribeCallerKey(key)}'");
 			}
 		}
 		List<string> parts = [];
 		if (mapped.Count > 0) {
-			parts.Add("Rename: " + string.Join(", ", mapped) + renameSuffix);
+			parts.Add("Rename: " + JoinCallerKeys(mapped) + renameSuffix);
 		}
 		if (unknown.Count > 0) {
-			parts.Add("Unknown args: " + string.Join(", ", unknown) + ". " + unknownHint);
+			parts.Add("Unknown args: " + JoinCallerKeys(unknown) + ". " + unknownHint);
 		}
 		return parts.Count > 0 ? string.Join(" ", parts) : null;
 	}

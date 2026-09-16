@@ -77,13 +77,16 @@ public class ModifyProcessAsNewVersionTool(
 		[Description("modify-business-process-as-new-version parameters")] [Required]
 		ModifyProcessAsNewVersionArgs args
 	) {
-		// ENG-98566. An unknown key inside the WRAPPED payload ({"args":{...}}) never reaches the
-		// flat-argument classifier - McpToolErrorFilter leaves an already-wrapped call untouched - so the
-		// serializer drops it at bind time and the tool answers a caller mistake with a plausible success.
+		// ENG-98566. This tool is LONG-TAIL - absent from McpCoreToolProfile - so McpToolErrorFilter's
+		// unknown-key classifier never runs on it in ANY payload shape: TryRefuseCallArgumentsCore bails at
+		// TryGetToolMethod because MatchedPrimitive is null for a tool that is not advertised. Even a
+		// RESIDENT tool is only classified in the FLAT shape - an already-wrapped {"args":{...}} call is
+		// passed through untouched. So the overflow bag plus this check is the ONLY thing standing between
+		// a mis-keyed call and a plausible success. Do not delete it because the normalizer exists.
 		string argumentError = McpToolArgumentSupport.BuildLegacyAliasError(
 			args?.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".", ValidArgsHint);
 		if (!string.IsNullOrWhiteSpace(argumentError)) {
-			return CommandExecutionResult.FromError(argumentError);
+			return CommandExecutionResult.FromValidationError(argumentError);
 		}
 
 		if (string.IsNullOrWhiteSpace(args?.EnvironmentName)) {

@@ -740,10 +740,14 @@ public static class McpToolErrorFilter
 	}
 
 	/// <summary>Most caller-supplied key names echoed back in one refusal.</summary>
-	private const int MaxEchoedKeys = 10;
+	/// <remarks>ENG-98566 moved the value itself to <see cref="McpToolArgumentSupport.MaxEchoedKeys"/>
+	/// so the overflow-bag echo path is bounded by the SAME number, rather than by a second copy that
+	/// can drift away from this one.</remarks>
+	private const int MaxEchoedKeys = McpToolArgumentSupport.MaxEchoedKeys;
 
 	/// <summary>Longest single caller-supplied key name echoed back.</summary>
-	private const int MaxEchoedKeyLength = 120;
+	/// <remarks>Shared with the overflow-bag echo path; see <see cref="MaxEchoedKeys"/>.</remarks>
+	private const int MaxEchoedKeyLength = McpToolArgumentSupport.MaxEchoedKeyLength;
 
 	/// <summary>
 	/// Renders caller-supplied key NAMES for a message: capped in count, capped per key, sanitized.
