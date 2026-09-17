@@ -122,13 +122,19 @@ Edges, all of them widening rather than narrowing:
   links a type that does not implement the interface itself.
 
 Parsing C# with regular expressions has known soft spots, so structure is never read from the raw
-file. One length-preserving pass blanks every raw string (the closing quote run has to match the
-opening one), verbatim and ordinary string, char literal, line comment and block comment, replacing
-each character with a space and keeping the line breaks. Declarations, base lists and the
+file. One length-preserving pass blanks every literal and comment - raw strings with any number of
+leading dollars and a closing run matching the opening one, interpolated strings whose holes may
+contain quotes, verbatim and interpolated-verbatim strings in either `$@` or `@$` order, ordinary
+strings, char literals, line comments and block comments - replacing each character with a space and
+keeping the line breaks. Declarations, base lists and the
 parentheses of a registration call are parsed on that text, so a bracket, a quote, a semicolon or a
 whole class written inside a comment or a literal cannot be read as syntax. *References* are still
 read from the raw text: a type named only in a comment adds an edge, which widens the selection and
 is the safe direction.
+
+The guard asserts the invariant that makes this checkable: after blanking, no quote and no comment
+marker is left anywhere under `clio/`. A literal form the lexer does not know leaves one behind, so
+the whole class of parser gaps fails a test instead of silently narrowing a selection.
 
 Two further shapes are handled explicitly. A base list may start on the line after the declaration,
 as `clio/Common/System.cs` does. A file whose first declaration is not its least-indented one is

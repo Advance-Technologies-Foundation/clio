@@ -441,6 +441,20 @@ internal sealed class McpE2eSelectionCoverageTests {
 	}
 
 	[Test]
+	[Description("After the script blanks comments and literals, no quote or comment marker is left anywhere under clio/, so a literal form the lexer does not know cannot silently corrupt the structural parse.")]
+	public void Lexer_ShouldLeaveNoLiteralOrCommentResidue() {
+		// Arrange
+		string[] residue = Inventory.Value.GetProperty("lexerResidue").EnumerateArray().Select(f => f.GetString()!).ToArray();
+
+		// Act
+		string[] offenders = residue.OrderBy(f => f, StringComparer.Ordinal).Take(10).ToArray();
+
+		// Assert
+		offenders.Should().BeEmpty(
+			because: "structure - declarations, base lists, the parentheses of a registration call - is parsed on the blanked text, so a string or comment form the lexer misses leaves a bracket or a quote behind and can end a type body or a registration statement early; that narrows the selection, which is the direction that loses a test. Interpolated raw strings ($\"\"\") and interpolated verbatim strings with a quote inside a hole are the forms that already did it");
+	}
+
+	[Test]
 	[Description("The set of product files no fixture can observe matches the list pinned in the repository, so a file drifting into or out of that set is a reviewable diff rather than a silent change to what runs.")]
 	public void UnreachableProductFiles_ShouldMatchThePinnedList() {
 		// Arrange

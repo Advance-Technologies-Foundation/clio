@@ -206,7 +206,15 @@ function Get-Graph() {
     # syntax. Offsets and line breaks are preserved, so indentation and anchors still work.
     # References are NOT read from the blanked text: a type named only in a comment adds an edge,
     # which widens the selection and is the safe direction.
-    $script:nonCode = [regex] '("{3,})[\s\S]*?\1|@"(?:[^"]|"")*"|"(?:\\.|[^"\\\r\n])*"|''(?:\\.|[^''\\\r\n])*''|//[^\r\n]*|/\*[\s\S]*?\*/'
+    # Order matters: the longest and most specific form first. A raw string is matched with any
+    # number of leading dollars, because `$"""` and `$$"""` are interpolated raw strings and 44
+    # files here use them. An interpolated string is listed
+    # before the ordinary one because a quote inside a hole - `$"{Call(\")\")}"`, which 105 files
+    # here contain, BindingsModule.cs among them - would otherwise end the literal early and leave
+    # a stray bracket in the structural text.
+    $script:nonCode = [regex] @'
+\$*("{3,})[\s\S]*?\1|(?:\$@|@\$)"(?:\{(?:[^{}"]|"(?:""|[^"])*")*\}|\{\{|\}\}|""|[^"])*"|\$@?"(?:\{(?:[^{}"]|"(?:\\.|[^"\\\r\n])*")*\}|\{\{|\}\}|""|\\.|[^"\\\r\n])*"|@"(?:[^"]|"")*"|"(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*'|//[^\r\n]*|/\*[\s\S]*?\*/
+'@
     # services.AddSingleton<IFoo, Foo>() - the one edge name matching cannot see, because a consumer
     # of IFoo never spells Foo out. Taken from the registration files only, and only as an exact pair.
     $registrationPair = [regex] 'Add(?:Singleton|Scoped|Transient|KeyedSingleton)<\s*(?:[\w.]*\.)?(\w+)\s*,\s*(?:[\w.]*\.)?(\w+)\s*>'
@@ -395,7 +403,17 @@ function Get-Graph() {
         }
     }
 
+    # An invariant the guard checks: after blanking, no quote, comment marker or char literal may
+    # remain anywhere. A lexer that misses a literal form leaves one behind, and that is exactly the
+    # class of bug that silently narrows the structural parse.
+    $residue = New-Object System.Collections.Generic.List[string]
+    foreach ($relative in ($texts.Keys | Sort-Object)) {
+        $blanked = Remove-NonCode $texts[$relative]
+        if ($blanked.Contains('"') -or $blanked.Contains('//') -or $blanked.Contains('/*')) { $residue.Add($relative) }
+    }
+
     $script:graph = @{
+        LexerResidue = $residue
         Texts = $texts; TypeFiles = $typeFiles; TypesByFile = $typesByFile
         VerbsByType = $verbsByType; Consumers = $consumers; RegistrationTypes = $registrationTypes
         UnboundedTypes = $unboundedTypes
@@ -610,6 +628,7 @@ if ($Inventory) {
         fixtures = $fixturesOut; reachability = $reachOut
         uncoveredTools = @($uncovered | Sort-Object)
         unreachableProductFiles = @($unreachable)
+        lexerResidue = @((Get-Graph).LexerResidue)
     } | ConvertTo-Json -Depth 4
     return
 }
