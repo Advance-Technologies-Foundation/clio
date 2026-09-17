@@ -163,7 +163,7 @@ place the state it needs exists.
 | Step | |
 |---|---|
 | 1 | Build a caller with a sub-process element on a callee declaring parameters `Alpha` and `Beta`, and map a value onto each. |
-| 2 | COMPILE the caller. This is the step the case turns on: without it describe falls back to the design instance and converges the element, and the case cannot be observed at all. |
+| 2 | Make the caller resolve as a RUNTIME instance. **UNDER TEST — see the note below; do not spend a compile on the strength of this row.** |
 | 3 | Remove `Beta` from the callee and save the callee. |
 | 4 | `describe-business-process` the CALLER. |
 
@@ -172,6 +172,22 @@ Expected: the `subProcess` block reports `inSync: false` while the element still
 the way DQ-15 describes — `MirrorsCallee` is satisfied by the refreshed element while the report's
 `IsUnchanged` counts the `Removed` entry. A FAIL here is `inSync: true` on step 4, which would mean
 describe converged after all and DQ-27's correction is itself wrong.
+
+**Step 2 is disputed, 2026-09-17, and this row is the only INSTRUCTION affected — everything else that
+says "compiled" is descriptive and is corrected in one pass once this is settled.** I wrote "COMPILE the
+caller" as the pivot. An interpreted process has nothing to compile, and every `inSync: false` reading so
+far was taken on a process that was never compiled. Our own `LoadForDescribe` agrees: its comment reads
+"Prefer the runtime instance (**DB** / compiled processes)" and its fallback is described as being for
+"design-time / file-design-mode (uncompiled) processes that are **not present as a runtime instance**".
+So the discriminator our code implements is *is there a runtime instance*, and "compiled" was my gloss on
+one half of a two-item list.
+
+The stand run now establishes which state produces one, in order and stopping at the first that works:
+**(a)** the schema merely saved, **(b)** the caller having been run once, **(c)** a compile. If it is (a)
+or (b), then telling anyone to compile is telling them to spend the operation that left this stand
+not-ready past 600 seconds, for nothing. Do not correct DQ-27, the contract or the guidance until that
+run reports — the objection is well-argued but it is not yet a measurement, and this ticket has been
+bitten five times by exactly that substitution.
 
 ## 5. What is deliberately not covered
 
