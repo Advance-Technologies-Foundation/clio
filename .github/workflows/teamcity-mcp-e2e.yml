@@ -28,6 +28,13 @@
 #      (authoritative fork control; the in-file `if:` guard below is only
 #      defense-in-depth). To be confirmed by a repo admin.
 #
+# Fixture selection (see the `select` job): the build runs only the fixtures the pull request
+# can affect, chosen by .github/scripts/Select-McpE2eTestFilter.ps1 from the rules in
+# clio.mcp.e2e/TestSelection/mcp-e2e-selection.json and delivered as the McpE2eTestFilter build
+# property. The TeamCity step reads it as --filter "%McpE2eTestFilter%"; its default is the full
+# suite, which is what the VCS-triggered master builds and manual dispatches still run. The
+# McpE2E.NoEnvironment tier is not sent to TeamCity at all: build.yml runs it on hosted runners.
+#
 # Note (advisory accuracy): only BranchNameClio (a branch name) is passed, so
 # TeamCity resolves the branch tip at build time. If a newer commit lands while a
 # build is queued, the status can post to the tip rather than the exact commit
@@ -82,9 +89,14 @@ on:
       - '!clio/help/**'
       - '!clio/Commands.md'
       - 'clio.mcp.e2e/**'
+      - '!clio.mcp.e2e/**/*.md'
       - 'clio.process.fixture/**'
       - 'cliogate/**'
       - 'Directory.Packages.props'
+      # The trigger and the selection are code too; a change to them must be exercised by a run.
+      - '.github/workflows/teamcity-mcp-e2e.yml'
+      - '.github/scripts/queue-teamcity-build.ps1'
+      - '.github/scripts/Select-McpE2eTestFilter.ps1'
   # Manual retrigger for a specific clio branch (e.g. re-run e2e after a flaky
   # failure, or validate the trigger). Only usable once the workflow is on the
   # default branch - a GitHub constraint.
@@ -106,8 +118,61 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Decides WHAT the TeamCity build runs before anything is queued. Rules and their order live in
+  # clio.mcp.e2e/TestSelection/mcp-e2e-selection.json; the outcome is one `dotnet test --filter`
+  # expression handed to TeamCity as the McpE2eTestFilter property. A pull request that only touches
+  # one MCP tool runs the fixtures that exercise it; shared infrastructure runs the whole suite.
+  # McpE2E.NoEnvironment tests are excluded here because build.yml runs them on hosted runners
+  # (job "MCP e2e NoEnvironment"); set the repository variable MCP_E2E_KEEP_NOENVIRONMENT_ON_TEAMCITY
+  # to `true` to keep them on TeamCity as well. A manual run (workflow_dispatch) has no diff and
+  # keeps the TeamCity default: the full suite.
+  # Hosted runner on purpose: this job needs the full checkout and no corporate network.
+  select:
+    name: Select MCP e2e fixtures
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      mode: ${{ steps.select.outputs.mode }}
+      filter: ${{ steps.select.outputs.filter }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select fixtures for the changed files
+        id: select
+        shell: pwsh
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+          KEEP_NOENVIRONMENT: ${{ vars.MCP_E2E_KEEP_NOENVIRONMENT_ON_TEAMCITY }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:BASE_SHA)) {
+            Write-Host 'Manual run: no diff to classify, the TeamCity default filter (full suite) applies.'
+            "mode=full" >> $env:GITHUB_OUTPUT
+            "filter=" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $arguments = @{ BaseRef = $env:BASE_SHA; HeadRef = $env:HEAD_SHA }
+          if ($env:KEEP_NOENVIRONMENT -eq 'true') { $arguments.IncludeNoEnvironment = $true }
+          $json = & ./.github/scripts/Select-McpE2eTestFilter.ps1 @arguments
+          $selection = $json | ConvertFrom-Json
+          Write-Host "Selection mode: $($selection.mode)"
+          foreach ($line in $selection.decisions) { Write-Host "  $line" }
+          if ($selection.mode -eq 'subset') { Write-Host "Fixtures: $($selection.fixtures -join ', ')" }
+          Write-Host "Filter: $($selection.filter)"
+          "mode=$($selection.mode)" >> $env:GITHUB_OUTPUT
+          "filter=$($selection.filter)" >> $env:GITHUB_OUTPUT
+
   attempt-1:
     name: Queue TeamCity MCP e2e (attempt 1)
+    needs: [select]
     runs-on: self-hosted
     # Never pin a shared self-hosted runner if TeamCity is unreachable/stalled.
     timeout-minutes: 10
@@ -117,9 +182,12 @@ jobs:
     # same-repo PRs and manual dispatch. This in-file guard is defense-in-depth;
     # the authoritative control is the repo setting Actions -> "Require approval
     # for all external contributors" (must be enabled).
+    # mode `none`: every affected fixture is NoEnvironment-only and build.yml already runs that tier,
+    # so a TeamCity build would deploy a Creatio for zero tests. Nothing is queued, no status posted.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.pull_request.head.repo.full_name == github.repository
+      needs.select.outputs.mode != 'none' &&
+      (github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository)
     permissions:
       # Only the workflow's own scripts are needed; checkout must not leave a token
       # behind on an in-network runner.
@@ -159,13 +227,15 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
           PR_NUMBER: ${{ github.event.pull_request.number || '(manual)' }}
           RUNNER_LABEL: ${{ runner.name }}
+          TEST_FILTER: ${{ needs.select.outputs.filter }}
+          TEST_SELECTION_MODE: ${{ needs.select.outputs.mode }}
         run: |
           $ErrorActionPreference = 'Stop'
           . "$env:GITHUB_WORKSPACE\.teamcity-trigger\.github\scripts\queue-teamcity-build.ps1"
 
   attempt-2:
     name: Queue TeamCity MCP e2e (attempt 2)
-    needs: attempt-1
+    needs: [select, attempt-1]
     # Runs only when attempt 1 found no route to TeamCity. `needs` also means this
     # job is scheduled after attempt 1 released its runner, so it can land on a
     # different one.
@@ -210,13 +280,15 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
           PR_NUMBER: ${{ github.event.pull_request.number || '(manual)' }}
           RUNNER_LABEL: ${{ runner.name }}
+          TEST_FILTER: ${{ needs.select.outputs.filter }}
+          TEST_SELECTION_MODE: ${{ needs.select.outputs.mode }}
         run: |
           $ErrorActionPreference = 'Stop'
           . "$env:GITHUB_WORKSPACE\.teamcity-trigger\.github\scripts\queue-teamcity-build.ps1"
 
   attempt-3:
     name: Queue TeamCity MCP e2e (attempt 3)
-    needs: [attempt-1, attempt-2]
+    needs: [select, attempt-1, attempt-2]
     # Third and last try. Two runners without a route in a row is unlikely but the
     # pool is not fixed, and one more sub-second job is far cheaper than a red check
     # that has nothing to do with the pull request. No always(): when an attempt
@@ -265,19 +337,37 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
           PR_NUMBER: ${{ github.event.pull_request.number || '(manual)' }}
           RUNNER_LABEL: ${{ runner.name }}
+          TEST_FILTER: ${{ needs.select.outputs.filter }}
+          TEST_SELECTION_MODE: ${{ needs.select.outputs.mode }}
         run: |
           $ErrorActionPreference = 'Stop'
           . "$env:GITHUB_WORKSPACE\.teamcity-trigger\.github\scripts\queue-teamcity-build.ps1"
 
   gate:
     name: TeamCity MCP e2e trigger
-    needs: [attempt-1, attempt-2, attempt-3]
+    needs: [select, attempt-1, attempt-2, attempt-3]
     runs-on: ubuntu-latest
     if: >-
       always() && (github.event_name == 'workflow_dispatch' ||
       github.event.pull_request.head.repo.full_name == github.repository)
     steps:
+      - name: Require that the fixture selection succeeded
+        if: needs.select.result != 'success'
+        shell: bash
+        env:
+          SELECT_RESULT: ${{ needs.select.result }}
+        run: |
+          echo "::error::The fixture selection job ended with '$SELECT_RESULT', so nothing was queued."
+          echo "This is a repository problem (Select-McpE2eTestFilter.ps1 or the selection manifest), not a runner one."
+          exit 1
+      - name: Accept that nothing needed to run on TeamCity
+        if: needs.select.outputs.mode == 'none'
+        shell: bash
+        run: |
+          echo "Every fixture affected by this pull request is NoEnvironment-only; build.yml runs that tier."
+          echo "No TeamCity build was queued and no 'CLIO MCP e2e tests (ATF)' status will appear."
       - name: Require that one attempt queued the build
+        if: needs.select.outputs.mode != 'none'
         shell: bash
         env:
           QUEUED_1: ${{ needs.attempt-1.outputs.queued }}
