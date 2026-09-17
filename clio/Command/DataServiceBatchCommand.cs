@@ -86,6 +86,7 @@ public sealed class DataServiceBatchService(IApplicationClient client, IServiceU
 	private const string Completed = "completed";
 	private const string Failed = "failed";
 	private const string Unknown = "unknown";
+	private const string InsertOperation = "insert";
 	private const string Advice = "One batch was submitted without retry. Continuation is enabled; atomicity is not guaranteed. Results are native acknowledgements, not independent readback. Verify affected records before resubmitting unknown items. Use native sequence enrollment for lifecycle changes.";
 
 	/// <inheritdoc />
@@ -124,18 +125,16 @@ public sealed class DataServiceBatchService(IApplicationClient client, IServiceU
 
 	private static void Validate(DataServiceBatchOperation operation) {
 		if (operation is null || operation.RecordId == Guid.Empty || !IsIdentifier(operation.SchemaName)
-			|| operation.Operation is not ("insert" or "update" or "delete")) {
+			|| operation.Operation is not (InsertOperation or "update" or "delete")) {
 			throw new ArgumentException("Each operation needs insert/update/delete, a schema-name and a non-empty record-id.");
 		}
 		int count = operation.Values?.Count ?? 0;
 		if (operation.Operation == "delete" ? count != 0 : count is < 1 or > 50) {
 			throw new ArgumentException("Insert/update require 1–50 values; delete accepts no values.");
 		}
-		foreach (var pair in operation.Values ?? []) {
-			if (!IsIdentifier(pair.Key) || pair.Key.Equals("Id", StringComparison.OrdinalIgnoreCase)
-				|| pair.Value is null || !IsScalar(pair.Value)) {
-				throw new ArgumentException("Values require column identifiers other than Id and compatible scalar DataService types (0–12).");
-			}
+		if ((operation.Values ?? []).Any(pair => !IsIdentifier(pair.Key) || pair.Key.Equals("Id", StringComparison.OrdinalIgnoreCase)
+			|| pair.Value is null || !IsScalar(pair.Value))) {
+			throw new ArgumentException("Values require column identifiers other than Id and compatible scalar DataService types (0–12).");
 		}
 	}
 
@@ -155,13 +154,13 @@ public sealed class DataServiceBatchService(IApplicationClient client, IServiceU
 	}
 
 	private static JsonNode BuildQuery(DataServiceBatchOperation operation, Guid queryId) {
-		string type = operation.Operation switch { "insert" => "InsertQuery", "update" => "UpdateQuery", _ => "DeleteQuery" };
+		string type = operation.Operation switch { InsertOperation => "InsertQuery", "update" => "UpdateQuery", _ => "DeleteQuery" };
 		JsonObject query = new() {
 			["__type"] = "Terrasoft.Nui.ServiceModel.DataContract." + type,
 			["queryId"] = queryId, ["rootSchemaName"] = operation.SchemaName,
-			["operationType"] = operation.Operation switch { "insert" => 1, "update" => 2, _ => 3 }
+			["operationType"] = operation.Operation switch { InsertOperation => 1, "update" => 2, _ => 3 }
 		};
-		if (operation.Operation != "insert") {
+		if (operation.Operation != InsertOperation) {
 			object select = SelectQueryHelper.BuildSelectQuery(operation.SchemaName, [], [new("Id", operation.RecordId, 0)]);
 			query["filters"] = JsonSerializer.SerializeToNode(select)["filters"].DeepClone();
 		}
@@ -170,7 +169,7 @@ public sealed class DataServiceBatchService(IApplicationClient client, IServiceU
 			foreach (var pair in operation.Values) {
 				values[pair.Key] = JsonSerializer.SerializeToNode(new { expressionType = 2, parameter = new { dataValueType = pair.Value.DataValueType, value = pair.Value.Value } });
 			}
-			if (operation.Operation == "insert") {
+			if (operation.Operation == InsertOperation) {
 				values["Id"] = JsonSerializer.SerializeToNode(new { expressionType = 2, parameter = new { dataValueType = 0, value = operation.RecordId } });
 			}
 			query["columnValues"] = new JsonObject { ["items"] = values };
