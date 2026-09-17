@@ -1147,24 +1147,44 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			}
 		}
 
-		// missingTargetPages queue: every web-page finding the LIVE environment produced must be
-		// reflected in the aggregated queue, and the queue must never carry any other kind — asserted against
-		// real transport data rather than only the hand-built unit fixtures. NotContain rather than OnlyContain
-		// on purpose: OnlyContain fails on an EMPTY collection ("but the collection is empty"), and a page
-		// selected only for a create/update-record navigating action legitimately has no web-page finding at
-		// all — that must not fail this assertion.
+		// missingTargetPages queue: BuildMissingTargetPages aggregates BOTH kinds now — a web-page finding is
+		// always queued (settled offline, every state is missing), and a verified-missing
+		// entity-default-mobile-page finding is queued too, keyed by its resolved candidate name when the
+		// environment found one, else by the raw object name (WebToMobileAnalysisService.BuildMissingTargetPages).
+		// When both kinds resolve to the SAME schema name they collapse into ONE row and web-page always wins
+		// the reported kind. Asserted against real transport data rather than only the hand-built unit fixtures.
+		// OnlyContain (not NotContain) is safe here because it only pins the KIND vocabulary, never emptiness —
+		// an empty queue trivially satisfies "every entry has a declared kind".
 		IReadOnlyList<UnresolvedTargetRequest> webPageFindings = [.. conversions.UnresolvedTargetRequests
 			.Where(f => string.Equals(f.TargetKind, MobileActionTargetProbe.KindWebPage, StringComparison.OrdinalIgnoreCase))];
-		conversions.MissingTargetPages.Should().NotContain(
-			p => !string.Equals(p.TargetKind, MobileActionTargetProbe.KindWebPage, StringComparison.OrdinalIgnoreCase),
-			because: $"on '{convertedSchemaName}' the queue must not yet offer an entity-default-mobile-page "
-				+ "target — resolving one into a candidate page needs a read this pass does not perform");
+		IReadOnlyList<UnresolvedTargetRequest> missingEntityFindings = [.. conversions.UnresolvedTargetRequests
+			.Where(f => string.Equals(
+					f.TargetKind, MobileActionTargetProbe.KindEntityDefaultMobilePage, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(f.State, UnresolvedTargetRequest.StateMissing, StringComparison.OrdinalIgnoreCase))];
+		conversions.MissingTargetPages.Should().OnlyContain(
+			p => declaredKinds.Contains(p.TargetKind),
+			because: $"on '{convertedSchemaName}' every queued target's kind must come from the shipped rules' "
+				+ "vocabulary, never a literal the aggregation invented");
+
+		string QueueKeyOf(UnresolvedTargetRequest finding) =>
+			string.Equals(finding.TargetKind, MobileActionTargetProbe.KindWebPage, StringComparison.OrdinalIgnoreCase)
+				? finding.Target!
+				: (!string.IsNullOrWhiteSpace(finding.ResolvedCandidateSchemaName)
+					? finding.ResolvedCandidateSchemaName!
+					: finding.Target!);
 		foreach (IGrouping<string, UnresolvedTargetRequest> group in
-			webPageFindings.GroupBy(f => f.Target, StringComparer.OrdinalIgnoreCase)) {
+			webPageFindings.Concat(missingEntityFindings).GroupBy(QueueKeyOf, StringComparer.OrdinalIgnoreCase)) {
 			MissingTargetPage queued = conversions.MissingTargetPages.Should().ContainSingle(
 				p => string.Equals(p.Target, group.Key, StringComparison.OrdinalIgnoreCase),
 				because: $"'{group.Key}' was reported missing on '{convertedSchemaName}', so it must be queued "
-					+ "exactly once regardless of how many controls reference it").Subject;
+					+ "exactly once regardless of how many controls or kinds reference it").Subject;
+			bool anyWebPage = group.Any(
+				f => string.Equals(f.TargetKind, MobileActionTargetProbe.KindWebPage, StringComparison.OrdinalIgnoreCase));
+			queued.TargetKind.Should().Be(
+				anyWebPage ? MobileActionTargetProbe.KindWebPage : MobileActionTargetProbe.KindEntityDefaultMobilePage,
+				because: $"'{group.Key}' on '{convertedSchemaName}' must report the web-page kind whenever ANY "
+					+ "reference to it is a definitional web-page absence, even when an "
+					+ "entity-default-mobile-page reference to the same schema also exists");
 			foreach (UnresolvedTargetRequest finding in group) {
 				MissingTargetPageReference reference = queued.References.Should().ContainSingle(
 						r => r.ElementName == finding.ElementName && r.Binding == finding.Binding,
