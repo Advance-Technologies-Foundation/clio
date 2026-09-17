@@ -337,6 +337,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`add-item`](docs/commands/add-item.md) - Generate package item models from Creatio metadata, `create`
 <a id="add-schema"></a>
 - [`add-schema`](docs/commands/add-schema.md) - Create a schema file in a workspace package
+<a id="create-user-task-page"></a>
+- [`create-user-task-page`](docs/commands/create-user-task-page.md) - Create and associate a Classic user-task parameter page in a workspace
 <a id="add-user-task"></a>
 - [`add-user-task`](docs/commands/add-user-task.md) - Create a user task schema in a workspace package
 <a id="alm-deploy"></a>

@@ -21,6 +21,10 @@
 # 2026-07-06) is a separate Jira ticket stacked on the same branch; tracked as its own row.
 
 stories:
+  - id: story-create-user-task-page-1
+    title: Native Classic parameter-page scaffolding
+    status: in-progress
+    issue: 1600
   - id: story-process-element-registration-1
     title: Generate package-owned custom process element registration
     status: in-progress
