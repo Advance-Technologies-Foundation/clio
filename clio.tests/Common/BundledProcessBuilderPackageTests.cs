@@ -179,21 +179,21 @@ public class BundledProcessBuilderPackageTests {
 	/// and this removes the operator's editor and git configuration from the hash instead of gating on them.
 	/// </para>
 	/// <para>
-	/// Measured entry by entry for the archive pinned below, by extracting it with <c>clio extract-pkg-zip</c>
-	/// and comparing every file against <c>git show &lt;ExpectedProducingCommit&gt;:&lt;path&gt;</c>:
-	/// <b>167 entries, 166 byte-IDENTICAL</b> to the commit blob, 0 line-ending-only differences, 0 content
-	/// differences. The 167th is <c>descriptor.json</c>, which by contract cannot match the pre-restamp commit
-	/// and is pinned separately by <see cref="ExpectedArchiveVersion"/> and
-	/// <see cref="ExpectedDescriptorModifiedOnUtc"/>.
-	/// <para>An earlier revision of this paragraph carried 157/156 and attributed it to a specific cut. Both
-	/// numbers were wrong and the attribution made the error harder to spot, in the one file whose job is that
-	/// provenance statements stay true. The count moves as the package gains sources, so re-measure it with the
-	/// two commands above rather than carrying it forward - it takes under a minute.</para>
+	/// The INVARIANT, which is what this paragraph is for and the only part that cannot go stale: every entry in
+	/// the archive is byte-IDENTICAL to the producing commit's blob EXCEPT <c>descriptor.json</c>, which by
+	/// contract cannot match a pre-restamp commit and is pinned separately by
+	/// <see cref="ExpectedArchiveVersion"/> and <see cref="ExpectedDescriptorModifiedOnUtc"/>.
+	/// <para>Verify it in two commands, which is how it was verified at the <b>1.6.3.3</b> cut (167 entries, 166
+	/// identical): extract with <c>clio extract-pkg-zip &lt;archive&gt; -d &lt;dir&gt;</c>, then compare every
+	/// extracted file against <c>git show &lt;ExpectedProducingCommit&gt;:packages/CrtProcessBuilder/&lt;path&gt;</c>.
+	/// The COUNT is not pinned here on purpose - it moves as the package gains sources, and an earlier revision
+	/// that carried one (157/156, wrong, attributed to a specific cut) made the staleness look checked. Re-run the
+	/// two commands instead; it takes under a minute.</para>
 	/// </para>
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"7928D36EB05A3ADE606F80849608FD204D2D0EB6F781A311A10D512FCDFDFFB5";
+		"0D5CAA878FBB9D0EA971D13ABE37E50D637C6BD0AA3119B3D4A9141AB88571BD";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -221,7 +221,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.3.3";
+	private const string ExpectedArchiveVersion = "1.6.3.4";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -233,7 +233,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "1d64dc9115286f1c46ac589c20d730f08fd9ca40";
+	private const string ExpectedProducingCommit = "9ad5359dabdf0727b5a102f18e24ea7eb6b20f48";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -259,7 +259,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789629720000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789631983000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.

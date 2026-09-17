@@ -352,26 +352,30 @@ criterion of its own. V7 and the manual TC-06 / TC-07 cover it, and they have no
 
 Fourteen findings, four of them blocking, one a regression round 3 introduced. Only the calls are here.
 
-## DQ-17 — two post-conditions, not one, and the weaker one is on the busier path
+## DQ-17 — one post-condition, on both paths — and the weaker one it replaced was defending a fixture
 
 Round 3 checked the SELECTION path and left the re-synchronization path unchecked — the path that runs
-on every `setElement` touching the element, and the one where a loss is also SAVED. Fixed, but not with
-the same predicate.
+on every `setElement` touching the element, and the one where a loss is also SAVED. Round 4 added a check
+there, but a weaker one: "the element came out EMPTY while the callee declares parameters", on the ground
+that the reader's memo could predate a change to the callee and make a legitimate drop look like a
+failure. **Round 5 reversed that.**
 
-**Decision.** The selection path asks `MirrorsCallee`; the re-sync path asks only whether the element
-came out EMPTY while the callee is known to declare parameters.
+**Decision.** Both paths ask `MirrorsCallee`.
 
-**Reason.** Measured, not reasoned: the strict predicate broke two existing tests. On the re-sync path
-the details come from the reader's per-request memo, which can predate a change to the callee made
-earlier in the same request, so a partial difference between the memo and the platform's own load is
-indistinguishable from a legitimate drop — and refusing an ordinary drop would make the
-re-synchronization useless for its own purpose. The empty case has no second explanation.
+**Reason.** The memo cannot go stale within a request: `ISubProcessReader` is registered `AddScoped`,
+every web-service entry point wraps its call in its own `CreateScope()`, and nothing inside one call
+loads a second process schema for writing. The two tests that failed under the strict predicate shared
+ONE reader between their arrange and their act — a state no request reaches. `AnApplierForTheNextRequest()`
+gives the act the reader a second request would have, and they pass.
 
-**What it costs.** A partial loss on the re-sync path is still unobserved. The catastrophic one, which
-is also the one that MISREPORTS, is not.
+**What the weaker form cost while it stood.** A partial copy failure on the busiest path was unrefused,
+saved, and reported to the caller as "the called process dropped these" — the same misreport the check
+exists to prevent. It was also incoherent: a callee that legitimately drops ALL of its parameters
+produces exactly the refused state, so the ambiguity was moved to arity 1 rather than removed.
 
-**What would flip it.** Reading the callee fresh on this path instead of from the memo. That is a schema
-load per element per request, and it buys a case nobody has seen.
+**The lesson worth keeping.** A test had been written to pin the concession, so restoring the correct
+guard would have read to the next person as a regression. Do not pin a concession with a test; pin the
+behaviour you actually want and record the concession here.
 
 ## DQ-18 — the provenance audit numbers were wrong, and the attribution made it worse
 
@@ -401,3 +405,25 @@ It sits at 27,761 of 27,793 and the right fix is a split at the R1–R20 seam. N
 the guidance NAME set, and that forces the `curated-knowledge-names.json` re-pin which DQ-6 deliberately
 leaves to travel with the release. It is its own change, after that release. Until then every edit to
 that article has about thirty characters to spend.
+
+## DQ-21 — where a code reviewer's findings actually live
+
+Copilot's second review on the package pull request says "generated no new comments" and carries four
+findings inside a collapsed **Suppressed comments** block in the review BODY, with no inline threads. A
+thread query answers zero, and so does reading the summary line. Two of the four were real guard holes on
+a supported operation and had been sitting unanswered for a day.
+
+**Decision.** Read the review BODIES, not the thread list, on every round. Written up as a knowledge
+record in the same change, because nothing in this repository said it and the summary line actively
+misleads.
+
+## DQ-22 — the provenance paragraph pins an invariant, not a count
+
+Two rounds running, the by-hand archive audit was recorded as a NUMBER and went stale — 157/156 with a
+specific false attribution in round 3, then 167/166 re-pointed at "the archive pinned below" in round 4,
+which re-points at whatever the next rebundle pins.
+
+**Decision.** The paragraph now states the invariant that cannot go stale — every entry but
+`descriptor.json` is byte-identical to the producing commit's blob — plus the two commands that verify it,
+and names the cut at which it was last actually run. The count is deliberately not pinned: it moves as
+the package gains sources, and a pinned one makes staleness look checked.
