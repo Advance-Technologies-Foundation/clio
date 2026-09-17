@@ -660,3 +660,43 @@ Also from that pass, and worth having before anyone writes the next case: an ele
 cannot be read by another element (*"The input parameter … cannot be used as a data source for the
 parameter …"*), so a dangling-reference scenario has to be built on an OUT parameter of the callee. The
 manual case description assumed the input shape and was not constructible as written.
+
+## DQ-29 — the cost of 2b, stated once, and the owner's decision to keep going
+
+Recorded because the SHAPE of this feature's cost is not visible from any one commit, and the next person
+deciding whether to extend it should see it in one place.
+
+**What 2b is.** The owner's choice on 2026-09-17 between shipping the re-sync with a documented blind spot,
+building the stored-metadata drift reader, or reporting the CONSEQUENCE of a dropped parameter. They chose
+the third — the dangling-reference scan (DQ-26).
+
+**What it cost.** Six review rounds, 8 through 13. Every one of them found a REAL defect in the previous
+round's fix, and four of the six were defects that would have reached a user:
+
+| Round | What the previous round shipped | What it actually did |
+|---|---|---|
+| 8 | the scan | ran on one of the two write paths; rendered the walk-failure marker as a broken element name |
+| 9 | the positive rewrite | searched forward unboundedly, so it INVENTED references on unrelated edits |
+| 11 | the pair parse | correct, but its docblock and its N-form test asserted a spelling nothing writes |
+| 12 | the N-form drop + the stop fix | the stop fix was scoped to the message, not the seam, so the over-reach survived |
+| 13 | the seam fix + the timeout channel | — |
+
+**Why, and this is the part worth carrying.** Every one of those defects is a SCOPE error, not a logic
+error: the guard was right and the thing it was applied to was wrong. Forward search from an element
+instead of a pair. A collapse over a message instead of a seam. A catch in the method that finds matches
+instead of the method that owns the failure channel. A plural counted off readers instead of drops. The
+code reviewed well line by line each time, because line by line it was right.
+
+**Two properties of this feature make that likely rather than unlucky**, and they are what to weigh before
+extending it: it is a NOTICE, so nothing refuses and no caller ever reports a wrong answer back; and its
+input is an unbounded stored string in a grammar nobody owns a specification for. A guard with no
+feedback loop over an unspecified input is where scope errors survive.
+
+**The decision, 2026-09-17.** The owner was shown this table and the alternative — revert 2b to the
+documented-limitation state, which the rest of ENG-92707 does not depend on — and chose to fix the round-12
+findings and continue. Shipped at CrtProcessBuilder **1.6.3.12**.
+
+**What would change the answer.** A seventh round finding a seventh scope error. At that point the honest
+move is not another fix: it is to narrow what the scan CLAIMS until the claim is one a unit test can
+exhaust — for example, report only the metapath segment-pair spelling and say so, dropping the bare map
+path, which is the half with no delimiter and therefore the half every one of these defects touched.
