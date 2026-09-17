@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -35,6 +36,9 @@ public sealed class FormulaElementToolE2ETests {
 
 	private const string ToolName = CreateBusinessProcessTool.CreateBusinessProcessToolName;
 
+	/// <summary>The cut that builds the element; named in the skip message so a developer knows what to install.</summary>
+	private const string MinimumPackageVersion = "1.6.3.10";
+
 	#region Methods: Tests
 
 	[Test]
@@ -43,14 +47,16 @@ public sealed class FormulaElementToolE2ETests {
 	[AllureName("create-business-process builds a formula element and describe reads the block back")]
 	public async Task CreateBusinessProcess_Should_BuildFormulaElement_AndReadItBack() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync();
+		await using ProcessDesignerArrangeContext context =
+			await ProcessDesignerE2EArrange.StartAsync("Formula", MinimumPackageVersion);
 		string processName = $"UsrClioBpFormulaE2e{Guid.NewGuid():N}";
 
 		// Act
-		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+		CallToolResult callResult = await ProcessDesignerE2EArrange.CallToolAsync(context, ToolName,
+			new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildProcessParameterTargetDescriptor(processName)
-		});
+			});
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
@@ -58,11 +64,11 @@ public sealed class FormulaElementToolE2ETests {
 		JsonSerializer.Serialize(callResult).Should().Contain("created (UId:",
 			because: "only a genuinely successful build logs the created-schema line");
 
-		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
-		DescribedElement formula = graph.Elements.Single(element => element.Name == "Formula1");
-		formula.BuildType.Should().Be("formulatask",
+		JsonObject graph = DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.DescribeAsync(context, processName));
+		JsonObject formula = ElementNamed(graph, "Formula1");
+		formula["buildType"]!.GetValue<string>().Should().Be("formulatask",
 			because: "the element round-trips to its own build token rather than to the script task it derives from");
-		string described = JsonSerializer.Serialize(formula);
+		string described = formula.ToJsonString();
 		described.Should().Contain("[Parameter:",
 			because: "the body is stored EXPANDED: a name the caller wrote is turned into the platform meta path, "
 				+ "which is the only form the formula engine evaluates");
@@ -78,22 +84,24 @@ public sealed class FormulaElementToolE2ETests {
 	[AllureName("create-business-process builds a formula targeting another element's parameter")]
 	public async Task CreateBusinessProcess_Should_BuildFormulaTargetingAnElementParameter() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync();
+		await using ProcessDesignerArrangeContext context =
+			await ProcessDesignerE2EArrange.StartAsync("Formula", MinimumPackageVersion);
 		string processName = $"UsrClioBpFormulaElementTargetE2e{Guid.NewGuid():N}";
 
 		// Act
-		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+		CallToolResult callResult = await ProcessDesignerE2EArrange.CallToolAsync(context, ToolName,
+			new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildElementParameterTargetDescriptor(processName)
-		});
+			});
 
 		// Assert
 		JsonSerializer.Serialize(callResult).Should().Contain("created (UId:",
 			because: "an element-parameter target is resolved after every element exists, so declaring the target "
 				+ "element AFTER the formula must still build");
 
-		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
-		string described = JsonSerializer.Serialize(graph.Elements.Single(element => element.Name == "Formula1"));
+		JsonObject graph = DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.DescribeAsync(context, processName));
+		string described = ElementNamed(graph, "Formula1").ToJsonString();
 		described.Should().Contain("Task1",
 			because: "describe reports the target element by name");
 		described.Should().Contain("Recommendation",
@@ -106,14 +114,16 @@ public sealed class FormulaElementToolE2ETests {
 	[AllureName("create-business-process refuses a formula element with no target")]
 	public async Task CreateBusinessProcess_Should_RefuseFormulaWithoutATarget() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync();
+		await using ProcessDesignerArrangeContext context =
+			await ProcessDesignerE2EArrange.StartAsync("Formula", MinimumPackageVersion);
 		string processName = $"UsrClioBpFormulaNoTargetE2e{Guid.NewGuid():N}";
 
 		// Act
-		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+		CallToolResult callResult = await ProcessDesignerE2EArrange.CallToolAsync(context, ToolName,
+			new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildNoTargetDescriptor(processName)
-		});
+			});
 
 		// Assert
 		string resultJson = JsonSerializer.Serialize(callResult);
@@ -190,69 +200,12 @@ public sealed class FormulaElementToolE2ETests {
 		}
 		""";
 
-	private static DescribeProcessResult ParseDescribeGraph(CallToolResult describeResult) {
-		CommandExecutionEnvelope envelope = McpCommandExecutionParser.Extract(describeResult);
-		string graphJson = envelope.Output!
-			.Select(message => message.Value)
-			.First(value => !string.IsNullOrWhiteSpace(value)
-				&& value!.TrimStart().StartsWith("{", StringComparison.Ordinal))!;
-		return JsonSerializer.Deserialize<DescribeProcessResult>(graphJson,
-			new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
-	}
 
-	private static async Task<CallToolResult> DescribeAsync(ArrangeContext context, string processCode) =>
-		await context.Session.CallToolAsync(
-			DescribeProcessTool.ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = context.EnvironmentName,
-					["process-name"] = processCode
-				}
-			},
-			context.CancellationTokenSource.Token);
-
-	private static async Task<CallToolResult> CallToolAsync(ArrangeContext context,
-			Dictionary<string, object?> args) {
-		IReadOnlyCollection<string> toolNames =
-			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
-		toolNames.Should().Contain(ToolName,
-			because: "the create-business-process tool must be discoverable before the end-to-end call");
-		return await context.Session.CallToolAsync(
-			ToolName, new Dictionary<string, object?> { ["args"] = args }, context.CancellationTokenSource.Token);
-	}
-
-	// No 'requireReachableEnvironment' switch: every fixture here calls the server, so the parameter was passed
-	// true at all four call sites and the false branch could never run. A dead branch in an arrange helper reads
-	// as coverage that exists; reinstate it only alongside a fixture that actually needs it.
-	private static async Task<ArrangeContext> ArrangeAsync() {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string? environmentName = settings.Sandbox.EnvironmentName;
-		if (string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore(
-				"Configure McpE2E:Sandbox:EnvironmentName (with a CrtProcessBuilder 1.6.3.8 or later, which "
-				+ "builds the formula element) to run the Approval MCP E2E tests.");
-		}
-
-		if (!await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName!)) {
-			Assert.Ignore(
-				$"Formula MCP E2E requires a reachable configured sandbox environment. '{environmentName}' was not reachable.");
-		}
-
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource, environmentName);
-	}
-
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource,
-		string? EnvironmentName) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
-	}
+	/// <summary>The described element with that name, as the graph reports it.</summary>
+	private static JsonObject ElementNamed(JsonObject graph, string name) =>
+		graph["elements"]!.AsArray()
+			.Select(element => element!.AsObject())
+			.Single(element => element["name"]!.GetValue<string>() == name);
 
 	#endregion
 

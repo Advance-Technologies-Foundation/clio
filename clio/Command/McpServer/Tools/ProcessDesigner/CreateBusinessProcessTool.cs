@@ -35,7 +35,7 @@ public class CreateBusinessProcessTool(
 		 + "The descriptor is an object with: name (schema code), caption, packageName, elements[] "
 		 + "({name (the element handle/local code), type:startEvent|signalStart|endEvent|userTask|sendEmail|approval|exclusiveGateway|parallelGateway|formulaTask|"
 		 + "openEditPage|preconfiguredPage (aliases readData/changeData/changeAccessRights/performTask), caption, userTaskName?, "
-		 + "formula? (formulaTask: {body, resultProcessParameter|elementName+elementParameter}), "
+		 + "formula? (formulaTask: body + resultProcessParameter|elementName+elementParameter), "
 		 + "approval? (approval elements only — the designer's Approval element, which requests a visa on a record: "
 		 + "{object:<EntityName> (required on a first configuration — the object whose record goes for approval, "
 		 + "resolved by NAME server-side), recordId:{exactly ONE of recordId (a fixed record: its GUID, or the "
