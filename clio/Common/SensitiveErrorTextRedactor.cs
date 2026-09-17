@@ -560,6 +560,42 @@ internal static partial class SensitiveErrorTextRedactor {
 	}
 
 	/// <summary>
+	/// Runs ONLY the JSON credential-property rule over <paramref name="text"/>, leaving paths, URIs,
+	/// hosts and key=value pairs exactly as they were found.
+	/// </summary>
+	/// <remarks>
+	/// For a caller that must keep a payload's full fidelity but cannot publish a secret with it — the MCP
+	/// e2e harness writes an unreadable tool result to a file that the CI build publishes as an artifact,
+	/// and that result can be a <c>show-webApp-list</c> envelope carrying a registered environment's
+	/// password and client secret (PR #1539).
+	/// <para>
+	/// One anchored pass, not the full chain <see cref="Redact"/> runs: the chain's ten-plus passes over a
+	/// multi-megabyte input are what exhausted the regex budget and collapsed the whole diagnostic into a
+	/// bare placeholder (issue #1537). This rule begins each match on a complete quote spelling and cannot
+	/// backtrack across the document, so it does not reinstate that cost.
+	/// </para>
+	/// <para>
+	/// The same ACCEPTED LIMITS stated on <c>JsonCredentialPropertyRegex</c> apply unchanged, and one more
+	/// follows from running this rule alone: a credential written as a <c>key=value</c> pair rather than a
+	/// JSON property is NOT touched here. This is a narrowing of the blast radius, not a full scrub.
+	/// </para>
+	/// <para>
+	/// On a regex timeout this FAILS CLOSED like every other entry point — the whole text is replaced by
+	/// the placeholder, so a caller gets no text rather than unscrubbed text. A caller that would rather
+	/// keep the original must decide that for itself; this method will not hand back an input it did not
+	/// finish scanning.
+	/// </para>
+	/// </remarks>
+	/// <param name="text">The text to scrub. <see langword="null"/>/empty returns <see cref="string.Empty"/>.</param>
+	/// <returns>The text with every credential-keyed JSON property's value replaced.</returns>
+	public static string RedactJsonCredentialProperties(string? text) {
+		if (string.IsNullOrEmpty(text)) {
+			return string.Empty;
+		}
+		return ExecuteRegex(() => JsonCredentialPropertyRegex().Replace(text, RedactJsonCredentialProperty));
+	}
+
+	/// <summary>
 	/// Rewrites a credential-keyed JSON property as <c>"key":"[redacted]"</c> in the SAME quote spelling
 	/// the match was written in, so a document written with one spelling never gains a second one.
 	/// </summary>

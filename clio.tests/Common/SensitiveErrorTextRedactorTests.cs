@@ -1342,4 +1342,54 @@ public sealed class SensitiveErrorTextRedactorTests {
 		redacted.Should().Contain(pair,
 			because: "over-redacting an identifier every Creatio payload carries would cost more diagnostic signal than the camelCase widening buys");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("RedactJsonCredentialProperties replaces a credential-keyed JSON property, which is the whole reason a caller reaches for it instead of Redact.")]
+	public void RedactJsonCredentialProperties_ShouldReplaceTheValue_WhenTheKeyIsACredential() {
+		// Arrange: the show-webApp-list envelope shape the MCP e2e dump can carry (PR #1539).
+		const string text =
+			"""{"Name":"dev","Login":"Supervisor","Password":"hunter2","ClientSecret":"d3adb33f"}""";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.RedactJsonCredentialProperties(text);
+
+		// Assert
+		redacted.Should().NotContain("hunter2",
+			because: "a registered environment's password is what this pass exists to keep out of a published build artifact");
+		redacted.Should().NotContain("d3adb33f",
+			because: "the client secret sits under the same rule's key set");
+		redacted.Should().Contain("Supervisor",
+			because: "the login is not in the credential key set, so the envelope keeps the part that makes the dump a diagnostic");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("RedactJsonCredentialProperties runs ONLY that rule: the paths, URIs and key=value pairs the full chain would scrub are exactly what the payload dump needs to keep.")]
+	public void RedactJsonCredentialProperties_ShouldLeaveEveryOtherRuleOff_WhenTheTextCarriesThem() {
+		// Arrange
+		const string text =
+			"Failed reading /Users/alex/secrets/credentials.json from https://stand.local:443 with password=hunter2";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.RedactJsonCredentialProperties(text);
+
+		// Assert
+		redacted.Should().Be(text,
+			because: "none of this is a JSON credential property, and running the other nine-odd passes over a multi-megabyte payload is the cost issue #1537 removed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("RedactJsonCredentialProperties treats null and empty the way every other entry point does, so a caller needs no null guard of its own.")]
+	[TestCase(null, TestName = "Null")]
+	[TestCase("", TestName = "Empty")]
+	public void RedactJsonCredentialProperties_ShouldReturnEmpty_WhenTextIsNullOrEmpty(string? text) {
+		// Act
+		string redacted = SensitiveErrorTextRedactor.RedactJsonCredentialProperties(text);
+
+		// Assert
+		redacted.Should().BeEmpty(
+			because: "Redact answers empty for both, and a second entry point that answered null instead would be a trap");
+	}
 }

@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 
@@ -66,9 +66,10 @@ public sealed class McpResultDiagnosticsTests {
 	}
 
 	[Test]
-	[Description("Writes the payload to the dump verbatim, with no redaction, bounding or reshaping of any kind.")]
+	[Description("Writes the payload to the dump unbounded and unreshaped, keeping the paths and key=value diagnostics the full redaction chain would have destroyed.")]
 	public void Describe_ShouldDumpThePayloadVerbatim_WhenResultCannotBeParsed() {
-		// Arrange: a value the previous design would have replaced with [redacted] on its way out.
+		// Arrange: a value the previous design would have replaced with [redacted] on its way out. None of
+		// it is a JSON credential property, so the one surviving rule (see the test below) leaves it alone.
 		const string serverText = "Auth rejected for /Users/alex/.clio/appsettings.json password=hunter2";
 		RecordingDumpSink sink = new();
 		CallToolResult callResult = new() {
@@ -83,9 +84,55 @@ public sealed class McpResultDiagnosticsTests {
 		sink.Writes.Should().ContainSingle(
 			because: "one parse failure produces exactly one dump");
 		sink.Writes[0].Payload.Should().Contain(serverText,
-			because: "the dump is the full-fidelity record of what arrived; redacting or bounding it is precisely what destroyed the diagnostic under CI load (#1537)");
+			because: "the dump is the full-fidelity record of what arrived; bounding it, or running the whole redaction chain over it, is precisely what destroyed the diagnostic under CI load (#1537)");
 		sink.Writes[0].Payload.Should().NotContain("[redacted",
-			because: "no redaction rule may run on the payload's way to the file");
+			because: "only the JSON credential-property rule runs on the way to the file - the path, URI, host and key=value rules are the diagnostic and stay off");
+	}
+
+	[Test]
+	[Description("Redacts a credential-keyed JSON property before the dump reaches the file, because that file is published as a build artifact.")]
+	public void Describe_ShouldRedactCredentialProperties_WhenThePayloadCarriesAnEnvironmentEnvelope() {
+		// Arrange: the show-webApp-list envelope shape - (Name, Uri, Login, Password, ClientSecret) per
+		// registered environment - which both of its parse-failure paths send through this describer.
+		const string environmentPassword = "hunter2-live-environment-password";
+		const string clientSecret = "d3adb33f-live-client-secret";
+		string serverText =
+			$$"""{"Name":"dev","Uri":"https://stand.local","Login":"Supervisor","Password":"{{environmentPassword}}","ClientSecret":"{{clientSecret}}"}""";
+		RecordingDumpSink sink = new();
+		CallToolResult callResult = new() {
+			IsError = true,
+			Content = [new TextContentBlock { Text = serverText }]
+		};
+
+		// Act
+		McpResultDiagnostics.DescribeWithSink(callResult, null, "envelope", sink);
+
+		// Assert
+		sink.Writes[0].Payload.Should().NotContain(environmentPassword,
+			because: "the dump directory is published as a build artifact, so a live environment password may not reach it in clear");
+		sink.Writes[0].Payload.Should().NotContain(clientSecret,
+			because: "the client secret is a credential on the same envelope and the same rule covers it");
+		sink.Writes[0].Payload.Should().Contain("Supervisor",
+			because: "only credential-keyed properties are replaced; the rest of the envelope is the diagnostic the dump exists for");
+	}
+
+	[Test]
+	[Description("Keeps the credential pass off the hot path's cost profile: one anchored scan over a multi-megabyte payload, not the full chain that issue #1537 removed.")]
+	public void Describe_ShouldStillDumpTheWholePayload_WhenTheCredentialPassRunsOverMegabytes() {
+		// Arrange
+		string hugePayload = new('x', 3_000_000);
+		RecordingDumpSink sink = new();
+		CallToolResult callResult = new() {
+			IsError = true,
+			Content = [new TextContentBlock { Text = hugePayload }]
+		};
+
+		// Act
+		McpResultDiagnostics.DescribeWithSink(callResult, null, "huge-with-credential-pass", sink);
+
+		// Assert
+		sink.Writes[0].Payload.Should().Contain(hugePayload,
+			because: "the credential pass must not bound, truncate or time out on a payload this size - a timeout would fail closed and replace the whole dump with a placeholder, which is the #1537 failure mode again");
 	}
 
 	[Test]

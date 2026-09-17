@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 
@@ -160,8 +160,8 @@ public sealed class EntitySchemaStructuredResultParserTests {
 				because: "the 10,000-character payload is not JSON")
 			.Which;
 		TrackDump(exception.Message);
-		exception.Message.Length.Should().BeLessThan(1_000,
-			because: "the message carries metadata and a path now, so its length no longer scales with the payload's at all");
+		exception.Message.Length.Should().BeLessThan(McpResultDiagnostics.LogFragmentLimit + 500,
+			because: "the message carries metadata and a path now, so its length no longer scales with the payload's at all - the bound is the documented fragment limit plus room for the dump path, not a magic number that a longer path would break");
 		PayloadDumpReader.ReadAndDelete(exception.Message).Should().Contain(hugeText,
 			because: "the dump holds the payload WHOLE - the cap that used to keep only its beginning is gone, and with it the redaction pass whose one-second budget the cap existed to protect (#1537)");
 	}
@@ -187,7 +187,7 @@ public sealed class EntitySchemaStructuredResultParserTests {
 		exception.Message.Should().NotContain("/Users/alex/secrets/credentials.json",
 			because: "the message reaches the build log and carries no payload text at all any more");
 		PayloadDumpReader.ReadAndDelete(exception.Message).Should().Contain(sensitiveText,
-			because: "the dump is a full-fidelity record of what the tool returned; redacting it is what the design deliberately dropped (#1537)");
+			because: "a path is the diagnostic, not a secret - only credential-keyed JSON properties are scrubbed on the way to the file, and the full redaction chain the message used to run is what the design deliberately dropped (#1537)");
 	}
 
 	[Test]

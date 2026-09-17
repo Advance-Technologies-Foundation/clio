@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 
 namespace Clio.Mcp.E2E.Support.Results;
 
@@ -35,7 +35,12 @@ internal interface IMcpPayloadDumpSink {
 	/// <see cref="McpPayloadDumpResult.FailureReason"/> instead.
 	/// </remarks>
 	/// <param name="label">The caller's own description of the failure, used to name the file.</param>
-	/// <param name="rawPayload">The payload exactly as it arrived. Never modified, never redacted.</param>
+	/// <param name="rawPayload">
+	/// The payload as the caller prepared it: never bounded, never reshaped, and written through verbatim
+	/// by the sink. The caller — not the sink — decides what, if anything, was scrubbed out of it first;
+	/// <see cref="McpResultDiagnostics"/> runs one credential-property pass so a published artifact cannot
+	/// carry a registered environment's password (PR #1539).
+	/// </param>
 	McpPayloadDumpResult Write(string label, string rawPayload);
 }
 

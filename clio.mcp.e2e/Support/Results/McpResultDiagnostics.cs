@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Text;
 using System.Text.Json;
 using Clio.Common;
@@ -28,8 +28,16 @@ namespace Clio.Mcp.E2E.Support.Results;
 /// </para>
 /// <para>
 /// Writing the payload to a file removes both costs at once: nothing payload-shaped reaches the build log,
-/// so nothing about it needs bounding or redacting to get there, and the reader gets the answer whole
-/// rather than its first few thousand characters.
+/// so nothing about it needs bounding to get there, and the reader gets the answer whole rather than its
+/// first few thousand characters.
+/// </para>
+/// <para>
+/// The file is not unscrubbed, though. It lands in a directory the CI build publishes as an artifact, so
+/// exactly one rule still runs over it —
+/// <see cref="SensitiveErrorTextRedactor.RedactJsonCredentialProperties"/>, a single anchored pass over
+/// credential-keyed JSON properties. That is what keeps a <c>show-webApp-list</c> envelope's environment
+/// password out of a published artifact without bringing back the full chain's cost. See
+/// <c>DescribeDump</c>.
 /// </para>
 /// </remarks>
 internal static class McpResultDiagnostics {
@@ -174,12 +182,24 @@ internal static class McpResultDiagnostics {
 	/// <para>
 	/// "Raw" here means the result as it stands after the MCP SDK deserialized it: the original bytes are
 	/// no longer available at this layer, and re-serializing the <see cref="CallToolResult"/> is the
-	/// closest faithful record of what arrived. Nothing is bounded, filtered or redacted on the way to the
+	/// closest faithful record of what arrived. Nothing is bounded, filtered or reshaped on the way to the
 	/// file.
+	/// </para>
+	/// <para>
+	/// ONE exception to "nothing is filtered", and it is a narrow one: credential-keyed JSON properties are
+	/// replaced by <see cref="SensitiveErrorTextRedactor.RedactJsonCredentialProperties"/> before the write.
+	/// The file lands in a directory the CI build publishes as an artifact, and a <c>show-webApp-list</c>
+	/// envelope carries a registered environment's <c>Password</c> and <c>ClientSecret</c> verbatim — so
+	/// without this pass a parse failure on that tool would publish live credentials in clear. It is a
+	/// single anchored pass, NOT the full <see cref="SensitiveErrorTextRedactor.Redact"/> chain whose
+	/// ten-plus passes over a multi-megabyte input are what issue #1537 removed; paths, URIs, hosts and
+	/// <c>key=value</c> pairs are deliberately left intact, because they are the diagnostic and they are
+	/// not secrets.
 	/// </para>
 	/// </remarks>
 	private static string DescribeDump(CallToolResult callResult, string label, IMcpPayloadDumpSink sink) {
-		string rawPayload = JsonSerializer.Serialize(callResult, RawDumpOptions);
+		string rawPayload = SensitiveErrorTextRedactor.RedactJsonCredentialProperties(
+			JsonSerializer.Serialize(callResult, RawDumpOptions));
 		McpPayloadDumpResult dump = sink.Write(label, rawPayload);
 
 		if (dump.Succeeded) {
