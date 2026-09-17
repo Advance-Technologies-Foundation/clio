@@ -101,6 +101,8 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"get-related-page-addon",
 		"get-request-info",
 		"get-schema-name-prefix",
+		// Reads merged metadata and bounded configuration rows; never enrolls participants or changes sequences.
+		"get-sequence-context",
 		"get-sys-setting",
 		"get-target-package",
 		"get-telemetry-consent",
