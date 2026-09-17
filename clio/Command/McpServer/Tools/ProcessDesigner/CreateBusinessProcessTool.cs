@@ -3,6 +3,8 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
+using System.Collections.Generic;
+using System.Text.Json;
 
 namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 
@@ -16,12 +18,23 @@ public class CreateBusinessProcessTool(
 
 	internal const string CreateBusinessProcessToolName = "create-business-process";
 
+	/// <summary>The canonical field list echoed back when an unknown argument key is refused (ENG-98566).</summary>
+	internal const string ValidArgsHint = "Valid: environment-name, package-name, descriptor.";
+
+	/// <summary>
+	/// Refusal for a call whose whole argument object is absent (ENG-98566, Sonar S2259).
+	/// </summary>
+	/// <remarks>
+	/// Stays inline rather than moving into the shared helper: it has to run before any field can be read,
+	/// and that is what lets the analyser prove no field read is reached with null (csharpsquid:S2259). See
+	/// <see cref="McpToolArgumentSupport.BuildUnknownArgumentError"/>.
+	/// </remarks>
+	internal const string NullArgsError = "args is required: the call carried no argument object. " + ValidArgsHint;
+
 	/// <summary>
 	/// Builds a business process from an inline JSON descriptor on the specified environment.
 	/// </summary>
-	/// <param name="environmentName">Registered clio environment name.</param>
-	/// <param name="descriptor">Inline JSON process descriptor.</param>
-	/// <param name="packageName">Optional package name that overrides the descriptor's <c>packageName</c>.</param>
+	/// <param name="args">The tool arguments; see <see cref="CreateBusinessProcessArgs"/>.</param>
 	/// <returns>The command execution result with the created schema identity in the log output.</returns>
 	[McpServerTool(Name = CreateBusinessProcessToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		 OpenWorld = false),
@@ -300,7 +313,18 @@ public class CreateBusinessProcessTool(
 	public CommandExecutionResult CreateBusinessProcess(
 		[Description("create-business-process parameters")] [Required] CreateBusinessProcessArgs args
 	) {
-		if (string.IsNullOrWhiteSpace(args?.EnvironmentName)) {
+		if (args is null) {
+			return CommandExecutionResult.FromValidationError(NullArgsError);
+		}
+
+		// The only unknown-key defence this tool has; the helper's docs say why. ENG-98566.
+		string argumentError = McpToolArgumentSupport.BuildUnknownArgumentError(
+			args.ExtensionData, ValidArgsHint);
+		if (!string.IsNullOrWhiteSpace(argumentError)) {
+			return CommandExecutionResult.FromValidationError(argumentError);
+		}
+
+		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
 			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
 		}
 
@@ -349,4 +373,13 @@ public sealed record CreateBusinessProcessArgs(
 
 	[property: JsonPropertyName("package-name")]
 	[property: Description("Optional package name that overrides the descriptor's packageName.")]
-	string? PackageName = null);
+	string? PackageName = null) {
+
+	/// <summary>
+	/// Overflow bag for top-level keys the SDK could not bind to a declared argument (ENG-98566).
+	/// Inspected by the tool so a mis-keyed argument is named back to the caller; a bag that is
+	/// never read is the failure mode, not the fix.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}
