@@ -132,6 +132,7 @@ internal static class SchemaDesignerHelper {
 
 	// ESQ payload keys, single-sourced so the select builders below cannot drift on a key name.
 	private const string ItemsKey = "items";
+	private const string FiltersKey = "filters";
 	private const string ExpressionKey = "expression";
 	private const string ColumnPathKey = "columnPath";
 	private const string FilterTypeKey = "filterType";
@@ -199,8 +200,8 @@ internal static class SchemaDesignerHelper {
 		IServiceUrlBuilder urlBuilder,
 		string schemaName,
 		SchemaDesignerKind kind) {
-		// ClientUnit resolves the most-derived layer. SQL rejects ambiguous package script names;
-		// SourceCode retains its existing single-row resolution.
+		// Resolve client schemas to their most-derived layer. Package SQL names must be unique.
+		// Source code schemas retain their existing single-row resolution.
 		if (kind != SchemaDesignerKind.ClientUnit) {
 			return ResolveSchemaUIdSingle(client, urlBuilder, schemaName, kind);
 		}
@@ -229,7 +230,7 @@ internal static class SchemaDesignerHelper {
 		var query = BuildSelectUIdByName(schemaName, kind.ManagerName);
 		if (kind == SchemaDesignerKind.SqlScript) {
 			query["rootSchemaName"] = "VwSysSqlScriptInPackage";
-			((JObject)query["filters"]["items"]).Remove("byManager");
+			((JObject)query[FiltersKey]["items"]).Remove("byManager");
 			query["rowCount"] = 2;
 		}
 		string url = kind == SchemaDesignerKind.SqlScript
@@ -550,7 +551,7 @@ internal static class SchemaDesignerHelper {
 					}
 				}
 			},
-			["filters"] = BuildNameAndManagerFilters(schemaName, managerName),
+			[FiltersKey] = BuildNameAndManagerFilters(schemaName, managerName),
 			["rowCount"] = 1
 		};
 	}
@@ -582,7 +583,7 @@ internal static class SchemaDesignerHelper {
 					}
 				}
 			},
-			["filters"] = BuildNameAndManagerFilters(schemaName, managerName),
+			[FiltersKey] = BuildNameAndManagerFilters(schemaName, managerName),
 			// -1 = no limit: return every layer so a multi-package replacing chain enumerates in full.
 			["rowCount"] = -1
 		};
@@ -599,7 +600,7 @@ internal static class SchemaDesignerHelper {
 			});
 		}
 		JObject query = BuildSelectLayersByName(string.Empty, managerName);
-		query["filters"][ItemsKey]["byName"] = new JObject {
+		query[FiltersKey][ItemsKey]["byName"] = new JObject {
 			[FilterTypeKey] = 4,
 			[ComparisonTypeKey] = 3,
 			[IsEnabledKey] = true,

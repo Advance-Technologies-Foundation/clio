@@ -131,19 +131,10 @@ public class SqlSchemaCreateCommand : Command<SqlSchemaCreateOptions> {
 				response = duplicateFailure;
 				return false;
 			}
-			int? engine = options.DbEngineType;
+			(int? engine, string engineError) = ResolveDatabaseEngine(options.DbEngineType);
 			if (engine is null) {
-				string infoUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetSystemEnvironmentInfo);
-				string infoJson = _applicationClient.ExecutePostRequest(infoUrl, "{}");
-				(JObject info, string infoError) = SchemaDesignerHelper.ParseServiceResponse("GetSystemEnvironmentInfo", infoUrl, infoJson);
-				engine = info?["success"]?.Value<bool>() == true ? info["dbEngineType"]?.ToString() switch {
-					"MSSql" => 0, "Oracle" => 1, "PostgreSql" => 2, _ => null
-				} : null;
-				if (engine is null) {
-					response = new SqlSchemaCreateResponse { Success = false,
-						Error = $"Could not detect the database engine. Supply db-engine-type explicitly. {infoError ?? (info?["errorInfo"] as JObject)?["message"]?.ToString()}" };
-					return false;
-				}
+				response = new SqlSchemaCreateResponse { Success = false, Error = engineError };
+				return false;
 			}
 			string caption = options.SchemaName;
 			JObject schema = new() {
@@ -159,7 +150,7 @@ public class SqlSchemaCreateCommand : Command<SqlSchemaCreateOptions> {
 					response = new SqlSchemaCreateResponse { Success = false, Error = saveError };
 					return false;
 				}
-				response = VerifyUnknownSaveOutcome(options, saveError, packageUId, caption, schema["uId"]!.ToString());
+				response = VerifyUnknownSaveOutcome(options, saveError, packageUId, caption, schema["uId"].ToString());
 				return response.Success;
 			}
 			response = BuildSuccess(options, schema["uId"]?.ToString(), packageUId, caption);
@@ -169,6 +160,22 @@ public class SqlSchemaCreateCommand : Command<SqlSchemaCreateOptions> {
 			response = new SqlSchemaCreateResponse { Success = false, Error = ex.Message };
 			return false;
 		}
+	}
+
+	private (int? Engine, string Error) ResolveDatabaseEngine(int? requestedEngine) {
+		if (requestedEngine is not null) {
+			return (requestedEngine, null);
+		}
+		string infoUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetSystemEnvironmentInfo);
+		string infoJson = _applicationClient.ExecutePostRequest(infoUrl, "{}");
+		(JObject info, string infoError) = SchemaDesignerHelper.ParseServiceResponse("GetSystemEnvironmentInfo", infoUrl, infoJson);
+		int? engine = info?["success"]?.Value<bool>() == true ? info["dbEngineType"]?.ToString() switch {
+			"MSSql" => 0, "Oracle" => 1, "PostgreSql" => 2, _ => null
+		} : null;
+		string error = engine is null
+			? $"Could not detect the database engine. Supply db-engine-type explicitly. {infoError ?? (info?["errorInfo"] as JObject)?["message"]?.ToString()}"
+			: null;
+		return (engine, error);
 	}
 
 	/// <summary>
