@@ -331,7 +331,9 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>Native filtered sequence participant enrollment.</summary>
 		SequenceParticipantBulkAdd = 94,
 		/// <summary>Native DataService batch writes.</summary>
-		BatchQuery = 95
+		BatchQuery = 95,
+		/// <summary>OpenID Connect discovery document.</summary>
+		OpenIdConfiguration = 96
 
 	}
 
@@ -347,6 +349,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 
 	public static readonly IReadOnlyDictionary<KnownRoute, string> KnownRoutes = new Dictionary<KnownRoute, string> {
 		{KnownRoute.GetPackageProperties, "ServiceModel/PackageService.svc/GetPackageProperties"},
+		{KnownRoute.OpenIdConfiguration, "/.well-known/openid-configuration"},
 		{KnownRoute.AdministrationSaveRole, "/rest/AdministrationService/SaveRole"},
 		{KnownRoute.AdministrationSaveChiefsRole, "/rest/AdministrationService/SaveChiefsRole"},
 		{KnownRoute.AdministrationSaveUser, "/rest/AdministrationService/UpdateOrCreateUser"},

@@ -42,7 +42,10 @@ internal class Program {
 	private static bool useCreatioLogStreamer;
 
 	private static readonly Type[] CommandOption = [
-		typeof(RegAppOptions),
+		 typeof(RegAppOptions),
+		typeof(LoginOptions),
+		typeof(LogoutOptions),
+		typeof(AuthStatusOptions),
 		typeof(UnregAppOptions),
 		typeof(AppListOptions),
 		typeof(ExecuteAssemblyOptions),
@@ -540,6 +543,9 @@ internal class Program {
 			SetLogoOptions opts => Resolve<SetLogoCommand>(opts).Execute(opts),
 			UploadLicenseCommandOptions opts => Resolve<UploadLicenseCommand>(opts).Execute(opts),
 			RegAppOptions opts => Resolve<RegAppCommand>(opts).Execute(opts),
+			LoginOptions opts => Resolve<LoginCommand>(opts).Execute(opts),
+			LogoutOptions opts => Resolve<LogoutCommand>(opts).Execute(opts),
+			AuthStatusOptions opts => Resolve<AuthStatusCommand>(opts).Execute(opts),
 			AppListOptions opts => Resolve<ShowAppListCommand>().Execute(opts),
 			UnregAppOptions opts => Resolve<UnregAppCommand>().Execute(opts),
 			GeneratePkgZipOptions opts => Resolve<CompressPackageCommand>().Execute(opts),

@@ -37,6 +37,15 @@ public class RegAppOptions : EnvironmentNameOptions {
 	[Option("add-from-iis", Required = false, HelpText = "Register all Creatios from IIS")]
 	public bool FromIis { get; set; }
 
+	[Option("auth-flow", Required = false, HelpText = "Authentication flow: client-credentials or authorization-code")]
+	public string AuthFlow { get; set; }
+
+	[Option("redirect-port", Required = false, HelpText = "Loopback OAuth callback port")]
+	public int? RedirectPort { get; set; }
+
+	[Option("redirect-uri", Required = false, HelpText = "Registered OAuth redirect URI")]
+	public string RedirectUri { get; set; }
+
 	[Option("host", Required = false, HelpText = "Computer name where IIS is hosted")]
 	public string Host { get; set; }
 
@@ -77,6 +86,17 @@ public class RegAppCommand : Command<RegAppOptions> {
 
 	public override int Execute(RegAppOptions options){
 		try {
+			OAuthFlow? requestedAuthFlow = ParseAuthFlow(options);
+			if (requestedAuthFlow == OAuthFlow.AuthorizationCode && string.IsNullOrWhiteSpace(options.ClientId)) {
+				throw new ValidationException("Authorization-code sign-in requires --clientId. clio ships no default client; ask whoever administers "
+					+ (options.Uri ?? "the environment") + " which OAuth client to use.");
+			}
+			if (requestedAuthFlow == OAuthFlow.AuthorizationCode && !string.IsNullOrWhiteSpace(options.ClientSecret)) {
+				throw new ValidationException("Authorization-code sign-in uses a public client and does not accept --clientSecret.");
+			}
+			if (options.RedirectPort is < 1 or > 65535) {
+				throw new ValidationException("--redirect-port must be between 1 and 65535.");
+			}
 			if (options.FromIis) {
 				DiscoverIisEnvironments(options).ToList().ForEach(site => {
 					EnvironmentSettings settings = new() {
@@ -107,9 +127,8 @@ public class RegAppCommand : Command<RegAppOptions> {
 				}
 				throw new Exception($"Not found environment {options.ActiveEnvironment} in settings");
 			}
-			EnvironmentSettings? existingEnvironment = string.IsNullOrWhiteSpace(options.EnvironmentName)
-				? null
-				: _settingsRepository.FindEnvironment(options.EnvironmentName);
+			EnvironmentSettings? existingEnvironment = _settingsRepository.FindEnvironment(options.EnvironmentName);
+			OAuthFlow authFlow = requestedAuthFlow ?? existingEnvironment?.AuthFlow ?? OAuthFlow.ClientCredentials;
 			
 			// Resolve the runtime BEFORE anything is persisted. Detection is allowed to refuse, and a refusal
 			// that leaves a registered environment behind is worse than a plain failure: the stored IsNetCore
@@ -126,6 +145,9 @@ public class RegAppCommand : Command<RegAppOptions> {
 				ClientId = options.ClientId,
 				ClientSecret = options.ClientSecret,
 				AuthAppUri = options.AuthAppUri,
+				AuthFlow = authFlow,
+				RedirectPort = options.RedirectPort,
+				RedirectUri = options.RedirectUri,
 				WorkspacePathes = options.WorkspacePathes,
 				EnvironmentPath = options.EnvironmentPath
 			};
@@ -157,6 +179,13 @@ public class RegAppCommand : Command<RegAppOptions> {
 	#endregion
 
 	#region Methods: Private
+
+	private static OAuthFlow? ParseAuthFlow(RegAppOptions options) {
+		if (string.IsNullOrWhiteSpace(options.AuthFlow)) return null;
+		if (string.Equals(options.AuthFlow, "authorization-code", StringComparison.OrdinalIgnoreCase)) return OAuthFlow.AuthorizationCode;
+		if (string.Equals(options.AuthFlow, "client-credentials", StringComparison.OrdinalIgnoreCase)) return OAuthFlow.ClientCredentials;
+		throw new ValidationException("--auth-flow must be client-credentials or authorization-code.");
+	}
 
 	private IEnumerable<IisEnvironmentDescriptor> DiscoverIisEnvironments(RegAppOptions options) {
 		if (_iisEnvironmentDiscoveryService != null) {

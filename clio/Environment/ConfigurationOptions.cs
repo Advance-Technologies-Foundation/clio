@@ -25,6 +25,8 @@ using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio
 {
+	/// <summary>Authentication flow configured for a Creatio environment.</summary>
+	public enum OAuthFlow { ClientCredentials, AuthorizationCode }
 
 	public class EnvironmentSettings
 	{
@@ -188,6 +190,16 @@ namespace Clio
 			get; set;
 		}
 
+		/// <summary>Configured OAuth authentication flow.</summary>
+		public OAuthFlow AuthFlow { get; set; } = OAuthFlow.ClientCredentials;
+		/// <summary>Optional loopback callback port for authorization-code sign-in.</summary>
+		public int? RedirectPort { get; set; }
+		/// <summary>Registered OAuth redirect URI used by authorization-code sign-in.</summary>
+		public string RedirectUri { get; set; }
+		/// <summary>Ephemeral environment name used in local diagnostics.</summary>
+		[YamlIgnore, Newtonsoft.Json.JsonIgnore, System.Text.Json.Serialization.JsonIgnore]
+		public string EnvironmentName { get; set; }
+
 		internal void Merge(EnvironmentSettings environment) {
 			if (!environment.IdentityService.IsEmpty) {
 				IdentityService = environment.IdentityService;
@@ -214,6 +226,9 @@ namespace Clio
 			ClientId = environment.ClientId;
 			ClientSecret = environment.ClientSecret;
 			AuthAppUri = environment.AuthAppUri;
+			AuthFlow = environment.AuthFlow;
+			RedirectPort = environment.RedirectPort;
+			RedirectUri = environment.RedirectUri;
 			WorkspacePathes = environment.WorkspacePathes;
 
 			if (!string.IsNullOrWhiteSpace(environment.EnvironmentPath)) {
@@ -266,6 +281,9 @@ namespace Clio
 			result.ClientId = string.IsNullOrEmpty(options.ClientId) ? this.ClientId : options.ClientId;
 			result.ClientSecret = string.IsNullOrEmpty(options.ClientSecret) ? this.ClientSecret : options.ClientSecret;
 			result.AuthAppUri = string.IsNullOrEmpty(options.AuthAppUri) ? this.AuthAppUri : options.AuthAppUri;
+			result.AuthFlow = this.AuthFlow;
+			result.RedirectPort = this.RedirectPort;
+			result.RedirectUri = this.RedirectUri;
 			result.Maintainer =
 				string.IsNullOrEmpty(options.Maintainer) ? this.Maintainer : options.Maintainer;
 			if (this.Safe.HasValue && this.Safe.Value
@@ -1395,6 +1413,7 @@ namespace Clio
 				}
 			}
 			EnvironmentSettings result = envSettings.Fill(options, _interactiveConsole ?? RealInteractiveConsole.Shared);
+			result.EnvironmentName = options.Environment ?? GetDefaultEnvironmentName();
 			return result;
 		}
 

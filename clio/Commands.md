@@ -785,6 +785,16 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 ### Related-page response identity
 
+<a id="login"></a>
+<a id="signin"></a>
+- [`login`](docs/commands/login.md) - Sign in to an SSO-enabled Creatio environment using OAuth authorization code + PKCE, `signin`
+<a id="logout"></a>
+<a id="signout"></a>
+- [`logout`](docs/commands/logout.md) - Revoke the cached SSO OAuth session, `signout`
+<a id="auth-status"></a>
+<a id="whoami"></a>
+- [`auth-status`](docs/commands/auth-status.md) - Show cached SSO authentication status, `whoami`
+
 `get-related-page-addon` and `create-related-page-addon` report `entitySchemaUId` as
 the base/root entity UId resolved by Creatio for the add-on, shared across replacing
 layers. A temporary designer schema or an individual replacing row is not that identity.

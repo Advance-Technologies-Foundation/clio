@@ -1,0 +1,15 @@
+NAME
+    auth-status - show cached SSO authentication status
+
+ALIASES
+    whoami
+
+SYNOPSIS
+    auth-status [options]
+
+OPTIONS
+    --Environment -e  Environment name
+
+RETURN VALUES
+    0  A usable session is cached
+    1  No session is cached or the cached access token is expired
