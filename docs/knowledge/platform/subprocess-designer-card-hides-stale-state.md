@@ -24,18 +24,22 @@ process renames or drops a parameter, and the answers are opposite:
   real Chrome. An earlier revision of this record predicted the reassurance from
   `SubProcessPropertiesPage.synchronizeActualSchemaParameters` and got the right answer for the wrong
   reason; the trap does not depend on whether the card converges.
-* the card misleads in BOTH directions, and neither is data loss. Measured 2026-09-17 at 1.6.3.10:
+* the card misleads in BOTH directions, and neither is data loss. 2026-09-17, at 1.6.3.10. **M** is a
+  reading taken in that state; **I** is an inference from the binding mechanism, not an observation -
+  this table has been wrong four times and the marker is what stops the fifth:
 
   | Renamed on the callee | `inSync` | Caller's STORED mapping | The card | Runtime |
   |---|---|---|---|---|
-  | caption only | `true` | intact | *not measured* | unaffected |
-  | code only | `false` | intact | old caption, mapping shown - looks healthy | **broken** |
-  | code AND caption | `false` | **intact** | new caption, mapping row rendered EMPTY | **broken** |
+  | caption only | `true` **M** | present, printed fields unchanged **M** | *not read* | unaffected **I** |
+  | code only | `false` **M** | *not read* - intact **I** | old caption, mapping shown, looks healthy **M** | **broken M** (3x, earlier pass) |
+  | code AND caption | `false` **M** | byte-identical to baseline **M** | new caption, mapping row EMPTY **M** | **broken I** |
 
   The third row is a FALSE ALARM: `describe` on the caller in exactly that state returns the parameter
   byte-identical to its healthy baseline - same `uid`, same `source`, same `value`, same `valueDisplay` -
   so the empty row is a rendering artefact and the mapping is really there. An earlier revision of this
-  record read the empty row as "a visible signal, not a reassurance"; it is neither.
+  record read the empty row as "a visible signal, not a reassurance"; it is neither. Note which cell that
+  byte-identical read belongs to: row THREE. Row one's mapping was read but not diffed field by field,
+  and row two's was never read at all - it is inferred from row three, which is sound but is not evidence.
 * one hypothesis fits all three rows - the card pairs the caller's stored parameter to the callee's by
   CAPTION, so an unchanged caption matches and a changed one does not. **Inference, not measured.** It
   predicts that the caption-only row would ALSO render empty, which is the cheap check that would confirm

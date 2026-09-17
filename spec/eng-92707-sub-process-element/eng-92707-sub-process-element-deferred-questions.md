@@ -531,11 +531,15 @@ mapping.
 card "shows the NEW name and an intact mapping, because rendering the card re-synchronizes it". That
 conflates two different renames, and the stated cause is not the operative one:
 
+**M** is a reading taken in that state; **I** is an inference from the binding mechanism. The distinction
+is not pedantry here — this table has been written wrong four times, each time by a cell that was reasoned
+and then repeated as though it had been seen.
+
 | Renamed on the callee | `inSync` | Caller's STORED mapping | What the card shows | Runtime |
 |---|---|---|---|---|
-| caption only | `true` | intact | *not measured* | unaffected |
-| code only — the rename that breaks delivery | `false` | intact | SAME caption, mapping shown, nothing marked | **broken** |
-| code AND caption | `false` | **intact** | NEW caption, mapping row EMPTY | **broken** |
+| caption only | `true` **M** | present, printed fields unchanged **M** | *not read* | unaffected **I** |
+| code only — the rename that breaks delivery | `false` **M** | *not read* — intact **I** | SAME caption, mapping shown, nothing marked **M** | **broken M** (3×, earlier pass) |
+| code AND caption | `false` **M** | byte-identical to baseline **M** | NEW caption, mapping row EMPTY **M** | **broken I** |
 
 The card renders the CAPTION and never the code, so it cannot display code staleness under any
 convergence behaviour. F2 does not depend on the design-instance question at all — the earlier write-up
