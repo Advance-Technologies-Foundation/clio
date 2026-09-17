@@ -75,11 +75,15 @@ jobs:
 
       # The release is tag-only and is cut from a master commit that the `Build` workflow (build.yml) has
       # already tested: the same clio.tests suite, sharded across GitHub-hosted runners, plus the
-      # ConflictResolver, analyzer, .NET 8 and integration jobs. Re-running the whole unit suite here on a
-      # single self-hosted runner (with Coverlet instrumentation whose output nothing consumed) cost 6-9
-      # minutes of a 9-17 minute release. Instead, confirm that the `Build` run for the tagged commit is
-      # green, and refuse to publish otherwise. A tag that races the master push is tolerated: the step
-      # waits for an in-flight run rather than failing on it.
+      # ConflictResolver, analyzer and .NET 8 jobs. The step removed here ran `dotnet test` with no
+      # category filter, so it also executed the Integration category; build.yml's unit shards exclude
+      # Integration and its integration shards only run on `pull_request`, so a green master `Build` does
+      # NOT re-prove integration coverage on the tagged commit - that evidence comes from the pre-merge PR
+      # run of the same commit tree. Re-running the whole suite here on a single self-hosted runner (with
+      # Coverlet instrumentation whose output nothing consumed) cost 6-9 minutes of a 9-17 minute release.
+      # Instead, confirm that the master push `Build` run for the tagged commit is green, and refuse to
+      # publish otherwise. A tag that races the master push is tolerated: the step waits for an in-flight
+      # run rather than failing on it.
       - name: Verify Build workflow is green for the tagged commit
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -99,10 +103,15 @@ jobs:
           while ($true) {
             $uri = "https://api.github.com/repos/$repo/actions/runs?head_sha=$sha&per_page=50"
             $response = Invoke-RestMethod -Uri $uri -Headers $headers -Method Get
-            $buildRuns = @($response.workflow_runs | Where-Object { $_.path -eq '.github/workflows/build.yml' })
+            # Only a `push` run on master counts. A `pull_request` run for the same SHA skips every real
+            # build and test job (they are gated on the event), so accepting one would let a green-looking
+            # run with zero executed tests satisfy this gate.
+            $buildRuns = @($response.workflow_runs | Where-Object {
+              $_.path -eq '.github/workflows/build.yml' -and $_.event -eq 'push' -and $_.head_branch -eq 'master'
+            })
 
             if ($buildRuns.Count -eq 0) {
-              throw "No 'Build' workflow run found for commit $sha. Tag a master commit that build.yml has tested, or push it first."
+              throw "No 'Build' workflow run from a master push found for commit $sha. Release from a commit pushed to master that build.yml has tested; pull_request runs of the same SHA do not count."
             }
 
             # The newest run is authoritative: a re-run supersedes an earlier failed attempt.
