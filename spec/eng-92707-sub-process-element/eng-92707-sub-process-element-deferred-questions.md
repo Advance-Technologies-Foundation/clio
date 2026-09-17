@@ -546,3 +546,34 @@ step.
 
 **Cleanup is pending a decision**: entity `UsrTc92707Order` (package `Custom`, 7 records) and eight
 `UsrTc92707*` processes. Three older `UsrTc92707*` schemas predate the pass and were not touched.
+
+
+## DQ-26 — TC-04 closed from the consequence; TC-10 still open
+
+The owner chose the middle route on 2026-09-17: report what a dropped parameter BROKE rather than build
+the stored-metadata reader that would report the drop itself.
+
+**What shipped (CrtProcessBuilder 1.6.3.7).** A re-synchronization now names every element, process
+parameter, execution context or flow condition still bound to a parameter UId the element no longer
+carries. `ProcessElementDependencyScanner.FindDanglingParameterReferences` walks the same reference sites
+as the retarget guard with the question inverted: a value that names the ELEMENT but none of its LIVE
+parameter UIds points at one that is gone. No metapath parsing - a reference always names both.
+
+**Why this shape.** It is what the classic designer does.
+`SubProcessPropertiesPage.synchronizeActualSchemaParameters` collects links before its own re-sync and
+then calls `invalidateDependentElements`, which marks a dependent invalid when the parameter it read is
+no longer findable. The designer has no drift report either; its signal is the broken consumer. We answer
+the same question for a caller with no diagram to mark, and on both the explicit and the incidental path,
+because the designer reports whenever it converges rather than only when someone came to look.
+
+**What is still open, and it is TC-10.** A RENAME keeps the parameter UId, so every reference stays
+resolvable while the SAVED element parameter name goes stale and the runtime - which binds by name -
+delivers nothing. Nothing observes that: not the designer, not describe, not `inSync`, not this new scan.
+Only the stored metadata holds the difference, which is the option the owner deferred. DQ-10 and DQ-25
+carry the mechanism and the corrected cost estimate.
+
+**One process note worth keeping.** The scan's first landing coincided with the suite going from 10 s to
+65 s, and on that reading I scoped it to explicit re-syncs and wrote "measured, 6x" into a code comment.
+The walk is 7.4 ms. The baseline, re-run with the change stashed, is 1 m 6 s - the slowdown was never
+mine. Both the scoping and the comment were reverted before either shipped. A suite duration measures the
+machine as much as the code; take the baseline in the same minute.

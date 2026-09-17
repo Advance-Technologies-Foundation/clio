@@ -18,9 +18,13 @@ Measured on a stand at CrtProcessBuilder 1.6.3.6, 2026-09-17, during the ENG-927
 **Why it is this way** — convergence on read is what keeps a design-time instance correct without a
 migration step. It was never meant to be an inspection surface, and it is not one.
 
-**What breaks if you ignore it** — there is no read that reveals the stale state. Not the designer, not
+**What breaks if you ignore it** — no read reveals the stale state itself. Not the designer, not
 `describe-business-process`, not `inSync`, and not the re-synchronization's own warning list: all four go
-through a design-time load that converges the element first, so all four report health. A person who
+through a design-time load that converges the element first, so all four report health. From
+CrtProcessBuilder 1.6.3.7 a re-synchronization does report the CONSEQUENCE of a DROPPED parameter — the
+references left bound to a parameter UId the element no longer carries — which is the half a caller can
+act on. A RENAME produces no consequence to find: the mapping row keeps the UId, so every reference stays
+resolvable and only the saved NAME is stale. That case remains invisible to every surface. A person who
 suspects a problem, opens the caller and sees a correct card closes it reassured while the process keeps
 delivering an empty parameter on every run — which is worse than a visibly stale name would have been.
 
