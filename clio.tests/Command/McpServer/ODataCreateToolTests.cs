@@ -15,6 +15,22 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class ODataCreateToolTests {
 	private static JsonElement Arr(string json) => JsonDocument.Parse(json).RootElement.Clone();
 
+	[TestCase("[]")]
+	[TestCase("null")]
+	[Category("Unit")]
+	[Description("A received JSON scalar or array remains a received response even when creation parsing rejects it.")]
+	public void Create_ShouldPreserveReceipt_WhenResponseShapeIsInvalid(string body) {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), 30000, 1, 1).Returns(body);
+		ODataCreateTool tool = BuildTool(client);
+		// Act
+		var result = tool.Create(new() { EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Name\":\"Probe\"}]") });
+		// Assert
+		result.Results[0].Diagnostic.TransportOutcome.Should().Be("response-received", because: "parsing cannot erase the observed transport boundary");
+		result.Results[0].Diagnostic.SideEffect.Should().Be("unknown", because: "malformed acknowledgement cannot establish the write outcome");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises a stable, non-read-only, non-destructive, non-idempotent MCP tool name for odata-create.")]

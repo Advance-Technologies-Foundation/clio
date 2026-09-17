@@ -143,3 +143,5 @@ and on a short single-attempt budget, because there the type map merely sharpens
 must never hold up or fail the insert. `odata-delete` sends no field set and is unaffected. (As with the documented PATCH build divergence,
 this POST strictness is a single-build observation; if a future build loosens POST to a silent drop,
 `odata-create` would inherit the same gap and this note must be revisited.)
+
+A failure in the metadata or selected-field read is a preflight refusal: the PATCH has not been attempted. Keep that distinction when reporting transport errors; receiving an error body during preflight must not imply an uncertain write.
