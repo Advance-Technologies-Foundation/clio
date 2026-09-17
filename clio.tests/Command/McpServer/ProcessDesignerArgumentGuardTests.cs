@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using FluentAssertions;
 using NUnit.Framework;
@@ -40,11 +41,23 @@ public sealed class ProcessDesignerArgumentGuardTests {
 
 	private const string ProcessDesignerNamespace = "Clio.Command.McpServer.Tools.ProcessDesigner";
 
+	/// <summary>
+	/// Family members that live OUTSIDE the ProcessDesigner folder. ENG-98566 review finding 8: the shipped
+	/// contract in <c>ToolContractGetTool</c> enumerates the process-designer family as create / modify /
+	/// describe / <b>list-user-tasks</b> / validate, so a namespace filter alone defines a different set than
+	/// the product does - and the one member it missed was the one still unguarded.
+	/// </summary>
+	private static readonly Type[] FamilyMembersOutsideTheFolder = [typeof(ListUserTasksArgs)];
+
+	/// <summary>The tool halves of <see cref="FamilyMembersOutsideTheFolder"/>.</summary>
+	private static readonly Type[] FamilyToolsOutsideTheFolder = [typeof(ListUserTasksTool)];
+
 	private static IReadOnlyList<Type> ArgumentRecords() =>
 		typeof(ValidateProcessGraphArgs).Assembly
 			.GetTypes()
 			.Where(type => type.Namespace == ProcessDesignerNamespace
 				&& type.Name.EndsWith("Args", StringComparison.Ordinal))
+			.Concat(FamilyMembersOutsideTheFolder)
 			.OrderBy(type => type.Name, StringComparer.Ordinal)
 			.ToList();
 
@@ -53,6 +66,7 @@ public sealed class ProcessDesignerArgumentGuardTests {
 			.GetTypes()
 			.Where(type => type.Namespace == ProcessDesignerNamespace
 				&& type.Name.EndsWith("Tool", StringComparison.Ordinal))
+			.Concat(FamilyToolsOutsideTheFolder)
 			.OrderBy(type => type.Name, StringComparer.Ordinal)
 			.ToList();
 

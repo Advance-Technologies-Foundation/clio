@@ -165,6 +165,41 @@ internal static class McpToolArgumentSupport {
 			["environment"] = "environment-name"
 		};
 
+	/// <summary>
+	/// The single unknown-argument check for an environment-scoped MCP tool: inspects the args record's
+	/// <c>[JsonExtensionData]</c> overflow bag and returns the refusal to hand back, or <see langword="null"/>
+	/// when the caller supplied nothing unexpected.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// ENG-98566. Why every tool needs this rather than relying on the filter: an args record binds through
+	/// <c>BindingsModule.CreateMcpSerializerOptions()</c>, a copy of <c>McpJsonUtilities.DefaultOptions</c>
+	/// WITHOUT <c>JsonUnmappedMemberHandling.Disallow</c>, so a key matching no <c>[JsonPropertyName]</c> is
+	/// discarded with no error. <c>McpToolErrorFilter</c>'s classifier does not cover it twice over: it runs
+	/// from <c>MatchedPrimitive</c>, null for anything outside <c>McpCoreToolProfile.CoreToolTypes</c>, so the
+	/// whole long tail is never classified in ANY shape; and even for a RESIDENT tool it inspects only the FLAT
+	/// payload, passing an already-wrapped <c>{"args":{...}}</c> call - the shape the published schema asks for
+	/// - straight through. The bag plus this check is the only defence, and a bag nobody reads is the failure
+	/// mode rather than the fix.
+	/// </para>
+	/// <para>
+	/// The global alternative was considered and REJECTED, and the reasoning is recorded in
+	/// <c>docs/knowledge/McpServer/mcp-arg-records-swallow-unbound-fields.md</c>: the loose binding is
+	/// deliberate for forward compatibility across MCP SDK versions, and turning <c>Disallow</c> on globally
+	/// would reject payloads that older or newer clients legitimately decorate. Do not "simplify" this away.
+	/// </para>
+	/// <para>
+	/// The NULL-<c>args</c> check deliberately does NOT live here. It has to run before the caller can read
+	/// the bag to pass in, and keeping it inline at each call site is what lets the analyser prove no field
+	/// read is reached with a null argument object - the condition that clears <c>csharpsquid:S2259</c>.
+	/// </para>
+	/// </remarks>
+	/// <param name="extensionData">The args record's overflow bag.</param>
+	/// <param name="validArgsHint">The calling tool's canonical field list, echoed on an unknown key.</param>
+	public static string? BuildUnknownArgumentError(
+			IReadOnlyDictionary<string, JsonElement>? extensionData, string validArgsHint) =>
+		BuildLegacyAliasError(extensionData, EnvironmentNameAliases, ".", validArgsHint);
+
 	/// <summary>Most caller-supplied key names echoed back in one message.</summary>
 	/// <remarks>
 	/// ENG-98566. The single definition of these bounds, shared with

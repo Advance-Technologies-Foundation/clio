@@ -57,14 +57,9 @@ internal static class ProcessTargetArguments {
 			string environmentName,
 			string processName,
 			string processUid) {
-		// ENG-98566. Both callers are LONG-TAIL - absent from McpCoreToolProfile - so McpToolErrorFilter's
-		// unknown-key classifier never runs on them in ANY payload shape: TryRefuseCallArgumentsCore bails at
-		// TryGetToolMethod because MatchedPrimitive is null for a tool that is not advertised. Even a RESIDENT
-		// tool is only classified in the FLAT shape - an already-wrapped {"args":{...}} call is passed through
-		// untouched. So the overflow bag plus this check is the ONLY thing standing between a mis-keyed call
-		// and a plausible success. Do not delete it because the normalizer exists.
-		string argumentError = McpToolArgumentSupport.BuildLegacyAliasError(
-			extensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".", validArgsHint);
+		// The only unknown-key defence these two tools have; the helper's docs say why. ENG-98566.
+		string argumentError = McpToolArgumentSupport.BuildUnknownArgumentError(
+			extensionData, validArgsHint);
 		if (!string.IsNullOrWhiteSpace(argumentError)) {
 			return CommandExecutionResult.FromValidationError(argumentError);
 		}

@@ -279,4 +279,21 @@ public sealed class ProcessDesignerUnknownArgumentRefusalTests {
 		_commandResolver.ReceivedCalls().Should().BeEmpty(
 			because: "no environment may be resolved for a call that names none");
 	}
+	[Test]
+	[Category("Unit")]
+	[Description("Review finding 8: list-user-tasks belongs to the shipped process-designer family but sits "
+		+ "outside the folder, so it had neither a bag nor a check. With a single declared argument the "
+		+ "consequence was the quietest in the family - environmentName bound to nothing, EnvironmentName "
+		+ "stayed null, and the call answered against the DEFAULT registered environment.")]
+	public void ListUserTasks_ShouldRefuseAnUnknownArgument_AndNameIt() {
+		// Arrange
+		ListUserTasksTool tool = new(null, ConsoleLogger.Instance, _commandResolver);
+		ListUserTasksArgs args = new(EnvName) { ExtensionData = Overflow() };
+
+		// Act
+		CommandExecutionResult result = tool.ListUserTasks(args);
+
+		// Assert
+		AssertRefused(result, ListUserTasksTool.ListUserTasksToolName);
+	}
 }

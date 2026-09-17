@@ -118,19 +118,11 @@ public sealed class ValidateProcessGraphTool {
 				return new ValidateProcessGraphResponse { Success = false, Error = NullArgsError };
 			}
 
-			// ENG-98566. Two exclusions stack here, and naming only the second one misleads the next reader.
-			// FIRST: this tool is LONG-TAIL - absent from McpCoreToolProfile - so McpToolErrorFilter's
-			// unknown-key classifier never runs on it in ANY payload shape (TryRefuseCallArgumentsCore bails
-			// at TryGetToolMethod: MatchedPrimitive is null for a tool that is not advertised). SECOND: even
-			// for a RESIDENT tool the classifier only inspects the FLAT shape, so an already-wrapped
-			// {"args":{...}} call - the shape the published schema asks for - is passed through untouched.
-			// Either way the serializer drops the key at bind time and this method would otherwise answer
-			// about a graph it was NOT given.
-			// The overflow bag plus this check is the remedy docs/knowledge/McpServer/
-			// mcp-arg-records-swallow-unbound-fields.md prescribes; the bag alone is the failure mode.
-			// Checked BEFORE the package requirement so a caller mistake is answered without touching Creatio.
-			string argumentError = McpToolArgumentSupport.BuildLegacyAliasError(
-				args.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".", ValidArgsHint);
+			// The only unknown-key defence this tool has; without it this method answers about a graph it was
+			// NOT given. The helper's docs carry the two reasons the filter never covers it. Checked BEFORE the
+			// package requirement, so a caller mistake is answered without touching Creatio. ENG-98566.
+			string argumentError = McpToolArgumentSupport.BuildUnknownArgumentError(
+				args.ExtensionData, ValidArgsHint);
 			if (!string.IsNullOrWhiteSpace(argumentError)) {
 				return new ValidateProcessGraphResponse { Success = false, Error = argumentError };
 			}

@@ -3,6 +3,8 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
+using System.Collections.Generic;
+using System.Text.Json;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -15,6 +17,15 @@ public class ListUserTasksTool(
 	IToolCommandResolver commandResolver) : BaseTool<ListUserTasksOptions>(command, logger, commandResolver) {
 
 	internal const string ListUserTasksToolName = "list-user-tasks";
+
+	/// <summary>The canonical field list echoed back when an unknown argument key is refused (ENG-98566).</summary>
+	internal const string ValidArgsHint = "Valid: environment-name.";
+
+	/// <summary>
+	/// Refusal for a call whose whole argument object is absent. Stays inline rather than moving into the
+	/// shared helper - see <see cref="McpToolArgumentSupport.BuildUnknownArgumentError"/>.
+	/// </summary>
+	internal const string NullArgsError = "args is required: the call carried no argument object. " + ValidArgsHint;
 
 	/// <summary>
 	/// Lists the user-facing user tasks available on the specified environment.
@@ -47,7 +58,20 @@ public class ListUserTasksTool(
 	public CommandExecutionResult ListUserTasks(
 		[Description("list-user-tasks parameters")] [Required] ListUserTasksArgs args
 	) {
-		if (string.IsNullOrWhiteSpace(args?.EnvironmentName)) {
+		if (args is null) {
+			return CommandExecutionResult.FromValidationError(NullArgsError);
+		}
+
+		// The only unknown-key defence this tool has; the helper's docs say why. ENG-98566 review finding 8:
+		// with a single declared argument, an unbound environmentName left EnvironmentName null and the call
+		// ran against the DEFAULT registered environment - an answer about a stand the caller never named.
+		string argumentError = McpToolArgumentSupport.BuildUnknownArgumentError(
+			args.ExtensionData, ValidArgsHint);
+		if (!string.IsNullOrWhiteSpace(argumentError)) {
+			return CommandExecutionResult.FromValidationError(argumentError);
+		}
+
+		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
 			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
 		}
 
@@ -65,4 +89,12 @@ public sealed record ListUserTasksArgs(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Registered clio environment name.")]
 	[property: Required]
-	string EnvironmentName);
+	string EnvironmentName) {
+
+	/// <summary>
+	/// Overflow bag for unknown JSON fields (ENG-98566). Inspected by the tool; a bag that is never read is
+	/// the failure mode, not the fix.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}

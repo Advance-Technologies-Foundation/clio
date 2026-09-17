@@ -26,12 +26,9 @@ public class ModifyProcessAsNewVersionTool(
 	/// Refusal for a call whose whole argument object is absent (ENG-98566, Sonar S2259).
 	/// </summary>
 	/// <remarks>
-	/// The guard below reads <c>args.ExtensionData</c> and every check after it reads a real field, so
-	/// exactly one place may decide what a null <c>args</c> means - and it is this one. An <c>args?.</c>
-	/// on the first line followed by an unconditional dereference on the next READS as null-safe while
-	/// only moving the NullReferenceException three lines down, where it escapes as a raw transport
-	/// fault instead of an answer. Hard to reach behind [Required] and the SDK missing-parameter error,
-	/// but "hard to reach" is not the same as handled.
+	/// Stays inline rather than moving into the shared helper: it has to run before any field can be read,
+	/// and that is what lets the analyser prove no field read is reached with null (csharpsquid:S2259). See
+	/// <see cref="McpToolArgumentSupport.BuildUnknownArgumentError"/>.
 	/// </remarks>
 	internal const string NullArgsError = "args is required: the call carried no argument object. " + ValidArgsHint;
 
