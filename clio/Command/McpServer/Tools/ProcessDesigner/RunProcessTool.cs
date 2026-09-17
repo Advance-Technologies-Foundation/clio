@@ -167,7 +167,7 @@ public sealed record RunProcessArgs {
 	/// never read is the failure mode, not the fix.
 	/// </summary>
 	[JsonExtensionData]
-	public Dictionary<string, JsonElement> ExtensionData { get; init; }
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 
 	[JsonPropertyName("process-name")]
 	[Description("Process CODE (schema Name), e.g. 'MigrateDashboardsProcess', naming ONE version of a "

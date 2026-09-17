@@ -139,5 +139,5 @@ public sealed record GetProcessSignatureArgs(
 	/// never read is the failure mode, not the fix.
 	/// </summary>
 	[JsonExtensionData]
-	public Dictionary<string, JsonElement> ExtensionData { get; init; }
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }

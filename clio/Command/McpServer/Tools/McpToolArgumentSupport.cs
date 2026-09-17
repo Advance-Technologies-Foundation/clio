@@ -148,8 +148,14 @@ internal static class McpToolArgumentSupport {
 	/// binding to nothing. Shared by every environment-scoped tool so the pair is defined once; a tool with extra
 	/// fields seeds its own map from this and adds them.
 	/// </summary>
+	/// <remarks>
+	/// ENG-98566 review finding 11: the map is OrdinalIgnoreCase because the JSON binder matches property
+	/// names case-insensitively. A capitalised spelling such as <c>EnvironmentName</c> still fails to bind -
+	/// the HYPHEN is what it gets wrong - so it lands in the overflow bag, and under an Ordinal comparer it
+	/// missed the rename hint and came back as a bare unknown key.
+	/// </remarks>
 	public static readonly IReadOnlyDictionary<string, string> EnvironmentNameAliases =
-		new Dictionary<string, string>(StringComparer.Ordinal) {
+		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
 			["environmentName"] = "environment-name",
 			["environment_name"] = "environment-name",
 			// ENG-95885: the bare 'environment' spelling was the one missing member of this set — it is
@@ -199,7 +205,7 @@ internal static class McpToolArgumentSupport {
 	/// </para>
 	/// </summary>
 	/// <param name="renderedKeys">Fragments produced from <see cref="DescribeCallerKey"/>.</param>
-	private static string JoinCallerKeys(IReadOnlyList<string> renderedKeys) {
+	public static string JoinCallerKeys(IReadOnlyList<string> renderedKeys) {
 		string shown = string.Join(", ", renderedKeys.Take(MaxEchoedKeys));
 		int hidden = renderedKeys.Count - Math.Min(renderedKeys.Count, MaxEchoedKeys);
 		return hidden > 0 ? $"{shown} and {hidden} more" : shown;

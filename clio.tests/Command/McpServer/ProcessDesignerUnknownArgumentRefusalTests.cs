@@ -254,4 +254,29 @@ public sealed class ProcessDesignerUnknownArgumentRefusalTests {
 		_commandResolver.ReceivedCalls().Should().BeEmpty(
 			because: "a call with no arguments cannot have earned an environment resolution");
 	}
+	[Test]
+	[Category("Unit")]
+	[Description("Review finding 13: describe-business-process was the only family member that never checked "
+		+ "environment-name, so a blank one fell through to the DEFAULT registered environment and returned a "
+		+ "real, well-formed graph read from a stand the caller never named. That is the same "
+		+ "authoritative-answer-about-the-wrong-thing class as the R3 fabrication this ticket fixes, and it is "
+		+ "worse than an error because the answer looks right.")]
+	public void DescribeProcess_ShouldRefuseABlankEnvironmentName() {
+		// Arrange
+		DescribeProcessTool tool = new(null, ConsoleLogger.Instance, _commandResolver);
+		DescribeProcessArgs args = new(EnvironmentName: "   ", ProcessName: "UsrOrder_Handle");
+
+		// Act
+		CommandExecutionResult result = tool.DescribeProcess(args);
+
+		// Assert
+		result.ExitCode.Should().Be(1,
+			because: "a blank required argument is caller-actionable, and the two guards above it in the same "
+				+ "method already answer with exit 1");
+		TextOf(result).Should().Contain("environment-name is required",
+			because: "the caller must learn which argument was blank, not receive a graph from a stand they "
+				+ "never named");
+		_commandResolver.ReceivedCalls().Should().BeEmpty(
+			because: "no environment may be resolved for a call that names none");
+	}
 }

@@ -44,6 +44,35 @@ public sealed class ValidateProcessGraphTool {
 	/// Refusal for a call that names no graph. Says WHY there is nothing to validate and points at the tool
 	/// that does read a process, because the argument an agent actually reached for was <c>process-name</c>.
 	/// </summary>
+	/// <summary>Canonical field list for one entry of <c>nodes</c> (ENG-98566 review finding 2).</summary>
+	internal const string ValidNodeArgsHint = "Valid keys on a node: name, type.";
+
+	/// <summary>Canonical field list for one entry of <c>edges</c> (ENG-98566 review finding 2).</summary>
+	internal const string ValidEdgeArgsHint =
+		"Valid keys on an edge: source, target, flow-kind, condition, results.";
+
+	/// <summary>
+	/// The mis-spellings an agent reaches for on a NODE, each mapped to the canonical name. Rejection-only,
+	/// like every alias table here: a wrong spelling earns a rename hint, never a silent binding.
+	/// </summary>
+	private static readonly Dictionary<string, string> NodeAliases = new(StringComparer.OrdinalIgnoreCase) {
+		["nodeType"] = "type",
+		["elementType"] = "type",
+		["node-type"] = "type",
+		["nodeName"] = "name",
+		["id"] = "name"
+	};
+
+	/// <summary>The mis-spellings an agent reaches for on an EDGE. See <see cref="NodeAliases"/>.</summary>
+	private static readonly Dictionary<string, string> EdgeAliases = new(StringComparer.OrdinalIgnoreCase) {
+		["from"] = "source",
+		["to"] = "target",
+		["kind"] = "flow-kind",
+		["flowKind"] = "flow-kind",
+		["sourceRef"] = "source",
+		["targetRef"] = "target"
+	};
+
 	internal const string NoGraphSuppliedError =
 		"No graph was supplied: 'nodes' is absent or empty, so there is nothing to validate. This is a missing "
 		+ "argument, not a finding about a process - validate-process-graph checks a graph you DESCRIBE inline "
@@ -113,6 +142,16 @@ public sealed class ValidateProcessGraphTool {
 				return new ValidateProcessGraphResponse { Success = false, Error = NoGraphSuppliedError };
 			}
 
+			// ENG-98566 review findings 1 and 2. The top-level guard above says nothing about what is INSIDE
+			// the arrays: a null entry used to reach the projection below and surface as "Object reference not
+			// set to an instance of an object", and a mis-keyed NESTED key (nodeType, from, to) is dropped by
+			// the serializer exactly as a mis-keyed top-level one was - leaving the tool to report findings
+			// about a graph the caller never described. That is this ticket's own defect one level down.
+			string entryError = BuildEntryError(args.Nodes, args.Edges);
+			if (!string.IsNullOrWhiteSpace(entryError)) {
+				return new ValidateProcessGraphResponse { Success = false, Error = entryError };
+			}
+
 			IRequiredPackageChecker checker = _commandResolver.Resolve<IRequiredPackageChecker>(
 				new EnvironmentOptions { Environment = args.EnvironmentName });
 			checker.EnsureRequirements(args);
@@ -160,6 +199,38 @@ public sealed class ValidateProcessGraphTool {
 					"{\"nodes\":[{\"name\":\"s\",\"type\":\"startEvent\"}],\"edges\":[{\"source\":\"s\",\"target\":\"r\",\"flow-kind\":\"sequence\"}]}."
 			};
 		}
+	}
+
+	/// <summary>
+	/// Refuses a null entry or an unrecognised NESTED key in <c>nodes</c>/<c>edges</c>, naming the array and
+	/// the INDEX so the caller can find it. Returns <see langword="null"/> when every entry is well formed.
+	/// </summary>
+	/// <param name="nodes">The node entries, already known to be non-empty.</param>
+	/// <param name="edges">The edge entries, which may be absent.</param>
+	private static string BuildEntryError(List<ProcessGraphNodeArg> nodes, List<ProcessGraphEdgeArg> edges) {
+		for (int i = 0; i < nodes.Count; i++) {
+			if (nodes[i] is null) {
+				return $"nodes[{i}] is null. Every entry must be an object, e.g. "
+					+ "{\"name\":\"s\",\"type\":\"startEvent\"}.";
+			}
+			string nodeError = McpToolArgumentSupport.BuildLegacyAliasError(
+				nodes[i].ExtensionData, NodeAliases, ".", ValidNodeArgsHint);
+			if (!string.IsNullOrWhiteSpace(nodeError)) {
+				return $"nodes[{i}]: {nodeError}";
+			}
+		}
+		for (int i = 0; i < (edges?.Count ?? 0); i++) {
+			if (edges[i] is null) {
+				return $"edges[{i}] is null. Every entry must be an object, e.g. "
+					+ "{\"source\":\"s\",\"target\":\"e\"}.";
+			}
+			string edgeError = McpToolArgumentSupport.BuildLegacyAliasError(
+				edges[i].ExtensionData, EdgeAliases, ".", ValidEdgeArgsHint);
+			if (!string.IsNullOrWhiteSpace(edgeError)) {
+				return $"edges[{i}]: {edgeError}";
+			}
+		}
+		return null;
 	}
 
 	/// <summary>
@@ -220,13 +291,21 @@ public sealed record ValidateProcessGraphArgs(
 	/// <see cref="ValidateProcessGraphTool.Validate"/>; a bag that is never read is the defect, not the fix.
 	/// </summary>
 	[JsonExtensionData]
-	public Dictionary<string, JsonElement> ExtensionData { get; init; }
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }
 
 /// <summary>One node argument.</summary>
 public sealed record ProcessGraphNodeArg(
 	[property: JsonPropertyName("name")] string Name = null,
-	[property: JsonPropertyName("type")] string Type = null);
+	[property: JsonPropertyName("type")] string Type = null) {
+
+	/// <summary>
+	/// Overflow bag for unrecognised keys on ONE node (ENG-98566 review finding 2). Without it a mis-keyed
+	/// nested key is dropped by the serializer and the tool answers about a graph the caller never described.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}
 
 /// <summary>One edge argument.</summary>
 public sealed record ProcessGraphEdgeArg(
@@ -234,7 +313,12 @@ public sealed record ProcessGraphEdgeArg(
 	[property: JsonPropertyName("target")] string Target = null,
 	[property: JsonPropertyName("flow-kind")] string FlowKind = null,
 	[property: JsonPropertyName("condition")] string Condition = null,
-	[property: JsonPropertyName("results")] string[] Results = null);
+	[property: JsonPropertyName("results")] string[] Results = null) {
+
+	/// <summary>Overflow bag for unrecognised keys on ONE edge. See <see cref="ProcessGraphNodeArg"/>.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}
 
 /// <summary>Response from the <c>validate-process-graph</c> MCP tool.</summary>
 public sealed class ValidateProcessGraphResponse {

@@ -820,7 +820,11 @@ public sealed class ValidateProcessGraphToolTests {
 		+ "never learn that their argument was also wrong.")]
 	public void Validate_ShouldNotResolveThePackageChecker_WhenAnArgumentIsUnknown() {
 		// Arrange
-		ValidateProcessGraphArgs args = ArgsWithUnknown("process-name", "UsrOrder_Handle");
+		// A REAL graph is essential: with nodes left null the no-graph guard returns before the resolver is
+		// touched, so the test would pass with the argument guard moved AFTER the package check - it could
+		// not fail for the proposition its description states.
+		ValidateProcessGraphArgs args = ArgsWithUnknown("process-name", "UsrOrder_Handle",
+			[N("s", "startEvent"), N("e", "endEvent")]);
 
 		// Act
 		_tool.Validate(args);
@@ -932,5 +936,90 @@ public sealed class ValidateProcessGraphToolTests {
 		response.Findings.Should().BeNull(because: "no graph was read, so no finding can be about one");
 		_commandResolver.ReceivedCalls().Should().BeEmpty(
 			because: "a call with no arguments cannot have earned an environment resolution");
+	}
+	[Test]
+	[Category("Unit")]
+	[Description("Review finding 1: a NULL ENTRY inside nodes is refused by name. It used to reach the "
+		+ "projection and surface as 'Object reference not set to an instance of an object' - the exact "
+		+ "misleading diagnosis this ticket exists to remove, reached through the array rather than the "
+		+ "argument object.")]
+	public void Validate_ShouldRefuseANullNodeEntry_ByName() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), null];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, []);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a null entry describes no element");
+		response.Error.Should().Contain("nodes[1]",
+			because: "naming the INDEX is what lets the caller find the offending entry");
+		response.Error.Should().NotContain("Object reference",
+			because: "a null-reference message blames the caller's graph for a shape the tool can name");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Review finding 2: an unrecognised NESTED key on a node is named back. This is this "
+		+ "ticket's own defect one level down - the serializer drops a mis-keyed nested key exactly as it "
+		+ "dropped a mis-keyed top-level one, leaving the tool to report findings about a graph the caller "
+		+ "never described. 'nodeType' binds nothing, so type arrives null and the graph reads as UNKNOWN.")]
+	public void Validate_ShouldRefuseAnUnknownNodeKey_AndNameIt() {
+		// Arrange
+		ProcessGraphNodeArg miskeyed = new("s", null) {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["nodeType"] = JsonDocument.Parse("\"startEvent\"").RootElement
+			}
+		};
+
+		// Act
+		ValidateProcessGraphResponse response = Validate([miskeyed], []);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a key the tool cannot bind is a caller mistake");
+		response.Error.Should().Contain("nodes[0]", because: "the offending entry must be locatable");
+		response.Error.Should().Contain("'nodeType' -> 'type'",
+			because: "nodeType is a known mis-spelling, so it earns a rename hint rather than a bare unknown");
+		response.Findings.Should().BeNull(
+			because: "reporting UNKNOWN about an element whose type was silently dropped is the defect");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Review finding 2, edge half: an unrecognised key on an EDGE is named back with its index. "
+		+ "'from'/'to' are what an agent writes when thinking in BPMN rather than in this tool's vocabulary.")]
+	public void Validate_ShouldRefuseAnUnknownEdgeKey_AndNameIt() {
+		// Arrange
+		ProcessGraphEdgeArg miskeyed = new(null, null) {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["from"] = JsonDocument.Parse("\"s\"").RootElement
+			}
+		};
+
+		// Act
+		ValidateProcessGraphResponse response = Validate([N("s", "startEvent"), N("e", "endEvent")], [miskeyed]);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a key the tool cannot bind is a caller mistake");
+		response.Error.Should().Contain("edges[0]", because: "the offending entry must be locatable");
+		response.Error.Should().Contain("'from' -> 'source'",
+			because: "from is a known mis-spelling of source and earns the rename");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A well-formed graph is unaffected by the entry guards - they must refuse malformed entries "
+		+ "without narrowing what a correct call can express.")]
+	public void Validate_ShouldStillAcceptAWellFormedGraph_AfterTheEntryGuards() {
+		// Arrange
+		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("r", "readDataUserTask"), N("e", "endEvent")];
+		List<ProcessGraphEdgeArg> edges = [E("s", "r"), E("r", "e")];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the entry guards must not refuse a correct graph");
+		response.HasErrors.Should().BeFalse(because: "this graph violates no connection rule");
 	}
 }

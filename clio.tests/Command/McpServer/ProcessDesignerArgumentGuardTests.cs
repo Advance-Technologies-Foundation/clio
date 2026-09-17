@@ -103,6 +103,9 @@ public sealed class ProcessDesignerArgumentGuardTests {
 			.ToList();
 
 		// Assert
+		records.Should().NotBeEmpty(
+			because: "an empty population makes the filtered list empty too, so without this the tripwire "
+				+ "reports the family as guarded while guarding nothing - review finding 5");
 		wrongType.Should().BeEmpty(
 			because: "BuildLegacyAliasError takes IReadOnlyDictionary<string, JsonElement>; a bag it cannot "
 				+ "accept leaves the tool with a captured key it never reports");
@@ -169,6 +172,9 @@ public sealed class ProcessDesignerArgumentGuardTests {
 			.ToList();
 
 		// Assert
+		tools.Should().NotBeEmpty(
+			because: "an empty population makes the filtered list empty too, so without this the tripwire "
+				+ "reports the family as guarded while guarding nothing - review finding 5");
 		withoutEnvironment.Should().BeEmpty(
 			because: "a hint that omits the argument most often mis-spelled cannot resolve the commonest call");
 	}

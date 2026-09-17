@@ -71,6 +71,16 @@ public sealed class DescribeProcessTool(
 			return CommandExecutionResult.FromValidationError(argumentError);
 		}
 
+		// ENG-98566 review finding 13. Without this, a blank environment-name resolves the DEFAULT registered
+		// environment and returns a real, well-formed graph read from a stand the caller never named - the
+		// same "authoritative answer about the wrong thing" class as the R3 fabrication this ticket fixes.
+		// FromValidationError rather than the siblings' FromError: this is caller-actionable input, and the
+		// two new guards above already answer with it, so describe stays internally consistent.
+		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
+			return CommandExecutionResult.FromValidationError(
+				"environment-name is required and cannot be empty.");
+		}
+
 		DescribeProcessOptions options = new() {
 			ProcessName = args.ProcessName,
 			ProcessUid = args.ProcessUid,
@@ -119,5 +129,5 @@ public sealed record DescribeProcessArgs(
 	/// never read is the failure mode, not the fix.
 	/// </summary>
 	[JsonExtensionData]
-	public Dictionary<string, JsonElement> ExtensionData { get; init; }
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }

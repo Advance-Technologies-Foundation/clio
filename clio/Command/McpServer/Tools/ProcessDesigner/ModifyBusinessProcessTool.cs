@@ -410,5 +410,5 @@ public sealed record ModifyBusinessProcessArgs(
 	/// never read is the failure mode, not the fix.
 	/// </summary>
 	[JsonExtensionData]
-	public Dictionary<string, JsonElement> ExtensionData { get; init; }
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }
