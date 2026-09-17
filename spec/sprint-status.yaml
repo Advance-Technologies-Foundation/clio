@@ -4086,3 +4086,9 @@ stories:
     description: Native bounded enrollment for clio issue 1576
     depends_on: []
     blocks: []
+
+  - id: story-sales-engagement-1
+    status: in-progress
+    description: Compact sequence context for clio issue 1575
+    depends_on: []
+    blocks: []

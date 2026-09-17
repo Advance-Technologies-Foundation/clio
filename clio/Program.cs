@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -229,6 +229,7 @@ internal class Program {
 		typeof(GetEntitySchemaColumnPropertiesOptions),
 		typeof(GetEntitySchemaPropertiesOptions),
 		typeof(SequenceEnrollmentOptions),
+		typeof(SequenceContextOptions),
 		typeof(SetEntitySchemaPropertiesOptions),
 		typeof(FindEntitySchemaOptions),
 		typeof(FindAppOptions),
@@ -706,6 +707,7 @@ internal class Program {
 			GetEntitySchemaColumnPropertiesOptions opts => Resolve<GetEntitySchemaColumnPropertiesCommand>(opts).Execute(opts),
 			GetEntitySchemaPropertiesOptions opts => Resolve<GetEntitySchemaPropertiesCommand>(opts).Execute(opts),
 			SequenceEnrollmentOptions opts => Resolve<SequenceEnrollmentCommand>(opts).Execute(opts),
+			SequenceContextOptions opts => Resolve<SequenceContextCommand>(opts).Execute(opts),
 			SetEntitySchemaPropertiesOptions opts => Resolve<SetEntitySchemaPropertiesCommand>(opts).Execute(opts),
 			FindEntitySchemaOptions opts => Resolve<FindEntitySchemaCommand>(opts).Execute(opts),
 			FindAppOptions opts => Resolve<FindAppCommand>(opts).Execute(opts),
@@ -2100,4 +2102,3 @@ internal class Program {
 	#endregion
 
 }
-
