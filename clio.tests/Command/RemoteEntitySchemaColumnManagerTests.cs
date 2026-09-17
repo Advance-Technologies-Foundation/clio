@@ -1706,18 +1706,22 @@ internal class RemoteEntitySchemaColumnManagerTests
 					MergedCreatedOnColumnUId, "CreatedOn", "Created on", null, 7, false, true, null, IsIndexed: false)
 			]);
 
-	[Test]
+	[TestCase(false)]
+	[TestCase(true)]
 	[Description("Returns the merged effective column set, including custom columns from other packages, when no package is supplied.")]
-	public void GetSchemaProperties_ReturnsMergedColumnsAcrossPackages_WhenPackageIsOmitted() {
+	public void GetSchemaProperties_ReturnsMergedColumnsAcrossPackages_WhenPackageIsOmitted(bool bounded) {
 		// Arrange
 		_runtimeEntitySchemaReader.GetByName("Account").Returns(CreateMergedRuntimeSchema());
+		_runtimeEntitySchemaReader.GetByName("Account", 10000).Returns(CreateMergedRuntimeSchema());
 
 		// Act
 		EntitySchemaPropertiesInfo result = _manager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
-			SchemaName = "Account"
+			SchemaName = "Account", RuntimeReadTimeoutMilliseconds = bounded ? 10000 : null
 		});
 
 		// Assert
+		_runtimeEntitySchemaReader.ReceivedCalls().Single().GetArguments().Length.Should().Be(bounded ? 2 : 1,
+			because: "only callers requesting a bounded read should select the timeout overload");
 		result.Name.Should().Be("Account",
 			because: "the merged read should preserve the runtime schema name");
 		result.PackageName.Should().Be(RemoteEntitySchemaColumnManager.MergedSchemaPackageName,

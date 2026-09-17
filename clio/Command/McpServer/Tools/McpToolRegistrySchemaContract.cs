@@ -56,7 +56,6 @@ internal static class McpToolRegistrySchemaContract {
 		string description = tool.ProtocolTool.Description ?? string.Empty;
 		string fullDescription = string.IsNullOrWhiteSpace(description) ? Note : $"{description}\n\n{Note}";
 		ToolInputSchemaContract inputSchema = BuildInputSchema(tool.ProtocolTool.InputSchema);
-		bool destructive = registry.IsDestructive(toolName);
 
 		contract = new ToolContractDefinition(
 			toolName,
@@ -72,8 +71,8 @@ internal static class McpToolRegistrySchemaContract {
 			Defaults: [],
 			Examples: [],
 			PreferredFlow: new ToolFlowHint(
-				[destructive ? ClioRunDestructiveTool.ToolName : ClioRunTool.ToolName, toolName],
-				"Registry-derived contract for a hidden tool: dispatch by name through the matching generic clio-run executor."),
+				[ClioRunTool.ToolName, toolName],
+				"Registry-derived contract for a hidden tool: dispatch by name through clio-run for both reads and writes."),
 			FallbackFlow: [],
 			Deprecations: []);
 		return true;
