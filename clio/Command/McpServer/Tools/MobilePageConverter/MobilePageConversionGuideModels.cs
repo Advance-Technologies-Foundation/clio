@@ -1417,11 +1417,11 @@ public sealed class RequestConversionInfo {
 	/// verification step exists or is needed for this kind. <c>entity-default-mobile-page</c> targets are
 	/// deliberately NOT aggregated here yet: turning an object name into a candidate web page to convert
 	/// requires a new environment read this pass does not perform — that read lives in
-	/// <see cref="UnresolvedTargetRequest.ResolvedCandidateSchemaName"/> instead, classified the same way
-	/// (see <see cref="MissingTargetPage.ResolvedSourceType"/>) but not folded into this
-	/// list — the caller combines both sources into one display queue. One entry per distinct <c>target</c>
-	/// value (case-insensitive), carrying every element/binding pair that references it, each with its own
-	/// <see cref="MissingTargetPageReference.OriginalBinding"/> to restore once the target resolves. Empty
+	/// <see cref="UnresolvedTargetRequest.ResolvedCandidateSchemaName"/> instead, and is not folded into
+	/// this list — the caller combines both sources into one display queue. One entry per distinct
+	/// <c>target</c> value (case-insensitive), carrying every element/binding pair that references it,
+	/// each with its own <see cref="MissingTargetPageReference.OriginalBinding"/> to restore once the
+	/// target resolves. Empty
 	/// when no <c>web-page</c> target was found missing.
 	/// </summary>
 	[JsonPropertyName("missingTargetPages")]
@@ -1468,28 +1468,6 @@ public sealed class MissingTargetPage {
 	/// <summary>Every element/binding pair on the source page that references <see cref="Target"/>.</summary>
 	[JsonPropertyName("references")]
 	public IReadOnlyList<MissingTargetPageReference> References { get; init; } = [];
-
-	/// <summary>
-	/// <see cref="Target"/>'s detected source type — the same <c>sourceType</c> vocabulary the guide itself
-	/// reports for the MAIN source page (<c>freedom-web</c>, <c>mobile</c>, or the schema's raw type when
-	/// neither, which covers Classic UI and anything unrecognized). ALWAYS NULL on this response: the tool
-	/// no longer performs the environment read this needs — the caller classifies each distinct candidate
-	/// itself, per the mandatory guidance procedure, before presenting a plan. Settable so a caller MAY still
-	/// fill it locally for its own bookkeeping; the tool never writes it.
-	/// </summary>
-	[JsonPropertyName("resolvedSourceType")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string ResolvedSourceType { get; set; }
-
-	/// <summary>
-	/// The next step to propose for <see cref="Target"/>, derived from <see cref="ResolvedSourceType"/>.
-	/// ALWAYS NULL on this response, for the same reason as <see cref="ResolvedSourceType"/> — see there.
-	/// clio does not define this vocabulary: the caller classifies and labels each candidate itself, per
-	/// the mandatory guidance procedure.
-	/// </summary>
-	[JsonPropertyName("recommendedAction")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string RecommendedAction { get; set; }
 }
 
 /// <summary>A request carried to mobile from a component's event binding.</summary>
@@ -1645,23 +1623,6 @@ public sealed class UnresolvedTargetRequest {
 	[JsonPropertyName("resolvedCandidateSchemaName")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string ResolvedCandidateSchemaName { get; init; }
-
-	/// <summary>
-	/// <see cref="ResolvedCandidateSchemaName"/>'s detected source type — see
-	/// <see cref="MissingTargetPage.ResolvedSourceType"/> for the vocabulary. ALWAYS NULL on this response,
-	/// for the same reason as <see cref="MissingTargetPage.ResolvedSourceType"/> — see there.
-	/// </summary>
-	[JsonPropertyName("resolvedSourceType")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string ResolvedSourceType { get; set; }
-
-	/// <summary>
-	/// The next step to propose for <see cref="ResolvedCandidateSchemaName"/>. ALWAYS NULL on this response.
-	/// See <see cref="MissingTargetPage.RecommendedAction"/> for the vocabulary — clio no longer defines it.
-	/// </summary>
-	[JsonPropertyName("recommendedAction")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string RecommendedAction { get; set; }
 
 	/// <summary>Wire value for a target established ABSENT on mobile.</summary>
 	public const string StateMissing = "missing";

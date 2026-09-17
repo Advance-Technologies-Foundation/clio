@@ -1145,14 +1145,6 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 					because: "a candidate is resolved only for a target verified missing, never for one the "
 						+ "environment could not answer for");
 			}
-			// The guide never classifies a candidate itself — regardless of whether a name was resolved,
-			// ResolvedSourceType/RecommendedAction always come back null; classification moved to the caller.
-			// Asserted over the real MCP transport, not only the hand-built unit fixtures, so a reintroduced
-			// classification pass cannot go unnoticed.
-			finding.ResolvedSourceType.Should().BeNull(
-				because: $"'{convertedSchemaName}' guide must never classify a candidate itself");
-			finding.RecommendedAction.Should().BeNull(
-				because: $"'{convertedSchemaName}' guide must never classify a candidate itself");
 		}
 
 		// missingTargetPages queue: every web-page finding the LIVE environment produced must be
@@ -1190,12 +1182,6 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 							+ "preserved binding from both collections, not two independently-built copies");
 				}
 			}
-			// The queue entry never gets classified by the guide either — asserted against the real
-			// environment so a reintroduced classification pass cannot go unnoticed.
-			queued.ResolvedSourceType.Should().BeNull(
-				because: $"'{convertedSchemaName}' guide must never classify a queued candidate itself");
-			queued.RecommendedAction.Should().BeNull(
-				because: $"'{convertedSchemaName}' guide must never classify a queued candidate itself");
 		}
 	}
 

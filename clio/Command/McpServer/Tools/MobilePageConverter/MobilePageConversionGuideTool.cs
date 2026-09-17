@@ -82,7 +82,7 @@ public class MobilePageConversionGuideTool {
 		+ "article. It FAILS rather than degrading when the mobile template cannot be read, because without it "
 		+ "the guide would insert duplicates of elements that template already provides. "
 		+ "requestConversions.missingTargetPages / unresolvedTargetRequests report candidate names ONLY — "
-		+ "resolvedSourceType/recommendedAction are always null. YOU must classify each distinct candidate "
+		+ "they carry no classification. YOU must classify each distinct candidate "
 		+ "yourself (get-page for existence/schema-type; list-pages / find-entity-schema to check for an "
 		+ "existing mobile equivalent) before presenting a plan; a candidate matched under a mobile-styled "
 		+ "name that turns out to be Classic UI counts as NO existing mobile equivalent. "
@@ -259,13 +259,12 @@ public class MobilePageConversionGuideTool {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}
 
-		// Missing-target candidates are deliberately left unclassified here (ResolvedSourceType /
-		// RecommendedAction stay null): classifying one needs its own environment read, and it used to run
-		// inside this call under a fixed per-guide-call read ceiling. The caller now performs this
-		// classification itself, per the mandatory guidance procedure, using its own tools (get-page /
-		// list-pages / find-entity-schema) with no artificial ceiling — mirroring how KindWebPage targets
-		// were already never probed server-side. This also lets the caller check for an existing mobile
-		// equivalent under a different name, a search this tool never performed.
+		// Missing-target candidates are deliberately left unclassified here: classifying one needs its own
+		// environment read, and it used to run inside this call under a fixed per-guide-call read ceiling.
+		// The caller performs this classification itself, per the mandatory guidance procedure, using its
+		// own tools (get-page / list-pages / find-entity-schema) with no artificial ceiling — mirroring how
+		// KindWebPage targets were already never probed server-side. This also lets the caller check for an
+		// existing mobile equivalent under a different name, a search this tool never performed.
 
 		return new MobilePageConversionGuideResponse {
 			Success = true,
