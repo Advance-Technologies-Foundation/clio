@@ -149,6 +149,65 @@ public sealed class RegisterProcessElementCommandTests : BaseCommandTests<Regist
 			because: "invalid package requests must not write files");
 	}
 
+	/// <summary>Interrupted artifact generation can resume without rotating existing identities.</summary>
+	[TestCase(".sql")]
+	[TestCase("descriptor.json")]
+	[Description("Recreates a missing registration artifact and leaves every remaining artifact unchanged.")]
+	public void Execute_RepairsMissingArtifact(string suffix) {
+		// Arrange
+		_command.Execute(Options());
+		string[] paths = FileSystem.Directory.GetFiles(Path.Combine(_package, "SqlScripts"), "*", SearchOption.AllDirectories);
+		string missing = paths.First(p => p.EndsWith(suffix, StringComparison.Ordinal));
+		var remaining = paths.Where(p => p != missing).ToDictionary(p => p, FileSystem.File.ReadAllText);
+		FileSystem.File.Delete(missing);
+		// Act
+		int result = _command.Execute(Options());
+		// Assert
+		result.Should().Be(0, because: "missing generated artifacts can be recreated on retry");
+		FileSystem.File.Exists(missing).Should().BeTrue(because: "the interrupted artifact must be restored");
+		remaining.Keys.ToDictionary(p => p, FileSystem.File.ReadAllText).Should().BeEquivalentTo(remaining,
+			because: "existing artifact identities and content must not change during recovery");
+	}
+
+	/// <summary>Duplicate task identities are ambiguous even when both descriptors agree.</summary>
+	[Test]
+	[Description("Rejects duplicate task UIds before writing registration artifacts.")]
+	public void Execute_RejectsDuplicateTaskUId() {
+		// Arrange
+		string original = Path.Combine(_package, "Schemas", "UsrTask");
+		string duplicate = Path.Combine(_package, "Schemas", "Duplicate");
+		FileSystem.Directory.CreateDirectory(duplicate);
+		foreach (string path in FileSystem.Directory.GetFiles(original)) {
+			FileSystem.File.Copy(path, Path.Combine(duplicate, Path.GetFileName(path)));
+		}
+		// Act
+		int result = _command.Execute(Options());
+		// Assert
+		result.Should().Be(1, because: "two task descriptors with one UId are ambiguous");
+		FileSystem.Directory.Exists(Path.Combine(_package, "SqlScripts")).Should().BeFalse(
+			because: "the duplicate must be detected before any registration file is written");
+	}
+
+	/// <summary>A wrong native engine descriptor must not be silently adopted.</summary>
+	[Test]
+	[Description("Preserves all existing artifacts when a native descriptor conflicts with its dialect.")]
+	public void Execute_RejectsConflictingDescriptor() {
+		// Arrange
+		_command.Execute(Options());
+		string descriptorPath = FileSystem.Directory.GetFiles(Path.Combine(_package, "SqlScripts"), "descriptor.json", SearchOption.AllDirectories).First();
+		JsonNode descriptor = JsonNode.Parse(FileSystem.File.ReadAllText(descriptorPath))!;
+		descriptor["SqlScript"]!["DBEngineType"] = 99;
+		FileSystem.File.WriteAllText(descriptorPath, descriptor.ToJsonString());
+		var original = FileSystem.Directory.GetFiles(Path.Combine(_package, "SqlScripts"), "*", SearchOption.AllDirectories)
+			.ToDictionary(p => p, FileSystem.File.ReadAllText);
+		// Act
+		int result = _command.Execute(Options());
+		// Assert
+		result.Should().Be(1, because: "an existing descriptor must match the requested dialect");
+		original.Keys.ToDictionary(p => p, FileSystem.File.ReadAllText).Should().BeEquivalentTo(original,
+			because: "conflicting native descriptors must never be overwritten implicitly");
+	}
+
 	private RegisterProcessElementOptions Options() => new() {
 		WorkspacePath = _root, PackageName = "UsrExample", UserTaskUId = _taskUId, Caption = "Format text"
 	};

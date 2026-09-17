@@ -32,6 +32,11 @@ without overwrite. Package installation preserves existing registrations and cap
 clio register-process-element --workspace-path ./MyWorkspace --package-name UsrExample --user-task-uid 90810b59-c2aa-4133-8b6b-61f57b12143c --caption "Format text"
 ```
 
+## MCP
+
+Discover `register-process-element` using `get-tool-contract`, then dispatch through
+`clio-run` with `command: "register-process-element"` and `args` containing the options above.
+
 ## Notes
 
 Deploy using push-pkg or push-workspace; pkg-to-db does not execute the scripts.
