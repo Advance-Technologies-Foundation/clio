@@ -46,6 +46,7 @@ public sealed class SequenceContextCommandTests : BaseCommandTests<SequenceConte
 		var result = _command.Read(new());
 		// Assert
 		result.Availability.Should().Be("absent", because: "the catalog read succeeded with no matching schema");
+		_command.Execute(new()).Should().Be(1, because: "the CLI must fail when sequence context is unavailable");
 		result.Success.Should().BeFalse(because: "absent sequences cannot supply usable context");
 		_schemas.ReceivedCalls().Should().BeEmpty(because: "discovery stops before reading absent metadata");
 	}
@@ -72,6 +73,7 @@ public sealed class SequenceContextCommandTests : BaseCommandTests<SequenceConte
 		Action act = () => _command.Read(options);
 		// Assert
 		act.Should().Throw<ArgumentException>(because: "an empty ID is not an existing definition");
+		_command.Execute(options).Should().Be(1, because: "the CLI must convert invalid input to a failure exit code");
 		_client.ReceivedCalls().Should().BeEmpty(because: "invalid inputs must not reach Creatio");
 	}
 
@@ -106,6 +108,7 @@ public sealed class SequenceContextCommandTests : BaseCommandTests<SequenceConte
 		var result = _command.Read(new());
 		// Assert
 		result.Success.Should().BeTrue(because: "all requested read sections completed");
+		_command.Execute(new()).Should().Be(0, because: "complete context must produce a successful CLI exit code");
 		JsonSerializer.Serialize(result.Sections["choices:SequenceStatus"].Data).Should().Contain(liveId.ToString(),
 			because: "lookup identifiers must come from this environment");
 		_schemas.ReceivedCalls().Select(call => (GetEntitySchemaPropertiesOptions)call.GetArguments()[0])
@@ -160,6 +163,25 @@ public sealed class SequenceContextCommandTests : BaseCommandTests<SequenceConte
 		result.Sections["selected-ruleset"].State.Should().Be("missing", because: "an invisible referenced ruleset cannot be inspected");
 		result.Success.Should().BeFalse(because: "prerequisite inspection is incomplete");
 		result.Sections["schema:Sequence"].State.Should().Be("failed", because: "missing effective metadata cannot become an empty success");
+	}
+
+	[Test]
+	[Description("Many individually bounded reads cannot bypass the total context response budget.")]
+	public void AggregateResponse_IsBounded() {
+		// Arrange
+		_client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), 10000, 1, 1).Returns(call => {
+			using var query = JsonDocument.Parse(call.ArgAt<string>(1));
+			string schema = query.RootElement.GetProperty("rootSchemaName").GetString();
+			return JsonSerializer.Serialize(new { success = true, rows = new[] {
+				new { Id = Guid.NewGuid(), Name = schema == "SysSchema" ? "Sequence" : new string('x', 20000) }
+			}});
+		});
+		// Act
+		var result = _command.Read(new());
+		// Assert
+		result.Success.Should().BeFalse(because: "individually bounded sections can still exceed the total budget");
+		result.Sections["context"].Error.Should().Contain("response budget", because: "the aggregate limit must be explicit");
+		JsonSerializer.Serialize(result).Length.Should().BeLessThan(2000, because: "the rejected aggregate must not be returned");
 	}
 
 	[TestCase(false, false)]

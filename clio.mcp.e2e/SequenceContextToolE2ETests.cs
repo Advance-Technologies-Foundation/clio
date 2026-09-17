@@ -3,6 +3,7 @@ using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Mcp;
 using FluentAssertions;
+using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
 
@@ -40,5 +41,7 @@ public sealed class SequenceContextToolE2ETests : McpContractFixtureBase {
 			}}, context.CancellationTokenSource.Token);
 		// Assert
 		result.IsError.Should().BeTrue(because: "a malformed UUID cannot bind to a valid sequence inspection");
+		string.Join(" ", result.Content.OfType<TextContentBlock>().Select(block => block.Text)).Should()
+			.Contain("sequence-id", because: "the UUID contract must reject the request before environment resolution");
 	}
 }
