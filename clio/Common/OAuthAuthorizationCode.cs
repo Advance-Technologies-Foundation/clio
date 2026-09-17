@@ -92,8 +92,12 @@ public sealed class OAuthTokenStore : IOAuthTokenStore
 
     public void Delete(EnvironmentSettings environment) { string path = GetPath(environment); if (File.Exists(path)) File.Delete(path); }
     private string GetPath(EnvironmentSettings environment) => Path.Combine(Root, BuildKey(environment) + ".json");
-    private static string StripScheme(string value) => value.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
-        ? value[8..] : value.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ? value[7..] : value;
+    private static string StripScheme(string value)
+    {
+        if (value.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) return value[8..];
+        if (value.StartsWith("http://", StringComparison.OrdinalIgnoreCase)) return value[7..];
+        return value;
+    }
     private static string Sanitize(string value) => new string(value.Select(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-' or '_' ? c : '-').ToArray()).Trim('-', '.').ToLowerInvariant();
     private sealed record PersistedToken(string access_token, string refresh_token, DateTimeOffset expires_at, string token_endpoint,
         string client_id, DateTimeOffset obtained_at, string identity);
@@ -102,6 +106,7 @@ public sealed class OAuthTokenStore : IOAuthTokenStore
 /// <summary>Pure OAuth helpers for PKCE and callback validation.</summary>
 public static class OAuthAuthorizationCodeProtocol
 {
+	private const string ClientIdParameter = "client_id";
     public static string CreateCodeVerifier()
     {
         const string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
@@ -124,8 +129,6 @@ public static class OAuthAuthorizationCodeProtocol
             string[] pieces = part.Split('=', 2);
             if (pieces.Length == 2) query[DecodeQuery(pieces[0])] = DecodeQuery(pieces[1]);
         }
-        query.TryGetValue("state", out string state);
-        if (!string.Equals(state, expectedState, StringComparison.Ordinal)) throw new InvalidOperationException("OAuth callback state did not match.");
         if (query.TryGetValue("error", out string error) && !string.IsNullOrWhiteSpace(error))
         {
             query.TryGetValue("error_description", out string description);
@@ -134,6 +137,8 @@ public static class OAuthAuthorizationCodeProtocol
                 ? $"OAuth authorization failed: {error}."
                 : $"OAuth authorization failed: {error} ({safeDescription}).");
         }
+		query.TryGetValue("state", out string state);
+		if (!string.Equals(state, expectedState, StringComparison.Ordinal)) throw new InvalidOperationException("OAuth callback state did not match.");
         if (!query.TryGetValue("code", out string code) || string.IsNullOrWhiteSpace(code)) throw new InvalidOperationException("OAuth callback did not contain an authorization code.");
         return (code, state);
     }
@@ -152,6 +157,7 @@ public interface IOAuthAuthorizationCodeService
 /// <inheritdoc />
 public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeService
 {
+	private const string ClientIdParameter = "client_id";
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IOAuthTokenStore _store;
     private readonly ILogger _logger;
@@ -171,11 +177,15 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
         using HttpClient client = _httpClientFactory.CreateClient();
         using HttpRequestMessage request = new(HttpMethod.Post, token.TokenEndpoint)
         {
-            Content = new FormUrlEncodedContent(new Dictionary<string, string> { { "grant_type", "refresh_token" }, { "refresh_token", token.RefreshToken }, { "client_id", token.ClientId } })
+            Content = new FormUrlEncodedContent(new Dictionary<string, string> { { "grant_type", "refresh_token" }, { "refresh_token", token.RefreshToken }, { ClientIdParameter, token.ClientId } })
         };
         using HttpResponseMessage response = await client.SendAsync(request, cancellationToken);
         string body = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (!response.IsSuccessStatusCode) { _store.Delete(environment); throw MissingToken(environment); }
+        if (!response.IsSuccessStatusCode)
+        {
+            if (IsTerminalRefreshFailure(response.StatusCode, body)) _store.Delete(environment);
+            throw new InvalidOperationException(DescribeOAuthFailure("OAuth token refresh failed", body));
+        }
         OAuthResponse refreshed = JsonSerializer.Deserialize<OAuthResponse>(body) ?? throw MissingToken(environment);
         if (string.IsNullOrWhiteSpace(refreshed.access_token) || refreshed.expires_in < 0) { _store.Delete(environment); throw MissingToken(environment); }
         OAuthTokenSet updated = ToToken(refreshed, token.TokenEndpoint, token.ClientId, token.RefreshToken);
@@ -193,7 +203,14 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
         int callbackPort = environment.RedirectPort ?? (Uri.TryCreate(configuredRedirect, UriKind.Absolute, out Uri configuredUri) && configuredUri.Port > 0 ? configuredUri.Port : 0);
         using TcpListener listener = useLoopback ? new TcpListener(IPAddress.Loopback, callbackPort) : null;
         listener?.Start();
-        string redirect = useLoopback ? (string.IsNullOrWhiteSpace(configuredRedirect) ? $"http://127.0.0.1:{((IPEndPoint)listener.LocalEndpoint).Port}/callback" : ReplacePort(configuredRedirect, ((IPEndPoint)listener.LocalEndpoint).Port)) : configuredRedirect;
+        string redirect = configuredRedirect;
+        if (useLoopback)
+        {
+            int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            redirect = string.IsNullOrWhiteSpace(configuredRedirect)
+                ? $"http://127.0.0.1:{port}/callback"
+                : ReplacePort(configuredRedirect, port);
+        }
         if (string.IsNullOrWhiteSpace(redirect)) throw new InvalidOperationException("OAuth authorization requires a registered --redirect-uri.");
         string auth = BuildAuthorizationUrl(discovery.authorization_endpoint, environment.ClientId, redirect, state, verifier);
         if (!noBrowser && TryOpenBrowser(auth)) _logger.WriteInfo("Complete sign-in in the browser; waiting for the callback..."); else _logger.WriteInfo($"Open this authorization URL: {auth}");
@@ -209,9 +226,9 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
         (string code, _) = OAuthAuthorizationCodeProtocol.ParseCallback(callback, state);
         using HttpClient client = _httpClientFactory.CreateClient();
         using HttpResponseMessage response = await client.PostAsync(discovery.token_endpoint,
-            new FormUrlEncodedContent(new Dictionary<string, string> { { "grant_type", "authorization_code" }, { "code", code }, { "redirect_uri", redirect }, { "client_id", environment.ClientId }, { "code_verifier", verifier } }), cancellationToken);
+            new FormUrlEncodedContent(new Dictionary<string, string> { { "grant_type", "authorization_code" }, { "code", code }, { "redirect_uri", redirect }, { ClientIdParameter, environment.ClientId }, { "code_verifier", verifier } }), cancellationToken);
         string body = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (!response.IsSuccessStatusCode) throw new InvalidOperationException("OAuth token exchange failed.");
+        if (!response.IsSuccessStatusCode) throw new InvalidOperationException(DescribeOAuthFailure("OAuth token exchange failed", body));
         OAuthResponse token = JsonSerializer.Deserialize<OAuthResponse>(body) ?? throw new InvalidOperationException("OAuth token exchange returned an invalid response.");
         ValidateTokenResponse(token);
         OAuthTokenSet result = ToToken(token, discovery.token_endpoint, environment.ClientId); _store.Write(environment, result); return result;
@@ -226,7 +243,7 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
             if (string.IsNullOrWhiteSpace(discovery.revocation_endpoint)) throw new InvalidOperationException("OpenID configuration lacks revocation_endpoint.");
             using HttpClient client = _httpClientFactory.CreateClient();
             using HttpResponseMessage response = await client.PostAsync(discovery.revocation_endpoint,
-                new FormUrlEncodedContent(new Dictionary<string, string> { { "token", token.RefreshToken }, { "token_type_hint", "refresh_token" }, { "client_id", token.ClientId } }), cancellationToken);
+                new FormUrlEncodedContent(new Dictionary<string, string> { { "token", token.RefreshToken }, { "token_type_hint", "refresh_token" }, { ClientIdParameter, token.ClientId } }), cancellationToken);
             if (!response.IsSuccessStatusCode) throw new InvalidOperationException("OAuth token revocation failed.");
         }
         finally { _store.Delete(environment); }
@@ -240,10 +257,28 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
         if (string.IsNullOrWhiteSpace(doc.authorization_endpoint) || string.IsNullOrWhiteSpace(doc.token_endpoint)) throw new InvalidOperationException("OpenID configuration lacks authorization_endpoint or token_endpoint.");
         _discovery[key] = doc; return doc;
     }
-    private static OAuthTokenSet ToToken(OAuthResponse response, string endpoint, string clientId, string fallbackRefreshToken = null) => new(response.access_token, response.refresh_token ?? fallbackRefreshToken, DateTimeOffset.UtcNow.AddSeconds(response.expires_in), endpoint, clientId, DateTimeOffset.UtcNow, ExtractIdentity(response.id_token));
+	private static bool IsTerminalRefreshFailure(HttpStatusCode statusCode, string body) =>
+		(statusCode >= HttpStatusCode.BadRequest && statusCode < HttpStatusCode.InternalServerError)
+			&& (string.Equals(ReadError(body), "invalid_grant", StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(ReadError(body), "invalid_client", StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(ReadError(body), "unauthorized_client", StringComparison.OrdinalIgnoreCase)
+				|| string.IsNullOrWhiteSpace(ReadError(body)));
+	private static string DescribeOAuthFailure(string prefix, string body) {
+		string error = ReadError(body);
+		string description = SensitiveErrorTextRedactor.RedactForConsoleOrNull(ReadErrorDescription(body));
+		return string.IsNullOrWhiteSpace(error) ? prefix + "." : string.IsNullOrWhiteSpace(description) ? $"{prefix}: {error}." : $"{prefix}: {error} ({description}).";
+	}
+	private static string ReadError(string body) => ReadOAuthProperty(body, "error");
+	private static string ReadErrorDescription(string body) => ReadOAuthProperty(body, "error_description");
+	private static string ReadOAuthProperty(string body, string propertyName) {
+		try {
+			using JsonDocument document = JsonDocument.Parse(body);
+			return document.RootElement.TryGetProperty(propertyName, out JsonElement value) ? value.GetString() : null;
+		} catch (JsonException) { return null; }
+	}
+    private static OAuthTokenSet ToToken(OAuthResponse response, string endpoint, string clientId, string fallbackRefreshToken = null) => new(response.access_token, response.refresh_token ?? fallbackRefreshToken, DateTimeOffset.UtcNow.AddSeconds(response.expires_in), endpoint, clientId, DateTimeOffset.UtcNow);
     private static void ValidateTokenResponse(OAuthResponse response) { if (string.IsNullOrWhiteSpace(response.access_token) || string.IsNullOrWhiteSpace(response.refresh_token) || response.expires_in < 0) throw new InvalidOperationException("OAuth token exchange returned an incomplete token response."); }
-    private static string ExtractIdentity(string jwt) { if (string.IsNullOrWhiteSpace(jwt)) return null; try { string payload = jwt.Split('.')[1]; using JsonDocument doc = JsonDocument.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(payload.Replace('-', '+').Replace('_', '/') + new string('=', (4 - payload.Length % 4) % 4)))); foreach (string key in new[] { "name", "preferred_username", "email", "sub" }) if (doc.RootElement.TryGetProperty(key, out JsonElement value)) return value.GetString(); } catch { } return null; }
-    private static string BuildAuthorizationUrl(string endpoint, string clientId, string redirect, string state, string verifier) => endpoint + "?" + string.Join("&", new Dictionary<string, string> { { "response_type", "code" }, { "client_id", clientId }, { "redirect_uri", redirect }, { "state", state }, { "code_challenge", OAuthAuthorizationCodeProtocol.CreateCodeChallenge(verifier) }, { "code_challenge_method", "S256" }, { "scope", "offline_access" } }.Select(p => $"{Uri.EscapeDataString(p.Key)}={Uri.EscapeDataString(p.Value)}"));
+    private static string BuildAuthorizationUrl(string endpoint, string clientId, string redirect, string state, string verifier) => endpoint + "?" + string.Join("&", new Dictionary<string, string> { { "response_type", "code" }, { ClientIdParameter, clientId }, { "redirect_uri", redirect }, { "state", state }, { "code_challenge", OAuthAuthorizationCodeProtocol.CreateCodeChallenge(verifier) }, { "code_challenge_method", "S256" }, { "scope", "offline_access" } }.Select(p => $"{Uri.EscapeDataString(p.Key)}={Uri.EscapeDataString(p.Value)}"));
     private static bool IsLoopbackRedirect(string redirect) => Uri.TryCreate(redirect, UriKind.Absolute, out Uri uri)
         && uri.Scheme == Uri.UriSchemeHttp && uri.Host == IPAddress.Loopback.ToString();
     private static string ReplacePort(string redirect, int port) { UriBuilder builder = new(redirect); builder.Port = port; return builder.Uri.ToString().TrimEnd('/'); }
@@ -252,14 +287,22 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
     {
         using CancellationTokenSource timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutSource.CancelAfter(timeout <= 0 ? 120000 : timeout);
-        using TcpClient client = await listener.AcceptTcpClientAsync(timeoutSource.Token);
-        using NetworkStream stream = client.GetStream(); using StreamReader reader = new(stream, Encoding.UTF8, leaveOpen: true);
-        string request = await reader.ReadLineAsync(timeoutSource.Token) ?? string.Empty;
-        string target = request.StartsWith("GET ", StringComparison.Ordinal) ? request[4..].Split(' ')[0] : string.Empty;
-        string body = "<html><body>You can close this tab.</body></html>";
-        byte[] bodyBytes = Encoding.UTF8.GetBytes(body);
-        byte[] bytes = Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {bodyBytes.Length}\r\nConnection: close\r\n\r\n{body}");
-        await stream.WriteAsync(bytes, timeoutSource.Token); return "http://127.0.0.1/" + target.TrimStart('/');
+        while (true)
+        {
+            using TcpClient client = await listener.AcceptTcpClientAsync(timeoutSource.Token);
+            using NetworkStream stream = client.GetStream();
+            using StreamReader reader = new(stream, Encoding.UTF8, leaveOpen: true);
+            string request = await reader.ReadLineAsync(timeoutSource.Token) ?? string.Empty;
+            string target = request.StartsWith("GET ", StringComparison.Ordinal) ? request[4..].Split(' ')[0] : string.Empty;
+            string body = "<html><body>You can close this tab.</body></html>";
+            byte[] bodyBytes = Encoding.UTF8.GetBytes(body);
+            byte[] bytes = Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {bodyBytes.Length}\r\nConnection: close\r\n\r\n{body}");
+            await stream.WriteAsync(bytes, timeoutSource.Token);
+            if (target.Contains("code=", StringComparison.OrdinalIgnoreCase) || target.Contains("error=", StringComparison.OrdinalIgnoreCase))
+            {
+                return "http://127.0.0.1/" + target.TrimStart('/');
+            }
+        }
     }
     private static InvalidOperationException MissingToken(EnvironmentSettings e) { string name = string.IsNullOrWhiteSpace(e.EnvironmentName) ? e.Uri : e.EnvironmentName; return new($"Environment '{name}' uses SSO sign-in and has no valid session. Run: clio login -e {name}"); }
     private sealed record DiscoveryDocument(string authorization_endpoint, string token_endpoint, string revocation_endpoint);

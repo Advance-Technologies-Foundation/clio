@@ -11,13 +11,15 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 	#region Fields: Private
 
 	private readonly IReauthExecutor _noReauthExecutor;
+	private readonly IOAuthAuthorizationCodeService _oauthService;
 
 	#endregion
 
 	#region Constructors: Public
 
-	public ApplicationClientFactory(IReauthExecutor noReauthExecutor) {
+	public ApplicationClientFactory(IReauthExecutor noReauthExecutor, IOAuthAuthorizationCodeService oauthService = null) {
 		_noReauthExecutor = noReauthExecutor ?? throw new ArgumentNullException(nameof(noReauthExecutor));
+		_oauthService = oauthService;
 	}
 
 	#endregion
@@ -25,6 +27,9 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 	#region Methods: Public
 
 	public IApplicationClient CreateClient(EnvironmentSettings settings) {
+		if (settings.AuthFlow == OAuthFlow.AuthorizationCode) {
+			return CreateBearerEnvironmentClient(settings, ResolveOAuthToken(settings).AccessToken);
+		}
 		// Credential-passthrough bearer branch (FR-01/FR-18): an ephemeral EnvironmentSettings
 		// carrying an opaque access token resolves to a pre-authenticated client that NEVER
 		// re-logs-in (NoReauthExecutor). The login/password + OAuth branches below keep the
@@ -52,6 +57,9 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 	}
 
 	public IApplicationClient CreateEnvironmentClient(EnvironmentSettings settings) {
+		if (settings.AuthFlow == OAuthFlow.AuthorizationCode) {
+			return CreateBearerEnvironmentClient(settings, ResolveOAuthToken(settings).AccessToken);
+		}
 		// Credential-passthrough bearer branch (FR-01/FR-18): see CreateClient. The service-url
 		// builder is still wired so environment-relative routes resolve; only the reauth path
 		// differs (NoReauthExecutor instead of the default closure-based ReauthExecutor).
@@ -110,6 +118,13 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 	#endregion
 
 	#region Methods: Private
+
+	private OAuthTokenSet ResolveOAuthToken(EnvironmentSettings settings) {
+		if (_oauthService is null) {
+			throw new InvalidOperationException("OAuth authorization-code service is not registered.");
+		}
+		return _oauthService.ResolveAsync(settings).GetAwaiter().GetResult();
+	}
 
 	// Validates the bearer-passthrough settings. Errors are caller-actionable and NEVER echo the
 	// secret token value (FR-12): a blank url is named explicitly, and an unsupported token type
