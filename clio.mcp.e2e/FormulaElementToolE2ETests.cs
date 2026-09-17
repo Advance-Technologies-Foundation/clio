@@ -37,7 +37,7 @@ public sealed class FormulaElementToolE2ETests {
 	private const string ToolName = CreateBusinessProcessTool.CreateBusinessProcessToolName;
 
 	/// <summary>The cut that builds the element; named in the skip message so a developer knows what to install.</summary>
-	private const string MinimumPackageVersion = "1.6.3.12";
+	private const string MinimumPackageVersion = "1.6.3.14";
 
 	#region Methods: Tests
 
