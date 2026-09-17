@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
@@ -40,10 +40,14 @@ public sealed class ODataDeleteTool(
 		//Minted once and stamped on the single exit, so every response carries the correlation-id
 		//core-rules promises - refusals and validation failures included.
 		string correlationId = correlationIds.New();
-		return DeleteCore(args) with { CorrelationId = correlationId };
+		ODataWriteResponse result = DeleteCore(args, out bool attempted, out bool received);
+		return result with { CorrelationId = correlationId, Diagnostic = DataWriteDiagnostic.Create("delete",
+			args.Entity, null, attempted, received, result.Success, result.Error) };
 	}
 
-	private ODataWriteResponse DeleteCore(ODataDeleteArgs args) {
+	private ODataWriteResponse DeleteCore(ODataDeleteArgs args, out bool attempted, out bool received) {
+		attempted = false;
+		received = false;
 		try {
 			ODataWriteResponse invalidTarget = ODataKeyedWrite.ValidateTarget(args.Entity, args.Id, "delete");
 			if (invalidTarget is not null) {
@@ -56,7 +60,9 @@ public sealed class ODataDeleteTool(
 
 			(IApplicationClient client, IServiceUrlBuilder _, string url) =
 				ODataKeyedWrite.ResolveTarget(commandResolver, args.EnvironmentName, args.Entity, args.Id);
+			attempted = true;
 			string response = client.ExecuteDeleteRequest(url, string.Empty, 30_000);
+			received = true;
 			string validationError = ODataKeyedWrite.ValidateWriteResponse(response);
 			if (validationError is not null) {
 				return ODataWriteResponse.Failure(validationError);

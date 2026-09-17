@@ -396,6 +396,67 @@ public sealed class ValidateProcessGraphToolE2ETests {
 				+ "test would pass on a build where R13 had stopped firing at all");
 	}
 
+	[Test]
+	[Description("ENG-98566: over the real MCP path, an unrecognized argument is named back instead of being dropped. The call goes through CallToolAsync, which sends the WRAPPED {\"args\":{...}} shape - the one McpToolErrorFilter passes through untouched - so this is the exact path on which the key was lost. Needs no Creatio: the guard runs before the environment is resolved.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-process-graph names an unrecognized argument instead of dropping it")]
+	public async Task ValidateProcessGraph_Should_Name_AnUnrecognizedArgument() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync();
+		Dictionary<string, object?> graph = new() {
+			["environment-name"] = $"missing-process-graph-env-{Guid.NewGuid():N}",
+			// The measured mistake: the key an agent carries over from describe-business-process.
+			["process-name"] = "UsrOrder_Handle"
+		};
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(arrangeContext, graph);
+		ValidateProcessGraphResponse response = EntitySchemaStructuredResultParser.Extract<ValidateProcessGraphResponse>(callResult);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an argument the tool cannot bind is a caller mistake, not a validated graph");
+		response.Error.Should().Contain("process-name",
+			because: "naming the offending key is the remedy - the caller cannot otherwise see the drop, and "
+				+ "the binder loses it silently on this wrapped path");
+		(response.Findings ?? new List<ValidateProcessGraphFinding>()).Should().BeEmpty(
+			because: "the tool validated nothing, so a finding here would be a statement about a process it "
+				+ "never read - the R3 fabrication this ticket exists for");
+	}
+
+	[Test]
+	[Description("ENG-98566: over the real MCP path, a call supplying no graph says so instead of answering R3 'Process has no start event.'. The regression this pins is specific: the refusal must not be reachable-but-identical to the unknown-argument one, because the measured defect was two different calls returning a byte-identical response.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-process-graph states that no graph was supplied")]
+	public async Task ValidateProcessGraph_Should_State_ThatNoGraphWasSupplied() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync();
+		string environmentName = $"missing-process-graph-env-{Guid.NewGuid():N}";
+		Dictionary<string, object?> noGraph = new() { ["environment-name"] = environmentName };
+		Dictionary<string, object?> unknownArgument = new() {
+			["environment-name"] = environmentName,
+			["process-name"] = "UsrOrder_Handle"
+		};
+
+		// Act
+		ValidateProcessGraphResponse noGraphResponse = EntitySchemaStructuredResultParser
+			.Extract<ValidateProcessGraphResponse>(await CallToolAsync(arrangeContext, noGraph));
+		ValidateProcessGraphResponse unknownArgumentResponse = EntitySchemaStructuredResultParser
+			.Extract<ValidateProcessGraphResponse>(await CallToolAsync(arrangeContext, unknownArgument));
+
+		// Assert
+		noGraphResponse.Success.Should().BeFalse(because: "there is no graph to validate, so nothing succeeded");
+		noGraphResponse.Error.Should().Contain("No graph was supplied",
+			because: "the caller has to learn that the INPUT was missing, not that their process is broken");
+		(noGraphResponse.Findings ?? new List<ValidateProcessGraphFinding>())
+			.Should().NotContain(finding => finding.RuleId == "R3",
+			because: "R3 over an empty node set is the false statement, and it is the worst one to fabricate - "
+				+ "'no start event' reads as a structural defect in the caller's own process");
+		noGraphResponse.Error.Should().NotBe(unknownArgumentResponse.Error,
+			because: "the measured symptom was that supplying a bad argument and supplying nothing at all "
+				+ "produced byte-identical answers; two different mistakes must now read differently");
+	}
+
 	private static Dictionary<string, object?> Node(string name, string type) =>
 		new() { ["name"] = name, ["type"] = type };
 
