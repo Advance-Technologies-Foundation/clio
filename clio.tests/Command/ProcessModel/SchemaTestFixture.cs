@@ -37,10 +37,10 @@ public class SchemaTestFixture{
 	
 	private static Func<string, string> GetExampleFilePath => filename => Path.Join("Examples", "ProcessSchema", filename);
 
-	[TestCase(30)]
-	[TestCase(43)]
-	[Description("Maps current and legacy runtime rich text to the native binding type without losing HTML content.")]
-	public void FromRuntimeValueType_ShouldMapRichText_WhenRuntimeReportsSupportedCode(int runtimeType) {
+	[TestCase(30, "5ca35f10-a101-4c67-a96a-383da6afacfc")]
+	[TestCase(43, "79bccffa-8c8b-4863-b376-a69d2244182b")]
+	[Description("Distinguishes runtime LongText and RichText identities while preserving text content.")]
+	public void FromRuntimeValueType_ShouldMapText_WhenRuntimeReportsSupportedCode(int runtimeType, string expectedUId) {
 		// Arrange
 		const string html = "<p>Call &amp; follow up</p>";
 		DataBindingValueConverter converter = new(Substitute.For<IFileSystem>());
@@ -48,7 +48,7 @@ public class SchemaTestFixture{
 		Guid type = DataValueTypeMap.FromRuntimeValueType(runtimeType);
 		object value = converter.ConvertValue(System.Text.Json.Nodes.JsonValue.Create(html), type, "Body", allowEmptyString: false);
 		// Assert
-		type.Should().Be(Guid.Parse("79bccffa-8c8b-4863-b376-a69d2244182b"), because: "the package descriptor must retain the native rich-text identity");
+		type.Should().Be(Guid.Parse(expectedUId), because: "LongText and RichText have distinct native descriptor identities");
 		value.Should().Be(html, because: "step instructions and email HTML must survive binding generation verbatim");
 	}
 

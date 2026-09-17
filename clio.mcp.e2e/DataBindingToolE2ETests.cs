@@ -39,7 +39,7 @@ public sealed class DataBindingToolE2ETests : McpContractFixtureBase {
 			["schema-name"] = "SequenceStep",
 			["workspace-path"] = context.WorkspacePath,
 			["environment-name"] = context.EnvironmentName,
-			["values"] = JsonSerializer.Serialize(new { Description = html, Body = html })
+			["values"] = JsonSerializer.Serialize(new { Description = html, Body = html, Subject = "Binding subject" })
 		});
 		// Assert
 		AssertToolCallSucceeded(result);
@@ -51,6 +51,9 @@ public sealed class DataBindingToolE2ETests : McpContractFixtureBase {
 		richColumns.Should().HaveCount(2, because: "both requested rich-text fields must be exported");
 		richColumns.Should().OnlyContain(column => column.GetProperty("DataTypeValueUId").GetString() == "79bccffa-8c8b-4863-b376-a69d2244182b",
 			because: "the binding descriptor must use the platform rich-text identity");
+		descriptor.RootElement.GetProperty("Descriptor").GetProperty("Columns").EnumerateArray()
+			.Single(column => column.GetProperty("ColumnName").GetString() == "Subject").GetProperty("DataTypeValueUId").GetString()
+			.Should().Be("5ca35f10-a101-4c67-a96a-383da6afacfc", because: "Subject is LongText, distinct from HTML body RichText");
 		using JsonDocument data = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(binding, "data.json")));
 		data.RootElement.GetProperty("PackageData")[0].GetProperty("Row").EnumerateArray()
 			.Count(column => column.GetProperty("Value").ValueKind == JsonValueKind.String && column.GetProperty("Value").GetString() == html)

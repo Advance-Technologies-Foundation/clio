@@ -9,6 +9,6 @@ Validated against Creatio 10.1.752.0, .NET 8, PostgreSQL, with Sales Engagement 
 - After explicit target-local owner configuration and UI activation, native enrollment of one synthetic target contact returned one Active participant. Readback and the standard Tasks tab showed exactly one first-step task, with the first step description in Notes.
 - No actual email was sent. Cross-version portability, DST combinations and two-user assignment remain outside this proof.
 
-Regression: runtime types 30 and 43 map to the native rich-text type and preserve HTML. `dotnet test clio.tests/clio.tests.csproj -c Release --filter "Category=Unit&(Module=ProcessModel|Module=Command)"`: 5,205 passed, 13 skipped. `CreateDataBinding_ShouldPreserveRichText_WhenSequenceSchemaIsAvailable` passed over the actual MCP process on both net8.0 and net10.0.
+Regression: runtime type 43 maps to RichText and type 30 to LongText; both preserve their text values. `dotnet test clio.tests/clio.tests.csproj -c Release --filter "Category=Unit&(Module=ProcessModel|Module=Command)"`: 5,205 passed, 13 skipped. `CreateDataBinding_ShouldPreserveRichText_WhenSequenceSchemaIsAvailable` passed over the actual MCP process on both net8.0 and net10.0.
 
 Docs and MCP reviewed: existing create-data-binding contract remains unchanged; help/details and actual MCP coverage updated. Command index and aliases remain accurate. ClioRing compatibility reviewed, no Ring-consumed contract changed: inspected ClioRing.Ipc, ClioRing and ClioRing.Desktop/actions.json for the binding commands.
