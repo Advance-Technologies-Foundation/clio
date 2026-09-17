@@ -84,10 +84,16 @@ Creates an entity schema with an optional parent.
 | `parent-schema-name` | No | Parent schema name |
 | `extend-parent` | No | Create a replacement schema (default: false) |
 | `is-virtual` | No | Create a virtual entity schema without a physical database table (default: false) |
+| `is-db-view` | No | Map to a separately provisioned SQL view without generating a table. Omission preserves metadata. |
 | `columns` | No | Initial columns |
 | `seed-rows` | No | Rows to insert after creation |
 
 Use `is-virtual: true` only when the entity is backed by a custom data provider rather than a Creatio database table. A virtual `create-entity` operation cannot include `seed-rows` because there is no table to populate. Verify the result through `get-entity-schema-properties` or the entity list returned by `get-app-info`.
+
+A `create-entity` with `is-db-view: true` cannot include `seed-rows`. An existing schema
+with a different explicitly requested flag is a collision; use `set-entity-schema-properties`
+to change it explicitly. Other operation types reject `is-db-view`. This flag does not
+change `is-virtual`, provision SQL, or convert an existing table.
 
 #### `update-entity`
 

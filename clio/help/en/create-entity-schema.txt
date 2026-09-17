@@ -49,6 +49,8 @@ DESCRIPTION
 OPTIONS
     --package              Target package name
     --name                 Entity schema name
+    --is-db-view <true|false>  Set the database-view flag; omit to preserve metadata.
+                              SQL views are provisioned separately; tables are not converted.
     --title                Entity schema title/caption
     --parent               Parent schema name. Defaults to the schema name for
                            replacements, or BaseEntity otherwise
@@ -104,6 +106,9 @@ EXAMPLES
     clio create-entity-schema -e dev --package Custom --name UsrExternalVehicle --title "External vehicle" --is-virtual
 
 NOTES
+    - An explicit --is-db-view requires designer readback. If it returns HTML,
+      creation reports an error even though the schema may already be saved.
+      Inspect it with get-entity-schema-properties before retrying creation.
     - The command works against a remote Creatio environment only
     - Package resolution requires cliogate to be installed on the target environment
     - When --parent is omitted a non-replacement schema inherits BaseEntity. A
@@ -152,6 +157,3 @@ REPORTING BUGS
 
 SEE ALSO
     install-gate, list-packages, add-schema
-
-  --is-db-view <true|false>  Set the database-view flag; omit to preserve metadata.
-  SQL views are provisioned separately. Existing tables are not converted or dropped.

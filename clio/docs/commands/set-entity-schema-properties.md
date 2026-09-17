@@ -27,6 +27,9 @@ its own optional flag, and only the flags you supply are applied.
 
 Supported properties:
 
+- **`--is-db-view`** — explicitly set or clear the native database-view flag.
+  SQL view provisioning remains separate; omission preserves the current flag.
+
 - **`--primary-display-column`** — the column shown as the record's display value in
   lookups and links. The target may be an **own** or an **inherited** column and is
   resolved by name to its column UId before saving. clio uses the modern designer
@@ -53,6 +56,7 @@ clear error rather than reporting a silent success.
 ```bash
 --package                  Target package name (required; writes are package-scoped)
 --schema-name              Entity schema name (required)
+--is-db-view <true|false>   Set or clear the database-view flag (optional)
 --primary-display-column   Column name (own or inherited) to set as the
                            primary-display column (optional)
 --title                    New schema caption for the effective caption culture (optional)
@@ -61,7 +65,7 @@ clear error rather than reporting a silent success.
 --caption-culture          Culture used for a scalar --title (e.g. en-US). Precedence:
                            this override > the connected user's profile culture > en-US
 
-At least one settable property (--primary-display-column, --title or
+At least one settable property (--primary-display-column, --is-db-view, --title or
 --title-localizations) is required. --title and --title-localizations are
 mutually exclusive: supplying both is rejected, because the write applies the
 map only and the scalar would be dropped silently.

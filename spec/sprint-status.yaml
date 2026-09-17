@@ -4127,7 +4127,7 @@ stories:
     blocks: []
 
   - id: story-entity-db-view-1
-    status: review
+    status: done
     description: Native entity DB-view flag support for clio issue 1618
     depends_on: []
     blocks: []

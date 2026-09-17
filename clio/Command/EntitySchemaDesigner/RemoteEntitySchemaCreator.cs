@@ -570,6 +570,59 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		return package ?? throw new InvalidOperationException($"Package '{packageName}' was not found.");
 	}
 
+	private void VerifyCreatedSchema(CreateEntitySchemaOptions options, Guid packageUId,
+		string effectiveCultureName, Guid schemaUId) {
+		// No separate runtime-availability probe after the publish. Publishing refreshes the schema manager
+		// through SchemaManager.RefreshItems, which clears the changed items and re-initialises them as two
+		// steps; a request that lands between them is told the schema does not exist even though it was saved
+		// and published. Measured on a stand: only the schema being created is missing, for about nine seconds,
+		// while every other schema keeps answering. The design-item reload below is the check that holds.
+		DesignerResponse<EntityDesignSchemaDto>? designItemResponse = _entitySchemaDesignerClient.TryGetSchemaDesignItem(
+			new GetSchemaDesignItemRequestDto {
+				Name = options.SchemaName,
+				PackageUId = packageUId,
+				UseFullHierarchy = false,
+				// Verification-only read (checks the reloaded schema name). Mi-2: this is a
+				// schema-level culture ARRAY, not a caption cultureName; use the effective creation
+				// culture rather than the host CultureInfo.CurrentCulture.
+				Cultures = [effectiveCultureName]
+			}, options);
+		if (designItemResponse != null) {
+			EntityDesignSchemaDto reloadedSchema = designItemResponse.Schema
+				?? throw new InvalidOperationException(
+					$"Schema '{options.SchemaName}' could not be reloaded after save.");
+			if (!string.Equals(reloadedSchema.Name, options.SchemaName, StringComparison.OrdinalIgnoreCase)) {
+				throw new InvalidOperationException(
+					$"Schema '{options.SchemaName}' was reloaded with unexpected name '{reloadedSchema.Name}'.");
+			}
+			if (options.IsDBView.HasValue && reloadedSchema.IsDBView != options.IsDBView.Value) {
+				throw new InvalidOperationException($"Database-view flag was not persisted for schema '{options.SchemaName}'.");
+			}
+		} else {
+			// The designer service answered with an HTML error page, so the design-item reload above could not
+			// verify anything. Only here is the runtime read worth its risk: it is the sole remaining check,
+			// and this branch is already the degraded path.
+			RuntimeEntitySchemaResponse runtimeResponse =
+				_entitySchemaDesignerClient.GetRuntimeEntitySchema(schemaUId, options);
+			if (!runtimeResponse.Success || runtimeResponse.Schema == null) {
+				throw new InvalidOperationException(
+					$"Schema '{options.SchemaName}' was saved but could not be verified: the designer service " +
+					"returned an HTML response and the runtime schema is unavailable.");
+			}
+			string runtimeName = runtimeResponse.Schema.Name;
+			if (options.IsDBView.HasValue) {
+				throw new InvalidOperationException(
+					$"Schema '{options.SchemaName}' was saved but the database-view flag could not be verified because the designer returned HTML.");
+			}
+			if (!string.Equals(runtimeName, options.SchemaName, StringComparison.OrdinalIgnoreCase)) {
+				throw new InvalidOperationException(
+					$"Schema '{options.SchemaName}' was created but runtime schema name '{runtimeName}' does not match.");
+			}
+			_logger.WriteInfo(
+				$"Schema '{options.SchemaName}': designer service returned an HTML response during verification; confirmed accessible at runtime.");
+		}
+	}
+
 	private void EnsureSchemaNameAvailable(CreateEntitySchemaOptions options) {
 		bool nameExists = options.ExtendParent
 			? _findEntitySchemaCommand.FindSchemas(new FindEntitySchemaOptions { SchemaName = options.SchemaName })
@@ -616,55 +669,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		}
 		_entitySchemaDesignerClient.SaveSchemaDbStructure(schemaUId, options);
 		PublishSchema(options);
-		// No separate runtime-availability probe after the publish. Publishing refreshes the schema manager
-		// through SchemaManager.RefreshItems, which clears the changed items and re-initialises them as two
-		// steps; a request that lands between them is told the schema does not exist even though it was saved
-		// and published. Measured on a stand: only the schema being created is missing, for about nine seconds,
-		// while every other schema keeps answering. The design-item reload below is the check that holds.
-		DesignerResponse<EntityDesignSchemaDto>? designItemResponse = _entitySchemaDesignerClient.TryGetSchemaDesignItem(
-			new GetSchemaDesignItemRequestDto {
-				Name = options.SchemaName,
-				PackageUId = package.Descriptor.UId,
-				UseFullHierarchy = false,
-				// Verification-only read (checks the reloaded schema name). Mi-2: this is a
-				// schema-level culture ARRAY, not a caption cultureName; use the effective creation
-				// culture rather than the host CultureInfo.CurrentCulture.
-				Cultures = [effectiveCultureName]
-			}, options);
-		if (designItemResponse != null) {
-			EntityDesignSchemaDto reloadedSchema = designItemResponse.Schema
-				?? throw new InvalidOperationException(
-					$"Schema '{options.SchemaName}' could not be reloaded after save.");
-			if (!string.Equals(reloadedSchema.Name, options.SchemaName, StringComparison.OrdinalIgnoreCase)) {
-				throw new InvalidOperationException(
-					$"Schema '{options.SchemaName}' was reloaded with unexpected name '{reloadedSchema.Name}'.");
-			}
-			if (options.IsDBView.HasValue && reloadedSchema.IsDBView != options.IsDBView.Value) {
-				throw new InvalidOperationException($"Database-view flag was not persisted for schema '{options.SchemaName}'.");
-			}
-		} else {
-			// The designer service answered with an HTML error page, so the design-item reload above could not
-			// verify anything. Only here is the runtime read worth its risk: it is the sole remaining check,
-			// and this branch is already the degraded path.
-			RuntimeEntitySchemaResponse runtimeResponse =
-				_entitySchemaDesignerClient.GetRuntimeEntitySchema(schemaUId, options);
-			if (!runtimeResponse.Success || runtimeResponse.Schema == null) {
-				throw new InvalidOperationException(
-					$"Schema '{options.SchemaName}' was saved but could not be verified: the designer service " +
-					"returned an HTML response and the runtime schema is unavailable.");
-			}
-			string runtimeName = runtimeResponse.Schema.Name;
-			if (options.IsDBView.HasValue) {
-				throw new InvalidOperationException(
-					$"Schema '{options.SchemaName}' was saved but the database-view flag could not be verified because the designer returned HTML.");
-			}
-			if (!string.Equals(runtimeName, options.SchemaName, StringComparison.OrdinalIgnoreCase)) {
-				throw new InvalidOperationException(
-					$"Schema '{options.SchemaName}' was created but runtime schema name '{runtimeName}' does not match.");
-			}
-			_logger.WriteInfo(
-				$"Schema '{options.SchemaName}': designer service returned an HTML response during verification; confirmed accessible at runtime.");
-		}
+		VerifyCreatedSchema(options, package.Descriptor.UId, effectiveCultureName, schemaUId);
 		_logger.WriteInfo($"Entity schema '{options.SchemaName}' created in package '{options.Package}'.");
 	}
 

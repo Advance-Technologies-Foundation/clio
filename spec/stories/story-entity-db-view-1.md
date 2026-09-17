@@ -1,6 +1,6 @@
 # Entity database-view support
 
-Status: review
+Status: done
 Issue: #1618
 Design: [Native flag propagation](../adr/adr-entity-db-view.md)
 
@@ -13,3 +13,7 @@ Acceptance:
 - Real MCP tests on a disposable PostgreSQL Creatio instance verify flags, table generation, and replay.
 - Documentation and discoverable contracts describe separately provisioned SQL views.
 - Disposable runtime is removed after validation; evidence is preserved.
+
+Validation: 10,380 affected-module unit tests passed; all three disposable Creatio MCP
+cases passed. The runtime was removed and evidence retained. Parallel review and the
+focused Claude consultation found no material issues; documentation feedback was applied.

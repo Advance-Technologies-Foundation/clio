@@ -40,7 +40,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 	private const string CurrentDateTimeSystemValueUId = "d7c295d3-3146-4ee1-ac49-3a7bd0edc45d";
 
 	[Test]
-	[Category("LocalOnly")]
+	// LocalOnly classifies the whole fixture; keep this probe explicit, manual, and CI-guarded.
 	[Category("McpE2E.Manual")]
 	[Explicit("Publishes on an exclusively owned disposable Creatio instance.")]
 	[Description("Creates a DB-view entity through sync, replays it without mutation, and rejects a conflicting storage kind.")]

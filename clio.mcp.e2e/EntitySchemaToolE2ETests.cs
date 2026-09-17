@@ -1764,7 +1764,7 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	[TestCase(true)]
 	[TestCase(false)]
 	[Category("McpE2E.Sandbox")]
-	[Category("LocalOnly")]
+	// LocalOnly classifies the whole fixture; keep this probe explicit, manual, and CI-guarded.
 	[Category("McpE2E.Manual")]
 	[Explicit("Publishes schema changes on an exclusively owned disposable instance.")]
 	[Description("Persists the DB-view flag through create and set MCP tools and proves the database-table boundary.")]
