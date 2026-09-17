@@ -16,7 +16,7 @@ DESCRIPTION
     multiple parameter definitions with |.
     Supported parameter types are Boolean, Date, DateTime, Float, Guid,
     Unique identifier, Integer, Lookup, Money, Serializable list of composite
-    values, Text, and Time.
+    values, Text, Unlimited text (alias MaxSizeText), and Time.
 
     Child items can be added to parameters of type Serializable list of
     composite values with --parameter-item. Separate multiple item definitions
@@ -129,3 +129,7 @@ EXAMPLE
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
+
+Use type=Unlimited text (or MaxSizeText) for an unlimited-length string, such as an
+ErrorMessage output. Text and String keep their existing plain-text type.
+Example parameter: code=ErrorMessage;title=Error message;type=Unlimited text;direction=Out;resulting=true;serializable=true

@@ -17,10 +17,12 @@ public class CreateUserTaskTool(
 	IToolCommandResolver commandResolver)
 	: BaseTool<CreateUserTaskOptions>(command, logger, commandResolver) {
 
+	internal const string CreateUserTaskToolName = "create-user-task";
+
 	/// <summary>
 	/// Creates a workspace-owned user task and optionally adds initial parameters.
 	/// </summary>
-	[McpServerTool(Name = "create-user-task", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+	[McpServerTool(Name = CreateUserTaskToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,
@@ -60,11 +62,13 @@ public class ModifyUserTaskParametersTool(
 	ILogger logger,
 	IToolCommandResolver commandResolver)
 	: BaseTool<ModifyUserTaskParametersOptions>(command, logger, commandResolver) {
+	internal const string ModifyUserTaskParametersToolName = "modify-user-task-parameters";
+
 
 	/// <summary>
 	/// Adds and/or removes parameters on an existing workspace-owned user task.
 	/// </summary>
-	[McpServerTool(Name = "modify-user-task-parameters", ReadOnly = false, Destructive = true, Idempotent = false,
+	[McpServerTool(Name = ModifyUserTaskParametersToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -235,7 +239,7 @@ public record UserTaskParameterArgs(
 	string Title,
 
 	[property:JsonPropertyName("type")]
-	[Description("Parameter type. Supported values: Boolean, Date, DateTime, Float, Guid, Unique identifier, Integer, Lookup, Money, Serializable list of composite values, Text, Time.")]
+	[Description("Parameter type. Supported values: Boolean, Date, DateTime, Float, Guid, Unique identifier, Integer, Lookup, Money, Serializable list of composite values, Text, Unlimited text (MaxSizeText), Time.")]
 	[Required]
 	string Type,
 
@@ -296,7 +300,7 @@ public record UserTaskParameterItemArgs(
 	string Title,
 
 	[property:JsonPropertyName("type")]
-	[Description("Child item type. Supported values: Boolean, Date, DateTime, Float, Guid, Unique identifier, Integer, Lookup, Money, Serializable list of composite values, Text, Time.")]
+	[Description("Child item type. Supported values: Boolean, Date, DateTime, Float, Guid, Unique identifier, Integer, Lookup, Money, Serializable list of composite values, Text, Unlimited text (MaxSizeText), Time.")]
 	[Required]
 	string Type,
 

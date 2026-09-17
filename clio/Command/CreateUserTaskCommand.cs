@@ -608,6 +608,7 @@ internal static class UserTaskSchemaSupport {
 		"Unique identifier",
 		"Serializable list of composite values",
 		"Text",
+		"Unlimited text",
 		"Time"
 	];
 
@@ -633,6 +634,8 @@ internal static class UserTaskSchemaSupport {
 			["CompositeValueList"] = new(CompositeSerializableListTypeId, "data-type-other-icon.svg"),
 			["Text"] = new(1, "data-type-text-icon.svg"),
 			["String"] = new(1, "data-type-text-icon.svg"),
+			["Unlimited text"] = new(29, "data-type-text-icon.svg"),
+			["MaxSizeText"] = new(29, "data-type-text-icon.svg"),
 			["Time"] = new(9, "data-type-time-icon.svg")
 		};
 
