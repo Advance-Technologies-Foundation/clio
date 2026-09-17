@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Clio.Common;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -31,6 +32,10 @@ public sealed record ODataWriteResponse(
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	[property: Description("Identifier for this write, present on success and on failure. The same id tags any debug line written for it.")]
 	string? CorrelationId = null) {
+
+	/// <summary>Observed write boundary and safe retry context.</summary>
+	[JsonPropertyName("diagnostic"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public DataWriteDiagnostic? Diagnostic { get; init; }
 
 	/// <summary>Creates a failure response.</summary>
 	public static ODataWriteResponse Failure(string message) => new(false, message);

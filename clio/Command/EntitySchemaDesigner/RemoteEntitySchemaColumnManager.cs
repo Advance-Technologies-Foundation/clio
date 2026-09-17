@@ -575,7 +575,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
 			throw new EntitySchemaDesignerException("Schema name is required.");
 		}
-		RuntimeEntitySchemaResult runtimeSchema = ReadMergedRuntimeSchema(options.SchemaName.Trim());
+		RuntimeEntitySchemaResult runtimeSchema = ReadMergedRuntimeSchema(options.SchemaName.Trim(), options.RuntimeReadTimeoutMilliseconds);
 		List<EntitySchemaPropertyColumnInfo> columns = runtimeSchema.Columns
 			.Select(MapRuntimePropertyColumn)
 			.ToList();
@@ -622,9 +622,11 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	/// <see cref="JsonException"/>). The MCP <c>get-entity-schema-properties</c> tool calls this path directly
 	/// without the <c>BaseTool</c> catch-all, so all realistic failure types are normalized here.
 	/// </remarks>
-	private RuntimeEntitySchemaResult ReadMergedRuntimeSchema(string schemaName) {
+	private RuntimeEntitySchemaResult ReadMergedRuntimeSchema(string schemaName, int? timeoutMilliseconds = null) {
 		try {
-			return _runtimeEntitySchemaReader.GetByName(schemaName);
+			return timeoutMilliseconds.HasValue
+				? _runtimeEntitySchemaReader.GetByName(schemaName, timeoutMilliseconds.Value)
+				: _runtimeEntitySchemaReader.GetByName(schemaName);
 		} catch (Exception exception) when (exception is InvalidOperationException
 			or HttpRequestException
 			or JsonException

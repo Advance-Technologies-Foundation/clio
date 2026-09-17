@@ -1,0 +1,6 @@
+Enroll explicit contacts using Creatio's native sequence service.
+Usage: clio enroll-sequence-participants -e <environment> --sequence-id <uuid> --contact-ids <uuid>,<uuid>
+Accepts 1–100 unique contact IDs. Does not activate the sequence. Native eligibility,
+capacity, duplicate handling and activity creation apply. May trigger configured outreach.
+Inspect completion, platform counts and readback. Added does not mean Active.
+No automatic retry: uncertain completion requires record/activity verification before resubmission.
