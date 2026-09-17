@@ -18,7 +18,7 @@ namespace Clio.Mcp.E2E;
 
 /// <summary>
 /// End-to-end coverage for the Formula element (ENG-92712) over the real MCP path. NOT in CI — run manually,
-/// gated on the <c>process-designer</c> feature and a reachable environment carrying CrtProcessBuilder 1.6.3.6
+/// gated on the <c>process-designer</c> feature and a reachable environment carrying CrtProcessBuilder 1.6.3.8
 /// or later.
 /// <para>The element is checked through what a caller can SEE: the build token it round-trips to, the
 /// expression after the server expanded its parameter names, and the target resolved back to the name a build
@@ -230,7 +230,7 @@ public sealed class FormulaElementToolE2ETests {
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			Assert.Ignore(
-				"Configure McpE2E:Sandbox:EnvironmentName (with a CrtProcessBuilder 1.6.3.6 or later, which "
+				"Configure McpE2E:Sandbox:EnvironmentName (with a CrtProcessBuilder 1.6.3.8 or later, which "
 				+ "builds the formula element) to run the Approval MCP E2E tests.");
 		}
 
