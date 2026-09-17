@@ -345,3 +345,59 @@ separate task)." It is implemented, and the assignee confirmed on 2026-09-17 tha
 this round's findings land on exactly that path, so the deviation is not free — it is recorded here and in
 the pull request rather than left for a reader to notice, and the retarget path still has no acceptance
 criterion of its own. V7 and the manual TC-06 / TC-07 cover it, and they have not been run.
+
+---
+
+# Round 4 — the judgement calls in the second re-review
+
+Fourteen findings, four of them blocking, one a regression round 3 introduced. Only the calls are here.
+
+## DQ-17 — two post-conditions, not one, and the weaker one is on the busier path
+
+Round 3 checked the SELECTION path and left the re-synchronization path unchecked — the path that runs
+on every `setElement` touching the element, and the one where a loss is also SAVED. Fixed, but not with
+the same predicate.
+
+**Decision.** The selection path asks `MirrorsCallee`; the re-sync path asks only whether the element
+came out EMPTY while the callee is known to declare parameters.
+
+**Reason.** Measured, not reasoned: the strict predicate broke two existing tests. On the re-sync path
+the details come from the reader's per-request memo, which can predate a change to the callee made
+earlier in the same request, so a partial difference between the memo and the platform's own load is
+indistinguishable from a legitimate drop — and refusing an ordinary drop would make the
+re-synchronization useless for its own purpose. The empty case has no second explanation.
+
+**What it costs.** A partial loss on the re-sync path is still unobserved. The catastrophic one, which
+is also the one that MISREPORTS, is not.
+
+**What would flip it.** Reading the callee fresh on this path instead of from the memo. That is a schema
+load per element per request, and it buys a case nobody has seen.
+
+## DQ-18 — the provenance audit numbers were wrong, and the attribution made it worse
+
+Round 3 rewrote "157 entries, 156 byte-identical" and attributed it to the 1.6.3.1 cut. Both numbers
+were wrong — the archive has 167 entries — and naming a specific cut made the error look checked.
+
+**Decision.** Re-measured by hand for the 1.6.3.3 cut (`clio extract-pkg-zip`, then every file against
+`git show <commit>:<path>`): **167 entries, 166 byte-identical, only `descriptor.json` differs.** The
+paragraph now carries the commands rather than an invitation to carry the number forward, and says the
+count moves as the package gains sources.
+
+## DQ-19 — the guidance said "check for this after every retarget", and nobody has seen it happen
+
+Round 3 replaced a false promise (the build path refuses the stranded-mapping hazard) with a duty that
+has no evidence behind it. The repository's own rule is that behaviour is not claimed without naming the
+evidence, and the instruction could not have been carried out anyway — a stranded mapping row and a live
+one render identically in describe.
+
+**Decision.** State the hazard, state that its standing is UNOBSERVED and why (the platform prunes such a
+row for every non-dynamic parameter; this contract produces none; T-27 open), say explicitly not to add a
+routine check, and name the discriminator for whoever does meet one: whether the `[Parameter:{…}]` UId
+inside the stored metapath still matches a `uId` describe reports on that element.
+
+## DQ-20 — `process-activity-connections` is still not split
+
+It sits at 27,761 of 27,793 and the right fix is a split at the R1–R20 seam. Not done here: a split moves
+the guidance NAME set, and that forces the `curated-knowledge-names.json` re-pin which DQ-6 deliberately
+leaves to travel with the release. It is its own change, after that release. Until then every edit to
+that article has about thirty characters to spend.

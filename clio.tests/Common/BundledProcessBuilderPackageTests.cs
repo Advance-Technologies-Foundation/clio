@@ -179,20 +179,21 @@ public class BundledProcessBuilderPackageTests {
 	/// and this removes the operator's editor and git configuration from the hash instead of gating on them.
 	/// </para>
 	/// <para>
-	/// Measured entry by entry against <c>git show &lt;ExpectedProducingCommit&gt;:&lt;path&gt;</c> at the
-	/// <b>1.6.3.1</b> cut: 157 entries, 156 byte-IDENTICAL to the commit blob, 0 line-ending-only differences,
-	/// 0 content differences. The 157th is <c>descriptor.json</c>, which by contract cannot match the pre-restamp
-	/// commit and is pinned separately by <see cref="ExpectedArchiveVersion"/> and
+	/// Measured entry by entry for the archive pinned below, by extracting it with <c>clio extract-pkg-zip</c>
+	/// and comparing every file against <c>git show &lt;ExpectedProducingCommit&gt;:&lt;path&gt;</c>:
+	/// <b>167 entries, 166 byte-IDENTICAL</b> to the commit blob, 0 line-ending-only differences, 0 content
+	/// differences. The 167th is <c>descriptor.json</c>, which by contract cannot match the pre-restamp commit
+	/// and is pinned separately by <see cref="ExpectedArchiveVersion"/> and
 	/// <see cref="ExpectedDescriptorModifiedOnUtc"/>.
-	/// <para>NOT re-run by hand for the cuts after it, and deliberately: that measurement is what PROVED the
-	/// structural fix described above, and once the script exports the pinned commit and overlays that one file,
-	/// re-measuring asks the same question of the same mechanism. Re-run it when the script's PACKING changes,
-	/// not when the sources do.</para>
+	/// <para>An earlier revision of this paragraph carried 157/156 and attributed it to a specific cut. Both
+	/// numbers were wrong and the attribution made the error harder to spot, in the one file whose job is that
+	/// provenance statements stay true. The count moves as the package gains sources, so re-measure it with the
+	/// two commands above rather than carrying it forward - it takes under a minute.</para>
 	/// </para>
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"47AAD17C3AB75EB34FE55DD5254EF454C35561F1BA550C3C5840284100E0CF80";
+		"7928D36EB05A3ADE606F80849608FD204D2D0EB6F781A311A10D512FCDFDFFB5";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -220,7 +221,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.3.2";
+	private const string ExpectedArchiveVersion = "1.6.3.3";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -232,7 +233,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "2e3ca8ea0788370f4b1d03641760f815307e5eb0";
+	private const string ExpectedProducingCommit = "1d64dc9115286f1c46ac589c20d730f08fd9ca40";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -258,7 +259,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789626046000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789629720000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.

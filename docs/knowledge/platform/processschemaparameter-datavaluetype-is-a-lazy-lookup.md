@@ -1,7 +1,7 @@
 ---
 description: ProcessSchemaParameter.DataValueType resolves lazily through the owner's manager and answers null when that manager is out of reach, so comparing type NAMES can silently report no change
 applies-to:
-  - clio.tests/Command/ProcessModel/ServerProcessDescriberTests.cs
+  - clio/CrtProcessBuilder/CrtProcessBuilder.gz
 ticket: ENG-92707
 date: 2026-09-17
 ---

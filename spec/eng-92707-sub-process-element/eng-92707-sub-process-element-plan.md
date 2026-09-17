@@ -1,4 +1,4 @@
-﻿# ENG-92707 — Sub-process element: selection + parameter sync — implementation plan
+# ENG-92707 — Sub-process element: selection + parameter sync — implementation plan
 
 [ENG-92707](https://creatio.atlassian.net/browse/ENG-92707) · component *bpms tools* · epic
 [ENG-92704](https://creatio.atlassian.net/browse/ENG-92704) · 5 SP · ticket estimate ~2.5 days ·

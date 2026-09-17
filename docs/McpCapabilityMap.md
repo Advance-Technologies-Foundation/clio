@@ -1,4 +1,4 @@
-﻿# How An External AI Sees The clio MCP Server
+# How An External AI Sees The clio MCP Server
 
 ## Scope
 

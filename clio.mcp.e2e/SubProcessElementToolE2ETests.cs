@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -326,6 +326,11 @@ public sealed class SubProcessElementToolE2ETests {
 	/// <para>Discarding this result is how a broken arrange reaches the assertions disguised as the thing under
 	/// test: the callee fails to build, the caller then cannot resolve it, and the failure reads as a defect in
 	/// the sub-process element rather than in the two lines above it.</para>
+	/// <para>It asserts the SUCCESS LINE, not <c>IsError</c>. A refused or failed build comes back as an ordinary
+	/// result carrying a non-zero exit code, and nothing on the MCP path turns that into <c>IsError</c> - which is
+	/// set for a binding error or a thrown exception. That is why every acting assertion in this fixture pairs the
+	/// two, and an arrange guard that checked only the flag would have passed the exact failure it exists to
+	/// catch.</para>
 	/// </summary>
 	private static async Task<CallToolResult> ArrangeProcessAsync(ArrangeContext context, string descriptor,
 			string what) {
@@ -333,6 +338,9 @@ public sealed class SubProcessElementToolE2ETests {
 		result.IsError.Should().NotBeTrue(
 			because: $"the {what} is an arrange step - if it did not build, every assertion below is about the "
 				+ "wrong failure");
+		JsonSerializer.Serialize(result).Should().Contain("created (UId:",
+			because: $"only a genuinely successful build logs the created-schema line, and the {what} has to "
+				+ "exist before the case below means anything");
 		return result;
 	}
 

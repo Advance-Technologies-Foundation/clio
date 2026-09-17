@@ -1,4 +1,4 @@
-﻿# ENG-92707 — Sub-process element: test plan
+# ENG-92707 — Sub-process element: test plan
 
 ## 1. Where the coverage lives
 
