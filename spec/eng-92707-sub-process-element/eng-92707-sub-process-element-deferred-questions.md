@@ -524,8 +524,28 @@ machinery is there; it has nothing to compare against, because the load that pre
 converged the element.
 
 **F2, which the pass did not anticipate and which is new:** the designer does not merely fail to warn, it
-REASSURES. Opening the caller's card after a callee rename shows the new name and an intact mapping,
-because rendering the card re-synchronizes it. The saved schema — the one that runs — still carries the
+REASSURES. Opening the caller's card after a callee CODE rename shows the same caption and an intact
+mapping.
+
+**Mechanism corrected 2026-09-17, measured at 1.6.3.10 through a real Chrome.** This originally said the
+card "shows the NEW name and an intact mapping, because rendering the card re-synchronizes it". That
+conflates two different renames, and the stated cause is not the operative one:
+
+| What was renamed on the callee | What the caller's card shows | Misleading? |
+|---|---|---|
+| the parameter CODE — the rename that breaks runtime delivery | the SAME caption, mapping intact, nothing marked | YES, and this is F2 |
+| the parameter CAPTION | the NEW caption, and the mapping row EMPTY | no — an unmapped required input is a signal |
+
+The card renders the CAPTION and never the code, so it cannot display code staleness under any
+convergence behaviour. F2 does not depend on the design-instance question at all — the earlier write-up
+reached the right conclusion from the wrong premise. In the state where the mapping is intact the name is
+the OLD caption; in the state where the name is new the mapping is empty. There is no state in which the
+card shows both a new name and an intact mapping.
+
+**Open, and it is not a footnote:** the caption-rename row above is a reading of the CARD. Whether the
+caller's STORED mapping survived that state was not measured. If it did not, a cosmetic edit on a callee
+destroys caller configuration — which nothing here predicts, because the element parameter and its source
+are paired through the schema's mapping row rather than by name. Asked of the test session. The saved schema — the one that runs — still carries the
 old name. So no read reveals the stale state: not the designer, not describe, not `inSync`, not the
 warning list.
 
@@ -639,8 +659,16 @@ takes a design-time read. One unverified load path propagated into three shipped
 most useful signal the product has read as worthless.
 
 **What changed.** The `inSync` contract, the guidance and the knowledge record now state both halves and
-which instance produces which. F2 is narrowed with them: the designer clause is unverified — the classic
-designer would not load on the stand — and is the only part of that sentence still owed a measurement.
+which instance produces which. F2 is narrowed with them.
+
+**The designer clause was measured on 2026-09-17 and is no longer owed.** Two corrections came with it,
+and the second is the one that matters. First: the classic designer IS reachable on this stand —
+`…/0/Nui/ViewModule.aspx?vm=SchemaDesigner#process/<uid>` loads in about 20 s in a real Chrome. The
+earlier "would not load" was the renderer intermittently freezing; the DOM stays readable throughout, so
+a card can be read even while screenshots time out. No design-time claim on this stand is blocked, and
+that sentence was on its way to becoming the reason AC-4 stayed open. Second: F2 holds, but its CAUSE is
+not the one predicted. The card renders the parameter CAPTION and never its code, so it cannot show a
+code rename under any convergence behaviour — see the table in DQ-25.
 
 **What did NOT change.** DQ-10 stands for the re-synchronization report itself: the modify path does
 converge, so the drift is still unobservable from there, and the dangling-reference scan is still how
