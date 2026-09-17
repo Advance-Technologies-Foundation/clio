@@ -356,7 +356,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="client-unit-schema-create"></a>
 - [`create-client-unit-schema`](docs/commands/create-client-unit-schema.md) - Create a new JavaScript (ClientUnit) schema on a remote Creatio environment, `client-unit-schema-create`
 <a id="create-entity-schema"></a>
-- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create a persistent, virtual, or same-name replacing entity schema in a remote Creatio package; columns accept repeated flags or a JSON array
+- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create a persistent, virtual, DB-view, or same-name replacing entity schema in a remote Creatio package; columns accept repeated flags or a JSON array
 <a id="create-lookup"></a>
 - [`create-lookup`](docs/commands/create-lookup.md) - Create a lookup entity schema in a remote Creatio package
 <a id="create-schema"></a>
@@ -408,7 +408,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="get-entity-schema-properties"></a>
 - [`get-entity-schema-properties`](docs/commands/get-entity-schema-properties.md) - Get properties from a remote Creatio entity schema (`--required-only` filters required columns; omit `--package` for the merged all-packages view, including custom columns from other packages)
 <a id="set-entity-schema-properties"></a>
-- [`set-entity-schema-properties`](docs/commands/set-entity-schema-properties.md) - Set schema-level properties (the primary-display column, and the schema caption per culture via `--title` / `--title-localizations`) on a remote Creatio entity schema
+- [`set-entity-schema-properties`](docs/commands/set-entity-schema-properties.md) - Set schema-level properties (the database-view flag, primary-display column, and schema caption per culture via `--title` / `--title-localizations`) on a remote Creatio entity schema
 <a id="get-process-signature"></a>
 <a id="gps"></a>
 - [`get-process-signature`](docs/commands/get-process-signature.md) - Read the parameter signature (codes, types, direction) of a Creatio business process, `gps`
