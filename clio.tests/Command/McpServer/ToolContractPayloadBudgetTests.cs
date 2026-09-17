@@ -58,11 +58,11 @@ public sealed class ToolContractPayloadBudgetTests {
 	// worth knowing but is NOT this ratchet's business to fix: ENG-96389 §3 measured that relocating
 	// description content into guidance articles is token-NEGATIVE beyond 1.3 articles, so the index is
 	// pinned where it stands.
-	// 173 * 256 = 44288 leaves 605 bytes, about three tools - see the deviation note in the fixture remarks.
+	// Sequence discovery and native enrollment add two tools; measured 44380 bytes. Rounded to the next 256-byte step (44544), without additional slack.
 	// Serialization uses the default JSON encoder,
 	// which escapes non-ASCII (a purpose ellipsis is written as a 6-byte escape), so it over-counts the real
 	// UTF-8 wire size — conservative, which is the safe direction for a ceiling.
-	private const int MaxCompactIndexSerializedBytes = 173 * 256;
+	private const int MaxCompactIndexSerializedBytes = 174 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
 	// — the same quantity the index ratchet above measures, and what the agent actually receives.

@@ -313,6 +313,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-client-unit-schema"] = PassthroughClassification.NotApplicable,
 			["get-entity-schema-column-properties"] = PassthroughClassification.NotApplicable,
 			["get-entity-schema-properties"] = PassthroughClassification.NotApplicable,
+			["enroll-sequence-participants"] = PassthroughClassification.NotApplicable,
 			["get-sequence-context"] = PassthroughClassification.NotApplicable,
 			["set-entity-schema-properties"] = PassthroughClassification.NotApplicable,
 			["get-fsm-mode"] = PassthroughClassification.NotApplicable,

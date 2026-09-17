@@ -327,7 +327,9 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		///     Answers whether the bundled dashboards-migrator package's own code is serving — the same
 		///     liveness-only, ungated probe as <see cref="ProcessBuilderPing"/>, for the other bundled package.
 		/// </summary>
-		DashboardsMigratorPing = 93
+		DashboardsMigratorPing = 93,
+		/// <summary>Native filtered sequence participant enrollment.</summary>
+		SequenceParticipantBulkAdd = 94
 
 	}
 
@@ -386,6 +388,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.ClearRedisDb, "ServiceModel/AppInstallerService.svc/ClearRedisDb"},
 		{KnownRoute.EntitySchemaManagerRequest, "DataService/json/SyncReply/EntitySchemaManagerRequest"},
 		{KnownRoute.RuntimeEntitySchemaRequest, "DataService/json/SyncReply/RuntimeEntitySchemaRequest"},
+		{KnownRoute.SequenceParticipantBulkAdd, "rest/SequenceParticipantBulkAddService/AddByFilter"},
 		{KnownRoute.GetWorkspaceItems, "ServiceModel/WorkspaceExplorerService.svc/GetWorkspaceItems"},
 		{KnownRoute.DeleteWorkspaceItem, "ServiceModel/WorkspaceExplorerService.svc/Delete"},
 		{KnownRoute.GetUserTaskSchema, "ServiceModel/ProcessUserTaskSchemaDesignerService.svc/GetSchema"},

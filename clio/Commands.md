@@ -789,5 +789,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 the base/root entity UId resolved by Creatio for the add-on, shared across replacing
 layers. A temporary designer schema or an individual replacing row is not that identity.
 
+<a id="enroll-sequence-participants"></a>
+
+Enroll explicit contacts through Creatio's native sequence service. See [enroll-sequence-participants](docs/commands/enroll-sequence-participants.md).
 <a id="get-sequence-context"></a>
 - [get-sequence-context](docs/commands/get-sequence-context.md) - Read effective sequence fields and live configuration choices.
