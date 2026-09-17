@@ -110,7 +110,12 @@ public static class OAuthAuthorizationCodeProtocol
     {
         const string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
         Span<byte> bytes = stackalloc byte[64]; RandomNumberGenerator.Fill(bytes);
-        StringBuilder result = new(64); foreach (byte value in bytes) result.Append(alphabet[value % alphabet.Length]); return result.ToString();
+        StringBuilder result = new(64);
+        foreach (byte value in bytes)
+        {
+            result.Append(alphabet[value % alphabet.Length]);
+        }
+        return result.ToString();
     }
     public static string CreateCodeChallenge(string verifier)
     {
@@ -138,7 +143,10 @@ public static class OAuthAuthorizationCodeProtocol
         }
 		query.TryGetValue("state", out string state);
 		if (!string.Equals(state, expectedState, StringComparison.Ordinal)) throw new InvalidOperationException("OAuth callback state did not match.");
-        if (!query.TryGetValue("code", out string code) || string.IsNullOrWhiteSpace(code)) throw new InvalidOperationException("OAuth callback did not contain an authorization code.");
+        if (!query.TryGetValue("code", out string code) || string.IsNullOrWhiteSpace(code))
+        {
+            throw new InvalidOperationException("OAuth callback did not contain an authorization code.");
+        }
         return (code, state);
     }
     private static string Base64Url(ReadOnlySpan<byte> bytes) => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
@@ -223,14 +231,30 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
             throw new InvalidOperationException("OAuth callback timed out. Retry with --no-browser and paste the full redirect URL.");
         }
         (string code, _) = OAuthAuthorizationCodeProtocol.ParseCallback(callback, state);
+        OAuthTokenSet result = await ExchangeCodeAsync(discovery.token_endpoint, environment.ClientId, code, redirect, verifier, cancellationToken);
+        _store.Write(environment, result);
+        return result;
+    }
+
+    private async Task<OAuthTokenSet> ExchangeCodeAsync(string endpoint, string clientId, string code, string redirect,
+        string verifier, CancellationToken cancellationToken)
+    {
         using HttpClient client = _httpClientFactory.CreateClient();
-        using HttpResponseMessage response = await client.PostAsync(discovery.token_endpoint,
-            new FormUrlEncodedContent(new Dictionary<string, string> { { "grant_type", "authorization_code" }, { "code", code }, { "redirect_uri", redirect }, { ClientIdParameter, environment.ClientId }, { "code_verifier", verifier } }), cancellationToken);
+        using HttpResponseMessage response = await client.PostAsync(endpoint,
+            new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                { "grant_type", "authorization_code" }, { "code", code }, { "redirect_uri", redirect },
+                { ClientIdParameter, clientId }, { "code_verifier", verifier }
+            }), cancellationToken);
         string body = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (!response.IsSuccessStatusCode) throw new InvalidOperationException(DescribeOAuthFailure("OAuth token exchange failed", body));
-        OAuthResponse token = JsonSerializer.Deserialize<OAuthResponse>(body) ?? throw new InvalidOperationException("OAuth token exchange returned an invalid response.");
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(DescribeOAuthFailure("OAuth token exchange failed", body));
+        }
+        OAuthResponse token = JsonSerializer.Deserialize<OAuthResponse>(body)
+            ?? throw new InvalidOperationException("OAuth token exchange returned an invalid response.");
         ValidateTokenResponse(token);
-        OAuthTokenSet result = ToToken(token, discovery.token_endpoint, environment.ClientId); _store.Write(environment, result); return result;
+        return ToToken(token, endpoint, clientId);
     }
 
     public async Task LogoutAsync(EnvironmentSettings environment, CancellationToken cancellationToken = default)
@@ -262,10 +286,13 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
 				|| string.Equals(ReadError(body), "invalid_client", StringComparison.OrdinalIgnoreCase)
 				|| string.Equals(ReadError(body), "unauthorized_client", StringComparison.OrdinalIgnoreCase)
 				|| string.IsNullOrWhiteSpace(ReadError(body)));
-	private static string DescribeOAuthFailure(string prefix, string body) {
+	private static string DescribeOAuthFailure(string prefix, string body)
+	{
 		string error = ReadError(body);
 		string description = SensitiveErrorTextRedactor.RedactForConsoleOrNull(ReadErrorDescription(body));
-		return string.IsNullOrWhiteSpace(error) ? prefix + "." : string.IsNullOrWhiteSpace(description) ? $"{prefix}: {error}." : $"{prefix}: {error} ({description}).";
+		if (string.IsNullOrWhiteSpace(error)) return prefix + ".";
+		if (string.IsNullOrWhiteSpace(description)) return $"{prefix}: {error}.";
+		return $"{prefix}: {error} ({description}).";
 	}
 	private static string ReadError(string body) => ReadOAuthProperty(body, "error");
 	private static string ReadErrorDescription(string body) => ReadOAuthProperty(body, "error_description");
@@ -277,11 +304,26 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
 	}
     private static OAuthTokenSet ToToken(OAuthResponse response, string endpoint, string clientId, string fallbackRefreshToken = null) => new(response.access_token, response.refresh_token ?? fallbackRefreshToken, DateTimeOffset.UtcNow.AddSeconds(response.expires_in), endpoint, clientId, DateTimeOffset.UtcNow);
     private static void ValidateTokenResponse(OAuthResponse response) { if (string.IsNullOrWhiteSpace(response.access_token) || string.IsNullOrWhiteSpace(response.refresh_token) || response.expires_in < 0) throw new InvalidOperationException("OAuth token exchange returned an incomplete token response."); }
-    private static string BuildAuthorizationUrl(string endpoint, string clientId, string redirect, string state, string verifier) => endpoint + "?" + string.Join("&", new Dictionary<string, string> { { "response_type", "code" }, { ClientIdParameter, clientId }, { "redirect_uri", redirect }, { "state", state }, { "code_challenge", OAuthAuthorizationCodeProtocol.CreateCodeChallenge(verifier) }, { "code_challenge_method", "S256" }, { "scope", "offline_access" } }.Select(p => $"{Uri.EscapeDataString(p.Key)}={Uri.EscapeDataString(p.Value)}"));
+	private static string BuildAuthorizationUrl(string endpoint, string clientId, string redirect, string state, string verifier) => endpoint + "?" + string.Join("&", new Dictionary<string, string> { { "response_type", "code" }, { ClientIdParameter, clientId }, { "redirect_uri", redirect }, { "state", state }, { "code_challenge", OAuthAuthorizationCodeProtocol.CreateCodeChallenge(verifier) }, { "code_challenge_method", "S256" }, { "scope", "offline_access" } }.Select(p => $"{Uri.EscapeDataString(p.Key)}={Uri.EscapeDataString(p.Value)}"));
     private static bool IsLoopbackRedirect(string redirect) => Uri.TryCreate(redirect, UriKind.Absolute, out Uri uri)
         && uri.Scheme == Uri.UriSchemeHttp && uri.Host == IPAddress.Loopback.ToString();
     private static string ReplacePort(string redirect, int port) { UriBuilder builder = new(redirect); builder.Port = port; return builder.Uri.ToString().TrimEnd('/'); }
-    private bool TryOpenBrowser(string url) { try { string file = OperatingSystem.IsMacOS() ? "open" : OperatingSystem.IsWindows() ? "cmd.exe" : "xdg-open"; string[] args = OperatingSystem.IsWindows() ? ["/c", "start", "", url] : [url]; ProcessExecutionResult result = _processExecutor.ExecuteAndCaptureAsync(new ProcessExecutionOptions(file, string.Empty) { ArgumentList = args }).GetAwaiter().GetResult(); return result.Started; } catch { return false; } }
+	private bool TryOpenBrowser(string url)
+	{
+		try
+		{
+			string file = OperatingSystem.IsMacOS() ? "open" : "xdg-open";
+			string[] args = [url];
+			if (OperatingSystem.IsWindows())
+			{
+				file = "cmd.exe";
+				args = ["/c", "start", "", url];
+			}
+			ProcessExecutionResult result = _processExecutor.ExecuteAndCaptureAsync(new ProcessExecutionOptions(file, string.Empty) { ArgumentList = args }).GetAwaiter().GetResult();
+			return result.Started;
+		}
+		catch { return false; }
+	}
     private static async Task<string> ReceiveCallbackAsync(TcpListener listener, int timeout, CancellationToken ct)
     {
         using CancellationTokenSource timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(ct);
