@@ -427,3 +427,22 @@ which re-points at whatever the next rebundle pins.
 `descriptor.json` is byte-identical to the producing commit's blob — plus the two commands that verify it,
 and names the cut at which it was last actually run. The count is deliberately not pinned: it moves as
 the package gains sources, and a pinned one makes staleness look checked.
+
+## DQ-23 — the three skip flags are exclusive by construction, not by contract
+
+`SubProcessSyncReport` carries `MultiInstanceSkipped`, `SelfReferenceSkipped` and `CalleeUnreadable`.
+Exactly one is ever set, because every producer sets one and returns immediately — the precedence
+between them is the ORDER of those returns and lives nowhere else. A `SubProcessSkipReason` enum would
+make it structural.
+
+**Decision.** Not done, and deliberately not raised as a ticket either: a three-flag refactor that fixes
+no observable behaviour does not get scheduled, it expires in a backlog. It is recorded here because this
+file is read by the one person it is for — the next one changing this element.
+
+**Judge it on this, rather than inheriting the opinion.** Today nothing BRANCHES on the flags at all:
+`SubProcessSyncNotices` renders them and `SubProcessSyncReport.IsUnchanged` counts them, and that is the
+whole consumer set. So the positional precedence is invisible and harmless.
+
+**The trigger is a condition, not a date.** It stops being harmless the moment either a FOURTH skip
+reason appears, or any consumer starts branching on which flag is set. The precedence is load-bearing
+from then on, and it will still be written down nowhere but the order of the returns.
