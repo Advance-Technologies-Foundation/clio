@@ -1,5 +1,5 @@
 ---
-description: the NUnit category "McpE2E.ProcessDesigner" has no consumer inside this repository - it is excluded by the TeamCity job Team_Atf_ClioMcpE2eTests (step Run_MCP_e2e_tests) via a --filter argument stored in the job config, so grep says the string is dead and it is not
+description: the NUnit category "McpE2E.ProcessDesigner" is excluded by the TeamCity job Team_Atf_ClioMcpE2eTests through the default of its McpE2eTestFilter parameter (mirrored as baseFilter in mcp-e2e-selection.json), so the only in-repo consumer is a mirror and renaming the constant still breaks the exclusion silently
 applies-to:
   - clio.mcp.e2e/Support/Configuration/McpE2ECategories.cs
   - clio.mcp.e2e/CreateBusinessProcessToolE2ETests.cs
@@ -7,17 +7,21 @@ applies-to:
   - clio.mcp.e2e/DescribeProcessToolE2ETests.cs
   - clio.mcp.e2e/ListUserTasksToolE2ETests.cs
   - clio.mcp.e2e/ValidateProcessGraphToolE2ETests.cs
+  - clio.mcp.e2e/TestSelection/mcp-e2e-selection.json
 ticket: ENG-96132
 date: 2026-08-28
 ---
 
 **What is true** - the five process-designer stand fixtures carry
-`[Category(McpE2ECategories.ProcessDesigner)]`, and nothing in this repository reads that
-string's value: no workflow, no test, no runsettings. Its only consumer is the TeamCity job
-`Team_Atf_ClioMcpE2eTests` (step `Run_MCP_e2e_tests`), whose `dotnet test` arguments exclude
-`TestCategory!=McpE2E.ProcessDesigner`. The value therefore lives in exactly one place
-(`McpE2ECategories`), which is deliberate: the compiler can keep five fixtures in step with each
-other, but nothing can keep them in step with the job config.
+`[Category(McpE2ECategories.ProcessDesigner)]`. The exclusion that keeps them out of the default
+run lives in the TeamCity job `Team_Atf_ClioMcpE2eTests`: since 2026-09-16 the step
+`Run_MCP_e2e_tests` runs `--filter "%McpE2eTestFilter%"` and the parameter's default is
+`TestCategory!=McpE2E.ProcessDesigner&TestCategory!=McpE2E.Manual` (before that, the same string was
+the step's literal argument). The repository holds only a mirror of it - `baseFilter` in
+`clio.mcp.e2e/TestSelection/mcp-e2e-selection.json`, pinned by `McpE2eSelectionCoverageTests` - and
+the mirror is what pull-request runs send back to TeamCity. Nothing in the repository can keep the
+constant's VALUE in step with the job-config default: the compiler keeps five fixtures in step with
+each other, and the guard keeps the mirror in step with itself.
 
 **Why it is this way** - these fixtures need a sandbox that serves ProcessDesignService
 (`CrtProcessBuilder` installed), which the default CI stand does not provide. Without the
