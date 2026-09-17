@@ -1067,8 +1067,11 @@ public sealed class DescribedSubProcess {
 	/// <summary>
 	/// Whether the element still carries every parameter the called process declares. <c>null</c> means that
 	/// process could not be read, which is UNKNOWN and never "out of sync".
-	/// <para>Ordinarily true: the platform re-synchronizes every sub-process element on every design-time read, so
-	/// an element that has just been read has already converged. The informative value is <c>false</c>.</para>
+	/// <para>Whether it can report DRIFT depends on which instance describe read. For a COMPILED process it reads
+	/// the RUNTIME instance, which the platform does not converge, so a callee that renamed or dropped a parameter
+	/// leaves the element stale and <c>false</c> here is real evidence a re-synchronization is owed. For an
+	/// UNCOMPILED process describe falls back to the design instance, which converges as it loads, and <c>true</c>
+	/// then says nothing. Measured on a stand 2026-09-17.</para>
 	/// </summary>
 	[JsonPropertyName("inSync")]
 	public bool? InSync { get; set; }

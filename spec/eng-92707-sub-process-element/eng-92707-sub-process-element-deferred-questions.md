@@ -239,12 +239,19 @@ What does that snapshot actually see?
 **Decision.** Ship it, and write the limit down in the contract, in the report's own docblock and in the
 guidance rather than leaving a reader to assume more.
 
-**Reason.** The platform re-synchronizes every sub-process element on every design-time read, and BOTH
-the describe and the modify paths load the schema through `GetDesignInstance`. So by the time the applier
-takes its snapshot the element has already converged, and a snapshot diff can only ever report drift
+**Reason.** The platform re-synchronizes every sub-process element on every DESIGN-TIME read, and the
+MODIFY path always loads the schema through `GetDesignInstance`. So by the time the applier takes its
+snapshot the element has already converged, and a snapshot diff can only ever report drift
 that THIS REQUEST causes - the first selection, or a retarget. A pure `resync` after the called process
 changed underneath a saved caller still *writes* the refreshed element, because the load converged it and
 the save persists it, and reports nothing.
+
+**Corrected 2026-09-17 (DQ-27):** this reason originally said BOTH describe and modify load through
+`GetDesignInstance`. Describe does not — it prefers the runtime instance for a compiled process. The
+VERDICT is unaffected, because it only ever depended on the modify path, and a reviewer re-verified the
+mechanism in platform source: `BaseProcessSchemaManager` calls `SynchronizeParameters()` on the metadata
+and design paths and no runtime getter does. But the false half of the premise was load-bearing
+elsewhere — see DQ-15 below.
 
 That is trap T-7 arriving one layer lower than the plan's D2 expected: D2 says "snapshot before mutating
 `SchemaUId`", which is what the applier does, but the load that precedes it has already run the
@@ -332,11 +339,19 @@ what stops the caller being handed a report naming parameters the new callee dec
 The two predicates are asymmetric: `MirrorsCallee` asks only whether the callee's parameters are all
 present, `IsUnchanged` also counts `Removed`. The review wants them reconciled and TC-07 written.
 
-**Decision.** Document the asymmetry on the now-shared predicate and leave TC-07 for a stand. The state
-that would expose it — an element still carrying a parameter the callee dropped — is converged by the
-platform on every design-time read before this package sees the schema, which is the same argument DQ-10
-makes about the drift report. Writing a unit test would mean constructing a state the platform does not
-produce, and asserting on it would pin the fixture rather than the behaviour.
+**Decision.** Document the asymmetry on the now-shared predicate and leave TC-07 for a stand.
+
+**RE-ARGUED 2026-09-17, because the original reason was false.** It said the state "is converged by the
+platform on every design-time read", so a unit test "would mean constructing a state the platform does
+not produce". The platform DOES produce it — on the runtime-instance path describe takes, which is the
+very surface DQ-15 named as unable to see it. A stand measured `inSync: false` on exactly that state.
+
+The decision survives on a different and narrower reason: the asymmetry is between two predicates
+answering two questions, and the one that can now be observed is `inSync` — which is `MirrorsCallee`, the
+predicate the review wanted reconciled. So the case TC-07 was written for is no longer hypothetical, and
+what it would pin is worth having. It is NOT written here because a unit fixture reaches only the
+converged path; the observable case lives on the describe path against a compiled process, which is a
+STAND case. Moved to the manual matrix rather than left as "the platform does not produce it".
 
 ## DQ-16 — the ticket's scope line says retarget is out of scope
 
@@ -512,7 +527,15 @@ converged the element.
 REASSURES. Opening the caller's card after a callee rename shows the new name and an intact mapping,
 because rendering the card re-synchronizes it. The saved schema — the one that runs — still carries the
 old name. So no read reveals the stale state: not the designer, not describe, not `inSync`, not the
-warning list. Recorded in guidance (`process-parameters`) and as
+warning list.
+
+**Corrected 2026-09-17 (DQ-27): the "not describe, not `inSync`" half is false.** `LoadForDescribe`
+prefers the RUNTIME instance and only falls back to the design instance when there is none, and the
+runtime instance is not re-synchronized. So against a COMPILED caller, describe reports the stale
+parameter name and `inSync: false` — it is the one read that does reveal the state, and the pass
+measured it. Against an uncompiled caller it falls back to the design instance, converges, and reports
+`inSync: true`, so the reassurance is real but conditional. The DESIGNER half stands as written and is
+what makes the procedural rule worth keeping. Recorded in guidance (`process-parameters`) and as
 `docs/knowledge/platform/subprocess-designer-card-hides-stale-state.md`, with the rule stated
 procedurally: re-save every caller after any change to a called process's parameters, because the callee
 changed — not because something looked wrong.
@@ -557,7 +580,13 @@ the stored-metadata reader that would report the drop itself.
 parameter, execution context or flow condition still bound to a parameter UId the element no longer
 carries. `ProcessElementDependencyScanner.FindDanglingParameterReferences` walks the same reference sites
 as the retarget guard with the question inverted: a value that names the ELEMENT but none of its LIVE
-parameter UIds points at one that is gone. No metapath parsing - a reference always names both.
+parameter UIds points at one that is gone.
+
+**Superseded at 1.6.3.11.** The clause that followed here read "No metapath parsing - a reference always
+names both", and that was the wrong call twice over. Asking "does the value name none of the live UIds"
+fails OPEN on a compound value, and the fix for that - take the next Guid after our element - searched
+unbounded and INVENTED references, naming a real element and a real parameter on values that were fine.
+The element and the parameter are now matched as ONE PAIR, in the two spellings the platform writes.
 
 **Why this shape.** It is what the classic designer does.
 `SubProcessPropertiesPage.synchronizeActualSchemaParameters` collects links before its own re-sync and
@@ -568,9 +597,17 @@ because the designer reports whenever it converges rather than only when someone
 
 **What is still open, and it is TC-10.** A RENAME keeps the parameter UId, so every reference stays
 resolvable while the SAVED element parameter name goes stale and the runtime - which binds by name -
-delivers nothing. Nothing observes that: not the designer, not describe, not `inSync`, not this new scan.
-Only the stored metadata holds the difference, which is the option the owner deferred. DQ-10 and DQ-25
-carry the mechanism and the corrected cost estimate.
+delivers nothing. The WRITE path cannot observe it: the modify load converges the
+element before the applier snapshots it, so the re-sync has nothing to compare and this new scan sees
+every reference still resolving. Neither does the designer, nor this package's own warning list.
+
+**But one read does, and DQ-27 corrected this sentence to say so.** Describe against a COMPILED caller
+takes the runtime instance, which is not re-synchronized: it reports the STALE parameter name and
+`inSync: false`. That is real evidence a rename happened, available today, and it changes TC-10 from
+"unobservable" to "not reported where the change is made". What is still missing is the report on the
+modify path — which needs the STORED metadata, the option the owner deferred. DQ-10 and DQ-25 carry the
+mechanism and the corrected cost estimate; the caveat is that an UNCOMPILED caller falls back to the
+design instance and reports `inSync: true`, so the signal is conditional and must be described that way.
 
 **One process note worth keeping.** The scan's first landing coincided with the suite going from 10 s to
 65 s, and on that reading I scoped it to explicit re-syncs and wrote "measured, 6x" into a code comment.

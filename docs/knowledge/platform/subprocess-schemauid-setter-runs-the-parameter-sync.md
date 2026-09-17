@@ -16,8 +16,14 @@ for it. `ProcessSchemaSubProcess.SchemaUId`'s **setter** calls
 (`ProcessSchemaSubProcess.GetSchemaParameters()` returns them). Pairing is by the caller schema's
 `ProcessSchemaMapping` rows, not by name; name is only the adoption fallback in the add phase.
 
-`BaseProcessSchemaManager.FindDesignItem` and `GetItemFromMetaData` re-run it on **every read of a
-process schema**, so a "stale" sub-process element is not a state the object model will hand you.
+`BaseProcessSchemaManager.FindDesignItem` and `GetItemFromMetaData` re-run it on every **design-time**
+read. A RUNTIME read does not — no runtime getter calls `SynchronizeParameters()` — so a stale
+sub-process element IS a state the object model hands you, through
+`ProcessSchemaManager.FindInstanceByUId` / `FindInstanceByName`. That is the difference between the two
+clio paths: `ProcessModifyHandler` always takes `GetDesignInstance` and sees a converged element, while
+`ProcessSchemaRepository.LoadForDescribe` prefers the runtime instance for a compiled process and
+reports the stale name with `inSync: false`. An earlier revision of this record said the stale state was
+unreachable; a stand measured it on 2026-09-17.
 
 Three ways it is a **silent** no-op (`GetCanSynchronizeParameters`): the host schema has no `UId`, the
 element has no `UId` yet, or `SchemaUId` equals the host schema's UId — a process calling itself.

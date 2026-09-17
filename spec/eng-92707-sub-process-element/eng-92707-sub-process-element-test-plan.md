@@ -144,6 +144,11 @@ design-time read, because the platform converges the element before this package
 same argument DQ-10 makes about the drift report — so the case is left for a stand rather than pinned by a
 unit test that would have to construct a state the platform does not produce.
 
+**Corrected 2026-09-17.** The platform DOES produce it, on the runtime-instance path `describe` takes for
+a compiled process — a stand measured `inSync: false` there. TC-07 therefore moves to the STAND matrix
+rather than staying unwritten: a unit fixture only ever reaches the converged path, so the case has to be
+observed where it exists. See DQ-15 and DQ-27.
+
 ### Stand only
 
 TC-29…TC-36 are V1–V8 in the [plan](eng-92707-sub-process-element-plan.md) §5. Each must declare which
@@ -151,6 +156,22 @@ observation level it reaches — **Stored** (metadata written), **Design time** 
 **Runtime** (the process ran) — and where it stops. A case that passes at Stored level with no
 designer ever opened has not proved the designer accepts it; nine of ten flow-label cases did exactly
 that on ENG-91853, and the run's own report said so.
+
+**TC-07 (moved here 2026-09-17, from the unit matrix).** Reaches **Design time**, and it is the only
+place the state it needs exists.
+
+| Step | |
+|---|---|
+| 1 | Build a caller with a sub-process element on a callee declaring parameters `Alpha` and `Beta`, and map a value onto each. |
+| 2 | COMPILE the caller. This is the step the case turns on: without it describe falls back to the design instance and converges the element, and the case cannot be observed at all. |
+| 3 | Remove `Beta` from the callee and save the callee. |
+| 4 | `describe-business-process` the CALLER. |
+
+Expected: the `subProcess` block reports `inSync: false` while the element still carries `Beta`. Then
+`modify-business-process` with `subProcess: {resync: true}` and confirm the two predicates disagree in
+the way DQ-15 describes — `MirrorsCallee` is satisfied by the refreshed element while the report's
+`IsUnchanged` counts the `Removed` entry. A FAIL here is `inSync: true` on step 4, which would mean
+describe converged after all and DQ-27's correction is itself wrong.
 
 ## 5. What is deliberately not covered
 
