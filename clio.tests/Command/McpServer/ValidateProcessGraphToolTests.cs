@@ -1042,4 +1042,35 @@ public sealed class ValidateProcessGraphToolTests {
 		_commandResolver.ReceivedCalls().Should().BeEmpty(
 			because: "the refusal must precede the environment resolve, as the comment in the tool promises");
 	}
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-99086, filed independently during the ENG-98559 QA pass and closed as a duplicate of "
+		+ "this ticket. The report floated a SECOND hypothesis - that the tool does not recognise signalStart "
+		+ "as a start event at all - which would have been an adjacent defect this fix does not touch. It is "
+		+ "not so: ResolveDataId maps 'signalstart' to StartSignalEvent and that maps to the Start role, so a "
+		+ "two-signal-start graph passed as nodes/edges validates clean. The only way to reach 'Process has no "
+		+ "start event' on that graph is an EMPTY node set - which is what a descriptor sent under an "
+		+ "undeclared key (their 'graph') produces. Same root cause, confirmed by execution rather than by "
+		+ "reading the map.")]
+	public void Validate_ShouldAcceptTheMultiSignalStartGraphFromEng99086() {
+		// Arrange - the reporter's own shape: two signal starts, each reaching the end event
+		List<ProcessGraphNodeArg> nodes = [
+			N("RequestFiledSignal", "signalStart"),
+			N("RequestChangedSignal", "signalStart"),
+			N("EndRequestHandled", "endEvent")
+		];
+		List<ProcessGraphEdgeArg> edges = [
+			E("RequestFiledSignal", "EndRequestHandled"),
+			E("RequestChangedSignal", "EndRequestHandled")
+		];
+
+		// Act
+		ValidateProcessGraphResponse response = Validate(nodes, edges);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the graph is well formed and was actually supplied");
+		response.Findings.Should().NotContain(f => f.RuleId == "R3",
+			because: "signalStart resolves to the Start role and several triggered starts are legal since "
+				+ "ENG-98559, so the reported R3 could only have come from an empty node set");
+	}
 }
