@@ -1077,6 +1077,10 @@ public sealed class DescribedSubProcess {
 	/// right half to be sensitive to, because the runtime binds by CODE and a caption has no effect on delivery;
 	/// but <c>true</c> means "the element carries every parameter the callee declares", NOT "the element matches
 	/// the callee".</para>
+	/// <para>On a MULTI-INSTANCE element <c>false</c> is PERMANENT and is not drift. Such an element carries an
+	/// input collection, an output collection and three iteration counters INSTEAD of the callee's parameters, so
+	/// the test can never be satisfied - and the re-synchronization <c>false</c> would otherwise call for is
+	/// REFUSED on it. Read this flag together with <see cref="DescribedSubProcess.MultiInstance"/>, never alone.</para>
 	/// </summary>
 	[JsonPropertyName("inSync")]
 	public bool? InSync { get; set; }
