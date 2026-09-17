@@ -740,10 +740,15 @@ public static class McpToolErrorFilter
 	}
 
 	/// <summary>Most caller-supplied key names echoed back in one refusal.</summary>
-	private const int MaxEchoedKeys = 10;
+	/// <remarks>ENG-98566 moved the value itself to <see cref="McpToolArgumentSupport.MaxEchoedKeys"/> so
+	/// the overflow-bag echo path is bounded by the SAME constant, rather than by a second copy that can
+	/// drift away from this one. The CONSTANT is shared; the per-message total is not - this path caps one
+	/// list, while BuildLegacyAliasError caps its rename and unknown lists separately.</remarks>
+	private const int MaxEchoedKeys = McpToolArgumentSupport.MaxEchoedKeys;
 
 	/// <summary>Longest single caller-supplied key name echoed back.</summary>
-	private const int MaxEchoedKeyLength = 120;
+	/// <remarks>Shared with the overflow-bag echo path; see <see cref="MaxEchoedKeys"/>.</remarks>
+	private const int MaxEchoedKeyLength = McpToolArgumentSupport.MaxEchoedKeyLength;
 
 	/// <summary>
 	/// Renders caller-supplied key NAMES for a message: capped in count, capped per key, sanitized.
@@ -766,15 +771,12 @@ public static class McpToolErrorFilter
 	/// the canonical field names — are deliberately NOT routed through here: they are already trusted
 	/// and bounded, and truncating them would hide part of the answer the caller needs to fix the call.
 	/// </remarks>
-	private static string DescribeCallerKeys(IEnumerable<string> keys) {
-		List<string> all = [.. keys];
-		string shown = string.Join(", ", all
-			.Take(MaxEchoedKeys)
-			.Select(key =>
-				$"\"{Clio.Common.TextUtilities.SanitizeForDisplay(key, MaxEchoedKeyLength)}\""));
-		int hidden = all.Count - Math.Min(all.Count, MaxEchoedKeys);
-		return hidden > 0 ? $"{shown} and {hidden} more" : shown;
-	}
+	private static string DescribeCallerKeys(IEnumerable<string> keys) =>
+		// ENG-98566 review finding 10. This used to re-implement the cap/sanitise/"and N more" algorithm
+		// statement for statement alongside McpToolArgumentSupport's copy. Sharing the two CONSTANTS while
+		// leaving two copies of the logic is the drift this file's own remark said it was preventing.
+		McpToolArgumentSupport.JoinCallerKeys(
+			[.. keys.Select(key => $"\"{McpToolArgumentSupport.DescribeCallerKey(key)}\"")]);
 
 	private static string BuildUnknownArgumentsMessage(
 		string? toolName, string wrapperName, IReadOnlyList<string> canonicalNames, List<string> unknownKeys) {

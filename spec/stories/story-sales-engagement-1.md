@@ -1,7 +1,7 @@
 # Compact sequence context
 
 Issue: clio#1575
-Status: in-progress
+Status: validated; delivery pending
 
 As an agent I can retrieve bounded, environment-derived sequence metadata and configuration in one MCP invocation.
 
