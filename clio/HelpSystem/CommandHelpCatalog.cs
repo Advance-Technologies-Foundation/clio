@@ -60,6 +60,7 @@ internal sealed class CommandHelpCatalog {
 			["add-schema"] = "Create a schema file in a workspace package",
 			["add-user-task"] = "Create a user task schema in a workspace package",
 			["create-user-task-page"] = "Create and associate a Classic user-task parameter page in a workspace",
+			["register-process-element"] = "Generate package-owned process element registration scripts",
 			["alm-deploy"] = "Deploy a package to Creatio",
 			["apply-manifest"] = "Apply an environment manifest",
 			[CallService] = "Call a Creatio service endpoint",
@@ -271,6 +272,7 @@ internal sealed class CommandHelpCatalog {
 
 	private static readonly HashSet<string> DevelopmentCommands =
 		[
+			"register-process-element",
 			"add-item",
 			"add-schema",
 			"add-user-task",

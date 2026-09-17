@@ -175,6 +175,7 @@ Commands:
   reg-web-app                                 Register a Creatio environment, cfg, reg
   regenerate-identity-signing-key             Regenerate the instance identity-assertion signing key pair (the private key never leaves Creatio), identity-regenerate-key
   register                                    Register clio shell integrations
+  register-process-element                    Generate package-owned process element registration scripts
   register-sso-provider                       Register a new OIDC SSO provider in Creatio, sso-register-provider
   remove-data-binding-row                     Remove a row from a package data binding
   remove-data-binding-row-db                  Remove a row from a DB-first package data binding

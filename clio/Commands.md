@@ -307,6 +307,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="push-workspace"></a>
 <a id="pushw"></a>
 - [`push-workspace`](docs/commands/push-workspace.md) - Push workspace to selected environment, `pushw`
+<a id="register-process-element"></a>
+- [`register-process-element`](docs/commands/register-process-element.md) - Generate package-owned process element registration scripts
 <a id="remove-data-binding-row"></a>
 - [`remove-data-binding-row`](docs/commands/remove-data-binding-row.md) - Remove a row from a package data binding
 <a id="remove-data-binding-row-db"></a>

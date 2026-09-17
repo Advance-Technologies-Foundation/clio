@@ -15,10 +15,13 @@ Input retained its Source parameter mapping; changing Shared value from 3 to 9,
 saving and reloading preserved 9. The second element retained its mapping to
 First calculation.Result. Its numeric source selector offered Result and Shared
 value and excluded Input value. Numeric selection filters out Boolean/text outputs.
-Both diagram and page-header SVG icons rendered. Probe artifacts remain in the lab.
+Toolbox, diagram and page-header SVG icons rendered. Probe artifacts remain in the lab.
 
 Full unit suite passed after review fixes (13,696 tests, 25 existing skips).
-After review fixes run the focused page fixture, then affected modules/full suite
-before committing composition-root changes. Run the real MCP fixture again.
+Final Command module with five additional negative cases: 4,888 passed, 13 existing
+skips. Combined registration/page stdio MCP run after merging master: 2 passed.
+The combined compact discovery index measured 44,986 bytes and exceeded the prior
+44,800 ceiling; adding two independent tool entries requires a deliberate repin
+to the next 256-byte step, 45,056. The per-tool contract budget is unchanged.
 Package installation and SQL Server portability remain tracked by #1602.
 

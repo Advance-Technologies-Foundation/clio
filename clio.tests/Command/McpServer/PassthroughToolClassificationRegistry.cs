@@ -215,6 +215,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-tool-contract"] = PassthroughClassification.NotEnvironmentSensitive,
 			[CreatioArtifactMergeTool.ToolName] = PassthroughClassification.NotEnvironmentSensitive,
 			[CreateUserTaskPageTool.ToolName] = PassthroughClassification.NotEnvironmentSensitive,
+			[RegisterProcessElementTool.ToolName] = PassthroughClassification.NotEnvironmentSensitive,
 			["assert-infrastructure"] = PassthroughClassification.NotEnvironmentSensitive,
 			["show-passing-infrastructure"] = PassthroughClassification.NotEnvironmentSensitive,
 			["list-environments"] = PassthroughClassification.NotEnvironmentSensitive, // PRD prose: "show-web-app-list" (ShowWebAppListTool); actual tool name is list-environments

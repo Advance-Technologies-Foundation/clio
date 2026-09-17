@@ -557,6 +557,8 @@ public class BindingsModule {
 		services.AddTransient<GetClassicListColumnsCommand>();
 		services.AddTransient<ListEntityClientSchemasCommand>();
 		services.AddTransient<SqlSchemaCreateCommand>();
+		services.AddTransient<RegisterProcessElementCommand>();
+		services.AddTransient<IProcessElementRegistration, ProcessElementRegistration>();
 		services.AddTransient<SqlSchemaGetCommand>();
 		services.AddTransient<SqlSchemaUpdateCommand>();
 		services.AddTransient<SqlSchemaInstallCommand>();
@@ -706,6 +708,7 @@ public class BindingsModule {
 		services.AddTransient<GetClassicPageSourcesTool>();
 		services.AddTransient<ListEntityClientSchemasTool>();
 		services.AddTransient<SqlSchemaCreateTool>();
+		services.AddTransient<RegisterProcessElementTool>();
 		services.AddTransient<SqlSchemaGetTool>();
 		services.AddTransient<SqlSchemaUpdateTool>();
 		services.AddTransient<SqlSchemaInstallTool>();
