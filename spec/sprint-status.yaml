@@ -4098,3 +4098,9 @@ stories:
     description: Bounded native DataService batch writes for clio issue 1577
     depends_on: []
     blocks: []
+
+  - id: story-sequence-package-portability-1
+    status: in-progress
+    description: Native sequence package portability for clio issue 1579
+    depends_on: []
+    blocks: []

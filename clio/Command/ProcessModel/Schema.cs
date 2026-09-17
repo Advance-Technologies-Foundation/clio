@@ -502,7 +502,7 @@ public static class DataValueTypeMap{
 		27 => ShortTextDataValueTypeUId,
 		28 => MediumTextDataValueTypeUId,
 		29 => MaxSizeTextDataValueTypeUId,
-		30 => RichTextDataValueTypeUId,
+		30 or 43 => RichTextDataValueTypeUId,
 		31 => SecureTextDataValueTypeUId,
 		32 => HashTextDataValueTypeUId,
 		33 => DbObjectNameDataValueTypeUId,
