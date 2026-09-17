@@ -405,7 +405,10 @@ public static class MobileActionTargetProbe {
 	/// What the object tier did. <c>Answered</c> is what <see cref="MobileActionTargetProbeResult.ProbeOk"/>
 	/// reports, so a tier that performed NO read must say false however cleanly it returned — otherwise the
 	/// caller is told the object targets were verified when nothing was asked. <c>Note</c> is null only when
-	/// the tier ran in full; it is set both when the tier did not run and when it ran incompletely.
+	/// the tier ran in full; it is set both when the tier did not run and when it ran incompletely — including
+	/// when every <c>Missing</c> verdict was itself settled but a <see cref="ResolveDefaultWebPage"/> candidate
+	/// lookup failed for one or more of them, which still leaves <c>Answered</c> <see langword="true"/>: the
+	/// verdicts stand, only the bonus candidate name is what a caller cannot trust as "confirmed absent".
 	/// </summary>
 	private sealed record EntityTierOutcome(bool Answered, string Note);
 
@@ -443,6 +446,8 @@ public static class MobileActionTargetProbe {
 		var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		bool truncated = ReadEntitySchemaRows(context, names, uIdByName, seenNames);
 
+		int candidateFailures = 0;
+		Exception firstCandidateFailure = null;
 		foreach (string name in names) {
 			if (!uIdByName.TryGetValue(name, out string entityUId)) {
 				// No rows at all: the object does not exist, so the action is dead — unless the read may have
@@ -455,12 +460,25 @@ public static class MobileActionTargetProbe {
 			}
 			ActionTargetState state = ClassifyEntityDefaultMobilePage(context, entityUId, packageUId);
 			// Candidate resolution runs ONLY for a verified-missing verdict: Unknown/Resolved need no candidate.
-			string candidate = state == ActionTargetState.Missing
-				? ResolveDefaultWebPage(context, entityUId, packageUId)
-				: null;
+			string candidate = null;
+			if (state == ActionTargetState.Missing) {
+				candidate = ResolveDefaultWebPage(context, entityUId, packageUId, out Exception failure);
+				if (failure is not null) {
+					candidateFailures++;
+					firstCandidateFailure ??= failure;
+				}
+			}
 			RecordEntityResolution(into, name, state, candidate);
 		}
-		return new EntityTierOutcome(true, null);
+		// A candidate-resolution failure never demotes the STATE (it was already settled above) and never
+		// aborts the batch — the other objects' candidates stand. It only costs the NOTE, so a caller can
+		// tell "the read failed" apart from "the object genuinely has no default web page" instead of both
+		// silently reaching the wire as the same null.
+		string note = candidateFailures > 0
+			? Describe(
+				$"Could not resolve a candidate web page for {candidateFailures} object(s)", firstCandidateFailure)
+			: null;
+		return new EntityTierOutcome(true, note);
 	}
 
 	/// <summary>
@@ -552,12 +570,28 @@ public static class MobileActionTargetProbe {
 	/// missing <see cref="KindEntityDefaultMobilePage"/> target. Reads the WEB
 	/// <see cref="RelatedPageAddonName"/> add-on (the mirror of <see cref="ClassifyEntityDefaultMobilePage"/>'s
 	/// mobile read) for the untyped default page's <c>PageSchemaUId</c>, then reverse-resolves that UId to its
-	/// schema NAME via <see cref="PageSchemaMetadataHelper.QueryPageSchemaNameByUId"/> — the same reverse lookup
-	/// <c>get-related-page-addon</c> uses. Fails open to <see langword="null"/> (never a guess): no add-on
-	/// configured, no untyped default, or either read failing all read the same as "no candidate found",
-	/// leaving the caller to decide manually rather than being told a wrong page name.
+	/// schema NAME via <see cref="PageSchemaMetadataHelper.QuerySysSchemaRowByUId"/> — the same reverse lookup
+	/// <c>get-related-page-addon</c> uses.
+	/// <para>
+	/// Fails open to <see langword="null"/> (never a guess): no add-on configured, no untyped default, an
+	/// unparseable add-on body (<see cref="ExtractDefaultPageSchemaUId"/> already swallows that, and has its
+	/// own dedicated coverage), or a resolved name that fails
+	/// <see cref="PageSchemaMetadataHelper.IsValidSchemaName"/> all read the same as "no candidate found" —
+	/// the caller decides manually rather than being told a wrong page name.
+	/// </para>
+	/// <para>
+	/// A THROW from the add-on read, or the by-UId lookup coming back with no row (a dangling
+	/// <c>PageSchemaUId</c> the add-on still names, or a transport/failure envelope), is DIFFERENT: it is
+	/// surfaced through <paramref name="failure"/> rather than swallowed, because "the read never answered"
+	/// and "the object genuinely has no default page" are not the same fact — collapsing them is what let a
+	/// stale add-on reference read exactly like a clean absence. The caller (<see cref="ResolveEntityTargets"/>)
+	/// folds this into the tier's degradation note; it never aborts THIS object's own <c>Missing</c> verdict,
+	/// which was already settled before this method runs, and never touches any other object's candidate.
+	/// </para>
 	/// </summary>
-	private static string ResolveDefaultWebPage(ProbeContext context, string entitySchemaUId, Guid packageUId) {
+	private static string ResolveDefaultWebPage(
+		ProbeContext context, string entitySchemaUId, Guid packageUId, out Exception failure) {
+		failure = null;
 		if (!Guid.TryParse(entitySchemaUId, out Guid entityUId)) {
 			return null;
 		}
@@ -571,10 +605,20 @@ public static class MobileActionTargetProbe {
 				UseFullHierarchy = true
 			});
 			string pageSchemaUId = ExtractDefaultPageSchemaUId(schema?.MetaData);
-			return string.IsNullOrWhiteSpace(pageSchemaUId)
-				? null
-				: PageSchemaMetadataHelper.QueryPageSchemaNameByUId(context.Client, context.UrlBuilder, pageSchemaUId);
-		} catch (Exception) {
+			if (string.IsNullOrWhiteSpace(pageSchemaUId)) {
+				return null;
+			}
+			(JToken row, string error) = PageSchemaMetadataHelper.QuerySysSchemaRowByUId(
+				context.Client, context.UrlBuilder, pageSchemaUId, ("Name", "Name"));
+			if (row is null) {
+				failure = new InvalidOperationException(
+					error ?? $"Page schema '{pageSchemaUId}' could not be resolved to a name.");
+				return null;
+			}
+			string name = row["Name"]?.ToString();
+			return !string.IsNullOrEmpty(name) && PageSchemaMetadataHelper.IsValidSchemaName(name) ? name : null;
+		} catch (Exception ex) {
+			failure = ex;
 			return null;
 		}
 	}
