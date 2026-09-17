@@ -531,15 +531,24 @@ mapping.
 card "shows the NEW name and an intact mapping, because rendering the card re-synchronizes it". That
 conflates two different renames, and the stated cause is not the operative one:
 
-**M** is a reading taken in that state; **I** is an inference from the binding mechanism. The distinction
-is not pedantry here — this table has been written wrong four times, each time by a cell that was reasoned
-and then repeated as though it had been seen.
+Every cell carries its provenance. A first revision of this table marked cells only measured-or-inferred,
+and that was still not enough: two cells carried **M** from a DIFFERENT pass against a DIFFERENT package
+build, which a single letter hides and which is how an old reading gets cited as a current one.
+
+> **M10** read at CrtProcessBuilder 1.6.3.10, the 2026-09-17 designer pass.
+> **M07** read at 1.6.3.7, the earlier stand pass.
+> **I** inferred from the binding mechanism. Not observed.
 
 | Renamed on the callee | `inSync` | Caller's STORED mapping | What the card shows | Runtime |
 |---|---|---|---|---|
-| caption only | `true` **M** | present, printed fields unchanged **M** | *not read* | unaffected **I** |
-| code only — the rename that breaks delivery | `false` **M** | *not read* — intact **I** | SAME caption, mapping shown, nothing marked **M** | **broken M** (3×, earlier pass) |
-| code AND caption | `false` **M** | byte-identical to baseline **M** | NEW caption, mapping row EMPTY **M** | **broken I** |
+| caption only | `true` **M10** | all printed fields identical to baseline **M10** | *not read* | unaffected **I** |
+| code only — the rename that breaks delivery | `false` **M07** | *not read* — intact **I** | SAME caption, mapping shown, nothing marked **M10** | **broken M07** (3×) |
+| code AND caption | `false` **M10** | byte-identical to baseline **M10** | NEW caption, mapping row EMPTY **M10** | **broken I** |
+
+No `describe` and no runtime run happened in the code-only state during the 1.6.3.10 pass — the sequence
+there was rename code, open designer, read card, then rename the caption too. So the code-only row's
+`inSync` and runtime are the earlier pass's, and they stand as evidence of the BEHAVIOUR while saying
+nothing about this build.
 
 The card renders the CAPTION and never the code, so it cannot display code staleness under any
 convergence behaviour. F2 does not depend on the design-instance question at all — the earlier write-up

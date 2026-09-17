@@ -24,22 +24,28 @@ process renames or drops a parameter, and the answers are opposite:
   real Chrome. An earlier revision of this record predicted the reassurance from
   `SubProcessPropertiesPage.synchronizeActualSchemaParameters` and got the right answer for the wrong
   reason; the trap does not depend on whether the card converges.
-* the card misleads in BOTH directions, and neither is data loss. 2026-09-17, at 1.6.3.10. **M** is a
-  reading taken in that state; **I** is an inference from the binding mechanism, not an observation -
-  this table has been wrong four times and the marker is what stops the fifth:
+* the card misleads in BOTH directions, and neither is data loss. Every cell carries its provenance,
+  because "measured" is not one bit - it is a reading, by a particular pass, against a particular build:
+
+  > **M10** read at CrtProcessBuilder 1.6.3.10, the 2026-09-17 designer pass.
+  > **M07** read at 1.6.3.7, the earlier stand pass - a different session and a different build.
+  > **I** inferred from the binding mechanism. Not observed.
 
   | Renamed on the callee | `inSync` | Caller's STORED mapping | The card | Runtime |
   |---|---|---|---|---|
-  | caption only | `true` **M** | present, printed fields unchanged **M** | *not read* | unaffected **I** |
-  | code only | `false` **M** | *not read* - intact **I** | old caption, mapping shown, looks healthy **M** | **broken M** (3x, earlier pass) |
-  | code AND caption | `false` **M** | byte-identical to baseline **M** | new caption, mapping row EMPTY **M** | **broken I** |
+  | caption only | `true` **M10** | all printed fields identical to baseline **M10** | *not read* | unaffected **I** |
+  | code only | `false` **M07** | *not read* - intact **I** | old caption, mapping shown, looks healthy **M10** | **broken M07** (3x) |
+  | code AND caption | `false` **M10** | byte-identical to baseline **M10** | new caption, mapping row EMPTY **M10** | **broken I** |
 
   The third row is a FALSE ALARM: `describe` on the caller in exactly that state returns the parameter
   byte-identical to its healthy baseline - same `uid`, same `source`, same `value`, same `valueDisplay` -
   so the empty row is a rendering artefact and the mapping is really there. An earlier revision of this
-  record read the empty row as "a visible signal, not a reassurance"; it is neither. Note which cell that
-  byte-identical read belongs to: row THREE. Row one's mapping was read but not diffed field by field,
-  and row two's was never read at all - it is inferred from row three, which is sound but is not evidence.
+  record read the empty row as "a visible signal, not a reassurance"; it is neither.
+
+  Two cells in the code-only row are **M07**, and a plain **M** hid that: no `describe` and no runtime run
+  happened in the code-only state during the 1.6.3.10 pass. They are real measurements against an older
+  build, which is not the same claim as "measured here" - and a table headed with one version is exactly
+  how the older reading gets cited as the newer one later.
 * one hypothesis fits all three rows - the card pairs the caller's stored parameter to the callee's by
   CAPTION, so an unchanged caption matches and a changed one does not. **Inference, not measured.** It
   predicts that the caption-only row would ALSO render empty, which is the cheap check that would confirm
