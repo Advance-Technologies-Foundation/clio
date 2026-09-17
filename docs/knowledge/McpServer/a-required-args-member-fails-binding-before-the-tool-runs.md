@@ -22,8 +22,11 @@ runs, so none of the tool's own guards — null-args, unknown-key, environment �
 diagnosis.
 
 Measured on `run-process`, the only member of the process-designer family that declares one
-(`RunProcessArgs.ProcessName`, `public required string`). Every other args record in that family uses
-optional positional parameters with defaults and binds fine on a partial payload.
+(`RunProcessArgs.ProcessName`, `public required string`). Every other args record in that family uses NON-`required`
+parameters, which System.Text.Json binds to their default when the key is absent, so a partial payload
+binds fine. (Several of them are positional with no default - `environment-name` is schema-required on
+four - which is exactly why `required` and schema-required must not be conflated: only the C# keyword
+fails the bind.)
 
 **Why it is this way** — `required` is a language/serializer contract, not an MCP one. It sits below
 the tool and below `McpToolErrorFilter`'s per-tool checks, and the filter reports a binding failure in

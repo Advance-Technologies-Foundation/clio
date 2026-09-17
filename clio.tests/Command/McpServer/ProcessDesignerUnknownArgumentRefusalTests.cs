@@ -231,6 +231,7 @@ public sealed class ProcessDesignerUnknownArgumentRefusalTests {
 		SetActiveProcessVersionTool setActive = new(null, ConsoleLogger.Instance, _commandResolver);
 		GetProcessSignatureTool signature = new(null, ConsoleLogger.Instance, _commandResolver);
 		RunProcessTool run = new(ConsoleLogger.Instance, _commandResolver);
+		ListUserTasksTool listUserTasks = new(null, ConsoleLogger.Instance, _commandResolver);
 
 		// Act
 		CommandExecutionResult createResult = create.CreateBusinessProcess(null);
@@ -240,6 +241,7 @@ public sealed class ProcessDesignerUnknownArgumentRefusalTests {
 		CommandExecutionResult setActiveResult = setActive.SetActiveProcessVersion(null);
 		GetProcessSignatureResponse signatureResponse = signature.GetProcessSignature(null);
 		RunProcessResponse runResponse = await run.RunProcess(null);
+		CommandExecutionResult listUserTasksResult = listUserTasks.ListUserTasks(null);
 
 		// Assert
 		AssertNullRefused(createResult, CreateBusinessProcessTool.CreateBusinessProcessToolName);
@@ -247,6 +249,7 @@ public sealed class ProcessDesignerUnknownArgumentRefusalTests {
 		AssertNullRefused(modifyResult, ModifyBusinessProcessTool.ModifyBusinessProcessToolName);
 		AssertNullRefused(modifyAsNewResult, ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName);
 		AssertNullRefused(setActiveResult, SetActiveProcessVersionTool.SetActiveProcessVersionToolName);
+		AssertNullRefused(listUserTasksResult, ListUserTasksTool.ListUserTasksToolName);
 		signatureResponse.Error.Should().Contain("args is required",
 			because: "get-process-signature is the second file Sonar flagged, and answers in its own shape");
 		runResponse.Error.Should().Contain("args is required",
@@ -257,10 +260,9 @@ public sealed class ProcessDesignerUnknownArgumentRefusalTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Review finding 13: describe-business-process was the only family member that never checked "
-		+ "environment-name, so a blank one fell through to the DEFAULT registered environment and returned a "
-		+ "real, well-formed graph read from a stand the caller never named. That is the same "
-		+ "authoritative-answer-about-the-wrong-thing class as the R3 fabrication this ticket fixes, and it is "
-		+ "worse than an error because the answer looks right.")]
+		+ "environment-name. The finding said a blank one fell through to the DEFAULT registered environment; "
+		+ "measured, it does not - the resolver builds an empty EnvironmentSettings, finds no Uri and throws. "
+		+ "What this guard buys is the family's own sentence instead of the resolver's generic one.")]
 	public void DescribeProcess_ShouldRefuseABlankEnvironmentName() {
 		// Arrange
 		DescribeProcessTool tool = new(null, ConsoleLogger.Instance, _commandResolver);

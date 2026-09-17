@@ -21,7 +21,9 @@ namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 /// unknown-argument refusal, <c>FromError</c> (-1) for the two older checks. Those two are arguably
 /// miscategorised, since both are ordinary argument validation and -1 means "clio itself broke"; that is a
 /// deliberate non-change here, because correcting it alters behaviour pinned by existing fixtures and is
-/// wider than the ticket that prompted this extraction.
+/// wider than the ticket that prompted this extraction. It is tracked as ENG-99100, which also records that
+/// <c>describe-business-process</c> already answers 1 for the same check - so the family is split until that
+/// ticket lands, and the split is known rather than accidental.
 /// </para>
 /// <para>
 /// The null-<c>args</c> check deliberately stays at each call site rather than moving here: it has to

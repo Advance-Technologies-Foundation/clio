@@ -34,9 +34,7 @@ public class CreateBusinessProcessTool(
 	/// <summary>
 	/// Builds a business process from an inline JSON descriptor on the specified environment.
 	/// </summary>
-	/// <param name="environmentName">Registered clio environment name.</param>
-	/// <param name="descriptor">Inline JSON process descriptor.</param>
-	/// <param name="packageName">Optional package name that overrides the descriptor's <c>packageName</c>.</param>
+	/// <param name="args">The tool arguments; see <see cref="CreateBusinessProcessArgs"/>.</param>
 	/// <returns>The command execution result with the created schema identity in the log output.</returns>
 	[McpServerTool(Name = CreateBusinessProcessToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		 OpenWorld = false),

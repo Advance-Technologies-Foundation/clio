@@ -40,10 +40,6 @@ public sealed class ValidateProcessGraphTool {
 	/// </remarks>
 	internal const string NullArgsError = "args is required: the call carried no argument object. " + ValidArgsHint;
 
-	/// <summary>
-	/// Refusal for a call that names no graph. Says WHY there is nothing to validate and points at the tool
-	/// that does read a process, because the argument an agent actually reached for was <c>process-name</c>.
-	/// </summary>
 	/// <summary>Canonical field list for one entry of <c>nodes</c> (ENG-98566 review finding 2).</summary>
 	internal const string ValidNodeArgsHint = "Valid keys on a node: name, type.";
 
@@ -73,6 +69,10 @@ public sealed class ValidateProcessGraphTool {
 		["targetRef"] = "target"
 	};
 
+	/// <summary>
+	/// Refusal for a call that names no graph. Says WHY there is nothing to validate and points at the tool
+	/// that does read a process, because the argument an agent actually reached for was <c>process-name</c>.
+	/// </summary>
 	internal const string NoGraphSuppliedError =
 		"No graph was supplied: 'nodes' is absent or empty, so there is nothing to validate. This is a missing "
 		+ "argument, not a finding about a process - validate-process-graph checks a graph you DESCRIBE inline "
@@ -144,6 +144,19 @@ public sealed class ValidateProcessGraphTool {
 				return new ValidateProcessGraphResponse { Success = false, Error = entryError };
 			}
 
+			// Every other environment-requiring member of the family answers a blank environment-name with
+			// this exact sentence; this tool fell through to the resolver's generic message instead. NOTE the
+			// mechanism, because the first version of this comment got it wrong and three reviews repeated it:
+			// a blank name does NOT reach a default environment. ToolCommandResolver.ResolveSettingsAndKey
+			// builds an EMPTY EnvironmentSettings, finds no Uri and THROWS. The defect was the wording, not
+			// the targeting - and until the catch below learned about EnvironmentResolutionException that
+			// throw arrived wrapped in a sentence about the caller's graph JSON.
+			if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
+				return new ValidateProcessGraphResponse {
+					Success = false, Error = ProcessTargetArguments.MissingEnvironmentError
+				};
+			}
+
 			IRequiredPackageChecker checker = _commandResolver.Resolve<IRequiredPackageChecker>(
 				new EnvironmentOptions { Environment = args.EnvironmentName });
 			checker.EnsureRequirements(args);
@@ -178,6 +191,16 @@ public sealed class ValidateProcessGraphTool {
 				Error = ex.Message
 			};
 		}
+		catch (EnvironmentResolutionException ex) {
+			// EnvironmentResolutionException derives from Exception, NOT from InvalidOperationException, so
+			// before this arm existed every unknown or unresolvable environment fell through to the catch-all
+			// below and came back as "validate-process-graph failed: Environment 'x' was not found.. Expected
+			// args: {nodes:[...]}" - an environment error wearing a graph-JSON example. That is the same
+			// blames-the-caller's-graph failure this ticket exists to remove, on its commonest path.
+			return new ValidateProcessGraphResponse {
+				Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message)
+			};
+		}
 		catch (InvalidOperationException ex) {
 			return new ValidateProcessGraphResponse {
 				Success = false,
@@ -187,7 +210,7 @@ public sealed class ValidateProcessGraphTool {
 		catch (Exception ex) {
 			return new ValidateProcessGraphResponse {
 				Success = false,
-				Error = $"validate-process-graph failed: {ex.Message}. Expected args: " +
+				Error = $"validate-process-graph failed: {SensitiveErrorTextRedactor.Redact(ex.Message)}. Expected args: " +
 					"{\"nodes\":[{\"name\":\"s\",\"type\":\"startEvent\"}],\"edges\":[{\"source\":\"s\",\"target\":\"r\",\"flow-kind\":\"sequence\"}]}."
 			};
 		}

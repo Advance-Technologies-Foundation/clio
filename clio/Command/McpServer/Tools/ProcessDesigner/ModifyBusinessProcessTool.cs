@@ -34,9 +34,7 @@ public class ModifyBusinessProcessTool(
 	/// <summary>
 	/// Applies an inline JSON operations array to an existing process (identified by name or uid).
 	/// </summary>
-	/// <param name="environmentName">Registered clio environment name.</param>
-	/// <param name="processName">Process code (schema Name) to edit. Provide this or <paramref name="processUid"/>.</param>
-	/// <param name="processUid">Process schema UId to edit. Provide this or <paramref name="processName"/>.</param>
+	/// <param name="args">The tool arguments; see <see cref="ModifyBusinessProcessArgs"/>.</param>
 	/// <param name="operations">Inline JSON operations array.</param>
 	/// <returns>The command execution result with the edited schema identity in the log output.</returns>
 	[McpToolExecution(

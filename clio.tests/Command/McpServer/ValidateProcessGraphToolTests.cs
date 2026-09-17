@@ -722,14 +722,14 @@ public sealed class ValidateProcessGraphToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("When the requested environment is unknown the resolver throws InvalidOperationException; the tool surfaces that message as success=false and does not validate the graph.")]
+	[Description("When the requested environment is unknown the resolver throws EnvironmentResolutionException - which derives from Exception, NOT from InvalidOperationException. The tool surfaces that message verbatim. Before the dedicated catch arm existed this fell through to the catch-all and came back as \"validate-process-graph failed: ... Expected args: {nodes:[...]}\" - an environment error wearing a graph-JSON example, which is the blames-the-caller failure this ticket exists to remove. The old test threw InvalidOperationException and so could never see it.")]
 	public void Validate_ShouldReturnFailureAndSkipValidation_WhenEnvironmentIsUnknown() {
 		// Arrange
 		IProcessGraphValidator validator = Substitute.For<IProcessGraphValidator>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		const string message = "Environment 'ghost' was not found.";
 		resolver.Resolve<IRequiredPackageChecker>(Arg.Any<EnvironmentOptions>())
-			.Returns(_ => throw new InvalidOperationException(message));
+			.Returns(_ => throw new EnvironmentResolutionException(message));
 		ValidateProcessGraphTool tool = new(validator, resolver);
 
 		// Act
@@ -1021,5 +1021,25 @@ public sealed class ValidateProcessGraphToolTests {
 		// Assert
 		response.Success.Should().BeTrue(because: "the entry guards must not refuse a correct graph");
 		response.HasErrors.Should().BeFalse(because: "this graph violates no connection rule");
+	}
+	[Test]
+	[Category("Unit")]
+	[Description("Final-gate finding: a blank environment-name is answered with the family's own sentence "
+		+ "rather than the resolver's generic one. The mechanism is worth stating because three reviews got "
+		+ "it wrong: a blank name does NOT reach a default environment - the resolver builds an empty "
+		+ "EnvironmentSettings, finds no Uri and throws. What this guard fixes is the wording, not targeting.")]
+	public void Validate_ShouldRefuseABlankEnvironmentName() {
+		// Arrange
+		ValidateProcessGraphArgs args = new("   ", [N("s", "startEvent"), N("e", "endEvent")], []);
+
+		// Act
+		ValidateProcessGraphResponse response = _tool.Validate(args);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "no environment was named, so nothing could be validated");
+		response.Error.Should().Contain("environment-name is required",
+			because: "every other environment-requiring member of the family answers with this sentence");
+		_commandResolver.ReceivedCalls().Should().BeEmpty(
+			because: "the refusal must precede the environment resolve, as the comment in the tool promises");
 	}
 }

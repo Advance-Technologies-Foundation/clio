@@ -63,11 +63,15 @@ public sealed class DescribeProcessTool(
 			return CommandExecutionResult.FromValidationError(argumentError);
 		}
 
-		// ENG-98566 review finding 13. Without this, a blank environment-name resolves the DEFAULT registered
-		// environment and returns a real, well-formed graph read from a stand the caller never named - the
-		// same "authoritative answer about the wrong thing" class as the R3 fabrication this ticket fixes.
+		// ENG-98566 review finding 13, with its MECHANISM corrected. The finding said a blank environment-name
+		// resolves the DEFAULT registered environment and returns a graph from a stand the caller never named.
+		// It does not: ToolCommandResolver.ResolveSettingsAndKey takes its else branch, builds an EMPTY
+		// EnvironmentSettings, finds no Uri and THROWS. What this guard buys is the SPECIFIC sentence instead
+		// of the resolver's generic one - a smaller win than the finding claimed, and worth stating correctly
+		// because three separate reviews repeated the wrong version of it.
 		// FromValidationError rather than the siblings' FromError: this is caller-actionable input, and the
-		// two new guards above already answer with it, so describe stays internally consistent.
+		// two new guards above already answer with it, so describe stays internally consistent (ENG-99100
+		// tracks unifying the rest of the family).
 		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
 			return CommandExecutionResult.FromValidationError(
 				"environment-name is required and cannot be empty.");

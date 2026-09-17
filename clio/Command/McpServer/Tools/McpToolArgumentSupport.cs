@@ -153,6 +153,13 @@ internal static class McpToolArgumentSupport {
 	/// names case-insensitively. A capitalised spelling such as <c>EnvironmentName</c> still fails to bind -
 	/// the HYPHEN is what it gets wrong - so it lands in the overflow bag, and under an Ordinal comparer it
 	/// missed the rename hint and came back as a bare unknown key.
+	/// <para>
+	/// SCOPE: a tool that copies this map into its own dictionary must carry the comparer over. Several
+	/// theming and package tools build <c>new(EnvironmentNameAliases, StringComparer.Ordinal)</c> to add
+	/// their own entries, which DISCARDS this comparer - so they still answer a capitalised spelling with a
+	/// bare unknown-key list. Not a regression (they were always Ordinal) and out of this ticket's scope,
+	/// but do not read this remark as saying the whole surface is covered.
+	/// </para>
 	/// </remarks>
 	public static readonly IReadOnlyDictionary<string, string> EnvironmentNameAliases =
 		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
@@ -220,7 +227,14 @@ internal static class McpToolArgumentSupport {
 	/// </summary>
 	/// <param name="key">The raw key as the caller spelled it.</param>
 	public static string DescribeCallerKey(string key) =>
-		Clio.Common.TextUtilities.SanitizeForDisplay(key ?? string.Empty, MaxEchoedKeyLength);
+		// The quote characters are stripped, not escaped: callers render this inside '...' or "..." framing,
+		// and a key carrying the closing quote would otherwise terminate it and continue as prose in
+		// server-authored text that reaches the hosting agent's transcript. SanitizeForDisplay deliberately
+		// leaves prose alone - it stops an invented LINE, not an invented sentence - so the quoting has to be
+		// made non-terminable here instead.
+		Clio.Common.TextUtilities.SanitizeForDisplay(key ?? string.Empty, MaxEchoedKeyLength)
+			.Replace("'", string.Empty)
+			.Replace("\"", string.Empty);
 
 	/// <summary>
 	/// Joins already-rendered caller-key fragments, capped at <see cref="MaxEchoedKeys"/> with an
@@ -233,10 +247,11 @@ internal static class McpToolArgumentSupport {
 	/// long rename list hide every unknown key, which is the half the caller cannot guess.
 	/// </para>
 	/// <para>
-	/// Note what is NOT a reason here: the neighbouring <c>McpToolErrorFilter.DescribeCallerKeys</c> also
-	/// cites a regex pass per redaction pattern, which is true of that sink and NOT of this one - this
-	/// text goes into <c>CommandExecutionResult.FromValidationError</c> or a typed response's error field,
-	/// and neither is routed through <c>SensitiveErrorTextRedactor</c>.
+	/// The redaction cost belongs to the CALLER, not to this method: since ENG-98566 both sinks share this
+	/// join, and only the filter's own path runs a redaction pass. The overflow-bag path lands in
+	/// <c>CommandExecutionResult.FromValidationError</c> or a typed response's error field, neither of which
+	/// is routed through <c>SensitiveErrorTextRedactor</c> - correctly, since its content is caller-authored
+	/// key names rather than server-derived text.
 	/// </para>
 	/// </summary>
 	/// <param name="renderedKeys">Fragments produced from <see cref="DescribeCallerKey"/>.</param>

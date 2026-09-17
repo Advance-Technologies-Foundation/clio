@@ -27,7 +27,7 @@ namespace Clio.Tests.Command.McpServer;
 /// the BuildLegacyAliasError call from a tool leaves every assertion here green, because a declaration is
 /// not a call. That proposition belongs to
 /// <see cref="ProcessDesignerUnknownArgumentRefusalTests"/>, which exercises the other SEVEN tools through
-/// their real entry points - validate-process-graph's own behavioural guard tests live beside its other
+/// their real entry points (eight of the nine; validate-process-graph's own behavioural guard tests live beside its other
 /// cases in ValidateProcessGraphToolTests. This fixture is the tripwire for the declaration, not the oracle
 /// for the behaviour; saying "all eight" here would send the next reader to a file that does not hold the
 /// eighth.
@@ -56,7 +56,11 @@ public sealed class ProcessDesignerArgumentGuardTests {
 		typeof(ValidateProcessGraphArgs).Assembly
 			.GetTypes()
 			.Where(type => type.Namespace == ProcessDesignerNamespace
-				&& type.Name.EndsWith("Args", StringComparison.Ordinal))
+				// "Arg" as well as "Args": ProcessGraphNodeArg / ProcessGraphEdgeArg are the NESTED records
+				// review finding 2 gave bags to, and an "Args"-only filter could never see them - the same
+				// gap as finding 8, one level down.
+				&& (type.Name.EndsWith("Args", StringComparison.Ordinal)
+					|| type.Name.EndsWith("Arg", StringComparison.Ordinal)))
 			.Concat(FamilyMembersOutsideTheFolder)
 			.OrderBy(type => type.Name, StringComparer.Ordinal)
 			.ToList();
@@ -196,7 +200,7 @@ public sealed class ProcessDesignerArgumentGuardTests {
 	[Category("Unit")]
 	[Description("Every process-designer tool declares a non-blank NullArgsError, so a tool added to this "
 		+ "folder later cannot omit the decision about a null argument object. The behavioural half cannot be "
-		+ "reflective - the seven return shapes differ - so it lives in "
+		+ "reflective - the nine return shapes differ - so it lives in "
 		+ "ProcessDesignerUnknownArgumentRefusalTests; this is the declaration tripwire, the same split as "
 		+ "ValidArgsHint above.")]
 	public void EveryTool_ShouldDeclareANullArgumentRefusal() {
