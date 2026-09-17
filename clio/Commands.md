@@ -336,7 +336,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="add-schema"></a>
 - [`add-schema`](docs/commands/add-schema.md) - Create a schema file in a workspace package
 <a id="add-user-task"></a>
-- [`add-user-task`](docs/commands/add-user-task.md) - Create a user task schema in a workspace package, including unlimited-text outputs
+- [`add-user-task`](docs/commands/add-user-task.md) - Create a user task schema in a workspace package
 <a id="alm-deploy"></a>
 <a id="deploy"></a>
 - [`alm-deploy`](docs/commands/alm-deploy.md) - Deploy a package to Creatio, `deploy`
@@ -434,7 +434,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="modify-entity-schema-column"></a>
 - [`modify-entity-schema-column`](docs/commands/modify-entity-schema-column.md) - Add, modify, or remove a column in a remote Creatio entity schema
 <a id="modify-user-task-parameters"></a>
-- [`modify-user-task-parameters`](docs/commands/modify-user-task-parameters.md) - Add or remove parameters in a user task schema, including unlimited text
+- [`modify-user-task-parameters`](docs/commands/modify-user-task-parameters.md) - Add or remove parameters in a user task schema
 <a id="new-test-project"></a>
 <a id="create-test-project"></a>
 <a id="unit-test"></a>

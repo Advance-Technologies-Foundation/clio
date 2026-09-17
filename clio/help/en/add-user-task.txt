@@ -127,9 +127,10 @@ EXAMPLE
         create a user task, patch parameter direction in metadata.json, load
         the workspace package to the database, and rebuild MyPackage
 
+PARAMETER TYPES
+    Use type=Unlimited text (or MaxSizeText) for an unlimited-length string, such as an
+    ErrorMessage output. Text and String keep their existing plain-text type.
+    Example parameter: code=ErrorMessage;title=Error message;type=Unlimited text;direction=Out;resulting=true;serializable=true
+
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
-
-Use type=Unlimited text (or MaxSizeText) for an unlimited-length string, such as an
-ErrorMessage output. Text and String keep their existing plain-text type.
-Example parameter: code=ErrorMessage;title=Error message;type=Unlimited text;direction=Out;resulting=true;serializable=true

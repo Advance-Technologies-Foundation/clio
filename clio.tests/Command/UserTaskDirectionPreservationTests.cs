@@ -70,9 +70,12 @@ public sealed class UserTaskDirectionPreservationTests : BaseCommandTests<Modify
 	[TestCase(1, null, 1)]
 	[TestCase(2, null, 2)]
 	[TestCase(0, "Keep=Out", 1)]
+	[TestCase(1, null, 1, false)]
 	[Description("Preserves existing native directions across a DTO save, drops removed parameters and honors explicit overrides.")]
-	public void Modify_PreservesDirections(int originalDirection, string update, int expectedDirection) {
+	public void Modify_PreservesDirections(int originalDirection, string update, int expectedDirection, bool fsmEnabled = true) {
 		// Arrange
+		_packages.LoadPackagesToDb().Returns(fsmEnabled
+			? FileDesignModeLoadResult.Completed : FileDesignModeLoadResult.FileDesignModeDisabled);
 		Guid schemaUid = Guid.NewGuid();
 		FileSystem.AddFile(_metadataPath, new System.IO.Abstractions.TestingHelpers.MockFileData(
 			JsonSerializer.Serialize(new { MetaData = new { Schema = new { FJ1 = new[] {
@@ -89,7 +92,7 @@ public sealed class UserTaskDirectionPreservationTests : BaseCommandTests<Modify
 			});
 		ModifyUserTaskParametersOptions options = new() {
 			UserTaskName = "UsrTest", RemoveParameters = ["Remove"],
-			AddParameters = ["code=Added;title=Added;type=Unlimited text;direction=Out"],
+			AddParameters = ["code=Added;title=Added;type=Unlimited text" + (fsmEnabled ? ";direction=Out" : string.Empty)],
 			SetDirections = update is null ? [] : [update]
 		};
 
@@ -98,8 +101,13 @@ public sealed class UserTaskDirectionPreservationTests : BaseCommandTests<Modify
 		IReadOnlyDictionary<string, int> actual = _directions.ReadDirections("TestPackage", "UsrTest");
 
 		// Assert
-		result.Should().Be(0, because: "a valid parameter change must complete");
-		actual.Should().BeEquivalentTo(new Dictionary<string, int> { ["Keep"] = expectedDirection, ["Added"] = 1 },
+		result.Should().Be(fsmEnabled ? 0 : 1,
+			because: "a preserved direction must not be reported as applied when FSM import is unavailable, even without a requested direction edit");
+		Dictionary<string, int> expected = new() { ["Keep"] = expectedDirection };
+		if (fsmEnabled) {
+			expected["Added"] = 1;
+		}
+		actual.Should().BeEquivalentTo(expected,
 			because: "saving an unrelated parameter must preserve directions and explicit edits must take precedence");
 	}
 }

@@ -123,9 +123,10 @@ EXAMPLE
         -e docker_fix2
         add two parameters, remove two parameters, and rebuild the owning package
 
+PARAMETER TYPES
+    Use type=Unlimited text (or MaxSizeText) for an unlimited-length string, such as an
+    ErrorMessage output. Text and String keep their existing plain-text type.
+    Example parameter: code=ErrorMessage;title=Error message;type=Unlimited text;direction=Out;resulting=true;serializable=true
+
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
-
-Use type=Unlimited text (or MaxSizeText) for an unlimited-length string, such as an
-ErrorMessage output. Text and String keep their existing plain-text type.
-Example parameter: code=ErrorMessage;title=Error message;type=Unlimited text;direction=Out;resulting=true;serializable=true

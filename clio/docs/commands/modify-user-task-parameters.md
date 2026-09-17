@@ -28,6 +28,9 @@ Unique identifier.
 Existing explicit directions are read from the linked workspace before saving and
 restored for retained parameters. Removing and re-adding a parameter gives it the
 new definition's direction; `--set-direction` takes precedence over preserved values.
+This also makes FSM necessary for an unrelated edit when retained workspace parameters
+already have explicit directions. Clio reports a failed import rather than claiming
+those directions were preserved on the server.
 
 When parameter direction is present, added or changed, clio persists it through the
 workspace file design mode flow because the current Creatio SaveSchema

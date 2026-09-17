@@ -81,6 +81,7 @@ public class ModifyUserTaskParametersTool(
 				 Modifies parameters on an existing workspace-owned user task in Creatio.
 				 
 				 This tool can add parameters, remove parameters, or do both in one call.
+				 Preserving existing explicit directions also requires a linked FSM workspace, even when no direction change is requested.
 				 Because it can remove parameters from an existing schema, treat it as destructive.
 				 """)]
 	public CommandExecutionResult ModifyUserTaskParameters(
