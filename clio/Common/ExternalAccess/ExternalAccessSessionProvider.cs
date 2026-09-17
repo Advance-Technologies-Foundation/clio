@@ -28,6 +28,10 @@ public sealed class ExternalAccessSessionProvider : IExternalAccessSessionProvid
 	// this exact name, so a session without it would silently send the client back to a forms login.
 	internal const string AuthCookieName = ".ASPXAUTH";
 
+	// A relative Uri resolves against the base only when the base ends in a separator, so BuildBaseUri
+	// always appends one.
+	private const char UriPathSeparator = '/';
+
 	private const int ExchangeTimeoutSeconds = 60;
 
 	private readonly Func<CookieContainer, HttpMessageHandler> _handlerFactory;
@@ -181,6 +185,16 @@ public sealed class ExternalAccessSessionProvider : IExternalAccessSessionProvid
 			? DateTime.MinValue
 			: DateTimeOffset.FromUnixTimeSeconds((long)cookie.Expires).UtcDateTime);
 
+	private static CreatioSessionCookie ToSessionCookie(Cookie cookie, Uri baseUri) => new(
+		cookie.Name,
+		cookie.Value,
+		string.IsNullOrEmpty(cookie.Domain) ? baseUri.Host : cookie.Domain,
+		string.IsNullOrEmpty(cookie.Path) ? "/" : cookie.Path,
+		cookie.HttpOnly,
+		cookie.Secure,
+		sameSite: null,
+		cookie.Expires);
+
 	private static BrowserCookie ToBrowserCookie(CreatioSessionCookie cookie) => new(
 		cookie.Name,
 		cookie.Value,
@@ -271,7 +285,8 @@ public sealed class ExternalAccessSessionProvider : IExternalAccessSessionProvid
 	private static int GetTimeZoneOffsetMinutes() => -(int)DateTimeOffset.Now.Offset.TotalMinutes;
 
 	private static Uri BuildBaseUri(string environmentUri) {
-		if (!Uri.TryCreate(environmentUri.TrimEnd('/') + "/", UriKind.Absolute, out Uri baseUri)) {
+		if (!Uri.TryCreate(environmentUri.TrimEnd(UriPathSeparator) + UriPathSeparator, UriKind.Absolute,
+			out Uri baseUri)) {
 			throw new ExternalAccessLoginException($"'{environmentUri}' is not a valid absolute url.");
 		}
 		return baseUri;
@@ -309,13 +324,4 @@ public sealed class ExternalAccessSessionProvider : IExternalAccessSessionProvid
 		return true;
 	}
 
-	private static CreatioSessionCookie ToSessionCookie(Cookie cookie, Uri baseUri) => new(
-		cookie.Name,
-		cookie.Value,
-		string.IsNullOrEmpty(cookie.Domain) ? baseUri.Host : cookie.Domain,
-		string.IsNullOrEmpty(cookie.Path) ? "/" : cookie.Path,
-		cookie.HttpOnly,
-		cookie.Secure,
-		sameSite: null,
-		cookie.Expires);
 }

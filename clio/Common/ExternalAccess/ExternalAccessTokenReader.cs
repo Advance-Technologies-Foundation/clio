@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -76,7 +77,8 @@ public static class ExternalAccessTokenReader {
 	}
 
 	private static DateTimeOffset? ReadDate(JsonNode payload, string claim) =>
-		DateTimeOffset.TryParse(payload[claim]?.GetValue<string>(), out DateTimeOffset parsed)
+		DateTimeOffset.TryParse(payload[claim]?.GetValue<string>(), CultureInfo.InvariantCulture,
+			DateTimeStyles.None, out DateTimeOffset parsed)
 			? parsed
 			: null;
 
