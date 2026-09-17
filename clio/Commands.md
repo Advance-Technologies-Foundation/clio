@@ -1,4 +1,4 @@
-﻿# Clio Command Reference
+# Clio Command Reference
 
 Use `clio help` for the terminal overview and `clio <command> --help` for command details.
 
@@ -788,3 +788,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 `get-related-page-addon` and `create-related-page-addon` report `entitySchemaUId` as
 the base/root entity UId resolved by Creatio for the add-on, shared across replacing
 layers. A temporary designer schema or an individual replacing row is not that identity.
+
+<a id="enroll-sequence-participants"></a>
+
+Enroll explicit contacts through Creatio's native sequence service. See [enroll-sequence-participants](docs/commands/enroll-sequence-participants.md).

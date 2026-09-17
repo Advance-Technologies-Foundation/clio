@@ -288,6 +288,7 @@ internal sealed class CommandHelpCatalog {
 			"generate-process-model",
 			"get-entity-schema-column-properties",
 			"get-entity-schema-properties",
+			"enroll-sequence-participants",
 			"git-sync",
 			"listen",
 			"merge-creatio-artifact",

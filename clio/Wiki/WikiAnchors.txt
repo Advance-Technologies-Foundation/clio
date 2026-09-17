@@ -237,3 +237,4 @@ manage-user:manage-user
 manage-role:manage-role
 manage-access:manage-access
 manage-license:manage-license
+enroll-sequence-participants:enroll-sequence-participants

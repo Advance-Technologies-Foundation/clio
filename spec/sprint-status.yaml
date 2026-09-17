@@ -4080,3 +4080,9 @@ stories:
     depends_on:
       - story-eng-91853-gateways-and-flows-2
     blocks: []
+
+  - id: story-sequence-enrollment-1
+    status: in-progress
+    description: Native bounded enrollment for clio issue 1576
+    depends_on: []
+    blocks: []
