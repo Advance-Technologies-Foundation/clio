@@ -122,6 +122,18 @@ function Get-ToolDeclarations([string] $ToolFilePath) {
     return @{ Classes = @($classes | Select-Object -Unique); Literals = @($literals | Select-Object -Unique) }
 }
 
+# True when the fixture source names one of the tool classes declared in the changed file, or
+# contains one of its [McpServerTool(Name = ...)] literals - either is enough to select it.
+function Test-FixtureNamesDeclaration([string] $Source, $Declarations) {
+    foreach ($class in $Declarations.Classes) {
+        if ($Source -cmatch "\b$([regex]::Escape($class))\b") { return $true }
+    }
+    foreach ($literal in $Declarations.Literals) {
+        if ($Source.Contains('"' + $literal + '"')) { return $true }
+    }
+    return $false
+}
+
 function Select-FixturesForTool([string] $ToolFileRelative) {
     $toolFile = Join-Path $root $ToolFileRelative
     $selected = New-Object System.Collections.Generic.HashSet[string]
@@ -132,13 +144,7 @@ function Select-FixturesForTool([string] $ToolFileRelative) {
     if (Test-Path -LiteralPath $toolFile) {
         $decl = Get-ToolDeclarations $toolFile
         foreach ($name in $fixtureSources.Keys) {
-            $source = $fixtureSources[$name]
-            foreach ($class in $decl.Classes) {
-                if ($source -cmatch "\b$([regex]::Escape($class))\b") { [void]$selected.Add($name); break }
-            }
-            foreach ($literal in $decl.Literals) {
-                if ($source.Contains('"' + $literal + '"')) { [void]$selected.Add($name); break }
-            }
+            if (Test-FixtureNamesDeclaration $fixtureSources[$name] $decl) { [void]$selected.Add($name) }
         }
     }
     # A deleted tool file still selects fixtures by name (they will fail to compile, which is the point).
