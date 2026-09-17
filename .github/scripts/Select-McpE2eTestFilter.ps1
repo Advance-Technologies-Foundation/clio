@@ -162,12 +162,28 @@ function Select-FixturesForTool([string] $ToolFileRelative) {
 # An edge B -> A ("A consumes B") exists when A's identifier set contains a type name declared in B,
 # or when A consumes a type that B declares a base type of. Name matching over-approximates: an edge
 # may exist where the compiler sees none, which widens the selection and never narrows it.
+function Remove-NonCode([string] $Text) {
+    # Length-preserving: every character of a comment or literal becomes a space, except the line
+    # breaks, so offsets, line numbers and indentation are unchanged.
+    return $script:nonCode.Replace($Text, {
+        param($match)
+        $builder = New-Object System.Text.StringBuilder $match.Value.Length
+        foreach ($character in $match.Value.ToCharArray()) {
+            if ($character -eq "`n" -or $character -eq "`r") { [void]$builder.Append($character) }
+            else { [void]$builder.Append(' ') }
+        }
+        return $builder.ToString()
+    })
+}
+
 $graph = $null
 function Get-Graph() {
     if ($null -ne $script:graph) { return $script:graph }
     # A type declaration at the start of a line. Attributes are part of the match, so [Verb("x")]
     # belongs to the body of the options type it decorates.
-    $typeDeclaration = [regex] '(?m)^([ \t]*)(?:\[[^\]]*\]\s*)*(?:public|internal|private|protected|static|sealed|abstract|partial|readonly)[\w \t]*\b(class|record|interface|struct|enum)\s+([A-Za-z_]\w*)\b(?:<[^>{\r\n]*>)?[ \t]*(?::[ \t]*([^{\r\n]+))?'
+    # The base list may start on the following line - `class Foo\n    : IFoo` - so one line break is
+    # allowed before the colon. Any more would risk swallowing an unrelated `:` further down.
+    $typeDeclaration = [regex] '(?m)^([ \t]*)(?:\[[^\]]*\]\s*)*(?:public|internal|private|protected|static|sealed|abstract|partial|readonly)[\w \t]*\b(class|record|interface|struct|enum)\s+([A-Za-z_]\w*)\b(?:<[^>{\r\n]*>)?[ \t]*(?:\r?\n[ \t]*)?(?::[ \t]*([^{\r\n]+))?'
     $verbDeclaration = '\[\s*Verb\(\s*"([^"]+)"'
     # An identifier that is not preceded by a dot: `SysSettingsManager` counts, `task.Result` and
     # `options.Schema` do not. Member access through a common property name is what made the graph
@@ -183,15 +199,22 @@ function Get-Graph() {
     # `public static int Normalize(this Service value)`: the extension type is never named by the
     # caller, so the call site has to be routed through the type it extends.
     $extensionParameter = [regex] '\(\s*this\s+(?:ref\s+|in\s+|scoped\s+)*([A-Za-z_]\w*)'
-    # A raw string can contain anything, including a line that looks like a declaration.
-    $rawString = [regex] '(?s)""".*?"""'
+    # Everything that is not code: raw strings (the closing run matches the opening one), verbatim
+    # and ordinary strings, char literals, line and block comments. Structure - declarations, base
+    # lists, the parentheses of a registration call - is parsed on text where each of these has been
+    # replaced by spaces, so a bracket, a quote or a declaration written inside one cannot be read as
+    # syntax. Offsets and line breaks are preserved, so indentation and anchors still work.
+    # References are NOT read from the blanked text: a type named only in a comment adds an edge,
+    # which widens the selection and is the safe direction.
+    $script:nonCode = [regex] '("{3,})[\s\S]*?\1|@"(?:[^"]|"")*"|"(?:\\.|[^"\\\r\n])*"|''(?:\\.|[^''\\\r\n])*''|//[^\r\n]*|/\*[\s\S]*?\*/'
     # services.AddSingleton<IFoo, Foo>() - the one edge name matching cannot see, because a consumer
     # of IFoo never spells Foo out. Taken from the registration files only, and only as an exact pair.
     $registrationPair = [regex] 'Add(?:Singleton|Scoped|Transient|KeyedSingleton)<\s*(?:[\w.]*\.)?(\w+)\s*,\s*(?:[\w.]*\.)?(\w+)\s*>'
     # services.AddSingleton<ILogger>(ConsoleLogger.Instance) and the lambda form: one generic argument
     # and an instance or factory that names the implementation somewhere on the same line.
-    # Bounded to the statement, not to the line: the implementation can sit on a continuation line.
-    $registrationFactory = [regex] '(?s)Add(?:Singleton|Scoped|Transient|KeyedSingleton)<\s*(?:[\w.]*\.)?(\w+)\s*>\s*\((?!\s*\))[^;]{0,600};'
+    # Only the opening of the call: the argument is then read by matching parentheses, because a
+    # lambda body holds semicolons of its own and a literal can hold anything.
+    $registrationFactory = [regex] 'Add(?:Singleton|Scoped|Transient|KeyedSingleton)<\s*(?:[\w.]*\.)?(\w+)\s*>\s*\('
 
     $texts = @{}
     $productRoot = Join-Path $root $manifest.productSourceRoot
@@ -227,7 +250,7 @@ function Get-Graph() {
         $text = $texts[$relative]
         # Scan for declarations on a copy with raw-string contents blanked out, so a code sample
         # inside a literal cannot be read as the file's next top-level type. Offsets are preserved.
-        $scan = $rawString.Replace($text, { param($m) ' ' * $m.Value.Length })
+        $scan = Remove-NonCode $text
         $matches = @($typeDeclaration.Matches($scan))
         if ($matches.Count -eq 0) { $typesByFile[$relative] = @(); continue }
         $topIndent = ($matches | ForEach-Object { $_.Groups[1].Value.Length } | Measure-Object -Minimum).Minimum
@@ -326,7 +349,9 @@ function Get-Graph() {
     $registration = @($manifest.registrationFiles)
     foreach ($registrationFile in $registration) {
         if (-not $texts.ContainsKey($registrationFile)) { continue }
-        foreach ($m in $registrationPair.Matches($texts[$registrationFile])) {
+        # A `;` inside a literal would end the statement early and hide the implementation.
+        $registrationText = Remove-NonCode $texts[$registrationFile]
+        foreach ($m in $registrationPair.Matches($registrationText)) {
             $service = $m.Groups[1].Value
             $implementation = $m.Groups[2].Value
             if (-not $typeBody.ContainsKey($service) -or -not $typeBody.ContainsKey($implementation)) { continue }
@@ -336,10 +361,21 @@ function Get-Graph() {
         }
         # The factory form carries the implementation in the argument rather than in a second generic
         # parameter, so every known type named on that line is linked to the service.
-        foreach ($m in $registrationFactory.Matches($texts[$registrationFile])) {
+        foreach ($m in $registrationFactory.Matches($registrationText)) {
             $service = $m.Groups[1].Value
             if (-not $typeBody.ContainsKey($service) -or -not $consumers.ContainsKey($service)) { continue }
-            foreach ($t in [regex]::Matches($m.Value, '(?<![\w.])([A-Za-z_]\w*)')) {
+            $start = $m.Index + $m.Length
+            if ($start -ge $registrationText.Length -or $registrationText[$start] -eq ')') { continue }
+            $depth = 1
+            $cursor = $start
+            $limit = [Math]::Min($registrationText.Length, $start + 4000)
+            while ($cursor -lt $limit -and $depth -gt 0) {
+                $character = $registrationText[$cursor]
+                if ($character -eq '(') { $depth++ } elseif ($character -eq ')') { $depth-- }
+                $cursor++
+            }
+            $argument = $registrationText.Substring($start, $cursor - $start)
+            foreach ($t in [regex]::Matches($argument, '(?<![\w.])([A-Za-z_]\w*)')) {
                 $implementation = $t.Groups[1].Value
                 if ($implementation -eq $service -or -not $typeBody.ContainsKey($implementation)) { continue }
                 if (-not $consumers.ContainsKey($implementation)) { $consumers[$implementation] = New-Object System.Collections.Generic.HashSet[string] }

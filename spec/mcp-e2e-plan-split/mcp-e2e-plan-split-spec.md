@@ -121,10 +121,19 @@ Edges, all of them widening rather than narrowing:
   read to the end of the statement rather than to the end of the line. The factory form is what
   links a type that does not implement the interface itself.
 
-Two shapes make the per-type split unreliable, and both fall back rather than guess: a raw string is
-blanked out before the declaration scan, so a code sample inside a literal is not read as the next
-declaration, and a file whose first declaration is not its least-indented one is attributed whole to
-every type it declares.
+Parsing C# with regular expressions has known soft spots, so structure is never read from the raw
+file. One length-preserving pass blanks every raw string (the closing quote run has to match the
+opening one), verbatim and ordinary string, char literal, line comment and block comment, replacing
+each character with a space and keeping the line breaks. Declarations, base lists and the
+parentheses of a registration call are parsed on that text, so a bracket, a quote, a semicolon or a
+whole class written inside a comment or a literal cannot be read as syntax. *References* are still
+read from the raw text: a type named only in a comment adds an edge, which widens the selection and
+is the safe direction.
+
+Two further shapes are handled explicitly. A base list may start on the line after the declaration,
+as `clio/Common/System.cs` does. A file whose first declaration is not its least-indented one is
+attributed whole to every type it declares instead of split, because a nested type indented less
+than its outer type would otherwise swallow the outer body.
 
 Entry points found in a closure select fixtures two ways: an **MCP tool file** through rule 7, and a
 `[Verb("x")]` through the tool published under the same name (132 of 243 verbs are also MCP tool

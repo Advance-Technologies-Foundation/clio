@@ -369,6 +369,29 @@ internal sealed class McpE2eSelectionCoverageTests {
 	}
 
 	[Test]
+	[Description("The parser survives the C# shapes that break a line-oriented reading: a base list on the line after the declaration, a raw string delimited by four quotes whose content contains three, and a factory registration whose lambda holds a semicolon and a closing parenthesis in a literal and in a comment, and a class written inside a block comment.")]
+	public void Script_ShouldParseBaseListsRawStringsAndLiteralsThatSpanOrContainDelimiters() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+
+		// Act
+		JsonElement baseListOnNextLine = RunSelection(["clio/Common/MuService.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement longRawStringDelimiter = RunSelection(["clio/Common/NuDependency.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement semicolonInLiteral = RunSelection(["clio/Common/XiBackend.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement declarationInBlockComment = RunSelection(["clio/Common/OmicronDependency.cs"], includeNoEnvironment: false, repo.Root);
+
+		// Assert
+		baseListOnNextLine.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["MuToolE2ETests"],
+			because: "clio/Common/System.cs declares its interface on the following line, so a base list read only to the end of the declaration line loses a real implementation edge");
+		longRawStringDelimiter.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["NuToolE2ETests"],
+			because: "a four-quote raw string ends at four quotes, and stopping at the three inside it would leave a fake declaration visible and cut NuService's body short");
+		semicolonInLiteral.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["XiToolE2ETests"],
+			because: "neither the semicolon nor the closing parenthesis inside the lambda's string or its comment may end the registration statement before the implementation is named");
+		declarationInBlockComment.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["OmicronToolE2ETests"],
+			because: "a class written inside a block comment is not a declaration, and reading it as one would end OmicronService's body before the dependency it uses");
+	}
+
+	[Test]
 	[Description("A data asset runs the whole suite when any file naming it has an unknown blast radius, even when another file naming it resolved to fixtures first.")]
 	public void Script_ShouldSelectFullRun_WhenOneHolderOfADataAssetIsUnclassifiable() {
 		// Arrange
@@ -642,11 +665,39 @@ internal sealed class McpE2eSelectionCoverageTests {
 			// An extension on a type this repository does not declare: its callers cannot be listed.
 			Write("clio/Common/LambdaExtensions.cs",
 				"public static class LambdaExtensions {\n\tpublic static int Shorten(this string value) => 1;\n}");
+			// The base list starts on the line after the declaration, as clio/Common/System.cs does.
+			Write("clio/Command/McpServer/Tools/MuTool.cs",
+				"public sealed class MuTool : BaseTool {\n\tinternal const string ToolName = \"mu-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(IMuService service) { }\n}");
+			Write("clio/Common/IMuService.cs", "public interface IMuService { }");
+			Write("clio/Common/MuService.cs", "public sealed class MuService\n\t: IMuService\n{\n}");
+			// A raw string with four quotes wrapping content that itself contains three.
+			Write("clio/Common/NuService.cs",
+				"public sealed class NuService {\n\tconst string Sample = \"\"\"\"\ncontains \"\"\" inside\n" +
+				"public class NuFakeDeclaration { }\n\"\"\"\";\n\tpublic void Use(NuDependency dependency) { }\n}");
+			Write("clio/Common/NuDependency.cs", "public sealed class NuDependency { }");
+			Write("clio/Common/OmicronService.cs",
+				"public sealed class OmicronService {\n\t/*\npublic class OmicronFakeDeclaration { }\n\t*/\n" +
+				"\tpublic void Use(OmicronDependency dependency) { }\n}");
+			Write("clio/Common/OmicronDependency.cs", "public sealed class OmicronDependency { }");
+			Write("clio/Command/McpServer/Tools/OmicronTool.cs",
+				"public sealed class OmicronTool : BaseTool {\n\tinternal const string ToolName = \"omicron-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(OmicronService service) { }\n}");
+			Write("clio/Command/McpServer/Tools/NuTool.cs",
+				"public sealed class NuTool : BaseTool {\n\tinternal const string ToolName = \"nu-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(NuService service) { }\n}");
+			// A factory whose lambda body contains a string literal with a semicolon in it.
+			Write("clio/Command/McpServer/Tools/XiTool.cs",
+				"public sealed class XiTool : BaseTool {\n\tinternal const string ToolName = \"xi-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(IXiService service) { }\n}");
+			Write("clio/Common/IXiService.cs", "public interface IXiService { }");
+			Write("clio/Common/XiBackend.cs", "public sealed class XiBackend { }");
 			Write("clio/BindingsModule.cs",
 				"public static class BindingsModule { static void Register() {\n" +
 				"\t_ = typeof(RegisteredOnlyService);\n\tservices.AddSingleton<IBetaService, BetaService>();\n" +
 				"\tservices.AddSingleton<IDeltaService>(sp => new DeltaAdapter(new DeltaBackend()));\n" +
-				"\tservices.AddSingleton<IIotaService>(\n\t\tsp => new IotaAdapter(new IotaBackend()));\n} }");
+				"\tservices.AddSingleton<IIotaService>(\n\t\tsp => new IotaAdapter(new IotaBackend()));\n" +
+				"\tservices.AddSingleton<IXiService>(sp => {\n\t\tvar marker = \"a;b)\";\n\t\t// this comment contains )\n\t\treturn new XiBackend();\n\t});\n} }");
 			Write("clio.mcp.e2e/AlphaToolE2ETests.cs",
 				"public abstract class AlphaFixtureBase { }\n[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class AlphaToolE2ETests : AlphaFixtureBase {\n\t[Test] public void Works() => Call(AlphaTool.ToolName);\n}");
 			Write("clio.mcp.e2e/AlphaLiteralE2ETests.cs",
@@ -657,6 +708,14 @@ internal sealed class McpE2eSelectionCoverageTests {
 				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class UnrelatedE2ETests {\n\t[Test] public void Works() { }\n}");
 			Write("clio.mcp.e2e/BetaToolE2ETests.cs",
 				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class BetaToolE2ETests {\n\t[Test] public void Works() => Call(BetaTool.ToolName);\n}");
+			Write("clio.mcp.e2e/OmicronToolE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class OmicronToolE2ETests {\n\t[Test] public void Works() => Call(OmicronTool.ToolName);\n}");
+			Write("clio.mcp.e2e/MuToolE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class MuToolE2ETests {\n\t[Test] public void Works() => Call(MuTool.ToolName);\n}");
+			Write("clio.mcp.e2e/NuToolE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class NuToolE2ETests {\n\t[Test] public void Works() => Call(NuTool.ToolName);\n}");
+			Write("clio.mcp.e2e/XiToolE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class XiToolE2ETests {\n\t[Test] public void Works() => Call(XiTool.ToolName);\n}");
 			Write("clio.mcp.e2e/IotaToolE2ETests.cs",
 				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class IotaToolE2ETests {\n\t[Test] public void Works() => Call(IotaTool.ToolName);\n}");
 			Write("clio.mcp.e2e/KappaToolE2ETests.cs",
