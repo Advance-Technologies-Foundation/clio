@@ -446,3 +446,46 @@ whole consumer set. So the positional precedence is invisible and harmless.
 **The trigger is a condition, not a date.** It stops being harmless the moment either a FOURTH skip
 reason appears, or any consumer starts branching on which flag is set. The precedence is load-bearing
 from then on, and it will still be written down nowhere but the order of the returns.
+
+## DQ-24 — a constant mapped onto a NON-SCALAR parameter is accepted and does nothing
+
+Found while answering "is a collection-typed parameter supported?", after the review closed. Not
+sub-process-specific — it is `ProcessMappingService`, so it applies to any element parameter — but a
+sub-process element is where such a parameter arrives without anyone asking for it.
+
+**The shape.** You cannot DECLARE a collection parameter through this contract:
+`ProcessParameterService.NormalizeParameterTypeName` allows the scalar set plus `Lookup` and refuses
+entity collection, composite, binary and the rest by name. But a sub-process element mirrors the CALLED
+process's parameters, and the platform copies them whatever their type — so a callee that declares a
+collection puts one on the element. Three routes then answer differently:
+
+* `sourceElement` + `sourceElementParameter`, or `processParameter` — **refused**, by
+  `EnsureCompatibleTypes` ("incompatible data value types").
+* `expression` — the platform's own pre-save gate validates it against the target's declared type.
+* `value` — **accepted, stored, and inert.** `ProcessParameterValueValidator.ValidateConstantValue`
+  classifies any resolvable non-Lookup type as `ConstantKind.Scalar` and then converts only
+  int / decimal / double / bool / Guid, rejects DateTime outright, leaves string unconstrained, and says
+  of everything else: *"any other type is left to the runtime initializer"*. So the value is persisted as
+  a raw `ConstValue` string.
+
+**Why that is worse than it looks.** Nothing downstream catches it. The runtime transfer keys on the
+parameter NAME through `ProcessInstanceParametersDataWriter.CopyCurrentValue`, which resolves with
+`FindScalarParameterByName` — **scalar parameters only**, in both directions — and an unresolved name is
+skipped with no `else`, no throw and no log line. So the mapping saves green, describe reports the value,
+and the called process receives nothing. It is the exact silent-failure shape the rest of this contract
+converts into an error.
+
+**Decision.** Recorded, not fixed. The refusal is a one-line guard in `ValidateConstantValue` — reject a
+target whose type is neither Lookup nor a convertible scalar — but it is a package change, so it costs a
+cut, a rebundle, a re-pin and another review round, and nobody has yet met the state: it needs a callee
+that declares a collection parameter AND a caller who maps a constant onto it rather than being refused
+by the other two routes.
+
+**The trigger is a condition, not a date.** Fix it when either happens:
+
+1. someone reports a sub-process mapping that saves and then delivers nothing at run time — this is the
+   first thing to check, and the discriminator is the target parameter's `type` in describe being
+   anything outside the scalar set plus `Lookup`; or
+2. `NormalizeParameterTypeName` is ever widened beyond scalars and `Lookup`. Today the gap is reachable
+   only through a parameter INHERITED from a callee; widening that allow-list makes it reachable from a
+   descriptor the caller writes themselves, which is a different risk entirely.
