@@ -119,30 +119,11 @@ public sealed class UserTaskPageScaffolder(IFileSystem files) : IUserTaskPageSca
 			.Any(p => files.Directory.Exists(files.Path.Combine(p, "Schemas", options.PageName)))) {
 			throw new InvalidOperationException("The page name already exists in the workspace; existing pages are never overwritten.");
 		}
-		JsonArray parameters = task["FJ1"]?.AsArray() ?? throw new InvalidOperationException("Task parameter metadata is missing.");
-		string[] inputs = parameters.Where(p => IsInput(p)).Select(p => p["A2"].GetValue<string>()).ToArray();
-		foreach (string name in inputs) { ValidateName(name, "parameter name"); }
-		if (inputs.Any(name => name is "UserTaskContainer" or "EditorsContainer")) {
-			throw new InvalidOperationException("An input parameter name conflicts with a Classic page layout container.");
-		}
-		if (inputs.Distinct(StringComparer.Ordinal).Count() != inputs.Length) {
-			throw new InvalidOperationException("Parameter names must be unique.");
-		}
+		string[] inputs = ReadInputNames(task);
 		string taskResourcePath = files.Path.Combine(packagePath, "Resources", taskName + ".ProcessUserTask", "resource." + culture + ".xml");
 		XDocument taskResources = files.File.Exists(taskResourcePath) ? ReadXml(files.File.ReadAllText(taskResourcePath)) : NewResources(culture);
 		XElement taskItems = GetItems(taskResources);
-		bool hasIcons = false;
-		foreach ((string name, string path) in new[] { ("SmallSvgImage", options.SmallIconPath), ("LargeSvgImage", options.LargeIconPath), ("TitleSvgImage", options.TitleIconPath) }) {
-			if (string.IsNullOrWhiteSpace(path)) { continue; }
-			if (files.FileInfo.New(path).Length > 1024 * 1024) { throw new ArgumentException("An SVG icon must be at most 1 MiB."); }
-			byte[] bytes = files.File.ReadAllBytes(path);
-			ValidateSvg(bytes);
-			XElement item = taskItems.Elements("Item").SingleOrDefault(i => (string)i.Attribute("Name") == name);
-			item?.Remove();
-			taskItems.Add(new XElement("Item", new XAttribute("Name", name), new XAttribute("Type", "Image"),
-				new XAttribute("ContentType", "Data"), new XAttribute("FileExtension", ".svg"), new XAttribute("Value", Convert.ToBase64String(bytes))));
-			hasIcons = true;
-		}
+		bool hasIcons = ApplyIcons(taskItems, options);
 		string pageResourcePath = files.Path.Combine(packagePath, "Resources", options.PageName + ".ClientUnit", "resource." + culture + ".xml");
 		if (files.Directory.Exists(files.Path.GetDirectoryName(pageResourcePath))) {
 			throw new InvalidOperationException("Resources already exist for the requested page; they were preserved.");
@@ -175,6 +156,35 @@ public sealed class UserTaskPageScaffolder(IFileSystem files) : IUserTaskPageSca
 		files.File.WriteAllText(taskMetadataPath, taskRoot.ToJsonString(JsonOptions));
 		files.File.WriteAllText(matches[0], taskDescriptorRoot.ToJsonString(JsonOptions));
 		return files.Path.Combine(pagePath, options.PageName + ".js");
+	}
+
+	private static string[] ReadInputNames(JsonNode task) {
+		JsonArray parameters = task["FJ1"]?.AsArray() ?? throw new InvalidOperationException("Task parameter metadata is missing.");
+		string[] inputs = parameters.Where(p => IsInput(p)).Select(p => p["A2"].GetValue<string>()).ToArray();
+		foreach (string name in inputs) { ValidateName(name, "parameter name"); }
+		if (inputs.Any(name => name is "UserTaskContainer" or "EditorsContainer")) {
+			throw new InvalidOperationException("An input parameter name conflicts with a Classic page layout container.");
+		}
+		if (inputs.Distinct(StringComparer.Ordinal).Count() != inputs.Length) {
+			throw new InvalidOperationException("Parameter names must be unique.");
+		}
+		return inputs;
+	}
+
+	private bool ApplyIcons(XElement taskItems, CreateUserTaskPageOptions options) {
+		bool hasIcons = false;
+		foreach ((string name, string path) in new[] { ("SmallSvgImage", options.SmallIconPath), ("LargeSvgImage", options.LargeIconPath), ("TitleSvgImage", options.TitleIconPath) }) {
+			if (string.IsNullOrWhiteSpace(path)) { continue; }
+			if (files.FileInfo.New(path).Length > 1024 * 1024) { throw new ArgumentException("An SVG icon must be at most 1 MiB."); }
+			byte[] bytes = files.File.ReadAllBytes(path);
+			ValidateSvg(bytes);
+			XElement item = taskItems.Elements("Item").SingleOrDefault(i => (string)i.Attribute("Name") == name);
+			item?.Remove();
+			taskItems.Add(new XElement("Item", new XAttribute("Name", name), new XAttribute("Type", "Image"),
+				new XAttribute("ContentType", "Data"), new XAttribute("FileExtension", ".svg"), new XAttribute("Value", Convert.ToBase64String(bytes))));
+			hasIcons = true;
+		}
+		return hasIcons;
 	}
 
 	private static bool IsInput(JsonNode parameter) {
