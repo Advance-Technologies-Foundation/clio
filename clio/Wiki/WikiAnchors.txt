@@ -243,3 +243,5 @@ manage-license:manage-license
 enroll-sequence-participants:enroll-sequence-participants
 get-sequence-context:get-sequence-context
 execute-dataservice-batch:execute-dataservice-batch
+create-user-task-page:create-user-task-page
+register-process-element:register-process-element
