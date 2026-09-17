@@ -239,3 +239,4 @@ manage-access:manage-access
 manage-license:manage-license
 enroll-sequence-participants:enroll-sequence-participants
 get-sequence-context:get-sequence-context
+execute-dataservice-batch:execute-dataservice-batch
