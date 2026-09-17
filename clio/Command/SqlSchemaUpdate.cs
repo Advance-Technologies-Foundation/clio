@@ -100,7 +100,7 @@ public class SqlSchemaUpdateCommand : Command<SqlSchemaUpdateOptions> {
 				// carries that instead of reading as an observed rejection.
 				response = new SqlSchemaUpdateResponse {
 					Success = false,
-					Error = outcomeUnknown
+					Error = outcomeUnknown && !saveError.Contains(SchemaDesignerHelper.SaveOutcomeUnknownNote, StringComparison.Ordinal)
 						? $"{saveError} {SchemaDesignerHelper.SaveOutcomeUnknownNote}"
 						: saveError
 				};

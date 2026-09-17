@@ -13,7 +13,7 @@ namespace Clio.Mcp.E2E;
 
 /// <summary>
 /// End-to-end coverage for issue #1322: <c>create-sql-schema</c> invoked through <c>clio-run</c> against a
-/// <c>ScriptSchemaDesignerService</c> that answers with a body clio cannot parse must report a failure that
+/// <c>SqlScriptSchemaDesignerService</c> that answers with a body clio cannot parse must report a failure that
 /// names the service, the operation and the endpoint — never the bare Newtonsoft parser message the issue
 /// was filed about, and never the HTML of an error or login page.
 /// </summary>
@@ -34,7 +34,7 @@ public sealed class SqlSchemaCreateNonJsonResponseE2ETests {
 	[TestCase(SqlSchemaDesignerStubResponse.HtmlLoginPage, "HTML page instead of JSON",
 		TestName = "CreateSqlSchema_ReportsNamedFailure_WhenDesignerReturnsLoginPage")]
 	[Category("E2E")]
-	[Description("create-sql-schema run through clio-run reports a classified, service-named failure instead of the raw JSON parser message when ScriptSchemaDesignerService answers with an unusable body (issue #1322).")]
+	[Description("create-sql-schema run through clio-run reports a classified, service-named failure instead of the raw JSON parser message when SqlScriptSchemaDesignerService answers with an unusable body (issue #1322).")]
 	[AllureTag(SqlSchemaCreateTool.ToolName)]
 	[AllureName("create-sql-schema classifies an unusable designer response")]
 	public async Task ClioRun_ShouldReportClassifiedFailure_WhenDesignerResponseIsNotJson(
@@ -79,7 +79,8 @@ public sealed class SqlSchemaCreateNonJsonResponseE2ETests {
 						["args"] = new Dictionary<string, object?> {
 							["environment-name"] = EnvironmentKey,
 							["schema-name"] = "UsrIssue1322Probe",
-							["package-name"] = "Custom"
+							["package-name"] = "Custom",
+							["db-engine-type"] = 2
 						}
 					},
 					cancellationTokenSource.Token));
@@ -87,7 +88,7 @@ public sealed class SqlSchemaCreateNonJsonResponseE2ETests {
 
 			// Assert
 			AllureApi.Step("Assert the failure names the service and the operation", () =>
-				serialized.Should().Contain("ScriptSchemaDesignerService CreateNewSchema",
+				serialized.Should().Contain("SqlScriptSchemaDesignerService SaveSchema",
 					because: "the caller must learn which designer service and operation produced the unusable body"));
 			AllureApi.Step("Assert the failure classifies the response", () =>
 				serialized.Should().Contain(expectedClassification,
