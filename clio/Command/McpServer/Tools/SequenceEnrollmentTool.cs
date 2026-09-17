@@ -19,7 +19,7 @@ public sealed class SequenceEnrollmentTool(SequenceEnrollmentCommand command, IL
 		RequiresClientRequests = McpToolClientRequests.None, SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Enroll 1–100 explicit contacts through Creatio's native sequence service. Native eligibility, duplicates, capacity and activity creation apply. " +
 		"Does not activate a sequence. May start activities for an already active sequence. No automatic retry. Inspect completion, platform counts and readback; " +
-		"uncertain completion requires verification before resubmission. Added does not mean Active.")]
+		"uncertain completion requires verification before resubmission. Added does not mean Active. Read get-guidance name=sequences before sequence work.")]
 	public SequenceEnrollmentResult Enroll([Required] SequenceEnrollmentArgs args) {
 		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
 			throw new ArgumentException("environment-name is required.");

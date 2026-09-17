@@ -21,11 +21,17 @@ public sealed class DataServiceBatchToolE2ETests : McpContractFixtureBase {
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
 		// Act
 		var index = await context.Session.GetToolContractIndexAsync(context.CancellationTokenSource.Token);
+		var contractCall = await context.Session.CallToolAsync(ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> { ["tool-names"] = new[] { DataServiceBatchTool.ToolName } } }, context.CancellationTokenSource.Token);
+		var contract = EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractCall).Tools!.Single();
 		var result = await context.Session.CallToolAsync(DataServiceBatchTool.ToolName,
 			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> { ["environment-name"] = "unused", ["operations"] = new[] {
 				new Dictionary<string, object?> { ["operation"] = "delete", ["schema-name"] = "Contact", ["record-id"] = "invalid" }
 			}} }, context.CancellationTokenSource.Token);
 		// Assert
+		contract.PreferredFlow.Tools.Should().Contain(ClioRunTool.ToolName, because: "live discovery must prefer the canonical executor");
+		contract.InputSchema.Properties.Single(field => field.Name == "operations").Description.Should().Contain("data-value-type:",
+			because: "live discovery must explain typed nested values");
 		index.Should().ContainSingle(item => item.Name == DataServiceBatchTool.ToolName, because: "batch writes must be discoverable")
 			.Which.Destructive.Should().BeTrue(because: "the native request can change records");
 		result.IsError.Should().BeTrue(because: "malformed targeting must fail before a write");

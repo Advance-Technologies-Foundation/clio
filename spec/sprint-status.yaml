@@ -4104,3 +4104,9 @@ stories:
     description: Safe data-write diagnostics for clio issue 1578
     depends_on: []
     blocks: []
+
+  - id: story-sequence-workflow-acceptance-1
+    status: in-progress
+    description: Sequence workflow and efficiency acceptance for clio issue 1580
+    depends_on: []
+    blocks: []
