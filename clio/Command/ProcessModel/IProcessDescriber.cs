@@ -1072,6 +1072,11 @@ public sealed class DescribedSubProcess {
 	/// leaves the element stale and <c>false</c> here is real evidence a re-synchronization is owed. For an
 	/// UNCOMPILED process describe falls back to the design instance, which converges as it loads, and <c>true</c>
 	/// then says nothing. Measured on a stand 2026-09-17.</para>
+	/// <para>It does NOT see a CAPTION. The element keeps its own copy of each parameter's caption, so a callee
+	/// that renames only the caption leaves this <c>true</c> while the two texts differ - measured. That is the
+	/// right half to be sensitive to, because the runtime binds by CODE and a caption has no effect on delivery;
+	/// but <c>true</c> means "the element carries every parameter the callee declares", NOT "the element matches
+	/// the callee".</para>
 	/// </summary>
 	[JsonPropertyName("inSync")]
 	public bool? InSync { get; set; }

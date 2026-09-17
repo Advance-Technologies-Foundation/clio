@@ -531,10 +531,11 @@ mapping.
 card "shows the NEW name and an intact mapping, because rendering the card re-synchronizes it". That
 conflates two different renames, and the stated cause is not the operative one:
 
-| What was renamed on the callee | What the caller's card shows | Misleading? |
-|---|---|---|
-| the parameter CODE — the rename that breaks runtime delivery | the SAME caption, mapping intact, nothing marked | YES, and this is F2 |
-| the parameter CAPTION | the NEW caption, and the mapping row EMPTY | no — an unmapped required input is a signal |
+| Renamed on the callee | `inSync` | Caller's STORED mapping | What the card shows | Runtime |
+|---|---|---|---|---|
+| caption only | `true` | intact | *not measured* | unaffected |
+| code only — the rename that breaks delivery | `false` | intact | SAME caption, mapping shown, nothing marked | **broken** |
+| code AND caption | `false` | **intact** | NEW caption, mapping row EMPTY | **broken** |
 
 The card renders the CAPTION and never the code, so it cannot display code staleness under any
 convergence behaviour. F2 does not depend on the design-instance question at all — the earlier write-up
@@ -542,10 +543,36 @@ reached the right conclusion from the wrong premise. In the state where the mapp
 the OLD caption; in the state where the name is new the mapping is empty. There is no state in which the
 card shows both a new name and an intact mapping.
 
-**Open, and it is not a footnote:** the caption-rename row above is a reading of the CARD. Whether the
-caller's STORED mapping survived that state was not measured. If it did not, a cosmetic edit on a callee
-destroys caller configuration — which nothing here predicts, because the element parameter and its source
-are paired through the schema's mapping row rather than by name. Asked of the test session. The saved schema — the one that runs — still carries the
+**The empty row is a FALSE ALARM, and this was the question worth asking.** I flagged the third row as
+possible silent data loss — a cosmetic callee edit destroying caller configuration — and asked for the
+SCHEMA rather than the card. It is benign: `describe` on the caller in exactly that state returns the
+parameter byte-identical to the healthy baseline (same `uid`, `source`, `value`, `valueDisplay`), so the
+mapping is present and the card simply fails to render it. The platform fact holds — the element
+parameter and its source are paired through the mapping row, not by name.
+
+So the card misleads in BOTH directions and neither is data loss: it reassures on a code-only rename and
+alarms without cause when the caption moves too.
+
+**One hypothesis fits all three rows** — the card pairs the caller's stored parameter to the callee's by
+CAPTION, so an unchanged caption matches and a changed one does not. **Inference, not measured.** It
+predicts the caption-only row would also render empty; that is the cheap check that confirms or kills it,
+and it is the one cell in the table still blank. It needs somebody SIGNED IN on the stand — the pass lost
+its Supervisor session to the 1.6.3.10 app restarts, and a session that will not type credentials into a
+login form is behaving correctly, not failing.
+
+**A separate thing the same pass established:** `inSync` does not see a CAPTION. The caller keeps its own
+copy and reports `true` while the callee's differs; only a code change flips it. That is the right half
+to be sensitive to — the runtime binds by code — but `inSync: true` is not "the element matches the
+callee", and the contract should not be read that way.
+
+**One correction is deliberately NOT applied, and this is the record of it.** The PACKAGE-side contract
+docblock (`DescribeContracts.DescribedSubProcess.InSync`) says "a callee that renamed or dropped a
+parameter leaves the element stale", which for a CAPTION rename is true of the element and false of the
+flag. Fixing one word there changes the shipped source, therefore the archive SHA, therefore all four
+pins — a rebundle and a version bump for a comment, and `RequiredPackageChecker` throws on a convergence
+refusal, so a casual bump strands a reviewer's clio against a stand that has not caught up. The
+clio-side contract and the tool description a caller actually reads are correct as of this commit. Apply
+the package word on the NEXT rebundle taken for a substantive reason. The saved schema — the one that runs — still carries the
 old name. So no read reveals the stale state: not the designer, not describe, not `inSync`, not the
 warning list.
 

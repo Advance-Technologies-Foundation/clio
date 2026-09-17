@@ -24,10 +24,26 @@ process renames or drops a parameter, and the answers are opposite:
   real Chrome. An earlier revision of this record predicted the reassurance from
   `SubProcessPropertiesPage.synchronizeActualSchemaParameters` and got the right answer for the wrong
   reason; the trap does not depend on whether the card converges.
-* a CAPTION rename is the opposite case and does NOT mislead: the card converges visibly - it picks up
-  the callee's new caption with no action on the caller, which is the design instance doing its job - and
-  it renders the mapping row EMPTY. A visibly unmapped required input is a signal, not a reassurance.
-  Whether the STORED mapping survived that state was not measured; the card is what was read.
+* the card misleads in BOTH directions, and neither is data loss. Measured 2026-09-17 at 1.6.3.10:
+
+  | Renamed on the callee | `inSync` | Caller's STORED mapping | The card | Runtime |
+  |---|---|---|---|---|
+  | caption only | `true` | intact | *not measured* | unaffected |
+  | code only | `false` | intact | old caption, mapping shown - looks healthy | **broken** |
+  | code AND caption | `false` | **intact** | new caption, mapping row rendered EMPTY | **broken** |
+
+  The third row is a FALSE ALARM: `describe` on the caller in exactly that state returns the parameter
+  byte-identical to its healthy baseline - same `uid`, same `source`, same `value`, same `valueDisplay` -
+  so the empty row is a rendering artefact and the mapping is really there. An earlier revision of this
+  record read the empty row as "a visible signal, not a reassurance"; it is neither.
+* one hypothesis fits all three rows - the card pairs the caller's stored parameter to the callee's by
+  CAPTION, so an unchanged caption matches and a changed one does not. **Inference, not measured.** It
+  predicts that the caption-only row would ALSO render empty, which is the cheap check that would confirm
+  or kill it.
+* `inSync` does not see a caption. The caller keeps its OWN copy of the caption and reports `true` while
+  the callee's differs - measured. Only a CODE change flips it, which is the right half to be sensitive
+  to, since the runtime binds by code; but do not read `inSync: true` as "the element matches the
+  callee".
 
 Either way the schema that RUNS is the saved one, and the runtime binds caller to callee by parameter
 NAME (`FindScalarParameterByName`), skipping an unmatched name with no exception and no log line.
