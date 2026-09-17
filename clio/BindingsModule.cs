@@ -1129,6 +1129,9 @@ public class BindingsModule {
 		services.AddTransient<FindEntitySchemaCommand>();
 		services.AddTransient<FindAppCommand>();
 		services.AddTransient<CreateUserTaskCommand>();
+		services.AddTransient<CreateUserTaskPageCommand>();
+		services.AddTransient<CreateUserTaskPageTool>();
+		services.AddTransient<IUserTaskPageScaffolder, UserTaskPageScaffolder>();
 		services.AddTransient<ModifyUserTaskParametersCommand>();
 		services.AddTransient<DeleteSchemaCommand>();
 		services.AddTransient<ExportSchemaCommand>();
