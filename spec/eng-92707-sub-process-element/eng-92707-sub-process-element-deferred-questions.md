@@ -889,6 +889,14 @@ radius: it reorders every element type, and the pre-configured page has the iden
 workaround is one extra call. Sizing and the decision belong to the owner, not to a fourteenth round
 started at the end of a day.
 
+**How to VERIFY a fix, written down now because the obvious way proves nothing.** Exercise the route that
+exposed it: one `create-business-process` call carrying a `changeData` value bound to
+`sourceElement: <sub-process element>` / `sourceElementParameter: <an Out parameter of the callee>`, with
+the sub-process element declared earlier in `elements[]`, and confirm it is no longer refused. Then the
+same shape against a PRE-CONFIGURED PAGE element, which has the identical defect and which a
+sub-process-only fix would leave broken. Do NOT verify through `setElement`: that path already works, it
+is the documented workaround, and a green result there says nothing about the build path.
+
 ## DQ-33 — AC-4: parity holds on every key but one, and that one is the platform's own doing
 
 V1 was unblocked by the owner building the manual side in the designer, so the diff is real and on
@@ -921,10 +929,19 @@ other places on both sides — the parameter's own `L8` and the resources — de
 `Ina: source=ConstValue, value="V1-CONST"` for both, the designer renders both, and V8 proved the clio
 form delivers at run time.
 
+* `ProcessSchemaMapping.Source` is a plain `{ get; set; }` — no lazy getter, no null guard
+  (`ProcessSchemaMapping.cs:46`). So `null` there is genuinely reachable, not theoretically so.
+
+**Both STORED forms are safe, and that is the point.** On disk `GT1` is present on BOTH sides: the
+designer writes an empty object `{}`, not an absent key. So neither persisted shape can produce the null
+that dereference would trip on. The shape that WOULD is one writing no object at all — which is precisely
+what suppressing `GT1` would produce. The difference between us and the designer is the object's
+CONTENTS; the risk lives in removing the object.
+
 **Decision: do not change it.** Suppressing `GT1` means not assigning through `SourceValue` — stepping off
 the platform API to hand-write metadata, on the exact field the platform dereferences unguarded during
-synchronization. That trades a cosmetic diff for a silent-failure risk, which is the wrong direction for
-this package.
+synchronization, and landing on the one shape neither side currently persists. That trades a cosmetic
+diff for a silent-failure risk, which is the wrong direction for this package.
 
 **What AC-4 gets, stated plainly rather than rounded to PASS.** Parity holds on `CK4`, `BL7`, `BN2`, `BP2`
 and the resources. Strict byte parity does NOT hold: `BK15.GT1` and `BL8` differ. Whether that meets "server
