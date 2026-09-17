@@ -4099,6 +4099,12 @@ stories:
     depends_on: []
     blocks: []
 
+  - id: story-data-write-diagnostics-1
+    status: in-progress
+    description: Safe data-write diagnostics for clio issue 1578
+    depends_on: []
+    blocks: []
+
   - id: story-sequence-package-portability-1
     status: in-progress
     description: Native sequence package portability for clio issue 1579
