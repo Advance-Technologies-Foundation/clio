@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
+using System.Threading;
 using Clio.Command;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.McpServer.Tools;
@@ -1105,6 +1106,92 @@ public sealed class MobileActionTargetProbeTests {
 		// the add-on read runs once per object, and re-resolving the client inside that loop would cost
 		// container work for nothing.
 		environment.Resolver.Received(1).Resolve<IAddonSchemaDesignerClient>(Arg.Any<EnvironmentOptions>());
+	}
+
+	// ── Concurrency (bounded per-object reads run at the same time) ────────────────────────────
+
+	[Test]
+	[Description("Six objects probed at once complete their per-object reads OUT OF ORDER (deliberately reversed via a delay), yet every object's own verdict and candidate land under ITS OWN key — concurrent completion order must never scramble which result belongs to which object.")]
+	public void Probe_ManyObjectTargets_CompleteOutOfOrder_EachResultLandsUnderItsOwnKey() {
+		// Arrange — six objects: even-indexed ones resolve cleanly, odd-indexed ones are Missing with their
+		// own distinct candidate page. The classify read for an EARLIER index sleeps LONGER and a LATER
+		// index returns immediately, so completion order is deliberately the reverse of probe order — if a
+		// result ever landed under the wrong slot, this reversal is what would surface it.
+		const int count = 6;
+		string[] names = [.. Enumerable.Range(0, count).Select(i => $"Object{i}")];
+		Guid[] entityUIds = [.. names.Select(_ => Guid.NewGuid())];
+		Guid[] candidatePageUIds = [.. names.Select(_ => Guid.NewGuid())];
+
+		EnvironmentStub environment = Environment(
+			Route(
+				Rows([.. Enumerable.Range(0, count).Where(i => i % 2 == 1)
+					.Select(i => PageRow($"{names[i]}_FormPage", WebRoot, uId: candidatePageUIds[i].ToString()))]),
+				Rows([.. Enumerable.Range(0, count).Select(i => EntityRow(names[i], uId: entityUIds[i].ToString()))])));
+		environment.AddonClient.GetSchema(Arg.Any<AddonGetRequestDto>()).Returns(callInfo => {
+			AddonGetRequestDto request = callInfo.Arg<AddonGetRequestDto>();
+			int index = Array.IndexOf(entityUIds, request.TargetSchemaUId);
+			bool isMissing = index % 2 == 1;
+			if (string.Equals(request.AddonName, "RelatedPage", StringComparison.Ordinal)) {
+				return new AddonSchemaDto {
+					MetaData = isMissing
+						? $"{{\"Pages\":[{{\"PageSchemaUId\":\"{candidatePageUIds[index]}\",\"IsDefault\":true}}]}}"
+						: "{\"Pages\":[]}"
+				};
+			}
+			Thread.Sleep((count - index) * 20);
+			return new AddonSchemaDto {
+				MetaData = isMissing ? "{\"Pages\":[]}" : "{\"Pages\":[{\"IsDefault\":true}]}"
+			};
+		});
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(environment, CreateRecordViewConfig(names));
+
+		// Assert
+		for (int i = 0; i < count; i++) {
+			bool isMissing = i % 2 == 1;
+			StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, names[i])
+				.Should().Be(isMissing ? ActionTargetState.Missing : ActionTargetState.Resolved,
+					because: $"'{names[i]}'s own verdict must land under its own key regardless of completion order");
+			CandidateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, names[i])
+				.Should().Be(isMissing ? $"{names[i]}_FormPage" : null,
+					because: $"'{names[i]}'s own candidate must never be swapped with a sibling's");
+		}
+		result.Note.Should().BeNullOrWhiteSpace(because: "every read succeeded, so there is nothing to caveat");
+	}
+
+	[Test]
+	[Description("One object's mobile-classification read throwing does not affect any other object's result — running the reads concurrently must not let one object's exception escape the parallel body and abort its siblings.")]
+	public void Probe_OneOfSeveralClassifyReadsThrows_SiblingResultsStayIntact() {
+		// Arrange — "Faulty"'s MobileRelatedPage read throws; "Healthy"'s resolves cleanly.
+		Guid faultyUId = Guid.NewGuid();
+		Guid healthyUId = Guid.NewGuid();
+		EnvironmentStub environment = Environment(
+			Route(Rows(), Rows(
+				EntityRow("Faulty", uId: faultyUId.ToString()), EntityRow("Healthy", uId: healthyUId.ToString()))));
+		environment.AddonClient.GetSchema(Arg.Any<AddonGetRequestDto>()).Returns(callInfo => {
+			AddonGetRequestDto request = callInfo.Arg<AddonGetRequestDto>();
+			if (!string.Equals(request.AddonName, "MobileRelatedPage", StringComparison.Ordinal)) {
+				return new AddonSchemaDto { MetaData = "{\"Pages\":[]}" };
+			}
+			if (request.TargetSchemaUId == faultyUId) {
+				throw new InvalidOperationException("boom");
+			}
+			return new AddonSchemaDto { MetaData = "{\"Pages\":[{\"IsDefault\":true}]}" };
+		});
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(environment, CreateRecordViewConfig("Faulty", "Healthy"));
+
+		// Assert
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "Faulty")
+			.Should().Be(ActionTargetState.Unknown,
+				because: "a throwing classify read fails open, never a guessed Missing or Resolved");
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "Healthy")
+			.Should().Be(ActionTargetState.Resolved,
+				because: "a sibling's throwing read must never affect this object's own successful classification");
+		result.ProbeOk.Should().BeTrue(
+			because: "the entity tier still answered — one object's classification degraded, not the whole tier");
 	}
 
 	[Test]

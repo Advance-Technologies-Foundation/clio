@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading.Tasks;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Common;
 using Newtonsoft.Json.Linq;
@@ -115,6 +116,19 @@ public static class MobileActionTargetProbe {
 	/// reporting the excess as <see cref="ActionTargetState.Unknown"/> (fail open) rather than verifying them.
 	/// </summary>
 	private const int MaxEntityAddonProbes = 32;
+
+	/// <summary>
+	/// Upper bound on how many of the per-object reads inside the <see cref="MaxEntityAddonProbes"/> budget
+	/// run AT THE SAME TIME, rather than one after another. The only existing precedent for concurrent reads
+	/// on the shared <see cref="IApplicationClient"/> (<c>EntitySchemaDependencyResolver.Resolve</c>) runs two
+	/// requests at once and documents why that is safe (<c>CreatioClientAdapter</c>'s
+	/// <c>Lazy&lt;CreatioClient&gt;</c> guarded by <c>ExecutionAndPublication</c>, <c>ReauthExecutor</c>
+	/// collapsing a parallel failure burst into one <c>Login</c>, <c>LoginDiagnostics</c> counting
+	/// <c>RequestsInFlight</c> with <c>Interlocked</c>) — proven at concurrency 2, not yet proven at the width
+	/// this constant introduces. Kept well under <see cref="MaxEntityAddonProbes"/> as a deliberate caution
+	/// pending a live-stand measurement, rather than running the whole budget wide open.
+	/// </summary>
+	private const int MaxEntityProbeParallelism = 8;
 
 	/// <summary>
 	/// The key one distinct action target is resolved under. Single-sourced so the probe that WRITES a
@@ -439,13 +453,24 @@ public static class MobileActionTargetProbe {
 		IAddonSchemaDesignerClient AddonClient);
 
 	/// <summary>
+	/// The per-object outcome of the CONCURRENT phase of <see cref="ResolveEntityTargets"/>: the mobile
+	/// classification plus, for a verified-missing object, the candidate web page UId (or the read failure that
+	/// stopped one being found). Written once per array slot from inside the parallel body and read back
+	/// sequentially afterwards — nothing else touches it, so no further synchronization is needed.
+	/// </summary>
+	private sealed record EntityProbeOutcome(
+		string Name, ActionTargetState State, Guid? CandidatePageUId, Exception CandidateFailure);
+
+	/// <summary>
 	/// Resolves every <see cref="KindEntityDefaultMobilePage"/> target: one batched <c>SysSchema</c> read for
 	/// the objects' base-row UIds, then one <c>MobileRelatedPage</c> add-on read per object (capped by
-	/// <see cref="MaxEntityAddonProbes"/>). That add-on is
+	/// <see cref="MaxEntityAddonProbes"/>, run concurrently up to <see cref="MaxEntityProbeParallelism"/> at a
+	/// time). That add-on is
 	/// what the Creatio Mobile app resolves for a create/update-record action, and it is the same add-on
 	/// <c>create-related-page-addon --schema-type mobile</c> writes at the end of a conversion. For the
-	/// objects verified missing, the candidate WEB page is resolved as one web add-on read per object plus
-	/// ONE batched name lookup for all of them (<see cref="ResolveCandidateNames"/>).
+	/// objects verified missing, the candidate WEB page is resolved as one web add-on read per object (also
+	/// concurrent, in the same pass) plus ONE batched name lookup for all of them
+	/// (<see cref="ResolveCandidateNames"/>).
 	/// </summary>
 	/// <returns>Whether the tier answered, and what limited it — see <see cref="EntityTierOutcome"/>.</returns>
 	private static EntityTierOutcome ResolveEntityTargets(
@@ -470,14 +495,11 @@ public static class MobileActionTargetProbe {
 		var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		bool truncated = ReadEntitySchemaRows(context, names, uIdByName, seenNames);
 
-		int candidateFailures = 0;
-		Exception firstCandidateFailure = null;
-		int budget = MaxEntityAddonProbes;
-		bool budgetExhausted = false;
-		// Verified-missing objects whose web add-on named a default page. The UIds are resolved to schema
-		// NAMES in one batched select after the loop (ResolveCandidateNames) instead of one by-UId round
-		// trip per object — the add-on read stays per object, the name lookup does not.
-		var pendingCandidates = new List<(string Name, Guid PageUId)>();
+		// Phase 1 (no reads, sequential): split by whether the object even HAS a row to probe. This is what
+		// decides which names compete for the budget, in the same first-seen order the sequential version
+		// walked `names` in, so the budget still consumes candidates in a deterministic, input-order sequence
+		// before any read — and therefore before any concurrency — enters the picture.
+		var toProbe = new List<(string Name, string EntityUId)>();
 		foreach (string name in names) {
 			if (!uIdByName.TryGetValue(name, out string entityUId)) {
 				// No rows at all: the object does not exist, so the action is dead — unless the read may have
@@ -488,28 +510,66 @@ public static class MobileActionTargetProbe {
 					seenNames.Contains(name) || truncated ? ActionTargetState.Unknown : ActionTargetState.Missing);
 				continue;
 			}
-			if (budget-- <= 0) {
-				// Fail open AND say so: an unasked target must not look like one the environment answered "no"
-				// to. Skipping the classify call here also skips the candidate read below it — a target never
-				// probed is never Missing, so it never enters the candidate resolution.
-				budgetExhausted = true;
+			toProbe.Add((name, entityUId));
+		}
+
+		bool budgetExhausted = toProbe.Count > MaxEntityAddonProbes;
+		List<(string Name, string EntityUId)> budgeted =
+			budgetExhausted ? toProbe.Take(MaxEntityAddonProbes).ToList() : toProbe;
+		if (budgetExhausted) {
+			// Fail open AND say so: an unasked target must not look like one the environment answered "no" to.
+			// Never entering the probe phase for these also skips their candidate read — a target never probed
+			// is never Missing, so it never enters candidate resolution.
+			foreach ((string name, _) in toProbe.Skip(MaxEntityAddonProbes)) {
 				Record(into, KindEntityDefaultMobilePage, name, ActionTargetState.Unknown);
-				continue;
 			}
-			ActionTargetState state = ClassifyEntityDefaultMobilePage(context, entityUId, packageUId);
-			// Candidate resolution runs ONLY for a verified-missing verdict: Unknown/Resolved need no candidate.
-			if (state == ActionTargetState.Missing) {
-				Guid? pageUId = ReadDefaultWebPageUId(context, entityUId, packageUId, out Exception failure);
-				if (failure is not null) {
-					candidateFailures++;
-					firstCandidateFailure ??= failure;
+		}
+
+		// Phase 2 (the reads, concurrent): each entry's classify-then-candidate sequence is independent of
+		// every other entry's, so it runs on its own task, bounded by MaxEntityProbeParallelism. Both
+		// ClassifyEntityDefaultMobilePage and ReadDefaultWebPageUId already fail open inside their own
+		// try/catch; the outer try/catch here is a second, structural guarantee that no single object's
+		// failure can escape the parallel body and take any other object's result down with it. Writing into
+		// a PRE-SIZED, per-index array — never a shared mutable collection — keeps the result order
+		// deterministic (byte-for-byte identical to the sequential version) no matter which read finishes
+		// first or slowest.
+		var outcomes = new EntityProbeOutcome[budgeted.Count];
+		Parallel.For(0, budgeted.Count,
+			new ParallelOptions { MaxDegreeOfParallelism = MaxEntityProbeParallelism },
+			i => {
+				(string name, string entityUId) = budgeted[i];
+				try {
+					ActionTargetState state = ClassifyEntityDefaultMobilePage(context, entityUId, packageUId);
+					Guid? candidatePageUId = null;
+					Exception candidateFailure = null;
+					// Candidate resolution runs ONLY for a verified-missing verdict: Unknown/Resolved need no
+					// candidate.
+					if (state == ActionTargetState.Missing) {
+						candidatePageUId =
+							ReadDefaultWebPageUId(context, entityUId, packageUId, out candidateFailure);
+					}
+					outcomes[i] = new EntityProbeOutcome(name, state, candidatePageUId, candidateFailure);
+				} catch (Exception) {
+					outcomes[i] = new EntityProbeOutcome(name, ActionTargetState.Unknown, null, null);
 				}
-				if (pageUId is not null) {
-					pendingCandidates.Add((name, pageUId.Value));
-				}
+			});
+
+		int candidateFailures = 0;
+		Exception firstCandidateFailure = null;
+		// Verified-missing objects whose web add-on named a default page. The UIds are resolved to schema
+		// NAMES in one batched select after the loop (ResolveCandidateNames) instead of one by-UId round
+		// trip per object — the add-on read stays per object, the name lookup does not.
+		var pendingCandidates = new List<(string Name, Guid PageUId)>();
+		foreach (EntityProbeOutcome outcome in outcomes) {
+			if (outcome.CandidateFailure is not null) {
+				candidateFailures++;
+				firstCandidateFailure ??= outcome.CandidateFailure;
+			}
+			if (outcome.CandidatePageUId is not null) {
+				pendingCandidates.Add((outcome.Name, outcome.CandidatePageUId.Value));
 			}
 			// Candidate stays null here; ResolveCandidateNames re-records the entries that resolve a name.
-			RecordEntityResolution(into, name, state, null);
+			RecordEntityResolution(into, outcome.Name, outcome.State, null);
 		}
 		ResolveCandidateNames(context, pendingCandidates, into, ref candidateFailures, ref firstCandidateFailure);
 		// A candidate-resolution failure never demotes the STATE (it was already settled above) and never
