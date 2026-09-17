@@ -14,6 +14,24 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public class UserTaskToolTests {
 
+	[TestCase("Unlimited text")]
+	[TestCase("MaxSizeText")]
+	[Description("The MCP serializer preserves unlimited-text type names and output direction for creation and modification.")]
+	[Category("Unit")]
+	public void ParameterDefinitions_Should_PreserveUnlimitedText(string type) {
+		// Arrange
+		UserTaskParameterArgs parameter = new("ErrorMessage", "Error message", type,
+			Direction: "Out", Resulting: true, Serializable: true);
+
+		// Act
+		IEnumerable<string> definitions = UserTaskToolSupport.SerializeParameterDefinitions([parameter]);
+
+		// Assert
+		definitions.Should().Equal(
+			[$"code=ErrorMessage;title=Error message;type={type};direction=Out;resulting=true;serializable=true"],
+			because: "both user-task tools use this serializer and must retain the native unlimited-text request");
+	}
+
 	[Test]
 	[Description("Resolves the create user task command for the requested environment and maps structured MCP parameters into command options.")]
 	[Category("Unit")]

@@ -553,6 +553,7 @@ internal sealed record UserTaskParameterTypeDefinition(int TypeId, string Icon);
 internal sealed record UserTaskParameterItemDefinition(string ParentParameterName, UserTaskParameterDto Parameter);
 
 internal static class UserTaskSchemaSupport {
+	private const string TextIcon = "data-type-text-icon.svg";
 
 	/// <summary>
 	/// Loads the workspace packages into the configuration database so that direction metadata written
@@ -608,6 +609,7 @@ internal static class UserTaskSchemaSupport {
 		"Unique identifier",
 		"Serializable list of composite values",
 		"Text",
+		"Unlimited text",
 		"Time"
 	];
 
@@ -631,8 +633,10 @@ internal static class UserTaskSchemaSupport {
 			["SerializableListOfCompositeValues"] = new(CompositeSerializableListTypeId, "data-type-other-icon.svg"),
 			["SerializableCompositeValueList"] = new(CompositeSerializableListTypeId, "data-type-other-icon.svg"),
 			["CompositeValueList"] = new(CompositeSerializableListTypeId, "data-type-other-icon.svg"),
-			["Text"] = new(1, "data-type-text-icon.svg"),
-			["String"] = new(1, "data-type-text-icon.svg"),
+			["Text"] = new(1, TextIcon),
+			["String"] = new(1, TextIcon),
+			["Unlimited text"] = new(29, TextIcon),
+			["MaxSizeText"] = new(29, TextIcon),
 			["Time"] = new(9, "data-type-time-icon.svg")
 		};
 
