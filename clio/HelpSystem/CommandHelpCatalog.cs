@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -288,6 +288,9 @@ internal sealed class CommandHelpCatalog {
 			"generate-process-model",
 			"get-entity-schema-column-properties",
 			"get-entity-schema-properties",
+			"enroll-sequence-participants",
+			"get-sequence-context",
+			"execute-dataservice-batch",
 			"git-sync",
 			"listen",
 			"merge-creatio-artifact",

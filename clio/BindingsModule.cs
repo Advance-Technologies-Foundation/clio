@@ -1,4 +1,4 @@
-﻿#pragma warning disable CLIO001 // This is DI class, warning not applicable
+#pragma warning disable CLIO001 // This is DI class, warning not applicable
 
 using System;
 using System.Collections.Generic;
@@ -1122,6 +1122,9 @@ public class BindingsModule {
 		services.AddTransient<ModifyEntitySchemaColumnCommand>();
 		services.AddTransient<GetEntitySchemaColumnPropertiesCommand>();
 		services.AddTransient<GetEntitySchemaPropertiesCommand>();
+		services.AddTransient<SequenceEnrollmentCommand>();
+		services.AddTransient<SequenceContextCommand>();
+		services.AddTransient<DataServiceBatchCommand>();
 		services.AddTransient<SetEntitySchemaPropertiesCommand>();
 		services.AddTransient<FindEntitySchemaCommand>();
 		services.AddTransient<FindAppCommand>();
