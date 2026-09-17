@@ -214,6 +214,9 @@ re-implementing the regexes in C#.
   the compiler would require, and it cannot see reflection at all. A fixture that exercises tool B
   but only names tool A is selected by changes to A. Reference the tool class (`XTool.ToolName`)
   from the fixture.
+- **A `#if false` region containing a type declaration would fabricate a type** and could cut the
+  enclosing type's body short. One file under `clio/` uses `#if` and no declaration sits inside such
+  a region; the guard's lexer-residue invariant does not cover preprocessor directives.
 - **13 MCP tools have no fixture** (`toolsWithoutFixtures`). Each forces a full run, because the
   detector cannot tell which tests would show the regression.
 - **Hidden per-session cost** is unaffected by the filter.
