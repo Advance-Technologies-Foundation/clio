@@ -268,6 +268,18 @@ function Get-Graph() {
             if (-not $consumers.ContainsKey($service)) { continue }
             foreach ($c in $consumers[$service]) { if ($c -ne $implementation) { [void]$consumers[$implementation].Add($c) } }
         }
+        # The factory form carries the implementation in the argument rather than in a second generic
+        # parameter, so every known type named on that line is linked to the service.
+        foreach ($m in $registrationFactory.Matches($texts[$registrationFile])) {
+            $service = $m.Groups[1].Value
+            if (-not $typeBody.ContainsKey($service) -or -not $consumers.ContainsKey($service)) { continue }
+            foreach ($t in [regex]::Matches($m.Value, '(?<![\w.])([A-Za-z_]\w*)')) {
+                $implementation = $t.Groups[1].Value
+                if ($implementation -eq $service -or -not $typeBody.ContainsKey($implementation)) { continue }
+                if (-not $consumers.ContainsKey($implementation)) { $consumers[$implementation] = New-Object System.Collections.Generic.HashSet[string] }
+                foreach ($c in $consumers[$service]) { if ($c -ne $implementation) { [void]$consumers[$implementation].Add($c) } }
+            }
+        }
     }
 
     # A type declared only in a registration file is never traversed through: every type is named

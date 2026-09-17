@@ -302,6 +302,7 @@ internal sealed class McpE2eSelectionCoverageTests {
 		JsonElement directToolConsumer = RunSelection(["clio/Command/AlphaService.cs"], includeNoEnvironment: false, repo.Root);
 		JsonElement indirectConsumer = RunSelection(["clio/Command/SharedHelper.cs"], includeNoEnvironment: false, repo.Root);
 		JsonElement registeredImplementation = RunSelection(["clio/Common/BetaService.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement factoryImplementation = RunSelection(["clio/Common/DeltaBackend.cs"], includeNoEnvironment: false, repo.Root);
 		JsonElement cliVerb = RunSelection(["clio/Command/GammaCommand.cs"], includeNoEnvironment: false, repo.Root);
 		JsonElement asset = RunSelection(["clio/Command/McpServer/Data/AlphaRules.json"], includeNoEnvironment: false, repo.Root);
 		JsonElement toolFile = RunSelection(["clio/Command/McpServer/Tools/AlphaTool.cs"], includeNoEnvironment: false, repo.Root);
@@ -315,6 +316,8 @@ internal sealed class McpE2eSelectionCoverageTests {
 			because: "SharedHelper is named by OtherCommand.cs as well, but following that consumer further reaches no other tool, so the old rule's full run was pure over-approximation");
 		registeredImplementation.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["BetaToolE2ETests"],
 			because: "BetaTool names only IBetaService, so the AddSingleton<IBetaService, BetaService> pair is the only edge that links the implementation to its coverage");
+		factoryImplementation.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["DeltaToolE2ETests"],
+			because: "DeltaBackend declares no interface, so the factory line in the composition root is the only thing that ties it to DeltaTool; without reading that line a change to it looks unreachable and skips the build entirely");
 		cliVerb.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["GammaCliE2ETests"],
 			because: "a command is reached by its verb string, so the fixture that spells the verb out is its only textual coverage link");
 		asset.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(alphaFixtures,
@@ -527,6 +530,15 @@ internal sealed class McpE2eSelectionCoverageTests {
 				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(IBetaService service) { }\n}");
 			Write("clio/Common/IBetaService.cs", "public interface IBetaService { }");
 			Write("clio/Common/BetaService.cs", "public sealed class BetaService : IBetaService { }");
+			// Registered through a factory. DeltaBackend declares no base list, so the
+			// implementation-to-interface edge cannot reach it and the factory line is the only
+			// thing tying it to the tool - the form 31 registrations in the real BindingsModule use.
+			Write("clio/Command/McpServer/Tools/DeltaTool.cs",
+				"public sealed class DeltaTool : BaseTool {\n\tinternal const string ToolName = \"delta-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(IDeltaService service) { }\n}");
+			Write("clio/Common/IDeltaService.cs", "public interface IDeltaService { }");
+			Write("clio/Common/DeltaAdapter.cs", "public sealed class DeltaAdapter : IDeltaService { }");
+			Write("clio/Common/DeltaBackend.cs", "public sealed class DeltaBackend { }");
 			// A CLI command reached by its verb string, the way the harness runs the executable.
 			Write("clio/Command/GammaCommand.cs",
 				"[Verb(\"gamma-run\")]\npublic sealed class GammaOptions { }\npublic sealed class GammaCommand { }");
@@ -534,7 +546,8 @@ internal sealed class McpE2eSelectionCoverageTests {
 			Write("clio/Command/McpServer/Data/AlphaRules.json", "{ }");
 			Write("clio/BindingsModule.cs",
 				"public static class BindingsModule { static void Register() {\n" +
-				"\t_ = typeof(RegisteredOnlyService);\n\tservices.AddSingleton<IBetaService, BetaService>();\n} }");
+				"\t_ = typeof(RegisteredOnlyService);\n\tservices.AddSingleton<IBetaService, BetaService>();\n" +
+				"\tservices.AddSingleton<IDeltaService>(sp => new DeltaAdapter(new DeltaBackend()));\n} }");
 			Write("clio.mcp.e2e/AlphaToolE2ETests.cs",
 				"public abstract class AlphaFixtureBase { }\n[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class AlphaToolE2ETests : AlphaFixtureBase {\n\t[Test] public void Works() => Call(AlphaTool.ToolName);\n}");
 			Write("clio.mcp.e2e/AlphaLiteralE2ETests.cs",
@@ -545,6 +558,8 @@ internal sealed class McpE2eSelectionCoverageTests {
 				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class UnrelatedE2ETests {\n\t[Test] public void Works() { }\n}");
 			Write("clio.mcp.e2e/BetaToolE2ETests.cs",
 				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class BetaToolE2ETests {\n\t[Test] public void Works() => Call(BetaTool.ToolName);\n}");
+			Write("clio.mcp.e2e/DeltaToolE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class DeltaToolE2ETests {\n\t[Test] public void Works() => Call(DeltaTool.ToolName);\n}");
 			Write("clio.mcp.e2e/GammaCliE2ETests.cs",
 				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class GammaCliE2ETests {\n\t[Test] public void Works() => RunCli(\"gamma-run\");\n}");
 			// Carries no McpE2E.* tier at all, like DownloadSysSettingFileE2ETests in the live tree.
