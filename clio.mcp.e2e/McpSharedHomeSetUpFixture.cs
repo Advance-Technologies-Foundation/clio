@@ -58,6 +58,7 @@ public sealed class McpSharedHomeSetUpFixture {
 			["root-path"] = Path.Combine(_sharedClioHome, "knowledge"),
 			["sources"] = new JsonObject()
 		};
+		SeedPlaceholderEnvironmentWhenNoneRegistered(root);
 		SuiteFeatureFlags.Enable(root, typeof(MobilePageConversionGuideTool));
 		File.WriteAllText(
 			_isolatedSettingsPath,
@@ -98,6 +99,34 @@ public sealed class McpSharedHomeSetUpFixture {
 		}
 		_sharedClioHome = null;
 		_isolatedSettingsPath = null;
+	}
+
+	/// <summary>
+	/// The NoEnvironment tier asserts the structured failure for an UNKNOWN environment name, and clio
+	/// only produces that failure when the settings bootstrap can serve environment tools at all, which
+	/// means at least one registered environment with a valid <c>ActiveEnvironmentKey</c>
+	/// (<c>SettingsBootstrapReport.CanExecuteEnvTools</c>). On a developer machine and on the TeamCity
+	/// agent the copied real settings satisfy that implicitly; on a clean GitHub-hosted runner there is
+	/// no settings file, the copy starts from <c>{}</c>, and every such assertion sees
+	/// "clio settings bootstrap is broken" instead (67 failures on the first hosted run). A loopback
+	/// discard-port placeholder keeps the tier's contract identical on every host without giving any
+	/// test a reachable stand.
+	/// </summary>
+	private static void SeedPlaceholderEnvironmentWhenNoneRegistered(JsonObject root) {
+		if (root["Environments"] is JsonObject { Count: > 0 }) {
+			return;
+		}
+		const string placeholderName = "mcp-e2e-placeholder";
+		root["Environments"] = new JsonObject {
+			[placeholderName] = new JsonObject {
+				["Uri"] = "http://127.0.0.1:9",
+				["Login"] = "placeholder",
+				["Password"] = "placeholder",
+				["IsNetCore"] = true,
+				["Safe"] = true
+			}
+		};
+		root["ActiveEnvironmentKey"] = placeholderName;
 	}
 
 	private static void ProtectDirectoryForCurrentUser(string path) {
