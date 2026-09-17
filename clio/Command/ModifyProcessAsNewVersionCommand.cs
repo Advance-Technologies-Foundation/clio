@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -37,6 +37,12 @@ public sealed class ModifyProcessAsNewVersionOptions : EnvironmentOptions {
 
 	/// <summary>The SAME inline JSON operations array <c>modify-business-process</c> takes; empty is legal and yields a plain snapshot.</summary>
 	public string OperationsJson { get; set; } = string.Empty;
+
+	/// <summary>
+	/// Says that re-drawing the diagram is intended, exactly as on <c>modify-business-process</c>. Asked here
+	/// too although the SOURCE is untouched, because the version is the one the author will open next.
+	/// </summary>
+	public bool ConfirmLayoutChange { get; set; }
 }
 
 /// <summary>
@@ -97,6 +103,11 @@ public sealed class ModifyProcessAsNewVersionService(
 		// An ABSENT operations array is a legal request — a version that is a pure snapshot of the source — so
 		// the empty case sends an empty array rather than being refused the way the in-place edit refuses it.
 		requestObject["operations"] = ParseOperations(request.OperationsJson);
+		if (request.ConfirmLayoutChange) {
+			// Only when asked for, and harmless against a server that has no such member: one that does not
+			// gate layout changes never refuses on them either.
+			requestObject["confirmLayoutChange"] = true;
+		}
 
 		// The SAME pre-check both sibling write paths run, and skipping it here was not a decision anyone made:
 		// this path takes the identical operations vocabulary, so an invented button or data-source name survives
@@ -184,6 +195,13 @@ public sealed class ModifyProcessAsNewVersionService(
 			message += $" {result.AppliedOperations} operation(s) had been applied to the version draft.";
 		}
 
+		// A layout refusal is a question rather than a fault, and this throw is where it leaves clio, so the
+		// part a caller has to relay travels with it: which elements move, and the one word that re-sends it.
+		if (result.LayoutChange != null) {
+			message += $" Affected elements: {string.Join(", ", result.LayoutChange.Elements ?? [])}."
+				+ " Re-send the same request with confirm-layout-change once the user has agreed.";
+		}
+
 		if (!string.IsNullOrWhiteSpace(result.VersionName) || !string.IsNullOrWhiteSpace(result.VersionSchemaUId)) {
 			message += $" The version '{result.VersionName}' (UId: {result.VersionSchemaUId}) WAS created and "
 				+ "still exists — a version cannot be deleted.";
@@ -262,6 +280,22 @@ public sealed class ModifyProcessAsNewVersionService(
 
 		[JsonPropertyName("warnings")]
 		public List<string>? Warnings { get; set; }
+
+		// Declared for the reason the two above are: an undeclared member is discarded silently, and this one
+		// carries the only actionable part of a layout refusal - which elements to show the user.
+		[JsonPropertyName("layoutChange")]
+		public LayoutChangeDto? LayoutChange { get; set; }
+	}
+
+	private sealed class LayoutChangeDto {
+		[JsonPropertyName("reason")]
+		public string? Reason { get; set; }
+
+		[JsonPropertyName("summary")]
+		public string? Summary { get; set; }
+
+		[JsonPropertyName("elements")]
+		public List<string>? Elements { get; set; }
 	}
 
 	#endregion
@@ -293,7 +327,7 @@ public class ModifyProcessAsNewVersionCommand(
 			ModifyProcessAsNewVersionResult result = modifyProcessAsNewVersionService.ModifyAsNewVersion(
 				options.Environment,
 				new ModifyProcessAsNewVersionRequest(options.ProcessName, options.ProcessUid, options.PackageName,
-					options.OperationsJson));
+					options.OperationsJson, options.ConfirmLayoutChange));
 			// The number is printed only when the environment reported one: in this feature's vocabulary 0 means
 			// the schema is a family ROOT, so a defaulted 0 standing in for an omitted field would state the
 			// opposite of what a new version is.
@@ -332,8 +366,12 @@ public class ModifyProcessAsNewVersionCommand(
 /// <param name="ProcessUid">Process schema UId of the source.</param>
 /// <param name="PackageName">Package the version is saved into; empty lets the platform choose.</param>
 /// <param name="OperationsJson">The JSON operations array content; empty yields a plain snapshot.</param>
+/// <param name="ConfirmLayoutChange">
+/// Says that re-drawing the diagram is intended; without it the server refuses such an edit and reports what it
+/// would have changed.
+/// </param>
 public sealed record ModifyProcessAsNewVersionRequest(string ProcessName, string ProcessUid, string PackageName,
-	string OperationsJson);
+	string OperationsJson, bool ConfirmLayoutChange = false);
 
 /// <summary>
 /// Structured result of saving a process as a new version.

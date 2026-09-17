@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Clio.Common;
@@ -89,7 +89,8 @@ public class ModifyProcessAsNewVersionTool(
 			ProcessName = args.ProcessName ?? string.Empty,
 			ProcessUid = args.ProcessUid ?? string.Empty,
 			PackageName = args.PackageName ?? string.Empty,
-			OperationsJson = args.Operations ?? string.Empty
+			OperationsJson = args.Operations ?? string.Empty,
+			ConfirmLayoutChange = args.ConfirmLayoutChange ?? false
 		};
 		// Same post-op note as the in-place edit: a saved version is interpreted and runs as-is once activated,
 		// so "saved" must not be read as "must be compiled" (ENG-95706).
@@ -137,4 +138,8 @@ public sealed record ModifyProcessAsNewVersionArgs(
 	[property: Description(
 		"Package the new version is saved into. Omit to let the platform choose; a version does not inherit the "
 		+ "root's package.")]
-	string? PackageName = null);
+	string? PackageName = null,
+
+	[property: JsonPropertyName("confirm-layout-change")]
+	[property: Description("Set ONLY after the user has agreed to have the diagram re-drawn - identical in meaning to modify-business-process's flag, and asked here too because the VERSION is the diagram they will open next. Leave it out the first time. Without it, edits that would re-draw the process rather than extend it are refused and no version is created: either the source diagram is not the one the builder lays out (arranged by hand, or drawn by an older version), or the edits change which elements sit above which. Shifting elements and inserting one between others never trigger it. The refusal names the elements affected: show the user that sentence and those names, get an explicit yes, then re-send the SAME request with this set.")]
+	bool? ConfirmLayoutChange = null);

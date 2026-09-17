@@ -23,6 +23,7 @@ public class ModifyBusinessProcessTool(
 	/// <param name="processName">Process code (schema Name) to edit. Provide this or <paramref name="processUid"/>.</param>
 	/// <param name="processUid">Process schema UId to edit. Provide this or <paramref name="processName"/>.</param>
 	/// <param name="operations">Inline JSON operations array.</param>
+	/// <param name="confirmLayoutChange">Agreement to have the diagram re-drawn, sent only on a re-try.</param>
 	/// <returns>The command execution result with the edited schema identity in the log output.</returns>
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -56,11 +57,10 @@ public class ModifyBusinessProcessTool(
 		 + "joined by two flows, ignoring a 'kind' would remove one you did not name. Strip those fields "
 		 + "before removing. The REFUSAL ships from CrtProcessBuilder 1.6.0.10; below it the extra fields "
 		 + "are accepted and silently dropped, so on an older environment stripping them is the whole "
-		 + "protection and there is no backstop to rely on), setFlow (with "
+		 + "protection), setFlow (with "
 		 + "'source', 'target' and 'kind', plus an optional 'label': changes an EXISTING flow's kind IN PLACE, "
-		 + "keeping its UId and its "
-		 + "position, which is what keeps branch precedence — a remove-and-add looks equivalent and silently "
-		 + "moves the branch to last), setFlowCondition (with 'source' and "
+		 + "keeping its UId and its position, which decides branch precedence"
+		 + "), setFlowCondition (with 'source' and "
 		 + "'target' naming an EXISTING flow, plus a non-empty 'condition' — and NOT a 'kind', which it does "
 		 + "not read and REFUSES from 1.6.0.11 (it resolves the flow by its endpoint pair, so an echoed kind "
 		 + "would be dropped while the edit landed on whichever flow that pair resolves to) — a boolean "
@@ -345,7 +345,8 @@ public class ModifyBusinessProcessTool(
 			Environment = args.EnvironmentName,
 			ProcessName = args.ProcessName ?? string.Empty,
 			ProcessUid = args.ProcessUid ?? string.Empty,
-			OperationsJson = args.Operations
+			OperationsJson = args.Operations,
+			ConfirmLayoutChange = args.ConfirmLayoutChange ?? false
 		};
 		// A business process edited by clio stays interpreted and runs as-is — editing it never needs
 		// compilation (clio cannot author a Script Task or an after-activity-save script, the only in-process
@@ -386,4 +387,8 @@ public sealed record ModifyBusinessProcessArgs(
 
 	[property: JsonPropertyName("process-uid")]
 	[property: Description("Process schema UId to edit; provide exactly one of process-name or process-uid.")]
-	string? ProcessUid = null);
+	string? ProcessUid = null,
+
+	[property: JsonPropertyName("confirm-layout-change")]
+	[property: Description("LEAVE IT OUT the first time: an edit that would RE-DRAW the diagram rather than extend it is refused unapplied, and the refusal says how to proceed.")]
+	bool? ConfirmLayoutChange = null);
