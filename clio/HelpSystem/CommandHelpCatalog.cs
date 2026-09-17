@@ -290,6 +290,7 @@ internal sealed class CommandHelpCatalog {
 			"get-entity-schema-properties",
 			"enroll-sequence-participants",
 			"get-sequence-context",
+			"execute-dataservice-batch",
 			"git-sync",
 			"listen",
 			"merge-creatio-artifact",

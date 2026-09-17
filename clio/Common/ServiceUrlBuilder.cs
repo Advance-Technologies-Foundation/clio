@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace Clio.Common;
@@ -329,7 +329,9 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// </summary>
 		DashboardsMigratorPing = 93,
 		/// <summary>Native filtered sequence participant enrollment.</summary>
-		SequenceParticipantBulkAdd = 94
+		SequenceParticipantBulkAdd = 94,
+		/// <summary>Native DataService batch writes.</summary>
+		BatchQuery = 95
 
 	}
 
@@ -366,6 +368,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.AdministrationRemoveFunctionalRole, "/rest/CreatioApiGateway/RemoveFunctionalRoleAssociation"},
 		{KnownRoute.AdministrationRedistributeRoleLicenses, "/rest/CreatioApiGateway/ScheduleRoleLicenseRedistribution"},
 		{KnownRoute.AdministrationInvalidateRightsCache, "/rest/CreatioApiGateway/InvalidateAdministrationRightsCache"},
+		{KnownRoute.BatchQuery, "DataService/json/SyncReply/BatchQuery"},
 		{KnownRoute.Select, "DataService/json/SyncReply/SelectQuery"},
 		{KnownRoute.Insert, "DataService/json/SyncReply/InsertQuery"},
 		{KnownRoute.Update, "DataService/json/SyncReply/UpdateQuery"},

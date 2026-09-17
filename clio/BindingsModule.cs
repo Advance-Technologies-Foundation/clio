@@ -1124,6 +1124,7 @@ public class BindingsModule {
 		services.AddTransient<GetEntitySchemaPropertiesCommand>();
 		services.AddTransient<SequenceEnrollmentCommand>();
 		services.AddTransient<SequenceContextCommand>();
+		services.AddTransient<DataServiceBatchCommand>();
 		services.AddTransient<SetEntitySchemaPropertiesCommand>();
 		services.AddTransient<FindEntitySchemaCommand>();
 		services.AddTransient<FindAppCommand>();
