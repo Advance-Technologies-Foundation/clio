@@ -163,17 +163,26 @@ place the state it needs exists.
 | Step | |
 |---|---|
 | 1 | Build a caller with a sub-process element on a callee declaring parameters `Alpha` and `Beta`, and map a value onto each. |
-| 2 | Make the caller resolve as a RUNTIME instance. **UNDER TEST — see the note below; do not spend a compile on the strength of this row.** |
+| 2 | **RUN the caller once.** Measured: that is what produces a runtime instance. Saving does not, and compiling does not. |
 | 3 | Remove `Beta` from the callee and save the callee. |
 | 4 | `describe-business-process` the CALLER. |
 
-Expected: the `subProcess` block reports `inSync: false` while the element still carries `Beta`. Then
+Expected: the element still carries `Beta`, and the read does NOT converge it.
+
+**`inSync` is the wrong instrument for this case and the original expectation was unreachable.** It is
+one-directional — it asks whether every parameter the CALLEE declares is present on the element — so
+removing `Beta` from the callee leaves `inSync` **`true`**, the element merely carrying an extra. Assert
+on the element's PARAMETER LIST still containing `Beta` instead. To exercise `inSync` itself, ADD a
+parameter to the callee rather than removing one; that is the direction it answers. Then
 `modify-business-process` with `subProcess: {resync: true}` and confirm the two predicates disagree in
 the way DQ-15 describes — `MirrorsCallee` is satisfied by the refreshed element while the report's
-`IsUnchanged` counts the `Removed` entry. A FAIL here is `inSync: true` on step 4, which would mean
-describe converged after all and DQ-27's correction is itself wrong.
+`IsUnchanged` counts the `Removed` entry. A FAIL here is `Beta` being ABSENT from the element on step 4, which would mean the read converged after
+all and DQ-27's correction is itself wrong.
 
-**Step 2 is disputed, 2026-09-17, and this row is the only INSTRUCTION affected — everything else that
+**RESOLVED 2026-09-17 by the stand run: it is the RUN.** The dispute and its reasoning are kept below
+because the reasoning was right and is worth reusing.
+
+**Step 2 was disputed, 2026-09-17, and this row was the only INSTRUCTION affected — everything else that
 says "compiled" is descriptive and is corrected in one pass once this is settled.** I wrote "COMPILE the
 caller" as the pivot. An interpreted process has nothing to compile, and every `inSync: false` reading so
 far was taken on a process that was never compiled. Our own `LoadForDescribe` agrees: its comment reads

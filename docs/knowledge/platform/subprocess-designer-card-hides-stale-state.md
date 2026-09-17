@@ -1,5 +1,5 @@
 ---
-description: A sub-process element stale after a callee parameter CODE rename is VISIBLE through describe (runtime instance, not converged), invisible to the modify path (design instance, converged), and unshowable by the designer card, which displays the CAPTION and never the code
+description: A sub-process element stale after a callee parameter CODE rename is visible through describe ONLY once the caller has been RUN (a runtime instance is not produced by saving or compiling), invisible to the modify path, invisible to inSync when the callee DROPPED a parameter, and unshowable by the designer card, which never displays a code
 applies-to:
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
 ticket: ENG-92707
@@ -10,10 +10,22 @@ date: 2026-09-17
 synchronization; a runtime-instance read does not. Which one you get decides what you see after a called
 process renames or drops a parameter, and the answers are opposite:
 
-* `describe-business-process` prefers the RUNTIME instance for a compiled process
-  (`ProcessSchemaRepository.LoadForDescribe`), so it reports the STALE parameter name and
-  `inSync: false`. **Measured on a stand, 2026-09-17.** For an uncompiled process there is no runtime
-  instance, it falls back to the design instance, and that one converges.
+* `describe-business-process` prefers the RUNTIME instance when the process HAS one
+  (`ProcessSchemaRepository.LoadForDescribe`), and then reports the STALE parameter name with
+  `inSync: false`. Without one it falls back to the design instance, which converges AS IT LOADS — the
+  read erases the drift it was called to show.
+* **What produces a runtime instance is RUNNING the process.** Measured 2026-09-17 with a control: the
+  same caller, same mappings, same re-synchronization, differing only in having been run, gave opposite
+  answers. Merely SAVING the schema does not — that read converged, while `pull-pkg` confirmed the stored
+  bytes still carried the dropped parameter, so the drift was real and describe hid it without persisting
+  its own convergence. **Neither does COMPILING**, and an earlier revision of this record said "compiled":
+  an interpreted process has nothing to compile, and every non-converging read taken on this stand was on
+  a process that never was. Do not compile to expose drift — on this stand a compile is what left the
+  environment not-ready past 600 seconds.
+* **`inSync` is ONE-DIRECTIONAL and a DROPPED parameter is invisible to it.** It asks whether every
+  parameter the CALLEE declares is present on the element: callee ADDS one → `false`; callee REMOVES one →
+  `true`, because the element merely carries an extra. Measured. A code RENAME reads as add-plus-remove
+  and does flip it. So `inSync` answers the rename case and says nothing about the drop.
 * the MODIFY path always takes the design instance (`ProcessModifyHandler` then `GetDesignInstance`),
   which converges before the package sees the schema - which is why the re-synchronization's own drift
   report is empty.
@@ -33,7 +45,7 @@ process renames or drops a parameter, and the answers are opposite:
 
   | Renamed on the callee | `inSync` | Caller's STORED mapping | The card | Runtime |
   |---|---|---|---|---|
-  | caption only | `true` **M10** | all printed fields identical to baseline **M10** | *not read* | unaffected **I** |
+  | caption only | `true` **M12** | all printed fields identical to baseline **M10** | NEW caption, value KEPT **M12** | unaffected **I** |
   | code only | `false` **M07** | *not read* - intact **I** | old caption, mapping shown, looks healthy **M10** | **broken M07** (3x) |
   | code AND caption | `false` **M10** | byte-identical to baseline **M10** | new caption, mapping row EMPTY **M10** | **broken I** |
 
@@ -46,10 +58,10 @@ process renames or drops a parameter, and the answers are opposite:
   happened in the code-only state during the 1.6.3.10 pass. They are real measurements against an older
   build, which is not the same claim as "measured here" - and a table headed with one version is exactly
   how the older reading gets cited as the newer one later.
-* one hypothesis fits all three rows - the card pairs the caller's stored parameter to the callee's by
-  CAPTION, so an unchanged caption matches and a changed one does not. **Inference, not measured.** It
-  predicts that the caption-only row would ALSO render empty, which is the cheap check that would confirm
-  or kill it.
+* that hypothesis is DEAD. It said the card pairs by CAPTION, and predicted the caption-only row would
+  render empty too. Measured 2026-09-17: a caption-only rename shows the NEW caption and KEEPS the mapped
+  value. **No mechanism is established for why the code+caption row empties** — do not reason forward from
+  one, and do not replace this with a third guess. Three readings, no model.
 * `inSync` does not see a caption. The caller keeps its OWN copy of the caption and reports `true` while
   the callee's differs - measured. Only a CODE change flips it, which is the right half to be sensitive
   to, since the runtime binds by code; but do not read `inSync: true` as "the element matches the

@@ -811,3 +811,80 @@ answer here too.
 
 **Neither is scheduled.** Both are warnings-not-refusals, both are cheap, and both belong to whoever next
 opens this applier — not to a thirteenth review round on a branch that is already green.
+
+## DQ-31 — the stand run settled the mechanism, and corrected me three times doing it
+
+Full run 2026-09-17 at CrtProcessBuilder **1.6.3.12**. Report:
+`C:\Projects\eng92707-manual-test\eng-92707-stand-verification-report.md`. **V2–V8 PASS**, TC-07
+resolved, **V1 not closed**, and `compile-creatio` was never spent. Three corrections, all measured,
+all against things I had written:
+
+**1. A runtime instance comes from RUNNING the process — not saving, and not compiling.** I had written
+"compiled" into nine places. It is wrong twice over: an interpreted process has nothing to compile, and
+every non-converging read anyone has taken was on a process that never was. The run tested the three
+candidates in order with a control — `UsrTc92707T7CallerNR`, same mappings, same `setElement{resync:true}`,
+not run — and got the opposite outcome from one difference. A merely-saved schema CONVERGES on the
+describe read; `pull-pkg` afterwards showed the stored bytes still held the dropped parameter, so the
+drift was real and describe hid it without persisting its own convergence.
+
+*Corrects DQ-15, DQ-25, DQ-26, DQ-27 and the test plan, all of which say "compiled". Do not read the word
+in those entries as a condition.*
+
+**2. `inSync` is ONE-DIRECTIONAL, and TC-07's own expectation was unreachable.** Callee ADDS a parameter
+→ `false`. Callee REMOVES one → **`true`**, because the element merely carries an extra the callee no
+longer declares. So a DROPPED parameter is invisible to `inSync` no matter which instance was read, and
+"expect `inSync: false` after removing `Beta`" could never have passed. The predicate disagreement DQ-15
+is about was still confirmed at Stored level: `inSync: true` coexisted with a re-synchronization that
+really did cut `BP2` from `['Alpha','Beta']` to `['Alpha']` and `BK15` from two rows to one.
+
+**3. The card does NOT pair by caption.** My hypothesis predicted a caption-only rename would empty the
+mapping row. It does not: NEW caption, mapped value KEPT. The hypothesis is dead and **no mechanism
+replaces it** — three readings, no model. Do not guess a fourth time.
+
+**Not defects, checked and closed:** `BL8` on designer-made elements is `CreatedInOwnerSchemaUId`, written
+as `Guid.Empty`, omitted by `JsonDataWriter` at default, read only through a getter short-circuited on an
+empty `BL9` — inert, 387/387 product elements carry it and clio writes it never. Do not raise it.
+
+**V1 (AC-4) is NOT closed and was deliberately left blank rather than approximated.** The designer's
+palette item is a native HTML5 draggable inside a bpmn-js popup and needs trusted drag events
+(`CDP Input.dispatchDragEvent`), which the harness cannot send. Partial parity was established another
+way — an instrumented element on the SAME callee as a designer-made one matched on `CK4`, `BL7`, `BN2`,
+`BP2` (nine parameters, names and order) and the `BK15` row key-set, with only `BL8` differing. A skeleton
+`UsrTc92707V1Hand` (`7a890871-5b49-4daa-8bed-2044ad241422`) waits on the stand: a human dropping one
+sub-process element into it, on `UsrTc92707V1Callee` with `Ina="V1-CONST"`, makes the byte diff a
+two-minute job with the mechanics already built.
+
+## DQ-32 — the build path cannot bind a changeData value to a sub-process element's output
+
+Found by the same run, and it is a real defect in this feature rather than a documentation error.
+
+**What happens.** `create-business-process` REFUSES a `changeData` column value bound to
+`sourceElement: <sub-process element>` / `sourceElementParameter: <an Out parameter of the callee>`, with
+`Element 'CallV8' has no parameter 'OutValue'`, although the sub-process element is declared EARLIER in
+`elements[]` as the contract requires. The identical binding is ACCEPTED through
+`modify-business-process` → `setElement` moments later against the saved process.
+
+**Why.** Ordering in `ProcessBuildHandler`. `BuildGraph` creates each element AND binds its own
+configuration block — `changeData` lands in `UserTaskElementHandler` → `ChangeDataConfigBinder.Apply`
+during that pass. The sub-process selection, which is what copies the callee's parameters onto the
+element, runs afterwards in `ApplyDeclarativeContent`. So at the moment the later element's `changeData`
+is resolved, the sub-process element carries no callee parameters at all. On the modify path they are
+already there, which is why the same request works one call later.
+
+The comment above that phase already anticipates this shape for MAPPINGS and for `typeFromElement`
+parameters, and orders the sub-process and pre-configured-page sync ahead of them. It does not reach an
+element's OWN config block, because that is bound one phase earlier still.
+
+**Workaround, and it is in the report:** build with a constant placeholder, then re-point with
+`setElement`.
+
+**Two fixes, neither started.** (a) Move the per-element sub-process selection INTO the element-creation
+loop, so a sub-process element is synchronized as it is placed and later elements bind against a complete
+parameter set. The existing "it cannot run any earlier" comment argues only that it cannot precede the
+element existing — which at that point it does. (b) Split `BuildGraph` into create-elements and
+bind-configs passes and run the sync between them. (b) is the cleaner architecture and the wider blast
+radius: it reorders every element type, and the pre-configured page has the identical defect.
+
+**Not scheduled.** It is shared build-path code, the branch is green after thirteen rounds, and the
+workaround is one extra call. Sizing and the decision belong to the owner, not to a fourteenth round
+started at the end of a day.

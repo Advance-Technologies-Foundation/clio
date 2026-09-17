@@ -1067,11 +1067,18 @@ public sealed class DescribedSubProcess {
 	/// <summary>
 	/// Whether the element still carries every parameter the called process declares. <c>null</c> means that
 	/// process could not be read, which is UNKNOWN and never "out of sync".
-	/// <para>Whether it can report DRIFT depends on which instance describe read. For a COMPILED process it reads
-	/// the RUNTIME instance, which the platform does not converge, so a callee that renamed or dropped a parameter
-	/// leaves the element stale and <c>false</c> here is real evidence a re-synchronization is owed. For an
-	/// UNCOMPILED process describe falls back to the design instance, which converges as it loads, and <c>true</c>
-	/// then says nothing. Measured on a stand 2026-09-17.</para>
+	/// <para>Whether it can report DRIFT depends on whether the process HAS a runtime instance. With one, describe
+	/// reads it and the platform does not converge it, so a stale element stays stale. Without one, describe falls
+	/// back to the design instance, which converges AS IT LOADS — the read erases the drift it was called to show,
+	/// and <c>true</c> there says nothing.</para>
+	/// <para>A runtime instance is produced by RUNNING the process. Measured on a stand 2026-09-17 against a
+	/// control that differed only in having been run. SAVING the schema does not produce one, and neither does
+	/// COMPILING — an earlier revision of this paragraph said "compiled", which is wrong: an interpreted process
+	/// has nothing to compile, and every non-converging read so far was taken on one that never was.</para>
+	/// <para>The test is ONE-DIRECTIONAL and a DROPPED parameter is invisible to it. It asks whether every
+	/// parameter the CALLEE declares is present on the element, so a callee that ADDS one flips this to
+	/// <c>false</c> while a callee that REMOVES one leaves it <c>true</c> — the element merely carries an extra.
+	/// Measured. A code RENAME reads as an add plus a remove and does flip it.</para>
 	/// <para>It does NOT see a CAPTION. The element keeps its own copy of each parameter's caption, so a callee
 	/// that renames only the caption leaves this <c>true</c> while the two texts differ - measured. That is the
 	/// right half to be sensitive to, because the runtime binds by CODE and a caption has no effect on delivery;
