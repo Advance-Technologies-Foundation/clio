@@ -768,3 +768,46 @@ findings and continue. Shipped at CrtProcessBuilder **1.6.3.12**.
 move is not another fix: it is to narrow what the scan CLAIMS until the claim is one a unit test can
 exhaust — for example, report only the metapath segment-pair spelling and say so, dropping the bare map
 path, which is the half with no delimiter and therefore the half every one of these defects touched.
+
+## DQ-30 — two review findings I chose not to act on, written down so the choice is visible
+
+Both came from the automated review on PR #68 and both were left alone deliberately. Recording them
+because "deliberately deferred" that lives only in a chat transcript is indistinguishable from "missed".
+Verified against the code on 2026-09-17 before writing, not recalled.
+
+### F-a — R16 is not re-checked on either re-synchronization path
+
+`EnsureCallable` carries the R16 gate (`details.HasSimpleStartEvent`, `SubProcessApplier.cs:480`) and is
+reached from exactly ONE call site, `:99` — the `Apply` path, where a callee is being resolved from a
+config. Neither `Synchronize` → `SynchronizeAgainstCurrentCallee` nor the incidental
+`SynchronizeIfSubProcess` calls it.
+
+**Why that is defensible.** The selection was validated when it was MADE. A re-sync changes no selection,
+and refusing an edit over a property of an element the caller did not mention is the same bad trade the
+multi-instance incidental path avoids.
+
+**Why it is still a real gap.** A callee can LOSE its simple start event after the selection — somebody
+edits the called process. The element then calls a process that can no longer be invoked, and a re-sync
+refreshes it and reports success. The state is reachable, and nothing in this package says so.
+
+**The honest split, if anyone picks this up:** the INCIDENTAL path should keep quiet — that argument
+holds. An EXPLICIT `{resync: true}` is a different case: the caller asked about this element, so a
+warning (not a refusal — a refusal would strand them) is the proportionate answer.
+
+### F-b — `{processName, resync: true}` on an element that calls nothing performs a silent FIRST selection
+
+`EnsureResyncIsMeaningful` refuses `resync: true` only when `mode == Create` (`:326`). On an UPDATE
+against an element whose `SchemaUId` is empty — the state `addElement` leaves before configuration — the
+request resolves the callee, takes the empty-snapshot path and selects it. `InitialSelection` is set
+(`:112`) and the notices correctly stay silent about drift.
+
+So the OUTCOME is right: the caller wanted that process called, and it is. What is not right is that
+`resync: true` was inert and nothing said so — the caller asked to re-synchronize against a selection
+that did not exist. It is the same class as the create-time refusal, one mode over.
+
+**Left as is** because the alternative is refusing a request whose outcome the caller wanted, and a modify
+batch is atomic, so the refusal would roll back work that succeeded. A notice would be the proportionate
+answer here too.
+
+**Neither is scheduled.** Both are warnings-not-refusals, both are cheap, and both belong to whoever next
+opens this applier — not to a thirteenth review round on a branch that is already green.
