@@ -891,6 +891,28 @@ public sealed class SectionRegistrationInfo {
 }
 
 /// <summary>
+/// One mobile page that already exists for the entity/page currently being converted — the fact behind
+/// the "reuse or convert again" check (playbook step 2a). See
+/// <see cref="MobilePageConversionGuide.ExistingMobilePages"/> for scope and construction.
+/// </summary>
+public sealed class ExistingMobilePageInfo {
+	[JsonPropertyName("schemaName")]
+	public string SchemaName { get; init; }
+
+	[JsonPropertyName("schemaUId")]
+	public string SchemaUId { get; init; }
+
+	/// <summary>
+	/// How this existing page was found: <c>section</c> (the source list/section page's
+	/// <c>SysModule.MobileSectionSchemaUId</c> is already set) or <c>entity-default-mobile-page</c> (the
+	/// source page's bound entity already has a default mobile edit page, via the same
+	/// <c>MobileRelatedPage</c> add-on read <c>MobileActionTargetProbe</c> performs for other objects).
+	/// </summary>
+	[JsonPropertyName("source")]
+	public string Source { get; init; }
+}
+
+/// <summary>
 /// Deterministic advisory "conversion guide" for turning a source page into a Freedom UI mobile
 /// page. The model executes the conversion using this guide; the tool builds nothing. The
 /// <see cref="SourceType"/> records which source page type was detected (today: <c>freedom-web</c>).
@@ -1109,6 +1131,18 @@ public sealed class MobilePageConversionGuide {
 	[JsonPropertyName("sectionRegistration")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public SectionRegistrationInfo SectionRegistration { get; init; }
+
+	/// <summary>
+	/// Mobile page(s) that already exist for the entity/page being converted — the reuse-vs-convert fact
+	/// (playbook step 2a). Checked identically on the original page and on every step-8a follow-up: a
+	/// section source checks <see cref="SectionRegistrationInfo.MobileSectionRegistered"/>, a form source
+	/// checks the bound entity's <c>MobileRelatedPage</c> add-on. A match naming the SAME schema this run
+	/// is about to create/update is excluded (nothing to "reuse vs convert again" when it is the very page
+	/// being built). Empty when none was found or the probe could not run.
+	/// </summary>
+	[JsonPropertyName("existingMobilePages")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<ExistingMobilePageInfo> ExistingMobilePages { get; init; } = [];
 
 	// ── Page-level business rules (advisory conversion) ───────────────
 	/// <summary>
@@ -1409,20 +1443,21 @@ public sealed class RequestConversionInfo {
 	public string TargetsNote { get; init; }
 
 	/// <summary>
-	/// Deduplicated queue of missing mobile pages the caller can offer to convert next, built
-	/// from <see cref="UnresolvedTargetRequests"/> without any extra environment read. Today this carries only
-	/// <c>web-page</c> targets (<c>MobileActionTargetProbe.KindWebPage</c>): that kind's verdict is settled
-	/// offline and final by construction (a web page's <c>schemaName</c> is carried verbatim, never rewritten
-	/// to a mobile name), so every distinct target is queued unconditionally — no "is it really missing"
-	/// verification step exists or is needed for this kind. <c>entity-default-mobile-page</c> targets are
-	/// deliberately NOT aggregated here yet: turning an object name into a candidate web page to convert
-	/// requires a new environment read this pass does not perform — that read lives in
-	/// <see cref="UnresolvedTargetRequest.ResolvedCandidateSchemaName"/> instead, and is not folded into
-	/// this list — the caller combines both sources into one display queue. One entry per distinct
-	/// <c>target</c> value (case-insensitive), carrying every element/binding pair that references it,
-	/// each with its own <see cref="MissingTargetPageReference.OriginalBinding"/> to restore once the
-	/// target resolves. Empty
-	/// when no <c>web-page</c> target was found missing.
+	/// Deduplicated queue of missing mobile pages the caller can offer to convert next, built from
+	/// <see cref="UnresolvedTargetRequests"/>. Covers BOTH kinds: every <c>web-page</c> target
+	/// (<c>MobileActionTargetProbe.KindWebPage</c>) — settled offline and final by construction, so queued
+	/// unconditionally — and every <c>entity-default-mobile-page</c> target verified <c>missing</c> (a
+	/// <c>state: unknown</c> entity target is reported only, via <see cref="UnresolvedTargetRequests"/>, and
+	/// never queued here). An entity target is keyed by its
+	/// <see cref="UnresolvedTargetRequest.ResolvedCandidateSchemaName"/> when the environment resolved one,
+	/// else by its raw object <c>target</c> name. When a <c>web-page</c> target's schema name coincides with
+	/// an entity target's resolved candidate (a direct <c>crt.OpenPageRequest</c> on a page that also happens
+	/// to be some object's default mobile edit page), they collapse into ONE entry carrying every reference
+	/// from both sources — the caller no longer needs to cross-reference the two sources itself. One entry
+	/// per distinct key (case-insensitive), carrying every element/binding pair that references it, each
+	/// with its own <see cref="MissingTargetPageReference.OriginalBinding"/> (null for an entity-only
+	/// reference, since that kind never strips a binding) to restore once the target resolves. Empty when no
+	/// target was found missing.
 	/// </summary>
 	[JsonPropertyName("missingTargetPages")]
 	public IReadOnlyList<MissingTargetPage> MissingTargetPages { get; init; } = [];
@@ -1457,11 +1492,19 @@ public sealed class MissingTargetPageReference {
 /// See <see cref="RequestConversionInfo.MissingTargetPages"/> for scope and construction.
 /// </summary>
 public sealed class MissingTargetPage {
-	/// <summary>The target value read from the binding's params — a page schema name for <c>web-page</c>.</summary>
+	/// <summary>
+	/// The target value: a page schema name for a <c>web-page</c> row, or for an entity row
+	/// <see cref="UnresolvedTargetRequest.ResolvedCandidateSchemaName"/> when resolved, else the raw object
+	/// name.
+	/// </summary>
 	[JsonPropertyName("target")]
 	public string Target { get; init; }
 
-	/// <summary>The <see cref="UnresolvedTargetRequest.TargetKind"/> every deduplicated reference shares.</summary>
+	/// <summary>
+	/// <c>web-page</c> or <c>entity-default-mobile-page</c>. When references from BOTH kinds collapsed into
+	/// this one row (they resolved to the same schema name), this is <c>web-page</c> — that is the kind the
+	/// step-8a repoint sub-step keys on.
+	/// </summary>
 	[JsonPropertyName("targetKind")]
 	public string TargetKind { get; init; }
 

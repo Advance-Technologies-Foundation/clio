@@ -233,6 +233,31 @@ public class MobilePageConversionGuideTool {
 				pageResponse.Bundle?.ViewConfig, rules, pageResponse.Bundle?.ModelConfig,
 				pageResponse.Page?.PackageUId));
 
+		// Read-only probe: does the entity/page being converted already have an EXISTING mobile page — the
+		// reuse-vs-convert fact (playbook step 2a)? A section source checks the SysModule registration
+		// already probed above (no extra read); a form source checks the bound entity's MobileRelatedPage
+		// add-on, the same mechanism MobileActionTargetProbe uses to resolve THAT kind for OTHER objects.
+		// Either match is excluded when it names the schema THIS run is about to create/update — nothing to
+		// "reuse vs convert again" there. Best-effort; never blocks the guide.
+		List<ExistingMobilePageInfo> existingMobilePages = [];
+		if (sectionRegistration is { MobileSectionRegistered: true, MobileSectionSchemaUId: { Length: > 0 } sectionSchemaUId }) {
+			ExistingMobilePageInfo sectionMatch = MobileActionTargetProbe.ProbeSectionMobilePage(
+				_commandResolver, args.EnvironmentName, args.Uri, args.Login, args.Password, sectionSchemaUId);
+			if (sectionMatch is not null && !string.Equals(sectionMatch.SchemaName, targetName, StringComparison.OrdinalIgnoreCase)) {
+				existingMobilePages.Add(sectionMatch);
+			}
+		}
+		if (isFormPage) {
+			foreach (string entityName in MobileActionTargetProbe.CollectSourceEntityNames(pageResponse.Bundle?.ModelConfig)) {
+				ExistingMobilePageInfo entityMatch = MobileActionTargetProbe.ProbeSourceEntityDefaultMobilePage(
+					_commandResolver, args.EnvironmentName, args.Uri, args.Login, args.Password,
+					entityName, pageResponse.Page?.PackageUId);
+				if (entityMatch is not null && !string.Equals(entityMatch.SchemaName, targetName, StringComparison.OrdinalIgnoreCase)) {
+					existingMobilePages.Add(entityMatch);
+				}
+			}
+		}
+
 		MobilePageConversionGuide guide;
 		try {
 			guide = WebToMobileAnalysisService.Analyze(
@@ -254,17 +279,11 @@ public class MobilePageConversionGuideTool {
 				mobileTemplateLayoutConfigs: mobileTemplateProbe.LayoutConfigsByName,
 				webTemplateBaselineNodes: webTemplateBaseline.Nodes,
 				webTemplateResources: webTemplateBaseline.Resources,
-				actionTargetsProbe: actionTargets);
+				actionTargetsProbe: actionTargets,
+				existingMobilePages: existingMobilePages);
 		} catch (Exception ex) {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}
-
-		// Missing-target candidates are deliberately left unclassified here: classifying one needs its own
-		// environment read, and it used to run inside this call under a fixed per-guide-call read ceiling.
-		// The caller performs this classification itself, per the mandatory guidance procedure, using its
-		// own tools (get-page / list-pages / find-entity-schema) with no artificial ceiling — mirroring how
-		// KindWebPage targets were already never probed server-side. This also lets the caller check for an
-		// existing mobile equivalent under a different name, a search this tool never performed.
 
 		return new MobilePageConversionGuideResponse {
 			Success = true,

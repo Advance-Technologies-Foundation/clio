@@ -87,6 +87,9 @@ public static class WebToMobileAnalysisService {
 	/// mobile, surfaced as <c>requestConversions.unresolvedTargetRequests</c>. Null - or a probe
 	/// that could not reach the environment - leaves every target unknown and changes no conversion decision:
 	/// the report is a warning, nothing is dropped on target grounds.</param>
+	/// <param name="existingMobilePages">Mobile page(s) already found for the entity/page being converted
+	/// (the reuse-vs-convert fact, playbook step 2a). Carried onto the guide unchanged; null becomes an
+	/// empty list.</param>
 		public static MobilePageConversionGuide Analyze(
 		PageBundleInfo bundle,
 		IReadOnlySet<string> mobileTypes,
@@ -111,7 +114,8 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, JsonObject> mobileTemplateLayoutConfigs = null,
 		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null,
 		JObject webTemplateResources = null,
-		MobileActionTargetProbeResult actionTargetsProbe = null) {
+		MobileActionTargetProbeResult actionTargetsProbe = null,
+		IReadOnlyList<ExistingMobilePageInfo> existingMobilePages = null) {
 		ArgumentNullException.ThrowIfNull(bundle);
 		ArgumentNullException.ThrowIfNull(mobileTypes);
 		ArgumentNullException.ThrowIfNull(webTypes);
@@ -388,6 +392,7 @@ public static class WebToMobileAnalysisService {
 			DroppedElements = ProjectDroppedElements(elementMap),
 			MobileContracts = contracts,
 			SectionRegistration = sectionRegistration,
+			ExistingMobilePages = existingMobilePages ?? [],
 			PageBusinessRules = pageBusinessRules,
 			RequestConversions = requestConversions,
 			AdaptiveLayout = adaptiveLayout.Count > 0 ? adaptiveLayout : null,
@@ -4508,23 +4513,55 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Deduplicates <see cref="UnresolvedTargetRequest"/> entries into the caller-facing conversion queue.
-	/// Scoped to <c>web-page</c> only — see <see cref="RequestConversionInfo.MissingTargetPages"/>
-	/// for why <c>entity-default-mobile-page</c> is deliberately excluded here. Grouped case-insensitively so
-	/// two references that differ only by casing collapse into one candidate.
+	/// Covers BOTH kinds: a <c>web-page</c> target is keyed by its <c>target</c> schema name (settled offline,
+	/// every state is <c>missing</c>); an <c>entity-default-mobile-page</c> target is included ONLY when
+	/// verified <c>missing</c>, keyed by its <see cref="UnresolvedTargetRequest.ResolvedCandidateSchemaName"/>
+	/// when the environment resolved one, else by the raw object <c>target</c>. When both kinds resolve to the
+	/// SAME schema name (a direct <c>crt.OpenPageRequest</c> on a page that also happens to be some object's
+	/// default mobile edit page), they collapse into ONE row carrying every reference from both sources.
+	/// Grouped case-insensitively so two references that differ only by casing collapse into one candidate.
 	/// </summary>
 	private static List<MissingTargetPage> BuildMissingTargetPages(
 		IReadOnlyList<UnresolvedTargetRequest> unresolvedTargets) {
 		if (unresolvedTargets is not { Count: > 0 }) {
 			return [];
 		}
-		return [.. unresolvedTargets
-			.Where(r => string.Equals(r.TargetKind, MobileActionTargetProbe.KindWebPage, StringComparison.OrdinalIgnoreCase)
-				&& !string.IsNullOrWhiteSpace(r.Target))
-			.GroupBy(r => r.Target, StringComparer.OrdinalIgnoreCase)
-			.Select(g => new MissingTargetPage {
-				Target = g.Key,
-				TargetKind = MobileActionTargetProbe.KindWebPage,
-				References = [.. g
+		var rowsByKey = new Dictionary<string, List<UnresolvedTargetRequest>>(StringComparer.OrdinalIgnoreCase);
+		var kindByKey = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		foreach (UnresolvedTargetRequest r in unresolvedTargets) {
+			string key;
+			string kind;
+			if (string.Equals(r.TargetKind, MobileActionTargetProbe.KindWebPage, StringComparison.OrdinalIgnoreCase)
+				&& !string.IsNullOrWhiteSpace(r.Target)) {
+				key = r.Target;
+				kind = MobileActionTargetProbe.KindWebPage;
+			} else if (string.Equals(r.TargetKind, MobileActionTargetProbe.KindEntityDefaultMobilePage, StringComparison.OrdinalIgnoreCase)
+				&& r.State == UnresolvedTargetRequest.StateMissing) {
+				key = !string.IsNullOrWhiteSpace(r.ResolvedCandidateSchemaName) ? r.ResolvedCandidateSchemaName : r.Target;
+				kind = MobileActionTargetProbe.KindEntityDefaultMobilePage;
+				if (string.IsNullOrWhiteSpace(key)) {
+					continue;
+				}
+			} else {
+				continue;
+			}
+			if (!rowsByKey.TryGetValue(key, out List<UnresolvedTargetRequest> rows)) {
+				rows = [];
+				rowsByKey[key] = rows;
+			}
+			rows.Add(r);
+			// A web-page row always wins the reported kind for its key — it is what makes the step-8a
+			// repoint sub-step apply; an entity-default-mobile-page row never downgrades a key a
+			// web-page row already claimed.
+			if (!kindByKey.TryGetValue(key, out string existingKind) || existingKind != MobileActionTargetProbe.KindWebPage) {
+				kindByKey[key] = kind;
+			}
+		}
+		return [.. rowsByKey
+			.Select(kv => new MissingTargetPage {
+				Target = kv.Key,
+				TargetKind = kindByKey[kv.Key],
+				References = [.. kv.Value
 					.GroupBy(r => (r.ElementName, r.Binding))
 					.Select(rg => rg.First())
 					.Select(r => new MissingTargetPageReference {

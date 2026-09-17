@@ -57,6 +57,14 @@ public static class MobileActionTargetProbe {
 	/// <summary>Target kind: the value names an object that must have a default mobile edit page.</summary>
 	internal const string KindEntityDefaultMobilePage = "entity-default-mobile-page";
 
+	/// <summary>
+	/// <see cref="ExistingMobilePageInfo.Source"/> value for a match found via the source list/section
+	/// page's own <c>SysModule.MobileSectionSchemaUId</c> registration (see
+	/// <see cref="ProbeSectionMobilePage"/>) — distinct from <see cref="KindEntityDefaultMobilePage"/>, which
+	/// names the same source used to resolve an ACTION target on a different object.
+	/// </summary>
+	internal const string KindSection = "section";
+
 	private const string MobileRelatedPageAddonName = "MobileRelatedPage";
 
 	/// <summary>
@@ -619,6 +627,103 @@ public static class MobileActionTargetProbe {
 			return !string.IsNullOrEmpty(name) && PageSchemaMetadataHelper.IsValidSchemaName(name) ? name : null;
 		} catch (Exception ex) {
 			failure = ex;
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// Resolves the SOURCE page's own bound entity's existing default MOBILE edit page, if any — the
+	/// "does this object already have a mobile page" fact behind the reuse-vs-convert check
+	/// (<see cref="ExistingMobilePageInfo"/> / playbook step 2a). Mirrors <see cref="ResolveDefaultWebPage"/>
+	/// almost exactly, but reads the MOBILE add-on (<see cref="MobileRelatedPageAddonName"/>) instead of the
+	/// web one, and is keyed by an entity NAME resolved via <see cref="ReadEntitySchemaRows"/> rather than an
+	/// already-known UId (the missing-target tier already has one; this call-site starts from just a name —
+	/// see <see cref="CollectSourceEntityNames"/>). Fails open to <see langword="null"/> on any degradation
+	/// (unreachable environment, unresolvable entity name, no default page, an unparseable add-on body, or a
+	/// resolved name that fails <see cref="PageSchemaMetadataHelper.IsValidSchemaName"/>) — never throws, and
+	/// never guesses a page name.
+	/// </summary>
+	internal static ExistingMobilePageInfo ProbeSourceEntityDefaultMobilePage(
+		IToolCommandResolver commandResolver, string environment, string uri, string login, string password,
+		string entitySchemaName, string pagePackageUId) {
+		if (commandResolver is null || string.IsNullOrWhiteSpace(entitySchemaName)
+			|| !Guid.TryParse(pagePackageUId, out Guid packageUId)) {
+			return null;
+		}
+		try {
+			var options = new EnvironmentOptions {
+				Environment = environment, Uri = uri, Login = login, Password = password
+			};
+			var context = new ProbeContext(
+				commandResolver, options,
+				commandResolver.Resolve<IApplicationClient>(options),
+				commandResolver.Resolve<IServiceUrlBuilder>(options),
+				commandResolver.Resolve<IAddonSchemaDesignerClient>(options));
+
+			var uIdByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+			var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			ReadEntitySchemaRows(context, [entitySchemaName], uIdByName, seenNames);
+			if (!uIdByName.TryGetValue(entitySchemaName, out string entitySchemaUId)
+				|| !Guid.TryParse(entitySchemaUId, out Guid entityUId)) {
+				return null;
+			}
+
+			AddonSchemaDto schema = context.AddonClient.GetSchema(new AddonGetRequestDto {
+				AddonName = MobileRelatedPageAddonName,
+				TargetSchemaUId = entityUId,
+				TargetParentSchemaUId = Guid.Empty,
+				TargetPackageUId = packageUId,
+				TargetSchemaManagerName = EntitySchemaManagerName,
+				UseFullHierarchy = true
+			});
+			string pageSchemaUId = ExtractDefaultPageSchemaUId(schema?.MetaData);
+			if (string.IsNullOrWhiteSpace(pageSchemaUId)) {
+				return null;
+			}
+			(JToken row, string error) = PageSchemaMetadataHelper.QuerySysSchemaRowByUId(
+				context.Client, context.UrlBuilder, pageSchemaUId, ("Name", "Name"));
+			if (row is null || error is not null) {
+				return null;
+			}
+			string name = row["Name"]?.ToString();
+			return !string.IsNullOrEmpty(name) && PageSchemaMetadataHelper.IsValidSchemaName(name)
+				? new ExistingMobilePageInfo {
+					SchemaName = name, SchemaUId = pageSchemaUId, Source = KindEntityDefaultMobilePage
+				}
+				: null;
+		} catch (Exception) {
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// Resolves an already-known mobile page UId (e.g.
+	/// <c>SectionRegistrationInfo.MobileSectionSchemaUId</c>) to its schema NAME — the section half of the
+	/// reuse-vs-convert check (<see cref="ExistingMobilePageInfo"/> / playbook step 2a). Same reverse lookup
+	/// <see cref="ResolveDefaultWebPage"/> uses. Fails open to <see langword="null"/>, never throws.
+	/// </summary>
+	internal static ExistingMobilePageInfo ProbeSectionMobilePage(
+		IToolCommandResolver commandResolver, string environment, string uri, string login, string password,
+		string sectionSchemaUId) {
+		if (commandResolver is null || string.IsNullOrWhiteSpace(sectionSchemaUId)) {
+			return null;
+		}
+		try {
+			var options = new EnvironmentOptions {
+				Environment = environment, Uri = uri, Login = login, Password = password
+			};
+			IApplicationClient client = commandResolver.Resolve<IApplicationClient>(options);
+			IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
+			(JToken row, string error) = PageSchemaMetadataHelper.QuerySysSchemaRowByUId(
+				client, urlBuilder, sectionSchemaUId, ("Name", "Name"));
+			if (row is null || error is not null) {
+				return null;
+			}
+			string name = row["Name"]?.ToString();
+			return !string.IsNullOrEmpty(name) && PageSchemaMetadataHelper.IsValidSchemaName(name)
+				? new ExistingMobilePageInfo { SchemaName = name, SchemaUId = sectionSchemaUId, Source = KindSection }
+				: null;
+		} catch (Exception) {
 			return null;
 		}
 	}

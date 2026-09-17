@@ -791,6 +791,30 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A supplied existingMobilePages list is carried into the guide unchanged; null becomes an empty list rather than a null guide field.")]
+	public void Analyze_CarriesExistingMobilePagesIntoGuide() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "DataTable", "type": "crt.DataGrid" } ] } ]
+			""");
+		var existing = new List<ExistingMobilePageInfo> {
+			new() { SchemaName = "UsrApp_MobileFormPage", SchemaUId = "abc", Source = MobileActionTargetProbe.KindEntityDefaultMobilePage }
+		};
+
+		MobilePageConversionGuide guideWithExisting = WebToMobileAnalysisService.Analyze(
+			bundle, MobileTypes, WebTypes, Reg(("crt.FlexContainer", true)), null, Rules, templateRule: null,
+			sourcePage: "UsrApp_ListPage", sourceTemplate: "ListPageV3Template",
+			suggestedTarget: "UsrApp_MobileListPage", containerNameMap: null, existingMobilePages: existing);
+		guideWithExisting.ExistingMobilePages.Should().BeSameAs(existing);
+
+		MobilePageConversionGuide guideWithoutExisting = WebToMobileAnalysisService.Analyze(
+			bundle, MobileTypes, WebTypes, Reg(("crt.FlexContainer", true)), null, Rules, templateRule: null,
+			sourcePage: "UsrApp_ListPage", sourceTemplate: "ListPageV3Template",
+			suggestedTarget: "UsrApp_MobileListPage", containerNameMap: null);
+		guideWithoutExisting.ExistingMobilePages.Should().NotBeNull().And.BeEmpty();
+	}
+
+	[Test]
 	[Description("Source-type detection maps the platform schema-type: web -> freedom-web, mobile -> mobile, anything else verbatim (lowercased) as not-yet-supported.")]
 	public void DetectSourceType_MapsPlatformSchemaType() {
 		MobilePageConversionGuideTool.DetectSourceType("web").Should().Be("freedom-web");
@@ -6665,8 +6689,30 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("An entity-default-mobile-page target is reported in unresolvedTargetRequests but NOT aggregated into missingTargetPages: resolving an object name into a candidate web page needs a new environment read this pass does not perform.")]
-	public void Analyze_EntityTargetMissing_IsNotQueuedInMissingTargetPages() {
+	[Description("A verified-missing entity-default-mobile-page target WITH a resolved candidate is queued into missingTargetPages, keyed by the resolved candidate schema name — clio now aggregates this kind too, so the caller no longer classifies or groups it by hand.")]
+	public void Analyze_EntityTargetMissingWithResolvedCandidate_QueuesItByResolvedCandidateSchemaName() {
+		// Arrange
+		PageBundleInfo bundle = CreateRecordButtonBundle("ProductsAddButton", "LeadProduct");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"ProductsAddButton", "crt.CreateRecordRequest",
+			MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct", ActionTargetState.Missing,
+			resolvedCandidateSchemaName: "LeadProduct_FormPage");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		MissingTargetPage candidate = guide.RequestConversions!.MissingTargetPages
+			.Should().ContainSingle(because: "the resolved candidate must be offered for conversion").Subject;
+		candidate.Target.Should().Be("LeadProduct_FormPage",
+			because: "the resolved candidate schema name is the page to actually convert, not the object name");
+		candidate.TargetKind.Should().Be(MobileActionTargetProbe.KindEntityDefaultMobilePage);
+		candidate.References.Should().ContainSingle(r => r.ElementName == "ProductsAddButton");
+	}
+
+	[Test]
+	[Description("A verified-missing entity-default-mobile-page target with NO resolved candidate falls back to the raw object name as its queue key, so it can still be offered (and deduped) even though there is no page name yet.")]
+	public void Analyze_EntityTargetMissingWithoutResolvedCandidate_QueuesItByRawTargetName() {
 		// Arrange
 		PageBundleInfo bundle = CreateRecordButtonBundle("ProductsAddButton", "LeadProduct");
 		MobileActionTargetProbeResult probe = ProbeResult(
@@ -6677,11 +6723,113 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
 
 		// Assert
+		MissingTargetPage candidate = guide.RequestConversions!.MissingTargetPages
+			.Should().ContainSingle().Subject;
+		candidate.Target.Should().Be("LeadProduct",
+			because: "with no candidate resolved, the raw object name is the only key available");
+		candidate.TargetKind.Should().Be(MobileActionTargetProbe.KindEntityDefaultMobilePage);
+	}
+
+	[Test]
+	[Description("An entity-default-mobile-page target whose state is unknown (unreachable environment, not a confirmed absence) is still reported only in unresolvedTargetRequests, never queued in missingTargetPages — an unverified guess must not be offered as a conversion candidate.")]
+	public void Analyze_EntityTargetUnknown_IsNotQueuedInMissingTargetPages() {
+		// Arrange
+		PageBundleInfo bundle = CreateRecordButtonBundle("ProductsAddButton", "LeadProduct");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"ProductsAddButton", "crt.CreateRecordRequest",
+			MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct", ActionTargetState.Unknown);
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
 		guide.RequestConversions!.UnresolvedTargetRequests.Should().ContainSingle(
 			because: "the object target is still reported");
 		guide.RequestConversions.MissingTargetPages.Should().BeEmpty(
-			because: "an entity-default-mobile-page target has no resolved candidate page yet, so it must not be "
-				+ "offered as one");
+			because: "an unverified (unknown) entity target must never be queued as a conversion candidate");
+	}
+
+	[Test]
+	[Description("Two buttons creating the same missing object — sharing the same resolved candidate schema name — dedupe into ONE missingTargetPages entry, carrying both references, so the object's default page is never offered for conversion twice.")]
+	public void Analyze_TwoButtonsSameMissingEntity_DedupeIntoOneMissingTargetPage() {
+		// Arrange — mirrors Analyze_TwoButtonsSameMissingEntity_ProduceSeparateFindingsSharingTheSameResolvedCandidate,
+		// but asserts the missingTargetPages-level dedup this pass now performs on top of that.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "FirstAddButton", "type": "crt.Button", "caption": "First",
+				  "clicked": { "request": "crt.CreateRecordRequest", "params": { "entityName": "LeadProduct" } } },
+				{ "name": "SecondAddButton", "type": "crt.Button", "caption": "Second",
+				  "clicked": { "request": "crt.CreateRecordRequest", "params": { "entityName": "LeadProduct" } } }
+			] } ]
+			""");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"FirstAddButton", "crt.CreateRecordRequest",
+			MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct", ActionTargetState.Missing,
+			resolvedCandidateSchemaName: "LeadProduct_FormPage");
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		MissingTargetPage candidate = guide.RequestConversions!.MissingTargetPages
+			.Should().ContainSingle(because: "both buttons name the same resolved candidate").Subject;
+		candidate.References.Should().HaveCount(2);
+		candidate.References.Should().Contain(r => r.ElementName == "FirstAddButton");
+		candidate.References.Should().Contain(r => r.ElementName == "SecondAddButton");
+	}
+
+	[Test]
+	[Description("A web-page target whose schema name coincides with an entity-default-mobile-page target's resolved candidate — a direct crt.OpenPageRequest on a page that also happens to be some object's default mobile edit page — collapse into ONE missingTargetPages row carrying references from BOTH sources, reported as web-page (the kind the step-8a repoint sub-step keys on).")]
+	public void Analyze_WebPageAndEntityTarget_SameResolvedSchema_MergeIntoOneMissingTargetPage() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "OpenButton", "type": "crt.Button", "caption": "Open",
+				  "clicked": { "request": "crt.OpenPageRequest", "params": { "schemaName": "LeadProduct_FormPage" } } },
+				{ "name": "AddButton", "type": "crt.Button", "caption": "Add",
+				  "clicked": { "request": "crt.CreateRecordRequest", "params": { "entityName": "LeadProduct" } } }
+			] } ]
+			""");
+		var probe = new MobileActionTargetProbeResult {
+			ProbeOk = true,
+			Occurrences = [
+				new ActionTargetOccurrence {
+					ElementName = "OpenButton", Binding = "clicked", WebRequest = "crt.OpenPageRequest",
+					Kind = MobileActionTargetProbe.KindWebPage, Target = "LeadProduct_FormPage"
+				},
+				new ActionTargetOccurrence {
+					ElementName = "AddButton", Binding = "clicked", WebRequest = "crt.CreateRecordRequest",
+					Kind = MobileActionTargetProbe.KindEntityDefaultMobilePage, Target = "LeadProduct"
+				}
+			],
+			TargetsByKey = new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase) {
+				[MobileActionTargetProbe.TargetKey(MobileActionTargetProbe.KindWebPage, "LeadProduct_FormPage")] =
+					new ActionTargetResolution {
+						Kind = MobileActionTargetProbe.KindWebPage, Target = "LeadProduct_FormPage",
+						State = ActionTargetState.Missing
+					},
+				[MobileActionTargetProbe.TargetKey(MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct")] =
+					new ActionTargetResolution {
+						Kind = MobileActionTargetProbe.KindEntityDefaultMobilePage, Target = "LeadProduct",
+						State = ActionTargetState.Missing, ResolvedCandidateSchemaName = "LeadProduct_FormPage"
+					}
+			}
+		};
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeTargets(bundle, probe);
+
+		// Assert
+		MissingTargetPage candidate = guide.RequestConversions!.MissingTargetPages
+			.Should().ContainSingle(
+				because: "the web-page target and the entity's resolved candidate name the SAME schema").Subject;
+		candidate.Target.Should().Be("LeadProduct_FormPage");
+		candidate.TargetKind.Should().Be(MobileActionTargetProbe.KindWebPage,
+			because: "a merged row reports as web-page — that is the kind the step-8a repoint sub-step keys on");
+		candidate.References.Should().HaveCount(2,
+			because: "the merged row must carry the reference from BOTH sources, not just the web-page one");
+		candidate.References.Should().Contain(r => r.ElementName == "OpenButton");
+		candidate.References.Should().Contain(r => r.ElementName == "AddButton");
 	}
 
 	#endregion
