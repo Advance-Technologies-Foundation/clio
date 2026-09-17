@@ -142,7 +142,10 @@ public static class OAuthAuthorizationCodeProtocol
                 : $"OAuth authorization failed: {error} ({safeDescription}).");
         }
 		query.TryGetValue("state", out string state);
-		if (!string.Equals(state, expectedState, StringComparison.Ordinal)) throw new InvalidOperationException("OAuth callback state did not match.");
+		if (!string.Equals(state, expectedState, StringComparison.Ordinal))
+		{
+			throw new InvalidOperationException("OAuth callback state did not match.");
+		}
         if (!query.TryGetValue("code", out string code) || string.IsNullOrWhiteSpace(code))
         {
             throw new InvalidOperationException("OAuth callback did not contain an authorization code.");
@@ -201,8 +204,7 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
 
     public async Task<OAuthTokenSet> LoginAsync(EnvironmentSettings environment, bool noBrowser, int timeoutMs, CancellationToken cancellationToken = default)
     {
-        if (environment.AuthFlow != OAuthFlow.AuthorizationCode || string.IsNullOrWhiteSpace(environment.ClientId))
-            throw new InvalidOperationException("Authorization-code sign-in requires a registered environment with --clientId.");
+        EnsureAuthorizationCodeEnvironment(environment);
         DiscoveryDocument discovery = await DiscoverAsync(environment, cancellationToken);
         string verifier = OAuthAuthorizationCodeProtocol.CreateCodeVerifier(); string state = OAuthAuthorizationCodeProtocol.CreateState();
         string configuredRedirect = environment.RedirectUri;
@@ -234,6 +236,14 @@ public sealed class OAuthAuthorizationCodeService : IOAuthAuthorizationCodeServi
         OAuthTokenSet result = await ExchangeCodeAsync(discovery.token_endpoint, environment.ClientId, code, redirect, verifier, cancellationToken);
         _store.Write(environment, result);
         return result;
+    }
+
+    private static void EnsureAuthorizationCodeEnvironment(EnvironmentSettings environment)
+    {
+        if (environment.AuthFlow != OAuthFlow.AuthorizationCode || string.IsNullOrWhiteSpace(environment.ClientId))
+        {
+            throw new InvalidOperationException("Authorization-code sign-in requires a registered environment with --clientId.");
+        }
     }
 
     private async Task<OAuthTokenSet> ExchangeCodeAsync(string endpoint, string clientId, string code, string redirect,
