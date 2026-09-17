@@ -364,7 +364,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`create-schema`](docs/commands/create-schema.md) - Create a new C# source-code schema on a remote Creatio environment with aggregate name validation and optional `--body` or `--body-file`, `schema-create`
 <a id="create-sql-schema"></a>
 <a id="sql-schema-create"></a>
-- [`create-sql-schema`](docs/commands/create-sql-schema.md) - Create a new SQL script schema on a remote Creatio environment with aggregate name validation, `sql-schema-create`
+- [`create-sql-schema`](docs/commands/create-sql-schema.md) - Create an empty native package SQL script with target engine detection and installation phase selection, `sql-schema-create`
 <a id="dataservice"></a>
 <a id="ds"></a>
 - [`dataservice`](docs/commands/dataservice.md) - Send a Creatio DataService request, `ds`

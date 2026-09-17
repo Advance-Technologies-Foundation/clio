@@ -24,11 +24,10 @@ internal sealed record SchemaDesignerKind(
 		"ServiceModel/SourceCodeSchemaDesignerService.svc/CreateNewSchema");
 
 	internal static readonly SchemaDesignerKind SqlScript = new(
-		"ScriptSchemaManager",
-		"ScriptSchemaDesignerService",
-		"ServiceModel/ScriptSchemaDesignerService.svc/GetSchema",
-		"ServiceModel/ScriptSchemaDesignerService.svc/SaveSchema",
-		"ServiceModel/ScriptSchemaDesignerService.svc/CreateNewSchema");
+		"VwSysSqlScriptInPackage",
+		"SqlScriptSchemaDesignerService",
+		ServiceUrlBuilder.KnownRoutes[ServiceUrlBuilder.KnownRoute.GetSqlScriptSchema],
+		ServiceUrlBuilder.KnownRoutes[ServiceUrlBuilder.KnownRoute.SaveSqlScriptSchema]);
 
 	internal static readonly SchemaDesignerKind ClientUnit = new(
 		"ClientUnitSchemaManager",
@@ -170,12 +169,17 @@ internal static class SchemaDesignerHelper {
 	private static string DesignerOperation(SchemaDesignerKind kind, string operation) =>
 		$"{kind.ServiceName} {operation}";
 
-	private static (JObject parsed, string error) ParseServiceResponse(
+	internal static (JObject parsed, string error) ParseServiceResponse(
 		string operationName, string url, string responseBody, string hint = null) =>
 		ServiceResponseJsonGuard.TryParseJObject(operationName, url, responseBody, hint,
 			out JObject parsed, out string error)
 			? (parsed, null)
 			: (null, error);
+
+	/// <summary>Transport failures can occur after a non-replayable write has already committed.</summary>
+	internal static bool IsTransportFailure(Exception exception) => exception is
+		System.Net.Http.HttpRequestException or System.Net.WebException or System.IO.IOException
+		or TimeoutException or OperationCanceledException;
 
 	internal static string ValidateCreateInput(string schemaName, string packageName) {
 		List<string> errors = [];
@@ -195,12 +199,8 @@ internal static class SchemaDesignerHelper {
 		IServiceUrlBuilder urlBuilder,
 		string schemaName,
 		SchemaDesignerKind kind) {
-		// The deterministic top-layer (most-derived) resolution is SCOPED to ClientUnit — the only kind the
-		// Classic->Freedom migration path needs it for. SqlScript/SourceCode keep the pre-PR single-row pick:
-		// ResolveSchemaUId is a shared, kind-generic helper also used by SqlSchemaUpdate/SqlSchemaInstall
-		// (which executes raw SQL against the DB) and SourceCodeSchemaUpdate, none of which are covered by
-		// multi-layer resolution tests. Silently redirecting which physical layer those commands write to /
-		// execute against is out of scope for this PR (see PR #937 review); modernize those kinds separately.
+		// ClientUnit resolves the most-derived layer. SQL rejects ambiguous package script names;
+		// SourceCode retains its existing single-row resolution.
 		if (kind != SchemaDesignerKind.ClientUnit) {
 			return ResolveSchemaUIdSingle(client, urlBuilder, schemaName, kind);
 		}
@@ -220,16 +220,20 @@ internal static class SchemaDesignerHelper {
 		return SchemaResolveResult.Resolved(uId);
 	}
 
-	// Pre-PR single-row resolution preserved verbatim for the non-ClientUnit kinds (SqlScript/SourceCode):
-	// a UId-by-name query capped at one row, taking that row's UId. Kept deliberately unchanged so the layer
-	// the Sql/SourceCode update/install commands target is not altered by this PR (see ResolveSchemaUId).
+	// SQL scripts live in their package view and require an unambiguous name.
 	private static SchemaResolveResult ResolveSchemaUIdSingle(
 		IApplicationClient client,
 		IServiceUrlBuilder urlBuilder,
 		string schemaName,
 		SchemaDesignerKind kind) {
 		var query = BuildSelectUIdByName(schemaName, kind.ManagerName);
-		string url = urlBuilder.Build(SelectQueryRoute);
+		if (kind == SchemaDesignerKind.SqlScript) {
+			query["rootSchemaName"] = "VwSysSqlScriptInPackage";
+			((JObject)query["filters"]["items"]).Remove("byManager");
+			query["rowCount"] = 2;
+		}
+		string url = kind == SchemaDesignerKind.SqlScript
+			? urlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select) : urlBuilder.Build(SelectQueryRoute);
 		string responseJson = client.ExecutePostRequest(url, query.ToString(Formatting.None));
 		(JObject selectResponse, string parseError) = ParseServiceResponse("SelectQuery", url, responseJson);
 		if (parseError != null)
@@ -243,6 +247,9 @@ internal static class SchemaDesignerHelper {
 		var rows = selectResponse["rows"] as JArray ?? [];
 		if (rows.Count == 0)
 			return SchemaResolveResult.NotFound(SchemaNotFoundError(schemaName, kind));
+		if (kind == SchemaDesignerKind.SqlScript && rows.Count > 1) {
+			return SchemaResolveResult.Unanswerable($"SQL script name '{schemaName}' is ambiguous across packages or database engines. Use a unique name.");
+		}
 		string uId = rows[0]["UId"]?.ToString();
 		// See ResolveSchemaUId: a blank UId leaves the question unanswered rather than answering "absent".
 		if (string.IsNullOrWhiteSpace(uId))
@@ -384,7 +391,9 @@ internal static class SchemaDesignerHelper {
 			["schemaUId"] = schemaUId,
 			["useFullHierarchy"] = useFullHierarchy
 		};
-		string designerUrl = urlBuilder.Build(kind.GetRoute);
+		string designerUrl = kind == SchemaDesignerKind.SqlScript
+			? urlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetSqlScriptSchema)
+			: urlBuilder.Build(kind.GetRoute);
 		string json = client.ExecutePostRequest(designerUrl, request.ToString(Formatting.None));
 		(JObject response, string parseError) = ParseServiceResponse(
 			DesignerOperation(kind, "GetSchema"), designerUrl, json, DesignerServiceHint);
@@ -429,8 +438,18 @@ internal static class SchemaDesignerHelper {
 		SchemaDesignerKind kind,
 		out bool outcomeUnknown) {
 		outcomeUnknown = false;
-		string saveUrl = urlBuilder.Build(kind.SaveRoute);
-		string json = client.ExecutePostRequest(saveUrl, schema.ToString(Formatting.None));
+		string saveUrl = kind == SchemaDesignerKind.SqlScript
+			? urlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveSqlScriptSchema)
+			: urlBuilder.Build(kind.SaveRoute);
+		string json;
+		try {
+			json = kind == SchemaDesignerKind.SqlScript
+				? client.ExecuteNonReplayablePostRequest(saveUrl, schema.ToString(Formatting.None))
+				: client.ExecutePostRequest(saveUrl, schema.ToString(Formatting.None));
+		} catch (Exception ex) when (kind == SchemaDesignerKind.SqlScript && IsTransportFailure(ex)) {
+			outcomeUnknown = true;
+			return $"SqlScriptSchemaDesignerService SaveSchema transport failed. URL: {saveUrl} {SaveOutcomeUnknownNote}";
+		}
 		(JObject response, string parseError) = ParseServiceResponse(
 			DesignerOperation(kind, "SaveSchema"), saveUrl, json, DesignerServiceHint);
 		if (parseError != null) {
