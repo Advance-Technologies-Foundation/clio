@@ -4080,3 +4080,9 @@ stories:
     depends_on:
       - story-eng-91853-gateways-and-flows-2
     blocks: []
+
+  - id: story-sales-engagement-1
+    status: in-progress
+    description: Compact sequence context for clio issue 1575
+    depends_on: []
+    blocks: []

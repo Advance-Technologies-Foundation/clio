@@ -1,0 +1,6 @@
+Read effective sequence fields and bounded lookup/configuration choices using DataService.
+Usage: clio get-sequence-context -e <environment> [--sequence-id <uuid>]
+Requires schema metadata and sequence configuration read access. Does not mutate records.
+Inspect success, availability and every section state. Choices/columns are capped at 100;
+responses at 200000 UTF-8 bytes. Missing, truncated or failed sections require attention.
+Each HTTP read has a ten-second timeout and no automatic retries.

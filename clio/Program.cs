@@ -228,6 +228,7 @@ internal class Program {
 		typeof(ModifyEntitySchemaColumnOptions),
 		typeof(GetEntitySchemaColumnPropertiesOptions),
 		typeof(GetEntitySchemaPropertiesOptions),
+		typeof(SequenceContextOptions),
 		typeof(SetEntitySchemaPropertiesOptions),
 		typeof(FindEntitySchemaOptions),
 		typeof(FindAppOptions),
@@ -704,6 +705,7 @@ internal class Program {
 			ModifyEntitySchemaColumnOptions opts => Resolve<ModifyEntitySchemaColumnCommand>(opts).Execute(opts),
 			GetEntitySchemaColumnPropertiesOptions opts => Resolve<GetEntitySchemaColumnPropertiesCommand>(opts).Execute(opts),
 			GetEntitySchemaPropertiesOptions opts => Resolve<GetEntitySchemaPropertiesCommand>(opts).Execute(opts),
+			SequenceContextOptions opts => Resolve<SequenceContextCommand>(opts).Execute(opts),
 			SetEntitySchemaPropertiesOptions opts => Resolve<SetEntitySchemaPropertiesCommand>(opts).Execute(opts),
 			FindEntitySchemaOptions opts => Resolve<FindEntitySchemaCommand>(opts).Execute(opts),
 			FindAppOptions opts => Resolve<FindAppCommand>(opts).Execute(opts),
@@ -2098,4 +2100,3 @@ internal class Program {
 	#endregion
 
 }
-

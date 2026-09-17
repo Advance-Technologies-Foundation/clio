@@ -1,4 +1,4 @@
-﻿# Clio Command Reference
+# Clio Command Reference
 
 Use `clio help` for the terminal overview and `clio <command> --help` for command details.
 
@@ -788,3 +788,6 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 `get-related-page-addon` and `create-related-page-addon` report `entitySchemaUId` as
 the base/root entity UId resolved by Creatio for the add-on, shared across replacing
 layers. A temporary designer schema or an individual replacing row is not that identity.
+
+<a id="get-sequence-context"></a>
+- [get-sequence-context](docs/commands/get-sequence-context.md) - Read effective sequence fields and live configuration choices.

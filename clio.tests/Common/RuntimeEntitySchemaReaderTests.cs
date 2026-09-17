@@ -10,10 +10,11 @@ namespace Clio.Tests.Common;
 
 [TestFixture]
 public sealed class RuntimeEntitySchemaReaderTests {
-	[Test]
+	[TestCase(false)]
+	[TestCase(true)]
 	[Category("Unit")]
 	[Description("Reads a runtime schema by name, preserves the full column set, and resolves the primary display column name from the explicit schema field when it is provided.")]
-	public void GetByName_Should_Parse_Rich_Runtime_Schema_Response() {
+	public void GetByName_Should_Parse_Rich_Runtime_Schema_Response(bool bounded) {
 		// Arrange
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
@@ -77,9 +78,11 @@ public sealed class RuntimeEntitySchemaReaderTests {
 		RuntimeEntitySchemaReader reader = new(applicationClient, serviceUrlBuilder);
 
 		// Act
-		RuntimeEntitySchemaResult result = reader.GetByName("Contact");
+		RuntimeEntitySchemaResult result = bounded ? reader.GetByName("Contact", 10000) : reader.GetByName("Contact");
 
 		// Assert
+		applicationClient.ReceivedCalls().Single().GetArguments()[2].Should().Be(bounded ? 10000 : -1,
+			because: "bounded discovery must pass its HTTP deadline while existing callers retain their defaults");
 		result.Name.Should().Be("Contact", because: "the reader should preserve the runtime schema name");
 		result.PrimaryColumnUId.Should().Be(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
 			because: "the reader should expose the schema primary column UId");
