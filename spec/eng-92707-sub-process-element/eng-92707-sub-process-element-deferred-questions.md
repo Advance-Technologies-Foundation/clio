@@ -363,7 +363,7 @@ failure. **Round 5 reversed that.**
 **Decision.** Both paths ask `MirrorsCallee`.
 
 **Reason.** The memo cannot go stale within a request: `ISubProcessReader` is registered `AddScoped`,
-every web-service entry point wraps its call in its own `CreateScope()`, and nothing inside one call
+every entry point that resolves a service wraps its call in its own `CreateScope()` (`Ping` does not, and resolves nothing), and nothing inside one call
 loads a second process schema for writing. The two tests that failed under the strict predicate shared
 ONE reader between their arrange and their act — a state no request reaches. `AnApplierForTheNextRequest()`
 gives the act the reader a second request would have, and they pass.
@@ -397,7 +397,7 @@ one render identically in describe.
 **Decision.** State the hazard, state that its standing is UNOBSERVED and why (the platform prunes such a
 row for every non-dynamic parameter; this contract produces none; T-27 open), say explicitly not to add a
 routine check, and name the discriminator for whoever does meet one: whether the `[Parameter:{…}]` UId
-inside the stored metapath still matches a `uId` describe reports on that element.
+inside the stored metapath still matches a `uid` describe reports on that element.
 
 ## DQ-20 — `process-activity-connections` is still not split
 

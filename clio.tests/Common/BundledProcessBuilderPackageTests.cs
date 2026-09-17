@@ -183,7 +183,7 @@ public class BundledProcessBuilderPackageTests {
 	/// the archive is byte-IDENTICAL to the producing commit's blob EXCEPT <c>descriptor.json</c>, which by
 	/// contract cannot match a pre-restamp commit and is pinned separately by
 	/// <see cref="ExpectedArchiveVersion"/> and <see cref="ExpectedDescriptorModifiedOnUtc"/>.
-	/// <para>Verify it in two commands, which is how it was verified at the <b>1.6.3.3</b> cut (167 entries, 166
+	/// <para>Verify it in two commands, which is how it was verified at the <b>1.6.3.5</b> cut (167 entries, 166
 	/// identical): extract with <c>clio extract-pkg-zip &lt;archive&gt; -d &lt;dir&gt;</c>, then compare every
 	/// extracted file against <c>git show &lt;ExpectedProducingCommit&gt;:packages/CrtProcessBuilder/&lt;path&gt;</c>.
 	/// The COUNT is not pinned here on purpose - it moves as the package gains sources, and an earlier revision
@@ -193,7 +193,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"0D5CAA878FBB9D0EA971D13ABE37E50D637C6BD0AA3119B3D4A9141AB88571BD";
+		"0DF51F405358E54C9A6FDC9DE776308687F0E0FB8DF4264593DD66672B46CA9B";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -221,7 +221,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.3.4";
+	private const string ExpectedArchiveVersion = "1.6.3.5";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -233,7 +233,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "9ad5359dabdf0727b5a102f18e24ea7eb6b20f48";
+	private const string ExpectedProducingCommit = "a500c3d20d65d5c58c77b245ee2c130b12a3dbe6";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -259,7 +259,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789631983000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789633667000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.

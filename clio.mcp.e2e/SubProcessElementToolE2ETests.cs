@@ -329,8 +329,9 @@ public sealed class SubProcessElementToolE2ETests {
 	/// <para>It asserts the SUCCESS LINE, not <c>IsError</c>. A refused or failed build comes back as an ordinary
 	/// result carrying a non-zero exit code, and nothing on the MCP path turns that into <c>IsError</c> - which is
 	/// set for a binding error or a thrown exception. That is why every acting assertion in this fixture pairs the
-	/// two - or, where one does not, asserts the described result instead. An arrange guard that checked only
-	/// the flag would have passed the exact failure it exists to catch.</para>
+	/// two; the refusal cases assert the ABSENCE of that line plus the refusal text, and one case asserts the
+	/// described result instead. An arrange guard that checked only the flag would have passed the exact failure
+	/// it exists to catch.</para>
 	/// </summary>
 	private static async Task<CallToolResult> ArrangeProcessAsync(ArrangeContext context, string descriptor,
 			string what) {

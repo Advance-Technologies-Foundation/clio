@@ -1,7 +1,7 @@
 ---
 description: A Copilot pull-request review can say "generated no new comments" and still carry findings, inside a collapsed Suppressed comments block in the review BODY with no inline threads
 applies-to:
-  - spec/
+  - CONTRIBUTING.md
 ticket: ENG-92707
 date: 2026-09-17
 ---
