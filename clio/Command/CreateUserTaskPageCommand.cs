@@ -103,13 +103,7 @@ public sealed class UserTaskPageScaffolder(IFileSystem files) : IUserTaskPageSca
 		string taskMetadataPath = files.Path.Combine(files.Path.GetDirectoryName(matches[0]), "metadata.json");
 		JsonNode taskRoot = Read(taskMetadataPath);
 		JsonNode task = taskRoot["MetaData"]?["Schema"];
-		if (taskDescriptor["ManagerName"]?.GetValue<string>() != "ProcessUserTaskSchemaManager"
-			|| task?["ManagerName"]?.GetValue<string>() != "ProcessUserTaskSchemaManager"
-			|| task?["A2"]?.GetValue<string>() != taskName
-			|| Guid.Parse(task["UId"].GetValue<string>()) != options.UserTaskUId
-			|| Guid.Parse(task["B6"].GetValue<string>()) != packageUId) {
-			throw new InvalidOperationException("Task descriptor, metadata and package identities must agree.");
-		}
+		ValidateTaskIdentity(taskDescriptor, task, taskName, options.UserTaskUId, packageUId);
 		string existingPage = task["FK11"]?.GetValue<string>();
 		if (!string.IsNullOrEmpty(existingPage) && existingPage != Guid.Empty.ToString()) {
 			throw new InvalidOperationException("The user task already has a parameter page. Edit that page instead of replacing it.");
@@ -156,6 +150,16 @@ public sealed class UserTaskPageScaffolder(IFileSystem files) : IUserTaskPageSca
 		files.File.WriteAllText(taskMetadataPath, taskRoot.ToJsonString(JsonOptions));
 		files.File.WriteAllText(matches[0], taskDescriptorRoot.ToJsonString(JsonOptions));
 		return files.Path.Combine(pagePath, options.PageName + ".js");
+	}
+
+	private static void ValidateTaskIdentity(JsonNode descriptor, JsonNode task, string name, Guid taskUId, Guid packageUId) {
+		if (descriptor["ManagerName"]?.GetValue<string>() != "ProcessUserTaskSchemaManager"
+			|| task?["ManagerName"]?.GetValue<string>() != "ProcessUserTaskSchemaManager"
+			|| task["A2"]?.GetValue<string>() != name
+			|| Guid.Parse(task["UId"].GetValue<string>()) != taskUId
+			|| Guid.Parse(task["B6"].GetValue<string>()) != packageUId) {
+			throw new InvalidOperationException("Task descriptor, metadata and package identities must agree.");
+		}
 	}
 
 	private static string[] ReadInputNames(JsonNode task) {
