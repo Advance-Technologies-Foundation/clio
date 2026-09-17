@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
@@ -59,10 +59,14 @@ public sealed class ODataUpdateTool(
 		//Minted once and stamped on the single exit, so every response carries the correlation-id
 		//core-rules promises - refusals and validation failures included.
 		string correlationId = correlationIds.New();
-		return UpdateCore(args) with { CorrelationId = correlationId };
+		ODataWriteResponse result = UpdateCore(args, out bool attempted, out bool received);
+		return result with { CorrelationId = correlationId, Diagnostic = DataWriteDiagnostic.Create("update",
+			args.Entity, null, attempted, received, result.Success, result.Error) };
 	}
 
-	private ODataWriteResponse UpdateCore(ODataUpdateArgs args) {
+	private ODataWriteResponse UpdateCore(ODataUpdateArgs args, out bool attempted, out bool received) {
+		attempted = false;
+		received = false;
 		try {
 			ODataWriteResponse invalidTarget = ODataKeyedWrite.ValidateTarget(args.Entity, args.Id, "update");
 			if (invalidTarget is not null) {
@@ -97,7 +101,9 @@ public sealed class ODataUpdateTool(
 			if (zoneLessDateTime is not null) {
 				return ODataWriteResponse.Failure($"odata-update rejected: {zoneLessDateTime}");
 			}
+			attempted = true;
 			string response = client.ExecutePatchRequest(url, data.GetRawText(), 30_000);
+			received = true;
 			string validationError = ODataKeyedWrite.ValidateWriteResponse(response);
 			if (validationError is not null) {
 				return ODataWriteResponse.Failure(validationError);

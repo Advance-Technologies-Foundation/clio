@@ -61,6 +61,8 @@ public sealed class DataServiceBatchToolE2ETests : McpContractFixtureBase {
 		result.Items.Select(item => item.State).Should().Equal(new[] { "completed", "failed", "completed" },
 			because: "native continuation must preserve both successful neighbors");
 		result.UnknownCount.Should().Be(0, because: "the native service must correlate all three lab results");
+		result.Items[1].Diagnostic.SideEffect.Should().Be("unknown", because: "failure must not claim that no side effects occurred");
+		result.Items[1].Diagnostic.Entity.Should().Be("Contact", because: "the failed operation needs explicit entity context");
 		result.Items[1].Error.Should().Contain("UsrMissingBatchTestColumn", because: "the actual platform validation message must identify the rejected column");
 		result.Items.Where(item => item.State == "completed").Should().OnlyContain(item => item.RowsAffected == 1,
 			because: "both updates must target the selected existing lab contact");

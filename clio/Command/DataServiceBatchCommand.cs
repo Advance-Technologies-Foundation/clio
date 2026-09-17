@@ -38,7 +38,11 @@ public sealed record DataServiceBatchItemResult(
 	[property: JsonPropertyName("record-id")] Guid RecordId,
 	[property: JsonPropertyName("state")] string State,
 	[property: JsonPropertyName("rows-affected")] int? RowsAffected,
-	[property: JsonPropertyName("error")] string Error);
+	[property: JsonPropertyName("error")] string Error) {
+	/// <summary>Safe per-item write context and side-effect uncertainty.</summary>
+	[JsonPropertyName("diagnostic"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public DataWriteDiagnostic Diagnostic { get; init; }
+}
 
 /// <summary>Batch outcomes without an atomicity or independent-readback claim.</summary>
 public sealed record DataServiceBatchResult(
@@ -107,8 +111,10 @@ public sealed class DataServiceBatchService(IApplicationClient client, IServiceU
 			throw new ArgumentException("Encoded batch exceeds the 200000-byte limit.");
 		}
 		DataServiceBatchItemResult[] results;
+		bool responseReceived = false;
 		try {
 			string response = client.ExecuteNonReplayablePostRequest(urls.Build(ServiceUrlBuilder.KnownRoute.BatchQuery), body, 30_000, 1, 1);
+			responseReceived = true;
 			if (Encoding.UTF8.GetByteCount(response) > MaximumBytes) {
 				throw new InvalidOperationException("Batch response exceeded the 200000-byte limit.");
 			}
@@ -118,6 +124,10 @@ public sealed class DataServiceBatchService(IApplicationClient client, IServiceU
 			string error = SensitiveErrorTextRedactor.RedactUntrustedOrNull(exception.Message) ?? "Batch response unavailable.";
 			results = operations.Select((operation, index) => new DataServiceBatchItemResult(index, operation.RecordId, Unknown, null, error)).ToArray();
 		}
+		results = results.Select(item => item with {
+			Diagnostic = DataWriteDiagnostic.Create(operations[item.Index].Operation, operations[item.Index].SchemaName,
+				item.Index, true, responseReceived, item.State == Completed, item.Error)
+		}).ToArray();
 		int completed = results.Count(item => item.State == Completed);
 		int failed = results.Count(item => item.State == Failed);
 		return new(completed == operations.Count, completed, failed, results.Length - completed - failed, results, Advice);
@@ -178,7 +188,10 @@ public sealed class DataServiceBatchService(IApplicationClient client, IServiceU
 	}
 
 	private static DataServiceBatchItemResult[] ReadResults(JsonElement root, IReadOnlyList<DataServiceBatchOperation> operations, Guid[] ids) {
-		JsonElement[] rows = root.GetProperty("queryResults").EnumerateArray().ToArray();
+		if (!root.TryGetProperty("queryResults", out JsonElement nativeResults) || nativeResults.ValueKind != JsonValueKind.Array) {
+			throw new InvalidOperationException(ReadError(root) ?? "Batch response omitted per-item outcomes; verify affected records before retrying.");
+		}
+		JsonElement[] rows = nativeResults.EnumerateArray().ToArray();
 		if (rows.Any(row => !row.TryGetProperty("queryId", out JsonElement id) || !id.TryGetGuid(out Guid parsed) || !ids.Contains(parsed))) {
 			throw new InvalidOperationException("Batch response contained an uncorrelated query result.");
 		}

@@ -13,3 +13,5 @@ The result separates `completion` (`completed` or `uncertain`), `platform-succes
 The write has a 30-second HTTP timeout and no transport or authentication replay. A lost, malformed or oversized response is `uncertain`; inspect records and activities before resubmission. A failed readback never causes a second write. Reads have a ten-second timeout. Readback contains at most 100 participants and reports truncation; raw responses above 200,000 UTF-8 bytes are refused. At most 20 native error messages plus the service error are returned with bounded, redacted text.
 
 MCP: use `clio-run` with `command: "enroll-sequence-participants"` and arguments `environment-name`, `sequence-id` and `contact-ids` (a UUID array). The tool is destructive and non-idempotent; discover its exact schema with `get-tool-contract`.
+
+The optional diagnostic object adds operation/entity context, write-attempt and transport boundaries, side-effect certainty, and safe retry advice. A native failure after submission does not establish rollback. No HTTP status or offending field is inferred from prose.

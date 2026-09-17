@@ -81,3 +81,5 @@ session stops recovering and starts returning raw login HTML to its caller, whic
 ENG-90393 symptom the executor was written for. Do **not** re-add a caller-facing `MaxAttempts`-style
 escape hatch to re-enable replay - that was added in `56addae21` and removed the same day in
 `a0f2ac01f`; see the remarks in `DataServiceQuery.ExecuteServiceRequest`.
+
+A received failure body is not evidence of rollback. Write diagnostics distinguish the attempted-call boundary from acknowledgement; a read-only metadata preflight is not a write attempt.

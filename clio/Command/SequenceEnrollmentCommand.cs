@@ -31,7 +31,11 @@ public sealed record SequenceEnrollmentResult(
 	[property: JsonPropertyName("failed-count")] int? FailedCount,
 	[property: JsonPropertyName("errors")] IReadOnlyList<string> Errors,
 	[property: JsonPropertyName("readback")] SequenceEnrollmentReadback Readback,
-	[property: JsonPropertyName("next-step")] string NextStep);
+	[property: JsonPropertyName("next-step")] string NextStep) {
+	/// <summary>Observed submission boundary and bounded retry context.</summary>
+	[JsonPropertyName("diagnostic"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public DataWriteDiagnostic Diagnostic { get; init; }
+}
 
 /// <summary>Bounded current participant snapshot; does not attribute records to this submission.</summary>
 public sealed record SequenceEnrollmentReadback(
@@ -86,9 +90,11 @@ public sealed class SequenceEnrollmentService(IApplicationClient client, IServic
 		int added;
 		int failed;
 		List<string> errors;
+		bool responseReceived = false;
 		try {
 			string response = client.ExecuteNonReplayablePostRequest(
 				urls.Build(ServiceUrlBuilder.KnownRoute.SequenceParticipantBulkAdd), body, 30_000, 1, 1);
+			responseReceived = true;
 			using JsonDocument document = ParseBounded(response);
 			JsonElement root = document.RootElement;
 			platformSuccess = root.GetProperty("success").GetBoolean();
@@ -101,14 +107,20 @@ public sealed class SequenceEnrollmentService(IApplicationClient client, IServic
 		} catch (Exception exception) {
 			return new(false, "uncertain", null, null, null,
 				[SensitiveErrorTextRedactor.RedactUntrustedOrNull(exception.Message) ?? "Enrollment response unavailable."],
-				ReadParticipants(sequenceId, contactIds), UncertainAdvice);
+				ReadParticipants(sequenceId, contactIds), UncertainAdvice) {
+				Diagnostic = DataWriteDiagnostic.Create("enroll", "SequenceParticipant", null, true,
+					responseReceived, false, exception.Message)
+			};
 		}
 		SequenceEnrollmentReadback readback = ReadParticipants(sequenceId, contactIds);
 		if (added > readback.Participants.Count && readback.State == CompleteState) {
 			readback = readback with { State = "incomplete", Error = "Fewer visible participants than the native added count; verify permissions and current records before resubmission." };
 		}
 		return new(platformSuccess && failed == 0 && errors.Count == 0 && readback.State == CompleteState,
-			"completed", platformSuccess, added, failed, errors, readback, ReadbackAdvice);
+			"completed", platformSuccess, added, failed, errors, readback, ReadbackAdvice) {
+			Diagnostic = DataWriteDiagnostic.Create("enroll", "SequenceParticipant", null, true, true,
+				platformSuccess && failed == 0 && errors.Count == 0, errors.FirstOrDefault())
+		};
 	}
 
 	private static JsonDocument ParseBounded(string response) {

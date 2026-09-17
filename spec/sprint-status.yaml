@@ -4098,3 +4098,9 @@ stories:
     description: Bounded native DataService batch writes for clio issue 1577
     depends_on: []
     blocks: []
+
+  - id: story-data-write-diagnostics-1
+    status: in-progress
+    description: Safe data-write diagnostics for clio issue 1578
+    depends_on: []
+    blocks: []

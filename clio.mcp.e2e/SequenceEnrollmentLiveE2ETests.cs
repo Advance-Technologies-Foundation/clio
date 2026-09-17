@@ -34,6 +34,8 @@ public sealed class SequenceEnrollmentLiveE2ETests : McpContractFixtureBase {
 		var result = EntitySchemaStructuredResultParser.Extract<SequenceEnrollmentResult>(call);
 		// Assert
 		call.IsError.Should().NotBeTrue(because: "the configured lab request must execute through the real server");
+		result.Diagnostic.Should().NotBeNull(because: "native enrollment includes safe submission context");
+		result.Diagnostic.TransportOutcome.Should().Be("response-received", because: "the native service returned its counts");
 		result.Completion.Should().Be("completed", because: "the native service must return a compatible response");
 		result.AddedCount.Should().NotBeNull(because: "native applied counts must be available even on rejection");
 		result.FailedCount.Should().NotBeNull(because: "partial failures must remain observable");

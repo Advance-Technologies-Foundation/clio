@@ -129,6 +129,9 @@ public sealed class DataServiceBatchCommandTests : BaseCommandTests<DataServiceB
 		result.Items.Select(item => item.State).Should().Equal(new[] { "completed", "failed", "completed" }, because: "query IDs determine input ordering");
 		result.CompletedCount.Should().Be(2, because: "successful neighbors are retained");
 		result.FailedCount.Should().Be(1, because: "the middle item failed");
+		result.Items[1].Diagnostic.SideEffect.Should().Be("unknown", because: "a native failure can follow applied side effects");
+		result.Items[0].Diagnostic.SideEffect.Should().Be("acknowledged", because: "successful neighbors retain their native acknowledgement");
+		result.Items[1].Diagnostic.ItemIndex.Should().Be(1, because: "diagnostics must identify the submitted operation");
 		result.Items[1].Error.Should().Contain("Denied", because: "native PascalCase validation details must survive sanitization");
 		result.UnknownCount.Should().Be(0, because: "every native outcome was correlated");
 		JsonSerializer.Serialize(result).Should().NotContain("password=secret", because: "server diagnostics are sanitized");
@@ -179,6 +182,20 @@ public sealed class DataServiceBatchCommandTests : BaseCommandTests<DataServiceB
 		// Assert
 		result.CompletedCount.Should().Be(2, because: "both native success acknowledgements are correlated");
 		result.Items.Should().OnlyContain(item => item.RowsAffected == null, because: "invalid optional counts are not fabricated");
+	}
+
+	[Test]
+	[Description("A batch-level validation error retains safe detail without inventing individual outcomes.")]
+	public void ExecuteBatch_ShouldPreserveRootError_WhenItemOutcomesAreAbsent() {
+		// Arrange
+		_client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), 30000, 1, 1)
+			.Returns("{\"responseStatus\":{\"Message\":\"Invalid date password=secret\"}}");
+		// Act
+		var result = _command.ExecuteBatch([Operation()]);
+		// Assert
+		result.UnknownCount.Should().Be(1, because: "a root error cannot establish individual outcomes");
+		result.Items[0].Diagnostic.Message.Should().Contain("Invalid date", because: "safe platform validation details remain useful");
+		JsonSerializer.Serialize(result).Should().NotContain("password=secret", because: "root errors use the same redaction boundary");
 	}
 
 	[Test]

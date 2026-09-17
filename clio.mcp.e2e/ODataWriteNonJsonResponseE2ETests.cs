@@ -1,4 +1,4 @@
-﻿using Allure.NUnit;
+using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
@@ -54,6 +54,9 @@ public sealed class ODataWriteNonJsonResponseE2ETests {
 				because: "a bindable odata-update payload should return a structured tool response, not a protocol error");
 			response.Success.Should().BeFalse(
 				because: "an HTML odata response must never be reported as a successful update - the request never reached a real OData controller");
+			response.Diagnostic.Should().NotBeNull(because: "write failures carry additive diagnostic context");
+			response.Diagnostic!.SideEffect.Should().Be("not-attempted", because: "the metadata refusal prevents PATCH submission");
+			response.Diagnostic.TransportOutcome.Should().Be("not-attempted", because: "read-only preflight failed before the write");
 			response.Error.Should().Contain("was not JSON",
 				because: "the diagnostic must point at the transport layer, not the request's OData/ESQ shape");
 			response.Error.Should().Contain("HTTP 404",
@@ -88,6 +91,9 @@ public sealed class ODataWriteNonJsonResponseE2ETests {
 				because: "a bindable odata-delete payload should return a structured tool response, not a protocol error");
 			response.Success.Should().BeFalse(
 				because: "an HTML odata response must never be reported as a successful delete - the request never reached a real OData controller");
+			response.Diagnostic.Should().NotBeNull(because: "write failures carry additive diagnostic context");
+			response.Diagnostic!.SideEffect.Should().Be("unknown", because: "an HTML response cannot prove the write had no effect");
+			response.Diagnostic.TransportOutcome.Should().Be("response-received", because: "the stub returned a body after the write attempt");
 			response.Error.Should().Contain("was not JSON",
 				because: "the diagnostic must point at the transport layer, not the request's OData/ESQ shape");
 		});
@@ -120,6 +126,7 @@ public sealed class ODataWriteNonJsonResponseE2ETests {
 				because: "the single row targets an endpoint that answered with HTML and must be reported as failed, not created");
 			ODataRowResult row = response.Results.Should().ContainSingle(
 				because: "the one-row batch should report exactly one per-row result").Subject;
+			row.Diagnostic!.SideEffect.Should().Be("unknown", because: "a failed create can have committed before its response failed");
 			row.Success.Should().BeFalse(
 				because: "an HTML odata response must never be reported as a successful create");
 			row.RecordCreated.Should().BeNull(
