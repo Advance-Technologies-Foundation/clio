@@ -104,12 +104,23 @@ Edges, all of them widening rather than narrowing:
 - **reference** - A names a type declared in B. The identifier must not be preceded by a dot, so
   `task.Result` and `options.Schema` are member access, not references to the types `Result` and
   `Schema`.
+- **qualified reference** - `Clio.Common.Foo` and `global::Clio.Common.Foo`. The dot in front of
+  `Foo` hides it from the rule above, and 1247 references in this tree are written that way. Only
+  chains rooted in a namespace this repository declares are followed.
 - **implementation to interface** - a consumer injects `IFoo` and never spells `Foo` out. Restricted
   to base types declared as `interface`: a base *class* here (`Command`, `BaseTool`) is a
   template-method host whose hundreds of subclasses are not interchangeable, and following it merges
   the whole tree into one component.
-- **registration** - `AddSingleton<IFoo, Foo>()` and the factory form `AddSingleton<IFoo>(...)`,
-  taken from the registration files only.
+- **extension class to extended type** - `value.Normalize()` names neither the extension class nor
+  its file, so the type it extends is the only route from the call site to it.
+- **registration** - `AddSingleton<IFoo, Foo>()` and the factory form
+  `AddSingleton<IFoo>(sp => new Adapter(new Backend()))`, taken from the registration files only.
+  The factory form is what links a type that does not implement the interface itself.
+
+Two shapes make the per-type split unreliable, and both fall back rather than guess: a raw string is
+blanked out before the declaration scan, so a code sample inside a literal is not read as the next
+declaration, and a file whose first declaration is not its least-indented one is attributed whole to
+every type it declares.
 
 Entry points found in a closure select fixtures two ways: an **MCP tool file** through rule 7, and a
 `[Verb("x")]` through the tool published under the same name (132 of 243 verbs are also MCP tool

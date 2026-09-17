@@ -1,13 +1,23 @@
 # Product files no clio.mcp.e2e fixture can observe, as computed by
+
 # .github/scripts/Select-McpE2eTestFilter.ps1 -Inventory over the reference graph.
+
 #
+
 # A pull request that touches ONLY files listed here queues no TeamCity e2e build at all. That is
+
 # safe exactly while this list is true, so it is pinned here and compared by
+
 # clio.tests/McpE2eSelectionCoverageTests.cs: a file appearing in this list for the first time is a
+
 # reviewable claim that no e2e test covers it, not a silent loss of coverage.
+
 #
+
 # Refresh with:
+
 #   pwsh ./.github/scripts/Select-McpE2eTestFilter.ps1 -Inventory |
+
 #     ConvertFrom-Json | ForEach-Object { $_.unreachableProductFiles }
 clio/AppUpdater.cs
 clio/Command/AddSchema.cs
@@ -20,7 +30,6 @@ clio/Command/AssertCommand.cs
 clio/Command/BuildDockerImageCommand.cs
 clio/Command/BuildDockerImageService.cs
 clio/Command/BuildInfoCommand.cs
-clio/Command/BusinessRules/Filters/Esq/FullToSimpleFilterConverter.cs
 clio/Command/CheckNugetUpdateCommand.cs
 clio/Command/CheckWebFarmNodeConfigurationsCommand.cs
 clio/Command/CheckWindowsFeatureCommand.cs
@@ -41,7 +50,6 @@ clio/Command/DistributeLicenseCommand.cs
 clio/Command/DistributeLicenseOptions.cs
 clio/Command/DownloadAppCommand.cs
 clio/Command/EnvManageUiCommand.cs
-clio/Command/ExternalLink.cs
 clio/Command/FeatureToggleFilter.cs
 clio/Command/GetAppHash.cs
 clio/Command/GitSync.cs
@@ -150,14 +158,10 @@ clio/Common/DbHub/DbHubInstallerService.cs
 clio/Common/DockerTemplatePathProvider.cs
 clio/Common/EnvManageUiService.cs
 clio/Common/IConsole.cs
-clio/Common/IIS/NetFrameworkHttpsConfigurator.cs
 clio/Common/InfrastructurePathProvider.cs
-clio/Common/LoggerExtensions.cs
-clio/Common/LoggerMessageCaptureExtensions.cs
 clio/Common/NugetMaterializer.cs
 clio/Common/PropsBuilder.cs
 clio/Common/ResolvedDynamicallyAttribute.cs
-clio/Common/ScenarioHandlers/CreateIISSite.cs
 clio/Common/ScenarioHandlers/UpdateIISSitePhysicalPath.cs
 clio/Common/SkillRepositoryResolver.cs
 clio/Common/Skills/AgentCliRunner.cs

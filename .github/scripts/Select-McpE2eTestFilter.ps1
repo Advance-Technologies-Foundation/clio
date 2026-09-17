@@ -173,6 +173,16 @@ function Get-Graph() {
     # `options.Schema` do not. Member access through a common property name is what made the graph
     # a single blob when every token counted.
     $identifier = [regex] '(?<![\w.])([A-Za-z_]\w*)'
+    # `Clio.Common.Foo` and `global::Clio.Common.Foo`: the dot before Foo hides it from $identifier,
+    # and 1247 references in this tree are written that way. Only chains rooted in a namespace this
+    # repository declares are followed, so `task.Result` is still member access, not a reference.
+    $qualified = [regex] '(?<![\w.])(?:global::)?([A-Za-z_]\w*)((?:\.[A-Za-z_]\w*)+)'
+    $namespaceDeclaration = '(?m)^\s*namespace\s+([A-Za-z_]\w*)'
+    # `public static int Normalize(this Service value)`: the extension type is never named by the
+    # caller, so the call site has to be routed through the type it extends.
+    $extensionParameter = [regex] '\(\s*this\s+(?:ref\s+|in\s+|scoped\s+)*([A-Za-z_]\w*)'
+    # A raw string can contain anything, including a line that looks like a declaration.
+    $rawString = [regex] '(?s)""".*?"""'
     # services.AddSingleton<IFoo, Foo>() - the one edge name matching cannot see, because a consumer
     # of IFoo never spells Foo out. Taken from the registration files only, and only as an exact pair.
     $registrationPair = [regex] 'Add(?:Singleton|Scoped|Transient|KeyedSingleton)<\s*(?:[\w.]*\.)?(\w+)\s*,\s*(?:[\w.]*\.)?(\w+)\s*>'
@@ -195,14 +205,36 @@ function Get-Graph() {
     # part of their outer type and no character of the file is left unattributed.
     $interfaceTypes = New-Object System.Collections.Generic.HashSet[string]
     $baseList = @{}    # type name -> the names in its base list
+    $namespaceRoots = New-Object System.Collections.Generic.HashSet[string]
+    foreach ($relative in $texts.Keys) {
+        foreach ($m in [regex]::Matches($texts[$relative], $namespaceDeclaration)) { [void]$namespaceRoots.Add($m.Groups[1].Value) }
+    }
+
     $typeBody = @{}    # type name -> the text that belongs to it (a partial type accumulates)
     $typeFiles = @{}   # type name -> files declaring it
     $typesByFile = @{} # file -> type names declared at its top level
     foreach ($relative in $texts.Keys) {
         $text = $texts[$relative]
-        $matches = @($typeDeclaration.Matches($text))
+        # Scan for declarations on a copy with raw-string contents blanked out, so a code sample
+        # inside a literal cannot be read as the file's next top-level type. Offsets are preserved.
+        $scan = $rawString.Replace($text, { param($m) ' ' * $m.Value.Length })
+        $matches = @($typeDeclaration.Matches($scan))
         if ($matches.Count -eq 0) { $typesByFile[$relative] = @(); continue }
         $topIndent = ($matches | ForEach-Object { $_.Groups[1].Value.Length } | Measure-Object -Minimum).Minimum
+        # A nested type indented less than the type that contains it would become the file's only
+        # "top level" and swallow the outer type's body. Two files in this tree are formatted that
+        # way; rather than guess, attribute the whole file to every type it declares.
+        if ($matches[0].Groups[1].Value.Length -ne $topIndent) {
+            $declaredAll = @($matches | ForEach-Object { $_.Groups[3].Value } | Select-Object -Unique)
+            foreach ($name in $declaredAll) {
+                if (-not $typeBody.ContainsKey($name)) { $typeBody[$name] = New-Object System.Text.StringBuilder }
+                [void]$typeBody[$name].Append($text)
+                if (-not $typeFiles.ContainsKey($name)) { $typeFiles[$name] = New-Object System.Collections.Generic.HashSet[string] }
+                [void]$typeFiles[$name].Add($relative)
+            }
+            $typesByFile[$relative] = $declaredAll
+            continue
+        }
         $tops = @($matches | Where-Object { $_.Groups[1].Value.Length -eq $topIndent })
         foreach ($top in $tops) {
             if ($top.Groups[2].Value -eq 'interface') { [void]$interfaceTypes.Add($top.Groups[3].Value) }
@@ -237,10 +269,26 @@ function Get-Graph() {
         if ($verbs.Count -gt 0) { $verbsByType[$name] = $verbs }
         $tokens = New-Object System.Collections.Generic.HashSet[string]
         foreach ($m in $identifier.Matches($body)) { [void]$tokens.Add($m.Groups[1].Value) }
+        foreach ($m in $qualified.Matches($body)) {
+            if (-not $namespaceRoots.Contains($m.Groups[1].Value)) { continue }
+            foreach ($segment in $m.Groups[2].Value.Split('.')) { if ($segment) { [void]$tokens.Add($segment) } }
+        }
         foreach ($token in $tokens) {
             if ($token -eq $name -or -not $typeBody.ContainsKey($token)) { continue }
             if (-not $consumers.ContainsKey($token)) { $consumers[$token] = New-Object System.Collections.Generic.HashSet[string] }
             [void]$consumers[$token].Add($name)
+        }
+    }
+
+    # Extension class -> extended type. `value.Normalize()` names neither the extension class nor
+    # its file, so the only route from a call site to the extension is the type it extends.
+    foreach ($name in @($typeBody.Keys)) {
+        foreach ($m in $extensionParameter.Matches($typeBody[$name].ToString())) {
+            $extended = $m.Groups[1].Value
+            if ($extended -eq $name -or -not $typeBody.ContainsKey($extended)) { continue }
+            if (-not $consumers.ContainsKey($extended)) { continue }
+            if (-not $consumers.ContainsKey($name)) { $consumers[$name] = New-Object System.Collections.Generic.HashSet[string] }
+            foreach ($c in $consumers[$extended]) { if ($c -ne $name) { [void]$consumers[$name].Add($c) } }
         }
     }
 
@@ -454,8 +502,11 @@ function Select-FixturesForDataFile([string] $FileRelative, [ref] $Reason) {
     $selected = New-Object System.Collections.Generic.HashSet[string]
     foreach ($holder in $holders) {
         $holderReason = ''
-        foreach ($n in @(Select-FixturesForProductFile $holder ([ref]$holderReason))) { [void]$selected.Add($n) }
-        if ($selected.Count -eq 0 -and $holderReason.StartsWith('full run')) { $Reason.Value = "full run (asset holder $holder : $holderReason)"; return @() }
+        $holderFixtures = @(Select-FixturesForProductFile $holder ([ref]$holderReason))
+        # Checked per holder, not against what is already selected: one holder resolving to fixtures
+        # must not hide another whose blast radius is unknown.
+        if ($holderFixtures.Count -eq 0 -and $holderReason.StartsWith('full run')) { $Reason.Value = "full run (asset holder $holder : $holderReason)"; return @() }
+        foreach ($n in $holderFixtures) { [void]$selected.Add($n) }
     }
     if ($selected.Count -eq 0) { $Reason.Value = "no fixture reaches the $($holders.Count) file(s) naming this asset"; return @() }
     $Reason.Value = "asset named by $($holders.Count) product file(s)"

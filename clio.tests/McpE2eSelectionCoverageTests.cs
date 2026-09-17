@@ -304,7 +304,7 @@ internal sealed class McpE2eSelectionCoverageTests {
 		JsonElement registeredImplementation = RunSelection(["clio/Common/BetaService.cs"], includeNoEnvironment: false, repo.Root);
 		JsonElement factoryImplementation = RunSelection(["clio/Common/DeltaBackend.cs"], includeNoEnvironment: false, repo.Root);
 		JsonElement cliVerb = RunSelection(["clio/Command/GammaCommand.cs"], includeNoEnvironment: false, repo.Root);
-		JsonElement asset = RunSelection(["clio/Command/McpServer/Data/AlphaRules.json"], includeNoEnvironment: false, repo.Root);
+		JsonElement asset = RunSelection(["clio/Command/McpServer/Data/BetaRules.json"], includeNoEnvironment: false, repo.Root);
 		JsonElement toolFile = RunSelection(["clio/Command/McpServer/Tools/AlphaTool.cs"], includeNoEnvironment: false, repo.Root);
 
 		// Assert
@@ -320,12 +320,48 @@ internal sealed class McpE2eSelectionCoverageTests {
 			because: "DeltaBackend declares no interface, so the factory line in the composition root is the only thing that ties it to DeltaTool; without reading that line a change to it looks unreachable and skips the build entirely");
 		cliVerb.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["GammaCliE2ETests"],
 			because: "a command is reached by its verb string, so the fixture that spells the verb out is its only textual coverage link");
-		asset.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(alphaFixtures,
+		asset.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["BetaToolE2ETests"],
 			because: "an asset loaded by file name belongs to the fixtures of the tools that load it");
 		toolFile.GetProperty("mode").GetString().Should().Be("subset",
 			because: "a tool file resolves directly to the fixtures that reference it");
 		toolFile.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(alphaFixtures,
 			because: "the class identifier, the tool-name literal and the naming convention all point at the same fixtures");
+	}
+
+	[Test]
+	[Description("The graph follows the references a plain identifier scan cannot see: a fully qualified type name, an extension method reached only through the type it extends, and a declaration that only looks like one because it sits inside a raw string.")]
+	public void Script_ShouldFollowReferencesThatAPlainIdentifierScanMisses() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+
+		// Act
+		JsonElement qualified = RunSelection(["clio/Common/EpsilonService.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement extensionMethod = RunSelection(["clio/Common/ZetaExtensions.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement pastARawString = RunSelection(["clio/Common/ThetaDependency.cs"], includeNoEnvironment: false, repo.Root);
+
+		// Assert
+		qualified.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["EpsilonToolE2ETests"],
+			because: "EpsilonTool writes Clio.Common.EpsilonService, and a dot in front of the type name must not hide the reference or the change looks unobservable");
+		extensionMethod.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["ZetaToolE2ETests"],
+			because: "the call site writes value.Normalize() and never names ZetaExtensions, so the extended type is the only route from the tool to the extension");
+		pastARawString.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["ThetaToolE2ETests"],
+			because: "the declaration inside ThetaService's raw string must not end ThetaService's body early, or the dependency it uses after the literal loses its consumer");
+	}
+
+	[Test]
+	[Description("A data asset runs the whole suite when any file naming it has an unknown blast radius, even when another file naming it resolved to fixtures first.")]
+	public void Script_ShouldSelectFullRun_WhenOneHolderOfADataAssetIsUnclassifiable() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+
+		// Act
+		JsonElement selection = RunSelection(["clio/Command/McpServer/Data/AlphaRules.json"], includeNoEnvironment: false, repo.Root);
+
+		// Assert
+		selection.GetProperty("mode").GetString().Should().Be("full",
+			because: "EtaLoader also reads the asset and is resolved dynamically, so its blast radius is unknown; AlphaTool resolving first must not hide that");
+		selection.GetProperty("decisions").EnumerateArray().Select(d => d.GetString()).Should().Contain(d => d!.Contains("asset holder"),
+			because: "the decision log must name the holder that forced the full run");
 	}
 
 	[Test]
@@ -527,7 +563,7 @@ internal sealed class McpE2eSelectionCoverageTests {
 			// registration pair links them, which is the edge plain name matching cannot see.
 			Write("clio/Command/McpServer/Tools/BetaTool.cs",
 				"public sealed class BetaTool : BaseTool {\n\tinternal const string ToolName = \"beta-run\";\n" +
-				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(IBetaService service) { }\n}");
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(IBetaService service) { Load(\"BetaRules.json\"); }\n}");
 			Write("clio/Common/IBetaService.cs", "public interface IBetaService { }");
 			Write("clio/Common/BetaService.cs", "public sealed class BetaService : IBetaService { }");
 			// Registered through a factory. DeltaBackend declares no base list, so the
@@ -544,6 +580,33 @@ internal sealed class McpE2eSelectionCoverageTests {
 				"[Verb(\"gamma-run\")]\npublic sealed class GammaOptions { }\npublic sealed class GammaCommand { }");
 			// An asset the tool loads by file name rather than by type reference.
 			Write("clio/Command/McpServer/Data/AlphaRules.json", "{ }");
+			Write("clio/Command/McpServer/Data/BetaRules.json", "{ }");
+			// EpsilonTool names its dependency fully qualified, so the dot in front of the type hides
+			// it from the plain identifier scan; 1247 references in the real tree are written this way.
+			Write("clio/Command/McpServer/Tools/EpsilonTool.cs",
+				"namespace Clio.Command.McpServer.Tools;\npublic sealed class EpsilonTool : BaseTool {\n" +
+				"\tinternal const string ToolName = \"epsilon-run\";\n\t[McpServerTool(Name = ToolName)]\n" +
+				"\tpublic void Run() { var x = new Clio.Common.EpsilonService(); }\n}");
+			Write("clio/Common/EpsilonService.cs", "namespace Clio.Common;\npublic sealed class EpsilonService { }");
+			// ZetaExtensions is named by nobody: the call site writes value.Normalize() and reaches it
+			// only through the type it extends.
+			Write("clio/Command/McpServer/Tools/ZetaTool.cs",
+				"public sealed class ZetaTool : BaseTool {\n\tinternal const string ToolName = \"zeta-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(ZetaValue value) { value.Normalize(); }\n}");
+			Write("clio/Common/ZetaValue.cs", "public sealed class ZetaValue { }");
+			Write("clio/Common/ZetaExtensions.cs",
+				"public static class ZetaExtensions {\n\tpublic static int Normalize(this ZetaValue value) => 1;\n}");
+			// A second holder of AlphaRules.json whose own blast radius is unknown.
+			Write("clio/Command/McpServer/Tools/EtaLoader.cs",
+				"[ResolvedDynamically]\npublic sealed class EtaLoader {\n\tpublic void Load() { Read(\"AlphaRules.json\"); }\n}");
+			// A raw string whose contents look like a top-level declaration.
+			Write("clio/Common/ThetaService.cs",
+				"public sealed class ThetaService {\n\tconst string Sample = \"\"\"\npublic class FakeDeclaration { }\n\"\"\";\n" +
+				"\tpublic void Use(ThetaDependency dependency) { }\n}");
+			Write("clio/Command/McpServer/Tools/ThetaTool.cs",
+				"public sealed class ThetaTool : BaseTool {\n\tinternal const string ToolName = \"theta-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(ThetaService service) { }\n}");
+			Write("clio/Common/ThetaDependency.cs", "public sealed class ThetaDependency { }");
 			Write("clio/BindingsModule.cs",
 				"public static class BindingsModule { static void Register() {\n" +
 				"\t_ = typeof(RegisteredOnlyService);\n\tservices.AddSingleton<IBetaService, BetaService>();\n" +
@@ -558,6 +621,12 @@ internal sealed class McpE2eSelectionCoverageTests {
 				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class UnrelatedE2ETests {\n\t[Test] public void Works() { }\n}");
 			Write("clio.mcp.e2e/BetaToolE2ETests.cs",
 				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class BetaToolE2ETests {\n\t[Test] public void Works() => Call(BetaTool.ToolName);\n}");
+			Write("clio.mcp.e2e/EpsilonToolE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class EpsilonToolE2ETests {\n\t[Test] public void Works() => Call(EpsilonTool.ToolName);\n}");
+			Write("clio.mcp.e2e/ZetaToolE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class ZetaToolE2ETests {\n\t[Test] public void Works() => Call(ZetaTool.ToolName);\n}");
+			Write("clio.mcp.e2e/ThetaToolE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class ThetaToolE2ETests {\n\t[Test] public void Works() => Call(ThetaTool.ToolName);\n}");
 			Write("clio.mcp.e2e/DeltaToolE2ETests.cs",
 				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class DeltaToolE2ETests {\n\t[Test] public void Works() => Call(DeltaTool.ToolName);\n}");
 			Write("clio.mcp.e2e/GammaCliE2ETests.cs",
