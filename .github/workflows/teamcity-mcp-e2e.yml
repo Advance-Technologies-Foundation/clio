@@ -12,8 +12,9 @@
 # a commit status, so the result shows in the PR checks list.
 #
 # Phase 1 is advisory (non-blocking) - the status is informational and is NOT a
-# required check. The unit-tests config (Team_Atf_ClioUnitTests) uses a different
-# branch model and is handled as a fast-follow, not here.
+# required check. The unit-tests config (Team_Atf_ClioUnitTests) is queued the same
+# way by .github/workflows/teamcity-unit-tests.yml; both share
+# .github/scripts/queue-teamcity-build.ps1.
 #
 # Prerequisites (one-time, outside this repo) - all in place at merge time:
 #   1. TeamCity: Commit Status Publisher on Team_Atf_ClioMcpE2eTests (GitHub App
@@ -217,6 +218,10 @@ jobs:
           TC_URL: https://teamcity-rnd.bpmonline.com
           TC_TOKEN: ${{ secrets.TEAMCITY_TOKEN }}
           BUILD_TYPE: Team_Atf_ClioMcpE2eTests
+          BUILD_LABEL: MCP e2e
+          # e2e-only switches: deploy a full Creatio (Studio) and allow the
+          # destructive MCP tests against it. The unit-tests trigger sends none.
+          TC_EXTRA_PROPERTIES: '{"DeployCreatioBuild":"true","env.McpE2E__AllowDestructiveMcpTests":"true","ProductName":"Studio"}'
           # pull_request -> PR head branch; workflow_dispatch -> the chosen branch.
           HEAD_REF: ${{ github.event.pull_request.head.ref || inputs.branch }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
@@ -267,6 +272,10 @@ jobs:
           TC_URL: https://teamcity-rnd.bpmonline.com
           TC_TOKEN: ${{ secrets.TEAMCITY_TOKEN }}
           BUILD_TYPE: Team_Atf_ClioMcpE2eTests
+          BUILD_LABEL: MCP e2e
+          # e2e-only switches: deploy a full Creatio (Studio) and allow the
+          # destructive MCP tests against it. The unit-tests trigger sends none.
+          TC_EXTRA_PROPERTIES: '{"DeployCreatioBuild":"true","env.McpE2E__AllowDestructiveMcpTests":"true","ProductName":"Studio"}'
           HEAD_REF: ${{ github.event.pull_request.head.ref || inputs.branch }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
           PR_NUMBER: ${{ github.event.pull_request.number || '(manual)' }}
@@ -320,6 +329,10 @@ jobs:
           TC_URL: https://teamcity-rnd.bpmonline.com
           TC_TOKEN: ${{ secrets.TEAMCITY_TOKEN }}
           BUILD_TYPE: Team_Atf_ClioMcpE2eTests
+          BUILD_LABEL: MCP e2e
+          # e2e-only switches: deploy a full Creatio (Studio) and allow the
+          # destructive MCP tests against it. The unit-tests trigger sends none.
+          TC_EXTRA_PROPERTIES: '{"DeployCreatioBuild":"true","env.McpE2E__AllowDestructiveMcpTests":"true","ProductName":"Studio"}'
           HEAD_REF: ${{ github.event.pull_request.head.ref || inputs.branch }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
           PR_NUMBER: ${{ github.event.pull_request.number || '(manual)' }}
