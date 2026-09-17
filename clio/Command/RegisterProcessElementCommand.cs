@@ -61,7 +61,7 @@ public sealed class ProcessElementRegistration(System.IO.Abstractions.IFileSyste
 	public IReadOnlyList<string> Generate(RegisterProcessElementOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		if (string.IsNullOrWhiteSpace(options.WorkspacePath) || string.IsNullOrWhiteSpace(options.PackageName)
-			|| !Regex.IsMatch(options.PackageName, @"\A[A-Za-z_][A-Za-z0-9_]*\z")
+			|| !Regex.IsMatch(options.PackageName, @"\A[A-Za-z_][A-Za-z0-9_]*\z", RegexOptions.None, TimeSpan.FromSeconds(1))
 			|| options.UserTaskUId == Guid.Empty || string.IsNullOrWhiteSpace(options.Caption)
 			|| options.Caption.Contains('\0')) {
 			throw new ArgumentException("A workspace path, package name, nonempty user-task UId and caption are required.");
@@ -93,8 +93,8 @@ public sealed class ProcessElementRegistration(System.IO.Abstractions.IFileSyste
 				JsonNode descriptor = Read(descriptorPath)["SqlScript"];
 				if (descriptor?["Name"]?.GetValue<string>() != name
 					|| descriptor?["DBEngineType"]?.GetValue<int>() != engine
-					|| descriptor?["InstallType"]?.GetValue<int>() != 1
-					|| !Guid.TryParse(descriptor?["UId"]?.GetValue<string>(), out Guid uid) || uid == Guid.Empty) {
+					|| descriptor["InstallType"]?.GetValue<int>() != 1
+					|| !Guid.TryParse(descriptor["UId"]?.GetValue<string>(), out Guid uid) || uid == Guid.Empty) {
 					throw new InvalidOperationException($"Existing registration descriptor conflicts with the requested task: {descriptorPath}");
 				}
 			} else {
@@ -131,11 +131,11 @@ public sealed class ProcessElementRegistration(System.IO.Abstractions.IFileSyste
 			}
 			match = path;
 			JsonNode schema = Read(files.Path.Combine(files.Path.GetDirectoryName(path), "metadata.json"))["MetaData"]?["Schema"];
-			if (descriptor?["ManagerName"]?.GetValue<string>() != "ProcessUserTaskSchemaManager"
+			if (descriptor["ManagerName"]?.GetValue<string>() != "ProcessUserTaskSchemaManager"
 				|| schema?["ManagerName"]?.GetValue<string>() != "ProcessUserTaskSchemaManager"
-				|| schema?["A2"]?.GetValue<string>() != descriptor?["Name"]?.GetValue<string>()
-				|| !Guid.TryParse(schema?["UId"]?.GetValue<string>(), out Guid metadataUid) || metadataUid != taskUId
-				|| !Guid.TryParse(schema?["B6"]?.GetValue<string>(), out Guid owner) || owner != packageUId) {
+				|| schema["A2"]?.GetValue<string>() != descriptor["Name"]?.GetValue<string>()
+				|| !Guid.TryParse(schema["UId"]?.GetValue<string>(), out Guid metadataUid) || metadataUid != taskUId
+				|| !Guid.TryParse(schema["B6"]?.GetValue<string>(), out Guid owner) || owner != packageUId) {
 				throw new InvalidOperationException("The schema must be a user task with matching descriptor, metadata and package identities.");
 			}
 		}
