@@ -102,7 +102,8 @@ public sealed class UserTaskPageScaffolder(IFileSystem files) : IUserTaskPageSca
 		ValidateName(taskName, "task name");
 		string taskMetadataPath = files.Path.Combine(files.Path.GetDirectoryName(matches[0]), "metadata.json");
 		JsonNode taskRoot = Read(taskMetadataPath);
-		JsonNode task = taskRoot["MetaData"]?["Schema"];
+		JsonNode task = taskRoot["MetaData"]?["Schema"]
+			?? throw new InvalidOperationException("Task schema metadata is missing.");
 		ValidateTaskIdentity(taskDescriptor, task, taskName, options.UserTaskUId, packageUId);
 		string existingPage = task["FK11"]?.GetValue<string>();
 		if (!string.IsNullOrEmpty(existingPage) && existingPage != Guid.Empty.ToString()) {
@@ -154,7 +155,7 @@ public sealed class UserTaskPageScaffolder(IFileSystem files) : IUserTaskPageSca
 
 	private static void ValidateTaskIdentity(JsonNode descriptor, JsonNode task, string name, Guid taskUId, Guid packageUId) {
 		if (descriptor["ManagerName"]?.GetValue<string>() != "ProcessUserTaskSchemaManager"
-			|| task?["ManagerName"]?.GetValue<string>() != "ProcessUserTaskSchemaManager"
+			|| task["ManagerName"]?.GetValue<string>() != "ProcessUserTaskSchemaManager"
 			|| task["A2"]?.GetValue<string>() != name
 			|| Guid.Parse(task["UId"].GetValue<string>()) != taskUId
 			|| Guid.Parse(task["B6"].GetValue<string>()) != packageUId) {

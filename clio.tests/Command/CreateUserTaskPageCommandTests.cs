@@ -164,12 +164,14 @@ public sealed class CreateUserTaskPageCommandTests : BaseCommandTests<CreateUser
 	[TestCase("direction")]
 	[TestCase("page")]
 	[TestCase("resources")]
+	[TestCase("missing-schema")]
 	[Description("Rejects mismatched task ownership, invalid metadata and existing page artifacts without changing workspace files.")]
 	public void Execute_RejectsInvalidWorkspace_BeforeWrites(string failure) {
 		// Arrange
 		JsonNode root = JsonNode.Parse(FileSystem.File.ReadAllText(MetadataPath))!;
 		JsonNode schema = root["MetaData"]!["Schema"]!;
 		switch (failure) {
+			case "missing-schema": root["MetaData"]!["Schema"] = null; break;
 			case "owner": schema["B6"] = Guid.NewGuid().ToString(); break;
 			case "manager": schema["ManagerName"] = "EntitySchemaManager"; break;
 			case "direction": schema["FJ1"]![0]!["L12"] = 99; break;
