@@ -26,7 +26,9 @@ namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 /// file cannot make an older clio report a target it does not know how to verify.
 /// </para>
 /// <para>
-/// It performs DataService <c>SelectQuery</c> reads plus one designer read per object and issues no write
+/// It performs DataService <c>SelectQuery</c> reads plus up to two designer reads per object — the mobile
+/// classification, and for a verified-missing object the web candidate — capped per call by
+/// <see cref="MaxEntityAddonProbes"/>, and issues no write
 /// call. (The add-on <c>GetSchema</c> is a read that the SERVER answers by auto-provisioning an empty
 /// descriptor when none exists; that side effect is the platform's, and it is idempotent.) It NEVER throws: any failure degrades to <see cref="MobileActionTargetProbeResult.ProbeOk"/> = false and
 /// leaves the affected targets ABSENT from the resolution map, which every consumer reads as
@@ -103,6 +105,16 @@ public static class MobileActionTargetProbe {
 	/// all" (absent) from "rows but no base row" (unknown).
 	/// </summary>
 	private const int RowsPerNameHeadroom = 4;
+
+	/// <summary>
+	/// Per-call ceiling on <see cref="ClassifyEntityDefaultMobilePage"/> probes: each one is a sequential
+	/// round trip, and read-only MCP tools answer under a wall-clock deadline (<c>McpReadResponseDeadline</c>),
+	/// so an unbounded per-object fan-out on a page with many distinct targets can time out the whole call —
+	/// and a retry after a timeout repeats the identical unbounded work rather than resuming it. Capping
+	/// keeps one guide call's cost predictable regardless of how many targets a page names, at the cost of
+	/// reporting the excess as <see cref="ActionTargetState.Unknown"/> (fail open) rather than verifying them.
+	/// </summary>
+	private const int MaxEntityAddonProbes = 32;
 
 	/// <summary>
 	/// The key one distinct action target is resolved under. Single-sourced so the probe that WRITES a
@@ -414,8 +426,9 @@ public static class MobileActionTargetProbe {
 	/// reports, so a tier that performed NO read must say false however cleanly it returned — otherwise the
 	/// caller is told the object targets were verified when nothing was asked. <c>Note</c> is null only when
 	/// the tier ran in full; it is set both when the tier did not run and when it ran incompletely — including
-	/// when every <c>Missing</c> verdict was itself settled but a <see cref="ResolveDefaultWebPage"/> candidate
-	/// lookup failed for one or more of them, which still leaves <c>Answered</c> <see langword="true"/>: the
+	/// when every <c>Missing</c> verdict was itself settled but a candidate lookup
+	/// (<see cref="ReadDefaultWebPageUId"/> / <see cref="ResolveCandidateNames"/>) failed for one or more of
+	/// them, which still leaves <c>Answered</c> <see langword="true"/>: the
 	/// verdicts stand, only the bonus candidate name is what a caller cannot trust as "confirmed absent".
 	/// </summary>
 	private sealed record EntityTierOutcome(bool Answered, string Note);
@@ -427,9 +440,12 @@ public static class MobileActionTargetProbe {
 
 	/// <summary>
 	/// Resolves every <see cref="KindEntityDefaultMobilePage"/> target: one batched <c>SysSchema</c> read for
-	/// the objects' base-row UIds, then one <c>MobileRelatedPage</c> add-on read per object. That add-on is
+	/// the objects' base-row UIds, then one <c>MobileRelatedPage</c> add-on read per object (capped by
+	/// <see cref="MaxEntityAddonProbes"/>). That add-on is
 	/// what the Creatio Mobile app resolves for a create/update-record action, and it is the same add-on
-	/// <c>create-related-page-addon --schema-type mobile</c> writes at the end of a conversion.
+	/// <c>create-related-page-addon --schema-type mobile</c> writes at the end of a conversion. For the
+	/// objects verified missing, the candidate WEB page is resolved as one web add-on read per object plus
+	/// ONE batched name lookup for all of them (<see cref="ResolveCandidateNames"/>).
 	/// </summary>
 	/// <returns>Whether the tier answered, and what limited it — see <see cref="EntityTierOutcome"/>.</returns>
 	private static EntityTierOutcome ResolveEntityTargets(
@@ -456,36 +472,63 @@ public static class MobileActionTargetProbe {
 
 		int candidateFailures = 0;
 		Exception firstCandidateFailure = null;
+		int budget = MaxEntityAddonProbes;
+		bool budgetExhausted = false;
+		// Verified-missing objects whose web add-on named a default page. The UIds are resolved to schema
+		// NAMES in one batched select after the loop (ResolveCandidateNames) instead of one by-UId round
+		// trip per object — the add-on read stays per object, the name lookup does not.
+		var pendingCandidates = new List<(string Name, Guid PageUId)>();
 		foreach (string name in names) {
 			if (!uIdByName.TryGetValue(name, out string entityUId)) {
 				// No rows at all: the object does not exist, so the action is dead — unless the read may have
 				// been truncated, when "no row" cannot be told apart from "the row was cut off the result".
 				// Rows but no base row: the object cannot be addressed reliably, so refuse to guess (the
-				// ResolveEntityUId rule).
+				// ResolveEntityUId rule). Resolving the name cost no probe, so this branch never touches budget.
 				Record(into, KindEntityDefaultMobilePage, name,
 					seenNames.Contains(name) || truncated ? ActionTargetState.Unknown : ActionTargetState.Missing);
 				continue;
 			}
+			if (budget-- <= 0) {
+				// Fail open AND say so: an unasked target must not look like one the environment answered "no"
+				// to. Skipping the classify call here also skips the candidate read below it — a target never
+				// probed is never Missing, so it never enters the candidate resolution.
+				budgetExhausted = true;
+				Record(into, KindEntityDefaultMobilePage, name, ActionTargetState.Unknown);
+				continue;
+			}
 			ActionTargetState state = ClassifyEntityDefaultMobilePage(context, entityUId, packageUId);
 			// Candidate resolution runs ONLY for a verified-missing verdict: Unknown/Resolved need no candidate.
-			string candidate = null;
 			if (state == ActionTargetState.Missing) {
-				candidate = ResolveDefaultWebPage(context, entityUId, packageUId, out Exception failure);
+				Guid? pageUId = ReadDefaultWebPageUId(context, entityUId, packageUId, out Exception failure);
 				if (failure is not null) {
 					candidateFailures++;
 					firstCandidateFailure ??= failure;
 				}
+				if (pageUId is not null) {
+					pendingCandidates.Add((name, pageUId.Value));
+				}
 			}
-			RecordEntityResolution(into, name, state, candidate);
+			// Candidate stays null here; ResolveCandidateNames re-records the entries that resolve a name.
+			RecordEntityResolution(into, name, state, null);
 		}
+		ResolveCandidateNames(context, pendingCandidates, into, ref candidateFailures, ref firstCandidateFailure);
 		// A candidate-resolution failure never demotes the STATE (it was already settled above) and never
 		// aborts the batch — the other objects' candidates stand. It only costs the NOTE, so a caller can
 		// tell "the read failed" apart from "the object genuinely has no default web page" instead of both
 		// silently reaching the wire as the same null.
-		string note = candidateFailures > 0
+		string candidateNote = candidateFailures > 0
 			? Describe(
 				$"Could not resolve a candidate web page for {candidateFailures} object(s)", firstCandidateFailure)
 			: null;
+		// Both notes can fire in the same call (some objects never probed, others probed but failed to
+		// resolve a candidate) — neither may silently replace the other.
+		string budgetNote = budgetExhausted
+			? $"Only the first {MaxEntityAddonProbes} object targets were checked; the rest are reported as "
+				+ "unverified. Check them manually."
+			: null;
+		string note = budgetNote is null ? candidateNote : budgetNote + (candidateNote is null ? "" : " " + candidateNote);
+		// Answered either way: the reads that ran did succeed. The note is what says some were never asked
+		// and/or that a candidate lookup failed.
 		return new EntityTierOutcome(true, note);
 	}
 
@@ -574,30 +617,27 @@ public static class MobileActionTargetProbe {
 	}
 
 	/// <summary>
-	/// Resolves the object's default WEB edit page — the candidate to offer converting next for a verified-
-	/// missing <see cref="KindEntityDefaultMobilePage"/> target. Reads the WEB
-	/// <see cref="RelatedPageAddonName"/> add-on (the mirror of <see cref="ClassifyEntityDefaultMobilePage"/>'s
-	/// mobile read) for the untyped default page's <c>PageSchemaUId</c>, then reverse-resolves that UId to its
-	/// schema NAME via <see cref="PageSchemaMetadataHelper.QuerySysSchemaRowByUId"/> — the same reverse lookup
-	/// <c>get-related-page-addon</c> uses.
+	/// The PER-OBJECT half of resolving the candidate WEB edit page for a verified-missing
+	/// <see cref="KindEntityDefaultMobilePage"/> target: reads the WEB <see cref="RelatedPageAddonName"/>
+	/// add-on (the mirror of <see cref="ClassifyEntityDefaultMobilePage"/>'s mobile read) and returns the
+	/// untyped default page's UId. The UId→NAME step is deliberately NOT here — it runs once for the whole
+	/// tier in <see cref="ResolveCandidateNames"/>, batched, instead of one by-UId round trip per object.
 	/// <para>
-	/// Fails open to <see langword="null"/> (never a guess): no add-on configured, no untyped default, an
+	/// Fails open to <see langword="null"/> (never a guess): no add-on configured, no untyped default, or an
 	/// unparseable add-on body (<see cref="ExtractDefaultPageSchemaUId"/> already swallows that, and has its
-	/// own dedicated coverage), or a resolved name that fails
-	/// <see cref="PageSchemaMetadataHelper.IsValidSchemaName"/> all read the same as "no candidate found" —
-	/// the caller decides manually rather than being told a wrong page name.
+	/// own dedicated coverage) all read the same as "no candidate found".
 	/// </para>
 	/// <para>
-	/// A THROW from the add-on read, or the by-UId lookup coming back with no row (a dangling
-	/// <c>PageSchemaUId</c> the add-on still names, or a transport/failure envelope), is DIFFERENT: it is
-	/// surfaced through <paramref name="failure"/> rather than swallowed, because "the read never answered"
-	/// and "the object genuinely has no default page" are not the same fact — collapsing them is what let a
-	/// stale add-on reference read exactly like a clean absence. The caller (<see cref="ResolveEntityTargets"/>)
-	/// folds this into the tier's degradation note; it never aborts THIS object's own <c>Missing</c> verdict,
-	/// which was already settled before this method runs, and never touches any other object's candidate.
+	/// A THROW from the add-on read is DIFFERENT: it is surfaced through <paramref name="failure"/> rather
+	/// than swallowed, because "the read never answered" and "the object genuinely has no default page" are
+	/// not the same fact. So is a declared <c>PageSchemaUId</c> that does not parse as a GUID — it is failed
+	/// HERE rather than sent into the batch, where one authored-garbage value would fail the whole chunk and
+	/// cost every SIBLING its candidate. The caller (<see cref="ResolveEntityTargets"/>) folds either into
+	/// the tier's degradation note; it never aborts THIS object's own <c>Missing</c> verdict, which was
+	/// already settled before this method runs, and never touches any other object's candidate.
 	/// </para>
 	/// </summary>
-	private static string ResolveDefaultWebPage(
+	private static Guid? ReadDefaultWebPageUId(
 		ProbeContext context, string entitySchemaUId, Guid packageUId, out Exception failure) {
 		failure = null;
 		if (!Guid.TryParse(entitySchemaUId, out Guid entityUId)) {
@@ -616,15 +656,12 @@ public static class MobileActionTargetProbe {
 			if (string.IsNullOrWhiteSpace(pageSchemaUId)) {
 				return null;
 			}
-			(JToken row, string error) = PageSchemaMetadataHelper.QuerySysSchemaRowByUId(
-				context.Client, context.UrlBuilder, pageSchemaUId, ("Name", "Name"));
-			if (row is null) {
+			if (!Guid.TryParse(pageSchemaUId, out Guid pageUId)) {
 				failure = new InvalidOperationException(
-					error ?? $"Page schema '{pageSchemaUId}' could not be resolved to a name.");
+					$"Page schema '{pageSchemaUId}' could not be resolved to a name.");
 				return null;
 			}
-			string name = row["Name"]?.ToString();
-			return !string.IsNullOrEmpty(name) && PageSchemaMetadataHelper.IsValidSchemaName(name) ? name : null;
+			return pageUId;
 		} catch (Exception ex) {
 			failure = ex;
 			return null;
@@ -632,9 +669,67 @@ public static class MobileActionTargetProbe {
 	}
 
 	/// <summary>
+	/// The BATCHED half: resolves every pending candidate page UId to its schema NAME in one chunked
+	/// <c>SysSchema</c> select (<see cref="ClassicEntitySchemaQuery.BuildSelectSchemaNamesByUId"/> — the
+	/// shared UId→Name query every by-UId reference resolver uses), then re-records each object's resolution
+	/// with the name that came back. Distinctions the old per-object lookup drew are preserved:
+	/// <list type="bullet">
+	/// <item><description>a UId whose row never came back is a FAILURE (a dangling reference the add-on still
+	/// names), exactly like the single-row lookup's "no row" branch;</description></item>
+	/// <item><description>a row that came back with an empty or invalid <c>Name</c>
+	/// (<see cref="PageSchemaMetadataHelper.IsValidSchemaName"/>) is a SILENT null candidate — the row
+	/// exists, the object just has nothing offerable — so returned rows are kept in the map even when their
+	/// name is unusable; dropping them would collapse "present but unusable" into "absent";</description></item>
+	/// <item><description>a THROW from the chunked select (transport, failure envelope —
+	/// <c>DataServiceSelectResponse.ReadRows</c> throws on one) fails every candidate pending in that call,
+	/// but never the verdicts, which were settled before this ran.</description></item>
+	/// </list>
+	/// Truncation cannot cut this read the way it can cut the by-Name read: the UIds are DISTINCT, a
+	/// <c>SysSchema</c> UId matches at most one row, and the row cap is the distinct count — so a full
+	/// result is the all-resolved case, and "absent" always means "no such row", never "cut off".
+	/// </summary>
+	private static void ResolveCandidateNames(
+		ProbeContext context, IReadOnlyList<(string Name, Guid PageUId)> pending,
+		IDictionary<string, ActionTargetResolution> into,
+		ref int candidateFailures, ref Exception firstCandidateFailure) {
+		if (pending.Count == 0) {
+			return;
+		}
+		string[] pageUIds = [.. pending.Select(p => p.PageUId.ToString()).Distinct(StringComparer.OrdinalIgnoreCase)];
+		var nameByUId = new Dictionary<Guid, string>();
+		try {
+			foreach (IReadOnlyList<string> chunk in Chunk(pageUIds)) {
+				JArray rows = ClassicEntitySchemaQuery.Select(
+					context.Client, context.UrlBuilder, ClassicEntitySchemaQuery.BuildSelectSchemaNamesByUId(chunk));
+				foreach (JToken row in rows) {
+					if (Guid.TryParse(row["UId"]?.ToString(), out Guid uId)) {
+						nameByUId[uId] = row["Name"]?.ToString();
+					}
+				}
+			}
+		} catch (Exception ex) {
+			candidateFailures += pending.Count;
+			firstCandidateFailure ??= ex;
+			return;
+		}
+		foreach ((string name, Guid pageUId) in pending) {
+			if (!nameByUId.TryGetValue(pageUId, out string pageName)) {
+				candidateFailures++;
+				firstCandidateFailure ??= new InvalidOperationException(
+					$"Page schema '{pageUId}' could not be resolved to a name.");
+				continue;
+			}
+			if (!string.IsNullOrEmpty(pageName) && PageSchemaMetadataHelper.IsValidSchemaName(pageName)) {
+				RecordEntityResolution(into, name, ActionTargetState.Missing, pageName);
+			}
+		}
+	}
+
+	/// <summary>
 	/// Resolves the SOURCE page's own bound entity's existing default MOBILE edit page, if any — the
 	/// "does this object already have a mobile page" fact behind the reuse-vs-convert check
-	/// (<see cref="ExistingMobilePageInfo"/> / playbook step 2a). Mirrors <see cref="ResolveDefaultWebPage"/>
+	/// (<see cref="ExistingMobilePageInfo"/> / playbook step 2a). Mirrors the missing-target candidate flow
+	/// (<see cref="ReadDefaultWebPageUId"/> plus a name lookup)
 	/// almost exactly, but reads the MOBILE add-on (<see cref="MobileRelatedPageAddonName"/>) instead of the
 	/// web one, and is keyed by an entity NAME resolved via <see cref="ReadEntitySchemaRows"/> rather than an
 	/// already-known UId (the missing-target tier already has one; this call-site starts from just a name —
@@ -699,8 +794,10 @@ public static class MobileActionTargetProbe {
 	/// <summary>
 	/// Resolves an already-known mobile page UId (e.g.
 	/// <c>SectionRegistrationInfo.MobileSectionSchemaUId</c>) to its schema NAME — the section half of the
-	/// reuse-vs-convert check (<see cref="ExistingMobilePageInfo"/> / playbook step 2a). Same reverse lookup
-	/// <see cref="ResolveDefaultWebPage"/> uses. Fails open to <see langword="null"/>, never throws.
+	/// reuse-vs-convert check (<see cref="ExistingMobilePageInfo"/> / playbook step 2a). The same
+	/// UId→name reverse lookup the missing-target candidate flow batches in
+	/// <see cref="ResolveCandidateNames"/>, single-row here because this call-site has exactly one UId.
+	/// Fails open to <see langword="null"/>, never throws.
 	/// </summary>
 	internal static ExistingMobilePageInfo ProbeSectionMobilePage(
 		IToolCommandResolver commandResolver, string environment, string uri, string login, string password,
@@ -811,13 +908,13 @@ public static class MobileActionTargetProbe {
 	}
 
 	/// <summary>
-	/// Splits <paramref name="names"/> into ESQ-safe batches. Every <c>IN</c> value costs a query parameter and
-	/// MSSql caps a statement at 2100, so a page-driven value set must be chunked
-	/// (<see cref="ClassicEntitySchemaQuery.InFilterChunkSize"/>) or the whole query throws.
+	/// Splits <paramref name="values"/> (entity names, page UIds) into ESQ-safe batches. Every <c>IN</c>
+	/// value costs a query parameter and MSSql caps a statement at 2100, so a page-driven value set must be
+	/// chunked (<see cref="ClassicEntitySchemaQuery.InFilterChunkSize"/>) or the whole query throws.
 	/// </summary>
-	private static IEnumerable<IReadOnlyList<string>> Chunk(IReadOnlyList<string> names) {
-		for (int start = 0; start < names.Count; start += ClassicEntitySchemaQuery.InFilterChunkSize) {
-			yield return names
+	private static IEnumerable<IReadOnlyList<string>> Chunk(IReadOnlyList<string> values) {
+		for (int start = 0; start < values.Count; start += ClassicEntitySchemaQuery.InFilterChunkSize) {
+			yield return values
 				.Skip(start)
 				.Take(ClassicEntitySchemaQuery.InFilterChunkSize)
 				.ToArray();
@@ -830,7 +927,7 @@ public static class MobileActionTargetProbe {
 
 	/// <summary>
 	/// <see cref="Record"/> for an entity target, additionally carrying the candidate web page
-	/// <see cref="ResolveDefaultWebPage"/> resolved (null unless <paramref name="state"/> is
+	/// <see cref="ResolveCandidateNames"/> resolved (null unless <paramref name="state"/> is
 	/// <see cref="ActionTargetState.Missing"/> and a candidate was actually found).
 	/// </summary>
 	private static void RecordEntityResolution(

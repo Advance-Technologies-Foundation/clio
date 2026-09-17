@@ -616,6 +616,102 @@ public sealed class MobileActionTargetProbeTests {
 	}
 
 	[Test]
+	[Description("Several verified-missing objects resolve their candidate page NAMES through ONE batched by-UId select after the loop — never one reverse-lookup round trip per object.")]
+	public void Probe_SeveralMissingObjects_ResolveCandidateNamesInOneBatchedSelect() {
+		// Arrange — two objects, each web add-on declaring a DIFFERENT default page, so the one batch query
+		// must carry both UIds and each object must get its own name back.
+		var byUIdQueries = new List<string>();
+		EnvironmentStub environment = Environment(query => {
+			if (query.Contains("EntitySchemaManager")) {
+				return Rows(
+					EntityRow("LeadProduct", uId: EntitySchemaUId), EntityRow("Contact", uId: SecondEntitySchemaUId));
+			}
+			byUIdQueries.Add(query);
+			return Rows(
+				PageRow("LeadProduct_FormPage", WebRoot, uId: PageSchemaUId),
+				PageRow("Contact_FormPage", WebRoot, uId: DefaultMobilePageUId));
+		});
+		environment.AddonClient.GetSchema(Arg.Any<AddonGetRequestDto>()).Returns(callInfo => {
+			AddonGetRequestDto request = callInfo.Arg<AddonGetRequestDto>();
+			if (!string.Equals(request.AddonName, "RelatedPage", StringComparison.Ordinal)) {
+				return new AddonSchemaDto { MetaData = "{\"Pages\":[]}" };
+			}
+			string pageUId = request.TargetSchemaUId == Guid.Parse(EntitySchemaUId)
+				? PageSchemaUId
+				: DefaultMobilePageUId;
+			return new AddonSchemaDto {
+				MetaData = $"{{\"Pages\":[{{\"PageSchemaUId\":\"{pageUId}\",\"IsDefault\":true}}]}}"
+			};
+		});
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(environment, CreateRecordViewConfig("LeadProduct", "Contact"));
+
+		// Assert
+		byUIdQueries.Should().HaveCount(1,
+			because: "the UId->name lookups must be batched into one select after the loop, not issued per object");
+		byUIdQueries[0].Should().Contain("byUId",
+			because: "the batch must go through the shared BuildSelectSchemaNamesByUId query, not a private twin");
+		byUIdQueries[0].Should().Contain(PageSchemaUId, because: "one query must carry every pending page UId")
+			.And.Contain(DefaultMobilePageUId, because: "one query must carry every pending page UId");
+		CandidateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct")
+			.Should().Be("LeadProduct_FormPage", because: "each object must get ITS page back out of the shared batch");
+		CandidateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "Contact")
+			.Should().Be("Contact_FormPage", because: "each object must get ITS page back out of the shared batch");
+		result.Note.Should().BeNullOrWhiteSpace(because: "every lookup succeeded, so there is nothing to caveat");
+	}
+
+	[TestCase("", TestName = "Probe_CandidateRowNameEmpty_ResolvesNoCandidateWithoutFailure")]
+	[TestCase("123 not a schema name", TestName = "Probe_CandidateRowNameInvalid_ResolvesNoCandidateWithoutFailure")]
+	[Description("A row the by-UId batch DID return, but whose Name is empty or invalid, resolves no candidate SILENTLY — the row exists, so this is 'nothing offerable', not the dangling-reference failure, and the two must not collapse into the same outcome.")]
+	public void Probe_CandidateRowNameUnusable_ResolvesNoCandidateWithoutFailure(string pageName) {
+		// Arrange — the batch returns the page row, but its Name is unusable.
+		EnvironmentStub environment = Environment(
+			Route(Rows(PageRow(pageName, WebRoot, uId: PageSchemaUId)), Rows(EntityRow("LeadProduct"))),
+			addonMetaData: "{\"Pages\":[]}",
+			webRelatedPageAddonMetaData: $"{{\"Pages\":[{{\"PageSchemaUId\":\"{PageSchemaUId}\",\"IsDefault\":true}}]}}");
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(
+			environment, ViewConfig("crt.CreateRecordRequest", "entityName", "LeadProduct"));
+
+		// Assert
+		CandidateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct")
+			.Should().BeNull(because: "an unusable name must never be offered as the page to convert next");
+		result.Note.Should().BeNullOrWhiteSpace(
+			because: "the row came back, so 'present but unusable' is a clean absence — reporting it as a failure "
+				+ "would erase the distinction from a dangling reference, whose row did NOT come back");
+	}
+
+	[Test]
+	[Description("The batched by-UId select being rejected fails EVERY pending candidate at once: both verdicts stand, both candidates are null, and the Note counts them — a name-lookup failure must never demote a settled Missing verdict.")]
+	public void Probe_CandidateBatchSelectRejected_AllVerdictsStandAndCandidatesFail() {
+		// Arrange — both objects Missing with declared web defaults; the one batch select is rejected.
+		EnvironmentStub environment = Environment(
+			Route(
+				"{\"success\":false,\"errorInfo\":{\"message\":\"denied\"}}",
+				Rows(EntityRow("LeadProduct", uId: EntitySchemaUId), EntityRow("Contact", uId: SecondEntitySchemaUId))),
+			addonMetaData: "{\"Pages\":[]}",
+			webRelatedPageAddonMetaData: $"{{\"Pages\":[{{\"PageSchemaUId\":\"{PageSchemaUId}\",\"IsDefault\":true}}]}}");
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(environment, CreateRecordViewConfig("LeadProduct", "Contact"));
+
+		// Assert
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct")
+			.Should().Be(ActionTargetState.Missing, because: "the verdict was settled before the batch ran");
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "Contact")
+			.Should().Be(ActionTargetState.Missing, because: "the verdict was settled before the batch ran");
+		CandidateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "LeadProduct")
+			.Should().BeNull(because: "a failed lookup is fail-open, never a guessed page name");
+		CandidateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, "Contact")
+			.Should().BeNull(because: "a failed lookup is fail-open, never a guessed page name");
+		result.ProbeOk.Should().BeTrue(because: "the entity tier answered — only the bonus candidate lookup failed");
+		result.Note.Should().Contain("Could not resolve a candidate web page for 2 object(s)",
+			because: "one failed batch loses every candidate pending in it, and the count must say so");
+	}
+
+	[Test]
 	[Description("A RESOLVED object (mobile add-on already has a default) never triggers the candidate read — it is not missing anything to resolve a candidate for.")]
 	public void Probe_EntityResolved_DoesNotReadTheWebRelatedPageAddon() {
 		// Arrange
@@ -902,8 +998,8 @@ public sealed class MobileActionTargetProbeTests {
 	}
 
 	[Test]
-	[Description("There is no ceiling on the per-object reads: every distinct object target on the page is checked, however many there are.")]
-	public void Probe_ManyObjectTargets_ChecksEveryOne() {
+	[Description("Comfortably under the per-call probe ceiling, every distinct object target on the page is checked.")]
+	public void Probe_ManyObjectTargets_UnderCeiling_ChecksEveryOne() {
 		// Arrange — nine objects, all present as base rows.
 		string[] names = [.. Enumerable.Range(0, 9).Select(i => $"Object{i}")];
 		EnvironmentStub environment = Environment(
@@ -918,9 +1014,80 @@ public sealed class MobileActionTargetProbeTests {
 		foreach (string name in names) {
 			StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, name)
 				.Should().Be(ActionTargetState.Resolved,
-					because: $"'{name}' has a default mobile page and there is no ceiling that would leave it unchecked");
+					because: $"'{name}' has a default mobile page and nine targets is well under the probe ceiling");
 		}
 		result.Note.Should().BeNullOrWhiteSpace(because: "every target was actually asked, so there is nothing to caveat");
+	}
+
+	[Test]
+	[Description("Exactly at the per-call probe ceiling, every target is still checked and no budget note is raised — the ceiling only bites past it.")]
+	public void Probe_ObjectTargets_AtCeiling_ChecksEveryOneWithoutNote() {
+		// Arrange — exactly MaxEntityAddonProbes objects, all present as base rows and all resolved.
+		string[] names = [.. Enumerable.Range(0, 32).Select(i => $"Object{i}")];
+		EnvironmentStub environment = Environment(
+			Route(Rows(), Rows([.. names.Select(n => EntityRow(n))])),
+			addonMetaData: """{"Pages":[{"IsDefault":true}]}""");
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(environment, CreateRecordViewConfig(names));
+
+		// Assert
+		foreach (string name in names) {
+			StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, name)
+				.Should().Be(ActionTargetState.Resolved,
+					because: $"'{name}' sits within the ceiling, so it must still be probed");
+		}
+		result.Note.Should().BeNullOrWhiteSpace(
+			because: "the ceiling was reached but never exceeded, so there is nothing unverified to caveat");
+	}
+
+	[Test]
+	[Description("Past the per-call probe ceiling, the objects beyond it are reported Unknown (never guessed Missing) and the note names the ceiling, so an unasked target cannot look like one the environment answered 'no' to.")]
+	public void Probe_ObjectTargets_BeyondCeiling_TailIsUnknownWithBudgetNote() {
+		// Arrange — one more object than MaxEntityAddonProbes, all present and all resolved if probed.
+		string[] names = [.. Enumerable.Range(0, 33).Select(i => $"Object{i}")];
+		EnvironmentStub environment = Environment(
+			Route(Rows(), Rows([.. names.Select(n => EntityRow(n))])),
+			addonMetaData: """{"Pages":[{"IsDefault":true}]}""");
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(environment, CreateRecordViewConfig(names));
+
+		// Assert
+		result.ProbeOk.Should().BeTrue(because: "the reads that DID run still succeeded — only some were never asked");
+		foreach (string name in names.Take(32)) {
+			StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, name)
+				.Should().Be(ActionTargetState.Resolved, because: $"'{name}' is within the first 32 and was probed");
+		}
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, names[32])
+			.Should().Be(ActionTargetState.Unknown,
+				because: "the 33rd target exhausted the budget and was never asked — Unknown, not a guessed Missing");
+		result.Note.Should().Contain("Only the first 32 object targets were checked",
+			because: "the caller must be told some targets were never verified, and how many were");
+	}
+
+	[Test]
+	[Description("When the budget is exhausted AND a probed object's candidate lookup also fails, the note reports BOTH — neither degradation may silently swallow the other.")]
+	public void Probe_ObjectTargets_BudgetExhaustedAndCandidateFailure_NoteReportsBoth() {
+		// Arrange — 33 objects, all Missing on the mobile add-on, and the web candidate read always throws.
+		string[] names = [.. Enumerable.Range(0, 33).Select(i => $"Object{i}")];
+		EnvironmentStub environment = Environment(
+			Route(Rows(), Rows([.. names.Select(n => EntityRow(n))])),
+			addonMetaData: "{\"Pages\":[]}",
+			webRelatedPageAddonException: new InvalidOperationException("boom"));
+
+		// Act
+		MobileActionTargetProbeResult result = Probe(environment, CreateRecordViewConfig(names));
+
+		// Assert
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, names[32])
+			.Should().Be(ActionTargetState.Unknown, because: "the 33rd target still exhausts the budget");
+		StateOf(result, MobileActionTargetProbe.KindEntityDefaultMobilePage, names[0])
+			.Should().Be(ActionTargetState.Missing, because: "a probed object's own verdict stands despite the candidate read failing");
+		result.Note.Should().Contain("Only the first 32 object targets were checked",
+			because: "the budget degradation must not be dropped just because a second one also fired");
+		result.Note.Should().Contain("Could not resolve a candidate web page for 32 object(s)",
+			because: "every one of the 32 probed objects resolved Missing and every candidate read threw");
 	}
 
 	[Test]
@@ -1211,8 +1378,8 @@ public sealed class MobileActionTargetProbeTests {
 	[Test]
 	[Description("An already-known section mobile page UId resolves to its schema name for the reuse-vs-convert check.")]
 	public void ProbeSectionMobilePage_ResolvesSchemaName() {
-		// Arrange — the reverse UId -> name lookup is the SAME query shape ResolveDefaultWebPage uses (the
-		// non-EntitySchemaManager branch), so it is routed through the page-rows side of Route.
+		// Arrange — the reverse UId -> name lookup is the same non-EntitySchemaManager query family the
+		// candidate batch (ResolveCandidateNames) uses, so it is routed through the page-rows side of Route.
 		EnvironmentStub environment = Environment(
 			Route(Rows(PageRow("UsrApp_MobileListPage", MobileRoot, uId: PageSchemaUId)), Rows()));
 
