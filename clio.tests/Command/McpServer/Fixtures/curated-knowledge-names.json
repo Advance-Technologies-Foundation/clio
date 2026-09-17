@@ -1,7 +1,7 @@
 {
   "library": "com.creatio.clio",
-  "libraryVersion": "1.15.20",
-  "sequence": 1015020000,
+  "libraryVersion": "1.15.21",
+  "sequence": 1015021000,
   "availableNames": [
     "administration",
     "agent-execution",
@@ -108,6 +108,8 @@
     "creatio.process-version-writes",
     "creatio.process-versions",
     "creatio.product-telemetry",
+    "creatio.record-permission-extensions",
+    "creatio.record-permissions",
     "creatio.record-rights",
     "creatio.related-list",
     "creatio.related-page-binding",
@@ -188,6 +190,8 @@
     "process-version-writes",
     "process-versions",
     "product-telemetry",
+    "record-permission-extensions",
+    "record-permissions",
     "record-rights",
     "related-list",
     "related-page-binding",
