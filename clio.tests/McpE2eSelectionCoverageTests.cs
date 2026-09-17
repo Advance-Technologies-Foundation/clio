@@ -47,6 +47,9 @@ internal sealed class McpE2eSelectionCoverageTests {
 
 	private static readonly string SupportDirectory = Path.Combine(RepositoryRoot, "clio.mcp.e2e", "Support");
 
+	private static readonly string UnreachablePinPath =
+		Path.Combine(RepositoryRoot, "clio.mcp.e2e", "TestSelection", "unreachable-product-files.txt");
+
 	/// <summary>The script's inventory of the live tree, computed once per run.</summary>
 	private static readonly Lazy<JsonElement> Inventory = new(() => RunScript(ps => ps.AddParameter("Inventory")));
 
@@ -177,19 +180,25 @@ internal sealed class McpE2eSelectionCoverageTests {
 	}
 
 	[Test]
-	[Description("Every path the TeamCity trigger workflow listens to is a relevant path in the manifest, so a change that queues the build is also classified rather than ignored.")]
-	public void WorkflowTriggerPaths_ShouldAllBeRelevantPathsInTheManifest() {
+	[Description("Every path the TeamCity trigger workflow listens to is classified by the manifest: a path that starts a run is a relevant path, and a path the trigger excludes is one the manifest ignores, so the two filters cannot drift apart.")]
+	public void WorkflowTriggerPaths_ShouldAllBeClassifiedByTheManifest() {
 		// Arrange
-		HashSet<string> relevant = ReadManifest().GetProperty("relevantPaths").EnumerateArray().Select(p => p.GetString()!).ToHashSet(StringComparer.Ordinal);
+		JsonElement manifest = ReadManifest();
+		HashSet<string> relevant = manifest.GetProperty("relevantPaths").EnumerateArray().Select(p => p.GetString()!).ToHashSet(StringComparer.Ordinal);
+		HashSet<string> ignored = manifest.GetProperty("ignoredPaths").EnumerateArray().Select(p => p.GetString()!).ToHashSet(StringComparer.Ordinal);
 		string[] triggerPaths = ReadTriggerPaths();
 
 		// Act
-		string[] unclassified = triggerPaths.Where(path => !relevant.Contains(path)).ToArray();
+		string[] unclassified = triggerPaths
+			.Where(path => path.StartsWith('!')
+				? !ignored.Contains(path[1..])
+				: !relevant.Contains(path) && !ignored.Contains("!" + path))
+			.ToArray();
 
 		// Assert
 		triggerPaths.Should().NotBeEmpty(because: "the workflow must declare the paths that queue the TeamCity build");
 		unclassified.Should().BeEmpty(
-			because: "a path that triggers the workflow but is not in relevantPaths is ignored by the selection, and a run with only such files falls back to the full suite instead of the intended subset");
+			because: "a path that triggers the workflow but is not in relevantPaths is never classified, and a path the trigger excludes but the manifest does not ignore would be classified on a run started by some other file; both readings of the same filter have to agree");
 	}
 
 	[Test]
@@ -219,14 +228,14 @@ internal sealed class McpE2eSelectionCoverageTests {
 	[Description("Changing shared infrastructure forces a full run even when a tool file changed alongside it.")]
 	public void Script_ShouldSelectFullRun_WhenSharedInfrastructureChanged() {
 		// Arrange
-		string[] changed = ["clio/Common/SomeService.cs", "clio/Command/McpServer/Tools/PageSyncTool.cs"];
+		string[] changed = ["clio/BindingsModule.cs", "clio/Command/McpServer/Tools/PageSyncTool.cs"];
 
 		// Act
 		JsonElement selection = RunSelection(changed, includeNoEnvironment: false);
 
 		// Assert
 		selection.GetProperty("mode").GetString().Should().Be("full",
-			because: "clio/Common is used by every tool, so no subset is safe");
+			because: "the composition root decides what every tool resolves, so no subset is safe");
 		selection.GetProperty("filter").GetString().Should().Be(
 			"TestCategory!=McpE2E.NoEnvironment&TestCategory!=McpE2E.ProcessDesigner&TestCategory!=McpE2E.Manual",
 			because: "a full pull-request run still hands the NoEnvironment tier to GitHub");
@@ -249,47 +258,70 @@ internal sealed class McpE2eSelectionCoverageTests {
 	}
 
 	[Test]
-	[Description("A diff without any relevant file falls back to the full run rather than to an empty selection.")]
-	public void Script_ShouldSelectFullRun_WhenNoRelevantFileChanged() {
+	[Description("A diff of nothing but documentation and generated help runs no e2e build at all, because none of it is compiled into clio or read by the harness.")]
+	public void Script_ShouldRunNothing_WhenOnlyDocumentationChanged() {
 		// Arrange
-		string[] changed = ["README.md", "clio/docs/commands/ping.md", "clio.mcp.e2e/AGENTS.md"];
+		string[] changed = ["README.md", "clio/docs/commands/ping.md", "clio/Commands.md", "clio/help/en/ping.txt", "clio/Wiki/WikiAnchors.txt", "clio.mcp.e2e/AGENTS.md"];
 
 		// Act
 		JsonElement selection = RunSelection(changed, includeNoEnvironment: false);
 
 		// Assert
-		selection.GetProperty("mode").GetString().Should().Be("full",
-			because: "an unclassifiable diff must never shrink the run; the safe default is everything");
-		selection.GetProperty("decisions").EnumerateArray().Select(d => d.GetString()).Should().Contain(d => d!.Contains("no relevant file changed"),
-			because: "documentation under clio.mcp.e2e is excluded from relevantPaths and must be ignored, not classified");
+		selection.GetProperty("mode").GetString().Should().Be("none",
+			because: "no fixture can observe a change to text that is never compiled or loaded, so deploying a Creatio for it is pure waste");
+		selection.GetProperty("filter").GetString().Should().BeEmpty(
+			because: "mode none must not hand TeamCity any filter");
+		selection.GetProperty("decisions").EnumerateArray().Select(d => d.GetString()).Should().Contain(d => d!.Contains("ignored (documentation"),
+			because: "the decision log must name the rule that discarded each file");
 	}
 
 	[Test]
-	[Description("In a synthetic repository, a product file whose only consumers are tool files selects the fixtures of those tools; a product file also consumed outside the tools, or consumed by nothing, forces a full run.")]
-	public void Script_ShouldApplyClosedConsumerRule_ForProductFilesOutsideTools() {
+	[Description("A changed product file that no MCP tool and no covered CLI verb consumes runs nothing, because no fixture in this suite executes that code.")]
+	public void Script_ShouldRunNothing_WhenTheChangedCodeIsUnreachableFromTheMcpSurface() {
 		// Arrange
 		using SyntheticRepository repo = SyntheticRepository.Create();
 
 		// Act
-		JsonElement onlyToolConsumer = RunSelection(["clio/Command/AlphaService.cs"], includeNoEnvironment: false, repo.Root);
-		JsonElement outsideConsumer = RunSelection(["clio/Command/SharedHelper.cs"], includeNoEnvironment: false, repo.Root);
-		JsonElement noConsumer = RunSelection(["clio/Command/OrphanService.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement selection = RunSelection(["clio/Command/OrphanService.cs"], includeNoEnvironment: false, repo.Root);
+
+		// Assert
+		selection.GetProperty("mode").GetString().Should().Be("none",
+			because: "OrphanService is named by no tool, reaches no verb a fixture spells out, and is registered nowhere, so no e2e test can show a regression in it");
+		selection.GetProperty("decisions").EnumerateArray().Select(d => d.GetString()).Should().Contain(d => d!.Contains("no MCP tool and no covered CLI verb"),
+			because: "skipping the build is only defensible when the log says which reachability check came back empty");
+	}
+
+	[Test]
+	[Description("In a synthetic repository, a product file is selected through the transitive consumer graph: a direct tool consumer, a consumer one hop away, a DI-registered implementation reached only through its interface, a CLI verb a fixture spells out, and an asset a tool loads by file name.")]
+	public void Script_ShouldFollowTheReferenceGraph_ForProductFilesOutsideTools() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+		string[] alphaFixtures = ["AlphaToolE2ETests", "AlphaLiteralE2ETests", "AlphaContractE2ETests", "AlphaLegacyE2ETests"];
+
+		// Act
+		JsonElement directToolConsumer = RunSelection(["clio/Command/AlphaService.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement indirectConsumer = RunSelection(["clio/Command/SharedHelper.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement registeredImplementation = RunSelection(["clio/Common/BetaService.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement cliVerb = RunSelection(["clio/Command/GammaCommand.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement asset = RunSelection(["clio/Command/McpServer/Data/AlphaRules.json"], includeNoEnvironment: false, repo.Root);
 		JsonElement toolFile = RunSelection(["clio/Command/McpServer/Tools/AlphaTool.cs"], includeNoEnvironment: false, repo.Root);
 
 		// Assert
-		onlyToolConsumer.GetProperty("mode").GetString().Should().Be("subset",
-			because: "AlphaService is named only by AlphaTool.cs, so its blast radius is AlphaTool's fixtures");
-		onlyToolConsumer.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(
-			["AlphaToolE2ETests", "AlphaLiteralE2ETests", "AlphaContractE2ETests", "AlphaLegacyE2ETests"],
+		directToolConsumer.GetProperty("mode").GetString().Should().Be("subset",
+			because: "AlphaService is named by AlphaTool.cs, so its blast radius is AlphaTool's fixtures");
+		directToolConsumer.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(alphaFixtures,
 			because: "AlphaTool is selected by the fixture named after it, by the ones that use its tool-name literal and by the NoEnvironment contract fixture that names its class");
-		outsideConsumer.GetProperty("mode").GetString().Should().Be("full",
-			because: "SharedHelper is also named by clio/Command/OtherCommand.cs, so consumers outside the tools exist and the closure is unknown");
-		noConsumer.GetProperty("mode").GetString().Should().Be("full",
-			because: "a type nobody names under clio/ is reached through DI or reflection, which the textual rule cannot follow");
+		indirectConsumer.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(alphaFixtures,
+			because: "SharedHelper is named by OtherCommand.cs as well, but following that consumer further reaches no other tool, so the old rule's full run was pure over-approximation");
+		registeredImplementation.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["BetaToolE2ETests"],
+			because: "BetaTool names only IBetaService, so the AddSingleton<IBetaService, BetaService> pair is the only edge that links the implementation to its coverage");
+		cliVerb.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["GammaCliE2ETests"],
+			because: "a command is reached by its verb string, so the fixture that spells the verb out is its only textual coverage link");
+		asset.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(alphaFixtures,
+			because: "an asset loaded by file name belongs to the fixtures of the tools that load it");
 		toolFile.GetProperty("mode").GetString().Should().Be("subset",
 			because: "a tool file resolves directly to the fixtures that reference it");
-		toolFile.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(
-			["AlphaToolE2ETests", "AlphaLiteralE2ETests", "AlphaContractE2ETests", "AlphaLegacyE2ETests"],
+		toolFile.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(alphaFixtures,
 			because: "the class identifier, the tool-name literal and the naming convention all point at the same fixtures");
 	}
 
@@ -312,8 +344,8 @@ internal sealed class McpE2eSelectionCoverageTests {
 			because: "a tool without fixtures must not shrink the run to nothing");
 		unreferencedTool.GetProperty("decisions").EnumerateArray().Select(d => d.GetString()).Should().Contain(d => d!.Contains("selects no fixture"),
 			because: "the decision log must say why the run became full");
-		registeredOnly.GetProperty("mode").GetString().Should().Be("full",
-			because: "BindingsModule.cs is a registration file and is excluded from the consumer set, leaving no consumer");
+		registeredOnly.GetProperty("mode").GetString().Should().Be("none",
+			because: "a type only the composition root mentions, with no interface registration pointing at it, is consumed by nothing this suite executes");
 		fixtureFile.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["AlphaToolE2ETests"],
 			because: "the abstract AlphaFixtureBase declared in the same file is not a runnable fixture and must not enter the filter");
 		noEnvironmentOnly.GetProperty("mode").GetString().Should().Be("none",
@@ -324,6 +356,46 @@ internal sealed class McpE2eSelectionCoverageTests {
 			because: "when the NoEnvironment tier stays on TeamCity the same fixture is a normal subset");
 		untieredOnly.GetProperty("mode").GetString().Should().Be("subset",
 			because: "a fixture with no McpE2E.* tier runs on TeamCity under the base filter and nowhere on GitHub, so the absence of a Sandbox marker must never be read as NoEnvironment coverage (review finding on PR #1571)");
+	}
+
+	[Test]
+	[Description("The set of product files no fixture can observe matches the list pinned in the repository, so a file drifting into or out of that set is a reviewable diff rather than a silent change to what runs.")]
+	public void UnreachableProductFiles_ShouldMatchThePinnedList() {
+		// Arrange
+		string[] pinned = File.ReadAllLines(UnreachablePinPath)
+			.Where(line => !line.StartsWith('#') && !string.IsNullOrWhiteSpace(line))
+			.ToArray();
+		string[] computed = Inventory.Value.GetProperty("unreachableProductFiles").EnumerateArray().Select(p => p.GetString()!).ToArray();
+
+		// Act
+		string[] newlyUnreachable = computed.Except(pinned, StringComparer.Ordinal).OrderBy(p => p, StringComparer.Ordinal).ToArray();
+		string[] noLongerUnreachable = pinned.Except(computed, StringComparer.Ordinal).OrderBy(p => p, StringComparer.Ordinal).ToArray();
+
+		// Assert
+		pinned.Should().NotBeEmpty(because: "the pinned list is the record of what the detector is allowed to skip a build for");
+		newlyUnreachable.Should().BeEmpty(
+			because: "a pull request touching only these files queues no e2e build, so adding a file here is a claim that no fixture covers it and has to be reviewed, not discovered later; refresh the list with Select-McpE2eTestFilter.ps1 -Inventory once you agree");
+		noLongerUnreachable.Should().BeEmpty(
+			because: "a file that became reachable must leave the list, or the pin keeps asserting something that stopped being true");
+	}
+
+	[Test]
+	[Description("Every MCP tool that declares a tool name has at least one fixture, or is listed as a known gap, so the detector never selects an empty subset for a tool and no tool quietly ships without e2e coverage.")]
+	public void ToolsWithoutFixtures_ShouldMatchTheDeclaredGaps() {
+		// Arrange
+		HashSet<string> declaredGaps = ReadManifest().GetProperty("toolsWithoutFixtures").EnumerateArray()
+			.Select(t => t.GetString()!).ToHashSet(StringComparer.Ordinal);
+		string[] uncovered = Inventory.Value.GetProperty("uncoveredTools").EnumerateArray().Select(t => t.GetString()!).ToArray();
+
+		// Act
+		string[] undeclared = uncovered.Except(declaredGaps, StringComparer.Ordinal).OrderBy(t => t, StringComparer.Ordinal).ToArray();
+		string[] stale = declaredGaps.Except(uncovered, StringComparer.Ordinal).OrderBy(t => t, StringComparer.Ordinal).ToArray();
+
+		// Assert
+		undeclared.Should().BeEmpty(
+			because: "a tool no fixture references forces the whole suite to run for every change to it; add the fixture, or record the gap in toolsWithoutFixtures so it is visible");
+		stale.Should().BeEmpty(
+			because: "a declared gap that has fixtures now is dead configuration and hides the next real gap");
 	}
 
 	private static JsonElement RunSelection(string[] changedFiles, bool includeNoEnvironment, string? repositoryRoot = null) =>
@@ -440,7 +512,7 @@ internal sealed class McpE2eSelectionCoverageTests {
 			Write("clio/Command/McpServer/Tools/BaseTool.cs", "public abstract class BaseTool { }");
 			Write("clio/Command/McpServer/Tools/AlphaTool.cs",
 				"public sealed class AlphaTool : BaseTool {\n\tinternal const string ToolName = \"alpha-run\";\n" +
-				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(AlphaService service, SharedHelper helper) { }\n}");
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(AlphaService service, SharedHelper helper) { Load(\"AlphaRules.json\"); }\n}");
 			Write("clio/Command/McpServer/Tools/LonelyTool.cs",
 				"public sealed class LonelyTool : BaseTool {\n\t[McpServerTool(Name = \"lonely-run\")]\n\tpublic void Run() { }\n}");
 			Write("clio/Command/AlphaService.cs", "public sealed class AlphaService { }");
@@ -448,7 +520,21 @@ internal sealed class McpE2eSelectionCoverageTests {
 			Write("clio/Command/OtherCommand.cs", "public sealed class OtherCommand { private readonly SharedHelper _helper; }");
 			Write("clio/Command/OrphanService.cs", "public sealed class OrphanService { }");
 			Write("clio/Command/RegisteredOnlyService.cs", "public sealed class RegisteredOnlyService { }");
-			Write("clio/BindingsModule.cs", "public static class BindingsModule { static void Register() { _ = typeof(RegisteredOnlyService); } }");
+			// BetaTool depends on the interface and never spells the implementation out; only the
+			// registration pair links them, which is the edge plain name matching cannot see.
+			Write("clio/Command/McpServer/Tools/BetaTool.cs",
+				"public sealed class BetaTool : BaseTool {\n\tinternal const string ToolName = \"beta-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(IBetaService service) { }\n}");
+			Write("clio/Common/IBetaService.cs", "public interface IBetaService { }");
+			Write("clio/Common/BetaService.cs", "public sealed class BetaService : IBetaService { }");
+			// A CLI command reached by its verb string, the way the harness runs the executable.
+			Write("clio/Command/GammaCommand.cs",
+				"[Verb(\"gamma-run\")]\npublic sealed class GammaOptions { }\npublic sealed class GammaCommand { }");
+			// An asset the tool loads by file name rather than by type reference.
+			Write("clio/Command/McpServer/Data/AlphaRules.json", "{ }");
+			Write("clio/BindingsModule.cs",
+				"public static class BindingsModule { static void Register() {\n" +
+				"\t_ = typeof(RegisteredOnlyService);\n\tservices.AddSingleton<IBetaService, BetaService>();\n} }");
 			Write("clio.mcp.e2e/AlphaToolE2ETests.cs",
 				"public abstract class AlphaFixtureBase { }\n[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class AlphaToolE2ETests : AlphaFixtureBase {\n\t[Test] public void Works() => Call(AlphaTool.ToolName);\n}");
 			Write("clio.mcp.e2e/AlphaLiteralE2ETests.cs",
@@ -457,6 +543,10 @@ internal sealed class McpE2eSelectionCoverageTests {
 				"[TestFixture]\n[Category(\"McpE2E.NoEnvironment\")]\npublic sealed class AlphaContractE2ETests {\n\t[Test] public void Advertises() => Call(AlphaTool.ToolName);\n}");
 			Write("clio.mcp.e2e/UnrelatedE2ETests.cs",
 				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class UnrelatedE2ETests {\n\t[Test] public void Works() { }\n}");
+			Write("clio.mcp.e2e/BetaToolE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class BetaToolE2ETests {\n\t[Test] public void Works() => Call(BetaTool.ToolName);\n}");
+			Write("clio.mcp.e2e/GammaCliE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class GammaCliE2ETests {\n\t[Test] public void Works() => RunCli(\"gamma-run\");\n}");
 			// Carries no McpE2E.* tier at all, like DownloadSysSettingFileE2ETests in the live tree.
 			Write("clio.mcp.e2e/AlphaLegacyE2ETests.cs",
 				"[TestFixture]\n[Category(\"E2E\")]\npublic sealed class AlphaLegacyE2ETests {\n\t[Test] public void Works() => Call(\"alpha-run\");\n}");

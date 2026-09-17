@@ -4,8 +4,9 @@
 #   mode    - "full"   : the whole suite minus the categories the base filter excludes and, unless
 #                        -IncludeNoEnvironment is set, minus the McpE2E.NoEnvironment tier
 #             "subset" : only the listed fixtures
-#             "none"   : every selected fixture is NoEnvironment-only and that tier runs on GitHub,
-#                        so a TeamCity build would deploy a Creatio and run zero tests - do not queue
+#             "none"   : no fixture in this suite can observe the change - either nothing the diff
+#                        touches is reachable from an MCP entry point, or every selected fixture is
+#                        NoEnvironment-only and that tier runs on GitHub. Do not queue a build.
 #   filter  - the exact `dotnet test --filter` expression to hand TeamCity as McpE2eTestFilter.
 #             Empty when -IncludeNoEnvironment is set and mode is "full", meaning the TeamCity
 #             default (baseFilter) applies unchanged.
@@ -14,7 +15,8 @@
 #
 # The rules live in clio.mcp.e2e/TestSelection/mcp-e2e-selection.json (read its _comment).
 # With -Inventory the script prints what it sees instead of a selection:
-# { fixtures: { <file base name>: [fixture names] }, reachability: { <fixture>: [tool files that select it] } }.
+# { fixtures: { <file base name>: [fixture names] }, reachability: { <fixture>: [tool files that select it] },
+#   uncoveredTools: [tool files no fixture names] }.
 # clio.tests/McpE2eSelectionCoverageTests.cs compares that inventory with reflection over the compiled
 # e2e assembly, so this script is the single owner of the textual rules and the guard only checks that
 # the text-based view and the compiled view agree.
@@ -68,7 +70,7 @@ $root = [System.IO.Path]::GetFullPath($RepositoryRoot)
 $manifestFullPath = Join-Path $root $ManifestPath
 if (-not (Test-Path -LiteralPath $manifestFullPath)) { throw "Selection manifest not found: $manifestFullPath" }
 $manifest = Get-Content -LiteralPath $manifestFullPath -Raw | ConvertFrom-Json
-if ($manifest.version -ne 1) { throw "Selection manifest version $($manifest.version) is not supported by this script (expected 1)." }
+if ($manifest.version -ne 2) { throw "Selection manifest version $($manifest.version) is not supported by this script (expected 2)." }
 
 if ($null -eq $ChangedFiles -and -not $Inventory) {
     if ([string]::IsNullOrWhiteSpace($BaseRef)) { throw 'Pass -ChangedFiles or -BaseRef.' }
@@ -134,7 +136,9 @@ function Test-FixtureNamesDeclaration([string] $Source, $Declarations) {
     return $false
 }
 
+$toolFixtureCache = @{}
 function Select-FixturesForTool([string] $ToolFileRelative) {
+    if ($toolFixtureCache.ContainsKey($ToolFileRelative)) { return $toolFixtureCache[$ToolFileRelative] }
     $toolFile = Join-Path $root $ToolFileRelative
     $selected = New-Object System.Collections.Generic.HashSet[string]
     $stem = [System.IO.Path]::GetFileNameWithoutExtension($ToolFileRelative)
@@ -148,44 +152,301 @@ function Select-FixturesForTool([string] $ToolFileRelative) {
         }
     }
     # A deleted tool file still selects fixtures by name (they will fail to compile, which is the point).
-    return @($selected)
+    $result = @($selected)
+    $toolFixtureCache[$ToolFileRelative] = $result
+    return $result
 }
 
-# --- product sources: who names a type declared in a changed non-tool file? (loaded on first use) ---
-$typeDeclaration = '(?m)^\s*(?:\[[^\]]*\]\s*)*(?:public|internal|private|protected|static|sealed|abstract|partial|readonly)[\w\s]*\b(?:class|record|interface|struct|enum)\s+([A-Za-z_]\w*)\b'
-$productSources = $null
-function Get-ProductSources() {
-    if ($null -eq $script:productSources) {
-        $script:productSources = @{}
-        $productRoot = Join-Path $root $manifest.productSourceRoot
-        foreach ($file in Get-ChildItem -LiteralPath $productRoot -Filter '*.cs' -File -Recurse) {
-            $relative = $file.FullName.Substring($root.Length).TrimStart('/', '\').Replace('\', '/')
-            if ($relative -cmatch '/(bin|obj)/') { continue }
-            $script:productSources[$relative] = Read-Text $file.FullName
+# --- the product reference graph ------------------------------------------------------------------
+# Built once, lazily. Nodes are repository-relative paths of the .cs files under productSourceRoot.
+# An edge B -> A ("A consumes B") exists when A's identifier set contains a type name declared in B,
+# or when A consumes a type that B declares a base type of. Name matching over-approximates: an edge
+# may exist where the compiler sees none, which widens the selection and never narrows it.
+$graph = $null
+function Get-Graph() {
+    if ($null -ne $script:graph) { return $script:graph }
+    # A type declaration at the start of a line. Attributes are part of the match, so [Verb("x")]
+    # belongs to the body of the options type it decorates.
+    $typeDeclaration = [regex] '(?m)^([ \t]*)(?:\[[^\]]*\]\s*)*(?:public|internal|private|protected|static|sealed|abstract|partial|readonly)[\w \t]*\b(class|record|interface|struct|enum)\s+([A-Za-z_]\w*)\b(?:<[^>{\r\n]*>)?[ \t]*(?::[ \t]*([^{\r\n]+))?'
+    $verbDeclaration = '\[\s*Verb\(\s*"([^"]+)"'
+    # An identifier that is not preceded by a dot: `SysSettingsManager` counts, `task.Result` and
+    # `options.Schema` do not. Member access through a common property name is what made the graph
+    # a single blob when every token counted.
+    $identifier = [regex] '(?<![\w.])([A-Za-z_]\w*)'
+    # services.AddSingleton<IFoo, Foo>() - the one edge name matching cannot see, because a consumer
+    # of IFoo never spells Foo out. Taken from the registration files only, and only as an exact pair.
+    $registrationPair = [regex] 'Add(?:Singleton|Scoped|Transient|KeyedSingleton)<\s*(?:[\w.]*\.)?(\w+)\s*,\s*(?:[\w.]*\.)?(\w+)\s*>'
+    # services.AddSingleton<ILogger>(ConsoleLogger.Instance) and the lambda form: one generic argument
+    # and an instance or factory that names the implementation somewhere on the same line.
+    $registrationFactory = [regex] '(?m)^.*Add(?:Singleton|Scoped|Transient|KeyedSingleton)<\s*(?:[\w.]*\.)?(\w+)\s*>\s*\((?!\s*\)).*$'
+
+    $texts = @{}
+    $productRoot = Join-Path $root $manifest.productSourceRoot
+    foreach ($file in Get-ChildItem -LiteralPath $productRoot -Filter '*.cs' -File -Recurse) {
+        $relative = $file.FullName.Substring($root.Length).TrimStart('/', '\').Replace('\', '/')
+        if ($relative -cmatch '/(bin|obj)/') { continue }
+        $texts[$relative] = Read-Text $file.FullName
+    }
+
+    # The graph node is a TYPE, not a file. A file that declares a narrow helper next to a widely used
+    # one would otherwise merge their consumer sets and make the narrow type look as connected as the
+    # wide one - measured as the single largest source of over-approximation in this tree.
+    # A type owns the text from its declaration to the next top-level declaration, so nested types are
+    # part of their outer type and no character of the file is left unattributed.
+    $interfaceTypes = New-Object System.Collections.Generic.HashSet[string]
+    $baseList = @{}    # type name -> the names in its base list
+    $typeBody = @{}    # type name -> the text that belongs to it (a partial type accumulates)
+    $typeFiles = @{}   # type name -> files declaring it
+    $typesByFile = @{} # file -> type names declared at its top level
+    foreach ($relative in $texts.Keys) {
+        $text = $texts[$relative]
+        $matches = @($typeDeclaration.Matches($text))
+        if ($matches.Count -eq 0) { $typesByFile[$relative] = @(); continue }
+        $topIndent = ($matches | ForEach-Object { $_.Groups[1].Value.Length } | Measure-Object -Minimum).Minimum
+        $tops = @($matches | Where-Object { $_.Groups[1].Value.Length -eq $topIndent })
+        foreach ($top in $tops) {
+            if ($top.Groups[2].Value -eq 'interface') { [void]$interfaceTypes.Add($top.Groups[3].Value) }
+            if ($top.Groups[4].Success) {
+                $baseNames = @([regex]::Matches($top.Groups[4].Value, '(?<![\w.])([A-Za-z_]\w*)') | ForEach-Object { $_.Groups[1].Value })
+                if (-not $baseList.ContainsKey($top.Groups[3].Value)) { $baseList[$top.Groups[3].Value] = New-Object System.Collections.Generic.HashSet[string] }
+                foreach ($baseName in $baseNames) { [void]$baseList[$top.Groups[3].Value].Add($baseName) }
+            }
+        }
+        # Usings, the namespace and file-level attributes precede every type and can carry a reference
+        # that belongs to all of them.
+        $preamble = $text.Substring(0, $tops[0].Index)
+        $declared = New-Object System.Collections.Generic.List[string]
+        for ($i = 0; $i -lt $tops.Count; $i++) {
+            $name = $tops[$i].Groups[3].Value
+            $from = $tops[$i].Index
+            $to = if ($i + 1 -lt $tops.Count) { $tops[$i + 1].Index } else { $text.Length }
+            if (-not $typeBody.ContainsKey($name)) { $typeBody[$name] = New-Object System.Text.StringBuilder }
+            [void]$typeBody[$name].Append($preamble).Append($text.Substring($from, $to - $from))
+            if (-not $typeFiles.ContainsKey($name)) { $typeFiles[$name] = New-Object System.Collections.Generic.HashSet[string] }
+            [void]$typeFiles[$name].Add($relative)
+            if (-not $declared.Contains($name)) { $declared.Add($name) }
+        }
+        $typesByFile[$relative] = @($declared)
+    }
+
+    $verbsByType = @{}
+    $consumers = @{}   # type name -> type names whose text names it
+    foreach ($name in $typeBody.Keys) {
+        $body = $typeBody[$name].ToString()
+        $verbs = @([regex]::Matches($body, $verbDeclaration) | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+        if ($verbs.Count -gt 0) { $verbsByType[$name] = $verbs }
+        $tokens = New-Object System.Collections.Generic.HashSet[string]
+        foreach ($m in $identifier.Matches($body)) { [void]$tokens.Add($m.Groups[1].Value) }
+        foreach ($token in $tokens) {
+            if ($token -eq $name -or -not $typeBody.ContainsKey($token)) { continue }
+            if (-not $consumers.ContainsKey($token)) { $consumers[$token] = New-Object System.Collections.Generic.HashSet[string] }
+            [void]$consumers[$token].Add($name)
         }
     }
-    return $script:productSources
+
+    # Implementation -> interface. A consumer injects IFoo and never spells Foo out, so without this
+    # edge every service behind an interface looks unreachable. Restricted to base types declared as
+    # `interface`: a base CLASS in this tree (Command, BaseTool) is a template-method host whose
+    # hundreds of subclasses are not interchangeable, and following it merges the whole tree.
+    foreach ($name in @($baseList.Keys)) {
+        foreach ($baseName in $baseList[$name]) {
+            if (-not $interfaceTypes.Contains($baseName)) { continue }
+            if (-not $consumers.ContainsKey($baseName)) { continue }
+            if (-not $consumers.ContainsKey($name)) { $consumers[$name] = New-Object System.Collections.Generic.HashSet[string] }
+            foreach ($c in $consumers[$baseName]) { if ($c -ne $name) { [void]$consumers[$name].Add($c) } }
+        }
+    }
+
+    $registration = @($manifest.registrationFiles)
+    foreach ($registrationFile in $registration) {
+        if (-not $texts.ContainsKey($registrationFile)) { continue }
+        foreach ($m in $registrationPair.Matches($texts[$registrationFile])) {
+            $service = $m.Groups[1].Value
+            $implementation = $m.Groups[2].Value
+            if (-not $typeBody.ContainsKey($service) -or -not $typeBody.ContainsKey($implementation)) { continue }
+            if (-not $consumers.ContainsKey($implementation)) { $consumers[$implementation] = New-Object System.Collections.Generic.HashSet[string] }
+            if (-not $consumers.ContainsKey($service)) { continue }
+            foreach ($c in $consumers[$service]) { if ($c -ne $implementation) { [void]$consumers[$implementation].Add($c) } }
+        }
+    }
+
+    # A type declared only in a registration file is never traversed through: every type is named
+    # there, so following it would make every change reach every tool.
+    $registrationTypes = New-Object System.Collections.Generic.HashSet[string]
+    foreach ($registrationFile in $registration) {
+        if (-not $typesByFile.ContainsKey($registrationFile)) { continue }
+        foreach ($name in $typesByFile[$registrationFile]) {
+            $owners = @($typeFiles[$name] | Where-Object { $registration -notcontains $_ })
+            if ($owners.Count -eq 0) { [void]$registrationTypes.Add($name) }
+        }
+    }
+
+    $script:graph = @{
+        Texts = $texts; TypeFiles = $typeFiles; TypesByFile = $typesByFile
+        VerbsByType = $verbsByType; Consumers = $consumers; RegistrationTypes = $registrationTypes
+        Registration = $registration
+    }
+    return $script:graph
+}
+
+$closureCache = @{}
+function Get-ConsumerClosure([string] $FileRelative) {
+    if ($script:closureCache.ContainsKey($FileRelative)) { return $script:closureCache[$FileRelative] }
+    # Every type that transitively names a type declared in this file, plus those types themselves.
+    $g = Get-Graph
+    $seen = New-Object System.Collections.Generic.HashSet[string]
+    $queue = New-Object System.Collections.Generic.Queue[string]
+    foreach ($name in $g.TypesByFile[$FileRelative]) { if ($seen.Add($name)) { $queue.Enqueue($name) } }
+    while ($queue.Count -gt 0) {
+        $current = $queue.Dequeue()
+        if (-not $g.Consumers.ContainsKey($current)) { continue }
+        foreach ($consumer in $g.Consumers[$current]) {
+            if ($g.RegistrationTypes.Contains($consumer)) { continue }
+            if ($seen.Add($consumer)) { $queue.Enqueue($consumer) }
+        }
+    }
+    $result = @($seen)
+    $script:closureCache[$FileRelative] = $result
+    return $result
+}
+
+$toolFilesByName = $null
+function Get-ToolFilesByName() {
+    # Every [McpServerTool(Name = ...)] literal in the tree, mapped to the file that declares it.
+    # 132 CLI verbs are also MCP tool names, because the tool IS the command's MCP surface; without
+    # this index a command change looks uncovered while its tool has fixtures.
+    if ($null -ne $script:toolFilesByName) { return $script:toolFilesByName }
+    $script:toolFilesByName = @{}
+    $toolRootFull = Join-Path $root $manifest.toolSourceRoot
+    foreach ($toolFile in Get-ChildItem -LiteralPath $toolRootFull -Filter '*.cs' -File -Recurse) {
+        $relative = $toolFile.FullName.Substring($root.Length).TrimStart('/', '\').Replace('\', '/')
+        foreach ($literal in (Get-ToolDeclarations $toolFile.FullName).Literals) {
+            if (-not $script:toolFilesByName.ContainsKey($literal)) { $script:toolFilesByName[$literal] = New-Object System.Collections.Generic.HashSet[string] }
+            [void]$script:toolFilesByName[$literal].Add($relative)
+        }
+    }
+    return $script:toolFilesByName
+}
+
+$verbFixtureCache = @{}
+function Select-FixturesForVerb([string] $Verb) {
+    if ($script:verbFixtureCache.ContainsKey($Verb)) { return $script:verbFixtureCache[$Verb] }
+    # A command is reached two ways: an MCP tool published under the same name (the usual case), and
+    # the CLI harness spelling the verb out in a fixture.
+    $selected = New-Object System.Collections.Generic.HashSet[string]
+    $byName = Get-ToolFilesByName
+    if ($byName.ContainsKey($Verb)) {
+        foreach ($toolFile in $byName[$Verb]) {
+            foreach ($n in @(Select-FixturesForTool $toolFile)) { [void]$selected.Add($n) }
+        }
+    }
+    $needle = '"' + $Verb + '"'
+    foreach ($name in $fixtureSources.Keys) {
+        if ($fixtureSources[$name].Contains($needle)) { [void]$selected.Add($name) }
+    }
+    $result = @($selected)
+    $script:verbFixtureCache[$Verb] = $result
+    return $result
 }
 
 function Select-FixturesForProductFile([string] $FileRelative, [ref] $Reason) {
-    # Sound only when the consumer set is closed: every file under clio/ that names a type declared
-    # in the changed file is a tool file (registration files excepted). A consumer elsewhere, or no
-    # consumer at all (the type is reached through DI or reflection), means the blast radius is
-    # unknown and the whole suite runs.
-    $sources = Get-ProductSources
-    if (-not $sources.ContainsKey($FileRelative)) { $Reason.Value = 'full run (file not in the tree)'; return @() }
-    $types = @([regex]::Matches($sources[$FileRelative], $typeDeclaration) | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
-    if ($types.Count -eq 0) { $Reason.Value = 'full run (declares no type)'; return @() }
-    $pattern = '\b(?:' + (($types | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')\b'
-    $registration = @($manifest.registrationFiles)
-    $consumers = @($sources.Keys | Where-Object { $_ -ne $FileRelative -and $registration -notcontains $_ -and $sources[$_] -cmatch $pattern } | Sort-Object)
-    if ($consumers.Count -eq 0) { $Reason.Value = 'full run (no direct consumer under clio/, reached through DI or reflection)'; return @() }
-    $outside = @($consumers | Where-Object { -not $_.StartsWith($manifest.toolSourceRoot) })
-    if ($outside.Count -gt 0) { $Reason.Value = "full run (also used outside MCP tools: $($outside[0]))"; return @() }
+    $g = Get-Graph
+    if (-not $g.TypesByFile.ContainsKey($FileRelative)) { $Reason.Value = 'full run (file not in the tree)'; return @() }
+    # AGENTS.md: [ResolvedDynamically] marks a service resolved by reflection or from another
+    # assembly. That is exactly the edge an identifier scan cannot see, so the graph is not allowed
+    # to conclude anything about such a file.
+    if ($g.Texts[$FileRelative].Contains('[ResolvedDynamically]')) { $Reason.Value = 'full run (declares a [ResolvedDynamically] type, resolved by reflection)'; return @() }
+    if (@($g.TypesByFile[$FileRelative]).Count -eq 0) { $Reason.Value = 'full run (declares no type)'; return @() }
+    $closure = @(Get-ConsumerClosure $FileRelative)
     $selected = New-Object System.Collections.Generic.HashSet[string]
-    foreach ($toolFile in $consumers) { foreach ($n in @(Select-FixturesForTool $toolFile)) { [void]$selected.Add($n) } }
-    if ($selected.Count -eq 0) { $Reason.Value = 'full run (consuming tool files select no fixture)'; return @() }
-    $Reason.Value = "product file used only by $($consumers.Count) tool file(s)"
+    $toolFiles = New-Object System.Collections.Generic.HashSet[string]
+    $verbCount = 0
+    foreach ($type in $closure) {
+        foreach ($owner in $g.TypeFiles[$type]) {
+            if ($owner.StartsWith($manifest.toolSourceRoot) -and $owner.EndsWith('.cs')) { [void]$toolFiles.Add($owner) }
+        }
+        if ($g.VerbsByType.ContainsKey($type)) {
+            foreach ($verb in $g.VerbsByType[$type]) {
+                $verbFixtures = @(Select-FixturesForVerb $verb)
+                if ($verbFixtures.Count -gt 0) { $verbCount++ }
+                foreach ($n in $verbFixtures) { [void]$selected.Add($n) }
+            }
+        }
+    }
+    foreach ($toolFile in $toolFiles) {
+        foreach ($n in @(Select-FixturesForTool $toolFile)) { [void]$selected.Add($n) }
+    }
+    if ($toolFiles.Count -eq 0 -and $verbCount -eq 0) {
+        $Reason.Value = "no MCP tool and no covered CLI verb consumes it (closure $($closure.Count) type(s))"
+        return @()
+    }
+    if ($selected.Count -eq 0) {
+        $Reason.Value = "full run ($($toolFiles.Count) consuming tool file(s) select no fixture)"
+        return @()
+    }
+    $Reason.Value = "reached from $($toolFiles.Count) tool file(s) and $verbCount covered verb(s) over $($closure.Count) consumer type(s)"
+    return @($selected)
+}
+
+function Select-FixturesForRegistrationFile([string] $FileRelative, [ref] $Reason) {
+    # The composition root is named by nothing and names everything, so the graph cannot place it.
+    # Its diff can: a pull request that adds `services.AddSingleton<IFoo, Foo>()` changes what Foo's
+    # consumers resolve and nothing else. Only a diff made exclusively of registration statements
+    # qualifies - anything else (a new using, a reordered method, a changed lifetime helper) can
+    # affect resolution globally and still runs the whole suite.
+    if ([string]::IsNullOrWhiteSpace($BaseRef)) { $Reason.Value = 'full run (registration file, no diff available to narrow it)'; return @() }
+    $diff = @(& git -C $root diff -U0 "$BaseRef...$HeadRef" -- $FileRelative)
+    if ($LASTEXITCODE -ne 0) { $Reason.Value = 'full run (registration file, git diff failed)'; return @() }
+    $changed = @($diff | Where-Object { ($_.StartsWith('+') -or $_.StartsWith('-')) -and -not ($_.StartsWith('+++') -or $_.StartsWith('---')) } | ForEach-Object { $_.Substring(1) })
+    if ($changed.Count -eq 0) { $Reason.Value = 'full run (registration file, empty diff)'; return @() }
+    # A line that is only punctuation, a brace or a comment carries no resolution change.
+    $registrationStatement = '^\s*(?://.*|/\*.*|\*.*|\}|\{|\)\s*;?|)$|(?:services|builder|collection)\s*\.\s*(?:Add|Try(?:Add)?)\w*\s*[<(]|\.\s*As\w*\s*<'
+    $offending = @($changed | Where-Object { $_ -notmatch $registrationStatement })
+    if ($offending.Count -gt 0) {
+        $Reason.Value = "full run (registration file, $($offending.Count) changed line(s) are not registration statements)"
+        return @()
+    }
+    $g = Get-Graph
+    $names = New-Object System.Collections.Generic.HashSet[string]
+    foreach ($line in $changed) {
+        foreach ($m in [regex]::Matches($line, '(?<![\w.])([A-Za-z_]\w*)')) {
+            $name = $m.Groups[1].Value
+            if ($g.TypeFiles.ContainsKey($name)) { [void]$names.Add($name) }
+        }
+    }
+    if ($names.Count -eq 0) { $Reason.Value = 'full run (registration file, no known type on the changed lines)'; return @() }
+    $selected = New-Object System.Collections.Generic.HashSet[string]
+    $owners = New-Object System.Collections.Generic.HashSet[string]
+    foreach ($name in $names) { foreach ($owner in $g.TypeFiles[$name]) { if ($g.Registration -notcontains $owner) { [void]$owners.Add($owner) } } }
+    foreach ($owner in $owners) {
+        $ownerReason = ''
+        $ownerFixtures = @(Select-FixturesForProductFile $owner ([ref]$ownerReason))
+        if ($ownerFixtures.Count -eq 0 -and $ownerReason.StartsWith('full run')) {
+            $Reason.Value = "full run (registration of $owner : $ownerReason)"
+            return @()
+        }
+        foreach ($n in $ownerFixtures) { [void]$selected.Add($n) }
+    }
+    if ($selected.Count -eq 0) { $Reason.Value = "no fixture reaches the $($owners.Count) type(s) whose registration changed"; return @() }
+    $Reason.Value = "registration of $($owners.Count) type(s) over $($changed.Count) changed line(s)"
+    return @($selected)
+}
+
+function Select-FixturesForDataFile([string] $FileRelative, [ref] $Reason) {
+    # A non-code asset under clio/ (a rules table, a catalog) is reached by name, so the product
+    # files that spell its file name out are its consumers; from there the graph rules apply.
+    $g = Get-Graph
+    $leaf = [System.IO.Path]::GetFileName($FileRelative)
+    $holders = @( $g.Texts.Keys | Where-Object { $g.Texts[$_].Contains($leaf) } | Sort-Object)
+    if ($holders.Count -eq 0) { $Reason.Value = 'full run (no product file names this asset)'; return @() }
+    $selected = New-Object System.Collections.Generic.HashSet[string]
+    foreach ($holder in $holders) {
+        $holderReason = ''
+        foreach ($n in @(Select-FixturesForProductFile $holder ([ref]$holderReason))) { [void]$selected.Add($n) }
+        if ($selected.Count -eq 0 -and $holderReason.StartsWith('full run')) { $Reason.Value = "full run (asset holder $holder : $holderReason)"; return @() }
+    }
+    if ($selected.Count -eq 0) { $Reason.Value = "no fixture reaches the $($holders.Count) file(s) naming this asset"; return @() }
+    $Reason.Value = "asset named by $($holders.Count) product file(s)"
     return @($selected)
 }
 
@@ -194,17 +455,41 @@ if ($Inventory) {
     $toolRootFull = Join-Path $root $manifest.toolSourceRoot
     $reachability = @{}
     foreach ($name in $fixtureSources.Keys) { $reachability[$name] = New-Object System.Collections.Generic.List[string] }
+    $uncovered = New-Object System.Collections.Generic.List[string]
     foreach ($toolFile in Get-ChildItem -LiteralPath $toolRootFull -Filter '*.cs' -File -Recurse) {
         $relative = $toolFile.FullName.Substring($root.Length).TrimStart('/', '\').Replace('\', '/')
         # A tool file under fullRunPaths is classified by rule 2 and never selects anything itself.
         if (Test-GlobMatch $relative $manifest.fullRunPaths) { continue }
-        foreach ($name in @(Select-FixturesForTool $relative)) { $reachability[$name].Add($relative) }
+        $declared = Get-ToolDeclarations $toolFile.FullName
+        if ($declared.Classes.Count -eq 0 -and $declared.Literals.Count -eq 0) { continue }
+        $names = @(Select-FixturesForTool $relative)
+        if ($names.Count -eq 0) { $uncovered.Add($relative); continue }
+        foreach ($name in $names) { $reachability[$name].Add($relative) }
     }
     $fixturesOut = [ordered]@{}
     foreach ($key in ($fixturesByFile.Keys | Sort-Object)) { $fixturesOut[$key] = @($fixturesByFile[$key] | Sort-Object) }
     $reachOut = [ordered]@{}
     foreach ($key in ($reachability.Keys | Sort-Object)) { $reachOut[$key] = @($reachability[$key] | Sort-Object) }
-    [pscustomobject]@{ fixtures = $fixturesOut; reachability = $reachOut } | ConvertTo-Json -Depth 4
+    # Every product file the graph says no fixture can observe. Pinned in the repository, because
+    # skipping the build for such a file is only safe while a human agrees the file is really
+    # outside the MCP surface - a silent addition here is a test that stopped running.
+    $g = Get-Graph
+    $unreachable = New-Object System.Collections.Generic.List[string]
+    foreach ($relative in ($g.TypesByFile.Keys | Sort-Object)) {
+        if (Test-GlobMatch $relative $manifest.ignoredPaths) { continue }
+        if (Test-GlobMatch $relative $manifest.fullRunPaths) { continue }
+        if (@($manifest.registrationFiles) -contains $relative) { continue }
+        if ($relative.StartsWith($manifest.toolSourceRoot)) { continue }
+        $reason = ''
+        if (@(Select-FixturesForProductFile $relative ([ref]$reason)).Count -eq 0 -and -not $reason.StartsWith('full run')) {
+            $unreachable.Add($relative)
+        }
+    }
+    [pscustomobject]@{
+        fixtures = $fixturesOut; reachability = $reachOut
+        uncoveredTools = @($uncovered | Sort-Object)
+        unreachableProductFiles = @($unreachable)
+    } | ConvertTo-Json -Depth 4
     return
 }
 
@@ -220,8 +505,21 @@ function Add-Decision([string] $File, [string] $Rule, [string[]] $Selected) {
 }
 
 foreach ($file in $ChangedFiles) {
+    if (Test-GlobMatch $file $manifest.ignoredPaths) { Add-Decision $file 'ignored (documentation or unrelated project)' @(); continue }
     if (-not (Test-GlobMatch $file $manifest.relevantPaths)) { Add-Decision $file 'ignored (outside relevantPaths)' @(); continue }
     $relevantCount++
+
+    if (@($manifest.registrationFiles) -contains $file) {
+        $reason = ''
+        $names = @(Select-FixturesForRegistrationFile $file ([ref]$reason))
+        if ($names.Count -eq 0) {
+            if ($reason.StartsWith('full run')) { $mode = 'full' }
+            Add-Decision $file $reason @(); continue
+        }
+        foreach ($n in $names) { [void]$fixtures.Add($n) }
+        Add-Decision $file $reason $names
+        continue
+    }
 
     if (Test-GlobMatch $file $manifest.fullRunPaths) { $mode = 'full'; Add-Decision $file 'full run (fullRunPaths)' @(); continue }
 
@@ -246,17 +544,44 @@ foreach ($file in $ChangedFiles) {
     }
 
     if ($file.StartsWith($manifest.toolSourceRoot) -and $file.EndsWith('.cs')) {
-        $names = @(Select-FixturesForTool $file)
-        if ($names.Count -eq 0) { $mode = 'full'; Add-Decision $file 'full run (tool file selects no fixture)' @(); continue }
-        foreach ($n in $names) { [void]$fixtures.Add($n) }
-        Add-Decision $file 'tool file' $names
-        continue
+        # Not every file under Tools/ is a tool: response records, linters and stores live there too,
+        # and they have no tool name for a fixture to reference. Only a file that really declares a
+        # tool forces a full run when nothing covers it; the rest go through the graph like any
+        # other product file.
+        $toolPath = Join-Path $root $file
+        $declaresTool = $false
+        if (Test-Path -LiteralPath $toolPath) {
+            $declared = Get-ToolDeclarations $toolPath
+            $declaresTool = ($declared.Classes.Count -gt 0) -or ($declared.Literals.Count -gt 0)
+        }
+        if ($declaresTool) {
+            $names = @(Select-FixturesForTool $file)
+            if ($names.Count -eq 0) { $mode = 'full'; Add-Decision $file 'full run (tool file selects no fixture)' @(); continue }
+            foreach ($n in $names) { [void]$fixtures.Add($n) }
+            Add-Decision $file 'tool file' $names
+            continue
+        }
     }
 
     if ($file.StartsWith($manifest.productSourceRoot) -and $file.EndsWith('.cs')) {
         $reason = ''
         $names = @(Select-FixturesForProductFile $file ([ref]$reason))
-        if ($names.Count -eq 0) { $mode = 'full'; Add-Decision $file $reason @(); continue }
+        if ($names.Count -eq 0) {
+            if ($reason.StartsWith('full run')) { $mode = 'full' }
+            Add-Decision $file $reason @(); continue
+        }
+        foreach ($n in $names) { [void]$fixtures.Add($n) }
+        Add-Decision $file $reason $names
+        continue
+    }
+
+    if ($file.StartsWith($manifest.productSourceRoot)) {
+        $reason = ''
+        $names = @(Select-FixturesForDataFile $file ([ref]$reason))
+        if ($names.Count -eq 0) {
+            if ($reason.StartsWith('full run')) { $mode = 'full' }
+            Add-Decision $file $reason @(); continue
+        }
         foreach ($n in $names) { [void]$fixtures.Add($n) }
         Add-Decision $file $reason $names
         continue
@@ -265,19 +590,22 @@ foreach ($file in $ChangedFiles) {
     $mode = 'full'; Add-Decision $file 'full run (no rule)' @()
 }
 
-if ($relevantCount -eq 0) { $mode = 'full'; $decisions.Add('no relevant file changed -> full run (safe default)') }
-if ($mode -eq 'subset' -and $fixtures.Count -eq 0) { $mode = 'full'; $decisions.Add('subset resolved to zero fixtures -> full run') }
-if ($mode -eq 'subset' -and $fixtures.Count -gt [int]$manifest.maxSubsetFixtures) {
-    $decisions.Add("subset of $($fixtures.Count) fixtures exceeds maxSubsetFixtures=$($manifest.maxSubsetFixtures) -> full run")
-    $mode = 'full'
+if ($mode -eq 'subset' -and $fixtures.Count -eq 0) {
+    if ($relevantCount -eq 0) { $decisions.Add('nothing the diff touches is relevant to this suite -> nothing to run') }
+    else { $decisions.Add('no fixture in this suite can observe the changed code -> nothing to run') }
+    $mode = 'none'
 }
-
 if ($mode -eq 'subset' -and -not $IncludeNoEnvironment) {
     $needsTeamCity = @($fixtures | Where-Object { -not $fixtureNoEnvironmentOnly[$_] })
     if ($needsTeamCity.Count -eq 0) {
         $decisions.Add('every selected fixture is positively NoEnvironment-only and that tier runs on GitHub -> nothing to run on TeamCity')
         $mode = 'none'
     }
+}
+
+if ($mode -eq 'subset' -and $fixtures.Count -gt [int]$manifest.maxSubsetFixtures) {
+    $decisions.Add("subset of $($fixtures.Count) fixtures exceeds maxSubsetFixtures=$($manifest.maxSubsetFixtures) -> full run")
+    $mode = 'full'
 }
 
 # --- compose the filter --------------------------------------------------------------------------

@@ -50,13 +50,18 @@ TeamCity automatic lane.
 A pull request does not run the whole suite on TeamCity. `.github/workflows/teamcity-mcp-e2e.yml`
 runs `.github/scripts/Select-McpE2eTestFilter.ps1`, which maps the changed files to fixtures using
 `TestSelection/mcp-e2e-selection.json` and sends the resulting `--filter` to TeamCity as the
-`McpE2eTestFilter` build property. Shared infrastructure (`clio/Common/**`, McpServer root files,
-`Support/**`, `cliogate/**`, package versions) runs everything; a change to
-`clio/Command/McpServer/Tools/X.cs` runs the fixtures that reference `X`; a change to another
-`clio/**/*.cs` runs the fixtures of the tools that consume it, but only when nothing outside the tools
-consumes it too. If every selected fixture is positively `McpE2E.NoEnvironment` (a fixture with no `McpE2E.*` tier still counts as needing TeamCity), no TeamCity build is queued at all.
-Master builds keep the full default. The `McpE2E.NoEnvironment` tier runs on GitHub-hosted runners (`build.yml`, job
-`mcp-e2e-noenvironment`) and is excluded from pull-request runs on TeamCity.
+`McpE2eTestFilter` build property. A change to `clio/Command/McpServer/Tools/X.cs` runs the fixtures
+that reference `X`; a change to any other `clio/**/*.cs` runs the fixtures of every tool that
+transitively consumes it and of every CLI verb it reaches that a fixture covers; shared
+infrastructure (McpServer root files, `Support/**`, `cliogate/**`, package versions) still runs
+everything, because everything can observe it. Master builds keep the full default. The
+`McpE2E.NoEnvironment` tier runs on GitHub-hosted runners (`build.yml`, job `mcp-e2e-noenvironment`)
+and is excluded from pull-request runs on TeamCity.
+
+No TeamCity build is queued at all when the diff touches only documentation, only code no fixture
+can observe (pinned in `TestSelection/unreachable-product-files.txt`), or only fixtures that are
+positively `McpE2E.NoEnvironment`. A fixture with no `McpE2E.*` tier still counts as needing
+TeamCity.
 
 What a fixture must satisfy so that it is selected when the code it tests changes
 (`clio.tests/McpE2eSelectionCoverageTests.cs` fails the unit lane otherwise):
@@ -69,6 +74,10 @@ What a fixture must satisfy so that it is selected when the code it tests change
 - A fixture that tests server-level behaviour rather than one tool (startup, shutdown, workers, HTTP
   routing, progress relay) belongs in `fullRunOnlyFixtures` of the manifest: its code lives under
   `fullRunPaths`, so it runs in every full run and no tool file can select it.
+
+A tool with no fixture at all is listed in `toolsWithoutFixtures`. Every change to such a tool runs
+the whole suite, because nothing tells the detector which tests would show the regression. Treat an
+entry there as a coverage gap to close, not as an exemption.
 
 See `spec/mcp-e2e-plan-split/` for the rules in full and the measured baseline.
 
