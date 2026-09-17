@@ -45,7 +45,6 @@ clio/Command/DeleteInfrastructureCommand.cs
 clio/Command/DeletePackageCommand.cs
 clio/Command/DeletePkgOptions.cs
 clio/Command/DeployAppCommand.cs
-clio/Command/DeployInfrastructureCommand.cs
 clio/Command/DistributeLicenseCommand.cs
 clio/Command/DistributeLicenseOptions.cs
 clio/Command/DownloadAppCommand.cs
@@ -73,7 +72,6 @@ clio/Command/McpServer/Prompts/DeleteSchemaPrompt.cs
 clio/Command/McpServer/Prompts/DeployCreatioPrompt.cs
 clio/Command/McpServer/Prompts/DeployIdentityPrompt.cs
 clio/Command/McpServer/Prompts/DownloadConfigurationPrompt.cs
-clio/Command/McpServer/Prompts/EntitySchemaPrompt.cs
 clio/Command/McpServer/Prompts/FindEmptyIisPortPrompt.cs
 clio/Command/McpServer/Prompts/FsmAndCompilePrompt.cs
 clio/Command/McpServer/Prompts/GenerateProcessModelPrompt.cs
@@ -184,7 +182,6 @@ clio/Common/Skills/JsonConfigEditor.cs
 clio/Common/Skills/ManagedSkillsManifestStore.cs
 clio/Common/StringParser.cs
 clio/Common/UpdateCheckCache.cs
-clio/Common/ValidateUtilities.cs
 clio/CreatioModel/SysWorkspace.cs
 clio/CreatioModel/VwWebServiceV2.cs
 clio/K8CommandsTests.cs

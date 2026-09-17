@@ -106,16 +106,20 @@ Edges, all of them widening rather than narrowing:
   `Schema`.
 - **qualified reference** - `Clio.Common.Foo` and `global::Clio.Common.Foo`. The dot in front of
   `Foo` hides it from the rule above, and 1247 references in this tree are written that way. Only
-  chains rooted in a namespace this repository declares are followed.
+  chains rooted in a namespace this repository declares are followed, plus the aliases of such a
+  namespace (`using Contracts = Clio.Common;`); an alias of `System.*` adds nothing.
 - **implementation to interface** - a consumer injects `IFoo` and never spells `Foo` out. Restricted
   to base types declared as `interface`: a base *class* here (`Command`, `BaseTool`) is a
   template-method host whose hundreds of subclasses are not interchangeable, and following it merges
   the whole tree into one component.
 - **extension class to extended type** - `value.Normalize()` names neither the extension class nor
-  its file, so the type it extends is the only route from the call site to it.
+  its file, so the type it extends is the only route from the call site to it. When the receiver is
+  not a type this repository declares (`this string`, `this IEnumerable<T>` - half the extension
+  methods here), no consumer set bounds it and the whole suite runs.
 - **registration** - `AddSingleton<IFoo, Foo>()` and the factory form
-  `AddSingleton<IFoo>(sp => new Adapter(new Backend()))`, taken from the registration files only.
-  The factory form is what links a type that does not implement the interface itself.
+  `AddSingleton<IFoo>(sp => new Adapter(new Backend()))`, taken from the registration files only and
+  read to the end of the statement rather than to the end of the line. The factory form is what
+  links a type that does not implement the interface itself.
 
 Two shapes make the per-type split unreliable, and both fall back rather than guess: a raw string is
 blanked out before the declaration scan, so a code sample inside a literal is not read as the next

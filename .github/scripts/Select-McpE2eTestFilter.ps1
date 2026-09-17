@@ -178,6 +178,8 @@ function Get-Graph() {
     # repository declares are followed, so `task.Result` is still member access, not a reference.
     $qualified = [regex] '(?<![\w.])(?:global::)?([A-Za-z_]\w*)((?:\.[A-Za-z_]\w*)+)'
     $namespaceDeclaration = '(?m)^\s*namespace\s+([A-Za-z_]\w*)'
+    # `using Contracts = Clio.Common;` makes Contracts.Foo a reference to Clio.Common.Foo.
+    $namespaceAlias = '(?m)^\s*using\s+([A-Za-z_]\w*)\s*=\s*(?:global::)?([A-Za-z_]\w*)[\w.]*\s*;'
     # `public static int Normalize(this Service value)`: the extension type is never named by the
     # caller, so the call site has to be routed through the type it extends.
     $extensionParameter = [regex] '\(\s*this\s+(?:ref\s+|in\s+|scoped\s+)*([A-Za-z_]\w*)'
@@ -188,7 +190,8 @@ function Get-Graph() {
     $registrationPair = [regex] 'Add(?:Singleton|Scoped|Transient|KeyedSingleton)<\s*(?:[\w.]*\.)?(\w+)\s*,\s*(?:[\w.]*\.)?(\w+)\s*>'
     # services.AddSingleton<ILogger>(ConsoleLogger.Instance) and the lambda form: one generic argument
     # and an instance or factory that names the implementation somewhere on the same line.
-    $registrationFactory = [regex] '(?m)^.*Add(?:Singleton|Scoped|Transient|KeyedSingleton)<\s*(?:[\w.]*\.)?(\w+)\s*>\s*\((?!\s*\)).*$'
+    # Bounded to the statement, not to the line: the implementation can sit on a continuation line.
+    $registrationFactory = [regex] '(?s)Add(?:Singleton|Scoped|Transient|KeyedSingleton)<\s*(?:[\w.]*\.)?(\w+)\s*>\s*\((?!\s*\))[^;]{0,600};'
 
     $texts = @{}
     $productRoot = Join-Path $root $manifest.productSourceRoot
@@ -208,6 +211,13 @@ function Get-Graph() {
     $namespaceRoots = New-Object System.Collections.Generic.HashSet[string]
     foreach ($relative in $texts.Keys) {
         foreach ($m in [regex]::Matches($texts[$relative], $namespaceDeclaration)) { [void]$namespaceRoots.Add($m.Groups[1].Value) }
+    }
+    # An alias of a namespace this repository declares is a root too; one aliasing System.* adds
+    # nothing, because no type behind it is ours.
+    foreach ($relative in $texts.Keys) {
+        foreach ($m in [regex]::Matches($texts[$relative], $namespaceAlias)) {
+            if ($namespaceRoots.Contains($m.Groups[2].Value)) { [void]$namespaceRoots.Add($m.Groups[1].Value) }
+        }
     }
 
     $typeBody = @{}    # type name -> the text that belongs to it (a partial type accumulates)
@@ -282,10 +292,18 @@ function Get-Graph() {
 
     # Extension class -> extended type. `value.Normalize()` names neither the extension class nor
     # its file, so the only route from a call site to the extension is the type it extends.
+    $unboundedTypes = New-Object System.Collections.Generic.HashSet[string]
     foreach ($name in @($typeBody.Keys)) {
         foreach ($m in $extensionParameter.Matches($typeBody[$name].ToString())) {
             $extended = $m.Groups[1].Value
-            if ($extended -eq $name -or -not $typeBody.ContainsKey($extended)) { continue }
+            if ($extended -eq $name) { continue }
+            if (-not $typeBody.ContainsKey($extended)) {
+                # `this string`, `this IEnumerable<T>`, `this Exception`: the receiver is not ours, so
+                # the callers cannot be enumerated. Half the extension methods in this tree are of
+                # that shape, and guessing an empty consumer set for them would skip the build.
+                [void]$unboundedTypes.Add($name)
+                continue
+            }
             if (-not $consumers.ContainsKey($extended)) { continue }
             if (-not $consumers.ContainsKey($name)) { $consumers[$name] = New-Object System.Collections.Generic.HashSet[string] }
             foreach ($c in $consumers[$extended]) { if ($c -ne $name) { [void]$consumers[$name].Add($c) } }
@@ -344,6 +362,7 @@ function Get-Graph() {
     $script:graph = @{
         Texts = $texts; TypeFiles = $typeFiles; TypesByFile = $typesByFile
         VerbsByType = $verbsByType; Consumers = $consumers; RegistrationTypes = $registrationTypes
+        UnboundedTypes = $unboundedTypes
         Registration = $registration
     }
     return $script:graph
@@ -416,6 +435,9 @@ function Select-FixturesForProductFile([string] $FileRelative, [ref] $Reason) {
     # assembly. That is exactly the edge an identifier scan cannot see, so the graph is not allowed
     # to conclude anything about such a file.
     if ($g.Texts[$FileRelative].Contains('[ResolvedDynamically]')) { $Reason.Value = 'full run (declares a [ResolvedDynamically] type, resolved by reflection)'; return @() }
+    foreach ($name in $g.TypesByFile[$FileRelative]) {
+        if ($g.UnboundedTypes.Contains($name)) { $Reason.Value = "full run ($name extends a type this repository does not declare, so its callers cannot be enumerated)"; return @() }
+    }
     if (@($g.TypesByFile[$FileRelative]).Count -eq 0) { $Reason.Value = 'full run (declares no type)'; return @() }
     $closure = @(Get-ConsumerClosure $FileRelative)
     $selected = New-Object System.Collections.Generic.HashSet[string]

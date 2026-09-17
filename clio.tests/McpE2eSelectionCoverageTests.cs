@@ -349,6 +349,26 @@ internal sealed class McpE2eSelectionCoverageTests {
 	}
 
 	[Test]
+	[Description("A registration spread over several lines still links the implementation, a namespace alias still resolves the type behind it, and an extension on a type the repository does not declare runs the whole suite because its callers cannot be enumerated.")]
+	public void Script_ShouldHandleMultilineRegistrations_AliasedNamespaces_AndUnboundedExtensions() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+
+		// Act
+		JsonElement multilineFactory = RunSelection(["clio/Common/IotaBackend.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement aliasedNamespace = RunSelection(["clio/Common/KappaService.cs"], includeNoEnvironment: false, repo.Root);
+		JsonElement unboundedExtension = RunSelection(["clio/Common/LambdaExtensions.cs"], includeNoEnvironment: false, repo.Root);
+
+		// Assert
+		multilineFactory.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["IotaToolE2ETests"],
+			because: "the implementation sits on a continuation line, and a rule that reads only the line with the generic argument would call the change unobservable");
+		aliasedNamespace.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().BeEquivalentTo(["KappaToolE2ETests"],
+			because: "Contracts.KappaService is a reference to Clio.Common.KappaService, and an alias must resolve to the namespace behind it");
+		unboundedExtension.GetProperty("mode").GetString().Should().Be("full",
+			because: "an extension on string is called as value.Shorten() from anywhere, including code outside this repository, so no consumer set bounds it and skipping the build would be a guess");
+	}
+
+	[Test]
 	[Description("A data asset runs the whole suite when any file naming it has an unknown blast radius, even when another file naming it resolved to fixtures first.")]
 	public void Script_ShouldSelectFullRun_WhenOneHolderOfADataAssetIsUnclassifiable() {
 		// Arrange
@@ -607,10 +627,26 @@ internal sealed class McpE2eSelectionCoverageTests {
 				"public sealed class ThetaTool : BaseTool {\n\tinternal const string ToolName = \"theta-run\";\n" +
 				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(ThetaService service) { }\n}");
 			Write("clio/Common/ThetaDependency.cs", "public sealed class ThetaDependency { }");
+			// The implementation sits on a continuation line of the registration statement.
+			Write("clio/Command/McpServer/Tools/IotaTool.cs",
+				"public sealed class IotaTool : BaseTool {\n\tinternal const string ToolName = \"iota-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run(IIotaService service) { }\n}");
+			Write("clio/Common/IIotaService.cs", "public interface IIotaService { }");
+			Write("clio/Common/IotaBackend.cs", "public sealed class IotaBackend { }");
+			// Reached only through a namespace alias.
+			Write("clio/Command/McpServer/Tools/KappaTool.cs",
+				"namespace Clio.Command.McpServer.Tools;\nusing Contracts = Clio.Common;\n" +
+				"public sealed class KappaTool : BaseTool {\n\tinternal const string ToolName = \"kappa-run\";\n" +
+				"\t[McpServerTool(Name = ToolName)]\n\tpublic void Run() { var x = new Contracts.KappaService(); }\n}");
+			Write("clio/Common/KappaService.cs", "namespace Clio.Common;\npublic sealed class KappaService { }");
+			// An extension on a type this repository does not declare: its callers cannot be listed.
+			Write("clio/Common/LambdaExtensions.cs",
+				"public static class LambdaExtensions {\n\tpublic static int Shorten(this string value) => 1;\n}");
 			Write("clio/BindingsModule.cs",
 				"public static class BindingsModule { static void Register() {\n" +
 				"\t_ = typeof(RegisteredOnlyService);\n\tservices.AddSingleton<IBetaService, BetaService>();\n" +
-				"\tservices.AddSingleton<IDeltaService>(sp => new DeltaAdapter(new DeltaBackend()));\n} }");
+				"\tservices.AddSingleton<IDeltaService>(sp => new DeltaAdapter(new DeltaBackend()));\n" +
+				"\tservices.AddSingleton<IIotaService>(\n\t\tsp => new IotaAdapter(new IotaBackend()));\n} }");
 			Write("clio.mcp.e2e/AlphaToolE2ETests.cs",
 				"public abstract class AlphaFixtureBase { }\n[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class AlphaToolE2ETests : AlphaFixtureBase {\n\t[Test] public void Works() => Call(AlphaTool.ToolName);\n}");
 			Write("clio.mcp.e2e/AlphaLiteralE2ETests.cs",
@@ -621,6 +657,10 @@ internal sealed class McpE2eSelectionCoverageTests {
 				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class UnrelatedE2ETests {\n\t[Test] public void Works() { }\n}");
 			Write("clio.mcp.e2e/BetaToolE2ETests.cs",
 				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class BetaToolE2ETests {\n\t[Test] public void Works() => Call(BetaTool.ToolName);\n}");
+			Write("clio.mcp.e2e/IotaToolE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class IotaToolE2ETests {\n\t[Test] public void Works() => Call(IotaTool.ToolName);\n}");
+			Write("clio.mcp.e2e/KappaToolE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class KappaToolE2ETests {\n\t[Test] public void Works() => Call(KappaTool.ToolName);\n}");
 			Write("clio.mcp.e2e/EpsilonToolE2ETests.cs",
 				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class EpsilonToolE2ETests {\n\t[Test] public void Works() => Call(EpsilonTool.ToolName);\n}");
 			Write("clio.mcp.e2e/ZetaToolE2ETests.cs",
