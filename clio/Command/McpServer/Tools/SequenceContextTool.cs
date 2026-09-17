@@ -21,7 +21,7 @@ public sealed class SequenceContextTool(SequenceContextCommand command, ILogger 
 	[Description("Discover effective sequence fields, live lookup IDs and ruleset/schedule choices in one read-only call. " +
 		"Uses DataService; no OData fallback. Optional sequence-id inspects an existing definition. " +
 		"Check each section state: missing, failed or truncated sections are not complete context. " +
-		"Schema presence does not prove lifecycle-service availability or write permissions.")]
+		"Schema presence does not prove lifecycle-service availability or write permissions. Read get-guidance name=sequences before sequence work.")]
 	public SequenceContextResult GetContext([Required] SequenceContextArgs args) {
 		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
 			throw new ArgumentException("environment-name is required.");

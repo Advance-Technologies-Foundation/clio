@@ -4110,3 +4110,9 @@ stories:
     description: Native sequence package portability for clio issue 1579
     depends_on: []
     blocks: []
+
+  - id: story-sequence-workflow-acceptance-1
+    status: in-progress
+    description: Sequence workflow and efficiency acceptance for clio issue 1580
+    depends_on: []
+    blocks: []
