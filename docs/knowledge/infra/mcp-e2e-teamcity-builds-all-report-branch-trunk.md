@@ -2,13 +2,15 @@
 description: every Team_Atf_ClioMcpE2eTests build reports branchName trunk because the branch under test travels in the BranchNameClio parameter, so the TeamCity branch column cannot tell a PR build from a baseline one
 applies-to:
   - .github/workflows/teamcity-mcp-e2e.yml
+  - .github/scripts/queue-teamcity-build.ps1
 ticket: ENG-92669
 date: 2026-08-19
 ---
 
 **What is true** — `Team_Atf_ClioMcpE2eTests` checks clio out from
 `refs/heads/%BranchNameClio%` rather than through TeamCity branch tracking (stated in the header of
-`.github/workflows/teamcity-mcp-e2e.yml`, which is what sets that parameter). The build's own logical
+`.github/workflows/teamcity-mcp-e2e.yml`; the parameter itself is set by
+`.github/scripts/queue-teamcity-build.ps1`, which that workflow runs). The build's own logical
 `branchName` is therefore unrelated to the code under test and reads `trunk` for every run, PR builds
 included. The branch under test is only visible in the build's parameters (and, for runs queued by
 this workflow, in the build comment, which carries the PR number and head SHA).
