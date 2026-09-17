@@ -888,3 +888,49 @@ radius: it reorders every element type, and the pre-configured page has the iden
 **Not scheduled.** It is shared build-path code, the branch is green after thirteen rounds, and the
 workaround is one extra call. Sizing and the decision belong to the owner, not to a fourteenth round
 started at the end of a day.
+
+## DQ-33 — AC-4: parity holds on every key but one, and that one is the platform's own doing
+
+V1 was unblocked by the owner building the manual side in the designer, so the diff is real and on
+equivalent content: `UsrProcess_6117b42` (designer) against `UsrTc92707V1Tool` (ours), same callee, same
+constant, both pulled in one `clio pull-pkg Custom`.
+
+**Identical:** `CK4`, `BL7`, `BN2`, and the schema resources key for key. **`BP2`** matches to identity
+UIds — both rows, names, order and fields, including `L8 = {GS1:1, GS5:<own schema>}` on `Ina` and `{}` on
+`Outa`; only the UIds and each side's own schema reference differ, which is what they must do.
+
+**Two differences.** `BL8` is closed as inert — DQ-31. The other is `BK15[Ina].GT1`:
+
+| | `GT1` (the MAPPING row's `Source`) |
+|---|---|
+| designer | `{}` |
+| clio | `{GS1: 1, GS5: <own schema UId>}` |
+
+**It is not ours to remove, and calling it redundant understates it.** Read from platform source rather
+than inferred:
+
+* `ProcessSchemaParameter.SourceValue`'s SETTER does `mappingInfo.Source = _sourceValue`
+  (`ProcessSchemaParameter.cs:450`). Populating `GT1` is what the supported API does; we assign through
+  that setter deliberately, and `ProcessMappingService` already says so in a comment.
+* `ProcessSchemaActivity.UpdateParameters` then does `mappingInfo.Source.DataValueType = target.DataValueType`
+  (`ProcessSchemaActivity.cs:246`) — an UNGUARDED dereference, on the synchronization path this whole
+  ticket is about. So the platform does not treat that object as spare: it writes into it on every sync.
+
+The two sides therefore converge IN MEMORY and differ only at rest. The value itself is carried in two
+other places on both sides — the parameter's own `L8` and the resources — describe reports
+`Ina: source=ConstValue, value="V1-CONST"` for both, the designer renders both, and V8 proved the clio
+form delivers at run time.
+
+**Decision: do not change it.** Suppressing `GT1` means not assigning through `SourceValue` — stepping off
+the platform API to hand-write metadata, on the exact field the platform dereferences unguarded during
+synchronization. That trades a cosmetic diff for a silent-failure risk, which is the wrong direction for
+this package.
+
+**What AC-4 gets, stated plainly rather than rounded to PASS.** Parity holds on `CK4`, `BL7`, `BN2`, `BP2`
+and the resources. Strict byte parity does NOT hold: `BK15.GT1` and `BL8` differ. Whether that meets "server
+serialization matches a designer-built capture" is the owner's call — the run deliberately did not write
+"V1 PASS", and neither does this entry.
+
+**Not measured, and worth one check if anyone revisits:** which of the two the RUNTIME reads — the
+mapping's `Source` or the parameter's value. Nothing here depends on the answer, but a future change to
+this write does.
