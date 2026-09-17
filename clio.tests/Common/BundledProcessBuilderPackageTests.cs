@@ -191,7 +191,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"A14C1816314B55E2F67B47BC2892A1FA2119241342FE15C0902C37A6BF789D9E";
+		"1873FC3231CC3FD03BA7CB1F7FAA082EBF0D4C99D7C9488F5CA9BD7CB6B8C5E4";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -219,7 +219,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.2.24";
+	private const string ExpectedArchiveVersion = "1.6.3.7";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -231,7 +231,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "4da4e4e93f161d8219f4528365a3fb0e1a39634b";
+	private const string ExpectedProducingCommit = "32c003683f6d598a63ebcab8ef4fa533002e51cc";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -257,7 +257,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789559547000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789638706000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -466,7 +466,13 @@ public class BundledProcessBuilderPackageTests {
 	// the rest of the archive as the window would let a member on any later type satisfy the probe,
 	// which is exactly the vacuity this helper exists to remove. `DescribeProcessFlow` is the last
 	// region in its file, so that is not a hypothetical shape.
-	private static bool DeclaresLabelOn(string archive, string typeName) {
+	private static bool DeclaresLabelOn(string archive, string typeName) =>
+		DeclaresMemberOn(archive, typeName, "label");
+
+	// Generalised from the label probe: the same window, asked about any wire name. The diagram members
+	// arrived needing that question about three more types, and a second copy of the region arithmetic is a
+	// second place for the unterminated-region hole to be reintroduced.
+	private static bool DeclaresMemberOn(string archive, string typeName, string dataMemberName) {
 		int start = archive.IndexOf($"#region Class: {typeName}\r", StringComparison.Ordinal);
 		if (start < 0) {
 			start = archive.IndexOf($"#region Class: {typeName}\n", StringComparison.Ordinal);
@@ -478,7 +484,7 @@ public class BundledProcessBuilderPackageTests {
 
 		int end = archive.IndexOf("#endregion", start, StringComparison.Ordinal);
 		return end >= 0
-			&& archive[start..end].Contains("[DataMember(Name = \"label\")]", StringComparison.Ordinal);
+			&& archive[start..end].Contains($"[DataMember(Name = \"{dataMemberName}\")]", StringComparison.Ordinal);
 	}
 
 	/// <summary>
@@ -1037,6 +1043,28 @@ public class BundledProcessBuilderPackageTests {
 		archive.Should().Contain("BodyStyle = WebMessageBodyStyle.Wrapped",
 			because: "the wrapper name clio looks for (PingResult) is a FUNCTION of this setting; flipping it to "
 				+ "Bare removes the envelope and the verdict inverts silently");
+
+		// The diagram read-back, asked the same way and for the same reason: clio TYPES these members, so
+		// an archive without them answers every describe with a null size and a null geometry while clio's
+		// own DTO says the fields exist - and a caller then reads "this package reports no geometry" off a
+		// package that simply was not rebundled.
+		DeclaresMemberOn(archive, "DescribeProcessElement", "size").Should().BeTrue(
+			because: "without the size a described position cannot be inverted into a diagram row at all");
+		DeclaresMemberOn(archive, "DescribeProcessFlow", "geometry").Should().BeTrue(
+			because: "every criterion about a connector is a statement about this chain, so without it the "
+				+ "layout can only be checked by a person opening the designer");
+		DeclaresMemberOn(archive, "DescribeFlowGeometry", "start").Should().BeTrue(
+			because: "the chain's own members have to be on the shipped type, not only on its container");
+		// Through the ENTRY NAMES, not the text: the container stores paths UTF-16LE, so a Contain over the
+		// decompressed blob answers false for a file that IS shipped. The names come back with forward
+		// slashes whatever the container stored.
+		IReadOnlyList<string> entries = ReadBundledArchiveEntryNames();
+		entries.Should().Contain(name => name.EndsWith("Layout/ConnectorRouter.cs", StringComparison.Ordinal),
+			because: "the package ships as SOURCE and compiles on the target, so a routing file missing from "
+				+ "the archive is a package that installs, pings green and writes no connector geometry");
+		entries.Should().Contain(name => name.EndsWith("Layout/FlowGeometryWriter.cs", StringComparison.Ordinal),
+			because: "same for the writer - the one file that turns a routed chain into stored CI7/CI8/CI10/"
+				+ "CI11/CI12");
 	}
 
 	[Test]
