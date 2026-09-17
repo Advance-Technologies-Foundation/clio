@@ -138,7 +138,8 @@ the GitHub App authenticates TeamCity→GitHub (status posting).
 1. **TeamCity Commit Status Publisher** on `Team_Atf_ClioMcpE2eTests` — **DONE** (`BUILD_EXT_77`,
    GitHub App connection **TeamCity ATF**, `api.github.com`); validated against PR #651.
 2. **GitHub secret `TEAMCITY_TOKEN`** — **DONE**. Least-privilege token `clio-pr-trigger`
-   (scope: Run build + View project on ATF; deliberately cannot cancel/stop builds), added as the
+   (scope: Run build + View project + Comment build + Reorder builds in queue on ATF, which is what
+   the build comment and `moveToTop` need; deliberately cannot cancel/stop builds), added as the
    repo secret `TEAMCITY_TOKEN`.
 3. **Cost control (concurrent full-Creatio deploys)** — **DONE**. GitHub `concurrency` only de-dupes
    the sub-second trigger runs (the token can't cancel builds), so concurrency is bounded on the
@@ -153,13 +154,29 @@ the GitHub App authenticates TeamCity→GitHub (status posting).
    `workflow_dispatch` (GitHub only exposes the manual trigger once the workflow is on `master`),
    or on the first real code PR; confirm the check appears. Required post-merge step.
 
-### Fast-follow: unit-tests (`Team_Atf_ClioUnitTests`)
+### Fast-follow: unit-tests (`Team_Atf_ClioUnitTests`) — DONE 2026-09-16
 
-Its root ignores `BranchNameClio`. To PR-build it, either parameterize its (dedicated) root like e2e
-(`refs/heads/%BranchNameClio%`) or add a scoped branchSpec + pass `branchName`. Constrain its existing
-`+:*` VCS trigger to default-only if a branchSpec is added, or it auto-builds every branch push.
-Currently `Team_Atf_ClioUnitTests` keeps the two features from the proof (Commit Status Publisher +
-inert Pull Requests) — side effect: it posts `CLIO Unit Tests (ATF)` statuses on master builds.
+Wired the same way as e2e, not via TeamCity branch tracking:
+
+- TeamCity (done by hand via REST, `Team_Atf` PROJECT_ADMIN): parameter `BranchNameClio=master`;
+  the dedicated root `Team_Atf_Https…ClioGit…Master11` now checks out `refs/heads/%BranchNameClio%`;
+  `buildNumberPattern=%build.counter%_%BranchNameClio%`; Commit Status Publisher `BUILD_EXT_113`
+  (same stored GitHub App token as e2e's `BUILD_EXT_77`, `vcsRootId` = that root). The `+:*` VCS
+  trigger was left as is — with no branch spec it still fires for master only, which keeps a trunk
+  baseline in TeamCity's test history.
+- Repository: `.github/workflows/teamcity-unit-tests.yml` queues the build for the PR head branch;
+  `.github/scripts/queue-teamcity-build.ps1` is shared with e2e and takes the config-specific build
+  properties from `TC_EXTRA_PROPERTIES` (the unit-tests trigger sends none).
+- Status name on the PR: `CLIO Unit Tests (ATF)`. Advisory; `build.yml` stays the required check.
+- Same day, the config was widened to mirror every `build.yml` lane as five steps (clio.tests,
+  Clio.Analyzers.Tests, Creatio.ConflictResolver.Tests on net8.0, cliogate.tests on net472, clio
+  net8.0 compatibility build), each with `execute_always` so one red step does not hide the rest.
+  Step table: `docs/knowledge/infra/clio-unit-tests-teamcity-config-is-hand-maintained.md`.
+
+Why it existed red for a month first: PR #1075 (2026-08-14) dropped `net8.0` from `clio.tests.csproj`
+while the step still ran `--framework net8.0` / required SDK 8 (`NETSDK1005` on SDK 10 agents, an
+SDK 9 agent cannot build `net10.0` at all). Fixed by hand on 2026-09-16 (`net10.0`, SDK `10`).
+Nothing consumed the config, so nobody noticed — the PR status is what gives it a reader.
 
 ## Out of scope (per ticket)
 

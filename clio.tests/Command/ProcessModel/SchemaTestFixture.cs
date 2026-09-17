@@ -37,6 +37,21 @@ public class SchemaTestFixture{
 	
 	private static Func<string, string> GetExampleFilePath => filename => Path.Join("Examples", "ProcessSchema", filename);
 
+	[TestCase(30, "5ca35f10-a101-4c67-a96a-383da6afacfc")]
+	[TestCase(43, "79bccffa-8c8b-4863-b376-a69d2244182b")]
+	[Description("Distinguishes runtime LongText and RichText identities while preserving text content.")]
+	public void FromRuntimeValueType_ShouldMapText_WhenRuntimeReportsSupportedCode(int runtimeType, string expectedUId) {
+		// Arrange
+		const string html = "<p>Call &amp; follow up</p>";
+		DataBindingValueConverter converter = new(Substitute.For<IFileSystem>());
+		// Act
+		Guid type = DataValueTypeMap.FromRuntimeValueType(runtimeType);
+		object value = converter.ConvertValue(System.Text.Json.Nodes.JsonValue.Create(html), type, "Body", allowEmptyString: false);
+		// Assert
+		type.Should().Be(Guid.Parse(expectedUId), because: "LongText and RichText have distinct native descriptor identities");
+		value.Should().Be(html, because: "step instructions and email HTML must survive binding generation verbatim");
+	}
+
 	[Test]
 	[Description("Maps Creatio runtime dataValueType 18 to the native Color data type and keeps its native CLR type, so process signatures and codegen stay System.Drawing.Color.")]
 	public void FromRuntimeValueType_Should_Map_Color_To_NativeColorDataType() {

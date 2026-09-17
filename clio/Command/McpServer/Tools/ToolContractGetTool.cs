@@ -732,6 +732,9 @@ internal static class ToolContractCatalog {
 		+ "log lines. Unlike odata-read, this tool's 'error' MAY carry Creatio's own message (with URIs, "
 		+ "paths and tokens removed) and there is no separate debug line to look the id up in.";
 
+	private const string DataWriteDiagnosticFieldName = "diagnostic";
+	private const string DataWriteDiagnosticDescription = "Optional bounded context: operation, entity, item-index, write-attempted, transport-outcome, side-effect, retry-advice and sanitized message. No inferred HTTP status or offending field.";
+
 	private const string ODataReadErrorCodeFieldName = "error-code";
 
 		private static readonly ToolErrorContract CommonErrorContract = new([
@@ -2638,7 +2641,8 @@ internal static class ToolContractCatalog {
 				Field(SuccessFieldName, BooleanType, "Whether the OData update succeeded."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
 				Field("id", StringType, "GUID of the updated record."),
-				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription)
+				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
+				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)
 			),
 			CommonErrorContract,
 			[],
@@ -2686,7 +2690,8 @@ internal static class ToolContractCatalog {
 				Field(SuccessFieldName, BooleanType, "Whether the OData delete succeeded."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
 				Field("id", StringType, "GUID of the deleted record."),
-				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription)
+				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
+				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)
 			),
 			CommonErrorContract,
 			[],
@@ -6432,13 +6437,14 @@ internal static class ToolContractCatalog {
 					"Failed rows whose side effect could NOT be verified (a subset of 'failed'). Non-zero means the "
 					+ "batch must not be blindly re-sent."),
 				Field("results", ArrayType,
-					"Per-row outcomes for every attempted row; each item has index, success, id, error, "
+					"Per-row outcomes for every attempted row; each item has index, success, id, error, diagnostic, "
 					+ "record-created (true inserted / false definitely not inserted / null UNKNOWN) and, when "
 					+ "record-created is null, retry-guidance. A null record-created means Creatio failed the call "
 					+ "but may already have written the row - verify with odata-read before re-sending, a retry "
 					+ "duplicates it."),
 				Field("error", StringType, "Request-level error that prevented any row from being attempted."),
-				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription)
+				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
+				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)
 			]);
 	}
 

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace Clio.Common;
@@ -327,7 +327,11 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		///     Answers whether the bundled dashboards-migrator package's own code is serving — the same
 		///     liveness-only, ungated probe as <see cref="ProcessBuilderPing"/>, for the other bundled package.
 		/// </summary>
-		DashboardsMigratorPing = 93
+		DashboardsMigratorPing = 93,
+		/// <summary>Native filtered sequence participant enrollment.</summary>
+		SequenceParticipantBulkAdd = 94,
+		/// <summary>Native DataService batch writes.</summary>
+		BatchQuery = 95
 
 	}
 
@@ -364,6 +368,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.AdministrationRemoveFunctionalRole, "/rest/CreatioApiGateway/RemoveFunctionalRoleAssociation"},
 		{KnownRoute.AdministrationRedistributeRoleLicenses, "/rest/CreatioApiGateway/ScheduleRoleLicenseRedistribution"},
 		{KnownRoute.AdministrationInvalidateRightsCache, "/rest/CreatioApiGateway/InvalidateAdministrationRightsCache"},
+		{KnownRoute.BatchQuery, "DataService/json/SyncReply/BatchQuery"},
 		{KnownRoute.Select, "DataService/json/SyncReply/SelectQuery"},
 		{KnownRoute.Insert, "DataService/json/SyncReply/InsertQuery"},
 		{KnownRoute.Update, "DataService/json/SyncReply/UpdateQuery"},
@@ -386,6 +391,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.ClearRedisDb, "ServiceModel/AppInstallerService.svc/ClearRedisDb"},
 		{KnownRoute.EntitySchemaManagerRequest, "DataService/json/SyncReply/EntitySchemaManagerRequest"},
 		{KnownRoute.RuntimeEntitySchemaRequest, "DataService/json/SyncReply/RuntimeEntitySchemaRequest"},
+		{KnownRoute.SequenceParticipantBulkAdd, "rest/SequenceParticipantBulkAddService/AddByFilter"},
 		{KnownRoute.GetWorkspaceItems, "ServiceModel/WorkspaceExplorerService.svc/GetWorkspaceItems"},
 		{KnownRoute.DeleteWorkspaceItem, "ServiceModel/WorkspaceExplorerService.svc/Delete"},
 		{KnownRoute.GetUserTaskSchema, "ServiceModel/ProcessUserTaskSchemaDesignerService.svc/GetSchema"},
