@@ -878,12 +878,36 @@ element's OWN config block, because that is bound one phase earlier still.
 **Workaround, and it is in the report:** build with a constant placeholder, then re-point with
 `setElement`.
 
-**Two fixes, neither started.** (a) Move the per-element sub-process selection INTO the element-creation
-loop, so a sub-process element is synchronized as it is placed and later elements bind against a complete
-parameter set. The existing "it cannot run any earlier" comment argues only that it cannot precede the
-element existing — which at that point it does. (b) Split `BuildGraph` into create-elements and
-bind-configs passes and run the sync between them. (b) is the cleaner architecture and the wider blast
-radius: it reorders every element type, and the pre-configured page has the identical defect.
+**Two fixes, neither started — and the sizing below is COUNTED, not estimated.** An earlier revision of
+this entry called (b) "the wider blast radius" on the assumption that every element type binds config
+during the build. Two do.
+
+*(a) Sync the sub-process inside the element-creation loop.* Smaller, and wrong on two counts: it puts
+`ISubProcessApplier` and `IPreconfiguredPageApplier` into `ProcessGraphBuilder`, which is the wrong layer
+and currently holds no appliers at all, and it fixes the sub-process only — the pre-configured page has
+the identical defect and would stay broken.
+
+*(b) Split element CREATION from element CONFIGURATION and run the sync between them.* The measured
+surface:
+
+| Piece | Size |
+|---|---|
+| `IProcessElementHandler` + `ProcessElementHandlerBase` | one member, one `virtual` no-op — the file already uses that pattern for `Describe` / `CanBuild` |
+| Handlers that must move code | **TWO**: `UserTaskElementHandler` (9 block references) and `OpenEditPageElementHandler` (2). `SubProcessElementHandler` and `PreconfiguredPageElementHandler` only VALIDATE their block at create; the other eight touch none |
+| `IProcessElementFactory` | one dispatch method, mirroring `Describe` |
+| `ProcessGraphBuilder.BuildGraph` | split the element loop in two |
+| `ProcessBuildHandler` | reorder; the sync moves out of `ApplyDeclarativeContent` |
+
+**The ordering that keeps the risk at zero elsewhere:** create elements → sub-process / pre-configured
+page sync → configure elements → flows → layout → declarative content. Configure stays BEFORE flows, so
+the flow loop and the activity-result walk see exactly what they see today and nothing about them
+changes. The only phase that moves is the sync, and on a CREATE it has no dependency on flows: the
+dangling-reference scan runs only when `currentCalleeUId == callee.UId`, which a first selection never
+satisfies.
+
+**The one thing still to check before starting:** `addElement` on the modify path goes through the same
+`PlaceNewElement`, and `ElementOperations` applies the sub-process block itself there. The split must not
+double-apply or skip it.
 
 **Not scheduled.** It is shared build-path code, the branch is green after thirteen rounds, and the
 workaround is one extra call. Sizing and the decision belong to the owner, not to a fourteenth round
