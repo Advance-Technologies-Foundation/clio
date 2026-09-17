@@ -1761,6 +1761,45 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		});
 	}
 
+	[TestCase(true)]
+	[TestCase(false)]
+	[Category("McpE2E.Sandbox")]
+	[Category("LocalOnly")]
+	[Category("McpE2E.Manual")]
+	[Explicit("Publishes schema changes on an exclusively owned disposable instance.")]
+	[Description("Persists the DB-view flag through create and set MCP tools and proves the database-table boundary.")]
+	[AllureTag(CreateToolName)]
+	[AllureTag(SetSchemaToolName)]
+	public async Task EntitySchema_ShouldPersistDbView_WhenCreatedAndUpdated(bool initialValue) {
+		// Arrange
+		TeamCityRunGuard.IgnoreIfRunningUnderTeamCityOrGitHubActions("Requires an exclusive disposable instance.");
+		McpE2ESettings settings = TestConfiguration.Load();
+		TestConfiguration.RequirePostgreSqlSandbox(settings);
+		await using EntitySchemaArrangeContext context = await ArrangeSandboxPackageAsync();
+		SandboxEnvironmentContext sandbox = SandboxEnvironmentResolver.Resolve(settings);
+		// Act
+		CallToolResult created = await CallCreateEntitySchemaAsync(context.Session, context.EnvironmentName,
+			context.PackageName, context.SchemaName, context.CancellationTokenSource.Token, isDBView: initialValue);
+		EntitySchemaPropertiesInfo before = await ActGetSchemaPropertiesAsync(context);
+		bool tableExists = PostgresTableProbe.Exists(sandbox.DatabaseConnectionString, context.SchemaName);
+		// Assert
+		AllureApi.Step("Verify creation and physical table boundary", () => {
+			AssertCommandSucceeded(McpCommandExecutionParser.Extract(created), "creation must persist the requested DB-view kind");
+			before.DbView.Should().Be(initialValue, because: "the designer must return the saved flag");
+			before.Virtual.Should().BeFalse(because: "a database view is independent of a virtual entity");
+			tableExists.Should().Be(!initialValue, because: "the platform creates tables only for ordinary entities");
+		});
+		// Act
+		CallToolResult updated = await CallSetEntitySchemaPropertiesAsync(context.Session, context.EnvironmentName,
+			context.PackageName, context.SchemaName, context.CancellationTokenSource.Token, isDBView: !initialValue);
+		EntitySchemaPropertiesInfo after = await ActGetSchemaPropertiesAsync(context);
+		// Assert
+		AllureApi.Step("Verify explicit true and false updates", () => {
+			AssertCommandSucceeded(McpCommandExecutionParser.Extract(updated), "the flag-only property update must succeed");
+			after.DbView.Should().Be(!initialValue, because: "both setting and clearing must survive reload");
+		});
+	}
+
 	private static async Task<CallToolResult> CallCreateEntitySchemaAsync(
 		McpServerSession session,
 		string environmentName,
@@ -1768,7 +1807,7 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		string schemaName,
 		CancellationToken cancellationToken,
 		IReadOnlyList<Dictionary<string, object?>>? columns = null,
-		bool isVirtual = false) {
+		bool isVirtual = false, bool? isDBView = null) {
 		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
 		reachableToolNames.Should().Contain(CreateToolName,
 			because: "the create-entity-schema MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
@@ -1782,7 +1821,8 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 					["schema-name"] = schemaName,
 					["title-localizations"] = BuildLocalizations("Vehicle"),
 					["columns"] = columns,
-					["is-virtual"] = isVirtual
+					["is-virtual"] = isVirtual,
+					["is-db-view"] = isDBView
 				}
 			},
 			cancellationToken);
@@ -1898,7 +1938,7 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		string schemaName,
 		CancellationToken cancellationToken,
 		string? primaryDisplayColumn = null,
-		IReadOnlyDictionary<string, string>? titleLocalizations = null) {
+		IReadOnlyDictionary<string, string>? titleLocalizations = null, bool? isDBView = null) {
 		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
 		reachableToolNames.Should().Contain(SetEntitySchemaPropertiesTool.SetEntitySchemaPropertiesToolName,
 			because: "the set-entity-schema-properties MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
@@ -1910,6 +1950,9 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		};
 		if (!string.IsNullOrWhiteSpace(primaryDisplayColumn)) {
 			args["primary-display-column"] = primaryDisplayColumn;
+		}
+		if (isDBView.HasValue) {
+			args["is-db-view"] = isDBView.Value;
 		}
 		if (titleLocalizations is { Count: > 0 }) {
 			args["title-localizations"] = titleLocalizations;

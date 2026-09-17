@@ -104,3 +104,11 @@ clio set-entity-schema-properties -e dev --package Custom --schema-name labLangu
 - [get-entity-schema-properties](get-entity-schema-properties.md)
 - [modify-entity-schema-column](modify-entity-schema-column.md)
 - [create-entity-schema](create-entity-schema.md)
+
+## Database views
+
+Use `--is-db-view true` to map an entity to a database view, or `--is-db-view false`
+to clear that flag. Omission preserves inherited/current metadata. Creatio skips table
+generation for DB-view entities. Provision the SQL view separately (for example with a
+package SQL script); this option neither creates a SQL view nor converts or drops an
+existing table. `is-virtual` is independent and is not changed.

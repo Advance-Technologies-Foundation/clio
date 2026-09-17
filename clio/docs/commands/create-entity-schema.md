@@ -159,3 +159,11 @@ cliogate must be installed on the target Creatio environment.
 clio create-entity-schema -e dev --package Custom --name UsrVehicle --title Vehicle --column 'Notes:Text' --column 'Amount:Integer'
 clio create-entity-schema -e dev --package Custom --name UsrInvoice --title Invoice --column '[{"name":"Notes","type":"Text"},{"name":"Amount","type":"Integer","required":true}]'
 ```
+
+## Database views
+
+Use `--is-db-view true` to map an entity to a database view, or `--is-db-view false`
+to clear that flag. Omission preserves inherited/current metadata. Creatio skips table
+generation for DB-view entities. Provision the SQL view separately (for example with a
+package SQL script); this option neither creates a SQL view nor converts or drops an
+existing table. `is-virtual` is independent and is not changed.

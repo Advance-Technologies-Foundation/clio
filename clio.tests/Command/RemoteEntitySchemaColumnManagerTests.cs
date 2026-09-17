@@ -3349,6 +3349,47 @@ internal class RemoteEntitySchemaColumnManagerTests
 			Arg.Any<EnvironmentOptions>(), Arg.Any<string?>());
 	}
 
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("Persists an explicit DB-view update without changing virtual metadata.")]
+	public void SetSchemaProperties_ShouldPersistDbView_WhenSupplied(bool requested) {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)],
+			inheritedColumns: [], primaryDisplayColumn: null);
+		_loadedSchema.IsDBView = !requested;
+		SetupLoadedSchema();
+		SetEntitySchemaPropertiesOptions options = new() {
+			Package = "UsrPkg", SchemaName = "UsrVehicle", IsDBView = requested
+		};
+		// Act
+		_manager.SetSchemaProperties(options);
+		// Assert
+		_savedSchema.IsDBView.Should().Be(requested, because: "the designer save must carry either explicit boolean value");
+		_savedSchema.IsVirtual.Should().BeFalse(because: "the independent virtual flag must remain unchanged");
+	}
+
+	[Test]
+	[Description("Reports a failure when the server silently drops the requested DB-view flag.")]
+	public void SetSchemaProperties_ShouldFail_WhenDbViewDoesNotPersist() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)],
+			inheritedColumns: [], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		_designerClient.SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>())
+			.Returns(call => {
+				_savedSchema = call.ArgAt<EntityDesignSchemaDto>(0);
+				_savedSchema.IsDBView = false;
+				return new Clio.Command.EntitySchemaDesigner.SaveDesignItemDesignerResponse { Success = true, SchemaUId = _savedSchema.UId };
+			});
+		// Act
+		Action act = () => _manager.SetSchemaProperties(new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg", SchemaName = "UsrVehicle", IsDBView = true
+		});
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(because: "a silently ignored flag is not a successful update")
+			.WithMessage("*Database-view flag was not persisted*", because: "the failure must identify the property that failed readback");
+	}
+
 	private void SetupLoadedSchema() {
 		Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> MakeResponse() =>
 			new() { Success = true, Schema = _savedSchema ?? _loadedSchema };

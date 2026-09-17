@@ -4125,3 +4125,9 @@ stories:
     description: Sequence workflow and efficiency acceptance for clio issue 1580
     depends_on: []
     blocks: []
+
+  - id: story-entity-db-view-1
+    status: review
+    description: Native entity DB-view flag support for clio issue 1618
+    depends_on: []
+    blocks: []

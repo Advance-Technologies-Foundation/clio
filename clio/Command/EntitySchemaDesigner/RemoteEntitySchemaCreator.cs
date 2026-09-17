@@ -151,6 +151,9 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		if (options.IsVirtual) {
 			schema.IsVirtual = true;
 		}
+		if (options.IsDBView.HasValue) {
+			schema.IsDBView = options.IsDBView.Value;
+		}
 		NormalizeAdministrationMetadata(schema);
 
 		Dictionary<string, ManagerItemDto> referenceSchemas = parsedColumns.Any(c => c.IsLookup)
@@ -636,6 +639,9 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 				throw new InvalidOperationException(
 					$"Schema '{options.SchemaName}' was reloaded with unexpected name '{reloadedSchema.Name}'.");
 			}
+			if (options.IsDBView.HasValue && reloadedSchema.IsDBView != options.IsDBView.Value) {
+				throw new InvalidOperationException($"Database-view flag was not persisted for schema '{options.SchemaName}'.");
+			}
 		} else {
 			// The designer service answered with an HTML error page, so the design-item reload above could not
 			// verify anything. Only here is the runtime read worth its risk: it is the sole remaining check,
@@ -648,6 +654,10 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 					"returned an HTML response and the runtime schema is unavailable.");
 			}
 			string runtimeName = runtimeResponse.Schema.Name;
+			if (options.IsDBView.HasValue) {
+				throw new InvalidOperationException(
+					$"Schema '{options.SchemaName}' was saved but the database-view flag could not be verified because the designer returned HTML.");
+			}
 			if (!string.Equals(runtimeName, options.SchemaName, StringComparison.OrdinalIgnoreCase)) {
 				throw new InvalidOperationException(
 					$"Schema '{options.SchemaName}' was created but runtime schema name '{runtimeName}' does not match.");

@@ -152,3 +152,6 @@ REPORTING BUGS
 
 SEE ALSO
     install-gate, list-packages, add-schema
+
+  --is-db-view <true|false>  Set the database-view flag; omit to preserve metadata.
+  SQL views are provisioned separately. Existing tables are not converted or dropped.
