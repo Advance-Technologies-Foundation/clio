@@ -577,3 +577,49 @@ carry the mechanism and the corrected cost estimate.
 The walk is 7.4 ms. The baseline, re-run with the change stashed, is 1 m 6 s - the slowdown was never
 mine. Both the scoping and the comment were reverted before either shipped. A suite duration measures the
 machine as much as the code; take the baseline in the same minute.
+
+## DQ-27 — the stand corrected my model: describe does NOT converge, so `inSync` IS the drift signal
+
+The 1.6.3.7 stand pass measured what DQ-10, DQ-25, DQ-26, the guidance and a knowledge record all denied.
+Recording it here because those four documents were written from one inference and the inference was wrong.
+
+**What I claimed.** "Both the describe and the modify paths load through a design instance, which
+converges the element before this package sees it — so `inSync: true` proves nothing and nothing observes
+a callee rename."
+
+**What is true.** `ProcessSchemaRepository.LoadForDescribe` prefers the RUNTIME instance
+(`FindInstanceByUId` / `FindInstanceByName`) and falls back to the design instance only when there is
+none. `ProcessModifyHandler` always takes `GetDesignInstance`. So:
+
+| | compiled process | uncompiled / FSD |
+|---|---|---|
+| describe | runtime instance, NOT converged — stale name reported, `inSync: false` is real evidence | design instance, converges — `true` says nothing |
+| modify / re-sync | design instance, converges — the drift report is empty | same |
+
+**How the error happened, because that is the reusable part.** "The platform converges on every
+design-time read" is true. I inferred "describe converges" from it without ever checking whether describe
+takes a design-time read. One unverified load path propagated into three shipped documents and made the
+most useful signal the product has read as worthless.
+
+**What changed.** The `inSync` contract, the guidance and the knowledge record now state both halves and
+which instance produces which. F2 is narrowed with them: the designer clause is unverified — the classic
+designer would not load on the stand — and is the only part of that sentence still owed a measurement.
+
+**What did NOT change.** DQ-10 stands for the re-synchronization report itself: the modify path does
+converge, so the drift is still unobservable from there, and the dangling-reference scan is still how
+that half is answered.
+
+## DQ-28 — the dangling notice is narrower than its own guidance claimed
+
+Measured on the same pass. The platform's pre-save validation refuses a Script-source reference — a
+formula, a mapping, a flow condition — before the re-synchronization can report it, aborting the save
+one site per attempt. So the notice in practice covers stored blob sites, such as a Modify-data element's
+column bindings, and the guidance sentence "names every element, process parameter, execution context or
+flow condition" overstated what ships. Narrowed rather than reworded away: the behaviour is defensible —
+the caller IS told there is a problem, just by a refusal that names one site at a time — and the guidance
+now says which sites the notice reaches and why.
+
+Also from that pass, and worth having before anyone writes the next case: an element's INPUT parameter
+cannot be read by another element (*"The input parameter … cannot be used as a data source for the
+parameter …"*), so a dangling-reference scenario has to be built on an OUT parameter of the callee. The
+manual case description assumed the input shape and was not constructible as written.

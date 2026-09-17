@@ -1,26 +1,40 @@
 ---
-description: Opening a sub-process element's card re-synchronizes it as it renders, so after a callee parameter rename the designer shows the healthy NEW name while the saved schema still carries the old one and delivers nothing
+description: A sub-process element stale after a callee parameter rename is VISIBLE through describe (runtime instance, not converged) and invisible to the modify path (design instance, converged); the designer card is believed to converge as it renders, which is read from source and not yet measured
 applies-to:
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
 ticket: ENG-92707
 date: 2026-09-17
 ---
 
-**What is true** — every design-time read of a process schema runs the platform's own parameter
-synchronization, and that includes the classic designer rendering a Sub-process element's card. So after
-a called process renames or drops a parameter, opening the CALLER shows the element already converged:
-the new parameter name, the mapping intact, nothing amiss. The schema that RUNS is the saved one, which
-still carries the old name — and the runtime binds caller to callee by parameter NAME
-(`FindScalarParameterByName`), skipping an unmatched name with no exception and no log line.
+**What is true** - a DESIGN-TIME read of a process schema runs the platform's own parameter
+synchronization; a runtime-instance read does not. Which one you get decides what you see after a called
+process renames or drops a parameter, and the answers are opposite:
 
-Measured on a stand at CrtProcessBuilder 1.6.3.6, 2026-09-17, during the ENG-92707 manual pass (TC-10).
+* `describe-business-process` prefers the RUNTIME instance for a compiled process
+  (`ProcessSchemaRepository.LoadForDescribe`), so it reports the STALE parameter name and
+  `inSync: false`. **Measured on a stand, 2026-09-17.** For an uncompiled process there is no runtime
+  instance, it falls back to the design instance, and that one converges.
+* the MODIFY path always takes the design instance (`ProcessModifyHandler` then `GetDesignInstance`),
+  which converges before the package sees the schema - which is why the re-synchronization's own drift
+  report is empty.
+* the classic designer's card is believed to converge as it renders
+  (`SubProcessPropertiesPage.synchronizeActualSchemaParameters`), which would show the new name and
+  reassure the reader. **Read from the designer's source, NOT measured** - the classic designer would not
+  load on the stand used for the pass, so this clause is still owed a measurement.
+
+Either way the schema that RUNS is the saved one, and the runtime binds caller to callee by parameter
+NAME (`FindScalarParameterByName`), skipping an unmatched name with no exception and no log line.
 
 **Why it is this way** — convergence on read is what keeps a design-time instance correct without a
 migration step. It was never meant to be an inspection surface, and it is not one.
 
-**What breaks if you ignore it** — no read reveals the stale state itself. Not the designer, not
-`describe-business-process`, not `inSync`, and not the re-synchronization's own warning list: all four go
-through a design-time load that converges the element first, so all four report health. From
+**What breaks if you ignore it** — the reads do NOT all agree, and the round-9 stand pass corrected this
+paragraph. `describe-business-process` prefers the RUNTIME instance for a compiled process
+(`ProcessSchemaRepository.LoadForDescribe`), which the platform does not converge — so it reports the
+STALE parameter name and `inSync: false`, and both are real evidence. It falls back to the design
+instance only for an uncompiled process, and that one converges. The MODIFY path always takes the design
+instance (`ProcessModifyHandler` → `GetDesignInstance`), which is why its own drift report sees nothing.
+The designer and the re-synchronization's warning list therefore report health while describe does not. From
 CrtProcessBuilder 1.6.3.7 a re-synchronization does report the CONSEQUENCE of a DROPPED parameter — the
 references left bound to a parameter UId the element no longer carries — which is the half a caller can
 act on. A RENAME produces no consequence to find: the mapping row keeps the UId, so every reference stays
