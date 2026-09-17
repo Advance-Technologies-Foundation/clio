@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -494,9 +494,22 @@ public sealed class DescribedElement {
 	[JsonPropertyName("managerItemUId")]
 	public string ManagerItemUId { get; set; }
 
-	/// <summary>Diagram position "X;Y".</summary>
+	/// <summary>Diagram position "X;Y" — the shape's TOP-LEFT corner, not its centre.</summary>
 	[JsonPropertyName("position")]
 	public string Position { get; set; }
+
+	/// <summary>
+	/// The shape's size, <c>"W;H"</c>; absent on a <c>CrtProcessBuilder</c> that predates the member.
+	/// </summary>
+	/// <remarks>
+	/// Typed beside <see cref="Position"/> because the position alone cannot be turned back into a diagram row:
+	/// elements of different heights share a row by sharing its CENTRE line, so the row is
+	/// <c>(Y + ceil(H / 2) - CenterY) / BranchStep</c> and the height is half of that arithmetic. Read-only — no
+	/// create or modify argument carries it, and the server recomputes the whole layout on every save.
+	/// </remarks>
+	[JsonPropertyName("size")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Size { get; set; }
 
 	/// <summary>
 	/// Whether the element runs in background mode — a platform property of EVERY process element, so it is reported
@@ -1518,12 +1531,58 @@ public sealed class DescribedFlow {
 	public string Label { get; set; }
 
 	/// <summary>
+	/// Where the connector runs: the point it leaves the source by, the corners between, the point it arrives at
+	/// the target by, and the edge of each shape it attaches to. <c>null</c> on a flow the server stored no
+	/// geometry for, and on a <c>CrtProcessBuilder</c> that predates the member.
+	/// </summary>
+	/// <remarks>
+	/// Typed rather than left to the overflow bag because it is what an assertion about a diagram is written in
+	/// terms of: every criterion about connectors - orthogonal, anchored on a border, distinct exits per branch,
+	/// no segment through an unrelated shape - is a statement about this chain, and without it they can only be
+	/// checked by a person opening the designer. Read-only, for the same reason as
+	/// <see cref="DescribedElement.Size"/>.
+	/// </remarks>
+	[JsonPropertyName("geometry")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public DescribedFlowGeometry Geometry { get; set; }
+
+	/// <summary>
 	/// Every other field the server returns on a flow, so a description round-trips losslessly - the same bag
 	/// the graph root, nodes and parameters already carry. Added with the nullability fix above: without it a
 	/// newer <c>CrtProcessBuilder</c> reporting a new flow field needs a matching clio property AND a clio
 	/// release before the caller can see it, and until then it is dropped with no trace. <c>condition</c> and
 	/// <c>branchesOnActivityResult</c> keep their typed properties because guards and callers read them by name.
 	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>Where one connector runs on the diagram, as the designer draws it.</summary>
+public sealed class DescribedFlowGeometry {
+	/// <summary>Where the connector leaves the source shape, as <c>"X;Y"</c> on that shape's border.</summary>
+	[JsonPropertyName("start")]
+	public string Start { get; set; }
+
+	/// <summary>
+	/// The corners between the two ends, each <c>"X;Y"</c>. Empty for a straight connector and for one the server
+	/// could not route, where the designer's own router decides the path.
+	/// </summary>
+	[JsonPropertyName("points")]
+	public string[] Points { get; set; }
+
+	/// <summary>Where the connector arrives at the target shape, as <c>"X;Y"</c> on that shape's border.</summary>
+	[JsonPropertyName("end")]
+	public string End { get; set; }
+
+	/// <summary>Which edge of the source it leaves by: <c>right</c>, <c>left</c>, <c>top</c> or <c>bottom</c>.</summary>
+	[JsonPropertyName("exitSide")]
+	public string ExitSide { get; set; }
+
+	/// <summary>Which edge of the target it arrives at.</summary>
+	[JsonPropertyName("entrySide")]
+	public string EntrySide { get; set; }
+
+	/// <summary>Anything else the server reports about a connector's geometry, so a newer one is not dropped.</summary>
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement> AdditionalData { get; set; }
 }
