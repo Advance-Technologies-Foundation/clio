@@ -21,6 +21,11 @@
 # 2026-07-06) is a separate Jira ticket stacked on the same branch; tracked as its own row.
 
 stories:
+  - id: story-process-element-registration-1
+    title: Generate package-owned custom process element registration
+    status: in-progress
+    issue: 1599
+    file: spec/stories/story-process-element-registration-1.md
   - id: story-identity-uninstall-1
     title: Optional local IdentityService attachment and removal
     status: done
