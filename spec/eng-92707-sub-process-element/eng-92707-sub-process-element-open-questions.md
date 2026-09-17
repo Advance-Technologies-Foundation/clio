@@ -300,7 +300,15 @@ The critic's original list, condensed. Five are folded into plan step S1; the re
 
 ### B.5 — Process debt, unchanged
 
-The designer serialization capture (AC4) has **not** been taken; no `docs/knowledge/` records are
-written; and there is no PRD, ADR, story or `spec/sprint-status.yaml` row. This folder is what those
+The designer serialization capture (AC4) has **not** been taken, and there is no PRD, ADR, story or
+`spec/sprint-status.yaml` row. (`docs/knowledge/` records WERE written — four of them, listed in the
+README; this sentence predates them.)
+
+**AC4 is not BLOCKED, and for a while the record implied it was.** A stand pass reported the classic
+designer unreachable; a later one loaded it in about 20 s in a real Chrome at
+`…/0/Nui/ViewModule.aspx?vm=SchemaDesigner#process/<uid>`. What the first pass hit was the renderer
+intermittently freezing — screenshots time out, the DOM stays readable — so the capture is a matter of
+someone taking it, not of the environment refusing. Do not inherit "unreachable" from a screenshot
+timeout. This folder is what those
 would be built from, not a substitute for them — and until it is committed it has already been reported
 as non-existent once *inside this very research effort*.
