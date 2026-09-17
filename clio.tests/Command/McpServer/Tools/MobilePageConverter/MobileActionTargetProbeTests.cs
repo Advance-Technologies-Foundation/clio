@@ -877,6 +877,24 @@ public sealed class MobileActionTargetProbeTests {
 			because: "server prose must be fenced as data, or an agent reads it as instructions");
 	}
 
+	[TestCase(MobileActionTargetProbe.KindWebPage, true,
+		TestName = "StripsBindingOnMissing_WebPage_Strips")]
+	[TestCase(MobileActionTargetProbe.KindEntityDefaultMobilePage, false,
+		TestName = "StripsBindingOnMissing_EntityDefaultMobilePage_ReportsOnly")]
+	[TestCase("some-future-kind", false, TestName = "StripsBindingOnMissing_UnknownKind_ReportsOnly")]
+	[TestCase(null, false, TestName = "StripsBindingOnMissing_NullKind_ReportsOnly")]
+	[Description("Only a DEFINITIONAL absence removes an action: a web page cannot open on mobile whatever the environment holds, while every kind whose verdict comes from a read is reported and left alone.")]
+	public void StripsBindingOnMissing_OnlyDefinitionalAbsenceStrips(string kind, bool expected) {
+		// Arrange & Act
+		bool strips = MobileActionTargetProbe.StripsBindingOnMissing(kind);
+
+		// Assert
+		strips.Should().Be(expected,
+			because: "the object verdict comes from an add-on read whose body carrying no page set is equally "
+				+ "the shape a mis-addressed read returns, so removing a working action on it is not a trade "
+				+ "this tool makes");
+	}
+
 	// ── Fail-open ──────────────────────────────────────────────────────────────────────────────
 
 	[Test]

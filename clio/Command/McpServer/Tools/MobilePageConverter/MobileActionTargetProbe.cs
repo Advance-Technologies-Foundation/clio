@@ -274,6 +274,36 @@ public static class MobileActionTargetProbe {
 		|| string.Equals(kind, KindEntityDefaultMobilePage, StringComparison.OrdinalIgnoreCase);
 
 	/// <summary>
+	/// Whether a <see cref="ActionTargetState.Missing"/> verdict on this kind is strong enough to REMOVE the
+	/// action's binding, as opposed to only reporting it. The single seam that decides it, so the rule lives
+	/// in one place instead of being re-derived at each consumer.
+	/// <para>
+	/// True only for <see cref="KindWebPage"/> — a DEFINITIONAL absence that needs no environment read and
+	/// cannot be wrong for a reason outside this process: a web page cannot open on the Creatio Mobile app,
+	/// full stop. Leaving the binding in place there does not merely fail silently — <c>schemaName</c> is
+	/// <c>required</c> on <c>crt.OpenPageRequest</c>, so the runtime shows the user a settings-error dialog on
+	/// every tap. Removing it instead leaves the control inert (no dialog, no error), matching what the
+	/// developer actually asked for. <see cref="UnresolvedTargetRequest.OriginalBinding"/> keeps the removed
+	/// binding verbatim precisely so this is reversible: once the missing target page converts (or an existing
+	/// mobile equivalent is found under a different name) later in the same session, the caller re-adds the
+	/// binding from that snapshot with only the target param's value swapped — nothing else about it invented.
+	/// </para>
+	/// <para>
+	/// <see cref="KindEntityDefaultMobilePage"/> stays exempt for a SEPARATE reason: the <c>MobileRelatedPage</c>
+	/// add-on declaring no default page is a fact about the add-on, not proof the action is dead — a legacy
+	/// default page can exist without ever being registered there (see
+	/// <see cref="ClassifyEntityDefaultMobilePage"/>). Stripping on that uncertain a signal risks removing a
+	/// working action, which is a trade this tool does not make.
+	/// </para>
+	/// </summary>
+	/// <param name="kind">A rules-declared <c>targetKind</c>.</param>
+	/// <returns>Whether a verified absence of this kind removes the binding.</returns>
+	internal static bool StripsBindingOnMissing(string kind) =>
+		// Trimmed to match TargetKey, which trims the kind when it builds the key a resolution is stored
+		// under: an untrimmed Kind would otherwise be FOUND by the lookup and then silently not stripped.
+		string.Equals(kind?.Trim(), KindWebPage, StringComparison.OrdinalIgnoreCase);
+
+	/// <summary>
 	/// Every place a target-carrying request appears in the page body. PURE — no environment, so the whole
 	/// collection rule is unit-testable offline. A binding is recognized STRUCTURALLY (an object property
 	/// whose value is an object carrying a non-empty string <c>request</c>), the same test
