@@ -106,7 +106,6 @@ public sealed class OAuthTokenStore : IOAuthTokenStore
 /// <summary>Pure OAuth helpers for PKCE and callback validation.</summary>
 public static class OAuthAuthorizationCodeProtocol
 {
-	private const string ClientIdParameter = "client_id";
     public static string CreateCodeVerifier()
     {
         const string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
