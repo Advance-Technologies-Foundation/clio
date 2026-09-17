@@ -1,4 +1,4 @@
-# ENG-92707 — Sub-process element: test plan
+﻿# ENG-92707 — Sub-process element: test plan
 
 ## 1. Where the coverage lives
 
@@ -108,7 +108,7 @@ all, which is how every `PreconfiguredPage*` fixture stays fast.
 | TC-14 | Callee name/UId does not resolve | Refused; "not found" distinguished from "could not read" | P |
 | TC-15 | Mapping onto an `Out` / `Internal` parameter | Refused, message names the direction | P |
 | TC-16 | Mapping a collection parameter (multi-instance, D9) | Refused, message says multi-instance is unsupported | P |
-| TC-17 | Callee does not begin with a Simple start event (R16, D8) | **Warning**, not refusal | P |
+| TC-17 | Callee does not begin with a Simple start event (R16, D8) | **Refusal**, not a warning — see the note below | P |
 
 ### Write ordering — T-1 / T-5
 
@@ -126,10 +126,23 @@ all, which is how every `PreconfiguredPage*` fixture stays fast.
 | TC-22 | Round trip: build → graph → describe over an in-memory schema | Element and parameters survive | P |
 | TC-23 | `ManagerMap.ResolveDataId("subprocess")` | `EventType.SubProcess`, not `Unknown` (T-6) | C |
 | TC-24 | `validate-process-graph` over a graph containing the element | No `UNKNOWN` finding | C |
-| TC-25 | `SubProcessBlockExpectation`: block sent, block missing from describe | Warning raised, on **both** reporter paths (T-14) | C |
+| TC-25 | ~~`SubProcessBlockExpectation`~~ | **Dropped by D2a** — the block binds to `type:"subProcess"` and an older server refuses the unknown type loudly, so no expectation is owed | — |
 | TC-26 | `DescribedSubProcess` outbound re-serialization | Pins the wire names, inbound-only assertions do not (T-14 note) | C |
 | TC-27 | `create-business-process` with a `subProcess` block against a live stand | Element built, describe confirms | E |
 | TC-28 | `modify-business-process` `setElement` with `resync: true` | Drift reported | E |
+
+**TC-17 reads the wrong half of the plan, and the code follows the other one.** §3 D8 decides
+"R16 can be a hard refusal in the applier and an Error in `ProcessGraphValidator`", backed by a corpus
+measurement of zero violations among the 269 resolvable callees; S3 step 2 and this row said "warn". The
+applier throws, which is D8. The validator half did NOT ship — a planned graph carries no reference to the
+called process at all, so the rule fires in the build path only (DQ-2). Row corrected rather than the code.
+
+**TC-07 is still not implemented.** `IsInSync` (`SubProcessElementIdentity.MirrorsCallee`, one-directional)
+and `SubProcessSyncReport.IsUnchanged` (which also counts `Removed`) answer different questions about an
+element that carries a parameter the callee dropped. That state may well be unreachable through a
+design-time read, because the platform converges the element before this package sees it — which is the
+same argument DQ-10 makes about the drift report — so the case is left for a stand rather than pinned by a
+unit test that would have to construct a state the platform does not produce.
 
 ### Stand only
 

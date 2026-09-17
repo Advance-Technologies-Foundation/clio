@@ -179,17 +179,20 @@ public class BundledProcessBuilderPackageTests {
 	/// and this removes the operator's editor and git configuration from the hash instead of gating on them.
 	/// </para>
 	/// <para>
-	/// Measured for the archive pinned below, entry by entry against
-	/// <c>git show &lt;ExpectedProducingCommit&gt;:&lt;path&gt;</c>: 157 entries, 156 byte-IDENTICAL to the
-	/// commit blob, 0 line-ending-only differences, 0 content differences. The 157th is
-	/// <c>descriptor.json</c>, which by contract cannot match the pre-restamp commit and is pinned separately by
-	/// <see cref="ExpectedArchiveVersion"/> and <see cref="ExpectedDescriptorModifiedOnUtc"/>. That audit was
-	/// re-run for THIS cut rather than inherited from an earlier one.
+	/// Measured entry by entry against <c>git show &lt;ExpectedProducingCommit&gt;:&lt;path&gt;</c> at the
+	/// <b>1.6.3.1</b> cut: 157 entries, 156 byte-IDENTICAL to the commit blob, 0 line-ending-only differences,
+	/// 0 content differences. The 157th is <c>descriptor.json</c>, which by contract cannot match the pre-restamp
+	/// commit and is pinned separately by <see cref="ExpectedArchiveVersion"/> and
+	/// <see cref="ExpectedDescriptorModifiedOnUtc"/>.
+	/// <para>NOT re-run by hand for the cuts after it, and deliberately: that measurement is what PROVED the
+	/// structural fix described above, and once the script exports the pinned commit and overlays that one file,
+	/// re-measuring asks the same question of the same mechanism. Re-run it when the script's PACKING changes,
+	/// not when the sources do.</para>
 	/// </para>
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"C61430F6C5EBFEA0A2DE61969AF3D50A1182108FD7C1F6CEE0FB59A8D94BD4AC";
+		"47AAD17C3AB75EB34FE55DD5254EF454C35561F1BA550C3C5840284100E0CF80";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -217,7 +220,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.3.1";
+	private const string ExpectedArchiveVersion = "1.6.3.2";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -229,7 +232,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "69e951f5d9f779d7a9bccd44b7b92c4aa338dd00";
+	private const string ExpectedProducingCommit = "2e3ca8ea0788370f4b1d03641760f815307e5eb0";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -255,7 +258,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789601388000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789626046000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.

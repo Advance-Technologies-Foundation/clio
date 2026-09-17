@@ -1137,8 +1137,11 @@ public static class ManagerMap{
 			// tokens whose data-ids (readDataUserTask / changeDataUserTask / changeAdminRightsUserTask) already
 			// resolve through that suffix arm, while the token a descriptor actually carries does not end in
 			// "usertask" and would otherwise fall to Unknown — a hard validator Error on a graph that builds fine.
+			// "preconfiguredpage" is the same case once more, and it was the last build token still missing: the
+			// element's own data-id is PreconfiguredPageUserTask, which the suffix arm below covers, while the
+			// token a DESCRIPTOR carries does not end in "usertask" and fell to Unknown.
 			"usertask" or "performtask" or "sendemail" or "approval" or "openeditpage" or "readdata"
-					or "changedata" or "changeaccessrights" => EventType.UserTask,
+					or "changedata" or "changeaccessrights" or "preconfiguredpage" => EventType.UserTask,
 			var i when i.StartsWith("intermediatecatchevent", StringComparison.Ordinal) => EventType.IntermediateCatchSignalEvent,
 			var i when i.StartsWith("intermediatethrowevent", StringComparison.Ordinal) => EventType.IntermediateThrowSignalEvent,
 			// every system/user action element ends with the "usertask" suffix and is an activity.

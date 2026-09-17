@@ -51,3 +51,15 @@ is a snapshot taken before the write.
 
 Source: `Terrasoft.Core/Process/ProcessSchemaSubProcess.cs`, `ProcessSchemaActivity.cs`. Full
 write-up with line numbers: `spec/eng-92707-sub-process-element/`.
+
+**One more way it produces nothing, added 2026-09-17** — the setter resolves the called process through
+`GetInstanceFromMetaData` (a design-time instance is deserialized from metadata), while a reader that
+loads it with `GetInstanceByUId` asks a different question. If those two disagree — the process reads
+fine by UId and does not resolve from metadata — the write is accepted, `GetSchemaParameters()` answers
+with an EMPTY collection, and the platform then removes every parameter and mapping row the element
+carried. Probing readability with the reader before the write does not cover it, and the check cannot be
+moved onto `element.Schema` beforehand either, because until the assignment the element still references
+the PREVIOUS callee. The only place to catch it is after the write and before `Save`, by comparing the
+element's parameters against what the callee was read to declare. Left unchecked it is silent on a first
+selection and actively MISLEADING on a retarget, where every previously carried parameter appears as
+removed by the new callee.

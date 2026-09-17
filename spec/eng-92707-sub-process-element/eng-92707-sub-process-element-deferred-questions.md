@@ -284,3 +284,64 @@ the platform produces it, by writing the field, and a mutation check confirms th
 call fails it.
 
 **What would flip it.** Nothing. This one is settled by the platform source.
+
+---
+
+# Round 3 — what an adversarial review changed, and what it did not
+
+A second reviewer went over all three pull requests after they opened. Fourteen Major findings; eleven
+stood, one was refuted, three were narrower than written. What follows is only the part that needed a
+judgement — the fixes themselves are in the commits.
+
+## DQ-12 — R16 is a REFUSAL, and the plan contradicted itself
+
+The review read TC-17 ("**Warning**, not refusal") and S3 step 2 ("warn on R16") and reported the code as
+a shipped deviation. It is not: D8, the decision, reads "R16 can be a hard refusal in the applier and an
+Error in `ProcessGraphValidator`", and it is backed by the measurement that made the call — zero
+violations among the 269 resolvable callees in the corpus. The applier throws, which is D8.
+
+**Decision.** Correct the matrix and S3, not the applier. The validator half never shipped and cannot
+(DQ-2). The reviewer's scenario — "a callee that gains a triggered-only start hard-fails an otherwise
+valid build" — is not supported by that measurement and was withdrawn.
+
+## DQ-13 — the retype comparison is hardened, not repaired
+
+The review said the drift snapshot's `DataValueType?.Name` comparison is "dead on the path it exists for",
+citing `ProcessParameterService`'s own comment that the object property "would always be null" on a
+read-back schema. The platform source disagrees: `ProcessSchemaParameter.DataValueType` resolves LAZILY
+through `ProcessSchema ?? ParentMetaSchema as BaseProcessSchema`, and TC-04 reads it today and passes.
+
+**Decision.** Change it anyway, to `DataValueTypeUId` with the `Guid.Empty` guard the page synchronizer
+uses, and say in the code that this is hardening. The property is the stored one and the comparison no
+longer depends on a lookup being reachable. The claim that it was DEAD is not repeated anywhere.
+
+## DQ-14 — the post-condition could not go where the review put it
+
+The finding is right and the fix it proposed is not: call `CanPlatformResolve` before the write. That
+probe asks about the element's CURRENT callee, and on a create or a retarget the element still references
+the old one, so before the assignment it answers about the wrong process. The check has to run AFTER the
+write, against the details already read — which is safe, because nothing is persisted until `Save`.
+
+**What it costs.** The in-memory element has already been mutated when the refusal fires; a retarget that
+is refused this way leaves the element with no parameters in memory. The test says so rather than
+pretending otherwise. The refusal is what stops that state reaching the database and, more importantly,
+what stops the caller being handed a report naming parameters the new callee declares as dropped.
+
+## DQ-15 — `inSync` vs `IsUnchanged`, left open on purpose
+
+The two predicates are asymmetric: `MirrorsCallee` asks only whether the callee's parameters are all
+present, `IsUnchanged` also counts `Removed`. The review wants them reconciled and TC-07 written.
+
+**Decision.** Document the asymmetry on the now-shared predicate and leave TC-07 for a stand. The state
+that would expose it — an element still carrying a parameter the callee dropped — is converged by the
+platform on every design-time read before this package sees the schema, which is the same argument DQ-10
+makes about the drift report. Writing a unit test would mean constructing a state the platform does not
+produce, and asserting on it would pin the fixture rather than the behaviour.
+
+## DQ-16 — the ticket's scope line says retarget is out of scope
+
+Ticket Scope: "No need to support replacing one sub-process with another one (will be covered as a
+separate task)." It is implemented, and the assignee confirmed on 2026-09-17 that it is supported. Two of
+this round's findings land on exactly that path, so the deviation is not free — it is recorded here and in
+the pull request rather than left for a reader to notice, and the retarget path still has no acceptance
+criterion of its own. V7 and the manual TC-06 / TC-07 cover it, and they have not been run.

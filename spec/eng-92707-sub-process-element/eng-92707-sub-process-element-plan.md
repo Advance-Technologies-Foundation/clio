@@ -1,4 +1,4 @@
-# ENG-92707 — Sub-process element: selection + parameter sync — implementation plan
+﻿# ENG-92707 — Sub-process element: selection + parameter sync — implementation plan
 
 [ENG-92707](https://creatio.atlassian.net/browse/ENG-92707) · component *bpms tools* · epic
 [ENG-92704](https://creatio.atlassian.net/browse/ENG-92704) · 5 SP · ticket estimate ~2.5 days ·
@@ -294,7 +294,9 @@ shipped content either way.
 
 ### D9 — Multi-instance is out of scope, and the refusal is a **pre-condition**, not a validation.
 
-It is derived, never declared: mapping one incoming parameter to a collection silently converts the
+**Correction (2026-09-17): "never declared" is false, and it seeded the same error in the guidance.** `MultiInstanceOptions` is an explicit `[DesignModeProperty MetaPropertyName="BP6"]` on `ProcessSchemaActivity` (:22, :122), with `IsMultiInstanceModeEnabled => MultiInstanceOptions != null` (:84) - declared, serialized, and reported by describe as `subProcess.multiInstance`. What is true is that nothing on THIS write path produces one: the collection-to-multi-instance conversion is classic designer client code (`MappingEditMixin.js:1032 _tryConvertToMultiInstance`), and `ProcessMappingService.Apply` writes `SourceValue` only. The refusal is a pre-condition for elements that ALREADY carry the flag.
+
+The original sentence, kept for the record: mapping one incoming parameter to a collection silently converts the
 element into an N-instance loop, and the element's parameter set then stops mirroring the callee
 altogether (three counters plus an input and an output collection).
 
@@ -405,7 +407,8 @@ New in `packages/CrtProcessBuilder/Files/src/cs/`:
 `Synchronize(schema, elementName)`, running **post-graph** (the `PreconfiguredPageApplier` position):
 
 1. Resolve the callee (D11); refuse "not found", distinguish "unreadable" (D7).
-2. Refuse self-reference (D7); refuse a retarget with live dependents (D7); warn on R16 (D8); refuse a
+2. Refuse self-reference (D7); refuse a retarget with live dependents (D7); REFUSE on R16 (D8 decides a hard
+   refusal in the applier; this line said "warn" and TC-17 followed it - both corrected 2026-09-17); refuse a
    collection mapping (D9).
 3. Snapshot parameters + `BK15` rows (D2).
 4. Assign `SchemaUId` — with the element attached and carrying its `UId` (T-1, T-5).

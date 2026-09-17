@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -75,7 +75,8 @@ public sealed class ToolContractPayloadBudgetTests {
 	// This is the number ENG-96389 watched double: create-business-process answers a single
 	// get-tool-contract call with more than the ENTIRE tools/list budget, for one tool. Pinning the
 	// MAXIMUM rather than the sum keeps the guard on what ONE fetch costs, which is what an agent pays.
-	// Measured 34165 bytes (create-business-process) at 14e2dd5a9 plus this branch's round-2 fixes;
+	// Measured 34794 bytes (create-business-process) at the ENG-92707 round-3 cut, with
+	// modify-business-process 10 bytes behind it at 34784 and create-entity-business-rules third at 32010;
 	// 136 * 256 = 34816 per the next-256 convention, re-pinned from 134 when CrtProcessBuilder 1.6.2.18
 	// added the activity-result selection: modify-business-process gained the setFlowResults operation and
 	// create-business-process the flows[].results field, and the Approval paragraph in the latter had to be
@@ -90,11 +91,15 @@ public sealed class ToolContractPayloadBudgetTests {
 	// mutually exclusive, and what each refusal is. That is the split ENG-96389 section 5 identified as the
 	// one that pays - cutting depth WITHIN a block, not relocating the block.
 	//
-	// Be honest about what 139 bytes of headroom means rather than claiming a wording fix passes: the
+	// Be honest about what 22 bytes of headroom means rather than claiming a wording fix passes: the
 	// default JSON encoder escapes every non-ASCII character and apostrophe as a six-byte unicode
-	// escape, and these descriptions are dense with both, so the room is roughly TWENTY escaped
-	// characters — less than one clause. Adding a sentence to create-business-process trips this, and so
-	// does growing modify-business-process, which sits 831 bytes behind at 33334. That tightness is
+	// escape, and these descriptions are dense with both, so the room is roughly THREE escaped
+	// characters — not a clause, not a word. Adding anything at all to create-business-process trips
+	// this, and modify-business-process is 10 bytes behind it, so the same is true of both.
+	// These numbers are re-measured on every cut that touches either description, by lowering the
+	// ceiling and reading the failure message, because a stale figure here overstates the slack and the
+	// next author finds a red ratchet where the comment promised room. The ENG-92707 round-3 numbers
+	// replaced 34165 / 139 / 33334, which were three cuts old. That tightness is
 	// deliberate on the two tools this ticket is about, and the failure message names the largest three
 	// so an author who edited a different one is not sent to the wrong file. If it starts firing on
 	// edits that are NOT budget decisions, re-pin it deliberately and say so here — never widen it in

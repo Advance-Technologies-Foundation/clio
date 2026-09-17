@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -51,7 +51,7 @@ public sealed class SubProcessElementToolE2ETests {
 		await using ArrangeContext context = await ArrangeAsync();
 		string calleeName = $"UsrClioBpSubCallee{Guid.NewGuid():N}";
 		string callerName = $"UsrClioBpSubCaller{Guid.NewGuid():N}";
-		await CreateAsync(context, BuildCalleeDescriptor(calleeName));
+		await ArrangeProcessAsync(context, BuildCalleeDescriptor(calleeName), "called process");
 
 		// Act
 		CallToolResult callResult = await CreateAsync(context, BuildCallerDescriptor(callerName, calleeName));
@@ -100,7 +100,7 @@ public sealed class SubProcessElementToolE2ETests {
 		await using ArrangeContext context = await ArrangeAsync();
 		string calleeName = $"UsrClioBpSubMapCallee{Guid.NewGuid():N}";
 		string callerName = $"UsrClioBpSubMapCaller{Guid.NewGuid():N}";
-		await CreateAsync(context, BuildCalleeDescriptor(calleeName));
+		await ArrangeProcessAsync(context, BuildCalleeDescriptor(calleeName), "called process");
 
 		// Act
 		CallToolResult callResult = await CreateAsync(context, BuildMappingCallerDescriptor(callerName, calleeName));
@@ -131,8 +131,8 @@ public sealed class SubProcessElementToolE2ETests {
 		await using ArrangeContext context = await ArrangeAsync();
 		string calleeName = $"UsrClioBpSubResyncCallee{Guid.NewGuid():N}";
 		string callerName = $"UsrClioBpSubResyncCaller{Guid.NewGuid():N}";
-		await CreateAsync(context, BuildCalleeDescriptor(calleeName));
-		await CreateAsync(context, BuildCallerDescriptor(callerName, calleeName));
+		await ArrangeProcessAsync(context, BuildCalleeDescriptor(calleeName), "called process");
+		await ArrangeProcessAsync(context, BuildCallerDescriptor(callerName, calleeName), "calling process");
 		// The called process gains a parameter after the caller was built. This is the state the whole re-sync
 		// exists for: at run time a value aimed at a name the other side does not carry is skipped with no
 		// exception and no log line, so the element keeps running and quietly delivers nothing.
@@ -217,7 +217,7 @@ public sealed class SubProcessElementToolE2ETests {
 		await using ArrangeContext context = await ArrangeAsync();
 		string calleeName = $"UsrClioBpSubMisplacedCallee{Guid.NewGuid():N}";
 		string processName = $"UsrClioBpSubMisplaced{Guid.NewGuid():N}";
-		await CreateAsync(context, BuildCalleeDescriptor(calleeName));
+		await ArrangeProcessAsync(context, BuildCalleeDescriptor(calleeName), "called process");
 
 		// Act
 		CallToolResult callResult = await CreateAsync(context,
@@ -320,6 +320,21 @@ public sealed class SubProcessElementToolE2ETests {
 	#endregion
 
 	#region Methods: Arrange
+
+	/// <summary>
+	/// Builds a process for an ARRANGE step and fails the test on the spot if it did not build.
+	/// <para>Discarding this result is how a broken arrange reaches the assertions disguised as the thing under
+	/// test: the callee fails to build, the caller then cannot resolve it, and the failure reads as a defect in
+	/// the sub-process element rather than in the two lines above it.</para>
+	/// </summary>
+	private static async Task<CallToolResult> ArrangeProcessAsync(ArrangeContext context, string descriptor,
+			string what) {
+		CallToolResult result = await CreateAsync(context, descriptor);
+		result.IsError.Should().NotBeTrue(
+			because: $"the {what} is an arrange step - if it did not build, every assertion below is about the "
+				+ "wrong failure");
+		return result;
+	}
 
 	private static async Task<CallToolResult> CreateAsync(ArrangeContext context, string descriptor) =>
 		await CallToolAsync(context, ToolName, new Dictionary<string, object?> {

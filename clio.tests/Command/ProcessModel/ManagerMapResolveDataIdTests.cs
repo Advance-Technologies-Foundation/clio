@@ -1,4 +1,4 @@
-using Clio.Command.ProcessModel;
+﻿using Clio.Command.ProcessModel;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -67,6 +67,11 @@ public sealed class ManagerMapResolveDataIdTests {
 	// correctly resolves to Unknown and validate-process-graph reports a hard Error on it.
 	[TestCase("subProcess", ManagerMap.EventType.SubProcess)]
 	[TestCase("subprocess", ManagerMap.EventType.SubProcess)]
+	// The Pre-configured page build token, for the same reason: its data-id PreconfiguredPageUserTask resolves
+	// through the suffix arm while the token itself did not, so a graph containing an element the server
+	// builds happily was reported as UNKNOWN by validate-process-graph.
+	[TestCase("preconfiguredpage", ManagerMap.EventType.UserTask)]
+	[TestCase("preconfiguredPage", ManagerMap.EventType.UserTask)]
 	[TestCase("eventSubProcessExpanded", ManagerMap.EventType.EventSubProcess)]
 	public void ResolveDataId_ShouldReturnActivityEventType_WhenActivityDataId(string dataId, ManagerMap.EventType expected) {
 		// Act
