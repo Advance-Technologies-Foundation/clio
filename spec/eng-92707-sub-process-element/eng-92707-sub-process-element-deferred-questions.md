@@ -519,9 +519,21 @@ changed — not because something looked wrong.
 
 **The decision that is NOT mine.** A real drift report needs the STORED metadata: read the `SysSchema`
 body before a design-time load touches it, and diff the element's parameter set against the converged
-one. That is a new mechanism rather than an adjustment to the one this ticket built — a second read path,
-a metadata parse, and its own tests — and it would close TC-04, TC-10 and F2 together. Whether it belongs
-to ENG-92707 or to a follow-up is a scope call for the owner. What is true either way: AC-3's REFRESH
+one. It would close TC-04, TC-10 and F2 together. Whether it belongs to ENG-92707 or to a follow-up is a
+scope call for the owner.
+
+**Correction, 2026-09-17: DQ-10 called that "a different mechanism", and having read the code that is an
+overstatement worth removing before anyone decides on it.** The pieces are already here. The platform
+writes `SchemaUId` from metadata straight into the BACKING FIELD
+(`ProcessSchemaSubProcess.ApplyMetaDataValue`: `case SchemaUIdPropertyName: _schemaUId = …`), not through
+the synchronizing setter — so a schema deserialized from stored metadata comes back with the element
+STILL STALE, which is exactly the state no other surface has. The same trap DQ-11 records about `Name`,
+working in our favour this time. And the round trip has a precedent in this package:
+`ProcessVersionCloneFactory` already does `SerializeSchemaMetaData` / `ReadSchemaMetaData` through
+`IProcessSchemaRepository`, and several files read the database directly. What is left is the
+`SysSchema.MetaData` select, locating the element in the detached copy, and then the EXISTING `Snapshot`
+and `Diff`. Not free - a schema deserialization per request, so it should be scoped to an explicit
+`resync: true` rather than every touch - and not verified end to end; this is a code read, not a run. What is true either way: AC-3's REFRESH
 half is met and verified on a stand; its REPORTING half is not, and the guidance says so rather than
 implying otherwise.
 
