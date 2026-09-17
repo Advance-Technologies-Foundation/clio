@@ -1,7 +1,7 @@
 {
   "library": "com.creatio.clio",
-  "libraryVersion": "1.15.21",
-  "sequence": 1015021000,
+  "libraryVersion": "1.15.22",
+  "sequence": 1015022000,
   "availableNames": [
     "administration",
     "agent-execution",
@@ -81,6 +81,8 @@
     "creatio.page-modification-containers",
     "creatio.page-modification-field-contract",
     "creatio.page-modification-overview",
+    "creatio.page-modification-standard-components",
+    "creatio.page-modification-template-supplied-parts",
     "creatio.page-schema-converters",
     "creatio.page-schema-creatio-devkit-common",
     "creatio.page-schema-handlers",
@@ -163,6 +165,8 @@
     "page-modification-containers",
     "page-modification-field-contract",
     "page-modification-overview",
+    "page-modification-standard-components",
+    "page-modification-template-supplied-parts",
     "page-schema-converters",
     "page-schema-creatio-devkit-common",
     "page-schema-handlers",
