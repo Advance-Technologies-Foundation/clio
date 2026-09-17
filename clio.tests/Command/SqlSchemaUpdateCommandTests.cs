@@ -190,4 +190,20 @@ public sealed class SqlSchemaUpdateCommandTests {
 				Newtonsoft.Json.Linq.JToken.Parse("""{"uId":"stable","body":"SELECT 2;","dbEngineType":2,"installType":3,"package":{"uId":"package"},"dependOnSqlScripts":[{"uId":"dependency"}],"backwardCompatibilityConfirmed":true}"""))));
 	}
 
+	[Test]
+	[Description("Transport failures during SQL update report the unknown outcome once.")]
+	public void TryUpdateSchema_ShouldNotDuplicateWarning_WhenTransportFails() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
+		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(GetSchemaSuccessJson);
+		_applicationClient.ExecuteNonReplayablePostRequest(SaveSchemaUrl, Arg.Any<string>())
+			.Returns(_ => throw new IOException("connection lost"));
+		// Act
+		bool result = _command.TryUpdateSchema(new() { SchemaName = "UsrSqlScript", Body = "SELECT 1;" }, out SqlSchemaUpdateResponse response);
+		// Assert
+		result.Should().BeFalse(because: "a lost response cannot prove success");
+		response.Error.Split(SchemaDesignerHelper.SaveOutcomeUnknownNote).Length.Should().Be(2,
+			because: "the same uncertainty sentence should appear exactly once");
+	}
+
 }

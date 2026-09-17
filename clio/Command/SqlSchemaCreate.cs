@@ -141,7 +141,7 @@ public class SqlSchemaCreateCommand : Command<SqlSchemaCreateOptions> {
 				} : null;
 				if (engine is null) {
 					response = new SqlSchemaCreateResponse { Success = false,
-						Error = $"Could not detect the database engine. Supply db-engine-type explicitly. {infoError}" };
+						Error = $"Could not detect the database engine. Supply db-engine-type explicitly. {infoError ?? (info?["errorInfo"] as JObject)?["message"]?.ToString()}" };
 					return false;
 				}
 			}
@@ -231,7 +231,7 @@ public class SqlSchemaCreateCommand : Command<SqlSchemaCreateOptions> {
 					+ $"Check whether schema '{options.SchemaName}' exists before retrying."
 			};
 		}
-		return readBack.IsResolved && readBack.UId == createdUId
+		return readBack.IsResolved && Guid.TryParse(readBack.UId, out Guid actualUId) && actualUId == Guid.Parse(createdUId)
 			? BuildSuccess(options, readBack.UId, packageUId, caption)
 			: new SqlSchemaCreateResponse { Success = false, Error = saveError };
 	}

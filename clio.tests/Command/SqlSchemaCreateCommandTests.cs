@@ -163,7 +163,7 @@ public sealed class SqlSchemaCreateCommandTests : BaseCommandTests<SqlSchemaCrea
 		_saveResponse = string.Empty;
 		_client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(call => {
 			_saved = JObject.Parse(call.ArgAt<string>(1));
-			string uid = sameIdentity ? _saved["uId"].Value<string>() : Guid.NewGuid().ToString();
+			string uid = sameIdentity ? _saved["uId"].Value<string>().ToUpperInvariant() : Guid.NewGuid().ToString();
 			_scriptRows = new JArray(new JObject { ["UId"] = uid }).ToString();
 			return string.Empty;
 		});
@@ -223,6 +223,33 @@ public sealed class SqlSchemaCreateCommandTests : BaseCommandTests<SqlSchemaCrea
 		result.Should().BeFalse(because: "neither response proves the saved state");
 		response.Error.Should().Contain("SaveSchema transport failed", because: "the initial uncertain write must remain visible");
 		response.Error.Should().Contain("exists before retrying", because: "creation may already have committed");
+	}
+
+	[Test]
+	[Description("Engine discovery preserves the server diagnostic when its request is rejected.")]
+	public void TryCreate_ShouldReportEngineError_WhenDiscoveryIsRejected() {
+		// Arrange
+		_client.ExecutePostRequest(Arg.Is<string>(s => s.EndsWith("GetSystemEnvironmentInfo")), Arg.Any<string>())
+			.Returns("{\"success\":false,\"errorInfo\":{\"message\":\"permission denied\"}}");
+		// Act
+		bool result = _command.TryCreate(new() { SchemaName = "UsrSql", PackageName = "Custom" }, out SqlSchemaCreateResponse response);
+		// Assert
+		result.Should().BeFalse(because: "the engine cannot be inferred from a rejected response");
+		response.Error.Should().Contain("permission denied", because: "the server reason is actionable");
+		_saved.Should().BeNull(because: "engine discovery must finish before writing");
+	}
+
+	[Test]
+	[Description("Unknown engines with JSON-null errorInfo retain the explicit engine-selection diagnostic.")]
+	public void TryCreate_ShouldExplainUnknownEngine_WhenErrorInfoIsJsonNull() {
+		// Arrange
+		_client.ExecutePostRequest(Arg.Is<string>(s => s.EndsWith("GetSystemEnvironmentInfo")), Arg.Any<string>())
+			.Returns("{\"success\":true,\"dbEngineType\":\"Unknown\",\"errorInfo\":null}");
+		// Act
+		bool result = _command.TryCreate(new() { SchemaName = "UsrSql", PackageName = "Custom" }, out SqlSchemaCreateResponse response);
+		// Assert
+		result.Should().BeFalse(because: "an unknown dialect cannot be saved safely");
+		response.Error.Should().Contain("Supply db-engine-type explicitly", because: "JSON null must not replace the useful diagnostic with a parser error");
 	}
 
 }
