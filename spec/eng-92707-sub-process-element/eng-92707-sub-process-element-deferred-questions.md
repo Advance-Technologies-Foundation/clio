@@ -489,3 +489,48 @@ by the other two routes.
 2. `NormalizeParameterTypeName` is ever widened beyond scalars and `Lookup`. Today the gap is reachable
    only through a parameter INHERITED from a callee; widening that allow-list makes it reachable from a
    descriptor the caller writes themselves, which is a different risk entirely.
+
+## DQ-25 — the manual pass, and the one gap it turns into a decision
+
+Run 2026-09-17 against `http://d_krestov_n.tscrm.com:40001/` at CrtProcessBuilder **1.6.3.6**, knowledge
+library 1.16.0, in an isolated session. **11 PASS / 2 FAIL, nothing blocked.** Report:
+`C:\Projects\eng92707-manual-test\eng-92707-manual-test-report.md`.
+
+Worth recording beside the failures: of 24 build/modify calls, 17 succeeded and six of the seven that did
+not are exactly the six refusals the matrix demands — each with a message naming the cause. There were no
+semantic retries. The contract and the guidance got an agent to the right descriptor first time,
+including every refusal path.
+
+**Both failures are one defect, and it is DQ-10 arriving where a test can see it.** TC-04 (callee drops a
+parameter) and TC-10 (callee renames one) both refresh the caller correctly and report a bare success —
+no name, no "removed", no "the value you mapped is now dangling". When the SAME request causes the drift
+the warnings are excellent (TC-06's retarget named all four parameters and the consequence), so the
+machinery is there; it has nothing to compare against, because the load that precedes it has already
+converged the element.
+
+**F2, which the pass did not anticipate and which is new:** the designer does not merely fail to warn, it
+REASSURES. Opening the caller's card after a callee rename shows the new name and an intact mapping,
+because rendering the card re-synchronizes it. The saved schema — the one that runs — still carries the
+old name. So no read reveals the stale state: not the designer, not describe, not `inSync`, not the
+warning list. Recorded in guidance (`process-parameters`) and as
+`docs/knowledge/platform/subprocess-designer-card-hides-stale-state.md`, with the rule stated
+procedurally: re-save every caller after any change to a called process's parameters, because the callee
+changed — not because something looked wrong.
+
+**The decision that is NOT mine.** A real drift report needs the STORED metadata: read the `SysSchema`
+body before a design-time load touches it, and diff the element's parameter set against the converged
+one. That is a new mechanism rather than an adjustment to the one this ticket built — a second read path,
+a metadata parse, and its own tests — and it would close TC-04, TC-10 and F2 together. Whether it belongs
+to ENG-92707 or to a follow-up is a scope call for the owner. What is true either way: AC-3's REFRESH
+half is met and verified on a stand; its REPORTING half is not, and the guidance says so rather than
+implying otherwise.
+
+**Environment notes for the next stand pass**, neither an ENG-92707 issue: the built-in browser pane
+cannot render this stand (every subresource fails `net::ERR_BLOCKED_BY_CLIENT`, leaving a blank page,
+though the same URL serves fine as a top-level navigation — the pass fell back to Claude in Chrome); and
+`SysProcessData` rows do not survive a completed interpreted instance there, so a short-lived callee's
+parameters are not directly observable — build the observable into the callee, or park it at a human
+step.
+
+**Cleanup is pending a decision**: entity `UsrTc92707Order` (package `Custom`, 7 records) and eight
+`UsrTc92707*` processes. Three older `UsrTc92707*` schemas predate the pass and were not touched.
