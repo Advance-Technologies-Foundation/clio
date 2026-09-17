@@ -43,3 +43,5 @@ server-side failure (auth/session issue, routing error, proxy/IIS error page) is
 agent and the user as a completed write. Route every new keyed write through
 `ODataKeyedWrite.ValidateWriteResponse`, and a batch/row-based write through the same
 `CreatioResponseError.TryDetect` + `DescribeNonJsonResponse` pair `ODataCreateTool` uses.
+
+A diagnostic transport outcome of response-received means only that a body arrived. It is not an observed HTTP status or proof of commit/rollback. Unrecognized bodies must not be echoed as diagnostic previews; retain the uncertainty and inspect affected records.

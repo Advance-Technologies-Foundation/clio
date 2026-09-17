@@ -101,6 +101,8 @@ public sealed class SequenceEnrollmentCommandTests : BaseCommandTests<SequenceEn
 		// Assert
 		result.Completion.Should().Be("completed", because: "a valid response is different from uncertain completion");
 		result.AddedCount.Should().Be(1, because: "a partial failure must not hide a committed enrollment");
+		result.Diagnostic.TransportOutcome.Should().Be("response-received", because: "native counts came from a received response");
+		result.Diagnostic.SideEffect.Should().Be("unknown", because: "the complete selection was not acknowledged successfully");
 		result.FailedCount.Should().Be(1, because: "the native failed count remains explicit");
 		result.Success.Should().BeFalse(because: "partial application is not complete success");
 		string.Join(" ", result.Errors).Should().NotContain("secret-value", because: "platform errors may contain sensitive values");
@@ -153,6 +155,8 @@ public sealed class SequenceEnrollmentCommandTests : BaseCommandTests<SequenceEn
 		var result = _command.Enroll(new() { SequenceId = _sequence, ContactIds = [_contact] });
 		// Assert
 		result.Completion.Should().Be("uncertain", because: "timeout does not imply rollback");
+		result.Diagnostic.SideEffect.Should().Be("unknown", because: "transport failure cannot prove no enrollment happened");
+		result.Diagnostic.TransportOutcome.Should().Be("unknown", because: "the native response never arrived");
 		JsonSerializer.Serialize(result).Length.Should().BeLessThan(3000, because: "exception content must be bounded");
 		_client.ReceivedCalls().Count(call => call.GetMethodInfo().Name == "ExecuteNonReplayablePostRequest")
 			.Should().Be(1, because: "timeouts must not replay a write");
