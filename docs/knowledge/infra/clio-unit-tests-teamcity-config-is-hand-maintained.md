@@ -2,6 +2,7 @@
 description: Team_Atf_ClioUnitTests is configured by hand in TeamCity (five dotnet steps with their framework and SDK, BranchNameClio root, Commit Status Publisher) and nothing in the repository reproduces it, so a TargetFramework change in any test project it runs must be mirrored there or the PR status CLIO Unit Tests (ATF) turns red on every PR
 applies-to:
   - .github/workflows/teamcity-unit-tests.yml
+  - .github/workflows/build.yml
   - .github/scripts/queue-teamcity-build.ps1
   - clio.tests/clio.tests.csproj
   - Clio.Analyzers.Tests/Clio.Analyzers.Tests.csproj
@@ -22,6 +23,13 @@ on a Windows agent, each set to run even when an earlier step failed:
 | `Analyzer tests` | `test Clio.Analyzers.Tests`, `-p:RunAnalyzers=false` | `net10.0` | 10 |
 | `ConflictResolver tests` | `test Creatio.ConflictResolver.Tests`, Release, `-p:RunAnalyzers=false` | `net8.0` | 8, 10 |
 | `ClioGate tests (net472)` | `test cliogate.tests`, Release | project default (`net472`) | 10, 4.7.2 |
+
+Since 2026-09-17 this is the **only** place `cliogate.tests` runs: `build.yml` had a `ClioGate
+Tests` job on a self-hosted Windows runner (hosted runners cannot reach the private Nexus feed the
+gate restores from), and it was removed as an exact duplicate of the step above. It was already
+restricted to same-repo pull requests, the same restriction the TeamCity trigger carries, so no
+pull request lost coverage - but if no in-network runner can queue the TeamCity build, nothing runs
+`cliogate.tests` at all.
 | `clio net8.0 product compatibility build` | `build clio/clio.csproj`, `-p:RunAnalyzers=false` | `net8.0` | 8, 10 |
 
 It checks clio out from `refs/heads/%BranchNameClio%` (default `master`) through a VCS root used by
