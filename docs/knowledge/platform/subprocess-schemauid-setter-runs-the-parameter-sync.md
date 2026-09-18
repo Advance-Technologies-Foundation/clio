@@ -21,7 +21,8 @@ read. A RUNTIME read does not — no runtime getter calls `SynchronizeParameters
 sub-process element IS a state the object model hands you, through
 `ProcessSchemaManager.FindInstanceByUId` / `FindInstanceByName`. That is the difference between the two
 clio paths: `ProcessModifyHandler` always takes `GetDesignInstance` and sees a converged element, while
-`ProcessSchemaRepository.LoadForDescribe` prefers the runtime instance while its cached instance predates the change and
+`ProcessSchemaRepository.LoadForDescribe` can report the stale name -
+see `subprocess-insync-depends-on-the-schema-instance.md` for when, which is not restated here - and
 reports the stale name with `inSync: false`. An earlier revision of this record said the stale state was
 unreachable; a stand measured it on 2026-09-17.
 

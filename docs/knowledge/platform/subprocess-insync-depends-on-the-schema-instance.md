@@ -1,5 +1,5 @@
 ---
-description: Whether describe's inSync can show sub-process drift depends on which schema instance the manager hands back, and for an INTERPRETABLE process a freshly built one converges while for a compiled one it carries the compile-time parameter set; prime the instance before changing the callee
+description: Whether describe's inSync can show sub-process drift depends on which schema instance the manager hands back on BOTH sides; an interpretable process's freshly built instance converges, a compiled one's carries the compile-time parameter set, so prime the caller's instance before changing the callee
 applies-to:
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
   - clio/Command/ProcessModel/IProcessDescriber.cs
@@ -7,45 +7,42 @@ ticket: ENG-92707
 date: 2026-09-18
 ---
 
-**What is true** — `describe-business-process` returns whatever schema instance the manager hands back
-and never re-converges it. Whether `inSync` can therefore show that a called process changed depends on
-two things: whether an instance built BEFORE the change is still cached, and — if one has to be built —
-whether the process is interpretable.
+**What is true** — `describe` returns whatever instance the manager hands back and never re-converges it,
+so what `inSync` can show depends on which instance that is. `inSync` compares two sides, and the table is
+about the CALLER's; the callee is read the same lazy way, so a compiled callee that was not recompiled
+reports its own compile-time parameters and both sides agree on stale.
 
-| State when describe runs | What it returns | `inSync` after a callee change |
-|---|---|---|
-| an instance cached from before the change | that instance, unconverged | **`false`** — real evidence |
-| no instance, process is INTERPRETABLE | one built now, and the build CONVERGES | `true` — says nothing |
-| no instance, process is COMPILED | one built from the assembly, carrying the COMPILE-TIME parameter set | **`false`** — real evidence, no priming needed |
-| manager cannot produce an instance at all | the design instance, which converges | `true` — says nothing |
+| Caller's instance when describe runs | `inSync` after a callee change |
+|---|---|
+| cached from BEFORE the change | **`false`** — real evidence |
+| cached from AFTER it | as if freshly built — see the next two rows |
+| built now, process INTERPRETABLE | `true` — the build converges |
+| built now, process COMPILED and its type published in the workspace assembly | **`false`** — the instance carries the compile-time set, no priming needed, provided the callee's read also reflects the change |
+| manager cannot produce one — no item, no assembly, `MissingMethodException`, or an unpublished compiled type | design instance, which converges → `true` |
 
-**Why it is this way** — `BaseProcessSchemaManager.CreateSchemaInstance` routes to
-`FindInstanceFromMetaData` only when `UseInstanceFromMetaData`, which is
-`ForceUseInstanceFromMetaData || CanUseFlowEngine` (`ProcessSchemaManagerItem.cs:61-73`). That path
-converges: `GetItemFromMetaData` calls `SynchronizeParameters()` (`BaseProcessSchemaManager.cs:961,966`,
-and `:1090` for the design path — those three are its only call sites). Otherwise it falls to
+**Why it is this way** — `BaseProcessSchemaManager.CreateSchemaInstance` takes the converging
+`FindInstanceFromMetaData` route only when `UseInstanceFromMetaData`
+(`ForceUseInstanceFromMetaData || CanUseFlowEngine`, `ProcessSchemaManagerItem.cs:61-73`); otherwise
 `base.CreateSchemaInstance` → `assembly.CreateInstance` (`SchemaManager.cs:2547-2551`), which
-synchronizes nothing, so a compiled process's fresh instance is whatever was compiled.
+synchronizes nothing. Within `BaseProcessSchemaManager` the only `SynchronizeParameters()` calls are
+`:961`, `:966` (metadata) and `:1090` (design) — `EmbeddedProcessSchema.cs:190` is a fourth elsewhere and
+changes nothing here. `SchemaManagerItem.Instance` is a lazy build ANY reader triggers; saving evicts
+(`SchemaManager.cs:2311,2315,2317`). The last row returns null rather than throwing because
+`InitializeSafeInstance` writes through the `Instance` setter, which marks the item initialized even for
+null (`SchemaManager.cs:4023-4039`).
 
-`SchemaManagerItem.Instance` is a lazy double-checked build, so ANY reader creates one; saving the schema
-evicts it (`DropInstance` / `ClearRuntimeInstances`, `SchemaManager.cs:2305-2317`). The last row is not
-just file-design mode: `InitializeSafeSchema` (`SchemaManager.cs:4023-4039`) also yields null when the
-assembly is absent, on `MissingMethodException`, and when `assembly.CreateInstance` returns null — which
-is what a compiled process whose type was never published into the workspace assembly does.
+A compiled caller does NOT converge on build even though `ProcessSchemaSubProcess.SchemaUId`'s setter
+calls `SynchronizeParameters`: `ProcessSchema`'s constructor runs `InitializeBaseElements()` before the
+manager assigns `UId`, so `GetCanSynchronizeParameters()` is false.
 
-**What breaks if you ignore it** — the advice inverts. Told that running or re-reading the caller is what
-makes drift visible, an agent does it AFTER changing the callee; on an interpretable process that builds a
-fresh converged instance and reports `true`, destroying the evidence it was sent to collect. Told the
-opposite — that any read after the change hides it — a caller concludes `describe` is useless, when a
-primed instance is exactly what makes it work.
+**What breaks if you ignore it** — the advice inverts in both directions. "Run the caller to expose
+drift" builds a fresh converged instance on an interpretable process and destroys the evidence; "any read
+after the change hides it" makes `describe` look useless when a primed instance is exactly what works.
 
-**The recipe, which is correct for every row above and harmful in none:** save the caller, describe it
-once, change the callee, describe again. The middle read is what makes the last one meaningful.
+**The recipe, correct for every row and harmful in none:** save the caller, describe it once, change the
+callee, describe again.
 
-**Provenance, because this paragraph has a history.** It shipped wrong in three consecutive releases —
-"a COMPILED process reads the runtime instance", then "a runtime instance is produced by RUNNING the
-process", then "the fallback is a missing manager item". Every version was consistent with everything the
-stand could show; each error was visible only by reading platform source. That is why the mechanism lives
-here, with line numbers, instead of in `DescribeContracts`, which reads as settled. The stand control
-behind the second version (one caller differing only in having been run) established that a run is one
-way to prime the cache, not that it is the mechanism.
+**Provenance.** This shipped wrong three releases running — "a COMPILED process reads the runtime
+instance", then "produced by RUNNING the process", then "the fallback is a missing manager item". Each
+was consistent with everything a stand could show; all three were only falsifiable in platform source.
+That is why it lives here with line numbers rather than in `DescribeContracts`, which reads as settled.

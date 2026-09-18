@@ -10,27 +10,11 @@ date: 2026-09-18
 synchronization; a runtime-instance read does not. Which one you get decides what you see after a called
 process renames or drops a parameter, and the answers are opposite:
 
-* `describe-business-process` returns the manager's instance AS-IS
-  (`ProcessSchemaRepository.LoadForDescribe`), so while that instance predates the callee's change it
-  reports the STALE parameter name with `inSync: false`. With no instance cached one is BUILT, and the
-  build converges. The fallback to the design instance happens only when the manager has no ITEM at all
-  (file-design mode): `FindInstanceByUId` returns `default` solely on a missing item, so a process merely
-  unread since its last save does NOT fall back — it gets a fresh, converged instance.
-* **What decides it is WHEN the instance was built — cache timing, not running and not compiling.**
-  Describe reads whatever instance the schema manager already holds and does not re-converge it, so an
-  instance built BEFORE the callee changed reports the stale state, and one built AFTER it reports
-  `true` — because a freshly built instance CONVERGES as it is created
-  (`BaseProcessSchemaManager.CreateSchemaInstance` routes an interpretable process to
-  `FindInstanceFromMetaData`, whose `GetItemFromMetaData` calls `SynchronizeParameters()`).
-  `SchemaManagerItem.Instance` is a lazy double-checked build, so ANY reader creates one — an earlier
-  describe as much as a run — and saving the schema evicts it (`DropInstance` / `ClearRuntimeInstances`).
-  **Verified in platform source 2026-09-18.**
-* **Two earlier revisions of this record got the mechanism wrong, in opposite directions**, and the
-  second was worse than the first. It said "a runtime instance is produced by RUNNING the process" and
-  told the reader to do that. Running or re-reading the caller AFTER changing the callee builds a fresh,
-  converged instance and HIDES the drift — the advice actively destroyed the evidence it promised to
-  reveal. The control behind it showed only that a run is one way to PRIME the cache before the change,
-  which is not the same as being the mechanism. **Never compile to expose drift either**: on this stand a
+* `describe-business-process` can report the stale name and `inSync: false`, but only for some
+  processes and only at some times. WHEN is platform behaviour and it is NOT restated here: see
+  `subprocess-insync-depends-on-the-schema-instance.md`, which carries the table, the source lines and
+  the record of three wrong versions. This record is about the DESIGNER CARD, which is blind for a
+  different and simpler reason. **Never compile to expose drift either**: on this stand a
   compile is what left the environment not-ready past 600 seconds.
 * **`inSync` is ONE-DIRECTIONAL and a DROPPED parameter is invisible to it.** It asks whether every
   parameter the CALLEE declares is present on the element: callee ADDS one → `false`; callee REMOVES one →
@@ -88,7 +72,7 @@ migration step. It was never meant to be an inspection surface, and it is not on
 paragraph. `describe-business-process` reads whatever instance the schema manager already HOLDS
 (`ProcessSchemaRepository.LoadForDescribe`) and does not re-converge it — so while that instance predates
 the callee's change it reports the STALE parameter name and `inSync: false`, and both are real evidence.
-It falls back to the design instance when nothing is cached, and that one converges as it loads. The MODIFY path always takes the design
+The MODIFY path always takes the design
 instance (`ProcessModifyHandler` → `GetDesignInstance`), which is why its own drift report sees nothing.
 The designer's card and the re-synchronization's warning list therefore report health while describe does
 not - the card because the code is never on screen, the warning list because its load already converged. From
@@ -97,7 +81,7 @@ references left bound to a parameter UId the element no longer carries — which
 act on. A CODE rename produces no consequence to find: the mapping row keeps the UId, so every reference stays
 resolvable and only the saved NAME is stale. Two of the three surfaces are blind to it — the designer's
 card because it shows the caption, the re-synchronization because its load converged first — and
-`describe` against a caller whose cached instance predates the change is the one that is not. A person who suspects a problem, opens the
+`describe` is the one that is not - under the conditions the companion record states. A person who suspects a problem, opens the
 caller and sees a correct card closes it reassured while the process keeps delivering an empty parameter
 on every run, which is worse than a visibly stale name would have been; the read that would have told
 them is the one nobody thinks to run, which is why the rule below is procedural.

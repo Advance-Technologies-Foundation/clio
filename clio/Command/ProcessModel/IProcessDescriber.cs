@@ -1067,10 +1067,7 @@ public sealed class DescribedSubProcess {
 	/// <summary>
 	/// Whether the element still carries every parameter the called process declares. <c>null</c> means that
 	/// process could not be read, which is UNKNOWN and never "out of sync".
-	/// <para>Whether it can report DRIFT depends on whether the process HAS a runtime instance. With one, describe
-	/// reads it and the platform does not converge it, so a stale element stays stale. Without one, describe falls
-	/// back to the design instance, which converges AS IT LOADS — the read erases the drift it was called to show,
-	/// and <c>true</c> there says nothing.</para>
+
 	/// <para>THE RECIPE, which is what to do rather than why it works: save the caller, <b>describe it once</b>,
 	/// change the callee, then describe again and read this flag. The middle read is what makes the last one
 	/// meaningful, and between the callee change and the final read do not run, re-read or compile the caller.
