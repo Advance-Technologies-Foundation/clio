@@ -54,6 +54,14 @@ Name (pos. 0)	Environment(web application) name
 --IsNetCore             -i          Override runtime auto-detection:
                                     true for .NET Core / NET8,
                                     false for .NET Framework
+
+--auth-flow                         Authentication flow: client-credentials or authorization-code
+
+--clientId                          Public OAuth client id for authorization-code flow
+
+--redirect-port                     Loopback OAuth callback port
+
+--redirect-uri                      Registered OAuth redirect URI for paste-back mode
 ```
 
 ## Example

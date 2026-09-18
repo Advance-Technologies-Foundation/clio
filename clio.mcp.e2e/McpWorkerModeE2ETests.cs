@@ -156,11 +156,11 @@ public sealed class McpWorkerModeE2ETests {
 
 	// ═══════════════════════════════════════════════════════════════════════════════════════════════════
 	// IDENTITY-UNIFICATION FLIP POINT — switch this to BearerIdentityExpectation.AfterIdentityUnification
-	// once a bearer-only environment actually presents its token on the MCP per-call path. Keep
-	// MasterToday as the record of what shipped; nothing else in this fixture encodes the column.
+	// once a bearer-only environment actually presents its token on the MCP per-call path. Keep the
+	// earlier columns as the record of what shipped; nothing else in this fixture encodes the column.
 	// ═══════════════════════════════════════════════════════════════════════════════════════════════════
 	private static readonly BearerIdentityExpectation ExpectedBearerIdentity =
-		BearerIdentityExpectation.MasterToday;
+		BearerIdentityExpectation.AfterFactoryUnification;
 
 	[Category("McpE2E.NoEnvironment")]
 	[Test]
@@ -168,7 +168,7 @@ public sealed class McpWorkerModeE2ETests {
 	[AllureFeature(ListPagesToolName)]
 	[AllureTag(ListPagesToolName)]
 	[AllureName("A worker presents exactly the identity a host presents, and the bearer identity matches the expected column")]
-	[AllureDescription("Registers an environment carrying ONLY an access token — no login, no password — and drives the same list-pages call twice against the same deterministic Creatio stub: once through clio mcp-server --worker and once through an ordinary clio mcp-server. The stub records the Authorization header of every SelectQuery and the UserName of every forms-auth login, which is the only witness that distinguishes a delegated principal from a silent fallback: the fallback answers success:true just as well. Two things are asserted. The identities observed for the worker and for the host must be IDENTICAL — that is the Stage 3 guarantee, that a worker introduces no second construction site. And the absolute identity must match the expected column; on master today that column records the measured defect, a forms-auth login as Supervisor with no bearer header ever presented.")]
+	[AllureDescription("Registers an environment carrying ONLY an access token — no login, no password — and drives the same list-pages call twice against the same deterministic Creatio stub: once through clio mcp-server --worker and once through an ordinary clio mcp-server. The stub records the Authorization header of every SelectQuery and the UserName of every forms-auth login, which is the only witness that distinguishes a delegated principal from a silent fallback: the fallback answers success:true just as well. Two things are asserted. The identities observed for the worker and for the host must be IDENTICAL — that is the Stage 3 guarantee, that a worker introduces no second construction site. And the absolute identity must match the expected column; the column selected on this branch records the measured defect as it stands now — the Supervisor fallback is gone, but the bearer token is still not presented and a forms-auth login is attempted with no principal at all (clio issue #1624).")]
 	public async Task Worker_Should_PresentTheSameIdentityAsTheHost_AtTheCreatioEnd() {
 		// Arrange
 		string accessToken = $"wkr-bearer-{Guid.NewGuid():N}";
@@ -229,12 +229,11 @@ public sealed class McpWorkerModeE2ETests {
 				return Task.CompletedTask;
 			}
 
-			// MEASURED ON MASTER, 2026-08-17, and recorded rather than tolerated: an environment carrying ONLY
-			// an AccessToken performs a forms-auth login as Supervisor and answers success:true. The token is
-			// never presented. This is the same class of defect as ENG-93208 B1, it is NOT introduced by the
-			// worker boundary (Stage 3 adds no client-construction site), and no assertion on the call's
-			// outcome could have found it. Unifying the inline construction site onto ApplicationClientFactory
-			// is separate work; when it lands, flip the constant above and this arm disappears.
+			// MEASURED, and recorded rather than tolerated. The token is not presented in either of the
+			// columns below; they differ in what happens INSTEAD. This is the same class of defect as
+			// ENG-93208 B1, it is NOT introduced by the worker boundary (Stage 3 adds no client-construction
+			// site), and no assertion on the call's outcome could have found it: the call answers
+			// success:true in every column.
 			workerIdentity.AuthorizationHeaders.Should().NotContain(header =>
 					header.Contains(accessToken, StringComparison.Ordinal),
 				because: $"the '{ExpectedBearerIdentity.Name}' column records that the access token is never "
@@ -475,11 +474,16 @@ public sealed class McpWorkerModeE2ETests {
 	}
 
 	/// <summary>
-	/// The two columns of the bearer-identity observation: what master presents today, and the acceptance shape.
+	/// The three columns of the bearer-identity observation, in the order the code moved through them:
+	/// the Supervisor fallback master shipped, the state this branch produces, and the acceptance shape.
 	/// </summary>
 	/// <param name="Name">Column name, quoted in every assertion message.</param>
 	/// <param name="ExpectBearerHeader">Whether the access token must reach Creatio as a bearer header.</param>
-	/// <param name="FallbackPrincipal">The principal a forms-auth fallback presents, when one happens.</param>
+	/// <param name="FallbackPrincipal">
+	/// The principal a forms-auth fallback presents. <see cref="AnonymousPrincipal"/> means a login IS
+	/// attempted but carries no <c>UserName</c> at all, which is a different observation from a login as a
+	/// named user; <see cref="string.Empty"/> means no login is expected to happen.
+	/// </param>
 	private sealed record BearerIdentityExpectation(
 		string Name,
 		bool ExpectBearerHeader,
@@ -491,6 +495,23 @@ public sealed class McpWorkerModeE2ETests {
 		/// </summary>
 		public static BearerIdentityExpectation MasterToday { get; } =
 			new("master today (the identity defect)", ExpectBearerHeader: false, FallbackPrincipal: "Supervisor");
+
+		/// <summary>
+		/// The value <c>CreatioWedgeStubServer</c> records when a forms-auth login arrives with no
+		/// <c>UserName</c> field. Naming it here keeps the column below honest: the login happened.
+		/// </summary>
+		public const string AnonymousPrincipal = "<none>";
+
+		/// <summary>
+		/// Measured on this branch (2026-09-18), once both construction sites resolve through
+		/// <c>ApplicationClientFactory</c>: the <c>Supervisor</c> fallback is gone, but the access token is
+		/// still not presented. A forms-auth login is attempted carrying NO principal at all, the session it
+		/// returns carries the SelectQuery, and the call answers <c>success:true</c>. Half of the unification
+		/// has landed; the remaining half is tracked in clio issue #1624.
+		/// </summary>
+		public static BearerIdentityExpectation AfterFactoryUnification { get; } =
+			new("after factory unification (anonymous forms login)", ExpectBearerHeader: false,
+				FallbackPrincipal: AnonymousPrincipal);
 
 		/// <summary>
 		/// After the client-construction sites are unified: the token is presented and no login happens at all.

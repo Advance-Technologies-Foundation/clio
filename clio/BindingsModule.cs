@@ -431,6 +431,8 @@ public class BindingsModule {
 				sp.GetRequiredService<Clio.Common.IFileSystem>()));
 		services.AddTransient<Clio.Common.BrowserSession.IChromiumLocator, Clio.Common.BrowserSession.ChromiumLocator>();
 		services.AddTransient<Clio.Common.BrowserSession.IAuthenticatedBrowserLauncher, Clio.Common.BrowserSession.AuthenticatedBrowserLauncher>();
+		services.AddSingleton<IOAuthTokenStore, OAuthTokenStore>();
+		services.AddSingleton<IOAuthAuthorizationCodeService, OAuthAuthorizationCodeService>();
 		IDeserializer deserializer = new DeserializerBuilder()
 			.WithNamingConvention(UnderscoredNamingConvention.Instance)
 			.IgnoreUnmatchedProperties()
@@ -1303,14 +1305,15 @@ public class BindingsModule {
 		// safe: ILogger and IReauthExecutor are stateless singletons, and the two file systems and the
 		// working-directories provider are transients that implement no IDisposable.
 		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(sp => {
-			IReauthExecutor reauthExecutor = sp.GetRequiredService<IReauthExecutor>();
 			IWorkingDirectoriesProvider workingDirectoriesProvider =
 				sp.GetRequiredService<IWorkingDirectoriesProvider>();
 			Clio.Common.IFileSystem clioFileSystem = sp.GetRequiredService<Clio.Common.IFileSystem>();
 			IFileSystem fileSystem = sp.GetRequiredService<IFileSystem>();
 			ILogger logger = sp.GetRequiredService<ILogger>();
+			IOAuthAuthorizationCodeService oauthService = sp.GetRequiredService<IOAuthAuthorizationCodeService>();
+			IApplicationClientFactory applicationClientFactory = sp.GetRequiredService<IApplicationClientFactory>();
 			return envSettings => BuildEnvironmentScopedSysSettingsManager(
-				envSettings, reauthExecutor, workingDirectoriesProvider, clioFileSystem, fileSystem, logger);
+				envSettings, workingDirectoriesProvider, clioFileSystem, fileSystem, logger, oauthService, applicationClientFactory);
 		});
 
 		// The container-bound ICompilationHistoryPoller closes over the PROCESS-ACTIVE environment (see the
@@ -1319,8 +1322,10 @@ public class BindingsModule {
 		// its own, or it reads compilation history from the wrong stand. Since the completion rule decides
 		// the exit code from those rows, reading the wrong stand's history does not degrade the output: it
 		// reports a successful build as a transport failure.
-		services.AddTransient<Func<EnvironmentSettings, ICompilationHistoryPoller>>(_ =>
-			BuildEnvironmentScopedCompilationHistoryPoller);
+		services.AddTransient<Func<EnvironmentSettings, ICompilationHistoryPoller>>(sp => {
+			IOAuthAuthorizationCodeService oauthService = sp.GetRequiredService<IOAuthAuthorizationCodeService>();
+			return env => BuildEnvironmentScopedCompilationHistoryPoller(env, oauthService);
+		});
 
 		RegisterFluentValidators(services);
 		return settingsRepository;
@@ -1386,7 +1391,6 @@ public class BindingsModule {
 	/// unmade (issue #1421).
 	/// </remarks>
 	/// <param name="envSettings">The environment the manager reads settings from.</param>
-	/// <param name="reauthExecutor">Re-authentication executor; used only on the token path.</param>
 	/// <param name="workingDirectoriesProvider">Working-directory provider.</param>
 	/// <param name="clioFileSystem">clio's own file-system abstraction.</param>
 	/// <param name="fileSystem">The <c>System.IO.Abstractions</c> file system.</param>
@@ -1394,23 +1398,21 @@ public class BindingsModule {
 	/// <returns>A manager bound to <paramref name="envSettings"/>.</returns>
 	private static ISysSettingsManager BuildEnvironmentScopedSysSettingsManager(
 		EnvironmentSettings envSettings,
-		IReauthExecutor reauthExecutor,
 		IWorkingDirectoriesProvider workingDirectoriesProvider,
 		Clio.Common.IFileSystem clioFileSystem,
 		IFileSystem fileSystem,
-		ILogger logger) {
-		Lazy<CreatioClient> lazyCreatioClient = new(() => BuildCreatioClient(envSettings));
+		ILogger logger,
+		IOAuthAuthorizationCodeService oauthService,
+		IApplicationClientFactory applicationClientFactory) {
 		// Same token rule as RegisterActiveEnvironmentServices: with an access token OR an OAuth client
 		// the adapter must never fall back to CreatioClient.Login() when it receives a login page -
 		// that crosses the bearer credential boundary (multi-tenant safety, ENG-93208 B1), and an OAuth
 		// profile has no username/password to log in with at all.
-		IApplicationClient applicationClient = UsesTokenAuthentication(envSettings)
-			? new CreatioClientAdapter(lazyCreatioClient, reauthExecutor)
-			: new CreatioClientAdapter(lazyCreatioClient);
+		IApplicationClient applicationClient = applicationClientFactory.CreateEnvironmentClient(envSettings);
 		return new SysSettingsManager(
 			applicationClient,
 			new ServiceUrlBuilder(envSettings),
-			new ClassifyingDataProvider(BuildRemoteDataProvider(envSettings)),
+			new ClassifyingDataProvider(BuildRemoteDataProvider(envSettings, oauthService)),
 			workingDirectoriesProvider,
 			clioFileSystem,
 			fileSystem,
@@ -1424,28 +1426,19 @@ public class BindingsModule {
 	/// <param name="envSettings">The environment whose <c>CompilationHistory</c> is to be read.</param>
 	/// <returns>A poller reading that environment.</returns>
 	private static ICompilationHistoryPoller BuildEnvironmentScopedCompilationHistoryPoller(
-		EnvironmentSettings envSettings) =>
-		new CompilationHistoryPoller(BuildRemoteDataProvider(envSettings), ConsoleLogger.Instance,
+		EnvironmentSettings envSettings, IOAuthAuthorizationCodeService oauthService) =>
+		new CompilationHistoryPoller(BuildRemoteDataProvider(envSettings, oauthService), ConsoleLogger.Instance,
 			TimeProvider.System, new CancellableDelay());
-
-	/// <summary>
-	/// True when the environment authenticates with a token rather than with a login and password: an
-	/// <c>AccessToken</c>, or an OAuth client-credentials pair.
-	/// </summary>
-	/// <remarks>
-	/// Neither shape carries a username/password, so neither may reach the adapter's forms-login
-	/// reauthentication path: an OAuth client that receives a login page would otherwise attempt
-	/// <c>CreatioClient.Login()</c> with no credentials to log in with and turn a valid environment into
-	/// an <c>UnauthorizedAccessException</c>. The bearer rule (multi-tenant safety, ENG-93208 B1) applies
-	/// to both bearer shapes for the same reason.
-	/// </remarks>
-	private static bool UsesTokenAuthentication(EnvironmentSettings settings) =>
-		!string.IsNullOrEmpty(settings.AccessToken) || !string.IsNullOrEmpty(settings.ClientId);
 
 	// Builds an ATF RemoteDataProvider for the environment. Bearer-first: an AccessToken is
 	// consumed via the dedicated bearer ctor and must never reach the login/password path
 	// (multi-tenant safety, ENG-93208 B1). Login/password are passed as-is (no Supervisor default).
-	private static RemoteDataProvider BuildRemoteDataProvider(EnvironmentSettings settings) {
+	private static RemoteDataProvider BuildRemoteDataProvider(EnvironmentSettings settings, IOAuthAuthorizationCodeService oauthService = null) {
+		if (settings.AuthFlow == OAuthFlow.AuthorizationCode) {
+			OAuthTokenSet token = oauthService?.ResolveAsync(settings).GetAwaiter().GetResult()
+				?? throw new InvalidOperationException("Environment uses SSO sign-in and has no valid session. Run: clio login.");
+			return new RemoteDataProvider(settings.Uri, token.AccessToken, settings.IsNetCore);
+		}
 		if (!string.IsNullOrEmpty(settings.AccessToken)) {
 			return new RemoteDataProvider(settings.Uri, settings.AccessToken, settings.IsNetCore);
 		}
@@ -1459,7 +1452,12 @@ public class BindingsModule {
 	// Builds a CreatioClient for the environment. Bearer-first: an AccessToken is consumed via the
 	// bearer ctor and must never reach the "Supervisor" fallback (multi-tenant safety, ENG-93208 B1).
 	// The Supervisor/localhost default stays reachable ONLY for the no-credential bootstrap case.
-	private static CreatioClient BuildCreatioClient(EnvironmentSettings settings) {
+	private static CreatioClient BuildCreatioClient(EnvironmentSettings settings, IOAuthAuthorizationCodeService oauthService = null) {
+		if (settings.AuthFlow == OAuthFlow.AuthorizationCode) {
+			OAuthTokenSet token = oauthService?.ResolveAsync(settings).GetAwaiter().GetResult()
+				?? throw new InvalidOperationException("Environment uses SSO sign-in and has no valid session. Run: clio login.");
+			return new CreatioClient(settings.Uri ?? DefaultLocalhostUri, token.AccessToken, settings.IsNetCore);
+		}
 		if (!string.IsNullOrEmpty(settings.AccessToken)) {
 			return new CreatioClient(settings.Uri ?? DefaultLocalhostUri, settings.AccessToken, settings.IsNetCore);
 		}
@@ -1478,18 +1476,22 @@ public class BindingsModule {
 		// false reaches the caller as an empty collection and the command reports success (issue #1222).
 		// The SAME wrapping is applied in BuildEnvironmentScopedSysSettingsManager - that per-environment
 		// path is a second construction site, and a provider left raw there is unprotected.
-		services.AddTransient<IDataProvider>(_ =>
-			new ClassifyingDataProvider(new LazyDataProvider(() => BuildRemoteDataProvider(activeSettings))));
+		services.AddTransient<IDataProvider>(sp => {
+			IOAuthAuthorizationCodeService oauthService = sp.GetRequiredService<IOAuthAuthorizationCodeService>();
+			return new ClassifyingDataProvider(new LazyDataProvider(() => BuildRemoteDataProvider(activeSettings, oauthService)));
+		});
 		// Bearer-first; AccessToken must never reach the "Supervisor" fallback below
 		// (multi-tenant safety, ENG-93208 B1).
 		// Keep the directly resolvable compatibility service separate from the adapter's transport.
 		// Microsoft DI owns/disposes factory-returned IDisposable services, so sharing that instance
 		// would bypass the adapter's SignalR listener guard during provider teardown. Both remain lazy,
 		// which is required because constructing an OAuth client fetches its token over the network.
-		Lazy<CreatioClient> compatibilityClient = new(() => BuildCreatioClient(activeSettings));
-		Lazy<CreatioClient> adapterClient = new(() => BuildCreatioClient(activeSettings));
-		services.AddSingleton<CreatioClient>(_ => compatibilityClient.Value);
+		services.AddSingleton<CreatioClient>(sp => {
+			IOAuthAuthorizationCodeService oauthService = sp.GetRequiredService<IOAuthAuthorizationCodeService>();
+			return BuildCreatioClient(activeSettings, oauthService);
+		});
 		services.AddSingleton<IApplicationClient>(sp => {
+			IApplicationClientFactory applicationClientFactory = sp.GetRequiredService<IApplicationClientFactory>();
 			// Bearer path must never re-login: wire NoReauthExecutor (the DI'd IReauthExecutor)
 			// so an ephemeral bearer client cannot fall back to a login/password re-auth
 			// (multi-tenant safety, ENG-93208 B1). Non-bearer keeps the adapter's default
@@ -1498,9 +1500,7 @@ public class BindingsModule {
 			// teardown guard when the child provider is disposed.
 			// An OAuth client (ClientId) is a token shape too and has no username/password, so it takes
 			// the same no-login executor; only a login/password profile keeps the login-capable one.
-			return UsesTokenAuthentication(activeSettings)
-				? new CreatioClientAdapter(adapterClient, sp.GetRequiredService<IReauthExecutor>())
-				: new CreatioClientAdapter(adapterClient, ownsClient: true);
+			return applicationClientFactory.CreateEnvironmentClient(activeSettings);
 		});
 		services.AddTransient<SysSettingsManager>();
 	}

@@ -11,13 +11,15 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 	#region Fields: Private
 
 	private readonly IReauthExecutor _noReauthExecutor;
+	private readonly IOAuthAuthorizationCodeService _oauthService;
 
 	#endregion
 
 	#region Constructors: Public
 
-	public ApplicationClientFactory(IReauthExecutor noReauthExecutor) {
+	public ApplicationClientFactory(IReauthExecutor noReauthExecutor, IOAuthAuthorizationCodeService oauthService = null) {
 		_noReauthExecutor = noReauthExecutor ?? throw new ArgumentNullException(nameof(noReauthExecutor));
+		_oauthService = oauthService;
 	}
 
 	#endregion
@@ -25,6 +27,9 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 	#region Methods: Public
 
 	public IApplicationClient CreateClient(EnvironmentSettings settings) {
+		if (settings.AuthFlow == OAuthFlow.AuthorizationCode) {
+			return CreateBearerEnvironmentClient(settings, ResolveOAuthToken(settings).AccessToken);
+		}
 		// Credential-passthrough bearer branch (FR-01/FR-18): an ephemeral EnvironmentSettings
 		// carrying an opaque access token resolves to a pre-authenticated client that NEVER
 		// re-logs-in (NoReauthExecutor). The login/password + OAuth branches below keep the
@@ -47,11 +52,13 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 				settings.IsNetCore);
 		}
 
-		return new CreatioClientAdapter(settings.Uri, settings.ClientId,
-			settings.ClientSecret, settings.AuthAppUri, settings.IsNetCore);
+		return CreateOAuthClientCredentialsAdapter(settings, serviceUrlBuilder: null);
 	}
 
 	public IApplicationClient CreateEnvironmentClient(EnvironmentSettings settings) {
+		if (settings.AuthFlow == OAuthFlow.AuthorizationCode) {
+			return CreateBearerEnvironmentClient(settings, ResolveOAuthToken(settings).AccessToken);
+		}
 		// Credential-passthrough bearer branch (FR-01/FR-18): see CreateClient. The service-url
 		// builder is still wired so environment-relative routes resolve; only the reauth path
 		// differs (NoReauthExecutor instead of the default closure-based ReauthExecutor).
@@ -75,8 +82,7 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 				settings.IsNetCore, serviceUrlBuilder);
 		}
 
-		return new CreatioClientAdapter(settings.Uri, settings.ClientId,
-			settings.ClientSecret, settings.AuthAppUri, settings.IsNetCore, serviceUrlBuilder);
+		return CreateOAuthClientCredentialsAdapter(settings, serviceUrlBuilder);
 	}
 
 	/// <inheritdoc />
@@ -110,6 +116,26 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 	#endregion
 
 	#region Methods: Private
+
+	// An OAuth client-credentials profile (ClientId/ClientSecret) is a token shape: it carries no
+	// username/password, so a login-page response must never send it down CreatioClient.Login().
+	// This is the rule BindingsModule.UsesTokenAuthentication used to apply at each inline wiring
+	// site; now that both sites resolve through this factory, the factory owns it. Wiring the
+	// adapter's default closure-based executor here would let an OAuth profile regain the
+	// login-capable path (multi-tenant safety, ENG-93208 B1).
+	private IApplicationClient CreateOAuthClientCredentialsAdapter(EnvironmentSettings settings,
+		IServiceUrlBuilder serviceUrlBuilder) {
+		Lazy<CreatioClient> client = new(() => CreatioClient.CreateOAuth20Client(settings.Uri,
+			settings.AuthAppUri, settings.ClientId, settings.ClientSecret, settings.IsNetCore));
+		return new CreatioClientAdapter(client, serviceUrlBuilder, _noReauthExecutor, ownsClient: true);
+	}
+
+	private OAuthTokenSet ResolveOAuthToken(EnvironmentSettings settings) {
+		if (_oauthService is null) {
+			throw new InvalidOperationException("OAuth authorization-code service is not registered.");
+		}
+		return _oauthService.ResolveAsync(settings).GetAwaiter().GetResult();
+	}
 
 	// Validates the bearer-passthrough settings. Errors are caller-actionable and NEVER echo the
 	// secret token value (FR-12): a blank url is named explicitly, and an unsupported token type
