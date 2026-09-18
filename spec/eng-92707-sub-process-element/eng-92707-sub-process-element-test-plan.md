@@ -163,9 +163,9 @@ place the state it needs exists.
 | Step | |
 |---|---|
 | 1 | Build a caller with a sub-process element on a callee declaring parameters `Alpha` and `Beta`, and map a value onto each. |
-| 2 | **RUN the caller once.** Measured: that is what produces a runtime instance. Saving does not, and compiling does not. |
+| 2 | **Describe the caller once, to PRIME the manager's instance.** It must happen BEFORE step 3. What primes it does not matter - any read does - but the instance has to exist while the callee is still correct, because a read taken with nothing cached BUILDS a converged instance and reports no drift. |
 | 3 | Remove `Beta` from the callee and save the callee. |
-| 4 | `describe-business-process` the CALLER. |
+| 4 | `describe-business-process` the CALLER. **Do not re-run or re-read anything between steps 3 and 4** - a describe "to make sure an instance exists" is exactly what destroys the evidence and records a false PASS. |
 
 Expected: the element still carries `Beta`, and the read does NOT converge it.
 
@@ -179,7 +179,8 @@ the way DQ-15 describes — `MirrorsCallee` is satisfied by the refreshed elemen
 `IsUnchanged` counts the `Removed` entry. A FAIL here is `Beta` being ABSENT from the element on step 4, which would mean the read converged after
 all and DQ-27's correction is itself wrong.
 
-**RESOLVED 2026-09-17 by the stand run: it is the RUN.** The dispute and its reasoning are kept below
+**RESOLVED, then corrected 2026-09-18: it is neither the run nor the compile - it is whether an instance
+built BEFORE the change is still cached.** The dispute and its reasoning are kept below
 because the reasoning was right and is worth reusing.
 
 **Step 2 was disputed, 2026-09-17, and this row was the only INSTRUCTION affected — everything else that

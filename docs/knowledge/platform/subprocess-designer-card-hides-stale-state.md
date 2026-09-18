@@ -1,19 +1,21 @@
 ---
-description: A sub-process element stale after a callee parameter CODE rename is visible through describe ONLY once the caller has been RUN (a runtime instance is not produced by saving or compiling), invisible to the modify path, invisible to inSync when the callee DROPPED a parameter, and unshowable by the designer card, which never displays a code
+description: A sub-process element stale after a callee parameter CODE rename is visible through describe ONLY while the manager still holds an instance built BEFORE the change - prime it by describing once first, because any later read builds a converged one - invisible to the modify path, invisible to inSync when the callee DROPPED a parameter, and unshowable by the designer card, which never displays a code
 applies-to:
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
 ticket: ENG-92707
-date: 2026-09-17
+date: 2026-09-18
 ---
 
 **What is true** - a DESIGN-TIME read of a process schema runs the platform's own parameter
 synchronization; a runtime-instance read does not. Which one you get decides what you see after a called
 process renames or drops a parameter, and the answers are opposite:
 
-* `describe-business-process` prefers the RUNTIME instance when the process HAS one
-  (`ProcessSchemaRepository.LoadForDescribe`), and then reports the STALE parameter name with
-  `inSync: false`. Without one it falls back to the design instance, which converges AS IT LOADS — the
-  read erases the drift it was called to show.
+* `describe-business-process` returns the manager's instance AS-IS
+  (`ProcessSchemaRepository.LoadForDescribe`), so while that instance predates the callee's change it
+  reports the STALE parameter name with `inSync: false`. With no instance cached one is BUILT, and the
+  build converges. The fallback to the design instance happens only when the manager has no ITEM at all
+  (file-design mode): `FindInstanceByUId` returns `default` solely on a missing item, so a process merely
+  unread since its last save does NOT fall back — it gets a fresh, converged instance.
 * **What decides it is WHEN the instance was built — cache timing, not running and not compiling.**
   Describe reads whatever instance the schema manager already holds and does not re-converge it, so an
   instance built BEFORE the callee changed reports the stale state, and one built AFTER it reports
@@ -49,15 +51,12 @@ process renames or drops a parameter, and the answers are opposite:
 
   > **M10** read at CrtProcessBuilder 1.6.3.10, the 2026-09-17 designer pass.
   > **M07** read at 1.6.3.7, the earlier stand pass - a different session and a different build.
+  > **M12** read at 1.6.3.12, the V1 and card pass.
   > **I** inferred from the binding mechanism. Not observed.
 
   | Renamed on the callee | `inSync` | Caller's STORED mapping | The card | Runtime |
   |---|---|---|---|---|
   | caption only | `true` **M12** | all printed fields identical to baseline **M10** | NEW caption, value KEPT **M12** | unaffected **I** |
-
-  **M12** read at 1.6.3.12 — added to the legend after being used in two cells without it, in the very
-  table built to make provenance explicit and one paragraph below the sentence warning that an unqualified
-  marker "is precisely how the old reading gets cited as the current one".
   | code only | `false` **M07** | *not read* - intact **I** | old caption, mapping shown, looks healthy **M10** | **broken M07** (3x) |
   | code AND caption | `false` **M10** | byte-identical to baseline **M10** | new caption, mapping row EMPTY **M10** | **broken I** |
 

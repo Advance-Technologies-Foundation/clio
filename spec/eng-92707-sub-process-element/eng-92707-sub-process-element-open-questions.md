@@ -300,7 +300,11 @@ The critic's original list, condensed. Five are folded into plan step S1; the re
 
 ### B.5 — Process debt, unchanged
 
-The designer serialization capture (AC4) has **not** been taken, and there is no PRD, ADR, story or
+The designer serialization capture (AC4) HAS been taken - corpus-mined, plus the live single-example diff
+on 2026-09-17 at 1.6.3.12 (DQ-33), which found five keys matching and two differing. What is open is the
+owner's call on whether that satisfies the criterion. The paragraph's original text follows.
+
+The designer serialization capture (AC4) had **not** been taken, and there is no PRD, ADR, story or
 `spec/sprint-status.yaml` row. (`docs/knowledge/` records WERE written — **eight** carry
 `ticket: ENG-92707`, counted 2026-09-18. An earlier correction to this sentence said "four of them,
 listed in the README" and was wrong on both halves: the README lists none.)

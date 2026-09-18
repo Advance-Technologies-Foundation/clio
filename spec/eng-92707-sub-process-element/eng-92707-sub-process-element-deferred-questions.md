@@ -632,7 +632,7 @@ WAS applied — the 1.6.3.14 archive carries the corrected `DescribeContracts` d
 rebundled for a substantive reason and the word rode along exactly as this entry said it should. The
 designer table below is also the REFUTED version: its caption-only cell reads "not read" and the
 pairs-by-caption hypothesis it presents as fitting all three rows is dead. Read DQ-31's table instead;
-this one is kept only as the record of what was believed.
+this one is kept only as the record of what was believed, and it sits ABOVE this note rather than below.
 
 **Cleanup is pending a decision**: entity `UsrTc92707Order` (package `Custom`, 7 records) and eight
 `UsrTc92707*` processes. Three older `UsrTc92707*` schemas predate the pass and were not touched.
@@ -864,6 +864,10 @@ replaces it** — three readings, no model. Do not guess a fourth time.
 as `Guid.Empty`, omitted by `JsonDataWriter` at default, read only through a getter short-circuited on an
 empty `BL9` — inert, 387/387 product elements carry it and clio writes it never. Do not raise it.
 
+**V1 (AC-4) - SUPERSEDED 2026-09-18: the owner built the manual side, the diff was taken, and DQ-33
+carries it. The blocker described below is gone; the reason for leaving it blank rather than
+approximating it is the part worth keeping.**
+
 **V1 (AC-4) is NOT closed and was deliberately left blank rather than approximated.** The designer's
 palette item is a native HTML5 draggable inside a bpmn-js popup and needs trusted drag events
 (`CDP Input.dispatchDragEvent`), which the harness cannot send. Partial parity was established another
@@ -977,7 +981,13 @@ is the documented workaround, and a green result there says nothing about the bu
 
 ## DQ-33 — AC-4: parity holds on every key but one, and that one is the platform's own doing
 
-**Build and date: the diff was taken 2026-09-18 against CrtProcessBuilder 1.6.3.13.** Stamped after
+**Build and date: the diff was taken 2026-09-17 against CrtProcessBuilder 1.6.3.12**, the build the stand
+carried and the one the pass marked every reading with. A first attempt at this stamp said "2026-09-18,
+1.6.3.13" — both invented rather than read from the record, in the entry that decides an acceptance
+criterion, and contradicted by this file's own commit history. Provenance that is internally inconsistent
+is worse than none.
+
+**Superseded stamp, kept as the record:** Stamped after
 review noted this was the only measured entry in the set without one — and the one that decides an
 acceptance criterion. 1.6.3.14 then landed the create/configure split, which reorders when an element's
 configuration is bound; it cannot move any key compared here, because the example binds a CONSTANT and
