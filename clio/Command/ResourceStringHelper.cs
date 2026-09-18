@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
 
 internal static class ResourceStringHelper {
+	private const string ValuesPropertyName = "values";
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 	private static readonly Regex MacroResourceStringPattern = new(
 		@"#ResourceString\(([^)]+)\)#",
@@ -98,7 +99,7 @@ internal static class ResourceStringHelper {
 		return new JObject {
 			["uId"] = Guid.NewGuid().ToString(),
 			["name"] = key,
-			["values"] = new JArray {
+			[ValuesPropertyName] = new JArray {
 				new JObject {
 					["cultureName"] = "en-US",
 					["value"] = value
@@ -143,10 +144,10 @@ internal static class ResourceStringHelper {
 			}
 			var copy = (JObject)entry.DeepClone();
 			if (resources != null && resources.TryGetValue(name, out string value)) {
-				if (copy["values"] is not JArray) {
-					copy["values"] = new JArray();
+				if (copy[ValuesPropertyName] is not JArray) {
+					copy[ValuesPropertyName] = new JArray();
 				}
-				var values = (JArray)copy["values"];
+				var values = (JArray)copy[ValuesPropertyName];
 				JObject cultureValue = values.Children<JObject>().FirstOrDefault(item =>
 					string.Equals(item["cultureName"]?.ToString(), "en-US", StringComparison.OrdinalIgnoreCase));
 				if (cultureValue == null) {
