@@ -1440,12 +1440,23 @@ public class BindingsModule {
 	/// to both bearer shapes for the same reason.
 	/// </remarks>
 	private static bool UsesTokenAuthentication(EnvironmentSettings settings) =>
-		!string.IsNullOrEmpty(settings.AccessToken) || !string.IsNullOrEmpty(settings.ClientId);
+		!string.IsNullOrEmpty(settings.AccessToken) || !string.IsNullOrEmpty(settings.ClientId)
+		|| !string.IsNullOrEmpty(settings.ExternalAccessToken);
 
 	// Builds an ATF RemoteDataProvider for the environment. Bearer-first: an AccessToken is
 	// consumed via the dedicated bearer ctor and must never reach the login/password path
 	// (multi-tenant safety, ENG-93208 B1). Login/password are passed as-is (no Supervisor default).
 	private static RemoteDataProvider BuildRemoteDataProvider(EnvironmentSettings settings) {
+		// ATF.Repository has no session-cookie constructor, so an external-access session cannot back a
+		// data provider. Fail closed and name the reason: falling through would build a provider from the
+		// login/password branch below - with no credentials present that is the "Supervisor" default, a
+		// silent connection as the WRONG identity.
+		if (!string.IsNullOrEmpty(settings.ExternalAccessToken)) {
+			throw new NotSupportedException(
+				"This command reads through ATF.Repository, which cannot run on an external-access session: "
+				+ "it accepts a login and password, an OAuth client, or an API token, but not session cookies. "
+				+ "Use a command that goes through the Creatio services, or connect with credentials.");
+		}
 		if (!string.IsNullOrEmpty(settings.AccessToken)) {
 			return new RemoteDataProvider(settings.Uri, settings.AccessToken, settings.IsNetCore);
 		}
@@ -1460,6 +1471,18 @@ public class BindingsModule {
 	// bearer ctor and must never reach the "Supervisor" fallback (multi-tenant safety, ENG-93208 B1).
 	// The Supervisor/localhost default stays reachable ONLY for the no-credential bootstrap case.
 	private static CreatioClient BuildCreatioClient(EnvironmentSettings settings) {
+		// External access first: the session is established by exchanging the token, and the resulting
+		// cookies are imported into a client with NO credentials, so creatio.client treats it as already
+		// authenticated and never attempts a login. Falling through to the branches below would connect
+		// as "Supervisor" instead - the silent wrong-identity failure this ordering exists to prevent.
+		if (!string.IsNullOrEmpty(settings.ExternalAccessToken)) {
+			CreatioClient externalAccessClient = new(settings.Uri, userName: null, userPassword: null,
+				useUntrustedSsl: false, settings.IsNetCore);
+			externalAccessClient.ImportSessionCookies(
+				Clio.Common.ExternalAccess.ExternalAccessSessionProvider.CreateDefault()
+					.GetSession(settings, settings.ExternalAccessToken));
+			return externalAccessClient;
+		}
 		if (!string.IsNullOrEmpty(settings.AccessToken)) {
 			return new CreatioClient(settings.Uri ?? DefaultLocalhostUri, settings.AccessToken, settings.IsNetCore);
 		}
