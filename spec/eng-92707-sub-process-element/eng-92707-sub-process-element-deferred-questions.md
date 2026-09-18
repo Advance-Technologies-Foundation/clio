@@ -1069,3 +1069,56 @@ serialization matches a designer-built capture" is the owner's call — the run 
 **Not measured, and worth one check if anyone revisits:** which of the two the RUNTIME reads — the
 mapping's `Source` or the parameter's value. Nothing here depends on the answer, but a future change to
 this write does.
+
+## DQ-34 — the post-condition cannot see a half-synchronization, and the strict version would be wrong
+
+An automated review proposed making `EnsureSynchronizationLanded` a strict post-condition, on the correct
+observation that `MirrorsCallee` is one-directional: it asks whether every parameter the CALLEE declares
+is present, so it catches "nothing arrived" and cannot catch "the old ones were not removed". A
+half-synchronization leaving stale parameters therefore passes, `Diff` reports no removal, and the stale
+parameters and their mapping rows are saved.
+
+**The observation is right and the fix is wrong, which is why this is an entry rather than a commit.**
+The platform's own `GetRemovedSchemaParameters` KEEPS a parameter that has no mapping row and whose
+`CreatedInSchemaUId` is not the callee. So an element carrying a parameter outside the callee's set is a
+LEGITIMATE state, and an equality post-condition would throw on a healthy element. Distinguishing a
+half-synchronized element from a legitimately-extended one means replicating that platform rule in this
+package — a copy of someone else's branch logic, which is the kind of thing that goes stale in silence
+and then refuses correct work.
+
+**What shipped instead:** the asymmetry is stated where the predicate is used, so the next reader meets
+it as a known limit rather than discovering it. The `SchemaUId` half of the suggestion is in as a
+defensive assertion, documented as unreachable — the platform setter assigns unconditionally — because a
+test asserting it would pass with the branch deleted.
+
+**The trigger, and it is a condition rather than a date.** Fix it when either happens:
+
+1. a half-synchronized element is actually OBSERVED — the discriminator is an element carrying a
+   parameter the callee does not declare AND which has a mapping row, since the legitimate keep has none;
+   or
+2. the platform exposes the removal decision (anything answering "should this parameter have gone") so
+   the post-condition can ask rather than re-derive.
+
+**Not measured, and it bounds the whole entry:** nobody has seen a half-synchronization. The failure is
+reachable by reading the code, not by any run recorded on this ticket.
+
+## DQ-35 — the retarget guard skipped the element itself, and the mapping shape it hid is accepted
+
+`ProcessElementDependencyScanner` skipped `flowElement.UId == element.UId` when walking for references.
+The skip carried no rationale — the comment above it is about a different narrowing — and nothing pinned
+it: removing it left all 1 956 tests green.
+
+It hid a real shape. `ProcessMappingService` accepts a mapping whose TARGET is one of a sub-process
+element's `In` parameters and whose SOURCE is another parameter on the SAME element: `ResolveSourceElementParameter`
+has no same-element guard, and `EnsureSubProcessTargetCanHoldAValue` only refuses a target whose direction
+cannot hold a value. A retarget replaces both parameters, so the survivor references a UId that is gone —
+and neither the retarget guard nor the dangling report could see it, because the owner was skipped.
+
+**Fixed:** the element is walked like any other, with a test that fails when the skip is restored. Walking
+it costs nothing on the ordinary shape — a self-reference whose target is still live is answered by the
+same live-set test as any other reference.
+
+**Not measured:** whether such a mapping SURVIVES A SAVE. The platform's pre-save validation may refuse
+it, in which case the shape cannot exist in a stored process and this fix closes a hole nobody could
+reach. That does not change the fix — the scan is now correct either way — but it does bound the claim,
+and it is the check to run before the guidance says anything about T-27 being constructible.
