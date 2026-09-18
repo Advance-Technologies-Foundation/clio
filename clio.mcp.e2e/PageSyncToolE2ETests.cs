@@ -1662,10 +1662,10 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 			because: "without a per-page checksum the caller on the CANONICAL write path had only force:true to get past a baseline that describes a different body (issue #1464)");
 		pagesDescription.Should().Contain("get-page",
 			because: "the served contract must tell the caller which value to pass as the per-page conflict baseline");
-		pagesDescription.Should().Contain("Additions only",
+		pagesDescription.Should().Contain("updates supplied en-US values",
 			because: "a caller who reads `resources` as a full replacement set re-sends every key on every save, which is the behaviour issue #1320 reports and #1464 closes on sync-pages");
-		pagesDescription.Should().Contain("NOT updated by re-sending",
-			because: "a key already stored on the schema is never rewritten by CleanAndMerge, so promising overrides turns a corrected caption into a silent no-op reported as success");
+		pagesDescription.Should().Contain("restore-workspace",
+			because: "resource changes must be captured before a workspace push can replace them");
 	}
 
 	[Test]
