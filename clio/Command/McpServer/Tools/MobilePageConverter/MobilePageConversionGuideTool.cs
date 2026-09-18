@@ -154,6 +154,21 @@ public class MobilePageConversionGuideTool {
 		HashSet<string> webTypes = new(webEntries.Select(e => e.ComponentType), StringComparer.OrdinalIgnoreCase);
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType = IndexByComponentType(mobileEntries);
 		IReadOnlyDictionary<string, ComponentRegistryEntry> webByType = IndexByComponentType(webEntries);
+		// ENG-96589 — what the converter may treat as an authoritative statement of what mobile supports.
+		// `version` is the TARGET ENVIRONMENT's resolved platform version (not what the CDN chain served):
+		// a stand whose versioned registry 404s falls back to `latest`, and pruning it against a runtime
+		// newer than its own would strip properties it actually supports, so the stand's version is the
+		// question. BaseInputs travels along because it is the sole declaration site of visible/layoutConfig.
+		var mobileRegistryGeneration = new WebToMobileAnalysisService.MobileRegistryGeneration(
+			RequestedVersion: version,
+			// `Environment` covers both "read from the stand" and "named outright by the caller" — the two
+			// cases where the version is a POSITIVE statement about the target. A LatestFallback reports the
+			// literal string "latest" because the probe FAILED, which says nothing about how new the stand is.
+			VersionKnown: versionResolution.Source == VersionResolutionSource.Environment,
+			RuntimeDerived: mobileState.MobileRuntimeVersion is not null,
+			Release: mobileState.MobileRuntimeVersion?.Release,
+			Commit: mobileState.MobileRuntimeVersion?.Commit,
+			BaseInputs: mobileState.GlobalReferences?.BaseInputs);
 
 		WebToMobilePageConversionRules rules = await _rulesCatalog.GetRulesAsync(version, cancellationToken).ConfigureAwait(false);
 		// Resolve the effective web template, climbing past same-named replacing layers when the page is a
@@ -250,7 +265,8 @@ public class MobilePageConversionGuideTool {
 				mobileTemplateNodesByName: mobileTemplateProbe.NodesByName,
 				webTemplateBaselineNodes: webTemplateBaseline.Nodes,
 				webTemplateResources: webTemplateBaseline.Resources,
-				actionTargetsProbe: actionTargets);
+				actionTargetsProbe: actionTargets,
+				mobileRegistryGeneration: mobileRegistryGeneration);
 		} catch (Exception ex) {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}

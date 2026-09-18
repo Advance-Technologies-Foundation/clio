@@ -161,8 +161,12 @@ Four working operations; two reach the wire.
 - Wire projection is an **allow-list** (`IsInsert || IsMerge`), never a deny-list: a new working operation must fail to reach
   the applier rather than land in it.
 - `values` on `insert`: `type` + every source property except `name`, the value binding (`control`) included. On `merge`:
-  only the delta over the template, no `type`. Nothing is pruned against the mobile registry until it publishes real
-  per-component property lists.
+  only the delta over the template, no `type`. A TOP-LEVEL property the target mobile component does not declare is then
+  removed by `PruneUndeclaredProperties` and reported in `prunedProperties` (ENG-96589). Membership is
+  `inputs ∪ outputs ∪ references.baseInputs` — `outputs` because that is where the runtime-derived registry puts every
+  event binding, `baseInputs` because `visible` and `layoutConfig` are declared nowhere else. The prune runs only when the
+  loaded catalog carries `mobileRuntimeVersion` AND the environment's platform version is above `10.0.0`; on any other
+  stand it is a no-op and the conversion is byte-identical to the pre-feature one.
 - A merge with nothing to apply carries `{}` — never `null`, never absent. `JsonDiffApplier` requires `values` on `merge`
   and validates every operation before applying any.
 - `name` is not unique: two operations may target one element (`Tabs → Tabs` and `CardToggleTabPanel → Tabs`). Apply in
@@ -373,7 +377,8 @@ E2E: the `clio.mcp.e2e` converter fixtures against a seeded stand.
 
 | Gap | Status |
 |---|---|
-| Properties a mobile component cannot accept are copied verbatim | Blocked on `MobileComponentRegistry.json` publishing real per-component property lists |
+| A property nested inside an `object`-typed input (e.g. `crt.ChartWidget.config`) is never pruned | Deliberate: the prune is top-level only while such an input is opaque. Contextual validity and MISSING properties are a different class of defect |
+| A stand at or below `10.0.0` still carries undeclared properties | Deliberate: every versioned mobile registry path serves the web-derived catalog, so membership in it is not a valid test. Resolves itself as versioned runtime-derived files are published |
 | `crt.MenuItem` has no inline contract | Rules emit it; the mobile registry does not describe it |
 | `adaptiveLayout`, `tabAreaLayers`, `modelConfig`, `viewModelConfig` re-serialize data the operations / diffs carry | Provenance the caller reads, not applies; removal is a contract decision |
 | A type whose every instance vanishes is reported per type, not per element | `componentSuggestions` only |

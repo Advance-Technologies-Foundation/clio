@@ -392,6 +392,16 @@ public static class ReasonCodes {
 	public const string DropRequestUnsupported = "drop-request-unsupported";
 
 	/// <summary>
+	/// The binding's PROPERTY is not declared by the target mobile component — absent from that component's
+	/// <c>inputs</c>, its <c>outputs</c> and the registry's <c>baseInputs</c> — so the whole binding went
+	/// with the property when undeclared properties were pruned (ENG-96589). The component itself still
+	/// renders. Distinct from <see cref="DropRequestUnsupported"/>, where the property is fine and the
+	/// REQUEST has no mobile equivalent. Params: <c>mobileType</c> — the type whose declaration was
+	/// consulted; the element and the request are already the record's own fields.
+	/// </summary>
+	public const string DropRequestPropertyNotDeclared = "drop-request-property-not-declared";
+
+	/// <summary>
 	/// The request TYPE converts, but its navigation TARGET cannot exist on mobile, so the binding was
 	/// removed while the component itself still renders. Emitted only for a DEFINITIONAL absence — a
 	/// verdict that needed no environment read — never for one a probe merely failed to confirm; the
@@ -1196,6 +1206,36 @@ public sealed class MobilePageConversionGuide {
 	public IReadOnlyDictionary<string, NormalizationInfo> Normalizations { get; init; }
 
 	/// <summary>
+	/// Properties the conversion REMOVED because the target mobile component does not declare them
+	/// (ENG-96589). Already applied in <see cref="ViewConfigDiff"/> — nothing here is separate to apply.
+	/// It exists so a caller can see what the web page carried that mobile does not implement, and
+	/// cross-check it against <c>mobileContracts[].allowedProperties</c>, which is the SAME set computed by
+	/// the same function.
+	/// <para>
+	/// Null when nothing was pruned — including every case where pruning is OFF. Read it together with
+	/// <see cref="MobileRuntimeVersion"/>: that field absent means the loaded catalog could not be used as a
+	/// membership test at all, so an undeclared property surviving is expected rather than a defect.
+	/// </para>
+	/// </summary>
+	[JsonPropertyName("prunedProperties")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<PrunedPropertyEntry> PrunedProperties { get; init; }
+
+	/// <summary>
+	/// The mobile RUNTIME build the property prune was measured against, or null when nothing was pruned
+	/// because the loaded registry is the older web-derived generation or the environment's platform
+	/// version is at/below the prune floor.
+	/// <para>
+	/// Read it with <c>resolvedFrom</c>: an environment whose platform version has no published versioned
+	/// mobile registry falls back to <c>latest</c>, so a catalog NEWER than the stand's own runtime can be
+	/// served. That is why this field is reported rather than assumed.
+	/// </para>
+	/// </summary>
+	[JsonPropertyName("mobileRuntimeVersion")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public MobileRuntimeVersionInfo MobileRuntimeVersion { get; init; }
+
+	/// <summary>
 	/// Every localized string the converted body references, keyed by resource name and resolved to its
 	/// en-US text (e.g. <c>{ "EmailsSentNewMetric_title": "Emails sent" }</c>). The converted <c>values</c>
 	/// carry the <c>#ResourceString(key)#</c> tokens verbatim (top-level captions AND nested ones like
@@ -1396,6 +1436,55 @@ public sealed class RequestConversionInfo {
 }
 
 /// <summary>A request carried to mobile from a component's event binding.</summary>
+/// <summary>
+/// One element and the undeclared top-level properties removed from its mobile values (ENG-96589).
+/// </summary>
+public sealed class PrunedPropertyEntry {
+	/// <summary>The element's mobile name — the same key the element map and the request collections use.</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; init; }
+
+	/// <summary>The mobile component type whose declaration was consulted.</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; init; }
+
+	/// <summary>The element's WEB name, when it converted from one.</summary>
+	[JsonPropertyName("webName")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string WebName { get; init; }
+
+	/// <summary>
+	/// The top-level property keys removed, in source order. TOP-LEVEL only, so this never names a dotted
+	/// path — a nested key such as <c>layoutConfig.colSpan</c> or anything inside a chart's <c>config</c> is
+	/// out of the prune's reach by design.
+	/// </summary>
+	[JsonPropertyName("properties")]
+	public IReadOnlyList<string> Properties { get; init; } = [];
+
+	/// <summary>
+	/// The subset of <see cref="Properties"/> that carried an EVENT BINDING rather than an inert value. Each
+	/// is also reported in <c>requestConversions.droppedRequests</c> with
+	/// <see cref="ReasonCodes.DropRequestPropertyNotDeclared"/> — an ACTION was lost, not just a property.
+	/// Absent when none did.
+	/// </summary>
+	[JsonPropertyName("bindings")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string> Bindings { get; init; }
+}
+
+/// <summary>The mobile runtime build a conversion's property prune was measured against.</summary>
+public sealed class MobileRuntimeVersionInfo {
+	/// <summary>Release branch the runtime was built from, e.g. <c>"main"</c>.</summary>
+	[JsonPropertyName("release")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Release { get; init; }
+
+	/// <summary>Commit SHA of the runtime the mobile catalog was introspected from.</summary>
+	[JsonPropertyName("commit")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Commit { get; init; }
+}
+
 public sealed class ConvertedRequest {
 	/// <summary>Name of the component that carries the binding (e.g. "SaveButton").</summary>
 	[JsonPropertyName("elementName")]

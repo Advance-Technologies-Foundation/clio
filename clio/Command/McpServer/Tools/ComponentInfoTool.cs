@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
@@ -1144,11 +1144,52 @@ public sealed class ComponentRegistryEnvelope {
 	public RegistryGlobalReferences? References { get; init; }
 
 	/// <summary>
+	/// Producer marker present ONLY on the RUNTIME-DERIVED mobile registry generation (introspected from
+	/// the Flutter mobile runtime), carrying the release branch and the commit it was generated from.
+	/// Absent from the web-derived generation that every VERSIONED mobile path still serves today
+	/// (8.3.0/8.3.3/8.3.4/10.0.0), and absent from the web registry.
+	/// <para>
+	/// Its PRESENCE is half of the enablement gate for the converter's property prune (ENG-96589): the old
+	/// generation's per-component <c>inputs</c> describe the WEB component, so pruning against it would
+	/// strip genuinely supported mobile properties (there <c>crt.Feed</c> declares only
+	/// <c>primaryColumnValue</c>, and the 8.3.0 file lists three components in total). See
+	/// <c>WebToMobileAnalysisService.MobileRegistryGeneration</c> for the other half — the version floor.
+	/// </para>
+	/// </summary>
+	[JsonPropertyName("mobileRuntimeVersion")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public MobileRuntimeVersion? MobileRuntimeVersion { get; init; }
+
+	/// <summary>
 	/// Captures any top-level producer field clio has not mapped yet. Always
 	/// expected to be empty against the live snapshot — the
 	/// <c>Live_Registry_Snapshot_Should_Have_No_Unmapped_Fields</c> guard test
 	/// fails when this dictionary is non-empty. The bucket exists so deserialise
 	/// does NOT throw under strict mode; the test does the bookkeeping.
+	/// </summary>
+	[JsonExtensionData]
+	public IDictionary<string, JsonElement>? UnmappedExtensions { get; init; }
+}
+
+/// <summary>
+/// Which mobile runtime build the registry payload was introspected from. Published only by the
+/// runtime-derived mobile registry generation; see
+/// <see cref="ComponentRegistryEnvelope.MobileRuntimeVersion"/> for why its presence is load-bearing.
+/// </summary>
+public sealed class MobileRuntimeVersion {
+	/// <summary>Release branch the runtime was built from, e.g. <c>"main"</c>.</summary>
+	[JsonPropertyName("release")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? Release { get; init; }
+
+	/// <summary>Commit SHA of the runtime the catalog was generated from.</summary>
+	[JsonPropertyName("commit")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? Commit { get; init; }
+
+	/// <summary>
+	/// Captures any producer field clio has not mapped yet, so strict-mode deserialisation does not throw.
+	/// The snapshot guard test asserts it stays empty.
 	/// </summary>
 	[JsonExtensionData]
 	public IDictionary<string, JsonElement>? UnmappedExtensions { get; init; }

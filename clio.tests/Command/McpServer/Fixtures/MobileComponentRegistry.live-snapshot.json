@@ -1,1055 +1,4183 @@
 {
-	"components": [
-		{
-			"componentType": "crt.Scaffold",
-			"description": "Mandatory root element for every mobile page. Provides the top navigation bar (title, leading, actions) and the page body (items). All other content goes inside it. Templates already insert one Scaffold — do NOT insert a second one; use merge to patch it.",
-			"inputs": {
-				"title": {
-					"type": "string",
-					"description": "Page title. Typically '$PageTitle' attribute reference."
-				},
-				"leading": {
-					"type": "array",
-					"description": "Left-side navigation items (back/cancel buttons)."
-				},
-				"actions": {
-					"type": "array",
-					"description": "Right-side action items (save button, search button)."
-				},
-				"floatAction": {
-					"type": "object",
-					"description": "Single floating action button (crt.FloatingActionButton). Set to null when not needed."
-				},
-				"items": {
-					"type": "array",
-					"description": "Page body — array of container/component references."
-				},
-				"header": {
-					"type": "array",
-					"description": "Header child components."
-				},
-				"fullScreen": {
-					"type": "boolean",
-					"description": "Full-screen mode."
-				},
-				"useSurface": {
-					"type": "boolean",
-					"description": "Use surface background color."
-				},
-				"leadingWidth": {
-					"type": "number",
-					"description": "Leading area width."
-				}
-			}
-		},
-		{
-			"componentType": "crt.GridContainer",
-			"description": "CSS-grid layout container. Supports the 'adaptive' property for per-breakpoint column overrides (small/medium/large).",
-			"inputs": {
-				"columns": {
-					"type": "string",
-					"default": "1fr",
-					"description": "CSS grid-template-columns. Single string '1fr 1fr' or array ['1fr','1fr']. Runtime accepts both formats."
-				},
-				"adaptive": {
-					"type": "object",
-					"description": "Per-breakpoint column overrides. Keys: 'small' (phone portrait), 'medium' (landscape/tablet portrait), 'large' (tablet landscape). Example: {\"small\":{\"columns\":\"1fr\"},\"medium\":{\"columns\":\"1fr 1fr\"}}."
-				},
-				"gap": {
-					"type": "object",
-					"description": "Row and column gap config."
-				},
-				"padding": {
-					"type": "object",
-					"description": "Padding config: { top, right, bottom, left }."
-				},
-				"borderRadius": {
-					"type": "object",
-					"description": "Border radius config."
-				},
-				"justifyItems": {
-					"type": "string",
-					"description": "CSS-like justify-items."
-				},
-				"alignItems": {
-					"type": "string",
-					"description": "CSS-like align-items."
-				},
-				"items": {
-					"type": "array",
-					"description": "Child components."
-				},
-				"color": {
-					"type": "string",
-					"values": ["default", "primary"],
-					"description": "Background color. Use 'primary' for profile/area highlight."
-				}
-			}
-		},
-		{
-			"componentType": "crt.FlexContainer",
-			"description": "Flexbox layout container for linear horizontal or vertical arrangement of items.",
-			"inputs": {
-				"direction": {
-					"type": "string",
-					"default": "column",
-					"values": ["row", "column"],
-					"description": "Flex direction."
-				},
-				"justifyContent": {
-					"type": "string",
-					"default": "start",
-					"values": ["start", "end", "center", "spaceBetween", "spaceAround", "spaceEvenly"],
-					"description": "Main axis alignment."
-				},
-				"alignItems": {
-					"type": "string",
-					"default": "stretch",
-					"values": ["start", "end", "center", "stretch"],
-					"description": "Cross axis alignment."
-				},
-				"wrap": {
-					"type": "string",
-					"default": "noWrap",
-					"values": ["noWrap", "wrap"],
-					"description": "Flex wrapping behavior."
-				},
-				"gap": {
-					"type": "number",
-					"description": "Gap between items in pixels."
-				},
-				"padding": {
-					"type": "object",
-					"description": "Padding config: { top, right, bottom, left }."
-				},
-				"color": {
-					"type": "string",
-					"description": "Background color."
-				},
-				"borderRadius": {
-					"type": "object",
-					"description": "Border radius config."
-				},
-				"scrollable": {
-					"type": "boolean",
-					"default": false,
-					"description": "Enable scrolling."
-				},
-				"items": {
-					"type": "array",
-					"description": "Child components."
-				}
-			}
-		},
-		{
-			"componentType": "crt.TabPanel",
-			"description": "Top-level tab strip container. Holds crt.TabContainer items.",
-			"inputs": {
-				"items": {
-					"type": "array",
-					"description": "Child crt.TabContainer entries."
-				},
-				"isScrollable": {
-					"type": "boolean",
-					"default": true,
-					"description": "Whether tabs are scrollable."
-				},
-				"selectedTabName": {
-					"type": "string",
-					"description": "Currently selected tab name binding."
-				}
-			}
-		},
-		{
-			"componentType": "crt.TabContainer",
-			"description": "Individual tab body inside crt.TabPanel.",
-			"inputs": {
-				"caption": {
-					"type": "string",
-					"description": "Tab header caption (resource string or literal)."
-				},
-				"items": {
-					"type": "array",
-					"description": "Tab body content."
-				}
-			}
-		},
-		{
-			"componentType": "crt.ExpansionPanel",
-			"description": "Collapsible panel that can expand to show its content.",
-			"inputs": {
-				"title": {
-					"type": "string",
-					"description": "Panel title."
-				},
-				"tools": {
-					"type": "array",
-					"description": "Tool/action components in the panel header."
-				},
-				"expanded": {
-					"type": "boolean",
-					"description": "Whether the panel is expanded by default."
-				},
-				"items": {
-					"type": "array",
-					"description": "Panel body content."
-				}
-			}
-		},
-		{
-			"componentType": "crt.Label",
-			"description": "Static text label for headings, captions, and inline explanatory copy.",
-			"inputs": {
-				"caption": {
-					"type": "string",
-					"description": "Visible text."
-				},
-				"labelType": {
-					"type": "string",
-					"description": "Semantic type / heading level."
-				},
-				"labelThickness": {
-					"type": "string",
-					"description": "Font weight."
-				},
-				"labelColor": {
-					"type": "string",
-					"description": "Text color."
-				},
-				"labelEllipsis": {
-					"type": "boolean",
-					"description": "Enable text overflow ellipsis."
-				}
-			}
-		},
-		{
-			"componentType": "crt.Button",
-			"description": "Tappable button for triggering actions, navigation, and menus.",
-			"inputs": {
-				"caption": {
-					"type": "string",
-					"description": "Button label text."
-				},
-				"icon": {
-					"type": "string",
-					"description": "Icon identifier."
-				},
-				"iconPosition": {
-					"type": "string",
-					"description": "Icon position relative to caption."
-				},
-				"color": {
-					"type": "string",
-					"description": "Color scheme."
-				},
-				"size": {
-					"type": "string",
-					"description": "Size variant."
-				},
-				"menuItems": {
-					"type": "array",
-					"description": "Child crt.MenuItem entries for dropdown/modal menu."
-				},
-				"menuTitle": {
-					"type": "string",
-					"description": "Title shown on the menu picker."
-				},
-				"visible": {
-					"type": "string",
-					"description": "Visibility binding, e.g. '$CardState | crt.IsEqual : \\'edit\\''."
-				}
-			},
-			"outputs": {
-				"clicked": {
-					"type": "RequestBindingConfig",
-					"description": "Request descriptor fired on tap."
-				}
-			}
-		},
-		{
-			"componentType": "crt.FloatingActionButton",
-			"description": "Single floating action button attached to crt.Scaffold.floatAction. Mobile-specific. Allowed parent: crt.Scaffold.",
-			"inputs": {
-				"icon": {
-					"type": "string",
-					"description": "Icon identifier."
-				},
-				"menuItems": {
-					"type": "array",
-					"description": "Child crt.MenuItem entries for menu."
-				},
-				"menuTitle": {
-					"type": "string",
-					"description": "Title shown on the menu picker."
-				}
-			},
-			"outputs": {
-				"clicked": {
-					"type": "RequestBindingConfig",
-					"description": "Request descriptor fired on tap."
-				}
-			}
-		},
-		{
-			"componentType": "crt.Input",
-			"description": "Single-line text input field.",
-			"inputs": {
-				"control": {
-					"type": "string",
-					"description": "Bound view-model attribute, e.g. '$PDS_Name'."
-				},
-				"label": {
-					"type": "string",
-					"description": "Field label."
-				},
-				"placeholder": {
-					"type": "string",
-					"description": "Placeholder text."
-				},
-				"readonly": {
-					"type": "string",
-					"description": "Readonly binding."
-				},
-				"visible": {
-					"type": "string",
-					"description": "Visibility binding."
-				},
-				"labelPosition": {
-					"type": "string",
-					"default": "above",
-					"values": ["above", "auto", "hidden"],
-					"description": "Label position."
-				},
-				"multiline": {
-					"type": "boolean",
-					"default": false,
-					"description": "Enable multiline mode."
-				}
-			}
-		},
-		{
-			"componentType": "crt.NumberInput",
-			"description": "Numeric text input.",
-			"inputs": {
-				"control": {
-					"type": "string",
-					"description": "Bound view-model attribute."
-				},
-				"label": {
-					"type": "string",
-					"description": "Field label."
-				},
-				"format": {
-					"type": "object",
-					"description": "Number format config: { decimalPrecision: N }. Use 0 for integers."
-				},
-				"labelPosition": {
-					"type": "string",
-					"default": "above",
-					"values": ["above", "auto", "hidden"],
-					"description": "Label position."
-				},
-				"readonly": {
-					"type": "string",
-					"description": "Readonly binding."
-				},
-				"visible": {
-					"type": "string",
-					"description": "Visibility binding."
-				}
-			}
-		},
-		{
-			"componentType": "crt.EmailInput",
-			"description": "Email-type text input with validation.",
-			"inputs": {
-				"control": {
-					"type": "string",
-					"description": "Bound view-model attribute."
-				},
-				"label": {
-					"type": "string",
-					"description": "Field label."
-				},
-				"labelPosition": {
-					"type": "string",
-					"default": "above",
-					"values": ["above", "auto", "hidden"],
-					"description": "Label position."
-				},
-				"readonly": {
-					"type": "string",
-					"description": "Readonly binding."
-				},
-				"visible": {
-					"type": "string",
-					"description": "Visibility binding."
-				},
-				"placeholder": {
-					"type": "string",
-					"description": "Placeholder text."
-				}
-			}
-		},
-		{
-			"componentType": "crt.WebInput",
-			"description": "URL/web address text input.",
-			"inputs": {
-				"control": {
-					"type": "string",
-					"description": "Bound view-model attribute."
-				},
-				"label": {
-					"type": "string",
-					"description": "Field label."
-				},
-				"labelPosition": {
-					"type": "string",
-					"default": "above",
-					"values": ["above", "auto", "hidden"],
-					"description": "Label position."
-				},
-				"readonly": {
-					"type": "string",
-					"description": "Readonly binding."
-				},
-				"visible": {
-					"type": "string",
-					"description": "Visibility binding."
-				},
-				"placeholder": {
-					"type": "string",
-					"description": "Placeholder text."
-				}
-			}
-		},
-		{
-			"componentType": "crt.PhoneInput",
-			"description": "Phone number input with call intent support.",
-			"inputs": {
-				"control": {
-					"type": "string",
-					"description": "Bound view-model attribute."
-				},
-				"label": {
-					"type": "string",
-					"description": "Field label."
-				},
-				"labelPosition": {
-					"type": "string",
-					"default": "above",
-					"values": ["above", "auto", "hidden"],
-					"description": "Label position."
-				},
-				"readonly": {
-					"type": "string",
-					"description": "Readonly binding."
-				},
-				"visible": {
-					"type": "string",
-					"description": "Visibility binding."
-				},
-				"placeholder": {
-					"type": "string",
-					"description": "Placeholder text."
-				}
-			}
-		},
-		{
-			"componentType": "crt.Checkbox",
-			"description": "Checkbox for Boolean fields. NOTE: In mobile pages use crt.Toggle for Boolean data-type fields — the mobile designer maps Boolean to crt.Toggle by default. Reserve crt.Checkbox for explicit tristate or custom scenarios.",
-			"inputs": {
-				"control": {
-					"type": "string",
-					"description": "Bound view-model attribute."
-				},
-				"label": {
-					"type": "string",
-					"description": "Field label."
-				},
-				"labelPosition": {
-					"type": "string",
-					"default": "above",
-					"values": ["above", "auto", "hidden"],
-					"description": "Label position."
-				},
-				"readonly": {
-					"type": "string",
-					"description": "Readonly binding."
-				},
-				"visible": {
-					"type": "string",
-					"description": "Visibility binding."
-				}
-			}
-		},
-		{
-			"componentType": "crt.ComboBox",
-			"description": "Lookup dropdown selector. Use for lookup and enumeration fields.",
-			"inputs": {
-				"control": {
-					"type": "string",
-					"description": "Bound view-model attribute."
-				},
-				"label": {
-					"type": "string",
-					"description": "Field label."
-				},
-				"labelPosition": {
-					"type": "string",
-					"default": "above",
-					"values": ["above", "auto", "hidden"],
-					"description": "Label position."
-				},
-				"readonly": {
-					"type": "string",
-					"description": "Readonly binding."
-				},
-				"visible": {
-					"type": "string",
-					"description": "Visibility binding."
-				},
-				"placeholder": {
-					"type": "string",
-					"description": "Placeholder text."
-				},
-				"items": {
-					"type": "string",
-					"description": "Data property attribute for lookup items."
-				},
-				"showValueAsLink": {
-					"type": "boolean",
-					"description": "Show selected value as a navigable link."
-				},
-				"isAddAllowed": {
-					"type": "boolean",
-					"description": "Allow creating new lookup records."
-				}
-			}
-		},
-		{
-			"componentType": "crt.DateTimePicker",
-			"description": "Date and/or time picker.",
-			"inputs": {
-				"control": {
-					"type": "string",
-					"description": "Bound view-model attribute."
-				},
-				"label": {
-					"type": "string",
-					"description": "Field label."
-				},
-				"pickerType": {
-					"type": "string",
-					"values": ["date", "time", "datetime"],
-					"description": "Picker type. Default: 'datetime'."
-				},
-				"labelPosition": {
-					"type": "string",
-					"default": "above",
-					"values": ["above", "auto", "hidden"],
-					"description": "Label position."
-				},
-				"readonly": {
-					"type": "string",
-					"description": "Readonly binding."
-				},
-				"visible": {
-					"type": "string",
-					"description": "Visibility binding."
-				}
-			}
-		},
-		{
-			"componentType": "crt.ImageInput",
-			"description": "Image upload / preview field.",
-			"inputs": {
-				"control": {
-					"type": "string",
-					"description": "Bound view-model attribute."
-				},
-				"label": {
-					"type": "string",
-					"description": "Field label."
-				},
-				"size": {
-					"type": "string",
-					"default": "large",
-					"values": ["small", "medium", "large"],
-					"description": "Image preview size."
-				},
-				"borderRadius": {
-					"type": "string",
-					"description": "Border radius preset (e.g. 'medium')."
-				},
-				"positioning": {
-					"type": "string",
-					"description": "Image fill/fit mode (e.g. 'fill', 'cover')."
-				},
-				"maxFileSize": {
-					"type": "number",
-					"description": "Max upload file size."
-				},
-				"labelPosition": {
-					"type": "string",
-					"default": "above",
-					"values": ["above", "auto", "hidden"],
-					"description": "Label position."
-				},
-				"readonly": {
-					"type": "string",
-					"description": "Readonly binding."
-				},
-				"visible": {
-					"type": "string",
-					"description": "Visibility binding."
-				}
-			}
-		},
-		{
-			"componentType": "crt.RichTextEditor",
-			"description": "Multi-line rich text editor.",
-			"inputs": {
-				"control": {
-					"type": "string",
-					"description": "Bound view-model attribute."
-				},
-				"label": {
-					"type": "string",
-					"description": "Field label."
-				},
-				"labelPosition": {
-					"type": "string",
-					"default": "above",
-					"values": ["above", "auto", "hidden"],
-					"description": "Label position."
-				},
-				"readonly": {
-					"type": "string",
-					"description": "Readonly binding."
-				},
-				"visible": {
-					"type": "string",
-					"description": "Visibility binding."
-				}
-			}
-		},
-		{
-			"componentType": "crt.Slider",
-			"description": "Numeric range slider.",
-			"inputs": {
-				"control": {
-					"type": "string",
-					"description": "Bound view-model attribute."
-				},
-				"minValue": {
-					"type": "number",
-					"description": "Minimum value."
-				},
-				"maxValue": {
-					"type": "number",
-					"description": "Maximum value."
-				},
-				"step": {
-					"type": "number",
-					"description": "Step increment."
-				},
-				"color": {
-					"type": "string",
-					"description": "Color scheme."
-				},
-				"label": {
-					"type": "string",
-					"description": "Field label."
-				},
-				"labelPosition": {
-					"type": "string",
-					"default": "above",
-					"values": ["above", "auto", "hidden"],
-					"description": "Label position."
-				},
-				"readonly": {
-					"type": "string",
-					"description": "Readonly binding."
-				},
-				"visible": {
-					"type": "string",
-					"description": "Visibility binding."
-				}
-			}
-		},
-		{
-			"componentType": "crt.Toggle",
-			"description": "Boolean toggle switch. Mobile-specific — the mobile designer maps Boolean data types to crt.Toggle (not crt.Checkbox). Always prefer crt.Toggle for Boolean fields in mobile pages.",
-			"inputs": {
-				"control": {
-					"type": "string",
-					"description": "Bound view-model attribute (Boolean)."
-				},
-				"label": {
-					"type": "string",
-					"description": "Field label."
-				},
-				"labelPosition": {
-					"type": "string",
-					"default": "above",
-					"values": ["above", "auto", "hidden"],
-					"description": "Label position."
-				},
-				"readonly": {
-					"type": "string",
-					"description": "Readonly binding."
-				},
-				"visible": {
-					"type": "string",
-					"description": "Visibility binding."
-				}
-			},
-			"outputs": {
-				"valueChange": {
-					"type": "RequestBindingConfig",
-					"description": "Request descriptor fired when value changes."
-				}
-			}
-		},
-		{
-			"componentType": "crt.BarcodeScanner",
-			"description": "Barcode/QR code scanner field. Mobile-only — not available in web pages.",
-			"inputs": {
-				"scanTimeout": {
-					"type": "number",
-					"default": 2000,
-					"description": "Timeout between scans in milliseconds."
-				},
-				"enabled": {
-					"type": "boolean",
-					"description": "Whether the scanner is enabled."
-				},
-				"size": {
-					"type": "string",
-					"values": ["small", "medium", "large", "max"],
-					"description": "Scanner viewport size."
-				},
-				"features": {
-					"type": "object",
-					"description": "Feature toggles: { flashToggle (bool), beepOnScan (bool) }."
-				}
-			},
-			"outputs": {
-				"scanned": {
-					"type": "RequestBindingConfig",
-					"description": "Request descriptor fired when a barcode is scanned."
-				}
-			}
-		},
-		{
-			"componentType": "crt.List",
-			"description": "Scrollable record list. Used in list/section pages.",
-			"inputs": {
-				"items": {
-					"type": "string",
-					"description": "Data property attribute for the record collection, typically '$Items'."
-				},
-				"itemLayout": {
-					"type": "object",
-					"description": "Item layout template (crt.ListItem config)."
-				},
-				"scrollable": {
-					"type": "boolean",
-					"default": true,
-					"description": "Enable scrolling."
-				},
-				"useSeparator": {
-					"type": "boolean",
-					"description": "Show separators between items."
-				},
-				"enablePullToRefresh": {
-					"type": "boolean",
-					"description": "Enable pull-to-refresh."
-				},
-				"visible": {
-					"type": "string",
-					"description": "Visibility binding."
-				}
-			},
-			"outputs": {
-				"itemSelected": {
-					"type": "RequestBindingConfig",
-					"description": "Request descriptor fired when an item is selected."
-				}
-			}
-		},
-		{
-			"componentType": "crt.FileList",
-			"description": "File attachment list.",
-			"inputs": {
-				"items": {
-					"type": "string",
-					"description": "Data property attribute for the file collection."
-				},
-				"entityName": {
-					"type": "string",
-					"description": "File entity schema name."
-				},
-				"primaryColumnName": {
-					"type": "string",
-					"description": "Primary column name."
-				},
-				"recordColumnName": {
-					"type": "string",
-					"description": "Record column name."
-				},
-				"masterRecordColumnValue": {
-					"type": "string",
-					"description": "Master record column value binding."
-				},
-				"columns": {
-					"type": "array",
-					"description": "Column definitions for the file list."
-				},
-				"scrollable": {
-					"type": "boolean",
-					"default": false,
-					"description": "Enable scrolling."
-				}
-			}
-		},
-		{
-			"componentType": "crt.Feed",
-			"description": "Activity/message feed panel.",
-			"inputs": {
-				"primaryColumnValue": {
-					"type": "string",
-					"description": "Record ID binding for ESN messages."
-				},
-				"entitySchemaName": {
-					"type": "string",
-					"description": "Entity schema name for the feed."
-				},
-				"dataSourceName": {
-					"type": "string",
-					"description": "Data source name."
-				}
-			}
-		},
-		{
-			"componentType": "crt.Gallery",
-			"description": "Card gallery with image thumbnails.",
-			"inputs": {
-				"items": {
-					"type": "string",
-					"description": "Data property attribute for the gallery collection."
-				},
-				"itemConfig": {
-					"type": "object",
-					"description": "Gallery item configuration."
-				},
-				"useSpecificPage": {
-					"type": "boolean",
-					"description": "Open a specific page on item click."
-				},
-				"specificPage": {
-					"type": "string",
-					"description": "Page schema name to open."
-				}
-			}
-		},
-		{
-			"componentType": "crt.Timeline",
-			"description": "Chronological timeline view for records.",
-			"inputs": {
-				"items": {
-					"type": "array",
-					"description": "Timeline tile configurations."
-				},
-				"masterSchemaId": {
-					"type": "string",
-					"description": "Master schema ID binding."
-				},
-				"masterEntity": {
-					"type": "string",
-					"description": "Master entity name binding."
-				}
-			}
-		},
-		{
-			"componentType": "crt.CommunicationOptions",
-			"description": "Communication options widget (call, email, SMS links).",
-			"inputs": {
-				"items": {
-					"type": "string",
-					"description": "Data property attribute for communication options collection."
-				},
-				"typeColumnName": {
-					"type": "string",
-					"description": "Communication type column name."
-				},
-				"numberColumnName": {
-					"type": "string",
-					"description": "Number/value column name."
-				},
-				"masterRecordColumnName": {
-					"type": "string",
-					"description": "Master record column name."
-				},
-				"masterRecordColumnValue": {
-					"type": "string",
-					"description": "Master record column value binding."
-				},
-				"primaryColumnName": {
-					"type": "string",
-					"description": "Primary column name."
-				},
-				"readonly": {
-					"type": "boolean",
-					"description": "Read-only mode."
-				},
-				"visible": {
-					"type": "string",
-					"description": "Visibility binding."
-				}
-			}
-		},
-		{
-			"componentType": "crt.EntityStageProgressBar",
-			"description": "Horizontal stage progress bar for pipeline/status tracking.",
-			"inputs": {
-				"entityName": {
-					"type": "string",
-					"description": "Entity name for DCM stages."
-				},
-				"recordId": {
-					"type": "string",
-					"description": "Record ID binding for DCM runtime."
-				},
-				"value": {
-					"type": "string",
-					"description": "Current stage value binding."
-				}
-			}
-		},
-		{
-			"componentType": "crt.IndicatorWidget",
-			"description": "KPI / indicator metric widget.",
-			"inputs": {
-				"config": {
-					"type": "object",
-					"description": "Full indicator configuration: { title, data: { providing, formatting }, text: { template, metricMacros, fontSizeMode }, layout: { color, border, icon }, theme, hideTitle }."
-				}
-			}
-		},
-		{
-			"componentType": "crt.ChartWidget",
-			"description": "Chart/graph widget for data visualization.",
-			"inputs": {
-				"config": {
-					"type": "object",
-					"description": "Full chart configuration: { title, theme, color, layout: { showLegend, showDataLabels }, series: [{ data, type, color, label }], seriesOrder, scales }."
-				}
-			}
-		},
-		{
-			"componentType": "crt.FolderTreeActions",
-			"description": "Action toolbar for the folder tree (add/edit/delete folders).",
-			"inputs": {
-				"caption": {
-					"type": "string",
-					"description": "Button caption text."
-				},
-				"activeFolderName": {
-					"type": "string",
-					"description": "Active folder name binding."
-				},
-				"sourceSchemaName": {
-					"type": "string",
-					"description": "Source entity schema name."
-				},
-				"rootSchemaName": {
-					"type": "string",
-					"description": "Root schema name for folder hierarchy."
-				},
-				"color": {
-					"type": "string",
-					"description": "Color scheme."
-				},
-				"size": {
-					"type": "string",
-					"values": ["small", "medium", "large"],
-					"description": "Button size."
-				}
-			}
-		},
-		{
-			"componentType": "crt.QuickFilter",
-			"description": "Quick filter chip for applying a named data filter. Allowed parent: crt.QuickFilterGroup.",
-			"inputs": {
-				"filterType": {
-					"type": "string",
-					"description": "Filter type identifier."
-				},
-				"value": {
-					"type": "string",
-					"description": "Current filter value binding."
-				},
-				"config": {
-					"type": "object",
-					"description": "Filter configuration object."
-				}
-			},
-			"outputs": {
-				"valueChange": {
-					"type": "RequestBindingConfig",
-					"description": "Request descriptor fired when filter changes."
-				}
-			}
-		},
-		{
-			"componentType": "crt.QuickFilterGroup",
-			"description": "Group of quick filter chips. Mobile-specific grouping component. Typical children: crt.QuickFilter.",
-			"inputs": {
-				"items": {
-					"type": "array",
-					"description": "Child crt.QuickFilter entries."
-				}
-			}
-		},
-		{
-			"componentType": "crt.Sort",
-			"description": "Sort control for record lists. Mobile-specific.",
-			"inputs": {
-				"items": {
-					"type": "array",
-					"description": "Sort option items."
-				},
-				"value": {
-					"type": "string",
-					"description": "Current sort value binding."
-				},
-				"defaultValue": {
-					"type": "string",
-					"description": "Default sort value."
-				},
-				"iconPosition": {
-					"type": "string",
-					"values": ["left", "right"],
-					"description": "Icon position."
-				},
-				"color": {
-					"type": "string",
-					"description": "Color scheme."
-				},
-				"size": {
-					"type": "string",
-					"values": ["small", "medium", "large"],
-					"description": "Button size."
-				}
-			},
-			"outputs": {
-				"valueChange": {
-					"type": "RequestBindingConfig",
-					"description": "Request descriptor fired when sort changes."
-				}
-			}
-		}
-	]
+  "mobileRuntimeVersion": {
+    "release": "main",
+    "commit": "d7a0c3bb6796a1cde204ab8762b04d8940e38726"
+  },
+  "components": [
+    {
+      "componentType": "crt.AccountCompactProfile",
+      "inputs": {
+        "accountName": {
+          "type": "string"
+        },
+        "country": {
+          "type": "unknown"
+        },
+        "photo": {
+          "type": "unknown"
+        },
+        "readonly": {
+          "type": "boolean"
+        },
+        "referenceColumn": {
+          "type": "unknown"
+        },
+        "timeZone": {
+          "type": "unknown"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/account_compact_profile.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.AddressListItem",
+      "inputs": {
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "ViewElementConfig"
+          }
+        },
+        "body": {
+          "type": "array",
+          "items": {
+            "type": "unknown"
+          },
+          "required": true
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/address_list_item.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.AddressPreview",
+      "inputs": {},
+      "references": {
+        "docs": [
+          "mobile-docs/address_preview.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.BarcodeScanner",
+      "inputs": {
+        "attributeName": {
+          "type": "string",
+          "description": "Name of the view-model attribute the scan result is written to. The barcode preprocessor generates the scanned request from it when none is authored; set this instead of wiring the request by hand."
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether the scanner is enabled."
+        },
+        "features": {
+          "type": "BarcodeScannerFeatures",
+          "description": "Features configuration."
+        },
+        "lookupFilterColumn": {
+          "type": "string",
+          "description": "Column used to filter the lookup a scan resolves against, when the scan feeds a lookup selection."
+        },
+        "scanTimeout": {
+          "type": "number",
+          "description": "Scan next barcode after [scanTimeout] ms."
+        },
+        "scanned": {
+          "type": "unknown",
+          "description": "Configuration of scan event."
+        },
+        "size": {
+          "type": "string",
+          "description": "Size of the barcode scanner."
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/barcode_scanner.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.Button",
+      "inputs": {
+        "buttonType": {
+          "type": "ButtonType",
+          "values": [
+            "default",
+            "quick-add"
+          ]
+        },
+        "caption": {
+          "type": "string"
+        },
+        "clicked": {
+          "type": "unknown",
+          "description": "Configuration of click event."
+        },
+        "color": {
+          "type": "string",
+          "description": "Background color."
+        },
+        "icon": {
+          "type": "unknown",
+          "description": "Configuration of icon."
+        },
+        "iconColor": {
+          "type": "string"
+        },
+        "iconPosition": {
+          "type": "string"
+        },
+        "isFloat": {
+          "type": "boolean",
+          "description": "True, if button should be float (FAB)."
+        },
+        "menuDisplayType": {
+          "type": "MenuDisplayType",
+          "values": [
+            "modal",
+            "popup"
+          ],
+          "default": "modal"
+        },
+        "menuItems": {
+          "type": "array",
+          "items": {
+            "type": "ViewElementConfig"
+          },
+          "description": "Menu items configuration."
+        },
+        "menuTitle": {
+          "type": "string",
+          "description": "Title of menu picker."
+        },
+        "size": {
+          "type": "string"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/button.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.Calendar",
+      "inputs": {
+        "autoLoad": {
+          "type": "boolean"
+        },
+        "colorizationType": {
+          "type": "CalendarColorizationType",
+          "values": [
+            "default",
+            "byField",
+            "byOwner"
+          ],
+          "description": "Colorization type."
+        },
+        "controller": {
+          "type": "string"
+        },
+        "controllerType": {
+          "type": "string"
+        },
+        "createItem": {
+          "type": "Record",
+          "keyType": "unknown",
+          "valueType": "unknown"
+        },
+        "dateRange": {
+          "type": "string"
+        },
+        "focusDate": {
+          "type": "string"
+        },
+        "highlightedStartDate": {
+          "type": "string"
+        },
+        "items": {
+          "type": "string",
+          "description": "Data property."
+        },
+        "modelType": {
+          "type": "string"
+        },
+        "templateValuesMapping": {
+          "type": "CalendarColumnsMapping",
+          "description": "Columns mapping.",
+          "required": true
+        },
+        "timeScale": {
+          "type": "string",
+          "description": "Attribute holding the time grid step in minutes (15, 30 or 60), like [viewMode]."
+        },
+        "viewMode": {
+          "type": "string",
+          "description": "Calendar view mode."
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/calendar.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.CalendarDatePicker",
+      "inputs": {
+        "focusDate": {
+          "type": "string",
+          "description": "Attribute name that determines which days are currently visible and focused."
+        },
+        "showHeader": {
+          "type": "boolean"
+        },
+        "useDateRangeMode": {
+          "type": "boolean",
+          "description": "True, if needed to select the date range."
+        },
+        "value": {
+          "type": "string",
+          "description": "Attribute name that determines selected date range."
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/calendar_date_picker.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.ChartWidget",
+      "inputs": {
+        "autoLoad": {
+          "type": "boolean"
+        },
+        "config": {
+          "type": "ChartConfig"
+        },
+        "controller": {
+          "type": "string"
+        },
+        "controllerType": {
+          "type": "string"
+        },
+        "listConfig": {
+          "type": "unknown"
+        },
+        "listData": {
+          "type": "string"
+        },
+        "modelType": {
+          "type": "string"
+        },
+        "pagingConfig": {
+          "type": "Record",
+          "keyType": "unknown",
+          "valueType": "unknown"
+        },
+        "searchValue": {
+          "type": "string",
+          "description": "Drill-down search text attribute. The preprocessor emits it as a binding (`$DYN_..._SearchValue`), so the prefix is stripped to get the attribute name."
+        },
+        "sectionBindingColumnRecordId": {
+          "type": "string"
+        },
+        "seriesData": {
+          "type": "unknown"
+        }
+      },
+      "outputs": {
+        "drillDown": {
+          "type": "RequestBindingConfig"
+        },
+        "paginationChange": {
+          "type": "RequestBindingConfig"
+        },
+        "searchFilterChange": {
+          "type": "RequestBindingConfig",
+          "description": "Handled by the generic `SearchFilterRequestHandler`, which stores the value into [searchValue]."
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/chart_widget.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.Checkbox",
+      "inputs": {
+        "control": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "labelPosition": {
+          "type": "InputLabelPosition",
+          "values": [
+            "above",
+            "auto",
+            "hidden"
+          ],
+          "default": "above"
+        },
+        "placeholder": {
+          "type": "string"
+        },
+        "readonly": {
+          "type": "boolean"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/checkbox.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.ComboBox",
+      "inputs": {
+        "control": {
+          "type": "string"
+        },
+        "isAddAllowed": {
+          "type": "boolean"
+        },
+        "items": {
+          "type": "string",
+          "description": "Data property attribute.",
+          "required": true
+        },
+        "label": {
+          "type": "string"
+        },
+        "labelPosition": {
+          "type": "InputLabelPosition",
+          "values": [
+            "above",
+            "auto",
+            "hidden"
+          ],
+          "default": "above"
+        },
+        "placeholder": {
+          "type": "string"
+        },
+        "readonly": {
+          "type": "boolean"
+        },
+        "secondaryDisplayValue": {
+          "type": "string"
+        },
+        "showValueAsLink": {
+          "type": "boolean"
+        }
+      },
+      "outputs": {
+        "createRecord": {
+          "type": "RequestBindingConfig"
+        },
+        "paginationChange": {
+          "type": "RequestBindingConfig"
+        },
+        "showList": {
+          "type": "RequestBindingConfig"
+        },
+        "valuePicked": {
+          "type": "RequestBindingConfig"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/combo_box.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.CommunicationOptions",
+      "inputs": {
+        "autoLoad": {
+          "type": "boolean"
+        },
+        "controller": {
+          "type": "string"
+        },
+        "controllerType": {
+          "type": "string"
+        },
+        "displayFormatColumnName": {
+          "type": "string"
+        },
+        "gap": {
+          "type": "number",
+          "default": 16.0
+        },
+        "imageLinkColumnName": {
+          "type": "string"
+        },
+        "items": {
+          "type": "string",
+          "description": "Data property."
+        },
+        "labelPosition": {
+          "type": "string",
+          "values": [
+            "above",
+            "auto",
+            "hidden"
+          ],
+          "default": "auto",
+          "description": "Where each option's label sits relative to its value. Consumed by the communication-options preprocessor before deserialisation; defaults to auto."
+        },
+        "masterRecordColumnName": {
+          "type": "string"
+        },
+        "masterRecordColumnValue": {
+          "type": "string"
+        },
+        "modelType": {
+          "type": "string"
+        },
+        "numberColumnName": {
+          "type": "string",
+          "default": ""
+        },
+        "primaryColumnName": {
+          "type": "string"
+        },
+        "readonly": {
+          "type": "boolean"
+        },
+        "templates": {
+          "type": "Record",
+          "keyType": "unknown",
+          "valueType": "unknown"
+        },
+        "typeColumnName": {
+          "type": "string",
+          "default": ""
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/communication_options.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.ContactCompactProfile",
+      "inputs": {
+        "birthDate": {
+          "type": "string"
+        },
+        "country": {
+          "type": "unknown"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "photo": {
+          "type": "unknown"
+        },
+        "readonly": {
+          "type": "boolean"
+        },
+        "referenceColumn": {
+          "type": "unknown"
+        },
+        "timeZone": {
+          "type": "unknown"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/contact_compact_profile.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.DataGrid",
+      "inputs": {
+        "autoLoad": {
+          "type": "boolean"
+        },
+        "cellContentAlignment": {
+          "type": "string",
+          "values": [
+            "topLeft",
+            "centerLeft"
+          ],
+          "description": "Alignment of cell content. Defaults to [Alignment.topLeft]."
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "DataGridColumnDefinition"
+          },
+          "description": "Column definitions."
+        },
+        "controller": {
+          "type": "string"
+        },
+        "controllerType": {
+          "type": "string"
+        },
+        "expanded": {
+          "type": "boolean",
+          "description": "If true, the component transitions to expanded mode."
+        },
+        "expandedTitle": {
+          "type": "string",
+          "description": "Screen title in expanded mode."
+        },
+        "features": {
+          "type": "DataGridFeatures",
+          "description": "Features."
+        },
+        "items": {
+          "type": "string",
+          "description": "Data property."
+        },
+        "modelType": {
+          "type": "string"
+        },
+        "rowHeight": {
+          "type": "number",
+          "description": "Fixed row height in pixels."
+        },
+        "rowTitle": {
+          "type": "string",
+          "description": "Frozen non-editable column name"
+        },
+        "rowToolbarItems": {
+          "type": "array",
+          "items": {
+            "type": "ViewElementConfig"
+          }
+        },
+        "showHeaderColumnDividers": {
+          "type": "boolean",
+          "description": "Whether to draw vertical dividers between columns."
+        },
+        "showLockIcon": {
+          "type": "boolean",
+          "description": "Whether to show the lock icon on non-editable columns in the grid caption/header. Null preserves the previous automatic per-column behavior."
+        },
+        "sorting": {
+          "type": "array",
+          "items": {
+            "type": "DataTableSortingConfig"
+          },
+          "description": "Sorting config."
+        },
+        "verticalScroll": {
+          "type": "boolean",
+          "description": "Whether component should have vertical scrolling."
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/data_grid.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.DataTableEditBooleanCell",
+      "inputs": {
+        "contentType": {
+          "type": "string"
+        },
+        "displayType": {
+          "type": "BooleanCellDisplayType",
+          "values": [
+            "toggle",
+            "checkbox"
+          ],
+          "description": "Visual representation of the boolean cell. Defaults to [BooleanCellDisplayType.toggle] when `null`."
+        },
+        "hint": {
+          "type": "string"
+        },
+        "isCollapsed": {
+          "type": "boolean"
+        },
+        "label": {
+          "type": "Record",
+          "keyType": "unknown",
+          "valueType": "unknown"
+        },
+        "maxLines": {
+          "type": "number"
+        },
+        "readOnly": {
+          "type": "boolean"
+        },
+        "showEmptyValue": {
+          "type": "boolean"
+        },
+        "textStyle": {
+          "type": "unknown"
+        },
+        "value": {
+          "type": "unknown"
+        }
+      },
+      "outputs": {
+        "valueChanged": {
+          "type": "RequestBindingConfig"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/data_table_edit_boolean_cell.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.DataTableEditLookupCell",
+      "inputs": {
+        "clicked": {
+          "type": "unknown",
+          "description": "Configuration of click event."
+        },
+        "contentType": {
+          "type": "string"
+        },
+        "hint": {
+          "type": "string"
+        },
+        "isCollapsed": {
+          "type": "boolean"
+        },
+        "label": {
+          "type": "Record",
+          "keyType": "unknown",
+          "valueType": "unknown"
+        },
+        "maxLines": {
+          "type": "number"
+        },
+        "readOnly": {
+          "type": "boolean"
+        },
+        "secondaryDisplayValue": {
+          "type": "string",
+          "description": "Secondary display value."
+        },
+        "showEmptyValue": {
+          "type": "boolean"
+        },
+        "textStyle": {
+          "type": "unknown"
+        },
+        "value": {
+          "type": "unknown"
+        }
+      },
+      "outputs": {
+        "valueChanged": {
+          "type": "RequestBindingConfig"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/data_table_edit_lookup_cell.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.DataTableEditNumericCell",
+      "inputs": {
+        "contentType": {
+          "type": "string"
+        },
+        "hint": {
+          "type": "string"
+        },
+        "isCollapsed": {
+          "type": "boolean"
+        },
+        "label": {
+          "type": "Record",
+          "keyType": "unknown",
+          "valueType": "unknown"
+        },
+        "maxLines": {
+          "type": "number"
+        },
+        "readOnly": {
+          "type": "boolean"
+        },
+        "showEmptyValue": {
+          "type": "boolean"
+        },
+        "textStyle": {
+          "type": "unknown"
+        },
+        "value": {
+          "type": "unknown"
+        }
+      },
+      "outputs": {
+        "valueChanged": {
+          "type": "RequestBindingConfig"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/data_table_edit_numeric_cell.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.DataTableEditTextCell",
+      "inputs": {
+        "contentType": {
+          "type": "string"
+        },
+        "hint": {
+          "type": "string"
+        },
+        "isCollapsed": {
+          "type": "boolean"
+        },
+        "label": {
+          "type": "Record",
+          "keyType": "unknown",
+          "valueType": "unknown"
+        },
+        "maxLines": {
+          "type": "number"
+        },
+        "readOnly": {
+          "type": "boolean"
+        },
+        "showEmptyValue": {
+          "type": "boolean"
+        },
+        "textStyle": {
+          "type": "unknown"
+        },
+        "value": {
+          "type": "unknown"
+        }
+      },
+      "outputs": {
+        "valueChanged": {
+          "type": "RequestBindingConfig"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/data_table_edit_text_cell.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.DateTimePicker",
+      "inputs": {
+        "control": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "labelPosition": {
+          "type": "InputLabelPosition",
+          "values": [
+            "above",
+            "auto",
+            "hidden"
+          ],
+          "default": "above"
+        },
+        "pickerType": {
+          "type": "DateTimePickerType",
+          "values": [
+            "date",
+            "datetime",
+            "time"
+          ],
+          "default": "datetime"
+        },
+        "placeholder": {
+          "type": "string"
+        },
+        "readonly": {
+          "type": "boolean"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/date_time_picker.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.EmailInput",
+      "inputs": {
+        "autofocus": {
+          "type": "boolean"
+        },
+        "control": {
+          "type": "string"
+        },
+        "hideActionButtonOnFocus": {
+          "type": "boolean"
+        },
+        "label": {
+          "type": "string"
+        },
+        "labelPosition": {
+          "type": "InputLabelPosition",
+          "values": [
+            "above",
+            "auto",
+            "hidden"
+          ],
+          "default": "above"
+        },
+        "maxLines": {
+          "type": "number"
+        },
+        "minLines": {
+          "type": "number",
+          "default": 1
+        },
+        "multiline": {
+          "type": "boolean"
+        },
+        "placeholder": {
+          "type": "string"
+        },
+        "readonly": {
+          "type": "boolean"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/email_input.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.EntityStageProgressBar",
+      "description": "Configuration for EntityStageProgressBarComponent.",
+      "inputs": {
+        "createdOnAttributeName": {
+          "type": "string",
+          "description": "Attribute that holds the created on date of the record."
+        },
+        "entityName": {
+          "type": "string",
+          "description": "Entity name to fetch DCM stage data for."
+        },
+        "filteringColumn": {
+          "type": "unknown",
+          "description": "State attribute bound to the column used for DCM filtering."
+        },
+        "loadData": {
+          "type": "Record",
+          "keyType": "string",
+          "valueType": "unknown",
+          "description": "Handler for loading data."
+        },
+        "recordId": {
+          "type": "string",
+          "description": "Record ID to fetch DCM runtime information for."
+        },
+        "stageChanged": {
+          "type": "Record",
+          "keyType": "string",
+          "valueType": "unknown",
+          "description": "Handler for stage changed event."
+        },
+        "stageConnections": {
+          "type": "unknown",
+          "description": "State attribute that stores DCM stage connections."
+        },
+        "stages": {
+          "type": "unknown",
+          "description": "State attribute that stores loaded DCM stages."
+        },
+        "value": {
+          "type": "unknown",
+          "description": "Binding to the current stage attribute."
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/entity_stage_progress_bar.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.ExpansionPanel",
+      "inputs": {
+        "expanded": {
+          "type": "boolean",
+          "description": "Whether component should be expanded by default."
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "ViewElementConfig"
+          },
+          "description": "List of widgets."
+        },
+        "padding": {
+          "type": "PaddingConfig",
+          "description": "Padding configuration."
+        },
+        "title": {
+          "type": "unknown",
+          "description": "Title."
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "ViewElementConfig"
+          },
+          "description": "List of tools widgets, placed in header panel."
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/expansion_panel.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.Feed",
+      "inputs": {
+        "autoLoad": {
+          "type": "boolean"
+        },
+        "controller": {
+          "type": "string"
+        },
+        "controllerType": {
+          "type": "string"
+        },
+        "entitySchemaName": {
+          "type": "string"
+        },
+        "modelType": {
+          "type": "string"
+        },
+        "primaryColumnValue": {
+          "type": "string"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/feed.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.FileList",
+      "description": "Configuration for FileList component.",
+      "inputs": {
+        "autoLoad": {
+          "type": "boolean"
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "FileListColumnDefinition"
+          },
+          "description": "Columns configuration for file list."
+        },
+        "controller": {
+          "type": "string"
+        },
+        "controllerType": {
+          "type": "string"
+        },
+        "enablePullToRefresh": {
+          "type": "boolean"
+        },
+        "entityName": {
+          "type": "string",
+          "description": "Entity name for file schema (e.g., 'ActivityFile', 'AccountFile', 'ContactFile', 'SysFile')."
+        },
+        "fileGroups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "File groups configuration."
+        },
+        "itemLayout": {
+          "type": "ViewElementConfig"
+        },
+        "itemPadding": {
+          "type": "PaddingConfig",
+          "description": "Padding for item."
+        },
+        "items": {
+          "type": "string",
+          "description": "Data property attribute."
+        },
+        "masterRecordColumnValue": {
+          "type": "string",
+          "description": "Master record column value."
+        },
+        "modelType": {
+          "type": "string"
+        },
+        "primaryColumnName": {
+          "type": "string",
+          "description": "Primary column name."
+        },
+        "recordColumnName": {
+          "type": "string",
+          "description": "Record column name."
+        },
+        "scrollable": {
+          "type": "boolean",
+          "default": false
+        },
+        "tag": {
+          "type": "string",
+          "description": "Free-form tag copied onto files uploaded through this list, for grouping. Consumed by the upload-file request preprocessor; defaults to an empty string."
+        },
+        "tileSize": {
+          "type": "string",
+          "description": "Tile size for grid view."
+        },
+        "viewType": {
+          "type": "string",
+          "description": "View type for the file list."
+        }
+      },
+      "outputs": {
+        "itemSelected": {
+          "type": "RequestBindingConfig"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/file_list.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.FileListItem",
+      "description": "Configuration for FileListItem component.",
+      "inputs": {
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "ViewElementConfig"
+          },
+          "description": "File actions configuration."
+        },
+        "fileName": {
+          "type": "string",
+          "description": "File name property."
+        },
+        "size": {
+          "type": "number",
+          "description": "File size property."
+        },
+        "subtitles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Subtitles property."
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/file_list_item.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.FlexContainer",
+      "inputs": {
+        "alignItems": {
+          "type": "FlexAlign",
+          "values": [
+            "flex-start",
+            "flex-end",
+            "center",
+            "stretch"
+          ],
+          "default": "stretch"
+        },
+        "borderRadius": {
+          "type": "BorderRadiusConfig"
+        },
+        "color": {
+          "type": "string"
+        },
+        "direction": {
+          "type": "FlexDirection",
+          "values": [
+            "row",
+            "row-reverse",
+            "column",
+            "column-reverse"
+          ],
+          "default": "column"
+        },
+        "gap": {
+          "type": "number",
+          "default": 8.0
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "ViewElementConfig"
+          },
+          "default": []
+        },
+        "justifyContent": {
+          "type": "FlexJustifyContent",
+          "values": [
+            "start",
+            "end",
+            "center",
+            "space-around",
+            "space-evenly",
+            "space-between"
+          ],
+          "default": "start"
+        },
+        "padding": {
+          "type": "PaddingConfig"
+        },
+        "safeArea": {
+          "type": "boolean",
+          "description": "If SafeArea true, the container will be wrapped bottom padding (or add scrollPadding) to avoid app BottomBar overlay."
+        },
+        "scrollable": {
+          "type": "boolean",
+          "default": false
+        },
+        "wrap": {
+          "type": "FlexWrap",
+          "values": [
+            "nowrap",
+            "wrap",
+            "wrap-reverse"
+          ],
+          "default": "nowrap"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/flex_container.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.FloatingActionButton",
+      "inputs": {
+        "clicked": {
+          "type": "unknown",
+          "description": "Configuration of click event."
+        },
+        "icon": {
+          "type": "string",
+          "description": "Configuration of icon."
+        },
+        "menuDisplayType": {
+          "type": "MenuDisplayType",
+          "values": [
+            "modal",
+            "popup"
+          ],
+          "default": "modal"
+        },
+        "menuItems": {
+          "type": "array",
+          "items": {
+            "type": "ViewElementConfig"
+          },
+          "description": "Configuration of menu items that are displayed when the button is pressed."
+        },
+        "menuTitle": {
+          "type": "string",
+          "description": "Title of menu picker."
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/floating_action_button.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.FolderTreeActions",
+      "inputs": {
+        "activeFolderName": {
+          "type": "string",
+          "description": "Selected folder name."
+        },
+        "caption": {
+          "type": "string",
+          "description": "Caption of picker with folders."
+        },
+        "color": {
+          "type": "ButtonColor",
+          "values": [
+            "primary",
+            "accent",
+            "warn",
+            "default",
+            "secondary",
+            "outlined"
+          ],
+          "default": "secondary"
+        },
+        "folderTreeVisibleChanged": {
+          "type": "Record",
+          "keyType": "unknown",
+          "valueType": "unknown",
+          "description": "Config of request (look at crt.OpenModalFolderTreeRequest), that opens picker with list of folders."
+        },
+        "iconPosition": {
+          "type": "ButtonIconPosition",
+          "values": [
+            "only-text",
+            "left-icon",
+            "right-icon",
+            "only-icon"
+          ],
+          "default": "left-icon"
+        },
+        "maxWidth": {
+          "type": "number",
+          "description": "Maximum width to constrain the folder button."
+        },
+        "rootSchemaName": {
+          "type": "string",
+          "description": "Root schema name for folder tree."
+        },
+        "size": {
+          "type": "ButtonSize",
+          "values": [
+            "small",
+            "medium",
+            "large",
+            "extra-large",
+            "xxl",
+            "xxxl"
+          ],
+          "default": "medium"
+        },
+        "sourceSchemaName": {
+          "type": "string",
+          "description": "Source schema name for folder tree."
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/folder_tree_actions.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.Gallery",
+      "description": "Configuration for Gallery component that displays items in a grid layout.",
+      "inputs": {
+        "autoLoad": {
+          "type": "boolean"
+        },
+        "controller": {
+          "type": "string"
+        },
+        "controllerType": {
+          "type": "string"
+        },
+        "itemConfig": {
+          "type": "GalleryItemConfig",
+          "description": "Configuration for gallery items."
+        },
+        "items": {
+          "type": "string",
+          "description": "Data source for gallery items (attribute name)."
+        },
+        "modelType": {
+          "type": "string"
+        },
+        "specificPage": {
+          "type": "string",
+          "description": "Specific page name to open when item is clicked."
+        },
+        "useSpecificPage": {
+          "type": "boolean",
+          "description": "Whether to use a specific page when item is clicked."
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/gallery.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.GridContainer",
+      "inputs": {
+        "adaptive": {
+          "type": "AdaptiveConfig_GridContainerBreakpointConfig",
+          "description": "Adaptive configuration describing per-breakpoint overrides for this component."
+        },
+        "alignItems": {
+          "type": "string"
+        },
+        "borderRadius": {
+          "type": "BorderRadiusConfig"
+        },
+        "color": {
+          "type": "string"
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "GridContainerColumnConfig"
+          },
+          "description": "List of column definitions. Each string represents a column (e.g., [\"1fr\", \"1fr\"]). For now, only the count is used (ignore \"fr\" values)."
+        },
+        "gap": {
+          "type": "GridContainerGap",
+          "required": true
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "ViewElementConfig"
+          },
+          "required": true
+        },
+        "justifyItems": {
+          "type": "string"
+        },
+        "padding": {
+          "type": "PaddingConfig"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/grid_container.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.IFrame",
+      "inputs": {
+        "contentType": {
+          "type": "WebViewContentType",
+          "values": [
+            "html",
+            "url"
+          ]
+        },
+        "htmlContent": {
+          "type": "string"
+        },
+        "urlContent": {
+          "type": "string"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/i_frame.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.ImageInput",
+      "inputs": {
+        "borderRadius": {
+          "type": "BorderRadiusConfig"
+        },
+        "control": {
+          "type": "string"
+        },
+        "disabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "label": {
+          "type": "string"
+        },
+        "labelPosition": {
+          "type": "InputLabelPosition",
+          "values": [
+            "above",
+            "auto",
+            "hidden"
+          ],
+          "default": "above"
+        },
+        "maxFileSize": {
+          "type": "number"
+        },
+        "placeholder": {
+          "type": "string"
+        },
+        "positioning": {
+          "type": "ImagePositioning",
+          "values": [
+            "cover",
+            "scale-down"
+          ],
+          "default": "cover"
+        },
+        "readonly": {
+          "type": "boolean"
+        },
+        "size": {
+          "type": "ImageInputSize",
+          "values": [
+            "small",
+            "medium",
+            "large",
+            "extra-large"
+          ],
+          "default": "large"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/image_input.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.IndicatorWidget",
+      "inputs": {
+        "autoLoad": {
+          "type": "boolean"
+        },
+        "config": {
+          "type": "IndicatorConfig"
+        },
+        "controller": {
+          "type": "string"
+        },
+        "controllerType": {
+          "type": "string"
+        },
+        "data": {
+          "type": "unknown"
+        },
+        "errorMessage": {
+          "type": "string"
+        },
+        "listConfig": {
+          "type": "unknown"
+        },
+        "listData": {
+          "type": "string"
+        },
+        "modelType": {
+          "type": "string"
+        },
+        "pagingConfig": {
+          "type": "Record",
+          "keyType": "unknown",
+          "valueType": "unknown"
+        },
+        "searchValue": {
+          "type": "string",
+          "description": "Drill-down search text attribute. The preprocessor emits it as a binding (`$DYN_..._SearchValue`), so the prefix is stripped to get the attribute name."
+        },
+        "useCompactFormat": {
+          "type": "boolean"
+        }
+      },
+      "outputs": {
+        "columnsChange": {
+          "type": "RequestBindingConfig"
+        },
+        "drillDown": {
+          "type": "RequestBindingConfig"
+        },
+        "fullScreenStateChanged": {
+          "type": "RequestBindingConfig"
+        },
+        "getProfileColumns": {
+          "type": "RequestBindingConfig"
+        },
+        "paginationChange": {
+          "type": "RequestBindingConfig"
+        },
+        "searchFilterChange": {
+          "type": "RequestBindingConfig",
+          "description": "Handled by the generic `SearchFilterRequestHandler`, which stores the value into [searchValue]."
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/indicator_widget.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.Input",
+      "inputs": {
+        "autofocus": {
+          "type": "boolean"
+        },
+        "control": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "labelPosition": {
+          "type": "InputLabelPosition",
+          "values": [
+            "above",
+            "auto",
+            "hidden"
+          ],
+          "default": "above"
+        },
+        "maxLines": {
+          "type": "number"
+        },
+        "minLines": {
+          "type": "number"
+        },
+        "multiline": {
+          "type": "boolean"
+        },
+        "placeholder": {
+          "type": "string"
+        },
+        "readonly": {
+          "type": "boolean"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/input.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.Label",
+      "inputs": {
+        "caption": {
+          "type": "unknown"
+        },
+        "labelColor": {
+          "type": "string"
+        },
+        "labelEllipsis": {
+          "type": "boolean",
+          "default": false
+        },
+        "labelThickness": {
+          "type": "LabelThickness",
+          "values": [
+            "light",
+            "normal",
+            "semibold",
+            "bold",
+            "default"
+          ],
+          "default": "default"
+        },
+        "labelType": {
+          "type": "LabelType",
+          "values": [
+            "large-1",
+            "large-2",
+            "large-3",
+            "large-4",
+            "headline-1",
+            "headline-1-small",
+            "headline-2",
+            "headline-3",
+            "headline-4",
+            "body-large",
+            "body",
+            "caption-large",
+            "caption",
+            "placeholder-large",
+            "placeholder",
+            "button",
+            "button-small",
+            "blankslate"
+          ],
+          "default": "body"
+        },
+        "maxLines": {
+          "type": "number"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/label.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.Link",
+      "inputs": {
+        "caption": {
+          "type": "unknown",
+          "description": "Caption."
+        },
+        "clicked": {
+          "type": "unknown",
+          "description": "Configuration of click event."
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/link.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.List",
+      "inputs": {
+        "autoLoad": {
+          "type": "boolean"
+        },
+        "blankSlateText": {
+          "type": "string",
+          "description": "Custom text shown when the list has no data."
+        },
+        "controller": {
+          "type": "string"
+        },
+        "controllerType": {
+          "type": "string"
+        },
+        "enablePullToRefresh": {
+          "type": "boolean"
+        },
+        "itemLayout": {
+          "type": "ViewElementConfig",
+          "description": "Row the list renders per record - a crt.ListItem carrying the title and the body fields. One element, not a collection."
+        },
+        "itemPadding": {
+          "type": "PaddingConfig",
+          "description": "Padding for item."
+        },
+        "items": {
+          "type": "string",
+          "description": "Data property attribute."
+        },
+        "modelType": {
+          "type": "string"
+        },
+        "scrollable": {
+          "type": "boolean",
+          "default": true
+        },
+        "useSeparator": {
+          "type": "boolean"
+        }
+      },
+      "outputs": {
+        "itemSelected": {
+          "type": "RequestBindingConfig"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/list.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.ListItem",
+      "inputs": {
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "ViewElementConfig"
+          }
+        },
+        "body": {
+          "type": "array",
+          "items": {
+            "type": "ListItemBodyField | ViewElementConfig"
+          },
+          "description": "Elements rendered under the row title. An array whose entries are each a body field (value/label/showEmptyValues) or any component config such as {\"type\": \"crt.Button\"}; the list-item preprocessor wraps it into the body element before deserialisation. A single component config is also accepted in place of the array."
+        },
+        "icon": {
+          "type": "string"
+        },
+        "iconSize": {
+          "type": "string"
+        },
+        "showEmptyValues": {
+          "type": "boolean"
+        },
+        "subtitles": {
+          "type": "array",
+          "items": {
+            "type": "LabeledStateProperty"
+          },
+          "description": "Secondary lines under the title. Each entry is either a binding string, or `{ \"value\": \"$Column\", \"label\": { \"value\": ..., \"position\": ..., \"visible\": ... } }` when the line needs a label of its own — see the class example above."
+        },
+        "title": {
+          "type": "string"
+        },
+        "titleChipColor": {
+          "type": "string"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/list_item.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.Map",
+      "inputs": {
+        "autoLoad": {
+          "type": "boolean"
+        },
+        "controller": {
+          "type": "string"
+        },
+        "controllerType": {
+          "type": "string"
+        },
+        "defaultZoom": {
+          "type": "number"
+        },
+        "fixedHeight": {
+          "type": "number"
+        },
+        "items": {
+          "type": "unknown",
+          "description": "Collection binding used by map data loading. Contract: this binding must stay stable during component lifecycle. Runtime datasource rebinding via `items` is not supported."
+        },
+        "mapType": {
+          "type": "string"
+        },
+        "modelType": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "radius": {
+          "type": "number"
+        },
+        "showPointsOfInterest": {
+          "type": "boolean"
+        },
+        "templateValuesMapping": {
+          "type": "MapColumnsMapping"
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "ViewElementConfig"
+          }
+        }
+      },
+      "outputs": {
+        "itemSelected": {
+          "type": "RequestBindingConfig"
+        },
+        "longPressed": {
+          "type": "RequestBindingConfig"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/map.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.MapPreview",
+      "inputs": {
+        "address": {
+          "type": "string"
+        },
+        "borderRadius": {
+          "type": "BorderRadiusConfig"
+        },
+        "coordinates": {
+          "type": "MapPreviewCoordinates"
+        },
+        "directionsOnTap": {
+          "type": "boolean"
+        },
+        "height": {
+          "type": "number"
+        },
+        "mapType": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "showMarker": {
+          "type": "boolean"
+        },
+        "zoom": {
+          "type": "number"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/map_preview.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.MenuItem",
+      "inputs": {
+        "caption": {
+          "type": "string",
+          "description": "Caption."
+        },
+        "clicked": {
+          "type": "unknown",
+          "description": "Config of click event on menu item."
+        },
+        "icon": {
+          "type": "unknown",
+          "description": "Icon."
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/menu_item.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.NumberInput",
+      "inputs": {
+        "control": {
+          "type": "string"
+        },
+        "format": {
+          "type": "NumberInputFormat",
+          "required": true
+        },
+        "label": {
+          "type": "string"
+        },
+        "labelPosition": {
+          "type": "InputLabelPosition",
+          "values": [
+            "above",
+            "auto",
+            "hidden"
+          ],
+          "default": "above"
+        },
+        "placeholder": {
+          "type": "string"
+        },
+        "readonly": {
+          "type": "boolean"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/number_input.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.PhoneInput",
+      "inputs": {
+        "autofocus": {
+          "type": "boolean"
+        },
+        "control": {
+          "type": "string"
+        },
+        "hideActionButtonOnFocus": {
+          "type": "boolean"
+        },
+        "label": {
+          "type": "string"
+        },
+        "labelPosition": {
+          "type": "InputLabelPosition",
+          "values": [
+            "above",
+            "auto",
+            "hidden"
+          ],
+          "default": "above"
+        },
+        "maxLines": {
+          "type": "number"
+        },
+        "minLines": {
+          "type": "number",
+          "default": 1
+        },
+        "multiline": {
+          "type": "boolean"
+        },
+        "placeholder": {
+          "type": "string"
+        },
+        "readonly": {
+          "type": "boolean"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/phone_input.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.PositionedExpansionPanel",
+      "inputs": {
+        "expanded": {
+          "type": "boolean"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "ViewElementConfig"
+          }
+        },
+        "position": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "toggleItems": {
+          "type": "array",
+          "items": {
+            "type": "ViewElementConfig"
+          }
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "ViewElementConfig"
+          }
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/positioned_expansion_panel.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.QuickFilter",
+      "inputs": {
+        "config": {
+          "type": "BaseQuickFilterConfig",
+          "description": "Config of filter.",
+          "required": true
+        },
+        "filterType": {
+          "type": "QuickFilterType",
+          "values": [
+            "custom",
+            "dateRange",
+            "lookup"
+          ],
+          "description": "Type of filter.",
+          "required": true
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "type": "BaseQuickFilterTarget"
+          },
+          "description": "Filter targets."
+        },
+        "value": {
+          "type": "unknown",
+          "description": "Filter value."
+        },
+        "valueChange": {
+          "type": "unknown",
+          "description": "Configuration for request on change event."
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/quick_filter.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.QuickFilterGroup",
+      "inputs": {
+        "flexContainerConfig": {
+          "type": "ViewElementConfig"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "ViewElementConfig"
+          },
+          "required": true
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/quick_filter_group.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.RichTextEditor",
+      "inputs": {
+        "control": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "labelPosition": {
+          "type": "InputLabelPosition",
+          "values": [
+            "above",
+            "auto",
+            "hidden"
+          ],
+          "default": "above"
+        },
+        "placeholder": {
+          "type": "string"
+        },
+        "readonly": {
+          "type": "boolean"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/rich_text_editor.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.Scaffold",
+      "inputs": {
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "ViewElementConfig"
+          }
+        },
+        "floatAction": {
+          "type": "ViewElementConfig"
+        },
+        "fullScreen": {
+          "type": "boolean"
+        },
+        "header": {
+          "type": "array",
+          "items": {
+            "type": "ViewElementConfig"
+          }
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "ViewElementConfig"
+          }
+        },
+        "leading": {
+          "type": "array",
+          "items": {
+            "type": "ViewElementConfig"
+          }
+        },
+        "leadingWidth": {
+          "type": "number"
+        },
+        "showAppBar": {
+          "type": "boolean"
+        },
+        "title": {
+          "type": "string"
+        },
+        "useSurface": {
+          "type": "boolean"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/scaffold.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.SearchFilter",
+      "inputs": {
+        "placeholder": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "outputs": {
+        "valueChange": {
+          "type": "RequestBindingConfig"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/search_filter.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.SegmentedButtonGroup",
+      "inputs": {
+        "gap": {
+          "type": "number"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "SegmentedButtonGroupItemConfig"
+          }
+        },
+        "selectedValue": {
+          "type": "unknown"
+        }
+      },
+      "outputs": {
+        "changed": {
+          "type": "RequestBindingConfig"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/segmented_button_group.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.Slider",
+      "inputs": {
+        "color": {
+          "type": "SliderColor",
+          "values": [
+            "accent",
+            "primary",
+            "warn",
+            "default"
+          ],
+          "description": "Color schema for the Slider component."
+        },
+        "control": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "labelPosition": {
+          "type": "InputLabelPosition",
+          "values": [
+            "above",
+            "auto",
+            "hidden"
+          ],
+          "default": "above"
+        },
+        "maxValue": {
+          "type": "number",
+          "description": "Maximum value for the slider."
+        },
+        "minValue": {
+          "type": "number",
+          "description": "Minimum value for the slider."
+        },
+        "placeholder": {
+          "type": "string"
+        },
+        "readonly": {
+          "type": "boolean"
+        },
+        "step": {
+          "type": "number",
+          "description": "Step value for the slider."
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/slider.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.Sort",
+      "inputs": {
+        "color": {
+          "type": "ButtonColor",
+          "values": [
+            "primary",
+            "accent",
+            "warn",
+            "default",
+            "secondary",
+            "outlined"
+          ],
+          "default": "secondary"
+        },
+        "defaultValue": {
+          "type": "array",
+          "items": {
+            "type": "Record",
+            "keyType": "unknown",
+            "valueType": "unknown"
+          },
+          "description": "For internal usage."
+        },
+        "iconPosition": {
+          "type": "ButtonIconPosition",
+          "values": [
+            "only-text",
+            "left-icon",
+            "right-icon",
+            "only-icon"
+          ],
+          "default": "left-icon"
+        },
+        "items": {
+          "type": "string",
+          "description": "Attribute name of the collection to be sorted."
+        },
+        "size": {
+          "type": "ButtonSize",
+          "values": [
+            "small",
+            "medium",
+            "large",
+            "extra-large",
+            "xxl",
+            "xxxl"
+          ],
+          "default": "medium"
+        },
+        "sortItems": {
+          "type": "array",
+          "items": {
+            "type": "SortItemsConfig"
+          },
+          "description": "List of sorting options."
+        },
+        "value": {
+          "type": "unknown",
+          "description": "Selected sorting value."
+        },
+        "valueChange": {
+          "type": "Record",
+          "keyType": "unknown",
+          "valueType": "unknown",
+          "description": "Request config."
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/sort.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.TabContainer",
+      "description": "One tab inside a `crt.TabPanel`. Declaration-only: the type has no widget and is NOT registered in [ComponentConfigDeserializer]. `tab_panel_preprocessor.dart` rewrites a `crt.TabPanel` holding `crt.TabContainer` items into a `TabPanelHeader` + `ToggleContainer` structure before deserialisation, so the type is legal in a page schema yet never reaches the deserializer as a standalone element. This stub exists only to keep the type's authoring contract and its doc in the runtime, where the contract belongs — the registry generator discovers it by the tag below, not through the widget scan or the deserializer map.",
+      "inputs": {
+        "caption": {
+          "type": "string",
+          "description": "Tab title shown in the tab header; read by `tab_panel_preprocessor.dart`."
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "ViewElementConfig"
+          },
+          "description": "Content of the tab."
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/tab_container.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.TabPanel",
+      "inputs": {
+        "isScrollable": {
+          "type": "boolean",
+          "default": true
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "ViewElementConfig"
+          }
+        },
+        "selectedTabName": {
+          "type": "string"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/tab_panel.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.TabPanelHeader",
+      "inputs": {
+        "tabs": {
+          "type": "array",
+          "items": {
+            "type": "ViewElementConfig"
+          }
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/tab_panel_header.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.TabPanelHeaderItem",
+      "inputs": {
+        "caption": {
+          "type": "string"
+        },
+        "icon": {
+          "type": "string"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/tab_panel_header_item.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.TableBooleanCell",
+      "inputs": {
+        "maxLines": {
+          "type": "number"
+        },
+        "readonly": {
+          "type": "boolean",
+          "description": "Is the cell in readonly mode."
+        },
+        "value": {
+          "type": "unknown"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/table_boolean_cell.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.TableLinkCell",
+      "inputs": {
+        "caption": {
+          "type": "unknown",
+          "description": "Caption."
+        },
+        "clicked": {
+          "type": "unknown",
+          "description": "Configuration of click event."
+        },
+        "maxLines": {
+          "type": "number"
+        },
+        "readonly": {
+          "type": "boolean",
+          "description": "Is the cell in readonly mode."
+        },
+        "value": {
+          "type": "unknown"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/table_link_cell.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.TableTextCell",
+      "inputs": {
+        "maxLines": {
+          "type": "number"
+        },
+        "readonly": {
+          "type": "boolean",
+          "description": "Is the cell in readonly mode."
+        },
+        "value": {
+          "type": "unknown"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/table_text_cell.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.Timeline",
+      "inputs": {
+        "itemPadding": {
+          "type": "PaddingConfig",
+          "description": "Padding for item."
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "TimelineTileConfig"
+          }
+        },
+        "masterEntity": {
+          "type": "string"
+        },
+        "masterSchemaId": {
+          "type": "string"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/timeline.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.TimelineTile",
+      "description": "A single tile inside a `crt.Timeline`. Declaration-only: the type has no widget and is NOT registered in [ComponentConfigDeserializer]. The timeline renders its tiles itself from its own `items` configuration (see `TimelineTileType`), so a page schema never writes a `crt.TimelineTile` element or any property on it — it carries no authorable input of its own beyond the shared base. This stub keeps the type's name and its doc in the runtime; the registry generator discovers it by the tag below, not through the widget scan or the deserializer map.",
+      "inputs": {},
+      "references": {
+        "docs": [
+          "mobile-docs/timeline_tile.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.Timer",
+      "inputs": {
+        "control": {
+          "type": "string"
+        },
+        "labelEllipsis": {
+          "type": "boolean"
+        },
+        "labelTextAlign": {
+          "type": "TimerTextAlign",
+          "values": [
+            "start",
+            "center",
+            "end",
+            "justify"
+          ],
+          "default": "start"
+        },
+        "labelThickness": {
+          "type": "LabelThickness",
+          "values": [
+            "light",
+            "normal",
+            "semibold",
+            "bold",
+            "default"
+          ],
+          "default": "default"
+        },
+        "labelType": {
+          "type": "LabelType",
+          "values": [
+            "large-1",
+            "large-2",
+            "large-3",
+            "large-4",
+            "headline-1",
+            "headline-1-small",
+            "headline-2",
+            "headline-3",
+            "headline-4",
+            "body-large",
+            "body",
+            "caption-large",
+            "caption",
+            "placeholder-large",
+            "placeholder",
+            "button",
+            "button-small",
+            "blankslate"
+          ],
+          "default": "body"
+        },
+        "negativeTextColor": {
+          "type": "string"
+        },
+        "negativeTextValue": {
+          "type": "string"
+        },
+        "positiveTextColor": {
+          "type": "string"
+        },
+        "positiveTextValue": {
+          "type": "string"
+        },
+        "showNegativeCountDownValue": {
+          "type": "boolean",
+          "default": true
+        },
+        "timerType": {
+          "type": "TimerType",
+          "values": [
+            "timer-from-date",
+            "countdown-to-specific-date"
+          ]
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/timer.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.Toggle",
+      "inputs": {
+        "control": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "labelPosition": {
+          "type": "InputLabelPosition",
+          "values": [
+            "above",
+            "auto",
+            "hidden"
+          ],
+          "default": "above"
+        },
+        "placeholder": {
+          "type": "string"
+        },
+        "readonly": {
+          "type": "boolean"
+        }
+      },
+      "outputs": {
+        "valueChange": {
+          "type": "RequestBindingConfig"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/toggle.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.ToggleContainer",
+      "inputs": {
+        "isScrollable": {
+          "type": "boolean",
+          "default": true
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "ViewElementConfig"
+          }
+        },
+        "verticalScroll": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/toggle_container.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.ToggleContainerItem",
+      "inputs": {
+        "caption": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "ViewElementConfig"
+          }
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/toggle_container_item.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.UserProfile",
+      "inputs": {
+        "nameTemplate": {
+          "type": "string",
+          "description": "Display name template. Use `{0}` as placeholder for the user's first name (e.g. `'Hello, {0}!'`)."
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/user_profile.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.WebInput",
+      "inputs": {
+        "autofocus": {
+          "type": "boolean"
+        },
+        "control": {
+          "type": "string"
+        },
+        "hideActionButtonOnFocus": {
+          "type": "boolean"
+        },
+        "imageId": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "labelPosition": {
+          "type": "InputLabelPosition",
+          "values": [
+            "above",
+            "auto",
+            "hidden"
+          ],
+          "default": "above"
+        },
+        "maxLines": {
+          "type": "number"
+        },
+        "minLines": {
+          "type": "number",
+          "default": 1
+        },
+        "multiline": {
+          "type": "boolean"
+        },
+        "placeholder": {
+          "type": "string"
+        },
+        "readonly": {
+          "type": "boolean"
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/web_input.component.md"
+        ]
+      }
+    }
+  ],
+  "references": {
+    "baseInputs": {
+      "_filterOptions": {
+        "type": "object",
+        "description": "Declarative filter wiring, consumed by the filter-options preprocessor before deserialisation and turned into calculated attributes. Set it instead of binding a filter by hand; it is honoured on any element, and in practice belongs on the quick-filter and folder-tree components."
+      },
+      "adaptive": {
+        "type": "AdaptiveConfig",
+        "description": "Adaptive configuration describing per-breakpoint overrides for this component."
+      },
+      "bindTo": {
+        "type": "string",
+        "description": "The name of a view model attribute to which the component's state is bound. This property links the component to a specific piece of data in the page's view model. For example, the visibility of the component can be controlled by the `visible` property of the bound attribute. If this property is null, the component's [name] is used as the binding key instead."
+      },
+      "flexConfig": {
+        "type": "FlexConfig",
+        "description": "Written on the element itself, beside `type`, never on a wrapper object. IGNORED unless the parent puts this element in a slot typed FlexItemConfig, so it is not a property every component takes."
+      },
+      "key": {
+        "type": "string"
+      },
+      "layoutConfig": {
+        "type": "GridLayoutConfig",
+        "description": "Written on the element itself, beside `type`, never on a wrapper object. IGNORED unless the parent puts this element in a slot typed GridLayoutItemConfig, so it is not a property every component takes."
+      },
+      "name": {
+        "type": "string"
+      },
+      "type": {
+        "type": "string",
+        "description": "Type of component."
+      },
+      "visible": {
+        "type": "boolean"
+      }
+    },
+    "typeDefinitions": {
+      "AdaptiveConfig": {
+        "fields": {
+          "small": {
+            "type": "BaseComponentBreakpointConfig"
+          },
+          "medium": {
+            "type": "BaseComponentBreakpointConfig"
+          },
+          "large": {
+            "type": "BaseComponentBreakpointConfig"
+          }
+        }
+      },
+      "AdaptiveConfig_GridContainerBreakpointConfig": {
+        "fields": {
+          "small": {
+            "type": "GridContainerBreakpointConfig"
+          },
+          "medium": {
+            "type": "GridContainerBreakpointConfig"
+          },
+          "large": {
+            "type": "GridContainerBreakpointConfig"
+          }
+        }
+      },
+      "AxisConfig": {
+        "fields": {
+          "name": {
+            "type": "string",
+            "description": "Name of the axis, which is displayed in the chart."
+          },
+          "formatting": {
+            "type": "AxisFormattingConfig",
+            "description": "Format configuration for the axis values. Determines how the values are displayed in the chart."
+          }
+        }
+      },
+      "AxisFormattingConfig": {
+        "fields": {
+          "type": {
+            "type": "string",
+            "description": "Type of formatting (e.g., 'number', 'string', 'datetime')."
+          },
+          "decimalSeparator": {
+            "type": "string",
+            "description": "Decimal separator character for number formatting."
+          },
+          "decimalPrecision": {
+            "type": "number",
+            "description": "Number of decimal places for number formatting."
+          },
+          "thousandSeparator": {
+            "type": "string",
+            "description": "Thousand separator character for number formatting."
+          },
+          "dateTimeFormat": {
+            "type": "string",
+            "description": "Date/time format pattern for datetime formatting."
+          }
+        }
+      },
+      "BarcodeScannerFeatures": {
+        "fields": {
+          "flashToggle": {
+            "type": "boolean",
+            "description": "Whether to enable the flash feature."
+          },
+          "beepOnScan": {
+            "type": "boolean",
+            "description": "Whether to play a sound when a barcode is successfully scanned."
+          }
+        }
+      },
+      "BaseComponentBreakpointConfig": {
+        "fields": {
+          "visible": {
+            "type": "boolean"
+          }
+        }
+      },
+      "BaseQuickFilterConfig": {
+        "fields": {
+          "defaultValue": {
+            "type": "unknown",
+            "description": "Default filter value."
+          },
+          "caption": {
+            "type": "string",
+            "description": "Caption of filter"
+          },
+          "hint": {
+            "type": "string",
+            "description": "Hint for filter"
+          },
+          "icon": {
+            "type": "string",
+            "description": "Icon name."
+          },
+          "iconPosition": {
+            "type": "string",
+            "description": "Icon position."
+          }
+        }
+      },
+      "BaseQuickFilterTarget": {
+        "fields": {
+          "filterAttributeName": {
+            "type": "string",
+            "description": "The name of the attribute to set the filter on."
+          },
+          "viewAttributeName": {
+            "type": "string",
+            "description": "The name of the view model attribute bound to the filter target."
+          }
+        }
+      },
+      "BooleanCellDisplayType": {
+        "type": "string",
+        "values": [
+          "toggle",
+          "checkbox"
+        ],
+        "description": "Display variants for the boolean cell of the DataGrid edit component."
+      },
+      "BorderRadiusConfig": {
+        "fields": {
+          "topLeft": {
+            "type": "number"
+          },
+          "topRight": {
+            "type": "number"
+          },
+          "bottomLeft": {
+            "type": "number"
+          },
+          "bottomRight": {
+            "type": "number"
+          }
+        }
+      },
+      "ButtonColor": {
+        "type": "string",
+        "values": [
+          "primary",
+          "accent",
+          "warn",
+          "default",
+          "secondary",
+          "outlined"
+        ]
+      },
+      "ButtonIconPosition": {
+        "type": "string",
+        "values": [
+          "only-text",
+          "left-icon",
+          "right-icon",
+          "only-icon"
+        ]
+      },
+      "ButtonSize": {
+        "type": "string",
+        "values": [
+          "small",
+          "medium",
+          "large",
+          "extra-large",
+          "xxl",
+          "xxxl"
+        ]
+      },
+      "ButtonType": {
+        "type": "string",
+        "values": [
+          "default",
+          "quick-add"
+        ]
+      },
+      "CalendarColorizationType": {
+        "type": "string",
+        "values": [
+          "default",
+          "byField",
+          "byOwner"
+        ]
+      },
+      "CalendarColumnsMapping": {
+        "fields": {
+          "startColumn": {
+            "type": "string"
+          },
+          "endColumn": {
+            "type": "string"
+          },
+          "titleColumn": {
+            "type": "string"
+          },
+          "notesColumn": {
+            "type": "string"
+          },
+          "colorizationColumn": {
+            "type": "string"
+          },
+          "overdueColumn": {
+            "type": "string",
+            "description": "Column whose value decides whether a record may be shown as overdue."
+          },
+          "notCompletedValues": {
+            "type": "array",
+            "items": {
+              "type": "unknown"
+            },
+            "description": "Values of [overdueColumn] for which a record is *not* completed yet, and so may be shown as overdue once its end time has passed."
+          }
+        }
+      },
+      "ChartBorderConfig": {
+        "fields": {
+          "hidden": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ChartConfig": {
+        "fields": {
+          "title": {
+            "type": "string"
+          },
+          "theme": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string"
+          },
+          "hideBorder": {
+            "type": "boolean"
+          },
+          "layout": {
+            "type": "ChartLayoutConfig"
+          },
+          "series": {
+            "type": "array",
+            "items": {
+              "type": "SeriesConfig"
+            }
+          },
+          "seriesOrder": {
+            "type": "SeriesOrderConfig"
+          },
+          "scales": {
+            "type": "ScaleConfig"
+          },
+          "widgetTheme": {
+            "type": "string"
+          },
+          "normalizedTheme": {
+            "type": "string"
+          }
+        }
+      },
+      "ChartLayoutConfig": {
+        "fields": {
+          "border": {
+            "type": "ChartBorderConfig"
+          }
+        }
+      },
+      "ChartOrderType": {
+        "type": "string",
+        "values": [
+          "by-aggregation-value",
+          "by-grouping-value"
+        ]
+      },
+      "ColumnsFlexConfig": {
+        "fields": {
+          "phonePortrait": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "phoneLandscape": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "tabletPortrait": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "tabletLandscape": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          }
+        }
+      },
+      "DataGridColumnDefinition": {
+        "description": "Column definition for data grid component.",
+        "fields": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "dataValueType": {
+            "type": "DataValueType",
+            "values": [
+              "0",
+              "1",
+              "4",
+              "5",
+              "6",
+              "7",
+              "8",
+              "9",
+              "10",
+              "12",
+              "13",
+              "14",
+              "16",
+              "18",
+              "19",
+              "20",
+              "21",
+              "22",
+              "23",
+              "24",
+              "25",
+              "26",
+              "27",
+              "28",
+              "29",
+              "30",
+              "31",
+              "32",
+              "33",
+              "34",
+              "35",
+              "36",
+              "37",
+              "38",
+              "39",
+              "40",
+              "41",
+              "42",
+              "43",
+              "44",
+              "45",
+              "46",
+              "47",
+              "48",
+              "49",
+              "50"
+            ]
+          },
+          "width": {
+            "type": "number"
+          },
+          "caption": {
+            "type": "string"
+          },
+          "hidden": {
+            "type": "boolean"
+          },
+          "sticky": {
+            "type": "boolean"
+          },
+          "readonly": {
+            "type": "boolean"
+          },
+          "cellView": {
+            "type": "ViewElementConfig",
+            "description": "Config of component that should be used for preview\\\"read only\" column."
+          },
+          "editingCellView": {
+            "type": "ViewElementConfig",
+            "description": "Config of component that should be used for editing."
+          }
+        }
+      },
+      "DataGridFeatures": {
+        "fields": {
+          "editable": {
+            "type": "DataTableEditingFeatures"
+          },
+          "rows": {
+            "type": "DataGridRowsFeatures"
+          }
+        }
+      },
+      "DataGridRowsFeatures": {
+        "fields": {
+          "toolbar": {
+            "type": "boolean"
+          }
+        }
+      },
+      "DataLabelConfig": {
+        "fields": {
+          "display": {
+            "type": "boolean"
+          },
+          "color": {
+            "type": "string"
+          }
+        }
+      },
+      "DataTableEditingFeatures": {
+        "fields": {
+          "enable": {
+            "type": "boolean"
+          }
+        }
+      },
+      "DataTableSortingConfig": {
+        "description": "Sorting config for data grid component.",
+        "fields": {
+          "columnCode": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "SortDirection",
+            "values": [
+              "asc",
+              "desc",
+              "none"
+            ]
+          }
+        }
+      },
+      "DataValueType": {
+        "type": "string",
+        "values": [
+          "0",
+          "1",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "12",
+          "13",
+          "14",
+          "16",
+          "18",
+          "19",
+          "20",
+          "21",
+          "22",
+          "23",
+          "24",
+          "25",
+          "26",
+          "27",
+          "28",
+          "29",
+          "30",
+          "31",
+          "32",
+          "33",
+          "34",
+          "35",
+          "36",
+          "37",
+          "38",
+          "39",
+          "40",
+          "41",
+          "42",
+          "43",
+          "44",
+          "45",
+          "46",
+          "47",
+          "48",
+          "49",
+          "50"
+        ],
+        "description": "Types of values."
+      },
+      "DateTimePickerType": {
+        "type": "string",
+        "values": [
+          "date",
+          "datetime",
+          "time"
+        ]
+      },
+      "FileListColumnDefinition": {
+        "fields": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "caption": {
+            "type": "string"
+          },
+          "dataValueType": {
+            "type": "number"
+          }
+        }
+      },
+      "FlexAlign": {
+        "type": "string",
+        "values": [
+          "flex-start",
+          "flex-end",
+          "center",
+          "stretch"
+        ]
+      },
+      "FlexConfig": {
+        "fields": {
+          "expanded": {
+            "type": "boolean"
+          }
+        }
+      },
+      "FlexDirection": {
+        "type": "string",
+        "values": [
+          "row",
+          "row-reverse",
+          "column",
+          "column-reverse"
+        ]
+      },
+      "FlexJustifyContent": {
+        "type": "string",
+        "values": [
+          "start",
+          "end",
+          "center",
+          "space-around",
+          "space-evenly",
+          "space-between"
+        ]
+      },
+      "FlexWrap": {
+        "type": "string",
+        "values": [
+          "nowrap",
+          "wrap",
+          "wrap-reverse"
+        ]
+      },
+      "GalleryItemConfig": {
+        "description": "Configuration for gallery item appearance and data mapping.",
+        "fields": {
+          "defaultSize": {
+            "type": "string"
+          },
+          "captionClicked": {
+            "type": "RequestBindingConfig"
+          },
+          "descriptionMaxLines": {
+            "type": "number"
+          },
+          "templateValuesMapping": {
+            "type": "GalleryTemplateValuesMapping",
+            "description": "Mapping of template values to data source attributes."
+          },
+          "specificPageRecordId": {
+            "type": "string",
+            "description": "Record ID property for opening specific page."
+          }
+        }
+      },
+      "GalleryTemplateValuesMapping": {
+        "description": "Template values mapping for gallery items.",
+        "fields": {
+          "caption": {
+            "type": "string",
+            "description": "Property name for item caption."
+          },
+          "description": {
+            "type": "string",
+            "description": "Property name for item description."
+          },
+          "image": {
+            "type": "string",
+            "description": "Property name for item image."
+          },
+          "id": {
+            "type": "string",
+            "description": "Property name for item ID."
+          }
+        }
+      },
+      "GridContainerBreakpointConfig": {
+        "description": "Configuration for a specific screen size breakpoint.",
+        "fields": {
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "GridContainerColumnConfig"
+            }
+          },
+          "visible": {
+            "type": "boolean"
+          }
+        }
+      },
+      "GridContainerColumnConfig": {
+        "fields": {
+          "flex": {
+            "type": "number"
+          },
+          "fixedWidth": {
+            "type": "number"
+          }
+        }
+      },
+      "GridContainerGap": {
+        "fields": {
+          "rowGap": {
+            "type": "number"
+          },
+          "columnGap": {
+            "type": "number"
+          }
+        }
+      },
+      "GridLayoutConfig": {
+        "fields": {
+          "column": {
+            "type": "number"
+          },
+          "row": {
+            "type": "number"
+          },
+          "adaptive": {
+            "type": "LayoutAdaptiveConfig"
+          }
+        }
+      },
+      "ImageInputSize": {
+        "type": "string",
+        "values": [
+          "small",
+          "medium",
+          "large",
+          "extra-large"
+        ]
+      },
+      "ImagePositioning": {
+        "type": "string",
+        "values": [
+          "cover",
+          "scale-down"
+        ]
+      },
+      "IndicatorBorderConfig": {
+        "fields": {
+          "hidden": {
+            "type": "boolean"
+          }
+        }
+      },
+      "IndicatorConfig": {
+        "fields": {
+          "title": {
+            "type": "string"
+          },
+          "data": {
+            "type": "IndicatorDataConfig"
+          },
+          "text": {
+            "type": "IndicatorTextConfig"
+          },
+          "layout": {
+            "type": "IndicatorLayoutConfig"
+          },
+          "theme": {
+            "type": "IndicatorWidgetTheme",
+            "values": [
+              "full-fill",
+              "without-fill",
+              "partial-fill",
+              "glassmorphism",
+              "transparent"
+            ]
+          },
+          "hideTitle": {
+            "type": "boolean"
+          }
+        }
+      },
+      "IndicatorDataAggregationConfig": {
+        "fields": {
+          "column": {
+            "type": "QueryColumn"
+          }
+        }
+      },
+      "IndicatorDataConfig": {
+        "fields": {
+          "providing": {
+            "type": "IndicatorDataProvidingConfig"
+          },
+          "formatting": {
+            "type": "IndicatorDataFormattingConfig"
+          }
+        }
+      },
+      "IndicatorDataFiltersConfig": {
+        "fields": {
+          "filter": {
+            "type": "QueryFilter"
+          },
+          "filterAttributes": {
+            "type": "array",
+            "items": {
+              "type": "Record",
+              "keyType": "unknown",
+              "valueType": "unknown"
+            }
+          }
+        }
+      },
+      "IndicatorDataFormattingConfig": {
+        "fields": {
+          "type": {
+            "type": "string"
+          },
+          "decimalSeparator": {
+            "type": "string"
+          },
+          "decimalPrecision": {
+            "type": "number"
+          },
+          "thousandSeparator": {
+            "type": "string"
+          }
+        }
+      },
+      "IndicatorDataProvidingConfig": {
+        "fields": {
+          "attribute": {
+            "type": "string"
+          },
+          "schemaName": {
+            "type": "string"
+          },
+          "expressionSchema": {
+            "type": "unknown"
+          },
+          "filters": {
+            "type": "IndicatorDataFiltersConfig"
+          },
+          "aggregation": {
+            "type": "IndicatorDataAggregationConfig"
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "type": "ModelDependency"
+            }
+          }
+        }
+      },
+      "IndicatorFontSize": {
+        "type": "string",
+        "values": [
+          "extra-small",
+          "small",
+          "medium",
+          "large",
+          "extra-large"
+        ]
+      },
+      "IndicatorIconConfig": {
+        "fields": {
+          "iconName": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string"
+          }
+        }
+      },
+      "IndicatorLayoutConfig": {
+        "fields": {
+          "color": {
+            "type": "string"
+          },
+          "border": {
+            "type": "IndicatorBorderConfig"
+          },
+          "icon": {
+            "type": "IndicatorIconConfig"
+          }
+        }
+      },
+      "IndicatorTextConfig": {
+        "fields": {
+          "template": {
+            "type": "string"
+          },
+          "metricMacros": {
+            "type": "string"
+          },
+          "fontSizeMode": {
+            "type": "IndicatorFontSize",
+            "values": [
+              "extra-small",
+              "small",
+              "medium",
+              "large",
+              "extra-large"
+            ]
+          },
+          "labelPosition": {
+            "type": "string"
+          }
+        }
+      },
+      "IndicatorWidgetTheme": {
+        "type": "string",
+        "values": [
+          "full-fill",
+          "without-fill",
+          "partial-fill",
+          "glassmorphism",
+          "transparent"
+        ]
+      },
+      "InputLabelPosition": {
+        "type": "string",
+        "values": [
+          "above",
+          "auto",
+          "hidden"
+        ]
+      },
+      "LabelThickness": {
+        "type": "string",
+        "values": [
+          "light",
+          "normal",
+          "semibold",
+          "bold",
+          "default"
+        ]
+      },
+      "LabelType": {
+        "type": "string",
+        "values": [
+          "large-1",
+          "large-2",
+          "large-3",
+          "large-4",
+          "headline-1",
+          "headline-1-small",
+          "headline-2",
+          "headline-3",
+          "headline-4",
+          "body-large",
+          "body",
+          "caption-large",
+          "caption",
+          "placeholder-large",
+          "placeholder",
+          "button",
+          "button-small",
+          "blankslate"
+        ]
+      },
+      "LabeledStateProperty": {
+        "type": "object",
+        "description": "Represents metadata of value with label. Keys are not described by the generated contract."
+      },
+      "LayoutAdaptiveConfig": {
+        "description": "Adaptive configuration for layout based on screen size.",
+        "fields": {
+          "small": {
+            "type": "LayoutBreakpointConfig"
+          },
+          "medium": {
+            "type": "LayoutBreakpointConfig"
+          },
+          "large": {
+            "type": "LayoutBreakpointConfig"
+          }
+        }
+      },
+      "LayoutBreakpointConfig": {
+        "description": "Configuration for a specific screen size breakpoint.",
+        "fields": {
+          "column": {
+            "type": "number"
+          },
+          "row": {
+            "type": "number"
+          }
+        }
+      },
+      "LayoutConfig": {
+        "fields": {
+          "column": {
+            "type": "number"
+          },
+          "row": {
+            "type": "number"
+          }
+        }
+      },
+      "LegendConfig": {
+        "fields": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "color": {
+            "type": "string"
+          }
+        }
+      },
+      "ListItemBodyField": {
+        "description": "One field inside a crt.ListItem body, as a page schema writes it.",
+        "fields": {
+          "value": {
+            "type": "string",
+            "description": "Binding to the column rendered, e.g. $PDS_Stage."
+          },
+          "label": {
+            "type": "object",
+            "description": "Label options for the field, e.g. {\"isVisible\": true}."
+          },
+          "showEmptyValues": {
+            "type": "boolean",
+            "description": "Render the field even when the bound value is empty. Inherited from the row when the row declares it."
+          }
+        }
+      },
+      "MapColumnsMapping": {
+        "fields": {
+          "id": {
+            "type": "string"
+          },
+          "lat": {
+            "type": "string"
+          },
+          "lon": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "subtitle": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "captionOnMap": {
+            "type": "string"
+          },
+          "extraColumns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MapPreviewCoordinates": {
+        "fields": {
+          "lat": {
+            "type": "number"
+          },
+          "lon": {
+            "type": "number"
+          }
+        }
+      },
+      "MenuDisplayType": {
+        "type": "string",
+        "values": [
+          "modal",
+          "popup"
+        ]
+      },
+      "ModelDependency": {
+        "fields": {
+          "attributePath": {
+            "type": "string"
+          },
+          "relationPath": {
+            "type": "string"
+          },
+          "trackByAttributes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "NumberInputFormat": {
+        "fields": {
+          "decimalPrecision": {
+            "type": "number"
+          }
+        }
+      },
+      "PaddingConfig": {
+        "fields": {
+          "top": {
+            "type": "number"
+          },
+          "bottom": {
+            "type": "number"
+          },
+          "left": {
+            "type": "number"
+          },
+          "right": {
+            "type": "number"
+          }
+        }
+      },
+      "QueryColumn": {
+        "description": "Query column.",
+        "fields": {
+          "alias": {
+            "type": "string",
+            "description": "Alias."
+          },
+          "orderDirection": {
+            "type": "QueryOrderDirection",
+            "values": [
+              "0",
+              "1",
+              "2"
+            ],
+            "description": "Order direction."
+          },
+          "orderPosition": {
+            "type": "number",
+            "description": "Order position."
+          },
+          "expression": {
+            "type": "QueryExpression",
+            "description": "Query expression."
+          },
+          "isVisible": {
+            "type": "boolean",
+            "description": "If true then column data will be present in the result set."
+          }
+        }
+      },
+      "QueryExpression": {
+        "description": "Marker type.",
+        "fields": {
+          "expressionType": {
+            "type": "number",
+            "description": "Expression type key."
+          }
+        }
+      },
+      "QueryFilter": {
+        "type": "object",
+        "description": "Query filter interface. Keys are not described by the generated contract."
+      },
+      "QueryOrderDirection": {
+        "type": "string",
+        "values": [
+          "0",
+          "1",
+          "2"
+        ],
+        "description": "Order direction."
+      },
+      "QuickFilterType": {
+        "type": "string",
+        "values": [
+          "custom",
+          "dateRange",
+          "lookup"
+        ]
+      },
+      "RequestBindingConfig": {
+        "fields": {
+          "request": {
+            "type": "string",
+            "required": true,
+            "description": "Request type to dispatch, e.g. \"crt.SaveRecordRequest\"."
+          },
+          "params": {
+            "type": "object",
+            "description": "Parameters merged into the request. Bindings are resolved against the page context before it is dispatched."
+          }
+        },
+        "description": "Wiring for one output. An array of these dispatches each in turn."
+      },
+      "ScaleConfig": {
+        "fields": {
+          "stacked": {
+            "type": "boolean",
+            "description": "Determines if the scale is stacked. When true, data series will be stacked on top of each other."
+          },
+          "xAxis": {
+            "type": "AxisConfig",
+            "description": "Configuration for the X axis. Defines how the X axis will be rendered and its properties."
+          },
+          "yAxis": {
+            "type": "AxisConfig",
+            "description": "Configuration for the Y axis. Defines how the Y axis will be rendered and its properties."
+          },
+          "color": {
+            "type": "string",
+            "description": "The color of the scale in the chart."
+          }
+        }
+      },
+      "SegmentedButtonGroupItemConfig": {
+        "fields": {
+          "caption": {
+            "type": "string"
+          },
+          "value": {
+            "type": "unknown"
+          }
+        }
+      },
+      "SeriesBorderConfig": {
+        "fields": {
+          "width": {
+            "type": "number"
+          },
+          "color": {
+            "type": "string"
+          },
+          "hoverColor": {
+            "type": "string"
+          }
+        }
+      },
+      "SeriesConfig": {
+        "fields": {
+          "type": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string"
+          },
+          "legend": {
+            "type": "LegendConfig"
+          },
+          "dataLabel": {
+            "type": "DataLabelConfig"
+          },
+          "border": {
+            "type": "SeriesBorderConfig"
+          },
+          "data": {
+            "type": "SeriesDataConfig"
+          },
+          "style": {
+            "type": "string",
+            "description": "Visual style of the line for line/spline/area chart types. Supported values: 'solid' (default), 'dashed', 'dotted'."
+          },
+          "indexNumberCaption": {
+            "type": "string",
+            "description": "Custom caption shown in the center of a doughnut chart. Overrides the auto-computed dominant-segment caption when set."
+          }
+        }
+      },
+      "SeriesDataAggregationConfig": {
+        "fields": {
+          "column": {
+            "type": "QueryColumn"
+          }
+        }
+      },
+      "SeriesDataConfig": {
+        "fields": {
+          "formatting": {
+            "type": "SeriesDataFormattingConfig"
+          },
+          "providing": {
+            "type": "SeriesDataProvidingConfig"
+          }
+        }
+      },
+      "SeriesDataFiltersConfig": {
+        "fields": {
+          "filter": {
+            "type": "QueryFilter"
+          },
+          "filterAttributes": {
+            "type": "array",
+            "items": {
+              "type": "Record",
+              "keyType": "unknown",
+              "valueType": "unknown"
+            }
+          }
+        }
+      },
+      "SeriesDataFormattingConfig": {
+        "fields": {
+          "type": {
+            "type": "string"
+          },
+          "decimalSeparator": {
+            "type": "string"
+          },
+          "decimalPrecision": {
+            "type": "number"
+          },
+          "thousandSeparator": {
+            "type": "string"
+          }
+        }
+      },
+      "SeriesDataGroupingConfig": {
+        "fields": {
+          "type": {
+            "type": "string"
+          },
+          "column": {
+            "type": "unknown"
+          }
+        }
+      },
+      "SeriesDataProvidingConfig": {
+        "fields": {
+          "attribute": {
+            "type": "string"
+          },
+          "schemaName": {
+            "type": "string"
+          },
+          "filters": {
+            "type": "SeriesDataFiltersConfig"
+          },
+          "aggregation": {
+            "type": "SeriesDataAggregationConfig"
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "type": "ModelDependency"
+            }
+          },
+          "rowCount": {
+            "type": "number"
+          },
+          "grouping": {
+            "type": "SeriesDataGroupingConfig"
+          },
+          "hierarchyConfig": {
+            "type": "WidgetDataHierarchyConfig"
+          }
+        }
+      },
+      "SeriesOrderConfig": {
+        "fields": {
+          "type": {
+            "type": "ChartOrderType",
+            "values": [
+              "by-aggregation-value",
+              "by-grouping-value"
+            ]
+          },
+          "direction": {
+            "type": "number"
+          }
+        }
+      },
+      "SliderColor": {
+        "type": "string",
+        "values": [
+          "accent",
+          "primary",
+          "warn",
+          "default"
+        ],
+        "description": "Color variants for the Slider component."
+      },
+      "SortDirection": {
+        "type": "string",
+        "values": [
+          "asc",
+          "desc",
+          "none"
+        ]
+      },
+      "SortItemsConfig": {
+        "fields": {
+          "attributeName": {
+            "type": "string"
+          },
+          "caption": {
+            "type": "string"
+          }
+        }
+      },
+      "TimelineBoundEntity": {
+        "fields": {
+          "type": {
+            "type": "TimelineTileType",
+            "values": [
+              "Entity",
+              "Email",
+              "Call",
+              "Feed",
+              "Chat",
+              "SysFile"
+            ]
+          },
+          "schemaName": {
+            "type": "string"
+          },
+          "linkedColumn": {
+            "type": "string"
+          },
+          "sortedByColumn": {
+            "type": "string"
+          },
+          "authorColumnName": {
+            "type": "string"
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "filters": {
+            "type": "QueryFilter"
+          }
+        }
+      },
+      "TimelineTileConfig": {
+        "fields": {
+          "timelineBoundEntity": {
+            "type": "TimelineBoundEntity"
+          },
+          "columnConfigs": {
+            "type": "Record",
+            "keyType": "string",
+            "valueType": "LayoutConfig"
+          },
+          "columnsFlexConfig": {
+            "type": "ColumnsFlexConfig"
+          }
+        }
+      },
+      "TimelineTileType": {
+        "type": "string",
+        "values": [
+          "Entity",
+          "Email",
+          "Call",
+          "Feed",
+          "Chat",
+          "SysFile"
+        ]
+      },
+      "TimerTextAlign": {
+        "type": "string",
+        "values": [
+          "start",
+          "center",
+          "end",
+          "justify"
+        ]
+      },
+      "TimerType": {
+        "type": "string",
+        "values": [
+          "timer-from-date",
+          "countdown-to-specific-date"
+        ]
+      },
+      "WebViewContentType": {
+        "type": "string",
+        "values": [
+          "html",
+          "url"
+        ]
+      },
+      "WidgetDataHierarchyConfig": {
+        "description": "Widget data hierarchy configuration",
+        "fields": {
+          "hierarchicalColumnName": {
+            "type": "string"
+          },
+          "hierarchicalFullDataLoad": {
+            "type": "boolean"
+          },
+          "hierarchicalFilterAttributes": {
+            "type": "array",
+            "items": {
+              "type": "Record",
+              "keyType": "string",
+              "valueType": "unknown"
+            }
+          },
+          "hierarchicalColumnValueAttributeName": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
 }
