@@ -627,6 +627,13 @@ though the same URL serves fine as a top-level navigation — the pass fell back
 parameters are not directly observable — build the observable into the callee, or park it at a human
 step.
 
+**Superseded 2026-09-18:** the deferral recorded above ("one correction is deliberately NOT applied")
+WAS applied — the 1.6.3.14 archive carries the corrected `DescribeContracts` docblock, because round 14
+rebundled for a substantive reason and the word rode along exactly as this entry said it should. The
+designer table below is also the REFUTED version: its caption-only cell reads "not read" and the
+pairs-by-caption hypothesis it presents as fitting all three rows is dead. Read DQ-31's table instead;
+this one is kept only as the record of what was believed.
+
 **Cleanup is pending a decision**: entity `UsrTc92707Order` (package `Custom`, 7 records) and eight
 `UsrTc92707*` processes. Three older `UsrTc92707*` schemas predate the pass and were not touched.
 
@@ -819,7 +826,19 @@ Full run 2026-09-17 at CrtProcessBuilder **1.6.3.12**. Report:
 resolved, **V1 not closed**, and `compile-creatio` was never spent. Three corrections, all measured,
 all against things I had written:
 
-**1. A runtime instance comes from RUNNING the process — not saving, and not compiling.** I had written
+**1. RETRACTED 2026-09-18 — this entry shipped the SECOND wrong mechanism, and the worse of the two.** It
+said a runtime instance comes from RUNNING the process, and told readers to do it. It does not, and they
+must not: a freshly built instance CONVERGES as it is created
+(`BaseProcessSchemaManager.CreateSchemaInstance` → `FindInstanceFromMetaData` → `GetItemFromMetaData`,
+which calls `SynchronizeParameters()`), `SchemaManagerItem.Instance` is a lazy build that ANY reader
+triggers, and saving evicts it. The variable is WHEN the instance was built — cache timing. Running or
+re-reading the caller AFTER the callee changed therefore HIDES the drift the advice promised to reveal.
+The control only showed that a run is one way to PRIME the cache before the change, which is not the
+mechanism; the standard my own commit applied four lines away — "no mechanism is established… do not
+reason forward from one" — is the one this paragraph failed. Verified in platform source 2026-09-18.
+Corrected on every surface in round 16.
+
+*The original text follows, because the shape of the error is the reusable part.* I had written
 "compiled" into nine places. It is wrong twice over: an interpreted process has nothing to compile, and
 every non-converging read anyone has taken was on a process that never was. The run tested the three
 candidates in order with a control — `UsrTc92707T7CallerNR`, same mappings, same `setElement{resync:true}`,
@@ -958,6 +977,13 @@ is the documented workaround, and a green result there says nothing about the bu
 
 ## DQ-33 — AC-4: parity holds on every key but one, and that one is the platform's own doing
 
+**Build and date: the diff was taken 2026-09-18 against CrtProcessBuilder 1.6.3.13.** Stamped after
+review noted this was the only measured entry in the set without one — and the one that decides an
+acceptance criterion. 1.6.3.14 then landed the create/configure split, which reorders when an element's
+configuration is bound; it cannot move any key compared here, because the example binds a CONSTANT and
+writes no cross-element reference, so nothing in it depends on when configuration ran relative to the
+selections. That is reasoning, not a re-run: the diff has NOT been re-taken against 1.6.3.14.
+
 V1 was unblocked by the owner building the manual side in the designer, so the diff is real and on
 equivalent content: `UsrProcess_6117b42` (designer) against `UsrTc92707V1Tool` (ours), same callee, same
 constant, both pulled in one `clio pull-pkg Custom`.
@@ -1000,7 +1026,10 @@ CONTENTS; the risk lives in removing the object.
 **MEASURED 2026-09-18, and it inverts the framing above: clio is NOT the outlier — the hand-built example
 is.** The capture lists `GT1` as a mapping-row key but never recorded how often it is OCCUPIED, and that
 silence is what let one designer-built element read as authoritative. Scanning the same shipped corpus the
-capture was mined from (`C:/Projects/PackageStore`, the 262 files carrying a sub-process element, 249 of
+capture was mined from (`C:/Projects/PackageStore`; **attribution predicate:** a row counts when its `A2` equals the `A2` of an
+element in `BK4` whose `BL1` is `ProcessSchemaSubProcess` — an independent scan using a different
+predicate got 260 files / 1 728 rows / 93.5 %, same conclusion, so quote the predicate with the figure;
+the 262 files carrying a sub-process element, 249 of
 them parseable into 1 672 mapping rows attributed to a sub-process element):
 
 | `GT1` | rows | share |

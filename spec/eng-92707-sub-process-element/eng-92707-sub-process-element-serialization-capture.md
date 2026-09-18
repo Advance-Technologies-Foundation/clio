@@ -5,8 +5,9 @@ capture.
 
 It is mined from the **shipped 7.8.0 corpus** rather than from one hand-built designer example, for the
 reason the ENG-91853 and ENG-95891 captures give: one example cannot separate *what the designer always
-writes* from *what that one example happened to have*. A single-example capture on a live stand is
-still owed before merge (see the plan, V1) — this document is what it will be diffed **against**.
+writes* from *what that one example happened to have*. A single-example capture on a live stand **was taken on 2026-09-18** (V1, at
+CrtProcessBuilder 1.6.3.14) and is diffed against this document in DQ-33: five keys match, `BK15.GT1` and
+`BL8` differ, and whether that satisfies AC-4 is the owner's open call.
 
 **Method.** `grep -rl --include=metadata.json "ProcessSchemaSubProcess"` over
 `C:/Projects/PackageStore` (1 099 package roots), then a per-occurrence window scan. Measured

@@ -301,8 +301,9 @@ The critic's original list, condensed. Five are folded into plan step S1; the re
 ### B.5 — Process debt, unchanged
 
 The designer serialization capture (AC4) has **not** been taken, and there is no PRD, ADR, story or
-`spec/sprint-status.yaml` row. (`docs/knowledge/` records WERE written — four of them, listed in the
-README; this sentence predates them.)
+`spec/sprint-status.yaml` row. (`docs/knowledge/` records WERE written — **eight** carry
+`ticket: ENG-92707`, counted 2026-09-18. An earlier correction to this sentence said "four of them,
+listed in the README" and was wrong on both halves: the README lists none.)
 
 **AC4 is not BLOCKED, and for a while the record implied it was.** A stand pass reported the classic
 designer unreachable; a later one loaded it in about 20 s in a real Chrome at

@@ -14,14 +14,22 @@ process renames or drops a parameter, and the answers are opposite:
   (`ProcessSchemaRepository.LoadForDescribe`), and then reports the STALE parameter name with
   `inSync: false`. Without one it falls back to the design instance, which converges AS IT LOADS — the
   read erases the drift it was called to show.
-* **What produces a runtime instance is RUNNING the process.** Measured 2026-09-17 with a control: the
-  same caller, same mappings, same re-synchronization, differing only in having been run, gave opposite
-  answers. Merely SAVING the schema does not — that read converged, while `pull-pkg` confirmed the stored
-  bytes still carried the dropped parameter, so the drift was real and describe hid it without persisting
-  its own convergence. **Neither does COMPILING**, and an earlier revision of this record said "compiled":
-  an interpreted process has nothing to compile, and every non-converging read taken on this stand was on
-  a process that never was. Do not compile to expose drift — on this stand a compile is what left the
-  environment not-ready past 600 seconds.
+* **What decides it is WHEN the instance was built — cache timing, not running and not compiling.**
+  Describe reads whatever instance the schema manager already holds and does not re-converge it, so an
+  instance built BEFORE the callee changed reports the stale state, and one built AFTER it reports
+  `true` — because a freshly built instance CONVERGES as it is created
+  (`BaseProcessSchemaManager.CreateSchemaInstance` routes an interpretable process to
+  `FindInstanceFromMetaData`, whose `GetItemFromMetaData` calls `SynchronizeParameters()`).
+  `SchemaManagerItem.Instance` is a lazy double-checked build, so ANY reader creates one — an earlier
+  describe as much as a run — and saving the schema evicts it (`DropInstance` / `ClearRuntimeInstances`).
+  **Verified in platform source 2026-09-18.**
+* **Two earlier revisions of this record got the mechanism wrong, in opposite directions**, and the
+  second was worse than the first. It said "a runtime instance is produced by RUNNING the process" and
+  told the reader to do that. Running or re-reading the caller AFTER changing the callee builds a fresh,
+  converged instance and HIDES the drift — the advice actively destroyed the evidence it promised to
+  reveal. The control behind it showed only that a run is one way to PRIME the cache before the change,
+  which is not the same as being the mechanism. **Never compile to expose drift either**: on this stand a
+  compile is what left the environment not-ready past 600 seconds.
 * **`inSync` is ONE-DIRECTIONAL and a DROPPED parameter is invisible to it.** It asks whether every
   parameter the CALLEE declares is present on the element: callee ADDS one → `false`; callee REMOVES one →
   `true`, because the element merely carries an extra. Measured. A code RENAME reads as add-plus-remove
@@ -46,6 +54,10 @@ process renames or drops a parameter, and the answers are opposite:
   | Renamed on the callee | `inSync` | Caller's STORED mapping | The card | Runtime |
   |---|---|---|---|---|
   | caption only | `true` **M12** | all printed fields identical to baseline **M10** | NEW caption, value KEPT **M12** | unaffected **I** |
+
+  **M12** read at 1.6.3.12 — added to the legend after being used in two cells without it, in the very
+  table built to make provenance explicit and one paragraph below the sentence warning that an unqualified
+  marker "is precisely how the old reading gets cited as the current one".
   | code only | `false` **M07** | *not read* - intact **I** | old caption, mapping shown, looks healthy **M10** | **broken M07** (3x) |
   | code AND caption | `false` **M10** | byte-identical to baseline **M10** | new caption, mapping row EMPTY **M10** | **broken I** |
 
@@ -74,10 +86,10 @@ NAME (`FindScalarParameterByName`), skipping an unmatched name with no exception
 migration step. It was never meant to be an inspection surface, and it is not one.
 
 **What breaks if you ignore it** — the reads do NOT all agree, and the round-9 stand pass corrected this
-paragraph. `describe-business-process` prefers the RUNTIME instance for a compiled process
-(`ProcessSchemaRepository.LoadForDescribe`), which the platform does not converge — so it reports the
-STALE parameter name and `inSync: false`, and both are real evidence. It falls back to the design
-instance only for an uncompiled process, and that one converges. The MODIFY path always takes the design
+paragraph. `describe-business-process` reads whatever instance the schema manager already HOLDS
+(`ProcessSchemaRepository.LoadForDescribe`) and does not re-converge it — so while that instance predates
+the callee's change it reports the STALE parameter name and `inSync: false`, and both are real evidence.
+It falls back to the design instance when nothing is cached, and that one converges as it loads. The MODIFY path always takes the design
 instance (`ProcessModifyHandler` → `GetDesignInstance`), which is why its own drift report sees nothing.
 The designer's card and the re-synchronization's warning list therefore report health while describe does
 not - the card because the code is never on screen, the warning list because its load already converged. From
@@ -86,7 +98,7 @@ references left bound to a parameter UId the element no longer carries — which
 act on. A CODE rename produces no consequence to find: the mapping row keeps the UId, so every reference stays
 resolvable and only the saved NAME is stale. Two of the three surfaces are blind to it — the designer's
 card because it shows the caption, the re-synchronization because its load converged first — and
-`describe` against a COMPILED caller is the one that is not. A person who suspects a problem, opens the
+`describe` against a caller whose cached instance predates the change is the one that is not. A person who suspects a problem, opens the
 caller and sees a correct card closes it reassured while the process keeps delivering an empty parameter
 on every run, which is worse than a visibly stale name would have been; the read that would have told
 them is the one nobody thinks to run, which is why the rule below is procedural.

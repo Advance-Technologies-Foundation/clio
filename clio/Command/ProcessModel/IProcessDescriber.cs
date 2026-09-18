@@ -1071,10 +1071,14 @@ public sealed class DescribedSubProcess {
 	/// reads it and the platform does not converge it, so a stale element stays stale. Without one, describe falls
 	/// back to the design instance, which converges AS IT LOADS — the read erases the drift it was called to show,
 	/// and <c>true</c> there says nothing.</para>
-	/// <para>A runtime instance is produced by RUNNING the process. Measured on a stand 2026-09-17 against a
-	/// control that differed only in having been run. SAVING the schema does not produce one, and neither does
-	/// COMPILING — an earlier revision of this paragraph said "compiled", which is wrong: an interpreted process
-	/// has nothing to compile, and every non-converging read so far was taken on one that never was.</para>
+	/// <para>What decides it is WHEN that instance was built. A freshly built one CONVERGES as it is created, and
+	/// <c>SchemaManagerItem.Instance</c> is a lazy build that ANY reader triggers — an earlier describe as much as
+	/// a run — while saving the schema evicts it. So an instance predating the callee's change reports the drift
+	/// and one built after it reports <c>true</c>. Verified in platform source 2026-09-18.</para>
+	/// <para>Do NOT run, re-read or compile the caller in order to expose drift: each of those builds a fresh,
+	/// converged instance and HIDES it. Two earlier revisions of this paragraph said otherwise — first "compiled",
+	/// then "produced by RUNNING the process" — and the second actively recommended the action that destroys the
+	/// evidence.</para>
 	/// <para>The test is ONE-DIRECTIONAL and a DROPPED parameter is invisible to it. It asks whether every
 	/// parameter the CALLEE declares is present on the element, so a callee that ADDS one flips this to
 	/// <c>false</c> while a callee that REMOVES one leaves it <c>true</c> — the element merely carries an extra.
