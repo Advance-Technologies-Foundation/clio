@@ -1149,11 +1149,12 @@ public sealed class ComponentRegistryEnvelope {
 	/// Absent from the web-derived generation that every VERSIONED mobile path still serves today
 	/// (8.3.0/8.3.3/8.3.4/10.0.0), and absent from the web registry.
 	/// <para>
-	/// Its PRESENCE is half of the enablement gate for the converter's property prune (ENG-96589): the old
-	/// generation's per-component <c>inputs</c> describe the WEB component, so pruning against it would
-	/// strip genuinely supported mobile properties (there <c>crt.Feed</c> declares only
-	/// <c>primaryColumnValue</c>, and the 8.3.0 file lists three components in total). See
-	/// <c>WebToMobileAnalysisService.MobileRegistryGeneration</c> for the other half — the version floor.
+	/// It is PROVENANCE ONLY and gates nothing: the producer republished <c>latest</c> without it on
+	/// 2026-09-17 while the catalog content stayed runtime-derived, so a feature gated on it switched itself
+	/// off with nothing failing. The converter's property prune (ENG-96589) is gated on the platform version
+	/// plus the inherited <c>baseInputs</c> surface instead — see
+	/// <c>WebToMobileAnalysisService.MobileRegistryGeneration</c>. Reported when published so a caller can
+	/// audit which runtime build a conversion was measured against.
 	/// </para>
 	/// </summary>
 	[JsonPropertyName("mobileRuntimeVersion")]

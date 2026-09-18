@@ -48,8 +48,8 @@ public sealed class WebToMobilePropertyPruneTests {
 			because: "a caller that supplies no registry generation must convert exactly as it did before ENG-96589");
 		guide.PrunedProperties.Should().BeNull(
 			because: "nothing was pruned, so the section must be omitted rather than shipped empty");
-		guide.MobileRuntimeVersion.Should().BeNull(
-			because: "no prune was measured, so naming a runtime would imply one was");
+		guide.PropertyPruneApplied.Should().BeFalse(
+			because: "this is the field a caller branches on, and it must say the prune did not run");
 	}
 
 	[Test]
@@ -86,8 +86,10 @@ public sealed class WebToMobilePropertyPruneTests {
 		// Assert
 		Values(guide, "HelpTab").Should().NotContainKey("icon",
 			because: "the catalog IS the runtime-derived generation regardless of whether the producer stamped its provenance");
+		guide.PropertyPruneApplied.Should().BeTrue(
+			because: "the prune RAN, and that fact must be reported independently of whether the producer stamped provenance");
 		guide.MobileRuntimeVersion.Should().BeNull(
-			because: "provenance is reported only when the producer actually publishes it — an empty object would advertise a measurement nobody can trace");
+			because: "provenance is reported only when the producer actually publishes it — and its absence must NOT be readable as 'the prune did not run'");
 	}
 
 	[TestCase("8.3.0")]
@@ -109,8 +111,8 @@ public sealed class WebToMobilePropertyPruneTests {
 			because: $"a stand on {environmentVersion} runs a mobile runtime older than the one `latest` was generated from, so pruning against it could strip properties that stand supports");
 		guide.PrunedProperties.Should().BeNull(
 			because: "backward compatibility means the conversion is byte-identical to the pre-feature one");
-		guide.MobileRuntimeVersion.Should().BeNull(
-			because: "an absent runtime version is how a caller tells that the prune did not run on this stand");
+		guide.PropertyPruneApplied.Should().BeFalse(
+			because: "this is how a caller tells that the prune did not run on this stand");
 	}
 
 	[TestCase(LatestVersion)]
@@ -130,6 +132,8 @@ public sealed class WebToMobilePropertyPruneTests {
 			because: $"{environmentVersion} is above the floor and the payload is runtime-derived, so membership is a valid test");
 		guide.PrunedProperties.Should().NotBeNull(
 			because: "an undeclared property was carried, so the removal must be reported rather than done silently");
+		guide.PropertyPruneApplied.Should().BeTrue(
+			because: "the gate opened, so the caller-facing flag must say so");
 		guide.MobileRuntimeVersion!.Commit.Should().NotBeNullOrWhiteSpace(
 			because: "this generation record carries provenance, so it must be echoed for the caller to audit");
 	}
@@ -149,8 +153,8 @@ public sealed class WebToMobilePropertyPruneTests {
 			because: "a failed version probe says nothing about how new the stand is, so it cannot authorise pruning");
 		guide.PrunedProperties.Should().BeNull(
 			because: "the gate refused, so there is nothing to report");
-		guide.MobileRuntimeVersion.Should().BeNull(
-			because: "no measurement was made, so naming a runtime would imply one was");
+		guide.PropertyPruneApplied.Should().BeFalse(
+			because: "a degraded probe must leave the caller-facing flag false, not merely omit provenance");
 	}
 
 	[Test]
@@ -184,8 +188,8 @@ public sealed class WebToMobilePropertyPruneTests {
 			because: "'visible' is declared ONLY in baseInputs, so a prune without it would remove it from every element");
 		values.Should().ContainKey("icon",
 			because: "the whole prune is disabled, not merely narrowed — a half-known contract is not a membership test");
-		guide.MobileRuntimeVersion.Should().BeNull(
-			because: "no usable measurement was possible, and advertising one would misrepresent what was checked");
+		guide.PropertyPruneApplied.Should().BeFalse(
+			because: "a half-known contract disables the prune, and the flag must report that rather than look like a clean page");
 	}
 
 	[Test]
@@ -535,19 +539,80 @@ public sealed class WebToMobilePropertyPruneTests {
 		// Assert
 		Dictionary<string, IReadOnlyList<string>> contracts = guide.MobileContracts
 			.ToDictionary(c => c.ComponentType, c => c.AllowedProperties, StringComparer.OrdinalIgnoreCase);
+		int checkedKeys = 0;
 		foreach (ViewConfigDiffOperation operation in guide.ViewConfigDiff.Where(o => o.Values is JsonObject)) {
 			string type = operation.Values!["type"]?.GetValue<string>();
-			if (type is null || !contracts.TryGetValue(type, out IReadOnlyList<string> allowed)) {
+			if (type is null || !contracts.TryGetValue(type, out IReadOnlyList<string> allowed)
+				|| !PruneGovernsType(type)) {
 				continue;
 			}
 			foreach (string key in operation.Values.AsObject().Select(p => p.Key)) {
+				checkedKeys++;
 				allowed.Should().Contain(k => string.Equals(k, key, StringComparison.OrdinalIgnoreCase),
 					because: $"'{key}' survived on {operation.Name} ({type}), so the contract the same response publishes must declare it — otherwise the guide contradicts itself");
 			}
 		}
+		checkedKeys.Should().BeGreaterThan(0,
+			because: "the loop has to actually reach keys — one that iterated nothing would assert the invariant vacuously");
+	}
+
+	// ---------------------------------------------------------------- generation identification
+
+	[Test]
+	[Description("An inherited surface that keeps layoutConfig but loses `visible` disables the prune. Requiring BOTH is what makes the surface a generation test rather than a single-key guess — and a partial surface is exactly the shape a producer cleanup (moving `visible` into per-component inputs) would produce.")]
+	public void Analyze_WhenInheritedSurfaceIsPartial_ShouldPruneNothing() {
+		// Arrange
+		var partial = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase) {
+			["layoutConfig"] = JsonSerializer.SerializeToElement(new { type = "GridLayoutConfig" }),
+		};
+		PageBundleInfo bundle = TabContainerCarryingIcons();
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, generation: Generation(LatestVersion, baseInputs: partial));
+
+		// Assert
+		Values(guide, "HelpTab").Should().ContainKey("icon",
+			because: "half an inherited surface is not a membership test — pruning against it would strip whatever the missing half declared");
+		guide.PropertyPruneApplied.Should().BeFalse(
+			because: "the refusal must be visible to the caller rather than looking like a page with nothing to prune");
+	}
+
+	[Test]
+	[Description("The inherited surface is recognised case-insensitively. The registry's dictionaries come from System.Text.Json with the ORDINAL comparer, so an indexed lookup would make the whole feature hinge on the producer's casing — the same single-string fragility that made the provenance marker unusable as a gate.")]
+	public void Analyze_ShouldRecogniseTheInheritedSurfaceRegardlessOfCasing() {
+		// Arrange
+		var oddCasing = new Dictionary<string, JsonElement>(StringComparer.Ordinal) {
+			["LayoutConfig"] = JsonSerializer.SerializeToElement(new { type = "GridLayoutConfig" }),
+			["Visible"] = JsonSerializer.SerializeToElement(new { type = "boolean" }),
+		};
+		PageBundleInfo bundle = TabContainerCarryingIcons();
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(
+			bundle, generation: Generation(LatestVersion, baseInputs: oddCasing));
+
+		// Assert
+		guide.PropertyPruneApplied.Should().BeTrue(
+			because: "the surface is present; only its casing differs, and casing must not decide whether a feature runs");
 	}
 
 	// ---------------------------------------------------------------- helpers
+
+	/// <summary>
+	/// True when the prune has membership data for <paramref name="mobileType"/>. A component the registry
+	/// describes with NO properties of its own yields none, so the prune fails OPEN on it while its contract
+	/// row still lists the inherited surface — that asymmetry is correct, and an invariant that ignored it
+	/// would fail on a correct conversion.
+	/// </summary>
+	private static bool PruneGovernsType(string mobileType) {
+		ComponentRegistryEntry entry = LiveMobileCatalog().Lookup.TryGetValue(mobileType, out ComponentRegistryEntry found)
+			? found
+			: null;
+		return entry is not null
+			&& ((entry.Inputs?.Count ?? 0) > 0 || (entry.Outputs?.Count ?? 0) > 0);
+	}
+
 
 	/// <summary>
 	/// A page whose tab carries the two keys from the reported defect. `icon`/`iconPosition` are declared
@@ -577,7 +642,7 @@ public sealed class WebToMobilePropertyPruneTests {
 		IReadOnlyDictionary<string, JsonElement> baseInputs = null,
 		bool omitBaseInputs = false) =>
 		new(requestedVersion, versionKnown, runtimeDerived, "main", "d7a0c3bb6796a1cde204ab8762b04d8940e38726",
-			omitBaseInputs ? baseInputs : baseInputs ?? LiveMobileCatalog().GlobalReferences?.BaseInputs);
+			omitBaseInputs ? null : baseInputs ?? LiveMobileCatalog().GlobalReferences?.BaseInputs);
 
 	/// <summary>
 	/// A rules object carrying ONE direct request mapping, so a binding actually converts and lands in the
@@ -634,11 +699,18 @@ public sealed class WebToMobilePropertyPruneTests {
 	private static IEnumerable<string> DeclaredNames(string componentType) =>
 		LiveMobileCatalog().Lookup[componentType].Inputs?.Keys ?? [];
 
-	private static ComponentCatalogState LiveMobileCatalog() {
+	/// <summary>
+	/// The pinned live catalog, parsed ONCE. Nearly every test reads it — through <c>Generation</c>, through
+	/// <c>Analyze</c>, and in its own premise assertion — so re-parsing per call meant parsing the whole
+	/// fixture several times per test case. The state is immutable, so sharing it is safe.
+	/// </summary>
+	private static readonly Lazy<ComponentCatalogState> LiveCatalog = new(() => {
 		string path = Path.Combine(
 			TestContext.CurrentContext.TestDirectory, "Command", "McpServer", "Fixtures",
 			"MobileComponentRegistry.live-snapshot.json");
 		using FileStream stream = File.OpenRead(path);
 		return ComponentInfoCatalog.LoadFromStream(stream);
-	}
+	});
+
+	private static ComponentCatalogState LiveMobileCatalog() => LiveCatalog.Value;
 }

@@ -1171,7 +1171,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	[Description("Against the runtime-derived mobile registry (version=latest), every top-level key the conversion emits is declared by the target component's own published contract, and anything the page carried beyond it is reported in prunedProperties rather than pasted into the page (ENG-96589).")]
 	[AllureTag(ToolName)]
 	[AllureName("get-mobile-page-conversion-guide prunes undeclared properties against the runtime-derived registry")]
-	[AllureDescription("Starts the real clio MCP server, converts a seeded page pinned to version=latest so the runtime-derived MobileComponentRegistry is served deterministically regardless of the stand's platform version, and asserts the response is self-consistent: mobileRuntimeVersion is reported, every emitted values key appears in that type's allowedProperties, and prunedProperties names only keys outside it.")]
+	[AllureDescription("Starts the real clio MCP server and converts a seeded page pinned to version=latest, so the runtime-derived MobileComponentRegistry is served deterministically regardless of the stand's platform version. Asserts the response is self-consistent: propertyPruneApplied is true, and every property reported as pruned is genuinely absent from that type's published allowedProperties.")]
 	public async Task MobilePageConversionGuideTool_Should_Prune_Undeclared_Properties_Against_RuntimeDerived_Registry() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -1205,40 +1205,36 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			Assert.Ignore($"No seeded page of '{ApplicationCode}' converted on environment '{environmentName}'.");
 			return;
 		}
-		// NOT asserted: guide.mobileRuntimeVersion. That marker is provenance the producer publishes only
-		// sometimes — it appeared on `latest` and was dropped again the same day while the catalog content
-		// was unchanged — so the prune neither requires nor reports it consistently. What the prune DOES
-		// depend on is the inherited surface, and the contract below is the observable consequence of it:
-		// every emitted key is declared, which cannot hold unless the prune actually ran against the
-		// runtime-derived generation.
+		guide.PropertyPruneApplied.Should().BeTrue(
+			because: $"'{convertedSchemaName}' was converted against version=latest, which serves the runtime-derived "
+				+ "catalog, so the gate must have opened. NOT asserted: mobileRuntimeVersion — that marker is "
+				+ "provenance the producer publishes irregularly, and reading its absence as 'the prune did not "
+				+ "run' is exactly the mistake propertyPruneApplied exists to prevent");
 		guide.MobileContracts.Should().NotBeEmpty(
-			because: $"'{convertedSchemaName}' converted at version=latest, so the mobile contracts the response "
-				+ "publishes are the same membership sets the prune enforced and must be present to check against");
+			because: "the pruned keys below are cross-checked against these contracts");
 
+		// Only the REVERSE direction is sound over the wire. The forward one ("every emitted key is
+		// declared") does not hold for a component the registry describes with NO properties of its own:
+		// the prune fails open on it by design, while its contract row still lists the inherited surface.
+		// The forward invariant is asserted in the unit fixture, which can consult the registry entry.
 		Dictionary<string, IReadOnlyList<string>> contracts = guide.MobileContracts
 			.ToDictionary(c => c.ComponentType, c => c.AllowedProperties, StringComparer.OrdinalIgnoreCase);
-		foreach (ViewConfigDiffOperation operation in guide.ViewConfigDiff.Where(o => o.Values is JsonObject)) {
-			string? type = operation.Values!["type"]?.GetValue<string>();
-			if (type is null || !contracts.TryGetValue(type, out IReadOnlyList<string>? allowed)) {
-				continue;
-			}
-			foreach (string key in operation.Values.AsObject().Select(pair => pair.Key)) {
-				allowed.Should().Contain(declared => string.Equals(declared, key, StringComparison.OrdinalIgnoreCase),
-					because: $"'{key}' survived on {operation.Name} ({type}) of '{convertedSchemaName}', so the contract "
-						+ "published in the SAME response must declare it — otherwise the guide contradicts itself");
-			}
-		}
+		int checkedKeys = 0;
 		foreach (PrunedPropertyEntry pruned in guide.PrunedProperties ?? []) {
 			if (!contracts.TryGetValue(pruned.Type, out IReadOnlyList<string>? allowed)) {
 				continue;
 			}
 			foreach (string key in pruned.Properties) {
+				checkedKeys++;
 				allowed.Should().NotContain(declared => string.Equals(declared, key, StringComparison.OrdinalIgnoreCase),
-					because: $"'{key}' was reported as pruned from {pruned.Name} ({pruned.Type}), so it must NOT appear in "
-						+ "that type's allowedProperties — a DECLARED property being pruned is the failure mode that "
-						+ "silently strips working pages");
+					because: $"'{key}' was reported as pruned from {pruned.Name} ({pruned.Type}) of "
+						+ $"'{convertedSchemaName}', so it must NOT appear in that type's allowedProperties — a "
+						+ "DECLARED property being pruned is the failure mode that silently strips working pages");
 			}
 		}
+		TestContext.Out.WriteLine(
+			$"prune cross-check: {checkedKeys} pruned key(s) verified against the published contracts on "
+			+ $"'{convertedSchemaName}'.");
 	}
 
 	[Test]
@@ -1277,9 +1273,11 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			Assert.Ignore($"No seeded page of '{ApplicationCode}' converted on environment '{environmentName}'.");
 			return;
 		}
+		guide.PropertyPruneApplied.Should().BeFalse(
+			because: $"'{convertedSchemaName}' was converted at {FloorRegistryVersion}, which is AT the floor, so the "
+				+ "gate must have refused — this is the flag a caller branches on");
 		guide.MobileRuntimeVersion.Should().BeNull(
-			because: $"'{convertedSchemaName}' was converted at {FloorRegistryVersion}, which is at the floor, so no "
-				+ "prune ran and no provenance may be advertised");
+			because: "no prune was measured, so no provenance may be advertised either");
 		guide.PrunedProperties.Should().BeNull(
 			because: "pruning against a catalog that describes WEB components would strip genuinely supported mobile "
 				+ "properties — on that generation crt.Feed declares only primaryColumnValue — so a stand at or below "

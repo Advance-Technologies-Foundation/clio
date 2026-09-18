@@ -787,7 +787,13 @@ public sealed class MobileComponentContract {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Description { get; init; }
 
-	/// <summary>Property/input names this mobile component accepts (Properties ∪ Inputs).</summary>
+	/// <summary>
+	/// Property/input names this mobile component accepts: its legacy <c>properties</c>, its <c>inputs</c>,
+	/// its <c>outputs</c> (where the runtime-derived registry puts event bindings) and the registry's root
+	/// <c>references.baseInputs</c>. Built by <c>WebToMobileAnalysisService.BuildAllowedPropertyNames</c>,
+	/// which is also what the property prune enforces — so this is exactly the set
+	/// <see cref="MobilePageConversionGuide.PrunedProperties"/> can be reconciled against.
+	/// </summary>
 	[JsonPropertyName("allowedProperties")]
 	public IReadOnlyList<string> AllowedProperties { get; init; } = [];
 
@@ -1209,12 +1215,18 @@ public sealed class MobilePageConversionGuide {
 	/// Properties the conversion REMOVED because the target mobile component does not declare them
 	/// (ENG-96589). Already applied in <see cref="ViewConfigDiff"/> — nothing here is separate to apply.
 	/// It exists so a caller can see what the web page carried that mobile does not implement, and
-	/// cross-check it against <c>mobileContracts[].allowedProperties</c>, which is the SAME set computed by
-	/// the same function.
+	/// cross-check it against <c>mobileContracts[].allowedProperties</c>: for every type that section
+	/// lists, it is the SAME set, computed by the same function. A pruned element whose type reached no
+	/// component suggestion has no contract row to check against.
 	/// <para>
-	/// Null when nothing was pruned — including every case where pruning is OFF. Read it together with
-	/// <see cref="MobileRuntimeVersion"/>: that field absent means the loaded catalog could not be used as a
-	/// membership test at all, so an undeclared property surviving is expected rather than a defect.
+	/// Null when nothing was pruned — including every case where pruning is OFF. To tell those apart read
+	/// <see cref="PropertyPruneApplied"/>; it is false exactly when the gate refused.
+	/// </para>
+	/// <para>
+	/// One asymmetry when reconciling: a component the registry describes with NO properties of its own
+	/// yields no membership information, so the prune fails OPEN on it and every carried property survives —
+	/// while its contract row still lists the inherited surface. Undeclared keys surviving on such a type
+	/// are correct, not a prune failure.
 	/// </para>
 	/// </summary>
 	[JsonPropertyName("prunedProperties")]
@@ -1222,9 +1234,20 @@ public sealed class MobilePageConversionGuide {
 	public IReadOnlyList<PrunedPropertyEntry> PrunedProperties { get; init; }
 
 	/// <summary>
-	/// The mobile RUNTIME build the property prune was measured against, or null when nothing was pruned
-	/// because the loaded registry is the older web-derived generation or the environment's platform
-	/// version is at/below the prune floor.
+	/// Whether the property prune RAN for this conversion. This is the field to branch on, not
+	/// <see cref="MobileRuntimeVersion"/>: false means the gate refused (the platform version could not be
+	/// positively determined, is at/below the prune floor, or the loaded catalog is not the runtime-derived
+	/// generation), so an undeclared property surviving is EXPECTED rather than a defect. True with an
+	/// absent <see cref="PrunedProperties"/> means the page simply carried nothing undeclared.
+	/// </summary>
+	[JsonPropertyName("propertyPruneApplied")]
+	public bool PropertyPruneApplied { get; init; }
+
+	/// <summary>
+	/// The mobile RUNTIME build the prune was measured against — PROVENANCE ONLY, and published
+	/// irregularly by the producer, so its absence says NOTHING about whether the prune ran
+	/// (<see cref="PropertyPruneApplied"/> says that). Null whenever the catalog carried no
+	/// <c>mobileRuntimeVersion</c> marker, which is the normal case today.
 	/// <para>
 	/// Read it with <c>resolvedFrom</c>: an environment whose platform version has no published versioned
 	/// mobile registry falls back to <c>latest</c>, so a catalog NEWER than the stand's own runtime can be
@@ -1435,7 +1458,6 @@ public sealed class RequestConversionInfo {
 	public string TargetsNote { get; init; }
 }
 
-/// <summary>A request carried to mobile from a component's event binding.</summary>
 /// <summary>
 /// One element and the undeclared top-level properties removed from its mobile values (ENG-96589).
 /// </summary>
@@ -1462,17 +1484,28 @@ public sealed class PrunedPropertyEntry {
 	public IReadOnlyList<string> Properties { get; init; } = [];
 
 	/// <summary>
-	/// The subset of <see cref="Properties"/> that carried an EVENT BINDING rather than an inert value. Each
-	/// is also reported in <c>requestConversions.droppedRequests</c> with
-	/// <see cref="ReasonCodes.DropRequestPropertyNotDeclared"/> — an ACTION was lost, not just a property.
+	/// The subset of <see cref="Properties"/> that carried an EVENT BINDING rather than an inert value.
 	/// Absent when none did.
+	/// <para>
+	/// A binding pruned from an INSERT that a request record claimed is ALSO reported in
+	/// <c>requestConversions.droppedRequests</c> with
+	/// <see cref="ReasonCodes.DropRequestPropertyNotDeclared"/> — there an ACTION was lost. It is NOT
+	/// reported there on a MERGE (omitting a key from a merge cannot claim the template element's own
+	/// binding is gone), nor when no record claimed it (an inert leftover). So read this list as "the
+	/// property carried a binding", and join to <c>droppedRequests</c> for what became of the action.
+	/// </para>
 	/// </summary>
 	[JsonPropertyName("bindings")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<string> Bindings { get; init; }
 }
 
-/// <summary>The mobile runtime build a conversion's property prune was measured against.</summary>
+/// <summary>
+/// The mobile runtime build a conversion's property prune was measured against. Deliberately a separate
+/// type from the registry-side <c>MobileRuntimeVersion</c> it is copied from: that one carries a
+/// <c>[JsonExtensionData]</c> bucket for unmapped producer fields, which must not leak onto this
+/// caller-facing contract. Do not "unify" them.
+/// </summary>
 public sealed class MobileRuntimeVersionInfo {
 	/// <summary>Release branch the runtime was built from, e.g. <c>"main"</c>.</summary>
 	[JsonPropertyName("release")]
@@ -1485,6 +1518,7 @@ public sealed class MobileRuntimeVersionInfo {
 	public string Commit { get; init; }
 }
 
+/// <summary>A request carried to mobile from a component's event binding.</summary>
 public sealed class ConvertedRequest {
 	/// <summary>Name of the component that carries the binding (e.g. "SaveButton").</summary>
 	[JsonPropertyName("elementName")]

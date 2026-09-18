@@ -44,6 +44,9 @@ using JsonValue = System.Text.Json.Nodes.JsonValue;
 [SuppressMessage("Info Code Smell", "S1135:Track uses of TODO tags", Justification = "The TODO tracks ENG-93027 (dynamic mobile-request set) and is intentionally retained as a pointer.")]
 [SuppressMessage("Major Code Smell", "S3358:Ternary operators should not be nested", Justification = "The nested ternaries express a compact fallback chain that reads clearly in context.")]
 [SuppressMessage("Major Code Smell", "S2589:Boolean expressions should not be gratuitous", Justification = "The flagged null checks guard values the analyzer cannot prove non-null across the Newtonsoft/STJ boundary; removing them would risk an NRE on malformed bundles.")]
+// Split across two files: the conversion walk here, and the ENG-96589 property prune in
+// WebToMobilePropertyPrune.cs, which needs this file's private registry and reason helpers. The
+// [SuppressMessage] block above therefore governs that file too.
 public static partial class WebToMobileAnalysisService {
 
 	private const string GuidanceArticleName = "freedom-page-web-to-mobile-conversion";
@@ -410,6 +413,10 @@ public static partial class WebToMobileAnalysisService {
 			TabAreaLayers = tabAreaLayers.Count > 0 ? tabAreaLayers : null,
 			Normalizations = BuildNormalizations(componentPropertyOverrides),
 			PrunedProperties = propertyPrune.IsEmpty ? null : propertyPrune.Entries,
+			// Whether the prune RAN — the only honest signal, and deliberately independent of provenance:
+			// the producer publishes the marker irregularly, so a caller that inferred "the prune was off"
+			// from an absent mobileRuntimeVersion would be wrong on every conversion against today's catalog.
+			PropertyPruneApplied = declaredProps.Enabled,
 			// Provenance, reported only when the producer actually published it — the marker is not required
 			// to prune and is currently absent from the published catalog, so emitting an empty object would
 			// advertise a measurement nobody can trace.
@@ -3815,7 +3822,7 @@ public static partial class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Builds the prebuilt, ready-to-paste mobile <c>values</c> for an inserted component. Copy rule: carry
-	/// EVERY source property verbatim, dropping only the element identity/type and the value binding (see
+	/// EVERY source property verbatim, dropping only the element identity/type (see
 	/// <see cref="ExcludedSourceProps"/>) and event bindings (converted separately). <c>type</c> is set and,
 	/// for field components, <c>label</c> is synthesized. Returns null for an unknown mobile type.
 	/// <para>

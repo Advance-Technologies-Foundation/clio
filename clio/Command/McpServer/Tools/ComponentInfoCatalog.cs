@@ -114,8 +114,8 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 	/// <c>null</c> global content — there is no envelope to carry it.
 	/// <para>
 	/// Also returns the envelope-level <c>mobileRuntimeVersion</c> marker and the envelope's own
-	/// unmapped-field bucket. Both are null for the legacy array shape. The marker gates the
-	/// converter's property prune (ENG-96589); the bucket is surfaced so the snapshot guard can assert
+	/// unmapped-field bucket. Both are null for the legacy array shape. The marker is PROVENANCE for the
+	/// converter's property prune (ENG-96589) and does not gate it; the bucket is surfaced so the guard can assert
 	/// it is empty — previously nothing read <see cref="ComponentRegistryEnvelope.UnmappedExtensions"/>,
 	/// so a new TOP-LEVEL producer field was swallowed silently.
 	/// </para>
@@ -158,15 +158,6 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 			throw new InvalidOperationException($"{sourceDescription} is empty or invalid.");
 		}
 		return (entries, globalReferences, composites, mobileRuntimeVersion, envelopeExtensions);
-	}
-
-	/// <summary>
-	/// Back-compat shim used by hermetic mobile-catalog tests that consume only the
-	/// entries (mobile registry has no global <c>content</c> block).
-	/// </summary>
-	internal static ComponentRegistryEntry[] DeserializeEntries(Stream stream, string sourceDescription) {
-		(ComponentRegistryEntry[] entries, _, _, _, _) = DeserializeEnvelope(stream, sourceDescription);
-		return entries;
 	}
 
 	private async Task<ComponentCatalogState> LoadCatalogStateAsync(string requestedVersion, CancellationToken cancellationToken) {

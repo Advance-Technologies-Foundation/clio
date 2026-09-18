@@ -74,7 +74,7 @@ public static partial class WebToMobileAnalysisService {
 		/// WEB-derived generation (10.0.0 lists 46 components describing web inputs; 8.3.0 lists three), so
 		/// a stand on those versions must convert exactly as it did before this feature existed.
 		/// </summary>
-		public static readonly Version MinimumPrunableVersion = new(10, 0, 0);
+		internal static readonly Version MinimumPrunableVersion = new(10, 0, 0);
 
 		/// <summary>
 		/// True when the target version is positively KNOWN and above the floor. Those two are the gate;
@@ -108,7 +108,7 @@ public static partial class WebToMobileAnalysisService {
 		/// ABOVE <c>10.0.0</c> and prunes the very generation the floor is named after. Normalising also
 		/// makes a 2-part <c>10.0</c> behave like <c>10.0.0</c> instead of sorting below it.
 		/// </remarks>
-		public static bool VersionAllowsPrune(string requestedVersion) {
+		internal static bool VersionAllowsPrune(string requestedVersion) {
 			if (string.IsNullOrWhiteSpace(requestedVersion)) {
 				return false;
 			}
@@ -165,8 +165,7 @@ public static partial class WebToMobileAnalysisService {
 			//     top-level-only design depends on, and no web-derived payload has ever carried it.
 			if (generation is not { PruneEnabled: true }
 				|| generation.BaseInputs is not { Count: > 0 }
-				|| !generation.BaseInputs.ContainsKey("layoutConfig")
-				|| !generation.BaseInputs.ContainsKey("visible")
+				|| !DeclaresInheritedSurface(generation.BaseInputs)
 				|| mobileByType is not { Count: > 0 }) {
 				return Disabled;
 			}
@@ -178,13 +177,27 @@ public static partial class WebToMobileAnalysisService {
 				// The "declares nothing" test is made BEFORE baseInputs is folded in — otherwise a component
 				// with an empty contract would look like it declares the nine inherited keys, and everything
 				// else on it would be pruned.
-				SortedSet<string> own = BuildAllowedPropertyNames(pair.Value);
-				if (own.Count == 0) {
+				SortedSet<string> declared = BuildAllowedPropertyNames(pair.Value);
+				if (declared.Count == 0) {
 					continue;
 				}
-				byType[pair.Key] = BuildAllowedPropertyNames(pair.Value, generation.BaseInputs);
+				foreach (string inherited in generation.BaseInputs.Keys) {
+					declared.Add(inherited);
+				}
+				byType[pair.Key] = declared;
 			}
 			return byType.Count == 0 ? Disabled : new DeclaredPropertyIndex(true, byType);
+		}
+
+		/// <summary>
+		/// True when the inherited surface is the RUNTIME-DERIVED one. Matched case-insensitively on purpose:
+		/// the registry's own dictionaries come from System.Text.Json with the ORDINAL comparer, so an
+		/// indexed lookup here would make the whole feature hinge on the producer's casing — the same
+		/// single-string fragility that made the provenance marker unusable as a gate.
+		/// </summary>
+		private static bool DeclaresInheritedSurface(IReadOnlyDictionary<string, JsonElement> baseInputs) {
+			var keys = new HashSet<string>(baseInputs.Keys, StringComparer.OrdinalIgnoreCase);
+			return keys.Contains("layoutConfig") && keys.Contains("visible");
 		}
 
 		/// <summary>
@@ -211,14 +224,6 @@ public static partial class WebToMobileAnalysisService {
 
 		internal bool IsEmpty => Entries is not { Count: > 0 };
 	}
-
-	/// <summary>
-	/// Element identity keys that are structural rather than component properties. Both are declared in
-	/// <c>baseInputs</c> anyway, so this guard is belt-and-braces — but it must not depend on producer data
-	/// staying that way, because removing either would make the element unaddressable.
-	/// </summary>
-	private static readonly HashSet<string> NeverPrunedProps =
-		new(StringComparer.OrdinalIgnoreCase) { "name", "type" };
 
 	/// <summary>
 	/// Removes from every element-map entry's prebuilt mobile <c>values</c> the TOP-LEVEL properties the
@@ -280,7 +285,11 @@ public static partial class WebToMobileAnalysisService {
 			var removed = new List<string>();
 			var removedBindings = new List<string>();
 			foreach (string propName in values.Select(prop => prop.Key).ToList()) {
-				if (NeverPrunedProps.Contains(propName) || declaredProps.Declares(entry.MobileType, propName)) {
+				// ExcludedSourceProps, not a second list: it states the same fact (these two keys are the
+				// operation's own identity) and its remarks forbid a competing mechanism. Both happen to be
+				// declared in baseInputs too, so this is belt-and-braces — but it must not DEPEND on producer
+				// data staying that way, because removing either makes the element unaddressable.
+				if (ExcludedSourceProps.Contains(propName) || declaredProps.Declares(entry.MobileType, propName)) {
 					continue;
 				}
 				bool wasBinding = IsEventBindingNode(values[propName]);
@@ -290,16 +299,18 @@ public static partial class WebToMobileAnalysisService {
 					continue;
 				}
 				removedBindings.Add(propName);
-				// Only an INSERT can claim the action is gone. Omitting a key from a MERGE payload means
+				// Only an INSERT can claim the action is GONE. Omitting a key from a MERGE payload means
 				// "keep the template element's own value", so the mobile control may well go on firing the
 				// template's binding — reporting a drop there would restate a claim the merge cannot
-				// perform, which is the same mistake ProcessOneEventBinding's canRemoveBinding:false guard
-				// exists to avoid. The key is still not carried, so it stays in `bindings`.
-				if (string.Equals(entry.Operation, ElementMapOperations.Insert, StringComparison.OrdinalIgnoreCase)) {
-					ReclassifyPrunedBinding(
-						convertedRequests, flaggedRequests, droppedRequests, unresolvedTargets,
-						entry.Name, propName, entry.MobileType);
-				}
+				// perform, the same mistake ProcessOneEventBinding's canRemoveBinding:false guard avoids.
+				// But the converted/flagged claim must be withdrawn either way: the diff no longer carries
+				// the binding, so leaving the record would have the guide name an action its own payload
+				// does not contain. On a merge the action is neither converted nor provably dropped.
+				bool isInsert = string.Equals(
+					entry.Operation, ElementMapOperations.Insert, StringComparison.OrdinalIgnoreCase);
+				ReclassifyPrunedBinding(
+					convertedRequests, flaggedRequests, isInsert ? droppedRequests : null, unresolvedTargets,
+					entry.Name, propName, entry.MobileType);
 			}
 			if (removed.Count > 0) {
 				entries.Add(new PrunedPropertyEntry {
@@ -365,8 +376,9 @@ public static partial class WebToMobileAnalysisService {
 		}
 		unresolvedTargets?.RemoveAll(r => Matches(r.ElementName, r.Binding));
 		if (webRequest is null || droppedRequests is null) {
-			// Nothing claimed the binding, so there is no action to report as lost — the pruned property
-			// was an inert leftover and `prunedProperties` alone describes it.
+			// Either nothing claimed the binding (an inert leftover), or the caller is a MERGE and passed no
+			// collection because a merge cannot prove the action is gone. Both are described by
+			// `prunedProperties.bindings` alone.
 			return;
 		}
 		droppedRequests.Add(new DroppedRequest {
