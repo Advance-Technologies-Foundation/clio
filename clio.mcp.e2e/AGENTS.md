@@ -79,6 +79,10 @@ A tool with no fixture at all is listed in `toolsWithoutFixtures`. Every change 
 the whole suite, because nothing tells the detector which tests would show the regression. Treat an
 entry there as a coverage gap to close, not as an exemption.
 
+An MCP resource or prompt with no fixture is listed the same way, in `entryPointsWithoutFixtures`.
+It costs a full run for exactly the same reason, and it never appears in
+`unreachable-product-files.txt`, so that list is the only place the gap is visible.
+
 See `spec/mcp-e2e-plan-split/` for the rules in full and the measured baseline.
 
 ## Default rule

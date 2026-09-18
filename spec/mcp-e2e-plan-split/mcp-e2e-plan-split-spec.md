@@ -224,11 +224,18 @@ re-implementing the regexes in C#.
   `clio/Command/AssemblyCommand.cs` and `clio/Command/PackageCommand/ValidationPackageCommand.cs` -
   and both are already pinned unreachable, so nothing is lost now. It is a silent-narrowing class,
   which is why it is recorded here rather than left to be rediscovered.
-- **The guard fixture costs about 1 m 35 s** on the unit lane for every pull request: its 21 cases
-  rebuild the reference graph over the real tree several times. That is a fixed new cost, paid to
-  keep the detector's rules pinned.
+- **The guard fixture costs about 1 m 35 s on macOS and about 10 minutes on Windows** for every pull
+  request: its 27 cases rebuild the reference graph over the real tree several times. The reason for
+  the gap between the two platforms has not been measured. The Windows figure is the one that counts,
+  because `unit-test-shards` is `runs-on: windows-latest`, and the fixture is not named in
+  `clio.tests/TestSharding/test-shards.json`, so it lands in `unit-4`, the catch-all shard. A
+  standalone `Select-McpE2eTestFilter.ps1 -Inventory` run on Windows took 12 m 42 s, which is worth
+  knowing before following the pin file's instruction to refresh it that way.
 - **9 MCP tools have no fixture** (`toolsWithoutFixtures`). Each forces a full run, because the
   detector cannot tell which tests would show the regression.
+- **MCP resources and prompts with no fixture** are pinned the same way, in
+  `entryPointsWithoutFixtures`. They never reach `unreachable-product-files.txt` - the entry-point
+  rule escalates them to a full run first - so that list is the only record of the gap.
 - **Hidden per-session cost** is unaffected by the filter.
 
 ## Rollout

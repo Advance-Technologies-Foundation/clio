@@ -16,7 +16,9 @@
 # The rules live in clio.mcp.e2e/TestSelection/mcp-e2e-selection.json (read its _comment).
 # With -Inventory the script prints what it sees instead of a selection:
 # { fixtures: { <file base name>: [fixture names] }, reachability: { <fixture>: [tool files that select it] },
-#   uncoveredTools: [tool files no fixture names] }.
+#   uncoveredTools: [tool files no fixture names],
+#   uncoveredEntryPoints: [MCP resource/prompt files no fixture names],
+#   unreachableProductFiles: [files no fixture can observe], lexerResidue: [files that survived blanking] }.
 # clio.tests/McpE2eSelectionCoverageTests.cs compares that inventory with reflection over the compiled
 # e2e assembly, so this script is the single owner of the textual rules and the guard only checks that
 # the text-based view and the compiled view agree.
@@ -728,9 +730,21 @@ if ($Inventory) {
             $unreachable.Add($relative)
         }
     }
+    # The same coverage gap as $uncovered, one entry-point kind out: a file declaring an MCP resource
+    # or prompt that no fixture names. It never reaches the unreachable pin, because rule 7's
+    # entry-point form escalates it to a full run instead - so without this list the gap is paid for on
+    # every change and recorded nowhere.
+    $uncoveredEntryPoints = New-Object System.Collections.Generic.List[string]
+    foreach ($relative in ($g.TypesByFile.Keys | Sort-Object)) {
+        if (Test-GlobMatch $relative $manifest.ignoredPaths) { continue }
+        if (Test-GlobMatch $relative $manifest.fullRunPaths) { continue }
+        if (-not (Test-McpEntryPointFile $relative)) { continue }
+        if (@(Select-FixturesForEntryPoint $relative).Count -eq 0) { $uncoveredEntryPoints.Add($relative) }
+    }
     [pscustomobject]@{
         fixtures = $fixturesOut; reachability = $reachOut
         uncoveredTools = @($uncovered | Sort-Object)
+        uncoveredEntryPoints = @($uncoveredEntryPoints)
         unreachableProductFiles = @($unreachable)
         lexerResidue = @((Get-Graph).LexerResidue)
     } | ConvertTo-Json -Depth 4

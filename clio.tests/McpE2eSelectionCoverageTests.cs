@@ -8,6 +8,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using Clio.Mcp.E2E;
 using FluentAssertions;
 using NUnit.Framework;
@@ -501,6 +502,25 @@ internal sealed class McpE2eSelectionCoverageTests {
 	}
 
 	[Test]
+	[Description("Every MCP resource and prompt file either selects a fixture or is listed as a known gap, so the full run each uncovered one forces is a recorded coverage gap rather than an unexplained cost.")]
+	public void EntryPointsWithoutFixtures_ShouldMatchTheDeclaredGaps() {
+		// Arrange
+		HashSet<string> declaredGaps = ReadManifest().GetProperty("entryPointsWithoutFixtures").EnumerateArray()
+			.Select(t => t.GetString()!).ToHashSet(StringComparer.Ordinal);
+		string[] uncovered = Inventory.Value.GetProperty("uncoveredEntryPoints").EnumerateArray().Select(t => t.GetString()!).ToArray();
+
+		// Act
+		string[] undeclared = uncovered.Except(declaredGaps, StringComparer.Ordinal).OrderBy(t => t, StringComparer.Ordinal).ToArray();
+		string[] stale = declaredGaps.Except(uncovered, StringComparer.Ordinal).OrderBy(t => t, StringComparer.Ordinal).ToArray();
+
+		// Assert
+		undeclared.Should().BeEmpty(
+			because: "an MCP resource or prompt no fixture names forces the whole suite to run for every change to it, exactly as an uncovered tool does; add the fixture, or record the gap in entryPointsWithoutFixtures so it is as visible as a tool gap");
+		stale.Should().BeEmpty(
+			because: "a declared gap that has fixtures now is dead configuration and hides the next real gap");
+	}
+
+	[Test]
 	[Description("A service reached only THROUGH an MCP resource selects that resource's fixtures instead of resolving to none: the resource is an entry point wherever it appears in the closure, not only when it is the changed file.")]
 	public void Script_ShouldSelectResourceFixtures_WhenAServiceIsReachedOnlyThroughAnMcpResource() {
 		// Arrange
@@ -712,6 +732,12 @@ internal sealed class McpE2eSelectionCoverageTests {
 			Git("config", "user.email", "selection-guard@example.invalid");
 			Git("config", "user.name", "Selection Guard");
 			Git("config", "commit.gpgsign", "false");
+			// Git for Windows installs core.autocrlf=true in its SYSTEM config, so without this
+			// every one of these LF-written files makes `git add -A` print a "LF will be replaced
+			// by CRLF" warning. That is thousands of bytes of stderr for a repository this size,
+			// which is what used to fill the pipe. The environment is neutralised in Git() as
+			// well; this line keeps the repository itself correct for anyone reading it.
+			Git("config", "core.autocrlf", "false");
 			return CommitAll("base");
 		}
 
@@ -758,12 +784,25 @@ internal sealed class McpE2eSelectionCoverageTests {
 				RedirectStandardError = true,
 				UseShellExecute = false
 			};
+			// The system and global git configuration belong to whoever runs the suite, and this
+			// repository must behave identically everywhere. core.autocrlf is the setting that
+			// broke it on Windows; core.hooksPath, init.defaultBranch and commit.gpgsign are the
+			// same class of hazard. GIT_CONFIG_GLOBAL points at a path that is never created.
+			startInfo.Environment["GIT_CONFIG_NOSYSTEM"] = "1";
+			startInfo.Environment["GIT_CONFIG_GLOBAL"] = Path.Combine(Root, ".gitconfig-absent");
 			foreach (string argument in arguments) {
 				startInfo.ArgumentList.Add(argument);
 			}
 			using Process process = Process.Start(startInfo)!;
+			// Both pipes are drained concurrently. Reading them one after the other deadlocks: git
+			// blocks writing once the pipe it is NOT being read from fills (~4 KB) while the parent
+			// sits in ReadToEnd on the other one, so neither side moves and WaitForExit is never
+			// reached. `git add -A` reaches that volume on Windows unaided - Git for Windows ships
+			// core.autocrlf=true in its system config and this tree is written with LF, so every
+			// file adds a "LF will be replaced by CRLF" line to stderr.
+			Task<string> standardErrorTask = process.StandardError.ReadToEndAsync();
 			string standardOutput = process.StandardOutput.ReadToEnd();
-			string standardError = process.StandardError.ReadToEnd();
+			string standardError = standardErrorTask.GetAwaiter().GetResult();
 			process.WaitForExit();
 			if (process.ExitCode != 0) {
 				throw new InvalidOperationException(
@@ -933,12 +972,29 @@ internal sealed class McpE2eSelectionCoverageTests {
 			return new SyntheticRepository(root);
 		}
 
+		/// <summary>
+		/// Deleting the tree needs the read-only bit cleared first: git writes its loose objects and
+		/// pack files read-only, and on Windows <c>Directory.Delete</c> then throws
+		/// <see cref="UnauthorizedAccessException"/>, which is not an <see cref="IOException"/>. Left
+		/// narrower, that exception escapes from inside a <c>using</c> and REPLACES whatever the test
+		/// itself threw, so the real failure never reaches the report.
+		/// </summary>
 		public void Dispose() {
 			try {
+				if (Directory.Exists(Root)) {
+					foreach (string file in Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories)) {
+						FileInfo info = new(file);
+						if ((info.Attributes & FileAttributes.ReadOnly) != 0) {
+							info.Attributes &= ~FileAttributes.ReadOnly;
+						}
+					}
+				}
 				Directory.Delete(Root, recursive: true);
 			}
-			catch (IOException) {
-				// A leftover temp directory is not worth failing the test run for.
+			catch (Exception exception) {
+				// A leftover temp directory is not worth failing the test run for, and it must never
+				// mask the exception the test was already reporting - so it is reported, not thrown.
+				TestContext.Out.WriteLine($"Leftover synthetic repository {Root} was not removed: {exception.Message}");
 			}
 		}
 
