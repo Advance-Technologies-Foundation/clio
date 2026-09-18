@@ -132,6 +132,36 @@ public class NugetMaterializerConfinementTests
 	}
 
 	[Test]
+	[Description("Accepts a workspace whose own packages folder is a symbolic link: the root is the "
+		+ "workspace's layout, not a path inside it, so the walk terminates there instead of probing it. "
+		+ "Probing the root refused every conversion in that layout, which master allows (issue 1311)")]
+	public void Materializer_Accepts_PackagesFolderThatIsItselfASymbolicLink(){
+		// Arrange
+		//A `packages` folder that is a junction onto another drive is an ordinary setup, so the whole
+		//workspace is relocated behind a link and only the ROOT is a link - every segment below it is real.
+		string relocatedPackages = Path.Combine(_outsideRoot, "relocated-packages");
+		string packagesRoot = Path.Combine(_workspaceRoot, "packages");
+		Directory.Delete(packagesRoot);
+		Directory.CreateDirectory(Path.Combine(relocatedPackages, PackageName));
+		File.WriteAllText(Path.Combine(relocatedPackages, PackageName, PackageName + ".csproj"), @"
+			<Project Sdk=""Microsoft.NET.Sdk"">
+				<ItemGroup>
+					<PackageReference Include=""Nuget1"" Version=""1.1.1"" />
+				</ItemGroup>
+			</Project>");
+		CreateDirectoryLinkOrIgnore(packagesRoot, relocatedPackages);
+
+		// Act
+		bool hasLinkWithin = _fileSystem.HasLinkWithin(packagesRoot,
+			Path.Combine(packagesRoot, PackageName, PackageName + ".csproj"));
+
+		// Assert
+		hasLinkWithin.Should().BeFalse(
+			because: "the confinement root terminates the walk; only the segments BELOW it are probed, "
+				+ "so a linked packages folder is not itself a confinement breach");
+	}
+
+	[Test]
 	[Description("Refuses a helper project folder that is a symbolic link, so the recursive bin/obj delete "
 		+ "never runs outside the workspace (issue 1311)")]
 	public void Materializer_Refuses_HelperFolderThatIsASymbolicLink(){

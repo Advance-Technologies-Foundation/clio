@@ -259,11 +259,16 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 			return false;
 		}
 		while (true) {
-			if (IsLink(current)) {
-				return true;
-			}
+			//Root-equality is tested FIRST so the walk terminates at the root instead of probing it.
+			//The root is the workspace's own layout: a `packages` folder that is itself a junction onto
+			//another drive is an ordinary setup, and link-testing it made the command refuse every
+			//conversion in that layout. No caller passes path == confinementRoot, so stopping here
+			//opens no hole - every caller passes a segment below the root.
 			if (PathsEqual(current, fullRoot)) {
 				return false;
+			}
+			if (IsLink(current)) {
+				return true;
 			}
 			string parent = msFileSystem.Path.GetDirectoryName(current);
 			if (string.IsNullOrEmpty(parent) || PathsEqual(parent, current)) {

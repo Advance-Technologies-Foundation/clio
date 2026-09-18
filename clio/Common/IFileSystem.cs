@@ -67,7 +67,7 @@ namespace Clio.Common
 		/// Tells whether any segment from <paramref name="confinementRoot"/> down to
 		/// <paramref name="path"/> is a symbolic link, a junction, or any other reparse point.
 		/// </summary>
-		/// <param name="confinementRoot">Folder the path must stay inside. It is probed as well.</param>
+		/// <param name="confinementRoot">Folder the path must stay inside. The root itself is NOT probed: the walk terminates there.</param>
 		/// <param name="path">Path about to be written, cleared or deleted. It need not exist yet.</param>
 		/// <returns>
 		/// True when a link stands anywhere on that ancestry, or when the walk cannot reach the root.
