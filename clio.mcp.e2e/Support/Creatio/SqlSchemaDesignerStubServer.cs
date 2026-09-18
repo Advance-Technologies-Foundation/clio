@@ -5,7 +5,7 @@ using System.Text;
 namespace Clio.Mcp.E2E.Support.Creatio;
 
 /// <summary>
-/// The unusable answer the stub returns from every <c>ScriptSchemaDesignerService</c> route.
+/// The unusable answer the stub returns from every <c>SqlScriptSchemaDesignerService</c> route.
 /// </summary>
 public enum SqlSchemaDesignerStubResponse {
 
@@ -26,7 +26,7 @@ public enum SqlSchemaDesignerStubResponse {
 /// <summary>
 /// Minimal Creatio stub for the issue #1322 regression: forms-auth login, a <c>SelectQuery</c> that
 /// resolves the target package and reports the schema as absent, and a
-/// <c>ScriptSchemaDesignerService</c> that answers with a body clio cannot parse.
+/// <c>SqlScriptSchemaDesignerService</c> that answers with a body clio cannot parse.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -48,7 +48,7 @@ internal sealed class SqlSchemaDesignerStubServer : IAsyncDisposable {
 
 	private const string LoginPathSuffix = "/AuthService.svc/Login";
 	private const string SelectQueryPathMarker = "SelectQuery";
-	private const string DesignerPathMarker = "ScriptSchemaDesignerService";
+	private const string DesignerPathMarker = "SqlScriptSchemaDesignerService";
 
 	/// <summary>The package UId the stub reports for any package name the command asks about.</summary>
 	internal const string PackageUId = "a0000000-0000-0000-0000-0000000000ff";
