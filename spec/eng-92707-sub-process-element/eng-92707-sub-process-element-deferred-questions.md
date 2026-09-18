@@ -856,6 +856,16 @@ two-minute job with the mechanics already built.
 
 ## DQ-32 — the build path cannot bind a changeData value to a sub-process element's output
 
+> **FIXED at CrtProcessBuilder 1.6.3.14 (round 15), on the owner's decision to do it in this ticket.**
+> Element CREATION and element CONFIGURATION are now two passes, with the selections between them:
+> place every element → `afterElementsPlaced` (sub-process + pre-configured page) → configure → flows.
+> Configuration still runs before the flow loop, exactly where it ran when it was part of creation, so
+> nothing else in the sequence moved. `addElement` takes the configure step explicitly, in the same
+> position, because it places elements through `PlaceNewElement` rather than `BuildGraph` — the two paths
+> applying these blocks in different orders is why the defect existed. Two ordering tests pin it, both
+> failing against the previous shape. **The sizing below was wrong when written and is corrected in
+> place; the analysis is kept because the stand-verification recipe at the end still applies.**
+
 Found by the same run, and it is a real defect in this feature rather than a documentation error.
 
 **What happens.** `create-business-process` REFUSES a `changeData` column value bound to
