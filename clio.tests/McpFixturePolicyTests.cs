@@ -113,12 +113,13 @@ public sealed class McpFixturePolicyTests {
 			because: "the feature owner requires all Creatio merge E2E coverage to remain outside automatic GitHub and TeamCity execution");
 	}
 
-	[Test]
-	[Description("Keeps the schema-publishing temporal alias probe explicit and manual without disabling the shared fixture's automatic tests.")]
-	public void TemporalAliasProbe_ShouldStayExplicitAndManual_WhenSharingAnAutomaticFixture() {
+	[TestCase(typeof(SchemaSyncToolE2ETests), nameof(SchemaSyncToolE2ETests.SchemaSync_ShouldReadBackDateTime_WhenTemporalAliasesAreWritten))]
+	[TestCase(typeof(SchemaSyncToolE2ETests), nameof(SchemaSyncToolE2ETests.SchemaSync_ShouldPersistDbView_WhenCreatedAndReplayed))]
+	[TestCase(typeof(EntitySchemaToolE2ETests), nameof(EntitySchemaToolE2ETests.EntitySchema_ShouldPersistDbView_WhenCreatedAndUpdated))]
+	[Description("Keeps schema-publishing probes explicit and manual without disabling shared fixtures automatic tests.")]
+	public void PublishingProbe_ShouldStayExplicitAndManual_WhenSharingAnAutomaticFixture(Type fixture, string methodName) {
 		// Arrange
-		Type fixture = typeof(SchemaSyncToolE2ETests);
-		MethodInfo method = fixture.GetMethod(nameof(SchemaSyncToolE2ETests.SchemaSync_ShouldReadBackDateTime_WhenTemporalAliasesAreWritten))!;
+		MethodInfo method = fixture.GetMethod(methodName)!;
 
 		// Act
 		ExplicitAttribute? explicitGuard = method.GetCustomAttribute<ExplicitAttribute>();

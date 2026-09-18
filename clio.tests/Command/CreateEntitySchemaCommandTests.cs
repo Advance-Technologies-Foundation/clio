@@ -19,6 +19,25 @@ internal class CreateEntitySchemaCommandTests : BaseCommandTests<CreateEntitySch
 	private IRemoteEntitySchemaCreator _creator;
 	private ILogger _logger;
 
+	[TestCase(null)]
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("Parses omitted and explicit DB-view values without treating false as omission.")]
+	public void Parse_ShouldPreserveDbView_WhenSupplied(bool? expected) {
+		// Arrange
+		List<string> arguments = ["--package", "UsrPkg", "--name", "UsrView", "--title", "View"];
+		if (expected.HasValue) {
+			arguments.AddRange(["--is-db-view", expected.Value ? "true" : "false"]);
+		}
+		CreateEntitySchemaOptions parsed = null;
+		// Act
+		ParserResult<CreateEntitySchemaOptions> result = Parser.Default
+			.ParseArguments<CreateEntitySchemaOptions>(arguments).WithParsed(options => parsed = options);
+		// Assert
+		result.Tag.Should().Be(ParserResultType.Parsed, because: "the documented boolean syntax must parse");
+		parsed.IsDBView.Should().Be(expected, because: "omission and explicit false have different metadata semantics");
+	}
+
 	public override void Setup()
 	{
 		base.Setup();

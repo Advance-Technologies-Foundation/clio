@@ -21,7 +21,7 @@ Parameters can be added during schema creation with --parameter. Separate
 multiple parameter definitions with |.
 Supported parameter types are Boolean, Date, DateTime, Float, Guid,
 Unique identifier, Integer, Lookup, Money, Serializable list of composite
-values, Text, and Time.
+values, Text, Unlimited text (alias MaxSizeText), and Time.
 
 Child items can be added to parameters of type Serializable list of
 composite values with --parameter-item. Separate multiple item definitions
@@ -109,6 +109,12 @@ multiple item definitions with |
 --timeout                  Request timeout in milliseconds
 ```
 
+Use `type=Unlimited text` (alias `MaxSizeText`) for an unlimited-length string,
+for example an `ErrorMessage` output. `Text` and `String` retain their existing type.
+
+```text
+code=ErrorMessage;title=Error message;type=Unlimited text;direction=Out;resulting=true;serializable=true
+```
 ## Example
 
 ```bash

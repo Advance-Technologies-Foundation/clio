@@ -11,9 +11,12 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public class SqlSchemaCreateToolTests {
 
-	[Test]
+	[TestCase(null, 1)]
+	[TestCase(2, 3)]
 	[Category("Unit")]
-	public void CreateSchema_Should_Resolve_Command_For_Requested_Environment() {
+	[Description("Maps default or explicit native SQL options into the requested environment command.")]
+	public void CreateSchema_ShouldResolveRequestedEnvironment_WhenNativeOptionsAreSupplied(int? engine, int phase) {
+		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeSqlSchemaCreateCommand defaultCommand = new();
 		FakeSqlSchemaCreateCommand resolvedCommand = new();
@@ -22,10 +25,14 @@ public class SqlSchemaCreateToolTests {
 			.Returns(resolvedCommand);
 		SqlSchemaCreateTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
+		// Act
 		SqlSchemaCreateResponse response = tool.CreateSchema(new SqlSchemaCreateArgs("UsrScript", "Custom") {
-			Caption = "Script caption", Description = "Script description", EnvironmentName = "dev" });
+			Caption = "Script caption", Description = "Script description", EnvironmentName = "dev", DbEngineType = engine, InstallType = phase });
 
-		response.Success.Should().BeTrue();
+		// Assert
+		response.Success.Should().BeTrue(because: "the resolved command supplies the result");
+		resolvedCommand.CapturedOptions.DbEngineType.Should().Be(engine, because: "the dialect override must reach the command");
+		resolvedCommand.CapturedOptions.InstallType.Should().Be(phase, because: "the installation phase must reach the command");
 		resolvedCommand.CapturedOptions.Should().NotBeNull();
 		resolvedCommand.CapturedOptions.SchemaName.Should().Be("UsrScript");
 		resolvedCommand.CapturedOptions.PackageName.Should().Be("Custom");
@@ -58,8 +65,7 @@ public class SqlSchemaCreateToolTests {
 		public SqlSchemaCreateOptions CapturedOptions { get; private set; }
 
 		public FakeSqlSchemaCreateCommand()
-			: base(Substitute.For<IApplicationClient>(), Substitute.For<IServiceUrlBuilder>(), ConsoleLogger.Instance,
-				Substitute.For<Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver>()) {
+			: base(Substitute.For<IApplicationClient>(), Substitute.For<IServiceUrlBuilder>(), ConsoleLogger.Instance) {
 		}
 
 		public override bool TryCreate(SqlSchemaCreateOptions options, out SqlSchemaCreateResponse response) {
