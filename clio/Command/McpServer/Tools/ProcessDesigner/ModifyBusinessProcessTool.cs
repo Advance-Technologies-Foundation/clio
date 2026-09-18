@@ -3,6 +3,8 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
+using System.Collections.Generic;
+using System.Text.Json;
 
 namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 
@@ -16,12 +18,23 @@ public class ModifyBusinessProcessTool(
 
 	internal const string ModifyBusinessProcessToolName = "modify-business-process";
 
+	/// <summary>The canonical field list echoed back when an unknown argument key is refused (ENG-98566).</summary>
+	internal const string ValidArgsHint = "Valid: environment-name, process-name, process-uid, operations.";
+
+	/// <summary>
+	/// Refusal for a call whose whole argument object is absent (ENG-98566, Sonar S2259).
+	/// </summary>
+	/// <remarks>
+	/// Stays inline rather than moving into the shared helper: it has to run before any field can be read,
+	/// and that is what lets the analyser prove no field read is reached with null (csharpsquid:S2259). See
+	/// <see cref="McpToolArgumentSupport.BuildUnknownArgumentError"/>.
+	/// </remarks>
+	internal const string NullArgsError = "args is required: the call carried no argument object. " + ValidArgsHint;
+
 	/// <summary>
 	/// Applies an inline JSON operations array to an existing process (identified by name or uid).
 	/// </summary>
-	/// <param name="environmentName">Registered clio environment name.</param>
-	/// <param name="processName">Process code (schema Name) to edit. Provide this or <paramref name="processUid"/>.</param>
-	/// <param name="processUid">Process schema UId to edit. Provide this or <paramref name="processName"/>.</param>
+	/// <param name="args">The tool arguments; see <see cref="ModifyBusinessProcessArgs"/>.</param>
 	/// <param name="operations">Inline JSON operations array.</param>
 	/// <returns>The command execution result with the edited schema identity in the log output.</returns>
 	[McpToolExecution(
@@ -84,7 +97,21 @@ public class ModifyBusinessProcessTool(
 		 + "reading exactly like a cleared condition. To make a branch unconditional set its condition to "
 		 + "'true'. Refused on a default branch, and refused on a flow whose branch the platform decides from "
 		 + "the preceding activity's RESULT - describe marks those branchesOnActivityResult:true, and a "
-		 + "condition written onto one is stored and never evaluated). "
+		 + "condition written onto one is stored and never evaluated. ALSO refused whenever the SOURCE "
+		 + "enumerates results at all: the designer offers no formula field there, so a condition would run "
+		 + "while the card opened empty. The refusal names the deciding activity and what to pass instead), "
+		 + "setFlowResults (from 1.6.2.23; with 'source' and 'target' naming an EXISTING flow, plus a "
+		 + "non-empty 'results' - the RESULT CAPTIONS selecting this branch, or their record ids, e.g. "
+		 + "['Positive'] on an Approval. This is a conditional flow's OTHER predicate slot, not a spelling of "
+		 + "setFlowCondition: which slot a connector takes is decided by its SOURCE, not by you. The two are "
+		 + "MUTUALLY EXCLUSIVE, asymmetrically: results CLEARS a stored condition; a condition onto a flow "
+		 + "already carrying a selection is REFUSED. Refused on a default branch, on a "
+		 + "source that enumerates nothing (use 'condition' there), and on an empty 'results' - a selection "
+		 + "cannot be CLEARED, because a conditional flow carrying neither is stored as 'true' and always "
+		 + "taken; call it again to change which results select the branch. An unknown caption is refused "
+		 + "WITH the set the element offers, which is the only way to discover them. Prefer declaring it on "
+		 + "the build path with flows[].results. get-guidance name=process-branch-conditions routes to the rule's owner "
+		 + "and says what to tell the user first), "
 		 + "A FLOW 'label' is the text the designer draws ON the connector, and on setFlow its three states "
 		 + "are different: OMIT it and the flow keeps the label it has - which is what you want, because a "
 		 + "modify normally lands on a designer-authored process where 84.9% of conditional flows already "
@@ -311,16 +338,14 @@ public class ModifyBusinessProcessTool(
 	public CommandExecutionResult ModifyBusinessProcess(
 		[Description("modify-business-process parameters")] [Required] ModifyBusinessProcessArgs args
 	) {
-		if (string.IsNullOrWhiteSpace(args?.EnvironmentName)) {
-			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
+		if (args is null) {
+			return CommandExecutionResult.FromValidationError(NullArgsError);
 		}
 
-		bool hasName = !string.IsNullOrWhiteSpace(args.ProcessName);
-		bool hasUid = !string.IsNullOrWhiteSpace(args.ProcessUid);
-		if (hasName == hasUid) {
-			return CommandExecutionResult.FromError(hasName
-				? "Provide only one of process-name or process-uid, not both."
-				: "one of process-name or process-uid is required.");
+		CommandExecutionResult targetError = ProcessTargetArguments.Validate(
+			args.ExtensionData, ValidArgsHint, args.EnvironmentName, args.ProcessName, args.ProcessUid);
+		if (targetError is not null) {
+			return targetError;
 		}
 
 		if (string.IsNullOrWhiteSpace(args.Operations)) {
@@ -372,4 +397,13 @@ public sealed record ModifyBusinessProcessArgs(
 
 	[property: JsonPropertyName("process-uid")]
 	[property: Description("Process schema UId to edit; provide exactly one of process-name or process-uid.")]
-	string? ProcessUid = null);
+	string? ProcessUid = null) {
+
+	/// <summary>
+	/// Overflow bag for top-level keys the SDK could not bind to a declared argument (ENG-98566).
+	/// Inspected by the tool so a mis-keyed argument is named back to the caller; a bag that is
+	/// never read is the failure mode, not the fix.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}

@@ -12,7 +12,7 @@ SYNOPSIS
 
 DESCRIPTION
     Replaces the body of an existing SQL script schema on a remote Creatio
-    environment via ScriptSchemaDesignerService. The schema is resolved by
+    environment via SqlScriptSchemaDesignerService. The schema is resolved by
     name and the body is patched in-place. No local workspace files are
     created or modified.
 
@@ -58,3 +58,6 @@ SEE ALSO
     create-sql-schema - Create a new SQL script schema
     get-sql-schema - Read body and metadata of a SQL script schema
     install-sql-schema - Execute a SQL script schema on the database
+
+NOTES
+    Resolves package SQL scripts through VwSysSqlScriptInPackage and reads them through SqlScriptSchemaDesignerService/GetSchema. Ambiguous names are rejected. Updates preserve the existing engine, installation phase and dependencies.

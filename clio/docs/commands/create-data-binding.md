@@ -121,3 +121,5 @@ rows and localizations again. Verify target rows after applying the binding.
 add-data-binding-row, remove-data-binding-row, call-service, create-data-binding-db
 
 - [Clio Command Reference](../../Commands.md#create-data-binding)
+
+Runtime rich-text columns (including sequence step Description and Body) are supported and retain their HTML text in native package bindings.

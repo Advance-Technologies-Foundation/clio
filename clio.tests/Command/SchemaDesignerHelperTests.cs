@@ -423,21 +423,21 @@ public sealed class SchemaDesignerHelperTests {
 	}
 
 	[Test]
-	[Description("ResolveSchemaUId for a non-ClientUnit kind (SqlScript) keeps the pre-PR single-row behavior and returns rows[0].UId, NOT the highest-hierarchy-level row.")]
-	public void ResolveSchemaUId_ShouldReturnFirstRowUId_WhenKindIsSqlScript() {
-		// Arrange — rows[0] is deliberately NOT the highest-hierarchy-level row, to distinguish the two behaviors
+	[Description("Package SQL names shared by multiple rows fail closed rather than selecting an arbitrary script.")]
+	public void ResolveSchemaUId_ShouldRejectAmbiguousName_WhenKindIsSqlScript() {
+		// Arrange
 		(IApplicationClient client, IServiceUrlBuilder urlBuilder) = MakeSelectQueryClient(NamedLayersResponse(
 			("uid-first", "UsrSqlScript", "CrtUIv2", 115),
 			("uid-highest", "UsrSqlScript", "SalesEnterprise", 438)));
-
+		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns("http://host/0/DataService/json/SyncReply/SelectQuery");
 		// Act
 		(string uId, string error) = SchemaDesignerHelper.ResolveSchemaUId(
 			client, urlBuilder, "UsrSqlScript", SchemaDesignerKind.SqlScript);
-
 		// Assert
-		error.Should().BeNull(because: "a resolvable SqlScript schema must not report an error");
-		uId.Should().Be("uid-first",
-			because: "SqlScript/SourceCode kinds keep the pre-PR single-row pick (rows[0].UId), scoped away from top-layer resolution");
+		error.Should().Contain("ambiguous", because: "a package or dialect collision must not target an arbitrary script");
+		uId.Should().BeNull(because: "an ambiguous lookup must not yield an executable target");
+		client.Received(1).ExecutePostRequest("http://host/0/DataService/json/SyncReply/SelectQuery",
+			Arg.Is<string>(body => body.Contains("VwSysSqlScriptInPackage") && !body.Contains("ManagerName")));
 	}
 
 	[Test]

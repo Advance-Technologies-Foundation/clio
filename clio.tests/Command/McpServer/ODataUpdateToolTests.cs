@@ -127,7 +127,7 @@ public sealed class ODataUpdateToolTests {
 			Resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(UrlBuilder);
 			Resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
 				.Returns((Client, UrlBuilder));
-			Tool = new ODataUpdateTool(Resolver);
+			Tool = new ODataUpdateTool(Resolver, new OperationCorrelationIdProvider());
 		}
 
 		/// <summary>
@@ -139,9 +139,11 @@ public sealed class ODataUpdateToolTests {
 			UrlBuilder = Substitute.For<IServiceUrlBuilder>();
 			UrlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
 			Resolver = Substitute.For<IToolCommandResolver>();
+			Resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(Client);
+			Resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(UrlBuilder);
 			Resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
 				.Returns((Client, UrlBuilder));
-			Tool = new ODataUpdateTool(Resolver);
+			Tool = new ODataUpdateTool(Resolver, new OperationCorrelationIdProvider());
 		}
 
 		public IApplicationClient Client { get; }
@@ -632,6 +634,9 @@ public sealed class ODataUpdateToolTests {
 
 		// Assert
 		response.Success.Should().BeFalse(because: "a transport failure on the PATCH is not a successful write");
+		response.Diagnostic!.WriteAttempted.Should().BeTrue(because: "the transport threw after entering the write call");
+		response.Diagnostic.TransportOutcome.Should().Be("unknown", because: "no response was received");
+		response.Diagnostic.SideEffect.Should().Be("unknown", because: "transport failure does not prove rollback");
 		response.Error!.Should()
 			.Contain("[redacted-path]")
 			.And.NotContain("/home/depot",
@@ -1105,7 +1110,7 @@ public sealed class ODataUpdateToolTests {
 			.Returns(firstRoot, repointedRoot);
 		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
 			.Returns((client, firstRoot));
-		ODataUpdateTool tool = new(resolver);
+		ODataUpdateTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		// Act
 		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
@@ -1352,4 +1357,27 @@ public sealed class ODataUpdateToolTests {
 		f.Client.DidNotReceiveWithAnyArgs()
 			.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>());
 	}
+
+	[TestCase(true, TestName = "Update_Should_Carry_A_Correlation_Id_On_Success")]
+	[TestCase(false, TestName = "Update_Should_Carry_A_Correlation_Id_On_A_Refusal")]
+	[Category("Unit")]
+	[Description("Every odata-update response carries the correlation-id core-rules promises, including the unconfirmed refusal that never reaches the environment.")]
+	public void Update_Should_Carry_A_Correlation_Id(bool confirm) {
+		// Arrange
+		Fixture fixture = CsdLFixture();
+
+		// Act
+		ODataWriteResponse response = fixture.Tool.Update(new ODataUpdateArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Id = "11111111-1111-1111-1111-111111111111",
+			Data = JsonDocument.Parse("{\"Name\":\"Jane\"}").RootElement.Clone(),
+			Confirm = confirm
+		});
+
+		// Assert
+		response.CorrelationId.Should().NotBeNullOrWhiteSpace(
+			because: "the id is minted before the work and stamped on the single exit, so a refusal that never reaches Creatio is traceable too");
+	}
+
 }

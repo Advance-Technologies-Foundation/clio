@@ -16,8 +16,17 @@ The create-schema command creates a new C# source-code schema on a remote Creati
 via SourceCodeSchemaDesignerService. The schema is saved directly to the server; no local
 workspace files are created.
 
+Use `--body` for inline C# source or `--body-file` for a UTF-8 source file. The file takes
+precedence when both are supplied. Supplied content must not be empty; missing or unreadable
+files fail before schema creation. Omit both to keep the platform's blank template.
+MCP exposes the same `body` and `body-file` inputs; file paths refer to the MCP server host.
+Creation saves the source but does not compile it. Use `get-schema` to read the saved body back.
+
 The schema-name must start with a letter and contain only letters, digits, or underscores.
 The name must be unique within the environment.
+
+Missing schema-name/package-name and invalid schema-name errors are returned together by the command validator.
+MCP validates these arguments before resolving the environment and includes a valid-argument hint; use `schema-name` and `package-name`, not `name` and `package`.
 
 ## Synopsis
 
@@ -31,6 +40,10 @@ clio create-schema [options]
 --schema-name                      New schema name (required)
 
 --package-name                     Target package name that will own the new schema (required)
+
+--body                             Optional initial C# source
+
+--body-file                        UTF-8 source file; takes precedence over --body
 
 --caption                          Optional display caption; defaults to schema-name
 
@@ -55,6 +68,9 @@ clio create-schema [options]
 ## Example
 
 ```bash
+clio create-schema --schema-name UsrMyHelper --package-name Custom --body-file ./UsrMyHelper.cs -e dev
+# Create with the contents of a C# source file
+
 clio create-schema --schema-name UsrMyHelper --package-name Custom -e dev
 # Create UsrMyHelper in the Custom package on the dev environment
 

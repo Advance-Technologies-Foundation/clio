@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -1327,6 +1327,49 @@ public sealed class ComponentInfoToolTests {
 		response.Mode.Should().Be("composite", because: "the not-found response stays in composite mode");
 		response.Error.Should().Contain(expectedFragment,
 			because: $"an empty catalog with isMobile={isMobile} must emit the matching guidance");
+	}
+
+	[Test]
+	[Description("container is TRI-STATE on the wire and the distinction is carried by WhenWritingNull, so it can only be asserted on the SERIALIZED response. A published false must reach the caller as container:false; an absent key must omit the field. The projection changed from `entry.Container ? true : null` to `entry.Container` in this branch and no assertion could see it: the two existing checks are BeTrue() and NotBe(false), which pass identically under bool? whether the field ships or is dropped, and no live registry entry publishes the key at all.")]
+	[TestCase(true, "\"container\":true", TestName = "Container_PublishedTrue_ReachesTheWire")]
+	[TestCase(false, "\"container\":false", TestName = "Container_PublishedFalse_ReachesTheWire")]
+	public void ComponentInfoTool_Detail_Should_Carry_APublishedContainerFlag_OntoTheWire(
+		bool published, string expected) {
+		// Arrange
+		ComponentRegistryEntry entry = new() { ComponentType = "crt.Probe", Container = published };
+
+		// Act
+		ComponentInfoResponse response = ComponentInfoTool.CreateDetailResponse(
+			entry, resolvedTargetVersion: "latest", resolvedFrom: "latest-fallback",
+			documentation: null, globalReferences: null);
+		string json = JsonSerializer.Serialize(response);
+
+		// Assert
+		response.Container.Should().Be(published,
+			because: "the projection passes the entry's own value straight through");
+		json.Replace(" ", string.Empty).Should().Contain(expected,
+			because: "a published false is a FACT about the component - that it is not a container - and "
+				+ "dropping it made it indistinguishable from a registry that says nothing, which is what "
+				+ "the caller has to branch on");
+	}
+
+	[Test]
+	[Description("The other half of the tri-state, and the half that cannot be asserted from the typed response alone: an entry that publishes no container key must OMIT the field rather than ship a default. Without this the test above passes on a wire that always writes container.")]
+	public void ComponentInfoTool_Detail_Should_OmitContainer_WhenTheRegistryPublishesNoFlag() {
+		// Arrange
+		ComponentRegistryEntry entry = new() { ComponentType = "crt.Probe" };
+
+		// Act
+		ComponentInfoResponse response = ComponentInfoTool.CreateDetailResponse(
+			entry, resolvedTargetVersion: "latest", resolvedFrom: "latest-fallback",
+			documentation: null, globalReferences: null);
+		string json = JsonSerializer.Serialize(response);
+
+		// Assert
+		response.Container.Should().BeNull(because: "the registry said nothing, so the response says nothing");
+		json.Should().NotContain("\"container\"",
+			because: "WhenWritingNull is what makes the three states distinguishable on the wire; a field "
+				+ "written as null or as a defaulted false would collapse 'unknown' into 'no'");
 	}
 
 	[Test]

@@ -23,6 +23,23 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class ToolContractGetToolTests {
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
+	[Test, Category("Unit")]
+	[Description("Batch discovery explains nested typed values and prefers the canonical executor for writes.")]
+	public void BatchContract_ShouldDescribeOperations_AndPreferCanonicalExecutor() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		// Act
+		ToolContractDefinition contract = tool.GetToolContracts(new ToolContractGetArgs([DataServiceBatchTool.ToolName])).Tools!.Single();
+		// Assert
+		contract.PreferredFlow.Tools.Should().Equal([ClioRunTool.ToolName, DataServiceBatchTool.ToolName],
+			because: "write callers should not be directed to a deprecated alias");
+		string description = contract.InputSchema.Properties.Single(field => field.Name == "operations").Description;
+		foreach (string field in new[] { "operation:", "schema-name:", "record-id:", "values:", "data-value-type:", "value:" }) {
+			description.Should().Contain(field, because: "a caller must be able to construct nested operations from discovery alone");
+		}
+	}
+
+
 	[Test]
 	[Category("Unit")]
 	[TestCase(CreateDataBindingTool.CreateDataBindingToolName)]
@@ -362,6 +379,38 @@ public sealed class ToolContractGetToolTests {
 			because: "the removed raw filter must be explicitly rejected in the discoverable contract");
 	}
 
+	// PR #1356 review (d-krestov, Gate 3) - update-page has a CURATED contract, so
+	// TryResolveFullContract serves the hand-written ToolContractCatalog literal and never looks at
+	// PageUpdateArgs. A spot check for `checksum` therefore passes verbatim with PageUpdateArgs.Checksum
+	// DELETED, while the caller's baseline is silently dropped - precisely the failure issue #1320
+	// reports. This is the curated-vs-reflection parity oracle update-page was missing; it mirrors the
+	// ODataReadArgs and PageGetArgs oracles above.
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the curated update-page input contract set-EQUAL with every bound PageUpdateArgs JSON member, so deleting a bound argument (or leaving a new one unpublished) fails instead of passing on the hand-written catalog literal (PR #1356 review).")]
+	public void ToolContractGet_Should_Keep_PageUpdate_Input_Contract_In_Sync_With_Args() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		string[] boundArgumentNames = typeof(PageUpdateArgs)
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Where(property => property.GetCustomAttribute<JsonExtensionDataAttribute>() is null)
+			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
+			.ToArray();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName]));
+		ToolContractDefinition contract = result.Tools!.Single();
+
+		// Assert
+		boundArgumentNames.Should().NotBeEmpty(
+			because: "an empty reflected set would make the set-equality assertion below pass vacuously");
+		boundArgumentNames.Should().Contain("checksum",
+			because: "PageUpdateArgs must bind the conflict baseline the caller pins - if this member disappears the curated literal alone would keep advertising it, which is the silent drop issue #1320 reports");
+		contract.InputSchema.Properties.Select(property => property.Name).Should()
+			.BeEquivalentTo(boundArgumentNames,
+			because: "the curated update-page contract must advertise every argument the real stdio binder accepts and no stale ones - a curated literal that outlives its bound member advertises an argument that is silently dropped, and one that lags leaves a new argument undiscoverable");
+	}
+
 	// Pins the Codex #1 fix: the uncurated contract for a single-scalar env tool now derives from the real
 	// dispatched MCP input schema, exposing the `environmentName` property the lossy reflection fallback
 	// dropped. This is the exact mismatch the review flagged — advertised contract vs what clio-run accepts.
@@ -480,6 +529,42 @@ public sealed class ToolContractGetToolTests {
 			precondition => precondition.Contains(Clio.Command.McpServer.Tools.ProcessDesigner.CreateBusinessProcessTool.CreateBusinessProcessToolName, StringComparison.Ordinal)
 				&& precondition.Contains("Script Task", StringComparison.Ordinal),
 			because: "the process precondition must keep the Script-Task carve-out explicit so it cannot silently regress into a blanket 'never compile after a process' prohibition");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GitHub #1150: the curated update-page contract states that an append dry run projects the merge and returns appendProjection, and declares that field in the output envelope. update-page is non-resident, so this curated entry — not the tool's [Description] attribute — is the whole description an agent reads.")]
+	public void ToolContractGet_Should_State_That_An_Append_DryRun_Projects_The_Merge() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "update-page must resolve to a curated contract");
+		ToolContractDefinition entry = result.Tools!.Single();
+		ToolContractField dryRunField = entry.InputSchema.Properties.Single(field => field.Name == "dry-run");
+		dryRunField.Description.Should().Contain("appendProjection",
+			because: "a dry run that names nothing the write would change is the #1150 report; the contract has to point at the field that does");
+		dryRunField.Description.Should().Contain("not an offline check",
+			because: "an append dry run now costs a schema fetch and can fail, so a caller planning around a free local validation must be told");
+		dryRunField.Description.Should().Contain("fails here too",
+			because: "an append the save would reject must be known to fail the dry run, or the check keeps giving the false reassurance it was added to remove");
+		ToolContractField projectionField =
+			entry.OutputContract.Fields.Single(field => field.Name == "appendProjection");
+		projectionField.Description.Should().Contain("projectedOperationCount",
+			because: "the count the reporter compared against their expected total is what makes the projection actionable");
+		projectionField.Description.Should().Contain("droppedOperations",
+			because: "a loss sourced from the SERVER body must be named, not left to be derived from the counts");
+		projectionField.Description.Should().Contain("NOT a loss",
+			because: "a replaced operation survives with the caller's values; conflating it with a drop would make every ordinary append look lossy");
+		projectionField.Description.Should().Contain("collapsedIncomingOperations",
+			because: "the caller-side loss channel is the likeliest one to hit and an agent cannot act on a field the contract never names");
+		projectionField.Description.Should().Contain("viewConfigDiffApplied",
+			because: "an agent must be able to tell that the counts describe an array the write discards");
+		projectionField.Description.Should().Contain("THREE DISTINCT LOSS CHANNELS",
+			because: "the first version of this contract claimed the dropped set was the only way an append loses an operation, which was false and is exactly what a reader carries forward");
 	}
 
 	[Test]
@@ -803,6 +888,63 @@ public sealed class ToolContractGetToolTests {
 		contract.AntiPatterns!.Should().Contain(
 			pattern => pattern.Pattern.Contains("THEN ask which workplace", StringComparison.Ordinal),
 			because: "the observed failure order must be named as an anti-pattern, not only implied by the precondition");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The published odata-read contract names every error-code the tool can emit, so an agent can branch on the code instead of matching the English sentence.")]
+	public void ToolContractGet_Should_Publish_Every_ODataRead_Error_Code() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		string[] emittedCodes = typeof(ODataReadErrorCodes)
+			.GetFields(BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Public | BindingFlags.FlattenHierarchy)
+			.Where(field => field.IsLiteral && field.FieldType == typeof(string))
+			.Select(field => (string)field.GetRawConstantValue()!)
+			.ToArray();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([ODataReadTool.ToolName]));
+		ToolContractDefinition contract = result.Tools!.Single();
+
+		// Assert
+		emittedCodes.Should().NotBeEmpty(
+			because: "the reflection that drives this assertion must actually find the codes, or the test would pass vacuously");
+		contract.ErrorContract.Codes.Select(code => code.Code).Should().Contain(emittedCodes,
+			because: "issue #1407 reports that the contract advertised structured codes the tool never emitted; the published set must cover every code the tool can return");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The published odata-read contract advertises the correlation-id and error-code response members core-rules and this tool promise on every call.")]
+	public void ToolContractGet_Should_Publish_ODataRead_Diagnostic_Members() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([ODataReadTool.ToolName]));
+		ToolContractDefinition contract = result.Tools!.Single();
+
+		// Assert
+		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain(["correlation-id", "error-code"],
+			because: "a member an agent is told to branch on has to be discoverable in the contract, which is the only description a non-resident tool ever shows");
+		contract.Description.Should().Contain("correlation-id",
+			because: "the curated description wins over the [Description] attribute, so the promise has to be stated here as well");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The odata-read contract warns against filtering on a raw foreign-key column and names the navigation path to use instead.")]
+	public void ToolContractGet_Should_Warn_About_Raw_Lookup_Column_Filters() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([ODataReadTool.ToolName]));
+		ToolContractDefinition contract = result.Tools!.Single();
+
+		// Assert
+		contract.AntiPatterns!.Should().Contain(pattern => pattern.Why.Contains("navigation path", StringComparison.Ordinal),
+			because: "filtering on AccountId instead of Account/Id is the failure issue #1407 reports, and the contract is where an agent can learn it before paying for the round trip");
 	}
 
 	[Test]
@@ -1588,6 +1730,9 @@ public sealed class ToolContractGetToolTests {
 				field.Name == "body" &&
 				field.Description.Contains("get-page.files.bodyFile"),
 			because: "update-page should advertise the materialized body file as the source of fallback single-page saves");
+		pageUpdateContract.InputSchema.Properties.Single(field => field.Name == "force").Description
+			.Should().Contain("explicit checksum is still compared",
+				because: "the contract must distinguish skipping the disk baseline from disabling a caller-pinned checksum on redirected writes");
 		// validate-page is the third consumer in the get-page handoff. Keep its explicit body-file input pinned so
 		// callers do not have to inline or re-escape the materialized page body.
 		ToolContractDefinition pageValidateContract = tool
@@ -3775,6 +3920,37 @@ public sealed class ToolContractGetToolTests {
 			.OutputContract.Fields.Single(field => field.Name == "warnings");
 		warningsField.Description.Should().Contain("never retry on a warning",
 			because: "these findings are advisory and the save already succeeded; an agent that reads a warning as a failure will re-save and can trip conflict detection");
+	}
+
+	// The sync-pages contract is curated too, and its per-page members live in the PROSE of the `pages`
+	// field rather than as top-level schema properties - so the set-equality oracle above has no
+	// equivalent here, and a new per-page argument can be bound and still be undiscoverable. issue #1464
+	// added `checksum` to PageSyncPageInput; without this the curated literal would keep describing a
+	// page item that has no way to pin a conflict baseline.
+	[Test]
+	[Category("Unit")]
+	[Description("Every bound PageSyncPageInput JSON member is named in the curated sync-pages `pages` description, so a per-page argument cannot be bound and left undiscoverable by the contract a lazy-mode client inspects before dispatch (issue #1464).")]
+	public void ToolContractGet_Should_Describe_Every_PageSyncPageInput_Member() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		string[] boundMemberNames = typeof(PageSyncPageInput)
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Where(property => property.GetCustomAttribute<JsonExtensionDataAttribute>() is null)
+			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
+			.ToArray();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([PageSyncTool.ToolName]));
+		string pagesDescription = result.Tools!.Single().InputSchema.Properties
+			.Single(property => property.Name == "pages").Description;
+
+		// Assert
+		boundMemberNames.Should().Contain("checksum",
+			because: "an empty or checksum-less reflected set would make the assertion below pass vacuously - and sync-pages without a per-page conflict baseline is the defect issue #1464 closes");
+		foreach (string memberName in boundMemberNames) {
+			pagesDescription.Should().Contain(memberName,
+				because: $"the curated sync-pages contract must name the bound per-page argument '{memberName}' - a client that cannot discover it cannot pass it");
+		}
 	}
 
 	// Synthetic input, deliberately NOT a production description. Driving these cases through a real

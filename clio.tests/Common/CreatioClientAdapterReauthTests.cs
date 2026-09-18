@@ -53,7 +53,7 @@ internal class CreatioClientAdapterReauthTests {
 		string canned) {
 		CapturedExecute captured = new();
 		IReauthExecutor executor = Substitute.For<IReauthExecutor>();
-		executor.Execute(Arg.Any<Func<string>>(), Arg.Any<Func<string, bool>>())
+		executor.Execute(Arg.Any<Func<string>>(), Arg.Any<Func<string, bool>>(), Arg.Any<bool>())
 			.Returns(ci => {
 				captured.Call = ci.Arg<Func<string>>();
 				captured.Predicate = ci.Arg<Func<string, bool>>();
@@ -161,7 +161,7 @@ internal class CreatioClientAdapterReauthTests {
 	public void ExecutePostRequestGeneric_ShouldDeserializeExecutorResult_WhenExecutorReturnsValidJson() {
 		// Arrange — simulate a successful retry: executor handled the reauth and returned JSON.
 		IReauthExecutor executor = Substitute.For<IReauthExecutor>();
-		executor.Execute(Arg.Any<Func<string>>(), Arg.Any<Func<string, bool>>())
+		executor.Execute(Arg.Any<Func<string>>(), Arg.Any<Func<string, bool>>(), Arg.Any<bool>())
 			.Returns("{\"success\":true}");
 		CreatioClientAdapter adapter = CreateAdapter(executor);
 
@@ -183,7 +183,7 @@ internal class CreatioClientAdapterReauthTests {
 		// opaque JsonException ("Invalid response format") that triggered ENG-90393 in the
 		// first place.
 		IReauthExecutor executor = Substitute.For<IReauthExecutor>();
-		executor.Execute(Arg.Any<Func<string>>(), Arg.Any<Func<string, bool>>())
+		executor.Execute(Arg.Any<Func<string>>(), Arg.Any<Func<string, bool>>(), Arg.Any<bool>())
 			.Returns(LoginPageBody);
 		CreatioClientAdapter adapter = CreateAdapter(executor);
 
@@ -348,8 +348,8 @@ internal class CreatioClientAdapterReauthTests {
 		// hard-codes the wrapped callback so we exercise the full Execute -> isUnauthorized
 		// -> Login -> retry path without touching the NuGet CreatioClient.
 		IReauthExecutor passthrough = Substitute.For<IReauthExecutor>();
-		passthrough.Execute(Arg.Any<Func<string>>(), Arg.Any<Func<string, bool>>())
-			.Returns(ci => real.Execute(ServerCall, ci.Arg<Func<string, bool>>()));
+		passthrough.Execute(Arg.Any<Func<string>>(), Arg.Any<Func<string, bool>>(), Arg.Any<bool>())
+			.Returns(ci => real.Execute(ServerCall, ci.Arg<Func<string, bool>>(), ci.ArgAt<bool>(2)));
 		CreatioClientAdapter adapter = CreateAdapter(passthrough);
 
 		// Act
@@ -360,6 +360,113 @@ internal class CreatioClientAdapterReauthTests {
 			because: "after a single reauth + retry the adapter must surface the final JSON payload");
 		loginCalls.Should().Be(1,
 			because: "ReauthExecutor must perform exactly one Login when the first response is the login page");
+	}
+
+	#endregion
+
+	#region Tests: Transport delegation and the no-replay rule for writes
+
+	// The transport seam (ICreatioClientTransport) is what makes these assertions possible at all:
+	// before it, the fixture had to resolve its Lazy<CreatioClient> to null, so the callback handed to
+	// the reauth executor could never be invoked and the delegation itself went unverified.
+	private static ICreatioClientTransport CreateTransport(string response) {
+		ICreatioClientTransport transport = Substitute.For<ICreatioClientTransport>();
+		transport.ExecutePutRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>()).Returns(response);
+		transport.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>()).Returns(response);
+		transport.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(response);
+		return transport;
+	}
+
+	[Test]
+	[Description("The callback ExecutePutRequest hands to the reauth executor issues exactly the PUT it was asked for, with every argument preserved")]
+	public void ExecutePutRequest_ShouldDelegateToTransportPutWithAllArguments_WhenCapturedCallbackIsInvoked() {
+		// Arrange
+		ICreatioClientTransport transport = CreateTransport("{\"put\":true}");
+		CapturedExecute captured = new();
+		IReauthExecutor executor = Substitute.For<IReauthExecutor>();
+		executor.Execute(Arg.Any<Func<string>>(), Arg.Any<Func<string, bool>>(), Arg.Any<bool>())
+			.Returns(ci => {
+				captured.Call = ci.Arg<Func<string>>();
+				return "{}";
+			});
+		CreatioClientAdapter adapter = new(transport, executor);
+
+		// Act
+		adapter.ExecutePutRequest("/x", "body", 7_000, 3, 5);
+		string captureResult = captured.Call();
+
+		// Assert
+		captureResult.Should().Be("{\"put\":true}",
+			because: "the captured callback must return what the transport produced, proving it is the PUT and not another verb");
+		transport.Received(1).ExecutePutRequest("/x", "body", 7_000, 3, 5);
+		// because: url, body, timeout, attempts and delay must all survive the hop into the callback -
+		// a dropped or reordered argument used to be invisible, since the callback was never invoked
+		transport.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(),
+			Arg.Any<int>(), Arg.Any<int>());
+		transport.DidNotReceive().ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(),
+			Arg.Any<int>(), Arg.Any<int>());
+		transport.DidNotReceive().ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(),
+			Arg.Any<int>(), Arg.Any<int>());
+		transport.DidNotReceive().ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>());
+		// because: every other verb is excluded explicitly - "it returned the PUT sentinel" alone would
+		// still pass if the adapter had also issued a second request through another verb
+	}
+
+	[Test]
+	[Description("An expired-session response to a PUT re-authenticates but issues the PUT exactly once")]
+	public void ExecutePutRequest_ShouldIssueExactlyOneUnderlyingCall_WhenSessionExpiredResponseIsReturned() {
+		// Arrange - the transport always answers with the login page, so a replay would be visible.
+		ICreatioClientTransport transport = CreateTransport(LoginPageBody);
+		CreatioClientAdapter adapter = new(transport, reauthExecutor: null);
+
+		// Act
+		string result = adapter.ExecutePutRequest("/x", "body");
+
+		// Assert
+		transport.Received(1).ExecutePutRequest("/x", "body", Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		transport.Received(1).Login();
+		// because: exactly one underlying PUT is the whole point - a replay here commits the write a
+		// second time; the single Login proves the session was still refreshed for the next call
+		result.Should().Be(LoginPageBody,
+			because: "the unreplayed original response must reach the caller so it can report the expired session");
+	}
+
+	[Test]
+	[Description("An expired-session response to a declared-write POST re-authenticates but issues the POST exactly once")]
+	public void ExecuteNonReplayablePostRequest_ShouldIssueExactlyOneUnderlyingCall_WhenSessionExpiredResponseIsReturned() {
+		// Arrange
+		ICreatioClientTransport transport = CreateTransport(LoginPageBody);
+		CreatioClientAdapter adapter = new(transport, reauthExecutor: null);
+
+		// Act
+		adapter.ExecuteNonReplayablePostRequest("/x", "body");
+
+		// Assert
+		transport.Received(1).ExecutePostRequest("/x", "body", Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		transport.Received(1).Login();
+		// because: a POST the caller declared a write must behave exactly like PUT, even though the
+		// plain POST below still replays
+	}
+
+	[Test]
+	[Description("A GET still replays after re-authentication - the no-replay rule must not disable session recovery for reads")]
+	public void ExecuteGetRequest_ShouldReplayAfterReauth_WhenSessionExpiredResponseIsReturned() {
+		// Arrange
+		ICreatioClientTransport transport = CreateTransport(LoginPageBody);
+		CreatioClientAdapter adapter = new(transport, reauthExecutor: null);
+
+		// Act
+		adapter.ExecuteGetRequest("/x");
+
+		// Assert
+		transport.Received(2).ExecuteGetRequest("/x", Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		transport.Received(1).Login();
+		// because: the read path must still recover from an expired session - two GETs around one Login
+		// is the ENG-90393 behaviour this change must not remove
 	}
 
 	#endregion

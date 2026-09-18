@@ -18,7 +18,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("remove-package-dependency")]
-public sealed class RemovePackageDependencyToolE2ETests {
+public sealed class RemovePackageDependencyToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = RemovePackageDependencyTool.RemovePackageDependencyToolName;
 
@@ -61,10 +61,10 @@ public sealed class RemovePackageDependencyToolE2ETests {
 		AssertFailureMentionsEnvironment(actResult, invalidEnvironmentName);
 	}
 
-	private static async Task<RemovePackageDependencyArrangeContext> ArrangeAsync(McpE2ESettings settings) {
+	private async Task<RemovePackageDependencyArrangeContext> ArrangeAsync(McpE2ESettings settings) {
 		return await AllureApi.Step("Arrange MCP server session", async () => {
 			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			McpServerSession session = Session;
 			return new RemovePackageDependencyArrangeContext(session, cancellationTokenSource);
 		});
 	}
@@ -127,9 +127,9 @@ public sealed class RemovePackageDependencyToolE2ETests {
 	private sealed record RemovePackageDependencyArrangeContext(
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 

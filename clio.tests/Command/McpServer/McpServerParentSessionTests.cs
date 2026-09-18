@@ -54,7 +54,7 @@ public sealed class McpServerParentSessionTests {
 		// Assert
 		parentSession.SupportsSampling.Should().BeTrue(
 			"because the relay mirrors this onto the child's initialize: read as false against a client that "
-			+ "CAN sample, the worker is never told to ask and the page semantic review silently degrades to "
+			+ "CAN sample, the worker is never told to ask and a sampling caller silently degrades to "
 			+ "Skipped=true with no error on any surface");
 	}
 
@@ -147,7 +147,7 @@ public sealed class McpServerParentSessionTests {
 		askedOfTheClient.Params["messages"][0]["content"]["text"].GetValue<string>()
 			.Should().Be("review this page",
 				"because the child's own prompt has to reach the real client — a relay that rebuilt or dropped it "
-				+ "would make update-page's semantic review answer about the wrong page");
+				+ "would make a sampling caller's review answer about the wrong page");
 		answer.Model.Should().Be("scripted-client-model",
 			"because the answer the caller gets must be the CLIENT's, not one this adapter invented: it is "
 			+ "returned into the child's pending sampling request, and a fabricated one degrades the page review "
@@ -155,7 +155,7 @@ public sealed class McpServerParentSessionTests {
 		answer.Content.Should().ContainSingle(
 			"because the client answered with exactly one content block")
 			.Which.Should().BeOfType<TextContentBlock>(
-				"because the client's text block is what PageBodySamplingService parses its verdict out of")
+				"because the client's text block is what a sampling caller parses its verdict out of")
 			.Which.Text.Should().Contain("verdict",
 				"because the round trip has to carry the client's payload, not just its shape");
 	}

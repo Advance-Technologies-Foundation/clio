@@ -21,6 +21,15 @@
 # 2026-07-06) is a separate Jira ticket stacked on the same branch; tracked as its own row.
 
 stories:
+  - id: story-create-user-task-page-1
+    title: Native Classic parameter-page scaffolding
+    status: in-progress
+    issue: 1600
+  - id: story-process-element-registration-1
+    title: Generate package-owned custom process element registration
+    status: in-progress
+    issue: 1599
+    file: spec/stories/story-process-element-registration-1.md
   - id: story-identity-uninstall-1
     title: Optional local IdentityService attachment and removal
     status: done
@@ -4079,4 +4088,46 @@ stories:
       merges are a human's.
     depends_on:
       - story-eng-91853-gateways-and-flows-2
+    blocks: []
+
+  - id: story-sequence-enrollment-1
+    status: in-progress
+    description: Native bounded enrollment for clio issue 1576
+    depends_on: []
+    blocks: []
+
+  - id: story-sales-engagement-1
+    status: in-progress
+    description: Compact sequence context for clio issue 1575
+    depends_on: []
+    blocks: []
+
+  - id: story-dataservice-batch-1
+    status: in-progress
+    description: Bounded native DataService batch writes for clio issue 1577
+    depends_on: []
+    blocks: []
+
+  - id: story-data-write-diagnostics-1
+    status: in-progress
+    description: Safe data-write diagnostics for clio issue 1578
+    depends_on: []
+    blocks: []
+
+  - id: story-sequence-package-portability-1
+    status: in-progress
+    description: Native sequence package portability for clio issue 1579
+    depends_on: []
+    blocks: []
+
+  - id: story-sequence-workflow-acceptance-1
+    status: in-progress
+    description: Sequence workflow and efficiency acceptance for clio issue 1580
+    depends_on: []
+    blocks: []
+
+  - id: story-entity-db-view-1
+    status: done
+    description: Native entity DB-view flag support for clio issue 1618
+    depends_on: []
     blocks: []

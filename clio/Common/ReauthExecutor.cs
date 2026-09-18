@@ -70,7 +70,7 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 	#region Methods: Public
 
 	/// <inheritdoc />
-	public T Execute<T>(Func<T> call, Func<T, bool> isUnauthorized) {
+	public T Execute<T>(Func<T> call, Func<T, bool> isUnauthorized, bool replayAllowed) {
 		if (call is null) {
 			throw new ArgumentNullException(nameof(call));
 		}
@@ -89,6 +89,11 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 			// the retry also throws, the exception propagates to the caller unchanged.
 			int observedVersion = Volatile.Read(ref _loginVersion);
 			TryReauthenticate(observedVersion);
+			if (!replayAllowed) {
+				// A write must not be issued twice. The session is refreshed for whatever the caller
+				// does next, but this request is not repeated; the original failure surfaces instead.
+				throw;
+			}
 			return call();
 		}
 		if (!isUnauthorized(result)) {
@@ -103,6 +108,16 @@ internal sealed class ReauthExecutor : IReauthExecutor {
 		// the reauth lock — exactly the parallel-burst case the dedupe is designed for.
 		int sessionObservedVersion = Volatile.Read(ref _loginVersion);
 		TryReauthenticate(sessionObservedVersion);
+		if (!replayAllowed) {
+			// GitHub #1313. The predicate is body-based, so it cannot distinguish "the server
+			// rejected the write unauthenticated" from "the write committed and its legitimate
+			// response happens to contain a login-page marker". For a non-idempotent call the
+			// second reading is unrecoverable — a replay would commit the write a second time —
+			// so the write is never repeated. Re-login still happened above, so the caller's next
+			// request works; this response is returned verbatim and the caller classifies it
+			// (call-service reports it as an expired session and exits non-zero).
+			return result;
+		}
 		// At most one retry, regardless of the retry's outcome. The caller observes the
 		// second response as-is; if it is still the login page (Login failed, or the
 		// session was invalidated again between Login and retry) the caller decides.

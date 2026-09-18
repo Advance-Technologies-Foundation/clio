@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
@@ -22,7 +22,9 @@ namespace Clio.Command.McpServer.Tools;
 /// the service accepted the PATCH, not that every value survived it.
 /// </summary>
 [McpServerToolType]
-public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
+public sealed class ODataUpdateTool(
+	IToolCommandResolver commandResolver,
+	IOperationCorrelationIdProvider correlationIds) {
 
 	internal const string ToolName = "odata-update";
 
@@ -47,12 +49,24 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 		"re-read important values with odata-read after a critical write. " +
 		"This tool never performs a keyless mass update. " +
 		"This is a destructive operation: it requires confirm=true to proceed. " +
+		McpToolDescriptions.CorrelationIdOnEveryResponse +
 		"Use odata-read to find the record by its fields and obtain its Id. " +
 		"Call get-tool-contract for odata-update to see usage examples and discovery workflow hints.")]
 	public ODataWriteResponse Update(
 		[Description("Parameters: entity, id, data, environment-name (all required).")]
 		[Required]
 		ODataUpdateArgs args) {
+		//Minted once and stamped on the single exit, so every response carries the correlation-id
+		//core-rules promises - refusals and validation failures included.
+		string correlationId = correlationIds.New();
+		ODataWriteResponse result = UpdateCore(args, out bool attempted, out bool received);
+		return result with { CorrelationId = correlationId, Diagnostic = DataWriteDiagnostic.Create("update",
+			args.Entity, null, attempted, received, result.Success, result.Error) };
+	}
+
+	private ODataWriteResponse UpdateCore(ODataUpdateArgs args, out bool attempted, out bool received) {
+		attempted = false;
+		received = false;
 		try {
 			ODataWriteResponse invalidTarget = ODataKeyedWrite.ValidateTarget(args.Entity, args.Id, "update");
 			if (invalidTarget is not null) {
@@ -87,7 +101,9 @@ public sealed class ODataUpdateTool(IToolCommandResolver commandResolver) {
 			if (zoneLessDateTime is not null) {
 				return ODataWriteResponse.Failure($"odata-update rejected: {zoneLessDateTime}");
 			}
+			attempted = true;
 			string response = client.ExecutePatchRequest(url, data.GetRawText(), 30_000);
+			received = true;
 			string validationError = ODataKeyedWrite.ValidateWriteResponse(response);
 			if (validationError is not null) {
 				return ODataWriteResponse.Failure(validationError);

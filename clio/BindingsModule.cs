@@ -1,4 +1,4 @@
-﻿#pragma warning disable CLIO001 // This is DI class, warning not applicable
+#pragma warning disable CLIO001 // This is DI class, warning not applicable
 
 using System;
 using System.Collections.Generic;
@@ -526,6 +526,12 @@ public class BindingsModule {
 		// Shared page conflict-baseline + file-output services consumed by both the CLI verbs
 		// (get-page / update-page) and the MCP tools (get-page / update-page / sync-pages).
 		services.AddTransient<IPageBaselineGuard, PageBaselineGuard>();
+		// Owns the persisted-resource-key read for one logical page write. Transient is deliberate: the
+		// caching scope is flow-local and STATIC inside the implementation, so the page tools (resolved
+		// from this container) and PageUpdateCommand (resolved from a SEPARATE per-tenant container built
+		// by another `new BindingsModule().Register`, which does not share this one's singletons) share ONE
+		// cache whatever lifetime is registered here.
+		services.AddTransient<IPersistedResourceKeyReader, PersistedResourceKeyReader>();
 		services.AddTransient<IPageFileWriter, PageFileWriter>();
 		// H-1 (ENG-95262): the cross-process gate for .clio-pages/{schema}. Registered explicitly as a
 		// SINGLETON because the intent is one gate per host: RegisterAssemblyInterfaceTypes would otherwise
@@ -551,6 +557,8 @@ public class BindingsModule {
 		services.AddTransient<GetClassicListColumnsCommand>();
 		services.AddTransient<ListEntityClientSchemasCommand>();
 		services.AddTransient<SqlSchemaCreateCommand>();
+		services.AddTransient<RegisterProcessElementCommand>();
+		services.AddTransient<IProcessElementRegistration, ProcessElementRegistration>();
 		services.AddTransient<SqlSchemaGetCommand>();
 		services.AddTransient<SqlSchemaUpdateCommand>();
 		services.AddTransient<SqlSchemaInstallCommand>();
@@ -700,6 +708,7 @@ public class BindingsModule {
 		services.AddTransient<GetClassicPageSourcesTool>();
 		services.AddTransient<ListEntityClientSchemasTool>();
 		services.AddTransient<SqlSchemaCreateTool>();
+		services.AddTransient<RegisterProcessElementTool>();
 		services.AddTransient<SqlSchemaGetTool>();
 		services.AddTransient<SqlSchemaUpdateTool>();
 		services.AddTransient<SqlSchemaInstallTool>();
@@ -708,7 +717,6 @@ public class BindingsModule {
 		services.AddTransient<ImportSchemaTool>();
 		services.AddTransient<PageSyncTool>();
 		services.AddTransient<MobilePageConversionGuideTool>();
-		services.AddSingleton<IPageBodySamplingService, PageBodySamplingServiceImpl>();
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<KnowledgeManagementTools>();
 		services.AddSingleton<IEnvironmentKnowledgeBundleTrustStore, EnvironmentKnowledgeBundleTrustStore>();
@@ -808,6 +816,7 @@ public class BindingsModule {
 		services.AddTransient<SysSettingUpdateTool>();
 		services.AddTransient<InstallGateTool>();
 		services.AddTransient<InstallProcessBuilderTool>();
+		services.AddTransient<InstallDashboardsMigratorTool>();
 		services.AddTransient<ExperimentalTool>();
 		services.AddTransient<ListCreatioBuildsTool>();
 		services.AddTransient<GetCreatioInfoTool>();
@@ -877,6 +886,7 @@ public class BindingsModule {
 		services.AddTransient<OpenCfgCommand>();
 		services.AddTransient<InstallGateCommand>();
 		services.AddTransient<InstallProcessBuilderCommand>();
+		services.AddTransient<InstallDashboardsMigratorCommand>();
 		services.AddTransient<PingAppCommand>();
 		services.AddTransient<ReferenceCommand>();
 		// NewPkgCommand depends on the reference command via its Command<ReferenceOptions> base type.
@@ -1115,10 +1125,16 @@ public class BindingsModule {
 		services.AddTransient<ModifyEntitySchemaColumnCommand>();
 		services.AddTransient<GetEntitySchemaColumnPropertiesCommand>();
 		services.AddTransient<GetEntitySchemaPropertiesCommand>();
+		services.AddTransient<SequenceEnrollmentCommand>();
+		services.AddTransient<SequenceContextCommand>();
+		services.AddTransient<DataServiceBatchCommand>();
 		services.AddTransient<SetEntitySchemaPropertiesCommand>();
 		services.AddTransient<FindEntitySchemaCommand>();
 		services.AddTransient<FindAppCommand>();
 		services.AddTransient<CreateUserTaskCommand>();
+		services.AddTransient<CreateUserTaskPageCommand>();
+		services.AddTransient<CreateUserTaskPageTool>();
+		services.AddTransient<IUserTaskPageScaffolder, UserTaskPageScaffolder>();
 		services.AddTransient<ModifyUserTaskParametersCommand>();
 		services.AddTransient<DeleteSchemaCommand>();
 		services.AddTransient<ExportSchemaCommand>();
@@ -1656,6 +1672,10 @@ public class BindingsModule {
 					// LoginDiagnostics holds per-adapter state (client correlation token, attempt
 					// counter); it is created by CreatioClientAdapter, not resolved from DI.
 					|| implementedInterface == typeof(ILoginDiagnostics)
+					// CreatioClientTransport wraps the adapter's own Lazy<CreatioClient>; like the two
+					// above it is per-adapter state created by CreatioClientAdapter, and its only
+					// constructor argument is that lazy client, which DI cannot supply.
+					|| implementedInterface == typeof(ICreatioClientTransport)
 					// Application-client implementations have ownership-sensitive constructors and
 					// are registered explicitly for the active environment. Auto-registration would
 					// either create an unbound adapter or introduce a circular ownership lease.

@@ -11,10 +11,11 @@ namespace Clio.Common;
 /// Passthrough clients are built from opaque bearer material (FR-18): there are no
 /// login/password credentials to re-login with, so an unauthorized response cannot be
 /// recovered here. The <c>isUnauthorized</c> predicate is intentionally ignored — the
-/// call is executed once and its result returned verbatim.
+/// call is executed once and its result returned verbatim, and <c>replayAllowed</c> is moot
+/// because nothing is ever replayed here.
 /// </remarks>
 internal sealed class NoReauthExecutor : IReauthExecutor {
 
 	/// <inheritdoc />
-	public T Execute<T>(Func<T> call, Func<T, bool> isUnauthorized) => call();
+	public T Execute<T>(Func<T> call, Func<T, bool> isUnauthorized, bool replayAllowed) => call();
 }
