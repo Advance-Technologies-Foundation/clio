@@ -1093,9 +1093,24 @@ test asserting it would pass with the branch deleted.
 
 **The trigger, and it is a condition rather than a date.** Fix it when either happens:
 
-1. a half-synchronized element is actually OBSERVED — the discriminator is an element carrying a
-   parameter the callee does not declare AND which has a mapping row, since the legitimate keep has none;
-   or
+1. a half-synchronized element is actually OBSERVED. **The discriminator first written here was WRONG and
+   is corrected in place, because it was a recipe someone could implement.** It said "carries a parameter
+   the callee does not declare AND has a mapping row, since the legitimate keep has none". There are
+   THREE keep-arms in `GetRemovedSchemaParameters`, not one:
+
+   | | kept when | what it is |
+   |---|---|---|
+   | K1 | no mapping row ∧ `CreatedInSchemaUId != SchemaUId` | the arm the original discriminator knew |
+   | K2 | a mapping row whose source still resolves in the callee | **every correctly synchronized parameter** |
+   | K3 | a mapping row whose source is gone ∧ `IsDynamic` | `IsDynamic` is `CreatedInSchemaUId == caller`, i.e. caller-created — the shape the original called the smoking gun, kept by design, stale row and all |
+
+   So "has a mapping row" flags a HEALTHY element, and the one case it pointed at is the one the platform
+   deliberately preserves. A correct predicate must reproduce both REMOVE arms and find neither fired:
+   for each surviving `p`, half-synchronized ⟺ (no mapping row ∧ `p.CreatedInSchemaUId == callee.UId`) ∨
+   (a mapping row ∧ the callee schema cannot resolve `m.SourceParameterUId` ∧
+   `p.CreatedInSchemaUId != caller.UId`). The second arm needs a read INTO the callee schema — which is
+   the "replicate the platform rule" cost this entry refuses, so the refusal is stronger than when it was
+   written, not weaker; or
 2. the platform exposes the removal decision (anything answering "should this parameter have gone") so
    the post-condition can ask rather than re-derive.
 
