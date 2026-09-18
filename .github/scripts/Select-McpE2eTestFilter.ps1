@@ -173,9 +173,15 @@ function Get-McpEntryPointDeclarations([string] $FilePath) {
     }
 }
 
-# True when the file declares an MCP resource or prompt type at all.
+# True when the file declares an MCP resource or prompt type at all. Get-Graph already read every
+# file under the product source root into memory and precomputed the set, so this is a lookup. The
+# disk path below is only reached for a file the graph does not hold - one outside that root, or a
+# call made before the graph exists.
 function Test-McpEntryPointFile([string] $FileRelative) {
     if (-not $FileRelative.EndsWith('.cs')) { return $false }
+    if (($null -ne $script:graph) -and $script:graph.Texts.ContainsKey($FileRelative)) {
+        return $script:graph.EntryPointFiles.Contains($FileRelative)
+    }
     $path = Join-Path $root $FileRelative
     if (-not (Test-Path -LiteralPath $path)) { return $false }
     return (Get-McpEntryPointDeclarations $path).IsEntryPoint
@@ -295,6 +301,18 @@ function Get-Graph() {
         $relative = $file.FullName.Substring($root.Length).TrimStart('/', '\').Replace('\', '/')
         if ($relative -cmatch '/(bin|obj)/') { continue }
         $texts[$relative] = Read-Text $file.FullName
+    }
+
+    # Which files declare an MCP resource or prompt is asked once per (closure type, owner) pair by
+    # Select-FixturesForProductFile, and the widest closure in this tree holds 3144 types. Answering
+    # it by reading the file back from disk made -Inventory an order of magnitude slower; the text is
+    # already here, so the answer is a set built once - the shape RegistrationTypes and UnboundedTypes
+    # are built with.
+    $entryPointFileSet = New-Object System.Collections.Generic.HashSet[string]
+    foreach ($relative in $texts.Keys) {
+        if ($texts[$relative].Contains('[McpServerResourceType') -or $texts[$relative].Contains('[McpServerPromptType')) {
+            [void]$entryPointFileSet.Add($relative)
+        }
     }
 
     # The graph node is a TYPE, not a file. A file that declares a narrow helper next to a widely used
@@ -494,7 +512,7 @@ function Get-Graph() {
         FactoryScanTruncated = $script:factoryScanTruncated
         Texts = $texts; TypeFiles = $typeFiles; TypesByFile = $typesByFile
         VerbsByType = $verbsByType; Consumers = $consumers; RegistrationTypes = $registrationTypes
-        UnboundedTypes = $unboundedTypes
+        UnboundedTypes = $unboundedTypes; EntryPointFiles = $entryPointFileSet
         Registration = $registration
     }
     return $script:graph

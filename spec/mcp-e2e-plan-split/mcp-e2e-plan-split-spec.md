@@ -224,13 +224,19 @@ re-implementing the regexes in C#.
   `clio/Command/AssemblyCommand.cs` and `clio/Command/PackageCommand/ValidationPackageCommand.cs` -
   and both are already pinned unreachable, so nothing is lost now. It is a silent-narrowing class,
   which is why it is recorded here rather than left to be rediscovered.
-- **The guard fixture costs about 1 m 35 s on macOS and about 10 minutes on Windows** for every pull
-  request: its 27 cases rebuild the reference graph over the real tree several times. The reason for
-  the gap between the two platforms has not been measured. The Windows figure is the one that counts,
-  because `unit-test-shards` is `runs-on: windows-latest`, and the fixture is not named in
-  `clio.tests/TestSharding/test-shards.json`, so it lands in `unit-4`, the catch-all shard. A
-  standalone `Select-McpE2eTestFilter.ps1 -Inventory` run on Windows took 12 m 42 s, which is worth
-  knowing before following the pin file's instruction to refresh it that way.
+- **The guard fixture costs about 31 s on macOS** for every pull request: its 27 cases rebuild the
+  reference graph over the real tree several times. It briefly cost an order of magnitude more, and
+  the cause was not a platform difference but `Test-McpEntryPointFile`: the entry-point rooting asks
+  it once per `(closure type, owner)` pair, the widest closure here holds 3144 types, and each call
+  read the file back from disk. Measured on macOS, same machine and worktree, all 27 cases:
+  **5 m 37 s** with the per-call disk read, **31 s** once `Get-Graph` precomputes the entry-point
+  file set from the text it already holds. Windows pays the same shape of cost, more heavily -
+  `-Inventory` was measured at 0 m 58 s before the rooting change and 14 m 29 s after it, on one
+  machine one commit apart - so the Windows figure is the one that counts: `unit-test-shards` is
+  `runs-on: windows-latest`, and the fixture is not named in `clio.tests/TestSharding/test-shards.json`,
+  so it lands in `unit-4`, the catch-all shard. Anything that puts a disk read on a per-closure-type
+  path brings this straight back, which is why the numbers are recorded here rather than left to be
+  rediscovered.
 - **9 MCP tools have no fixture** (`toolsWithoutFixtures`). Each forces a full run, because the
   detector cannot tell which tests would show the regression.
 - **MCP resources and prompts with no fixture** are pinned the same way, in
