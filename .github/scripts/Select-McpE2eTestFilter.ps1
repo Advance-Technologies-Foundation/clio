@@ -259,14 +259,14 @@ function Get-Graph() {
         # Scan for declarations on a copy with raw-string contents blanked out, so a code sample
         # inside a literal cannot be read as the file's next top-level type. Offsets are preserved.
         $scan = Remove-NonCode $text
-        $matches = @($typeDeclaration.Matches($scan))
-        if ($matches.Count -eq 0) { $typesByFile[$relative] = @(); continue }
-        $topIndent = ($matches | ForEach-Object { $_.Groups[1].Value.Length } | Measure-Object -Minimum).Minimum
+        $declarationMatches = @($typeDeclaration.Matches($scan))
+        if ($declarationMatches.Count -eq 0) { $typesByFile[$relative] = @(); continue }
+        $topIndent = ($declarationMatches | ForEach-Object { $_.Groups[1].Value.Length } | Measure-Object -Minimum).Minimum
         # A nested type indented less than the type that contains it would become the file's only
         # "top level" and swallow the outer type's body. Two files in this tree are formatted that
         # way; rather than guess, attribute the whole file to every type it declares.
-        if ($matches[0].Groups[1].Value.Length -ne $topIndent) {
-            $declaredAll = @($matches | ForEach-Object { $_.Groups[3].Value } | Select-Object -Unique)
+        if ($declarationMatches[0].Groups[1].Value.Length -ne $topIndent) {
+            $declaredAll = @($declarationMatches | ForEach-Object { $_.Groups[3].Value } | Select-Object -Unique)
             foreach ($name in $declaredAll) {
                 if (-not $typeBody.ContainsKey($name)) { $typeBody[$name] = New-Object System.Text.StringBuilder }
                 [void]$typeBody[$name].Append($text)
@@ -276,7 +276,7 @@ function Get-Graph() {
             $typesByFile[$relative] = $declaredAll
             continue
         }
-        $tops = @($matches | Where-Object { $_.Groups[1].Value.Length -eq $topIndent })
+        $tops = @($declarationMatches | Where-Object { $_.Groups[1].Value.Length -eq $topIndent })
         foreach ($top in $tops) {
             if ($top.Groups[2].Value -eq 'interface') { [void]$interfaceTypes.Add($top.Groups[3].Value) }
             if ($top.Groups[4].Success) {

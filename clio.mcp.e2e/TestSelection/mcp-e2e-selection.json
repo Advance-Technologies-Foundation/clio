@@ -115,12 +115,8 @@
       "clio/Command/McpServer/Tools/InstallGateTool.cs",
       "clio/Command/McpServer/Tools/ListCreatioBuildsTool.cs",
       "clio/Command/McpServer/Tools/SchemaUpdateTool.cs",
-      "clio/Command/McpServer/Tools/SqlSchemaGetTool.cs",
-      "clio/Command/McpServer/Tools/SqlSchemaInstallTool.cs",
-      "clio/Command/McpServer/Tools/SqlSchemaUpdateTool.cs",
       "clio/Command/McpServer/Tools/StartTool.cs",
-      "clio/Command/McpServer/Tools/StopTool.cs",
-      "clio/Command/McpServer/Tools/UserTaskTool.cs"
+      "clio/Command/McpServer/Tools/StopTool.cs"
   ],
   "explicitMappings": [],
   "_fullRunOnlyFixtures": [

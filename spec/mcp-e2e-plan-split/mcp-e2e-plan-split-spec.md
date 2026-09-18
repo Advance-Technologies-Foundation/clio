@@ -217,7 +217,7 @@ re-implementing the regexes in C#.
 - **A `#if false` region containing a type declaration would fabricate a type** and could cut the
   enclosing type's body short. One file under `clio/` uses `#if` and no declaration sits inside such
   a region; the guard's lexer-residue invariant does not cover preprocessor directives.
-- **13 MCP tools have no fixture** (`toolsWithoutFixtures`). Each forces a full run, because the
+- **9 MCP tools have no fixture** (`toolsWithoutFixtures`). Each forces a full run, because the
   detector cannot tell which tests would show the regression.
 - **Hidden per-session cost** is unaffected by the filter.
 
