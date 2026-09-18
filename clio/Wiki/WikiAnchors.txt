@@ -77,6 +77,7 @@ list-apps:list-apps,get-app-list,app-list,apps,apps-list,lia
 build-theme:build-theme
 get-record-rights:get-record-rights
 set-record-rights:set-record-rights
+set-object-rights:set-object-rights
 list-themes:list-themes,get-themes
 get-theme:get-theme
 create-theme:create-theme

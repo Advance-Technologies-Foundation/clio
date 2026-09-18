@@ -1,0 +1,44 @@
+COMMAND TYPE
+    Object rights
+
+NAME
+    set-object-rights - Grant operation and record permissions to an object and its connected (lookup) entities
+
+SYNOPSIS
+    set-object-rights --entity-schema-name <EntitySchemaName> [--confirm] [OPTIONS]
+
+DESCRIPTION
+    Turns on operation and record permissions for an object and operation permissions for every
+    entity connected to it through a lookup column, making it available to the external (portal)
+    audience. This is the object-level analog of set-record-rights (which is per-record) and wraps
+    the Freedom UI page designer's "Update object permissions now" action.
+
+    Only the root object is sent; the server (SectionService) resolves the connected lookup objects
+    from the root entity schema and grants them itself — you do not enumerate them. It does NOT
+    change column permissions. The call is asynchronous on the server (rights are recalculated) and
+    can take tens of seconds.
+
+    DESTRUCTIVE: this command changes access. In a non-interactive run it refuses to apply unless
+    --confirm is passed; in an interactive run it asks for a y/n confirmation. Re-granting the same
+    object access is idempotent.
+
+OPTIONS
+    --entity-schema-name
+        Root object (entity schema) name whose access is granted (for example UsrOrder). Required.
+        Connected lookup objects are resolved server-side.
+
+    --confirm
+        Confirm the destructive change without a prompt. Required in non-interactive runs.
+
+    -e, --environment
+        Name of the registered environment to change.
+
+EXIT CODES
+    0   The change was applied, or was cancelled at the prompt. Re-granting the same object access
+        is idempotent on the server.
+    1   The entity schema name was missing, confirmation was missing in a non-interactive run, or
+        the apply failed. A user-friendly "Error: ..." message is printed.
+
+EXAMPLES
+    Grant object access for a section object and its lookups:
+        clio set-object-rights --entity-schema-name UsrOrder --confirm -e production

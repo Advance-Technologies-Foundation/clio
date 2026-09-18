@@ -410,6 +410,7 @@ public class BindingsModule {
 
 		services.AddTransient<Clio.Command.RecordRights.GetRecordRightsCommand>();
 		services.AddTransient<Clio.Command.RecordRights.SetRecordRightsCommand>();
+		services.AddTransient<Clio.Command.ObjectRights.SetObjectRightsCommand>();
 		services.AddTransient<Clio.Command.Administration.ManageUserCommand>();
 		services.AddTransient<Clio.Command.Administration.ManageRoleCommand>();
 		services.AddTransient<Clio.Command.Administration.ManageAccessCommand>();
@@ -1006,6 +1007,7 @@ public class BindingsModule {
 		services.AddTransient<SetLogoCommand>();
 		services.AddTransient<CheckThemingAccessCommand>();
 		services.AddTransient<ICreatioRightsClient, CreatioRightsClient>();
+		services.AddTransient<ISectionServiceClient, CreatioSectionServiceClient>();
 		services.AddTransient<ICreatioLicenseClient, CreatioLicenseClient>();
 		services.AddTransient<IFsmModeStatusService, FsmModeStatusService>();
 		services.AddTransient<SetFsmConfigCommand>();

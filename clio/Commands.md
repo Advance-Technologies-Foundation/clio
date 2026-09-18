@@ -672,6 +672,11 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="set-record-rights"></a>
 - [`set-record-rights`](docs/commands/set-record-rights.md) - Grant or revoke a record-level access right on a single Creatio record (destructive)
 
+## Object rights
+
+<a id="set-object-rights"></a>
+- [`set-object-rights`](docs/commands/set-object-rights.md) - Grant operation and record permissions to an object and its connected (lookup) entities (destructive)
+
 ## Integrations & Tools
 
 <a id="install-knowledge"></a>

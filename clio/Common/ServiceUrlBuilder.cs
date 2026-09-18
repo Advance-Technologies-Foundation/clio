@@ -339,7 +339,9 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>Execute selected package SQL scripts.</summary>
 		InstallSqlScripts = 98,
 		/// <summary>Read the database engine and runtime without ClioGate.</summary>
-		GetSystemEnvironmentInfo = 99
+		GetSystemEnvironmentInfo = 99,
+		/// <summary>Grant operation/record permissions to an object and its connected (lookup) entities.</summary>
+		SetConnectedEntitiesAdministratedByEntity = 100
 
 	}
 
@@ -452,6 +454,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.RightsApplyChanges, "/rest/RightsService/ApplyChanges"},
 		{KnownRoute.ImageApiUpload, "/ImageAPIService/upload"},
 		{KnownRoute.GetEntitySchemaDesignItem, "ServiceModel/EntitySchemaDesignerService.svc/GetSchemaDesignItem"},
+		{KnownRoute.SetConnectedEntitiesAdministratedByEntity, "/rest/SectionService/SetConnectedEntitiesAdministratedByEntity"},
 	};
 
 	private EnvironmentSettings _environmentSettings;
