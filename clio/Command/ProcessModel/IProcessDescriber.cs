@@ -1071,14 +1071,15 @@ public sealed class DescribedSubProcess {
 	/// reads it and the platform does not converge it, so a stale element stays stale. Without one, describe falls
 	/// back to the design instance, which converges AS IT LOADS — the read erases the drift it was called to show,
 	/// and <c>true</c> there says nothing.</para>
-	/// <para>What decides it is WHEN that instance was built. A freshly built one CONVERGES as it is created, and
-	/// <c>SchemaManagerItem.Instance</c> is a lazy build that ANY reader triggers — an earlier describe as much as
-	/// a run — while saving the schema evicts it. So an instance predating the callee's change reports the drift
-	/// and one built after it reports <c>true</c>. Verified in platform source 2026-09-18.</para>
-	/// <para>Do NOT run, re-read or compile the caller in order to expose drift: each of those builds a fresh,
-	/// converged instance and HIDES it. Two earlier revisions of this paragraph said otherwise — first "compiled",
-	/// then "produced by RUNNING the process" — and the second actively recommended the action that destroys the
-	/// evidence.</para>
+	/// <para>THE RECIPE, which is what to do rather than why it works: save the caller, <b>describe it once</b>,
+	/// change the callee, then describe again and read this flag. The middle read is what makes the last one
+	/// meaningful, and between the callee change and the final read do not run, re-read or compile the caller.
+	/// On some processes <c>false</c> arrives without the recipe; it is never harmful to follow anyway.</para>
+	/// <para>The MECHANISM is deliberately not restated here. It was wrong in three consecutive releases, each
+	/// version consistent with everything a stand could show, because the errors were visible only in platform
+	/// source — so it lives in
+	/// <c>docs/knowledge/platform/subprocess-insync-depends-on-the-schema-instance.md</c> with its evidence, its
+	/// date and its line numbers, where a correction moves one file that is expected to carry uncertainty.</para>
 	/// <para>The test is ONE-DIRECTIONAL and a DROPPED parameter is invisible to it. It asks whether every
 	/// parameter the CALLEE declares is present on the element, so a callee that ADDS one flips this to
 	/// <c>false</c> while a callee that REMOVES one leaves it <c>true</c> — the element merely carries an extra.
