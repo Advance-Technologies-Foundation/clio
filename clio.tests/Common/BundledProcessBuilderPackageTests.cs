@@ -90,14 +90,16 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What THIS cut carries, over 1.6.2.24: the Sub-process element (ENG-92707) - the BPMN call activity,
+	/// <para>What THIS cut carries, over the 1.6.3.16 this file previously pinned: the Sub-process element
+	/// (ENG-92707) - the BPMN call activity,
 	/// selecting the called process and letting the platform copy that process's parameters onto the element,
 	/// with the guards the platform does not have (self-reference, a retarget with live dependents, a callee with
 	/// no Simple start event, an ambiguous caption, and any multi-instance element) and a drift report around the
 	/// synchronization.</para>
-	/// <para>The THIRD digit moves because a new buildable element type is a feature, and 1.6.3.0 is above the
-	/// global maximum across every branch in the package repository rather than in the first free gap. That is
-	/// deliberately the OPPOSITE of the rule stated above, and the reason is the package repository's own
+	/// <para>The FOURTH digit moves here: the third already stood at 1.6.3 when this branch started, so this cut
+	/// continues that line rather than opening one. The paragraph below records why the third digit was moved by
+	/// the cut that opened it, which is the case that was the OPPOSITE of the rule stated above, and the reason is
+	/// the package repository's own
 	/// 2026-09-16 diary entry: the "first free number" rule produced three collisions in one day on the ENG-98559
 	/// line, because the number is computed at cut time and other branches move between the cut and its review.
 	/// Going above the maximum cannot collide. What it costs is the thing the rule above is protecting - a version
@@ -183,8 +185,7 @@ public class BundledProcessBuilderPackageTests {
 	/// the archive is byte-IDENTICAL to the producing commit's blob EXCEPT <c>descriptor.json</c>, which by
 	/// contract cannot match a pre-restamp commit and is pinned separately by
 	/// <see cref="ExpectedArchiveVersion"/> and <see cref="ExpectedDescriptorModifiedOnUtc"/>.
-	/// <para>Verify it in two commands, which is how it was verified at the <b>1.6.3.21</b> cut (167 entries, 166
-	/// identical): extract with <c>clio extract-pkg-zip &lt;archive&gt; -d &lt;dir&gt;</c>, then compare every
+	/// <para>Verify it in two commands: extract with <c>clio extract-pkg-zip &lt;archive&gt; -d &lt;dir&gt;</c>, then compare every
 	/// extracted file against <c>git show &lt;ExpectedProducingCommit&gt;:packages/CrtProcessBuilder/&lt;path&gt;</c>.
 	/// The COUNT is not pinned here on purpose - it moves as the package gains sources, and an earlier revision
 	/// that carried one (157/156, wrong, attributed to a specific cut) made the staleness look checked. Re-run the
@@ -193,7 +194,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"231ABCA4123585A8CDF859CCB5CDFC754A24C54FFAAD049B5D78EA11D34DBD78";
+		"81BD8970553BB4A2CE5F5CAC4DA395B5CC83FA5C2265EB5318EE40233AEE5BB4";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -221,7 +222,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.3.23";
+	private const string ExpectedArchiveVersion = "1.6.3.24";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -233,7 +234,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "daa41ecb45d9a006d71428bb067d3b5d85c5b254";
+	private const string ExpectedProducingCommit = "c24af2c84f963f25c7d90420a62371d7adff3423";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -259,7 +260,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789724013000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789728279000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
