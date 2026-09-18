@@ -12,10 +12,14 @@ date: 2026-09-12
 ---
 
 **What is true** — a resource key registered by an `update-page` call is written into the page
-schema's `localizableStrings` and stays there. On every later save the key resolves at runtime
+schema's `localizableStrings` and survives later designer saves. A push from stale workspace
+metadata or culture XML can revert that state; capture and review the affected package before
+pushing. Linked FSM sources can already be updated by the native designer, so inspect their diff.
+On every later designer save the key resolves at runtime
 whether or not that call repeats it. The `resources` argument therefore describes *additions and
 overrides*, not the complete registered set — `ResourceStringHelper.CleanAndMerge` copies every
-existing entry before adding anything, which is why re-sending a key answers
+existing entry before adding anything and updates only explicitly supplied en-US values,
+preserving declaration identity and other cultures. Re-sending a key answers
 `resourcesRegistered: 0`.
 
 The label-resource validators (`ValidateInsertedFieldSelfConsistency`,
