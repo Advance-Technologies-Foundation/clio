@@ -865,6 +865,31 @@ two-minute job with the mechanics already built.
 > applying these blocks in different orders is why the defect existed. Two ordering tests pin it, both
 > failing against the previous shape. **The sizing below was wrong when written and is corrected in
 > place; the analysis is kept because the stand-verification recipe at the end still applies.**
+>
+> **ACCEPTED ON A STAND, 2026-09-18, at 1.6.3.14 — both cases, both through `create-business-process`
+> alone, `setElement` used nowhere.**
+>
+> * **Sub-process** (corr `82a71b853cfc`): no refusal, and the binding is REAL rather than merely
+>   unrefused — the stored `RecordColumnValues` carries
+>   `[#…[Element:{1af97912…}].[Parameter:{ea8c41c1…}]#]` with `Source=3`, the two UIds being the element
+>   and its `OutVal` parameter, and describe decodes it back to
+>   `{sourceElement: "CallDq32", sourceElementParameter: "OutVal"}`.
+> * **Pre-configured page** (corr `59b7ed788d01`) — the half nobody had ever exercised: the data-source
+>   parameter name was READ by probe rather than composed (`dataSources[0].parameter` =
+>   `DataSource_PDS_Id`), and the binding verified in the stored bytes against `BP2` of the page element
+>   itself.
+>
+> **The load-bearing evidence is a REFUSAL, not the green build** (corr `e0f3f314b849`). A first attempt
+> bound the page's data-source parameter into a TEXT column, and 1.6.3.14 refused it by TYPE:
+>
+> > `parameter 'DataSource_PDS_Id' cannot be assigned to column 'UsrCalleeTrace' (Text) — the types are
+> > not compatible`
+>
+> The message NAMES the parameter and knows its type, so the reference resolved. On 1.6.3.12 the same
+> request answered `Element 'X' has no parameter 'Y'` — the name did not resolve at all. That pair
+> distinguishes "the name now resolves" from "everything happened to line up", which a passing build
+> cannot. **Use it as the regression marker**: if this defect ever returns, the refusal reverts to the
+> has-no-parameter form before anything else visibly breaks.
 
 Found by the same run, and it is a real defect in this feature rather than a documentation error.
 
