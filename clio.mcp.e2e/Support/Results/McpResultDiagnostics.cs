@@ -1,414 +1,347 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
-using Clio.Command.McpServer;
 using Clio.Common;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E.Support.Results;
 
 /// <summary>
-/// Shared, redacted, bounded formatting of an MCP <see cref="CallToolResult"/> payload for embedding in
-/// parse-failure messages across every result parser in this folder. Extracted from
-/// <c>EntitySchemaStructuredResultParser</c> (GitHub issue #1384), whose <c>Extract</c> failure originally
-/// carried this diagnostic alone, so every sibling parser's bare "Could not parse ... MCP result." message
-/// can show what the tool actually returned — whether the call reported an error, the last
-/// <see cref="JsonException"/> encountered while trying to parse the payload, and the actual
-/// <c>StructuredContent</c>/<c>Content</c> — instead of leaving the failure undiagnosable.
+/// Shared formatting of an MCP <see cref="CallToolResult"/> parse failure for every result parser in this
+/// folder. Extracted from <c>EntitySchemaStructuredResultParser</c> (GitHub issue #1384), whose
+/// <c>Extract</c> failure originally carried this diagnostic alone, so every sibling parser's bare
+/// "Could not parse ... MCP result." message can say what the tool actually returned instead of leaving
+/// the failure undiagnosable.
 /// </summary>
-internal static partial class McpResultDiagnostics {
-    /// <summary>
-    /// Default maximum number of characters of the composed diagnostic text embedded in a parse-failure
-    /// message. Keeps a huge tool result from flooding CI logs while still showing its beginning, where
-    /// the diagnostic text (an auth rejection, an HTML login page, a serialized exception) actually lives.
-    /// A caller that prepends its own prefix passes a smaller budget, so the final message stays inside
-    /// this number rather than exceeding it by the prefix and then reporting a second, meaningless
-    /// "total".
-    /// </summary>
-    public const int PayloadDiagnosticLimit = 4_000;
+/// <remarks>
+/// The payload does NOT go into the message. It is written verbatim to its own file and the message names
+/// that file (GitHub issue #1537).
+/// <para>
+/// The previous design embedded a bounded, redacted dump inline. Bounding it meant the reader saw a
+/// fragment of a large answer; redacting it meant pushing up to 64 000 characters through
+/// <see cref="SensitiveErrorTextRedactor.Redact"/>, which runs ten or more backtracking scans under a
+/// one-second budget each and, on expiry, discards its whole input for the bare <c>[redacted]</c>
+/// placeholder. Measured on the shipped rules, that pass costs ~118 ms at 64 000 characters and grows
+/// superlinearly, so a loaded CI agent closed the remaining margin and the diagnostic this class exists to
+/// produce collapsed into a placeholder — the very blindness issue #1384 is about, arriving through the
+/// defence meant to prevent it.
+/// </para>
+/// <para>
+/// Writing the payload to a file removes both costs at once: nothing payload-shaped reaches the build log,
+/// so nothing about it needs bounding to get there, and the reader gets the answer whole rather than its
+/// first few thousand characters.
+/// </para>
+/// <para>
+/// The file is not unscrubbed, though. It lands in a directory the CI build publishes as an artifact, so
+/// exactly one rule still runs over it —
+/// <see cref="SensitiveErrorTextRedactor.RedactJsonCredentialProperties"/>, a single anchored pass over
+/// credential-keyed JSON properties. That is what keeps a <c>show-webApp-list</c> envelope's environment
+/// password out of a published artifact without bringing back the full chain's cost. See
+/// <c>DescribeDump</c>.
+/// </para>
+/// </remarks>
+internal static class McpResultDiagnostics {
+	/// <summary>
+	/// Longest message fragment this class composes from server-supplied text — the last
+	/// <see cref="JsonException"/>'s message, and the excerpt emitted only when the dump could not be
+	/// written.
+	/// </summary>
+	/// <remarks>
+	/// These two, unlike the payload, DO reach the build log, so they are still both bounded and passed
+	/// through <see cref="SensitiveErrorTextRedactor.Redact"/>. That is not a leftover of the design this
+	/// class moved away from: at this size the redaction pass costs about a millisecond against its
+	/// one-second budget — a margin of roughly a thousand, where the 64 000-character payload had about
+	/// eight — so the timeout that made the old design flaky cannot be reached from here.
+	/// </remarks>
+	public const int LogFragmentLimit = 1_000;
 
-    /// <summary>
-    /// Maximum number of characters of a single RAW payload fragment handed to the redaction rules,
-    /// applied before they run rather than only after. Whatever is cut here is reported inline as
-    /// <c>…(+N more characters)</c>, so the true size of the payload is stated instead of being silently
-    /// dropped.
-    /// </summary>
-    /// <remarks>
-    /// <see cref="SensitiveErrorTextRedactor.Redact"/> runs ten or more backtracking scans, each with its
-    /// own one-second timeout, and on timeout it discards its whole input and returns the bare
-    /// <c>[redacted]</c> placeholder. A multi-megabyte tool result therefore did not merely take a long
-    /// time — it replaced the diagnostic this class exists to produce with a single placeholder, which is
-    /// exactly the blindness issue #1384 is about.
-    /// <para>
-    /// The cut boundary IS reachable in the rendered text: redaction SHRINKS its input (60 000 characters
-    /// of URIs collapse to a few thousand <c>[redacted-uri]</c> placeholders), so a fragment cut at this
-    /// limit can still end up inside the display budget. That is why both credential rules also match an
-    /// unterminated quoted value running to the end of the input — a secret sliced as
-    /// <c>…{"password":"s3c</c> would otherwise match neither rule, since both of the terminated forms
-    /// require the closing quote, and half a secret would ship.
-    /// </para>
-    /// </remarks>
-    public const int RawPayloadInputLimit = 64_000;
+	private const string DefaultLabel = "mcp-result";
 
-    private const string RedactedValue = "[redacted]";
+	/// <summary>
+	/// Where payload dumps go.
+	/// </summary>
+	/// <remarks>
+	/// Deliberately <c>readonly</c> rather than a settable test seam. Some fixtures in this assembly carry
+	/// <c>[Parallelizable(ParallelScope.Self)]</c>, so a test that swapped a shared static sink could be
+	/// running while an unrelated e2e test hit a genuine parse failure, and that failure's payload would
+	/// land in the swapped sink. Tests reach the seam through <see cref="DescribeWithSink"/> instead,
+	/// which passes a sink down the call and shares nothing.
+	/// </remarks>
+	private static readonly IMcpPayloadDumpSink DefaultDumpSink = new TestResultsPayloadDumpSink();
 
-    /// <summary>
-    /// The secret-key words this harness redacts, mirroring
-    /// <c>SensitiveErrorTextRedactor.CredentialPairRegex</c>'s own alternation. Kept <c>internal</c> so
-    /// <c>McpResultDiagnosticsTests</c> can compare it against the production pattern and fail when a key
-    /// is added there and not here.
-    /// </summary>
-    internal const string CredentialKeyCore =
-        @"password|pwd|pass|secret|token|api[_-]?key|client[_-]?secret|client[_-]?id|private[_-]?key|" +
-        @"access[_-]?key|connection ?string|data ?source|server|host|hostname|initial ?catalog|database|" +
-        @"uid|user ?id|authorization|auth|bearer|set-cookie|cookie|asp\.net_sessionid|aspxauth|bpmcsrf|" +
-        @"jsessionid|phpsessid|session[_-]?id|[xc]srf[_-]?token";
+	/// <summary>
+	/// Describes an MCP tool result's parse failure: whether the call reported an error
+	/// (<c>IsError</c>), the last <see cref="JsonException"/> encountered while trying to parse the
+	/// payload (if the caller tracked one), the payload's shape, and the path of the file holding the
+	/// payload itself.
+	/// </summary>
+	/// <remarks>
+	/// This method never throws. Composing a diagnostic runs serialization and file IO over
+	/// attacker-shaped input on a path whose whole job is to REPORT a failure, so an exception here would
+	/// replace the parse failure the caller is trying to explain with an unrelated one.
+	/// </remarks>
+	/// <param name="callResult">The tool result that could not be parsed, or <c>null</c> when none was available.</param>
+	/// <param name="lastJsonException">
+	/// The last <see cref="JsonException"/> raised while attempting to parse the payload, when the caller
+	/// tracks one. Pass <c>null</c> when no parse attempt ever raised one.
+	/// </param>
+	public static string Describe(CallToolResult? callResult, JsonException? lastJsonException = null) =>
+		Describe(callResult, lastJsonException, DefaultLabel, DefaultDumpSink);
 
-    // Keys matched EXACTLY, with no prefix/suffix tolerance. They exist only so a secret nested one level
-    // deep under a secret key — {"token":{"value":"abc123"}} — is still redacted, since no regex here
-    // matches a balanced object as a value. Expanding them fuzzily would redact "defaultValue",
-    // "displayValue", "values" and most of a normal Creatio payload, which would cost more diagnostic
-    // signal than the nesting case is worth.
-    private const string ExactCredentialKeys = @"value|credentials|payload";
+	/// <summary>
+	/// Describes an MCP tool result's parse failure, taking the last <see cref="JsonException"/> from the
+	/// diagnostics a parser accumulated while it tried every accepted shape.
+	/// </summary>
+	public static string Describe(CallToolResult? callResult, McpParseDiagnostics diagnostics) =>
+		Describe(callResult, diagnostics.LastJsonException, DefaultLabel, DefaultDumpSink);
 
-    // The key as it is actually spelled in an OAuth or connection payload: access_token, refreshToken,
-    // idToken, dbPassword, clientId. Anchoring the alternation to the WHOLE quoted key matched none of
-    // them, and OAuth envelopes are a real path through this harness. The prefix/suffix classes exclude
-    // the quote character, so a match cannot run past the key.
-    //
-    // This over-redacts on purpose and the redactor's own policy says to: "tokenCount", "author",
-    // "guid" and "serverName" will read [redacted]. Over-redacting a field that only helps a reader is
-    // acceptable; leaking a credential into a build log everyone on the build can read is not.
-    private const string CredentialKeyPattern =
-        $@"[\w.-]*?(?:{CredentialKeyCore})[\w.-]*|{ExactCredentialKeys}";
+	/// <summary>
+	/// Composes <paramref name="prefix"/> with the failure description. The prefix also names the dump
+	/// file, so the artifact belonging to a given failure can be found without opening it.
+	/// </summary>
+	/// <param name="prefix">The caller's own sentence, already ending in whatever separator it wants.</param>
+	/// <param name="callResult">The tool result that could not be parsed, or <c>null</c> when none was available.</param>
+	/// <param name="lastJsonException">The last <see cref="JsonException"/> raised while parsing, when the caller tracks one.</param>
+	public static string DescribePrefixed(
+		string prefix,
+		CallToolResult? callResult,
+		JsonException? lastJsonException = null) =>
+		prefix + Describe(callResult, lastJsonException, prefix, DefaultDumpSink);
 
-    /// <summary>
-    /// Characters held back from the content-block budget for the fields composed around it and for the
-    /// "N more blocks" tail, so neither is pushed past the display cap.
-    /// </summary>
-    private const int TailHeadroom = 200;
+	/// <summary>
+	/// Composes <paramref name="prefix"/> with the failure description, taking the last
+	/// <see cref="JsonException"/> from the diagnostics a parser accumulated.
+	/// </summary>
+	/// <param name="prefix">The caller's own sentence, already ending in whatever separator it wants.</param>
+	/// <param name="callResult">The tool result that could not be parsed, or <c>null</c> when none was available.</param>
+	/// <param name="diagnostics">The diagnostics accumulated while every accepted shape was tried.</param>
+	public static string DescribePrefixed(
+		string prefix,
+		CallToolResult? callResult,
+		McpParseDiagnostics diagnostics) =>
+		DescribePrefixed(prefix, callResult, diagnostics.LastJsonException);
 
-    private const int RegexTimeoutMilliseconds = 1_000;
+	/// <summary>
+	/// The same description, written through a caller-supplied sink. The seam tests use so they can read
+	/// what would be dumped without touching the filesystem.
+	/// </summary>
+	internal static string DescribeWithSink(
+		CallToolResult? callResult,
+		JsonException? lastJsonException,
+		string label,
+		IMcpPayloadDumpSink sink) =>
+		Describe(callResult, lastJsonException, label, sink);
 
-    // A JSON-quoted credential property — "password": "s3cr3t" — which the production redactor does NOT
-    // reach: its CredentialPairRegex requires \b(key)\b\s*[=:], and the key's own CLOSING quote sits
-    // between the key and the colon, so the pair never matches. Measured against the shipped rules:
-    // Redact("{\"password\":\"s3cr3t\"}") returns that input verbatim.
-    //
-    // This post-pass is deliberately LOCAL to the e2e harness rather than a change to the production
-    // redactor: that file is being moved and edited by two open pull requests (#1473, #1493), and issue
-    // #1384 is a test-infrastructure change. The production gap is reported separately.
-    //
-    // The value alternation takes the terminated string first, then an UNTERMINATED one running to the
-    // end of the input (a secret sliced by RawPayloadInputLimit), then the bare JSON literals. The whole
-    // pair is rewritten in its JSON shape — "key":"[redacted]" — rather than the key=value shape the
-    // production rule uses, so the surrounding dump stays readable as JSON instead of losing a quote.
-    [GeneratedRegex(
-        $@"""(?<key>{CredentialKeyPattern})""\s*:\s*(?:""[^""]*""|""[^""]*\z|null|true|false|-?\d+(?:\.\d+)?)",
-        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
-    private static partial Regex JsonCredentialPropertyRegex();
+	private static string Describe(
+		CallToolResult? callResult,
+		JsonException? lastJsonException,
+		string label,
+		IMcpPayloadDumpSink sink) {
+		if (callResult is null) {
+			return "(no result)";
+		}
 
-    // The escaped-quote spellings of a JSON quote, captured into a group so the replacement puts back the
-    // SAME form it found rather than mixing the two inside one document.
-    private const string EscapedQuote = @"\\""|\\u0022";
+		try {
+			StringBuilder builder = new();
+			builder.Append("IsError=").Append(callResult.IsError.ToString());
 
-    // The SAME pair after one level of JSON escaping. This is not a hypothetical shape — StructuredContent
-    // routinely holds a string property whose value is itself serialized JSON (a nested envelope, a tool's
-    // raw response body), and GetRawText() renders that inner document with every quote escaped, so the
-    // plain rule above (which requires a literal quote immediately after the key) matches nothing at all
-    // and the secret ships in the clear. BOTH escaped spellings are covered: a hand-written \"password\"
-    // and the "password" that System.Text.Json's default encoder actually emits — measured, not
-    // assumed: SerializeToElement(new { body = "{\"password\":\"s3cr3t\"}" }).GetRawText() produces the
-    // " form, so a rule that knew only the backslash-quote spelling redacted nothing at all.
-    [GeneratedRegex(
-        $@"(?<q>{EscapedQuote})(?<key>{CredentialKeyPattern})\k<q>\s*:\s*(?:\k<q>[^""]*?\k<q>|\k<q>[^""]*\z|null|true|false|-?\d+(?:\.\d+)?)",
-        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
-    private static partial Regex EscapedJsonCredentialPropertyRegex();
+			if (lastJsonException is not null) {
+				builder.Append(" LastJsonError=\"")
+					.Append(RedactLogFragment(lastJsonException.Message))
+					.Append('"');
+			}
 
-    /// <summary>
-    /// Describes an MCP tool result's payload for a parse-failure message: whether the call reported an
-    /// error (<c>IsError</c>), the last <see cref="JsonException"/> encountered while trying to parse the
-    /// payload (if the caller tracked one), and a redacted dump of both <c>StructuredContent</c> and every
-    /// <c>Content</c> block's <c>type</c> plus its <c>text</c> — or, for a block that carries no
-    /// <c>text</c> string at all (an image, an audio or an embedded-resource block), that block's own raw
-    /// JSON, so a non-text answer is named rather than silently skipped.
-    /// </summary>
-    /// <remarks>
-    /// The returned text is ALREADY redacted and already bounded to <paramref name="limit"/>. Bounding
-    /// happens here, not at the call sites, so a caller that forgets cannot flood a CI log; and because
-    /// every fragment is redacted BEFORE the composed text is capped, the cap can never cut a secret out
-    /// of a redaction rule's reach. A caller that prepends its own prefix passes a REDUCED
-    /// <paramref name="limit"/> instead of truncating the composed message a second time — truncating
-    /// twice made the length note report the already-truncated size rather than the payload's.
-    /// <para>
-    /// This method never throws. Composing a diagnostic runs serialization and ten timed regexes over
-    /// attacker-shaped input on a path whose whole job is to REPORT a failure, so an exception here would
-    /// replace the parse failure the caller is trying to explain with an unrelated one.
-    /// </para>
-    /// </remarks>
-    /// <param name="callResult">The tool result that could not be parsed, or <c>null</c> when none was available.</param>
-    /// <param name="lastJsonException">
-    /// The last <see cref="JsonException"/> raised while attempting to parse the payload, when the caller
-    /// tracks one. Pass <c>null</c> when no parse attempt ever raised one.
-    /// </param>
-    /// <param name="limit">Maximum characters of the returned text. Defaults to <see cref="PayloadDiagnosticLimit"/>.</param>
-    public static string Describe(
-        CallToolResult? callResult,
-        JsonException? lastJsonException = null,
-        int limit = PayloadDiagnosticLimit) {
-        if (callResult is null) {
-            return "(no result)";
-        }
+			builder.Append(" StructuredContent=")
+				.Append(callResult.StructuredContent is null ? "(none)" : "present");
+			builder.Append(" Content=").Append(DescribeContentShape(callResult.Content));
+			builder.Append(' ').Append(DescribeDump(callResult, label, sink));
 
-        try {
-            StringBuilder builder = new();
-            builder.Append("IsError=").Append(callResult.IsError.ToString());
+			return builder.ToString();
+		}
+		catch (Exception exception) {
+			return $"(diagnostics unavailable: {exception.GetType().Name}: {SafeRedact(exception.Message)})";
+		}
+	}
 
-            if (lastJsonException is not null) {
-                builder.Append(" LastJsonError=\"")
-                    .Append(RedactBounded(lastJsonException.Message))
-                    .Append('"');
-            }
+	/// <summary>
+	/// Serializes the whole result and writes it, returning either the dump's path or — when the write
+	/// failed — the reason plus a bounded excerpt.
+	/// </summary>
+	/// <remarks>
+	/// The excerpt exists because a failed write would otherwise leave the reader with no payload at all,
+	/// which is exactly the state issue #1384 removed. A read-only directory, a full disk or a path length
+	/// the Windows agent rejects must degrade the diagnostic, not erase it.
+	/// <para>
+	/// ACCEPTED LIMIT: the serialized result is held whole in memory and written in one call, with no size
+	/// bound at all — the 64 000-character bound the old design used is gone on purpose, because a bounded
+	/// dump is not a full-fidelity record. A pathological result (hundreds of blocks of hundreds of
+	/// kilobytes) therefore costs its own size twice over on a path that is only reporting someone else's
+	/// failure. That is deliberate and has not been observed: e2e payloads are tool answers from a sandbox
+	/// stand, and the alternative reintroduces the very trade-off issue #1537 removed.
+	/// </para>
+	/// <para>
+	/// "Raw" here means the result as it stands after the MCP SDK deserialized it: the original bytes are
+	/// no longer available at this layer, and re-serializing the <see cref="CallToolResult"/> is the
+	/// closest faithful record of what arrived. Nothing is bounded, filtered or reshaped on the way to the
+	/// file.
+	/// </para>
+	/// <para>
+	/// ONE exception to "nothing is filtered", and it is a narrow one: credential-keyed JSON properties are
+	/// replaced by <see cref="SensitiveErrorTextRedactor.RedactJsonCredentialProperties"/> before the write.
+	/// The file lands in a directory the CI build publishes as an artifact, and a <c>show-webApp-list</c>
+	/// envelope carries a registered environment's <c>Password</c> and <c>ClientSecret</c> verbatim — so
+	/// without this pass a parse failure on that tool would publish live credentials in clear. It is a
+	/// single anchored pass, NOT the full <see cref="SensitiveErrorTextRedactor.Redact"/> chain whose
+	/// ten-plus passes over a multi-megabyte input are what issue #1537 removed; paths, URIs, hosts and
+	/// <c>key=value</c> pairs are deliberately left intact, because they are the diagnostic and they are
+	/// not secrets.
+	/// </para>
+	/// </remarks>
+	private static string DescribeDump(CallToolResult callResult, string label, IMcpPayloadDumpSink sink) {
+		string rawPayload = SensitiveErrorTextRedactor.RedactJsonCredentialProperties(
+			JsonSerializer.Serialize(callResult, RawDumpOptions));
+		McpPayloadDumpResult dump = sink.Write(label, rawPayload);
 
-            bool hasStructuredContent = TrySerializeToJsonElement(callResult.StructuredContent, out JsonElement structuredContent);
-            bool hasContent = TrySerializeToJsonElement(callResult.Content, out JsonElement content);
+		if (dump.Succeeded) {
+			// Quoted, and therefore self-delimiting. A caller may append its own text after this
+			// description (ApplicationToolE2ETests re-throws as "{message} Raw result: {description}"),
+			// so a path that ended at the next whitespace-delimited token or at end-of-string could not
+			// be recovered from the wrapped form. See PayloadDumpReader.
+			return $"Payload=\"{dump.Path}\"";
+		}
 
-            builder.Append(" StructuredContent=").Append(DescribePayload(hasStructuredContent ? structuredContent : null));
-            builder.Append(" Content=").Append(DescribeContentItems(hasContent ? content : null, limit));
+		return $"Payload=(dump failed: {dump.FailureReason}) "
+			+ $"PayloadExcerpt=\"{RedactLogFragment(rawPayload)}\"";
+	}
 
-            return Truncate(builder.ToString(), limit);
-        }
-        catch (Exception exception) {
-            return $"(diagnostics unavailable: {exception.GetType().Name}: {SafeRedact(exception.Message)})";
-        }
-    }
+	/// <summary>
+	/// Compact on purpose. Indenting inflated an already-unbounded payload — materially larger in memory,
+	/// on disk and in the published artifact — for no gain: the dump is a file people open with <c>jq</c>
+	/// or an editor, both of which pretty-print it themselves.
+	/// </summary>
+	private static readonly JsonSerializerOptions RawDumpOptions = new();
 
-    /// <summary>
-    /// Describes an MCP tool result's payload, taking the last <see cref="JsonException"/> from the
-    /// diagnostics a parser accumulated while it tried every accepted shape.
-    /// </summary>
-    public static string Describe(
-        CallToolResult? callResult,
-        McpParseDiagnostics diagnostics,
-        int limit = PayloadDiagnosticLimit) =>
-        Describe(callResult, diagnostics.LastJsonException, limit);
+	/// <summary>
+	/// Renders how many content blocks arrived, rather than their text. The count is what distinguishes
+	/// "the tool answered nothing" from "the tool answered something this parser could not read", and it
+	/// is the one part of the payload's description that is safe in a build log by construction.
+	/// </summary>
+	private static string DescribeContentShape(IList<ContentBlock>? content) {
+		if (content is null) {
+			return "(none)";
+		}
 
-    /// <summary>
-    /// Composes <paramref name="prefix"/> with the payload description, paying for the prefix OUT OF the
-    /// budget rather than on top of it.
-    /// </summary>
-    /// <remarks>
-    /// Every parser in this folder prepends its own "Could not parse &lt;tool&gt; MCP result: " sentence.
-    /// Passing the default limit alongside a prefix is what <see cref="Describe(CallToolResult, JsonException, int)"/>'s
-    /// own contract tells callers not to do: the emitted message then runs past the cap by the prefix
-    /// length, and the "truncated to fit N" note inside it states a number smaller than the message's own
-    /// length. Doing the subtraction here means no call site can forget it.
-    /// </remarks>
-    /// <param name="prefix">The caller's own sentence, already ending in whatever separator it wants.</param>
-    /// <param name="callResult">The tool result that could not be parsed, or <c>null</c> when none was available.</param>
-    /// <param name="lastJsonException">The last <see cref="JsonException"/> raised while parsing, when the caller tracks one.</param>
-    public static string DescribePrefixed(
-        string prefix,
-        CallToolResult? callResult,
-        JsonException? lastJsonException = null) =>
-        prefix + Describe(callResult, lastJsonException, PayloadDiagnosticLimit - prefix.Length);
+		int count = content.Count;
+		return count == 0 ? "(none)" : $"{count} block(s)";
+	}
 
-    /// <summary>
-    /// Composes <paramref name="prefix"/> with the payload description, taking the last
-    /// <see cref="JsonException"/> from the diagnostics a parser accumulated.
-    /// </summary>
-    /// <param name="prefix">The caller's own sentence, already ending in whatever separator it wants.</param>
-    /// <param name="callResult">The tool result that could not be parsed, or <c>null</c> when none was available.</param>
-    /// <param name="diagnostics">The diagnostics accumulated while every accepted shape was tried.</param>
-    public static string DescribePrefixed(
-        string prefix,
-        CallToolResult? callResult,
-        McpParseDiagnostics diagnostics) =>
-        DescribePrefixed(prefix, callResult, diagnostics.LastJsonException);
+	/// <summary>
+	/// Bounds a fragment destined for the build log, drops a value the bound cut through, and passes the
+	/// result through the production redaction rules.
+	/// </summary>
+	/// <remarks>
+	/// The middle step is not cosmetic. Bounding has to come FIRST — redacting megabytes is the cost this
+	/// class exists to avoid — but the production rule states as an accepted limit that "a value sliced by
+	/// an input cap before its closing quote is NOT matched"
+	/// (<see cref="SensitiveErrorTextRedactor"/>'s <c>JsonCredentialPropertyRegex</c>). So a fragment cut
+	/// as <c>…{"password":"s3c</c> would reach the log with the first characters of a real secret in it,
+	/// matching no rule at all. Discarding the unterminated value closes that without asking the redactor
+	/// to reason about a truncated document.
+	/// </remarks>
+	private static string RedactLogFragment(string? text) =>
+		string.IsNullOrEmpty(text)
+			? string.Empty
+			: SensitiveErrorTextRedactor.Redact(
+				Truncate(text, LogFragmentLimit, DropValueCutByTheBound));
 
-    /// <summary>
-    /// Truncates <paramref name="text"/> to <paramref name="limit"/> characters and states both the kept
-    /// and the original length, instead of embedding an unbounded tool result verbatim in an exception
-    /// message. The cut never splits a surrogate pair, so an emoji near the boundary cannot leave invalid
-    /// UTF-16 that breaks whatever serializes the message next.
-    /// </summary>
-    public static string Truncate(string text, int limit = PayloadDiagnosticLimit) {
-        if (limit <= 0) {
-            return string.Empty;
-        }
+	/// <summary>
+	/// Removes a trailing quoted value the bound cut through, so half a secret cannot ship where a whole
+	/// one would have been redacted.
+	/// </summary>
+	/// <remarks>
+	/// Counts unescaped quotes rather than matching a pattern: an odd count means the fragment ends INSIDE
+	/// a JSON string, and everything from that opening quote on is an unterminated value. A single scan,
+	/// with no backtracking and therefore none of the timeout exposure that motivated this whole redesign.
+	/// </remarks>
+	private static string DropValueCutByTheBound(string fragment) {
+		int lastOpeningQuote = -1;
+		bool insideString = false;
+		for (int index = 0; index < fragment.Length; index++) {
+			char character = fragment[index];
+			if (character == '\\') {
+				index++;
+				continue;
+			}
 
-        if (text.Length <= limit) {
-            return text;
-        }
+			if (character != '"') {
+				continue;
+			}
 
-        // The note is part of the budget, not an addition to it: appending it AFTER cutting to the limit
-        // made the result limit + note characters, so a caller that subtracted its own prefix from the
-        // budget still overshot. The note's own text depends only on the original length and the budget,
-        // never on the kept count, so it can be measured before the cut.
-        string note = $" … {text.Length} characters total, truncated to fit {limit}";
-        return note.Length >= limit
-            ? note[..limit]
-            : TextUtilities.TruncateWithoutSplittingSurrogatePair(text, limit - note.Length) + note;
-    }
+			insideString = !insideString;
+			if (insideString) {
+				lastOpeningQuote = index;
+			}
+		}
 
-    /// <summary>
-    /// Bounds a raw payload fragment, then redacts it with the production rules, then closes the
-    /// JSON-quoted credential gap those rules do not cover. Every string this class emits goes through
-    /// here — a payload dump reaches a TeamCity build log, readable by everyone who can see the build.
-    /// What the bound cut away is stated rather than dropped silently.
-    /// </summary>
-    private static string RedactBounded(string? rawText) {
-        if (string.IsNullOrEmpty(rawText)) {
-            return string.Empty;
-        }
+		return insideString && lastOpeningQuote >= 0
+			? fragment[..lastOpeningQuote] + "\"(value cut by the excerpt bound, not shown)"
+			: fragment;
+	}
 
-        if (rawText.Length <= RawPayloadInputLimit) {
-            return RedactJsonCredentialProperties(SensitiveErrorTextRedactor.Redact(rawText));
-        }
+	/// <summary>Redaction that cannot itself throw, for the last-resort message composed in a catch block.</summary>
+	private static string SafeRedact(string? text) {
+		try {
+			return RedactLogFragment(text);
+		}
+		catch (Exception) {
+			return "[redacted]";
+		}
+	}
 
-        // The marker goes in FRONT. Appended after the fragment it was correct and useless: it sat sixty
-        // thousand characters into a four-thousand-character display budget, so the reader saw a cut
-        // fragment and no statement that anything had been cut.
-        string bounded = TextUtilities.TruncateWithoutSplittingSurrogatePair(rawText, RawPayloadInputLimit);
-        return $"…({rawText.Length} characters, first {bounded.Length} shown) "
-            + RedactJsonCredentialProperties(SensitiveErrorTextRedactor.Redact(bounded));
-    }
+	/// <summary>
+	/// Truncates <paramref name="text"/> to <paramref name="limit"/> characters and states both the kept
+	/// and the original length, instead of embedding an unbounded fragment in an exception message. The
+	/// cut never splits a surrogate pair, so an emoji near the boundary cannot leave invalid UTF-16 that
+	/// breaks whatever serializes the message next.
+	/// </summary>
+	/// <param name="text">The text to bound.</param>
+	/// <param name="limit">Maximum length of the result, the note included.</param>
+	/// <param name="sanitizeCutText">
+	/// Applied to the kept text BEFORE the note is appended, for a caller that must also remove something
+	/// the cut itself created. Runs before the note so it cannot discard it.
+	/// </param>
+	public static string Truncate(
+		string text,
+		int limit = LogFragmentLimit,
+		Func<string, string>? sanitizeCutText = null) {
+		if (limit <= 0) {
+			return string.Empty;
+		}
 
-    /// <summary>
-    /// Applies the two JSON-quoted credential rules on top of an already production-redacted text. The
-    /// escaped form runs first so the plain rule cannot match a fragment of it and leave a dangling
-    /// backslash behind. A regex timeout collapses the fragment to the placeholder rather than returning
-    /// text whose credential rules never finished running.
-    /// </summary>
-    private static string RedactJsonCredentialProperties(string text) =>
-        SensitiveErrorTextRedactor.ExecuteRegex(() => {
-            string result = EscapedJsonCredentialPropertyRegex().Replace(text, match => {
-                string quote = match.Groups["q"].Value;
-                return $"{quote}{match.Groups["key"].Value}{quote}:{quote}{RedactedValue}{quote}";
-            });
-            return JsonCredentialPropertyRegex().Replace(result,
-                match => $"\"{match.Groups["key"].Value}\":\"{RedactedValue}\"");
-        });
+		if (text.Length <= limit) {
+			return text;
+		}
 
-    /// <summary>Redaction that cannot itself throw, for the last-resort message composed in a catch block.</summary>
-    private static string SafeRedact(string? text) {
-        try {
-            return RedactBounded(text);
-        }
-        catch (Exception) {
-            return RedactedValue;
-        }
-    }
+		// The note is part of the budget, not an addition to it: appending it AFTER cutting to the limit
+		// made the result limit + note characters. The note's own text depends only on the original length
+		// and the budget, never on the kept count, so it can be measured before the cut.
+		string note = $" … {text.Length} characters total, truncated to fit {limit}";
+		if (note.Length >= limit) {
+			return note[..limit];
+		}
 
-    private static string DescribePayload(JsonElement? element) {
-        if (element is null) {
-            return "(none)";
-        }
+		int keptBudget = limit - note.Length;
+		string kept = TextUtilities.TruncateWithoutSplittingSurrogatePair(text, keptBudget);
+		if (sanitizeCutText is not null) {
+			// Re-applied AFTER sanitizing, because a sanitizer may GROW the text rather than only shrink
+			// it: DropValueCutByTheBound replaces the tail from an unterminated opening quote with a
+			// 42-character marker, which overflows the documented limit when the cut quote sits near the
+			// end of the fragment. Cutting again keeps the invariant this method states for itself.
+			kept = TextUtilities.TruncateWithoutSplittingSurrogatePair(sanitizeCutText(kept), keptBudget);
+		}
 
-        return RedactBounded(element.Value.GetRawText());
-    }
-
-    /// <summary>
-    /// Renders each content block's <c>type</c> and, when present, its <c>text</c>. A block that carries
-    /// no <c>text</c> string — an image, an audio or an embedded-resource block, or any shape this
-    /// harness does not know — is dumped as its own raw JSON instead of being reported as "(no text)",
-    /// which named the block's existence while discarding everything that said what the tool answered.
-    /// </summary>
-    /// <remarks>
-    /// The per-fragment bound is not enough on its own: five hundred blocks of a hundred kilobytes each
-    /// are five hundred fragments, so the builder would still reach tens of megabytes and pay ten timed
-    /// regex scans per block — on the path that is supposed to REPORT a failure quickly. Blocks are
-    /// therefore appended only while the rendered text stays under <paramref name="limit"/>, and the rest
-    /// are counted rather than rendered.
-    /// </remarks>
-    private static string DescribeContentItems(JsonElement? content, int limit) {
-        if (content is null) {
-            return "(none)";
-        }
-
-        JsonElement contentElement = content.Value;
-        if (contentElement.ValueKind != JsonValueKind.Array) {
-            return RedactBounded(contentElement.GetRawText());
-        }
-
-        // Headroom for the fields composed around this section and for the "more blocks" tail, so both
-        // stay inside the caller's budget and are actually READ. A tail that lands past the display cap
-        // is the same as no tail at all.
-        int blockBudget = Math.Max(limit - TailHeadroom, TailHeadroom);
-
-        StringBuilder builder = new();
-        builder.Append('[');
-        bool isFirst = true;
-        int skippedBlocks = 0;
-        foreach (JsonElement item in contentElement.EnumerateArray()) {
-            if (skippedBlocks > 0) {
-                skippedBlocks++;
-                continue;
-            }
-
-            StringBuilder itemBuilder = new();
-            AppendContentItem(itemBuilder, item);
-
-            // The FIRST block is always rendered even when it alone blows the budget: the outer cap and
-            // the fragment's own size marker already describe that case, and rendering nothing at all
-            // would leave the reader with no payload whatsoever - the failure this class exists to fix.
-            if (!isFirst && builder.Length + itemBuilder.Length > blockBudget) {
-                skippedBlocks = 1;
-                continue;
-            }
-
-            if (!isFirst) {
-                builder.Append(", ");
-            }
-
-            isFirst = false;
-            builder.Append(itemBuilder);
-        }
-
-        if (skippedBlocks > 0) {
-            builder.Append(", …, ").Append(skippedBlocks).Append(" more blocks");
-        }
-
-        builder.Append(']');
-        return builder.ToString();
-    }
-
-    private static void AppendContentItem(StringBuilder builder, JsonElement item) {
-        bool isObject = item.ValueKind == JsonValueKind.Object;
-
-        // The type is server-supplied text like everything else on this path, so it is redacted too
-        // rather than being trusted because the protocol says it should be a short enum-like word.
-        string itemType = isObject &&
-            item.TryGetProperty("type", out JsonElement typeElement) &&
-            typeElement.ValueKind == JsonValueKind.String
-                ? RedactBounded(typeElement.GetString() ?? "(unknown)")
-                : "(unknown)";
-
-        if (isObject &&
-            item.TryGetProperty("text", out JsonElement textElement) &&
-            textElement.ValueKind == JsonValueKind.String) {
-            builder.Append("{type=").Append(itemType)
-                .Append(", text=\"").Append(RedactBounded(textElement.GetString())).Append("\"}");
-            return;
-        }
-
-        // No text string: show the block itself rather than the fact that it had none. An image or
-        // embedded-resource block, or a shape this harness has not seen, is exactly the case the bare
-        // "(no text)" made undiagnosable.
-        builder.Append("{type=").Append(itemType)
-            .Append(", raw=").Append(RedactBounded(item.GetRawText())).Append('}');
-    }
-
-    private static bool TrySerializeToJsonElement(object? value, out JsonElement element) {
-        if (value is null) {
-            element = default;
-            return false;
-        }
-
-        element = JsonSerializer.SerializeToElement(value);
-        return true;
-    }
+		return kept + note;
+	}
 }
 
 /// <summary>
@@ -418,82 +351,82 @@ internal static partial class McpResultDiagnostics {
 /// parser in this folder, so there is one definition of "what did we see" rather than one per envelope.
 /// </summary>
 internal sealed class McpParseDiagnostics {
-    /// <summary>Whether any content item carried a non-blank <c>text</c> string.</summary>
-    public bool SawTextPayload { get; set; }
+	/// <summary>Whether any content item carried a non-blank <c>text</c> string.</summary>
+	public bool SawTextPayload { get; set; }
 
-    /// <summary>
-    /// Whether a well-formed JSON value of ANY kind was handed to a deserialize attempt — an array
-    /// included.
-    /// </summary>
-    /// <remarks>
-    /// The array-wrapper suppression below is about whose exception to BLAME; it must not make the
-    /// parser claim there was no JSON. Without this flag a result whose StructuredContent is a JSON
-    /// array reported "no structured content and no text content at all" directly beside a dump of that
-    /// very array.
-    /// </remarks>
-    public bool SawAnyJson { get; private set; }
+	/// <summary>
+	/// Whether a well-formed JSON value of ANY kind was handed to a deserialize attempt — an array
+	/// included.
+	/// </summary>
+	/// <remarks>
+	/// The array-wrapper suppression below is about whose exception to BLAME; it must not make the
+	/// parser claim there was no JSON. Without this flag a result whose StructuredContent is a JSON
+	/// array reported "no structured content and no text content at all" directly beside a dump of that
+	/// very array.
+	/// </remarks>
+	public bool SawAnyJson { get; private set; }
 
-    /// <summary>
-    /// Whether a JSON value that is a plausible candidate FOR THE EXPECTED TYPE was handed to a
-    /// deserialize attempt.
-    /// </summary>
-    /// <remarks>
-    /// Narrower than <see cref="SawAnyJson"/>, and not redundant with it: the MCP content-item wrapper is
-    /// itself a non-empty array, so <see cref="SawAnyJson"/> is true on every result that carries any
-    /// content at all - including a plain text block that is not JSON. Only this flag can tell a caller
-    /// that the shape mismatch is about the payload rather than about the wrapper, which is why the
-    /// failure-shape description tests it before the text-payload branch.
-    /// </remarks>
-    public bool SawValidJson { get; private set; }
+	/// <summary>
+	/// Whether a JSON value that is a plausible candidate FOR THE EXPECTED TYPE was handed to a
+	/// deserialize attempt.
+	/// </summary>
+	/// <remarks>
+	/// Narrower than <see cref="SawAnyJson"/>, and not redundant with it: the MCP content-item wrapper is
+	/// itself a non-empty array, so <see cref="SawAnyJson"/> is true on every result that carries any
+	/// content at all - including a plain text block that is not JSON. Only this flag can tell a caller
+	/// that the shape mismatch is about the payload rather than about the wrapper, which is why the
+	/// failure-shape description tests it before the text-payload branch.
+	/// </remarks>
+	public bool SawValidJson { get; private set; }
 
-    /// <summary>The last <see cref="JsonException"/> raised while parsing text as JSON or deserializing JSON as the expected type.</summary>
-    public JsonException? LastJsonException { get; private set; }
+	/// <summary>The last <see cref="JsonException"/> raised while parsing text as JSON or deserializing JSON as the expected type.</summary>
+	public JsonException? LastJsonException { get; private set; }
 
-    /// <summary>
-    /// Records that <paramref name="element"/> is about to be deserialized as <paramref name="expectedType"/>,
-    /// and reports whether it is a MEANINGFUL candidate.
-    /// </summary>
-    /// <remarks>
-    /// A JSON array reaching a deserialize call is, for an OBJECT-shaped expected type, the raw MCP
-    /// content-item wrapper falling through (already unpacked, and known not to match) rather than a
-    /// genuine candidate. The attempt is still made — it is the only path that could recognize a
-    /// genuinely array-shaped type, and what counts as a successful parse must not change — but its
-    /// doomed exception must not be blamed for a mismatch the real payload caused.
-    /// <para>
-    /// When the expected type IS array-shaped (<c>ShowWebAppListEnvelope.TryDeserialize</c>, and
-    /// <c>EntitySchemaStructuredResultParser.Extract&lt;T&gt;</c> with a collection <c>T</c>) an array is
-    /// exactly the shape that parser wants, so its exception is the real one and is kept. Suppressing it
-    /// there reproduced, for those two parsers, the very swallowed-exception state issue #1384 exists to
-    /// remove: a malformed environment entry in <c>show-webApp-list</c> failed with no <c>LastJsonError=</c>.
-    /// </para>
-    /// </remarks>
-    /// <param name="element">The JSON value about to be deserialized.</param>
-    /// <param name="expectedType">The type the caller is deserializing into.</param>
-    public bool RecordDeserializeAttempt(JsonElement element, Type expectedType) {
-        bool isMeaningfulJsonCandidate =
-            element.ValueKind != JsonValueKind.Array || IsArrayShaped(expectedType);
-        // An EMPTY array is the "no content at all" case, not a payload: Content = [] serializes to [],
-        // and counting it as JSON would make an empty result claim a shape mismatch it never saw.
-        SawAnyJson |= element.ValueKind != JsonValueKind.Array || element.GetArrayLength() > 0;
-        SawValidJson |= isMeaningfulJsonCandidate;
+	/// <summary>
+	/// Records that <paramref name="element"/> is about to be deserialized as <paramref name="expectedType"/>,
+	/// and reports whether it is a MEANINGFUL candidate.
+	/// </summary>
+	/// <remarks>
+	/// A JSON array reaching a deserialize call is, for an OBJECT-shaped expected type, the raw MCP
+	/// content-item wrapper falling through (already unpacked, and known not to match) rather than a
+	/// genuine candidate. The attempt is still made — it is the only path that could recognize a
+	/// genuinely array-shaped type, and what counts as a successful parse must not change — but its
+	/// doomed exception must not be blamed for a mismatch the real payload caused.
+	/// <para>
+	/// When the expected type IS array-shaped (<c>ShowWebAppListEnvelope.TryDeserialize</c>, and
+	/// <c>EntitySchemaStructuredResultParser.Extract&lt;T&gt;</c> with a collection <c>T</c>) an array is
+	/// exactly the shape that parser wants, so its exception is the real one and is kept. Suppressing it
+	/// there reproduced, for those two parsers, the very swallowed-exception state issue #1384 exists to
+	/// remove: a malformed environment entry in <c>show-webApp-list</c> failed with no <c>LastJsonError=</c>.
+	/// </para>
+	/// </remarks>
+	/// <param name="element">The JSON value about to be deserialized.</param>
+	/// <param name="expectedType">The type the caller is deserializing into.</param>
+	public bool RecordDeserializeAttempt(JsonElement element, Type expectedType) {
+		bool isMeaningfulJsonCandidate =
+			element.ValueKind != JsonValueKind.Array || IsArrayShaped(expectedType);
+		// An EMPTY array is the "no content at all" case, not a payload: Content = [] serializes to [],
+		// and counting it as JSON would make an empty result claim a shape mismatch it never saw.
+		SawAnyJson |= element.ValueKind != JsonValueKind.Array || element.GetArrayLength() > 0;
+		SawValidJson |= isMeaningfulJsonCandidate;
 
-        return isMeaningfulJsonCandidate;
-    }
+		return isMeaningfulJsonCandidate;
+	}
 
-    /// <summary>
-    /// Whether <paramref name="type"/> deserializes FROM a JSON array — an array, or any non-string
-    /// enumerable such as <c>IReadOnlyList&lt;T&gt;</c>. <see cref="string"/> is excluded because it is
-    /// enumerable but deserializes from a JSON string.
-    /// </summary>
-    private static bool IsArrayShaped(Type type) {
-        Type target = Nullable.GetUnderlyingType(type) ?? type;
-        return target != typeof(string) && typeof(IEnumerable).IsAssignableFrom(target);
-    }
+	/// <summary>
+	/// Whether <paramref name="type"/> deserializes FROM a JSON array — an array, or any non-string
+	/// enumerable such as <c>IReadOnlyList&lt;T&gt;</c>. <see cref="string"/> is excluded because it is
+	/// enumerable but deserializes from a JSON string.
+	/// </summary>
+	private static bool IsArrayShaped(Type type) {
+		Type target = Nullable.GetUnderlyingType(type) ?? type;
+		return target != typeof(string) && typeof(IEnumerable).IsAssignableFrom(target);
+	}
 
-    /// <summary>Keeps <paramref name="exception"/> as the last parse failure, unless the attempt was the doomed array-wrapper one.</summary>
-    public void RecordJsonException(JsonException exception, bool isMeaningfulJsonCandidate = true) {
-        if (isMeaningfulJsonCandidate) {
-            LastJsonException = exception;
-        }
-    }
+	/// <summary>Keeps <paramref name="exception"/> as the last parse failure, unless the attempt was the doomed array-wrapper one.</summary>
+	public void RecordJsonException(JsonException exception, bool isMeaningfulJsonCandidate = true) {
+		if (isMeaningfulJsonCandidate) {
+			LastJsonException = exception;
+		}
+	}
 }
