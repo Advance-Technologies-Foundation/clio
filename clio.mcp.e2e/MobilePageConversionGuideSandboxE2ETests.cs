@@ -1063,7 +1063,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	}
 
 	[Test]
-	[Description("ENG-94839 end to end: a converted page whose actions navigate somewhere must report, against the LIVE environment, whether each target exists on mobile. Asserts the probe actually ran (targetsProbed), that every finding uses the declared vocabulary, that it names a control the element map really carries, and — the warn-only contract — that a verified-missing target never removes that control. A conversion failure always fails the test; only a seed with no navigating action degrades to Ignore.")]
+	[Description("End to end: a converted page whose actions navigate somewhere must report, against the LIVE environment, whether each target exists on mobile. Asserts the probe actually ran (targetsProbed), that every finding uses the declared vocabulary, that it names a control the element map really carries, and — the warn-only contract — that a verified-missing target never removes that control. A conversion failure always fails the test; only a seed with no navigating action degrades to Ignore.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-mobile-page-conversion-guide verifies each action's navigation target against the environment")]
 	[AllureDescription("Converts the seeded application's pages through the real clio MCP server until one carries an action whose request declares a navigation target, then asserts the guide reports the target verification as typed data and leaves the control in place.")]
@@ -1139,14 +1139,109 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				because: $"'{finding.ElementName}' on '{convertedSchemaName}' is reported as carrying an unreachable "
 					+ "target, so the CONTROL must still be on the converted page: naming a control the guide "
 					+ "already dropped would contradict its own element map");
+			// bindingRemoved is TRUE only for a definitional absence (web-page + missing) — never for an
+			// entity-default-mobile-page verdict (an add-on read cannot prove absence) and never for "unknown"
+			// (nothing was established). This is a one-way implication, not an equivalence: a web-page+missing
+			// finding on a MERGE-TWIN binding stays false too (the merge payload cannot remove anything), so the
+			// converse is checked separately below on the twin-free happy path only.
 			if (finding.BindingRemoved) {
+				finding.TargetKind.Should().Be(MobileActionTargetProbe.KindWebPage,
+					because: $"'{finding.ElementName}' on '{convertedSchemaName}' claims a removal, which only a "
+						+ "definitional web-page absence may do");
 				finding.State.Should().Be("missing",
-					because: "an action is only ever removed for an absence that was established, never for one "
-						+ "the environment could not answer for");
-				conversions.DroppedRequests.Should().Contain(
+					because: "a removal without a verified absence would strip a working action on a guess");
+				finding.OriginalBinding.Should().NotBeNull(
+					because: $"'{finding.ElementName}' on '{convertedSchemaName}' removed its binding, so the "
+						+ "pre-removal shape must survive for a later repoint");
+				JsonObject original = finding.OriginalBinding!.AsObject();
+				original["request"]!.GetValue<string>().Should().Be(finding.WebRequest,
+					because: "the preserved binding must be the ORIGINAL web request, not a mobile-remapped one");
+				(original["params"]?["schemaName"]?.GetValue<string>()).Should().Be(finding.Target,
+					because: "the preserved binding's target param must match the finding's own target — a mixed-up "
+						+ "pair here would repoint the wrong button once the target resolves");
+				conversions.ConvertedRequests.Should().NotContain(
 					r => r.ElementName == finding.ElementName && r.Binding == finding.Binding,
-					because: "a removed binding is a dropped request, so the two collections must agree over the "
-						+ "real MCP transport and not only in unit tests");
+					because: "a removed binding was not converted");
+				DroppedRequest dropped = conversions.DroppedRequests.Should().ContainSingle(
+						r => r.ElementName == finding.ElementName && r.Binding == finding.Binding,
+						because: $"'{finding.ElementName}' on '{convertedSchemaName}' must be reported as dropped, "
+							+ "exactly as an unsupported request type is")
+					.Subject;
+				dropped.Reason.Should().Contain(r => r.Code == ReasonCodes.DropRequestTargetMissing,
+					because: "the caller must be able to switch on the coded reason, not re-derive it");
+			} else {
+				finding.OriginalBinding.Should().BeNull(
+					because: $"'{finding.ElementName}' on '{convertedSchemaName}' kept its binding, so there is "
+						+ "nothing to restore later");
+			}
+			// A resolved candidate is fail-open (null is a legitimate "none found"), but WHEN one
+			// comes back over the real MCP transport it must be well-formed and scoped to exactly the kind/state
+			// the feature targets — a null-vs-empty-string slip or a leak onto web-page/unknown findings would
+			// not show up in the hand-built unit fixtures.
+			if (!string.IsNullOrEmpty(finding.ResolvedCandidateSchemaName)) {
+				finding.TargetKind.Should().Be(MobileActionTargetProbe.KindEntityDefaultMobilePage,
+					because: $"'{finding.ElementName}' on '{convertedSchemaName}' carries a resolved candidate, "
+						+ "which only ever applies to an entity-default-mobile-page target");
+				finding.State.Should().Be("missing",
+					because: "a candidate is resolved only for a target verified missing, never for one the "
+						+ "environment could not answer for");
+			}
+		}
+
+		// missingTargetPages queue: BuildMissingTargetPages aggregates BOTH kinds now — a web-page finding is
+		// always queued (settled offline, every state is missing), and a verified-missing
+		// entity-default-mobile-page finding is queued too, keyed by its resolved candidate name when the
+		// environment found one, else by the raw object name (WebToMobileAnalysisService.BuildMissingTargetPages).
+		// When both kinds resolve to the SAME schema name they collapse into ONE row and web-page always wins
+		// the reported kind. Asserted against real transport data rather than only the hand-built unit fixtures.
+		// OnlyContain (not NotContain) is safe here because it only pins the KIND vocabulary, never emptiness —
+		// an empty queue trivially satisfies "every entry has a declared kind".
+		IReadOnlyList<UnresolvedTargetRequest> webPageFindings = [.. conversions.UnresolvedTargetRequests
+			.Where(f => string.Equals(f.TargetKind, MobileActionTargetProbe.KindWebPage, StringComparison.OrdinalIgnoreCase))];
+		IReadOnlyList<UnresolvedTargetRequest> missingEntityFindings = [.. conversions.UnresolvedTargetRequests
+			.Where(f => string.Equals(
+					f.TargetKind, MobileActionTargetProbe.KindEntityDefaultMobilePage, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(f.State, UnresolvedTargetRequest.StateMissing, StringComparison.OrdinalIgnoreCase))];
+		conversions.MissingTargetPages.Should().OnlyContain(
+			p => declaredKinds.Contains(p.TargetKind),
+			because: $"on '{convertedSchemaName}' every queued target's kind must come from the shipped rules' "
+				+ "vocabulary, never a literal the aggregation invented");
+
+		string QueueKeyOf(UnresolvedTargetRequest finding) =>
+			string.Equals(finding.TargetKind, MobileActionTargetProbe.KindWebPage, StringComparison.OrdinalIgnoreCase)
+				? finding.Target!
+				: (!string.IsNullOrWhiteSpace(finding.ResolvedCandidateSchemaName)
+					? finding.ResolvedCandidateSchemaName!
+					: finding.Target!);
+		foreach (IGrouping<string, UnresolvedTargetRequest> group in
+			webPageFindings.Concat(missingEntityFindings).GroupBy(QueueKeyOf, StringComparer.OrdinalIgnoreCase)) {
+			MissingTargetPage queued = conversions.MissingTargetPages.Should().ContainSingle(
+				p => string.Equals(p.Target, group.Key, StringComparison.OrdinalIgnoreCase),
+				because: $"'{group.Key}' was reported missing on '{convertedSchemaName}', so it must be queued "
+					+ "exactly once regardless of how many controls or kinds reference it").Subject;
+			bool anyWebPage = group.Any(
+				f => string.Equals(f.TargetKind, MobileActionTargetProbe.KindWebPage, StringComparison.OrdinalIgnoreCase));
+			queued.TargetKind.Should().Be(
+				anyWebPage ? MobileActionTargetProbe.KindWebPage : MobileActionTargetProbe.KindEntityDefaultMobilePage,
+				because: $"'{group.Key}' on '{convertedSchemaName}' must report the web-page kind whenever ANY "
+					+ "reference to it is a definitional web-page absence, even when an "
+					+ "entity-default-mobile-page reference to the same schema also exists");
+			foreach (UnresolvedTargetRequest finding in group) {
+				MissingTargetPageReference reference = queued.References.Should().ContainSingle(
+						r => r.ElementName == finding.ElementName && r.Binding == finding.Binding,
+						because: $"'{finding.ElementName}' on '{convertedSchemaName}' references the missing page and "
+							+ "must be traceable from the queue entry")
+					.Subject;
+				// The reference's own snapshot must match ITS OWN finding, never a sibling's — this is the
+				// cross-contamination guard: two controls in the same group must not swap OriginalBinding.
+				(reference.OriginalBinding is null).Should().Be(finding.OriginalBinding is null,
+					because: $"'{finding.ElementName}' on '{convertedSchemaName}' must carry the SAME "
+						+ "removed-or-kept verdict on both the finding and the queue reference");
+				if (finding.OriginalBinding is not null) {
+					reference.OriginalBinding!.ToJsonString().Should().Be(finding.OriginalBinding.ToJsonString(),
+						because: $"'{finding.ElementName}' on '{convertedSchemaName}' must see the identical "
+							+ "preserved binding from both collections, not two independently-built copies");
+				}
 			}
 		}
 	}

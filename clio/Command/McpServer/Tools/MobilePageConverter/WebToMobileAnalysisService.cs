@@ -84,9 +84,12 @@ public static class WebToMobileAnalysisService {
 	/// as <paramref name="mobileTemplateViewModelConfig"/> to diff the page's modelConfig. Null when no
 	/// template rule matched or the template bundle could not be read.</param>
 	/// <param name="actionTargetsProbe">Read-only probe of whether each action's NAVIGATION TARGET exists on
-	/// mobile (ENG-94839), surfaced as <c>requestConversions.unresolvedTargetRequests</c>. Null - or a probe
+	/// mobile, surfaced as <c>requestConversions.unresolvedTargetRequests</c>. Null - or a probe
 	/// that could not reach the environment - leaves every target unknown and changes no conversion decision:
 	/// the report is a warning, nothing is dropped on target grounds.</param>
+	/// <param name="existingMobilePages">Mobile page(s) already found for the entity/page being converted
+	/// (the reuse-vs-convert fact, playbook step 2a). Carried onto the guide unchanged; null becomes an
+	/// empty list.</param>
 		public static MobilePageConversionGuide Analyze(
 		PageBundleInfo bundle,
 		IReadOnlySet<string> mobileTypes,
@@ -112,7 +115,8 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, JObject> mobileTemplateNodesByName = null,
 		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null,
 		JObject webTemplateResources = null,
-		MobileActionTargetProbeResult actionTargetsProbe = null) {
+		MobileActionTargetProbeResult actionTargetsProbe = null,
+		IReadOnlyList<ExistingMobilePageInfo> existingMobilePages = null) {
 		ArgumentNullException.ThrowIfNull(bundle);
 		ArgumentNullException.ThrowIfNull(mobileTypes);
 		ArgumentNullException.ThrowIfNull(webTypes);
@@ -206,7 +210,7 @@ public static class WebToMobileAnalysisService {
 		// from the map, and an absent key reads as Unknown. Gating on the flag instead threw away the verdicts
 		// the probe had ALREADY settled without the environment (a web-page target is dead by construction),
 		// so a page carrying one web-page target plus one object target silently lost the web-page warning
-		// that the same page without the object target reports fine (ENG-94839).
+		// that the same page without the object target reports fine.
 		IReadOnlyDictionary<string, ActionTargetResolution> actionTargets =
 			actionTargetsProbe?.TargetsByKey
 			?? new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase);
@@ -389,6 +393,7 @@ public static class WebToMobileAnalysisService {
 			DroppedElements = ProjectDroppedElements(elementMap),
 			MobileContracts = contracts,
 			SectionRegistration = sectionRegistration,
+			ExistingMobilePages = existingMobilePages ?? [],
 			PageBusinessRules = pageBusinessRules,
 			RequestConversions = requestConversions,
 			AdaptiveLayout = adaptiveLayout.Count > 0 ? adaptiveLayout : null,
@@ -1985,9 +1990,6 @@ public static class WebToMobileAnalysisService {
 		}
 		return referenced;
 	}
-
-
-
 
 	private static bool HasContent(string section, string empty) =>
 		!string.IsNullOrWhiteSpace(section) &&
@@ -4537,8 +4539,10 @@ public static class WebToMobileAnalysisService {
 				if (target is { State: ActionTargetState.Missing or ActionTargetState.Unknown }) {
 					bool missing = target.State == ActionTargetState.Missing;
 					// Removed only for a DEFINITIONAL absence (a web page cannot open on mobile, and no
-					// environment read was involved). An object's add-on verdict is a report, never a removal:
-					// it cannot prove absence, and stripping on it would cost a working action.
+					// environment read was involved) AND when this writer can actually perform a removal.
+					// An object's add-on verdict is a report, never a removal: it cannot prove absence, and
+					// stripping on it would cost a working action. The pre-removal shape is captured on
+					// OriginalBinding so a later repoint restores it verbatim, param-for-param.
 					bool removed = missing
 						&& canRemoveBinding
 						&& MobileActionTargetProbe.StripsBindingOnMissing(target.Kind);
@@ -4546,7 +4550,9 @@ public static class WebToMobileAnalysisService {
 						ElementName = elementName, Binding = binding, WebRequest = webRequest,
 						TargetKind = target.Kind, Target = target.Target,
 						State = missing ? UnresolvedTargetRequest.StateMissing : UnresolvedTargetRequest.StateUnknown,
-						BindingRemoved = removed
+						BindingRemoved = removed,
+						OriginalBinding = removed ? ToJsonNode(source) : null,
+						ResolvedCandidateSchemaName = target.ResolvedCandidateSchemaName
 					});
 					if (removed) {
 						ctx.DroppedRequests.Add(new DroppedRequest {
@@ -4665,11 +4671,70 @@ public static class WebToMobileAnalysisService {
 			FlaggedRequests = flagged,
 			UnresolvedTargetRequests = unresolvedTargets,
 			TargetsProbed = targetsProbed,
-			// Carried whenever the probe set one, not only on total failure: a check that ran but hit its
-			// per-object ceiling is incomplete in a way TargetsProbed alone cannot express. Redacted at the
-			// point it is built.
-			TargetsNote = actionTargetsProbe?.Note
+			// Carried whenever the probe set one — today only when the source page's package could not be
+			// resolved, so no object-target read could run at all. Redacted at the point it is built.
+			TargetsNote = actionTargetsProbe?.Note,
+			MissingTargetPages = BuildMissingTargetPages(unresolvedTargets)
 		};
+	}
+
+	/// <summary>
+	/// Deduplicates <see cref="UnresolvedTargetRequest"/> entries into the caller-facing conversion queue.
+	/// Covers BOTH kinds: a <c>web-page</c> target is keyed by its <c>target</c> schema name (settled offline,
+	/// every state is <c>missing</c>); an <c>entity-default-mobile-page</c> target is included ONLY when
+	/// verified <c>missing</c>, keyed by its <see cref="UnresolvedTargetRequest.ResolvedCandidateSchemaName"/>
+	/// when the environment resolved one, else by the raw object <c>target</c>. When both kinds resolve to the
+	/// SAME schema name (a direct <c>crt.OpenPageRequest</c> on a page that also happens to be some object's
+	/// default mobile edit page), they collapse into ONE row carrying every reference from both sources.
+	/// Grouped case-insensitively so two references that differ only by casing collapse into one candidate.
+	/// </summary>
+	private static List<MissingTargetPage> BuildMissingTargetPages(
+		IReadOnlyList<UnresolvedTargetRequest> unresolvedTargets) {
+		if (unresolvedTargets is not { Count: > 0 }) {
+			return [];
+		}
+		var rowsByKey = new Dictionary<string, List<UnresolvedTargetRequest>>(StringComparer.OrdinalIgnoreCase);
+		var kindByKey = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		foreach (UnresolvedTargetRequest r in unresolvedTargets) {
+			string key;
+			string kind;
+			if (string.Equals(r.TargetKind, MobileActionTargetProbe.KindWebPage, StringComparison.OrdinalIgnoreCase)
+				&& !string.IsNullOrWhiteSpace(r.Target)) {
+				key = r.Target;
+				kind = MobileActionTargetProbe.KindWebPage;
+			} else if (string.Equals(r.TargetKind, MobileActionTargetProbe.KindEntityDefaultMobilePage, StringComparison.OrdinalIgnoreCase)
+				&& r.State == UnresolvedTargetRequest.StateMissing) {
+				key = !string.IsNullOrWhiteSpace(r.ResolvedCandidateSchemaName) ? r.ResolvedCandidateSchemaName : r.Target;
+				kind = MobileActionTargetProbe.KindEntityDefaultMobilePage;
+				if (string.IsNullOrWhiteSpace(key)) {
+					continue;
+				}
+			} else {
+				continue;
+			}
+			if (!rowsByKey.TryGetValue(key, out List<UnresolvedTargetRequest> rows)) {
+				rows = [];
+				rowsByKey[key] = rows;
+			}
+			rows.Add(r);
+			// A web-page row always wins the reported kind for its key — it is what makes the step-8a
+			// repoint sub-step apply; an entity-default-mobile-page row never downgrades a key a
+			// web-page row already claimed.
+			if (!kindByKey.TryGetValue(key, out string existingKind) || existingKind != MobileActionTargetProbe.KindWebPage) {
+				kindByKey[key] = kind;
+			}
+		}
+		return [.. rowsByKey
+			.Select(kv => new MissingTargetPage {
+				Target = kv.Key,
+				TargetKind = kindByKey[kv.Key],
+				References = [.. kv.Value
+					.GroupBy(r => (r.ElementName, r.Binding))
+					.Select(rg => rg.First())
+					.Select(r => new MissingTargetPageReference {
+						ElementName = r.ElementName, Binding = r.Binding, OriginalBinding = r.OriginalBinding
+					})]
+			})];
 	}
 
 	/// <summary>

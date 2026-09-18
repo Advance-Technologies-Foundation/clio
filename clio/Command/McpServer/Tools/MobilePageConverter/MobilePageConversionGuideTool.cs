@@ -81,6 +81,11 @@ public class MobilePageConversionGuideTool {
 		+ "validate-page / update-page, and the ordered flow plus every standing rule live in the guidance "
 		+ "article. It FAILS rather than degrading when the mobile template cannot be read, because without it "
 		+ "the guide would insert duplicates of elements that template already provides. "
+		+ "requestConversions.missingTargetPages / unresolvedTargetRequests report candidate names ONLY — "
+		+ "they carry no classification. YOU must classify each distinct candidate "
+		+ "yourself (get-page for existence/schema-type; list-pages / find-entity-schema to check for an "
+		+ "existing mobile equivalent) before presenting a plan; a candidate matched under a mobile-styled "
+		+ "name that turns out to be Classic UI counts as NO existing mobile equivalent. "
 		+ "MANDATORY before acting on the guide: get-guidance name `freedom-page-web-to-mobile-conversion`.")]
 	public async Task<MobilePageConversionGuideResponse> GetMobilePageConversionGuide(
 		[Description("Parameters: schema-name (required, the source page); target-schema-name (optional suggested mobile page name); version (optional registry/Creatio version); environment-name preferred; uri/login/password emergency fallback only.")]
@@ -220,13 +225,38 @@ public class MobilePageConversionGuideTool {
 		// Read-only probe: do the page's action bindings point at targets that EXIST on mobile — a page the
 		// converter has a mobile twin for, an object with a default mobile edit page? Best-effort and
 		// per-tier: an unreachable environment leaves every OBJECT target unknown, which reports nothing and
-		// changes no conversion decision. A web-page target needs no read at all, so it is still reported and
-		// still costs its binding (never its control) even offline (ENG-94839).
+		// changes no conversion decision. A web-page target needs no read at all, so it is still reported even
+		// offline (its binding kept, same as every other finding — the control was never at risk either way).
 		MobileActionTargetProbeResult actionTargets = MobileActionTargetProbe.Probe(
 			_commandResolver, args.EnvironmentName, args.Uri, args.Login, args.Password,
 			new MobileActionTargetProbeRequest(
 				pageResponse.Bundle?.ViewConfig, rules, pageResponse.Bundle?.ModelConfig,
 				pageResponse.Page?.PackageUId));
+
+		// Read-only probe: does the entity/page being converted already have an EXISTING mobile page — the
+		// reuse-vs-convert fact (playbook step 2a)? A section source checks the SysModule registration
+		// already probed above (no extra read); a form source checks the bound entity's MobileRelatedPage
+		// add-on, the same mechanism MobileActionTargetProbe uses to resolve THAT kind for OTHER objects.
+		// Either match is excluded when it names the schema THIS run is about to create/update — nothing to
+		// "reuse vs convert again" there. Best-effort; never blocks the guide.
+		List<ExistingMobilePageInfo> existingMobilePages = [];
+		if (sectionRegistration is { MobileSectionRegistered: true, MobileSectionSchemaUId: { Length: > 0 } sectionSchemaUId }) {
+			ExistingMobilePageInfo sectionMatch = MobileActionTargetProbe.ProbeSectionMobilePage(
+				_commandResolver, args.EnvironmentName, args.Uri, args.Login, args.Password, sectionSchemaUId);
+			if (sectionMatch is not null && !string.Equals(sectionMatch.SchemaName, targetName, StringComparison.OrdinalIgnoreCase)) {
+				existingMobilePages.Add(sectionMatch);
+			}
+		}
+		if (isFormPage) {
+			foreach (string entityName in MobileActionTargetProbe.CollectSourceEntityNames(pageResponse.Bundle?.ModelConfig)) {
+				ExistingMobilePageInfo entityMatch = MobileActionTargetProbe.ProbeSourceEntityDefaultMobilePage(
+					_commandResolver, args.EnvironmentName, args.Uri, args.Login, args.Password,
+					entityName, pageResponse.Page?.PackageUId);
+				if (entityMatch is not null && !string.Equals(entityMatch.SchemaName, targetName, StringComparison.OrdinalIgnoreCase)) {
+					existingMobilePages.Add(entityMatch);
+				}
+			}
+		}
 
 		MobilePageConversionGuide guide;
 		try {
@@ -250,7 +280,8 @@ public class MobilePageConversionGuideTool {
 				mobileTemplateNodesByName: mobileTemplateProbe.NodesByName,
 				webTemplateBaselineNodes: webTemplateBaseline.Nodes,
 				webTemplateResources: webTemplateBaseline.Resources,
-				actionTargetsProbe: actionTargets);
+				actionTargetsProbe: actionTargets,
+				existingMobilePages: existingMobilePages);
 		} catch (Exception ex) {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}

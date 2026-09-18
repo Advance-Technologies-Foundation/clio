@@ -891,6 +891,28 @@ public sealed class SectionRegistrationInfo {
 }
 
 /// <summary>
+/// One mobile page that already exists for the entity/page currently being converted — the fact behind
+/// the "reuse or convert again" check (playbook step 2a). See
+/// <see cref="MobilePageConversionGuide.ExistingMobilePages"/> for scope and construction.
+/// </summary>
+public sealed class ExistingMobilePageInfo {
+	[JsonPropertyName("schemaName")]
+	public string SchemaName { get; init; }
+
+	[JsonPropertyName("schemaUId")]
+	public string SchemaUId { get; init; }
+
+	/// <summary>
+	/// How this existing page was found: <c>section</c> (the source list/section page's
+	/// <c>SysModule.MobileSectionSchemaUId</c> is already set) or <c>entity-default-mobile-page</c> (the
+	/// source page's bound entity already has a default mobile edit page, via the same
+	/// <c>MobileRelatedPage</c> add-on read <c>MobileActionTargetProbe</c> performs for other objects).
+	/// </summary>
+	[JsonPropertyName("source")]
+	public string Source { get; init; }
+}
+
+/// <summary>
 /// Deterministic advisory "conversion guide" for turning a source page into a Freedom UI mobile
 /// page. The model executes the conversion using this guide; the tool builds nothing. The
 /// <see cref="SourceType"/> records which source page type was detected (today: <c>freedom-web</c>).
@@ -1110,6 +1132,18 @@ public sealed class MobilePageConversionGuide {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public SectionRegistrationInfo SectionRegistration { get; init; }
 
+	/// <summary>
+	/// Mobile page(s) that already exist for the entity/page being converted — the reuse-vs-convert fact
+	/// (playbook step 2a). Checked identically on the original page and on every step-8a follow-up: a
+	/// section source checks <see cref="SectionRegistrationInfo.MobileSectionRegistered"/>, a form source
+	/// checks the bound entity's <c>MobileRelatedPage</c> add-on. A match naming the SAME schema this run
+	/// is about to create/update is excluded (nothing to "reuse vs convert again" when it is the very page
+	/// being built). Empty when none was found or the probe could not run.
+	/// </summary>
+	[JsonPropertyName("existingMobilePages")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<ExistingMobilePageInfo> ExistingMobilePages { get; init; } = [];
+
 	// ── Page-level business rules (advisory conversion) ───────────────
 	/// <summary>
 	/// Page-level business rules of the source page, deterministically converted for the mobile page.
@@ -1133,11 +1167,14 @@ public sealed class MobilePageConversionGuide {
 	/// verbatim and flagged for manual review (the component stays). <c>droppedRequests</c> reports a
 	/// BINDING: one lost while its element survived, and one lost on the paths that place or remove the
 	/// element itself (retarget onto a native, missing retarget target, non-converting scope, empty
-	/// container, exclusion). This section is an advisory SUMMARY — every actionable body change is
-	/// already in <see cref="ViewConfigDiff"/>, including the binding removed for an
-	/// <see cref="UnresolvedTargetRequest.BindingRemoved"/> finding. What is NOT applied is the TELLING:
-	/// every <see cref="RequestConversionInfo.UnresolvedTargetRequests"/> entry is a diagnosis the caller
-	/// must report itself.
+	/// container, exclusion). A missing action target (<see cref="UnresolvedTargetRequest"/>) is the one
+	/// exception to "every actionable body change is already in <see cref="ViewConfigDiff"/>": a definitional
+	/// absence (see <see cref="UnresolvedTargetRequest.BindingRemoved"/>) removes the binding from
+	/// <see cref="ViewConfigDiff"/> too, but the caller may still need to RE-ADD it later from
+	/// <see cref="UnresolvedTargetRequest.OriginalBinding"/> once the target resolves — this section is where
+	/// that snapshot lives. What is NOT applied is the TELLING: every
+	/// <see cref="RequestConversionInfo.UnresolvedTargetRequests"/> entry is a diagnosis the caller must
+	/// report itself.
 	/// Null when the source page references no requests AND no action target needed reporting.
 	/// (Page <c>handlers</c> are web-only and never transferred.)
 	/// </summary>
@@ -1342,22 +1379,32 @@ public sealed class RequestConversionInfo {
 	/// <summary>
 	/// Actions whose REQUEST converts but whose NAVIGATION TARGET could not be confirmed to exist on
 	/// mobile: a <c>crt.OpenPageRequest</c> naming a web page, or a create/update-record request naming an
-	/// object with no default mobile edit page (ENG-94839). The CONTROL always survives — every entry here
-	/// names an element the converted page still carries.
+	/// object with no default mobile edit page. The CONTROL always survives — every entry here
+	/// names an element the converted page still carries. Whether its ACTION also survives depends on how
+	/// confidently the absence is judged (see <see cref="UnresolvedTargetRequest.BindingRemoved"/>) — a
+	/// removed binding is preserved verbatim on <see cref="UnresolvedTargetRequest.OriginalBinding"/> so it
+	/// can be re-added once a target that converts later in the same session (the missing-target-page queue,
+	/// <see cref="MissingTargetPages"/>) makes the action work again, instead of it silently vanishing for
+	/// good or shipping broken.
 	/// <para>
-	/// Branch on <see cref="UnresolvedTargetRequest.BindingRemoved"/> for WHAT HAPPENED and on
-	/// <see cref="UnresolvedTargetRequest.State"/> for HOW CONFIDENTLY to say it — three outcomes, not two:
+	/// Branch on <see cref="UnresolvedTargetRequest.State"/> for HOW CONFIDENTLY the absence is reported, and
+	/// on <see cref="UnresolvedTargetRequest.BindingRemoved"/> for WHAT WAS ACTUALLY DONE about it — the two
+	/// are independent:
 	/// </para>
 	/// <list type="bullet">
-	/// <item><c>bindingRemoved: true</c> (always <c>state: missing</c>) — the target cannot exist on mobile by
-	/// construction, so the binding is ALREADY gone from that element's <c>mobileValues</c> and the action is
-	/// also in <see cref="DroppedRequests"/>. Build the element exactly as the element map says (it renders,
-	/// it does nothing) and tell the user which action was lost.</item>
-	/// <item><c>state: missing</c> with <c>bindingRemoved: false</c> — the environment REPORTED the target
-	/// absent, but a read of what an object declares today cannot prove the action is dead, so nothing was
-	/// removed. Report it and let the user decide.</item>
-	/// <item><c>state: unknown</c> — the environment could not answer; the binding was KEPT and the action
-	/// still works if the target is really there. Ask the user to confirm rather than reporting it broken.</item>
+	/// <item><c>state: missing</c>, <c>bindingRemoved: true</c> — a DEFINITIONAL absence (a web page cannot
+	/// open on mobile at all). The binding is already gone from <c>viewConfigDiff[].values</c> and also
+	/// appears in <see cref="DroppedRequests"/> under <see cref="ReasonCodes.DropRequestTargetMissing"/>. Do
+	/// NOT re-add it as-is — it would fail every time it is used; re-add it only once the target resolves,
+	/// using <see cref="UnresolvedTargetRequest.OriginalBinding"/> with the target param's value swapped for
+	/// the resolved mobile schema name.</item>
+	/// <item><c>state: missing</c>, <c>bindingRemoved: false</c> — an environment READ reported the target
+	/// absent (an object with no default mobile page). A read cannot PROVE absence, so nothing was removed:
+	/// build the element exactly as the element map says, and tell the user which action needs a working
+	/// target.</item>
+	/// <item><c>state: unknown</c> — the environment could not answer; the action still works if the target
+	/// is really there, so <c>bindingRemoved</c> is always <see langword="false"/> here too. Ask the user to
+	/// confirm rather than reporting it broken.</item>
 	/// </list>
 	/// <para>
 	/// Empty when every target resolved, and empty when nothing could be settled at all — a degraded probe
@@ -1377,22 +1424,93 @@ public sealed class RequestConversionInfo {
 	/// walked, or the conversion rules declare no navigation targets at all.
 	/// <para>
 	/// It does NOT mean the list is empty: a <c>web-page</c> target is settled without any read, so those
-	/// findings are reported (and their bindings removed) even here. Treat this as "were the object targets
-	/// verified", and <see cref="TargetsNote"/> as why not.
+	/// findings are reported even here (and their bindings removed — see
+	/// <see cref="UnresolvedTargetRequest.BindingRemoved"/> — since that verdict needs no read either).
+	/// Treat this as "were the object targets verified", and <see cref="TargetsNote"/> as why not.
 	/// </para>
 	/// </summary>
 	[JsonPropertyName("targetsProbed")]
 	public bool TargetsProbed { get; init; }
 
 	/// <summary>
-	/// What limited the check, when anything did: no environment, an unreadable response, rules that declare
-	/// no navigation targets, or a per-object read ceiling that left the remaining objects unasked. Null when
-	/// the check ran in full — so it can be present even with <see cref="TargetsProbed"/> true, and reporting
-	/// it is what lets the user tell "not asked" from "asked, and the answer was no".
+	/// What limited the check, when anything did: no environment, an unreadable response, or rules that
+	/// declare no navigation targets. Null when the check ran in full — so it can be present even with
+	/// <see cref="TargetsProbed"/> true, and reporting it is what lets the user tell "not asked" from "asked,
+	/// and the answer was no".
 	/// </summary>
 	[JsonPropertyName("targetsNote")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string TargetsNote { get; init; }
+
+	/// <summary>
+	/// Deduplicated queue of missing mobile pages the caller can offer to convert next, built from
+	/// <see cref="UnresolvedTargetRequests"/>. Covers BOTH kinds: every <c>web-page</c> target
+	/// (<c>MobileActionTargetProbe.KindWebPage</c>) — settled offline and final by construction, so queued
+	/// unconditionally — and every <c>entity-default-mobile-page</c> target verified <c>missing</c> (a
+	/// <c>state: unknown</c> entity target is reported only, via <see cref="UnresolvedTargetRequests"/>, and
+	/// never queued here). An entity target is keyed by its
+	/// <see cref="UnresolvedTargetRequest.ResolvedCandidateSchemaName"/> when the environment resolved one,
+	/// else by its raw object <c>target</c> name. When a <c>web-page</c> target's schema name coincides with
+	/// an entity target's resolved candidate (a direct <c>crt.OpenPageRequest</c> on a page that also happens
+	/// to be some object's default mobile edit page), they collapse into ONE entry carrying every reference
+	/// from both sources — the caller no longer needs to cross-reference the two sources itself. One entry
+	/// per distinct key (case-insensitive), carrying every element/binding pair that references it, each
+	/// with its own <see cref="MissingTargetPageReference.OriginalBinding"/> (null for an entity-only
+	/// reference, since that kind never strips a binding) to restore once the target resolves. Empty when no
+	/// target was found missing.
+	/// </summary>
+	[JsonPropertyName("missingTargetPages")]
+	public IReadOnlyList<MissingTargetPage> MissingTargetPages { get; init; } = [];
+}
+
+/// <summary>
+/// One place a <see cref="MissingTargetPage"/> is referenced from the source page: the component and the
+/// event binding that names it.
+/// </summary>
+public sealed class MissingTargetPageReference {
+	[JsonPropertyName("elementName")]
+	public string ElementName { get; init; }
+
+	[JsonPropertyName("binding")]
+	public string Binding { get; init; }
+
+	/// <summary>
+	/// THIS reference's original <c>{ request, params }</c> binding, verbatim — the same value
+	/// <see cref="UnresolvedTargetRequest.OriginalBinding"/> carries for this exact element/binding pair,
+	/// repeated here so a caller repointing straight from <see cref="RequestConversionInfo.MissingTargetPages"/>
+	/// does not have to cross-reference <c>unresolvedTargetRequests</c> to find which button it belongs to.
+	/// Restore it by cloning this object and swapping only the target param's value (<c>schemaName</c> for a
+	/// <c>web-page</c> target) for the resolved mobile schema name — never construct a fresh binding, which
+	/// would silently drop any other param this one carried.
+	/// </summary>
+	[JsonPropertyName("originalBinding")]
+	public JsonNode OriginalBinding { get; init; }
+}
+
+/// <summary>
+/// One distinct missing mobile page target, deduplicated across every element that references it.
+/// See <see cref="RequestConversionInfo.MissingTargetPages"/> for scope and construction.
+/// </summary>
+public sealed class MissingTargetPage {
+	/// <summary>
+	/// The target value: a page schema name for a <c>web-page</c> row, or for an entity row
+	/// <see cref="UnresolvedTargetRequest.ResolvedCandidateSchemaName"/> when resolved, else the raw object
+	/// name.
+	/// </summary>
+	[JsonPropertyName("target")]
+	public string Target { get; init; }
+
+	/// <summary>
+	/// <c>web-page</c> or <c>entity-default-mobile-page</c>. When references from BOTH kinds collapsed into
+	/// this one row (they resolved to the same schema name), this is <c>web-page</c> — that is the kind the
+	/// step-8a repoint sub-step keys on.
+	/// </summary>
+	[JsonPropertyName("targetKind")]
+	public string TargetKind { get; init; }
+
+	/// <summary>Every element/binding pair on the source page that references <see cref="Target"/>.</summary>
+	[JsonPropertyName("references")]
+	public IReadOnlyList<MissingTargetPageReference> References { get; init; } = [];
 }
 
 /// <summary>A request carried to mobile from a component's event binding.</summary>
@@ -1461,10 +1579,13 @@ public sealed class FlaggedRequest {
 }
 
 /// <summary>
-/// One action whose navigation target was not confirmed to exist on mobile (ENG-94839). The control it names
-/// ALWAYS stays on the converted page; at most the ACTION is removed, and only when the absence is
-/// definitional — <see cref="BindingRemoved"/> says which. Fully typed: what to do about each outcome arrives
-/// as a guide <c>constraint</c> composed from these findings, not as prose carried on this record.
+/// One action whose navigation target was not confirmed to exist on mobile. The control it names ALWAYS
+/// stays on the converted page. Its ACTION stays too, UNLESS the absence is definitional — see
+/// <see cref="BindingRemoved"/> — in which case the binding is stripped rather than shipped broken, and its
+/// pre-removal shape is kept on <see cref="OriginalBinding"/> so repointing it once its target converts
+/// later in the same session (<c>requestConversions.missingTargetPages</c>) does not mean reconstructing it
+/// from scratch. Fully typed: what to do about each outcome arrives as a guide <c>constraint</c> composed
+/// from these findings, not as prose carried on this record.
 /// </summary>
 public sealed class UnresolvedTargetRequest {
 	/// <summary>
@@ -1508,18 +1629,43 @@ public sealed class UnresolvedTargetRequest {
 
 	/// <summary>
 	/// Whether the converter REMOVED this action's binding from the element's <c>mobileValues</c> (the control
-	/// itself always stays). True only for an absence that is definitional rather than read from the
-	/// environment — today a <c>web-page</c> target, whose verdict needs no environment call and therefore
-	/// cannot be wrong for an external reason. A <c>state: missing</c> that came from reading an object's
-	/// add-on leaves this FALSE on purpose: such a read reports what the object declares now, it does not
-	/// prove the action is dead, and removing a working action on it is not a trade this tool makes.
-	/// <para>
-	/// When true, the same action also appears in <see cref="RequestConversionInfo.DroppedRequests"/>; when
-	/// false, it converted normally and appears in <see cref="RequestConversionInfo.ConvertedRequests"/>.
-	/// </para>
+	/// itself always stays). True only for a DEFINITIONAL absence — <see cref="TargetKind"/>
+	/// <c>web-page</c> with <see cref="State"/> <see cref="StateMissing"/>, whose verdict needs no environment
+	/// read and cannot be wrong for a reason outside this process. Always <see langword="false"/> for
+	/// <c>entity-default-mobile-page</c> (an add-on declaring no default page is a fact about the add-on, not
+	/// proof the action is dead) and for <see cref="StateUnknown"/> (nothing was established either way).
+	/// See <see cref="OriginalBinding"/> for what a caller needs to restore a removed binding once its target
+	/// resolves.
 	/// </summary>
 	[JsonPropertyName("bindingRemoved")]
 	public bool BindingRemoved { get; init; }
+
+	/// <summary>
+	/// The removed binding's original <c>{ request, params }</c> object, VERBATIM — set only when
+	/// <see cref="BindingRemoved"/> is <see langword="true"/>. Carries every param the web binding had (for
+	/// <c>crt.OpenPageRequest</c>: not just <c>schemaName</c> but also <c>modelInitConfigs</c>,
+	/// <c>parameters</c>, <c>skipUnsavedData</c> when the source set them), so a caller repointing this action
+	/// once its target page converts — or resolves to an existing mobile equivalent under a different name —
+	/// restores it by cloning this object and swapping ONLY the target param's value for the resolved mobile
+	/// schema name, rather than reconstructing the binding from scratch and silently dropping whatever else it
+	/// carried. Null whenever <see cref="BindingRemoved"/> is <see langword="false"/> — there is nothing to
+	/// restore because nothing was removed.
+	/// </summary>
+	[JsonPropertyName("originalBinding")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public JsonNode OriginalBinding { get; init; }
+
+	/// <summary>
+	/// The object's default WEB edit page, when one was found — set only for a
+	/// <see cref="TargetKind"/> of <c>entity-default-mobile-page</c> whose <see cref="State"/> is
+	/// <see cref="StateMissing"/>. Offer converting this page next; it becomes the object's default mobile
+	/// edit page once the conversion registers it. Null when no candidate could be found (the object's web
+	/// <c>RelatedPage</c> add-on declares none) — never a guessed name, so a null here means "the caller must
+	/// find or ask for the source page", not "there is none".
+	/// </summary>
+	[JsonPropertyName("resolvedCandidateSchemaName")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string ResolvedCandidateSchemaName { get; init; }
 
 	/// <summary>Wire value for a target established ABSENT on mobile.</summary>
 	public const string StateMissing = "missing";
@@ -1727,7 +1873,7 @@ public sealed class PageBusinessRuleProbeResult {
 /// </summary>
 public enum ActionTargetState {
 	/// <summary>
-	/// Not answered: not probed, not reachable, ambiguous, or past the per-object add-on read ceiling.
+	/// Not answered: not probed, not reachable, or ambiguous.
 	/// </summary>
 	Unknown = 0,
 
@@ -1738,8 +1884,9 @@ public enum ActionTargetState {
 	Resolved,
 
 	/// <summary>
-	/// Established absent on mobile. Always reported; whether it also removes the action's binding is decided
-	/// per target kind by <c>MobileActionTargetProbe.StripsBindingOnMissing</c>. It never removes the control.
+	/// Established absent on mobile. Always reported; never removes the control. Whether it removes the
+	/// action's BINDING depends on the target kind — see
+	/// <c>MobileActionTargetProbe.StripsBindingOnMissing</c>.
 	/// </summary>
 	Missing
 }
@@ -1754,6 +1901,15 @@ public sealed class ActionTargetResolution {
 
 	/// <summary>What the environment said. See <see cref="ActionTargetState"/>.</summary>
 	public ActionTargetState State { get; init; }
+
+	/// <summary>
+	/// The object's default WEB edit page, resolved ONLY for a <see cref="Kind"/> of
+	/// <c>entity-default-mobile-page</c> whose <see cref="State"/> is <see cref="ActionTargetState.Missing"/>
+	/// — the page the caller can offer to convert next so the object gets a mobile default.
+	/// Null on every other kind/state combination and when the object's web <c>RelatedPage</c> add-on declares
+	/// no untyped default either (fail-open, never a guessed name).
+	/// </summary>
+	public string ResolvedCandidateSchemaName { get; init; }
 }
 
 /// <summary>
@@ -1812,9 +1968,8 @@ public sealed class MobileActionTargetProbeResult {
 
 	/// <summary>
 	/// Human-readable note about the COMPLETENESS of the check; null when it ran in full. Set when nothing
-	/// could be verified AND when only part could — e.g. the per-object read ceiling was reached — so it is
-	/// meaningful whatever <see cref="ProbeOk"/> says. Already redacted of environment detail at the point
-	/// it is built.
+	/// could be verified, so it is meaningful whatever <see cref="ProbeOk"/> says. Already redacted of
+	/// environment detail at the point it is built.
 	/// </summary>
 	public string Note { get; init; }
 
