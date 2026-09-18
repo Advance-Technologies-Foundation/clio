@@ -193,17 +193,19 @@ public sealed class ComponentRegistrySnapshotTests {
 		UnmappedKeys(state.EnvelopeExtensions).Should().BeEmpty(
 			because: "any new TOP-LEVEL producer field on the mobile payload must be mapped, not silently dropped");
 
-		// Assert — the runtime-derived generation marker. Its PRESENCE is half of the converter
-		// prune's enablement gate (ENG-96589); without it the prune stays off, so a fixture that
-		// lost the marker would silently disable every prune assertion elsewhere.
-		state.MobileRuntimeVersion.Should().NotBeNull(
-			because: "the live mobile catalog is generated from the Flutter runtime and publishes mobileRuntimeVersion");
-		state.MobileRuntimeVersion!.Commit.Should().NotBeNullOrWhiteSpace(
-			because: "the marker must name the runtime commit the catalog was introspected from");
-		state.MobileRuntimeVersion.Release.Should().NotBeNullOrWhiteSpace(
-			because: "the marker must name the release branch the runtime was built from");
-		UnmappedKeys(state.MobileRuntimeVersion.UnmappedExtensions).Should().BeEmpty(
-			because: "any new key under mobileRuntimeVersion.* must be mapped");
+		// Assert — the runtime-derived generation marker, WHEN the producer publishes it. It is provenance
+		// only: it was briefly published and then dropped again on 2026-09-17 while the catalog content was
+		// unchanged, so the converter's prune does not gate on it and neither does this guard. What IS
+		// asserted is that whenever it appears it round-trips completely — a half-mapped marker would be a
+		// silent data loss of exactly the kind this fixture exists to catch.
+		if (state.MobileRuntimeVersion is not null) {
+			state.MobileRuntimeVersion.Commit.Should().NotBeNullOrWhiteSpace(
+				because: "a published marker must name the runtime commit the catalog was introspected from");
+			state.MobileRuntimeVersion.Release.Should().NotBeNullOrWhiteSpace(
+				because: "a published marker must name the release branch the runtime was built from");
+			UnmappedKeys(state.MobileRuntimeVersion.UnmappedExtensions).Should().BeEmpty(
+				because: "any new key under mobileRuntimeVersion.* must be mapped");
+		}
 
 		// Assert — the inherited input surface. `visible` and `layoutConfig` are declared by ZERO of
 		// the 66 components in their own `inputs`; they exist ONLY here. A membership test that
@@ -223,7 +225,7 @@ public sealed class ComponentRegistrySnapshotTests {
 		// snapshot; a regression back to it would make every prune assertion in
 		// WebToMobilePropertyPruneTests vacuous while staying green here.
 		state.Entries.Count.Should().BeGreaterThan(60,
-			because: "the runtime-derived mobile catalog ships 66 components — a regression to the old 35-entry curated snapshot must fail this guard");
+			because: "the runtime-derived mobile catalog ships ~65 components — a regression to the old 35-entry curated snapshot must fail this guard");
 	}
 
 	[Test]

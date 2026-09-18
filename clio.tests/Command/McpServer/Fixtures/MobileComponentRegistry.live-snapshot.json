@@ -1,8 +1,4 @@
 {
-  "mobileRuntimeVersion": {
-    "release": "main",
-    "commit": "d7a0c3bb6796a1cde204ab8762b04d8940e38726"
-  },
   "components": [
     {
       "componentType": "crt.AccountCompactProfile",
@@ -503,92 +499,6 @@
       "references": {
         "docs": [
           "mobile-docs/contact_compact_profile.component.md"
-        ]
-      }
-    },
-    {
-      "componentType": "crt.DataGrid",
-      "inputs": {
-        "autoLoad": {
-          "type": "boolean"
-        },
-        "cellContentAlignment": {
-          "type": "string",
-          "values": [
-            "topLeft",
-            "centerLeft"
-          ],
-          "description": "Alignment of cell content. Defaults to [Alignment.topLeft]."
-        },
-        "columns": {
-          "type": "array",
-          "items": {
-            "type": "DataGridColumnDefinition"
-          },
-          "description": "Column definitions."
-        },
-        "controller": {
-          "type": "string"
-        },
-        "controllerType": {
-          "type": "string"
-        },
-        "expanded": {
-          "type": "boolean",
-          "description": "If true, the component transitions to expanded mode."
-        },
-        "expandedTitle": {
-          "type": "string",
-          "description": "Screen title in expanded mode."
-        },
-        "features": {
-          "type": "DataGridFeatures",
-          "description": "Features."
-        },
-        "items": {
-          "type": "string",
-          "description": "Data property."
-        },
-        "modelType": {
-          "type": "string"
-        },
-        "rowHeight": {
-          "type": "number",
-          "description": "Fixed row height in pixels."
-        },
-        "rowTitle": {
-          "type": "string",
-          "description": "Frozen non-editable column name"
-        },
-        "rowToolbarItems": {
-          "type": "array",
-          "items": {
-            "type": "ViewElementConfig"
-          }
-        },
-        "showHeaderColumnDividers": {
-          "type": "boolean",
-          "description": "Whether to draw vertical dividers between columns."
-        },
-        "showLockIcon": {
-          "type": "boolean",
-          "description": "Whether to show the lock icon on non-editable columns in the grid caption/header. Null preserves the previous automatic per-column behavior."
-        },
-        "sorting": {
-          "type": "array",
-          "items": {
-            "type": "DataTableSortingConfig"
-          },
-          "description": "Sorting config."
-        },
-        "verticalScroll": {
-          "type": "boolean",
-          "description": "Whether component should have vertical scrolling."
-        }
-      },
-      "references": {
-        "docs": [
-          "mobile-docs/data_grid.component.md"
         ]
       }
     },
@@ -3057,108 +2967,6 @@
           }
         }
       },
-      "DataGridColumnDefinition": {
-        "description": "Column definition for data grid component.",
-        "fields": {
-          "id": {
-            "type": "string"
-          },
-          "code": {
-            "type": "string"
-          },
-          "dataValueType": {
-            "type": "DataValueType",
-            "values": [
-              "0",
-              "1",
-              "4",
-              "5",
-              "6",
-              "7",
-              "8",
-              "9",
-              "10",
-              "12",
-              "13",
-              "14",
-              "16",
-              "18",
-              "19",
-              "20",
-              "21",
-              "22",
-              "23",
-              "24",
-              "25",
-              "26",
-              "27",
-              "28",
-              "29",
-              "30",
-              "31",
-              "32",
-              "33",
-              "34",
-              "35",
-              "36",
-              "37",
-              "38",
-              "39",
-              "40",
-              "41",
-              "42",
-              "43",
-              "44",
-              "45",
-              "46",
-              "47",
-              "48",
-              "49",
-              "50"
-            ]
-          },
-          "width": {
-            "type": "number"
-          },
-          "caption": {
-            "type": "string"
-          },
-          "hidden": {
-            "type": "boolean"
-          },
-          "sticky": {
-            "type": "boolean"
-          },
-          "readonly": {
-            "type": "boolean"
-          },
-          "cellView": {
-            "type": "ViewElementConfig",
-            "description": "Config of component that should be used for preview\\\"read only\" column."
-          },
-          "editingCellView": {
-            "type": "ViewElementConfig",
-            "description": "Config of component that should be used for editing."
-          }
-        }
-      },
-      "DataGridFeatures": {
-        "fields": {
-          "editable": {
-            "type": "DataTableEditingFeatures"
-          },
-          "rows": {
-            "type": "DataGridRowsFeatures"
-          }
-        }
-      },
-      "DataGridRowsFeatures": {
-        "fields": {
-          "toolbar": {
-            "type": "boolean"
-          }
-        }
-      },
       "DataLabelConfig": {
         "fields": {
           "display": {
@@ -3168,81 +2976,6 @@
             "type": "string"
           }
         }
-      },
-      "DataTableEditingFeatures": {
-        "fields": {
-          "enable": {
-            "type": "boolean"
-          }
-        }
-      },
-      "DataTableSortingConfig": {
-        "description": "Sorting config for data grid component.",
-        "fields": {
-          "columnCode": {
-            "type": "string"
-          },
-          "direction": {
-            "type": "SortDirection",
-            "values": [
-              "asc",
-              "desc",
-              "none"
-            ]
-          }
-        }
-      },
-      "DataValueType": {
-        "type": "string",
-        "values": [
-          "0",
-          "1",
-          "4",
-          "5",
-          "6",
-          "7",
-          "8",
-          "9",
-          "10",
-          "12",
-          "13",
-          "14",
-          "16",
-          "18",
-          "19",
-          "20",
-          "21",
-          "22",
-          "23",
-          "24",
-          "25",
-          "26",
-          "27",
-          "28",
-          "29",
-          "30",
-          "31",
-          "32",
-          "33",
-          "34",
-          "35",
-          "36",
-          "37",
-          "38",
-          "39",
-          "40",
-          "41",
-          "42",
-          "43",
-          "44",
-          "45",
-          "46",
-          "47",
-          "48",
-          "49",
-          "50"
-        ],
-        "description": "Types of values."
       },
       "DateTimePickerType": {
         "type": "string",
@@ -4052,14 +3785,6 @@
           "default"
         ],
         "description": "Color variants for the Slider component."
-      },
-      "SortDirection": {
-        "type": "string",
-        "values": [
-          "asc",
-          "desc",
-          "none"
-        ]
       },
       "SortItemsConfig": {
         "fields": {

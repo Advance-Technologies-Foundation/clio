@@ -42,8 +42,16 @@ public static partial class WebToMobileAnalysisService {
 	/// </para>
 	/// </param>
 	/// <param name="RuntimeDerived">
-	/// True when the loaded payload carries the top-level <c>mobileRuntimeVersion</c> marker, i.e. it was
-	/// introspected from the Flutter runtime rather than derived from the Angular web components.
+	/// True when the loaded payload carries the top-level <c>mobileRuntimeVersion</c> marker. REPORTED, not
+	/// required: the marker is provenance the caller can audit when the producer publishes it, and it is
+	/// deliberately NOT part of <see cref="PruneEnabled"/>.
+	/// <para>
+	/// It was the gate's second condition until the producer republished <c>latest</c> without it
+	/// (2026-09-17 14:15 GMT, ~2h after it was first observed) while the CONTENT stayed runtime-derived —
+	/// same <c>baseInputs</c>, same component contracts. A field that can vanish within hours of appearing
+	/// is not a contract to gate a feature on; the generation is decided by the version floor plus the
+	/// inherited-surface check in <see cref="DeclaredPropertyIndex.Build"/> instead.
+	/// </para>
 	/// </param>
 	/// <param name="Release">Release branch of the runtime the catalog was generated from.</param>
 	/// <param name="Commit">Commit SHA of that runtime.</param>
@@ -69,20 +77,24 @@ public static partial class WebToMobileAnalysisService {
 		public static readonly Version MinimumPrunableVersion = new(10, 0, 0);
 
 		/// <summary>
-		/// True when ALL THREE halves of the gate hold: the target version is positively known, it is above
-		/// the floor, and the payload is the runtime-derived generation.
+		/// True when the target version is positively KNOWN and above the floor. Those two are the gate;
+		/// the payload's own shape is checked separately by <see cref="DeclaredPropertyIndex.Build"/>.
 		/// <para>
-		/// They are separate because they fail in different real cases. A stand on 8.3.5 has no published
-		/// versioned mobile registry, so the client falls back to <c>latest</c> and the marker IS present —
-		/// but its mobile runtime is older than the one <c>latest</c> was generated from, so the floor must
-		/// block it. A stand whose version probe merely FAILED reports the same string <c>"latest"</c>
-		/// without being new at all, so the floor alone cannot tell the two apart and
-		/// <see cref="VersionKnown"/> must. And were a version above the floor ever published in the old
-		/// generation, only the marker would block that.
+		/// Both halves are needed and neither implies the other. A stand on 8.3.5 has no published versioned
+		/// mobile registry, so the client falls back to the <c>latest</c> catalog — which describes a mobile
+		/// runtime NEWER than the one that stand runs, so the floor must block it. And a stand whose version
+		/// probe merely FAILED reports the literal string <c>"latest"</c> without being new at all, so the
+		/// floor cannot tell the two apart on its own and <see cref="VersionKnown"/> must.
+		/// </para>
+		/// <para>
+		/// The <c>mobileRuntimeVersion</c> marker is deliberately NOT consulted here — see
+		/// <see cref="RuntimeDerived"/> for why. The case it used to cover, a version above the floor served
+		/// in the OLD web-derived generation, is covered by the inherited-surface check in
+		/// <see cref="DeclaredPropertyIndex.Build"/>: that generation's <c>baseInputs</c> carry the Angular
+		/// element attributes (<c>classes</c>, <c>shape</c>, <c>tabIndex</c>) and no <c>layoutConfig</c>.
 		/// </para>
 		/// </summary>
-		public bool PruneEnabled =>
-			RuntimeDerived && VersionKnown && VersionAllowsPrune(RequestedVersion);
+		public bool PruneEnabled => VersionKnown && VersionAllowsPrune(RequestedVersion);
 
 		/// <summary>
 		/// True for <c>latest</c> and for any version that normalises to a 3-part semver strictly above
@@ -136,15 +148,25 @@ public static partial class WebToMobileAnalysisService {
 		internal static DeclaredPropertyIndex Build(
 			IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType,
 			MobileRegistryGeneration generation) {
-			// BaseInputs is not optional context — it is part of the membership union. `visible` and
-			// `layoutConfig` are declared by ZERO of the components in their own inputs, so folding in an
-			// absent inherited surface would not merely narrow the union, it would strip both from every
-			// element of every converted page while leaving the response perfectly self-consistent (the
-			// contracts are built from the same function). A missing surface therefore disables the prune
-			// rather than silently shrinking it.
+			// BaseInputs does double duty here.
+			//
+			// (1) It is part of the membership union: `visible` and `layoutConfig` are declared by ZERO
+			//     components in their own inputs, so folding in an absent inherited surface would not merely
+			//     narrow the union — it would strip both from every element of every converted page, while
+			//     leaving the response perfectly self-consistent (the published contracts come from the same
+			//     function). A missing surface therefore disables the prune rather than shrinking it.
+			//
+			// (2) Since the provenance marker stopped being dependable, it is also how the GENERATION is
+			//     recognised. The two generations' inherited surfaces are disjoint apart from name/type: the
+			//     web-derived catalog carries the Angular element attributes (classes, id, shape, styles,
+			//     tabIndex), the runtime-derived one carries the Flutter layout model (layoutConfig,
+			//     flexConfig, bindTo, adaptive, visible). Requiring `layoutConfig` is therefore not a
+			//     heuristic over prose — it is the presence of the layout model the prune's whole
+			//     top-level-only design depends on, and no web-derived payload has ever carried it.
 			if (generation is not { PruneEnabled: true }
 				|| generation.BaseInputs is not { Count: > 0 }
 				|| !generation.BaseInputs.ContainsKey("layoutConfig")
+				|| !generation.BaseInputs.ContainsKey("visible")
 				|| mobileByType is not { Count: > 0 }) {
 				return Disabled;
 			}

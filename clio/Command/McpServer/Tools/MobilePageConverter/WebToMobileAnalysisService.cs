@@ -410,7 +410,12 @@ public static partial class WebToMobileAnalysisService {
 			TabAreaLayers = tabAreaLayers.Count > 0 ? tabAreaLayers : null,
 			Normalizations = BuildNormalizations(componentPropertyOverrides),
 			PrunedProperties = propertyPrune.IsEmpty ? null : propertyPrune.Entries,
-			MobileRuntimeVersion = declaredProps.Enabled && mobileRegistryGeneration is not null
+			// Provenance, reported only when the producer actually published it — the marker is not required
+			// to prune and is currently absent from the published catalog, so emitting an empty object would
+			// advertise a measurement nobody can trace.
+			MobileRuntimeVersion = declaredProps.Enabled && mobileRegistryGeneration is { RuntimeDerived: true }
+				&& !(string.IsNullOrWhiteSpace(mobileRegistryGeneration.Release)
+					&& string.IsNullOrWhiteSpace(mobileRegistryGeneration.Commit))
 				? new MobileRuntimeVersionInfo {
 					Release = mobileRegistryGeneration.Release,
 					Commit = mobileRegistryGeneration.Commit,

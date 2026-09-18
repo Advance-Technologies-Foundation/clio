@@ -1205,11 +1205,15 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			Assert.Ignore($"No seeded page of '{ApplicationCode}' converted on environment '{environmentName}'.");
 			return;
 		}
-		guide.MobileRuntimeVersion.Should().NotBeNull(
-			because: $"'{convertedSchemaName}' was converted against version=latest, which serves the runtime-derived "
-				+ "catalog, so the prune must have run and must name the runtime it measured against");
-		guide.MobileRuntimeVersion!.Commit.Should().NotBeNullOrWhiteSpace(
-			because: "the commit is what makes the measurement reproducible for a caller auditing a pruned page");
+		// NOT asserted: guide.mobileRuntimeVersion. That marker is provenance the producer publishes only
+		// sometimes — it appeared on `latest` and was dropped again the same day while the catalog content
+		// was unchanged — so the prune neither requires nor reports it consistently. What the prune DOES
+		// depend on is the inherited surface, and the contract below is the observable consequence of it:
+		// every emitted key is declared, which cannot hold unless the prune actually ran against the
+		// runtime-derived generation.
+		guide.MobileContracts.Should().NotBeEmpty(
+			because: $"'{convertedSchemaName}' converted at version=latest, so the mobile contracts the response "
+				+ "publishes are the same membership sets the prune enforced and must be present to check against");
 
 		Dictionary<string, IReadOnlyList<string>> contracts = guide.MobileContracts
 			.ToDictionary(c => c.ComponentType, c => c.AllowedProperties, StringComparer.OrdinalIgnoreCase);
@@ -1274,8 +1278,8 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			return;
 		}
 		guide.MobileRuntimeVersion.Should().BeNull(
-			because: $"'{convertedSchemaName}' was converted at {FloorRegistryVersion}, whose published mobile registry "
-				+ "is the web-derived generation, so no prune may have been measured");
+			because: $"'{convertedSchemaName}' was converted at {FloorRegistryVersion}, which is at the floor, so no "
+				+ "prune ran and no provenance may be advertised");
 		guide.PrunedProperties.Should().BeNull(
 			because: "pruning against a catalog that describes WEB components would strip genuinely supported mobile "
 				+ "properties — on that generation crt.Feed declares only primaryColumnValue — so a stand at or below "

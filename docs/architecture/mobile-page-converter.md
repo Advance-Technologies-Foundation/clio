@@ -165,8 +165,11 @@ Four working operations; two reach the wire.
   removed by `PruneUndeclaredProperties` and reported in `prunedProperties` (ENG-96589). Membership is
   `inputs ∪ outputs ∪ references.baseInputs` — `outputs` because that is where the runtime-derived registry puts every
   event binding, `baseInputs` because `visible` and `layoutConfig` are declared nowhere else. The prune runs only when the
-  loaded catalog carries `mobileRuntimeVersion` AND the environment's platform version is above `10.0.0`; on any other
-  stand it is a no-op and the conversion is byte-identical to the pre-feature one.
+  environment's platform version is POSITIVELY KNOWN and is `latest` or above `10.0.0`, and the loaded catalog carries the
+  Flutter inherited surface (`layoutConfig` + `visible` in `references.baseInputs`, which the web-derived generation never
+  has). On any other stand it is a no-op and the conversion is byte-identical to the pre-feature one. The
+  `mobileRuntimeVersion` marker is reported as provenance when present but is NOT part of the gate — see the knowledge
+  record on the registry generations.
 - A merge with nothing to apply carries `{}` — never `null`, never absent. `JsonDiffApplier` requires `values` on `merge`
   and validates every operation before applying any.
 - `name` is not unique: two operations may target one element (`Tabs → Tabs` and `CardToggleTabPanel → Tabs`). Apply in

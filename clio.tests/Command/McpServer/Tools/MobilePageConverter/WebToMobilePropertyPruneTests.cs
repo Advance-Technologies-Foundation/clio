@@ -53,19 +53,41 @@ public sealed class WebToMobilePropertyPruneTests {
 	}
 
 	[Test]
-	[Description("A payload WITHOUT the mobileRuntimeVersion marker is the web-derived generation: its per-component inputs describe the WEB component, so membership in it is not a valid test and nothing may be pruned.")]
-	public void Analyze_WhenRegistryIsNotRuntimeDerived_ShouldPruneNothing() {
-		// Arrange
+	[Description("A payload carrying the WEB-derived inherited surface is the old generation — its per-component inputs describe the Angular component, so membership in it is not a valid support test and nothing may be pruned. The surface is what identifies the generation: the two sets are disjoint apart from name/type, and no web-derived payload has ever carried layoutConfig.")]
+	public void Analyze_WhenInheritedSurfaceIsWebDerived_ShouldPruneNothing() {
+		// Arrange — the real baseInputs of the published web-derived catalog (8.3.x / 10.0.0).
+		var webBaseInputs = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+		foreach (string key in new[] { "classes", "id", "loading", "name", "shape", "styles", "tabIndex", "type" }) {
+			webBaseInputs[key] = JsonSerializer.SerializeToElement(new { type = "string" });
+		}
 		PageBundleInfo bundle = TabContainerCarryingIcons();
 
 		// Act
-		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation(LatestVersion, runtimeDerived: false));
+		MobilePageConversionGuide guide = Analyze(
+			bundle, generation: Generation(LatestVersion, baseInputs: webBaseInputs));
 
 		// Assert
 		Values(guide, "HelpTab").Should().ContainKey("icon",
 			because: "the old generation's inputs describe the web component — pruning against it would strip genuinely supported mobile properties");
 		guide.PrunedProperties.Should().BeNull(
 			because: "the gate refused, so there is nothing to report");
+	}
+
+	[Test]
+	[Description("The mobileRuntimeVersion marker is NOT required to prune. The producer republished latest without it on 2026-09-17 while the content stayed runtime-derived, so a feature gated on it would have switched itself off; the generation is decided by the version floor plus the inherited surface instead.")]
+	public void Analyze_WhenMarkerIsAbsentButContentIsRuntimeDerived_ShouldStillPrune() {
+		// Arrange
+		PageBundleInfo bundle = TabContainerCarryingIcons();
+
+		// Act — exactly the published payload today: no marker, Flutter baseInputs.
+		MobilePageConversionGuide guide = Analyze(
+			bundle, generation: Generation(LatestVersion, runtimeDerived: false));
+
+		// Assert
+		Values(guide, "HelpTab").Should().NotContainKey("icon",
+			because: "the catalog IS the runtime-derived generation regardless of whether the producer stamped its provenance");
+		guide.MobileRuntimeVersion.Should().BeNull(
+			because: "provenance is reported only when the producer actually publishes it — an empty object would advertise a measurement nobody can trace");
 	}
 
 	[TestCase("8.3.0")]
@@ -106,10 +128,10 @@ public sealed class WebToMobilePropertyPruneTests {
 		// Assert
 		Values(guide, "HelpTab").Should().NotContainKey("icon",
 			because: $"{environmentVersion} is above the floor and the payload is runtime-derived, so membership is a valid test");
-		guide.MobileRuntimeVersion.Should().NotBeNull(
-			because: "a caller must be able to see WHICH runtime build the prune was measured against");
+		guide.PrunedProperties.Should().NotBeNull(
+			because: "an undeclared property was carried, so the removal must be reported rather than done silently");
 		guide.MobileRuntimeVersion!.Commit.Should().NotBeNullOrWhiteSpace(
-			because: "the commit is what makes the measurement reproducible");
+			because: "this generation record carries provenance, so it must be echoed for the caller to audit");
 	}
 
 	[Test]
@@ -167,18 +189,18 @@ public sealed class WebToMobilePropertyPruneTests {
 	}
 
 	[Test]
-	[Description("The pinned fixture must stay the runtime-derived 66-component catalog. A regression to the old 35-entry curated snapshot would leave every assertion in this fixture passing vacuously, because the gate would simply switch the prune off.")]
+	[Description("The pinned fixture must stay the runtime-derived catalog. It is identified by CONTENT — the Flutter inherited surface — and not by the mobileRuntimeVersion marker, which the producer removed on 2026-09-17 while the content was unchanged. A regression to the web-derived or the old curated snapshot would leave every assertion in this fixture passing vacuously, because the gate would simply switch the prune off.")]
 	public void LiveMobileSnapshot_ShouldBeTheRuntimeDerivedCatalog() {
 		// Arrange & Act
 		ComponentCatalogState state = LiveMobileCatalog();
 
 		// Assert
-		state.MobileRuntimeVersion.Should().NotBeNull(
-			because: "without the marker the gate refuses and every prune test below becomes a no-op that still passes");
 		state.Entries.Count.Should().BeGreaterThan(60,
-			because: "the runtime-derived catalog ships 66 components; a drop back to the 35-entry curated snapshot must fail loudly");
+			because: "the runtime-derived catalog ships ~65 components; a drop back to the 35-entry curated snapshot must fail loudly");
 		state.GlobalReferences!.BaseInputs!.Keys.Should().Contain(["visible", "layoutConfig"],
-			because: "these two are declared by ZERO components in their own inputs — the fixture must carry the inherited surface or the prune would strip them everywhere");
+			because: "these two are declared by ZERO components in their own inputs — the fixture must carry the Flutter inherited surface, which is BOTH half the membership union and how the generation is recognised");
+		state.GlobalReferences.BaseInputs.Keys.Should().NotContain("classes",
+			because: "'classes' is an Angular element attribute carried only by the WEB-derived generation — its presence would mean the fixture regressed to the wrong catalog");
 	}
 
 	// ---------------------------------------------------------------- membership union
