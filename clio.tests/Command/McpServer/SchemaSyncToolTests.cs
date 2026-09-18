@@ -239,7 +239,7 @@ public sealed class SchemaSyncToolTests {
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-entity", "UsrTodoList",
-				TitleLocalizations: Localizations("Todo List"), ParentSchemaName: "BaseEntity") { IsVirtual = true }]);
+				TitleLocalizations: Localizations("Todo List"), ParentSchemaName: "BaseEntity") { IsVirtual = true, IsDBView = true }]);
 
 		// Act
 		SchemaSyncResponse response = await tool.SchemaSync(args);
@@ -251,6 +251,8 @@ public sealed class SchemaSyncToolTests {
 			because: "create-entity should use the specified parent schema");
 		fakeCreateCommand.CapturedOptions.IsVirtual.Should().BeTrue(
 			because: "create-entity should preserve the explicit virtual-schema request");
+		fakeCreateCommand.CapturedOptions.IsDBView.Should().BeTrue(
+			because: "sync must forward the DB-view flag to creation");
 	}
 
 	[Test]
@@ -1044,6 +1046,35 @@ public sealed class SchemaSyncToolTests {
 			because: "the caller needs an actionable explanation of the incompatible fields");
 		fakeCreateCommand.CapturedOptions.Should().BeNull(
 			because: "validation must reject the request before resolving or executing the create command");
+	}
+
+	[TestCase("create-entity", true, "seed-rows")]
+	[TestCase("create-lookup", false, "only for create-entity")]
+	[TestCase("update-entity", false, "only for create-entity")]
+	[Category("Unit")]
+	[Description("Rejects DB-view seeding and unsupported operation kinds before resolving any remote command.")]
+	public async Task SchemaSync_ShouldRejectDbViewInput_WhenStorageRequestIsInvalid(string type, bool seed,
+		string expectedMessage) {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		IServiceCollection services = new ServiceCollection();
+		services.AddSingleton(resolver);
+		services.AddSingleton<ILogger>(ConsoleLogger.Instance);
+		services.AddSingleton(Convergence());
+		services.AddTransient<SchemaSyncTool>();
+		using ServiceProvider provider = services.BuildServiceProvider();
+		SchemaSyncTool tool = provider.GetRequiredService<SchemaSyncTool>();
+		SchemaSyncOperation op = new(type, "UsrView", TitleLocalizations: Localizations("View"),
+			SeedRows: seed ? [new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+				["Name"] = ToJsonElement("Rejected")
+			})] : null) { IsDBView = true };
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(new SchemaSyncArgs("missing-env", "UsrPkg", [op]));
+		// Assert
+		response.Success.Should().BeFalse(because: "unsupported DB-view operations must fail before mutation");
+		response.Results[0].Error.Should().Contain(expectedMessage, because: "the diagnostic must identify the invalid combination");
+		resolver.ReceivedCalls().Should().NotContain(call => call.GetMethodInfo().Name == "Resolve",
+			because: "local validation must not resolve environment-bound commands");
 	}
 
 	[Test]
