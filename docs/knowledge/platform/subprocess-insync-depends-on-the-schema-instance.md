@@ -8,16 +8,19 @@ date: 2026-09-18
 ---
 
 **What is true** — `describe` returns whatever instance the manager hands back and never re-converges it,
-so what `inSync` can show depends on which instance that is. `inSync` compares two sides, and the table is
-about the CALLER's; the callee is read the same lazy way, so a compiled callee that was not recompiled
-reports its own compile-time parameters and both sides agree on stale.
+so what `inSync` can show depends on which instance that is. `inSync` compares two sides, and the table
+below is about the CALLER's.
+
+Every row below assumes the CALLEE's own read reflects the change. It is read through the same lazy
+instance, so a compiled callee that was not recompiled reports its own compile-time parameters, both
+sides agree, and `inSync` comes back `true` whatever the caller's instance holds.
 
 | Caller's instance when describe runs | `inSync` after a callee change |
 |---|---|
 | cached from BEFORE the change | **`false`** — real evidence |
 | cached from AFTER it | as if freshly built — see the next two rows |
 | built now, process INTERPRETABLE | `true` — the build converges |
-| built now, process COMPILED and its type published in the workspace assembly | **`false`** — the instance carries the compile-time set, no priming needed, provided the callee's read also reflects the change |
+| built now, process COMPILED and its type published in the workspace assembly | **`false`** — the instance carries the compile-time set, no priming needed |
 | manager cannot produce one — no item, no assembly, `MissingMethodException`, or an unpublished compiled type | design instance, which converges → `true` |
 
 **Why it is this way** — `BaseProcessSchemaManager.CreateSchemaInstance` takes the converging

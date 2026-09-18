@@ -1,5 +1,5 @@
 ---
-description: A sub-process element stale after a callee parameter CODE rename is visible through describe ONLY while the manager still holds an instance built BEFORE the change - prime it by describing once first, because any later read builds a converged one - invisible to the modify path, invisible to inSync when the callee DROPPED a parameter, and unshowable by the designer card, which never displays a code
+description: The classic designer card cannot show a callee CODE rename because it renders the caption and never the code; the modify path cannot report it because its load converges first; and inSync cannot see a DROPPED parameter at all, the test being one-directional. Whether describe can see any of it is a separate question with its own record.
 applies-to:
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
 ticket: ENG-92707
