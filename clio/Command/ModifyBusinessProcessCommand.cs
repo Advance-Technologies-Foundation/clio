@@ -296,7 +296,7 @@ public sealed class ModifyBusinessProcessService(
 			// throw wearing the answer's shape: the elements it is about, and the one word that makes it
 			// re-sendable. Without the element list a caller has the server's sentence and no way to tell the
 			// user WHICH parts of their diagram move.
-			string layoutChange = result.LayoutChange?.RelaySentence("operations") ?? string.Empty;
+			string layoutChange = result.LayoutChange?.RelaySentence() ?? string.Empty;
 			throw new InvalidOperationException(
 				(result.ErrorMessage ?? "ModifyProcess failed.") + refusedBy + layoutChange);
 		}

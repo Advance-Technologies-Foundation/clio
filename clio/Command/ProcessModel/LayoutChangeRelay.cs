@@ -30,25 +30,38 @@ public sealed class LayoutChangeRelay {
 	public List<string>? Elements { get; set; }
 
 	/// <summary>
-	/// What clio adds to the server's own sentence when it relays a layout refusal.
+	/// The elements the report is about, as a sentence, or nothing at all when the server named none.
 	/// </summary>
 	/// <remarks>
-	/// EXACTLY ONE instruction reaches the caller, and it names the argument in the spelling clio's own surface
-	/// declares. The server may not name a spelling: its wire member is <c>confirmLayoutChange</c> and the MCP
-	/// argument is <c>confirm-layout-change</c>, so a message carrying both taught an agent to send the one the
-	/// tool does not declare — which deserializes to null, coalesces to false, and returns the identical refusal
-	/// to a user who had already agreed. The gate exists to collect that consent; dropping it silently is the
-	/// one failure it cannot survive.
-	/// <para>The element clause is omitted rather than left empty when the server names none, because
-	/// "Affected elements: ." reads as a truncated message and sends a reader looking for what was cut off.</para>
+	/// Omitted rather than left empty, because "Affected elements: ." reads as a truncated message and sends a
+	/// reader looking for what was cut off.
 	/// </remarks>
-	/// <param name="what">What the caller re-sends — "operations" on the in-place path, "request" on the version path.</param>
-	/// <returns>The sentence to append to the server's message.</returns>
-	public string RelaySentence(string what) {
-		string elements = Elements is { Count: > 0 }
+	/// <returns>The clause to append, already separated from what precedes it.</returns>
+	public string ElementsClause() =>
+		Elements is { Count: > 0 }
 			? $" Affected elements: {string.Join(", ", Elements.Where(name => !string.IsNullOrWhiteSpace(name)))}."
 			: string.Empty;
-		return $"{elements} Re-send the same {what} with confirm-layout-change once the user has agreed.";
-	}
+
+	/// <summary>
+	/// What clio adds to the server's own sentence when it relays an in-place layout refusal: the elements, and
+	/// the two ways forward in the order they should be offered.
+	/// </summary>
+	/// <remarks>
+	/// The new-version route is named FIRST because it is the one that costs the user nothing, and because a
+	/// bare "re-send with confirm-layout-change" is an instruction an agent can carry out without ever asking
+	/// anybody — which is the failure this gate exists to prevent, arriving by a different door.
+	/// <para>The flag is named in the spelling clio's own surface declares, and in exactly one place. The server
+	/// may not name a spelling: its wire member is <c>confirmLayoutChange</c> and the MCP argument is
+	/// <c>confirm-layout-change</c>, so a message carrying both taught an agent to send the one the tool does
+	/// not declare — which deserializes to null, coalesces to false, and returns the identical refusal to a user
+	/// who had already agreed.</para>
+	/// </remarks>
+	/// <returns>The sentence to append to the server's message.</returns>
+	public string RelaySentence() =>
+		ElementsClause()
+		+ " ASK THE USER which they want, and send nothing until they answer: the same operations to "
+		+ "modify-business-process-as-new-version, which leaves this process and its diagram untouched and "
+		+ "creates an INACTIVE version they can look at first, or the same operations here again with "
+		+ "confirm-layout-change, which re-draws this process in place.";
 
 }

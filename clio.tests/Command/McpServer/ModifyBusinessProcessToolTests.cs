@@ -495,15 +495,11 @@ public class ModifyBusinessProcessToolTests {
 			"{\"env\":\"e\",\"Operations\":\"[]\",\"confirm-layout-change\":true}")!;
 		ModifyBusinessProcessArgs wireName = JsonSerializer.Deserialize<ModifyBusinessProcessArgs>(
 			"{\"env\":\"e\",\"Operations\":\"[]\",\"confirmLayoutChange\":true}")!;
-		ModifyProcessAsNewVersionArgs versionDeclared = JsonSerializer.Deserialize<ModifyProcessAsNewVersionArgs>(
-			"{\"env\":\"e\",\"Operations\":\"[]\",\"version-name\":\"v\",\"confirm-layout-change\":true}")!;
 
 		// Assert
 		declared.ConfirmLayoutChange.Should().BeTrue(
 			because: "confirm-layout-change is the only spelling the tool declares, so it is the only one an "
 				+ "agent can be told to send");
-		versionDeclared.ConfirmLayoutChange.Should().BeTrue(
-			because: "the version path is gated by the same flag and fails the same way");
 		wireName.ConfirmLayoutChange.Should().BeNull(
 			because: "an undeclared member deserializes to null and is then SILENTLY coalesced to false - which "
 				+ "is why no message reaching an agent may name the server's wire spelling. If this ever starts "

@@ -45,11 +45,15 @@ public class ModifyProcessAsNewVersionTool(
 		 + "package, always — there is no fallback to a design package, so if the source's package does not "
 		 + "accept edits the call is refused and you must name an editable one. A version does NOT inherit the "
 		 + "root's package, and cross-package version families are normal. "
+		 + "THIS IS THE ANSWER to modify-business-process refusing an edit that would re-draw someone's "
+		 + "diagram: send it the same operations here once the user has agreed, and their process keeps the "
+		 + "diagram it has while the edit lands somewhere they can look at. Unlike that tool, this one never "
+		 + "refuses over layout — it reports how the new version's diagram differs and creates it anyway. "
 		 + "The new version is created INACTIVE: creating it changes NOTHING about what the environment "
-		 + "executes, and the source keeps running until something activates the new one. Activating is a "
-		 + "SEPARATE, explicit step — call set-active-business-process-version, and only if the user asked for "
-		 + "it; the product itself asks before making a new version actual, so do not activate on your own "
-		 + "initiative. The response reports the created version's schema UId, the name the PLATFORM composed "
+		 + "executes, and the source keeps running until something activates the new one. Activating is the "
+		 + "SECOND question and a SEPARATE call: ASK the user to open this version, look at it, and say "
+		 + "whether to make it actual; only then call set-active-business-process-version. Never chain the "
+		 + "two — a version is created inactive precisely so they get to look first. The response reports the created version's schema UId, the name the PLATFORM composed "
 		 + "(root name + package + number — you cannot predict or choose it), the version NUMBER the platform "
 		 + "allocated, isActiveVersion (false), the family ROOT UId (the family is FLAT — a version of a version "
 		 + "still points at the root) and the applied-operation count. The number and the flag are reported only "
@@ -89,8 +93,7 @@ public class ModifyProcessAsNewVersionTool(
 			ProcessName = args.ProcessName ?? string.Empty,
 			ProcessUid = args.ProcessUid ?? string.Empty,
 			PackageName = args.PackageName ?? string.Empty,
-			OperationsJson = args.Operations ?? string.Empty,
-			ConfirmLayoutChange = args.ConfirmLayoutChange ?? false
+			OperationsJson = args.Operations ?? string.Empty
 		};
 		// Same post-op note as the in-place edit: a saved version is interpreted and runs as-is once activated,
 		// so "saved" must not be read as "must be compiled" (ENG-95706).
@@ -138,8 +141,4 @@ public sealed record ModifyProcessAsNewVersionArgs(
 	[property: Description(
 		"Package the new version is saved into. Omit to let the platform choose; a version does not inherit the "
 		+ "root's package.")]
-	string? PackageName = null,
-
-	[property: JsonPropertyName("confirm-layout-change")]
-	[property: Description("Set ONLY after the user has agreed to have the diagram re-drawn - identical in meaning to modify-business-process's flag, and asked here too because the VERSION is the diagram they will open next. Leave it out the first time. Without it, edits that would re-draw the process rather than extend it are refused and no version is created: either the source diagram is not the one the builder lays out (arranged by hand, or drawn by an older version), or the edits change which elements sit above which. Shifting elements and inserting one between others never trigger it. The refusal names the elements affected: show the user that sentence and those names, get an explicit yes, then re-send the SAME request with this set.")]
-	bool? ConfirmLayoutChange = null);
+	string? PackageName = null);

@@ -23,7 +23,8 @@ public class ModifyBusinessProcessTool(
 	/// <param name="processName">Process code (schema Name) to edit. Provide this or <paramref name="processUid"/>.</param>
 	/// <param name="processUid">Process schema UId to edit. Provide this or <paramref name="processName"/>.</param>
 	/// <param name="operations">Inline JSON operations array.</param>
-	/// <param name="confirmLayoutChange">Agreement to have the diagram re-drawn, sent only on a re-try.</param>
+	/// <param name="confirmLayoutChange">Agreement to have THIS process re-drawn, sent only after the user has
+	/// turned down the new-version route.</param>
 	/// <returns>The command execution result with the edited schema identity in the log output.</returns>
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -390,5 +391,5 @@ public sealed record ModifyBusinessProcessArgs(
 	string? ProcessUid = null,
 
 	[property: JsonPropertyName("confirm-layout-change")]
-	[property: Description("LEAVE IT OUT the first time: an edit that would RE-DRAW the diagram rather than extend it is refused unapplied, and the refusal says how to proceed.")]
+	[property: Description("LEAVE IT OUT: an edit that would RE-DRAW the diagram is refused unapplied; offer modify-business-process-as-new-version first.")]
 	bool? ConfirmLayoutChange = null);
