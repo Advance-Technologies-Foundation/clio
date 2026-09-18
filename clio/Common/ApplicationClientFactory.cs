@@ -52,8 +52,7 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 				settings.IsNetCore);
 		}
 
-		return new CreatioClientAdapter(settings.Uri, settings.ClientId,
-			settings.ClientSecret, settings.AuthAppUri, settings.IsNetCore);
+		return CreateOAuthClientCredentialsAdapter(settings, serviceUrlBuilder: null);
 	}
 
 	public IApplicationClient CreateEnvironmentClient(EnvironmentSettings settings) {
@@ -83,8 +82,7 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 				settings.IsNetCore, serviceUrlBuilder);
 		}
 
-		return new CreatioClientAdapter(settings.Uri, settings.ClientId,
-			settings.ClientSecret, settings.AuthAppUri, settings.IsNetCore, serviceUrlBuilder);
+		return CreateOAuthClientCredentialsAdapter(settings, serviceUrlBuilder);
 	}
 
 	/// <inheritdoc />
@@ -118,6 +116,19 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 	#endregion
 
 	#region Methods: Private
+
+	// An OAuth client-credentials profile (ClientId/ClientSecret) is a token shape: it carries no
+	// username/password, so a login-page response must never send it down CreatioClient.Login().
+	// This is the rule BindingsModule.UsesTokenAuthentication used to apply at each inline wiring
+	// site; now that both sites resolve through this factory, the factory owns it. Wiring the
+	// adapter's default closure-based executor here would let an OAuth profile regain the
+	// login-capable path (multi-tenant safety, ENG-93208 B1).
+	private IApplicationClient CreateOAuthClientCredentialsAdapter(EnvironmentSettings settings,
+		IServiceUrlBuilder serviceUrlBuilder) {
+		Lazy<CreatioClient> client = new(() => CreatioClient.CreateOAuth20Client(settings.Uri,
+			settings.AuthAppUri, settings.ClientId, settings.ClientSecret, settings.IsNetCore));
+		return new CreatioClientAdapter(client, serviceUrlBuilder, _noReauthExecutor, ownsClient: true);
+	}
 
 	private OAuthTokenSet ResolveOAuthToken(EnvironmentSettings settings) {
 		if (_oauthService is null) {

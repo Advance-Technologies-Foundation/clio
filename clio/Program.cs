@@ -42,7 +42,7 @@ internal class Program {
 	private static bool useCreatioLogStreamer;
 
 	private static readonly Type[] CommandOption = [
-		 typeof(RegAppOptions),
+		typeof(RegAppOptions),
 		typeof(LoginOptions),
 		typeof(LogoutOptions),
 		typeof(AuthStatusOptions),

@@ -1430,20 +1430,6 @@ public class BindingsModule {
 		new CompilationHistoryPoller(BuildRemoteDataProvider(envSettings, oauthService), ConsoleLogger.Instance,
 			TimeProvider.System, new CancellableDelay());
 
-	/// <summary>
-	/// True when the environment authenticates with a token rather than with a login and password: an
-	/// <c>AccessToken</c>, or an OAuth client-credentials pair.
-	/// </summary>
-	/// <remarks>
-	/// Neither shape carries a username/password, so neither may reach the adapter's forms-login
-	/// reauthentication path: an OAuth client that receives a login page would otherwise attempt
-	/// <c>CreatioClient.Login()</c> with no credentials to log in with and turn a valid environment into
-	/// an <c>UnauthorizedAccessException</c>. The bearer rule (multi-tenant safety, ENG-93208 B1) applies
-	/// to both bearer shapes for the same reason.
-	/// </remarks>
-	private static bool UsesTokenAuthentication(EnvironmentSettings settings) =>
-		!string.IsNullOrEmpty(settings.AccessToken) || !string.IsNullOrEmpty(settings.ClientId);
-
 	// Builds an ATF RemoteDataProvider for the environment. Bearer-first: an AccessToken is
 	// consumed via the dedicated bearer ctor and must never reach the login/password path
 	// (multi-tenant safety, ENG-93208 B1). Login/password are passed as-is (no Supervisor default).
@@ -1500,6 +1486,10 @@ public class BindingsModule {
 		// Microsoft DI owns/disposes factory-returned IDisposable services, so sharing that instance
 		// would bypass the adapter's SignalR listener guard during provider teardown. Both remain lazy,
 		// which is required because constructing an OAuth client fetches its token over the network.
+		services.AddSingleton<CreatioClient>(sp => {
+			IOAuthAuthorizationCodeService oauthService = sp.GetRequiredService<IOAuthAuthorizationCodeService>();
+			return BuildCreatioClient(activeSettings, oauthService);
+		});
 		services.AddSingleton<IApplicationClient>(sp => {
 			IApplicationClientFactory applicationClientFactory = sp.GetRequiredService<IApplicationClientFactory>();
 			// Bearer path must never re-login: wire NoReauthExecutor (the DI'd IReauthExecutor)
