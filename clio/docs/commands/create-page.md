@@ -25,8 +25,8 @@ step-by-step progress for every validation and remote call, and on
 success returns the assigned SchemaUId and the resolved package /
 template metadata.
 
-create-page does not run AI sampling on the new page; it relies on the
-platform template body. After a successful call, use `get-page` to read
+create-page performs no client-side body validation of its own; it relies on
+the platform template body. After a successful call, use `get-page` to read
 the new schema back through the canonical page workflow.
 
 ## Synopsis

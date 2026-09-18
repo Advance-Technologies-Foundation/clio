@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.ProcessModel;
 using Clio.Common;
@@ -11,7 +12,7 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 
 /// <summary>
-/// Validates a planned Creatio business-process graph against the BPMN connection rules (R1–R18),
+/// Validates a planned Creatio business-process graph against the BPMN connection rules (R1–R20),
 /// so an AI agent can catch invalid connections before driving the Process Designer. The graph
 /// itself is validated in-memory, but the tool first resolves the requested environment and
 /// queries its installed packages to enforce that the <c>CrtProcessBuilder</c> package is present.
@@ -19,6 +20,64 @@ namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 [McpServerToolType]
 public sealed class ValidateProcessGraphTool {
 	internal const string ToolName = "validate-process-graph";
+
+	/// <summary>The canonical field list echoed back when an unknown argument key is refused (ENG-98566).</summary>
+	internal const string ValidArgsHint = "Valid: environment-name, nodes, edges.";
+
+	/// <summary>
+	/// Refusal for a call whose whole argument object is absent (ENG-98566, Sonar S2259).
+	/// </summary>
+	/// <remarks>
+	/// The guard below reads <c>args.ExtensionData</c> and every check after it reads a real field, so
+	/// exactly one place may decide what a null <c>args</c> means - and it is this one. An <c>args?.</c>
+	/// on the first line followed by an unconditional dereference on the next READS as null-safe while
+	/// only moving the NullReferenceException three lines down. In the other seven tools that deref
+	/// precedes any try and the exception escapes as a raw transport fault; HERE it sits inside the try
+	/// below, so the catch-all turns it into "validate-process-graph failed: Object reference not set to
+	/// an instance of an object" - a message that blames the caller's graph JSON for a binder outcome,
+	/// which is worse than a crash because it reads like a diagnosis. Hard to reach behind [Required] and
+	/// the SDK missing-parameter error, but "hard to reach" is not the same as handled.
+	/// </remarks>
+	internal const string NullArgsError = "args is required: the call carried no argument object. " + ValidArgsHint;
+
+	/// <summary>Canonical field list for one entry of <c>nodes</c> (ENG-98566 review finding 2).</summary>
+	internal const string ValidNodeArgsHint = "Valid keys on a node: name, type.";
+
+	/// <summary>Canonical field list for one entry of <c>edges</c> (ENG-98566 review finding 2).</summary>
+	internal const string ValidEdgeArgsHint =
+		"Valid keys on an edge: source, target, flow-kind, condition, results.";
+
+	/// <summary>
+	/// The mis-spellings an agent reaches for on a NODE, each mapped to the canonical name. Rejection-only,
+	/// like every alias table here: a wrong spelling earns a rename hint, never a silent binding.
+	/// </summary>
+	private static readonly Dictionary<string, string> NodeAliases = new(StringComparer.OrdinalIgnoreCase) {
+		["nodeType"] = "type",
+		["elementType"] = "type",
+		["node-type"] = "type",
+		["nodeName"] = "name",
+		["id"] = "name"
+	};
+
+	/// <summary>The mis-spellings an agent reaches for on an EDGE. See <see cref="NodeAliases"/>.</summary>
+	private static readonly Dictionary<string, string> EdgeAliases = new(StringComparer.OrdinalIgnoreCase) {
+		["from"] = "source",
+		["to"] = "target",
+		["kind"] = "flow-kind",
+		["flowKind"] = "flow-kind",
+		["sourceRef"] = "source",
+		["targetRef"] = "target"
+	};
+
+	/// <summary>
+	/// Refusal for a call that names no graph. Says WHY there is nothing to validate and points at the tool
+	/// that does read a process, because the argument an agent actually reached for was <c>process-name</c>.
+	/// </summary>
+	internal const string NoGraphSuppliedError =
+		"No graph was supplied: 'nodes' is absent or empty, so there is nothing to validate. This is a missing "
+		+ "argument, not a finding about a process - validate-process-graph checks a graph you DESCRIBE inline "
+		+ "(nodes:[{name,type}], edges:[{source,target,flow-kind}]); it never reads a process out of the "
+		+ "environment. To inspect an existing process use describe-business-process.";
 
 	private readonly IProcessGraphValidator _validator;
 	private readonly IToolCommandResolver _commandResolver;
@@ -47,20 +106,68 @@ public sealed class ValidateProcessGraphTool {
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Validates a planned Creatio business-process graph (nodes by data-id, e.g. startEvent/readDataUserTask/exclusiveGateway/endEvent; edges by flow-kind sequence|conditional|default - an omitted flow-kind is a plain sequence flow, an UNKNOWN one is refused rather than treated as plain) against the BPMN connection rules R1-R18 (R18: a conditional flow may have at most ONE outgoing sibling that carries no condition - the platform drops one of them and runs the other beside the branch the condition chose). The graph is validated in-memory, but the tool requires the 'CrtProcessBuilder' package to be installed on the target environment (install it with install-process-builder) (named by environment-name). Returns structured findings (error/warning + ruleId). Call this BEFORE driving the designer. IMPORTANT: a passing graph is NOT necessarily buildable — the rules cover the full BPMN catalog (gateways, conditional/default flows, timers, sub-processes), while create-business-process / modify-business-process build only startEvent/signalStart/endEvent/userTask/sendEmail/approval/changeAccessRights elements plus exclusiveGateway and parallelGateway, and all three flow kinds declaratively (flows[].kind with flows[].condition). Still NOT buildable: inclusiveGateway, eventBasedGateway, timer/message starts, intermediate events, sub-processes, formula and script tasks, and the activity-result condition dialect - so the fork narrows rather than closes; check the buildable slice in get-guidance name=process-modeling before promising a build; get-guidance name=process-formulas for an `expression` mapping source or a conditional-flow condition.")]
+	// The FIRST sentence is what the get-tool-contract compact index shows as this tool's one-line
+	// purpose, so it is written to BE that line: self-contained and under the 120-character cap, rather
+	// than the opening of a longer explanation that the cap then cuts mid-word. See
+	// docs/knowledge/McpServer/first-sentence-of-a-description-becomes-the-compact-index-purpose.md
+	[Description("Checks a planned Creatio business-process graph against the BPMN connection rules before you build it. "
+		+ "Nodes are given by data-id (e.g. startEvent/readDataUserTask/exclusiveGateway/endEvent; edges by flow-kind sequence|conditional|default - an omitted flow-kind is a plain sequence flow, an UNKNOWN one is refused rather than treated as plain; and results[], the activity-result CAPTIONS deciding a conditional branch when its predicate is a selection rather than text - pass it and R13 stops asking for a condition that branch neither needs nor can use) and are checked against rules R1-R20 (R18: a conditional flow may have at most ONE outgoing sibling that carries no condition - the platform drops one of them and runs the other beside the branch the condition chose). The graph is validated in-memory, but the tool requires the 'CrtProcessBuilder' package to be installed on the target environment (install it with install-process-builder) (named by environment-name). Returns structured findings (error/warning + ruleId). nodes is REQUIRED - a call supplying none is REFUSED, not validated as an empty graph, and this tool never reads a process from the environment (use describe-business-process for that). Call this BEFORE driving the designer. IMPORTANT: a passing graph is NOT necessarily buildable — the rules cover the full BPMN catalog (gateways, conditional/default flows, timers, sub-processes), while create-business-process / modify-business-process build only startEvent/signalStart/endEvent/userTask/sendEmail/approval/changeAccessRights elements plus exclusiveGateway and parallelGateway, and all three flow kinds declaratively (flows[].kind with flows[].condition). Still NOT buildable: inclusiveGateway, eventBasedGateway, timer/message starts, intermediate events, sub-processes, and formula and script tasks - so the fork narrows rather than closes. The activity-result dialect IS buildable now (flows[].results / setFlowResults), and a formula on such a connector is REFUSED by the build, so do not plan one; check the buildable slice in get-guidance name=process-modeling before promising a build; get-guidance name=process-formulas for an `expression` mapping source or a conditional-flow condition.")]
 	public ValidateProcessGraphResponse Validate([Required] ValidateProcessGraphArgs args) {
 		try {
+			if (args is null) {
+				return new ValidateProcessGraphResponse { Success = false, Error = NullArgsError };
+			}
+
+			// The only unknown-key defence this tool has; without it this method answers about a graph it was
+			// NOT given. The helper's docs carry the two reasons the filter never covers it. Checked BEFORE the
+			// package requirement, so a caller mistake is answered without touching Creatio. ENG-98566.
+			string argumentError = McpToolArgumentSupport.BuildUnknownArgumentError(
+				args.ExtensionData, ValidArgsHint);
+			if (!string.IsNullOrWhiteSpace(argumentError)) {
+				return new ValidateProcessGraphResponse { Success = false, Error = argumentError };
+			}
+
+			// An empty node set is a MISSING ARGUMENT, not a graph that fails R3. Running the rules over it
+			// returned "Process has no start event." - a real rule id and a plausible message about a process
+			// the tool never read, which is worse than silence because it reads as authoritative.
+			if (args.Nodes is null || args.Nodes.Count == 0) {
+				return new ValidateProcessGraphResponse { Success = false, Error = NoGraphSuppliedError };
+			}
+
+			// ENG-98566 review findings 1 and 2. The top-level guard above says nothing about what is INSIDE
+			// the arrays: a null entry used to reach the projection below and surface as "Object reference not
+			// set to an instance of an object", and a mis-keyed NESTED key (nodeType, from, to) is dropped by
+			// the serializer exactly as a mis-keyed top-level one was - leaving the tool to report findings
+			// about a graph the caller never described. That is this ticket's own defect one level down.
+			string entryError = BuildEntryError(args.Nodes, args.Edges);
+			if (!string.IsNullOrWhiteSpace(entryError)) {
+				return new ValidateProcessGraphResponse { Success = false, Error = entryError };
+			}
+
+			// Every other environment-requiring member of the family answers a blank environment-name with
+			// this exact sentence; this tool fell through to the resolver's generic message instead. NOTE the
+			// mechanism, because the first version of this comment got it wrong and three reviews repeated it:
+			// a blank name does NOT reach a default environment. ToolCommandResolver.ResolveSettingsAndKey
+			// builds an EMPTY EnvironmentSettings, finds no Uri and THROWS. The defect was the wording, not
+			// the targeting - and until the catch below learned about EnvironmentResolutionException that
+			// throw arrived wrapped in a sentence about the caller's graph JSON.
+			if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
+				return new ValidateProcessGraphResponse {
+					Success = false, Error = ProcessTargetArguments.MissingEnvironmentError
+				};
+			}
+
 			IRequiredPackageChecker checker = _commandResolver.Resolve<IRequiredPackageChecker>(
 				new EnvironmentOptions { Environment = args.EnvironmentName });
 			checker.EnsureRequirements(args);
 
-
-			List<ProcessGraphNode> nodes = (args.Nodes ?? [])
+			List<ProcessGraphNode> nodes = args.Nodes
 										   .Select(n => new ProcessGraphNode(n.Name, n.Type))
 										   .ToList();
 			List<ProcessGraphEdge> edges = (args.Edges ?? [])
 										   .Select(e =>
-											   new ProcessGraphEdge(e.Source, e.Target, ParseFlowKind(e.FlowKind), e.Condition))
+											   new ProcessGraphEdge(e.Source, e.Target, ParseFlowKind(e.FlowKind), e.Condition,
+												   e.Results))
 										   .ToList();
 
 			ProcessGraphValidationResult result = _validator.Validate(new ProcessGraph(nodes, edges));
@@ -84,6 +191,16 @@ public sealed class ValidateProcessGraphTool {
 				Error = ex.Message
 			};
 		}
+		catch (EnvironmentResolutionException ex) {
+			// EnvironmentResolutionException derives from Exception, NOT from InvalidOperationException, so
+			// before this arm existed every unknown or unresolvable environment fell through to the catch-all
+			// below and came back as "validate-process-graph failed: Environment 'x' was not found.. Expected
+			// args: {nodes:[...]}" - an environment error wearing a graph-JSON example. That is the same
+			// blames-the-caller's-graph failure this ticket exists to remove, on its commonest path.
+			return new ValidateProcessGraphResponse {
+				Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message)
+			};
+		}
 		catch (InvalidOperationException ex) {
 			return new ValidateProcessGraphResponse {
 				Success = false,
@@ -93,10 +210,42 @@ public sealed class ValidateProcessGraphTool {
 		catch (Exception ex) {
 			return new ValidateProcessGraphResponse {
 				Success = false,
-				Error = $"validate-process-graph failed: {ex.Message}. Expected args: " +
+				Error = $"validate-process-graph failed: {SensitiveErrorTextRedactor.Redact(ex.Message)}. Expected args: " +
 					"{\"nodes\":[{\"name\":\"s\",\"type\":\"startEvent\"}],\"edges\":[{\"source\":\"s\",\"target\":\"r\",\"flow-kind\":\"sequence\"}]}."
 			};
 		}
+	}
+
+	/// <summary>
+	/// Refuses a null entry or an unrecognised NESTED key in <c>nodes</c>/<c>edges</c>, naming the array and
+	/// the INDEX so the caller can find it. Returns <see langword="null"/> when every entry is well formed.
+	/// </summary>
+	/// <param name="nodes">The node entries, already known to be non-empty.</param>
+	/// <param name="edges">The edge entries, which may be absent.</param>
+	private static string BuildEntryError(List<ProcessGraphNodeArg> nodes, List<ProcessGraphEdgeArg> edges) {
+		for (int i = 0; i < nodes.Count; i++) {
+			if (nodes[i] is null) {
+				return $"nodes[{i}] is null. Every entry must be an object, e.g. "
+					+ "{\"name\":\"s\",\"type\":\"startEvent\"}.";
+			}
+			string nodeError = McpToolArgumentSupport.BuildLegacyAliasError(
+				nodes[i].ExtensionData, NodeAliases, ".", ValidNodeArgsHint);
+			if (!string.IsNullOrWhiteSpace(nodeError)) {
+				return $"nodes[{i}]: {nodeError}";
+			}
+		}
+		for (int i = 0; i < (edges?.Count ?? 0); i++) {
+			if (edges[i] is null) {
+				return $"edges[{i}] is null. Every entry must be an object, e.g. "
+					+ "{\"source\":\"s\",\"target\":\"e\"}.";
+			}
+			string edgeError = McpToolArgumentSupport.BuildLegacyAliasError(
+				edges[i].ExtensionData, EdgeAliases, ".", ValidEdgeArgsHint);
+			if (!string.IsNullOrWhiteSpace(edgeError)) {
+				return $"edges[{i}]: {edgeError}";
+			}
+		}
+		return null;
 	}
 
 	/// <summary>
@@ -149,19 +298,42 @@ public sealed record ValidateProcessGraphArgs(
 		+ "build will not happen). Flow ORDER is branch precedence: sibling conditions are evaluated in the "
 		+ "order given here and the first true one wins.")]
 	List<ProcessGraphEdgeArg> Edges = null
-	);
+	) {
+
+	/// <summary>
+	/// Captures top-level keys the SDK could not bind to a declared argument - most often
+	/// <c>process-name</c>, which an agent carries over from <c>describe-business-process</c>. Inspected by
+	/// <see cref="ValidateProcessGraphTool.Validate"/>; a bag that is never read is the defect, not the fix.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}
 
 /// <summary>One node argument.</summary>
 public sealed record ProcessGraphNodeArg(
 	[property: JsonPropertyName("name")] string Name = null,
-	[property: JsonPropertyName("type")] string Type = null);
+	[property: JsonPropertyName("type")] string Type = null) {
+
+	/// <summary>
+	/// Overflow bag for unrecognised keys on ONE node (ENG-98566 review finding 2). Without it a mis-keyed
+	/// nested key is dropped by the serializer and the tool answers about a graph the caller never described.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}
 
 /// <summary>One edge argument.</summary>
 public sealed record ProcessGraphEdgeArg(
 	[property: JsonPropertyName("source")] string Source = null,
 	[property: JsonPropertyName("target")] string Target = null,
 	[property: JsonPropertyName("flow-kind")] string FlowKind = null,
-	[property: JsonPropertyName("condition")] string Condition = null);
+	[property: JsonPropertyName("condition")] string Condition = null,
+	[property: JsonPropertyName("results")] string[] Results = null) {
+
+	/// <summary>Overflow bag for unrecognised keys on ONE edge. See <see cref="ProcessGraphNodeArg"/>.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}
 
 /// <summary>Response from the <c>validate-process-graph</c> MCP tool.</summary>
 public sealed class ValidateProcessGraphResponse {
@@ -174,7 +346,8 @@ public sealed class ValidateProcessGraphResponse {
 
 	/// <summary>
 	/// Whether the graph violates a rule. NULL - and omitted - when the graph was never validated, which is
-	/// every failure path: a missing package, an unknown <c>flow-kind</c>, an unexpected fault. A non-nullable
+	/// every failure path: an unknown argument, a call supplying no graph, a missing package, an
+	/// unknown <c>flow-kind</c>, an unexpected fault. A non-nullable
 	/// <c>bool</c> emitted <c>"has-errors": false</c> there - so a graph that was never looked at read as a
 	/// graph with nothing wrong. Absent is the honest answer; branch on <c>success</c> first.
 	/// <para>An earlier version of this note added that the tool description advertises the field and the

@@ -162,12 +162,8 @@ public abstract class DataBindingDbFixtureBase : McpContractFixtureBase {
 		return string.Empty;
 	}
 
-	private protected static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-			settings,
-			["ping-app", "-e", environmentName]);
-		return result.ExitCode == 0;
-	}
+	private protected static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) =>
+		await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName);
 
 	/// <summary>
 	/// Polls odata-read until the schema that was just published answers, or the window closes.

@@ -623,22 +623,12 @@ public class EnvManageUiCommand : Command<EnvManageUiOptions>, IEnvManageUiComma
 		
 		try
 		{
-			// Create a copy for editing
+			// A FULL copy, not a member-by-member one. Saving writes this object back over the
+			// environment (and a rename removes the original first), so every member the copy forgets is
+			// deleted from appsettings.json: the db-server key, the workspace paths that are not on this
+			// screen, and the overflow bag holding whatever a newer clio wrote.
 			var editedName = envName;
-			var editedEnv = new EnvironmentSettings
-			{
-				Uri = currentEnv.Uri,
-				Login = currentEnv.Login,
-				Password = currentEnv.Password,
-				IsNetCore = currentEnv.IsNetCore,
-				Maintainer = currentEnv.Maintainer,
-				ClientId = currentEnv.ClientId,
-				ClientSecret = currentEnv.ClientSecret,
-				Safe = currentEnv.Safe,
-				DeveloperModeEnabled = currentEnv.DeveloperModeEnabled,
-				WorkspacePathes = currentEnv.WorkspacePathes,
-				AuthAppUri = currentEnv.AuthAppUri
-			};
+			var editedEnv = currentEnv.Clone();
 			
 			bool keepEditing = true;
 			string lastSelectedField = ""; // Track last selected field for cursor positioning

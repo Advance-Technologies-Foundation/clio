@@ -208,6 +208,54 @@ public sealed class ValidateProcessGraphToolE2ETests {
 	}
 
 	[Test]
+
+	[Description("Over the real MCP path, SEVERAL SIGNAL starts validate clean while a SECOND SIMPLE start is an R3 error (ENG-98559). The cap is per KIND: a process may react to as many triggers as it has signals - the shape PublishDraftToArticle ships with - but only one simple start, which is the manual launch. Both halves travel in one case because the rule is the pair, and a build that relaxed the count for every kind would pass a test that only checked the signal half.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-process-graph accepts several signal starts and reports a second simple start")]
+	public async Task ValidateProcessGraph_Should_AcceptSeveralSignalStarts_AndReportASecondSimpleStart() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync();
+		string environmentName = await ResolveEnvironmentOrIgnoreAsync();
+		Dictionary<string, object?> severalSignalStarts = new() {
+			["environment-name"] = environmentName,
+			["nodes"] = new[] {
+				Node("added", "signalStart"), Node("changed", "signalStart"),
+				Node("r", "readDataUserTask"), Node("e", "endEvent")
+			},
+			["edges"] = new[] {
+				Edge("added", "r", "sequence"), Edge("changed", "r", "sequence"), Edge("r", "e", "sequence")
+			}
+		};
+		Dictionary<string, object?> twoSimpleStarts = new() {
+			["environment-name"] = environmentName,
+			["nodes"] = new[] {
+				Node("s1", "startEvent"), Node("s2", "startEvent"),
+				Node("r", "readDataUserTask"), Node("e", "endEvent")
+			},
+			["edges"] = new[] {
+				Edge("s1", "r", "sequence"), Edge("s2", "r", "sequence"), Edge("r", "e", "sequence")
+			}
+		};
+
+		// Act
+		CallToolResult signalResult = await CallToolAsync(arrangeContext, severalSignalStarts);
+		ValidateProcessGraphResponse signalResponse =
+			EntitySchemaStructuredResultParser.Extract<ValidateProcessGraphResponse>(signalResult);
+		CallToolResult simpleResult = await CallToolAsync(arrangeContext, twoSimpleStarts);
+		ValidateProcessGraphResponse simpleResponse =
+			EntitySchemaStructuredResultParser.Extract<ValidateProcessGraphResponse>(simpleResult);
+
+		// Assert
+		signalResponse.Success.Should().BeTrue(because: "the package is present, so the graph is validated");
+		signalResponse.Findings.Should().NotContain(f => f.RuleId == "R3",
+			because: "one signal per trigger the process reacts to is the shape the platform itself ships (ENG-98559)");
+		signalResponse.HasErrors.Should().BeFalse(
+			because: "each start has a single outgoing flow and every node lies on a start-to-end path, so nothing else is wrong with the graph either");
+		simpleResponse.Findings.Should().Contain(f => f.RuleId == "R3" && f.Severity == "error",
+			because: "two simple starts are two manual launches of one process with nothing to choose between them");
+	}
+
+	[Test]
 	[Description("Over the real MCP path, an unknown flow-kind is REFUSED by the tool rather than validated as a plain flow. The refusal travels back through the MCP envelope, which is the only place a caller sees it: a silent coercion would return success:true with findings about a graph the caller never described, and nothing in the envelope would say so.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-process-graph refuses an unknown flow-kind")]
@@ -304,17 +352,109 @@ public sealed class ValidateProcessGraphToolE2ETests {
 		return environmentName!;
 	}
 
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		using CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
-		try {
-			ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
-				settings,
-				["ping-app", "-e", environmentName],
-				cancellationToken: cts.Token);
-			return result.ExitCode == 0;
-		} catch (OperationCanceledException) {
-			return false;
-		}
+	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) =>
+		await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName);
+
+	[Test]
+	[Description("Over the real MCP path, an edge's RESULTS bind from the wire and silence R13. Same argument as the condition case beside it and the same blind spot: the unit tests construct ProcessGraphEdgeArg positionally in C#, so none of them touches the JSON binder, and the binder skips a member it cannot map in silence. Here the silence is worse than a missing value - a dropped 'results' key arrives null, R13 fires exactly as it did before the field existed, and its warning reads like ordinary advice while telling the caller to do one of two things that DESTROY the branch they planned. The sibling edge in the same graph carries neither predicate and must still be reported, so this cannot pass by R13 having stopped firing altogether.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-process-graph binds an edge result selection from the wire")]
+	public async Task ValidateProcessGraph_Should_BindEdgeResults_FromTheWire() {
+		// Arrange: two conditional branches off one activity - one decided by a result SELECTION, one
+		// carrying no predicate at all. R13 must name the second and only the second.
+		await using ArrangeContext arrangeContext = await ArrangeAsync();
+		string environmentName = await ResolveEnvironmentOrIgnoreAsync();
+		Dictionary<string, object?> graph = new() {
+			["environment-name"] = environmentName,
+			["nodes"] = new[] {
+				Node("s", "startEvent"), Node("approve", "activityUserTask"),
+				Node("selected", "activityUserTask"), Node("bare", "activityUserTask"), Node("e", "endEvent")
+			},
+			["edges"] = new[] {
+				Edge("s", "approve", "sequence"),
+				EdgeWithResults("approve", "selected", "Positive"),
+				Edge("approve", "bare", "conditional"),
+				Edge("selected", "e", "sequence"), Edge("bare", "e", "sequence")
+			}
+		};
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(arrangeContext, graph);
+		ValidateProcessGraphResponse response = EntitySchemaStructuredResultParser.Extract<ValidateProcessGraphResponse>(callResult);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the package is present, so the graph is validated and findings are returned");
+		response.Findings.Should().NotContain(
+			f => f.RuleId == "R13" && f.Message.Contains("'approve' -> 'selected'"),
+			because: "a result selection IS the predicate, so that branch is finished - and the rule can only "
+				+ "know it if the array itself crossed the wire; a dropped key arrives null and R13 would "
+				+ "warn, sending the caller to a condition the designer will not render or to deleting the branch");
+		response.Findings.Should().Contain(
+			f => f.RuleId == "R13" && f.Severity == "warning" && f.Message.Contains("'approve' -> 'bare'"),
+			because: "the sibling carries neither predicate and still has to be reported - without this the "
+				+ "test would pass on a build where R13 had stopped firing at all");
+	}
+
+	[Test]
+	[Description("ENG-98566: over the real MCP path, an unrecognized argument is named back instead of being dropped. The call goes through CallToolAsync, which sends the WRAPPED {\"args\":{...}} shape - the one McpToolErrorFilter passes through untouched - so this is the exact path on which the key was lost. Needs no Creatio: the guard runs before the environment is resolved.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-process-graph names an unrecognized argument instead of dropping it")]
+	public async Task ValidateProcessGraph_Should_Name_AnUnrecognizedArgument() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync();
+		Dictionary<string, object?> graph = new() {
+			["environment-name"] = $"missing-process-graph-env-{Guid.NewGuid():N}",
+			// The measured mistake: the key an agent carries over from describe-business-process.
+			["process-name"] = "UsrOrder_Handle"
+		};
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(arrangeContext, graph);
+		ValidateProcessGraphResponse response = EntitySchemaStructuredResultParser.Extract<ValidateProcessGraphResponse>(callResult);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an argument the tool cannot bind is a caller mistake, not a validated graph");
+		response.Error.Should().Contain("process-name",
+			because: "naming the offending key is the remedy - the caller cannot otherwise see the drop, and "
+				+ "the binder loses it silently on this wrapped path");
+		(response.Findings ?? new List<ValidateProcessGraphFinding>()).Should().BeEmpty(
+			because: "the tool validated nothing, so a finding here would be a statement about a process it "
+				+ "never read - the R3 fabrication this ticket exists for");
+	}
+
+	[Test]
+	[Description("ENG-98566: over the real MCP path, a call supplying no graph says so instead of answering R3 'Process has no start event.'. The regression this pins is specific: the refusal must not be reachable-but-identical to the unknown-argument one, because the measured defect was two different calls returning a byte-identical response.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-process-graph states that no graph was supplied")]
+	public async Task ValidateProcessGraph_Should_State_ThatNoGraphWasSupplied() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync();
+		string environmentName = $"missing-process-graph-env-{Guid.NewGuid():N}";
+		Dictionary<string, object?> noGraph = new() { ["environment-name"] = environmentName };
+		Dictionary<string, object?> unknownArgument = new() {
+			["environment-name"] = environmentName,
+			["process-name"] = "UsrOrder_Handle"
+		};
+
+		// Act
+		ValidateProcessGraphResponse noGraphResponse = EntitySchemaStructuredResultParser
+			.Extract<ValidateProcessGraphResponse>(await CallToolAsync(arrangeContext, noGraph));
+		ValidateProcessGraphResponse unknownArgumentResponse = EntitySchemaStructuredResultParser
+			.Extract<ValidateProcessGraphResponse>(await CallToolAsync(arrangeContext, unknownArgument));
+
+		// Assert
+		noGraphResponse.Success.Should().BeFalse(because: "there is no graph to validate, so nothing succeeded");
+		noGraphResponse.Error.Should().Contain("No graph was supplied",
+			because: "the caller has to learn that the INPUT was missing, not that their process is broken");
+		(noGraphResponse.Findings ?? new List<ValidateProcessGraphFinding>())
+			.Should().NotContain(finding => finding.RuleId == "R3",
+			because: "R3 over an empty node set is the false statement, and it is the worst one to fabricate - "
+				+ "'no start event' reads as a structural defect in the caller's own process");
+		noGraphResponse.Error.Should().NotBe(unknownArgumentResponse.Error,
+			because: "the measured symptom was that supplying a bad argument and supplying nothing at all "
+				+ "produced byte-identical answers; two different mistakes must now read differently");
 	}
 
 	private static Dictionary<string, object?> Node(string name, string type) =>
@@ -329,6 +469,16 @@ public sealed class ValidateProcessGraphToolE2ETests {
 			string condition) =>
 		new() {
 			["source"] = source, ["target"] = target, ["flow-kind"] = flowKind, ["condition"] = condition
+		};
+
+	// Puts "results" ON THE WIRE. No other edge in this fixture carries it, so nothing else here would
+	// notice the binder dropping the key - and a dropped key is INVISIBLE in the reassuring direction:
+	// results arrives null, R13 fires exactly as it did before the field existed, and the warning reads
+	// like ordinary advice rather than like a defect.
+	private static Dictionary<string, object?> EdgeWithResults(string source, string target,
+			params string[] results) =>
+		new() {
+			["source"] = source, ["target"] = target, ["flow-kind"] = "conditional", ["results"] = results
 		};
 
 	private static async Task<CallToolResult> CallToolAsync(ArrangeContext arrangeContext, Dictionary<string, object?> graphArgs) {

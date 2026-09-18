@@ -19,7 +19,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(SchemaNamePrefixTool.GetSchemaNamePrefixToolName)]
 [NonParallelizable]
-public sealed class SchemaNamePrefixToolE2ETests {
+public sealed class SchemaNamePrefixToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = SchemaNamePrefixTool.GetSchemaNamePrefixToolName;
 
@@ -214,45 +214,30 @@ public sealed class SchemaNamePrefixToolE2ETests {
 			arrangeContext.CancellationTokenSource.Token);
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync(
+	private async Task<ArrangeContext> ArrangeAsync(
 		McpE2ESettings settings,
 		TimeSpan timeout,
 		bool requireReachableEnvironment) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		string? environmentName = requireReachableEnvironment
 			? await ResolveReachableEnvironmentAsync(settings)
 			: settings.Sandbox.EnvironmentName;
 		return new ArrangeContext(session, cancellationTokenSource, environmentName);
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
-		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (string.IsNullOrWhiteSpace(configuredEnvironmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run SchemaNamePrefix MCP E2E tests.");
-		}
-
-		if (!await CanReachEnvironmentAsync(settings, configuredEnvironmentName!)) {
-			Assert.Ignore($"SchemaNamePrefix MCP E2E requires a reachable sandbox environment. '{configuredEnvironmentName}' was not reachable.");
-		}
-
-		return configuredEnvironmentName!;
-	}
-
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
 			settings,
-			["ping-app", "-e", environmentName]);
-		return result.ExitCode == 0;
-	}
+			"Configure McpE2E:Sandbox:EnvironmentName to run SchemaNamePrefix MCP E2E tests.");
 
-	private sealed record ArrangeContext(
+	private new sealed record ArrangeContext(
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource,
 		string? EnvironmentName) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 }

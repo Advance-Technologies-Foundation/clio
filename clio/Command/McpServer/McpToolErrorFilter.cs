@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Clio.Common;
+using System;
 using System.ComponentModel.DataAnnotations;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
@@ -739,10 +740,15 @@ public static class McpToolErrorFilter
 	}
 
 	/// <summary>Most caller-supplied key names echoed back in one refusal.</summary>
-	private const int MaxEchoedKeys = 10;
+	/// <remarks>ENG-98566 moved the value itself to <see cref="McpToolArgumentSupport.MaxEchoedKeys"/> so
+	/// the overflow-bag echo path is bounded by the SAME constant, rather than by a second copy that can
+	/// drift away from this one. The CONSTANT is shared; the per-message total is not - this path caps one
+	/// list, while BuildLegacyAliasError caps its rename and unknown lists separately.</remarks>
+	private const int MaxEchoedKeys = McpToolArgumentSupport.MaxEchoedKeys;
 
 	/// <summary>Longest single caller-supplied key name echoed back.</summary>
-	private const int MaxEchoedKeyLength = 120;
+	/// <remarks>Shared with the overflow-bag echo path; see <see cref="MaxEchoedKeys"/>.</remarks>
+	private const int MaxEchoedKeyLength = McpToolArgumentSupport.MaxEchoedKeyLength;
 
 	/// <summary>
 	/// Renders caller-supplied key NAMES for a message: capped in count, capped per key, sanitized.
@@ -765,15 +771,12 @@ public static class McpToolErrorFilter
 	/// the canonical field names — are deliberately NOT routed through here: they are already trusted
 	/// and bounded, and truncating them would hide part of the answer the caller needs to fix the call.
 	/// </remarks>
-	private static string DescribeCallerKeys(IEnumerable<string> keys) {
-		List<string> all = [.. keys];
-		string shown = string.Join(", ", all
-			.Take(MaxEchoedKeys)
-			.Select(key =>
-				$"\"{Clio.Common.TextUtilities.SanitizeForDisplay(key, MaxEchoedKeyLength)}\""));
-		int hidden = all.Count - Math.Min(all.Count, MaxEchoedKeys);
-		return hidden > 0 ? $"{shown} and {hidden} more" : shown;
-	}
+	private static string DescribeCallerKeys(IEnumerable<string> keys) =>
+		// ENG-98566 review finding 10. This used to re-implement the cap/sanitise/"and N more" algorithm
+		// statement for statement alongside McpToolArgumentSupport's copy. Sharing the two CONSTANTS while
+		// leaving two copies of the logic is the drift this file's own remark said it was preventing.
+		McpToolArgumentSupport.JoinCallerKeys(
+			[.. keys.Select(key => $"\"{McpToolArgumentSupport.DescribeCallerKey(key)}\"")]);
 
 	private static string BuildUnknownArgumentsMessage(
 		string? toolName, string wrapperName, IReadOnlyList<string> canonicalNames, List<string> unknownKeys) {
@@ -812,8 +815,38 @@ public static class McpToolErrorFilter
 			+ "so there is no doubt which value wins.";
 	}
 
+	/// <summary>
+	/// The full argument preflight: the structural checks below PLUS a trial deserialization of every
+	/// supplied argument, which is what produces the precise per-argument <c>invalid-parameter-type</c>
+	/// text. The trial binds the argument a second time, so on a path where the SDK is about to bind the
+	/// same JSON anyway this belongs on the FAILURE path only — see
+	/// <see cref="TryCreateArgumentShapeError"/> and <c>ClioRunTool</c>'s dispatch.
+	/// </summary>
 	internal static bool TryCreateArgumentDeserializationError(
 		RequestContext<CallToolRequestParams> context,
+		out CallToolResult? result) =>
+		TryCreateArgumentError(context, includeBindingTrial: true, out result);
+
+	/// <summary>
+	/// The allocation-free half of the preflight: the checks that read only an argument's
+	/// <see cref="JsonElement.ValueKind"/> and the parameter's declared type, and never deserialize.
+	/// </summary>
+	/// <remarks>
+	/// These two cannot move to the failure path, for opposite reasons. An explicit JSON null for a
+	/// required non-nullable parameter does NOT fail SDK binding — it binds to null and the tool body
+	/// runs — so only a check ahead of invocation keeps the direct and <c>clio-run</c> paths agreeing.
+	/// A JSON-encoded object DOES fail binding, but the point of that diagnostic is to name the shape
+	/// BEFORE the generic deserialization text can be produced, and running it here keeps its precedence
+	/// over the trial-deserialization message unchanged.
+	/// </remarks>
+	internal static bool TryCreateArgumentShapeError(
+		RequestContext<CallToolRequestParams> context,
+		out CallToolResult? result) =>
+		TryCreateArgumentError(context, includeBindingTrial: false, out result);
+
+	private static bool TryCreateArgumentError(
+		RequestContext<CallToolRequestParams> context,
+		bool includeBindingTrial,
 		out CallToolResult? result) {
 		result = null;
 		if (context.Params?.Arguments is not { } arguments) {
@@ -825,6 +858,15 @@ public static class McpToolErrorFilter
 		}
 
 		foreach (ParameterInfo parameter in method.GetParameters()) {
+			// Shared definition - see McpToolArgumentSupport.IsBindableToolParameter (ENG-95885). The SDK
+			// injects CancellationToken, IServiceProvider, RequestContext<> and its own server types from the
+			// request context, never from the arguments object, so a caller key that merely collides with such
+			// a parameter's name is not an argument for it. Without this guard the checks below would judge
+			// that key against the framework type and answer a well-formed call with a false
+			// invalid-parameter-type, hiding whatever the real failure was.
+			if (!McpToolArgumentSupport.IsBindableToolParameter(parameter)) {
+				continue;
+			}
 			string argumentName = GetArgumentName(parameter);
 			if (!arguments.TryGetValue(argumentName, out JsonElement argumentValue)) {
 				continue;
@@ -849,6 +891,9 @@ public static class McpToolErrorFilter
 			if (TryCreateJsonEncodedObjectError(
 				context.Params.Name, argumentName, parameter.ParameterType, argumentValue, out result)) {
 				return true;
+			}
+			if (!includeBindingTrial) {
+				continue;
 			}
 			try {
 				argumentValue.Deserialize(parameter.ParameterType, SerializerOptions);

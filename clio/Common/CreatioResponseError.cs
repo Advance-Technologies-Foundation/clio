@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
@@ -42,6 +43,32 @@ internal enum CreatioResponseContext {
 	ODataPayload
 
 }
+
+/// <summary>
+/// How a recognized Creatio OData error body should be ACTED ON by the caller. The kind is derived
+/// from the server's text but carries none of it, so a caller may put the kind (and the fixed
+/// sentence chosen for it) into an MCP transcript without reproducing server prose.
+/// </summary>
+internal enum ODataErrorKind {
+
+	/// <summary>A recognized error whose family could not be narrowed any further.</summary>
+	ServerError,
+
+	/// <summary>
+	/// The ASP.NET routing miss that identifies an entity set with no OData controller - typically the
+	/// asynchronous rebuild after create-entity-schema/create-lookup.
+	/// </summary>
+	UnregisteredEntity,
+
+	/// <summary>
+	/// The OData "query not valid" family: an unknown property, a column that is not on the schema, or
+	/// a $filter/$orderby/$select/$expand the server could not parse. The request shape is at fault, so
+	/// retrying it unchanged cannot succeed.
+	/// </summary>
+	InvalidQuery
+
+}
+
 
 internal static partial class CreatioResponseError {
 
@@ -182,16 +209,37 @@ internal static partial class CreatioResponseError {
 	/// instructions, opaque tokens, tenant data or embedded line breaks. This text lands in an MCP
 	/// transcript that a model reads as trusted content, so no server prose is copied into it.
 	/// </remarks>
-	internal static string DescribeServerReportedReadError(bool includeUnregisteredEntityHint = false) {
-		const string classification =
+	internal static string DescribeServerReportedReadError(
+			ODataErrorKind kind = ODataErrorKind.ServerError,
+			string callerInputDetail = null) {
+		const string genericClassification =
 			"Creatio reported an error for this OData read. The server's own wording is not reproduced "
 			+ "here, because a service or proxy response is not trusted text in an MCP transcript; check "
 			+ "the environment's own logs for the server-side cause, then verify the entity name, the "
-			+ "filter and the credentials.";
-		//The hint is locally authored, so it is the one piece of detail that may be added.
-		return includeUnregisteredEntityHint
-			? $"{classification} {UnregisteredEntityHint}"
-			: classification;
+			+ "filter and the credentials. The correlation-id on this response matches it to clio's own "
+			+ "log lines.";
+		//The invalid-query family is worth its own sentence: the request shape is at fault, so the caller
+		//must change the query rather than retry it or go looking in the environment's logs.
+		const string invalidQueryClassification =
+			"Creatio rejected this OData query as invalid: a property, a column or a query option in the "
+			+ "request could not be resolved. The server's own wording is not reproduced here, because a "
+			+ "service or proxy response is not trusted text in an MCP transcript; the correlation-id on "
+			+ "this response matches it to clio's own log lines. If the member was added moments ago, "
+			+ "wait for the OData rebuild and retry ONCE before changing anything - the same rejection is "
+			+ "how a column or entity that exists but is not published yet reports itself, and editing "
+			+ "the schema again in response makes it worse. Otherwise the query is at fault: correct the "
+			+ "field, select, expand or order-by names, because an unchanged retry cannot succeed.";
+		string classification = kind == ODataErrorKind.InvalidQuery
+			? invalidQueryClassification
+			: genericClassification;
+		//Both additions are locally authored - the fixed hint, and a restatement of the CALLER's own
+		//inputs - so they are the only detail that may be added to the sentence.
+		if (kind == ODataErrorKind.UnregisteredEntity) {
+			classification = $"{classification} {UnregisteredEntityHint}";
+		}
+		return string.IsNullOrWhiteSpace(callerInputDetail)
+			? classification
+			: $"{classification} {callerInputDetail}";
 	}
 
 	/// <summary>
@@ -202,16 +250,143 @@ internal static partial class CreatioResponseError {
 	/// The extracted text is deliberately not an output. Callers that put their result into an MCP
 	/// transcript must use <see cref="DescribeServerReportedReadError"/> instead of
 	/// <see cref="TryDetect"/>, whose message carries server-controlled prose.
+	/// The routing miss is reported by the detector itself, not found by searching the formatted message
+	/// for the hint: the hint's wording would otherwise be part of this contract, and building
+	/// the message at all made a read materialize prose it discards - an OData v4 error body with no
+	/// string <c>message</c> member copied the entire <c>error</c> subtree out with
+	/// <c>GetRawText()</c> first.
 	/// </remarks>
 	internal static bool TryClassify(JsonElement root, CreatioResponseContext context,
-			out bool isUnregisteredEntity) {
-		isUnregisteredEntity = false;
-		if (!TryDetect(root, context, out string detected)) {
+			out bool isUnregisteredEntity) =>
+		TryDetectCore(root, context, buildMessage: false, out string _, out isUnregisteredEntity);
+
+	/// <summary>
+	/// True when the body is a recognized Creatio error, reporting the error KIND and, separately, the
+	/// server's own wording for the debug channel only.
+	/// </summary>
+	/// <remarks>
+	/// This is the richer, more expensive overload: deciding between
+	/// <see cref="ODataErrorKind.InvalidQuery"/> and <see cref="ODataErrorKind.ServerError"/> requires the
+	/// server text, so the message IS built here. A caller that only needs to know whether the body is the
+	/// routing miss must use the <c>out bool isUnregisteredEntity</c> overload above, which skips building
+	/// the message entirely.
+	/// <para>
+	/// <paramref name="serverDetailForDebugChannel"/> is server-authored prose. It may only be written to
+	/// the debug channel after <see cref="UntrustedText.Fenced"/>; it must never be embedded in an
+	/// <c>error</c>, <c>cause</c> or any other field a caller reads by default.
+	/// </para>
+	/// </remarks>
+	internal static bool TryClassify(JsonElement root, CreatioResponseContext context,
+			out ODataErrorKind kind, out string serverDetailForDebugChannel) {
+		kind = ODataErrorKind.ServerError;
+		serverDetailForDebugChannel = null;
+		//buildMessage: true because the classification below reads the detected text; the routing miss
+		//itself comes from the detector's own flag rather than from searching that text for the hint's
+		//wording, so the hint's phrasing stays out of this contract.
+		if (!TryDetectCore(root, context, buildMessage: true, out string detected, out bool isUnregisteredEntity)) {
 			return false;
 		}
-		isUnregisteredEntity = detected.Contains(UnregisteredEntityHint, StringComparison.Ordinal);
+		//The whole message chain, not just the headline. Creatio answers an unresolvable column with
+		//error.message "An error has occurred." and puts the only useful sentence - "Column by path X not
+		//found in schema Y" - two levels down under innererror/internalexception, so classifying on the
+		//headline alone reported a query-shape failure as an unexplained server error.
+		string detail = CollectServerDetail(root, detected);
+		serverDetailForDebugChannel = detail;
+		if (isUnregisteredEntity) {
+			kind = ODataErrorKind.UnregisteredEntity;
+		} else if (LooksLikeInvalidQuery(detail)) {
+			kind = ODataErrorKind.InvalidQuery;
+		}
 		return true;
 	}
+
+	/// <summary>
+	/// Nested error members Creatio uses to carry the cause of an OData failure, in the exact casing the
+	/// observed bodies use - <see cref="JsonElement.TryGetProperty(string, out JsonElement)"/> is
+	/// case-sensitive, and a PascalCase spelling nobody has measured would be dead code that still reads
+	/// as coverage.
+	/// </summary>
+	private static readonly string[] InnerErrorMemberNames = ["innererror", "internalexception"];
+
+	/// <summary>
+	/// How far the innererror chain is walked. The deepest chain measured on a real stand is two levels
+	/// (<c>error.innererror.internalexception</c>); one spare level absorbs a build that adds a wrapper,
+	/// and the bound is what stops a crafted body from costing an unbounded walk.
+	/// </summary>
+	private const int MaxInnerErrorDepth = 3;
+
+	/// <summary>
+	/// Joins the detected headline with every nested <c>message</c> under the OData <c>error</c> object.
+	/// </summary>
+	/// <remarks>
+	/// The result is server-authored prose. It exists ONLY to choose a kind and to be written to the
+	/// debug channel after <see cref="UntrustedText.Fenced"/>; it must never be embedded in an
+	/// <c>error</c>, <c>cause</c> or any other field a caller reads by default.
+	/// </remarks>
+	private static string CollectServerDetail(JsonElement root, string detected) {
+		//TryDetect returned true, so `detected` is one of the composed non-empty messages.
+		List<string> parts = [detected];
+		if (root.ValueKind == JsonValueKind.Object
+			&& root.TryGetProperty("error", out JsonElement error)
+			&& error.ValueKind == JsonValueKind.Object) {
+			AppendInnerMessages(error, parts, 0);
+		}
+		return string.Join(" | ", parts.Distinct(StringComparer.Ordinal));
+	}
+
+	private static void AppendInnerMessages(JsonElement node, ICollection<string> parts, int depth) {
+		if (depth >= MaxInnerErrorDepth) {
+			return;
+		}
+		foreach (string memberName in InnerErrorMemberNames) {
+			if (!node.TryGetProperty(memberName, out JsonElement inner) || inner.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			string message = First(inner, "message", MessagePropertyName);
+			if (!string.IsNullOrWhiteSpace(message)) {
+				parts.Add(message);
+			}
+			AppendInnerMessages(inner, parts, depth + 1);
+		}
+	}
+
+	/// <summary>
+	/// Wordings that identify the OData "query not valid" family. Matching is on the SERVER text, but
+	/// only a boolean leaves this class - no fragment of the text is returned to a caller.
+	/// </summary>
+	/// <remarks>
+	/// Deliberately only the wordings MEASURED on a real stand. A looser second rule was tried and
+	/// removed: "the text names a query option AND contains a failure word" claims any server message
+	/// that merely echoes the request URI - an expired-session body carrying
+	/// <c>...?$filter=...</c> and the word "invalid" became <c>invalid-query</c>, which tells the agent
+	/// to go and correct field names that were never wrong. A missed classification degrades to
+	/// <c>server-reported-error</c>, which is the honest answer; a wrong one sends the agent to edit a
+	/// correct query, or worse, the schema.
+	/// </remarks>
+	private static readonly string[] InvalidQuerySignals = [
+		"The query specified in the URI is not valid",
+		"Could not find a property named",
+		"not found in schema"
+	];
+
+	private static bool LooksLikeInvalidQuery(string detail) =>
+		!string.IsNullOrWhiteSpace(detail)
+		&& InvalidQuerySignals.Any(signal => detail.Contains(signal, StringComparison.OrdinalIgnoreCase));
+
+	/// <summary>
+	/// The fixed diagnostic for a read whose response body was absent altogether.
+	/// </summary>
+	/// <remarks>
+	/// Distinct from <see cref="DescribeNonJsonReadResponse"/> on purpose: the shared GET transport
+	/// (<c>IApplicationClient.ExecuteGetRequest</c>) catches <c>HttpRequestException</c> and
+	/// <c>TaskCanceledException</c> and returns an empty string, so "no body" is the shape a connection
+	/// failure, a DNS failure and a timeout all arrive in - a transport problem, not a malformed payload.
+	/// </remarks>
+	internal static string DescribeEmptyReadResponse() =>
+		"Creatio returned no response body for this OData read. The shared GET transport reports a "
+		+ "connection failure, a DNS failure and a timeout all as an empty body, so this is a transport or "
+		+ "session problem rather than a query-shape problem; verify the environment is reachable and the "
+		+ "session is valid, then retry.";
 
 	internal static string DescribeNonJsonReadResponse() =>
 		"Creatio did not return a JSON OData response. This points to an IIS, proxy, routing, or session "
@@ -238,8 +413,22 @@ internal static partial class CreatioResponseError {
 	/// routing error the unregistered-entity hint is appended); otherwise an empty string.
 	/// </param>
 	/// <returns><see langword="true"/> when <paramref name="root"/> is a recognized error body.</returns>
-	public static bool TryDetect(JsonElement root, CreatioResponseContext context, out string message) {
+	public static bool TryDetect(JsonElement root, CreatioResponseContext context, out string message) =>
+		TryDetectCore(root, context, buildMessage: true, out message, out bool _);
+
+	/// <summary>
+	/// The single detection pass behind <see cref="TryDetect"/> and <see cref="TryClassify"/>. It always
+	/// reports whether the matched shape is the unregistered-entity routing miss;
+	/// <paramref name="buildMessage"/> decides whether the caller-facing text is composed as well.
+	/// </summary>
+	/// <remarks>
+	/// The detection decisions themselves are identical either way - only the message formatting is
+	/// skipped - so a classification never depends on the prose it does not build.
+	/// </remarks>
+	private static bool TryDetectCore(JsonElement root, CreatioResponseContext context, bool buildMessage,
+			out string message, out bool isUnregisteredEntity) {
 		message = string.Empty;
+		isUnregisteredEntity = false;
 		if (root.ValueKind != JsonValueKind.Object) {
 			return false;
 		}
@@ -254,12 +443,18 @@ internal static partial class CreatioResponseError {
 		//invites a duplicate retry. Explicit error envelopes are unaffected: the DataService and OData
 		//v4 error shapes are checked before this and still win.
 		bool hasProvenODataIdentity = !isService && HasODataContextAnnotation(root);
-		return TryDetectDataServiceEnvelope(root, out message)
-			|| (isService && TryDetectBaseResponse(root, out message))
-			|| TryDetectODataV4Error(root, out message)
-			|| (!hasProvenODataIdentity
-				&& (TryDetectAspNetException(root, out message)
-					|| TryDetectRoutingError(root, context, out message)));
+		if (TryDetectDataServiceEnvelope(root, buildMessage, out message)
+			|| (isService && TryDetectBaseResponse(root, buildMessage, out message))
+			|| TryDetectODataV4Error(root, buildMessage, out message)) {
+			return true;
+		}
+		if (hasProvenODataIdentity) {
+			return false;
+		}
+		//Only the routing branch can be the unregistered-entity miss, so it is the only one that reports
+		//it. Every other recognized shape leaves the flag false.
+		return TryDetectAspNetException(root, buildMessage, out message)
+			|| TryDetectRoutingError(root, context, buildMessage, out message, out isUnregisteredEntity);
 	}
 
 	/// <summary>
@@ -348,7 +543,7 @@ internal static partial class CreatioResponseError {
 	// rejects a login as {"Code":1,...} the same way - which is why it needs detecting at all.
 	// Requiring BOTH a non-zero Code and a non-empty Exception/Message keeps a payload that merely
 	// happens to carry a `Code` column from being read as a failure.
-	private static bool TryDetectDataServiceEnvelope(JsonElement root, out string message) {
+	private static bool TryDetectDataServiceEnvelope(JsonElement root, bool buildMessage, out string message) {
 		message = string.Empty;
 		if (HasODataControlAnnotation(root)) {
 			return false;
@@ -363,7 +558,7 @@ internal static partial class CreatioResponseError {
 		if (string.IsNullOrWhiteSpace(detail)) {
 			return false;
 		}
-		message = $"Creatio returned error code {codeValue}: {detail}";
+		message = buildMessage ? $"Creatio returned error code {codeValue}: {detail}" : string.Empty;
 		return true;
 	}
 
@@ -373,7 +568,7 @@ internal static partial class CreatioResponseError {
 	// failure, wrote it to --destination and exited 0 - the same false success this contract removes
 	// for the other envelopes. Only an explicit boolean false counts, so a payload carrying
 	// success=true, or a `success` string column, is left alone.
-	private static bool TryDetectBaseResponse(JsonElement root, out string message) {
+	private static bool TryDetectBaseResponse(JsonElement root, bool buildMessage, out string message) {
 		message = string.Empty;
 		//No OData-payload guard here, unlike the loose Code/Message detector: ValueResponse<T> and the
 		//insert-derived BaseResponse DTOs keep `value` or `id` on a failure, so guarding on those
@@ -401,6 +596,9 @@ internal static partial class CreatioResponseError {
 		//success:true, are both left alone.
 		if (!explicitFailure && !(hasPopulatedErrorInfo && !explicitSuccess)) {
 			return false;
+		}
+		if (!buildMessage) {
+			return true;
 		}
 		detail ??= First(root, "errorMessage", "ErrorMessage", "message", MessagePropertyName);
 		message = string.IsNullOrWhiteSpace(detail)
@@ -442,10 +640,16 @@ internal static partial class CreatioResponseError {
 	}
 
 	// OData v4 error envelope: { "error": { "message": ... } }.
-	private static bool TryDetectODataV4Error(JsonElement root, out string message) {
+	private static bool TryDetectODataV4Error(JsonElement root, bool buildMessage, out string message) {
 		message = string.Empty;
 		if (!(root.TryGetProperty("error", out JsonElement error) && error.ValueKind == JsonValueKind.Object)) {
 			return false;
+		}
+		//GetRawText() copies the WHOLE error subtree into a new string, and a read classifies the body
+		//without ever using the text - an 8,388,631-character subtree cost an extra 16,777,264 bytes for
+		//prose that was discarded. Detection needs the `error` object, not its content.
+		if (!buildMessage) {
+			return true;
 		}
 		message = error.TryGetProperty("message", out JsonElement m) && m.ValueKind == JsonValueKind.String
 			? m.GetString()
@@ -463,7 +667,7 @@ internal static partial class CreatioResponseError {
 		&& context.ValueKind == JsonValueKind.String
 		&& !string.IsNullOrWhiteSpace(context.GetString());
 
-	private static bool TryDetectAspNetException(JsonElement root, out string message) {
+	private static bool TryDetectAspNetException(JsonElement root, bool buildMessage, out string message) {
 		message = string.Empty;
 		bool isAspNetError = root.TryGetProperty("ExceptionType", out _)
 			|| root.TryGetProperty("ExceptionMessage", out _)
@@ -479,7 +683,9 @@ internal static partial class CreatioResponseError {
 		// would have prevented - a probed record whose own columns are named ExceptionMessage /
 		// ExceptionType / StackTrace - is already handled upstream by
 		// ODataFieldValidation.IsSelectedRecord, which returns before TryDetect is ever reached.
-		message = First(root, "ExceptionMessage", MessagePropertyName) ?? "Creatio returned a server error.";
+		message = buildMessage
+			? First(root, "ExceptionMessage", MessagePropertyName) ?? "Creatio returned a server error."
+			: string.Empty;
 		return true;
 	}
 
@@ -498,8 +704,9 @@ internal static partial class CreatioResponseError {
 	// metadata=none by-key read is ever added, revisit this branch. The ASP.NET-exception branch
 	// deliberately carries NO such guard - see the note in TryDetectAspNetException.
 	private static bool TryDetectRoutingError(JsonElement root, CreatioResponseContext context,
-		out string message) {
+		bool buildMessage, out string message, out bool isUnregisteredEntity) {
 		message = string.Empty;
+		isUnregisteredEntity = false;
 		if (!(root.TryGetProperty(MessagePropertyName, out JsonElement bareMessage)
 			&& bareMessage.ValueKind == JsonValueKind.String
 			&& !HasNonRoutingErrorMembers(root))) {
@@ -519,7 +726,7 @@ internal static partial class CreatioResponseError {
 		string? detail = First(root, "MessageDetail");
 		string primary = !string.IsNullOrEmpty(detail) ? detail : bareMessage.GetString() ?? string.Empty;
 		if (string.IsNullOrEmpty(primary)) {
-			message = "Creatio returned an empty error response.";
+			message = buildMessage ? "Creatio returned an empty error response." : string.Empty;
 			return true;
 		}
 		// The unregistered-entity hint (wait-and-retry, not compile/restart) is tied to a CONTENT
@@ -527,9 +734,10 @@ internal static partial class CreatioResponseError {
 		// bodies can share that shape, and telling the agent to wait for an async rebuild on an
 		// unrelated, non-transient failure would delay correct diagnosis. Append it only for the
 		// genuine routing miss; otherwise surface the message alone (still success=false).
-		message = IsRoutingMiss(detail) || IsRoutingMiss(bareMessage.GetString())
-			? $"{primary} {UnregisteredEntityHint}"
-			: primary;
+		isUnregisteredEntity = IsRoutingMiss(detail) || IsRoutingMiss(bareMessage.GetString());
+		if (buildMessage) {
+			message = isUnregisteredEntity ? $"{primary} {UnregisteredEntityHint}" : primary;
+		}
 		return true;
 	}
 

@@ -49,3 +49,15 @@ than the rules it qualifies:
 `*/Schemas/*/metadata.json`, collect `BK4` recursively, and read `BL1` for the CLR class and `CI4` for
 the `FlowType` (1 = Default, 2 = Conditional, absent = plain). A rule that no shipped process violates
 is safe as an error; anything else is a warning, or it is scoped until it is.
+
+**And check the shape of what you count before you trust the count.** An empty field can have more
+than one spelling, and 64 `metadata.json` files here are not JSON at all - see
+[corpus-scan-empty-selection-has-two-spellings](corpus-scan-empty-selection-has-two-spellings.md),
+where a string test for one spelling undercounted by 5x and a parse failure hid 64 schemas from both
+of two independent scans.
+
+**But do not resolve a flow's SOURCE against `BK4`.** Collecting flows from it is right; using it as the
+element index is not, and it fails quietly in both directions at once — see
+[corpus-scan-must-index-nodes-outside-bk4](corpus-scan-must-index-nodes-outside-bk4.md). Build the
+UId→element index from every dict in the tree that carries `UId` and `BL1`, and print the unresolved
+count: a scan that cannot say it resolved everything has not measured anything.

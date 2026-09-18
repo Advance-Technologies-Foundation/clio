@@ -25,7 +25,7 @@ Rule numbering comes from
 |---|---|---|---|
 | R1 start arity | no incoming, exactly 1 outgoing | ✔ error | keep |
 | R2 end arity | no outgoing, ≥1 incoming | ✔ error | keep |
-| R3 one start | exactly one start event | ✔ error | keep |
+| R3 start count | at least one start; at most one SIMPLE start (signal/timer/message starts may be several) | ✔ error | **relaxed per kind — ENG-98559** |
 | R6 gateway arity | diverging 1-in/≥2-out; converging ≥2-in/1-out | ✘ | **do not implement — §3** |
 | R7 exclusive needs default | diverging XOR *requires* a default | ✔ **warning** | keep as warning, **improve the message** — §2.3 |
 | R9 inclusive needs default | as R7 | ✔ warning (same code) | keep (ENG-95889 owns the gateway) |
@@ -43,6 +43,15 @@ Rule numbering comes from
 | — | a diverging or-gateway must not use plain sequence flows | ✘ | **ADD as warning** — §2.8 |
 
 ---
+
+> **ENG-98559 (2026-09-16) — R3 no longer caps the start COUNT.** The rule as first specified ("exactly
+> one start event") refused a shape the platform ships: `PublishDraftToArticle`
+> (CrtKnowledgeManagementVersions) carries two start signals, the designer draws several, and a two-signal
+> process assembled through `modify-business-process` runs on both. CrtProcessBuilder's build-path guard
+> capped the count "for parity with clio's R3", and R3 capped it because a process usually has one entry
+> point — so the two cited each other into refusing the product. The cap is now per KIND: as many TRIGGERED
+> starts (signal, timer, message) as the process has triggers, and one SIMPLE start, which is the manual
+> launch. Every per-start rule is unchanged (R1 arity, reachability), because they are per node.
 
 ## 2. The changes
 

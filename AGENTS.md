@@ -118,16 +118,17 @@ The install command is `push-pkg`, **not** `push-package` (that verb does not ex
 
 # Bundled Creatio packages
 
-clio ships two Creatio packages inside its own distribution — `cliogate` (prebuilt assembly) and
-`CrtProcessBuilder` (source only, compiled by the target) — and installs them on request.
+clio ships three Creatio packages inside its own distribution — `cliogate` and `CrtDashboardsMigratorApp`
+(prebuilt assemblies) and `CrtProcessBuilder` (source only, compiled by the target) — and installs them on
+request.
 
 **Before changing any of the following, read [docs/agent-instructions/bundled-packages.md](docs/agent-instructions/bundled-packages.md):**
 
-- `clio/CrtProcessBuilder/*.gz` or `clio/cliogate/*.gz` — the committed archives
+- `clio/CrtProcessBuilder/*.gz`, `clio/CrtDashboardsMigratorApp/*.gz` or `clio/cliogate/*.gz` — the committed archives
 - `clio/Common/BundledPackages.cs` — the identity constants
 - `clio/Common/BundledPackageCatalog.cs` / `BundledPackageConvergence.cs` — the version source of truth
   and the rule that decides an environment is behind
-- `clio.tests/Common/BundledProcessBuilderPackageTests.cs` — the SHA-256 / `ModifiedOnUtc` pins, and the two
+- `clio.tests/Common/BundledProcessBuilderPackageTests.cs`, `BundledDashboardsMigratorPackageTests.cs` — the SHA-256 / `ModifiedOnUtc` pins, and the two
   security counts the script does NOT write: `ExpectedOperationContractCount` and
   `ExpectedAuthorizationGateCallSites`. They are properties of the shipped sources, so a rebundle that
   changed the service surface has to move them by hand, in the same commit, and the package side moves first

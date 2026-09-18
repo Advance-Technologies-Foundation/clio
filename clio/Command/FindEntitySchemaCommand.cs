@@ -172,7 +172,7 @@ public class FindEntitySchemaCommand : Command<FindEntitySchemaOptions>
 		bool hasUid = !string.IsNullOrWhiteSpace(options.Uid);
 		if (!hasSchemaName && !hasSearchPattern && !hasUid) {
 			throw new ArgumentException(
-				"At least one of --schema-name, --search-pattern, or --uid is required.");
+				"At least one of 'schema-name', 'search-pattern', or 'uid' is required.");
 		}
 		if (!string.IsNullOrWhiteSpace(options.Uid)
 			&& !Guid.TryParse(options.Uid, out _)) {

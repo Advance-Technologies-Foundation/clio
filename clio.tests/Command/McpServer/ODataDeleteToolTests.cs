@@ -13,6 +13,26 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class ODataDeleteToolTests {
 	private const string Guid = "8ecab4a1-0ca3-4515-9399-efe0a19390bd";
 
+	[Test, Category("Unit")]
+	[Description("A throwing delete transport retains attempted status without claiming rollback.")]
+	public void Delete_ShouldRetainUnknownOutcome_WhenTransportThrows() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urls = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns((client, urls));
+		urls.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact");
+		client.ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => throw new System.Net.Http.HttpRequestException("connection lost"));
+		ODataDeleteTool tool = new(resolver, new OperationCorrelationIdProvider());
+		// Act
+		ODataWriteResponse result = tool.Delete(new ODataDeleteArgs { EnvironmentName = "dev", Entity = "Contact", Id = Guid, Confirm = true });
+		// Assert
+		result.Diagnostic!.WriteAttempted.Should().BeTrue(because: "the request entered the write transport");
+		result.Diagnostic.TransportOutcome.Should().Be("unknown", because: "no response was received");
+		result.Diagnostic.SideEffect.Should().Be("unknown", because: "transport failure does not establish rollback");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises a stable, destructive, idempotent MCP tool name for odata-delete.")]
@@ -37,8 +57,10 @@ public sealed class ODataDeleteToolTests {
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
-		ODataDeleteTool tool = new(resolver);
+		ODataDeleteTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Confirm = true
@@ -59,7 +81,9 @@ public sealed class ODataDeleteToolTests {
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
-		ODataDeleteTool tool = new(resolver);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
+		ODataDeleteTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = Guid
@@ -77,7 +101,7 @@ public sealed class ODataDeleteToolTests {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
-		ODataDeleteTool tool = new(resolver);
+		ODataDeleteTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = " "
@@ -93,7 +117,7 @@ public sealed class ODataDeleteToolTests {
 	[Description("Returns a validation failure without any remote call when entity is missing.")]
 	public void Delete_Should_Fail_When_Entity_Missing() {
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		ODataDeleteTool tool = new(resolver);
+		ODataDeleteTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
 			EnvironmentName = "dev", Entity = " ", Id = Guid
@@ -114,10 +138,12 @@ public sealed class ODataDeleteToolTests {
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
 		client.ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("<html><head><title>401 - Unauthorized: Access is denied due to invalid credentials.</title></head></html>");
-		ODataDeleteTool tool = new(resolver);
+		ODataDeleteTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		// Act
 		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
@@ -142,10 +168,12 @@ public sealed class ODataDeleteToolTests {
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
 		client.ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(string.Empty);
-		ODataDeleteTool tool = new(resolver);
+		ODataDeleteTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		// Act
 		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
@@ -166,10 +194,12 @@ public sealed class ODataDeleteToolTests {
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact(8ecab4a1-0ca3-4515-9399-efe0a19390bd)");
 		client.ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"error\":{\"code\":\"\",\"message\":\"The DELETE request violates a foreign key constraint\"}}");
-		ODataDeleteTool tool = new(resolver);
+		ODataDeleteTool tool = new(resolver, new OperationCorrelationIdProvider());
 
 		// Act
 		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
@@ -180,4 +210,29 @@ public sealed class ODataDeleteToolTests {
 		response.Success.Should().BeFalse(because: "an OData error envelope must not be reported as a successful delete");
 		response.Error.Should().Be("The DELETE request violates a foreign key constraint");
 	}
+
+	[TestCase(true, TestName = "Delete_Should_Carry_A_Correlation_Id_On_Success")]
+	[TestCase(false, TestName = "Delete_Should_Carry_A_Correlation_Id_On_A_Refusal")]
+	[Category("Unit")]
+	[Description("Every odata-delete response carries the correlation-id core-rules promises, including the refusal that never reaches the environment.")]
+	public void Delete_Should_Carry_A_Correlation_Id(bool confirm) {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
+		ODataDeleteTool tool = new(resolver, new OperationCorrelationIdProvider());
+
+		// Act
+		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
+			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Confirm = confirm
+		});
+
+		// Assert
+		response.CorrelationId.Should().NotBeNullOrWhiteSpace(
+			because: "the id is minted before the work and stamped on the single exit, so a refusal that never reaches Creatio is traceable too");
+	}
+
 }

@@ -1,0 +1,11 @@
+execute-dataservice-batch - Write explicit records in one native DataService batch
+
+Usage: clio execute-dataservice-batch -e <environment> --input <operations.json>
+
+--input  Required JSON array of 1–100 insert/update/delete operations; each has
+         operation, schema-name, record-id, and values for insert/update.
+         Values use {"data-value-type": 1, "value": "text"}.
+
+Continues after item errors. No atomicity guarantee or automatic retry.
+Inspect completed/failed/unknown item outcomes; verify records before retrying.
+Use native sequence enrollment for participant lifecycle changes.

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -59,6 +59,8 @@ internal sealed class CommandHelpCatalog {
 			["activate-pkg"] = "Activate a package in Creatio",
 			["add-schema"] = "Create a schema file in a workspace package",
 			["add-user-task"] = "Create a user task schema in a workspace package",
+			["create-user-task-page"] = "Create and associate a Classic user-task parameter page in a workspace",
+			["register-process-element"] = "Generate package-owned process element registration scripts",
 			["alm-deploy"] = "Deploy a package to Creatio",
 			["apply-manifest"] = "Apply an environment manifest",
 			[CallService] = "Call a Creatio service endpoint",
@@ -148,6 +150,7 @@ internal sealed class CommandHelpCatalog {
 			["get-info"] = "Show system information for a Creatio instance",
 			["install-gate"] = "Install or update cliogate in Creatio",
 			["install-process-builder"] = "Install or update the bundled process-builder package in Creatio",
+			["install-dashboards-migrator"] = "Install or update the bundled dashboards-migrator package in Creatio",
 			["check-nuget-update"] = "Check NuGet for Creatio package updates",
 			["uninstall-app-remote"] = "Uninstall an application package from Creatio",
 			["update-client-unit-schema"] = "Update the raw body of a client unit schema",
@@ -258,6 +261,7 @@ internal sealed class CommandHelpCatalog {
 			"delete-toolkit",
 			"env-ui",
 			"install-gate",
+			"install-dashboards-migrator",
 			"install-process-builder",
 			"install-toolkit",
 			"link-package-store",
@@ -268,9 +272,11 @@ internal sealed class CommandHelpCatalog {
 
 	private static readonly HashSet<string> DevelopmentCommands =
 		[
+			"register-process-element",
 			"add-item",
 			"add-schema",
 			"add-user-task",
+			"create-user-task-page",
 			"alm-deploy",
 			"apply-manifest",
 			"call-service",
@@ -286,6 +292,9 @@ internal sealed class CommandHelpCatalog {
 			"generate-process-model",
 			"get-entity-schema-column-properties",
 			"get-entity-schema-properties",
+			"enroll-sequence-participants",
+			"get-sequence-context",
+			"execute-dataservice-batch",
 			"git-sync",
 			"listen",
 			"merge-creatio-artifact",

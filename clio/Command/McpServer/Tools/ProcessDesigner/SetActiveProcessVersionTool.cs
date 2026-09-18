@@ -3,6 +3,8 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
+using System.Collections.Generic;
+using System.Text.Json;
 
 namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 
@@ -16,6 +18,19 @@ public class SetActiveProcessVersionTool(
 	: BaseTool<SetActiveProcessVersionOptions>(command, logger, commandResolver) {
 
 	internal const string SetActiveProcessVersionToolName = "set-active-business-process-version";
+
+	/// <summary>The canonical field list echoed back when an unknown argument key is refused (ENG-98566).</summary>
+	internal const string ValidArgsHint = "Valid: environment-name, version-name, version-uid.";
+
+	/// <summary>
+	/// Refusal for a call whose whole argument object is absent (ENG-98566, Sonar S2259).
+	/// </summary>
+	/// <remarks>
+	/// Stays inline rather than moving into the shared helper: it has to run before any field can be read,
+	/// and that is what lets the analyser prove no field read is reached with null (csharpsquid:S2259). See
+	/// <see cref="McpToolArgumentSupport.BuildUnknownArgumentError"/>.
+	/// </remarks>
+	internal const string NullArgsError = "args is required: the call carried no argument object. " + ValidArgsHint;
 
 	/// <summary>
 	/// Activates the named version and reports the version the environment reports as actual afterwards.
@@ -37,9 +52,10 @@ public class SetActiveProcessVersionTool(
 	[McpServerTool(Name = SetActiveProcessVersionToolName, ReadOnly = false, Destructive = true,
 		 Idempotent = true, OpenWorld = false),
 	 Description("Make one version of a Creatio business process the ACTUAL one — the product's UI word for "
-		 + "what the platform's data calls the active version. Identify the version by name (schema code) or "
-		 + "uid; it must be the version itself, not the family root. This is the rollback gesture: point the "
-		 + "environment at whichever member of the family should run. "
+		 + "what the platform's data calls the active version. Identify the member by name (schema code) or "
+		 + "uid. ANY member of the family is a valid target, the family ROOT included - activating the root is "
+		 + "how you go back to the original, and the platform accepts it like any other member. This is the "
+		 + "rollback gesture: point the environment at whichever member of the family should run. "
 		 + "WHAT IT CHANGES: only which version NEW process instances start on. Instances already running stay "
 		 + "on the version they started with and finish on it — activation never migrates them, so a long-lived "
 		 + "process keeps executing the old graph after this call and that is correct, not a failure. "
@@ -69,7 +85,18 @@ public class SetActiveProcessVersionTool(
 		[Description("set-active-business-process-version parameters")] [Required]
 		SetActiveProcessVersionArgs args
 	) {
-		if (string.IsNullOrWhiteSpace(args?.EnvironmentName)) {
+		if (args is null) {
+			return CommandExecutionResult.FromValidationError(NullArgsError);
+		}
+
+		// The only unknown-key defence this tool has; the helper's docs say why. ENG-98566.
+		string argumentError = McpToolArgumentSupport.BuildUnknownArgumentError(
+			args.ExtensionData, ValidArgsHint);
+		if (!string.IsNullOrWhiteSpace(argumentError)) {
+			return CommandExecutionResult.FromValidationError(argumentError);
+		}
+
+		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
 			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
 		}
 
@@ -114,10 +141,21 @@ public sealed record SetActiveProcessVersionArgs(
 
 	[property: JsonPropertyName("version-name")]
 	[property: Description(
-		"Code (schema Name) of the VERSION to make actual; provide exactly one of version-name or version-uid.")]
+		"Code (schema Name) of the family member to make actual, the root included; provide exactly one of "
+		+ "version-name or version-uid.")]
 	string? VersionName = null,
 
 	[property: JsonPropertyName("version-uid")]
 	[property: Description(
-		"Schema UId of the VERSION to make actual; provide exactly one of version-name or version-uid.")]
-	string? VersionUid = null);
+		"Schema UId of the family member to make actual, the root included; provide exactly one of "
+		+ "version-name or version-uid.")]
+	string? VersionUid = null) {
+
+	/// <summary>
+	/// Overflow bag for top-level keys the SDK could not bind to a declared argument (ENG-98566).
+	/// Inspected by the tool so a mis-keyed argument is named back to the caller; a bag that is
+	/// never read is the failure mode, not the fix.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}

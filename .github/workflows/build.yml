@@ -52,6 +52,7 @@ jobs:
             tests:
               - '.github/workflows/build.yml'
               - '.github/scripts/*TestShard*.ps1'
+              - '.github/scripts/Select-McpE2eTestFilter.ps1'
               - 'clio.tests/**'
               - 'Creatio.ConflictResolver.Tests/**'
               - 'clio.mcp.e2e/**'
@@ -223,6 +224,59 @@ jobs:
             needs.net8-compatibility.result != 'success' ||
             needs.conflict-resolver-tests.result != 'success'))
         run: exit 1
+
+  # ── MCP e2e, NoEnvironment tier (one hosted runner, no Creatio) ──────────
+  # The clio.mcp.e2e fixtures tagged McpE2E.NoEnvironment start the real `clio mcp-server` child
+  # process but never reach a Creatio stand, so they run here in ~10 minutes instead of inside the
+  # ~45-minute TeamCity build (Team_Atf_ClioMcpE2eTests), which the teamcity-mcp-e2e workflow now
+  # asks to skip this tier. Windows, like the TeamCity agents, so a path or process difference
+  # cannot pass here and fail there. Only net10.0: the TeamCity build still covers net8.0.
+  # Advisory for now: it is not part of the required "Unit Tests" gate until its stability on
+  # hosted runners is known.
+  mcp-e2e-noenvironment:
+    name: MCP e2e NoEnvironment
+    needs: changes
+    permissions:
+      contents: read
+    if: >-
+      needs.changes.outputs.clio-src == 'true' ||
+      needs.changes.outputs.tests   == 'true' ||
+      github.ref == 'refs/heads/master'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Run MCP e2e NoEnvironment tier
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop';
+          Set-Location $env:GITHUB_WORKSPACE;
+          dotnet test .\clio.mcp.e2e\clio.mcp.e2e.csproj `
+            --configuration Release `
+            --framework net10.0 `
+            -p:RunAnalyzers=false `
+            --blame-hang-timeout 5m `
+            --filter "TestCategory=McpE2E.NoEnvironment&TestCategory!=McpE2E.Manual&TestCategory!=McpE2E.ProcessDesigner" `
+            --logger "trx;LogFileName=mcp-e2e-noenvironment.trx" `
+            --results-directory TestResults/mcp-e2e-noenvironment
+
+      - name: Upload MCP e2e NoEnvironment results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-mcp-e2e-noenvironment
+          overwrite: true
+          path: TestResults/mcp-e2e-noenvironment/**
+          if-no-files-found: warn
+          retention-days: 14
 
   # ── ClioGate tests (only when the bundled service changes) ──────────
   cliogate-tests:

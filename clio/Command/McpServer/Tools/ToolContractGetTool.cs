@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Reflection;
@@ -527,7 +527,32 @@ internal static class ToolContractCatalog {
 		// The SecureText aliases are spelled out in prose rather than as `Password = SecureText`: the
 		// key-equals-value form reads as a hard-coded credential to static analysis (S2068).
 		"Other aliases: Blob = Binary, ImageLink = ImageLookup, EmailAddress = Email, " +
-		"Decimal/Float = Decimal2. The Creatio display names 'Encrypted' and 'Password' both map to SecureText.";
+		"Decimal/Float = Decimal2. The Creatio display names 'Encrypted' and 'Password' both map to SecureText. " +
+		"Most canonical names the read tools report are accepted here too: Float0-Float4/Float8 = " +
+		"Decimal0-Decimal4/Decimal8, Money0/Money1/Money3 = Currency0/Currency1/Currency3, " +
+		"PhoneText = PhoneNumber, WebText = WebLink, EmailText = Email. Three read names resolve to a " +
+		"DIFFERENT type here, so do not echo them blindly: 'Float' (the unbounded float a read reports for " +
+		"dataValueType 5) resolves to Decimal2, and 'Date'/'Time' resolve to DateTime. Read names for " +
+		"non-writable types (Enum, HashText, Collection, Entity, StageIndicator, FileLocator and the other " +
+		"structural types) are rejected — there is no way to create those columns through clio.";
+
+	// The `data-type` values are stated explicitly because a caller has to decide from them whether a column
+	// is numeric. A partial type map that fell back to "Text" once reported every decimal scale as text, and
+	// callers filtered a numeric column as a lexicographic string comparison (ENG-93202).
+	private const string DataForgeColumnsFieldDescription =
+		"Runtime column projections with `name`, `caption`, `description`, `data-type`, `required`, and " +
+		"`reference-schema-name`. `data-type` is the canonical Creatio type name — Text, Integer, Float, " +
+		"Float0-Float4/Float8 (decimal scales; Float2 is the common 'Decimal (0.01)'), Money/Money0/Money1/" +
+		"Money3 (currency scales), Boolean, DateTime, Date, Time, Lookup, Guid, ShortText/MediumText/LongText/" +
+		"MaxSizeText, PhoneText, WebText, EmailText, RichText, and so on. All Float*/Money*/Integer names are " +
+		"numeric, so compare them numerically rather than as strings. A type clio does not model yet is " +
+		"reported as its raw numeric ordinal (for example `51`) rather than as a guessed type name. " +
+		"Do NOT assume a name read here is writable: the write tools accept it back only for the types they " +
+		"can create, and three names mean a DIFFERENT type on write — " +
+		"`Float` writes Decimal2 (send Float2/Decimal2 explicitly for a scaled decimal, and note an " +
+		"unbounded Float column cannot be created by clio at all), while `Date` and `Time` both write " +
+		"DateTime. Names such as Enum, HashText, StageIndicator, Collection, Entity or FileLocator are " +
+		"read-only: the write tools reject them. Read the `type` field of those tools for the accepted list.";
 
 	// Shared by the create-lookup / create-entity-schema `columns` arrays. Spelling out the column identity
 	// field matters: these two contracts used to say only "Optional initial columns", so a caller had no way
@@ -555,7 +580,7 @@ internal static class ToolContractCatalog {
 	// the correlation ID beside the legacy message, so an agent has something to act on and an operator
 	// can find the matching log line.
 	// PR #1373 review (Blocker) — COMPOSED from the SysSettingErrorCategories constants, not retyped. The hand-
-	// written list had already drifted: it omitted `Configuration`, which `CategorizeFailure` returns for every
+	// written list had already drifted: it omitted `Configuration`, which `ISysSettingFailureClassifier.Categorize` returns for every
 	// `EnvironmentResolutionException` (an unregistered environment - the most common failure an agent hits, and
 	// the one arm carrying actionable recovery advice). Per
 	// docs/knowledge/McpServer/curated-tool-contract-wins-over-the-description-attribute.md this curated string can
@@ -570,7 +595,7 @@ internal static class ToolContractCatalog {
 			.OrderBy(name => name, StringComparer.Ordinal))
 		+ ". Null on success.";
 	// PR #1373 review — the previous wording claimed `cause` is "never composed from server prose", which
-	// `CategorizeFailure` does not honour: the `ProviderFailure` arm sets it from `DataProviderFailureException.Message`,
+	// `ISysSettingFailureClassifier.Categorize` does not honour: the `ProviderFailure` arm sets it from `DataProviderFailureException.Message`,
 	// built from the environment's HTTP response. Advertising a trust label the code does not keep is worse than no
 	// label - an agent would read environment-influenced text as trusted local guidance, the prompt-injection surface
 	// issue #1333 exists to close. Keeping `Cause` strictly fixed-local for `ProviderFailure` (the reviewer's preferred
@@ -630,7 +655,6 @@ internal static class ToolContractCatalog {
 		"Accepted alias for 'page-schema-name' \u2014 the spelling every other page tool uses. Supply one of the two.";
 	private const string ResourcesFieldName = "resources";
 	private const string SelectFieldName = "select";
-	private const string SkipSamplingFieldName = "skip-sampling";
 	private const string StringType = "string";
 	private const string StatusFieldName = "status";
 	private const string SuccessFalseSignal = "success == false";
@@ -685,6 +709,34 @@ internal static class ToolContractCatalog {
 		"Requires Creatio platform version 10.0.0 or later; CrtDataForge is included in supported platform versions.";
 	private const string WithMobilePagesFieldName = "with-mobile-pages";
 
+	/// <summary>Response member every odata-* tool stamps, on success and on failure alike.</summary>
+	private const string CorrelationIdFieldName = "correlation-id";
+
+	/// <summary>
+	/// The odata-read variant. Only this tool withholds the server's wording from <c>error</c> and routes
+	/// it to the debug channel, so only this tool may promise it.
+	/// </summary>
+	private const string ODataReadCorrelationIdDescription =
+		"Identifier for this call, present on success and on failure, matching this response to clio's own "
+		+ "log lines. The server's error wording is never reproduced in 'error'; it is written to clio's "
+		+ "debug log, which needs clio running in-process with --debug and a log sink, so an MCP worker "
+		+ "process produces no such line.";
+
+	/// <summary>
+	/// The odata-create/update/delete variant. These tools inject no logger and write no debug line, and
+	/// <c>ODataKeyedWrite.ValidateWriteResponse</c> puts the REDACTED server message into <c>error</c>,
+	/// so the read tool's promise would be false here twice over.
+	/// </summary>
+	private const string ODataWriteCorrelationIdDescription =
+		"Identifier for this call, present on success and on failure, matching this response to clio's own "
+		+ "log lines. Unlike odata-read, this tool's 'error' MAY carry Creatio's own message (with URIs, "
+		+ "paths and tokens removed) and there is no separate debug line to look the id up in.";
+
+	private const string DataWriteDiagnosticFieldName = "diagnostic";
+	private const string DataWriteDiagnosticDescription = "Optional bounded context: operation, entity, item-index, write-attempted, transport-outcome, side-effect, retry-advice and sanitized message. No inferred HTTP status or offending field.";
+
+	private const string ODataReadErrorCodeFieldName = "error-code";
+
 		private static readonly ToolErrorContract CommonErrorContract = new([
 			new ToolErrorCodeContract("tool-not-found", "Requested tool name is not registered by clio MCP."),
 			new ToolErrorCodeContract(MissingRequiredParameterCode, "A required parameter is missing."),
@@ -692,6 +744,29 @@ internal static class ToolContractCatalog {
 			new ToolErrorCodeContract("invalid-parameter-type", "A parameter value type does not match the tool contract."),
 			new ToolErrorCodeContract(InvalidLocalizationMapCode, "A localization map is malformed or missing en-US."),
 		new ToolErrorCodeContract(InvalidWorkflowShapeCode, "The request shape is structurally invalid for the target tool.")
+	]);
+
+	/// <summary>
+	/// The odata-read failure classification, published so an agent can branch on a code instead of
+	/// pattern-matching an English sentence. Derived from the <c>ODataReadErrorCodes</c> constants so the
+	/// contract cannot name a code the tool never emits.
+	/// </summary>
+	private static readonly ToolErrorContract ODataReadErrorContract = new([
+		..CommonErrorContract.Codes,
+		new ToolErrorCodeContract(ODataReadErrorCodes.Argument,
+			"The request failed local validation and nothing was sent to Creatio."),
+		new ToolErrorCodeContract(ODataReadErrorCodes.EntityNotFound,
+			"The entity set could not be reached: an IIS 404 page, or the routing miss for an OData controller that is not registered or is still rebuilding. Distinguish the two by the message, which carries the wait-and-retry hint only for the rebuild case."),
+		new ToolErrorCodeContract(ODataReadErrorCodes.InvalidQuery,
+			"Creatio rejected the query shape - an unknown property, or a column absent from the schema. The message lists the names THIS request sent and flags a filter field that looks like a raw lookup column. One exception before you change anything: a member added moments ago reports itself exactly this way while the OData model rebuilds, so wait and retry ONCE first - re-running a schema write in response makes it worse. Otherwise an unchanged retry cannot succeed."),
+		new ToolErrorCodeContract(ODataReadErrorCodes.ServerReportedError,
+			"Creatio reported an error that could not be narrowed further. The server's wording is not reproduced; the correlation-id ties this response to the debug line that carries it."),
+		new ToolErrorCodeContract(ODataReadErrorCodes.NonJsonResponse,
+			"The body was not a JSON OData response for the requested entity set - a proxy or IIS page, a session redirect, or a payload for a different set."),
+		new ToolErrorCodeContract(ODataReadErrorCodes.IncompleteResponse,
+			"The response was the requested payload but omitted something the request asked for, such as @odata.count for count=true."),
+		new ToolErrorCodeContract(ODataReadErrorCodes.Transport,
+			"No usable response body came back, or the call failed before it was sent. The shared GET transport reports a connection failure, a DNS failure and a timeout all as an empty body.")
 	]);
 
 	private static readonly IReadOnlyDictionary<string, ToolContractDefinition> Contracts =
@@ -765,6 +840,7 @@ internal static class ToolContractCatalog {
 			[SysSettingUpdateTool.UpdateSysSettingToolName] = BuildUpdateSysSetting(),
 			[InstallGateTool.InstallGateToolName] = BuildInstallGate(),
 			[InstallProcessBuilderTool.InstallProcessBuilderToolName] = BuildInstallProcessBuilder(),
+			[InstallDashboardsMigratorTool.InstallDashboardsMigratorToolName] = BuildInstallDashboardsMigrator(),
 			[AssertInfrastructureTool.AssertInfrastructureToolName] = BuildAssertInfrastructure(),
 			[ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName] = BuildShowPassingInfrastructure(),
 			[FindEmptyIisPortTool.FindEmptyIisPortToolName] = BuildFindEmptyIisPort(),
@@ -845,6 +921,38 @@ internal static class ToolContractCatalog {
 
 	/// <summary>The one-line purpose is truncated to this many characters for the compact index.</summary>
 	private const int MaxPurposeLength = 120;
+
+	/// <summary>
+	/// Abbreviations whose own terminating period IS followed by whitespace and therefore reads as a
+	/// sentence break to <see cref="FindFirstSentenceEnd"/>. Membership is decided by ONE property: the
+	/// abbreviation is never sentence-FINAL in English, so skipping its period can only ever be right.
+	/// An ambiguous one must stay out — a wrong skip merges two sentences and pulls the next one (often
+	/// a safety warning) into the one-liner, which is the same truncated-thought symptom ENG-96389 set
+	/// out to remove, merely relocated.
+	/// <para>
+	/// <c>etc.</c> is the worked example of that exclusion, and it is deliberate rather than an
+	/// oversight. Mid-sentence it is written <c>etc.,</c> or <c>etc.)</c>, whose period is NOT followed
+	/// by whitespace and is already kept by the mid-word rule below; the only form that would reach this
+	/// list is the ambiguous one, where sentence-final is the commoner reading.
+	/// </para>
+	/// <para>
+	/// Only <c>e.g.</c> reaches a first-sentence boundary in this assembly today - it is what cut
+	/// <c>get-user-culture</c> mid-example, and the reason this list exists. <c>i.e.</c> and <c>vs.</c>
+	/// are forward-looking entries, kept because they satisfy the never-sentence-final rule above, NOT
+	/// because either was measured reaching the split. Deliberately no occurrence counts here: a counted
+	/// claim in shipped text has no drift oracle and goes stale unnoticed (an earlier revision of this
+	/// comment carried three numbers that were already wrong when review checked them) - see
+	/// docs/knowledge/McpServer/counted-claims-in-shipped-text-have-no-drift-oracle.md.
+	/// </para>
+	/// <para>
+	/// This list narrows ONE trigger; it does not close the class. An index line is still DERIVED from
+	/// free prose and hard-cut at <see cref="MaxPurposeLength"/>, so a description written as
+	/// "Creates rows, columns, etc. BEFORE CALLING: ..." still distils to a truncated thought, and 73 of
+	/// the 212 served purposes are cut mid-word today. The general fix is an AUTHORED purpose declared
+	/// per tool with this distillation kept only as the fallback - tracked separately, not here.
+	/// </para>
+	/// </summary>
+	private static readonly string[] SentenceSafeAbbreviations = ["e.g.", "i.e.", "vs."];
 
 	/// <summary>
 	/// The names that have a HANDWRITTEN contract, as opposed to one synthesized from the registered tool
@@ -1129,12 +1237,21 @@ internal static class ToolContractCatalog {
 	}
 
 	/// <summary>
-	/// Distills a one-line purpose from a full tool description: takes the first sentence (up to the first
-	/// period followed by whitespace) or first line, collapses inner whitespace, and truncates to
-	/// <see cref="MaxPurposeLength"/> characters with an ellipsis so the index stays compact.
+	/// Distills the one-line purpose the compact index shows for a tool: collapses inner whitespace,
+	/// takes the first sentence (a period followed by whitespace or the end of the text, skipping the
+	/// <see cref="SentenceSafeAbbreviations"/>), and truncates to <see cref="MaxPurposeLength"/>
+	/// characters with an ellipsis so the index stays compact.
 	/// </summary>
+	/// <remarks>
+	/// <c>internal</c> rather than <c>private</c> so the distillation can be driven directly from tests.
+	/// Routing every case through a real tool's <c>[Description]</c> instead would pin this logic to
+	/// production prose: the abbreviation rules are then exercised only where some description happens
+	/// to use one, and a reword silently removes the coverage. See
+	/// <c>docs/knowledge/McpServer/first-sentence-of-a-description-becomes-the-compact-index-purpose.md</c>.
+	/// </remarks>
 	/// <param name="description">The full curated tool description.</param>
-	private static string BuildPurpose(string description) {
+	/// <returns>The one-line purpose, or an empty string when the description has no content.</returns>
+	internal static string BuildPurpose(string description) {
 		string normalized = string.Join(' ',
 			(description ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 		if (normalized.Length == 0) {
@@ -1151,7 +1268,9 @@ internal static class ToolContractCatalog {
 	/// <summary>
 	/// Returns the index of the first sentence-terminating period (a '.' followed by whitespace or the end
 	/// of the text), or <c>-1</c> when the text has no sentence break. Abbreviation periods mid-word (for
-	/// example <c>en-US</c> or version numbers) are kept because they are not followed by whitespace.
+	/// example <c>en-US</c> or version numbers) are kept because they are not followed by whitespace;
+	/// the abbreviations in <see cref="SentenceSafeAbbreviations"/> are kept explicitly, because their
+	/// final period IS followed by whitespace and the mid-word rule cannot see them.
 	/// </summary>
 	/// <param name="text">The whitespace-normalized description.</param>
 	private static int FindFirstSentenceEnd(string text) {
@@ -1159,11 +1278,40 @@ internal static class ToolContractCatalog {
 			if (text[index] != '.') {
 				continue;
 			}
-			if (index == text.Length - 1 || char.IsWhiteSpace(text[index + 1])) {
-				return index;
+			if (index != text.Length - 1 && !char.IsWhiteSpace(text[index + 1])) {
+				continue;
 			}
+			if (EndsWithSentenceSafeAbbreviation(text, index)) {
+				continue;
+			}
+			return index;
 		}
 		return -1;
+	}
+
+	/// <summary>
+	/// Whether the period at <paramref name="periodIndex"/> terminates one of
+	/// <see cref="SentenceSafeAbbreviations"/> rather than a sentence. The match must cover a WHOLE
+	/// token — the character before the abbreviation has to be a non-alphanumeric or the start of the
+	/// text — so a word that merely ends in the same letters (<c>code.g.</c>) is still a sentence break.
+	/// </summary>
+	/// <param name="text">The whitespace-normalized description.</param>
+	/// <param name="periodIndex">Index of the candidate sentence-terminating period.</param>
+	private static bool EndsWithSentenceSafeAbbreviation(string text, int periodIndex) {
+		foreach (string abbreviation in SentenceSafeAbbreviations) {
+			int start = periodIndex - abbreviation.Length + 1;
+			if (start < 0) {
+				continue;
+			}
+			if (string.Compare(text, start, abbreviation, 0, abbreviation.Length,
+				    StringComparison.OrdinalIgnoreCase) != 0) {
+				continue;
+			}
+			if (start == 0 || !char.IsLetterOrDigit(text[start - 1])) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/// <summary>
@@ -2110,7 +2258,7 @@ internal static class ToolContractCatalog {
 					Field("table-name", StringType, "Target runtime entity schema name.")),
 				OutputFields = DataForgeEnvelopeFields(
 					QueryCorrelationIdentifierDescription,
-					Field(ColumnsFieldName, ArrayType, "Runtime column projections with `name`, `caption`, `description`, `data-type`, `required`, and `reference-schema-name`.")),
+					Field(ColumnsFieldName, ArrayType, DataForgeColumnsFieldDescription)),
 				Examples = [
 					Example("Read Contact runtime columns for a configured environment", new Dictionary<string, object?> {
 						["table-name"] = ExampleContactSchemaName,
@@ -2143,7 +2291,8 @@ internal static class ToolContractCatalog {
 					Field("similar-tables", ArrayType, "Similar table results."),
 					Field("similar-lookups", ArrayType, "Similar lookup results."),
 					Field("relations", ObjectType, "Resolved relation paths keyed by source-target pair."),
-					Field(ColumnsFieldName, ObjectType, "Resolved runtime column projections keyed by table name."),
+					Field(ColumnsFieldName, ObjectType, "Resolved runtime column projections keyed by table name. "
+						+ $"Each projection has the same shape and `data-type` vocabulary as {DataForgeTool.DataForgeGetTableColumnsToolName}."),
 					Field("coverage", ObjectType, "Coverage flags for health, tables, lookups, relations, and table-columns.")),
 				Examples = [
 					Example("Aggregate app-modeling context for a configured environment", new Dictionary<string, object?> {
@@ -2204,7 +2353,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildODataRead() {
 		return new ToolContractDefinition(
 			ODataReadTool.ToolName,
-			"Reads Creatio records through OData v4. Use this to query records, page through ordered results, request a verified total count, resolve lookup primary values, verify records by Id, or inspect selected fields. Unknown arguments and malformed structured filters fail before any Creatio request; raw filter strings are not supported.",
+			"Reads Creatio records through OData v4. Use this to query records, page through ordered results, request a verified total count, resolve lookup primary values, verify records by Id, or inspect selected fields. Unknown arguments and malformed structured filters fail before any Creatio request; raw filter strings are not supported. Every response carries a correlation-id, and every failure carries a machine-readable error-code - branch on the code, not on the wording of error. The server's own error text is never reproduced in error, and reaches clio's debug log only when clio runs in-process with --debug and a log sink (an MCP worker process carries neither); the correlation-id is what ties this response to the debug line that records it. On error-code invalid-query the message lists the filter, select, expand and order-by names THIS request sent, and names the navigation path to use when a filter field looks like a raw lookup column (AccountId -> Account/Id).",
 			new ToolInputSchemaContract(
 				[EntityFieldName, EnvironmentNameFieldName],
 				[
@@ -2223,6 +2372,8 @@ internal static class ToolContractCatalog {
 						Context: "top must be between 1 and 100; omitting it uses the default of 25, and an out-of-range value (including 0 or negative) is rejected with success:false."),
 					new ToolContractValidator("skip-range", "invalid-skip", "skip",
 						Context: "skip must be zero or greater; use order-by with skip for stable paging."),
+					new ToolContractValidator("member-path", "argument", "select",
+						Context: "select, expand and order-by are held to the same rule as a filter field: every name must be a plain OData member path (letters, digits, underscore and '/'), and order-by additionally accepts a trailing asc or desc. Nested query options such as Account($select=Id) are rejected before any Creatio request."),
 					new ToolContractValidator("structured-filter", "invalid-filter", "filters",
 						Context: "When filters is present it must be a non-null object containing at least one condition in all or any. Every condition requires a simple field or navigation path and exactly one of value or in; unknown group/condition members, embedded OData grammar, and unsupported op values are rejected before any Creatio request.")
 				]),
@@ -2238,9 +2389,12 @@ internal static class ToolContractCatalog {
 				Field(ValueFieldName, ArrayType, "OData value array or single entity response."),
 				Field("next-link", StringType, "OData next-link URL when more records are available; use skip with a stable order-by to request subsequent pages through this tool."),
 				Field("status-code", NumberType, "HTTP status behind a failure, present ONLY when the response was an HTML error page that states its status in its title (404 when the entity has no OData controller, 401/502/503 for an auth/proxy/outage hop). Absent otherwise: Creatio serves the JSON routing 404 with HTTP 200, and that case instead carries the wait-and-retry hint in error. Branch on both, never on status-code alone."),
-				Field(EntityFieldName, StringType, "The OData entity set the failure refers to, echoed back so several concurrent reads can be told apart. Present on every failure raised once the requested entity name is known; an argument-level rejection (a missing or malformed entity, an unsupported argument) is refused before that point and carries no entity.")
+				Field(EntityFieldName, StringType, "The OData entity set the failure refers to, echoed back so several concurrent reads can be told apart. Present on every failure raised once the requested entity name is known; an argument-level rejection (a missing or malformed entity, an unsupported argument) is refused before that point and carries no entity."),
+				Field(ODataReadErrorCodeFieldName, StringType,
+					"Machine-readable failure classification when success is false; absent on success. Branch on this rather than on the wording of 'error'."),
+				Field(CorrelationIdFieldName, StringType, ODataReadCorrelationIdDescription)
 			),
-			CommonErrorContract,
+			ODataReadErrorContract,
 			[
 				Alias(ParameterScope, FiltersFieldName, "filter", RejectedStatus,
 					"Raw filter strings are not supported. Use the structured 'filters' object shown in this contract."),
@@ -2318,7 +2472,15 @@ internal static class ToolContractCatalog {
 					"Alternative discovery path: use find-entity-schema to locate the schema by name, then get-entity-schema-properties to inspect its columns, then query.")
 			],
 			[],
-			OdataUnregisteredEntityAntiPatterns(includeEsqEscapeRoute: true));
+			[
+				..OdataUnregisteredEntityAntiPatterns(includeEsqEscapeRoute: true),
+				new ToolAntiPattern(
+					"Filtering on a raw foreign-key column such as AccountId or SysSettingsId, then treating the resulting failure as 'the entity has no such data'.",
+					"OData does not expose a lookup's key column as a property - the reference is reachable only through the navigation path, so filter on Account/Id or SysSettings/Id instead. When clio can classify the rejection it answers error-code invalid-query and its message names the offending field and the navigation path to use; when it cannot, the code is server-reported-error and NO field is named, so check the filter yourself rather than reading the silence as 'the field is fine'."),
+				new ToolAntiPattern(
+					"Pattern-matching the wording of 'error' to decide what to do next, or re-sending an unchanged query after a failure.",
+					"Branch on error-code instead: invalid-query means the request shape is wrong and an unchanged retry cannot succeed, entity-not-found may be a rebuild worth one retry, transport is worth a retry once the environment is reachable. The server's own wording is deliberately never in 'error'; quote the correlation-id to whoever can read the environment's logs.")
+			]);
 	}
 
 	private static ToolContractDefinition BuildGetEmailTemplate() {
@@ -2478,7 +2640,9 @@ internal static class ToolContractCatalog {
 				[SuccessFalseSignal],
 				Field(SuccessFieldName, BooleanType, "Whether the OData update succeeded."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
-				Field("id", StringType, "GUID of the updated record.")
+				Field("id", StringType, "GUID of the updated record."),
+				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
+				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)
 			),
 			CommonErrorContract,
 			[],
@@ -2525,7 +2689,9 @@ internal static class ToolContractCatalog {
 				[SuccessFalseSignal],
 				Field(SuccessFieldName, BooleanType, "Whether the OData delete succeeded."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
-				Field("id", StringType, "GUID of the deleted record.")
+				Field("id", StringType, "GUID of the deleted record."),
+				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
+				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)
 			),
 			CommonErrorContract,
 			[],
@@ -3980,7 +4146,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
-					Field(OperationsFieldName, ArrayType, "Ordered schema operations. Supported `type` values: create-lookup, create-entity, update-entity, seed-data. For create-entity, set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. A standalone `seed-data` operation inserts `seed-rows` into an existing schema (used by resume-plan when a create succeeded but its inline seeding failed). Column fields are unified with get-app-info and are the same for the create-entity/create-lookup `columns` array: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. Default values are accepted on create-entity/create-lookup `columns` items and on `update-operations` items: `default-value-config` with `source` Const (its `value` is the scalar — for a lookup column the STABLE RECORD GUID of the target record, which must exist at write time), Settings (`value-source` = setting code), SystemValue (`value-source` = system value GUID), or Sequence (`sequence-prefix` + `sequence-number-of-chars`); `source: None` removes an existing default. The legacy shorthand `default-value-source: Const|None` (+ `default-value` for Const) is also accepted. A column read from get-app-info reports its default as `default-value-config` — send it back as-is to re-apply, or set `source: None` to clear it. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied). " + ColumnTypeVocabularyDescription + " Applies to column types in both columns and update-operations. Read columns back with get-entity-schema-properties after writing. For date-only Freedom UI fields, explicitly set pickerType: \"date\" on crt.DateTimePicker.")),
+					Field(OperationsFieldName, ArrayType, "Ordered schema operations. Supported `type` values: create-lookup, create-entity, update-entity, seed-data. For create-entity, `is-db-view` maps to a separately provisioned SQL view without generating a table; seed-rows are rejected and an existing mismatched storage kind is a collision. Omission preserves metadata. Set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. A standalone `seed-data` operation inserts `seed-rows` into an existing schema (used by resume-plan when a create succeeded but its inline seeding failed). Column fields are unified with get-app-info and are the same for the create-entity/create-lookup `columns` array: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. Default values are accepted on create-entity/create-lookup `columns` items and on `update-operations` items: `default-value-config` with `source` Const (its `value` is the scalar — for a lookup column the STABLE RECORD GUID of the target record, which must exist at write time), Settings (`value-source` = setting code), SystemValue (`value-source` = system value GUID), or Sequence (`sequence-prefix` + `sequence-number-of-chars`); `source: None` removes an existing default. The legacy shorthand `default-value-source: Const|None` (+ `default-value` for Const) is also accepted. A column read from get-app-info reports its default as `default-value-config` — send it back as-is to re-apply, or set `source: None` to clear it. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied). " + ColumnTypeVocabularyDescription + " Applies to column types in both columns and update-operations. Read columns back with get-entity-schema-properties after writing. For date-only Freedom UI fields, explicitly set pickerType: \"date\" on crt.DateTimePicker.")),
 				Validators: [
 					new ToolContractValidator(
 						"sync-schemas-operations-localizations",
@@ -4117,7 +4283,7 @@ internal static class ToolContractCatalog {
 				[EnvironmentNameFieldName, PagesFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field(PagesFieldName, ArrayType, "Page update requests built from the CONTENTS of the file at `get-page.files.bodyFile` \u2014 sync-pages takes the body inline only, so read that file and pass its text as `body` (it has no `body-file` parameter; update-page does). Each page item requires `schema-name` and full `body`; optional `resources` is a JSON object string of localizable string key-value pairs the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit caption overrides). Only include keys with NO matching DS-bound view model attribute on the page; matching keys are auto-provided by the platform \u2014 see `page-schema-resources` guidance. Each page item also accepts `optional-properties` (JSON array of {key, value} merged into schema optionalProperties)."),
+					Field(PagesFieldName, ArrayType, "Page update requests built from the CONTENTS of the file at `get-page.files.bodyFile` \u2014 sync-pages takes the body inline only, so read that file and pass its text as `body` (it has no `body-file` parameter; update-page does). Each page item requires `schema-name` and full `body`; optional `resources` is a JSON object string of localizable string key-value pairs the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit caption overrides). Only include keys with NO matching DS-bound view model attribute on the page; matching keys are auto-provided by the platform \u2014 see `page-schema-resources` guidance. Additions only: a key already stored on the schema stays registered and is NOT updated by re-sending it on a later save. Each page item also accepts `optional-properties` (JSON array of {key, value} merged into schema optionalProperties), `checksum` (the `editable.checksum` from the get-page THIS page's edit is based on — pass it on every save that follows a get-page and it becomes the authoritative conflict baseline for that page), and `force` (skip the external-modification check for this page and deliberately overwrite out-of-band changes; set true ONLY after the user explicitly confirms it)."),
 					Field(ValidateFieldName, BooleanType, "Run client-side content validation before save. Set false only as an escape hatch for pre-existing page defects; the structural floor still runs. This flag and `force` are orthogonal — one gates content checks, the other the baseline/conflict guard — so they can be combined; the per-page result then carries a warning that both guards are relaxed."),
 					Field(VerifyFieldName, BooleanType, "Read the page back after save.")
 				]),
@@ -4405,6 +4571,7 @@ internal static class ToolContractCatalog {
 					Field("columns", ArrayType, CreateColumnsDescription),
 					Field(ParentSchemaNameFieldName, StringType, "Optional parent schema name."),
 					Field("extend-parent", BooleanType, "Optional replacement-schema flag."),
+					Field("is-db-view", BooleanType, "Map to a separately provisioned SQL view without generating a table. Omit to preserve inherited metadata."),
 					Field(IsVirtualFieldName, BooleanType, "Creates a virtual entity schema without a physical database table when true.")),
 				Validators: [
 					RequiredLocalizationMapValidator(TitleLocalizationsFieldName)
@@ -4739,7 +4906,8 @@ internal static class ToolContractCatalog {
 			"Returns a structured summary of entity schema metadata for read-before-write inspection and read-back verification. " +
 			"Omit package-name to read the merged/effective schema with columns from ALL packages (recommended for column " +
 			"discovery); supply it only to inspect a single package layer's slice, which reports that layer's own columns and " +
-			"treats everything else as inherited.",
+			"treats everything else as inherited. Set required-only=true to return only columns marked required in schema metadata; " +
+			"schema column counts remain unfiltered. Dynamic business rules and default values are not evaluated.",
 			// package-name is NOT required here: the emitted tool schema makes it optional and its own text
 			// recommends omitting it for column discovery. Spelling it as required in the curated contract is
 			// the exact divergence issue #965 reports — an agent that trusts get-tool-contract always sends a
@@ -4753,7 +4921,8 @@ internal static class ToolContractCatalog {
 					Field(PackageNameFieldName, StringType,
 						"Optional target package name. Omit to read the merged/effective schema with columns from ALL " +
 						"packages (recommended for column discovery). Supply only to inspect a single package layer's slice."),
-					Field(SchemaNameFieldName, StringType, EntitySchemaNameDescription)
+					Field(SchemaNameFieldName, StringType, EntitySchemaNameDescription),
+					Field("required-only", BooleanType, "Optional, default false. Return only columns whose required metadata is true; schema column counts remain unfiltered.")
 				]),
 			StructuredResultOutput(
 				Field("name", StringType, "Schema name."),
@@ -5142,14 +5311,17 @@ internal static class ToolContractCatalog {
 					Field(SchemaNameFieldName, StringType, "Freedom UI page schema name."),
 					Field("body", StringType, "Full page body with all marker pairs. Reuse the CONTENTS of the file at `get-page.files.bodyFile` rather than the bundle written to `get-page.files.bundleFile`. Either `body` or `body-file` must be provided. WARNING: re-sending the full inherited body verbatim is wrong in BOTH modes, and they fail differently. In `append` a full-config body is rejected UP-FRONT, offline \u2014 that mode takes only the new viewConfigDiff/handlers operations in the diff form, and the rejection itself points at replace mode. In `replace` the body reaches the SERVER and can fail there with 'Object vs Array' when it re-applies merges already inherited from the parent hierarchy, so passing the `get-page.files.bodyFile` path straight through as `body-file` is mechanically accepted but IS the resend hazard, not a recommendation."),
 					Field(BodyFileFieldName, StringType, "Absolute path to a file containing the page body. Used when `body` is empty. Enables passing large bodies without inline JSON escaping."),
-					Field(DryRunFieldName, BooleanType, "Validate without saving."),
+					Field(DryRunFieldName, BooleanType, "Validate without saving. With `mode: append` this is not an offline check: it resolves the schema's current body, runs the REAL merge, and returns `appendProjection`, so it reports what the write would change (see that field). It also runs the SAME body checks the save runs, against the body that WOULD BE SAVED — including the save's own widget-caption gate, reported here as a warning instead of a refusal, so a dry run and a save cannot disagree about a caption. An append the save could not merge fails here too (that failure carries `dryRun: true`). `mode: replace` writes verbatim, so there is no projection. It is NOT an offline check and must not be planned as one: resolving the schema context still queries SysSchema, the design package and the parent schemas before either mode is chosen. What it skips is the designer GetSchema fetch of the CURRENT body. Its caption check can only resolve against the resources you pass, so it is weaker than the save's."),
 					Field(ValidateFieldName, BooleanType, "Run client-side content and run-process validation before saving. Set false only as an explicit escape hatch for a pre-existing page defect; JavaScript syntax, AST loadability, replace-mode marker integrity, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. It stays combinable with force=true - the two flags are orthogonal (one gates content checks, the other the baseline/conflict guard) - and the response then warns that both are relaxed."),
-					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit overrides). Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance."),
+					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit overrides). Only include keys with NO matching DS-bound view model attribute on the page \u2014 see `page-schema-resources` guidance. Additions only: keys already stored on the schema stay registered and are NOT updated by re-sending them on a later save."),
 					Field("optional-properties", StringType, "JSON array of {key, value} objects merged into schema optionalProperties (e.g. '[{\"key\":\"entitySchemaName\",\"value\":\"UsrMyEntity\"}]')."),
 					Field(VerifyFieldName, BooleanType, "If true, read the page back after saving and return its metadata. Best-effort \u2014 verify failure does not fail the update."),
-					Field("mode", StringType, "Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming fragment with the schema's current body \u2014 viewConfigDiff entries are replaced only when BOTH `operation` and `name` match — and, for a `remove`, whether it targets `properties` — with incoming winning in place. Every existing operation the fragment does not collide with is preserved, including a second operation on the same component. The one exception: a FURTHER existing entry of an identity the fragment already superseded is dropped rather than re-applied after the replacement. Handlers dedupe by `request`. SCHEMA_CONVERTERS and SCHEMA_VALIDATORS entries merge by type key and incoming wins, and the final merged web body is rejected when a custom validator reference has no matching SCHEMA_VALIDATORS declaration. Separately, at APPLY time: preserved is not the same as applied, and this part is not append-specific — a 'replace' body produces it too. The differ applies whole operation GROUPS in a fixed order (merges, then removes/inserts/moves, `set` last), never in viewConfigDiff array order. So a `merge`, `move`, or element `remove` that ends up beside an `insert` for one `name`, or a `move` whose name the same body also element-removes, resolves against a base without that component and is silently dropped. The same holds for any two operations whose groups run in sequence for one name: a `merge` beside an element `remove` or a `set`, and a property `remove` beside an element `remove` or beside a `set`. The response then carries an advisory `warnings` entry naming the component; fold the transform's values into the `insert`, or use `set`. Reordering the array changes nothing."),
+					Field("mode", StringType, "Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming fragment with the schema's current body \u2014 viewConfigDiff entries are replaced only when BOTH `operation` and `name` match — and, for a `remove` or a `set`, whether it targets `properties` — with incoming winning in place. Every existing operation the fragment does not collide with is preserved, including a second operation on the same component. The one exception: a FURTHER existing entry of an identity the fragment already superseded is dropped rather than re-applied after the replacement. Handlers dedupe by `request`. An append body is a FRAGMENT OF A PAGE BODY, not a bare list of operations: it may omit sections, but it must carry at least one section marker pair (e.g. /**SCHEMA_VIEW_CONFIG_DIFF*/[ ... ]/**SCHEMA_VIEW_CONFIG_DIFF*/) or it is rejected up-front — a bare array is valid JavaScript, so without this rule every section read as empty and the merge discarded the whole fragment while reporting success. SCHEMA_CONVERTERS and SCHEMA_VALIDATORS entries merge by type key and incoming wins, and the final merged web body is rejected when a custom validator reference has no matching SCHEMA_VALIDATORS declaration. Separately, at APPLY time: preserved is not the same as applied, and this part is not append-specific — a 'replace' body produces it too. The differ applies whole operation GROUPS in a fixed order (merges, then removes/inserts/moves, `set` last), never in viewConfigDiff array order. So a `merge`, `move`, or element `remove` that ends up beside an `insert` for one `name`, or a `move` whose name the same body also element-removes, resolves against a base without that component and is silently dropped. The same holds for any two operations whose groups run in sequence for one name: a `merge` beside an element `remove` or a `set`, and a property `remove` beside an element `remove` or beside a `set`. The response then carries an advisory `warnings` entry naming the component; fold the transform's values into the `insert`, or use `set`. Reordering the array changes nothing."),
 					Field("target-package-uid", StringType, "Explicit target package UId for the replacing schema. Overrides automatic design-package resolution."),
-					Field("target-schema-uid", StringType, "Explicit schema UId to save into directly. Bypasses hierarchy resolution entirely.")),
+					Field("target-schema-uid", StringType, "Explicit schema UId to save into directly. Bypasses hierarchy resolution entirely \u2014 the UId is used as given, with no name resolution or existence check. With `mode: append` this is also the body a `dry-run` fetches and projects against, so an unintended UId is read, not just written to."),
+					Field("checksum", StringType, "Conflict baseline: the `editable.checksum` returned by the get-page call this edit is based on. When supplied it is the authoritative baseline, so the save is compared against the body you actually fetched rather than the on-disk .clio-pages baseline, which can be stale or anchored elsewhere."),
+					Field("force", BooleanType, "Skip the external-modification (checksum) conflict check and deliberately overwrite out-of-band changes. Set true ONLY after the user explicitly confirms overwriting changes made outside this session. A target-package-uid / target-schema-uid redirect skips only the on-disk baseline; an explicit checksum is still compared with the resolved target and a mismatch remains a conflict."),
+					Field("output-directory", StringType, "Optional. Directory that anchors the `.clio-pages` conflict-baseline lookup \u2014 pass the same value that was passed to get-page when it differs from the auto-detected workspace root. Used only for baseline discovery; it does NOT change where the page is saved.")),
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -5160,8 +5332,9 @@ internal static class ToolContractCatalog {
 				Field("schemaName", StringType, "Page schema name."),
 				Field("bodyLength", NumberType, "Saved body length."),
 				Field("dryRun", BooleanType, "Whether the call ran in validation mode."),
+				Field("appendProjection", ObjectType, "What the append merge did — or, on a dry run, WOULD do — to the page's viewConfigDiff. Present for `mode: append` whenever a merge ran; absent for `replace` (writes verbatim) and absent when the stored body is empty (nothing to merge into). Counts: `currentOperationCount`, `incomingOperationCount`, `projectedOperationCount` (compare this against the count you expect), `addedOperationCount`. THREE DISTINCT LOSS CHANNELS, each with its own fix — do not read any one of them as the whole story: `droppedOperations`/`droppedOperationCount` = entries from the SERVER body the merge does not carry over (the further-duplicate exception described in `mode`), which also raise a `warnings` entry each; `collapsedIncomingOperations`/`collapsedIncomingOperationCount` = entries from YOUR OWN fragment that a later entry in the same fragment supersedes, so only the last spelling of an identity survives — the likeliest one to hit, reported here as data and deliberately NOT warned about because the fragment is yours to read; `viewConfigDiffApplied` = false means the current web body has no SCHEMA_VIEW_CONFIG_DIFF marker pair, so EVERY count above describes an array the write discards — use `mode: replace`. `replacedOperations`/`replacedOperationCount` is NOT a loss: the operation survives carrying your values. Named lists are capped in length; every count is exact. Speaks for `viewConfigDiff` ONLY: the sibling `*_DIFF` arrays append unconditionally and cannot lose an entry, but handlers are NOT covered — they dedupe by `request` and the merge drops every current handler whose `request` your fragment carries, so a current body holding one `request` twice keeps neither. Inspect the handlers section yourself when that shape is possible."),
 				Field("resourcesRegistered", NumberType, "Number of registered resources."),
-				Field("warnings", ArrayType, "Advisory non-fatal warnings; omitted when there are none. The save already succeeded — never retry on a warning. Covers an operation the differ will silently drop because another operation for the same component name cancels it (see `mode`), an `insert` this body replaced with a `merge`/`move`/`remove`, an existing operation an `append` could not preserve because the fragment superseded an identity the page carried twice (re-read with get-page), page-body lint findings, and the best-effort Designer Presence push."),
+				Field("warnings", ArrayType, "Advisory non-fatal warnings; omitted when there are none. The save already succeeded — never retry on a warning. Covers an operation the differ will silently drop because another operation for the same component name cancels it (see `mode`), an `insert` this body replaced with a `merge`/`move`/`remove`, an existing operation an `append` could not preserve because the fragment superseded an identity the page carried twice (re-read with get-page), an `append` whose merged viewConfigDiff cannot be written back at all because the current body has no marker pair (see `appendProjection.viewConfigDiffApplied`), page-body lint findings, and the best-effort Designer Presence push."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
@@ -5771,6 +5944,40 @@ internal static class ToolContractCatalog {
 			]);
 	}
 
+	private static ToolContractDefinition BuildInstallDashboardsMigrator() {
+		return new ToolContractDefinition(
+			InstallDashboardsMigratorTool.InstallDashboardsMigratorToolName,
+			"Installs (or updates) the bundled CrtDashboardsMigratorApp package - the \"Dashboards migrator\" app that converts Classic UI (7.x) dashboards into Freedom UI dashboards - into a registered Creatio environment (the package requires Creatio 8.3.1 or later; an older instance fails the configuration build and the outcome check reports it). The package ships prebuilt (assemblies for both .NET Framework and .NET), so the target does not compile it; the install still runs the platform's configuration build for the package's schemas and a restart follows, and how long that takes depends entirely on the target environment - do not quote a duration to the user. You never trigger the restart yourself - the tool waits for the instance to answer its health check before judging the result. It checks the outcome rather than the install call: it asks the package's own service whether it is serving (DashboardsMigratorPingService Ping, ungated) and fails unless it answers, so a package that was accepted but is not serving is reported instead of looking like success - which list-packages cannot distinguish. The check is liveness, not identity: on an UPGRADE a stale assembly that still answers will pass. It installs in every case but two, and re-running is otherwise safe (one configuration build on the target). Both exceptions stop an environment moving BACKWARDS, both report exit code 1, and neither is retryable; the override is a command-line flag deliberately NOT available to you. (1) It REFUSES when the environment already carries a NEWER version than this clio ships; say the fix is to update clio. (2) It REFUSES when this clio's OWN bundled version carries a pre-release suffix; nothing about the target is wrong, say the fix is to reinstall or update clio. Reinstalling the SAME version is allowed - that is the repair path when a package installed but never compiled.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+				]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Install the dashboards migrator before moving Classic dashboards to Freedom UI",
+					new Dictionary<string, object?> {
+						[EnvironmentNameFieldName] = ExampleEnvironmentName
+					})
+			],
+			Flow(
+				[
+					InstallDashboardsMigratorTool.InstallDashboardsMigratorToolName
+				],
+				"Install the package, then have the user run the migration from System Designer (Dashboards migration) and review the Dashboards migration log section. The install's own success proves the package is COMPILED and serving - it asks the package's ungated Ping and fails unless it answers. It does NOT prove WHICH build is serving: on an upgrade a stale assembly that still answers passes, so treat a new version as verified only once the migration itself works."),
+			[],
+			[],
+			Preconditions: [
+				"The target environment is registered (see list-environments / reg-web-app) and runs Creatio 8.3.1 or later; the version is not checked up front.",
+				"The user has Classic UI (7.x) dashboards to move to Freedom UI, and has confirmed the target environment - this tool runs a configuration build and restarts a live instance.",
+				"The caller can install a package on the target environment. With DataService read access to SysPackage the downgrade check runs; WITHOUT it the install proceeds and says so, so a missing read permission is not a reason to decline this call.",
+				"This tool is long-tail like install-process-builder: absent from tools/list, discoverable through the get-tool-contract index, reachable through clio-run-destructive."
+			]);
+	}
+
 	private const string WorkspaceDirectoryFieldName = "workspaceDirectory";
 	private const string ProjectNameFieldName = "projectName";
 	private const string VendorPrefixFieldName = "vendorPrefix";
@@ -6231,12 +6438,14 @@ internal static class ToolContractCatalog {
 					"Failed rows whose side effect could NOT be verified (a subset of 'failed'). Non-zero means the "
 					+ "batch must not be blindly re-sent."),
 				Field("results", ArrayType,
-					"Per-row outcomes for every attempted row; each item has index, success, id, error, "
+					"Per-row outcomes for every attempted row; each item has index, success, id, error, diagnostic, "
 					+ "record-created (true inserted / false definitely not inserted / null UNKNOWN) and, when "
 					+ "record-created is null, retry-guidance. A null record-created means Creatio failed the call "
 					+ "but may already have written the row - verify with odata-read before re-sending, a retry "
 					+ "duplicates it."),
-				Field("error", StringType, "Request-level error that prevented any row from being attempted.")
+				Field("error", StringType, "Request-level error that prevented any row from being attempted."),
+				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
+				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)
 			]);
 	}
 

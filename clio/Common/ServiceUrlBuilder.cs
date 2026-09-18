@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace Clio.Common;
@@ -321,7 +321,25 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		///     read from afterwards. It carries no timestamp, which is why it is only trusted once the reload
 		///     that ends the build has been observed.
 		/// </remarks>
-		LastCompilationResult = 92
+		LastCompilationResult = 92,
+
+		/// <summary>
+		///     Answers whether the bundled dashboards-migrator package's own code is serving — the same
+		///     liveness-only, ungated probe as <see cref="ProcessBuilderPing"/>, for the other bundled package.
+		/// </summary>
+		DashboardsMigratorPing = 93,
+		/// <summary>Native filtered sequence participant enrollment.</summary>
+		SequenceParticipantBulkAdd = 94,
+		/// <summary>Native DataService batch writes.</summary>
+		BatchQuery = 95,
+		/// <summary>Read a package SQL script.</summary>
+		GetSqlScriptSchema = 96,
+		/// <summary>Create or update a package SQL script.</summary>
+		SaveSqlScriptSchema = 97,
+		/// <summary>Execute selected package SQL scripts.</summary>
+		InstallSqlScripts = 98,
+		/// <summary>Read the database engine and runtime without ClioGate.</summary>
+		GetSystemEnvironmentInfo = 99
 
 	}
 
@@ -336,6 +354,10 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 	#region Fields: Private
 
 	public static readonly IReadOnlyDictionary<KnownRoute, string> KnownRoutes = new Dictionary<KnownRoute, string> {
+		{KnownRoute.GetSqlScriptSchema, "/ServiceModel/SqlScriptSchemaDesignerService.svc/GetSchema"},
+		{KnownRoute.SaveSqlScriptSchema, "/ServiceModel/SqlScriptSchemaDesignerService.svc/SaveSchema"},
+		{KnownRoute.InstallSqlScripts, "/ServiceModel/WorkspaceExplorerService.svc/InstallSqlScripts"},
+		{KnownRoute.GetSystemEnvironmentInfo, CreatioServicePaths.GetSystemEnvironmentInfo},
 		{KnownRoute.GetPackageProperties, "ServiceModel/PackageService.svc/GetPackageProperties"},
 		{KnownRoute.AdministrationSaveRole, "/rest/AdministrationService/SaveRole"},
 		{KnownRoute.AdministrationSaveChiefsRole, "/rest/AdministrationService/SaveChiefsRole"},
@@ -358,6 +380,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.AdministrationRemoveFunctionalRole, "/rest/CreatioApiGateway/RemoveFunctionalRoleAssociation"},
 		{KnownRoute.AdministrationRedistributeRoleLicenses, "/rest/CreatioApiGateway/ScheduleRoleLicenseRedistribution"},
 		{KnownRoute.AdministrationInvalidateRightsCache, "/rest/CreatioApiGateway/InvalidateAdministrationRightsCache"},
+		{KnownRoute.BatchQuery, "DataService/json/SyncReply/BatchQuery"},
 		{KnownRoute.Select, "DataService/json/SyncReply/SelectQuery"},
 		{KnownRoute.Insert, "DataService/json/SyncReply/InsertQuery"},
 		{KnownRoute.Update, "DataService/json/SyncReply/UpdateQuery"},
@@ -380,6 +403,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.ClearRedisDb, "ServiceModel/AppInstallerService.svc/ClearRedisDb"},
 		{KnownRoute.EntitySchemaManagerRequest, "DataService/json/SyncReply/EntitySchemaManagerRequest"},
 		{KnownRoute.RuntimeEntitySchemaRequest, "DataService/json/SyncReply/RuntimeEntitySchemaRequest"},
+		{KnownRoute.SequenceParticipantBulkAdd, "rest/SequenceParticipantBulkAddService/AddByFilter"},
 		{KnownRoute.GetWorkspaceItems, "ServiceModel/WorkspaceExplorerService.svc/GetWorkspaceItems"},
 		{KnownRoute.DeleteWorkspaceItem, "ServiceModel/WorkspaceExplorerService.svc/Delete"},
 		{KnownRoute.GetUserTaskSchema, "ServiceModel/ProcessUserTaskSchemaDesignerService.svc/GetSchema"},
@@ -408,6 +432,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.BuildProcess, "/rest/ProcessDesignService/BuildProcess"},
 		{KnownRoute.ListUserTasks, "/rest/ProcessDesignService/ListUserTasks"},
 		{KnownRoute.ProcessBuilderPing, "/rest/ProcessDesignService/Ping"},
+		{KnownRoute.DashboardsMigratorPing, "/rest/DashboardsMigratorPingService/Ping"},
 		{KnownRoute.FindSchemaLayers, "/rest/CreatioApiGateway/FindSchemaLayers"},
 		{KnownRoute.ExportSchema, "/rest/CreatioApiGateway/ExportSchema"},
 		{KnownRoute.ImportSchema, "/rest/CreatioApiGateway/ImportSchema"},
