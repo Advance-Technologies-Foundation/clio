@@ -576,10 +576,15 @@ function Select-FixturesForProductFile([string] $FileRelative, [ref] $Reason) {
     $closure = @(Get-ConsumerClosure $FileRelative)
     $selected = New-Object System.Collections.Generic.HashSet[string]
     $toolFiles = New-Object System.Collections.Generic.HashSet[string]
+    # An MCP resource or prompt reached THROUGH the closure is an entry point just as a tool file is.
+    # Rooting it only when it is the changed file left a file consumed by a resource resolving to
+    # "nothing observes this", although the fixtures assert on it through that resource.
+    $entryPointFiles = New-Object System.Collections.Generic.HashSet[string]
     $verbCount = 0
     foreach ($type in $closure) {
         foreach ($owner in $g.TypeFiles[$type]) {
             if ($owner.StartsWith($manifest.toolSourceRoot) -and $owner.EndsWith('.cs')) { [void]$toolFiles.Add($owner) }
+            if ($owner -ne $FileRelative -and $owner.EndsWith('.cs') -and (Test-McpEntryPointFile $owner)) { [void]$entryPointFiles.Add($owner) }
         }
         if ($g.VerbsByType.ContainsKey($type)) {
             foreach ($verb in $g.VerbsByType[$type]) {
@@ -592,15 +597,18 @@ function Select-FixturesForProductFile([string] $FileRelative, [ref] $Reason) {
     foreach ($toolFile in $toolFiles) {
         foreach ($n in @(Select-FixturesForTool $toolFile)) { [void]$selected.Add($n) }
     }
-    if ($toolFiles.Count -eq 0 -and $verbCount -eq 0) {
-        $Reason.Value = "no MCP tool and no covered CLI verb consumes it (closure $($closure.Count) type(s))"
+    foreach ($entryPointFile in $entryPointFiles) {
+        foreach ($n in @(Select-FixturesForEntryPoint $entryPointFile)) { [void]$selected.Add($n) }
+    }
+    if ($toolFiles.Count -eq 0 -and $entryPointFiles.Count -eq 0 -and $verbCount -eq 0) {
+        $Reason.Value = "no MCP tool, MCP resource/prompt or covered CLI verb consumes it (closure $($closure.Count) type(s))"
         return @()
     }
     if ($selected.Count -eq 0) {
-        $Reason.Value = "full run ($($toolFiles.Count) consuming tool file(s) select no fixture)"
+        $Reason.Value = "full run ($($toolFiles.Count) consuming tool file(s) and $($entryPointFiles.Count) consuming MCP resource/prompt file(s) select no fixture)"
         return @()
     }
-    $Reason.Value = "reached from $($toolFiles.Count) tool file(s) and $verbCount covered verb(s) over $($closure.Count) consumer type(s)"
+    $Reason.Value = "reached from $($toolFiles.Count) tool file(s), $($entryPointFiles.Count) MCP resource/prompt file(s) and $verbCount covered verb(s) over $($closure.Count) consumer type(s)"
     return @($selected)
 }
 

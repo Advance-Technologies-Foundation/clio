@@ -282,7 +282,7 @@ internal sealed class McpE2eSelectionCoverageTests {
 	}
 
 	[Test]
-	[Description("A changed product file that no MCP tool and no covered CLI verb consumes runs nothing, because no fixture in this suite executes that code.")]
+	[Description("A changed product file that no MCP tool, MCP resource/prompt or covered CLI verb consumes runs nothing, because no fixture in this suite executes that code.")]
 	public void Script_ShouldRunNothing_WhenTheChangedCodeIsUnreachableFromTheMcpSurface() {
 		// Arrange
 		using SyntheticRepository repo = SyntheticRepository.Create();
@@ -293,7 +293,7 @@ internal sealed class McpE2eSelectionCoverageTests {
 		// Assert
 		selection.GetProperty("mode").GetString().Should().Be("none",
 			because: "OrphanService is named by no tool, reaches no verb a fixture spells out, and is registered nowhere, so no e2e test can show a regression in it");
-		selection.GetProperty("decisions").EnumerateArray().Select(d => d.GetString()).Should().Contain(d => d!.Contains("no MCP tool and no covered CLI verb"),
+		selection.GetProperty("decisions").EnumerateArray().Select(d => d.GetString()).Should().Contain(d => d!.Contains("no MCP tool, MCP resource/prompt or covered CLI verb"),
 			because: "skipping the build is only defensible when the log says which reachability check came back empty");
 	}
 
@@ -498,6 +498,22 @@ internal sealed class McpE2eSelectionCoverageTests {
 			because: "a tool no fixture references forces the whole suite to run for every change to it; add the fixture, or record the gap in toolsWithoutFixtures so it is visible");
 		stale.Should().BeEmpty(
 			because: "a declared gap that has fixtures now is dead configuration and hides the next real gap");
+	}
+
+	[Test]
+	[Description("A service reached only THROUGH an MCP resource selects that resource's fixtures instead of resolving to none: the resource is an entry point wherever it appears in the closure, not only when it is the changed file.")]
+	public void Script_ShouldSelectResourceFixtures_WhenAServiceIsReachedOnlyThroughAnMcpResource() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+
+		// Act
+		JsonElement selection = RunSelection(["clio/Command/SigmaService.cs"], includeNoEnvironment: false, repo.Root);
+
+		// Assert
+		selection.GetProperty("mode").GetString().Should().Be("subset",
+			because: "SigmaService has a fixture that observes it through SigmaResource, so the change is not unobservable; reading the closure as 'no tool consumes it' would skip the build for a covered file");
+		selection.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().Contain("SigmaResourceE2ETests",
+			because: "the fixture spells the resource's URI template, which is how a fixture names a resource the way it names a tool");
 	}
 
 	[Test]
@@ -877,6 +893,14 @@ internal sealed class McpE2eSelectionCoverageTests {
 				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class AlphaLiteralE2ETests {\n\t[Test] public void Works() => Call(\"alpha-run\");\n}");
 			Write("clio.mcp.e2e/AlphaContractE2ETests.cs",
 				"[TestFixture]\n[Category(\"McpE2E.NoEnvironment\")]\npublic sealed class AlphaContractE2ETests {\n\t[Test] public void Advertises() => Call(AlphaTool.ToolName);\n}");
+			// An MCP resource is an entry point just as a tool is, and SigmaService is reachable only
+			// THROUGH it - the shape KnowledgeGuidanceResourceAdapter has in the live tree.
+			Write("clio/Command/McpServer/Resources/SigmaResource.cs",
+				"[McpServerResourceType]\npublic sealed class SigmaResource {\n" +
+				"\t[McpServerResource(UriTemplate = \"sigma://guide/{name}\")]\n\tpublic string Read(SigmaService service) => null;\n}");
+			Write("clio/Command/SigmaService.cs", "public sealed class SigmaService { }");
+			Write("clio.mcp.e2e/SigmaResourceE2ETests.cs",
+				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class SigmaResourceE2ETests {\n\t[Test] public void Works() => Read(\"sigma://guide/alpha\");\n}");
 			Write("clio.mcp.e2e/UnrelatedE2ETests.cs",
 				"[TestFixture]\n[Category(\"McpE2E.Sandbox\")]\npublic sealed class UnrelatedE2ETests {\n\t[Test] public void Works() { }\n}");
 			Write("clio.mcp.e2e/BetaToolE2ETests.cs",

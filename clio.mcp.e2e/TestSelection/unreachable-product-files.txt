@@ -81,8 +81,6 @@ clio/Command/LinkPackageStoreCommand.cs
 clio/Command/ListenCommand.cs
 clio/Command/LockPackageCommand.cs
 clio/Command/McpServer/Knowledge/KnowledgeResourceDiscoveryFilter.cs
-clio/Command/McpServer/Resources/BaseResource.cs
-clio/Command/McpServer/Resources/KnowledgeGuidanceResourceAdapter.cs
 clio/Command/MergeWorkspacesCommand.cs
 clio/Command/MockDataCommand.cs
 clio/Command/NewPkgCommand.cs
@@ -182,7 +180,6 @@ clio/Project/ICreatioPkgProject.cs
 clio/Project/ICreatioPkgProjectCreator.cs
 clio/Requests/Validators/ExternalLinkValidator.cs
 clio/Requests/Validators/ISSScannerValidator.cs
-clio/tpl/package-localization/Files/src/cs/LocalizableStrings/LocalizableStringResolver.cs
 clio/Utilities/WebBrowser.cs
 clio/WikiHelpViewer.cs
 clio/Workspace/WorkspaceEnvironment.cs
