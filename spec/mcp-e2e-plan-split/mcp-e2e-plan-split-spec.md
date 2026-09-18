@@ -78,13 +78,14 @@ subset-green and a full-green post the same commit status.
 
 | # | Changed file | Result |
 |---|---|---|
-| 1 | `ignoredPaths` (`clio/docs/**`, `clio/help/**`, `clio/Wiki/**`, markdown outside `clio/tpl/**`, `cliogate/Resources/**`) | ignored - none of it is compiled or loaded |
+| 1 | `ignoredPaths` (`clio/docs/**`, `clio/help/**`, `clio/Wiki/**`, markdown outside `clio/tpl/**`, `cliogate/Resources/**`) | ignored - no fixture in this suite asserts on any of it (some of it does ship; see `_ignoredPaths`) |
 | 2 | not under `relevantPaths` | ignored |
 | 3 | a `registrationFiles` entry (`Program.cs`, `BindingsModule.cs`) | classified from its **changed lines** (see below) |
 | 4 | matches `fullRunPaths` | **full run** |
 | 5 | top-level `clio.mcp.e2e/<File>.cs` | the fixtures declared in that file |
 | 6 | `explicitMappings` entry | the listed fixtures |
 | 7 | `clio/Command/McpServer/Tools/**/X.cs` **that declares a tool** | every fixture whose source names a `*Tool`/`*Tools` class declared in `X.cs`, or contains a tool-name literal bound by `[McpServerTool(Name = ...)]` in `X.cs`, or is named `X*E2ETests`; zero matches -> **full run** (and the gap is pinned in `toolsWithoutFixtures`) |
+| 7b | any `clio/**/*.cs` **that declares an MCP resource or prompt type** (`[McpServerResourceType]` / `[McpServerPromptType]`) | same shape as rule 7: every fixture whose source names a class declared in the file, or spells one of its `UriTemplate` / `Name` literals, or is named `X*E2ETests`; zero matches -> **full run** |
 | 8 | any other `clio/**/*.cs` | the transitive consumer closure over the reference graph (below) |
 | 9 | any other `clio/**` file (a data asset) | the product files that name the asset by file name, then rule 8 on each |
 | 10 | anything else | **full run** |
@@ -217,6 +218,15 @@ re-implementing the regexes in C#.
 - **A `#if false` region containing a type declaration would fabricate a type** and could cut the
   enclosing type's body short. One file under `clio/` uses `#if` and no declaration sits inside such
   a region; the guard's lexer-residue invariant does not cover preprocessor directives.
+- **A modifier-less top-level type is invisible to the declaration scan.** The pattern requires a
+  modifier before `class`/`record`, so in a file that mixes `public class A` with a bare `class B`,
+  B's body folds into A and B's own consumers are lost. Two files are written this way today -
+  `clio/Command/AssemblyCommand.cs` and `clio/Command/PackageCommand/ValidationPackageCommand.cs` -
+  and both are already pinned unreachable, so nothing is lost now. It is a silent-narrowing class,
+  which is why it is recorded here rather than left to be rediscovered.
+- **The guard fixture costs about 1 m 35 s** on the unit lane for every pull request: its 21 cases
+  rebuild the reference graph over the real tree several times. That is a fixed new cost, paid to
+  keep the detector's rules pinned.
 - **9 MCP tools have no fixture** (`toolsWithoutFixtures`). Each forces a full run, because the
   detector cannot tell which tests would show the regression.
 - **Hidden per-session cost** is unaffected by the filter.

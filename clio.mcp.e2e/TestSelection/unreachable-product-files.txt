@@ -14,6 +14,26 @@
 
 #
 
+# Before you regenerate: read the diff, do not just paste the new output. For every file that
+
+# APPEARS here, answer two questions and say so in the pull request.
+
+#   1. Is there really no fixture that exercises it, directly or through a tool it is reached
+
+#      from? A missing fixture is the answer 'none'; a fixture the graph cannot see is a defect.
+
+#   2. Would a fixture that did cover it run before merge at all? A McpE2E.NoEnvironment fixture
+
+#      runs on GitHub for any clio/** change, a Sandbox one runs only in the TeamCity build this
+
+#      list can skip - so the tiers are not interchangeable and membership alone does not say
+
+#      which one a file would have had.
+
+# A file LEAVING the list needs no defence: it became reachable, which is the safe direction.
+
+#
+
 # Refresh with:
 
 #   pwsh ./.github/scripts/Select-McpE2eTestFilter.ps1 -Inventory |
@@ -61,45 +81,8 @@ clio/Command/LinkPackageStoreCommand.cs
 clio/Command/ListenCommand.cs
 clio/Command/LockPackageCommand.cs
 clio/Command/McpServer/Knowledge/KnowledgeResourceDiscoveryFilter.cs
-clio/Command/McpServer/Prompts/AddItemModelPrompt.cs
-clio/Command/McpServer/Prompts/ApplicationPrompt.cs
-clio/Command/McpServer/Prompts/AssertInfrastructurePrompt.cs
-clio/Command/McpServer/Prompts/ClearRedisPrompt.cs
-clio/Command/McpServer/Prompts/CreateWorkspacePrompt.cs
-clio/Command/McpServer/Prompts/DataBindingDbPrompt.cs
-clio/Command/McpServer/Prompts/DataBindingPrompt.cs
-clio/Command/McpServer/Prompts/DeleteSchemaPrompt.cs
-clio/Command/McpServer/Prompts/DeployCreatioPrompt.cs
-clio/Command/McpServer/Prompts/DeployIdentityPrompt.cs
-clio/Command/McpServer/Prompts/DownloadConfigurationPrompt.cs
-clio/Command/McpServer/Prompts/FindEmptyIisPortPrompt.cs
-clio/Command/McpServer/Prompts/FsmAndCompilePrompt.cs
-clio/Command/McpServer/Prompts/GenerateProcessModelPrompt.cs
-clio/Command/McpServer/Prompts/InstallApplicationPrompt.cs
-clio/Command/McpServer/Prompts/LinkFromRepositoryPrompt.cs
-clio/Command/McpServer/Prompts/ListUserTasksPrompt.cs
-clio/Command/McpServer/Prompts/LoadPackagesPrompt.cs
-clio/Command/McpServer/Prompts/LookupHelpPrompt.cs
-clio/Command/McpServer/Prompts/PagePrompt.cs
-clio/Command/McpServer/Prompts/ProcessDesigner/CreateBusinessProcessPrompt.cs
-clio/Command/McpServer/Prompts/ProcessDesigner/DescribeProcessPrompt.cs
-clio/Command/McpServer/Prompts/ProcessDesigner/ModifyBusinessProcessPrompt.cs
-clio/Command/McpServer/Prompts/ProcessDesigner/ValidateProcessGraphPrompt.cs
-clio/Command/McpServer/Prompts/RegWebAppPrompt.cs
-clio/Command/McpServer/Prompts/RestartPrompt.cs
-clio/Command/McpServer/Prompts/RestoreDbPrompt.cs
-clio/Command/McpServer/Prompts/ShowPassingInfrastructurePrompt.cs
-clio/Command/McpServer/Prompts/SkillManagementPrompt.cs
-clio/Command/McpServer/Prompts/SysSettingPrompt.cs
-clio/Command/McpServer/Prompts/UserTaskPrompt.cs
-clio/Command/McpServer/Prompts/WorkspacePackagePrompt.cs
-clio/Command/McpServer/Prompts/WorkspaceSyncPrompt.cs
 clio/Command/McpServer/Resources/BaseResource.cs
-clio/Command/McpServer/Resources/ClearRedisResources.cs
-clio/Command/McpServer/Resources/GetHelpResources.cs
 clio/Command/McpServer/Resources/KnowledgeGuidanceResourceAdapter.cs
-clio/Command/McpServer/Resources/MultiSourceKnowledgeResource.cs
-clio/Command/McpServer/Resources/RestartResource.cs
 clio/Command/MergeWorkspacesCommand.cs
 clio/Command/MockDataCommand.cs
 clio/Command/NewPkgCommand.cs

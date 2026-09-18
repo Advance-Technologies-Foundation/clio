@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Management.Automation;
@@ -28,6 +29,11 @@ namespace Clio.Tests;
 /// </remarks>
 [TestFixture]
 [Category("Unit")]
+// Without a Module trait the repository's own smart-regression filter (Category=Unit&Module=X)
+// never runs this fixture, so an author who adds an unreachable product file sees their targeted
+// tests pass and learns about the pin only from full CI - at which point the path of least
+// resistance is to regenerate the list rather than to review it.
+[Property("Module", "Core")]
 internal sealed class McpE2eSelectionCoverageTests {
 
 	private static readonly string RepositoryRoot =
@@ -235,7 +241,7 @@ internal sealed class McpE2eSelectionCoverageTests {
 
 		// Assert
 		selection.GetProperty("mode").GetString().Should().Be("full",
-			because: "the composition root decides what every tool resolves, so no subset is safe");
+			because: "with no BaseRef there is no diff available to narrow a registration file by, so the composition root is read whole and no subset is safe; the narrowing rule itself is covered by the Registration_* cases, which do supply a diff");
 		selection.GetProperty("filter").GetString().Should().Be(
 			"TestCategory!=McpE2E.NoEnvironment&TestCategory!=McpE2E.ProcessDesigner&TestCategory!=McpE2E.Manual",
 			because: "a full pull-request run still hands the NoEnvironment tier to GitHub");
@@ -494,6 +500,88 @@ internal sealed class McpE2eSelectionCoverageTests {
 			because: "a declared gap that has fixtures now is dead configuration and hides the next real gap");
 	}
 
+	[Test]
+	[Description("A composition-root diff made only of registration statements narrows to the fixtures of the registered types.")]
+	public void Registration_ShouldSelectSubset_WhenTheDiffIsOnlyRegistrationStatements() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+		string baseRef = repo.InitializeGit();
+		string module = repo.ReadFile("clio/BindingsModule.cs")
+			.Replace("\t_ = typeof(RegisteredOnlyService);", "\t_ = typeof(RegisteredOnlyService);\n\tservices.AddSingleton<AlphaService>();");
+
+		// Act
+		repo.CommitChange("clio/BindingsModule.cs", module, "register AlphaService");
+		JsonElement selection = RunSelectionWithDiff(["clio/BindingsModule.cs"], baseRef, repo.Root);
+
+		// Assert
+		selection.GetProperty("mode").GetString().Should().Be("subset",
+			because: "a diff of nothing but registration statements changes what the registered type's consumers resolve and nothing else, which is the entire premise of narrowing a composition root");
+		selection.GetProperty("fixtures").EnumerateArray().Select(f => f.GetString()).Should().Contain("AlphaToolE2ETests",
+			because: "AlphaService is consumed by AlphaTool, so the fixtures of that tool are exactly the blast radius of registering it");
+	}
+
+	[Test]
+	[Description("One non-registration line anywhere in the composition-root diff forces the whole suite.")]
+	public void Registration_ShouldSelectFullRun_WhenOneChangedLineIsNotARegistration() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+		string baseRef = repo.InitializeGit();
+		string module = repo.ReadFile("clio/BindingsModule.cs")
+			.Replace("\t_ = typeof(RegisteredOnlyService);",
+				"\t_ = typeof(RegisteredOnlyService);\n\tservices.AddSingleton<AlphaService>();\n\tConfigureEverything();");
+
+		// Act
+		repo.CommitChange("clio/BindingsModule.cs", module, "register AlphaService and reconfigure");
+		JsonElement selection = RunSelectionWithDiff(["clio/BindingsModule.cs"], baseRef, repo.Root);
+
+		// Assert
+		selection.GetProperty("mode").GetString().Should().Be("full",
+			because: "any line that is not a registration statement can change resolution globally, and the rule has no way to bound it - a subset here would be a guess");
+	}
+
+	[Test]
+	[Description("A composition-root diff that names no type the graph knows forces the whole suite rather than selecting nothing.")]
+	public void Registration_ShouldSelectFullRun_WhenNoKnownTypeIsOnTheChangedLines() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+		string baseRef = repo.InitializeGit();
+		string module = repo.ReadFile("clio/BindingsModule.cs")
+			.Replace("\t_ = typeof(RegisteredOnlyService);", "\t_ = typeof(RegisteredOnlyService);\n\t// re-ordered\n\t{\n\t}");
+
+		// Act
+		repo.CommitChange("clio/BindingsModule.cs", module, "braces and a comment only");
+		JsonElement selection = RunSelectionWithDiff(["clio/BindingsModule.cs"], baseRef, repo.Root);
+
+		// Assert
+		selection.GetProperty("mode").GetString().Should().Be("full",
+			because: "punctuation and comments pass the registration-statement test but name nothing, so the rule has no registered type to bound the change by and must not read that as an empty blast radius");
+	}
+
+	[Test]
+	[Description("Registering a type whose own classification is a full run escalates the registration file to a full run too.")]
+	public void Registration_ShouldSelectFullRun_WhenTheRegisteredTypeItselfForcesOne() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+		string baseRef = repo.InitializeGit();
+		string module = repo.ReadFile("clio/BindingsModule.cs")
+			.Replace("\t_ = typeof(RegisteredOnlyService);", "\t_ = typeof(RegisteredOnlyService);\n\tservices.AddSingleton<LonelyTool>();");
+
+		// Act
+		repo.CommitChange("clio/BindingsModule.cs", module, "register LonelyTool");
+		JsonElement selection = RunSelectionWithDiff(["clio/BindingsModule.cs"], baseRef, repo.Root);
+
+		// Assert
+		selection.GetProperty("mode").GetString().Should().Be("full",
+			because: "LonelyTool is a tool no fixture names, so changing what it resolves cannot be covered by any subset; the escalation has to travel from the registered type back to the registration file");
+	}
+
+	private static JsonElement RunSelectionWithDiff(string[] changedFiles, string baseRef, string repositoryRoot) =>
+		RunScript(powerShell => {
+			powerShell.AddParameter("ChangedFiles", changedFiles);
+			powerShell.AddParameter("BaseRef", baseRef);
+			powerShell.AddParameter("HeadRef", "HEAD");
+		}, repositoryRoot);
+
 	private static JsonElement RunSelection(string[] changedFiles, bool includeNoEnvironment, string? repositoryRoot = null) =>
 		RunScript(powerShell => {
 			powerShell.AddParameter("ChangedFiles", changedFiles);
@@ -596,6 +684,77 @@ internal sealed class McpE2eSelectionCoverageTests {
 		public string Root { get; }
 
 		private SyntheticRepository(string root) => Root = root;
+
+		/// <summary>
+		/// Turns the layout into a one-commit git repository and returns that commit's sha, so a test
+		/// can hand the selection script a REAL <c>BaseRef</c>. Everything the registration rule does
+		/// beyond the degenerate "no diff available" branch runs `git diff` against it, so without a
+		/// repository here those branches cannot be exercised at all.
+		/// </summary>
+		public string InitializeGit() {
+			Git("init", "--quiet", "--initial-branch=main");
+			Git("config", "user.email", "selection-guard@example.invalid");
+			Git("config", "user.name", "Selection Guard");
+			Git("config", "commit.gpgsign", "false");
+			return CommitAll("base");
+		}
+
+		/// <summary>Replaces one file and commits, returning the new commit's sha.</summary>
+		public string CommitChange(string relative, string content, string message) {
+			string path = Path.Combine(Root, relative.Replace('/', Path.DirectorySeparatorChar));
+			Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+			File.WriteAllText(path, content);
+			return CommitAll(message);
+		}
+
+		public string ReadFile(string relative) =>
+			File.ReadAllText(Path.Combine(Root, relative.Replace('/', Path.DirectorySeparatorChar)));
+
+		private string CommitAll(string message) {
+			Git("add", "-A");
+			Git("commit", "--quiet", "--no-verify", "-m", message);
+			return Git("rev-parse", "HEAD").Trim();
+		}
+
+		/// <summary>
+		/// Resolved from PATH rather than left as the bare name "git": the test project's own output
+		/// directory contains a git.dll (clio.process.fixture builds one), and the process launcher
+		/// picks that up first and fails with "The application to execute does not exist".
+		/// </summary>
+		private static readonly string GitExecutable = FindGit();
+
+		private static string FindGit() {
+			string fileName = OperatingSystem.IsWindows() ? "git.exe" : "git";
+			foreach (string directory in (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+				.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)) {
+				string candidate = Path.Combine(directory, fileName);
+				if (File.Exists(candidate)) {
+					return candidate;
+				}
+			}
+			throw new InvalidOperationException("git was not found on PATH; the registration-diff cases need it.");
+		}
+
+		private string Git(params string[] arguments) {
+			ProcessStartInfo startInfo = new(GitExecutable) {
+				WorkingDirectory = Root,
+				RedirectStandardOutput = true,
+				RedirectStandardError = true,
+				UseShellExecute = false
+			};
+			foreach (string argument in arguments) {
+				startInfo.ArgumentList.Add(argument);
+			}
+			using Process process = Process.Start(startInfo)!;
+			string standardOutput = process.StandardOutput.ReadToEnd();
+			string standardError = process.StandardError.ReadToEnd();
+			process.WaitForExit();
+			if (process.ExitCode != 0) {
+				throw new InvalidOperationException(
+					$"git {string.Join(' ', arguments)} failed ({process.ExitCode}): {standardError}{standardOutput}");
+			}
+			return standardOutput;
+		}
 
 		public static SyntheticRepository Create() {
 			string root = Path.Combine(Path.GetTempPath(), "clio-selection-" + Guid.NewGuid().ToString("N"));

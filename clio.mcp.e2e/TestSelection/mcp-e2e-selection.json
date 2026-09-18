@@ -44,9 +44,14 @@
   ],
   "maxSubsetFixtures": 60,
   "_ignoredPaths": [
-    "Documentation and generated help. None of it is compiled into clio or read at run time by the",
-    "e2e harness, so no fixture can observe a change to it. Checked BEFORE relevantPaths, so a file",
-    "listed here is ignored even when the workflow's paths: filter let the run start."
+    "Documentation and generated help. NOT because none of it ships - clio/help/** and clio/Wiki/**",
+    "are <Content Include> in clio.csproj and help/** is served over MCP as docs://help/command/{name}",
+    "by GetHelpResources, and cliogate/Resources/** is deployed with the package. The claim that",
+    "holds is the narrower one: no fixture in clio.mcp.e2e asserts on any of it. `grep -rn 'docs://'`",
+    "over the fixtures and Support/** returns only docs://mcp/guides and docs://mcp/references, never",
+    "docs://help/. Add a fixture that reads one of these and the path has to leave this list.",
+    "Checked BEFORE relevantPaths, so a file listed here is ignored even when the workflow's paths:",
+    "filter let the run start."
   ],
   "ignoredPaths": [
     "clio/docs/**",

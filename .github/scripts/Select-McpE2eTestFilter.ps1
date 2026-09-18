@@ -137,6 +137,69 @@ function Test-FixtureNamesDeclaration([string] $Source, $Declarations) {
 }
 
 $toolFixtureCache = @{}
+$entryPointFixtureCache = @{}
+# An MCP resource or prompt type is an entry point exactly as a tool is: a session calls it
+# directly, so a fixture reaches it without any type reference the graph could follow. Rooting the
+# closure only in toolSourceRoot left all of Prompts/** and Resources/** with no root at all, and
+# the graph then reported them unreachable - the same verdict it would give a file that genuinely
+# has no fixture, so the pin could not tell the two apart. MultiSourceKnowledgeResource is the
+# proof they differ: KnowledgeGuidanceNuGetE2ETests and KnowledgeGuidanceGitHubReleaseE2ETests call
+# ReadResourceAsync on its own URI templates.
+function Get-McpEntryPointDeclarations([string] $FilePath) {
+    $text = Read-Text $FilePath
+    if (-not ($text.Contains('[McpServerResourceType') -or $text.Contains('[McpServerPromptType'))) {
+        return @{ Classes = @(); Literals = @(); IsEntryPoint = $false }
+    }
+    $classes = @([regex]::Matches($text, '(?m)^\s*(?:\[[^\]]*\]\s*)*(?:public|internal|private|protected|static|sealed|abstract|partial)[\w\s]*\b(?:class|record)\s+([A-Za-z_]\w*)\b') | ForEach-Object { $_.Groups[1].Value })
+    $constants = @{}
+    foreach ($m in [regex]::Matches($text, 'const\s+string\s+(\w+)\s*=\s*"([^"]+)"')) {
+        if (-not $constants.ContainsKey($m.Groups[1].Value)) { $constants[$m.Groups[1].Value] = @() }
+        $constants[$m.Groups[1].Value] += $m.Groups[2].Value
+    }
+    # Both the routed URI template and the advertised name are things a fixture spells out, and a
+    # fixture that does either is exercising this file.
+    $literals = @()
+    foreach ($m in [regex]::Matches($text, '(?:UriTemplate|Name)\s*=\s*("([^"]+)"|[\w.]+)')) {
+        if ($m.Groups[2].Success) { $literals += $m.Groups[2].Value; continue }
+        $identifier = ($m.Groups[1].Value -split '\.')[-1]
+        if ($constants.ContainsKey($identifier)) { $literals += $constants[$identifier] }
+    }
+    return @{
+        Classes = @($classes | Select-Object -Unique)
+        Literals = @($literals | Select-Object -Unique)
+        IsEntryPoint = $true
+    }
+}
+
+# True when the file declares an MCP resource or prompt type at all.
+function Test-McpEntryPointFile([string] $FileRelative) {
+    if (-not $FileRelative.EndsWith('.cs')) { return $false }
+    $path = Join-Path $root $FileRelative
+    if (-not (Test-Path -LiteralPath $path)) { return $false }
+    return (Get-McpEntryPointDeclarations $path).IsEntryPoint
+}
+
+# Same shape as Select-FixturesForTool: the fixture named after the file, plus any fixture naming
+# one of its declared classes or spelling one of its URI templates / advertised names.
+function Select-FixturesForEntryPoint([string] $FileRelative) {
+    if ($entryPointFixtureCache.ContainsKey($FileRelative)) { return $entryPointFixtureCache[$FileRelative] }
+    $path = Join-Path $root $FileRelative
+    $selected = New-Object System.Collections.Generic.HashSet[string]
+    $stem = [System.IO.Path]::GetFileNameWithoutExtension($FileRelative)
+    foreach ($name in $fixtureSources.Keys) {
+        if ($name -cmatch "^$([regex]::Escape($stem))\w*E2ETests$") { [void]$selected.Add($name) }
+    }
+    if (Test-Path -LiteralPath $path) {
+        $decl = Get-McpEntryPointDeclarations $path
+        foreach ($name in $fixtureSources.Keys) {
+            if (Test-FixtureNamesDeclaration $fixtureSources[$name] $decl) { [void]$selected.Add($name) }
+        }
+    }
+    $result = @($selected)
+    $entryPointFixtureCache[$FileRelative] = $result
+    return $result
+}
+
 function Select-FixturesForTool([string] $ToolFileRelative) {
     if ($toolFixtureCache.ContainsKey($ToolFileRelative)) { return $toolFixtureCache[$ToolFileRelative] }
     $toolFile = Join-Path $root $ToolFileRelative
@@ -324,6 +387,7 @@ function Get-Graph() {
     # Extension class -> extended type. `value.Normalize()` names neither the extension class nor
     # its file, so the only route from a call site to the extension is the type it extends.
     $unboundedTypes = New-Object System.Collections.Generic.HashSet[string]
+    $script:factoryScanTruncated = New-Object System.Collections.Generic.List[string]
     foreach ($name in @($typeBody.Keys)) {
         foreach ($m in $extensionParameter.Matches($typeBody[$name].ToString())) {
             $extended = $m.Groups[1].Value
@@ -382,6 +446,12 @@ function Get-Graph() {
                 if ($character -eq '(') { $depth++ } elseif ($character -eq ')') { $depth-- }
                 $cursor++
             }
+            # The cap is reached only by a factory argument longer than 4000 characters. Stopping
+            # there would silently drop the implementation name the argument carries, and the graph
+            # would then report a file reachable only through that implementation as unreachable -
+            # a skipped build, the direction that loses a test. There is no name to record because
+            # the name is precisely what was not read, so the whole graph degrades to a full run.
+            if ($depth -gt 0) { $script:factoryScanTruncated.Add("$service (registration in $registrationFile)") }
             $argument = $registrationText.Substring($start, $cursor - $start)
             foreach ($t in [regex]::Matches($argument, '(?<![\w.])([A-Za-z_]\w*)')) {
                 $implementation = $t.Groups[1].Value
@@ -406,14 +476,20 @@ function Get-Graph() {
     # An invariant the guard checks: after blanking, no quote, comment marker or char literal may
     # remain anywhere. A lexer that misses a literal form leaves one behind, and that is exactly the
     # class of bug that silently narrows the structural parse.
+    # Only -Inventory reads it, and computing it re-runs Remove-NonCode over every file under
+    # clio/ - roughly doubling the lexing a plain selection does (measured: graph ~10 s, inventory
+    # ~30 s). A selection on a pull request pays nothing for a list it never prints.
     $residue = New-Object System.Collections.Generic.List[string]
-    foreach ($relative in ($texts.Keys | Sort-Object)) {
-        $blanked = Remove-NonCode $texts[$relative]
-        if ($blanked.Contains('"') -or $blanked.Contains('//') -or $blanked.Contains('/*')) { $residue.Add($relative) }
+    if ($Inventory) {
+        foreach ($relative in ($texts.Keys | Sort-Object)) {
+            $blanked = Remove-NonCode $texts[$relative]
+            if ($blanked.Contains('"') -or $blanked.Contains('//') -or $blanked.Contains('/*')) { $residue.Add($relative) }
+        }
     }
 
     $script:graph = @{
         LexerResidue = $residue
+        FactoryScanTruncated = $script:factoryScanTruncated
         Texts = $texts; TypeFiles = $typeFiles; TypesByFile = $typesByFile
         VerbsByType = $verbsByType; Consumers = $consumers; RegistrationTypes = $registrationTypes
         UnboundedTypes = $unboundedTypes
@@ -484,6 +560,10 @@ function Select-FixturesForVerb([string] $Verb) {
 
 function Select-FixturesForProductFile([string] $FileRelative, [ref] $Reason) {
     $g = Get-Graph
+    if (@($g.FactoryScanTruncated).Count -gt 0) {
+        $Reason.Value = "full run (a factory registration argument exceeded the scan cap, so the graph is missing at least one implementation edge: $(@($g.FactoryScanTruncated) -join '; '))"
+        return @()
+    }
     if (-not $g.TypesByFile.ContainsKey($FileRelative)) { $Reason.Value = 'full run (file not in the tree)'; return @() }
     # AGENTS.md: [ResolvedDynamically] marks a service resolved by reflection or from another
     # assembly. That is exactly the edge an identifier scan cannot see, so the graph is not allowed
@@ -536,7 +616,10 @@ function Select-FixturesForRegistrationFile([string] $FileRelative, [ref] $Reaso
     $changed = @($diff | Where-Object { ($_.StartsWith('+') -or $_.StartsWith('-')) -and -not ($_.StartsWith('+++') -or $_.StartsWith('---')) } | ForEach-Object { $_.Substring(1) })
     if ($changed.Count -eq 0) { $Reason.Value = 'full run (registration file, empty diff)'; return @() }
     # A line that is only punctuation, a brace or a comment carries no resolution change.
-    $registrationStatement = '^\s*(?://.*|/\*.*|\*.*|\}|\{|\)\s*;?|)$|(?:services|builder|collection)\s*\.\s*(?:Add|Try(?:Add)?)\w*\s*[<(]|\.\s*As\w*\s*<'
+    # Both alternatives are anchored: an unanchored registration alternative accepted any line that
+    # merely CONTAINED a registration call, so `services.AddSingleton<IFoo, Foo>(); Reset();` passed
+    # as registration-only and the second statement narrowed the run with nothing guarding it.
+    $registrationStatement = '^\s*(?://.*|/\*.*|\*.*|\}|\{|\)\s*;?|)$|^\s*(?:services|builder|collection)\s*\.\s*(?:Add|Try(?:Add)?)\w*\s*[<(][^;]*;?\s*$|^\s*\.\s*As\w*\s*<[^;]*;?\s*$'
     $offending = @($changed | Where-Object { $_ -notmatch $registrationStatement })
     if ($offending.Count -gt 0) {
         $Reason.Value = "full run (registration file, $($offending.Count) changed line(s) are not registration statements)"
@@ -618,7 +701,20 @@ if ($Inventory) {
         if (Test-GlobMatch $relative $manifest.ignoredPaths) { continue }
         if (Test-GlobMatch $relative $manifest.fullRunPaths) { continue }
         if (@($manifest.registrationFiles) -contains $relative) { continue }
-        if ($relative.StartsWith($manifest.toolSourceRoot)) { continue }
+        # Skip only a file that really declares a tool - the same test the classify path applies.
+        # Skipping everything under toolSourceRoot left the response records, linters and stores
+        # that live there outside the pin, although classify routes them through the graph and can
+        # therefore reach `none` for them; the pin exists precisely to make that reviewable.
+        # An MCP resource or prompt file is rooted by Select-FixturesForEntryPoint, so it never
+        # reaches the unreachable verdict and does not belong in the pin.
+        if (Test-McpEntryPointFile $relative) { continue }
+        if ($relative.StartsWith($manifest.toolSourceRoot) -and $relative.EndsWith('.cs')) {
+            $toolPath = Join-Path $root $relative
+            if (Test-Path -LiteralPath $toolPath) {
+                $declaredTool = Get-ToolDeclarations $toolPath
+                if (($declaredTool.Classes.Count -gt 0) -or ($declaredTool.Literals.Count -gt 0)) { continue }
+            } else { continue }
+        }
         $reason = ''
         if (@(Select-FixturesForProductFile $relative ([ref]$reason)).Count -eq 0 -and -not $reason.StartsWith('full run')) {
             $unreachable.Add($relative)
@@ -701,6 +797,14 @@ foreach ($file in $ChangedFiles) {
             Add-Decision $file 'tool file' $names
             continue
         }
+    }
+
+    if ($file.StartsWith($manifest.productSourceRoot) -and (Test-McpEntryPointFile $file)) {
+        $names = @(Select-FixturesForEntryPoint $file)
+        if ($names.Count -eq 0) { $mode = 'full'; Add-Decision $file 'full run (MCP resource/prompt file selects no fixture)' @(); continue }
+        foreach ($n in $names) { [void]$fixtures.Add($n) }
+        Add-Decision $file 'MCP resource/prompt file' $names
+        continue
     }
 
     if ($file.StartsWith($manifest.productSourceRoot) -and $file.EndsWith('.cs')) {
