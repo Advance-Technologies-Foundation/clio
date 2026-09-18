@@ -98,7 +98,7 @@ from another element is `GS1:3` with a `[# … [Element:{uid}].[Parameter:{uid}]
 | `GT3` | `TargetUId` — the element parameter |
 | `GT4` | `SourceSchemaUId` — **the callee** |
 | `GT5` | `SourceParameterUId` — the callee's parameter |
-| `GT1` | `Source` — a `ProcessSchemaParameterValue` snapshot |
+| `GT1` | `Source` — a `ProcessSchemaParameterValue` snapshot. **Populated in 1 578 of the 1 672 rows (94.4 %); empty `{}` in 94; absent in none.** Measured 2026-09-18, after a single hand-built designer example came out empty and — because this table recorded the key without its OCCUPANCY — briefly read as the authoritative shape. A key's presence in this capture says it exists, not how often it is filled; where that distinction can decide a parity question, measure it. |
 
 One row per synced parameter, **including nested collection items**.
 

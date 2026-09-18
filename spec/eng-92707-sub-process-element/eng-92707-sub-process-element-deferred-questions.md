@@ -997,6 +997,26 @@ that dereference would trip on. The shape that WOULD is one writing no object at
 what suppressing `GT1` would produce. The difference between us and the designer is the object's
 CONTENTS; the risk lives in removing the object.
 
+**MEASURED 2026-09-18, and it inverts the framing above: clio is NOT the outlier — the hand-built example
+is.** The capture lists `GT1` as a mapping-row key but never recorded how often it is OCCUPIED, and that
+silence is what let one designer-built element read as authoritative. Scanning the same shipped corpus the
+capture was mined from (`C:/Projects/PackageStore`, the 262 files carrying a sub-process element, 249 of
+them parseable into 1 672 mapping rows attributed to a sub-process element):
+
+| `GT1` | rows | share |
+|---|---|---|
+| **populated** | **1 578** | **94.4 %** |
+| present but empty `{}` | 94 | 5.6 % |
+| key absent | 0 | 0 % |
+
+So writing a populated `GT1` is what 94 % of shipped sub-process mapping rows carry, and never writing the
+key at all is what NONE of them do. Cross-tabulating against whether the target parameter holds a value
+shows the emptiness does not track "unmapped" either — 1 090 rows are populated on a parameter with NO
+value, and only 20 rows in the whole corpus are empty on a parameter that HAS one, which is precisely the
+bucket the hand-built example fell into: the rarest of the four combinations, 1.2 %.
+
+*What this does NOT establish:* why that example came out empty. Unknown, and not worth a guess.
+
 **Decision: do not change it.** Suppressing `GT1` means not assigning through `SourceValue` — stepping off
 the platform API to hand-write metadata, on the exact field the platform dereferences unguarded during
 synchronization, and landing on the one shape neither side currently persists. That trades a cosmetic
