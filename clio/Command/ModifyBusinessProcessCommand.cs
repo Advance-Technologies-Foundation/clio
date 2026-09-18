@@ -296,10 +296,7 @@ public sealed class ModifyBusinessProcessService(
 			// throw wearing the answer's shape: the elements it is about, and the one word that makes it
 			// re-sendable. Without the element list a caller has the server's sentence and no way to tell the
 			// user WHICH parts of their diagram move.
-			string layoutChange = result.LayoutChange == null
-				? string.Empty
-				: $" Affected elements: {string.Join(", ", result.LayoutChange.Elements ?? [])}."
-					+ " Re-send the same operations with confirm-layout-change once the user has agreed.";
+			string layoutChange = result.LayoutChange?.RelaySentence("operations") ?? string.Empty;
 			throw new InvalidOperationException(
 				(result.ErrorMessage ?? "ModifyProcess failed.") + refusedBy + layoutChange);
 		}
@@ -367,18 +364,7 @@ public sealed class ModifyBusinessProcessService(
 		// user. Absent on a CrtProcessBuilder that does not gate layout changes, which reads as "no question
 		// was asked" and is exactly right there.
 		[JsonPropertyName("layoutChange")]
-		public LayoutChangeDto? LayoutChange { get; set; }
-	}
-
-	private sealed class LayoutChangeDto {
-		[JsonPropertyName("reason")]
-		public string? Reason { get; set; }
-
-		[JsonPropertyName("summary")]
-		public string? Summary { get; set; }
-
-		[JsonPropertyName("elements")]
-		public List<string>? Elements { get; set; }
+		public LayoutChangeRelay? LayoutChange { get; set; }
 	}
 
 	#endregion

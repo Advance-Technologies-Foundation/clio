@@ -198,8 +198,7 @@ public sealed class ModifyProcessAsNewVersionService(
 		// A layout refusal is a question rather than a fault, and this throw is where it leaves clio, so the
 		// part a caller has to relay travels with it: which elements move, and the one word that re-sends it.
 		if (result.LayoutChange != null) {
-			message += $" Affected elements: {string.Join(", ", result.LayoutChange.Elements ?? [])}."
-				+ " Re-send the same request with confirm-layout-change once the user has agreed.";
+			message += result.LayoutChange.RelaySentence("request");
 		}
 
 		if (!string.IsNullOrWhiteSpace(result.VersionName) || !string.IsNullOrWhiteSpace(result.VersionSchemaUId)) {
@@ -284,18 +283,7 @@ public sealed class ModifyProcessAsNewVersionService(
 		// Declared for the reason the two above are: an undeclared member is discarded silently, and this one
 		// carries the only actionable part of a layout refusal - which elements to show the user.
 		[JsonPropertyName("layoutChange")]
-		public LayoutChangeDto? LayoutChange { get; set; }
-	}
-
-	private sealed class LayoutChangeDto {
-		[JsonPropertyName("reason")]
-		public string? Reason { get; set; }
-
-		[JsonPropertyName("summary")]
-		public string? Summary { get; set; }
-
-		[JsonPropertyName("elements")]
-		public List<string>? Elements { get; set; }
+		public LayoutChangeRelay? LayoutChange { get; set; }
 	}
 
 	#endregion
