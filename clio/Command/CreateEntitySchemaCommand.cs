@@ -49,6 +49,11 @@ public class CreateEntitySchemaOptions : RemoteCommandOptions
 		HelpText = "Create a virtual entity schema without a physical database table")]
 	public bool IsVirtual { get; set; }
 
+	/// <summary>Gets or sets whether the schema maps to a separately provisioned database view.</summary>
+	[Option("is-db-view", Required = false,
+		HelpText = "Map the entity to a database view; no table or SQL view is generated")]
+	public bool? IsDBView { get; set; }
+
 	/// <summary>Gets or sets column specs, each containing a legacy definition, JSON object, or non-empty JSON array.</summary>
 	[Option("column", Required = false, HelpText = "Column spec <name>:<type>[:<title>[:<refSchema>]] or a JSON object/array with name/type/title/reference-schema-name/required/default-value-source/default-value. Repeat the option for multiple columns.")]
 	public IEnumerable<string> Columns { get; set; }
