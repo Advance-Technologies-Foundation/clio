@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Allure.Net.Commons;
 using Allure.NUnit;
@@ -166,16 +166,13 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		contract.InputSchema.Properties.Single(field => field.Name == "checksum").Description
 			.Should().Contain("get-page",
 				because: "the served contract must tell the caller which value to pass as the conflict baseline");
-		// "repeated" is a single generic word that a rewrite can keep while dropping the guarantee. Assert
-		// the two load-bearing halves of the additive wording instead: that the payload is additions ONLY -
-		// CleanAndMerge never updates an already-stored key, so promising overrides would report a silent
-		// no-op as success - and that an already-stored key stays registered without being re-sent.
+		// The contract must expose both value updates and the required workspace capture.
 		string servedResourcesDescription = contract.InputSchema.Properties
 			.Single(field => field.Name == "resources").Description;
-		servedResourcesDescription.Should().Contain("Additions only",
+		servedResourcesDescription.Should().Contain("updates supplied en-US values",
 			because: "the served contract must name the payload semantics - a caller who reads it as a full replacement set re-sends every key on every save, which is the behavior issue #1320 reports");
-		servedResourcesDescription.Should().Contain("NOT updated by re-sending",
-			because: "a key already stored on the schema is never rewritten by CleanAndMerge, so a contract that promises overrides turns a corrected caption into a silent no-op reported as success (issue #1320)");
+		servedResourcesDescription.Should().Contain("restore-workspace",
+			because: "a successful server save must not imply that workspace metadata and XML were captured");
 		servedResourcesDescription.Should().NotContain("replaces the full set",
 			because: "no wording that promises replacement semantics is acceptable for an additive payload");
 	}
@@ -1673,6 +1670,29 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 				because: $"the key is supplied in `resources`, so the save must go through. Error: {registeringSave.Error}");
 			registeringSave.RegisteredResourceKeys.Should().Contain(persistedKey,
 				because: "the response must report the key it persisted on the schema for the omission below to be meaningful");
+			registeringSave.Warnings.Should().Contain(PageUpdateCommand.ResourceWorkspaceCaptureWarning,
+				because: "the real MCP response must warn about a stale workspace push");
+
+			// Act: change an existing value through the real MCP save, then read native resources back.
+			PageUpdateResponse updated = await UpdatePageAsync(
+				arrangeContext, savePage, BodyWithLabelResource(originalBody, persistedKey),
+				environmentName, sessionDir, force: true,
+				resources: $"{{\"{persistedKey}\":\"E2E updated label\"}}");
+			PageGetResponse updatedReadback = await GetPageAsync(arrangeContext, savePage, environmentName, sessionDir);
+
+			// Assert
+			AllureApi.Step("Existing caption updates without registering another key", () => {
+				updated.Success.Should().BeTrue(because: "native SaveSchema must accept the changed value");
+				updated.ResourcesRegistered.Should().Be(0, because: "updating a value preserves declaration identity");
+				updated.Warnings.Should().Contain(PageUpdateCommand.ResourceWorkspaceCaptureWarning,
+					because: "value updates need the same capture warning as new keys");
+			});
+			await AllureApi.Step("Readback contains the new English caption", async () => {
+				updatedReadback.Success.Should().BeTrue(because: "server readback is required to prove the save");
+				JObject bundle = JObject.Parse(await File.ReadAllTextAsync(updatedReadback.Files.BundleFile));
+				bundle["resources"]?[persistedKey]?["en-US"]?.Value<string>().Should().Be("E2E updated label",
+					because: "a successful save alone previously hid an ignored resource update");
+			});
 
 			// Act 3: the same body, `resources` omitted entirely.
 			PageUpdateResponse omittingSave = await UpdatePageAsync(

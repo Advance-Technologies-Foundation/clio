@@ -12,6 +12,41 @@ namespace Clio.Tests.Command;
 [Category("Unit")]
 [Property("Module", "Command")]
 public sealed class ResourceStringHelperTests {
+	[TestCase("en-US")]
+	[TestCase("en-us")]
+	[TestCase("es-ES")]
+	[Description("Explicit values update or add only en-US while preserving schema ownership, translations, omitted keys, and the original read DTO.")]
+	public void CleanAndMerge_ShouldUpdateEnglishValue_WhenAnExistingKeyIsSupplied(string culture) {
+		// Arrange
+		JArray original = JArray.Parse("""
+			[{"uId":"stable-id","name":"Title","createdInSchemaUId":"owner","values":[]},
+			 {"name":"Unmentioned","values":[{"cultureName":"en-US","value":"Keep me"}]}]
+			""");
+		((JArray)original[0]["values"]).Add(new JObject {
+			["cultureName"] = culture, ["value"] = "Old", ["extra"] = "preserved"
+		});
+		string snapshot = original.ToString();
+
+		// Act
+		var result = ResourceStringHelper.CleanAndMerge(original,
+			new Dictionary<string, string> { ["Title"] = "" }, ["Title"]);
+
+		// Assert
+		JObject title = (JObject)result.cleaned[0];
+		title["uId"].Value<string>().Should().Be("stable-id", because: "updating text must retain declaration identity");
+		title["createdInSchemaUId"].Value<string>().Should().Be("owner", because: "ownership is platform metadata");
+		JArray values = (JArray)title["values"];
+		values.Children<JObject>().Single(v => string.Equals(v["cultureName"].Value<string>(), "en-US", StringComparison.OrdinalIgnoreCase))
+			["value"].Value<string>().Should().BeEmpty(because: "an explicit empty caption is a valid update");
+		values[0]["extra"].Value<string>().Should().Be("preserved", because: "unrelated culture metadata must survive");
+		if (culture == "es-ES") {
+			values[0]["value"].Value<string>().Should().Be("Old", because: "other cultures must not be overwritten");
+		}
+		JToken.DeepEquals(result.cleaned[1], original[1]).Should().BeTrue(because: "omitted keys remain unchanged");
+		result.registered.Should().BeEmpty(because: "an update does not register a new key");
+		original.ToString().Should().Be(snapshot, because: "preparing a save or dry run must not mutate the fetched DTO");
+	}
+
 	[Test]
 	[Description("CleanAndMerge preserves all existing resources (base and custom) and registers missing body and explicit resources")]
 	public void CleanAndMerge_WhenBodyAndExplicitResourcesContainMissingKeys_PreservesAndRegistersExpectedEntries() {
