@@ -42,6 +42,7 @@ public class NugetMaterializer : INugetMaterializer
 	//The Import element and the attribute that names the props file this csproj pulls in.
 	private const string ImportTag = "Import";
 	private const string ProjectAttribute = "Project";
+	private const string IncludeAttribute = "Include";
 
 	#endregion
 
@@ -276,7 +277,7 @@ public class NugetMaterializer : INugetMaterializer
 	private static IEnumerable<NugetPackage> GetNugetReferences(IEnumerable<XElement> elements){
 		IList<NugetPackage> list = new List<NugetPackage>();
 		foreach (XElement element in elements) {
-			string name = element.Attribute("Include")?.Value;
+			string name = element.Attribute(IncludeAttribute)?.Value;
 			string version = element.Attribute("Version")?.Value;
 			if (!Version.TryParse(version, out Version parsedVersion)) {
 				continue;
@@ -304,7 +305,7 @@ public class NugetMaterializer : INugetMaterializer
 		//Comment out only the PackageReference elements that were actually materialized.
 		//A nuget package that produced no dll (an analyzer, for instance) is still needed.
 		foreach (XElement element in xElements) {
-			string nugetPackageName = element.Attribute("Include")?.Value;
+			string nugetPackageName = element.Attribute(IncludeAttribute)?.Value;
 			if (!propsBuildResult.IsMaterialized(nugetPackageName)) {
 				_logger.WriteWarning($"Keeping the {nugetPackageName} package reference in the "
 					+ $"{_csprojPath} file, because it produced no assembly to reference");
@@ -455,7 +456,7 @@ public class NugetMaterializer : INugetMaterializer
 				continue;
 			}
 			comment.ReplaceWith(packageReference);
-			_logger.WriteInfo($"Restored the {packageReference.Attribute("Include")?.Value} package reference "
+			_logger.WriteInfo($"Restored the {packageReference.Attribute(IncludeAttribute)?.Value} package reference "
 				+ $"in the {_csprojPath} file, because the props file that replaced it is gone");
 		}
 	}
@@ -469,7 +470,7 @@ public class NugetMaterializer : INugetMaterializer
 		}
 		try {
 			XElement element = XElement.Parse(commentText.Trim());
-			return element.Name.LocalName == Tag && element.Attribute("Include") is not null
+			return element.Name.LocalName == Tag && element.Attribute(IncludeAttribute) is not null
 				? element
 				: null;
 		} catch (XmlException) {
