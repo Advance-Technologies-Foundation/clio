@@ -77,10 +77,11 @@ internal static class PageBodyAstLinter {
 		if (ast is null) {
 			return Array.Empty<PageBodyLintFinding>();
 		}
-		var findings = new List<PageBodyLintFinding>();
-		Visit(ast, default, depth: 0, findings);
-		CheckUndefinedSectionCalls(ast, findings);
-		return findings;
+		LintFindingBudget budget = new();
+		Visit(ast, default, depth: 0, budget);
+		CheckUndefinedSectionCalls(ast, budget);
+		budget.AppendSummaries();
+		return budget.Findings;
 	}
 
 	/// <summary>
@@ -134,35 +135,34 @@ internal static class PageBodyAstLinter {
 		bool EnclosingFunctionIsValidatorInstance,
 		string EnclosingPropertyKey);
 
-	private static void Visit(Node node, VisitContext ctx, int depth, List<PageBodyLintFinding> findings) {
+	private static void Visit(Node node, VisitContext ctx, int depth, LintFindingBudget budget) {
 		if (depth > MaxAstDepth) {
-			findings.Add(new PageBodyLintFinding(
-				Rule: RuleBodyTooDeeplyNested,
-				Severity: LintSeverity.Error,
-				Line: node.Location.Start.Line,
-				Column: node.Location.Start.Column + 1,
-				Message: $"Page body AST exceeds the safe traversal depth ({MaxAstDepth}). The lint pass refuses to walk further to avoid a StackOverflowException that would kill the MCP server process."));
+			//Every sibling at the cap would otherwise repeat this same finding, so it goes through
+			//the budget like every other rule.
+			budget.TryAdd(RuleBodyTooDeeplyNested, LintSeverity.Error,
+				node.Location.Start.Line, node.Location.Start.Column + 1,
+				() => $"Page body AST exceeds the safe traversal depth ({MaxAstDepth}). The lint pass refuses to walk further to avoid a StackOverflowException that would kill the MCP server process.");
 			return;
 		}
 		switch (node) {
 			case ObjectExpression obj:
-				CheckSchemaSectionShapes(obj, findings);
-				CheckEntityDataSourceStaticFilters(obj, ctx, findings);
-				CheckUnscopedAttributeChangeHandler(obj, depth, findings);
+				CheckSchemaSectionShapes(obj, budget);
+				CheckEntityDataSourceStaticFilters(obj, ctx, budget);
+				CheckUnscopedAttributeChangeHandler(obj, depth, budget);
 				break;
 			case Property prop:
-				CheckProperty(prop, ctx, findings);
+				CheckProperty(prop, ctx, budget);
 				break;
 			case CallExpression call:
-				CheckCallExpression(call, ctx, findings);
+				CheckCallExpression(call, ctx, budget);
 				break;
 			case ReturnStatement ret:
-				CheckReturnStatement(ret, ctx, findings);
+				CheckReturnStatement(ret, ctx, budget);
 				break;
 		}
 		foreach (Node child in node.ChildNodes) {
 			VisitContext childCtx = ComputeChildContext(node, child, ctx);
-			Visit(child, childCtx, depth + 1, findings);
+			Visit(child, childCtx, depth + 1, budget);
 		}
 	}
 
@@ -331,6 +331,11 @@ internal static class PageBodyAstLinter {
 	// every occurrence into a multi-megabyte string that no MCP client can use. Names past the cap
 	// are replaced by a single summary finding that states how many were left out, so the response
 	// stays bounded without pretending the rest do not exist.
+	//
+	// Must stay BELOW MaxFindingsPerRule. This cap is what makes the rule's own count of listed names
+	// agree with what the report shows: a name cleared here is always given a slot by the shared
+	// budget, so the summary's "N distinct name(s) are listed above" cannot overstate. Raising it past
+	// the per-rule cap would silently break that agreement.
 	internal const int MaxUndefinedSectionCallNames = 20;
 
 	// How many DISTINCT omitted names the summary keeps before its count saturates. The names are never
@@ -342,34 +347,208 @@ internal static class PageBodyAstLinter {
 	// in hundreds of kilobytes - unreadable, and the caller only ever fixes the first few before re-running.
 	internal const int MaxFindingsPerRule = 50;
 
+	// Ceiling on the WARNING part of the report, across rules. AST depth bounds how deep the walk goes,
+	// not how WIDE the body is: a generated page can trip several rules thousands of times each, and
+	// per-rule caps alone still let the response grow with the number of rules that happen to fire.
+	// Errors are deliberately exempt: an Error blocks the write, so dropping one to keep the report small
+	// turns a page the platform rejects into a page that saves clean. Errors stay bounded by the per-rule
+	// cap instead.
+	internal const int MaxFindingsTotal = 150;
+
+	/// <summary>
+	/// The single sink every rule writes through. A rule RESERVES a slot before its message is built, so a
+	/// wide body cannot allocate the long interpolated strings it will never show; what does not fit is
+	/// counted and collapses into one summary finding per rule.
+	/// </summary>
+	private sealed class LintFindingBudget {
+
+		private readonly List<PageBodyLintFinding> _findings = new();
+		private readonly Dictionary<string, int> _reported = new(StringComparer.Ordinal);
+		private readonly Dictionary<string, SuppressedRuleCount> _suppressed = new(StringComparer.Ordinal);
+		private readonly List<string> _suppressedOrder = new();
+
+		public IReadOnlyList<PageBodyLintFinding> Findings => _findings;
+
+		/// <summary>
+		/// Claims a slot for one finding of <paramref name="rule"/>, or counts it as suppressed.
+		/// A <see cref="LintSeverity.Error"/> only has to fit under its own rule's cap: the overall
+		/// ceiling exists to keep an advisory report readable, and applying it to an Error would let a
+		/// wide body full of warnings hide the finding that blocks the write.
+		/// </summary>
+		private bool TryReserve(string rule, LintSeverity severity, int line, int column){
+			_reported.TryGetValue(rule, out int reported);
+			bool fitsOverall = severity == LintSeverity.Error || _findings.Count < MaxFindingsTotal;
+			if (!fitsOverall || reported >= MaxFindingsPerRule) {
+				RecordSuppressed(rule, severity, line, column);
+				return false;
+			}
+			_reported[rule] = reported + 1;
+			return true;
+		}
+
+		/// <summary>Adds a finding whose slot was already claimed with <see cref="TryReserve"/>.</summary>
+		private void AddReserved(string rule, LintSeverity severity, int line, int column, string message) =>
+			_findings.Add(new PageBodyLintFinding(rule, severity, line, column, message));
+
+		/// <summary>
+		/// Reserves and adds in one step. <paramref name="message"/> is a factory on purpose: it runs only
+		/// when the finding is actually kept.
+		/// </summary>
+		public void TryAdd(string rule, LintSeverity severity, int line, int column,
+			Func<string> message){
+			if (TryReserve(rule, severity, line, column)) {
+				AddReserved(rule, severity, line, column, message());
+			}
+		}
+
+		/// <summary>Counts one finding that will not be shown, and remembers where it sat.</summary>
+		private void RecordSuppressed(string rule, LintSeverity severity, int line, int column){
+			if (_suppressed.TryGetValue(rule, out SuppressedRuleCount existing)) {
+				_suppressed[rule] = existing with {Count = existing.Count + 1, Line = line, Column = column};
+				return;
+			}
+			_suppressedOrder.Add(rule);
+			_suppressed[rule] = new SuppressedRuleCount(severity, 1, line, column);
+		}
+
+		/// <summary>
+		/// Appends one counted summary per rule that had findings suppressed. Rules that render their own
+		/// summary - `undefined-section-call` counts DISTINCT names, not occurrences - are skipped here so
+		/// the report never carries two summaries for the same rule.
+		/// </summary>
+		public void AppendSummaries(){
+			foreach (string rule in _suppressedOrder) {
+				if (SelfSummarisingRules.Contains(rule)) {
+					continue;
+				}
+				SuppressedRuleCount suppressed = _suppressed[rule];
+				_reported.TryGetValue(rule, out int reported);
+				//A rule that first fired after the report was already full has nothing "listed above",
+				//so saying "past the first 0" would send the reader looking for entries that are not there.
+				string message = reported > 0
+					? $"{suppressed.Count} further `{rule}` finding(s) past the first {reported} were "
+						+ "omitted from this report; fix the listed ones and re-run validate-page to see "
+						+ "the rest."
+					: $"{suppressed.Count} `{rule}` finding(s) were omitted from this report, which had "
+						+ "already reached its overall size limit; fix the listed findings and re-run "
+						+ "validate-page to see these.";
+				_findings.Add(new PageBodyLintFinding(
+					Rule: rule,
+					Severity: suppressed.Severity,
+					Line: suppressed.Line,
+					Column: suppressed.Column,
+					Message: message));
+			}
+		}
+
+	}
+
+	/// <summary>How many findings of one rule were dropped, and where the last of them sat.</summary>
+	private readonly record struct SuppressedRuleCount(
+		LintSeverity Severity,
+		int Count,
+		int Line,
+		int Column);
+
+	// Rules that render their own summary line, so the shared budget must not add a second one.
+	private static readonly IReadOnlyCollection<string> SelfSummarisingRules =
+		new HashSet<string>([RuleUndefinedSectionCall], StringComparer.Ordinal);
+
+	/// <summary>
+	/// How a bare callee name resolved against the scope chain.
+	/// </summary>
+	private enum BindingResolution {
+
+		/// <summary>Bound to a value that is there by the time the call runs.</summary>
+		Usable,
+
+		/// <summary>
+		/// The binding exists, but nothing guarantees a value was stored in it before the section that
+		/// calls it runs - a conditional declaration, a declaration without an initializer, or a binding
+		/// assigned only after the factory returned. The call throws a TypeError at runtime.
+		/// </summary>
+		DeclaredButNotInitialized,
+
+		/// <summary>No binding of that name in any enclosing scope.</summary>
+		Undeclared
+
+	}
+
 	/// <summary>
 	/// A lexical scope and its chain of enclosing scopes. Resolution walks outwards, so a name
 	/// declared in a sibling or nested function is invisible here - which is the whole point: a
 	/// single flat name set made the rule accept `missingHelper()` as soon as ANY unrelated
 	/// function in the body happened to declare that name.
+	///
+	/// Each binding also carries whether it is DEFINITELY INITIALIZED: `if (false) { function h(){} }`
+	/// and `let h;` both put the name in scope while leaving it `undefined`, so a handler calling `h()`
+	/// throws a TypeError. Definite initialization is demanded only once resolution leaves the function
+	/// that contains the call: inside one function body the statements really do run in order before
+	/// the call (`if (true) { var later = fn; } later();`), whereas a handler returned by the factory
+	/// runs long after the factory body finished, so whatever the factory left uninitialized stays so.
 	/// </summary>
 	private sealed class LexicalScope {
 
-		private readonly HashSet<string> _names = new(StringComparer.Ordinal);
+		//Name -> definitely initialized before the enclosing function finished.
+		private readonly Dictionary<string, bool> _names = new(StringComparer.Ordinal);
 		private readonly LexicalScope _parent;
+		private HashSet<string> _nestedFunctionAssignments;
 
-		public LexicalScope(LexicalScope parent){
+		public LexicalScope(LexicalScope parent, bool isFunctionBoundary = false){
 			_parent = parent;
+			IsFunctionBoundary = isFunctionBoundary;
 		}
 
-		public void Declare(string name){
-			if (!string.IsNullOrEmpty(name)) {
-				_names.Add(name);
+		/// <summary>True when this scope belongs to a function, so leaving it crosses a call boundary.</summary>
+		public bool IsFunctionBoundary { get; }
+
+		/// <summary>
+		/// The names this function's body assigns from inside a nested function of its own. They are
+		/// collected up front, because whether such an assignment has run by the time a section calls the
+		/// name does not follow from where the assignment sits in the source.
+		/// </summary>
+		public IReadOnlyCollection<string> NestedFunctionAssignments => _nestedFunctionAssignments;
+
+		public void RecordNestedFunctionAssignments(HashSet<string> names){
+			_nestedFunctionAssignments = names;
+		}
+
+		public void Declare(string name, bool definitelyInitialized){
+			if (string.IsNullOrEmpty(name)) {
+				return;
 			}
+			//A name declared twice (`var h; var h = fn;`) is usable as soon as ANY of its declarations
+			//initializes it, so the flags merge with OR rather than the last one winning.
+			_names[name] = definitelyInitialized
+				|| (_names.TryGetValue(name, out bool existing) && existing);
 		}
 
-		public bool IsDeclared(string name){
+		/// <summary>
+		/// Records that an assignment stored a value into an already-declared binding, wherever in the
+		/// chain it was declared (`let h; h = () =&gt; 1;` in a factory body).
+		/// </summary>
+		public void MarkInitialized(string name){
 			for (LexicalScope scope = this; scope is not null; scope = scope._parent) {
-				if (scope._names.Contains(name)) {
-					return true;
+				if (scope._names.ContainsKey(name)) {
+					scope._names[name] = true;
+					return;
 				}
 			}
-			return false;
+		}
+
+		public BindingResolution Resolve(string name){
+			bool crossedFunctionBoundary = false;
+			for (LexicalScope scope = this; scope is not null; scope = scope._parent) {
+				if (scope._names.TryGetValue(name, out bool definitelyInitialized)) {
+					return !crossedFunctionBoundary || definitelyInitialized
+						? BindingResolution.Usable
+						: BindingResolution.DeclaredButNotInitialized;
+				}
+				if (scope.IsFunctionBoundary) {
+					crossedFunctionBoundary = true;
+				}
+			}
+			return BindingResolution.Undeclared;
 		}
 
 	}
@@ -434,19 +613,171 @@ internal static class PageBodyAstLinter {
 
 	}
 
-	private static void CheckUndefinedSectionCalls(Script ast, List<PageBodyLintFinding> findings) {
-		LexicalScope scriptScope = new(null);
+	/// <summary>
+	/// Reference identity for AST nodes, so an anchor set holds the exact nodes the walk produced.
+	/// </summary>
+	private sealed class NodeReferenceComparer : IEqualityComparer<Node> {
+
+		public static readonly NodeReferenceComparer Instance = new();
+
+		public bool Equals(Node x, Node y) => ReferenceEquals(x, y);
+
+		public int GetHashCode(Node obj) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
+
+	}
+
+	/// <summary>
+	/// Everything one undefined-call scan needs besides the current scope: the runtime-global root the
+	/// AMD factory inherits INSTEAD of the script scope, the factory functions themselves, the section
+	/// properties of the object each factory returns, and the output sinks.
+	/// </summary>
+	private sealed record SectionScanState(
+		LexicalScope GlobalScope,
+		HashSet<Node> FactoryFunctions,
+		HashSet<Node> SectionProperties,
+		LintFindingBudget FindingBudget,
+		UndefinedCallBudget DistinctNameBudget);
+
+	private const string DefineGlobalName = "define";
+
+	// The page-schema sections the rule guards. A property of one of these names is a section ONLY
+	// when it is a direct property of the object the factory returns - see CollectSectionProperties.
+	private static readonly string[] SectionPropertyNames = ["handlers", "converters", "validators"];
+
+	private static void CheckUndefinedSectionCalls(Script ast, LintFindingBudget budget) {
+		//Two roots, not one. Seeding script-level user declarations into the single root the AMD
+		//factory inherits let a helper declared OUTSIDE `define(...)` satisfy a handler call - the
+		//exact shape this rule exists to catch, because Page Designer can keep the handler entry and
+		//drop the outer declaration. The factory chains to the runtime globals only.
+		LexicalScope globalScope = new(null);
 		foreach (string global in CallableRuntimeGlobals) {
-			scriptScope.Declare(global);
+			globalScope.Declare(global, definitelyInitialized: true);
 		}
+		LexicalScope scriptScope = new(globalScope);
 		bool strict = HasUseStrictDirective(ast.Body);
-		DeclareHoistedNames(ast, scriptScope, depth: 0, strict, atStatementLevel: true);
-		DeclareBlockNames(ast.Body, scriptScope, depth: 0);
-		UndefinedCallBudget budget = new();
-		ScanForUndefinedSectionCalls(ast, scriptScope, insideSection: false, depth: 0, strict, findings,
-			budget);
-		if (budget.OmittedOccurrenceCount > 0 && budget.LastOmitted.HasValue) {
-			findings.Add(BuildOmittedSummary(budget.LastOmitted.Value, budget));
+		DeclareHoistedNames(ast, scriptScope, depth: 0, strict, atStatementLevel: true,
+			unconditional: true);
+		DeclareBlockNames(ast.Body, scriptScope, depth: 0, assignmentsAlwaysRun: true);
+		HashSet<Node> factories = new(NodeReferenceComparer.Instance);
+		CollectFactoryFunctions(ast, factories, depth: 0);
+		HashSet<Node> sections = new(NodeReferenceComparer.Instance);
+		CollectSectionProperties(ast, factories, sections, depth: 0);
+		SectionScanState state = new(globalScope, factories, sections, budget, new UndefinedCallBudget());
+		ScanForUndefinedSectionCalls(ast, scriptScope, insideSection: false, depth: 0, strict,
+			unconditional: true, state);
+		if (state.DistinctNameBudget.OmittedOccurrenceCount > 0
+			&& state.DistinctNameBudget.LastOmitted.HasValue) {
+			OmittedCallLocation lastOmitted = state.DistinctNameBudget.LastOmitted.Value;
+			//Through the shared budget like every other finding, so the report's own accounting stays
+			//consistent. The summary is an Error, which the overall ceiling does not apply to.
+			budget.TryAdd(RuleUndefinedSectionCall, LintSeverity.Error, lastOmitted.Line,
+				lastOmitted.Column, () => BuildOmittedSummaryMessage(state.DistinctNameBudget));
+		}
+	}
+
+	/// <summary>
+	/// Collects the function arguments of every `define(...)` call - the AMD factories whose scope must
+	/// NOT inherit script-level user declarations.
+	/// </summary>
+	private static void CollectFactoryFunctions(Node node, HashSet<Node> factories, int depth) {
+		if (node is null || depth > MaxAstDepth) {
+			return;
+		}
+		if (node is CallExpression {Callee: Identifier {Name: DefineGlobalName}} call) {
+			foreach (Node argument in call.Arguments) {
+				if (argument is IFunction) {
+					factories.Add(argument);
+				}
+			}
+		}
+		foreach (Node child in node.ChildNodes) {
+			CollectFactoryFunctions(child, factories, depth + 1);
+		}
+	}
+
+	/// <summary>
+	/// Collects the page-schema section properties: the `handlers` / `converters` / `validators`
+	/// properties of the object literal a factory RETURNS. Matching the names anywhere in the tree
+	/// instead turned ordinary nested metadata such as `{ handlers: { run: () =&gt; cb() } }` into a
+	/// section and blocked pages that run correctly.
+	///
+	/// When the body carries no `define(...)` factory at all - nothing upstream of the linter requires
+	/// one - the same return-anchored rule is applied to every function in the body, so the rule keeps
+	/// working on a bare module without falling back to the name-anywhere match. The fallback is decided
+	/// for the WHOLE body: one `define(...)` anywhere is enough to scope discovery to factories only.
+	///
+	/// Only a `return` that is a direct statement of the function body is an anchor. A page schema
+	/// returned from inside an `if` or a `try` is therefore not discovered, the same silent gap as a
+	/// factory that returns a variable rather than an object literal.
+	/// </summary>
+	private static void CollectSectionProperties(Node node, HashSet<Node> factories,
+		HashSet<Node> sections, int depth) {
+		if (node is null || depth > MaxAstDepth) {
+			//Past the traversal cap the rule simply finds no sections there, so it reports nothing
+			//rather than reporting wrongly; the same body already gets a blocking
+			//`body-too-deeply-nested` finding from the main walk.
+			return;
+		}
+		if (node is IFunction function && (factories.Count == 0 || factories.Contains(node))) {
+			CollectReturnedSectionProperties(function, sections);
+		}
+		foreach (Node child in node.ChildNodes) {
+			CollectSectionProperties(child, factories, sections, depth + 1);
+		}
+	}
+
+	private static void CollectReturnedSectionProperties(IFunction function, HashSet<Node> sections) {
+		//An arrow with an expression body - `() => ({ handlers: [...] })` - returns its object literal
+		//without a `return` statement at all, and is a shape Page Designer emits.
+		if (function.Body is ObjectExpression conciseBody) {
+			AddSectionProperties(conciseBody, sections);
+			return;
+		}
+		if (function.Body is not BlockStatement body) {
+			return;
+		}
+		foreach (Statement statement in body.Body) {
+			if (statement is not ReturnStatement {Argument: not null} returnStatement) {
+				continue;
+			}
+			ObjectExpression returned = returnStatement.Argument as ObjectExpression
+				?? (returnStatement.Argument is Identifier returnedName
+					? FindObjectLiteralDeclaration(body, returnedName.Name)
+					: null);
+			if (returned is not null) {
+				AddSectionProperties(returned, sections);
+			}
+		}
+	}
+
+	/// <summary>
+	/// The object literal a direct `const`/`let`/`var` statement of this block assigned to
+	/// <paramref name="name"/> - the `const schema = { handlers: [...] }; return schema;` shape. A
+	/// declaration that gets its value any other way (a call result, a spread of another variable, an
+	/// assignment written separately from the declaration) is not followed: the rule then finds no
+	/// sections and stays silent, which is the same documented gap as a nested `return`.
+	/// </summary>
+	private static ObjectExpression FindObjectLiteralDeclaration(BlockStatement body, string name) {
+		foreach (Statement statement in body.Body) {
+			if (statement is not VariableDeclaration declaration) {
+				continue;
+			}
+			foreach (VariableDeclarator declarator in declaration.Declarations) {
+				if (declarator is {Id: Identifier {Name: var declared}, Init: ObjectExpression initializer}
+					&& string.Equals(declared, name, StringComparison.Ordinal)) {
+					return initializer;
+				}
+			}
+		}
+		return null;
+	}
+
+	private static void AddSectionProperties(ObjectExpression returned, HashSet<Node> sections) {
+		foreach (Node element in returned.Properties) {
+			if (TryGetEntryProperty(element, out Property property, out string key)
+				&& Array.IndexOf(SectionPropertyNames, key) >= 0) {
+				sections.Add(property);
+			}
 		}
 	}
 
@@ -474,21 +805,15 @@ internal static class PageBodyAstLinter {
 		enclosingStrict
 		|| (node is IFunction {Body: BlockStatement body} && HasUseStrictDirective(body.Body));
 
-	private static PageBodyLintFinding BuildOmittedSummary(
-		OmittedCallLocation lastOmitted, UndefinedCallBudget budget) {
+	private static string BuildOmittedSummaryMessage(UndefinedCallBudget budget) {
 		string floorPrefix = budget.OmittedNameCountIsFloor ? "at least " : string.Empty;
 		string namesPart = budget.OmittedNameCount > 0
 			? $"{floorPrefix}{budget.OmittedNameCount} "
 				+ $"further undeclared name(s) past the first {MaxUndefinedSectionCallNames}, and "
 			: string.Empty;
-		return new PageBodyLintFinding(
-			Rule: RuleUndefinedSectionCall,
-			Severity: LintSeverity.Error,
-			Line: lastOmitted.Line,
-			Column: lastOmitted.Column,
-			Message: $"{namesPart}{budget.OmittedOccurrenceCount} further call site(s) of undeclared "
-				+ $"identifiers were omitted from this report; {budget.ReportedNameCount} distinct name(s) "
-				+ "are listed above. Fix the listed ones and re-run validate-page to see the rest.");
+		return $"{namesPart}{budget.OmittedOccurrenceCount} further call site(s) of undeclared "
+			+ $"identifiers were omitted from this report; {budget.ReportedNameCount} distinct name(s) "
+			+ "are listed above. Fix the listed ones and re-run validate-page to see the rest.";
 	}
 
 	/// <summary>
@@ -497,7 +822,7 @@ internal static class PageBodyAstLinter {
 	/// declarations belong to their own scope.
 	/// </summary>
 	private static void DeclareHoistedNames(Node node, LexicalScope scope, int depth, bool strict,
-		bool atStatementLevel) {
+		bool atStatementLevel, bool unconditional) {
 		if (node is null || depth > MaxAstDepth) {
 			return;
 		}
@@ -514,12 +839,48 @@ internal static class PageBodyAstLinter {
 				afterReturn = true;
 				continue;
 			}
-			if (DeclareHoistedChildName(child, scope, depth, strict, atStatementLevel)) {
+			bool childUnconditional = IsUnconditionalChild(node, child, unconditional);
+			if (DeclareHoistedChildName(child, scope, depth, strict, atStatementLevel,
+				childUnconditional)) {
 				continue;
 			}
-			DeclareHoistedNames(child, scope, depth + 1, strict, atStatementLevel: false);
+			DeclareHoistedNames(child, scope, depth + 1, strict, atStatementLevel: false,
+				childUnconditional);
 		}
 	}
+
+	/// <summary>
+	/// True when <paramref name="child"/> is reached every time its parent is, so a declaration it
+	/// carries really does run. Statements of a block run in order; an `if` whose test is the literal
+	/// `true` or `false` takes the one branch the language folds it to. Nothing else is folded - a
+	/// loop, a `try`, a `switch` case or an `if` on any other expression leaves its declarations
+	/// conditional, which is what makes `if (false) { function helper(){} }` fail closed.
+	/// </summary>
+	private static bool IsUnconditionalChild(Node parent, Node child, bool parentUnconditional) {
+		if (parent is IFunction function && ReferenceEquals(child, function.Body)) {
+			//A function body opens its own sequence: it runs from the top whenever the function is
+			//called, wherever the function itself was written.
+			return true;
+		}
+		if (!parentUnconditional) {
+			return false;
+		}
+		if (parent is IfStatement ifStatement) {
+			bool? test = TryFoldBooleanLiteral(ifStatement.Test);
+			if (ReferenceEquals(child, ifStatement.Consequent)) {
+				return test == true;
+			}
+			return ReferenceEquals(child, ifStatement.Alternate) && test == false;
+		}
+		return parent is Acornima.Ast.Program or BlockStatement;
+	}
+
+	private static bool? TryFoldBooleanLiteral(Node test) =>
+		test switch {
+			Literal {Value: true} => true,
+			Literal {Value: false} => false,
+			_ => null
+		};
 
 	/// <summary>
 	/// Declares the hoisted name one child contributes to <paramref name="scope"/>, if any.
@@ -527,11 +888,14 @@ internal static class PageBodyAstLinter {
 	/// the caller must not walk into it.
 	/// </summary>
 	private static bool DeclareHoistedChildName(Node child, LexicalScope scope, int depth, bool strict,
-		bool atStatementLevel) {
+		bool atStatementLevel, bool unconditional) {
 		switch (child) {
 			case VariableDeclaration {Kind: VariableDeclarationKind.Var} varDeclaration:
 				foreach (VariableDeclarator declarator in varDeclaration.Declarations) {
-					DeclareBindings(declarator.Id, scope, depth + 1);
+					//`var helper;` and a `var helper = fn;` the branch never reaches both leave the
+					//binding `undefined`, so only an initializer on a path that always runs counts.
+					DeclareBindings(declarator.Id, scope, depth + 1,
+						definitelyInitialized: unconditional && declarator.Init is not null);
 				}
 				return false;
 			case FunctionDeclaration {Id: not null} functionDeclaration:
@@ -539,7 +903,10 @@ internal static class PageBodyAstLinter {
 				//hoisting it out of one would accept a call that throws ReferenceError at
 				//runtime. DeclareBlockNames declares it in its own block scope instead.
 				if (!strict || atStatementLevel) {
-					scope.Declare(functionDeclaration.Id.Name);
+					//Annex B hoists the NAME out of the block, but only the block actually running
+					//stores the function in it - `if (false) { function helper(){} }` leaves
+					//`helper` undefined and a handler calling it throws a TypeError.
+					scope.Declare(functionDeclaration.Id.Name, definitelyInitialized: unconditional);
 				}
 				//A function declaration opens its own scope; nothing inside it hoists to here.
 				return true;
@@ -555,7 +922,8 @@ internal static class PageBodyAstLinter {
 	/// Declares the block-scoped names of one statement list: `let`, `const`, classes, and the
 	/// function declarations that are direct statements of this block.
 	/// </summary>
-	private static void DeclareBlockNames(in NodeList<Statement> statements, LexicalScope scope, int depth) {
+	private static void DeclareBlockNames(in NodeList<Statement> statements, LexicalScope scope,
+		int depth, bool assignmentsAlwaysRun) {
 		bool afterReturn = false;
 		foreach (Statement statement in statements) {
 			if (afterReturn && statement is not FunctionDeclaration) {
@@ -573,14 +941,27 @@ internal static class PageBodyAstLinter {
 							or VariableDeclarationKind.Using or VariableDeclarationKind.AwaitUsing
 					} blockDeclaration:
 					foreach (VariableDeclarator declarator in blockDeclaration.Declarations) {
-						DeclareBindings(declarator.Id, scope, depth + 1);
+						DeclareBindings(declarator.Id, scope, depth + 1,
+							definitelyInitialized: declarator.Init is not null);
 					}
 					break;
 				case FunctionDeclaration {Id: not null} functionDeclaration:
-					scope.Declare(functionDeclaration.Id.Name);
+					scope.Declare(functionDeclaration.Id.Name, definitelyInitialized: true);
 					break;
 				case ClassDeclaration {Id: not null} classDeclaration:
-					scope.Declare(classDeclaration.Id.Name);
+					scope.Declare(classDeclaration.Id.Name, definitelyInitialized: true);
+					break;
+				case ExpressionStatement {
+						Expression: AssignmentExpression {
+							Operator: Acornima.Operator.Assignment, Left: Identifier assigned
+						}
+					}:
+					//`let helper; helper = () => 1;` before the return DOES leave a callable binding,
+					//so the assignment - not the declaration - is what makes it usable. The same
+					//assignment inside a branch that may not run proves nothing about the binding.
+					if (assignmentsAlwaysRun) {
+						scope.MarkInitialized(assigned.Name);
+					}
 					break;
 			}
 		}
@@ -591,31 +972,32 @@ internal static class PageBodyAstLinter {
 	/// the property being read, never a new binding, so `const {alpha: beta} = source` declares
 	/// `beta` alone; counting `alpha` as declared is what let a later `alpha()` through unchecked.
 	/// </summary>
-	private static void DeclareBindings(Node node, LexicalScope scope, int depth) {
+	private static void DeclareBindings(Node node, LexicalScope scope, int depth,
+		bool definitelyInitialized) {
 		if (node is null || depth > MaxAstDepth) {
 			return;
 		}
 		switch (node) {
 			case Identifier identifier:
-				scope.Declare(identifier.Name);
+				scope.Declare(identifier.Name, definitelyInitialized);
 				break;
 			case ObjectPattern objectPattern:
 				foreach (Node property in objectPattern.Properties) {
 					//Property.Value is the binding target; a RestElement carries its own.
 					DeclareBindings(property is Property {Value: not null} keyed ? keyed.Value : property,
-						scope, depth + 1);
+						scope, depth + 1, definitelyInitialized);
 				}
 				break;
 			case ArrayPattern arrayPattern:
 				foreach (Node element in arrayPattern.Elements) {
-					DeclareBindings(element, scope, depth + 1);
+					DeclareBindings(element, scope, depth + 1, definitelyInitialized);
 				}
 				break;
 			case AssignmentPattern assignmentPattern:
-				DeclareBindings(assignmentPattern.Left, scope, depth + 1);
+				DeclareBindings(assignmentPattern.Left, scope, depth + 1, definitelyInitialized);
 				break;
 			case RestElement restElement:
-				DeclareBindings(restElement.Argument, scope, depth + 1);
+				DeclareBindings(restElement.Argument, scope, depth + 1, definitelyInitialized);
 				break;
 		}
 	}
@@ -623,37 +1005,60 @@ internal static class PageBodyAstLinter {
 	/// <summary>
 	/// Opens the scope a node introduces, if any, and returns the scope its children see.
 	/// </summary>
-	private static LexicalScope OpenScope(Node node, LexicalScope scope, int depth, bool strict) {
+	private static LexicalScope OpenScope(Node node, LexicalScope scope, int depth, bool strict,
+		bool unconditional, SectionScanState state) {
 		switch (node) {
 			case IFunction function: {
-				LexicalScope functionScope = new(scope);
+				//The AMD factory chains to the runtime globals, NOT to the script scope: a helper
+				//declared outside `define(...)` is not something the factory's handlers can rely on.
+				LexicalScope parent = state.FactoryFunctions.Contains(node) ? state.GlobalScope : scope;
+				LexicalScope functionScope = new(parent, isFunctionBoundary: true);
 				//A named function expression can call itself by that name from inside its body.
 				if (function.Id is not null) {
-					functionScope.Declare(function.Id.Name);
+					functionScope.Declare(function.Id.Name, definitelyInitialized: true);
 				}
 				foreach (Node parameter in function.Params) {
-					DeclareBindings(parameter, functionScope, depth + 1);
+					DeclareBindings(parameter, functionScope, depth + 1, definitelyInitialized: true);
 				}
 				DeclareHoistedNames(function.Body, functionScope, depth + 1, strict,
-					atStatementLevel: true);
+					atStatementLevel: true, unconditional: true);
+				HashSet<string> nestedAssignments = new(StringComparer.Ordinal);
+				CollectNestedFunctionAssignments(function.Body, nestedAssignments, depth + 1,
+					insideNestedFunction: false);
+				functionScope.RecordNestedFunctionAssignments(nestedAssignments);
 				return functionScope;
 			}
 			case BlockStatement block: {
 				LexicalScope blockScope = new(scope);
-				DeclareBlockNames(block.Body, blockScope, depth + 1);
+				//Reaching a block's scope at all means the block runs, so what it DECLARES is bound
+				//either way; whether its assignments to OUTER bindings run is the part that depends
+				//on how this block was reached.
+				DeclareBlockNames(block.Body, blockScope, depth + 1, unconditional);
+				if (scope.IsFunctionBoundary && scope.NestedFunctionAssignments is not null) {
+					//This is the body block of the function that owns `scope`, so its `let`/`const`
+					//bindings are now in place and the assignments the function's nested functions make
+					//can be applied - all of them, before anything inside the body is resolved. Doing it
+					//at scan time instead made the verdict depend on where the nested function sits
+					//relative to the `return`.
+					foreach (string assigned in scope.NestedFunctionAssignments) {
+						blockScope.MarkInitialized(assigned);
+					}
+				}
 				return blockScope;
 			}
 			case SwitchStatement switchStatement: {
 				//Every case shares one block scope, so a `let` in case A is visible in case B.
 				LexicalScope switchScope = new(scope);
 				foreach (SwitchCase switchCase in switchStatement.Cases) {
-					DeclareBlockNames(switchCase.Consequent, switchScope, depth + 1);
+					//Which case runs is a runtime decision, so an assignment in one proves nothing.
+					DeclareBlockNames(switchCase.Consequent, switchScope, depth + 1,
+						assignmentsAlwaysRun: false);
 				}
 				return switchScope;
 			}
 			case CatchClause catchClause: {
 				LexicalScope catchScope = new(scope);
-				DeclareBindings(catchClause.Param, catchScope, depth + 1);
+				DeclareBindings(catchClause.Param, catchScope, depth + 1, definitelyInitialized: true);
 				return catchScope;
 			}
 			case ForStatement {Init: VariableDeclaration forInit}:
@@ -664,7 +1069,7 @@ internal static class PageBodyAstLinter {
 				return OpenLoopScope(forOfLeft, scope, depth);
 			case ClassExpression {Id: not null} classExpression: {
 				LexicalScope classScope = new(scope);
-				classScope.Declare(classExpression.Id.Name);
+				classScope.Declare(classExpression.Id.Name, definitelyInitialized: true);
 				return classScope;
 			}
 			default:
@@ -672,10 +1077,45 @@ internal static class PageBodyAstLinter {
 		}
 	}
 
+	/// <summary>
+	/// Collects the names a function body assigns from inside a NESTED function of its own -
+	/// `function init(){ helper = () =&gt; 1; }` in a factory that declares `let helper;`.
+	///
+	/// Such an assignment counts as initialization, with no attempt to decide whether the nested
+	/// function is ever called: a factory that assigns its helpers from an `init()` it calls before the
+	/// `return` is ordinary page code, and rejecting it would block a page that runs. The rule stays
+	/// fail-closed only where the language itself guarantees nothing ran - unreachable code and
+	/// branches that may not be taken - which is what the issue asks for.
+	///
+	/// Two consequences worth stating: a nested function that only assigns the name in a branch still
+	/// counts, and a nested function that SHADOWS the name (declaring its own `helper` before assigning
+	/// it) marks the outer binding too, because the walk records names rather than resolving them.
+	/// Both leave the rule silent on a page that may fail at runtime, which is the safe direction for a
+	/// finding that blocks the write.
+	/// </summary>
+	private static void CollectNestedFunctionAssignments(Node node, HashSet<string> names, int depth,
+		bool insideNestedFunction) {
+		if (node is null || depth > MaxAstDepth) {
+			return;
+		}
+		if (insideNestedFunction
+			&& node is AssignmentExpression {
+				Operator: Acornima.Operator.Assignment, Left: Identifier assigned
+			}) {
+			names.Add(assigned.Name);
+		}
+		foreach (Node child in node.ChildNodes) {
+			CollectNestedFunctionAssignments(child, names, depth + 1,
+				insideNestedFunction || child is IFunction);
+		}
+	}
+
 	private static LexicalScope OpenLoopScope(VariableDeclaration head, LexicalScope scope, int depth) {
 		LexicalScope loopScope = new(scope);
 		foreach (VariableDeclarator declarator in head.Declarations) {
-			DeclareBindings(declarator.Id, loopScope, depth + 1);
+			//The loop head binds its variable on every iteration that runs, and code inside the loop
+			//body is the only code that sees it.
+			DeclareBindings(declarator.Id, loopScope, depth + 1, definitelyInitialized: true);
 		}
 		return loopScope;
 	}
@@ -686,41 +1126,57 @@ internal static class PageBodyAstLinter {
 		bool insideSection,
 		int depth,
 		bool strict,
-		List<PageBodyLintFinding> findings,
-		UndefinedCallBudget budget) {
+		bool unconditional,
+		SectionScanState state) {
 		if (node is null || depth > MaxAstDepth) {
 			return;
 		}
 		bool childStrict = IsStrictFunction(node, strict);
-		LexicalScope childScope = OpenScope(node, scope, depth, childStrict);
-		bool childInsideSection = insideSection;
-		if (!insideSection && node is Property property && TryGetStaticPropertyName(property) is string key) {
-			childInsideSection = key is "handlers" or "converters" or "validators";
-		}
-		if (insideSection && node is CallExpression {Callee: Identifier identifier}
-			&& !childScope.IsDeclared(identifier.Name)) {
-			//The budget decides FIRST: a truncated body can repeat one broken call tens of thousands
-			//of times, and building the long interpolated message for every occurrence only to drop
-			//it allocated tens of megabytes. An omitted occurrence keeps its location and nothing
-			//else, which is all the summary finding reads.
-			if (budget.ShouldReport(identifier.Name)) {
-				findings.Add(new PageBodyLintFinding(
-					Rule: RuleUndefinedSectionCall,
-					Severity: LintSeverity.Error,
-					Line: identifier.Location.Start.Line,
-					Column: identifier.Location.Start.Column + 1,
-					Message: NonCallableRuntimeGlobals.Contains(identifier.Name)
-						? $"Call to `{identifier.Name}()` in a handlers/converters/validators section: the runtime does supply `{identifier.Name}`, but as a value rather than as a function callable without `new`, so this call throws a TypeError. Read it as a property, or construct it with `new`."
-						: $"Call to `{identifier.Name}()` in a handlers/converters/validators section references an identifier that is not declared in the enclosing scopes of this page body and is not a known JavaScript, browser, AMD or Creatio global. A module-scope helper may have been removed by Page Designer; re-add it before the `return` statement."));
-			} else {
-				budget.RecordOmitted(
-					identifier.Location.Start.Line, identifier.Location.Start.Column + 1);
-			}
+		LexicalScope childScope = OpenScope(node, scope, depth, childStrict, unconditional, state);
+		bool childInsideSection = insideSection
+			|| (node is Property property && state.SectionProperties.Contains(property));
+		if (insideSection && node is CallExpression {Callee: Identifier identifier}) {
+			ReportUnusableSectionCall(childScope.Resolve(identifier.Name), identifier, state);
 		}
 		foreach (Node child in node.ChildNodes) {
 			ScanForUndefinedSectionCalls(child, childScope, childInsideSection, depth + 1, childStrict,
-				findings, budget);
+				IsUnconditionalChild(node, child, unconditional), state);
 		}
+	}
+
+	private static void ReportUnusableSectionCall(BindingResolution resolution, Identifier identifier,
+		SectionScanState state) {
+		if (resolution == BindingResolution.Usable) {
+			return;
+		}
+		int line = identifier.Location.Start.Line;
+		int column = identifier.Location.Start.Column + 1;
+		//The budget decides FIRST: a truncated body can repeat one broken call tens of thousands
+		//of times, and building the long interpolated message for every occurrence only to drop
+		//it allocated tens of megabytes. An omitted occurrence keeps its location and nothing
+		//else, which is all the summary finding reads.
+		if (!state.DistinctNameBudget.ShouldReport(identifier.Name)) {
+			state.DistinctNameBudget.RecordOmitted(line, column);
+			return;
+		}
+		state.FindingBudget.TryAdd(RuleUndefinedSectionCall, LintSeverity.Error, line, column,
+			() => BuildUnusableSectionCallMessage(resolution, identifier.Name));
+	}
+
+	private static string BuildUnusableSectionCallMessage(BindingResolution resolution, string name) {
+		if (resolution == BindingResolution.DeclaredButNotInitialized) {
+			//"Not declared" would be plainly false here - the author can see the declaration - and
+			//would send them looking for a helper that is already in the body.
+			return $"Call to `{name}()` in a handlers/converters/validators section resolves to a "
+				+ "binding that is declared but not guaranteed to hold a value when the section runs "
+				+ "(declared without an initializer, initialized only inside a branch that may not "
+				+ "run, or assigned only after the factory's `return`). The call throws a TypeError at "
+				+ $"runtime. Assign `{name}` unconditionally before the `return` statement, or declare "
+				+ "it as a function declaration.";
+		}
+		return NonCallableRuntimeGlobals.Contains(name)
+			? $"Call to `{name}()` in a handlers/converters/validators section: the runtime does supply `{name}`, but as a value rather than as a function callable without `new`, so this call throws a TypeError. Read it as a property, or construct it with `new`."
+			: $"Call to `{name}()` in a handlers/converters/validators section references an identifier that is not declared in the enclosing scopes of this page body and is not a known JavaScript, browser, AMD or Creatio global. A module-scope helper may have been removed by Page Designer; re-add it before the `return` statement.";
 	}
 
 	#endregion
@@ -731,13 +1187,13 @@ internal static class PageBodyAstLinter {
 	// The crt-prefix rule applies to direct entries of that map only — a
 	// `"crt.X"` key inside a nested lookup table in a converter's closure
 	// is opaque to the rule.
-	private static void CheckSchemaSectionShapes(ObjectExpression obj, List<PageBodyLintFinding> findings) {
+	private static void CheckSchemaSectionShapes(ObjectExpression obj, LintFindingBudget budget) {
 		foreach (Node element in obj.Properties) {
 			if (!TryGetInitProperty(element, out Property prop, out string key)) {
 				continue;
 			}
 			if (key == "converters" && prop.Value is ObjectExpression convertersObj) {
-				CheckConvertersDirectKeys(convertersObj, findings);
+				CheckConvertersDirectKeys(convertersObj, budget);
 			}
 		}
 	}
@@ -767,11 +1223,10 @@ internal static class PageBodyAstLinter {
 	// No regex counterpart in SchemaValidationService — `crt.*` is treated
 	// as a valid vendor prefix by `ValidatePrefixedDeclarations` and the
 	// converter shape validators explicitly skip `crt.*` keys.
-	private static void CheckConvertersDirectKeys(ObjectExpression convertersObj, List<PageBodyLintFinding> findings) {
-		int reported = 0;
-		int suppressed = 0;
-		int lastLine = 0;
-		int lastColumn = 0;
+	// Every offending key carries the same fix, and a generated converters map can hold thousands of them:
+	// 5,000 keys formatted an ~871 KB error nobody reads. The shared budget collapses everything past the
+	// cap into one counted line at the last offending position.
+	private static void CheckConvertersDirectKeys(ObjectExpression convertersObj, LintFindingBudget budget) {
 		foreach (Node element in convertersObj.Properties) {
 			if (!TryGetInitProperty(element, out Property entry, out string entryKey)) {
 				continue;
@@ -779,32 +1234,9 @@ internal static class PageBodyAstLinter {
 			if (!entryKey.StartsWith("crt.", StringComparison.Ordinal)) {
 				continue;
 			}
-			lastLine = entry.Location.Start.Line;
-			lastColumn = entry.Location.Start.Column + 1;
-			if (reported < MaxFindingsPerRule) {
-				findings.Add(new PageBodyLintFinding(
-					Rule: RuleConverterCrtPrefixReserved,
-					Severity: LintSeverity.Error,
-					Line: lastLine,
-					Column: lastColumn,
-					Message: $"Custom converter `{entryKey}` uses the reserved `crt.*` namespace; only Creatio built-in converters may use this prefix"));
-				reported++;
-				continue;
-			}
-			// Every offending key carries the same fix, and a generated converters map can hold thousands of
-			// them: 5,000 keys formatted an ~871 KB error nobody reads. Past the cap they collapse into one
-			// counted line at the last offending position.
-			suppressed++;
-		}
-		if (suppressed > 0) {
-			findings.Add(new PageBodyLintFinding(
-				Rule: RuleConverterCrtPrefixReserved,
-				Severity: LintSeverity.Error,
-				Line: lastLine,
-				Column: lastColumn,
-				Message: $"{suppressed} further converter key(s) past the first {MaxFindingsPerRule} use the "
-					+ "reserved `crt.*` namespace and were omitted from this report; fix the listed ones and "
-					+ "re-run validate-page to see the rest."));
+			budget.TryAdd(RuleConverterCrtPrefixReserved, LintSeverity.Error,
+				entry.Location.Start.Line, entry.Location.Start.Column + 1,
+				() => $"Custom converter `{entryKey}` uses the reserved `crt.*` namespace; only Creatio built-in converters may use this prefix");
 		}
 	}
 
@@ -836,7 +1268,7 @@ internal static class PageBodyAstLinter {
 	// it. `_designOptions` is never a legitimate `crt.EntityDataSource` config location,
 	// so the object that is DIRECTLY the value of a property literally named
 	// `_designOptions` is excluded outright.
-	private static void CheckEntityDataSourceStaticFilters(ObjectExpression obj, VisitContext ctx, List<PageBodyLintFinding> findings) {
+	private static void CheckEntityDataSourceStaticFilters(ObjectExpression obj, VisitContext ctx, LintFindingBudget budget) {
 		if (ctx.EnclosingPropertyKey == "_designOptions") {
 			return;
 		}
@@ -855,12 +1287,9 @@ internal static class PageBodyAstLinter {
 		if (filtersProp is null || !hasEntitySchemaName) {
 			return;
 		}
-		findings.Add(new PageBodyLintFinding(
-			Rule: RuleEntityDataSourceStaticFilters,
-			Severity: LintSeverity.Warning,
-			Line: filtersProp.Location.Start.Line,
-			Column: filtersProp.Location.Start.Column + 1,
-			Message: "`config.filters` on a `crt.EntityDataSource` is never applied — `filters` is not a recognized data-source config key. update-page persists it and returns success, but the list shows UNFILTERED data. Put a static filter in a `<CollectionAttr>_PredefinedFilter` view-model attribute referenced from the collection attribute's `modelConfig.filterAttributes` (per related-list guidance)."));
+		budget.TryAdd(RuleEntityDataSourceStaticFilters, LintSeverity.Warning,
+			filtersProp.Location.Start.Line, filtersProp.Location.Start.Column + 1,
+			() => "`config.filters` on a `crt.EntityDataSource` is never applied — `filters` is not a recognized data-source config key. update-page persists it and returns success, but the list shows UNFILTERED data. Put a static filter in a `<CollectionAttr>_PredefinedFilter` view-model attribute referenced from the collection attribute's `modelConfig.filterAttributes` (per related-list guidance).");
 	}
 
 	// Rule 12: a `crt.HandleViewModelAttributeChangeRequest` handler entry that is NOT scoped to the
@@ -890,7 +1319,7 @@ internal static class PageBodyAstLinter {
 	//   - False positive: a guard hidden behind a helper call — an early return driven by a helper predicate on
 	//     request — is not seen, since detecting it needs inter-procedural data-flow analysis, so such a scoped
 	//     handler is still warned. The proxy trades these residuals for catching the common shapes.
-	private static void CheckUnscopedAttributeChangeHandler(ObjectExpression obj, int depth, List<PageBodyLintFinding> findings) {
+	private static void CheckUnscopedAttributeChangeHandler(ObjectExpression obj, int depth, LintFindingBudget budget) {
 		Property requestProp = null;
 		Property handlerProp = null;
 		foreach (Node element in obj.Properties) {
@@ -918,12 +1347,9 @@ internal static class PageBodyAstLinter {
 		if (referencesAttributeName || !writesContextAttribute) {
 			return;
 		}
-		findings.Add(new PageBodyLintFinding(
-			Rule: RuleHandlerAttributeChangeUnscopedWrite,
-			Severity: LintSeverity.Warning,
-			Line: requestProp.Location.Start.Line,
-			Column: requestProp.Location.Start.Column + 1,
-			Message: "A `crt.HandleViewModelAttributeChangeRequest` handler that writes a view-model attribute via `$context.set(...)` is not scoped to the triggering attribute, so it re-fires on its own write and can clear the value or loop. Scope it with an early guard: `if (request.attributeName !== \"<Attr>\") return next?.handle(request);` (per page-schema-handlers guidance). If the write is an intentional cross-field recompute, still guard it so it does not re-enter on its own write — skip when `request.attributeName` is the attribute you are writing. Note: `requestArgumentPropertyName` does NOT scope this handler — it is silently ignored."));
+		budget.TryAdd(RuleHandlerAttributeChangeUnscopedWrite, LintSeverity.Warning,
+			requestProp.Location.Start.Line, requestProp.Location.Start.Column + 1,
+			() => "A `crt.HandleViewModelAttributeChangeRequest` handler that writes a view-model attribute via `$context.set(...)` is not scoped to the triggering attribute, so it re-fires on its own write and can clear the value or loop. Scope it with an early guard: `if (request.attributeName !== \"<Attr>\") return next?.handle(request);` (per page-schema-handlers guidance). If the write is an intentional cross-field recompute, still guard it so it does not re-enter on its own write — skip when `request.attributeName` is the attribute you are writing. Note: `requestArgumentPropertyName` does NOT scope this handler — it is silently ignored.");
 	}
 
 	// Like TryGetInitProperty but ALSO accepts shorthand-method properties (`handler(r, n) {}`), whose
@@ -1004,23 +1430,20 @@ internal static class PageBodyAstLinter {
 	// subtree" gates (e.g. `executeRequest({type, params:[]})` inside a
 	// factory body or a `"crt.X"` lookup-table key inside a converter's
 	// closure no longer wrongly trigger an Error).
-	private static void CheckProperty(Property prop, VisitContext ctx, List<PageBodyLintFinding> findings) {
+	private static void CheckProperty(Property prop, VisitContext ctx, LintFindingBudget budget) {
 		// kept as an extension point for future Property-level rules
 	}
 
-	private static void CheckCallExpression(CallExpression call, VisitContext ctx, List<PageBodyLintFinding> findings) {
+	private static void CheckCallExpression(CallExpression call, VisitContext ctx, LintFindingBudget budget) {
 		// Rule 9: request.$context.executeRequest(...) is reachable from handler code
 		// but it is NOT part of the @creatio-devkit/common public surface — Creatio
 		// Academy uniformly uses sdk.HandlerChainService.instance.process(...) in
 		// SCHEMA_HANDLERS examples. The reverse direction (process discouraged in
 		// favour of executeRequest) was the previous guidance and is no longer correct.
 		if (IsContextExecuteRequest(call.Callee)) {
-			findings.Add(new PageBodyLintFinding(
-				Rule: RuleHandlerUsesContextExecuteRequest,
-				Severity: LintSeverity.Warning,
-				Line: call.Location.Start.Line,
-				Column: call.Location.Start.Column + 1,
-				Message: "`request.$context.executeRequest(...)` is not part of the documented @creatio-devkit/common public API; use `sdk.HandlerChainService.instance.process({ type, $context, scopes })` in deployed page-body handlers (per Creatio Academy SCHEMA_HANDLERS examples)"));
+			budget.TryAdd(RuleHandlerUsesContextExecuteRequest, LintSeverity.Warning,
+				call.Location.Start.Line, call.Location.Start.Column + 1,
+				() => "`request.$context.executeRequest(...)` is not part of the documented @creatio-devkit/common public API; use `sdk.HandlerChainService.instance.process({ type, $context, scopes })` in deployed page-body handlers (per Creatio Academy SCHEMA_HANDLERS examples)");
 		}
 		// Rule 10: direct `fetch(...)` / `globalThis.fetch(...)` / `window.fetch(...)`
 		// inside the converters schema subtree. Bounded via VisitContext.InsideConverters
@@ -1028,12 +1451,9 @@ internal static class PageBodyAstLinter {
 		// every control render) and does not noise the agent with informational
 		// flags on legitimate `fetch` usage elsewhere in the body.
 		if (ctx.InsideConverters && IsFetchCall(call.Callee)) {
-			findings.Add(new PageBodyLintFinding(
-				Rule: RuleConverterFetchCall,
-				Severity: LintSeverity.Warning,
-				Line: call.Location.Start.Line,
-				Column: call.Location.Start.Column + 1,
-				Message: "Direct `fetch(...)` inside a converter fires on every render of the bound control; replace with a cached SDK service such as `SysSettingsService` (per page-schema-converters guidance)"));
+			budget.TryAdd(RuleConverterFetchCall, LintSeverity.Warning,
+				call.Location.Start.Line, call.Location.Start.Column + 1,
+				() => "Direct `fetch(...)` inside a converter fires on every render of the bound control; replace with a cached SDK service such as `SysSettingsService` (per page-schema-converters guidance)");
 		}
 	}
 
@@ -1045,7 +1465,7 @@ internal static class PageBodyAstLinter {
 			_ => false
 		};
 
-	private static void CheckReturnStatement(ReturnStatement ret, VisitContext ctx, List<PageBodyLintFinding> findings) {
+	private static void CheckReturnStatement(ReturnStatement ret, VisitContext ctx, LintFindingBudget budget) {
 		// Rule 6: validator declaration must not return a literal. Bounded
 		// to returns whose nearest enclosing function is THE validator-
 		// instance function (the function returned by the factory). Other
@@ -1064,12 +1484,9 @@ internal static class PageBodyAstLinter {
 		if (!IsBadValidatorReturnLiteral(ret.Argument)) {
 			return;
 		}
-		findings.Add(new PageBodyLintFinding(
-			Rule: RuleValidatorBadReturnLiteral,
-			Severity: LintSeverity.Error,
-			Line: ret.Location.Start.Line,
-			Column: ret.Location.Start.Column + 1,
-			Message: "validator return must be `{ \"<ValidatorType>\": { message: config.message } }`; literal `true` / `false` / `{}` / hardcoded-string returns are rejected — see page-schema-validators guidance. `null` and `undefined` returns are allowed (they signal \"no error\")"));
+		budget.TryAdd(RuleValidatorBadReturnLiteral, LintSeverity.Error,
+			ret.Location.Start.Line, ret.Location.Start.Column + 1,
+			() => "validator return must be `{ \"<ValidatorType>\": { message: config.message } }`; literal `true` / `false` / `{}` / hardcoded-string returns are rejected — see page-schema-validators guidance. `null` and `undefined` returns are allowed (they signal \"no error\")");
 	}
 
 	#endregion
