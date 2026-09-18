@@ -41,6 +41,7 @@ public static class EntitySchemaPrompt {
 		 Set `parent-schema-name` only when inheritance or replacement behavior was explicitly requested.
 		 Set `extend-parent` to `true` only when the request is specifically for a replacement schema, and only
 		 together with `parent-schema-name`.
+		 Set `is-db-view` to `true` for a separately provisioned SQL view; no table or view SQL is generated.
 		 Set `is-virtual` to `true` only when the entity must not have a physical database table; it defaults to `false`.
 		 Include `columns` only when the request explicitly describes initial fields. `title-localizations` is
 		 OPTIONAL for a column add; when omitted, `en-US` is auto-derived from a scalar title/caption or the
@@ -325,7 +326,9 @@ public static class EntitySchemaPrompt {
 		[Description("Creatio environment name")]
 		string environmentName,
 		[Description("Column name (own or inherited) to set as the primary-display column")]
-		string primaryDisplayColumn = null) =>
+		string primaryDisplayColumn = null,
+		[Description("Optional database-view flag; omission preserves the current value")]
+		bool? isDBView = null) =>
 		$"""
 		 Use clio mcp server `{SetEntitySchemaPropertiesTool.SetEntitySchemaPropertiesToolName}` to set schema-level
 		 properties on entity schema `{schemaName}` in package `{packageName}` on environment `{environmentName}`.
@@ -333,6 +336,8 @@ public static class EntitySchemaPrompt {
 		 `primary-display-column` with the column (own or inherited) to show as the record's display value in
 		 lookups and links — this is the only supported way to change the display column of an EXISTING schema.
 		 Requested primary-display column: `{primaryDisplayColumn ?? "<not provided>"}`.
+		 When supplied, set `is-db-view` to `{isDBView?.ToString().ToLowerInvariant() ?? "<not provided>"}`.
+		 The SQL view must be provisioned separately; this flag does not convert existing tables or change `is-virtual`.
 		 At least one settable property must be supplied. The change is saved and published like other
 		 entity-schema tools, then verified on readback. Confirm the result with
 		 `{GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName}` (`primary-display-column-name`).

@@ -24,7 +24,7 @@ public class SetEntitySchemaPropertiesOptions : RemoteCommandOptions
 	/// </summary>
 	internal const string NoPropertyToSetError =
 		"At least one schema property to set is required " +
-		"(for example --primary-display-column, --title or --title-localizations).";
+		"(for example --primary-display-column, --is-db-view, --title or --title-localizations).";
 
 	/// <summary>
 	/// Single source of truth for the "--title together with --title-localizations" rejection.
@@ -72,6 +72,11 @@ public class SetEntitySchemaPropertiesOptions : RemoteCommandOptions
 		HelpText = "Column name (own or inherited) to set as the primary-display column")]
 	public string? PrimaryDisplayColumn { get; set; }
 
+	/// <summary>Gets or sets the database-view flag; omission preserves its current value.</summary>
+	[Option("is-db-view", Required = false,
+		HelpText = "Set the database-view flag (true or false); does not create SQL views or convert existing tables")]
+	public bool? IsDBView { get; set; }
+
 	/// <summary>
 	/// Gets or sets the new schema caption for a single culture. Mutually exclusive with
 	/// <see cref="TitleLocalizations"/>; supplying both is rejected by
@@ -115,7 +120,7 @@ public class SetEntitySchemaPropertiesOptions : RemoteCommandOptions
 	/// <see cref="SetEntitySchemaPropertiesCommand.ValidateOptions"/> populates the map before checking.
 	/// </remarks>
 	internal bool HasAnyPropertyToSet =>
-		!string.IsNullOrWhiteSpace(PrimaryDisplayColumn)
+		IsDBView.HasValue || !string.IsNullOrWhiteSpace(PrimaryDisplayColumn)
 		|| !string.IsNullOrWhiteSpace(Title)
 		|| ParsedTitleLocalizations is { Count: > 0 };
 }

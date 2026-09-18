@@ -13,6 +13,11 @@ namespace Clio.Command;
 /// Applies user task parameter direction values directly to workspace metadata files.
 /// </summary>
 public interface IUserTaskMetadataDirectionApplier {
+	/// <summary>Reads explicit directions from the linked workspace before a designer save can overwrite them.</summary>
+	/// <param name="packageName">Package owning the schema.</param>
+	/// <param name="schemaName">User task schema name.</param>
+	/// <returns>Explicit directions keyed by parameter name, or an empty dictionary when no local metadata exists.</returns>
+	IReadOnlyDictionary<string, int> ReadDirections(string packageName, string schemaName);
 	/// <summary>
 	/// Updates parameter direction values in the workspace metadata for the specified user task schema.
 	/// </summary>
@@ -37,6 +42,26 @@ public class UserTaskMetadataDirectionApplier : IUserTaskMetadataDirectionApplie
 	public UserTaskMetadataDirectionApplier(IWorkspacePathBuilder workspacePathBuilder, IFileSystem fileSystem) {
 		_workspacePathBuilder = workspacePathBuilder;
 		_fileSystem = fileSystem;
+	}
+
+	/// <inheritdoc />
+	public IReadOnlyDictionary<string, int> ReadDirections(string packageName, string schemaName) {
+		string metadataPath = BuildMetadataPath(packageName, schemaName);
+		var directions = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+		if (!_fileSystem.File.Exists(metadataPath)) {
+			return directions;
+		}
+		using JsonDocument document = JsonDocument.Parse(_fileSystem.File.ReadAllText(metadataPath));
+		if (!document.RootElement.GetProperty("MetaData").GetProperty("Schema")
+			.TryGetProperty("FJ1", out JsonElement parameters)) {
+			return directions;
+		}
+		foreach (JsonElement parameter in parameters.EnumerateArray()) {
+			if (parameter.TryGetProperty("L12", out JsonElement direction)) {
+				directions.Add(parameter.GetProperty("A2").GetString(), direction.GetInt32());
+			}
+		}
+		return directions;
 	}
 
 	/// <inheritdoc />
