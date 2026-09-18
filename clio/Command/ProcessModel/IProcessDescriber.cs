@@ -639,6 +639,19 @@ public sealed class DescribedElement {
 	public DescribedApproval Approval { get; set; }
 
 	/// <summary>
+	/// For a Formula element (<c>formulaTask</c>): the expression and the parameter its result is written to.
+	/// <c>null</c> for other element kinds and on a server that predates the element.
+	/// </summary>
+	/// <remarks>
+	/// The target is reported back in the NAMES a build takes, so a described formula feeds into a create or a
+	/// modify unchanged. <c>unresolved</c> means this package could not decode the stored map path into names —
+	/// not that the element writes nowhere, which is a claim neither side can make about a path the platform's own
+	/// reader may still accept.
+	/// </remarks>
+	[JsonPropertyName("formula")]
+	public DescribedFormula Formula { get; set; }
+
+	/// <summary>
 	/// Captures every other field the server reports on an element so the description round-trips losslessly:
 	/// a newer <c>CrtProcessBuilder</c> reporting a block this build does not declare reaches the command output
 	/// verbatim instead of being discarded without a trace.
@@ -1591,3 +1604,53 @@ public sealed class DescribedParameter {
 }
 
 #endregion
+
+/// <summary>A Formula element read back: the expression, and where its result goes.</summary>
+public sealed class DescribedFormula {
+
+	/// <summary>The expression, verbatim as stored (the platform meta-path form).</summary>
+	[JsonPropertyName("body")]
+	public string Body { get; set; }
+
+	/// <summary>Where the result is written. <c>null</c> when the element has no target yet.</summary>
+	[JsonPropertyName("target")]
+	public DescribedFormulaTarget Target { get; set; }
+
+	/// <summary>Anything a newer server reports that this build does not declare.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>The parameter a Formula element writes to, in the shape a build takes it.</summary>
+public sealed class DescribedFormulaTarget {
+
+	/// <summary>The process parameter receiving the result.</summary>
+	[JsonPropertyName("resultProcessParameter")]
+	public string ResultProcessParameter { get; set; }
+
+	/// <summary>The element whose parameter receives the result.</summary>
+	[JsonPropertyName("elementName")]
+	public string ElementName { get; set; }
+
+	/// <summary>The parameter of <see cref="ElementName"/> receiving the result.</summary>
+	[JsonPropertyName("elementParameter")]
+	public string ElementParameter { get; set; }
+
+	/// <summary>
+	/// For a three-part target, the column of that parameter's record, as the stored UId — the process cannot
+	/// name it, because the column belongs to an entity.
+	/// </summary>
+	[JsonPropertyName("entityColumnUId")]
+	public string EntityColumnUId { get; set; }
+
+	/// <summary>
+	/// The stored map path, reported when the server could not decode it into names. It does NOT assert that the
+	/// element writes nowhere.
+	/// </summary>
+	[JsonPropertyName("unresolved")]
+	public string Unresolved { get; set; }
+
+	/// <summary>Anything a newer server reports that this build does not declare.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
