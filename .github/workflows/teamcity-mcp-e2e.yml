@@ -87,11 +87,16 @@ on:
       - 'clio/**'
       - '!clio/docs/**'
       - '!clio/help/**'
+      - '!clio/Wiki/**'
       - '!clio/Commands.md'
+      - '!clio/**/*.md'
+      # tpl is a shipped workspace template, not documentation, even where it is markdown.
+      - 'clio/tpl/**'
       - 'clio.mcp.e2e/**'
       - '!clio.mcp.e2e/**/*.md'
       - 'clio.process.fixture/**'
       - 'cliogate/**'
+      - '!cliogate/Resources/**'
       - 'Directory.Packages.props'
       # The trigger and the selection are code too; a change to them must be exercised by a run.
       - '.github/workflows/teamcity-mcp-e2e.yml'
@@ -182,8 +187,10 @@ jobs:
     # same-repo PRs and manual dispatch. This in-file guard is defense-in-depth;
     # the authoritative control is the repo setting Actions -> "Require approval
     # for all external contributors" (must be enabled).
-    # mode `none`: every affected fixture is NoEnvironment-only and build.yml already runs that tier,
-    # so a TeamCity build would deploy a Creatio for zero tests. Nothing is queued, no status posted.
+    # mode `none`: no fixture in this suite can observe the change - the diff is documentation, or
+    # code nothing under the MCP surface consumes, or fixtures that are all NoEnvironment-only and
+    # already ran in build.yml. A TeamCity build would deploy a Creatio for zero tests, so nothing is
+    # queued and no status is posted. The `select` job log names the rule that discarded each file.
     if: >-
       needs.select.outputs.mode != 'none' &&
       (github.event_name == 'workflow_dispatch' ||
@@ -364,7 +371,8 @@ jobs:
         if: needs.select.outputs.mode == 'none'
         shell: bash
         run: |
-          echo "Every fixture affected by this pull request is NoEnvironment-only; build.yml runs that tier."
+          echo "No fixture in clio.mcp.e2e can observe this pull request: see the decision log in the"
+          echo "'Select MCP e2e fixtures' job for the rule that discarded each changed file."
           echo "No TeamCity build was queued and no 'CLIO MCP e2e tests (ATF)' status will appear."
       - name: Require that one attempt queued the build
         if: needs.select.outputs.mode != 'none'
