@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -44,7 +44,12 @@ public sealed class ComponentRegistrySnapshotTests {
 		using FileStream stream = File.OpenRead(snapshotPath);
 		ComponentCatalogState state = ComponentInfoCatalog.LoadFromStream(stream);
 
-		// Assert — root-level envelope.
+		// Assert — root-level envelope. Until ENG-96589 nothing read the ENVELOPE's own bucket
+		// (ComponentCatalogState did not carry it), so a new TOP-LEVEL producer field was swallowed
+		// without failing anything — which is exactly how `mobileRuntimeVersion` went unnoticed.
+		UnmappedKeys(state.EnvelopeExtensions).Should().BeEmpty(
+			because: "any new TOP-LEVEL producer field must be mapped or explicitly allowlisted, not silently dropped");
+
 		state.GlobalReferences.Should().NotBeNull(
 			because: "the live payload now ships a top-level 'references' block (baseInputs + global typeDefinitions)");
 		UnmappedKeys(state.GlobalReferences!.UnmappedExtensions).Should().BeEmpty(
@@ -185,8 +190,42 @@ public sealed class ComponentRegistrySnapshotTests {
 					because: $"any new key under mobile '{entry.ComponentType}'.references.* must be mapped");
 			}
 		}
-		state.Entries.Should().NotBeEmpty(
-			because: "the live mobile catalog must list at least one component");
+		UnmappedKeys(state.EnvelopeExtensions).Should().BeEmpty(
+			because: "any new TOP-LEVEL producer field on the mobile payload must be mapped, not silently dropped");
+
+		// Assert — the runtime-derived generation marker, WHEN the producer publishes it. It is provenance
+		// only: it was briefly published and then dropped again on 2026-09-17 while the catalog content was
+		// unchanged, so the converter's prune does not gate on it and neither does this guard. What IS
+		// asserted is that whenever it appears it round-trips completely — a half-mapped marker would be a
+		// silent data loss of exactly the kind this fixture exists to catch.
+		if (state.MobileRuntimeVersion is not null) {
+			state.MobileRuntimeVersion.Commit.Should().NotBeNullOrWhiteSpace(
+				because: "a published marker must name the runtime commit the catalog was introspected from");
+			state.MobileRuntimeVersion.Release.Should().NotBeNullOrWhiteSpace(
+				because: "a published marker must name the release branch the runtime was built from");
+			UnmappedKeys(state.MobileRuntimeVersion.UnmappedExtensions).Should().BeEmpty(
+				because: "any new key under mobileRuntimeVersion.* must be mapped");
+		}
+
+		// Assert — the inherited input surface. `visible` and `layoutConfig` are declared by ZERO of
+		// the 66 components in their own `inputs`; they exist ONLY here. A membership test that
+		// forgot baseInputs would therefore strip them from every element of every converted page.
+		state.GlobalReferences.Should().NotBeNull(
+			because: "the mobile payload parses through the same wrapped envelope as the web one and ships references.baseInputs");
+		state.GlobalReferences!.BaseInputs.Should().NotBeNull(
+			because: "the inherited input surface is the sole declaration site of visible/layoutConfig");
+		state.GlobalReferences.BaseInputs!.Keys.Should().Contain("visible",
+			because: "no mobile component declares 'visible' in its own inputs — pruning without baseInputs would strip it everywhere");
+		state.GlobalReferences.BaseInputs.Keys.Should().Contain("layoutConfig",
+			because: "no mobile component declares 'layoutConfig' in its own inputs — it is placement carried on every element");
+		UnmappedKeys(state.GlobalReferences.UnmappedExtensions).Should().BeEmpty(
+			because: "any new key under the mobile root.references.* must be mapped");
+
+		// Assert — count floor, mirroring the web arm. The previous fixture was a 35-entry curated
+		// snapshot; a regression back to it would make every prune assertion in
+		// WebToMobilePropertyPruneTests vacuous while staying green here.
+		state.Entries.Count.Should().BeGreaterThan(60,
+			because: "the runtime-derived mobile catalog ships ~65 components — a regression to the old 35-entry curated snapshot must fail this guard");
 	}
 
 	[Test]

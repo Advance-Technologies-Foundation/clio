@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -99,9 +99,11 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 			throw new ArgumentNullException(nameof(stream));
 		}
 
-		(ComponentRegistryEntry[] rawEntries, RegistryGlobalReferences? globalReferences, CompositeDefinition[] composites) =
+		(ComponentRegistryEntry[] rawEntries, RegistryGlobalReferences? globalReferences, CompositeDefinition[] composites,
+			MobileRuntimeVersion? mobileRuntimeVersion, IDictionary<string, JsonElement>? envelopeExtensions) =
 			DeserializeEnvelope(stream, "Component registry stream");
-		return BuildState(rawEntries, globalReferences, composites, "Component registry stream", resolvedVersion, source);
+		return BuildState(rawEntries, globalReferences, composites, "Component registry stream", resolvedVersion, source,
+			mobileRuntimeVersion, envelopeExtensions);
 	}
 
 	/// <summary>
@@ -110,13 +112,23 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 	/// (<c>[{...}, {...}]</c>) and the wrapped object shape
 	/// (<c>{ "components": [...], "content": {...} }</c>). The legacy shape returns
 	/// <c>null</c> global content — there is no envelope to carry it.
+	/// <para>
+	/// Also returns the envelope-level <c>mobileRuntimeVersion</c> marker and the envelope's own
+	/// unmapped-field bucket. Both are null for the legacy array shape. The marker is PROVENANCE for the
+	/// converter's property prune (ENG-96589) and does not gate it; the bucket is surfaced so the guard can assert
+	/// it is empty — previously nothing read <see cref="ComponentRegistryEnvelope.UnmappedExtensions"/>,
+	/// so a new TOP-LEVEL producer field was swallowed silently.
+	/// </para>
 	/// </summary>
-	internal static (ComponentRegistryEntry[] Entries, RegistryGlobalReferences? GlobalReferences, CompositeDefinition[] Composites) DeserializeEnvelope(
+	internal static (ComponentRegistryEntry[] Entries, RegistryGlobalReferences? GlobalReferences, CompositeDefinition[] Composites,
+		MobileRuntimeVersion? MobileRuntimeVersion, IDictionary<string, JsonElement>? EnvelopeExtensions) DeserializeEnvelope(
 		Stream stream, string sourceDescription) {
 		using JsonDocument document = JsonDocument.Parse(stream);
 		ComponentRegistryEntry[] entries;
 		RegistryGlobalReferences? globalReferences = null;
 		CompositeDefinition[] composites = [];
+		MobileRuntimeVersion? mobileRuntimeVersion = null;
+		IDictionary<string, JsonElement>? envelopeExtensions = null;
 
 		if (document.RootElement.ValueKind == JsonValueKind.Array) {
 			entries = document.RootElement.Deserialize<ComponentRegistryEntry[]>(DeserializerOptions)
@@ -135,6 +147,8 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 			entries = envelope.Components;
 			globalReferences = envelope.References;
 			composites = envelope.Composites ?? [];
+			mobileRuntimeVersion = envelope.MobileRuntimeVersion;
+			envelopeExtensions = envelope.UnmappedExtensions;
 		} else {
 			throw new InvalidOperationException(
 				$"{sourceDescription} must be either a JSON array of component entries or an object with a 'components' array.");
@@ -143,16 +157,7 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 		if (entries is null || entries.Length == 0) {
 			throw new InvalidOperationException($"{sourceDescription} is empty or invalid.");
 		}
-		return (entries, globalReferences, composites);
-	}
-
-	/// <summary>
-	/// Back-compat shim used by hermetic mobile-catalog tests that consume only the
-	/// entries (mobile registry has no global <c>content</c> block).
-	/// </summary>
-	internal static ComponentRegistryEntry[] DeserializeEntries(Stream stream, string sourceDescription) {
-		(ComponentRegistryEntry[] entries, _, _) = DeserializeEnvelope(stream, sourceDescription);
-		return entries;
+		return (entries, globalReferences, composites, mobileRuntimeVersion, envelopeExtensions);
 	}
 
 	private async Task<ComponentCatalogState> LoadCatalogStateAsync(string requestedVersion, CancellationToken cancellationToken) {
@@ -174,7 +179,9 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 		CompositeDefinition[] composites,
 		string sourceDescription,
 		string resolvedVersion,
-		ComponentRegistrySource source) {
+		ComponentRegistrySource source,
+		MobileRuntimeVersion? mobileRuntimeVersion = null,
+		IDictionary<string, JsonElement>? envelopeExtensions = null) {
 		string[] duplicateTypes = rawEntries
 			.Where(entry => !string.IsNullOrWhiteSpace(entry.ComponentType))
 			.GroupBy(entry => entry.ComponentType, StringComparer.OrdinalIgnoreCase)
@@ -227,6 +234,8 @@ public sealed class ComponentInfoCatalog : IComponentInfoCatalog {
 		return new ComponentCatalogState(
 			orderedEntries, lookup, resolvedVersion, source, globalReferences) {
 			Composites = orderedComposites,
+			MobileRuntimeVersion = mobileRuntimeVersion,
+			EnvelopeExtensions = envelopeExtensions,
 		};
 	}
 
@@ -329,8 +338,10 @@ public sealed class MobileComponentInfoCatalog : IMobileComponentInfoCatalog {
 /// <param name="GlobalReferences">
 /// Optional global <c>references</c> block from the wrapped envelope shape; carries
 /// the shared <c>baseInputs</c> and <c>typeDefinitions</c> producer metadata. Null
-/// for the legacy top-level-array shape and for the mobile catalog (which has no
-/// envelope).
+/// only for the legacy top-level-array shape. The MOBILE catalog parses through the
+/// same wrapped envelope and DOES carry it — its <c>baseInputs</c> is the sole
+/// declaration site of <c>visible</c> and <c>layoutConfig</c>, which no mobile
+/// component declares in its own <c>inputs</c>.
 /// </param>
 public sealed record ComponentCatalogState(
 	IReadOnlyList<ComponentRegistryEntry> Entries,
@@ -344,4 +355,20 @@ public sealed record ComponentCatalogState(
 	/// null — call sites iterate this list without a null-guard.
 	/// </summary>
 	public IReadOnlyList<CompositeDefinition> Composites { get; init; } = [];
+
+	/// <summary>
+	/// The mobile runtime build this payload was introspected from, or null when the payload is not the
+	/// runtime-derived mobile generation (every versioned mobile path today, the legacy array shape, and
+	/// the web registry). Half of the converter prune's enablement gate — see
+	/// <see cref="ComponentRegistryEnvelope.MobileRuntimeVersion"/>.
+	/// </summary>
+	public MobileRuntimeVersion? MobileRuntimeVersion { get; init; }
+
+	/// <summary>
+	/// The envelope's own unmapped top-level producer fields. Surfaced purely so the snapshot guard can
+	/// assert it is empty: before this existed nothing read
+	/// <see cref="ComponentRegistryEnvelope.UnmappedExtensions"/>, so a new top-level field was swallowed
+	/// without failing a test. Null for the legacy array shape.
+	/// </summary>
+	public IDictionary<string, JsonElement>? EnvelopeExtensions { get; init; }
 }
