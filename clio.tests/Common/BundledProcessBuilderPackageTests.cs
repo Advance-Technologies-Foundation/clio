@@ -74,7 +74,7 @@ public class BundledProcessBuilderPackageTests {
 	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1</c> at
 	/// <see cref="ExpectedArchiveVersion"/> from
 	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-98559-allow-several-start-events</c>, tag <c>crtprocessbuilder-1.6.2.21</c>), at the commit
+	/// <c>feature/ENG-92707-sub-process-element</c>), at the commit
 	/// recorded mechanically in
 	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
 	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
@@ -90,21 +90,21 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What THIS cut carries, over 1.6.2.9: the implicit-parallel-split notice. An ordinary element left
-	/// with more than one outgoing plain flow is reported once per request, over the finished graph, closing the
-	/// last silent divergence against clio&apos;s <c>validate-process-graph</c> - which has reported the shape as
-	/// R12 all along while the build path said nothing. A notice and not a refusal: 74 non-gateway sources in the
-	/// shipped corpus carry it.</para>
-	/// <para>THE NUMBER IS A KNOWN COLLISION, recorded here rather than left for whoever hits it. This branch
-	/// cut 1.6.1.22 through 1.6.1.25 in the 1.6.1 band, each superseded by a review round; merging <c>main</c>
-	/// then brought the package to 1.6.2.9, so every 1.6.1 number became unusable - a version below content the
-	/// branch now CONTAINS reaches no environment that already records 1.6.2.9. Above it, 1.6.2.10, 1.6.2.11 and
-	/// 1.6.2.12 are bundled on <c>feature/ENG-92709-delete-data-element</c> and
-	/// <c>feature/ENG-96504-read-data-collection</c>, whose package descriptor now sits at 1.6.2.13 - so the
-	/// first candidate free in BOTH histories was 1.6.2.14, one ABOVE the global maximum, which the rule above
-	/// equally forbids. The rule has no satisfiable answer on this branch. 1.6.2.10 was chosen deliberately; if
-	/// that line merges without re-cutting, one version names two byte sets and one side has to move. The
-	/// superseded tags stay pointing at their commits so every gap is traceable.</para>
+	/// <para>What THIS cut carries, over the 1.6.3.16 this file previously pinned: the Sub-process element
+	/// (ENG-92707) - the BPMN call activity,
+	/// selecting the called process and letting the platform copy that process's parameters onto the element,
+	/// with the guards the platform does not have (self-reference, a retarget with live dependents, a callee with
+	/// no Simple start event, an ambiguous caption, and any multi-instance element) and a drift report around the
+	/// synchronization.</para>
+	/// <para>The FOURTH digit moves here: the third already stood at 1.6.3 when this branch started, so this cut
+	/// continues that line rather than opening one. The paragraph below records why the third digit was moved by
+	/// the cut that opened it, which is the case that was the OPPOSITE of the rule stated above, and the reason is
+	/// the package repository's own
+	/// 2026-09-16 diary entry: the "first free number" rule produced three collisions in one day on the ENG-98559
+	/// line, because the number is computed at cut time and other branches move between the cut and its review.
+	/// Going above the maximum cannot collide. What it costs is the thing the rule above is protecting - a version
+	/// that looks newer than work it does not contain - so it is a trade, not a correction, and it is recorded
+	/// here rather than left to be rediscovered.</para>
 	/// <para>What the 1.4.0.x line carried, over the 1.3.1.1 performer/lookup delivery it replaced: server-side
 	/// VALIDATION of formula expressions — an <c>expression</c> mapping source and a conditional-flow condition
 	/// are now parsed, their parameter references resolved against the process, and their result type checked
@@ -181,17 +181,20 @@ public class BundledProcessBuilderPackageTests {
 	/// and this removes the operator's editor and git configuration from the hash instead of gating on them.
 	/// </para>
 	/// <para>
-	/// Measured for the archive pinned below, entry by entry against
-	/// <c>git show &lt;ExpectedProducingCommit&gt;:&lt;path&gt;</c>: 157 entries, 156 byte-IDENTICAL to the
-	/// commit blob, 0 line-ending-only differences, 0 content differences. The 157th is
-	/// <c>descriptor.json</c>, which by contract cannot match the pre-restamp commit and is pinned separately by
-	/// <see cref="ExpectedArchiveVersion"/> and <see cref="ExpectedDescriptorModifiedOnUtc"/>. That audit was
-	/// re-run for THIS cut rather than inherited from an earlier one.
+	/// The INVARIANT, which is what this paragraph is for and the only part that cannot go stale: every entry in
+	/// the archive is byte-IDENTICAL to the producing commit's blob EXCEPT <c>descriptor.json</c>, which by
+	/// contract cannot match a pre-restamp commit and is pinned separately by
+	/// <see cref="ExpectedArchiveVersion"/> and <see cref="ExpectedDescriptorModifiedOnUtc"/>.
+	/// <para>Verify it in two commands: extract with <c>clio extract-pkg-zip &lt;archive&gt; -d &lt;dir&gt;</c>, then compare every
+	/// extracted file against <c>git show &lt;ExpectedProducingCommit&gt;:packages/CrtProcessBuilder/&lt;path&gt;</c>.
+	/// The COUNT is not pinned here on purpose - it moves as the package gains sources, and an earlier revision
+	/// that carried one (157/156, wrong, attributed to a specific cut) made the staleness look checked. Re-run the
+	/// two commands instead; it takes under a minute.</para>
 	/// </para>
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"E199905C050FE71620DCA929EAFEDF97CC571F66B8DB0DB0AD95FC69A5DD90EE";
+		"149B2D628B520F320D9796E6A0E0573B294323BAB93477D5A4ED67C169CEF0BE";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -219,7 +222,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.3.16";
+	private const string ExpectedArchiveVersion = "1.6.3.26";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -231,7 +234,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "2f4f0fa8a0596c29d4869a17cc499b0b851a9b15";
+	private const string ExpectedProducingCommit = "e94d73aac0e42ad4d3d1bda3f41d27b6eb2eb142";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -257,7 +260,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789716463000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789735682000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
