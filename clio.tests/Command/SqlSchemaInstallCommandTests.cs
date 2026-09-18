@@ -1,6 +1,7 @@
 namespace Clio.Tests.Command;
 
 using Clio.Command;
+using Newtonsoft.Json.Linq;
 using Clio.Common;
 using FluentAssertions;
 using NSubstitute;
@@ -12,7 +13,7 @@ using NUnit.Framework;
 public sealed class SqlSchemaInstallCommandTests {
 	private const string TestBase = "http://test";
 	private const string SelectQueryUrl = TestBase + "/DataService/json/SyncReply/SelectQuery";
-	private const string ExecuteScriptUrl = TestBase + "/ServiceModel/ScriptSchemaDesignerService.svc/ExecuteScript";
+	private const string ExecuteScriptUrl = TestBase + "/ServiceModel/WorkspaceExplorerService.svc/InstallSqlScripts";
 	private const string SchemaUId = "aa000000-0000-0000-0000-000000000001";
 
 	private static string SchemaFoundJson =>
@@ -28,8 +29,8 @@ public sealed class SqlSchemaInstallCommandTests {
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_logger = Substitute.For<ILogger>();
-		_serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
-		_serviceUrlBuilder.Build("ServiceModel/ScriptSchemaDesignerService.svc/ExecuteScript").Returns(ExecuteScriptUrl);
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectQueryUrl);
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.InstallSqlScripts).Returns(ExecuteScriptUrl);
 		_command = new SqlSchemaInstallCommand(_applicationClient, _serviceUrlBuilder, _logger);
 	}
 
@@ -58,7 +59,7 @@ public sealed class SqlSchemaInstallCommandTests {
 	[Test]
 	public void TryInstall_Happy_Path_Calls_ExecuteScript() {
 		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
-		_applicationClient.ExecutePostRequest(ExecuteScriptUrl, Arg.Any<string>())
+		_applicationClient.ExecuteNonReplayablePostRequest(ExecuteScriptUrl, Arg.Any<string>())
 			.Returns("""{"success": true}""");
 		var options = new SqlSchemaInstallOptions { SchemaName = "UsrSqlScript" };
 
@@ -68,14 +69,14 @@ public sealed class SqlSchemaInstallCommandTests {
 		response.Success.Should().BeTrue();
 		response.SchemaName.Should().Be("UsrSqlScript");
 		response.SchemaUId.Should().Be(SchemaUId);
-		_applicationClient.Received(1).ExecutePostRequest(ExecuteScriptUrl,
-			Arg.Is<string>(s => s.Contains(SchemaUId)));
+		_applicationClient.Received(1).ExecuteNonReplayablePostRequest(ExecuteScriptUrl,
+			Arg.Is<string>(s => JToken.DeepEquals(JToken.Parse(s), new JArray(SchemaUId))));
 	}
 
 	[Test]
 	public void TryInstall_Surfaces_ExecuteScript_Error() {
 		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
-		_applicationClient.ExecutePostRequest(ExecuteScriptUrl, Arg.Any<string>())
+		_applicationClient.ExecuteNonReplayablePostRequest(ExecuteScriptUrl, Arg.Any<string>())
 			.Returns("""{"success": false, "errorInfo": {"message": "db failure"}}""");
 		var options = new SqlSchemaInstallOptions { SchemaName = "UsrSqlScript" };
 
@@ -85,4 +86,20 @@ public sealed class SqlSchemaInstallCommandTests {
 		response.Error.Should().Be("db failure");
 		response.SchemaUId.Should().Be(SchemaUId);
 	}
+	[Test]
+	[Description("A lost execution response must warn against blindly repeating non-idempotent SQL.")]
+	public void TryInstall_ShouldReportUnknownOutcome_WhenTransportThrows() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
+		_applicationClient.ExecuteNonReplayablePostRequest(ExecuteScriptUrl, Arg.Any<string>())
+			.Returns(_ => throw new System.Net.Http.HttpRequestException("connection reset"));
+		// Act
+		bool result = _command.TryInstall(new() { SchemaName = "UsrSql" }, out SqlSchemaInstallResponse response);
+		// Assert
+		result.Should().BeFalse(because: "a lost response does not establish execution success");
+		response.Error.Should().Contain("outcome is unknown", because: "the server may have committed before the connection reset");
+		response.Error.Should().Contain("verify database effects before retrying", because: "manual replay may duplicate a non-idempotent write");
+		_applicationClient.Received(1).ExecuteNonReplayablePostRequest(ExecuteScriptUrl, Arg.Any<string>());
+	}
+
 }

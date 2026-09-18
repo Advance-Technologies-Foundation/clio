@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -43,11 +43,18 @@ public class ExceptionReadableMessageExtensionTestCase
 	}
 
 	[Test]
+	[Description("An InvalidOperationException wrapping a fault with no server detail of its own keeps BOTH: the wrapper says what was being done, the inner says what went wrong. Returning the inner alone silently deleted the wrapper's diagnosis - which for the compilation poll's give-up was the window and the failed-round count (issue #1376).")]
 	public void GetReadableMessageException_PrintsCorrectMessage_WhenInvalidOperationException() {
+		// Arrange
 		var innerException = new Exception("InnerMessage");
 		var exception = new InvalidOperationException("Message", innerException);
+
+		// Act
 		var messageResult = exception.GetReadableMessageException();
-		messageResult.Should().Be($"{innerException.Message}");
+
+		// Assert
+		messageResult.Should().Be($"{exception.Message}: {innerException.Message}",
+			because: "the wrapper leads and the inner follows, the same order the WebException arm already uses so the operation context is preserved");
 	}
 
 	[Test]
@@ -213,6 +220,198 @@ public class ExceptionReadableMessageExtensionTestCase
 			because: "the wrapped WebException HTTP status code must survive the InvalidOperationException arm");
 		result.Should().Contain("ProtocolError",
 			because: "the wrapped WebException status must be reported even when the wrapper is an InvalidOperationException");
+	}
+
+	[Test]
+	[Description(
+		"Issue #1505: the SelectQuery failure path (SelectQueryHelper / DataServiceSelectResponse) throws a "
+		+ "plain InvalidOperationException carrying the server's errorInfo.message, so the credential the "
+		+ "server echoed must be redacted while clio's own 'SelectQuery failed:' prefix survives.")]
+	public void GetReadableMessageException_ShouldRedactServerCredentials_WhenSelectQueryFailureIsRendered() {
+		// Arrange
+		var exception = new InvalidOperationException(
+			"SelectQuery failed: Configuration service failed: backend echoed "
+			+ "password=s3cr3t server=db.internal");
+
+		// Act
+		string result = exception.GetReadableMessageException();
+
+		// Assert
+		result.Should().StartWith("SelectQuery failed: Configuration service failed:",
+			because: "clio's own diagnosis must survive redaction, otherwise the operator loses the reason");
+		result.Should().NotContain("s3cr3t",
+			because: "a credential the server echoed must never reach the console in the clear");
+		result.Should().NotContain("db.internal",
+			because: "the connection-string host the server echoed must be redacted like the password");
+		result.Should().Contain("password=[redacted]",
+			because: "the key is kept so the line still reads sensibly while the value is replaced");
+		result.Should().Contain("server=[redacted]",
+			because: "the same placeholder policy as the MCP path (ClioRunTool.RedactFailureContent) applies");
+	}
+
+	[Test]
+	[Description(
+		"Issue #1505's own measured repro: errorInfo.message carried the credential in SERIALIZED JSON, "
+		+ "{\"password\":\"s3cr3t\",\"server\":\"db.internal\"}, where the key's closing quote sits between the key "
+		+ "and the colon. SelectQueryHelper falls back to the whole raw JSON body when errorInfo.message is "
+		+ "absent, so this is the DEFAULT shape, not a contrived one.")]
+	public void GetReadableMessageException_ShouldRedactJsonQuotedCredentials_WhenSelectQueryFailureIsRendered() {
+		// Arrange
+		var exception = new InvalidOperationException(
+			"SelectQuery failed: Configuration service failed: backend echoed "
+			+ "{\"password\":\"s3cr3t\",\"server\":\"db.internal\"}");
+
+		// Act
+		string result = exception.GetReadableMessageException();
+
+		// Assert
+		result.Should().StartWith("SelectQuery failed: Configuration service failed:",
+			because: "clio's own diagnosis must survive redaction, otherwise the operator loses the reason");
+		result.Should().NotContain("s3cr3t",
+			because: "the JSON-quoted shape is the one issue #1505 measured - it must not reach the console");
+		result.Should().NotContain("db.internal",
+			because: "the connection-string host is redacted in the JSON shape exactly as in the bare shape");
+		result.Should().Contain("\"password\":\"[redacted]\"",
+			because: "the key is kept so the line still reads sensibly while the value is replaced");
+		result.Should().Contain("\"server\":\"[redacted]\"",
+			because: "the same placeholder policy as the MCP path (ClioRunTool.RedactFailureContent) applies");
+	}
+
+	[Test]
+	[Description(
+		"Issue #1505: the InvalidOperationException arm prefers the inner message, so a bearer token in an "
+		+ "INNER exception must be redacted too - the arm that is actually taken is the one that has to scrub.")]
+	public void GetReadableMessageException_ShouldRedactBearerToken_WhenInvalidOperationExceptionWrapsInner() {
+		// Arrange
+		var inner = new Exception("Request rejected with Authorization: Bearer eyJhbGciOi.eyJzdWIiOi.c2lnbmF0dXJl");
+		var exception = new InvalidOperationException("SelectQuery failed", inner);
+
+		// Act
+		string result = exception.GetReadableMessageException();
+
+		// Assert
+		result.Should().NotContain("eyJhbGciOi",
+			because: "a JWT surfaced by an inner exception must not reach the console in the clear");
+		result.Should().Contain("[redacted]",
+			because: "the token has to be replaced by the redactor's stable placeholder");
+		result.Should().StartWith("SelectQuery failed: Request rejected with",
+			because: "redaction must not change which arm is taken nor the surrounding prose - the "
+			+ "ComposeWithInnerDetail arm leads with the wrapper's own message and appends the scrubbed inner");
+	}
+
+	[Test]
+	[Description(
+		"Issue #1505: redaction is applied to the COMPOSED line, so the WebException enrichment that CI reads "
+		+ "must still be appended while a credential inside the exception message is replaced.")]
+	public void GetReadableMessageException_ShouldKeepWebExceptionEnrichment_WhenMessageCarriesCredential() {
+		// Arrange
+		using HttpWebResponse response = CreateHttpWebResponse(HttpStatusCode.Unauthorized);
+		var exception = new WebException(
+			"The remote server rejected password=s3cr3t",
+			null,
+			WebExceptionStatus.ProtocolError,
+			response);
+
+		// Act
+		string result = exception.GetReadableMessageException();
+
+		// Assert
+		result.Should().NotContain("s3cr3t",
+			because: "the credential must be redacted even on the WebException arm");
+		result.Should().Contain("(WebException: ProtocolError (HTTP 401 Unauthorized))",
+			because: "the enrichment arm's structure must survive the redaction wrapper unchanged");
+	}
+
+	[Test]
+	[Description(
+		"Issue #1505: the debug path must stay exception.ToString() verbatim - --debug is the bridge back to "
+		+ "the raw server text, so redaction must not be applied there.")]
+	public void GetReadableMessageException_ShouldNotRedact_WhenDebugIsRequested() {
+		// Arrange
+		var exception = new InvalidOperationException(
+			"SelectQuery failed: backend echoed password=s3cr3t server=db.internal");
+
+		// Act
+		string result = exception.GetReadableMessageException(true);
+
+		// Assert
+		result.Should().Be(exception.ToString(),
+			because: "the debug render is unchanged by this issue and must remain the raw ToString()");
+		result.Should().Contain("password=s3cr3t",
+			because: "--debug deliberately keeps the raw text so an operator can diagnose the fault");
+	}
+
+	[Test]
+	[Description(
+		"Issue #1505: a message with no secret shapes must come back byte-identical - Scrub replaces known "
+		+ "secret shapes only, and does not flatten or clamp clio's own multi-line prose.")]
+	public void GetReadableMessageException_ShouldReturnMessageUnchanged_WhenNothingIsSensitive() {
+		// Arrange
+		string message = "Package 'MyPackage' was not found." + Environment.NewLine
+			+ "Run list-packages to see what is installed. " + new string('x', 400);
+		var exception = new InvalidOperationException(message);
+
+		// Act
+		string result = exception.GetReadableMessageException();
+
+		// Assert
+		result.Should().Be(message,
+			because: "a secret-free line must not be altered, re-wrapped or truncated by the redaction wrapper");
+	}
+
+	[Test]
+	[Description(
+		"Issue #1505 follow-up: a local absolute path in clio's OWN prose must survive verbatim - the full "
+		+ "Redact turned `clio compress <missing dir>` into \"Could not find a part of the path "
+		+ "'[redacted-path]'.\", an error that names nothing.")]
+	public void GetReadableMessageException_ShouldKeepLocalPath_WhenMessageQuotesAnAbsolutePath() {
+		// Arrange
+		const string message = "Could not find a part of the path '/Users/x/y.json'.";
+		var exception = new InvalidOperationException(message);
+
+		// Act
+		string result = exception.GetReadableMessageException();
+
+		// Assert
+		result.Should().Be(message,
+			because: "a path on the operator's own terminal is the diagnosis, not a secret to hide from them");
+	}
+
+	[Test]
+	[Description(
+		"Issue #1505 follow-up: the operator's own environment URL and host:port must survive verbatim, so a "
+		+ "connectivity error still names the environment that could not be reached.")]
+	public void GetReadableMessageException_ShouldKeepEnvironmentUrl_WhenMessageQuotesAnEndpoint() {
+		// Arrange
+		const string message = "Cannot connect to http://ts1-core-dev04:88/site";
+		var exception = new InvalidOperationException(message);
+
+		// Act
+		string result = exception.GetReadableMessageException();
+
+		// Assert
+		result.Should().Be(message,
+			because: "a credential-free URL naming the operator's own stand must not be replaced by a placeholder");
+	}
+
+	[Test]
+	[Description(
+		"Issue #1505 follow-up: a credential embedded in a URL authority is still a credential - the userinfo "
+		+ "is removed while the host survives, so the line stays diagnosable.")]
+	public void GetReadableMessageException_ShouldRedactUriUserInfoOnly_WhenUrlCarriesCredentials() {
+		// Arrange
+		var exception = new InvalidOperationException("Request to https://user:pw@host.example.com/x failed");
+
+		// Act
+		string result = exception.GetReadableMessageException();
+
+		// Assert
+		result.Should().NotContain("user:pw",
+			because: "credentials embedded in a URL authority must never reach the console in the clear");
+		result.Should().Contain("host.example.com/x",
+			because: "the host and path must survive so the operator still knows which endpoint failed");
+		result.Should().Contain("[redacted]@",
+			because: "only the userinfo prefix is replaced, by the redactor's stable placeholder");
 	}
 
 	/// <summary>

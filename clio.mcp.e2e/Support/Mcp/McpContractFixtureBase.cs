@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Clio.Mcp.E2E.Support;
 using Clio.Mcp.E2E.Support.Configuration;
 
@@ -28,18 +29,87 @@ public abstract class McpContractFixtureBase {
 			: Path.GetFullPath(settings.ClioProcessPath);
 		ConfigureMcpServerSettings(settings);
 		using CancellationTokenSource startupCts = new(TimeSpan.FromMinutes(5));
-		_session = await McpServerSession.StartAsync(settings, startupCts.Token);
+		if (CustomizesServerSettings) {
+			_ownedSession = await McpServerSession.StartAsync(settings, startupCts.Token);
+			_session = _ownedSession;
+			return;
+		}
+		// Not `_processWideSession ??= await StartAsync(...)`: that reads, awaits and assigns as three
+		// steps. Many fixtures carry [Parallelizable(ParallelScope.Self)] and the run uses two NUnit
+		// workers, so two of their [OneTimeSetUp] bodies do overlap — both would see null, both would
+		// start a child, and only the last assignment would ever be disposed, leaking a clio process
+		// onto the agent for the rest of the build.
+		await _processWideSessionGate.WaitAsync(startupCts.Token);
+		try {
+			_processWideSession ??= await McpServerSession.StartAsync(settings, startupCts.Token);
+			_session = _processWideSession;
+		} finally {
+			_processWideSessionGate.Release();
+		}
 	}
 
 	[OneTimeTearDown]
 	public async Task StopSharedMcpServerAsync() {
 		try {
-			if (_session is not null) {
-				await _session.DisposeAsync();
+			// Only a session this fixture STARTED is disposed here. The process-wide one outlives every
+			// fixture and is disposed once, by ReleaseProcessWideSessionAsync at the end of the run.
+			if (_ownedSession is not null) {
+				await _ownedSession.DisposeAsync();
+				_ownedSession = null;
 			}
 		} finally {
+			_session = null;
 			CleanupFixtureDirectories();
 		}
+	}
+
+	/// <summary>
+	/// Server process shared by every contract fixture that does not customize the child's settings.
+	/// </summary>
+	/// <remarks>
+	/// A fixture-scoped server was already a large improvement over a per-test one, but the suite has
+	/// roughly a hundred contract fixtures, and starting a child process for each costs about 1.8 s to
+	/// start plus half a second to tear down — time TeamCity bills to no test, so it was invisible until
+	/// the run-level counters made it measurable. These fixtures exercise a read-only, stateless tool
+	/// surface against one identical configuration, so one process answers all of them.
+	/// <para>
+	/// A fixture that overrides <see cref="ConfigureMcpServerSettings"/> is excluded automatically: its
+	/// child differs (an isolated CLIO_HOME, a loopback stub, a specific client identity), so sharing
+	/// would silently give it the wrong server. That check is by declaration, not by a flag somebody has
+	/// to remember to set.
+	/// </para>
+	/// </remarks>
+	private static McpServerSession? _processWideSession;
+
+	private static readonly SemaphoreSlim _processWideSessionGate = new(1, 1);
+
+	private McpServerSession? _ownedSession;
+
+	// The answer is deterministic per derived type and never changes at runtime, so the reflection lookup
+	// runs once per fixture type instead of once per [OneTimeSetUp].
+	private static readonly ConcurrentDictionary<Type, bool> CustomizesSettingsCache = new();
+
+	private bool CustomizesServerSettings =>
+		CustomizesSettingsCache.GetOrAdd(GetType(), static fixtureType =>
+			fixtureType
+				.GetMethod(
+					nameof(ConfigureMcpServerSettings),
+					System.Reflection.BindingFlags.Instance
+						| System.Reflection.BindingFlags.NonPublic
+						| System.Reflection.BindingFlags.Public)
+				?.DeclaringType != typeof(McpContractFixtureBase));
+
+	/// <summary>
+	/// Disposes the process-wide contract server. Called once, after every fixture has finished.
+	/// </summary>
+	/// <returns>A task that completes when the shared child has exited.</returns>
+	internal static async Task ReleaseProcessWideSessionAsync() {
+		if (_processWideSession is null) {
+			return;
+		}
+		McpServerSession session = _processWideSession;
+		_processWideSession = null;
+		await session.DisposeAsync();
 	}
 
 	/// <summary>

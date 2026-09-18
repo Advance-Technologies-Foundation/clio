@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -58,6 +58,7 @@ internal class Program {
 		typeof(ExecuteSqlScriptOptions),
 		typeof(InstallGateOptions),
 		typeof(InstallProcessBuilderOptions),
+		typeof(InstallDashboardsMigratorOptions),
 		typeof(AddItemOptions),
 		typeof(DeveloperModeOptions),
 		typeof(SysSettingsOptions),
@@ -161,6 +162,7 @@ internal class Program {
 		typeof(GetClassicListColumnsOptions),
 		typeof(ListEntityClientSchemasOptions),
 		typeof(SqlSchemaCreateOptions),
+		typeof(RegisterProcessElementOptions),
 		typeof(SqlSchemaGetOptions),
 		typeof(SqlSchemaUpdateOptions),
 		typeof(SqlSchemaInstallOptions),
@@ -227,10 +229,14 @@ internal class Program {
 		typeof(ModifyEntitySchemaColumnOptions),
 		typeof(GetEntitySchemaColumnPropertiesOptions),
 		typeof(GetEntitySchemaPropertiesOptions),
+		typeof(SequenceEnrollmentOptions),
+		typeof(SequenceContextOptions),
+		typeof(DataServiceBatchOptions),
 		typeof(SetEntitySchemaPropertiesOptions),
 		typeof(FindEntitySchemaOptions),
 		typeof(FindAppOptions),
 		typeof(CreateUserTaskOptions),
+		typeof(CreateUserTaskPageOptions),
 		typeof(ModifyUserTaskParametersOptions),
 		typeof(DeleteSchemaOptions),
 		typeof(ExportSchemaOptions),
@@ -568,6 +574,7 @@ internal class Program {
 			ExecuteSqlScriptOptions opts => Resolve<SqlScriptCommand>(opts).Execute(opts),
 			InstallGateOptions opts => Resolve<InstallGateCommand>(opts).Execute(opts),
 			InstallProcessBuilderOptions opts => Resolve<InstallProcessBuilderCommand>(opts).Execute(opts),
+			InstallDashboardsMigratorOptions opts => Resolve<InstallDashboardsMigratorCommand>(opts).Execute(opts),
 			AddItemOptions opts => Resolve<AddItemCommand>(opts).Execute(opts),
 			DeveloperModeOptions opts => SetDeveloperMode(opts),
 			SysSettingsOptions opts => Resolve<SysSettingsCommand>(opts).Execute(opts),
@@ -702,10 +709,14 @@ internal class Program {
 			ModifyEntitySchemaColumnOptions opts => Resolve<ModifyEntitySchemaColumnCommand>(opts).Execute(opts),
 			GetEntitySchemaColumnPropertiesOptions opts => Resolve<GetEntitySchemaColumnPropertiesCommand>(opts).Execute(opts),
 			GetEntitySchemaPropertiesOptions opts => Resolve<GetEntitySchemaPropertiesCommand>(opts).Execute(opts),
+			SequenceEnrollmentOptions opts => Resolve<SequenceEnrollmentCommand>(opts).Execute(opts),
+			SequenceContextOptions opts => Resolve<SequenceContextCommand>(opts).Execute(opts),
+			DataServiceBatchOptions opts => Resolve<DataServiceBatchCommand>(opts).Execute(opts),
 			SetEntitySchemaPropertiesOptions opts => Resolve<SetEntitySchemaPropertiesCommand>(opts).Execute(opts),
 			FindEntitySchemaOptions opts => Resolve<FindEntitySchemaCommand>(opts).Execute(opts),
 			FindAppOptions opts => Resolve<FindAppCommand>(opts).Execute(opts),
 			CreateUserTaskOptions opts => Resolve<CreateUserTaskCommand>(opts).Execute(opts),
+			CreateUserTaskPageOptions opts => Resolve<CreateUserTaskPageCommand>(opts).Execute(opts),
 			ModifyUserTaskParametersOptions opts => Resolve<ModifyUserTaskParametersCommand>(opts).Execute(opts),
 			DeleteSchemaOptions opts => Resolve<DeleteSchemaCommand>(opts).Execute(opts),
 			ExportSchemaOptions opts => Resolve<ExportSchemaCommand>(opts).Execute(opts),
@@ -740,6 +751,7 @@ internal class Program {
 			GetClassicListColumnsOptions opts => Resolve<GetClassicListColumnsCommand>(opts).Execute(opts),
 			ListEntityClientSchemasOptions opts => Resolve<ListEntityClientSchemasCommand>(opts).Execute(opts),
 			SqlSchemaCreateOptions opts => Resolve<SqlSchemaCreateCommand>(opts).Execute(opts),
+			RegisterProcessElementOptions opts => Resolve<RegisterProcessElementCommand>(opts).Execute(opts),
 			SqlSchemaGetOptions opts => Resolve<SqlSchemaGetCommand>(opts).Execute(opts),
 			SqlSchemaUpdateOptions opts => Resolve<SqlSchemaUpdateCommand>(opts).Execute(opts),
 			SqlSchemaInstallOptions opts => Resolve<SqlSchemaInstallCommand>(opts).Execute(opts),
@@ -1665,6 +1677,12 @@ internal class Program {
 			|| string.Equals(first, "delete-toolkit", StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(first, "delete-skill", StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(first, "autoupdate", StringComparison.OrdinalIgnoreCase)
+			// The MCP verbs by NAME as well as through IsMcpServerMode above. That static is set from
+			// Main; a host or test boundary that calls ExecuteCommands / RunStartupUpdateCheck directly
+			// never sets it, and a worker replacing its own binaries mid-session is exactly the failure
+			// issue #1462 reported. "mcp" is the shipped alias of mcp-server.
+			|| string.Equals(first, "mcp-server", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "mcp", StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(first, "mcp-http", StringComparison.OrdinalIgnoreCase)) {
 			return true;
 		}
@@ -1683,23 +1701,83 @@ internal class Program {
 		catch {
 			return;
 		}
-		RunIfDue(settingsRepository, AutoUpdateTarget.Clio, () => {
-			IAppUpdater appUpdater = serviceProvider.GetRequiredService<IAppUpdater>();
-			appUpdater.UpdateInBackgroundAsync().GetAwaiter().GetResult();
-		});
+		// The check has to happen BEFORE RunIfDue, not inside the callback: TryScheduleAutoupdate advances
+		// next-run and saves it as part of deciding the update is due, so a deferral made after it would
+		// push the clio update a whole frequency window into the future. Deferring must leave the update
+		// due, so that the next cold start - with no resident worker - performs it.
+		McpHostPresenceMarker residentHost = TryFindResidentMcpHost(serviceProvider);
+		if (residentHost is null) {
+			RunIfDue(settingsRepository, AutoUpdateTarget.Clio, () => {
+				IAppUpdater appUpdater = serviceProvider.GetRequiredService<IAppUpdater>();
+				appUpdater.UpdateInBackgroundAsync().GetAwaiter().GetResult();
+			});
+		}
+		else if (IsClioAutoupdateDue(settingsRepository)) {
+			// Only when the update would actually have run. A line saying an update was deferred,
+			// printed on every command of a session whose schedule is disabled or not yet due,
+			// describes something that was never going to happen.
+			ConsoleLogger.Instance.WriteInfo(
+				$"clio self-update deferred: MCP host pid {residentHost.ProcessId} "
+				+ $"(version {residentHost.ClioVersion}) is running");
+		}
+		// Knowledge and toolkit updates are data-only: they replace no loaded assembly and no settings
+		// section, so a resident worker does not make them unsafe.
 		RunIfDue(settingsRepository, AutoUpdateTarget.Knowledge,
 			() => serviceProvider.GetRequiredService<IKnowledgeSourceManagementService>().Update(sourceAlias: null));
 		RunIfDue(settingsRepository, AutoUpdateTarget.Toolkit,
 			() => serviceProvider.GetRequiredService<ISkillInstallService>().Update(target: null, repo: null));
 	}
 
+	private static bool IsClioAutoupdateDue(ISettingsRepository settingsRepository) {
+		try {
+			// Deliberately the read-only check: TryScheduleAutoupdate would advance next-run, which is
+			// exactly what a deferral must not do.
+			return settingsRepository.IsAutoupdateDue(AutoUpdateTarget.Clio, DateTimeOffset.UtcNow);
+		}
+		catch {
+			return false;
+		}
+	}
+
+	/// <summary>
+	/// Finds a resident clio MCP host, if one is recorded in this clio home.
+	/// </summary>
+	/// <remarks>
+	/// Best effort in every direction: a service provider without the registry (the direct-call test
+	/// boundary) and any failure to read the markers both mean "no resident host", which restores the
+	/// previous behaviour rather than blocking updates forever.
+	/// </remarks>
+	private static McpHostPresenceMarker TryFindResidentMcpHost(IServiceProvider serviceProvider) {
+		try {
+			return serviceProvider.GetService<IMcpHostPresenceRegistry>()?.FindLiveHost();
+		}
+		catch {
+			return null;
+		}
+	}
+
+	// Process-wide on purpose: the three update targets share one refusal and the operator needs it once.
+	// Internal so a test can restore the process to its pre-run state - a static latch that survives a test
+	// makes the NEXT test's assertion about the warning pass or fail depending on execution order.
+	internal static bool SettingsWriteRefusalReported { get; set; }
+
 	private static void RunIfDue(ISettingsRepository settingsRepository, AutoUpdateTarget target, Action update) {
 		try {
 			if (settingsRepository.TryScheduleAutoupdate(target, DateTimeOffset.UtcNow)) {
 				update();
 			}
+		} catch (SettingsShapeMismatchException exception) {
+			// The ONE failure here that must not be silent. Claiming the schedule needs a settings write,
+			// and every settings write is refused while a member of the file cannot be bound - so automatic
+			// updates are off until the file is fixed, and the update is precisely what would have fixed
+			// it. Reported once per process: all three targets hit the same refusal.
+			if (!SettingsWriteRefusalReported) {
+				SettingsWriteRefusalReported = true;
+				ConsoleLogger.Instance.WriteWarning(
+					$"Automatic updates are paused. {exception.Message}");
+			}
 		} catch {
-			// automatic updates are best effort and must never fail the requested command
+			// every other failure: automatic updates are best effort and must never fail the requested command
 		}
 	}
 
@@ -2030,4 +2108,3 @@ internal class Program {
 	#endregion
 
 }
-

@@ -35,6 +35,6 @@ order, where the index arithmetic already is the whole placement.
 
 **What breaks if you ignore it** — the misplacement is completely silent. The body passes
 `validate-page`, passes `update-page --dry-run`, saves, and reads back byte-identical to what was sent;
-`elementMap` looks right because the index is right; and `get-page` confirms the merged tree is exactly
+`viewConfigDiff` looks right because the index is right; and `get-page` confirms the merged tree is exactly
 what was intended. Only the Creatio Mobile app shows it. Do not treat a correct merged tree as proof
 that placement works — that is precisely the inference that failed here.

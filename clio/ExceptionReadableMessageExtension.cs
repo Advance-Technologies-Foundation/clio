@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Text;
 using Clio.Common;
@@ -27,7 +29,28 @@ internal static class ExceptionReadableMessageExtension
 			return RenderServerDetailCarrier(carrier, exception, debug);
 		}
 		if (debug) return exception.ToString();
-		return exception switch
+		// Issue #1505: the non-carrier arms below render text whose CONTENT a server can influence -
+		// measured with `clio list-packages -e <env>` against a DataService answering HTTP 500 with
+		// {"success":false,"errorInfo":{"message":"Configuration service failed: backend echoed
+		// password=s3cr3t server=db.internal"}}: SelectQueryHelper throws
+		// InvalidOperationException("SelectQuery failed: <that prose>"), the IOE arm returned it verbatim,
+		// and the console printed the credential in the clear - while the MCP path
+		// (ClioRunTool.RedactFailureContent) redacted the same text. So the composed non-debug line goes
+		// through the redactor once, here, for every arm.
+		//
+		// ScrubCredentials, NOT Scrub and NOT ForConsole. The other two are the renderings for text a SERVER
+		// authored: ForConsole additionally flattens line breaks and clamps at 300 characters, and both
+		// scrub absolute paths, host:port endpoints and e-mail addresses. That is right for an excerpt
+		// bound for an MCP envelope, a log pasted into a ticket or a third-party model - and wrong here,
+		// where the reader is the person who typed the command and the path IS the diagnosis. Measured
+		// while this wrapper was still Scrub: `clio compress /Users/<user>/nope1505dir -d /tmp/x.gz`
+		// printed "Could not find a part of the path '[redacted-path]'." - an error naming nothing.
+		// ScrubCredentials runs the credential rules only (URI userinfo, JWT, Bearer, key=value secret
+		// pairs), so the server-echoed password above is still replaced and a secret-free line comes back
+		// byte-identical.
+		//
+		// The debug path above is untouched on purpose: --debug is the #1333 bridge back to the raw text.
+		return UntrustedText.ScrubCredentials(exception switch
 		{
 			AggregateException ex when ex.InnerException != null
 				=> ex.InnerException.GetReadableMessageException(debug),
@@ -41,9 +64,10 @@ internal static class ExceptionReadableMessageExtension
 			// enrichment, otherwise the IOE arm below would shadow it and drop the 401-vs-connect signal.
 			_ when TryGetWebException(exception, out WebException nestedWebException)
 				=> $"{exception.Message} ({DescribeWebException(nestedWebException)})",
-			InvalidOperationException ex => ex.InnerException?.Message ?? ex.Message,
+			InvalidOperationException { InnerException: not null } ex => ComposeWithInnerDetail(ex),
+			InvalidOperationException ex => ex.Message,
 			_ => exception.Message
-		};
+		});
 	}
 
 	/// <summary>
@@ -80,9 +104,12 @@ internal static class ExceptionReadableMessageExtension
 	private static string RenderCarrierForConsole(Exception carrier, Exception outer)
 	{
 		StringBuilder line = new();
-		//The outer exception said WHICH operation failed; dropping it left the operator with the
-		//provider's diagnosis and no idea which command produced it.
-		if (!ReferenceEquals(outer, carrier) && DescribeOuterContext(outer, carrier) is { } prefix)
+		//EVERY link above the carrier, not just the outermost one. Each wrapper says something the ones
+		//below it do not - PackageBuilder's "Package compilation could not be monitored" names the
+		//operation, and the poller's own wrapper below it carries the elapsed time, the give-up window and
+		//the failed-round count. Rendering only the outermost message deleted that middle link, so a
+		//three-link chain reported THAT monitoring stopped while silently dropping WHY (issue #1376).
+		if (DescribeChainAboveCarrier(outer, carrier) is { } prefix)
 		{
 			line.Append(prefix).Append(": ");
 		}
@@ -165,6 +192,58 @@ internal static class ExceptionReadableMessageExtension
 
 	/// <summary>Cap on an inner exception's message when it is rendered at debug verbosity.</summary>
 	private const int MaxRenderedInnerMessageLength = 300;
+
+	/// <summary>
+	/// The context every wrapper ABOVE <paramref name="carrier"/> adds, joined with <c>": "</c> from the
+	/// outermost inwards, or <see langword="null"/> when none of them adds anything.
+	/// </summary>
+	/// <remarks>
+	/// A message already quoted by one kept earlier is skipped, so a wrapper that merely restates the one
+	/// below it is not printed twice - the same rule <see cref="DescribeOuterContext"/> applies per link.
+	/// </remarks>
+	private static string DescribeChainAboveCarrier(Exception outer, Exception carrier)
+	{
+		List<string> parts = [];
+		for (Exception current = outer;
+			current != null && !ReferenceEquals(current, carrier);
+			current = current.InnerException)
+		{
+			if (DescribeOuterContext(current, carrier) is not { } part
+				|| parts.Any(kept => kept.Contains(part, StringComparison.Ordinal)))
+			{
+				continue;
+			}
+			parts.Add(part);
+		}
+		return parts.Count == 0 ? null : string.Join(": ", parts);
+	}
+
+	/// <summary>
+	/// An <see cref="InvalidOperationException"/> that wraps a fault carrying NO server-detail of its own:
+	/// the wrapper's own context leads and the inner message follows, scrubbed.
+	/// </summary>
+	/// <remarks>
+	/// This arm used to return the inner message alone. That silently deleted the wrapper's diagnosis
+	/// whenever the inner was not a <c>DataProviderFailureException</c> - and
+	/// <c>ClassifyingDataProvider.Guard</c> rethrows a transport fault UNCHANGED, so an
+	/// <c>HttpRequestException</c> under the compilation poll's give-up wrapper took exactly that path and
+	/// cost the operator the window and the round count (issue #1376). The inner is scrubbed because a
+	/// transport fault's message routinely carries the full request URI and this line reaches a console and
+	/// a CI log.
+	/// </remarks>
+	private static string ComposeWithInnerDetail(InvalidOperationException exception)
+	{
+		string inner = UntrustedText.ForConsole(exception.InnerException.Message)
+			?? exception.InnerException.Message;
+		if (string.IsNullOrWhiteSpace(exception.Message))
+		{
+			return inner;
+		}
+		return string.IsNullOrWhiteSpace(inner)
+			|| exception.Message.Contains(inner, StringComparison.Ordinal)
+			? exception.Message
+			: $"{exception.Message}: {inner}";
+	}
 
 	/// <summary>
 	/// The context the outer exception adds over the carrier's own message, or <see langword="null"/>

@@ -1,5 +1,3 @@
-using Clio.Command.McpServer;
-
 namespace Clio.Common;
 
 /// <summary>
@@ -8,20 +6,14 @@ namespace Clio.Common;
 /// </summary>
 /// <remarks>
 /// PR #1374 review. Issue #1333 promoted <see cref="SensitiveErrorTextRedactor"/> from an MCP-transport
-/// concern to the product-wide untrusted-text rule, so <c>Clio.Common</c> types started importing
-/// <c>Clio.Command.McpServer</c> - the shared foundation layer depending on a transport-specific module.
-/// Two concrete costs, not stylistic ones: a future non-MCP producer in <c>Common</c> has no
-/// discoverable reason to route through a type whose namespace says it only concerns MCP, and
-/// <c>Common</c> can no longer be reasoned about or extracted without the MCP module.
+/// concern to the product-wide untrusted-text rule; issue #1375 then moved that type into
+/// <c>Clio.Common</c>, so the dependency now runs <c>Clio.Command.McpServer</c> -> <c>Clio.Common</c> and
+/// never back.
 /// <para>
-/// So this type is the seam <c>Common</c> depends on instead. It is deliberately the only file under
-/// <c>clio/Common</c> that reaches into <c>Clio.Command.McpServer</c> for this rule (the separate
-/// <c>Clio.Command.McpServer.Progress</c> edge in <c>CreatioUninstaller</c> predates issue #1333 and is
-/// untouched here): moving
-/// <see cref="SensitiveErrorTextRedactor"/> into <c>Clio.Common</c> is a ~90-file mechanical change
-/// deferred out of issue #1333, and when it happens it touches this file rather than every call site.
-/// The deferral and its owner are recorded in
-/// <c>docs/knowledge/Common/server-prose-in-caller-visible-fields.md</c>.
+/// This type survives the move because it carries the part the redactor has no opinion about: WHICH of
+/// the three renderings a given field takes - fenced for a model-read field, unfenced for a console line,
+/// scrub-only for text whose prose clio itself wrote. A call site that picks a redactor method directly
+/// records no such reason, so the choice cannot be reviewed later.
 /// </para>
 /// </remarks>
 public static class UntrustedText {
@@ -49,4 +41,15 @@ public static class UntrustedText {
 	/// </summary>
 	/// <param name="text">The raw, possibly-sensitive text.</param>
 	public static string Scrub(string text) => SensitiveErrorTextRedactor.Redact(text);
+
+	/// <summary>
+	/// The CONSOLE rendering for text whose PROSE clio itself wrote: credential shapes only - embedded URI
+	/// userinfo, JWT and <c>Bearer</c> values, <c>key=value</c> secret pairs. Absolute paths, scheme-less
+	/// <c>host:port</c> endpoints, e-mail addresses and plain URLs are left intact, because on the
+	/// operator's own terminal they are the diagnosis rather than a leak (issue #1505). Use
+	/// <see cref="Scrub"/> instead for text a server authored, or for anything an MCP envelope, a log or a
+	/// third-party model will read.
+	/// </summary>
+	/// <param name="text">The raw text of a console line clio composed itself.</param>
+	public static string ScrubCredentials(string text) => SensitiveErrorTextRedactor.RedactCredentials(text);
 }

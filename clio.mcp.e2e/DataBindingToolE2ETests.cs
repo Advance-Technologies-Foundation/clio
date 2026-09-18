@@ -24,6 +24,42 @@ public sealed class DataBindingToolE2ETests : McpContractFixtureBase {
 	private const string AddRowToolName = AddDataBindingRowTool.AddDataBindingRowToolName;
 	private const string RemoveRowToolName = RemoveDataBindingRowTool.RemoveDataBindingRowToolName;
 
+	[Test, Category("McpE2E.Manual")]
+	[Description("Creates a native sequence-step binding through MCP and preserves rich-text HTML on a sequence-enabled environment.")]
+	public async Task CreateDataBinding_ShouldPreserveRichText_WhenSequenceSchemaIsAvailable() {
+		// Arrange
+		if (Environment.GetEnvironmentVariable("CLIO_SEQUENCE_TEST_SEQUENCE_ID") is null) {
+			Assert.Ignore("Requires an explicitly configured sequence-enabled lab.");
+		}
+		await using DataBindingArrangeContext context = await ArrangeWorkspaceAsync(requireEnvironment: true);
+		const string html = "<p>Follow up &amp; confirm</p>";
+		// Act
+		CommandExecutionActResult result = await ActCommandAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["package-name"] = context.PackageName,
+			["schema-name"] = "SequenceStep",
+			["workspace-path"] = context.WorkspacePath,
+			["environment-name"] = context.EnvironmentName,
+			["values"] = JsonSerializer.Serialize(new { Description = html, Body = html, Subject = "Binding subject" })
+		});
+		// Assert
+		AssertToolCallSucceeded(result);
+		AssertCommandExitCode(result, 0, "runtime rich-text columns must be bindable without a custom serializer");
+		string binding = Path.Combine(context.WorkspacePath, "packages", context.PackageName, "Data", "SequenceStep");
+		using JsonDocument descriptor = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(binding, "descriptor.json")));
+		var richColumns = descriptor.RootElement.GetProperty("Descriptor").GetProperty("Columns").EnumerateArray()
+			.Where(column => column.GetProperty("ColumnName").GetString() is "Description" or "Body").ToArray();
+		richColumns.Should().HaveCount(2, because: "both requested rich-text fields must be exported");
+		richColumns.Should().OnlyContain(column => column.GetProperty("DataTypeValueUId").GetString() == "79bccffa-8c8b-4863-b376-a69d2244182b",
+			because: "the binding descriptor must use the platform rich-text identity");
+		descriptor.RootElement.GetProperty("Descriptor").GetProperty("Columns").EnumerateArray()
+			.Single(column => column.GetProperty("ColumnName").GetString() == "Subject").GetProperty("DataTypeValueUId").GetString()
+			.Should().Be("5ca35f10-a101-4c67-a96a-383da6afacfc", because: "Subject is LongText, distinct from HTML body RichText");
+		using JsonDocument data = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(binding, "data.json")));
+		data.RootElement.GetProperty("PackageData")[0].GetProperty("Row").EnumerateArray()
+			.Count(column => column.GetProperty("Value").ValueKind == JsonValueKind.String && column.GetProperty("Value").GetString() == html)
+			.Should().Be(2, because: "HTML values must survive serialization unchanged");
+	}
+
 	[Test]
 	[Description("Creates localization-only columns over real MCP and verifies invalid localization input preserves existing artifacts and creates no partial new binding.")]
 	[AllureTag(CreateToolName)]
@@ -343,29 +379,10 @@ public sealed class DataBindingToolE2ETests : McpContractFixtureBase {
 			cancellationTokenSource);
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
-		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
-		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
-			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
-			return configuredEnvironmentName;
-		}
-
-		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
-			return fallbackEnvironmentName;
-		}
-
-		Assert.Ignore(
-			$"Data-binding MCP E2E requires a reachable environment. Configured sandbox environment '{configuredEnvironmentName}' was not reachable, and fallback environment '{fallbackEnvironmentName}' was also unavailable.");
-		return string.Empty;
-	}
-
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
-		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
+	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
+		await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(
 			settings,
-			["ping-app", "-e", environmentName]);
-		return result.ExitCode == 0;
-	}
+			$"Data-binding MCP E2E requires a reachable environment. Configured sandbox environment '{settings.Sandbox.EnvironmentName}' was not reachable, and fallback environment '{ReachableSandboxEnvironment.FallbackEnvironmentName}' was also unavailable.");
 
 	private static async Task<CommandExecutionActResult> ActCommandAsync(
 		DataBindingArrangeContext arrangeContext,

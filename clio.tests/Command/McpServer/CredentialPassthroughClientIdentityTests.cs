@@ -214,7 +214,7 @@ public class CredentialPassthroughClientIdentityTests {
 		CreatioClient compatibilityClient = container.GetRequiredService<CreatioClient>();
 		IApplicationClient applicationClient = container.GetRequiredService<IApplicationClient>();
 		((ICreatioApplicationClient)applicationClient).ExportSessionCookies();
-		Lazy<CreatioClient> adapterClient = GetPrivateField<Lazy<CreatioClient>>(applicationClient, "_lazyClient");
+		Lazy<CreatioClient> adapterClient = GetAdapterLazyClient(applicationClient);
 		SetPrivateField(applicationClient, "_listenerStarted", true);
 
 		try {
@@ -240,7 +240,7 @@ public class CredentialPassthroughClientIdentityTests {
 		IServiceProvider container = BuildFormsContainer();
 		IApplicationClient applicationClient = container.GetRequiredService<IApplicationClient>();
 		((ICreatioApplicationClient)applicationClient).ExportSessionCookies();
-		CreatioClient adapterClient = GetPrivateField<Lazy<CreatioClient>>(applicationClient, "_lazyClient").Value;
+		CreatioClient adapterClient = GetAdapterLazyClient(applicationClient).Value;
 
 		// Act
 		((IDisposable)container).Dispose();
@@ -251,5 +251,12 @@ public class CredentialPassthroughClientIdentityTests {
 		// Assert
 		await act.Should().ThrowAsync<ObjectDisposedException>(
 			because: "the adapter must remain the sole owner and release a request-only forms transport at provider teardown");
+	}
+
+	// The adapter holds its Creatio client behind the ICreatioClientTransport seam (GitHub #1313), so
+	// the lazy client is one hop further in than it used to be.
+	private static Lazy<CreatioClient> GetAdapterLazyClient(IApplicationClient applicationClient) {
+		object transport = GetPrivateField<object>(applicationClient, "_transport");
+		return GetPrivateField<Lazy<CreatioClient>>(transport, "_lazyClient");
 	}
 }

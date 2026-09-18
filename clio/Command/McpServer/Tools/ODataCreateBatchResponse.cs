@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Clio.Common;
 using System.ComponentModel;
 using System.Linq;
 using System.Text.Json.Serialization;
@@ -10,6 +11,10 @@ namespace Clio.Command.McpServer.Tools;
 /// a per-row result array so a partial failure never hides the rows that did insert.
 /// </summary>
 public sealed record ODataCreateBatchResponse {
+
+	/// <summary>Safe context for a request-level refusal before writes.</summary>
+	[JsonPropertyName("diagnostic"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public DataWriteDiagnostic? Diagnostic { get; init; }
 
 	/// <summary>Gets the number of rows created.</summary>
 	[JsonPropertyName("created")]
@@ -44,6 +49,12 @@ public sealed record ODataCreateBatchResponse {
 	[Description("Request-level error that prevented any row from being attempted.")]
 	public string? Error { get; init; }
 
+	/// <summary>Gets the identifier for this batch, present on success and on failure.</summary>
+	[JsonPropertyName("correlation-id")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[Description("Identifier for this batch, present on success and on failure. The same id tags any debug line written for it.")]
+	public string? CorrelationId { get; init; }
+
 	/// <summary>Builds a response from per-row outcomes.</summary>
 	public static ODataCreateBatchResponse From(IReadOnlyList<ODataRowResult> results) =>
 		new() {
@@ -60,6 +71,13 @@ public sealed record ODataCreateBatchResponse {
 
 /// <summary>Per-row outcome inside an <see cref="ODataCreateBatchResponse"/>.</summary>
 public sealed record ODataRowResult {
+
+	/// <summary>Safe context for this input row's write boundary.</summary>
+	[JsonPropertyName("diagnostic"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public DataWriteDiagnostic? Diagnostic { get; init; }
+
+	[JsonIgnore]
+	internal bool ResponseReceived { get; init; }
 
 	/// <summary>Gets the zero-based index of the row in the input array.</summary>
 	[JsonPropertyName("index")]

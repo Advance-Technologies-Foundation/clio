@@ -75,7 +75,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_dependencyResolver = Substitute.For<IEntitySchemaDependencyResolver>();
 		// Stubbed here, not per test: an unstubbed member returning a reference type answers with null, and a
 		// null resolution would fail the load path with a NullReferenceException before any assertion runs.
-		_dependencyResolver.Resolve(Arg.Any<string>(), Arg.Any<string>())
+		_dependencyResolver.Resolve(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>())
 			.Returns(EntitySchemaDependencyResolution.None);
 		_entitySchemaPublisher = Substitute.For<IEntitySchemaPublisher>();
 		_savedSchema = null;
@@ -1706,18 +1706,22 @@ internal class RemoteEntitySchemaColumnManagerTests
 					MergedCreatedOnColumnUId, "CreatedOn", "Created on", null, 7, false, true, null, IsIndexed: false)
 			]);
 
-	[Test]
+	[TestCase(false)]
+	[TestCase(true)]
 	[Description("Returns the merged effective column set, including custom columns from other packages, when no package is supplied.")]
-	public void GetSchemaProperties_ReturnsMergedColumnsAcrossPackages_WhenPackageIsOmitted() {
+	public void GetSchemaProperties_ReturnsMergedColumnsAcrossPackages_WhenPackageIsOmitted(bool bounded) {
 		// Arrange
 		_runtimeEntitySchemaReader.GetByName("Account").Returns(CreateMergedRuntimeSchema());
+		_runtimeEntitySchemaReader.GetByName("Account", 10000).Returns(CreateMergedRuntimeSchema());
 
 		// Act
 		EntitySchemaPropertiesInfo result = _manager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
-			SchemaName = "Account"
+			SchemaName = "Account", RuntimeReadTimeoutMilliseconds = bounded ? 10000 : null
 		});
 
 		// Assert
+		_runtimeEntitySchemaReader.ReceivedCalls().Single().GetArguments().Length.Should().Be(bounded ? 2 : 1,
+			because: "only callers requesting a bounded read should select the timeout overload");
 		result.Name.Should().Be("Account",
 			because: "the merged read should preserve the runtime schema name");
 		result.PackageName.Should().Be(RemoteEntitySchemaColumnManager.MergedSchemaPackageName,
@@ -2942,7 +2946,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	public void ModifyColumn_ShouldNotRetryTheDesignerLoad_WhenSchemaIsUnavailable() {
 		// Arrange
 		SetupUnavailableSchema();
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg")
+		_dependencyResolver.Resolve("UsrVehicle", Arg.Any<Guid>(), "UsrPkg")
 			.Returns(new EntitySchemaDependencyResolution(["UsrOwner"], 1, true, true));
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",
@@ -2964,7 +2968,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	public void ModifyColumn_ShouldThrowEnrichedError_WhenNoCandidateIsFound() {
 		// Arrange
 		SetupUnavailableSchema();
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg")
+		_dependencyResolver.Resolve("UsrVehicle", Arg.Any<Guid>(), "UsrPkg")
 			.Returns(EntitySchemaDependencyResolution.None);
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",
@@ -3026,7 +3030,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 		});
 
 		// Assert
-		_dependencyResolver.DidNotReceive().Resolve(Arg.Any<string>(), Arg.Any<string>());
+		_dependencyResolver.DidNotReceive().Resolve(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>());
 	}
 
 	[Test]
@@ -3043,7 +3047,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 		});
 
 		// Assert
-		_dependencyResolver.DidNotReceive().Resolve(Arg.Any<string>(), Arg.Any<string>());
+		_dependencyResolver.DidNotReceive().Resolve(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>());
 	}
 
 	[Test]
@@ -3145,6 +3149,29 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
+	[Description("ENG-91044 on the SCALAR path: --title is stored under the effective culture just like a map entry, so Cyrillic text against an en-US profile must be rejected before the published, destructive write — not only when it arrives as --title-localizations (PR #1356 gate-3 review).")]
+	public void SetSchemaProperties_ShouldThrow_WhenTheScalarTitleScriptDoesNotMatchTheEffectiveCulture() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)]);
+		SetupLoadedSchema();
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Мова згадки"
+		};
+
+		// Act
+		Action act = () => _manager.SetSchemaProperties(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>()
+			.WithMessage("*title*",
+				because: "the equivalent --title-localizations {\"en-US\":\"Мова згадки\"} is already rejected, and the two spellings must not disagree");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	[Test]
 	[Description("Turns a silent server no-op into a clear error when the primary-display column is not persisted on readback.")]
 	public void SetSchemaProperties_ShouldThrow_WhenReadbackDoesNotReflectPrimaryDisplayColumn() {
 		// Arrange
@@ -3178,6 +3205,191 @@ internal class RemoteEntitySchemaColumnManagerTests
 				because: "a silent no-op on an unsupported target must surface as a clear failure, not a false success");
 	}
 
+	[Test]
+	[Description("A caption-only save leaves the existing primary-display column alone. HasAnyPropertyToSet made SetSchemaProperties reachable with no --primary-display-column at all, and the request DTO carries the whole schema: if the caption path ever stopped preserving the loaded PrimaryDisplayColumn, a rename would silently clear the column the list view is built on, on a published write.")]
+	public void SetSchemaProperties_ShouldKeepThePrimaryDisplayColumn_WhenOnlyTheCaptionChanges() {
+		// Arrange
+		EntitySchemaColumnDto nameColumn = CreateTextColumn("Name", NameColumnUId);
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), nameColumn]);
+		_loadedSchema.PrimaryDisplayColumn = nameColumn;
+		SetupLoadedSchema();
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Car"
+		};
+
+		// Act
+		_manager.SetSchemaProperties(options);
+
+		// Assert
+		_savedSchema.Should().NotBeNull(because: "a caption rename is a save");
+		_savedSchema.PrimaryDisplayColumn.Should().NotBeNull(
+			because: "a request that names no primary-display column must not clear the one the schema already has");
+		_savedSchema.PrimaryDisplayColumn.Name.Should().Be("Name",
+			because: "the column the schema was loaded with is the column it must be saved with when the caller changed only the caption");
+	}
+
+	[Test]
+	[Description("AC-3, the shipped promise: cultures not named in the request keep the caption they already have. ApplySchemaCaption merges through SetLocalizableValue rather than replacing the collection, and a one-token change to ReplaceLocalizableValues would turn a rename into a silent wipe of every other language on a published, destructive write (PR #1356 gate-3 review).")]
+	public void SetSchemaProperties_ShouldKeepCaptionsOfCulturesNotNamed_WhenRenamingOne() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)]);
+		_loadedSchema.Caption = [
+			new Clio.Command.EntitySchemaDesigner.LocalizableStringDto { CultureName = "en-US", Value = "Vehicle" },
+			new Clio.Command.EntitySchemaDesigner.LocalizableStringDto { CultureName = "uk-UA", Value = "Транспорт" }
+		];
+		SetupLoadedSchema();
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Car"
+		};
+
+		// Act
+		_manager.SetSchemaProperties(options);
+
+		// Assert
+		_savedSchema.Should().NotBeNull(because: "a caption rename is a save");
+		_savedSchema.Caption.Should().Contain(value =>
+				value.CultureName == "en-US" && value.Value == "Car",
+			because: "the named culture takes the new caption");
+		_savedSchema.Caption.Should().Contain(value =>
+				value.CultureName == "uk-UA" && value.Value == "Транспорт",
+			because: "a culture the caller did not name must keep its existing caption - that is the promise shipped in the help text, the docs and the tool [Description]");
+	}
+
+	[Test]
+	[Description("The readback check compares the EXACT culture, not GetLocalizableValue. That helper falls back to en-US and then to the first entry, so a server that persisted only en-US would answer a uk-UA lookup with the en-US value and the check would pass on the very per-culture no-op it exists to catch (PR #1356 gate-3 review). Until now only a comment guarded this.")]
+	public void SetSchemaProperties_ShouldThrow_WhenOnlyAnotherCultureWasPersisted() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)]);
+		SetupLoadedSchema();
+		// A target version that ignores the uk-UA caption and persists only en-US: the reloaded schema
+		// carries an en-US entry that GetLocalizableValue would happily return for a uk-UA lookup.
+		_designerClient.SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<Clio.Command.RemoteCommandOptions>())
+			.Returns(callInfo => {
+				_savedSchema = callInfo.ArgAt<EntityDesignSchemaDto>(0);
+				_savedSchema.Caption = [new Clio.Command.EntitySchemaDesigner.LocalizableStringDto {
+					CultureName = "en-US",
+					Value = "Автомобіль"
+				}];
+				return new Clio.Command.EntitySchemaDesigner.SaveDesignItemDesignerResponse {
+					Success = true,
+					SchemaUId = _savedSchema.UId
+				};
+			});
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			ParsedTitleLocalizations = new Dictionary<string, string> { ["uk-UA"] = "Автомобіль" }
+		};
+
+		// Act
+		Action act = () => _manager.SetSchemaProperties(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>()
+			.WithMessage("*uk-UA*",
+				because: "a per-culture no-op must fail loudly instead of being reported as a successful rename - and it is the exact-culture lookup, not a fallback, that catches it");
+	}
+
+
+	[Test]
+	[Description("The scalar --title is anchored to the culture the resolver returns, and --caption-culture is what the resolver is asked about. Both were untested: dropping options.CaptionCulture from the call, or invoking the resolver with the wrong argument, would land the caption under the profile culture and every existing assertion would still pass, because VerifySchemaCaption verifies against the SAME resolved key (PR #1356 review).")]
+	public void SetSchemaProperties_ShouldAnchorTheScalarTitleToTheCaptionCulture_WhenOneIsRequested() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)]);
+		SetupLoadedSchema();
+		_captionCultureResolver
+			.ResolveEffectiveCulture(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>())
+			.Returns("uk-UA");
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Автомобіль",
+			CaptionCulture = "uk-UA"
+		};
+
+		// Act
+		_manager.SetSchemaProperties(options);
+
+		// Assert
+		_savedSchema.Should().NotBeNull(because: "a caption rename is a save");
+		_savedSchema.Caption.Should().Contain(value =>
+				value.CultureName == "uk-UA" && value.Value == "Автомобіль",
+			because: "the scalar title must land under the culture the resolver produced, not under the en-US default");
+		_savedSchema.Caption.Should().Contain(value =>
+				value.CultureName == "en-US" && value.Value == "Vehicle",
+			because: "the en-US caption the schema already carried must be untouched - landing the scalar there instead would rename a language the caller never named");
+		_captionCultureResolver.Received().ResolveEffectiveCulture(
+			Arg.Any<EnvironmentOptions>(), "uk-UA");
+	}
+
+	[Test]
+	[Description("The culture is resolved LAZILY: only a scalar --title needs an anchor, and a profile-culture lookup is a remote call the pre-existing primary-display-column-only invocation never made. That promise lived in a comment only (PR #1356 review).")]
+	public void SetSchemaProperties_ShouldNotResolveTheCaptionCulture_WhenOnlyThePrimaryDisplayColumnIsSet() {
+		// Arrange
+		EntitySchemaColumnDto captionColumn = CreateTextColumn("Caption", NameColumnUId);
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), captionColumn],
+			primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			PrimaryDisplayColumn = "Caption"
+		};
+
+		// Act
+		_manager.SetSchemaProperties(options);
+
+		// Assert
+		_savedSchema.Should().NotBeNull(because: "the primary-display change is still saved");
+		_captionCultureResolver.DidNotReceive().ResolveEffectiveCulture(
+			Arg.Any<EnvironmentOptions>(), Arg.Any<string?>());
+	}
+
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("Persists an explicit DB-view update without changing virtual metadata.")]
+	public void SetSchemaProperties_ShouldPersistDbView_WhenSupplied(bool requested) {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)],
+			inheritedColumns: [], primaryDisplayColumn: null);
+		_loadedSchema.IsDBView = !requested;
+		SetupLoadedSchema();
+		SetEntitySchemaPropertiesOptions options = new() {
+			Package = "UsrPkg", SchemaName = "UsrVehicle", IsDBView = requested
+		};
+		// Act
+		_manager.SetSchemaProperties(options);
+		// Assert
+		_savedSchema.IsDBView.Should().Be(requested, because: "the designer save must carry either explicit boolean value");
+		_savedSchema.IsVirtual.Should().BeFalse(because: "the independent virtual flag must remain unchanged");
+	}
+
+	[Test]
+	[Description("Reports a failure when the server silently drops the requested DB-view flag.")]
+	public void SetSchemaProperties_ShouldFail_WhenDbViewDoesNotPersist() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)],
+			inheritedColumns: [], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		_designerClient.SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>())
+			.Returns(call => {
+				_savedSchema = call.ArgAt<EntityDesignSchemaDto>(0);
+				_savedSchema.IsDBView = false;
+				return new Clio.Command.EntitySchemaDesigner.SaveDesignItemDesignerResponse { Success = true, SchemaUId = _savedSchema.UId };
+			});
+		// Act
+		Action act = () => _manager.SetSchemaProperties(new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg", SchemaName = "UsrVehicle", IsDBView = true
+		});
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(because: "a silently ignored flag is not a successful update")
+			.WithMessage("*Database-view flag was not persisted*", because: "the failure must identify the property that failed readback");
+	}
+
 	private void SetupLoadedSchema() {
 		Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> MakeResponse() =>
 			new() { Success = true, Schema = _savedSchema ?? _loadedSchema };
@@ -3201,7 +3413,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	public void ModifyColumn_ShouldNameRankedCandidatePackagesInTheError_WhenSchemaIsUnavailable() {
 		// Arrange
 		SetupMarkupSchemaResponse();
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg").Returns(
+		_dependencyResolver.Resolve("UsrVehicle", Arg.Any<Guid>(), "UsrPkg").Returns(
 			new EntitySchemaDependencyResolution(["CrtLeadOppMgmtApp", "SalesEnterprise", "CrtOpportunity"], 2, true, true));
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",
@@ -3232,7 +3444,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	public void ModifyColumn_ShouldClaimNoCause_WhenNoCandidatePackageWasFound() {
 		// Arrange
 		SetupMarkupSchemaResponse();
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg")
+		_dependencyResolver.Resolve("UsrVehicle", Arg.Any<Guid>(), "UsrPkg")
 			.Returns(EntitySchemaDependencyResolution.None);
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",
@@ -3253,11 +3465,11 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
-	[Description("Asks the resolver for candidates on a read path, so a read can name the fix; the lookup itself never changes the package on any path (issue #722).")]
+	[Description("Asks the resolver for candidates on a read path, so a read can name the fix; the lookup itself never changes the package on any path (issue #722). Passes the package identity the request was already scoped to, so the resolver does not re-resolve it by name (issue #1461).")]
 	public void GetSchemaProperties_ShouldRequestCandidates_WhenSchemaIsUnavailable() {
 		// Arrange
 		SetupMarkupSchemaResponse();
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg").Returns(
+		_dependencyResolver.Resolve("UsrVehicle", Arg.Any<Guid>(), "UsrPkg").Returns(
 			new EntitySchemaDependencyResolution(["CrtLeadOppMgmtApp"], 1, true, true));
 
 		// Act
@@ -3270,7 +3482,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 		act.Should().Throw<NonJsonServiceResponseException>()
 			.Which.Message.Should().Contain("CrtLeadOppMgmtApp",
 				because: "the read path carried no candidate information at all before, which is what made it unactionable");
-		_dependencyResolver.Received(1).Resolve("UsrVehicle", "UsrPkg");
+		_dependencyResolver.Received(1).Resolve("UsrVehicle", PackageUId, "UsrPkg");
 	}
 
 	[Test]
@@ -3284,7 +3496,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 				throw new SessionExpiredServiceResponseException(
 					"GetSchemaDesignItem was answered with the Creatio sign-in response instead of JSON. " +
 					"Verify the environment credentials."));
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg").Returns(
+		_dependencyResolver.Resolve("UsrVehicle", Arg.Any<Guid>(), "UsrPkg").Returns(
 			new EntitySchemaDependencyResolution(["CrtLeadOppMgmtApp"], 1, true, true));
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",
@@ -3302,7 +3514,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 			because: "a sign-in response says nothing about packages, so naming one would be a claim without evidence");
 		// The resolver is the only thing that can add a dependency, so proving it was never called is what
 		// proves an expired session cannot rewrite a package's dependency list.
-		_dependencyResolver.DidNotReceive().Resolve(Arg.Any<string>(), Arg.Any<string>());
+		_dependencyResolver.DidNotReceive().Resolve(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>());
 	}
 
 	[Test]
@@ -3320,7 +3532,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 			.Returns(_ => new Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> {
 				Success = true, Schema = null
 			});
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg").Returns(
+		_dependencyResolver.Resolve("UsrVehicle", Arg.Any<Guid>(), "UsrPkg").Returns(
 			new EntitySchemaDependencyResolution(["CrtLeadOppMgmtApp"], 1, true, true));
 
 		// Act
@@ -3361,7 +3573,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 			.Returns(_ => new Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> {
 				Success = true, Schema = null
 			});
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg")
+		_dependencyResolver.Resolve("UsrVehicle", Arg.Any<Guid>(), "UsrPkg")
 			.Returns(new EntitySchemaDependencyResolution(["CrtLeadOppMgmtApp"], 1, true, true));
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",
@@ -3383,7 +3595,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 			because: "naming candidates here would offer a fix for a problem the caller does not have");
 		// The lookup must not run at all on this path: it costs remote reads to build a diagnosis that is
 		// known to be wrong before it is computed.
-		_dependencyResolver.DidNotReceive().Resolve(Arg.Any<string>(), Arg.Any<string>());
+		_dependencyResolver.DidNotReceive().Resolve(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>());
 	}
 
 	[Test]
@@ -3391,7 +3603,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	public void ModifyColumn_ShouldReportTheFailedLookup_WhenTheCandidateSearchCouldNotComplete() {
 		// Arrange
 		SetupMarkupSchemaResponse();
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg")
+		_dependencyResolver.Resolve("UsrVehicle", Arg.Any<Guid>(), "UsrPkg")
 			.Returns(EntitySchemaDependencyResolution.LookupFailed("SelectQuery unreachable"));
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",
@@ -3418,7 +3630,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	public void ModifyColumn_ShouldCarryTheUnfilteredCaveatIntoTheError_WhenTheDependencyReadFailed() {
 		// Arrange
 		SetupMarkupSchemaResponse();
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg").Returns(
+		_dependencyResolver.Resolve("UsrVehicle", Arg.Any<Guid>(), "UsrPkg").Returns(
 			new EntitySchemaDependencyResolution(["CrtLeadOppMgmtApp", "SalesEnterprise"], 1, true, false));
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",
@@ -3443,7 +3655,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	public void ModifyColumn_ShouldNotClaimAmbiguity_WhenExactlyOneCandidateIsReported() {
 		// Arrange
 		SetupMarkupSchemaResponse();
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg").Returns(
+		_dependencyResolver.Resolve("UsrVehicle", Arg.Any<Guid>(), "UsrPkg").Returns(
 			new EntitySchemaDependencyResolution(["CrtLeadOppMgmtApp"], 1, true, true));
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",
@@ -3472,7 +3684,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 			"PkgFoxtrot", "PkgGolf", "PkgHotel"
 		];
 		SetupMarkupSchemaResponse();
-		_dependencyResolver.Resolve("UsrVehicle", "UsrPkg")
+		_dependencyResolver.Resolve("UsrVehicle", Arg.Any<Guid>(), "UsrPkg")
 			.Returns(new EntitySchemaDependencyResolution(candidates, 3, true, true));
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle",

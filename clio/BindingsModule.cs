@@ -1,4 +1,4 @@
-﻿#pragma warning disable CLIO001 // This is DI class, warning not applicable
+#pragma warning disable CLIO001 // This is DI class, warning not applicable
 
 using System;
 using System.Collections.Generic;
@@ -288,6 +288,26 @@ public class BindingsModule {
 		// unauthenticated GET to an operator-registered host has no reason to follow a redirect. The response-size
 		// cap is a defence-in-depth bound: sysenums.js is a small static file (~50KB today), so a multi-megabyte
 		// response is itself the signal something is wrong, well before the brace-matched parser would need to look at it.
+		// Dedicated client for the unauthenticated runtime-detection probes of reg-web-app. AllowAutoRedirect=false
+		// is load-bearing, not hygiene: a .NET Framework site answers /0/Login/NuiLogin.aspx with a 302 to the same
+		// page off the site root, and detection reads a 404 as proof that a runtime is absent — so following the
+		// redirect would let the status of a different URL convict the wrong runtime. Timeout is set here, once,
+		// under the same rule as the clients above.
+		// S4830: accepting any certificate is deliberate here for the same reason the availability probe
+		// below does it (PR #1429 review). reg-web-app registers a stand that every LATER request reaches
+		// through creatio.client, which trusts any certificate. A probe that validates would refuse exactly
+		// the self-signed dev stands the command exists to register, and detection would read the absent
+		// HTTP response as "the runtime is absent" - so a certificate this product otherwise accepts would
+		// convict a runtime that is running. The two probes against a Creatio stand must agree on trust.
+#pragma warning disable S4830
+		services.AddHttpClient(EnvironmentRuntimeDetectionService.HttpClientName)
+			.ConfigureHttpClient(client => client.Timeout = TimeSpan.FromSeconds(10))
+			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
+				UseCookies = false,
+				AllowAutoRedirect = false,
+				ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+			});
+#pragma warning restore S4830
 		services.AddHttpClient(ClassicEnumVocabularyResolver.HttpClientName)
 			.ConfigureHttpClient(client => {
 				client.Timeout = TimeSpan.FromSeconds(120);
@@ -395,6 +415,13 @@ public class BindingsModule {
 		services.AddTransient<Clio.Command.Administration.ManageAccessCommand>();
 		services.AddTransient<Clio.Command.Administration.ManageLicenseCommand>();
 		services.AddTransient<Clio.Common.IFileSystem, Clio.Common.FileSystem>();
+		// Issue #1462 - the resident-MCP-host presence marker the startup update check consults, and the
+		// process-liveness seam that keeps a marker left by a killed host from deferring updates forever.
+		// SINGLETON because both are stateless answers about this machine, and the CLI reads them once per
+		// run: a transient copy would buy nothing and the explicit pair states the intended lifetime
+		// instead of inheriting the assembly scan's transient default.
+		services.AddSingleton<IProcessLivenessProbe, ProcessLivenessProbe>();
+		services.AddSingleton<IMcpHostPresenceRegistry, McpHostPresenceRegistry>();
 		services.AddTransient<IFileSecurityHardening, FileSecurityHardening>();
 		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionCache, Clio.Common.BrowserSession.BrowserSessionCache>();
 		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionService>(sp =>
@@ -499,6 +526,12 @@ public class BindingsModule {
 		// Shared page conflict-baseline + file-output services consumed by both the CLI verbs
 		// (get-page / update-page) and the MCP tools (get-page / update-page / sync-pages).
 		services.AddTransient<IPageBaselineGuard, PageBaselineGuard>();
+		// Owns the persisted-resource-key read for one logical page write. Transient is deliberate: the
+		// caching scope is flow-local and STATIC inside the implementation, so the page tools (resolved
+		// from this container) and PageUpdateCommand (resolved from a SEPARATE per-tenant container built
+		// by another `new BindingsModule().Register`, which does not share this one's singletons) share ONE
+		// cache whatever lifetime is registered here.
+		services.AddTransient<IPersistedResourceKeyReader, PersistedResourceKeyReader>();
 		services.AddTransient<IPageFileWriter, PageFileWriter>();
 		// H-1 (ENG-95262): the cross-process gate for .clio-pages/{schema}. Registered explicitly as a
 		// SINGLETON because the intent is one gate per host: RegisterAssemblyInterfaceTypes would otherwise
@@ -524,6 +557,8 @@ public class BindingsModule {
 		services.AddTransient<GetClassicListColumnsCommand>();
 		services.AddTransient<ListEntityClientSchemasCommand>();
 		services.AddTransient<SqlSchemaCreateCommand>();
+		services.AddTransient<RegisterProcessElementCommand>();
+		services.AddTransient<IProcessElementRegistration, ProcessElementRegistration>();
 		services.AddTransient<SqlSchemaGetCommand>();
 		services.AddTransient<SqlSchemaUpdateCommand>();
 		services.AddTransient<SqlSchemaInstallCommand>();
@@ -673,6 +708,7 @@ public class BindingsModule {
 		services.AddTransient<GetClassicPageSourcesTool>();
 		services.AddTransient<ListEntityClientSchemasTool>();
 		services.AddTransient<SqlSchemaCreateTool>();
+		services.AddTransient<RegisterProcessElementTool>();
 		services.AddTransient<SqlSchemaGetTool>();
 		services.AddTransient<SqlSchemaUpdateTool>();
 		services.AddTransient<SqlSchemaInstallTool>();
@@ -681,7 +717,6 @@ public class BindingsModule {
 		services.AddTransient<ImportSchemaTool>();
 		services.AddTransient<PageSyncTool>();
 		services.AddTransient<MobilePageConversionGuideTool>();
-		services.AddSingleton<IPageBodySamplingService, PageBodySamplingServiceImpl>();
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<KnowledgeManagementTools>();
 		services.AddSingleton<IEnvironmentKnowledgeBundleTrustStore, EnvironmentKnowledgeBundleTrustStore>();
@@ -781,6 +816,7 @@ public class BindingsModule {
 		services.AddTransient<SysSettingUpdateTool>();
 		services.AddTransient<InstallGateTool>();
 		services.AddTransient<InstallProcessBuilderTool>();
+		services.AddTransient<InstallDashboardsMigratorTool>();
 		services.AddTransient<ExperimentalTool>();
 		services.AddTransient<ListCreatioBuildsTool>();
 		services.AddTransient<GetCreatioInfoTool>();
@@ -850,6 +886,7 @@ public class BindingsModule {
 		services.AddTransient<OpenCfgCommand>();
 		services.AddTransient<InstallGateCommand>();
 		services.AddTransient<InstallProcessBuilderCommand>();
+		services.AddTransient<InstallDashboardsMigratorCommand>();
 		services.AddTransient<PingAppCommand>();
 		services.AddTransient<ReferenceCommand>();
 		// NewPkgCommand depends on the reference command via its Command<ReferenceOptions> base type.
@@ -1088,10 +1125,16 @@ public class BindingsModule {
 		services.AddTransient<ModifyEntitySchemaColumnCommand>();
 		services.AddTransient<GetEntitySchemaColumnPropertiesCommand>();
 		services.AddTransient<GetEntitySchemaPropertiesCommand>();
+		services.AddTransient<SequenceEnrollmentCommand>();
+		services.AddTransient<SequenceContextCommand>();
+		services.AddTransient<DataServiceBatchCommand>();
 		services.AddTransient<SetEntitySchemaPropertiesCommand>();
 		services.AddTransient<FindEntitySchemaCommand>();
 		services.AddTransient<FindAppCommand>();
 		services.AddTransient<CreateUserTaskCommand>();
+		services.AddTransient<CreateUserTaskPageCommand>();
+		services.AddTransient<CreateUserTaskPageTool>();
+		services.AddTransient<IUserTaskPageScaffolder, UserTaskPageScaffolder>();
 		services.AddTransient<ModifyUserTaskParametersCommand>();
 		services.AddTransient<DeleteSchemaCommand>();
 		services.AddTransient<ExportSchemaCommand>();
@@ -1382,7 +1425,8 @@ public class BindingsModule {
 	/// <returns>A poller reading that environment.</returns>
 	private static ICompilationHistoryPoller BuildEnvironmentScopedCompilationHistoryPoller(
 		EnvironmentSettings envSettings) =>
-		new CompilationHistoryPoller(BuildRemoteDataProvider(envSettings));
+		new CompilationHistoryPoller(BuildRemoteDataProvider(envSettings), ConsoleLogger.Instance,
+			TimeProvider.System, new CancellableDelay());
 
 	/// <summary>
 	/// True when the environment authenticates with a token rather than with a login and password: an
@@ -1555,24 +1599,47 @@ public class BindingsModule {
 			if (_bootstrapDiagnosticsLogged) {
 				return;
 			}
-			if (report.RepairsApplied.Count > 0) {
-				string repairs = string.Join("; ", report.RepairsApplied.Select(repair => repair.Message));
-				ConsoleLogger.Instance.WriteWarning(
-					$"clio settings bootstrap repaired {repairs}. Active environment: {report.ResolvedActiveEnvironmentKey ?? "<none>"}.");
-				_bootstrapDiagnosticsLogged = true;
+			if (BuildBootstrapDiagnosticMessage(report) is not string message) {
 				return;
 			}
-			if (string.Equals(report.Status, "broken", StringComparison.OrdinalIgnoreCase)) {
-				string issue = report.Issues.FirstOrDefault()?.Message
-					?? "appsettings.json is unreadable.";
-				ConsoleLogger.Instance.WriteWarning(
-					$"clio settings bootstrap is degraded. {issue} File path: {report.SettingsFilePath}. "
-					+ "Fix or delete it and retry — clio never rewrites a broken settings file on its own, "
-					+ "so a hand fix (or deletion, if the registered environments are not worth recovering) "
-					+ "is the only way forward.");
-				_bootstrapDiagnosticsLogged = true;
-			}
+			ConsoleLogger.Instance.WriteWarning(message);
+			_bootstrapDiagnosticsLogged = true;
 		}
+	}
+
+	/// <summary>
+	/// Builds the one startup diagnostic line a bootstrap report deserves, or <see langword="null"/>
+	/// when it deserves none.
+	/// </summary>
+	/// <remarks>
+	/// A shape mismatch is reported for BOTH the degraded and the broken status, and WITHOUT the
+	/// "fix or delete it" tail: the file is valid JSON that a newer clio wrote, so the hand fix that
+	/// sentence asks for is the wrong action (issue #1462). Reporting it in the degraded case matters
+	/// most - there the command goes on working, and without this line a section the running build
+	/// silently dropped would never be mentioned outside the MCP health tool.
+	/// </remarks>
+	/// <param name="report">The bootstrap report to describe.</param>
+	/// <returns>The warning text, or <see langword="null"/> when the report is unremarkable.</returns>
+	internal static string BuildBootstrapDiagnosticMessage(SettingsBootstrapReport report) {
+		if (report.RepairsApplied.Count > 0) {
+			string repairs = string.Join("; ", report.RepairsApplied.Select(repair => repair.Message));
+			return $"clio settings bootstrap repaired {repairs}. "
+				+ $"Active environment: {report.ResolvedActiveEnvironmentKey ?? "<none>"}.";
+		}
+		SettingsIssue shapeMismatch = report.ShapeMismatch;
+		if (shapeMismatch is not null) {
+			return $"clio settings bootstrap is degraded. {shapeMismatch.Message} "
+				+ $"File path: {report.SettingsFilePath}.";
+		}
+		if (string.Equals(report.Status, "broken", StringComparison.OrdinalIgnoreCase)) {
+			string issue = report.Issues.FirstOrDefault()?.Message
+				?? "appsettings.json is unreadable.";
+			return $"clio settings bootstrap is degraded. {issue} File path: {report.SettingsFilePath}. "
+				+ "Fix or delete it and retry — clio never rewrites a broken settings file on its own, "
+				+ "so a hand fix (or deletion, if the registered environments are not worth recovering) "
+				+ "is the only way forward.";
+		}
+		return null;
 	}
 	
 	private static void RegisterAssemblyInterfaceTypes(IServiceCollection services){
@@ -1605,6 +1672,10 @@ public class BindingsModule {
 					// LoginDiagnostics holds per-adapter state (client correlation token, attempt
 					// counter); it is created by CreatioClientAdapter, not resolved from DI.
 					|| implementedInterface == typeof(ILoginDiagnostics)
+					// CreatioClientTransport wraps the adapter's own Lazy<CreatioClient>; like the two
+					// above it is per-adapter state created by CreatioClientAdapter, and its only
+					// constructor argument is that lazy client, which DI cannot supply.
+					|| implementedInterface == typeof(ICreatioClientTransport)
 					// Application-client implementations have ownership-sensitive constructors and
 					// are registered explicitly for the active environment. Auto-registration would
 					// either create an unbound adapter or introduce a circular ownership lease.

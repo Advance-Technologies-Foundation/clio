@@ -119,6 +119,7 @@ info:info,get-version,i,ver
 install-application:install-application,install-app,push-app
 install-dbhub:install-dbhub
 install-gate:install-gate,gate,installgate,update-gate
+install-dashboards-migrator:install-dashboards-migrator,idm,installdashboardsmigrator,udm,update-dashboards-migrator
 install-process-builder:install-process-builder,installprocessbuilder,update-process-builder
 install-nuget-pkg:install-nuget-pkg,installng
 install-toolkit:install-toolkit
@@ -236,3 +237,8 @@ manage-user:manage-user
 manage-role:manage-role
 manage-access:manage-access
 manage-license:manage-license
+enroll-sequence-participants:enroll-sequence-participants
+get-sequence-context:get-sequence-context
+execute-dataservice-batch:execute-dataservice-batch
+create-user-task-page:create-user-task-page
+register-process-element:register-process-element

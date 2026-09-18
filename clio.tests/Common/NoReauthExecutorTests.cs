@@ -16,7 +16,7 @@ internal sealed class NoReauthExecutorTests {
 		NoReauthExecutor sut = new();
 
 		// Act
-		string result = sut.Execute(() => "payload", _ => true);
+		string result = sut.Execute(() => "payload", _ => true, replayAllowed: true);
 
 		// Assert
 		result.Should().Be("payload",
@@ -34,7 +34,7 @@ internal sealed class NoReauthExecutorTests {
 		sut.Execute(() => {
 			callCount++;
 			return "payload";
-		}, _ => true);
+		}, _ => true, replayAllowed: true);
 
 		// Assert
 		callCount.Should().Be(1,
@@ -52,7 +52,7 @@ internal sealed class NoReauthExecutorTests {
 		string result = sut.Execute(() => "login-page", _ => {
 			predicateInvocations++;
 			return true;
-		});
+		}, replayAllowed: true);
 
 		// Assert
 		predicateInvocations.Should().Be(0,

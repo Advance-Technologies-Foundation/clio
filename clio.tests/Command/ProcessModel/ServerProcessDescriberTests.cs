@@ -37,6 +37,7 @@ public sealed class ServerProcessDescriberTests {
 	private const string OtherFamilyUId = "7c1d4f6e-9b02-4a55-8d31-1f0a5e2c7b48";
 
 	private const string PackageUId = "864d1545-a641-46c3-b866-e57bd6d39579";
+	private const string PackageName = "Invoice";
 
 	/// <summary>
 	/// The version reader defaults to one that establishes nothing, so every pre-existing describe assertion
@@ -110,6 +111,69 @@ public sealed class ServerProcessDescriberTests {
 		output["flows"]![0]!.AsObject().ContainsKey("branchesOnActivityResult").Should().BeFalse(
 			because: "an absent value must be OMITTED rather than emitted as false; while the property was a "
 				+ "non-nullable bool, WhenWritingNull could not omit it and the payload fabricated an answer");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("results and resultsActivity round-trip by their WIRE NAMES, and as with branchesOnActivityResult the OUTBOUND assertion is the one that pins them. The inbound half does not depend on the attributes at all: ServerProcessDescriber.JsonOptions sets PropertyNameCaseInsensitive and both keys differ from their C# property only in the first letter, so deserialization binds them with [JsonPropertyName] deleted outright. Serialization has no such fallback - it would emit \"Results\" and \"ResultsActivity\" - and DescribedFlow carries a [JsonExtensionData] bag, so the caller's payload still LOOKS right while every typed reader sees null. resultsActivity deliberately names an element that is NOT the flow's source here, because that is the whole reason the member exists: the designer keys a selection on the deciding ACTIVITY, which for a connector leaving a gateway is upstream of it, and a caller that assumed the source would re-key the selection onto the gateway.")]
+	public void Describe_ShouldRoundTripFlowResultsAndResultsActivity() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[],"
+			+ "\"flows\":[{\"source\":\"Route\",\"target\":\"end1\",\"kind\":\"conditional\","
+			+ "\"branchesOnActivityResult\":true,\"results\":[\"Positive\",\"Canceled\"],"
+			+ "\"resultsActivity\":\"ApproveOrder\"}],"
+			+ "\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Flows[0].Results.Should().Equal(new[] { "Positive", "Canceled" },
+			because: "the captions are what the write surface accepts, so a read that loses them leaves a "
+				+ "caller unable to verify, diff or preserve a selection it did not mean to change");
+		result.Value.Flows[0].ResultsActivity.Should().Be("ApproveOrder",
+			because: "the deciding activity is reported rather than assumed, and here it is NOT the flow's "
+				+ "source - writing the selection back onto 'Route' would change which activity decides");
+		JsonNode output = JsonNode.Parse(reserialized);
+		output["flows"]![0]!["results"]!.AsArray().Should().HaveCount(2,
+			because: "the outbound half is separate: without the attribute the key is emitted as 'Results', "
+				+ "the extension-data bag keeps the payload looking correct, and every typed reader sees null");
+		output["flows"]![0]!["resultsActivity"]!.GetValue<string>().Should().Be("ApproveOrder",
+			because: "two members, two independent attribute literals - asserting one would pass on a drop "
+				+ "of the other");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A server that never SENDS results must not have an empty array invented for it. describe is allowed on an environment whose CrtProcessBuilder predates the member - its [RequiresPackage] is presence-only - so this is the ordinary case on an older stand rather than an edge case. The distinction is load-bearing in the contract: null means 'this is a FORMULA branch', an empty array would mean 'a selection that selects nothing', and the write path refuses to create that state at all. Absence must also survive the way OUT, or WhenWritingNull is not doing the job the two dialects rely on to stay distinguishable from the read alone.")]
+	public void Describe_ShouldNotInventFlowResults_WhenTheServerOmitsThem() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[],"
+			+ "\"flows\":[{\"source\":\"task1\",\"target\":\"end1\",\"kind\":\"conditional\","
+			+ "\"condition\":\"[#Amount#] > 100\"}],"
+			+ "\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Flows[0].Results.Should().BeNull(
+			because: "null says 'formula branch' and an empty array would say 'a selection that selects "
+				+ "nothing' - a state the write path refuses, so inventing one describes an impossible flow");
+		result.Value.Flows[0].ResultsActivity.Should().BeNull(
+			because: "there is no selection to name an activity for");
+		JsonNode output = JsonNode.Parse(reserialized);
+		output["flows"]![0]!.AsObject().ContainsKey("results").Should().BeFalse(
+			because: "the WhenWritingNull half is what keeps the two dialects distinguishable from the read "
+				+ "alone, and an emitted null reads to a consumer as a field the server answered");
 	}
 
 	[Test]
@@ -234,6 +298,7 @@ public sealed class ServerProcessDescriberTests {
 			IsActiveVersion = isActive,
 			IsRoot = isRoot,
 			PackageUId = PackageUId,
+			PackageName = PackageName,
 			Enabled = true
 		};
 
@@ -1398,6 +1463,15 @@ public sealed class ServerProcessDescriberTests {
 			because: "the caller needs the name of the running version to re-describe it without a second lookup");
 		result.Value.ActiveVersionSchemaUId.Should().Be(ChildUId,
 			because: "the version's UId identifies it unambiguously, unlike the caption the family shares");
+		// The PROJECTION, which is the only place these two reach a caller. The reader fixture proves they
+		// are established and the command fixture hand-builds them already set, so deleting either
+		// assignment in ToDescribedVersion leaves both of those green - and a fact the read established
+		// never reaching the answer is the defect D2 was.
+		result.Value.Versions.Should().OnlyContain(version => version.PackageUId == PackageUId,
+			because: "the package identity the reader established has to survive the projection");
+		result.Value.Versions.Should().OnlyContain(version => version.PackageName == PackageName,
+			because: "the NAME is what a person asking which package a version lives in reads; manual "
+				+ "testing on ENG-94374 got the raw UId because nothing carried it this far");
 		result.Value.ActiveVersionSource.Should().Be("process-library-view",
 			because: "the output states which authority ranked the family, since the runtime consults another");
 		reader.Received(1).Read(RootUId);

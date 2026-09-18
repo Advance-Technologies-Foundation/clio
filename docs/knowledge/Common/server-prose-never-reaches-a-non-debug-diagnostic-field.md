@@ -6,11 +6,15 @@ applies-to:
   - clio/Common/ISysSettingsManager.cs
   - clio/Common/SessionRejectedException.cs
   - clio/Common/DataProviderFailureException.cs
+  - clio/Common/NonJsonWriteResponseException.cs
   - clio/Command/SysSettingsCommand.cs
-  - clio/Command/McpServer/SensitiveErrorTextRedactor.cs
+  - clio/Command/SysSettingFailureClassifier.cs
+  - clio/Common/SensitiveErrorTextRedactor.cs
   - clio/ExceptionReadableMessageExtension.cs
+  - clio/Common/UntrustedText.cs
   - clio/Common/ServerReportedFailureText.cs
-ticket: GH-1333
+  - clio/Command/McpServer/Tools/ODataReadTool.cs
+ticket: GH-1333, GH-1378
 date: 2026-09-03
 ---
 
@@ -31,6 +35,46 @@ envelope". `ExceptionReadableMessageExtension` renders the same excerpt for the 
 same treatment, and it also renders a carrier's OWN message rather than an inner one: an
 `InvalidOperationException` arm that preferred `InnerException.Message` was printing the raw parser
 fault instead of the composed diagnosis.
+
+Since issue #1505 the rule covers that renderer's **non-carrier** arms too: a failure with no
+`IServerDetailCarrier` can still carry server prose (`SelectQueryHelper` /
+`DataServiceSelectResponse` throw a plain `InvalidOperationException("SelectQuery failed: " +
+errorInfo.message)`), and the arms returned it verbatim while the MCP path redacted the same text.
+The whole composed non-debug line now goes through `UntrustedText.ScrubCredentials` once.
+
+**Credentials only, and deliberately so.** That line is composed mostly of clio's OWN prose for ~20
+commands, and its primary reader is the person who typed the command — for whom their own local path,
+their own environment URL, their own `host:port` and their own e-mail address are the diagnosis, not
+a leak. (The same `WriteError` buffer can reach `CommandExecutionResult.Messages` on the trusted
+stdio MCP path; full fidelity there is by design, and the passthrough path applies the full `Redact`
+separately.) The first attempt used the full `Scrub`, and `clio compress /Users/<user>/nope1505dir -d
+/tmp/x.gz` printed `Could not find a part of the path '[redacted-path]'.` — an error that names
+nothing. `ForConsole` is wrong here for a second reason on top of that: it also flattens line breaks
+and clamps at 300 characters, which is right for a platform fault excerpt and wrong for a composed
+CLI line.
+
+So the third rendering exists: `UntrustedText.ScrubCredentials` →
+`SensitiveErrorTextRedactor.RedactCredentials`, which runs `JsonCredentialPropertyRegex`,
+`UriRegex` (through a match evaluator that removes only `user:pass@` and keeps the host), `JwtRegex`,
+`BearerTokenRegex` and `CredentialPairRegex`, and does NOT run the path, `host:port` or e-mail
+rules. A secret-free message is byte-identical. The distinction is the SINK, not the text: the moment the same line is copied into
+an MCP envelope, a log an operator pastes into a ticket, or a third-party model's context, a path and
+a host ARE a leak and the full `Scrub`/`Fenced` rules apply. The debug path stays
+`exception.ToString()` unredacted.
+
+**The JSON shape is the fallback path, not an edge case, and `CredentialPairRegex` cannot reach it.**
+Issue #1505 measured the leak in serialized JSON (`{"password":"s3cr3t","server":"db.internal"}`), and
+`SelectQueryHelper` uses `response.ErrorInfo?.Message ?? responseJson`, so the whole raw JSON body
+becomes the exception message whenever `errorInfo.message` is absent. `CredentialPairRegex` needs
+`\b(key)\b\s*[=:]` and the key's own closing quote sits between the key and the colon, so it never
+matches that shape — and it is deliberately NOT loosened to tolerate the quote: it rewrites its match
+as `key=[redacted]`, which would cost the document its quotes and leave the JSON unparseable. The
+shape is covered instead by `JsonCredentialPropertyRegex`, which `RedactCredentials` runs FIRST, for
+the same ordering reason it runs first in `Redact` — see
+[json-credential-rules-run-first-in-redact.md](json-credential-rules-run-first-in-redact.md). It
+rewrites in place, `"password":"[redacted]"`, so the document still parses and the key still reads.
+That rule reached `Redact` (and with it the MCP path, `ClioRunTool.RedactFailureContent`) through
+GH-1497; this issue added it to the console-side `RedactCredentials`.
 
 The single exception is a plain `Success == false` whose `ErrorMessage` is the platform's own
 validation prose ("Column 'Name' is required") — no fixed sentence can replace it without destroying
@@ -64,7 +108,8 @@ So a failure composed from server prose carries **both** renderings and each sin
 | Rendering | Produced by | Read by |
 | --- | --- | --- |
 | fenced | `UntrustedText.Fenced` → `SensitiveErrorTextRedactor.RedactUntrustedOrNull` | MCP envelope fields, `WriteDebug` (which MCP mode still captures) |
-| unfenced | `UntrustedText.ForConsole` → `SensitiveErrorTextRedactor.RedactForConsoleOrNull` | `ILogger.WriteError` lines that are not MCP-visible, `GetReadableMessageException` at default verbosity |
+| unfenced | `UntrustedText.ForConsole` → `SensitiveErrorTextRedactor.RedactForConsoleOrNull` | `ILogger.WriteError` lines that are not MCP-visible, a carrier's `ConsoleMessage` |
+| credentials only | `UntrustedText.ScrubCredentials` → `SensitiveErrorTextRedactor.RedactCredentials` | `GetReadableMessageException`'s non-carrier arms at default verbosity (issue #1505) |
 
 `ServerReportedFailureText.ConsoleCause` / `ComposeConsoleMessage` and
 `IConsoleRenderedFailure.ConsoleMessage` (implemented by `DataProviderFailureException`) are the seams.
@@ -72,21 +117,37 @@ So a failure composed from server prose carries **both** renderings and each sin
 a console-only sink reads the other one. Dropping the fence does **not** drop the neutralization: the
 console rendering is still scrubbed, flattened and length-capped.
 
-`SysSettingsCommand.WriteAndForwardFailureLine` is the one path that keeps the fence while writing to the
+`NonJsonWriteResponseException` (issue #1378) is the third carrier and does **not** implement
+`IConsoleRenderedFailure`: its `Message` holds no server text at all, so there is no agent fence for a
+terminal to drop. It does implement `IAuthoritativeErrorMessage` — without that marker
+`SurfacedExceptionMessage.Resolve` walks past it to the inner parser fault, and `System.Text.Json`
+quotes the offending JSON path and value in its own message, so server-chosen bytes reach an MCP
+envelope unfenced and uncapped. A carrier whose message is authoritative must say so.
+
+`SysSettingFailureClassifier.LogFailureLine` is the one path that keeps the fence while writing to the
 console, because the same line is forwarded to `McpLogNotifier` — it *is* MCP-visible. What changed there
 is only that `DescribeFailureForLog` no longer prints the same composed diagnostic as both `Error` and
 `Cause`, which used to put two fence pairs on one line.
 
-## Layering: the `Clio.Common` seam and the deferred move
+## Layering: the `Clio.Common` seam
 
-`SensitiveErrorTextRedactor` still lives in `namespace Clio.Command.McpServer` while being the
-product-wide untrusted-text rule. `clio/Common/UntrustedText.cs` is the `Clio.Common`-owned seam that
-every `Common` call site depends on instead, and it is deliberately the only file under `clio/Common`
-that names the MCP namespace for this rule (`CreatioUninstaller`'s
-`Clio.Command.McpServer.Progress` import is a separate, older edge).
+`SensitiveErrorTextRedactor` lives in `namespace Clio.Common` (moved there by issue #1375; it was in
+`Clio.Command.McpServer` from issue #1333 until then, which made the shared foundation layer import a
+transport-specific module). `clio/Common/UntrustedText.cs` remains the named seam every `Common` call
+site is expected to depend on, because it states WHICH of the three renderings — fenced, console,
+scrub-only — a given field takes; the redactor itself has no opinion about that choice.
 
-**Deferred:** moving `SensitiveErrorTextRedactor` into `Clio.Common` is a ~90-file mechanical change,
-left out of issue #1333 on purpose. **Owner:** whoever next touches redaction broadly; the move now
-touches `UntrustedText.cs` rather than the call sites. Until then, do not add a new
-`using Clio.Command.McpServer;` to a file under `clio/Common` — route it through `UntrustedText`, or the
-inverted edge is silently normalized and `Common` can no longer be reasoned about without the MCP module.
+Do not add a `using Clio.Command.McpServer;` to a file under `clio/Common`: the dependency runs
+`McpServer` → `Common`, never back. Two edges still run the wrong way, both older than issue #1333 and
+untouched by the move: `CreatioUninstaller`'s `Clio.Command.McpServer.Progress` import and
+`McpWorker/StaleWorkerRegistry`'s `Clio.Command.McpServer.Tools` import.
+
+**Update (issue #1376, PR #1477)** — `ExceptionReadableMessageExtension.ComposeWithInnerDetail` renders an
+inner exception's message into the console line through `UntrustedText.ForConsole`: scrubbed and capped,
+not fenced. The fence is for a field a MODEL reads as trusted content; this renderer's output is the CLI
+line a person reads, where "[untrusted-source-text begin] ... [end]" around an ordinary platform message
+reads as clio malfunctioning (the same reason `ISysSettingsManager` prints `ForConsole` on its
+`set-syssetting` error path). `CompilationHistoryPoller.Describe` uses `Fenced` for the opposite reason:
+its warning is captured by `CompileCreatioTool` into an MCP result. Both treatments are deliberate, and
+which one applies is decided by the SINK, not by the class of text.
+

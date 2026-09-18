@@ -1,25 +1,25 @@
 ---
-description: SensitiveErrorTextRedactor replaces a URI with everything up to the next whitespace, so a ")" or "." pressed against a URL disappears with it and the MCP-channel message arrives malformed
+description: URI redaction preserves closing prose parentheses but still consumes other adjacent punctuation; userinfo must be matched separately to prevent partial credential leaks
 applies-to:
-  - clio/Command/McpServer/SensitiveErrorTextRedactor.cs
+  - clio/Common/SensitiveErrorTextRedactor.cs
   - clio/Package/ServiceResponseJsonGuard.cs
-ticket: GH-1322
-date: 2026-09-05
+ticket: GH-1536
+date: 2026-09-16
 ---
 
-**What is true** — the redactor's URI pattern is `\b[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s"'<>]+`: it runs
-from the scheme to the next whitespace character. Any punctuation written immediately after a URL is
-part of the match and is replaced along with it. A message built as
-`"... (URL: https://host/route). Next sentence"` therefore reaches an MCP client as
-`"... (URL: [redacted-uri] Next sentence"` — the closing parenthesis and the full stop are gone, and
-the reader sees an opening bracket that never closes. The CLI channel, which does not redact, shows
-the same message correctly, so the defect is invisible unless the message is read through MCP.
+**What is true** — URI redaction excludes closing parentheses from the URI tail so
+`(URL: https://host/route).` retains its closing punctuation. Other adjacent
+punctuation, such as a full stop without a preceding parenthesis, can still be
+consumed. The userinfo prefix separately accepts RFC 3986 punctuation through
+`@`, including the complete Unicode escapes System.Text.Json emits for `&`,
+apostrophe and `+`. Quote escapes remain outside the match.
 
-**Why it is this way** — the pattern is deliberately greedy to the next whitespace: a URL can legally
-contain `)`, `.`, `,` and `;`, and a conservative pattern that stopped at them would leak the tail of
-a path or query string. Over-redacting punctuation is the accepted price.
+**Why it is this way** — parentheses and apostrophes can delimit prose but are
+also legal inside URI credentials. Applying the tail's delimiter rule to
+userinfo leaves a partial password outside the match. Accepting every backslash
+escape instead would risk swallowing the JSON delimiter around the URI.
 
-**What breaks if you ignore it** — an error message that an agent copies into a transcript comes out
-with unbalanced brackets or two sentences fused into one. Write the URL as its own trailing segment
-followed by a space (`"... . URL: <url> Next sentence"`) rather than inside brackets or before a full
-stop, and the message stays well-formed in both channels.
+**What breaks if you ignore it** — narrowing userinfo to the tail's character set
+leaks credential fragments; widening the whole tail consumes closing prose or
+JSON delimiters. Prefer a space after a diagnostic URI when the next punctuation
+must be preserved, and keep userinfo and surrounding JSON escapes distinct.
