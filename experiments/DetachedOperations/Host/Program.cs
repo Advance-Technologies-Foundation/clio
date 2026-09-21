@@ -538,6 +538,52 @@ Check("O1 a runtime-defined result held by the caller keeps the release alive af
           escapedType,
           note = "the ledger reported a terminal state and released its own retention; the escaped value did not" });
 
+// ── G: the portable boundary for errors, progress and callbacks ────────────────────────────────────
+static async Task<bool> Collect(WeakReference weak, int rounds) {
+    for (int i = 0; i < rounds && weak.IsAlive; i++) {
+        GC.Collect(); GC.WaitForPendingFinalizers(); await Task.Delay(50);
+    }
+    return !weak.IsAlive;
+}
+
+var (g1Weak, g1Escaped, g1Code, g1Held, g1Progress) = await PhasePortableBoundary(v1Dir);
+bool g1AliveWhileHeld = !await Collect(g1Weak, 12);
+string g1Type = g1Escaped!.GetType().FullName!;
+g1Escaped = null;
+bool g1CollectedAfter = await Collect(g1Weak, 40);
+
+Check("G1 a runtime-defined exception retains its release exactly like a returned value does",
+    g1AliveWhileHeld && g1CollectedAfter && g1Type.Contains("ReleaseFault", StringComparison.Ordinal),
+    new { escapedType = g1Type, aliveWhileCaughtExceptionHeld = g1AliveWhileHeld,
+          collectedAfterDropped = g1CollectedAfter,
+          note = "an escaping exception is a returned value with extra steps" });
+
+var (g2Weak, g2Code) = await PhasePortableOnly(v1Dir);
+bool g2Collected = await Collect(g2Weak, 40);
+Check("G2 the portable error form lets the release go while the information survives",
+    g2Collected && g2Code == "release-fault",
+    new { releaseCollected = g2Collected, codeStillUsable = g2Code,
+          note = "same failure, expressed as strings; nothing retains the release" });
+
+Check("G3 a host progress delegate is not retained by the release after the call",
+    !g1Held && g1Progress.Count == 3 && g1Progress[0].StartsWith("10.0.0.0", StringComparison.Ordinal),
+    new { heldAfterCall = g1Held, reports = g1Progress.Count, first = g1Progress[0],
+          note = "the mirror case: a retained host delegate would tie the host graph to the release" });
+
+var (g4Weak, g4Callback) = await PhaseEscapedCallback(v1Dir);
+// The callback must actually be USED across the check. A variable that is never read can be treated as
+// dead immediately, and the case would then measure JIT liveness instead of the retention property.
+string g4Invoked = ((Func<string>)g4Callback)();
+bool g4AliveWhileHeld = !await Collect(g4Weak, 12);
+GC.KeepAlive(g4Callback);
+g4Callback = null!;
+bool g4CollectedAfter = await Collect(g4Weak, 40);
+Check("G4 negative control: a runtime-defined callback keeps the release alive until dropped",
+    g4AliveWhileHeld && g4CollectedAfter && g4Invoked.StartsWith("callback", StringComparison.Ordinal),
+    new { invoked = g4Invoked, aliveWhileCallbackHeld = g4AliveWhileHeld,
+          collectedAfterDropped = g4CollectedAfter,
+          note = "delegates behave exactly as DTOs and exceptions do — the rule is one rule" });
+
 GC.KeepAlive(v2Ctx);
 Console.WriteLine(JsonSerializer.Serialize(new {
     os = Environment.OSVersion.VersionString,
@@ -589,6 +635,48 @@ static async Task<bool> WaitQuiescent(IOperationLedger ledger, string? target, T
         await Task.Delay(25);
     }
     return ledger.IsQuiescent(target);
+}
+
+// Item 2: the portable boundary beyond returned values. Each phase lets exactly one thing escape and
+// reports whether the release outlived it, so the comparison is between forms, not between fixtures.
+[MethodImpl(MethodImplOptions.NoInlining)]
+static async Task<(WeakReference Weak, Exception? Escaped, string PortableCode, bool HeldHostCallback,
+        List<string> Progress)> PhasePortableBoundary(string releaseDirectory) {
+    var (context, runtime) = Load(releaseDirectory);
+    var progress = new List<string>();
+    runtime.ReportProgressTo(progress.Add, 3);            // a HOST delegate crosses in
+    bool heldAfterCall = runtime.HoldsHostCallback;
+    string portableCode = runtime.TryRuntimeDefinedError().Code;
+    Exception? escaped = null;
+    try { runtime.ThrowRuntimeDefinedError(); }
+    catch (Exception error) { escaped = error; }          // a RUNTIME type crosses out
+    var weak = new WeakReference(context, trackResurrection: true);
+    runtime = null!;
+    context.Unload();
+    await Task.Yield();
+    return (weak, escaped, portableCode, heldAfterCall, progress);
+}
+
+[MethodImpl(MethodImplOptions.NoInlining)]
+static async Task<(WeakReference Weak, string PortableOnly)> PhasePortableOnly(string releaseDirectory) {
+    var (context, runtime) = Load(releaseDirectory);
+    string code = runtime.TryRuntimeDefinedError().Code;   // only strings cross out
+    var weak = new WeakReference(context, trackResurrection: true);
+    runtime = null!;
+    context.Unload();
+    await Task.Yield();
+    return (weak, code);
+}
+
+[MethodImpl(MethodImplOptions.NoInlining)]
+static async Task<(WeakReference Weak, object Callback)> PhaseEscapedCallback(string releaseDirectory) {
+    var (context, runtime) = Load(releaseDirectory);
+    object callback = runtime.CreateRuntimeDefinedCallback();
+    var weak = new WeakReference(context, trackResurrection: true);
+    runtime = null!;
+    context.Unload();
+    await Task.Yield();
+    return (weak, callback);
 }
 
 // Shared contention harness: one starter against one swapper, so the repaired and the deliberately

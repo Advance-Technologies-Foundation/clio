@@ -198,4 +198,25 @@ public interface IDetachedRuntime {
     /// for reclamation. Case O1 measures it.
     /// </remarks>
     object CreateRuntimeDefinedResult();
+
+    /// <summary>Throws an exception whose TYPE is declared by this release.</summary>
+    /// <remarks>An escaping exception is a returned value with extra steps: catching it retains the release.</remarks>
+    void ThrowRuntimeDefinedError();
+
+    /// <summary>Does the same work and reports failure as portable data instead of a runtime type.</summary>
+    /// <returns>An error code and message, both <see cref="string"/>.</returns>
+    (string Code, string Message) TryRuntimeDefinedError();
+
+    /// <summary>Returns a delegate whose target lives in this release.</summary>
+    object CreateRuntimeDefinedCallback();
+
+    /// <summary>
+    /// Accepts a HOST delegate, invokes it, and must not retain it once the call returns.
+    /// </summary>
+    /// <param name="report">Host-owned progress sink.</param>
+    /// <param name="steps">How many times to report.</param>
+    void ReportProgressTo(Action<string> report, int steps);
+
+    /// <summary>Whether this release is still holding a host delegate from a previous call.</summary>
+    bool HoldsHostCallback { get; }
 }

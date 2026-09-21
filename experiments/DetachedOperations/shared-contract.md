@@ -26,7 +26,7 @@ it. The caller's only handle is this id; everything else about the operation is 
 An id is the unit of truth for *state*, never for *work* — holding an id does not entitle anyone to
 resume, retry or cancel by replay.
 
-## 3. Portable outcomes — settled, with one open extension
+## 3. Portable outcomes — settled, all forms measured
 
 Anything crossing back to a caller must be host-owned portable data. A runtime-defined type retains its
 release for as long as any caller holds an instance — measured by O1, where the release stayed alive
@@ -36,9 +36,13 @@ released its own retention.
 `OperationRecord` is the shape to follow: identifiers, timestamps, an enum, and an **opaque** `Code` the
 host never interprets.
 
-**Open:** the same rule must hold for runtime-defined exception types, progress payloads and callbacks.
-The mechanism is identical and the rule is stated, but only returned values are measured. That is my
-task 2 and it may add clauses here — it will not remove this one.
+**No longer open — the rule is one rule, and every form is now measured.** A runtime-defined *exception*
+retains its release exactly as a returned value does (G1: an escaping exception is a returned value with
+extra steps). A runtime-defined *callback* does the same (G4). The portable form of the same failure —
+an error code and message, both strings — lets the release go while the information survives (G2).
+
+The mirror case matters too: a **host** delegate handed into a release must not be retained by it (G3),
+or the host's object graph is tied to the release for as long as the release lives.
 
 ## 4. Ownership release — settled
 

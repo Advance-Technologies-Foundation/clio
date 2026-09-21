@@ -25,6 +25,40 @@ public sealed class DetachedRuntime : IDetachedRuntime {
     /// <summary>A DTO whose type lives in this release, exactly like a partner workflow's own result.</summary>
     public sealed record ReleasePayload(string ProducedBy);
 
+    /// <summary>An exception type declared by this release. Catching one retains the release.</summary>
+    public sealed class ReleaseFault(string producedBy) : Exception("release fault from " + producedBy) {
+        /// <summary>Which release raised it.</summary>
+        public string ProducedBy { get; } = producedBy;
+    }
+
+    private Action<string>? _retainedHostCallback;
+
+    /// <inheritdoc />
+    public bool HoldsHostCallback => _retainedHostCallback is not null;
+
+    /// <inheritdoc />
+    public void ThrowRuntimeDefinedError() => throw new ReleaseFault(Version);
+
+    /// <inheritdoc />
+    public (string Code, string Message) TryRuntimeDefinedError() =>
+        ("release-fault", "release fault from " + Version);
+
+    /// <inheritdoc />
+    public object CreateRuntimeDefinedCallback() {
+        // The delegate's target is this instance, so holding it holds the release.
+        return new Func<string>(() => "callback from " + Version);
+    }
+
+    /// <inheritdoc />
+    public void ReportProgressTo(Action<string> report, int steps) {
+        for (int step = 1; step <= steps; step++) {
+            report($"{Version} step {step}/{steps}");
+        }
+        // Deliberately NOT stored. Retaining a host delegate would tie the host's object graph to this
+        // release for as long as the release lives, which is the mirror of the escaped-value problem.
+        _retainedHostCallback = null;
+    }
+
     /// <inheritdoc />
     public string StartDetached(IOperationLedger ledger, string target, string effectPath, int workMilliseconds,
         string outcome, CancellationToken cancellationToken) {

@@ -79,6 +79,10 @@ would almost never be globally idle and a global-only predicate would be correct
 | E4 | repair is what makes an outcome durable; removing the fault alone changes nothing |
 | E5 | repair after a torn write survives restart readback |
 | E6 | with the fault still present, repair fails and explicit loss is the only way forward |
+| G1 | a runtime-defined exception retains its release exactly like a returned value |
+| G2 | the portable error form lets the release go while the information survives |
+| G3 | a host progress delegate is not retained by the release after the call |
+| G4 | **negative control** — a runtime-defined callback keeps the release alive until dropped |
 | O1 | **counterexample to I3** — a runtime-defined result held by the caller keeps the release alive |
 | R1 | the V1 release becomes collectible once no lease retains it |
 | C1 | **control** — a host with no evidence answers `NotFound` for the very same lost operation |
@@ -158,7 +162,7 @@ temporary directory and writes nothing outside it.
 
 ## macOS observations, 2026-09-21
 
-macOS 27.0.0 (arm64), .NET 10.0.12. **45/45 passed, exit 0.** The contract derived from these cases is in
+macOS 27.0.0 (arm64), .NET 10.0.12. **49/49 passed, exit 0.** The contract derived from these cases is in
 [`execution-lifetime-contract.md`](execution-lifetime-contract.md).
 
 - The operation started on `10.0.0.0` kept answering `Running` and stayed owned by `10.0.0.0` after

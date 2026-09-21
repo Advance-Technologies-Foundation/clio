@@ -1,7 +1,7 @@
 {
   "os": "Unix 27.0.0",
   "framework": "10.0.12",
-  "workDirectory": "/var/folders/xk/pl1m8g6d1w55jscyxzg0wjkc0000gn/T/detached-ops-9eyA3J",
+  "workDirectory": "/var/folders/xk/pl1m8g6d1w55jscyxzg0wjkc0000gn/T/detached-ops-KQIxbU",
   "cases": [
     {
       "name": "A1a the original operation still answers after a newer runtime is activated",
@@ -156,19 +156,19 @@
       "passed": true,
       "detail": {
         "Violations": 0,
-        "Admitted": 48,
-        "Refused": 96,
-        "Windows": 96
+        "Admitted": 49,
+        "Refused": 93,
+        "Windows": 93
       }
     },
     {
       "name": "A5i mutation control: the same regression detects a deliberately split admission",
       "passed": true,
       "detail": {
-        "Violations": 30,
-        "Admitted": 48,
+        "Violations": 5,
+        "Admitted": 46,
         "Refused": 91,
-        "Windows": 97,
+        "Windows": 92,
         "note": "non-zero here is the point: it shows A5h can fail"
       }
     },
@@ -387,7 +387,7 @@
         "busyWhenReserved": true,
         "reservedImmediately": true,
         "drained": true,
-        "drainMs": 132,
+        "drainMs": 106,
         "note": "new admissions are refused under the reservation, so in-flight work is finite"
       }
     },
@@ -398,7 +398,7 @@
         "reserved": true,
         "drainedWithinBudget": false,
         "hungStillRunning": true,
-        "reservationHeldMs": 622,
+        "reservationHeldMs": 623,
         "note": "the hung operation was neither killed nor completed; the update defers again"
       }
     },
@@ -419,6 +419,45 @@
         "collectedAfterResultDropped": true,
         "escapedType": "Clio10.DetachedOperationsFixture.DetachedRuntime\u002BReleasePayload",
         "note": "the ledger reported a terminal state and released its own retention; the escaped value did not"
+      }
+    },
+    {
+      "name": "G1 a runtime-defined exception retains its release exactly like a returned value does",
+      "passed": true,
+      "detail": {
+        "escapedType": "Clio10.DetachedOperationsFixture.DetachedRuntime\u002BReleaseFault",
+        "aliveWhileCaughtExceptionHeld": true,
+        "collectedAfterDropped": true,
+        "note": "an escaping exception is a returned value with extra steps"
+      }
+    },
+    {
+      "name": "G2 the portable error form lets the release go while the information survives",
+      "passed": true,
+      "detail": {
+        "releaseCollected": true,
+        "codeStillUsable": "release-fault",
+        "note": "same failure, expressed as strings; nothing retains the release"
+      }
+    },
+    {
+      "name": "G3 a host progress delegate is not retained by the release after the call",
+      "passed": true,
+      "detail": {
+        "heldAfterCall": false,
+        "reports": 3,
+        "first": "10.0.0.0 step 1/3",
+        "note": "the mirror case: a retained host delegate would tie the host graph to the release"
+      }
+    },
+    {
+      "name": "G4 negative control: a runtime-defined callback keeps the release alive until dropped",
+      "passed": true,
+      "detail": {
+        "invoked": "callback from 10.0.0.0",
+        "aliveWhileCallbackHeld": true,
+        "collectedAfterDropped": true,
+        "note": "delegates behave exactly as DTOs and exceptions do \u2014 the rule is one rule"
       }
     }
   ]
