@@ -74,28 +74,35 @@ This splits scenario (c)/(d)'s remaining gap in two, per
 (Creatio, for scenario d) and therefore never need to block a swap at all, and which
 can only ever report uncertain and therefore genuinely require quiescence first.**
 
-**Answered, measured against a live stand:**
-[Alexandr's three-tier classification](https://github.com/Advance-Technologies-Foundation/clio/blob/Alexandr-Kravchuk/detached-operation-probe/experiments/DetachedOperations/reconcilability.md)
-splits this further than "reconcilable vs. not" — attributability and state-persistence
-turn out to be separate axes:
+**Provisional, actively being narrowed — not settled.** Alexandr's
+[three-tier classification](https://github.com/Advance-Technologies-Foundation/clio/blob/Alexandr-Kravchuk/detached-operation-probe/experiments/DetachedOperations/reconcilability.md)
+split this further than "reconcilable vs. not", but the tier-2 conclusion this document
+first adopted from it was
+[retracted by its own author](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18541475)
+as circular: an end-marker only exists if the process survived long enough to write
+one, which is exactly false in the case the whole thread is about — the process dying
+*during* the operation. **The composition work (S6/S7) is unaffected; the specific
+`compile-creatio` claim was wrong and is removed below**, not narrowed.
 
-| tier | example | must a swap wait? | after a process loss |
-|---|---|---|---|
-| 1 — attributable | `create-app-section` (artefact exists or doesn't); `list-packages` for a named version | no — reconcile by the artefact's own key | recoverable |
-| 2 — state-reconcilable, not attributable | `compile-creatio` — Creatio persists the last build result, but with no id or timestamp; attributable only because Creatio serialises compilation per environment, so "last result" *becomes* "my result" once a terminal signal exists | only until a terminal signal exists — which E3's durable end-marker already supplies | recoverable **iff** an end-marker survived |
-| 3 — not reconcilable | `restart` — `get-info` exposes no uptime or process-start-time field; a restarted and never-restarted server are indistinguishable | yes | permanently `Unknown` |
+Current state of the table, per the
+[latest revision](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18541529)
+(25/25, macOS + Windows):
 
-Tier 2 is the one worth designing for: it converts from unrecoverable to recoverable for
-free once operations carry a durable terminal marker, which is exactly what the
-detached-operation ledger already provides — no new Creatio-side surface needed.
+| tier | must a swap wait? | after a process loss |
+|---|---|---|
+| 1 — desired-state verification (renamed from "attributable" — presence proves the world is in the shape requested, not that *this* invocation produced it; distinct from request attribution, per kirillkrylov's counterexamples) | a **policy choice**, not a technical consequence — being able to report non-completion afterward does not preserve the work or make destroying it acceptable | recoverable, but only as "is the artefact there", never "did my call finish" |
+| 2 — state-reconcilable, not attributable | **yes, in practice** — `compile-creatio` interrupted mid-flight is uncertain-only, same as tier 3; the server-side "last result" cannot be bound to a specific invocation without a build id/timestamp Creatio doesn't expose today | recoverable only if the process survived long enough to write its own end-marker; otherwise uncertain |
+| 3 — no answer through the inspected surface (narrowed from "not reconcilable" — clio's `get-info` carries no restart evidence; that is a property of the surface clio uses today, not proof no platform signal exists anywhere) | yes | `Unknown` through this surface |
 
-**Carried forward from kirillkrylov's qualification, restated by Alexandr:** a tier-1
-answer establishes an *outcome*, never *continuity* — the artefact being absent doesn't
-resume the work and doesn't make a retry safe on its own.
+What survives across both correction rounds: the classes differ in what they can
+honestly report after an interruption, so the *cost* of a global gate is not uniform —
+but that does not license skipping the drain for anything. A tier-1 answer establishes
+an *outcome*, never *continuity* (kirillkrylov's original qualification, still holding).
 
 Measured on one stand (Creatio 10.1.725.0, .NET Framework, MSSQL, clio 8.1.0.131);
-`sync-pages` and `run-process` are reasoned about, not measured, and not classified on
-a guess.
+`sync-pages` and `run-process` are reasoned about, not measured. Given two correction
+rounds in a row on this specific classification, treat any further conclusion drawn
+from it here as provisional until it settles.
 
 **Qualification from review**
 ([kirillkrylov](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540898)):
@@ -117,8 +124,8 @@ a clean, quiescent shutdown.
 
 - The **global** (not per-target) execution-quiescence signal for host-level swap —
   depends on the in-flight-operation experiment's ledger, aggregated across targets.
-- ~~The reconcilable vs. uncertain-only classification of operation classes~~ —
-  **done**, see the three-tier table above.
+- The reconcilable vs. uncertain-only classification of operation classes — **in
+  progress, not done**; see the provisional table above and its two correction rounds.
 - Call classification (read-only vs. side-effecting) for scenario (b) — undesigned.
 - ~~Composing transport continuity with a durable ledger~~ — **done, including a real
   respawn under concurrent handover pressure, against the repaired barrier.**
