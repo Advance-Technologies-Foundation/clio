@@ -1,9 +1,21 @@
 # Supervisor + quiescence composition: does gating a real process swap on the ledger actually work?
 
 Discussion [#1643](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643); base
-`0f76b1de2` (`Alexandr-Kravchuk/detached-operation-probe`). This isolated probe changes no
-product/Core contracts and adds no new files to that branch — it references `Contract.csproj` and
-links `OperationLedger.cs` from it, so the two probes cannot drift apart or collide.
+`7f49306e5` (`Alexandr-Kravchuk/detached-operation-probe`, the shared contract). This isolated probe
+changes no product/Core contracts and adds no new files to that branch — it references
+`Contract.csproj` and links `OperationLedger.cs` from it, so the two probes cannot drift apart or
+collide.
+
+**Fifth round: migrated off a primitive proven to starve.**
+[Alexandr tested his own "defer, never kill" disproof criterion and it held](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18542770):
+`TryEnterSwapWindow`, polled under continuous load, never granted a window for a full 2-second
+observation on either platform. That is the exact primitive every wait loop in S2/S4/S6–S9 used. All
+four migrated to `TryReserveAdmission` (reserve-then-drain: close the scope to new admissions
+immediately, then wait only for already-admitted work to finish, bounded by a caller-supplied
+`drainBudget` — never a hardcoded constant, since a real `compile-creatio` runs minutes, not this
+probe's milliseconds). **S10** is this stream's own disproof test, mirroring Alexandr's D1/D2 but
+applied to the host-swap case rather than his in-process one: under continuous admission pressure, the
+old poll never grants a window; the new reserve-then-drain always does.
 
 **Repair history, on the record.** The first measurement ran against `e3138962c`.
 [kirillkrylov's independent review](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540898)
@@ -113,6 +125,7 @@ Two tiny projects, no added packages beyond the referenced `Contract`.
 | S7 | **negative control for S6's oracle** | global | identical to S6, but the post-handover op is told to `fail` |
 | S8 | **failed-startup fallback, recovery** | global | V1 killed; V2 fails twice (`--fail-startup`); fallback restarts V1, which succeeds and serves new work |
 | S9 | **failed-startup fallback, exhausted** | global | V1 killed; V2 fails twice; fallback to V1 *also* fails twice; must report `Unavailable`, not hang |
+| S10 | **starvation disproof for the migration itself** | n/a (drives the ledger directly, no backend process) | 8 concurrent rolling-window admissions on `envA`; asserts the old poll never grants a window and the new reserve-then-drain always does, under identical continuous load |
 
 S1 is the control: without it, S2 passing would not be evidence the gate does anything — a suite that
 cannot fail is worth nothing. S3 is the one that operationalizes the per-target correction: a supervisor
@@ -143,9 +156,9 @@ dotnet run --project experiments/SupervisorQuiescenceComposition/Supervisor/Supe
 Exit code 1 means a case failed; JSON on stdout carries the raw observations, including swap and wait
 latency per scenario. The probe uses a unique temporary directory per scenario and writes nothing outside it.
 
-## Observations, 2026-09-21 — with S8/S9 added, rebased onto the ledger's P5 change
+## Observations, 2026-09-21 — with S10 added, migrated to TryReserveAdmission
 
-macOS 27.0.0 (arm64) / Unix 26.6.2, .NET 10.0.4 runtime (SDK 10.0.103). **9/9 passed, exit 0, three
+macOS 27.0.0 (arm64) / Unix 26.6.2, .NET 10.0.4 runtime (SDK 10.0.103). **10/10 passed, exit 0, five
 consecutive runs, numbers stable within noise:**
 
 | case | effects present | swap latency | wait latency |
@@ -208,6 +221,33 @@ land and every attempt looked like a failure regardless of whether the process a
 reported `Unavailable` even when `fallbackSucceeds: true`. Fixed by starting `PumpBackendOutput` before
 each handshake attempt, not after.
 
+**S10, five consecutive runs:**
+
+| run | pollGranted | reserveGranted | reserveMs |
+|---|---|---|---|
+| 1 | false | true | 395 |
+| 2 | false | true | 510 |
+| 3 | false | true | 2809 |
+| 4 | false | true | 590 |
+| 5 | false | true | 429 |
+
+`pollGranted=false` on all five runs is the same result Alexandr measured against his in-process case,
+now confirmed for the primitive this probe actually depends on: the old poll-for-idle pattern never
+grants a window under continuous admission, full stop. `reserveGranted=true` on all five confirms the
+migration fixes it. The `reserveMs` spread (395–2809ms) is wider than Alexandr's ~130ms and is a property
+of *this test's own load generation*, not of `TryReserveAdmission`: eight CPU-bound tight loops contend
+for one lock and saturate the thread pool, which adds scheduling latency to how quickly the drain-wait's
+own `Task.Delay(25)` gets to re-check — noted rather than smoothed over, since the honest number is the
+wider one.
+
+One design correction made while building S10, on the record rather than silently fixed: the first
+version generated load with 8 workers each doing dispose-then-rebegin in a loop, which has a real gap
+where a worker owns nothing between the two calls — independent workers occasionally hit that gap
+simultaneously by chance, and the scenario flaked (`pollGranted=true` on one of three early runs). Fixed
+by having each worker begin its next lease *before* disposing the current one (a rolling window that
+never touches zero), which makes "load is continuous" a guarantee rather than a probability that more
+workers would only have made less likely.
+
 ## Interpretation and limits
 
 This demonstrates the composition works for the shape it tests: one backend process (two for S6/S7,
@@ -221,16 +261,19 @@ every target in play. It does **not** demonstrate:
 - **Real transport continuity end-to-end.** This probe reuses the *measured* result from the earlier
   supervisor prototype rather than re-proving it; it does not itself keep an external client pipe open —
   adding that is straightforward (the earlier prototype already does it) but wasn't the open question.
-- **A supervisor that doesn't already know every live target.** `TryEnterSwapWindow(null)` is correct
-  *if* the ledger already has a record for every operation in flight. A target whose backend never
-  reported it (a crash before the first `Begin`, or a target the supervisor doesn't yet track) would not
-  block the gate and would still be lost — this is a narrower, sharper version of the "which operation
-  classes are reconcilable" question, now answered by
+- **A supervisor that doesn't already know every live target.** `TryReserveAdmission(null)`/`IsQuiescent`
+  are correct *if* the ledger already has a record for every operation in flight. A target whose backend
+  never reported it (a crash before the first `Begin`, or a target the supervisor doesn't yet track)
+  would not block the gate and would still be lost — this is a narrower, sharper version of the "which
+  operation classes are reconcilable" question, now answered by
   [E3's reconcilability tiers](https://github.com/Advance-Technologies-Foundation/clio/blob/Alexandr-Kravchuk/detached-operation-probe/experiments/DetachedOperations/reconcilability.md)
   for *which classes* this even matters for.
-- **A busy-wait cost bound.** `TryEnterSwapWindow` is polled every 25ms (S1-S5) or admission is attempted
-  every 5ms (S6's pressure loop); a production design would want an event/callback instead of polling,
-  and a policy for what happens if the wait exceeds a budget — that's activation policy, still open.
+- ~~A busy-wait cost bound~~ — **the starvation half is now closed (S10)**; the cost-bound half is not.
+  `AcquireDrainedWindow`'s drain wait still polls `IsQuiescent` every 25ms rather than using an
+  event/callback, and while `drainBudget` is now a caller-supplied parameter rather than a hardcoded
+  constant (per Alexandr's migration note), no policy exists yet for *what number to pass*, or for what
+  happens after a deferral — retry immediately, back off, surface to an operator. That remains
+  activation policy, still open.
 - **A mutation control for the *effect/outcome oracle*** — now present, as S7, after kirillkrylov found
   the original oracle unfalsifiable (a fixed `Succeeded` and a PID-suffix match both hid a `fail`
   outcome). What S7 does **not** cover: a mutation control for the *rest* of the composed path — killing

@@ -7,7 +7,7 @@
       "passed": true,
       "detail": {
         "effects": [],
-        "swapMs": 18,
+        "swapMs": 14,
         "waitedMs": 0
       }
     },
@@ -18,8 +18,8 @@
         "effects": [
           "envA"
         ],
-        "swapMs": 1236,
-        "waitedMs": 1221
+        "swapMs": 1256,
+        "waitedMs": 1226
       }
     },
     {
@@ -29,8 +29,8 @@
         "effects": [
           "envA"
         ],
-        "swapMs": 367,
-        "waitedMs": 351
+        "swapMs": 348,
+        "waitedMs": 324
       }
     },
     {
@@ -41,8 +41,8 @@
           "envA",
           "envB"
         ],
-        "swapMs": 1225,
-        "waitedMs": 1213
+        "swapMs": 1248,
+        "waitedMs": 1225
       }
     },
     {
@@ -57,12 +57,12 @@
       "name": "S6 a real V1-\u003EV2 respawn preserves V1\u0027s operation, serves a new one on a different PID, and refuses every concurrent admission attempt during the handover",
       "passed": true,
       "detail": {
-        "v1Pid": 71175,
-        "v2Pid": 71176,
+        "v1Pid": 97584,
+        "v2Pid": 97586,
         "v1EffectPresent": true,
         "v2EffectPresent": true,
-        "pressureAttempts": 12,
-        "pressureRefused": 12,
+        "pressureAttempts": 9,
+        "pressureRefused": 9,
         "pressureAdmittedDuringWindow": 0
       }
     },
@@ -70,8 +70,8 @@
       "name": "S7 negative control: a failing post-handover operation is reported Failed, and no effect line is falsely recorded for it",
       "passed": true,
       "detail": {
-        "v1Pid": 71177,
-        "v2Pid": 71178,
+        "v1Pid": 97587,
+        "v2Pid": 97589,
         "v1EffectPresent": true,
         "v2EffectCorrectlyAbsent": true
       }
@@ -83,7 +83,7 @@
         "outcome": "Recovered",
         "v2Attempts": 2,
         "fallbackAttempts": 1,
-        "recoveredPid": 71182,
+        "recoveredPid": 97593,
         "newWorkSucceeded": true
       }
     },
@@ -94,6 +94,15 @@
         "outcome": "Unavailable",
         "v2Attempts": 2,
         "fallbackAttempts": 2
+      }
+    },
+    {
+      "name": "S10 under continuous admission, poll-for-idle never grants a window but reserve-then-drain does",
+      "passed": true,
+      "detail": {
+        "pollGranted": false,
+        "reserveGranted": true,
+        "reserveMs": 507
       }
     }
   ]

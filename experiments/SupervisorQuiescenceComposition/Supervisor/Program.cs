@@ -23,26 +23,31 @@ void Check(string name, bool ok, object detail) {
 // what survived, but never bring up a replacement. S6 below is the actual swap proof, per
 // kirillkrylov's review: https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18541164
 
+TimeSpan defaultDrainBudget = TimeSpan.FromSeconds(20);
+
 // ── S1: naive swap, no gating — the control. Reproduces the create-app-section-shaped loss. ───────────
-var s1 = await RunScenario(backendPath, GateMode.None, null, ("envA", 1200));
+var s1 = await RunScenario(backendPath, GateMode.None, null, defaultDrainBudget, ("envA", 1200));
 Check("S1 naive swap loses the detached operation's effect (control, reproduces the known failure)",
     !s1.Effects.Contains("envA"), new { effects = s1.Effects, swapMs = s1.SwapMs, waitedMs = s1.WaitMs });
 
-// ── S2: global gate — the swap waits for quiescence before touching the process. ───────────────────────
-var s2 = await RunScenario(backendPath, GateMode.Global, null, ("envA", 1200));
+// ── S2: global gate — the swap waits for quiescence before touching the process. Reserve-then-drain, ────
+// not poll-for-idle (see AcquireDrainedWindow) -- migrated after Alexandr's D1 proved the poll starves.
+var s2 = await RunScenario(backendPath, GateMode.Global, null, defaultDrainBudget, ("envA", 1200));
 Check("S2 a globally gated swap preserves the detached operation's effect",
     s2.Effects.Contains("envA"), new { effects = s2.Effects, swapMs = s2.SwapMs, waitedMs = s2.WaitMs });
 
 // ── S3: per-target gate on the busy target does not protect a DIFFERENT target on the same host. ──────
 // This is the corrected understanding from the discussion made concrete: one host serves every target,
 // so a target-scoped window is the right predicate for a runtime swap but not license for a host swap.
-var s3 = await RunScenario(backendPath, GateMode.PerTarget, "envA", ("envA", 300), ("envB", 1200));
+var s3 = await RunScenario(backendPath, GateMode.PerTarget, "envA", defaultDrainBudget,
+    ("envA", 300), ("envB", 1200));
 Check("S3 a per-target gate on envA does not protect envB's in-flight work on the same host",
     s3.Effects.Contains("envA") && !s3.Effects.Contains("envB"),
     new { effects = s3.Effects, swapMs = s3.SwapMs, waitedMs = s3.WaitMs });
 
 // ── S4: global gate protects every target the host owns, at the cost of waiting for the slowest one. ──
-var s4 = await RunScenario(backendPath, GateMode.Global, null, ("envA", 300), ("envB", 1200));
+var s4 = await RunScenario(backendPath, GateMode.Global, null, defaultDrainBudget,
+    ("envA", 300), ("envB", 1200));
 Check("S4 a global gate protects every target the host owns",
     s4.Effects.Contains("envA") && s4.Effects.Contains("envB"),
     new { effects = s4.Effects, swapMs = s4.SwapMs, waitedMs = s4.WaitMs });
@@ -51,14 +56,14 @@ Check("S4 a global gate protects every target the host owns",
 // kirillkrylov's review found the admission barrier failed on, now checked against the repaired ledger
 // (Alexandr-Kravchuk/detached-operation-probe@551f25c92538) through this probe's own composed path,
 // not just directly against the ledger the way E3's own A5b/A5h already do.
-var s5 = await RunHandoverScenario(backendPath, "envA", 300);
+var s5 = await RunHandoverScenario(backendPath, "envA", 300, defaultDrainBudget);
 Check("S5 a new operation for the gated scope is refused while the window is held, and admitted again once released",
     s5.RefusedDuringWindow && s5.AdmittedAfterRelease,
     new { refusedDuringWindow = s5.RefusedDuringWindow, admittedAfterRelease = s5.AdmittedAfterRelease });
 
 // ── S6: the actual swap proof — real V1->V2 respawn, admission closure held through readiness, ─────────
 // concurrent handover pressure against the outgoing backend, not just a single sampled attempt.
-var s6 = await RunSwapScenario(backendPath, "envA", 400, postHandoverOutcome: "succeed");
+var s6 = await RunSwapScenario(backendPath, "envA", 400, defaultDrainBudget, postHandoverOutcome: "succeed");
 Check("S6 a real V1->V2 respawn preserves V1's operation, serves a new one on a different PID, "
     + "and refuses every concurrent admission attempt during the handover",
     s6.V1Pid != s6.V2Pid && s6.V1EffectPresent && s6.V2EffectMatchesOutcome
@@ -73,7 +78,7 @@ Check("S6 a real V1->V2 respawn preserves V1's operation, serves a new one on a 
 // outcome to "fail" still passed 6/6, because PumpBackendOutput ignored the reported outcome and the
 // effect check matched any line ending in the right PID (which the readiness probe's own line also did).
 // Both are fixed; this proves the fix by requiring the suite to now correctly fail-and-report a failure.
-var s7 = await RunSwapScenario(backendPath, "envA", 400, postHandoverOutcome: "fail");
+var s7 = await RunSwapScenario(backendPath, "envA", 400, defaultDrainBudget, postHandoverOutcome: "fail");
 Check("S7 negative control: a failing post-handover operation is reported Failed, "
     + "and no effect line is falsely recorded for it",
     s7.V1EffectPresent && s7.V2EffectMatchesOutcome,
@@ -85,7 +90,7 @@ Check("S7 negative control: a failing post-handover operation is reported Failed
 // ── S8: failed V2 startup, bounded fallback to a restarted V1, recovery. Ordering C from the ──────────
 // three-way comparison, the "smallest missing proof" kirillkrylov asked for: replacement readiness
 // (ping/pong, no customer-side effect), failed V2 startup (bounded attempts), and a working fallback.
-var s8 = await RunFallbackScenario(backendPath, "envA", fallbackSucceeds: true);
+var s8 = await RunFallbackScenario(backendPath, "envA", defaultDrainBudget, fallbackSucceeds: true);
 Check("S8 V2 fails to start twice; falling back to a restarted V1 recovers and serves new work",
     s8.Outcome == "Recovered" && s8.V2Attempts == 2 && s8.RecoveredPid is not null && s8.NewWorkSucceeded,
     new {
@@ -96,10 +101,19 @@ Check("S8 V2 fails to start twice; falling back to a restarted V1 recovers and s
 // ── S9: V2 fails AND the V1 fallback also fails (shared broken config/dependency) — the case ───────────
 // kirillkrylov named explicitly: a fallback attempt is not a guarantee. Must report a definite
 // "Unavailable" terminal after bounded attempts, never hang waiting for a window that cannot open.
-var s9 = await RunFallbackScenario(backendPath, "envA", fallbackSucceeds: false);
+var s9 = await RunFallbackScenario(backendPath, "envA", defaultDrainBudget, fallbackSucceeds: false);
 Check("S9 V2 and the V1 fallback both fail; reports a definite Unavailable terminal after bounded attempts",
     s9.Outcome == "Unavailable" && s9.V2Attempts == 2 && s9.FallbackAttempts == 2 && s9.RecoveredPid is null,
     new { outcome = s9.Outcome, v2Attempts = s9.V2Attempts, fallbackAttempts = s9.FallbackAttempts });
+
+// ── S10: starvation disproof for THIS probe's own use of the ledger, mirroring Alexandr's D1/D2 ────────
+// (https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18542770)
+// but applied to the host-swap wait rather than his in-process case. Proves the migration mattered: the
+// old poll-for-idle pattern starves under continuous admission; reserve-then-drain does not.
+var s10 = await RunStarvationScenario("envA", TimeSpan.FromSeconds(2));
+Check("S10 under continuous admission, poll-for-idle never grants a window but reserve-then-drain does",
+    !s10.PollGranted && s10.ReserveGranted,
+    new { pollGranted = s10.PollGranted, reserveGranted = s10.ReserveGranted, reserveMs = s10.ReserveMs });
 
 Console.WriteLine(JsonSerializer.Serialize(new {
     os = Environment.OSVersion.VersionString,
@@ -111,7 +125,7 @@ return failed ? 1 : 0;
 // ────────────────────────────────────────────────────────────────────────────────────────────────────
 
 static async Task<ScenarioResult> RunScenario(string backendPath, GateMode mode, string? gateTarget,
-    params (string Target, int WorkMs)[] ops) {
+    TimeSpan drainBudget, params (string Target, int WorkMs)[] ops) {
     string work = Directory.CreateTempSubdirectory("supervisor-quiescence-").FullName;
     string effectPath = Path.Combine(work, "effect.log");
     var ledger = new OperationLedger(Path.Combine(work, "operations.jsonl"));
@@ -144,10 +158,8 @@ static async Task<ScenarioResult> RunScenario(string backendPath, GateMode mode,
         if (mode != GateMode.None) {
             string? scope = mode == GateMode.PerTarget ? gateTarget : null;
             var waitClock = Stopwatch.StartNew();
-            while ((window = ledger.TryEnterSwapWindow(scope)) is null) {
-                await Task.Delay(25);
-                if (waitClock.ElapsedMilliseconds > 20_000) throw new TimeoutException("swap window never opened");
-            }
+            window = await AcquireDrainedWindow(ledger, scope, drainBudget);
+            if (window is null) throw new TimeoutException("swap window never opened (drain budget exhausted)");
             waitMs = waitClock.ElapsedMilliseconds;
         }
 
@@ -179,7 +191,8 @@ static async Task<ScenarioResult> RunScenario(string backendPath, GateMode mode,
     }
 }
 
-static async Task<HandoverResult> RunHandoverScenario(string backendPath, string target, int workMs) {
+static async Task<HandoverResult> RunHandoverScenario(string backendPath, string target, int workMs,
+    TimeSpan drainBudget) {
     string work = Directory.CreateTempSubdirectory("supervisor-handover-").FullName;
     string effectPath = Path.Combine(work, "effect.log");
     var ledger = new OperationLedger(Path.Combine(work, "operations.jsonl"));
@@ -200,12 +213,8 @@ static async Task<HandoverResult> RunHandoverScenario(string backendPath, string
         while (accepted.Count < 1 && DateTime.UtcNow < ackDeadline) await Task.Delay(10);
         if (accepted.Count < 1) throw new TimeoutException("backend never acknowledged the operation");
 
-        IDisposable? window = null;
-        var waitClock = Stopwatch.StartNew();
-        while ((window = ledger.TryEnterSwapWindow(null)) is null) {
-            await Task.Delay(25);
-            if (waitClock.ElapsedMilliseconds > 20_000) throw new TimeoutException("swap window never opened");
-        }
+        IDisposable? window = await AcquireDrainedWindow(ledger, null, drainBudget);
+        if (window is null) throw new TimeoutException("swap window never opened (drain budget exhausted)");
 
         // The moment being tested: a new request for the gated target arrives while the window is held —
         // it must be refused, not queued silently and not admitted underneath the swap decision.
@@ -242,7 +251,7 @@ static async Task<HandoverResult> RunHandoverScenario(string backendPath, string
 }
 
 static async Task<SwapResult> RunSwapScenario(string backendPath, string target, int workMs,
-    string postHandoverOutcome = "succeed") {
+    TimeSpan drainBudget, string postHandoverOutcome = "succeed") {
     string work = Directory.CreateTempSubdirectory("supervisor-swap-").FullName;
     string effectPath = Path.Combine(work, "effect.log");
     var ledger = new OperationLedger(Path.Combine(work, "operations.jsonl"));
@@ -292,12 +301,8 @@ static async Task<SwapResult> RunSwapScenario(string backendPath, string target,
 
         // Global, not per-target: this is a host-level swap, and S3 already established that gating on
         // one target does not protect another sharing the same host.
-        IDisposable? window = null;
-        var waitClock = Stopwatch.StartNew();
-        while ((window = ledger.TryEnterSwapWindow(null)) is null) {
-            await Task.Delay(25);
-            if (waitClock.ElapsedMilliseconds > 20_000) throw new TimeoutException("swap window never opened");
-        }
+        IDisposable? window = await AcquireDrainedWindow(ledger, null, drainBudget);
+        if (window is null) throw new TimeoutException("swap window never opened (drain budget exhausted)");
         Volatile.Write(ref windowHeldFlag, 1);
 
         int v1Pid = v1.Id;
@@ -374,7 +379,8 @@ static async Task<SwapResult> RunSwapScenario(string backendPath, string target,
 // Ordering C from the discussion's three-way comparison: kill V1, try V2, and on V2's failure fall
 // back to restarting V1 from its retained binary -- with bounded attempts on both legs and a definite
 // terminal "Unavailable" outcome if every attempt is exhausted, never a hang.
-static async Task<FallbackResult> RunFallbackScenario(string backendPath, string target, bool fallbackSucceeds) {
+static async Task<FallbackResult> RunFallbackScenario(string backendPath, string target,
+    TimeSpan drainBudget, bool fallbackSucceeds) {
     string work = Directory.CreateTempSubdirectory("supervisor-fallback-").FullName;
     string effectPath = Path.Combine(work, "effect.log");
     var ledger = new OperationLedger(Path.Combine(work, "operations.jsonl"));
@@ -391,12 +397,8 @@ static async Task<FallbackResult> RunFallbackScenario(string backendPath, string
         if (!await TryHandshake(v1, v1Accepted, TimeSpan.FromSeconds(5)))
             throw new InvalidOperationException("V1 never became ready");
 
-        IDisposable? window = null;
-        var waitClock = Stopwatch.StartNew();
-        while ((window = ledger.TryEnterSwapWindow(null)) is null) {
-            await Task.Delay(25);
-            if (waitClock.ElapsedMilliseconds > 20_000) throw new TimeoutException("swap window never opened");
-        }
+        IDisposable? window = await AcquireDrainedWindow(ledger, null, drainBudget);
+        if (window is null) throw new TimeoutException("swap window never opened (drain budget exhausted)");
 
         v1.Kill(entireProcessTree: true);
         try { await v1.WaitForExitAsync(); }
@@ -469,6 +471,82 @@ static async Task<FallbackResult> RunFallbackScenario(string backendPath, string
         if (failedV2 is { HasExited: false }) { try { failedV2.Kill(entireProcessTree: true); } catch { /* best effort */ } }
         if (recovered is { HasExited: false }) { try { recovered.Kill(entireProcessTree: true); } catch { /* best effort */ } }
     }
+}
+
+// Reserve-then-drain, replacing the former poll-for-idle pattern (TryEnterSwapWindow, looped), which
+// Alexandr proved starves forever under continuous admission pressure:
+// https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18542770
+// TryReserveAdmission closes the scope to new work immediately; only already-admitted work has to
+// drain, so the wait is bounded by drainBudget rather than dependent on ever observing an idle instant.
+// drainBudget is a caller-supplied parameter, not a constant -- a real compile-creatio runs minutes,
+// not this probe's milliseconds, and the mechanism must not assume otherwise.
+static async Task<IDisposable?> AcquireDrainedWindow(IOperationLedger ledger, string? target, TimeSpan drainBudget) {
+    IDisposable? reservation = ledger.TryReserveAdmission(target);
+    if (reservation is null) return null; // scope already held elsewhere
+    DateTime deadline = DateTime.UtcNow + drainBudget;
+    while (!ledger.IsQuiescent(target)) {
+        if (DateTime.UtcNow >= deadline) {
+            reservation.Dispose(); // released, not escalated: the update is deferred again
+            return null;
+        }
+        await Task.Delay(25);
+    }
+    return reservation;
+}
+
+// Drives the ledger directly, no backend process -- same shape as Alexandr's own D1/D2, since this is a
+// property of the shared primitive, not of this probe's process-replacement plumbing. Proves the
+// migration above actually mattered rather than just being a nicer API.
+static async Task<StarvationResult> RunStarvationScenario(string target, TimeSpan observeFor) {
+    string work = Directory.CreateTempSubdirectory("supervisor-starvation-").FullName;
+    var ledger = new OperationLedger(Path.Combine(work, "operations.jsonl"));
+    object loadOwner = new();
+
+    // Rolling window, not dispose-then-rebegin: a worker that disposes lease N before beginning lease
+    // N+1 has a real gap where it owns nothing, and 8 independent workers occasionally hit that gap
+    // simultaneously by chance -- the first version of this scenario did exactly that and flaked
+    // (pollGranted=true on a re-run). Beginning the next lease *before* disposing the previous one means
+    // each worker never owns zero operations while admission stays open, which makes "load is
+    // continuous" a guarantee rather than a probability. Once a reservation closes the scope, the next
+    // Begin is refused; the worker then disposes its currently-held lease and stops admitting, so the
+    // load actually drains instead of holding its last lease forever waiting for an admission that will
+    // never succeed again.
+    using var loadCts = new CancellationTokenSource();
+    Task[] loadTasks = Enumerable.Range(0, 8).Select(_ => Task.Run(() => {
+        IOperationLease held = ledger.Begin(target, "load", loadOwner);
+        while (!loadCts.IsCancellationRequested) {
+            IOperationLease? next;
+            try { next = ledger.Begin(target, "load", loadOwner); } // overlaps with `held`: no gap
+            catch (SwapWindowHeldException) { next = null; } // reserved: stop admitting, let this drain
+            held.Complete(OperationState.Succeeded);
+            held.Dispose();
+            if (next is null) break;
+            held = next;
+        }
+    })).ToArray();
+
+    // Assert the load precondition before measuring, not after -- Alexandr's own first draft of D1
+    // polled before the load was established and would have reported a false negative.
+    await Task.Delay(200);
+
+    bool pollGranted = false;
+    DateTime pollDeadline = DateTime.UtcNow + observeFor;
+    while (DateTime.UtcNow < pollDeadline) {
+        IDisposable? window = ledger.TryEnterSwapWindow(target);
+        if (window is not null) { pollGranted = true; window.Dispose(); break; }
+        await Task.Delay(5);
+    }
+
+    var reserveClock = Stopwatch.StartNew();
+    IDisposable? reserved = await AcquireDrainedWindow(ledger, target, observeFor);
+    long reserveMs = reserveClock.ElapsedMilliseconds;
+    reserved?.Dispose();
+
+    loadCts.Cancel();
+    try { await Task.WhenAll(loadTasks); }
+    catch (OperationCanceledException) { }
+
+    return new StarvationResult(pollGranted, reserved is not null, reserveMs);
 }
 
 static async Task<OperationRecord> WaitTerminal(IOperationLedger ledger, string id, TimeSpan budget) {
@@ -561,3 +639,5 @@ sealed record SwapResult(int V1Pid, int V2Pid, bool V1EffectPresent, bool V2Effe
 
 sealed record FallbackResult(string Outcome, int V2Attempts, int FallbackAttempts, int? RecoveredPid,
     bool NewWorkSucceeded);
+
+sealed record StarvationResult(bool PollGranted, bool ReserveGranted, long ReserveMs);
