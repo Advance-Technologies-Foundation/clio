@@ -633,24 +633,21 @@ public static class MobileActionTargetProbe {
 	}
 
 	/// <summary>
-	/// The BATCHED half: resolves every pending candidate page UId to its schema NAME in one chunked
-	/// <c>SysSchema</c> select (<see cref="ClassicEntitySchemaQuery.BuildSelectSchemaNamesByUId"/> — the
-	/// shared UId→Name query every by-UId reference resolver uses), then re-records each object's resolution
-	/// with the name that came back. Distinctions the old per-object lookup drew are preserved:
+	/// The BATCHED half: resolves every pending candidate page UId to its schema NAME through
+	/// <see cref="SchemaNameResolver.ResolveNames"/>, then re-records each object's resolution with the name
+	/// that came back. Distinctions the old per-object lookup drew are preserved via
+	/// <see cref="SchemaNameResolver.Status"/>:
 	/// <list type="bullet">
-	/// <item><description>a UId whose row never came back is a FAILURE (a dangling reference the add-on still
-	/// names), exactly like the single-row lookup's "no row" branch;</description></item>
-	/// <item><description>a row that came back with an empty or invalid <c>Name</c>
-	/// (<see cref="PageSchemaMetadataHelper.IsValidSchemaName"/>) is a SILENT null candidate — the row
-	/// exists, the object just has nothing offerable — so returned rows are kept in the map even when their
-	/// name is unusable; dropping them would collapse "present but unusable" into "absent";</description></item>
-	/// <item><description>a THROW from the chunked select (transport, failure envelope —
-	/// <c>DataServiceSelectResponse.ReadRows</c> throws on one) fails every candidate pending in that call,
+	/// <item><description><see cref="SchemaNameResolver.Status.RowMissing"/> is a FAILURE (a dangling
+	/// reference the add-on still names), exactly like the single-row lookup's "no row"
+	/// branch;</description></item>
+	/// <item><description><see cref="SchemaNameResolver.Status.NameInvalid"/> is a SILENT null candidate — the
+	/// row exists, the object just has nothing offerable — so it is neither a failure nor
+	/// recorded;</description></item>
+	/// <item><description>a THROW from the resolver (transport, failure envelope —
+	/// <c>DataServiceSelectResponse.ReadRows</c> throws on one) fails every candidate pending in this call,
 	/// but never the verdicts, which were settled before this ran.</description></item>
 	/// </list>
-	/// Truncation cannot cut this read the way it can cut the by-Name read: the UIds are DISTINCT, a
-	/// <c>SysSchema</c> UId matches at most one row, and the row cap is the distinct count — so a full
-	/// result is the all-resolved case, and "absent" always means "no such row", never "cut off".
 	/// </summary>
 	private static void ResolveCandidateNames(
 		ProbeContext context, IReadOnlyList<(string Name, Guid PageUId)> pending,
@@ -659,32 +656,25 @@ public static class MobileActionTargetProbe {
 		if (pending.Count == 0) {
 			return;
 		}
-		string[] pageUIds = [.. pending.Select(p => p.PageUId.ToString()).Distinct(StringComparer.OrdinalIgnoreCase)];
-		var nameByUId = new Dictionary<Guid, string>();
+		Guid[] pageUIds = [.. pending.Select(p => p.PageUId).Distinct()];
+		IReadOnlyDictionary<Guid, SchemaNameResolver.Result> resolved;
 		try {
-			foreach (IReadOnlyList<string> chunk in Chunk(pageUIds)) {
-				JArray rows = ClassicEntitySchemaQuery.Select(
-					context.Client, context.UrlBuilder, ClassicEntitySchemaQuery.BuildSelectSchemaNamesByUId(chunk));
-				foreach (JToken row in rows) {
-					if (Guid.TryParse(row["UId"]?.ToString(), out Guid uId)) {
-						nameByUId[uId] = row["Name"]?.ToString();
-					}
-				}
-			}
+			resolved = SchemaNameResolver.ResolveNames(context, pageUIds);
 		} catch (Exception ex) {
 			candidateFailures += pending.Count;
 			firstCandidateFailure ??= ex;
 			return;
 		}
 		foreach ((string name, Guid pageUId) in pending) {
-			if (!nameByUId.TryGetValue(pageUId, out string pageName)) {
+			SchemaNameResolver.Result result = resolved[pageUId];
+			if (result.Status == SchemaNameResolver.Status.RowMissing) {
 				candidateFailures++;
 				firstCandidateFailure ??= new InvalidOperationException(
 					$"Page schema '{pageUId}' could not be resolved to a name.");
 				continue;
 			}
-			if (!string.IsNullOrEmpty(pageName) && PageSchemaMetadataHelper.IsValidSchemaName(pageName)) {
-				RecordEntityResolution(into, name, ActionTargetState.Missing, pageName);
+			if (result.Status == SchemaNameResolver.Status.Resolved) {
+				RecordEntityResolution(into, name, ActionTargetState.Missing, result.Name);
 			}
 		}
 	}
@@ -699,8 +689,8 @@ public static class MobileActionTargetProbe {
 	/// already-known UId (the missing-target tier already has one; this call-site starts from just a name —
 	/// see <see cref="CollectSourceEntityNames"/>). Fails open to <see langword="null"/> on any degradation
 	/// (unreachable environment, unresolvable entity name, no default page, an unparseable add-on body, or a
-	/// resolved name that fails <see cref="PageSchemaMetadataHelper.IsValidSchemaName"/>) — never throws, and
-	/// never guesses a page name.
+	/// resolved name that fails <see cref="SchemaNameResolver.Status.NameInvalid"/> validation) — never throws,
+	/// and never guesses a page name.
 	/// </summary>
 	internal static ExistingMobilePageInfo ProbeSourceEntityDefaultMobilePage(
 		IToolCommandResolver commandResolver, string environment, string uri, string login, string password,
@@ -736,18 +726,13 @@ public static class MobileActionTargetProbe {
 				UseFullHierarchy = true
 			});
 			string pageSchemaUId = ExtractDefaultPageSchemaUId(schema?.MetaData);
-			if (string.IsNullOrWhiteSpace(pageSchemaUId)) {
+			if (string.IsNullOrWhiteSpace(pageSchemaUId) || !Guid.TryParse(pageSchemaUId, out Guid pageUId)) {
 				return null;
 			}
-			(JToken row, string error) = PageSchemaMetadataHelper.QuerySysSchemaRowByUId(
-				context.Client, context.UrlBuilder, pageSchemaUId, ("Name", "Name"));
-			if (row is null || error is not null) {
-				return null;
-			}
-			string name = row["Name"]?.ToString();
-			return !string.IsNullOrEmpty(name) && PageSchemaMetadataHelper.IsValidSchemaName(name)
+			SchemaNameResolver.Result result = SchemaNameResolver.ResolveName(context, pageUId);
+			return result.Status == SchemaNameResolver.Status.Resolved
 				? new ExistingMobilePageInfo {
-					SchemaName = name, SchemaUId = pageSchemaUId, Source = KindEntityDefaultMobilePage
+					SchemaName = result.Name, SchemaUId = pageSchemaUId, Source = KindEntityDefaultMobilePage
 				}
 				: null;
 		} catch (Exception) {
@@ -760,29 +745,28 @@ public static class MobileActionTargetProbe {
 	/// <c>SectionRegistrationInfo.MobileSectionSchemaUId</c>) to its schema NAME — the section half of the
 	/// reuse-vs-convert check (<see cref="ExistingMobilePageInfo"/> / playbook step 2a). The same
 	/// UId→name reverse lookup the missing-target candidate flow batches in
-	/// <see cref="ResolveCandidateNames"/>, single-row here because this call-site has exactly one UId.
+	/// <see cref="SchemaNameResolver.ResolveNames"/>, single-UId here via
+	/// <see cref="SchemaNameResolver.ResolveName"/> because this call-site has exactly one UId.
 	/// Fails open to <see langword="null"/>, never throws.
 	/// </summary>
 	internal static ExistingMobilePageInfo ProbeSectionMobilePage(
 		IToolCommandResolver commandResolver, string environment, string uri, string login, string password,
 		string sectionSchemaUId) {
-		if (commandResolver is null || string.IsNullOrWhiteSpace(sectionSchemaUId)) {
+		if (commandResolver is null || !Guid.TryParse(sectionSchemaUId, out Guid sectionUId)) {
 			return null;
 		}
 		try {
 			var options = new EnvironmentOptions {
 				Environment = environment, Uri = uri, Login = login, Password = password
 			};
-			IApplicationClient client = commandResolver.Resolve<IApplicationClient>(options);
-			IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
-			(JToken row, string error) = PageSchemaMetadataHelper.QuerySysSchemaRowByUId(
-				client, urlBuilder, sectionSchemaUId, ("Name", "Name"));
-			if (row is null || error is not null) {
-				return null;
-			}
-			string name = row["Name"]?.ToString();
-			return !string.IsNullOrEmpty(name) && PageSchemaMetadataHelper.IsValidSchemaName(name)
-				? new ExistingMobilePageInfo { SchemaName = name, SchemaUId = sectionSchemaUId, Source = KindSection }
+			var context = new ProbeContext(
+				commandResolver, options,
+				commandResolver.Resolve<IApplicationClient>(options),
+				commandResolver.Resolve<IServiceUrlBuilder>(options),
+				commandResolver.Resolve<IAddonSchemaDesignerClient>(options));
+			SchemaNameResolver.Result result = SchemaNameResolver.ResolveName(context, sectionUId);
+			return result.Status == SchemaNameResolver.Status.Resolved
+				? new ExistingMobilePageInfo { SchemaName = result.Name, SchemaUId = sectionSchemaUId, Source = KindSection }
 				: null;
 		} catch (Exception) {
 			return null;
