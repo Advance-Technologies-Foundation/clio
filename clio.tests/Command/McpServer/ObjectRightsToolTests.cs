@@ -59,4 +59,52 @@ public class ObjectRightsToolTests {
 		args.EnvironmentName.Should().Be("sandbox", because: "the kebab-case environment-name binds");
 		args.EntitySchemaName.Should().Be("UsrPortalSpike", because: "the kebab-case entity-schema-name binds");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Declares get-object-rights as a read-only, non-destructive, idempotent tool under its canonical name.")]
+	public void GetObjectRightsTool_ShouldDeclareReadOnlySafetyFlags_WhenInspectingAttribute() {
+		// Arrange & Act
+		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(GetObjectRightsTool)
+			.GetMethod(nameof(GetObjectRightsTool.GetObjectRights))!
+			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
+			.Single();
+
+		// Assert
+		attribute.Name.Should().Be(GetObjectRightsTool.ToolName, because: "the tool publishes under its canonical kebab-case name");
+		attribute.ReadOnly.Should().BeTrue(because: "reading object rights does not mutate state");
+		attribute.Destructive.Should().BeFalse(because: "a read does not change access rights");
+		attribute.Idempotent.Should().BeTrue(because: "reading the same object rights is safe to repeat");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Marks the single args wrapper as schema-required on get-object-rights so an omitted args object fails with a structured error.")]
+	public void GetObjectRightsTool_ShouldRequireArgsWrapper_WhenInspectingMethodSignature() {
+		// Arrange & Act
+		object[] required = typeof(GetObjectRightsTool)
+			.GetMethod(nameof(GetObjectRightsTool.GetObjectRights))!
+			.GetParameters()[0]
+			.GetCustomAttributes(typeof(RequiredAttribute), false);
+
+		// Assert
+		required.Should().NotBeEmpty(because: "the args wrapper must be schema-required so an omitted args object fails cleanly");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Binds the get-object-rights arguments from kebab-case JSON using the real MCP serializer options.")]
+	public void GetObjectRightsArgs_ShouldBindKebabCaseFields_WhenDeserializedWithMcpOptions() {
+		// Arrange
+		JsonSerializerOptions options = Clio.BindingsModule.CreateMcpSerializerOptions();
+
+		// Act
+		GetObjectRightsArgs args = JsonSerializer.Deserialize<GetObjectRightsArgs>(
+			"""{"environment-name":"sandbox","entity-schema-name":"UsrPortalSpike"}""",
+			options)!;
+
+		// Assert
+		args.EnvironmentName.Should().Be("sandbox", because: "the kebab-case environment-name binds");
+		args.EntitySchemaName.Should().Be("UsrPortalSpike", because: "the kebab-case entity-schema-name binds");
+	}
 }

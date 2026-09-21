@@ -677,6 +677,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="set-object-rights"></a>
 - [`set-object-rights`](docs/commands/set-object-rights.md) - Grant operation and record permissions to an object and its connected (lookup) entities (destructive)
 
+<a id="get-object-rights"></a>
+- [`get-object-rights`](docs/commands/get-object-rights.md) - Read whether external (portal) users have object operation access to an object and its connected (lookup) entities
+
 ## Integrations & Tools
 
 <a id="install-knowledge"></a>

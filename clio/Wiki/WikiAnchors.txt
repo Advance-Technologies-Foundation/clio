@@ -78,6 +78,7 @@ build-theme:build-theme
 get-record-rights:get-record-rights
 set-record-rights:set-record-rights
 set-object-rights:set-object-rights
+get-object-rights:get-object-rights
 list-themes:list-themes,get-themes
 get-theme:get-theme
 create-theme:create-theme

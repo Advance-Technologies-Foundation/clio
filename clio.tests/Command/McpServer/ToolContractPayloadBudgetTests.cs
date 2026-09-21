@@ -63,10 +63,13 @@ public sealed class ToolContractPayloadBudgetTests {
 	// ENG-99741 adds the set-object-rights long-tail tool (object-level access grant), which grows the
 	// default index by one tool to a measured 45226 bytes; round to the next 256-byte step (177 * 256 =
 	// 45312) per the convention above — one ordinary addition, not sustained catalog growth.
+	// ENG-99741 then adds the get-object-rights long-tail tool (the read companion), which grows the
+	// default index by one more tool to a measured 45456 bytes; round to the next 256-byte step (178 * 256 =
+	// 45568) per the same convention — the second of a matched read/write pair, not sustained growth.
 	// Serialization uses the default JSON encoder,
 	// which escapes non-ASCII (a purpose ellipsis is written as a 6-byte escape), so it over-counts the real
 	// UTF-8 wire size — conservative, which is the safe direction for a ceiling.
-	private const int MaxCompactIndexSerializedBytes = 177 * 256;
+	private const int MaxCompactIndexSerializedBytes = 178 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
 	// — the same quantity the index ratchet above measures, and what the agent actually receives.
