@@ -53,7 +53,7 @@ The three predicates, kept separate:
 | Predicate | Question | Mechanism with evidence | State |
 |---|---|---|---|
 | **Execution quiescence** | Is there outstanding work that would be silently lost? | [E3 ledger](https://github.com/Advance-Technologies-Foundation/clio/tree/Alexandr-Kravchuk/detached-operation-probe): `OperationRecord` is portable data (no delegates, no runtime objects), scoped **per target** (`IsQuiescent(target)`, measured in case A1b: envA busy, envB idle, global busy, same process, same moment) | Measured — but per-target scoping is the correct predicate for a **runtime** swap (which never needs it — already proven safe independent of quiescence), not license for a **host** swap to touch only the busy target's owner. For host-level swap, quiescence must be evaluated globally unless per-target isolation is separately built, which nothing here builds |
-| **Transport continuity** | Does the client's pipe survive the process being replaced at all? | Thin supervisor owning the client pipe, replaceable child process — [measured](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18539341): 8.1.0.129 → 8.1.0.131, 1.0s macOS / 1.3s Windows, zero client reconnects | Measured, but it is exactly the mechanism that independently loses operation continuity (child process dies, in-memory registries with it) — solving this predicate alone does not solve execution quiescence |
+| **Transport continuity** | Does the client's pipe survive the process being replaced at all? | Thin supervisor owning the client pipe, replaceable child process — [measured](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18539341): 8.1.0.129 → 8.1.0.131, 1.0s macOS / 1.3s Windows, zero client reconnects | Measured alone; **now also measured composed with execution quiescence** — see below |
 | **Activation policy** | Given the other two are satisfied, *when* does a swap actually trigger? | — | **Open.** Not the same question as quiescence — a natural reconnect (scenario e) is an existing transport-reinitialization opportunity, not proof of detached-work or status continuity for the general case, and the held-call runtime proof (scenario b) should not be read as proof of every dead-socket case either |
 
 ### Why durable evidence changes the shape of the quiescence requirement
@@ -84,18 +84,18 @@ a clean, quiescent shutdown.
 - The **reconcilable vs. uncertain-only** classification of operation classes, which
   determines whether quiescence can be skipped for a given operation type.
 - Call classification (read-only vs. side-effecting) for scenario (b) — undesigned.
-- **Composing transport continuity with a durable ledger — this is the concrete next
-  artifact for this stream.** The record shape is no longer hypothetical: E3 publishes
-  `OperationRecord(Id, Target, StartedUtc, RuntimeVersion, State, FinishedUtc?, Code?)`
-  and `IsQuiescent(target?)` in
-  [`experiments/DetachedOperations/Contract/Contract.cs`](https://github.com/Advance-Technologies-Foundation/clio/blob/Alexandr-Kravchuk/detached-operation-probe/experiments/DetachedOperations/Contract/Contract.cs).
-  Nobody has run a supervisor that consults `IsQuiescent(target)` before swapping,
-  against the exact workload that broke (`create-app-section`, detached past its
-  response deadline). Two possible outcomes, both informative: the failure does not
-  recur (activation policy on top of the two existing mechanisms is sufficient), or it
-  does recur despite passing quiescence (the gap is a race between the check and the
-  swap, or in the two mechanisms' composition, not in either alone). This is a real
-  implementation task, not a documentation update — scoping it before building.
+- ~~Composing transport continuity with a durable ledger~~ — **done, measured.**
+  [`experiments/SupervisorQuiescenceComposition`](https://github.com/Advance-Technologies-Foundation/clio/tree/nikonov/supervisor-quiescence-probe/experiments/SupervisorQuiescenceComposition)
+  runs a real separate backend process, gated on E3's `TryEnterSwapWindow`, against the
+  `create-app-section`-shaped workload. 4/4 cases pass, three consecutive runs: a naive
+  swap loses in-flight work (~18ms), a globally gated swap waits for it and does not
+  (~1220ms), and a per-target-only gate protects the checked target while still losing a
+  *different* target sharing the same host (~330ms swap, that target's effect missing) —
+  concrete evidence for the per-target-vs-global correction, not just an argument for it.
+  Limits: assumes the ledger already has a record for every live target (a target the
+  supervisor never learned about would not block the gate); does not re-measure transport
+  continuity itself (reuses that result); polls rather than using an event/callback; no
+  wait-budget/timeout policy — see the probe's own README for the full list.
 
 ~~A small counterexample probe demonstrating "idle transport ≠ idle process"~~ —
 **superseded.** [Alexandr-Kravchuk pointed out](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540612)
@@ -111,4 +111,5 @@ composition probe above.
 - [Alexandr-Kravchuk's macOS reproduction and open-decision reply](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540212)
 - [Split-ownership agreement](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540013)
 - [kirillkrylov's three-predicate correction and shared architecture-experiment record](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540566) / [`docs/architecture-experiments.md`](https://github.com/Advance-Technologies-Foundation/clio/blob/krylov/clio-10-experiment/docs/architecture-experiments.md)
-- [Alexandr-Kravchuk's `detached-operation-probe` (E3), acceptance cases A1–A4, R1, controls C1/C2](https://github.com/Advance-Technologies-Foundation/clio/tree/Alexandr-Kravchuk/detached-operation-probe)
+- [Alexandr-Kravchuk's `detached-operation-probe` (E3), acceptance cases A1–A5, R1, controls C1/C2](https://github.com/Advance-Technologies-Foundation/clio/tree/Alexandr-Kravchuk/detached-operation-probe)
+- [`nikonov/supervisor-quiescence-probe` — transport continuity composed with E3's quiescence ledger against a real process swap](https://github.com/Advance-Technologies-Foundation/clio/tree/nikonov/supervisor-quiescence-probe/experiments/SupervisorQuiescenceComposition)
