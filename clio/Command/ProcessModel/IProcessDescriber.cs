@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -1098,12 +1098,15 @@ public sealed class DescribedSubProcess {
 	/// True when the element runs the called process once per item of a collection: it carries two collections and
 	/// three iteration counters instead of the called process's parameters, so the names a mapping would use
 	/// address nothing on it.
-	/// <para>Every write path that CONFIGURES such an element refuses it, which is what this flag lets a caller
-	/// see coming. An unrelated <c>setElement</c> is NOT refused - it is applied, the element's re-synchronization
-	/// is skipped, and a warning says so.</para>
+	/// <para>Such an element IS configurable: see <see cref="MultiInstanceOptions"/>, which carries how it
+	/// iterates and round-trips into the write side's <c>multiInstanceOptions</c> block. What stays refused is a
+	/// RETARGET - naming a different called process on a multi-instance element - and a re-synchronization, which
+	/// cannot mean anything on an element that does not carry the callee's parameters at its root. An unrelated
+	/// <c>setElement</c> is not refused either: it is applied, the element's re-synchronization is skipped, and a
+	/// warning says so.</para>
 	/// <para>Nullable defensively, like <see cref="DescribedEmail.HasBody"/> and for the same reason: no shipped
-	/// server omits it, but a flag whose absence deserializes to <c>false</c> would read as "plain call activity,
-	/// safe to write" - the wrong side to fail toward on the one field that signals a refusal.</para>
+	/// server omits it, but a flag whose absence deserializes to <c>false</c> would read as "plain call activity"
+	/// - the wrong side to fail toward on the field that says the element's parameters are not where they look.</para>
 	/// </summary>
 	[JsonPropertyName("multiInstance")]
 	public bool? MultiInstance { get; set; }
@@ -1139,10 +1142,97 @@ public sealed class DescribedSubProcess {
 	public bool? InSync { get; set; }
 
 	/// <summary>
+	/// How the element iterates, when it does. Absent - and <c>null</c> - on an element that calls the process
+	/// once, so the block's PRESENCE is itself the answer.
+	/// <para>Mirrored as a TYPED member even though <see cref="AdditionalData"/> would carry it as raw extension
+	/// data: the XML doc on a typed member is the agent-facing contract surface, extension data carries none, and
+	/// clio's own tests can only assert against typed members.</para>
+	/// </summary>
+	[JsonPropertyName("multiInstanceOptions")]
+	public DescribedMultiInstanceOptions MultiInstanceOptions { get; set; }
+
+	/// <summary>
 	/// Anything the server reports inside this block that this model does not declare. Every server-built
 	/// configuration block here carries one, and the reason is the failure this whole block exists to close one
 	/// level up: the describe output is re-serialized from this model, so a field a later CrtProcessBuilder adds
 	/// is dropped on the way to the caller with nothing logged and a read-back that looks complete.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// A multi-instance element's iteration configuration. Mirrors the server's
+/// <c>DescribeMultiInstanceOptions</c> field for field, and round-trips into the write side's
+/// <c>multiInstanceOptions</c> block without translation.
+/// <para>The five parameter roles are reported as NAMES, which is what a caller can act on: mappings and
+/// describe output work in names, and the UIds are an implementation detail the server mints. A role is
+/// <c>null</c> when its stored UId resolves to no parameter on the element - a MALFORMED element, and the only
+/// warning a caller gets, because the platform's own load path throws on exactly that state rather than
+/// reporting it.</para>
+/// </summary>
+public sealed class DescribedMultiInstanceOptions {
+	/// <summary>
+	/// Always <c>true</c> on a block that is present at all - the block is absent on an element that calls the
+	/// process once. Present so the read feeds straight back into the write side's <c>enabled</c>.
+	/// </summary>
+	[JsonPropertyName("enabled")]
+	public bool? Enabled { get; set; }
+
+	/// <summary>
+	/// <c>Sequential</c> or <c>Parallel</c>, spelled as the write side accepts them.
+	/// <para>The EFFECTIVE value, including the default the stored metadata suppresses - a caller cannot act on
+	/// "absent". Reported as the string rather than the stored number because the write side REFUSES a number, so
+	/// echoing one back would produce a block that does not re-apply.</para>
+	/// <para><c>Parallel</c> does not by itself mean concurrent threads: it changes the generated flow topology,
+	/// and genuine concurrency comes from the element's own background mode.</para>
+	/// </summary>
+	[JsonPropertyName("executionMode")]
+	public string ExecutionMode { get; set; }
+
+	/// <summary>
+	/// Whether a failed iteration lets the process continue instead of failing. The EFFECTIVE value, including
+	/// the suppressed default of <c>false</c>. It changes only what happens AFTER a failure - the
+	/// failed-iteration counter is incremented either way.
+	/// </summary>
+	[JsonPropertyName("ignoreErrors")]
+	public bool? IgnoreErrors { get; set; }
+
+	/// <summary>
+	/// The name of the collection parameter the element iterates. Its <c>itemProperties</c> are the called
+	/// process's contract, and they are where a per-item value is mapped - the run time binds them BY NAME, and
+	/// answers an unmatched name with silence rather than an error.
+	/// </summary>
+	[JsonPropertyName("inputCollection")]
+	public string InputCollection { get; set; }
+
+	/// <summary>
+	/// The name of the collection parameter that receives one item per completed iteration. Do NOT write values
+	/// into its item properties: the platform derives them and clears them on every synchronization.
+	/// </summary>
+	[JsonPropertyName("outputCollection")]
+	public string OutputCollection { get; set; }
+
+	/// <summary>
+	/// The name of the counter the run time writes the completed-iteration count into.
+	/// <para>Its mid-run value is not what it looks like: the parallel barrier uses it as an arrival counter and
+	/// the End token overwrites it with total minus failed before persisting.</para>
+	/// </summary>
+	[JsonPropertyName("completedIterationsCount")]
+	public string CompletedIterationsCount { get; set; }
+
+	/// <summary>The name of the counter the run time writes the terminated-iteration count into.</summary>
+	[JsonPropertyName("terminatedIterationsCount")]
+	public string TerminatedIterationsCount { get; set; }
+
+	/// <summary>The name of the counter the run time writes the total-iteration count into.</summary>
+	[JsonPropertyName("totalIterationsCount")]
+	public string TotalIterationsCount { get; set; }
+
+	/// <summary>
+	/// Anything the server reports inside this block that this model does not declare - the same reason every
+	/// other server-built block here carries one: the describe output is re-serialized from this model, so a
+	/// field a later CrtProcessBuilder adds would otherwise be dropped silently.
 	/// </summary>
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement> AdditionalData { get; set; }
