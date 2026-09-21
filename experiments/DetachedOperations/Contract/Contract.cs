@@ -173,32 +173,46 @@ public interface IOperationLedger {
     IReadOnlyCollection<string> DegradedScopes { get; }
 
     /// <summary>
-    /// Operations this host can never resolve, because their owner cannot be asked whether it is there.
+    /// Operations whose owner cannot be asked whether it is still there.
     /// </summary>
     /// <remarks>
-    /// An owner that does not implement <see cref="IOwnerLiveness"/> is skipped by orphan resolution, and
-    /// silently: the operation simply stays <see cref="OperationState.Running"/> and keeps retaining. The
-    /// failure only becomes visible as a drain that never finishes, which is the worst possible moment.
-    /// Found by @vladimir-nikonov, who wired the correction into his own harness and observed that
-    /// passing a bare <c>Process</c> changed nothing until it was wrapped.
     /// <para>
-    /// So the ledger says so up front. A host about to drain a scope can see how many operations in it
-    /// are unresolvable BEFORE it starts waiting for them.
+    /// A capability report, <b>not a verdict</b> (@kirillkrylov's scoping). An in-process owner that
+    /// legitimately ends at <see cref="IDisposable.Dispose"/> appears here and is perfectly correct:
+    /// something will dispose it. Only the host knows which of its owners were supposed to be
+    /// liveness-capable, so the ledger reports the capability and takes no position on whether its
+    /// absence is a defect.
+    /// </para>
+    /// <para>
+    /// It exists because the absence is otherwise invisible. Orphan resolution skips such an owner
+    /// silently, so a cross-process owner that should have been wrapped simply stays
+    /// <see cref="OperationState.Running"/> and keeps retaining, and the only symptom is a drain that
+    /// never finishes. Found by @vladimir-nikonov, who wired the correction into his own harness and
+    /// observed that passing a bare <c>Process</c> changed nothing until it was wrapped.
     /// </para>
     /// </remarks>
-    IReadOnlyCollection<string> UnresolvableOwners { get; }
+    IReadOnlyCollection<string> OwnersWithoutLiveness { get; }
 
     /// <summary>
-    /// Configuration snapshots still referenced by a retained operation.
+    /// Configuration snapshots held by a retained operation. <b>One input to cleanup, never the whole
+    /// answer.</b>
     /// </summary>
     /// <remarks>
-    /// The reference set for snapshot cleanup, derived rather than counted: a snapshot is referenced
-    /// exactly while some operation admitted under it is still retained. Orphan resolution releases the
-    /// reference with the retention, so a lost owner does not pin a snapshot forever — the same failure
-    /// shape as H3, in the settings lane. Requested shape for @vladimir-nikonov's cleanup requirement,
-    /// so he does not build a separate reference count that can disagree with this one.
+    /// <para>
+    /// A snapshot appears here exactly while some operation admitted under it is still retained, derived
+    /// from retention rather than counted beside it, so it cannot drift from ownership the way a parallel
+    /// count would. Orphan resolution releases the reference with the retention, so a lost owner does not
+    /// pin a snapshot forever — the same failure shape as H3, in the settings lane.
+    /// </para>
+    /// <para>
+    /// <b>Deleting everything absent from this set destroys live configuration</b> (@kirillkrylov). A
+    /// snapshot with no running operation may still be the current one for the NEXT admission, a prepared
+    /// activation candidate, or the retained rollback target — none of which this ledger knows about.
+    /// K4 measures the gap rather than describing it. The settings owner combines those ownership reasons
+    /// with this one; this property answers a single question and nothing more.
+    /// </para>
     /// </remarks>
-    IReadOnlyCollection<string> ReferencedSnapshots { get; }
+    IReadOnlyCollection<string> OperationHeldSnapshots { get; }
 
     /// <summary>
     /// Operations whose outcome is known in memory but is NOT on disk.

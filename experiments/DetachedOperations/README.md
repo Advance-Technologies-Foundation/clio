@@ -105,6 +105,7 @@ would almost never be globally idle and a global-only predicate would be correct
 | K1 | an owner that cannot be asked about liveness is reported, not silently skipped |
 | K2 | only the owner that can be asked is resolved; the bare one is the warned-about failure |
 | K3 | a resolved orphan releases its snapshot; an unresolvable one pins it forever |
+| K4 | an idle current snapshot is absent from the held set, so this set alone must not drive deletion |
 | O1 | **counterexample to I3** — a runtime-defined result held by the caller keeps the release alive |
 | R1 | the V1 release becomes collectible once no lease retains it |
 | C1 | **control** — a host with no evidence answers `NotFound` for the very same lost operation |
@@ -184,7 +185,7 @@ temporary directory and writes nothing outside it.
 
 ## macOS observations, 2026-09-21
 
-macOS 27.0.0 (arm64), .NET 10.0.12. **66/66 passed, exit 0.** The contract derived from these cases is in
+macOS 27.0.0 (arm64), .NET 10.0.12. **67/67 passed, exit 0.** The contract derived from these cases is in
 [`execution-lifetime-contract.md`](execution-lifetime-contract.md).
 
 - The operation started on `10.0.0.0` kept answering `Running` and stayed owned by `10.0.0.0` after

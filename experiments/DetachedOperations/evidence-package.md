@@ -40,7 +40,7 @@ The eight clauses live in `shared-contract.md`; this is the index, not a replace
 | 4 | Response completion, outcome publication and ownership release are three distinct events; quiescence follows ownership. **When the owner is a process, liveness replaces disposal, and an owner that cannot be asked is declared rather than skipped** | P5, H1–H5, K1, K2 |
 | 5 | Use `TryReserveAdmission`, not `TryEnterSwapWindow`: polling for quiescence under load starves forever. The drain must be bounded and the reservation released when the budget expires | D1, D2, E1, E2 |
 | 5b | A degraded scope is repaired or explicitly abandoned, never cleared by the fault going away | E3–E6 |
-| 6 | A configuration snapshot needs one thing from this side: a portable identity, plus a cleanup reference set derived from retention rather than counted | J1–J5, K3 |
+| 6 | A configuration snapshot needs one thing from this side: a portable identity, plus the operation-held set — one input to cleanup, never the whole answer | J1–J5, K3, K4 |
 | 7 | The assembly crossing the boundary references `System.Runtime` and `System.Collections` and nothing else | F3, F4 |
 | 8 | A case title is a claim; a case naming a temporal or contention property carries a mutation control, and the mutation must be **observed to fail** | — |
 
@@ -72,7 +72,7 @@ the MCP tool contract and the settings contract.
 - **The supervisor harness is not repaired as a whole.** The owner-wrapper correction closes the
   orphan-status path for @vladimir-nikonov's MCP host only. `Supervisor/Program.cs` (S1–S10) still
   registers bare `Process` owners, so H3's failure — a drain after a lost owner never finishing — is
-  untested there, not fixed there. `UnresolvableOwners` (K1) makes that state visible rather than
+  untested there, not fixed there. `OwnersWithoutLiveness` (K1) makes that state visible rather than
   silent, which is the part that needed doing now.
 - **Package authenticity and trusted acquisition.** Untouched, by anyone, and it is a release gate.
   Nothing in this package bears on it.

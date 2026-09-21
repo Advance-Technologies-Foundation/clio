@@ -825,9 +825,9 @@ IOperationLease bare = kLedger.Begin("envK", "10.0.0.0", kBare, "cfg-B");   // t
 
 // K1: the ledger says which operations it can never resolve, before anyone waits on them.
 Check("K1 an owner that cannot be asked about liveness is reported, not silently skipped",
-    kLedger.UnresolvableOwners.Contains(bare.Id) && !kLedger.UnresolvableOwners.Contains(wrapped.Id),
-    new { unresolvable = kLedger.UnresolvableOwners.Count, bareListed = kLedger.UnresolvableOwners.Contains(bare.Id),
-          wrappedListed = kLedger.UnresolvableOwners.Contains(wrapped.Id),
+    kLedger.OwnersWithoutLiveness.Contains(bare.Id) && !kLedger.OwnersWithoutLiveness.Contains(wrapped.Id),
+    new { unresolvable = kLedger.OwnersWithoutLiveness.Count, bareListed = kLedger.OwnersWithoutLiveness.Contains(bare.Id),
+          wrappedListed = kLedger.OwnersWithoutLiveness.Contains(wrapped.Id),
           note = "visible before the drain rather than as a drain that never ends" });
 
 // K2: killing both owners resolves only the one that can be asked — the bare owner stays Running,
@@ -845,11 +845,28 @@ Check("K2 only the owner that can be asked is resolved; the bare one is the warn
 
 // K3: snapshot cleanup is safe only against the RESOLVED reference set. cfg-A's owner died and was
 // resolved, so cfg-A is free; cfg-B is pinned by an operation nothing can ever resolve.
-var referenced = kLedger.ReferencedSnapshots;
+var referenced = kLedger.OperationHeldSnapshots;
 Check("K3 a resolved orphan releases its snapshot; an unresolvable one pins it forever",
     !referenced.Contains("cfg-A") && referenced.Contains("cfg-B"),
-    new { referencedSnapshots = referenced,
-          note = "the cleanup reference set is derived from retention, so it cannot disagree with it" });
+    new { operationHeldSnapshots = referenced,
+          note = "derived from retention, so it cannot disagree with ownership" });
+
+// K4: the limit of K3, measured rather than written in a caveat. A snapshot with no running operation
+// is absent from this set and may still be the configuration the NEXT admission uses. Deleting
+// everything absent from it would therefore destroy live configuration (@kirillkrylov's boundary).
+Process kIdle = StartIdleOwner();
+IOperationLease finished = kLedger.Begin("envK4", "10.0.0.0", new ProcessOwner(kIdle), "cfg-current");
+finished.Complete(OperationState.Succeeded, "done");
+finished.Dispose();
+bool absentWhileIdle = !kLedger.OperationHeldSnapshots.Contains("cfg-current");
+IOperationLease next = kLedger.Begin("envK4", "10.0.0.0", new ProcessOwner(kIdle), "cfg-current");
+bool stillTheNextConfiguration = kLedger.Query(next.Id).ConfigurationSnapshot == "cfg-current";
+Check("K4 an idle current snapshot is absent from the held set, so this set alone must not drive deletion",
+    absentWhileIdle && stillTheNextConfiguration,
+    new { absentWhileIdle, stillTheNextConfiguration,
+          note = "the ledger knows retention; it does not know current, candidate or rollback" });
+next.Dispose();
+try { kIdle.Kill(entireProcessTree: true); } catch (InvalidOperationException) { /* already gone */ }
 
 fV1 = null!;
 fV1Ctx.Unload();

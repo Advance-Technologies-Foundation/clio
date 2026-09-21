@@ -83,7 +83,7 @@ behaves this way):
   fails, the scope is marked degraded and the record joins `UnpersistedOperations`, exactly as any other
   failed evidence write does. Clause 5b still governs what happens to it.
 
-**And an owner that cannot be asked must be declared, not skipped.** Resolution ignores an owner that
+**And an owner that cannot be asked must be declared, not skipped — as a capability, not a verdict.** Resolution ignores an owner that
 does not implement `IOwnerLiveness`, and it ignores it silently — @vladimir-nikonov wired this correction
 into his own harness and nothing changed until he wrapped the bare `Process` he was already passing. The
 failure then surfaces as a drain that never ends, at the worst possible moment. So `UnresolvableOwners`
@@ -164,10 +164,15 @@ re-read:
   line already carries it (J4).
 - Nothing new crosses the boundary: the seam is a `string` and the contract assembly still references
   `System.Runtime` and `System.Collections` only (J3).
-- **`ReferencedSnapshots` is the cleanup set, derived and not counted.** A snapshot is referenced exactly
-  while some operation admitted under it is still retained, so it cannot drift from retention the way a
-  separate reference count would. Resolving an orphan releases its snapshot with its retention; an
-  *unresolvable* owner pins one forever, which is H3's failure shape arriving in the settings lane (K3).
+- **`OperationHeldSnapshots` is one input to cleanup, never the whole answer.** A snapshot appears there
+  exactly while some operation admitted under it is still retained, derived from retention rather than
+  counted beside it, so it cannot drift from ownership. Resolving an orphan releases the reference; an
+  owner that cannot be resolved pins one forever — H3's failure shape in the settings lane (K3).
+  **Deleting everything absent from this set destroys live configuration**, because a snapshot with no
+  running operation may still be the current one for the next admission, a prepared activation candidate
+  or the retained rollback target — none of which this ledger knows about. K4 measures that gap instead
+  of leaving it as a caveat: an idle snapshot is absent from the set and is immediately used by the next
+  admission. The settings owner combines the ownership reasons; this property answers one question.
 
 **One trap, found by breaking it rather than by thinking about it.** The seam was first added as an
 optional parameter on the existing `Begin`. That is source compatible and **binary incompatible**: every
