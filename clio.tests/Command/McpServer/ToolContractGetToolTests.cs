@@ -3294,6 +3294,23 @@ public sealed class ToolContractGetToolTests {
 			because: "producer-owned BaseRequest fields are not part of the authorable request surface");
 		baseParameters.Description.Should().NotContainAny(["$context", "scopes", "$initialEvent"],
 			because: "the contract prose must not restore a fixed list of known producer fields");
+		// Kamil review (PR #1626): entry-level deprecated/deprecationReason were added to both
+		// RequestInfoResponse and RequestInfoListItem without being declared here, so the curated
+		// envelope was incomplete on the detail side and factually wrong about list items — an agent
+		// filtering the catalog listing had no declared field to filter on. Pinned so the two wire
+		// fields cannot drift back out of the declaration.
+		ToolContractField items = contract.OutputContract.Fields.Single(field => field.Name == "items");
+		items.Description.Should().Contain("deprecated/deprecationReason",
+			because: "list items carry entry-level deprecation metadata, and browse-time filtering is the reason it is emitted in list mode at all");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain(
+			["deprecated", "deprecationReason"],
+			because: "detail mode emits entry-level deprecation on the wire, so the curated envelope must declare both fields rather than leaving an agent to discover them");
+		ToolContractField deprecated = contract.OutputContract.Fields.Single(field => field.Name == "deprecated");
+		deprecated.Description.Should().Contain("honor that guidance",
+			because: "declaring the deprecation flag is insufficient unless the contract tells agents to act on it, matching the baseParameters precedent");
+		contract.OutputContract.Fields.Single(field => field.Name == "deprecationReason")
+			.Description.Should().Contain("honor that guidance",
+				because: "the reason names the replacement request, which is the actionable half of the deprecation signal");
 		contract.AntiPatterns.Should().NotBeNullOrEmpty(
 			because: "the contract must carry anti-patterns steering agents away from inventing request names and values");
 		contract.AntiPatterns!.Should().Contain(pattern =>
