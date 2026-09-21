@@ -278,12 +278,12 @@ public static class MobileActionTargetProbe {
 		// The marker is authoritative; the conventional name is the fallback for a body that omits it. When
 		// neither resolves, nothing is exempt — an unnecessary question costs the user a glance, while a wrong
 		// exemption costs them the finding entirely.
-		string primaryName = Str(modelConfig, "primaryDataSourceName");
+		string primaryName = RelatedPageAddonMetadata.Str(modelConfig, "primaryDataSourceName");
 		JsonObject primary =
 			(!string.IsNullOrWhiteSpace(primaryName) ? dataSources[primaryName] : null) as JsonObject
 			?? dataSources["PDS"] as JsonObject;
 		if (primary?["config"] is JsonObject config
-			&& Str(config, "entitySchemaName") is { } entity && !string.IsNullOrWhiteSpace(entity)) {
+			&& RelatedPageAddonMetadata.Str(config, "entitySchemaName") is { } entity && !string.IsNullOrWhiteSpace(entity)) {
 			names.Add(entity.Trim());
 		}
 		return names;
@@ -381,9 +381,9 @@ public static class MobileActionTargetProbe {
 		if (node is not JsonObject obj) {
 			return;
 		}
-		string elementName = Str(obj, NameProperty) ?? enclosingName;
+		string elementName = RelatedPageAddonMetadata.Str(obj, NameProperty) ?? enclosingName;
 		foreach (KeyValuePair<string, JsonNode> property in obj) {
-			if (property.Value is JsonObject candidate && Str(candidate, RequestProperty) is { } request
+			if (property.Value is JsonObject candidate && RelatedPageAddonMetadata.Str(candidate, RequestProperty) is { } request
 				&& !string.IsNullOrWhiteSpace(request)) {
 				// An event binding. Record it when the rules declare a target for it, and never descend into
 				// it: its params are data, not components.
@@ -407,7 +407,7 @@ public static class MobileActionTargetProbe {
 			return;
 		}
 		string target = bindingObject[ParamsProperty] is JsonObject parameters
-			? Str(parameters, rule.TargetParam)?.Trim()
+			? RelatedPageAddonMetadata.Str(parameters, rule.TargetParam)?.Trim()
 			: null;
 		// Trim BEFORE the attribute-binding test: " $PageToOpen" is just as runtime-resolved as "$PageToOpen",
 		// and letting it through would look up a schema named "$PageToOpen", find none, and report the control
@@ -893,23 +893,8 @@ public static class MobileActionTargetProbe {
 	/// blank/unparseable body, no <c>Pages</c> array, or a page set with no untyped <c>IsDefault</c> entry.
 	/// </summary>
 	internal static string ExtractDefaultPageSchemaUId(string metaData) {
-		if (string.IsNullOrWhiteSpace(metaData)) {
-			return null;
-		}
-		try {
-			if (JsonNode.Parse(metaData) is not JsonObject obj || obj["Pages"] is not JsonArray pages) {
-				return null;
-			}
-			foreach (JsonNode page in pages) {
-				if (page is JsonObject entry && Bool(entry, "IsDefault")
-					&& string.IsNullOrWhiteSpace(Str(entry, "TypeColumnValue"))) {
-					return Str(entry, "PageSchemaUId");
-				}
-			}
-			return null;
-		} catch (Exception) {
-			return null;
-		}
+		RelatedPageAddonMetadata.Result result = RelatedPageAddonMetadata.TryFindUntypedDefault(metaData);
+		return result.Status == RelatedPageAddonMetadata.Status.DefaultFound ? result.PageSchemaUId : null;
 	}
 
 	/// <summary>
@@ -942,30 +927,12 @@ public static class MobileActionTargetProbe {
 	/// </remarks>
 	/// <param name="metaData">The add-on's raw <c>metaData</c> JSON string.</param>
 	/// <returns>Whether the object has a default mobile edit page.</returns>
-	internal static ActionTargetState ClassifyRelatedPageMetadata(string metaData) {
-		if (string.IsNullOrWhiteSpace(metaData)) {
-			return ActionTargetState.Unknown;
-		}
-		try {
-			if (JsonNode.Parse(metaData) is not JsonObject obj) {
-				return ActionTargetState.Unknown;
-			}
-			if (obj["Pages"] is not JsonArray pages) {
-				return ActionTargetState.Missing;
-			}
-			foreach (JsonNode page in pages) {
-				if (page is JsonObject entry && Bool(entry, "IsDefault")
-					&& string.IsNullOrWhiteSpace(Str(entry, "TypeColumnValue"))) {
-					return ActionTargetState.Resolved;
-				}
-			}
-			return ActionTargetState.Missing;
-		} catch (Exception) {
-			// Every read is inside the try, not just the parse: this is internal and directly unit-tested, so
-			// a second caller could reach it without the outer degradation the probe's own path provides.
-			return ActionTargetState.Unknown;
-		}
-	}
+	internal static ActionTargetState ClassifyRelatedPageMetadata(string metaData) =>
+		RelatedPageAddonMetadata.TryFindUntypedDefault(metaData).Status switch {
+			RelatedPageAddonMetadata.Status.DefaultFound => ActionTargetState.Resolved,
+			RelatedPageAddonMetadata.Status.NoDefault => ActionTargetState.Missing,
+			_ => ActionTargetState.Unknown
+		};
 
 	/// <summary>
 	/// Splits <paramref name="values"/> (entity names, page UIds) into ESQ-safe batches. Every <c>IN</c>
@@ -1035,33 +1002,4 @@ public static class MobileActionTargetProbe {
 			ProbeOk = false, Note = note, Occurrences = occurrences,
 			TargetsByKey = settled ?? new Dictionary<string, ActionTargetResolution>(StringComparer.OrdinalIgnoreCase)
 		};
-
-	/// <summary>
-	/// Reads a scalar property as text. A non-string scalar falls back to its literal form, matching
-	/// <c>RelatedPageAddonService</c>'s reader: this probe classifies the SAME add-on metadata, and a numeric
-	/// <c>TypeColumnValue</c> read as null there would make a TYPED entry look like the untyped default.
-	/// </summary>
-	private static string Str(JsonObject obj, string property) {
-		if (obj is null || string.IsNullOrEmpty(property)
-			|| !obj.TryGetPropertyValue(property, out JsonNode node) || node is not JsonValue value) {
-			return null;
-		}
-		return value.TryGetValue(out string text) ? text : value.ToJsonString().Trim('"');
-	}
-
-	/// <summary>
-	/// Reads a boolean property, tolerating a bool stored as the STRING <c>"true"</c>. Deliberately as lenient
-	/// as <c>RelatedPageAddonService</c>'s reader: the two surfaces classify the same persisted add-on, and a
-	/// stricter read here would report "no default mobile page" for a record the other surface reports as the
-	/// default — a disagreement that lands on the false-alarm side.
-	/// </summary>
-	private static bool Bool(JsonObject obj, string property) {
-		if (obj is null || !obj.TryGetPropertyValue(property, out JsonNode node) || node is not JsonValue value) {
-			return false;
-		}
-		if (value.TryGetValue(out bool flag)) {
-			return flag;
-		}
-		return value.TryGetValue(out string text) && bool.TryParse(text, out bool parsed) && parsed;
-	}
 }
