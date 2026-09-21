@@ -330,10 +330,11 @@ sub-process **receives no values at all** while the element saves, describes and
 why the implementation reuses `ProcessMappingService.BuildSourceValue` (`:152-154`) instead of writing a
 second path, and why the stamp gets its own test (AC-17).
 
-**The clio mirror, with one correction to FR-02's stated reason.** `DescribedSubProcess` **does** carry
-`[JsonExtensionData]` (`IProcessDescriber.cs:1116-1117`), so an unmirrored describe block would round-trip
-as raw extension data rather than vanish. `DescribedParameter` (`:1632`) carries **none**, so anything new
-on a *parameter* is dropped silently — FR-02's reasoning is right there. Mirror the block typed anyway: the
+**The clio mirror, with one correction to FR-02's stated reason.** `DescribedSubProcess` (class at
+`IProcessDescriber.cs:1080`) **does** carry `[JsonExtensionData]` (`:1147`), so an unmirrored describe block
+would round-trip as raw extension data rather than vanish. `DescribedParameter` (`:1663-1756`) carries
+**none** — the nearest bags at `:1658` and `:1768` belong to the classes on either side of it — so anything
+new on a *parameter* is dropped silently, and FR-02's reasoning is right there. Mirror the block typed anyway: the
 XML doc on a typed member is the agent-facing contract surface and extension data carries none, and clio's
 own tests can only assert against typed members.
 
