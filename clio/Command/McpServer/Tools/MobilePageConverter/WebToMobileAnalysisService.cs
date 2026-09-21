@@ -241,11 +241,16 @@ public static partial class WebToMobileAnalysisService {
 		//
 		// The names it returns feed that purge ONLY — not ReclassifyRemovedBindings, which the two passes
 		// around it use, because nothing this one removes can still own a converted or flagged record (its own
-		// file argues why). Nor are they threaded into BuildMobileViewModelConfig: the empty-container and
-		// exclusion passes are layout cleanup and keep the attributes their elements referenced, while a menu
-		// item removed here is GENUINE loss and its attributes go with it. The button half is housekeeping
-		// rather than loss — the actions it held are reported one by one — but it reaches the same answer from
-		// the other side: a button that never fired anything referenced nothing worth keeping.
+		// file argues why).
+		//
+		// Nor are they threaded into BuildMobileViewModelConfig's keep-set, and MEASURED today that changes
+		// nothing: WalkConsumers descends `items` only, so a $Attr inside a menu was never credited to the
+		// menu item — it belongs to the host, which is still there or has its own entry. Both traversal
+		// shapes keep such an attribute, pinned by Analyze_CarriedMenuItems_KeepAttributesCreditedToTheHost.
+		// The omission is still deliberate rather than incidental: the two passes around this one add their
+		// names BECAUSE their removals are layout cleanup, and if WalkConsumers ever learns to descend
+		// menuItems (see the excluded-components-phase-b knowledge record, which anticipates exactly that),
+		// a dead action's attributes SHOULD go with it — that removal is genuine loss.
 		HashSet<string> deadActionRemovedMobileNames = RemoveDeadActions(elementMap, requestMap);
 
 		// Deterministic empty-container removal: a converter-created layout container whose items

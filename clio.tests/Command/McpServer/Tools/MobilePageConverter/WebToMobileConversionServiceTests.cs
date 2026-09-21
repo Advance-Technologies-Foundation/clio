@@ -3259,6 +3259,111 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("An excludedComponents rule can be what takes the last menu item off a button, and the button then goes as having nothing to do. This pins the pass ORDER: run the dead-action pass BEFORE the exclusion and the button still looks occupied, so it ships as a menu with nothing in it. Nothing else in the suite would notice the two being swapped.")]
+	public void Analyze_MenuButton_WhoseOnlyItemAnExclusionRemoved_IsAlsoDropped() {
+		// Arrange — the menu item's request CONVERTS, so only the exclusion can be what removes it.
+		PageBundleInfo bundle = MenuButtonBundle(SaveMenuItem);
+		var rules = new WebToMobilePageConversionRules {
+			Requests = MenuRules().Requests,
+			ExcludedComponents = [
+				new ExcludedComponentGroup {
+					Filters = [new ExcludedComponentFilterRule {
+						Type = "crt.MenuItem", ParentType = "crt.Button", PropertiesContainerName = "menuItems"
+					}]
+				}
+			]
+		};
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: MenuEntryGraphTypes, rules: rules);
+
+		// Assert
+		Codes(Dropped(guide, "SaveItem")).Should().Equal([ReasonCodes.DropExcludedByRule],
+			because: "the rule is what removed it — its request converts perfectly well");
+		Codes(Dropped(guide, "SettingsButton")).Should().Equal([ReasonCodes.DropActionNoRequest],
+			because: "the button is left with no menu item whatever emptied it, so the dead-action pass has "
+				+ "to run AFTER the exclusion to see that");
+	}
+
+	[Test]
+	[Description("An attribute bound only inside a removed menu item SURVIVES, in both traversal shapes, and the reason is worth pinning because it is not obvious: WalkConsumers descends `items` only, so a $Attr in a menuItems child was never credited to the menu item at all — it belongs to the host, which is still on the page. The dead-action pass therefore threads no name into the viewModelConfig keep-set and it costs nothing today. Written after a first version of this test asserted the opposite and failed: the pass's own call-site comment claimed these attributes were pruned, and they are not.")]
+	public void Analyze_CarriedMenuItems_KeepAttributesCreditedToTheHost() {
+		// Arrange — the dead item binds $CanExport; the live one binds $CanSave.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "SettingsButton", "type": "crt.Button", "caption": "Settings", "clickMode": "menu",
+				  "menuItems": [
+					{ "name": "ExportItem", "type": "crt.MenuItem", "visible": "$CanExport",
+					  "clicked": { "request": "crt.ExportDataGridToExcelRequest", "params": {} } },
+					{ "name": "SaveItem", "type": "crt.MenuItem", "visible": "$CanSave",
+					  "clicked": { "request": "crt.SaveRecordRequest", "params": {} } } ] } ] } ]
+			""",
+			viewModelConfigJson: """
+			{ "attributes": { "CanExport": { "value": true }, "CanSave": { "value": true } } }
+			""");
+
+		// Act
+		MobilePageConversionGuide carried = Analyze(bundle, mobileTypes: MenuCarriedTypes, rules: MenuRules());
+		MobilePageConversionGuide entries = Analyze(bundle, mobileTypes: MenuEntryGraphTypes, rules: MenuRules());
+
+		// Assert
+		DroppedNames(carried).Should().Contain("ExportItem",
+			because: "the dead menu item really is removed, or the attribute question below is moot");
+		string carriedViewModel = carried.ViewModelConfig?.ToJsonString() ?? string.Empty;
+		carriedViewModel.Should().Contain("CanExport",
+			because: "the consumer walk descends `items` only, so $CanExport was credited to SettingsButton "
+				+ "rather than to the menu item that spells it — the host survives, so the attribute does. "
+				+ "Pruning it would leave a surviving element binding an attribute the page no longer declares");
+		carriedViewModel.Should().Contain("CanSave",
+			because: "the surviving menu item still binds it, on any reading");
+		(entries.ViewModelConfig?.ToJsonString() ?? string.Empty).Should().Be(carriedViewModel,
+			because: "the two traversal shapes must not disagree about the view model either — this is the "
+				+ "same cross-shape parity the droppedElements tests hold, on the other data section");
+	}
+
+	[Test]
+	[Description("The ENG-94839 guard in the VERBATIM-CARRY shape — the one production runs. The entry-graph version of this test leaves the button's menuItems slot walked out into entries; here the slot is carried, so the button additionally loses the key when the pass empties it. Both routes arrive at a button with no clicked in its values and nothing in its menu, and both must keep it, because it DID author a click request.")]
+	public void Analyze_MenuButton_WhoseClickWasStrippedForAMissingTarget_IsKept_InTheCarriedShape() {
+		// Arrange — same shape as the entry-graph guard, but crt.MenuItem does not resolve here.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "SettingsButton", "type": "crt.Button", "caption": "Settings",
+				  "clicked": { "request": "crt.OpenPageRequest", "params": { "schemaName": "LegacyPage" } },
+				  "menuItems": [ { "name": "PrintItem", "type": "crt.MenuItem", "caption": "Print",
+				    "clicked": { "request": "crt.PrintablesRequest", "params": {} } } ] } ] } ]
+			""");
+		MobileActionTargetProbeResult probe = ProbeResult(
+			"SettingsButton", "crt.OpenPageRequest", MobileActionTargetProbe.KindWebPage, "LegacyPage",
+			ActionTargetState.Missing);
+
+		// Act — TargetRules minus crt.MenuItem from the mobile type set is the carried shape.
+		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
+			bundle,
+			new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.Button", "crt.FlexContainer" },
+			WebTypes,
+			webByType: Reg(("crt.FlexContainer", true)),
+			mobileByType: null,
+			TargetRules, templateRule: null,
+			sourcePage: "UsrApp_FormPage", sourceTemplate: null,
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null,
+			actionTargetsProbe: probe);
+
+		// Assert
+		DroppedNames(guide).Should().Contain("PrintItem",
+			because: "the carried dead menu item still goes — without that the button below never reaches "
+				+ "the state this test is about");
+		JsonObject values = Element(guide, "SettingsButton").Values!.AsObject();
+		values.Should().NotContainKey("clicked",
+			because: "the definitional-absence strip still removes the dead navigation");
+		values.ContainsKey("menuItems").Should().BeFalse(
+			because: "and the emptied slot loses its key, so the button now looks exactly like one that never "
+				+ "had either — which is the trap this guard exists for");
+		DroppedNames(guide).Should().NotContain("SettingsButton",
+			because: "it AUTHORED a click request, and ENG-94839 decided a control whose action opens a page "
+				+ "missing on mobile stays on the converted page");
+	}
+
+	[Test]
 	[Description("A header crt.Button whose clicked request is supported ONLY via the bundled MobileSupportedRequests set (absent from the versioned map) still converts into the FAB — pinning the bundled-set positive branch of IsRequestSupported so a future map-only simplification cannot silently start dropping these buttons.")]
 	public void Analyze_Fab_HeaderButton_BundledSetSupportedRequest_ConvertsIntoFab() {
 		// Arrange — crt.SetAttributeFromNfcRequest is in the bundled supported set but NOT in the versioned map (FabRule carries no requests).
