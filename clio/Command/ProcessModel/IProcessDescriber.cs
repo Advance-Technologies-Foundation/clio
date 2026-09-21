@@ -193,6 +193,7 @@ public sealed class ServerProcessDescriber(
 			IsActiveVersion = member.IsActiveVersion,
 			IsRoot = member.IsRoot,
 			PackageUId = member.PackageUId,
+			PackageName = member.PackageName,
 			Enabled = member.Enabled
 		};
 
@@ -429,6 +430,19 @@ public sealed class DescribedProcessVersion {
 	public string PackageUId { get; set; }
 
 	/// <summary>
+	/// Name of that package, absent when it could not be resolved.
+	/// </summary>
+	/// <remarks>
+	/// Published because a builder asking which package a version lives in is asking for the name — the UId
+	/// alone renders as a raw GUID in the answer they read (reported by manual testing on ENG-94374).
+	/// <see cref="PackageUId"/> stays the authority and is always present; this is read from
+	/// <c>SysPackage</c> beside the family, so absence means the package could not be NAMED, never that the
+	/// version has no package.
+	/// </remarks>
+	[JsonPropertyName("packageName")]
+	public string PackageName { get; set; }
+
+	/// <summary>
 	/// Whether the process is enabled. This is FAMILY state, not per-version state: the platform keys
 	/// enable/disable on the root schema, so every member of a family reports the same value.
 	/// </summary>
@@ -552,6 +566,18 @@ public sealed class DescribedElement {
 	public DescribedPreconfiguredPage PreconfiguredPage { get; set; }
 
 	/// <summary>
+	/// For a Sub-process element (a BPMN call activity): which process it calls, and whether the element still
+	/// mirrors that process's parameters. <c>null</c> for other element kinds and when the server (an older
+	/// <c>CrtProcessBuilder</c>) does not report it.
+	/// <para>Declared here for the same reason the page block is, and it is the only reason the block reaches a
+	/// caller at all: the describe output is re-serialized from this model, so a member the model does not declare
+	/// is dropped on the way out. Before this element existed the read-back carried no reference to the called
+	/// process whatsoever - the parameters came back, and nothing said whose they were.</para>
+	/// </summary>
+	[JsonPropertyName("subProcess")]
+	public DescribedSubProcess SubProcess { get; set; }
+
+	/// <summary>
 	/// The element's BOUND host-entity connections ("Connected to") — which records the Activity it creates is
 	/// attached to. <c>null</c> when the element has none, and also when the server is an older
 	/// <c>CrtProcessBuilder</c> that does not report them.
@@ -623,6 +649,19 @@ public sealed class DescribedElement {
 	/// </summary>
 	[JsonPropertyName("approval")]
 	public DescribedApproval Approval { get; set; }
+
+	/// <summary>
+	/// For a Formula element (<c>formulaTask</c>): the expression and the parameter its result is written to.
+	/// <c>null</c> for other element kinds and on a server that predates the element.
+	/// </summary>
+	/// <remarks>
+	/// The target is reported back in the NAMES a build takes, so a described formula feeds into a create or a
+	/// modify unchanged. <c>unresolved</c> means this package could not decode the stored map path into names —
+	/// not that the element writes nowhere, which is a claim neither side can make about a path the platform's own
+	/// reader may still accept.
+	/// </remarks>
+	[JsonPropertyName("formula")]
+	public DescribedFormula Formula { get; set; }
 
 	/// <summary>
 	/// Captures every other field the server reports on an element so the description round-trips losslessly:
@@ -1029,6 +1068,81 @@ public sealed class DescribedEmail {
 	/// losslessly: a newer <c>CrtProcessBuilder</c> reporting something this build does not declare — a body format, an
 	/// attachment list — reaches the command output verbatim instead of being
 	/// discarded without a trace. This block is where the next email feature lands, so it needs the bag most.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// Which process a Sub-process element calls, read back off the element. Mirrors the server's
+/// <c>DescribeSubProcessInfo</c> field for field.
+/// </summary>
+public sealed class DescribedSubProcess {
+	/// <summary>
+	/// The called process's schema NAME, or the raw UId when that process no longer resolves - describe never
+	/// fails over a dangling reference, it reports what the element actually stores. <c>null</c> when the element
+	/// calls nothing yet, which is a real state rather than a broken one.
+	/// </summary>
+	[JsonPropertyName("process")]
+	public string Process { get; set; }
+
+	/// <summary>The called process's schema UId, exactly as the element stores it.</summary>
+	[JsonPropertyName("processUId")]
+	public string ProcessUId { get; set; }
+
+	/// <summary>The called process's display caption, as the process library shows it; null when it does not resolve.</summary>
+	[JsonPropertyName("processCaption")]
+	public string ProcessCaption { get; set; }
+
+	/// <summary>
+	/// True when the element runs the called process once per item of a collection: it carries two collections and
+	/// three iteration counters instead of the called process's parameters, so the names a mapping would use
+	/// address nothing on it.
+	/// <para>Every write path that CONFIGURES such an element refuses it, which is what this flag lets a caller
+	/// see coming. An unrelated <c>setElement</c> is NOT refused - it is applied, the element's re-synchronization
+	/// is skipped, and a warning says so.</para>
+	/// <para>Nullable defensively, like <see cref="DescribedEmail.HasBody"/> and for the same reason: no shipped
+	/// server omits it, but a flag whose absence deserializes to <c>false</c> would read as "plain call activity,
+	/// safe to write" - the wrong side to fail toward on the one field that signals a refusal.</para>
+	/// </summary>
+	[JsonPropertyName("multiInstance")]
+	public bool? MultiInstance { get; set; }
+
+	/// <summary>
+	/// Whether the element still carries every parameter the called process declares. <c>null</c> means that
+	/// process could not be read, which is UNKNOWN and never "out of sync".
+
+	/// <para>THE RECIPE, which is what to do rather than why it works: save the caller, <b>describe it once</b>,
+	/// change the callee, then describe again and read this flag. The middle read is what makes the last one
+	/// meaningful, and between the callee change and the final read do not run, re-read or compile the caller.
+	/// On some processes <c>false</c> arrives without the recipe; it is never harmful to follow anyway.</para>
+	/// <para>The MECHANISM is deliberately not restated here. It was wrong in three consecutive releases, each
+	/// version consistent with everything a stand could show, because the errors were visible only in platform
+	/// source — so it lives in
+	/// <c>docs/knowledge/platform/subprocess-insync-depends-on-the-schema-instance.md</c> with its evidence, its
+	/// date and its line numbers, where a correction moves one file that is expected to carry uncertainty.</para>
+	/// <para>The test is ONE-DIRECTIONAL and a DROPPED parameter is invisible to it. It asks whether every
+	/// parameter the CALLEE declares is present on the element, so a callee that ADDS one flips this to
+	/// <c>false</c> while a callee that REMOVES one leaves it <c>true</c> — the element merely carries an extra.
+	/// Measured. A code RENAME reads as an add plus a remove and does flip it.</para>
+	/// <para>It does NOT see a CAPTION. The element keeps its own copy of each parameter's caption, so a callee
+	/// that renames only the caption leaves this <c>true</c> while the two texts differ - measured. That is the
+	/// right half to be sensitive to, because the runtime binds by CODE and a caption has no effect on delivery;
+	/// but <c>true</c> means "the element carries every parameter the callee declares", NOT "the element matches
+	/// the callee".</para>
+	/// <para>On a MULTI-INSTANCE element <c>false</c> is PERMANENT and is not drift. Such an element carries an
+	/// input collection, an output collection and three iteration counters INSTEAD of the callee's parameters, so
+	/// the test can never be satisfied - and the re-synchronization <c>false</c> would otherwise call for is
+	/// REFUSED on it. Read this flag together with <see cref="DescribedSubProcess.MultiInstance"/>, never alone.</para>
+	/// </summary>
+	[JsonPropertyName("inSync")]
+	public bool? InSync { get; set; }
+
+	/// <summary>
+	/// Anything the server reports inside this block that this model does not declare. Every server-built
+	/// configuration block here carries one, and the reason is the failure this whole block exists to close one
+	/// level up: the describe output is re-serialized from this model, so a field a later CrtProcessBuilder adds
+	/// is dropped on the way to the caller with nothing logged and a read-back that looks complete.
 	/// </summary>
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement> AdditionalData { get; set; }
@@ -1464,6 +1578,31 @@ public sealed class DescribedFlow {
 	public string Condition { get; set; }
 
 	/// <summary>
+	/// WHICH results select this branch, by caption, or <c>null</c> when the flow decides on a formula.
+	/// <para>Reported from <c>CrtProcessBuilder</c> 1.6.2.23. These are the same captions the write surface
+	/// takes - <c>flows[].results</c> on the build path, <c>setFlowResults</c> on the modify path - so a branch
+	/// reads back and writes back unchanged. Before this member <see cref="BranchesOnActivityResult"/> said only
+	/// THAT a selection exists, which left a selection unverifiable: a caller could write one and had no way to
+	/// confirm, diff or preserve it.</para>
+	/// <para>A result whose lookup row no longer resolves arrives as its raw UId rather than being dropped, so a
+	/// stale selection never reads as a SHORTER one. <c>null</c> rather than an empty array on a formula branch,
+	/// so the two dialects are distinguishable from the read alone. ABSENT on a package older than 1.6.2.23,
+	/// which is the same bytes as a formula branch - so an all-absent read is not evidence of anything.</para>
+	/// </summary>
+	[JsonPropertyName("results")]
+	public string[] Results { get; set; }
+
+	/// <summary>
+	/// The element whose results <see cref="Results"/> names, or <c>null</c> when the flow carries no selection.
+	/// <para>Usually the flow's own source, and reported anyway because it is NOT always: the designer keys the
+	/// selection on the deciding ACTIVITY, which for a connector leaving a gateway is an element UPSTREAM of it.
+	/// A caller that assumed the source and wrote the selection back would silently re-key it onto the gateway,
+	/// changing which activity's result decides the branch.</para>
+	/// </summary>
+	[JsonPropertyName("resultsActivity")]
+	public string ResultsActivity { get; set; }
+
+	/// <summary>
 	/// <c>true</c> when this flow's branch is decided by the RESULT of the preceding activity - which buttons it
 	/// was completed with - and NOT by <see cref="Condition"/>.
 	/// <para>The two are indistinguishable without it, and the difference is total: the platform reads the result
@@ -1558,6 +1697,16 @@ public sealed class DescribedParameter {
 	[JsonPropertyName("isResult")]
 	public bool? IsResult { get; set; }
 
+	/// <summary>
+	/// True when the parameter's declaration marks it required. Omitted when the server (an older
+	/// <c>CrtProcessBuilder</c>) does not report it.
+	/// <para>It matters most on a SUB-PROCESS element, where nothing validates it: values cross by parameter NAME
+	/// and requiredness is never checked on either side, so a required input left unmapped is refused nowhere and
+	/// the called process simply runs without it.</para>
+	/// </summary>
+	[JsonPropertyName("isRequired")]
+	public bool? IsRequired { get; set; }
+
 	/// <summary>For a lookup parameter: the referenced object (entity schema) name (for example <c>City</c>); null otherwise.</summary>
 	[JsonPropertyName("referenceSchema")]
 	public string ReferenceSchema { get; set; }
@@ -1603,3 +1752,53 @@ public sealed class DescribedParameter {
 }
 
 #endregion
+
+/// <summary>A Formula element read back: the expression, and where its result goes.</summary>
+public sealed class DescribedFormula {
+
+	/// <summary>The expression, verbatim as stored (the platform meta-path form).</summary>
+	[JsonPropertyName("body")]
+	public string Body { get; set; }
+
+	/// <summary>Where the result is written. <c>null</c> when the element has no target yet.</summary>
+	[JsonPropertyName("target")]
+	public DescribedFormulaTarget Target { get; set; }
+
+	/// <summary>Anything a newer server reports that this build does not declare.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>The parameter a Formula element writes to, in the shape a build takes it.</summary>
+public sealed class DescribedFormulaTarget {
+
+	/// <summary>The process parameter receiving the result.</summary>
+	[JsonPropertyName("resultProcessParameter")]
+	public string ResultProcessParameter { get; set; }
+
+	/// <summary>The element whose parameter receives the result.</summary>
+	[JsonPropertyName("elementName")]
+	public string ElementName { get; set; }
+
+	/// <summary>The parameter of <see cref="ElementName"/> receiving the result.</summary>
+	[JsonPropertyName("elementParameter")]
+	public string ElementParameter { get; set; }
+
+	/// <summary>
+	/// For a three-part target, the column of that parameter's record, as the stored UId — the process cannot
+	/// name it, because the column belongs to an entity.
+	/// </summary>
+	[JsonPropertyName("entityColumnUId")]
+	public string EntityColumnUId { get; set; }
+
+	/// <summary>
+	/// The stored map path, reported when the server could not decode it into names. It does NOT assert that the
+	/// element writes nowhere.
+	/// </summary>
+	[JsonPropertyName("unresolved")]
+	public string Unresolved { get; set; }
+
+	/// <summary>Anything a newer server reports that this build does not declare.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}

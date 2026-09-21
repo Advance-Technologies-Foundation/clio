@@ -235,13 +235,13 @@ public sealed class WorkerOperationCompletionSignalTests {
 
 		// Assert
 		sticky.Should().BeEquivalentTo(
-			["compile-creatio", "compile-status", "create-app-section", "install-process-builder",
-				"restart-by-credentials", "restart-by-environment-name", "restart-status"],
+			["compile-creatio", "compile-status", "create-app-section", "install-dashboards-migrator",
+				"install-process-builder", "restart-by-credentials", "restart-by-environment-name", "restart-status"],
 			because: "these are the tools whose worker outlives the response, and the sweep this fix rests "
 				+ "on covered exactly them");
 		owedASignal.Should().BeEquivalentTo(
-			["compile-creatio", "create-app-section", "install-process-builder", "restart-by-credentials",
-				"restart-by-environment-name"],
+			["compile-creatio", "create-app-section", "install-dashboards-migrator", "install-process-builder",
+				"restart-by-credentials", "restart-by-environment-name"],
 			because: "only a tool that STARTS an operation owns a worker to reap; the two status polls are "
 				+ "sticky but must never signal");
 	}
@@ -769,7 +769,12 @@ public sealed class WorkerOperationCompletionSignalTests {
 		internal FakeCompileConfigurationCommand()
 			: base(Substitute.For<IApplicationClient>(), new EnvironmentSettings(),
 				Substitute.For<IServiceUrlBuilder>(), Substitute.For<ICompilationHistoryPoller>(),
-				Substitute.For<ILogger>(), Substitute.For<IInteractiveConsole>()) {
+				Substitute.For<ILogger>(), Substitute.For<IInteractiveConsole>(),
+				Substitute.For<IApplicationClientFactory>(),
+				Substitute.For<ICompilationActivityWatcher>(),
+				Substitute.For<IEnvironmentReloadWatcher>(),
+				Substitute.For<ICompilationCompletionDecider>(),
+				Substitute.For<ICompilationResultReader>()) {
 		}
 
 		public override int Execute(CompileConfigurationOptions options) {

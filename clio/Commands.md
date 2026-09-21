@@ -1,6 +1,17 @@
-﻿# Clio Command Reference
+# Clio Command Reference
 
 Use `clio help` for the terminal overview and `clio <command> --help` for command details.
+
+## User and Role Administration
+
+<a id="manage-user"></a>
+- [`manage-user`](docs/commands/manage-user.md) - Inspect and manage Creatio user administration.
+<a id="manage-role"></a>
+- [`manage-role`](docs/commands/manage-role.md) - Inspect and manage Creatio role administration.
+<a id="manage-access"></a>
+- [`manage-access`](docs/commands/manage-access.md) - Inspect and manage Creatio access administration.
+<a id="manage-license"></a>
+- [`manage-license`](docs/commands/manage-license.md) - Inspect and manage Creatio license administration.
 
 ## Application Management
 
@@ -95,6 +106,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="set-file-content-storage-connection-string"></a>
 <a id="set-fcs-connection-string"></a>
 - [`set-file-content-storage-connection-string`](docs/commands/set-file-content-storage-connection-string.md) - Set the connection string of a file content storage, `set-fcs-connection-string`
+<a id="download-sys-setting-file"></a>
+- [`download-sys-setting-file`](docs/commands/download-sys-setting-file.md) - Save a Binary system setting's exact bytes to a required destination filename.
+
 <a id="set-syssetting"></a>
 <a id="get-syssetting"></a>
 <a id="ss"></a>
@@ -227,7 +241,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="up"></a>
 - [`unlock-package`](docs/commands/unlock-package.md) - Unlock a package in Creatio, `up`
 <a id="autoupdate"></a>
-- [`autoupdate`](docs/commands/autoupdate.md) - Enable or disable automatic clio updates on startup
+- [`autoupdate`](docs/commands/autoupdate.md) - Enable or disable automatic clio updates on startup (disabled by default; knowledge enabled, toolkit disabled)
 <a id="experimental"></a>
 <a id="exp"></a>
 - [`experimental`](docs/commands/experimental.md) - List and toggle clio experimental feature flags, `exp`
@@ -293,6 +307,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="push-workspace"></a>
 <a id="pushw"></a>
 - [`push-workspace`](docs/commands/push-workspace.md) - Push workspace to selected environment, `pushw`
+<a id="register-process-element"></a>
+- [`register-process-element`](docs/commands/register-process-element.md) - Generate package-owned process element registration scripts
 <a id="remove-data-binding-row"></a>
 - [`remove-data-binding-row`](docs/commands/remove-data-binding-row.md) - Remove a row from a package data binding
 <a id="remove-data-binding-row-db"></a>
@@ -321,6 +337,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`add-item`](docs/commands/add-item.md) - Generate package item models from Creatio metadata, `create`
 <a id="add-schema"></a>
 - [`add-schema`](docs/commands/add-schema.md) - Create a schema file in a workspace package
+<a id="create-user-task-page"></a>
+- [`create-user-task-page`](docs/commands/create-user-task-page.md) - Create and associate a Classic user-task parameter page in a workspace
 <a id="add-user-task"></a>
 - [`add-user-task`](docs/commands/add-user-task.md) - Create a user task schema in a workspace package
 <a id="alm-deploy"></a>
@@ -338,15 +356,15 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="client-unit-schema-create"></a>
 - [`create-client-unit-schema`](docs/commands/create-client-unit-schema.md) - Create a new JavaScript (ClientUnit) schema on a remote Creatio environment, `client-unit-schema-create`
 <a id="create-entity-schema"></a>
-- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create a persistent or virtual entity schema in a remote Creatio package
+- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create a persistent, virtual, DB-view, or same-name replacing entity schema in a remote Creatio package; columns accept repeated flags or a JSON array
 <a id="create-lookup"></a>
 - [`create-lookup`](docs/commands/create-lookup.md) - Create a lookup entity schema in a remote Creatio package
 <a id="create-schema"></a>
 <a id="schema-create"></a>
-- [`create-schema`](docs/commands/create-schema.md) - Create a new C# source-code schema on a remote Creatio environment, `schema-create`
+- [`create-schema`](docs/commands/create-schema.md) - Create a new C# source-code schema on a remote Creatio environment with aggregate name validation and optional `--body` or `--body-file`, `schema-create`
 <a id="create-sql-schema"></a>
 <a id="sql-schema-create"></a>
-- [`create-sql-schema`](docs/commands/create-sql-schema.md) - Create a new SQL script schema on a remote Creatio environment, `sql-schema-create`
+- [`create-sql-schema`](docs/commands/create-sql-schema.md) - Create an empty native package SQL script with target engine detection and installation phase selection, `sql-schema-create`
 <a id="dataservice"></a>
 <a id="ds"></a>
 - [`dataservice`](docs/commands/dataservice.md) - Send a Creatio DataService request, `ds`
@@ -363,7 +381,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`download-configuration`](docs/commands/download-configuration.md) - Download configuration libraries from Creatio, `dconf`
 <a id="execute-sql-script"></a>
 <a id="sql"></a>
-- [`execute-sql-script`](docs/commands/execute-sql-script.md) - Execute a SQL script in Creatio, `sql`
+- [`execute-sql-script`](docs/commands/execute-sql-script.md) - Execute a SQL script in Creatio; table display uses 40 characters per cell line, with JSON/CSV/XLSX file exports for full content (also available through MCP), `sql`
 <a id="export-component-registry"></a>
 <a id="export-registry"></a>
 - [`export-component-registry`](docs/commands/export-component-registry.md) - Write the full Freedom UI component registry for a resolved platform version to a file, `export-registry`
@@ -384,13 +402,13 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="client-unit-schema-get"></a>
 - [`get-client-unit-schema`](docs/commands/get-client-unit-schema.md) - Read body and metadata of a client unit (JavaScript) schema on a remote Creatio environment, `client-unit-schema-get`
 <a id="get-entity-schema-column-properties"></a>
-- [`get-entity-schema-column-properties`](docs/commands/get-entity-schema-column-properties.md) - Get one column's properties (omit `--package` for merged discovery across all packages)
+- [`get-entity-schema-column-properties`](docs/commands/get-entity-schema-column-properties.md) - Get one column's properties and resolve SystemValue default captions (omit `--package` for merged discovery across all packages)
 <a id="find-entity-schema"></a>
 - [`find-entity-schema`](docs/commands/find-entity-schema.md) - Find entity schemas in a Creatio environment by name, pattern, or UId
 <a id="get-entity-schema-properties"></a>
-- [`get-entity-schema-properties`](docs/commands/get-entity-schema-properties.md) - Get properties from a remote Creatio entity schema (omit `--package` for the merged all-packages view, including custom columns from other packages)
+- [`get-entity-schema-properties`](docs/commands/get-entity-schema-properties.md) - Get properties from a remote Creatio entity schema (`--required-only` filters required columns; omit `--package` for the merged all-packages view, including custom columns from other packages)
 <a id="set-entity-schema-properties"></a>
-- [`set-entity-schema-properties`](docs/commands/set-entity-schema-properties.md) - Set schema-level properties (e.g. the primary-display column) on a remote Creatio entity schema
+- [`set-entity-schema-properties`](docs/commands/set-entity-schema-properties.md) - Set schema-level properties (the database-view flag, primary-display column, and schema caption per culture via `--title` / `--title-localizations`) on a remote Creatio entity schema
 <a id="get-process-signature"></a>
 <a id="gps"></a>
 - [`get-process-signature`](docs/commands/get-process-signature.md) - Read the parameter signature (codes, types, direction) of a Creatio business process, `gps`
@@ -407,7 +425,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="get-version"></a>
 <a id="i"></a>
 <a id="ver"></a>
-- [`info`](docs/commands/info.md) - Show clio, cliogate, and .NET runtime versions, `get-version`, `i`, `ver`
+- [`info`](docs/commands/info.md) - Show clio, cliogate, bundled process-builder, installed knowledge, toolkit per agent, and .NET runtime versions, `get-version`, `i`, `ver`
 <a id="install-sql-schema"></a>
 <a id="sql-schema-install"></a>
 <a id="execute-sql-schema"></a>
@@ -444,7 +462,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`open-settings`](docs/commands/open-settings.md) - Open the clio settings file, `conf`, `configuration`, `os`, `settings`
 <a id="get-page"></a>
 <a id="page-get"></a>
-- [`get-page`](docs/commands/get-page.md) - Get a Freedom UI page bundle and raw schema body, `page-get`
+- [`get-page`](docs/commands/get-page.md) - Get a Freedom UI page bundle, editable body, and current-leaf/design-package metadata, `page-get`
 <a id="get-process-page-facts"></a>
 <a id="page-facts"></a>
 - [`get-process-page-facts`](docs/commands/get-process-page-facts.md) - Read the completing-button candidates and page-scoped data sources a Pre-configured page process element needs, `page-facts`
@@ -462,7 +480,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`update-client-unit-schema`](docs/commands/update-client-unit-schema.md) - Update the raw body of a client unit schema, `client-unit-schema-update`
 <a id="update-page"></a>
 <a id="page-update"></a>
-- [`update-page`](docs/commands/update-page.md) - Update Freedom UI page schema body with best-effort Designer Presence save push, `page-update`
+- [`update-page`](docs/commands/update-page.md) - Update Freedom UI page body and en-US resource values; warns to capture workspace resources before pushing, `page-update`
 <a id="create-page"></a>
 <a id="page-create"></a>
 - [`create-page`](docs/commands/create-page.md) - Create a new Freedom UI page from a supported template, `page-create`
@@ -605,6 +623,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="uninstall-creatio"></a>
 <a id="uc"></a>
 - [`uninstall-creatio`](docs/commands/uninstall-creatio.md) - Uninstall by registered EnvironmentPath with all-site and shared-pool-safe IIS cleanup, `uc`
+<a id="uninstall-identity"></a>
+- [`uninstall-identity`](docs/commands/uninstall-identity.md) - Remove the recorded local IdentityService while preserving Creatio and its database
 <a id="upload-license"></a>
 <a id="license"></a>
 <a id="load-license"></a>
@@ -622,6 +642,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`create-theme`](docs/commands/create-theme.md) - Create a custom Creatio theme on an environment (Creatio 10.0.0+)
 <a id="delete-theme"></a>
 - [`delete-theme`](docs/commands/delete-theme.md) - Delete a custom Creatio theme from an environment (Creatio 10.0.0+)
+<a id="get-theme"></a>
+- [`get-theme`](docs/commands/get-theme.md) - Read the content (theme.css) and metadata of a custom Creatio theme (Creatio 10.0.0+)
 <a id="list-themes"></a>
 <a id="get-themes"></a>
 - [`list-themes`](docs/commands/list-themes.md) - List the custom Creatio themes available on an environment (Creatio 10.0.0+), `get-themes`
@@ -689,6 +711,12 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="installgate"></a>
 <a id="update-gate"></a>
 - [`install-gate`](docs/commands/install-gate.md) - Install or update cliogate in Creatio, `gate`, `installgate`, `update-gate`
+<a id="install-dashboards-migrator"></a>
+<a id="idm"></a>
+<a id="installdashboardsmigrator"></a>
+<a id="udm"></a>
+<a id="update-dashboards-migrator"></a>
+- [`install-dashboards-migrator`](docs/commands/install-dashboards-migrator.md) - Install or update the bundled dashboards-migrator package in Creatio, `idm`, `installdashboardsmigrator`, `udm`, `update-dashboards-migrator`
 <a id="install-process-builder"></a>
 <a id="installprocessbuilder"></a>
 <a id="update-process-builder"></a>
@@ -758,3 +786,19 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`set-app-version`](docs/commands/set-app-version.md) - Set application version, `appversion`
 <a id="unregister"></a>
 - [`unregister`](docs/commands/unregister.md) - Remove clio shell integrations
+
+### Related-page response identity
+
+`get-related-page-addon` and `create-related-page-addon` report `entitySchemaUId` as
+the base/root entity UId resolved by Creatio for the add-on, shared across replacing
+layers. A temporary designer schema or an individual replacing row is not that identity.
+
+<a id="enroll-sequence-participants"></a>
+
+Enroll explicit contacts through Creatio's native sequence service. See [enroll-sequence-participants](docs/commands/enroll-sequence-participants.md).
+<a id="get-sequence-context"></a>
+- [get-sequence-context](docs/commands/get-sequence-context.md) - Read effective sequence fields and live configuration choices.
+
+<a id="execute-dataservice-batch"></a>
+
+Write explicit records in a native DataService batch. See [execute-dataservice-batch](docs/commands/execute-dataservice-batch.md).

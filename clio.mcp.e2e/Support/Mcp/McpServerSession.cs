@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using Clio.Command.McpServer.Knowledge;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
+using Clio.Mcp.E2E.Support.Diagnostics;
 using Clio.Mcp.E2E.Support.Results;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol;
@@ -21,6 +22,9 @@ internal sealed class McpServerSession : IAsyncDisposable {
 	private TaskCompletionSource<bool> _progressCapturedSignal = CreateProgressCapturedSignal();
 	private IAsyncDisposable? _progressCaptureRegistration;
 	private bool _progressCaptureRegistered;
+	private readonly ConcurrentQueue<JsonNode> _capturedLogParams = new();
+	private IAsyncDisposable? _logCaptureRegistration;
+	private bool _logCaptureRegistered;
 	private HashSet<string>? _advertisedToolNames;
 	private IReadOnlyCollection<string>? _reachableToolNames;
 	private IReadOnlyList<ToolContractIndexEntry>? _toolContractIndex;
@@ -67,8 +71,13 @@ internal sealed class McpServerSession : IAsyncDisposable {
 			WorkingDirectory = process.WorkingDirectory,
 			EnvironmentVariables = settings.ProcessEnvironmentVariables,
 			Name = "clio-mcp-e2e",
-			// SDK waits the full window on dispose even after the child exits (~0.05s measured on CI); 40x margin.
-			ShutdownTimeout = TimeSpan.FromSeconds(2),
+			// The SDK never closes the child's stdin on dispose: StdioClientTransport.DisposeProcess goes
+			// straight to KillTree(ShutdownTimeout), so this window is spent in full on EVERY disposal
+			// regardless of how fast the server would have exited on its own (measured: 2035ms out of a
+			// 2s setting, 280ms out of 250ms). clio's own EOF shutdown is not the bottleneck — a manual
+			// stdin close makes the server exit in 0.27s. The window therefore only has to cover
+			// KillTree itself, so keep it small; raising it costs the whole delta on every fixture.
+			ShutdownTimeout = TimeSpan.FromMilliseconds(500),
 			StandardErrorLines = standardErrorLines
 		}, NullLoggerFactory.Instance);
 
@@ -86,11 +95,13 @@ internal sealed class McpServerSession : IAsyncDisposable {
 			options.Handlers = new McpClientHandlers { ElicitationHandler = elicitationHandler };
 		}
 
+		long startedAt = Stopwatch.GetTimestamp();
 		McpClient client = await McpClient.CreateAsync(
 			transport,
 			options,
 			NullLoggerFactory.Instance,
 			cancellationToken);
+		E2ETimingProbe.RecordSessionStart(Stopwatch.GetElapsedTime(startedAt));
 
 		return new McpServerSession(client, transport);
 	}
@@ -129,6 +140,57 @@ internal sealed class McpServerSession : IAsyncDisposable {
 		} catch (JsonException) {
 			// Invalid-settings fixtures must reach the real server unchanged and assert its diagnostics.
 		}
+	}
+
+	/// <summary>
+	/// Registers a raw <c>notifications/message</c> handler so a test can assert what the server actually
+	/// forwarded to the client's log pane. Idempotent - registering more than once per session is a no-op.
+	/// </summary>
+	/// <remarks>
+	/// Needed because it is the ONLY sink a classified failure can reach when clio runs as an MCP server:
+	/// the console is suppressed under MCP server mode and the log file exists only with <c>--log</c>. A
+	/// correlation ID in a tool's failure envelope is only resolvable if it also arrives here.
+	/// </remarks>
+	public void StartCapturingLogNotifications() {
+		if (_logCaptureRegistered) {
+			return;
+		}
+
+		_logCaptureRegistered = true;
+		_logCaptureRegistration = Client.RegisterNotificationHandler(
+			NotificationMethods.LoggingMessageNotification, (notification, _) => {
+			JsonNode? paramsNode = notification.Params?.DeepClone();
+			if (paramsNode is not null) {
+				_capturedLogParams.Enqueue(paramsNode);
+			}
+
+			return default;
+		});
+	}
+
+	/// <summary>
+	/// The raw <c>params</c> nodes of every <c>notifications/message</c> captured since
+	/// <see cref="StartCapturingLogNotifications"/> was called, in arrival order.
+	/// </summary>
+	public IReadOnlyList<JsonNode> CapturedLogParams => [.. _capturedLogParams];
+
+	/// <summary>
+	/// Waits until a captured <c>notifications/message</c> satisfies <paramref name="predicate"/>, or the
+	/// timeout elapses. Notification dispatch and tool completion are independent SDK continuations, so a
+	/// finished tool call does not guarantee the handler has already run.
+	/// </summary>
+	public async Task<bool> WaitForCapturedLogAsync(
+		Func<JsonNode, bool> predicate,
+		TimeSpan timeout,
+		CancellationToken cancellationToken) {
+		DateTime deadline = DateTime.UtcNow + timeout;
+		while (DateTime.UtcNow < deadline) {
+			if (_capturedLogParams.Any(predicate)) {
+				return true;
+			}
+			await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken);
+		}
+		return _capturedLogParams.Any(predicate);
 	}
 
 	/// <summary>
@@ -281,13 +343,18 @@ internal sealed class McpServerSession : IAsyncDisposable {
 		string toolName,
 		IReadOnlyDictionary<string, object?> arguments,
 		CancellationToken cancellationToken) {
-		if (await IsToolAdvertisedAsync(toolName, cancellationToken)) {
-			return await Client.CallToolAsync(toolName, arguments, cancellationToken: cancellationToken);
+		long startedAt = Stopwatch.GetTimestamp();
+		try {
+			if (await IsToolAdvertisedAsync(toolName, cancellationToken)) {
+				return await Client.CallToolAsync(toolName, arguments, cancellationToken: cancellationToken);
+			}
+			return await Client.CallToolAsync(
+				ClioRunTool.ToolName,
+				BuildClioRunArguments(toolName, arguments),
+				cancellationToken: cancellationToken);
+		} finally {
+			E2ETimingProbe.RecordToolCall(toolName, Stopwatch.GetElapsedTime(startedAt));
 		}
-		return await Client.CallToolAsync(
-			ClioRunTool.ToolName,
-			BuildClioRunArguments(toolName, arguments),
-			cancellationToken: cancellationToken);
 	}
 
 	/// <summary>
@@ -304,14 +371,19 @@ internal sealed class McpServerSession : IAsyncDisposable {
 		IReadOnlyDictionary<string, object?> arguments,
 		IProgress<ProgressNotificationValue> progress,
 		CancellationToken cancellationToken) {
-		if (await IsToolAdvertisedAsync(toolName, cancellationToken)) {
-			return await Client.CallToolAsync(toolName, arguments, progress: progress, cancellationToken: cancellationToken);
+		long startedAt = Stopwatch.GetTimestamp();
+		try {
+			if (await IsToolAdvertisedAsync(toolName, cancellationToken)) {
+				return await Client.CallToolAsync(toolName, arguments, progress: progress, cancellationToken: cancellationToken);
+			}
+			return await Client.CallToolAsync(
+				ClioRunTool.ToolName,
+				BuildClioRunArguments(toolName, arguments),
+				progress: progress,
+				cancellationToken: cancellationToken);
+		} finally {
+			E2ETimingProbe.RecordToolCall(toolName, Stopwatch.GetElapsedTime(startedAt));
 		}
-		return await Client.CallToolAsync(
-			ClioRunTool.ToolName,
-			BuildClioRunArguments(toolName, arguments),
-			progress: progress,
-			cancellationToken: cancellationToken);
 	}
 
 	/// <summary>
@@ -456,6 +528,11 @@ internal sealed class McpServerSession : IAsyncDisposable {
 		if (_progressCaptureRegistration is not null) {
 			await _progressCaptureRegistration.DisposeAsync();
 		}
+		if (_logCaptureRegistration is not null) {
+			await _logCaptureRegistration.DisposeAsync();
+		}
+		long startedAt = Stopwatch.GetTimestamp();
 		await Client.DisposeAsync();
+		E2ETimingProbe.RecordSessionDispose(Stopwatch.GetElapsedTime(startedAt));
 	}
 }

@@ -18,6 +18,12 @@ that support the MCP protocol.
 The server runs until the stdin stream is closed or the process is
 terminated.
 
+Worker processes inherit `DOTNET_ROOT` (including architecture-specific variants) and
+`DOTNET_ROLL_FORWARD` from the server process. Configure these in your MCP client's
+server environment when using a non-default .NET installation or an explicit runtime
+roll-forward policy. Clio preserves that policy; it does not enable major-version
+roll-forward automatically.
+
 Available MCP tool categories:
 - application     Create, list, and inspect Creatio applications
 - entity          Create and update entity schemas (DB-first)
@@ -203,6 +209,12 @@ get-guidance again with the selected name.
 
     0       Server shut down normally
     1       Server failed to start
+
+## Files
+
+| Path | Purpose |
+|------|---------|
+| `<user-home>/.clio/mcp-hosts/mcp-server.<pid>.lock` | Presence marker written at startup and removed at shutdown (host only, never by an internal `--worker` child). While it exists and names a live process, other clio processes skip the background clio self-update, so this host's binaries and `appsettings.json` are not replaced underneath it. A marker left by a killed host is deleted by the next clio run that sees its process is gone. |
 
 ## Reporting Bugs
 

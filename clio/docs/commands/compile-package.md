@@ -90,6 +90,17 @@ compiled, exit code 2) and prints how to run it later. Non-interactive hosts
 - The command performs rebuild, not incremental build
 - Package names are split by comma before execution
 - When one package compilation fails, the command exits with code 1
+- Progress monitoring tolerates an environment that briefly stops answering: while
+the application tier is unreachable each failed poll round is reported as a warning
+and the next round is delayed 1 s, 2 s, then 5 s. Only after 90 seconds in which no
+round succeeded does the command stop monitoring and report `Package compilation
+could not be monitored`. The server keeps compiling either way - the message says
+monitoring stopped, not that the build failed.
+- The 90 seconds are measured from the moment the FIRST failed round of the current
+run is detected, and the check happens when a round fails - so with the last 5 s
+backoff step the give-up is observed at about 93 seconds, and a failing read that
+takes time to time out adds its own duration on top of that.
+
 
 ## Return Values
 

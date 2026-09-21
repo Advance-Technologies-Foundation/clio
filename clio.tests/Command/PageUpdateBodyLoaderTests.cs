@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using Clio.Command;
 using FluentAssertions;
 using NUnit.Framework;
@@ -76,6 +76,59 @@ public sealed class PageUpdateBodyLoaderTests {
 			ok.Should().BeTrue(because: "an existing body file must be loaded successfully");
 			error.Should().BeNull(because: "no error is expected on a successful load");
 			options.Body.Should().Be(expectedContent, because: "the body must equal the file content verbatim");
+		}
+		finally {
+			if (File.Exists(tempFile)) {
+				File.Delete(tempFile);
+			}
+		}
+	}
+
+	[Test]
+	[Description("A path that EXISTS but cannot be read is a different branch from 'File not found', with its own wording. An editor holding an exclusive lock, or a file with no read permission, must reach the caller as this tool's own error envelope rather than as a protocol-level MCP failure or a swallowed exception (PR #1352 review).")]
+	public void TryResolveBody_WhenFileExistsButIsLocked_ReportsCannotRead() {
+		// Arrange - FileShare.None is honoured in-process on Windows and on Unix, so this stays cross-OS.
+		string tempFile = Path.Combine(Path.GetTempPath(), $"clio-body-locked-{Path.GetRandomFileName()}.json");
+		File.WriteAllText(tempFile, "{\"viewConfigDiff\":[]}");
+		try {
+			using FileStream exclusiveLock = new(tempFile, FileMode.Open, FileAccess.Read, FileShare.None);
+
+			// Act
+			(bool ok, string resolvedBody, string error) = PageUpdateBodyLoader.TryResolveBody(null, tempFile);
+
+			// Assert
+			ok.Should().BeFalse(because: "an unreadable file is a failure, not an empty body silently passed on");
+			resolvedBody.Should().BeNull(because: "nothing was read, so no body may travel alongside the failure");
+			error.Should().Contain("Cannot read",
+				because: "the wording has to separate this from the 'File not found' branch - the two send the caller to different remedies");
+			error.Should().Contain(tempFile, because: "the error must name the file the caller has to unlock");
+			error.Should().NotContain("File not found",
+				because: "the file DOES exist; reporting it as missing is the misleading diagnosis this branch was added to remove");
+		}
+		finally {
+			if (File.Exists(tempFile)) {
+				File.Delete(tempFile);
+			}
+		}
+	}
+
+	[Test]
+	[Description("The same lock through the options-carrying entry point: TryLoadBodyFromFile shares TryResolveBody's branch, and a caller on the save path must get the same envelope as validate-page (PR #1352 review).")]
+	public void TryLoadBodyFromFile_WhenFileIsLocked_ReportsCannotReadAndLeavesBodyUnset() {
+		// Arrange
+		string tempFile = Path.Combine(Path.GetTempPath(), $"clio-body-locked-{Path.GetRandomFileName()}.json");
+		File.WriteAllText(tempFile, "{\"viewConfigDiff\":[]}");
+		try {
+			using FileStream exclusiveLock = new(tempFile, FileMode.Open, FileAccess.Read, FileShare.None);
+			PageUpdateOptions options = new() { BodyFile = tempFile };
+
+			// Act
+			(bool ok, string error) = PageUpdateBodyLoader.TryLoadBodyFromFile(options);
+
+			// Assert
+			ok.Should().BeFalse(because: "the save path must refuse rather than send an empty body to Creatio");
+			error.Should().Contain("Cannot read", because: "both entry points share one branch and must not word it differently");
+			options.Body.Should().BeNullOrEmpty(because: "no body must be set when the file could not be read");
 		}
 		finally {
 			if (File.Exists(tempFile)) {

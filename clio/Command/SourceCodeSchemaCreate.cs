@@ -7,6 +7,14 @@ namespace Clio.Command {
 
 	[Verb("create-schema", Aliases = ["schema-create"], HelpText = "Create a new C# source-code schema on a remote Creatio environment")]
 	public class SourceCodeSchemaCreateOptions : EnvironmentOptions {
+		/// <summary>Gets or sets optional initial C# source; omission keeps the platform template.</summary>
+		[Option("body", Required = false, HelpText = "Optional initial C# body. Use body-file for large bodies.")]
+		public string Body { get; set; }
+
+		/// <summary>Gets or sets a source file whose content takes precedence over <see cref="Body"/>.</summary>
+		[Option("body-file", Required = false, HelpText = "Path to a UTF-8 C# source file. Takes precedence over --body. The supplied file must not be empty.")]
+		public string BodyFile { get; set; }
+
 		[Option("schema-name", Required = true, HelpText = "New schema name, e.g. 'UsrMyHelper'")]
 		public string SchemaName { get; set; }
 
@@ -69,6 +77,16 @@ namespace Clio.Command {
 					LogFailure(response.Error);
 					return false;
 				}
+				string body = null;
+				if (options.Body != null || options.BodyFile != null) {
+					string bodyError;
+					(body, bodyError) = SchemaDesignerHelper.ResolveBody(options.Body, options.BodyFile);
+					if (bodyError != null) {
+						response = new SourceCodeSchemaCreateResponse { Success = false, Error = bodyError };
+						LogFailure(response.Error);
+						return false;
+					}
+				}
 				LogStep(ref stepNumber, totalSteps, $"Resolving package '{options.PackageName}'");
 				(string packageUId, string packageError) = PageSchemaMetadataHelper.QueryPackageUId(
 					_applicationClient, _serviceUrlBuilder, options.PackageName);
@@ -96,6 +114,9 @@ namespace Clio.Command {
 				}
 				string captionCulture = _captionCultureResolver.Resolve(options, options.CaptionCulture);
 				SchemaDesignerHelper.ApplySchemaMetadata(schema, options.SchemaName, caption, options.Description, captionCulture);
+				if (body != null) {
+					schema["body"] = body;
+				}
 				string saveError = SchemaDesignerHelper.SaveSchema(
 					_applicationClient, _serviceUrlBuilder, schema, Kind, out bool outcomeUnknown);
 				if (saveError != null) {

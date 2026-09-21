@@ -333,9 +333,13 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	[Description("Preserves virtual state inherited by a replacement schema when the caller omits the virtual option.")]
 	public void Create_ReplacementOfVirtualParent_PreservesInheritedVirtualState()
 	{
+		// Arrange
 		string saveBody = null;
 		bool saveDbStructureCalled = false;
 		SetupApplicationClient((url, body) => {
+			if (url.Contains("SelectQuery", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"rows\":[]}";
+			}
 			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
 				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
 			}
@@ -346,7 +350,7 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 				return "{\"success\":true,\"items\":[{\"uId\":\"33333333-3333-3333-3333-333333333333\",\"name\":\"Account\",\"caption\":\"Account\"}]}";
 			}
 			if (url.Contains("AssignParentSchema", StringComparison.Ordinal)) {
-				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"parentSchema\":{\"uId\":\"33333333-3333-3333-3333-333333333333\",\"name\":\"Account\"},\"isVirtual\":true,\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"parentSchema\":{\"uId\":\"33333333-3333-3333-3333-333333333333\",\"name\":\"Account\"},\"isVirtual\":true,\"isDBView\":true,\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
 			}
 			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
 				saveBody = body;
@@ -396,6 +400,8 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			Arg.Any<int>(),
 			Arg.Any<int>());
 		// because: the replacement schema must still be verified through the design-item readback path
+		JObject.Parse(saveBody)["isDBView"]!.Value<bool>().Should().BeTrue(
+			because: "omitting is-db-view must preserve the inherited DB-view kind");
 	}
 
 	[Test]
@@ -1627,6 +1633,82 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		JObject json = JObject.Parse(saveBody);
 		json["caption"]![0]!["cultureName"]!.Value<string>().Should().Be("en-US",
 			because: "with no override and no resolvable profile culture the caption must anchor to en-US, not the host uk-UA locale");
+	}
+
+	[Test]
+	[Description("Expands a JSON array alongside legacy columns and preserves each element's metadata and punctuation.")]
+	public void Create_ShouldSaveAllColumns_WhenInputContainsJsonArray() {
+		// Arrange
+		string saveBody = null;
+		SetupStandardSchemaClient(body => saveBody = body);
+		var options = new CreateEntitySchemaOptions {
+			Package = "UsrPkg", SchemaName = "UsrVehicle", Title = "Vehicle",
+			Columns = ["Active:Boolean", """ [{"name":"Notes","type":"ShortText","title":"A;B,C: D","default-value-source":"Const","default-value":"X;Y,Z"},{"name":"Amount","type":"Integer","required":true}]"""]
+		};
+		// Act
+		_creator.Create(options);
+		// Assert
+		JArray columns = (JArray)JObject.Parse(saveBody)["columns"]!;
+		columns.Select(column => column["name"]!.Value<string>()).Should().ContainInOrder(["Active", "Notes", "Amount"],
+			because: "array elements and legacy specs must all be saved in their original order");
+		JToken notes = columns.Single(column => column["name"]!.Value<string>() == "Notes");
+		notes["caption"]![0]!["value"]!.Value<string>().Should().Be("A;B,C: D",
+			because: "JSON punctuation belongs to the caption");
+		notes["defValue"]!["value"]!.Value<string>().Should().Be("X;Y,Z",
+			because: "array elements use the same default-value handling as single objects");
+		columns.Single(column => column["name"]!.Value<string>() == "Amount")["requirementType"]!.Value<int>()
+			.Should().Be((int)Terrasoft.Core.Entities.EntitySchemaColumnRequirementType.ApplicationLevel,
+				because: "required metadata must survive array expansion");
+	}
+
+	[TestCase("[]")]
+	[TestCase("[null]")]
+	[TestCase("[{\"name\":\"Notes\",\"type\":\"Text\"},{}]")]
+	[TestCase("[{\"name\":\"Notes\",\"type\":\"Text\"},42]")]
+	[TestCase("[{\"name\":\"Notes\",\"type\":\"Text\"}")]
+	[Description("Rejects empty, null, malformed, or invalid array entries before any schema can be saved.")]
+	public void Create_ShouldNotSaveSchema_WhenArrayIsInvalid(string array) {
+		// Arrange
+		bool saved = false;
+		SetupStandardSchemaClient(_ => saved = true);
+		var options = new CreateEntitySchemaOptions {
+			Package = "UsrPkg", SchemaName = "UsrVehicle", Title = "Vehicle", Columns = [array]
+		};
+		// Act
+		Action act = () => _creator.Create(options);
+		// Assert
+		act.Should().Throw<Exception>(because: "every supplied array element must be a valid column");
+		saved.Should().BeFalse(because: "invalid input must not persist a partial schema");
+	}
+
+	[TestCase(true, true)]
+	[TestCase(false, false)]
+	[TestCase(true, false)]
+	[Description("Forwards the DB-view flag and rejects a successful save whose readback loses the requested value.")]
+	public void Create_ShouldVerifyDbView_WhenExplicitlyRequested(bool requested, bool persisted) {
+		// Arrange
+		string saved = null;
+		SetupStandardSchemaClient(body => saved = body);
+		_applicationClient.ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("GetSchemaDesignItem", StringComparison.Ordinal)),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => JsonSerializer.Serialize(new {
+				success = true, schema = new { name = "UsrVehicle", isDBView = persisted }
+			}));
+		CreateEntitySchemaOptions options = new() {
+			Package = "UsrPkg", SchemaName = "UsrVehicle", Title = "Vehicle", IsDBView = requested
+		};
+		// Act
+		Action act = () => _creator.Create(options);
+		// Assert
+		if (requested == persisted) {
+			act.Should().NotThrow(because: "the requested flag persisted in the designer");
+		} else {
+			act.Should().Throw<InvalidOperationException>(because: "a dropped property must not report success")
+				.WithMessage("*Database-view flag was not persisted*", because: "the failed property must be identified");
+		}
+		JObject.Parse(saved)["isDBView"]!.Value<bool>().Should().Be(requested,
+			because: "the flag must reach the existing native save payload");
 	}
 
 	private void SetupStandardSchemaClient(Action<string> captureSaveBody)

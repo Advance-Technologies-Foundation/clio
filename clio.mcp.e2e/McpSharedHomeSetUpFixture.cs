@@ -1,4 +1,6 @@
+﻿using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Mcp.E2E.Support.Configuration;
+using Clio.Mcp.E2E.Support.Diagnostics;
 using Clio.Mcp.E2E.Support.Mcp;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -56,6 +58,8 @@ public sealed class McpSharedHomeSetUpFixture {
 			["root-path"] = Path.Combine(_sharedClioHome, "knowledge"),
 			["sources"] = new JsonObject()
 		};
+		SeedPlaceholderEnvironmentWhenNoneRegistered(root);
+		SuiteFeatureFlags.Enable(root, typeof(MobilePageConversionGuideTool));
 		File.WriteAllText(
 			_isolatedSettingsPath,
 			root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
@@ -70,7 +74,20 @@ public sealed class McpSharedHomeSetUpFixture {
 	}
 
 	[OneTimeTearDown]
-	public void RestoreSharedClioHome() {
+	public async Task RestoreSharedClioHomeAsync() {
+		// finally, not a plain sequence: releasing the shared session kills a process tree, and a child
+		// that already exited makes that throw. RestoreSharedClioHome deletes the settings file holding
+		// the stand password in clear text, so it must run even then.
+		try {
+			await McpContractFixtureBase.ReleaseProcessWideSessionAsync();
+		} finally {
+			RestoreSharedClioHome();
+		}
+	}
+
+	private void RestoreSharedClioHome() {
+		// Runs last in the assembly, so every fixture's arrange cost has already been recorded.
+		E2ETimingProbe.WriteReportToProcessStandardOutput();
 		TestConfiguration.ClearSharedClioHome();
 		DeleteSensitiveSettingsFile();
 		if (!string.IsNullOrWhiteSpace(_sharedClioHome) && Directory.Exists(_sharedClioHome)) {
@@ -82,6 +99,34 @@ public sealed class McpSharedHomeSetUpFixture {
 		}
 		_sharedClioHome = null;
 		_isolatedSettingsPath = null;
+	}
+
+	/// <summary>
+	/// The NoEnvironment tier asserts the structured failure for an UNKNOWN environment name, and clio
+	/// only produces that failure when the settings bootstrap can serve environment tools at all, which
+	/// means at least one registered environment with a valid <c>ActiveEnvironmentKey</c>
+	/// (<c>SettingsBootstrapReport.CanExecuteEnvTools</c>). On a developer machine and on the TeamCity
+	/// agent the copied real settings satisfy that implicitly; on a clean GitHub-hosted runner there is
+	/// no settings file, the copy starts from <c>{}</c>, and every such assertion sees
+	/// "clio settings bootstrap is broken" instead (67 failures on the first hosted run). A loopback
+	/// discard-port placeholder keeps the tier's contract identical on every host without giving any
+	/// test a reachable stand.
+	/// </summary>
+	private static void SeedPlaceholderEnvironmentWhenNoneRegistered(JsonObject root) {
+		if (root["Environments"] is JsonObject { Count: > 0 }) {
+			return;
+		}
+		const string placeholderName = "mcp-e2e-placeholder";
+		root["Environments"] = new JsonObject {
+			[placeholderName] = new JsonObject {
+				["Uri"] = "http://127.0.0.1:9",
+				["Login"] = "placeholder",
+				["Password"] = "placeholder",
+				["IsNetCore"] = true,
+				["Safe"] = true
+			}
+		};
+		root["ActiveEnvironmentKey"] = placeholderName;
 	}
 
 	private static void ProtectDirectoryForCurrentUser(string path) {

@@ -2,13 +2,14 @@
 description: every [Parallelizable(ParallelScope.Self)] fixture in clio.mcp.e2e is stand-free by construction, so a flaky sandbox failure can never be blamed on the parallel pool - the OData rebuild that causes it is started inside the sequential queue and outlives the command
 applies-to:
   - clio.mcp.e2e/clio.mcp.e2e.runsettings
+  - clio.mcp.e2e/FlatArgsProgressTokenE2ETests.cs
   - clio.mcp.e2e/Support/Mcp/TransientPlatformConditionRetryGate.cs
   - clio.tests/McpFixturePolicyTests.cs
 ticket: clio#1381
 date: 2026-09-04
 ---
 
-**What is true** — `clio.mcp.e2e.runsettings` sets `NumberOfTestWorkers=2`, but the 26 fixtures marked
+**What is true** — `clio.mcp.e2e.runsettings` sets `NumberOfTestWorkers=2`, but the 27 fixtures marked
 `[Parallelizable(ParallelScope.Self)]` cannot touch the run's Creatio instance. Each one is guarded in
 one of four ways, verified fixture by fixture: an invalid random `environment-name`
 (`$"missing-*-{Guid.NewGuid():N}"`) that fails resolution before any mutation; an isolated `CLIO_HOME`
@@ -16,7 +17,12 @@ pointing at a fixture-owned path or a loopback stub; purely local synthetic file
 deliberately corrupt input that fails before the mutating stage (`DeployCreatioToolE2ETests`,
 `RestoreDbToolE2ETests`). None of them carries `McpE2E.Sandbox` — they are `McpE2E.NoEnvironment` only,
 and `clio.tests/McpFixturePolicyTests.cs` already enforces that split. There is no assembly-level
-`[Parallelizable]` or `LevelOfParallelism` override, so those 26 are the entire pool.
+`[Parallelizable]` or `LevelOfParallelism` override, so those 27 are the entire pool.
+
+The 27th is `FlatArgsProgressTokenE2ETests`, added when the e2e duration work moved it out of the
+sequential queue: its single test spends ~100 s waiting on a loopback listener that accepts and never
+answers, and that wait IS the assertion. It falls under the loopback-stub guard above — its own MCP
+child with an isolated `CLIO_HOME` pointing at `127.0.0.1`, its own ephemeral port, no stand.
 
 **Why it is this way** — the `McpE2E.NoEnvironment` tier exists precisely to be a fast deterministic gate
 that runs with no Creatio, so its fixtures are the only ones allowed into the parallel pool.

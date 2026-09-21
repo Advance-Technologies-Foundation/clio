@@ -1,0 +1,46 @@
+NAME
+    create-user-task-page - Create and associate a Classic user-task parameter page
+
+SYNOPSIS
+    clio create-user-task-page --workspace-path <PATH> --package-name <PACKAGE> --user-task-uid <GUID> --page-name <NAME> --caption <TEXT> [OPTIONS]
+
+DESCRIPTION
+    Creates a new editable Classic page inheriting ProcessFlowElementPropertiesPage
+    and associates it with an existing workspace user task. In/Variable parameters
+    get MAPPING editors; Out/Internal parameters do not. Omitted direction metadata
+    uses the native Variable default. Parameter identities and directions are preserved.
+    Requires a native JSON user-task metadata export in a clio workspace.
+    This offline command does not register a toolbox item or deploy to Creatio.
+    Existing page names, resources or nonempty task page associations are refused.
+
+OPTIONS
+    --workspace-path     Required. Explicit local workspace root.
+    --package-name       Required. Package owning the task and new page.
+    --user-task-uid      Required. Existing task schema UId.
+    --page-name          Required. Unique Classic page schema name.
+    --caption            Required. Page display caption.
+    --culture            Optional resource culture; default en-US.
+    --small-icon-path    Optional local SVG for SmallSvgImage.
+    --large-icon-path    Optional local SVG for LargeSvgImage.
+    --title-icon-path    Optional local SVG for TitleSvgImage.
+
+EXAMPLE
+    clio create-user-task-page --workspace-path ./MyWorkspace --package-name UsrExample --user-task-uid 90810b59-c2aa-4133-8b6b-61f57b12143c --page-name UsrTaskPropertiesPage --caption "Task parameters"
+
+MCP
+    Discover create-user-task-page using get-tool-contract, then dispatch through
+    clio-run with command: create-user-task-page and args containing the options above.
+
+NOTES
+    SVG files must use static basic shapes (svg, g, path, rect, circle, ellipse,
+    line, polyline, polygon, title, desc, defs, use), be at most 1 MiB each, and
+    contain no styles, animation, event handlers or external references.
+    Supplied icon slots replace only those slots in the selected culture.
+    Without icon arguments, task resource files are not rewritten.
+    Edit the generated JavaScript for further layout or behavior customization.
+    Add CrtProcessDesigner as a package dependency if not already present.
+    Deploy via the normal workspace/package workflow, then save and reopen a
+    process to check mapping persistence and downstream output selection.
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

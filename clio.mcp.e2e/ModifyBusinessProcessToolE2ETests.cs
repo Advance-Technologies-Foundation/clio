@@ -842,6 +842,133 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
 	}
 
+	[Test]
+	[Description("setFlowResults writes an activity-result SELECTION, describe reads it back, and THEN the "
+		+ "build path's flows[].results is exercised on a second process - in that order, because the order is "
+		+ "what makes the version gate work.\n"
+		+ "The gate cannot come from the build path, which was the first thing tried here and was wrong. An "
+		+ "older server DROPS flows[].results (unknown DataMembers are discarded, measured), leaving "
+		+ "kind:'conditional' with no condition - and FlowKindRules.EnsureConditionMatchesKind on the old "
+		+ "package throws 'requires a non-empty condition'. So a descriptor declaring the selection does not "
+		+ "merely lose it there, it fails the BUILD, and every sandbox today is old because nothing is "
+		+ "rebundled yet.\n"
+		+ "So the gate is setFlowResults itself, and the asymmetry is what carries it: an old package has "
+		+ "neither the operation nor the field, so the operation being ACCEPTED proves the package is current "
+		+ "while the field being absent proves nothing. Once accepted, the build-path case needs no gate of "
+		+ "its own and its failure is a real failure.\n"
+		+ "KNOWN RESIDUAL, stated rather than claimed closed: a regression that unregistered "
+		+ "SetFlowResultsOperation on a CURRENT package answers the same unknown-operation refusal as an old "
+		+ "one, and is Ignored. Separating those needs a package-version read this suite has no helper for.")]
+	[AllureTag(ToolName)]
+	[AllureName("setFlowResults writes a selection, then the build path declares one")]
+	public async Task ModifyBusinessProcess_Should_WriteAnActivityResultSelection() {
+		// Arrange - an Approval element, the one source whose result set is never empty by configuration.
+		// Its flows are declared PLAIN: a descriptor carrying the selection cannot be built on the packages
+		// this test still has to run against, which is the whole reason the gate sits where it does.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpResultsE2e{Guid.NewGuid():N}";
+		CallToolResult built = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildApprovalBranchDescriptor(processName, declareSelection: false)
+		});
+		built.IsError.Should().NotBeTrue(
+			because: "this descriptor uses nothing newer than the approval element, so a build failure here is "
+				+ "a real failure and never the version gate");
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """
+				[
+				  { "op": "setFlowResults", "source": "Approve", "target": "EndOk",
+				    "results": ["Positive"] }
+				]
+				"""
+		});
+		SkipWhenTheOperationIsUnknown(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "writing a result selection onto an Approval branch must complete without a transport error");
+
+		DescribedFlow branch = await DescribeBranchAsync(context, processName, "EndOk");
+		branch.Results.Should().Equal(new[] { "Positive" },
+			because: "a selection has to read back as the captions it was written with, or a caller cannot "
+				+ "verify, diff or preserve it");
+		branch.ResultsActivity.Should().Be("Approve",
+			because: "the read names the element whose results these are rather than leaving it assumed");
+		branch.BranchesOnActivityResult.Should().BeTrue(
+			because: "the flag and the values have to agree");
+
+		// The BUILD path, now that the operation above has proved this package carries the surface. It is the
+		// route the tool description tells callers to prefer - the two-step one leaves a window in which the
+		// process is saved carrying a connector the designer already marks invalid - and it had no end-to-end
+		// coverage at all. No gate here: a failure is a failure.
+		string declaredName = $"UsrClioBpResultsBuildE2e{Guid.NewGuid():N}";
+		CallToolResult declared = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildApprovalBranchDescriptor(declaredName, declareSelection: true)
+		});
+		declared.IsError.Should().NotBeTrue(
+			because: "flows[].results is a build-path field on a package that has just accepted the equivalent "
+				+ "operation, so a refusal here is the build wire and not the version");
+		DescribedFlow declaredBranch = await DescribeBranchAsync(context, declaredName, "EndNo");
+		declaredBranch.Results.Should().Equal(new[] { "Negative" },
+			because: "a selection declared WHERE THE FLOW IS has to reach the graph, which the modify path "
+				+ "above cannot show - they are different wires into the same builder");
+	}
+
+	// The version gate, and it is a NEGATIVE one - see the test's Description for what that does and does not
+	// establish. It sits after a successful build deliberately: on a process that failed to build, the
+	// operation is refused for not finding the process and this would never match.
+	private static void SkipWhenTheOperationIsUnknown(CallToolResult result) {
+		string payload = JsonSerializer.Serialize(result);
+		if (result.IsError is true
+				&& (payload.Contains("not supported", StringComparison.OrdinalIgnoreCase)
+					|| payload.Contains("Unknown operation", StringComparison.OrdinalIgnoreCase))) {
+			Assert.Ignore(
+				"The sandbox's deployed CrtProcessBuilder does not offer setFlowResults, so it predates "
+				+ "1.6.2.18. This test is Ignored, NOT passing; the rebundle and a deploy are what make it "
+				+ "meaningful.");
+		}
+	}
+
+	// Describes the process and returns the branch leaving the Approval for the named target.
+	private static async Task<DescribedFlow> DescribeBranchAsync(ArrangeContext context, string processName,
+			string target) {
+		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
+			}));
+		return described.Flows.Single(f => f.Source == "Approve" && f.Target == target);
+	}
+
+	/// <summary>
+	/// An Approval branching two ways - the shape the selection dialect is for. With
+	/// <paramref name="declareSelection"/> the second arm declares its selection on the BUILD path, which an
+	/// older package cannot build at all: it drops the unknown field and then refuses the conditional kind for
+	/// having no condition. Only call it that way behind the gate.
+	/// </summary>
+	private static string BuildApprovalBranchDescriptor(string processName, bool declareSelection) => $$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio e2e activity-result selection",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "Start1", "type": "startEvent" },
+		    { "name": "Approve", "type": "approval", "caption": "Approve order" },
+		    { "name": "EndOk", "type": "endEvent" },
+		    { "name": "EndNo", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "Start1", "target": "Approve" },
+		    { "source": "Approve", "target": "EndOk" },
+		    { "source": "Approve", "target": "EndNo"{{(declareSelection ? ", \"kind\": \"conditional\", \"results\": [\"Negative\"]" : string.Empty)}} }
+		  ]
+		}
+		""";
+
 	// The gate, in one place so both tests read the same way. A CrtProcessBuilder predating the element rejects
 	// the element TYPE outright, before anything this fixture is about, so such an environment can exercise
 	// neither direction. It is Ignored rather than failed - but named, so an ignored run is not mistaken for

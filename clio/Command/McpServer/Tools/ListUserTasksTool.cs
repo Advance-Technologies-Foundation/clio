@@ -3,6 +3,8 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
+using System.Collections.Generic;
+using System.Text.Json;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -16,10 +18,21 @@ public class ListUserTasksTool(
 
 	internal const string ListUserTasksToolName = "list-user-tasks";
 
+	/// <summary>The canonical field list echoed back when an unknown argument key is refused (ENG-98566).</summary>
+	internal const string ValidArgsHint = "Valid: environment-name.";
+
+	/// <summary>Refusal for a call whose whole argument object is absent (ENG-98566, Sonar S2259).</summary>
+	/// <remarks>
+	/// Stays inline rather than moving into the shared helper: it has to run before any field can be read,
+	/// and that is what lets the analyser prove no field read is reached with null (csharpsquid:S2259). See
+	/// <see cref="McpToolArgumentSupport.BuildUnknownArgumentError"/>.
+	/// </remarks>
+	internal const string NullArgsError = "args is required: the call carried no argument object. " + ValidArgsHint;
+
 	/// <summary>
 	/// Lists the user-facing user tasks available on the specified environment.
 	/// </summary>
-	/// <param name="environmentName">Registered clio environment name.</param>
+	/// <param name="args">The tool arguments; see <see cref="ListUserTasksArgs"/>.</param>
 	/// <returns>The command execution result; the log output lists each task as <c>name\tuid</c>.</returns>
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -49,7 +62,21 @@ public class ListUserTasksTool(
 	public CommandExecutionResult ListUserTasks(
 		[Description("list-user-tasks parameters")] [Required] ListUserTasksArgs args
 	) {
-		if (string.IsNullOrWhiteSpace(args?.EnvironmentName)) {
+		if (args is null) {
+			return CommandExecutionResult.FromValidationError(NullArgsError);
+		}
+
+		// The only unknown-key defence this tool has; the helper's docs say why. ENG-98566 review finding 8:
+		// with a single declared argument, an unbound environmentName left EnvironmentName null. The finding
+		// said the call then ran against the DEFAULT registered environment; measured, it does not - the
+		// resolver throws instead. The real cost was a generic resolution error in place of a named argument.
+		string argumentError = McpToolArgumentSupport.BuildUnknownArgumentError(
+			args.ExtensionData, ValidArgsHint);
+		if (!string.IsNullOrWhiteSpace(argumentError)) {
+			return CommandExecutionResult.FromValidationError(argumentError);
+		}
+
+		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
 			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
 		}
 
@@ -67,4 +94,12 @@ public sealed record ListUserTasksArgs(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Registered clio environment name.")]
 	[property: Required]
-	string EnvironmentName);
+	string EnvironmentName) {
+
+	/// <summary>
+	/// Overflow bag for unknown JSON fields (ENG-98566). Inspected by the tool; a bag that is never read is
+	/// the failure mode, not the fix.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}

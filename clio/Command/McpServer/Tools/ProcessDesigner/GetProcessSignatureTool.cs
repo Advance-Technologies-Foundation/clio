@@ -4,6 +4,8 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
+using System.Collections.Generic;
+using System.Text.Json;
 
 namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 
@@ -20,6 +22,19 @@ public sealed class GetProcessSignatureTool(
 	: BaseTool<GetProcessSignatureOptions>(command, logger, commandResolver) {
 
 	internal const string ToolName = "get-process-signature";
+
+	/// <summary>The canonical field list echoed back when an unknown argument key is refused (ENG-98566).</summary>
+	internal const string ValidArgsHint = "Valid: environment-name, process-name, culture, uri, login, password.";
+
+	/// <summary>
+	/// Refusal for a call whose whole argument object is absent (ENG-98566, Sonar S2259).
+	/// </summary>
+	/// <remarks>
+	/// Stays inline rather than moving into the shared helper: it has to run before any field can be read,
+	/// and that is what lets the analyser prove no field read is reached with null (csharpsquid:S2259). See
+	/// <see cref="McpToolArgumentSupport.BuildUnknownArgumentError"/>.
+	/// </remarks>
+	internal const string NullArgsError = "args is required: the call carried no argument object. " + ValidArgsHint;
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
@@ -45,6 +60,17 @@ public sealed class GetProcessSignatureTool(
 		[Description("Parameters: process-name (required, the process CODE/schema name); culture (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required]
 		GetProcessSignatureArgs args) {
+		if (args is null) {
+			return new GetProcessSignatureResponse { Success = false, Error = NullArgsError };
+		}
+
+		// The only unknown-key defence this tool has; the helper's docs say why. ENG-98566.
+		string argumentError = McpToolArgumentSupport.BuildUnknownArgumentError(
+			args.ExtensionData, ValidArgsHint);
+		if (!string.IsNullOrWhiteSpace(argumentError)) {
+			return new GetProcessSignatureResponse { Success = false, Error = argumentError };
+		}
+
 		GetProcessSignatureOptions options = new() {
 			ProcessName = args.ProcessName,
 			Culture = args.Culture ?? "en-US",
@@ -80,21 +106,30 @@ public sealed record GetProcessSignatureArgs(
 
 	[property: JsonPropertyName("culture")]
 	[property: Description("Optional culture used to resolve localized parameter captions (default en-US)")]
-	string? Culture,
+	string? Culture = null,
 
 	[property: JsonPropertyName("environment-name")]
 	[property: Description(McpToolDescriptions.EnvironmentName)]
-	string? EnvironmentName,
+	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("uri")]
 	[property: Description("Creatio base URI (emergency fallback only; prefer environment-name)")]
-	string? Uri,
+	string? Uri = null,
 
 	[property: JsonPropertyName("login")]
 	[property: Description(McpToolDescriptions.Login)]
-	string? Login,
+	string? Login = null,
 
 	[property: JsonPropertyName("password")]
 	[property: Description(McpToolDescriptions.Password)]
-	string? Password
-);
+	string? Password = null
+) {
+
+	/// <summary>
+	/// Overflow bag for top-level keys the SDK could not bind to a declared argument (ENG-98566).
+	/// Inspected by the tool so a mis-keyed argument is named back to the caller; a bag that is
+	/// never read is the failure mode, not the fix.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}

@@ -239,7 +239,7 @@ public sealed class SchemaSyncToolTests {
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-entity", "UsrTodoList",
-				TitleLocalizations: Localizations("Todo List"), ParentSchemaName: "BaseEntity") { IsVirtual = true }]);
+				TitleLocalizations: Localizations("Todo List"), ParentSchemaName: "BaseEntity") { IsVirtual = true, IsDBView = true }]);
 
 		// Act
 		SchemaSyncResponse response = await tool.SchemaSync(args);
@@ -251,6 +251,8 @@ public sealed class SchemaSyncToolTests {
 			because: "create-entity should use the specified parent schema");
 		fakeCreateCommand.CapturedOptions.IsVirtual.Should().BeTrue(
 			because: "create-entity should preserve the explicit virtual-schema request");
+		fakeCreateCommand.CapturedOptions.IsDBView.Should().BeTrue(
+			because: "sync must forward the DB-view flag to creation");
 	}
 
 	[Test]
@@ -1044,6 +1046,35 @@ public sealed class SchemaSyncToolTests {
 			because: "the caller needs an actionable explanation of the incompatible fields");
 		fakeCreateCommand.CapturedOptions.Should().BeNull(
 			because: "validation must reject the request before resolving or executing the create command");
+	}
+
+	[TestCase("create-entity", true, "seed-rows")]
+	[TestCase("create-lookup", false, "only for create-entity")]
+	[TestCase("update-entity", false, "only for create-entity")]
+	[Category("Unit")]
+	[Description("Rejects DB-view seeding and unsupported operation kinds before resolving any remote command.")]
+	public async Task SchemaSync_ShouldRejectDbViewInput_WhenStorageRequestIsInvalid(string type, bool seed,
+		string expectedMessage) {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		IServiceCollection services = new ServiceCollection();
+		services.AddSingleton(resolver);
+		services.AddSingleton<ILogger>(ConsoleLogger.Instance);
+		services.AddSingleton(Convergence());
+		services.AddTransient<SchemaSyncTool>();
+		using ServiceProvider provider = services.BuildServiceProvider();
+		SchemaSyncTool tool = provider.GetRequiredService<SchemaSyncTool>();
+		SchemaSyncOperation op = new(type, "UsrView", TitleLocalizations: Localizations("View"),
+			SeedRows: seed ? [new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+				["Name"] = ToJsonElement("Rejected")
+			})] : null) { IsDBView = true };
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(new SchemaSyncArgs("missing-env", "UsrPkg", [op]));
+		// Assert
+		response.Success.Should().BeFalse(because: "unsupported DB-view operations must fail before mutation");
+		response.Results[0].Error.Should().Contain(expectedMessage, because: "the diagnostic must identify the invalid combination");
+		resolver.ReceivedCalls().Should().NotContain(call => call.GetMethodInfo().Name == "Resolve",
+			because: "local validation must not resolve environment-bound commands");
 	}
 
 	[Test]
@@ -4199,6 +4230,51 @@ public sealed class SchemaSyncToolTests {
 
 	private static System.Text.Json.JsonElement ToJsonElement(string value) {
 		return System.Text.Json.JsonDocument.Parse($"\"{value}\"").RootElement.Clone();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Carries the whole schema-unavailable diagnosis through the sync-schemas pipeline: issue #722 reports the failure on this surface too, and the candidate packages, the ready-to-run add-package-dependency call and the endpoint fragment must survive redaction rather than be flattened into a bare exit code.")]
+	public async Task SchemaSync_UpdateEntity_Should_Preserve_The_SchemaUnavailable_Diagnosis() {
+		// Arrange - the exact shape RemoteEntitySchemaColumnManager builds for a designer that answered markup.
+		const string enrichedError =
+			"Schema 'Opportunity' could not be opened in package 'UsrI722B'. The usual cause is that 'UsrI722B' "
+			+ "has no dependency on the package that owns the layer of 'Opportunity' it is trying to extend. "
+			+ "These packages contribute 'Opportunity' and are not already dependencies of 'UsrI722B', installed "
+			+ "applications first: CrtLeadOppMgmtApp, SalesEnterprise. Add the owning one with: clio "
+			+ "add-package-dependency --package-name UsrI722B --dependencies <PACKAGE>. Underlying failure: "
+			+ "GetSchemaDesignItem answered with an HTML/XML page instead of JSON (URL: "
+			+ "http://stand/0/ServiceModel/EntitySchemaDesignerService.svc/GetSchemaDesignItem).";
+		TestLogger logger = new();
+		FakeUpdateEntitySchemaCommand fakeUpdateCommand = new(logger, exitCode: 1, messages: [enrichedError]);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, logger, Convergence(),
+			retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new(
+			"dev", "UsrI722B",
+			[new SchemaSyncOperation("update-entity", "Opportunity",
+				UpdateOperations: [
+					new UpdateEntitySchemaOperationArgs("add", "UsrProbe",
+						Type: "Text", TitleLocalizations: Localizations("Probe"))
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+		string surfaced = response.Results[0].Error + " " + string.Join(" ", GetMessageValues(response.Results[0]));
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the update-entity operation failed and the batch must not report success");
+		surfaced.Should().Contain("CrtLeadOppMgmtApp",
+			because: "the candidate package names are the only actionable part of the diagnosis and must reach the caller through this surface too");
+		surfaced.Should().Contain("add-package-dependency --package-name UsrI722B",
+			because: "the ready-to-run fix must survive the sync-schemas result pipeline");
+		surfaced.Should().Contain("GetSchemaDesignItem",
+			because: "the endpoint fragment is what lets the caller tell which request failed");
+		response.Results[0].Attempts.Should().NotBe(3,
+			because: "a missing package dependency is not a transient fault, so the retry loop must not spin three times over an environment that will answer identically");
 	}
 
 	private static string[] GetMessageValues(SchemaSyncOperationResult result) {

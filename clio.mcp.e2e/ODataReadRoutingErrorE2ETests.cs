@@ -27,6 +27,7 @@ public sealed class ODataReadRoutingErrorE2ETests {
 	private const string RegisterToolName = "reg-web-app";
 	private const string UnregisteredEntity = "UsrCustomerStatus";
 	private const string NonODataEntity = "MessageType";
+	private const string InvalidQueryEntity = "SysSettingsValue";
 
 	[Test]
 	[AllureTag(ODataReadTool.ToolName)]
@@ -34,7 +35,7 @@ public sealed class ODataReadRoutingErrorE2ETests {
 	[AllureDescription("Registers an environment against a stub that returns the {Message, MessageDetail} routing body with HTTP 200 for an unregistered controller, then verifies odata-read returns success:false with the unregistered-entity hint.")]
 	[Description("odata-read against an unregistered OData controller (a {Message, MessageDetail} 404 body served with HTTP 200) returns success:false with a clear message, not a masked single-entity success.")]
 	public async Task ODataRead_Should_Report_Routing_Error_As_Failure() {
-		await RunAgainstRoutingErrorStubAsync(async (session, environmentName, cancellationToken) => {
+		await RunAgainstRoutingErrorStubAsync(async (session, environmentName, stubServer, cancellationToken) => {
 			// Act
 			CallToolResult callResult = await session.CallToolAsync(
 				ODataReadTool.ToolName,
@@ -55,8 +56,12 @@ public sealed class ODataReadRoutingErrorE2ETests {
 			response.Success.Should().BeFalse(
 				because: "a {Message, MessageDetail} routing body must be surfaced as a failure, not wrapped as a single-entity success");
 			response.Error.Should().Be(
-				CreatioResponseError.DescribeServerReportedReadError(includeUnregisteredEntityHint: true),
+				CreatioResponseError.DescribeServerReportedReadError(ODataErrorKind.UnregisteredEntity),
 				because: "the read path reports the locally authored classification plus the hint, asserted via the shared builder to avoid literal drift");
+			response.ErrorCode.Should().Be("entity-not-found",
+				because: "a routing miss and an IIS 404 page are the same condition - an entity set that cannot be reached - so they must not hand the caller two different codes");
+			response.CorrelationId.Should().NotBeNullOrWhiteSpace(
+				because: "core-rules promises a correlation-id on every response, and it is the only bridge to the debug line carrying the server's own wording");
 			response.Error.Should().NotContain($"controller named '{UnregisteredEntity}'",
 				because: "the server's own MessageDetail must not be copied into an MCP transcript, which a model reads as trusted content");
 			response.Error.Should().Contain(CreatioResponseError.UnregisteredEntityHint,
@@ -70,7 +75,7 @@ public sealed class ODataReadRoutingErrorE2ETests {
 	[AllureDescription("Registers an environment against a stub that returns the {Message, MessageDetail} routing body with HTTP 200 for a POST to an unregistered controller, then verifies odata-create reports a per-row failure with the unregistered-entity hint.")]
 	[Description("odata-create against an unregistered OData controller (a {Message, MessageDetail} 404 body served with HTTP 200 on POST) reports the row as failed with a clear message, exercising the shared routing-error detection end to end on the write path.")]
 	public async Task ODataCreate_Should_Report_Routing_Error_As_Failure() {
-		await RunAgainstRoutingErrorStubAsync(async (session, environmentName, cancellationToken) => {
+		await RunAgainstRoutingErrorStubAsync(async (session, environmentName, stubServer, cancellationToken) => {
 			// Act
 			CallToolResult callResult = await session.CallToolAsync(
 				ODataCreateTool.ToolName,
@@ -104,7 +109,7 @@ public sealed class ODataReadRoutingErrorE2ETests {
 	[AllureDescription("Registers an environment against a stub that returns a 404-style IIS HTML body with HTTP 200, then verifies odata-read explains the ESQ escape route without exposing the HTML parser failure.")]
 	[Description("odata-read against a 404-style HTML body returns success:false naming the unavailable entity and the execute-esq escape route, not a raw JSON parser error or IIS page.")]
 	public async Task ODataRead_Should_Classify_Iis_Html_404_As_Missing_Entity_Set() {
-		await RunAgainstRoutingErrorStubAsync(async (session, environmentName, cancellationToken) => {
+		await RunAgainstRoutingErrorStubAsync(async (session, environmentName, stubServer, cancellationToken) => {
 			// Act
 			CallToolResult callResult = await session.CallToolAsync(
 				ODataReadTool.ToolName,
@@ -132,7 +137,169 @@ public sealed class ODataReadRoutingErrorE2ETests {
 				because: "the caller should not be sent down a serialization-debugging path");
 			response.Error.Should().NotContain("404 - File or directory not found",
 				because: "the IIS boilerplate is not an actionable diagnostic");
+			response.ErrorCode.Should().Be("entity-not-found",
+				because: "GH-1407 case 1 asks for a structured code on the 404 path instead of a wall of escaped IIS markup");
+			response.CorrelationId.Should().NotBeNullOrWhiteSpace(
+				because: "core-rules promises a correlation-id on every response, and this path carried none");
+			response.StatusCode.Should().Be(404,
+				because: "issue #1325: the documented async-gap retry after create-entity-schema has to key off the "
+					+ "status programmatically, and the transport exposes no status of its own - it is read out of "
+					+ "the page title");
+			response.Entity.Should().Be(NonODataEntity,
+				because: "the structured failure must name the entity set it refers to");
+			response.Error.Should().Contain(CreatioResponseError.UnregisteredEntityHint,
+				because: "the HTML 404 and the JSON routing 404 are the same condition and must share the one hint");
 		}, NonODataEntity);
+	}
+
+	[Test]
+	[AllureTag(ODataReadTool.ToolName)]
+	[AllureName("odata-read accepts the comma-separated select form end to end")]
+	[AllureDescription("Sends select as the comma-separated string OData itself uses, over a real mcp-server session, and verifies it binds instead of failing on JSON deserialization.")]
+	[Description("odata-read with select passed as \"Id,Name\" reaches the tool and is answered by the tool contract, not by a System.String[] deserialization error from the MCP argument binder.")]
+	public async Task ODataRead_Should_Accept_A_Comma_Separated_Select() {
+		await RunAgainstRoutingErrorStubAsync(async (session, environmentName, stubServer, cancellationToken) => {
+			// Act
+			CallToolResult callResult = await session.CallToolAsync(
+				ODataReadTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["entity"] = NonODataEntity,
+						["select"] = "Id,Name",
+						["top"] = 10
+					}
+				},
+				cancellationToken);
+
+			// Assert
+			callResult.IsError.Should().NotBeTrue(
+				because: "issue #1327: the comma-separated form must bind, not be rejected by the argument binder "
+					+ "with \"The JSON value could not be converted to System.String[]\"");
+			ODataReadResponse response = EntitySchemaStructuredResultParser.Extract<ODataReadResponse>(callResult);
+			response.Error.Should().NotContain("System.String[]",
+				because: "a .NET type name is a serializer message, never a statement about this tool\'s contract");
+			response.StatusCode.Should().Be(404,
+				because: "the request reached the stub and was answered by the tool contract, which proves select bound");
+			IReadOnlyList<RecordedStubRequest> requests = await stubServer.GetRecordedRequestsAsync(cancellationToken);
+			requests.Should().Contain(request => request.Url.Contains("$select=Id%2CName", StringComparison.Ordinal),
+				because: "issue #1327 is about the two names reaching $select as two columns - asserting the status "
+					+ "alone would still pass if the comma-separated string bound and were then dropped");
+		}, NonODataEntity);
+	}
+
+	[Test]
+	[AllureTag(ODataReadTool.ToolName)]
+	[AllureName("odata-read rejects an unsupported select shape with a contract message")]
+	[AllureDescription("Sends select as a number over a real mcp-server session and verifies the failure states this tool\'s contract rather than a .NET type conversion.")]
+	[Description("odata-read with a numeric select returns a contract message naming the two accepted forms, not a serializer message.")]
+	public async Task ODataRead_Should_Reject_An_Unsupported_Select_Shape_With_A_Contract_Message() {
+		await RunAgainstRoutingErrorStubAsync(async (session, environmentName, stubServer, cancellationToken) => {
+			// Act
+			CallToolResult callResult = await session.CallToolAsync(
+				ODataReadTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["entity"] = NonODataEntity,
+						["select"] = 5,
+						["top"] = 10
+					}
+				},
+				cancellationToken);
+			ODataReadResponse response = EntitySchemaStructuredResultParser.Extract<ODataReadResponse>(callResult);
+
+			// Assert
+			response.Success.Should().BeFalse(
+				because: "a shape the tool cannot use must be rejected before any Creatio request");
+			response.Error.Should().Contain("comma-separated string",
+				because: "the message must name both accepted forms so the caller can correct the call in one step");
+			response.Error.Should().NotContain("System.String[]",
+				because: "the serializer message was the defect reported in issue #1327");
+		}, NonODataEntity);
+	}
+
+	[Test]
+	[AllureTag(ODataReadTool.ToolName)]
+	[AllureName("odata-read classifies an unknown filter property as invalid-query")]
+	[AllureDescription("Serves the OData v4 error body Creatio returns for a property the entity type has not got, and verifies odata-read reports error-code invalid-query with a correlation-id and none of the server's own wording.")]
+	[Description("GH-1407 case 4: a filter on a property the entity does not expose is reported as error-code invalid-query, naming the caller's own field, with a correlation-id and no server prose.")]
+	public async Task ODataRead_Should_Classify_An_Unknown_Filter_Property_As_Invalid_Query() {
+		await RunAgainstRoutingErrorStubAsync(async (session, environmentName, _, cancellationToken) => {
+			// Act
+			CallToolResult callResult = await session.CallToolAsync(
+				ODataReadTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["entity"] = InvalidQueryEntity,
+						["filters"] = new Dictionary<string, object?> {
+							["all"] = new object[] {
+								new Dictionary<string, object?> { ["field"] = "Nope", ["op"] = "eq", ["value"] = "x" }
+							}
+						},
+						["top"] = 2
+					}
+				},
+				cancellationToken);
+			ODataReadResponse response = EntitySchemaStructuredResultParser.Extract<ODataReadResponse>(callResult);
+
+			// Assert
+			response.Success.Should().BeFalse(
+				because: "an OData error envelope is a failure, not a page of records");
+			response.ErrorCode.Should().Be("invalid-query",
+				because: "GH-1407 asks for a machine-readable code so a caller can tell a wrong query from an unreachable environment without parsing English");
+			response.CorrelationId.Should().NotBeNullOrWhiteSpace(
+				because: "core-rules promises a correlation-id on every response, and this failure carried none before GH-1407");
+			response.Error.Should().Contain("Nope",
+				because: "the caller's own field name is the only text that may be echoed, and without it the caller cannot tell which member was rejected");
+			response.Error.Should().NotContain("Terrasoft.Configuration.OData",
+				because: "the server's own wording must not reach a field a model reads as trusted content");
+		}, invalidQueryEntity: InvalidQueryEntity);
+	}
+
+	[Test]
+	[AllureTag(ODataReadTool.ToolName)]
+	[AllureName("odata-read answers a raw lookup-column filter with the navigation-path hint")]
+	[AllureDescription("Serves the nested innererror body Creatio returns for a filter on a raw foreign-key column, and verifies odata-read classifies it as invalid-query and names the navigation path to filter on instead.")]
+	[Description("GH-1407 case 2: a filter on a raw foreign-key column, whose cause the server hides two levels down under innererror, is reported as invalid-query with the SysSettings/Id navigation-path hint.")]
+	public async Task ODataRead_Should_Hint_The_Navigation_Path_For_A_Raw_Lookup_Column() {
+		await RunAgainstRoutingErrorStubAsync(async (session, environmentName, _, cancellationToken) => {
+			// Act
+			CallToolResult callResult = await session.CallToolAsync(
+				ODataReadTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["entity"] = InvalidQueryEntity,
+						["filters"] = new Dictionary<string, object?> {
+							["all"] = new object[] {
+								new Dictionary<string, object?> {
+									["field"] = "SysSettingsId",
+									["op"] = "eq",
+									["value"] = "00000000-0000-0000-0000-000000000001"
+								}
+							}
+						},
+						["select"] = new[] { "Id", "TextValue" },
+						["top"] = 5
+					}
+				},
+				cancellationToken);
+			ODataReadResponse response = EntitySchemaStructuredResultParser.Extract<ODataReadResponse>(callResult);
+
+			// Assert
+			response.Success.Should().BeFalse(
+				because: "the server rejected the query, so reporting anything but a failure would hide it");
+			response.ErrorCode.Should().Be("invalid-query",
+				because: "Creatio puts 'An error has occurred.' in the headline here and the real cause two levels down, so classifying on the headline alone left the caller with an unexplained server error");
+			response.Error.Should().Contain("SysSettings/Id",
+				because: "GH-1407 reports that the navigation path succeeds where the raw column fails, and the caller had no way to discover it");
+			response.Error.Should().NotContain("Column by path",
+				because: "the sentence the classification was derived from is the server's own and stays on the debug channel");
+			response.CorrelationId.Should().NotBeNullOrWhiteSpace(
+				because: "the correlation-id is the only bridge from this response to that debug line");
+		}, invalidQueryEntity: InvalidQueryEntity);
 	}
 
 	/// <summary>
@@ -141,8 +308,9 @@ public sealed class ODataReadRoutingErrorE2ETests {
 	/// Centralizes the arrange so the read and create tests do not each re-implement it.
 	/// </summary>
 	private static async Task RunAgainstRoutingErrorStubAsync(
-		Func<McpServerSession, string, CancellationToken, Task> act,
-		string? nonJsonEntity = null) {
+		Func<McpServerSession, string, RuntimeDetectionStubServer, CancellationToken, Task> act,
+		string? nonJsonEntity = null,
+		string? invalidQueryEntity = null) {
 		string tempHome = Path.Combine(Path.GetTempPath(), $"clio-odata-routing-e2e-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(tempHome);
 		try {
@@ -168,13 +336,14 @@ public sealed class ODataReadRoutingErrorE2ETests {
 					NetCoreUiMarkerEnabled: false,
 					NetFrameworkUiMarkerEnabled: true,
 					ODataRoutingErrorEntity: UnregisteredEntity,
-					ODataNonJsonEntity: nonJsonEntity));
+					ODataNonJsonEntity: nonJsonEntity,
+					ODataInvalidQueryEntity: invalidQueryEntity));
 			using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 			await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 			string environmentName = $"odata-routing-{Guid.NewGuid():N}";
 			await RegisterEnvironmentAsync(session, environmentName, stubServer.BaseUrl, cancellationTokenSource.Token);
 
-			await act(session, environmentName, cancellationTokenSource.Token);
+			await act(session, environmentName, stubServer, cancellationTokenSource.Token);
 		} finally {
 			TryDeleteDirectory(tempHome);
 		}

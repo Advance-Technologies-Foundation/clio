@@ -1,11 +1,26 @@
-# Queues the TeamCity MCP e2e build for a clio branch from a self-hosted runner.
+# Queues a TeamCity build for a clio branch from a self-hosted runner. Shared by the
+# MCP e2e and the unit-tests trigger workflows; the build configuration and its
+# extra properties come from the environment so this file stays the only copy.
 #
 # ASCII only: Windows PowerShell 5.1 reads this file as ANSI unless it carries a BOM,
 # so a non-ASCII character (an em dash, an arrow) turns into an "Unexpected token"
 # parse error at run time - see PR #832.
 #
-# Consumed environment (set by .github/workflows/teamcity-mcp-e2e.yml):
+# Consumed environment (set by .github/workflows/teamcity-mcp-e2e.yml and
+# .github/workflows/teamcity-unit-tests.yml):
 #   TC_URL, TC_TOKEN, BUILD_TYPE, HEAD_REF, HEAD_SHA, PR_NUMBER, RUNNER_LABEL
+#   BUILD_LABEL         - short human name for the build comment, e.g. "MCP e2e".
+#   TC_EXTRA_PROPERTIES - optional JSON object of additional TeamCity build
+#                         properties, e.g. {"DeployCreatioBuild":"true"}. Every value
+#                         must be a JSON string (a bare true would reach TeamCity as
+#                         "True"). BranchNameClio is always set by this script and
+#                         must not be repeated here.
+#   TEST_FILTER (optional) - the `dotnet test --filter` expression chosen by
+#            Select-McpE2eTestFilter.ps1; sent as the McpE2eTestFilter build property, which
+#            the TeamCity step "Run MCP e2e tests (.NET)" reads as --filter "%McpE2eTestFilter%".
+#            Empty means the parameter's default (the full suite) applies.
+#   TEST_SELECTION_MODE (optional) - "full" or "subset", recorded in the build comment so a
+#            subset run is distinguishable from a full one on the TeamCity side.
 #
 # Step outputs:
 #   runner - the runner this attempt ran on, so the gate job can name it.
@@ -128,23 +143,54 @@ foreach ($lookupUri in $lookups) {
   }
 }
 
-# 3. Queue it. The e2e config resolves its checkout from BranchNameClio
+# 3. Queue it. Both configs resolve their clio checkout from BranchNameClio
 # (root branch = refs/heads/%BranchNameClio%). This works for same-repo PR heads (they
 # exist as refs/heads/<head.ref>); fork PRs are filtered out by the job-level `if:` in
 # the workflow, so BranchNameClio is always a branch that exists in the main repo.
+# Config-specific properties (the e2e deploy switches, for example) arrive in
+# TC_EXTRA_PROPERTIES so that this script does not know which config it is queueing.
+$properties = @(
+  @{ name = 'BranchNameClio'; value = $env:HEAD_REF }
+)
+if (-not [string]::IsNullOrWhiteSpace($env:TC_EXTRA_PROPERTIES)) {
+  $extra = $env:TC_EXTRA_PROPERTIES | ConvertFrom-Json
+  if ($extra -isnot [System.Management.Automation.PSCustomObject]) {
+    throw 'TC_EXTRA_PROPERTIES must be a JSON object of name/value pairs.'
+  }
+  foreach ($entry in $extra.PSObject.Properties) {
+    if ($entry.Name -eq 'BranchNameClio') {
+      throw 'TC_EXTRA_PROPERTIES must not set BranchNameClio - the script derives it from HEAD_REF.'
+    }
+    if ($entry.Value -isnot [string]) {
+      throw "TC_EXTRA_PROPERTIES value for '$($entry.Name)' must be a JSON string."
+    }
+    $properties += @{ name = $entry.Name; value = $entry.Value }
+  }
+}
+$buildLabel = if ([string]::IsNullOrWhiteSpace($env:BUILD_LABEL)) { $env:BUILD_TYPE } else { $env:BUILD_LABEL }
 $shaSuffix = if ([string]::IsNullOrWhiteSpace($env:HEAD_SHA)) { '' } else { " @ $env:HEAD_SHA" }
+$selectionSuffix = ''
+$testFilter = [string]$env:TEST_FILTER
+if (-not [string]::IsNullOrWhiteSpace($testFilter)) {
+  # Same allowed set as Select-McpE2eTestFilter.ps1 enforces; repeated here so that a modified
+  # selection script cannot hand TeamCity anything but a `dotnet test --filter` expression.
+  if ($testFilter -notmatch '^[A-Za-z0-9_.~=!&|()]*$') {
+    throw "TEST_FILTER contains characters outside the dotnet test filter grammar: $testFilter"
+  }
+  # The filter is the whole selection: a subset names its fixtures, a full run only excludes the
+  # tiers that run elsewhere. Anything TeamCity receives here is what `dotnet test` gets verbatim.
+  $properties += @{ name = 'McpE2eTestFilter'; value = $testFilter }
+  $selectionMode = if ([string]::IsNullOrWhiteSpace($env:TEST_SELECTION_MODE)) { 'filtered' } else { $env:TEST_SELECTION_MODE }
+  $selectionSuffix = " - selection: $selectionMode"
+  Write-Host "Test filter for this run: $testFilter"
+}
 $body = @{
   buildType  = @{ id = $env:BUILD_TYPE }
-  properties = @{ property = @(
-    @{ name = 'BranchNameClio';                        value = $env:HEAD_REF }
-    @{ name = 'DeployCreatioBuild';                    value = 'true' }
-    @{ name = 'env.McpE2E__AllowDestructiveMcpTests';  value = 'true' }
-    @{ name = 'ProductName';                           value = 'Studio' }
-  ) }
-  comment    = @{ text = "clio PR #$env:PR_NUMBER ($env:HEAD_REF$shaSuffix) - MCP e2e via GitHub Actions" }
+  properties = @{ property = $properties }
+  comment    = @{ text = "clio PR #$env:PR_NUMBER ($env:HEAD_REF$shaSuffix) - $buildLabel via GitHub Actions$selectionSuffix" }
 } | ConvertTo-Json -Depth 6
 
-# moveToTop: jump the queue so the advisory e2e starts promptly rather than waiting
+# moveToTop: jump the queue so the advisory build starts promptly rather than waiting
 # behind unrelated builds (needs "Reorder builds in queue").
 $response = Invoke-RestMethod -Method Post -Uri "$env:TC_URL/app/rest/buildQueue?moveToTop=true" `
   -Headers $authHeaders -ContentType 'application/json' -Body $body -TimeoutSec 60

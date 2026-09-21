@@ -13,6 +13,9 @@ namespace Clio.Command;
 [Verb("get-entity-schema-properties", HelpText = "Get properties from a remote Creatio entity schema")]
 public class GetEntitySchemaPropertiesOptions : RemoteCommandOptions
 {
+	/// <summary>Optional timeout in milliseconds for an internal effective-schema read; not a CLI option.</summary>
+	internal int? RuntimeReadTimeoutMilliseconds { get; set; }
+
 	[Option("package", Required = false, HelpText =
 		"Target package name. When omitted, returns the merged/effective schema with columns from ALL packages " +
 		"(including customizations made in other packages). When provided, returns only that package layer's slice.")]
@@ -26,6 +29,12 @@ public class GetEntitySchemaPropertiesOptions : RemoteCommandOptions
 
 	[Option("schema-name", Required = false, HelpText = "Entity schema name")]
 	public string SchemaName { get; set; }
+
+	/// <summary>
+	/// Gets or sets whether only columns marked required in schema metadata are returned.
+	/// </summary>
+	[Option("required-only", Default = false, HelpText = "Return only columns marked required. Schema column counts remain unfiltered.")]
+	public bool RequiredOnly { get; set; }
 
 	[Option("name", Required = false, Hidden = true, HelpText = "Alias for --schema-name")]
 	public string? SchemaNameAlias {
@@ -62,13 +71,16 @@ public class GetEntitySchemaPropertiesCommand : Command<GetEntitySchemaPropertie
 
 	internal virtual EntitySchemaPropertiesInfo GetSchemaProperties(GetEntitySchemaPropertiesOptions options) {
 		Validate(options);
-		return _columnManager.GetSchemaProperties(options);
+		EntitySchemaPropertiesInfo properties = _columnManager.GetSchemaProperties(options);
+		return options.RequiredOnly
+			? properties with { Columns = properties.Columns?.Where(column => column.Required).ToArray() ?? [] }
+			: properties;
 	}
 
 	private static void Validate(GetEntitySchemaPropertiesOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
-			throw new ArgumentException("Schema name is required.", nameof(options.SchemaName));
+			throw new ArgumentException("schema-name is required.");
 		}
 	}
 

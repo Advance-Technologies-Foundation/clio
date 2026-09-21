@@ -34,6 +34,7 @@ public enum SchemaConvergenceOutcome {
 /// <param name="IsLookup">Whether the operation is a <c>create-lookup</c>.</param>
 /// <param name="ExtendParent">Whether the operation creates a REPLACEMENT schema (a same-name schema in the target package that shadows a same-name base schema in a lower package).</param>
 /// <param name="RequestedColumns">The columns requested for the schema.</param>
+/// <param name="IsDBView">Optional requested database-view kind; omission does not constrain existing metadata.</param>
 public sealed record SchemaConvergenceTarget(
 	string EnvironmentName,
 	string PackageName,
@@ -41,7 +42,8 @@ public sealed record SchemaConvergenceTarget(
 	string? RequestedParentSchemaName,
 	bool IsLookup,
 	bool ExtendParent,
-	IReadOnlyList<CreateEntitySchemaColumnArgs> RequestedColumns);
+	IReadOnlyList<CreateEntitySchemaColumnArgs> RequestedColumns,
+	bool? IsDBView = null);
 
 /// <summary>
 /// The convergence plan computed from the current server state of a target schema. Data-only carrier.
@@ -121,6 +123,26 @@ public sealed class SchemaConvergenceService(IToolCommandResolver commandResolve
 				$"Error: schema '{target.SchemaName}' already exists in package '{existing.PackageName}'. "
 				+ "Reuse the existing schema by referencing it without creation, or delete the stale version before recreating.";
 			return new SchemaConvergencePlan(SchemaConvergenceOutcome.Collision, [], [], existing.PackageName, message);
+		}
+
+		if (target.IsDBView.HasValue) {
+			GetEntitySchemaPropertiesOptions options = new() {
+				Environment = target.EnvironmentName,
+				Package = target.PackageName,
+				SchemaName = target.SchemaName
+			};
+			EntitySchemaPropertiesInfo properties = commandResolver
+				.Resolve<GetEntitySchemaPropertiesCommand>(options).GetSchemaProperties(options);
+			if (properties.DbView != target.IsDBView.Value) {
+				return new SchemaConvergencePlan(SchemaConvergenceOutcome.Collision, [], [], existing.PackageName,
+					$"Error: schema '{target.SchemaName}' has a different is-db-view value. " +
+					"Use set-entity-schema-properties to explicitly change its storage kind.");
+			}
+		}
+		if (target.ExtendParent && !string.Equals(existing.ParentSchemaName, target.SchemaName, StringComparison.OrdinalIgnoreCase)) {
+			return new SchemaConvergencePlan(SchemaConvergenceOutcome.Collision, [], [], existing.PackageName,
+				$"Error: schema '{target.SchemaName}' already exists in package '{existing.PackageName}' but is not a same-name replacement. "
+				+ "Choose a different target package to create the replacement.");
 		}
 
 		// Same package: a mismatched immediate parent means the caller asked for a different kind of

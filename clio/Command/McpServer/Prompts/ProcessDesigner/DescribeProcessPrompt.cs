@@ -32,8 +32,9 @@ public static class DescribeProcessPrompt {
 		   `process-uid` / `process-caption`. It returns a STRUCTURED graph: `elements`
 		   (name, uid, caption, type, buildType, userTaskName, parameters; `signal` for a signal start, and a
 		   configuration block for a configured element - `email`, `readData`, `changeData`, `addData`,
-		   `openEditPage`), `flows` (name, source, target, kind, `label`, and on a branch its `condition` plus
-		   `branchesOnActivityResult`), and process `parameters` — not raw metadata. It also reports the
+		   `deleteData`, `openEditPage`), `flows` (name, source, target, kind, `label`, and on a branch its `condition`
+		   plus `branchesOnActivityResult`, `results` and `resultsActivity`), and process
+		   `parameters` — not raw metadata. It also reports the
 		   version standing: `version`, `isActiveVersion`, `activeVersionName`, `activeVersionSchemaUId` and
 		   the `versions[]` family.
 		   A `preconfiguredPage` element also carries its `preconfiguredPage` block: the page it shows, its
@@ -59,11 +60,17 @@ public static class DescribeProcessPrompt {
 		by parameter name. One read-back caveat worth stating if you see it: the block can report pre-filled values
 		AND a record together, because the runtime applies stored values in either mode — that combination cannot be
 		written through the tool, so flag it as something a human configured by hand.
-		Reading a branch takes both fields, and they can disagree. `condition` is the stored expression,
+		Reading a branch takes three fields, and they can disagree. `condition` is the stored expression,
 		reported whenever the flow carries condition TEXT — including on a flow whose `kind` is not
 		conditional, where the platform drops it at generation time and it never runs. And when
 		`branchesOnActivityResult` is true the branch is decided by which BUTTONS the preceding activity was
 		completed with, not by the expression: the text is still shown, and the runtime ignores it entirely.
+		`results` then names WHICH results select the branch, by caption, and `resultsActivity` the element
+		whose results they are - usually the flow's source, but for a connector leaving a GATEWAY an element
+		upstream of it, so narrate the activity `resultsActivity` names rather than assuming the source.
+		Both are ABSENT on a package cut from a line that never carried them, which reads exactly
+		like a formula branch - so an all-absent read is not evidence that no process here branches on a
+		result; `branchesOnActivityResult` is the older field to fall back on.
 		So never narrate a condition as "what decides this branch" without checking `kind` and
 		`branchesOnActivityResult` first — on 337 of the 1 406 conditional flows in the shipped 7.8.0 corpus
 		that reading would be wrong.

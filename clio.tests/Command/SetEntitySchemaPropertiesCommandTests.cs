@@ -1,6 +1,7 @@
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
+using CommandLine;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
@@ -15,6 +16,22 @@ internal class SetEntitySchemaPropertiesCommandTests : BaseCommandTests<SetEntit
 	private SetEntitySchemaPropertiesCommand _command;
 	private IRemoteEntitySchemaColumnManager _columnManager;
 	private ILogger _logger;
+
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("Parses explicit true and false for the schema-property CLI option.")]
+	public void Parse_ShouldPreserveDbView_WhenExplicitlySupplied(bool expected) {
+		// Arrange
+		string[] arguments = ["--package", "UsrPkg", "--schema-name", "UsrView",
+			"--is-db-view", expected ? "true" : "false"];
+		SetEntitySchemaPropertiesOptions parsed = null;
+		// Act
+		ParserResult<SetEntitySchemaPropertiesOptions> result = Parser.Default
+			.ParseArguments<SetEntitySchemaPropertiesOptions>(arguments).WithParsed(options => parsed = options);
+		// Assert
+		result.Tag.Should().Be(ParserResultType.Parsed, because: "documented boolean syntax must parse");
+		parsed.IsDBView.Should().Be(expected, because: "clearing the flag must not become an omitted property");
+	}
 
 	public override void Setup() {
 		base.Setup();
@@ -33,6 +50,22 @@ internal class SetEntitySchemaPropertiesCommandTests : BaseCommandTests<SetEntit
 	public void ClearReceived() {
 		_columnManager.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
+	}
+
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("Accepts either explicit DB-view value as the sole schema property.")]
+	public void Execute_ShouldAcceptDbViewOnly_WhenExplicitlySupplied(bool value) {
+		// Arrange
+		SetEntitySchemaPropertiesOptions options = new() {
+			Package = "UsrPkg", SchemaName = "UsrVehicle", IsDBView = value
+		};
+		// Act
+		int result = _command.Execute(options);
+		// Assert
+		result.Should().Be(0, because: "false clears the flag and must not be mistaken for omission");
+		_columnManager.ReceivedCalls().Should().ContainSingle(
+			because: "the valid DB-view-only request must reach the manager once");
 	}
 
 	[Test]
@@ -91,7 +124,12 @@ internal class SetEntitySchemaPropertiesCommandTests : BaseCommandTests<SetEntit
 		// Assert
 		result.Should().Be(1, because: "a write must target a concrete package layer");
 		_columnManager.DidNotReceiveWithAnyArgs().SetSchemaProperties(default);
-		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("Package is required.")));
+		// The WHOLE rendered message, not a Contains (PR #1352 review): everything issue #1304 is about
+		// lives in the suffix `ArgumentException.Message` appends, so a substring assertion is satisfied
+		// by `(Parameter 'Package')` just as well as by the clean message and cannot tell the fix from the
+		// revert. The negative guard is the half that actually pins it.
+		_logger.Received(1).WriteError("package-name is required.");
+		_logger.DidNotReceive().WriteError(Arg.Is<string>(message => message.Contains("(Parameter '")));
 	}
 
 	[Test]
@@ -110,7 +148,12 @@ internal class SetEntitySchemaPropertiesCommandTests : BaseCommandTests<SetEntit
 		// Assert
 		result.Should().Be(1, because: "schema identity is required for a schema-property write");
 		_columnManager.DidNotReceiveWithAnyArgs().SetSchemaProperties(default);
-		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("Schema name is required.")));
+		// The WHOLE rendered message, not a Contains (PR #1352 review): everything issue #1304 is about
+		// lives in the suffix `ArgumentException.Message` appends, so a substring assertion is satisfied
+		// by `(Parameter 'Package')` just as well as by the clean message and cannot tell the fix from the
+		// revert. The negative guard is the half that actually pins it.
+		_logger.Received(1).WriteError("schema-name is required.");
+		_logger.DidNotReceive().WriteError(Arg.Is<string>(message => message.Contains("(Parameter '")));
 	}
 
 	[Test]

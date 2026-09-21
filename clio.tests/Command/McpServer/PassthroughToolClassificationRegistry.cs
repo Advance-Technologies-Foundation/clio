@@ -214,6 +214,8 @@ internal static class PassthroughToolClassificationRegistry {
 			["configure-knowledge-feedback-policy"] = PassthroughClassification.NotEnvironmentSensitive,
 			["get-tool-contract"] = PassthroughClassification.NotEnvironmentSensitive,
 			[CreatioArtifactMergeTool.ToolName] = PassthroughClassification.NotEnvironmentSensitive,
+			[CreateUserTaskPageTool.ToolName] = PassthroughClassification.NotEnvironmentSensitive,
+			[RegisterProcessElementTool.ToolName] = PassthroughClassification.NotEnvironmentSensitive,
 			["assert-infrastructure"] = PassthroughClassification.NotEnvironmentSensitive,
 			["show-passing-infrastructure"] = PassthroughClassification.NotEnvironmentSensitive,
 			["list-environments"] = PassthroughClassification.NotEnvironmentSensitive, // PRD prose: "show-web-app-list" (ShowWebAppListTool); actual tool name is list-environments
@@ -290,10 +292,13 @@ internal static class PassthroughToolClassificationRegistry {
 			["delete-schema"] = PassthroughClassification.NotApplicable,
 			["delete-theme"] = PassthroughClassification.NotApplicable,
 			["deploy-identity"] = PassthroughClassification.NotApplicable,
+			["uninstall-identity"] = PassthroughClassification.NotApplicable, // BaseTool with per-environment command resolver.
 			["describe-business-process"] = PassthroughClassification.NotApplicable,
 			["describe-environment"] = PassthroughClassification.NotApplicable,
 			["download-configuration-by-build"] = PassthroughClassification.NotApplicable,
 			["download-configuration-by-environment"] = PassthroughClassification.NotApplicable,
+			// Environment-scoped BaseTool path; outside the original resident-tool passthrough audit.
+			[DownloadSysSettingFileTool.ToolName] = PassthroughClassification.NotApplicable,
 			["execute-esq"] = PassthroughClassification.NotApplicable,
 			["export-schema"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - already resolver-backed (class a), not part of the ENG-93347 passthrough audit
 			["experimental"] = PassthroughClassification.NotApplicable,
@@ -301,6 +306,8 @@ internal static class PassthroughToolClassificationRegistry {
 			["find-entity-schema"] = PassthroughClassification.NotApplicable,
 			["finish-hotfix"] = PassthroughClassification.NotApplicable,
 			["generate-process-model"] = PassthroughClassification.NotApplicable,
+			// Uses the existing environment-scoped BaseTool resolver; outside the original passthrough audit.
+			[ExecuteSqlScriptTool.ToolName] = PassthroughClassification.NotApplicable,
 			["generate-source-code"] = PassthroughClassification.NotApplicable,
 			["get-browser-session"] = PassthroughClassification.NotApplicable,
 			["get-classic-list-columns"] = PassthroughClassification.NotApplicable,
@@ -308,6 +315,9 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-client-unit-schema"] = PassthroughClassification.NotApplicable,
 			["get-entity-schema-column-properties"] = PassthroughClassification.NotApplicable,
 			["get-entity-schema-properties"] = PassthroughClassification.NotApplicable,
+			["enroll-sequence-participants"] = PassthroughClassification.NotApplicable,
+			["get-sequence-context"] = PassthroughClassification.NotApplicable,
+			["execute-dataservice-batch"] = PassthroughClassification.NotApplicable,
 			["set-entity-schema-properties"] = PassthroughClassification.NotApplicable,
 			["get-fsm-mode"] = PassthroughClassification.NotApplicable,
 			["get-identity-assertion"] = PassthroughClassification.NotApplicable,
@@ -320,14 +330,25 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-process-page-facts"] = PassthroughClassification.NotApplicable,
 			["get-process-signature"] = PassthroughClassification.NotApplicable,
 			["get-record-rights"] = PassthroughClassification.NotApplicable,
+			// New administration tools use the existing environment-aware BaseTool resolver path.
+			["inspect-user"] = PassthroughClassification.NotApplicable,
+			["manage-user"] = PassthroughClassification.NotApplicable,
+			["inspect-role"] = PassthroughClassification.NotApplicable,
+			["manage-role"] = PassthroughClassification.NotApplicable,
+			["inspect-access"] = PassthroughClassification.NotApplicable,
+			["manage-access"] = PassthroughClassification.NotApplicable,
+			["inspect-license"] = PassthroughClassification.NotApplicable,
+			["manage-license"] = PassthroughClassification.NotApplicable,
 			["get-related-page-addon"] = PassthroughClassification.NotApplicable,
 			["get-schema"] = PassthroughClassification.NotApplicable,
 			["get-schema-name-prefix"] = PassthroughClassification.NotApplicable,
 			["get-sql-schema"] = PassthroughClassification.NotApplicable,
 			["get-sys-setting"] = PassthroughClassification.NotApplicable,
 			["get-target-package"] = PassthroughClassification.NotApplicable,
+			["get-theme"] = PassthroughClassification.NotApplicable,
 			["import-schema"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - already resolver-backed (class a), not part of the ENG-93347 passthrough audit
 			["install-application"] = PassthroughClassification.NotApplicable,
+			["install-dashboards-migrator"] = PassthroughClassification.NotApplicable,
 			["last-compilation-log"] = PassthroughClassification.NotApplicable, // BaseTool<T>.ExecuteResolved<TCommand,TResponse> is already resolver-backed (class a)
 			["watch-compilation"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - same already-correct pattern as install-application/compile-creatio
 			["install-gate"] = PassthroughClassification.NotApplicable,

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -1488,6 +1488,7 @@ public sealed class SchemaValidationServiceTests
 	[Test]
 	[Description("Insert of a new field control without a matching viewModelConfigDiff attribute fails — without the attribute declaration the control has no data source at runtime.")]
 	public void ValidateInsertedFieldSelfConsistency_InsertWithoutViewModelAttribute_ReturnsInvalid() {
+		// Arrange
 		string body = BuildDiffBackedPageBody(
 			"""
 				[
@@ -1505,9 +1506,17 @@ public sealed class SchemaValidationServiceTests
 			""",
 			"[]");
 
+		// Act
 		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
 
+		// Assert
 		result.IsValid.Should().BeFalse("because the inserted control binds to an attribute that the body never declares — the field would have no data source at runtime");
+		result.Errors.Should().Contain(error =>
+			error.Contains("component itself is introduced by a parent schema") &&
+			error.Contains("keep its complete 'insert' operation") &&
+			error.Contains("include the attribute declaration") &&
+			error.Contains("Append replaces a matching insert as a whole"),
+			because: "GH-1189: the remediation must distinguish component ownership and preserve the own-body insert and binding");
 		result.Errors.Should().Contain(error =>
 			error.Contains("UsrEstimatedMinutes") &&
 			error.Contains("PDS_UsrEstimatedMinutes") &&
@@ -1550,6 +1559,230 @@ public sealed class SchemaValidationServiceTests
 			error.Contains("PDS_UsrContactPhone") &&
 			error.Contains("render blank"),
 			"because the diagnostic should name the broken field, the missing resource key, and what will go wrong at runtime");
+	}
+
+	[Test]
+	[Description("ValidateFieldLabelResources_ShouldNotConsultThePersistedKeyProvider_WhenTheBodyIsClean — the persisted-key lookup costs a remote GetSchema round-trip, so it must stay on the failure path only (issue #1320).")]
+	public void ValidateFieldLabelResources_ShouldNotConsultThePersistedKeyProvider_WhenTheBodyIsClean() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"Input_zl5k81v",
+						"values":{"type":"crt.Input","label":"$Resources.Strings.AccountDS_Name_ud92nhf","control":"$AccountDS_Name_ud92nhf"}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{"attributes":{"AccountDS_Name_ud92nhf":{"modelConfig":{"path":"AccountDS.Name"}}}}
+					}
+				]
+			""");
+		int providerInvocations = 0;
+
+		// Act
+		(SchemaValidationResult standardFields, SchemaValidationResult insertedFields) =
+			SchemaValidationService.ValidateFieldLabelResources(body, null, () => {
+				providerInvocations++;
+				return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			});
+
+		// Assert
+		insertedFields.IsValid.Should().BeTrue(
+			"because the label key equals the DS-bound binding attribute, so the platform auto-provides the caption");
+		standardFields.IsValid.Should().BeTrue(
+			"because the clean body has nothing for the standard-field validator to reject either");
+		providerInvocations.Should().Be(0,
+			"because a body that validates cleanly must never pay the extra GetSchema round-trip the provider performs");
+	}
+
+	[Test]
+	[Description("ValidateFieldLabelResources_ShouldAcceptTheBody_WhenTheProviderSuppliesThePersistedKey — the rescue re-run is what makes a later save of the same page succeed without re-sending every previously registered key (issue #1320).")]
+	public void ValidateFieldLabelResources_ShouldAcceptTheBody_WhenTheProviderSuppliesThePersistedKey() {
+		// Arrange
+		string body = BuildPersistedResourcePageBody();
+		int providerInvocations = 0;
+
+		// Act
+		(_, SchemaValidationResult insertedFields) =
+			SchemaValidationService.ValidateFieldLabelResources(body, null, () => {
+				providerInvocations++;
+				return new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "CaseSLA_label" };
+			});
+
+		// Assert
+		providerInvocations.Should().Be(1,
+			"because the failing verdict must trigger exactly one persisted-key lookup, not one per validator");
+		insertedFields.IsValid.Should().BeTrue(
+			"because the key the provider reports is stored on the schema and resolves at runtime");
+	}
+
+	[Test]
+	[Description("ValidateFieldLabelResources_ShouldKeepTheRejection_WhenTheProviderYieldsNothing — a provider that cannot read the schema must leave the original, stricter verdict standing rather than letting an unvalidated body through (issue #1320).")]
+	public void ValidateFieldLabelResources_ShouldKeepTheRejection_WhenTheProviderYieldsNothing() {
+		// Arrange
+		string body = BuildPersistedResourcePageBody();
+
+		// Act
+		(_, SchemaValidationResult insertedFields) =
+			SchemaValidationService.ValidateFieldLabelResources(body, null, () => null);
+
+		// Assert
+		insertedFields.IsValid.Should().BeFalse(
+			"because an unreadable persisted-key set must not be treated as proof that the resource exists");
+		insertedFields.Errors.Should().Contain(error => error.Contains("CaseSLA_label"),
+			"because the original diagnostic must survive the failed rescue attempt");
+	}
+
+	[Test]
+	[Description("ValidateFieldLabelResources_ShouldKeepTheRejection_WhenNoProviderIsSupplied — the stateless callers (validate-page) pass no provider and must keep the pre-existing behaviour.")]
+	public void ValidateFieldLabelResources_ShouldKeepTheRejection_WhenNoProviderIsSupplied() {
+		// Arrange
+		string body = BuildPersistedResourcePageBody();
+
+		// Act
+		(_, SchemaValidationResult insertedFields) =
+			SchemaValidationService.ValidateFieldLabelResources(body, null, persistedResourceKeysProvider: null);
+
+		// Assert
+		insertedFields.IsValid.Should().BeFalse(
+			"because without a provider there is no evidence the resource key exists anywhere");
+	}
+
+	[Test]
+	[Description("ValidateFieldLabelResources_ShouldNotConsultThePersistedKeyProvider_WhenTheRejectionIsAboutBindings — a missing view-model attribute declaration is not something a persisted resource key can fix, so that rejection must not spend the remote round-trip either (issue #1320).")]
+	public void ValidateFieldLabelResources_ShouldNotConsultThePersistedKeyProvider_WhenTheRejectionIsAboutBindings() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrEstimatedMinutes",
+						"values":{"type":"crt.NumberInput","control":"$PDS_UsrEstimatedMinutes"}
+					}
+				]
+			""",
+			"[]");
+		int providerInvocations = 0;
+
+		// Act
+		(_, SchemaValidationResult insertedFields) =
+			SchemaValidationService.ValidateFieldLabelResources(body, null, () => {
+				providerInvocations++;
+				return new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "anything" };
+			});
+
+		// Assert
+		insertedFields.IsValid.Should().BeFalse(
+			"because the inserted control binds to an attribute the body never declares");
+		providerInvocations.Should().Be(0,
+			"because a binding rejection carries no unresolved label resource, so the persisted-key lookup cannot change the verdict");
+	}
+
+	/// <summary>
+	/// A body whose inserted field carries a label resource key that is neither auto-provided nor supplied
+	/// in the call's own resources - the shape the persisted-key rescue exists for.
+	/// </summary>
+	private static string BuildPersistedResourcePageBody() =>
+		BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"CaseSLA",
+						"values":{"type":"crt.Input","label":"$Resources.Strings.CaseSLA_label","control":"$PDS_CaseSLA"}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{"attributes":{"PDS_CaseSLA":{"modelConfig":{"path":"PDS.UsrSLA"}}}}
+					}
+				]
+			""");
+
+	[Test]
+	[Description("Insert of a new field whose label resource key is already PERSISTED on the schema is accepted even when the current call does not repeat it in 'resources' — a stored key resolves at runtime, so later saves must not be forced to re-send every key ever registered (issue #1320).")]
+	public void ValidateInsertedFieldSelfConsistency_InsertWithPersistedLabelResource_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"CaseSLA",
+						"values":{"type":"crt.Input","label":"$Resources.Strings.CaseSLA_label","control":"$PDS_CaseSLA"}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{"attributes":{"PDS_CaseSLA":{"modelConfig":{"path":"PDS.UsrSLA"}}}}
+					}
+				]
+			""");
+		IReadOnlySet<string> persistedResourceKeys =
+			new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "CaseSLA_label" };
+
+		// Act
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(
+			body, explicitResources: null, persistedResourceKeys: persistedResourceKeys);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			"because the resource key is already stored in the schema's localizableStrings and resolves at runtime without being re-sent");
+		result.Errors.Should().BeEmpty(
+			"because a persisted resource key is not a missing resource");
+	}
+
+	[Test]
+	[Description("A persisted resource set that does NOT contain the label key still fails validation — the persisted-key allowance must not weaken detection of a genuinely unregistered resource (issue #1320).")]
+	public void ValidateInsertedFieldSelfConsistency_InsertWithUnrelatedPersistedResources_ReturnsInvalid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"CaseSLA",
+						"values":{"type":"crt.Input","label":"$Resources.Strings.CaseSLA_label","control":"$PDS_CaseSLA"}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{"attributes":{"PDS_CaseSLA":{"modelConfig":{"path":"PDS.UsrSLA"}}}}
+					}
+				]
+			""");
+		IReadOnlySet<string> persistedResourceKeys =
+			new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "SomeOtherKey_label" };
+
+		// Act
+		var result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(
+			body, explicitResources: null, persistedResourceKeys: persistedResourceKeys);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			"because the schema stores a different key and this label still has nothing to resolve to");
+		result.Errors.Should().Contain(error => error.Contains("CaseSLA_label"),
+			"because the diagnostic must still name the unresolvable resource key");
 	}
 
 	[Test]
@@ -2683,6 +2916,65 @@ public sealed class SchemaValidationServiceTests
 			because: "_designOptions.templateValuesMapping.caption is designer metadata naming a data-source attribute, not runtime user-visible text");
 		result.Errors.Should().BeEmpty(
 			because: "designer metadata must not produce a localizable-text validation error");
+	}
+
+	[TestCase("insert")]
+	[TestCase("merge")]
+	[Description("Gallery template slots name projected attributes rather than localized UI text, for both insert and merge operations.")]
+	public void ValidateLocalizableTextLiterals_ShouldAcceptGalleryMapping_WhenItemConfigNamesAttributes(string operation) {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"OPERATION","name":"Gallery","values":{"type":"crt.Gallery","itemConfig":{"templateValuesMapping":{"caption":"GalleryDS_Name","description":"GalleryDS_Description","image":"GalleryDS_Image","id":"GalleryDS_Id"}}}}]""".Replace("OPERATION", operation),
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "Gallery mappings contain attribute identifiers, not display text");
+		result.Errors.Should().BeEmpty(because: "the caption mapping must not require a resource binding");
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("Nested Gallery mappings and a same-body untyped merge use the same scoped exemption for web and mobile bodies.")]
+	public void ValidateLocalizableTextLiterals_ShouldAcceptMapping_WhenNestedOrSameBodyMerge(bool mobile) {
+		// Arrange
+		const string diff = """
+			[{"operation":"insert","name":"Container","values":{"type":"crt.FlexContainer","items":[{"name":"NestedGallery","type":"crt.Gallery","itemConfig":{"templateValuesMapping":{"caption":"NestedDS_Name"}}}]}},
+			{"operation":"insert","name":"Gallery","values":{"type":"crt.Gallery"}},
+			{"operation":"merge","name":"Gallery","values":{"itemConfig":{"templateValuesMapping":{"caption":"GalleryDS_Name"}}}}]
+			""";
+		string body = mobile ? "{\"viewConfigDiff\":" + diff + "}" : BuildDiffBackedPageBody(diff, "[]");
+
+		// Act
+		SchemaValidationResult result = mobile
+			? SchemaValidationService.ValidateMobileLocalizableTextLiterals(body)
+			: SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "nested nodes and same-body type resolution preserve the Gallery mapping contract");
+		result.Errors.Should().BeEmpty(because: "all captions in this body are attribute identifiers");
+	}
+
+	[TestCase("""{"type":"crt.Gallery","caption":"Visible caption","itemConfig":{"templateValuesMapping":{"caption":"GalleryDS_Name"}}}""")]
+	[TestCase("""{"type":"crt.Gallery","itemConfig":{"caption":"Visible caption","templateValuesMapping":{"caption":"GalleryDS_Name"}}}""")]
+	[TestCase("""{"type":"crt.Gallery","itemConfig":{"items":[{"type":"crt.Label","caption":"Visible caption"}],"templateValuesMapping":{"caption":"GalleryDS_Name"}}}""")]
+	[TestCase("""{"type":"crt.FlexContainer","itemConfig":{"templateValuesMapping":{"caption":"Visible caption"}}}""")]
+	[TestCase("""{"type":"crt.Gallery","templateValuesMapping":{"caption":"Visible caption"}}""")]
+	[Description("The Gallery mapping exemption must not hide captions on the component, sibling item configuration, children, other components or other paths.")]
+	public void ValidateLocalizableTextLiterals_ShouldRejectCaption_WhenOutsideGalleryMapping(string values) {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			$$"""[{"operation":"insert","name":"Gallery","values":{{values}}}]""", "[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "ordinary visible captions still require localization");
+		result.Errors.Should().ContainSingle(error => error.Contains("Visible caption"),
+			because: "only the real caption should be rejected, not the projected attribute name");
 	}
 
 	[Test]
@@ -7349,8 +7641,8 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Silently allows unknown types that are in neither mobile nor web registry (custom components).")]
-	public void ValidateMobileComponentTypes_WhenCustomType_ReturnsValid() {
+	[Description("A type in NEITHER registry does not block the write (it may be a package-registered custom component) but is no longer silent: it now warns, because the same shape is produced by a misspelled or invented type, which used to reach the save with no diagnostic at all (ENG-95827).")]
+	public void ValidateMobileComponentTypes_WhenTypeInNeitherRegistry_WarnsWithoutBlocking() {
 		// Arrange
 		string body = """
 		              {
@@ -7366,8 +7658,32 @@ public sealed class SchemaValidationServiceTests
 		SchemaValidationResult result = SchemaValidationService.ValidateMobileComponentTypes(body, allowed, webOnly);
 
 		// Assert
-		result.IsValid.Should().BeTrue("because custom types not in either registry should be allowed");
-		result.Warnings.Should().BeEmpty("because the type is not a known web-only component");
+		result.IsValid.Should().BeTrue(
+			because: "a genuinely custom mobile component is also absent from both registries, so this must never refuse the write");
+		result.Warnings.Should().ContainSingle(w => w.Contains("usr.CustomWidget") && w.Contains("NEITHER"),
+			because: "the caller has to be able to tell a registered custom component from a typo, and silence made the two indistinguishable");
+	}
+
+	[Test]
+	[Description("The web-only diagnostic keeps its own distinct wording after the neither-registry branch was added, so the two cases stay separable by the caller.")]
+	public void ValidateMobileComponentTypes_WhenWebOnlyTypeUsed_KeepsWebRegistryWording() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"X","type":"crt.DataGrid"}
+		                ]
+		              }
+		              """;
+		HashSet<string> allowed = new(StringComparer.OrdinalIgnoreCase) { "crt.Input" };
+		HashSet<string> webOnly = new(StringComparer.OrdinalIgnoreCase) { "crt.DataGrid" };
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileComponentTypes(body, allowed, webOnly);
+
+		// Assert
+		result.Warnings.Should().ContainSingle(w => w.Contains("web registry") && !w.Contains("NEITHER"),
+			because: "a web-only type has a known mobile alternative to look for, which is different advice from an unrecognised type");
 	}
 
 	#endregion
@@ -8174,6 +8490,169 @@ public sealed class SchemaValidationServiceTests
 			because: "the pipeline must surface the placement advisory that the type-placement rule cannot catch");
 		errors.Should().NotContain(e => e.Contains("Scaffold"),
 			because: "an undiscoverable placement is advisory, not a reason to refuse the write");
+	}
+
+	#endregion
+
+	#region ValidateMobileSingleScaffoldRoot
+
+	[Test]
+	[Description("An insert whose values.type is crt.Scaffold blocks: the mobile template already provides the Scaffold root and a second one shadows the native element.")]
+	public void ValidateMobileSingleScaffoldRoot_WhenInsertAuthorsScaffoldType_AddsBlockingError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"MyScaffold","parentName":"","propertyName":"items",
+		                   "values":{"type":"crt.Scaffold"}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileSingleScaffoldRoot(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a page that authors its own Scaffold shadows the template's root, so the navigation bar and body come from the wrong element");
+		result.Errors.Should().ContainSingle(e => e.Contains("crt.Scaffold") && e.Contains("merge"),
+			because: "the diagnostic must name the offending type and point at the supported alternative (merge onto the template's root)");
+	}
+
+	[Test]
+	[Description("An insert of an element NAMED Scaffold blocks whatever type it declares, because the template already owns that element name.")]
+	public void ValidateMobileSingleScaffoldRoot_WhenInsertUsesScaffoldName_AddsBlockingError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"Scaffold","parentName":"","propertyName":"items",
+		                   "values":{"type":"crt.GridContainer"}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileSingleScaffoldRoot(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the element name Scaffold belongs to the template, so an insert under it collides regardless of the declared type");
+	}
+
+	[Test]
+	[Description("A crt.Scaffold NESTED inside an insert's values is caught: an insert whose whole values object becomes the element authors its children too, so a second Scaffold one level down is the same defect by a longer route. A rule stated page-wide that only inspected the top level would be one a caller could satisfy while still shipping it.")]
+	public void ValidateMobileSingleScaffoldRoot_WhenInsertNestsScaffoldInsideValues_AddsBlockingError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"Wrap","parentName":"MainContainer","propertyName":"items",
+		                   "values":{"type":"crt.FlexContainer","items":[
+		                     {"name":"Inner","type":"crt.Scaffold"}]}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileSingleScaffoldRoot(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the nested child is authored by the same insert, so it adds the second Scaffold just as "
+				+ "a top-level one would");
+		result.Errors.Should().ContainSingle(e => e.Contains("crt.Scaffold"),
+			because: "one diagnostic per offending entry, naming the type at fault");
+	}
+
+	[Test]
+	[Description("An insert carrying no Scaffold anywhere in its values subtree stays valid, so the subtree scan does not turn the rule into a blanket refusal of nested children.")]
+	public void ValidateMobileSingleScaffoldRoot_WhenInsertNestsOrdinaryChildren_StaysValid() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"Wrap","parentName":"MainContainer","propertyName":"items",
+		                   "values":{"type":"crt.FlexContainer","items":[
+		                     {"name":"Inner","type":"crt.GridContainer","items":[
+		                       {"name":"Field","type":"crt.Input"}]}]}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileSingleScaffoldRoot(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "authoring children inside an insert's values is the documented way to build a container "
+				+ "tree — only a Scaffold among them is refused");
+		result.Errors.Should().BeEmpty(
+			because: "a rule that fired on ordinary nesting would block the normal conversion output");
+	}
+
+	[Test]
+	[Description("A flat-shaped insert carrying the type at entry level is caught too, so the shape the type-placement rule tolerates cannot smuggle a second Scaffold through.")]
+	public void ValidateMobileSingleScaffoldRoot_WhenFlatInsertDeclaresScaffoldType_AddsBlockingError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"SecondRoot","type":"crt.Scaffold","propertyName":"items"}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileSingleScaffoldRoot(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the rule resolves the type the same way the registry lookup does, so the flat shape is not an escape hatch");
+	}
+
+	[Test]
+	[Description("A merge onto Scaffold stays valid: patching the template's own root is the supported way to configure it.")]
+	public void ValidateMobileSingleScaffoldRoot_WhenMergeTargetsScaffold_StaysValid() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"merge","name":"Scaffold","values":{"title":"#ResourceString(Title)#"}}
+		                ]
+		              }
+		              """;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileSingleScaffoldRoot(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "merge is the documented way to patch the template-provided Scaffold and must not be confused with authoring a second one");
+	}
+
+	[Test]
+	[Description("The single-Scaffold rule is wired into the mobile validation pipeline as a blocking error, so update-page refuses the body instead of relying on guidance prose.")]
+	public void ValidateMobilePage_WhenBodyAuthorsSecondScaffold_ReportsBlockingError() {
+		// Arrange
+		string body = """
+		              {
+		                "viewConfigDiff": [
+		                  {"operation":"insert","name":"MyScaffold","parentName":"","propertyName":"items",
+		                   "values":{"type":"crt.Scaffold"}}
+		                ],
+		                "viewModelConfigDiff": [],
+		                "modelConfigDiff": []
+		              }
+		              """;
+		var empty = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		// Act
+		(List<string> errors, List<string> _) = SchemaValidationService.ValidateMobilePage(body, empty, empty);
+
+		// Assert
+		errors.Should().Contain(e => e.Contains("crt.Scaffold"),
+			because: "the invariant must be enforced by the validator the caller cannot skip, not stated in the conversion guide's constraints");
 	}
 
 	#endregion
@@ -10390,4 +10869,98 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	#endregion
+	#region ValidateAppendFragmentIsRecognizable
+
+	[Test]
+	[Description("A bare list of operations carries no section marker and is rejected.")]
+	public void ValidateAppendFragmentIsRecognizable_ShouldReject_WhenTheBodyCarriesNoSectionMarker() {
+		// Arrange - valid JavaScript (an array literal), so the syntax gate passes it. Before this rule the
+		// merge read every section as empty and reported success while discarding the whole fragment.
+		const string bareOperationList = """[{"operation":"merge","name":"UsrPanel","values":{"title":"New"}}]""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateAppendFragmentIsRecognizable(bareOperationList);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a body with no marker pair contributes nothing, so accepting it would silently discard it");
+		string.Join(" ", result.Errors).Should().Contain("SCHEMA_VIEW_CONFIG_DIFF",
+			because: "the caller needs to be told the shape that would have worked, not just that theirs failed");
+	}
+
+	[Test]
+	[Description("One section marker is enough - append relaxes completeness, not recognizability.")]
+	public void ValidateAppendFragmentIsRecognizable_ShouldAccept_WhenTheBodyCarriesOnlyOneSection() {
+		// Arrange - a genuine fragment: it omits every other section on purpose, which is the point of append.
+		const string singleSectionFragment =
+			"""define("X", function() { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ }; });""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateAppendFragmentIsRecognizable(singleSectionFragment);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "requiring more than one section would re-impose the completeness rule append exists to relax");
+	}
+
+	[Test]
+	[Description("A full-config body stays recognizable so it reaches its own precise error.")]
+	public void ValidateAppendFragmentIsRecognizable_ShouldAccept_WhenTheBodyCarriesOnlyFullConfigSections() {
+		// Arrange - full-config append IS unsupported, but PageBodyMerger.UsesUnsupportedFullConfigForm says so
+		// downstream and names --mode replace. This rule must not pre-empt that with a vaguer message.
+		const string fullConfigBody =
+			"""define("X", function() { return { viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{}/**SCHEMA_VIEW_MODEL_CONFIG*/ }; });""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateAppendFragmentIsRecognizable(fullConfigBody);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "the body IS recognizable; rejecting it here would replace a precise diagnosis with a generic one");
+	}
+
+	[Test]
+	[Description("An unclosed marker is not a pair, so it does not count as a section.")]
+	public void ValidateAppendFragmentIsRecognizable_ShouldReject_WhenTheMarkerIsNotClosed() {
+		// Arrange - PageSchemaSectionReader needs a PAIR; a lone opening marker reads as absent, which is the
+		// same silent-discard path as carrying no marker at all.
+		const string unclosedMarker =
+			"""define("X", function() { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[] }; });""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateAppendFragmentIsRecognizable(unclosedMarker);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the reader matches a pair, so a half-written marker discards the section just as silently");
+	}
+
+	#endregion
+	[Test]
+	[Category("Unit")]
+	[Description("A failed WEB-catalog fetch must not turn every web-only component into 'a misspelled or invented type'. The caller builds the web set from `webTask.Result ?? []`, so that failure yields an empty set while the mobile set stays populated from cache - and the only fail-open guard was on the MOBILE set. In that state the new neither-registry branch fires for components that ARE in the web registry and says they will not render, which is false; before this branch the same combination produced no message at all.")]
+	public void ValidateMobileComponentTypes_ShouldStaySilent_WhenTheWebRegistryFailedToLoad() {
+		// Arrange - crt.ScrollableContainer is a real WEB component; the empty set stands for a failed fetch.
+		const string body = """
+			{ "viewConfigDiff": [ { "operation": "insert", "name": "X",
+			   "values": { "type": "crt.ScrollableContainer" } } ] }
+			""";
+		IReadOnlySet<string> mobile = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.Input" };
+
+		// Act
+		SchemaValidationResult webLoaded = SchemaValidationService.ValidateMobileComponentTypes(
+			body, mobile, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.ScrollableContainer" });
+		SchemaValidationResult webFailed = SchemaValidationService.ValidateMobileComponentTypes(
+			body, mobile, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+		// Assert
+		webLoaded.Warnings.Should().ContainSingle(because: "with both catalogs loaded this is a web-only type")
+			.Which.Should().Contain("exists in the web registry",
+				because: "that is the accurate diagnosis when the web set is trustworthy");
+		webFailed.Warnings.Should().BeEmpty(
+			because: "with no web set there is no evidence the type is absent from the web registry, and the "
+				+ "neither-registry wording asserts exactly that evidence - saying a real component 'will not "
+				+ "render' sends the caller to replace something that works");
+	}
+
 }

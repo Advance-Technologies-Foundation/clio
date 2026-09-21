@@ -502,7 +502,8 @@ public static class DataValueTypeMap{
 		27 => ShortTextDataValueTypeUId,
 		28 => MediumTextDataValueTypeUId,
 		29 => MaxSizeTextDataValueTypeUId,
-		30 => RichTextDataValueTypeUId,
+		30 => LongTextDataValueTypeUId,
+		43 => RichTextDataValueTypeUId,
 		31 => SecureTextDataValueTypeUId,
 		32 => HashTextDataValueTypeUId,
 		33 => DbObjectNameDataValueTypeUId,
@@ -1120,7 +1121,12 @@ public static class ManagerMap{
 			"formulatask" => EventType.FormulaTask,
 			"scripttask" => EventType.ScriptTask,
 			"webservice" => EventType.WebServiceTask,
-			"callactivity" => EventType.SubProcess,
+			// Two tokens, one element, two vocabularies. "callactivity" is the DIAGRAM data-id the canvas and
+			// the guidance emit; "subprocess" is the lowercase-collapsed BUILD token a descriptor carries
+			// (ProcessDesignConstants.ElementTypes.SubProcess), and it does not end in the "usertask" suffix the
+			// arm below matches on. Without this entry a graph containing a sub-process element the server builds
+			// correctly resolves to Unknown, and CheckUnknownTypes turns that into a hard validator Error.
+			"callactivity" or "subprocess" => EventType.SubProcess,
 			"eventsubprocessexpanded" => EventType.EventSubProcess,
 			// "sendemail", "approval" and "openeditpage" are the dedicated build/describe tokens for the Send email
 			// (EmailTemplateUserTask), Approval (ApprovalUserTask) and Open edit page (OpenEditPageUserTask)
@@ -1132,8 +1138,11 @@ public static class ManagerMap{
 			// tokens whose data-ids (readDataUserTask / changeDataUserTask / changeAdminRightsUserTask) already
 			// resolve through that suffix arm, while the token a descriptor actually carries does not end in
 			// "usertask" and would otherwise fall to Unknown — a hard validator Error on a graph that builds fine.
+			// "preconfiguredpage" is the same case once more, and it was the last build token still missing: the
+			// element's own data-id is PreconfiguredPageUserTask, which the suffix arm below covers, while the
+			// token a DESCRIPTOR carries does not end in "usertask" and fell to Unknown.
 			"usertask" or "performtask" or "sendemail" or "approval" or "openeditpage" or "readdata"
-					or "changedata" or "adddata" or "changeaccessrights" => EventType.UserTask,
+					or "changedata" or "adddata" or "changeaccessrights" or "preconfiguredpage" => EventType.UserTask,
 			var i when i.StartsWith("intermediatecatchevent", StringComparison.Ordinal) => EventType.IntermediateCatchSignalEvent,
 			var i when i.StartsWith("intermediatethrowevent", StringComparison.Ordinal) => EventType.IntermediateThrowSignalEvent,
 			// every system/user action element ends with the "usertask" suffix and is an activity.

@@ -121,7 +121,7 @@
 			"additionalProperties": false,
 			"required": ["enabled", "frequency-minutes"],
 			"properties": {
-				"enabled": { "type": "boolean", "default": true },
+				"enabled": { "type": "boolean" },
 				"frequency-minutes": { "type": "integer", "minimum": 1 },
 				"next-run": { "type": "string", "format": "date-time" }
 			}
@@ -133,7 +133,7 @@
 			"properties": {
 				"clio": {
 					"allOf": [{ "$ref": "#/definitions/autoupdatepolicy" }],
-					"default": { "enabled": true, "frequency-minutes": 480 }
+					"default": { "enabled": false, "frequency-minutes": 480 }
 				},
 				"knowledge": {
 					"allOf": [{ "$ref": "#/definitions/autoupdatepolicy" }],
@@ -141,7 +141,7 @@
 				},
 				"toolkit": {
 					"allOf": [{ "$ref": "#/definitions/autoupdatepolicy" }],
-					"default": { "enabled": true, "frequency-minutes": 60 }
+					"default": { "enabled": false, "frequency-minutes": 60 }
 				}
 			}
 		},
@@ -231,6 +231,18 @@
 			},
 			"required": ["enabled", "config-path", "host", "port", "sync-local-environments"]
 		},
+		"identityserviceattachment": {
+			"type": ["object", "null"],
+			"description": "Optional local IdentityService owned by this environment. Empty values mean no identity. These recorded targets authorize cleanup; OAuth credentials alone do not.",
+			"additionalProperties": false,
+			"properties": {
+				"EnvironmentPath": { "type": "string", "default": "", "description": "Absolute folder containing the locally deployed identity, or empty when none is attached" },
+				"IisTarget": { "type": "string", "default": "", "description": "Exact IIS site or application name" },
+				"ApplicationPool": { "type": "string", "default": "", "description": "IIS pool; cleanup preserves it while another application uses it" },
+				"Uri": { "type": "string", "default": "", "description": "IdentityService base URL, or empty when none is attached" },
+				"CrmReferencesCleared": { "type": "boolean", "default": false, "description": "Clio cleanup checkpoint for retry after identity has stopped" }
+			}
+		},
 		"environment": {
 			"type": "object",
 			"properties": {
@@ -284,6 +296,9 @@
 				"EnvironmentPath": {
 					"type": "string",
 					"description": "Path to the environment on disk"
+				},
+				"IdentityService": {
+					"$ref": "#/definitions/identityserviceattachment"
 				}
 			},
 			"description": "Clio environment",
@@ -300,7 +315,8 @@
 				"IsNetCore": false,
 				"Safe": false,
 				"DeveloperModeEnabled": true,
-				"EnvironmentPath": "C:\\inetpub\\wwwroot\\clio\\<envkey>"
+				"EnvironmentPath": "C:\\inetpub\\wwwroot\\clio\\<envkey>",
+				"IdentityService": { "EnvironmentPath": "", "IisTarget": "", "ApplicationPool": "", "Uri": "", "CrmReferencesCleared": false }
 			}
 		},
 		"dbconnectionstring": {

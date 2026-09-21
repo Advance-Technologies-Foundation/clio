@@ -1,3 +1,4 @@
+using Clio.Common;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -10,7 +11,6 @@ using System.Threading.Tasks;
 using Acornima.Ast;
 using Clio.Command;
 using Clio.UserEnvironment;
-using McpServerLib = ModelContextProtocol.Server;
 using ModelContextProtocol.Server;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
@@ -23,8 +23,9 @@ namespace Clio.Command.McpServer.Tools;
 [McpServerToolType]
 [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 	Justification = "DI composition root: sync-pages requires nine constructor-injected collaborators, including "
-		+ "the ILogger added so the batch base-resolution path has the same diagnostic trail as update-page and the "
-		+ "interprocess file gate that serialises its .clio-pages writes against other clio processes. A "
+		+ "the ILogger added so the batch base-resolution path has the same diagnostic trail as update-page, the "
+		+ "interprocess file gate that serialises its .clio-pages writes against other clio processes, and the "
+		+ "persisted-resource-key reader that keeps the label-resource rescue to one schema read per page. A "
 		+ "parameter object would obscure the tool's injected contract; this mirrors the S107 suppressions on other "
 		+ "MCP entry points in this assembly.")]
 public sealed class PageSyncTool(
@@ -32,8 +33,11 @@ public sealed class PageSyncTool(
 	IFileSystem fileSystem,
 	IMobileComponentInfoCatalog mobileComponentCatalog,
 	IComponentInfoCatalog webComponentCatalog,
-	IPageBodySamplingService samplingService,
 	IPageBaselineGuard pageBaselineGuard,
+	// Owns the persisted-resource-key read for the whole batch. REQUIRED, not optional-with-null: an
+	// absent reader is invisible to every existing test construction, and a null would silently restore
+	// the per-gate duplicate hierarchy resolutions this collaborator exists to remove.
+	IPersistedResourceKeyReader persistedResourceKeyReader,
 	IPlatformVersionResolverFactory? resolverFactory = null,
 	// Injected by DI (Clio.Common.ILogger is registered in the container) so a failed mobile-base pre-resolution
 	// during a sync-pages batch leaves the same diagnostic trail update-page has (ENG-94418 review parity).
@@ -50,20 +54,20 @@ public sealed class PageSyncTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
-	// One of the two sampling callers (PageBodySamplingService): a relay that is not full-duplex degrades the
-	// semantic review to skipped SILENTLY. SharedFileResource is .clio-pages — the verify read-back body.js
+	// Issues no client requests: the pre-save LLM semantic review (sampling) was removed in ENG-98526, so a
+	// half-duplex relay is sufficient. SharedFileResource is .clio-pages — the verify read-back body.js
 	// and the meta.json rewrite, already routed through IInterprocessFileGate above.
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,
 		OperationFamily = McpToolOperationFamily.None,
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
-		RequiresClientRequests = McpToolClientRequests.Sampling,
+		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.ClioPages)]
 	[Description("Updates multiple Freedom UI page schemas in a single call. " +
-	             "For each page: validates body client-side (optional), runs AI semantic review (optional), saves to Creatio, " +
+	             "For each page: validates body client-side (optional), saves to Creatio, " +
 	             "and verifies the update (optional). Continues processing remaining pages on failure. " +
-		             "CONFLICT DETECTION: when get-page previously stored a checksum baseline in .clio-pages/{schema}/meta.json for the same environment, a page whose schema was modified outside this session fails with per-page `conflict: true` + `conflict-details` (other pages in the batch are unaffected). On a conflict: do NOT retry with the same body — re-run get-page for that schema, re-apply your change on top of the fresh body, then retry; inform the user about the external changes and set the per-page `force: true` ONLY after they explicitly confirm overwriting them. " +
+		             "CONFLICT DETECTION: pass the per-page `checksum` — the `editable.checksum` from the get-page that page's edit is based on — on every save that follows a get-page; it becomes the authoritative baseline for that page. Without it the check falls back to the baseline get-page stored in .clio-pages/{schema}/meta.json for the same environment, which is keyed by directory and schema name and can therefore describe a different body than the one you read. A page whose schema was modified outside this session fails with per-page `conflict: true` + `conflict-details` (other pages in the batch are unaffected). On a conflict: do NOT retry with the same body — re-run get-page for that schema, re-apply your change on top of the fresh body, then retry. Re-sending a conflict response's `actualChecksum` as `checksum` is NOT a resolution - it discards the external change exactly like force=true. Inform the user about the external changes and set the per-page `force: true` ONLY after they explicitly confirm overwriting them. " +
 		             "When verify=true, the read-back body is written to .clio-pages/{schema-name}/body.js, anchored at the workspace root (or the `output-directory` argument); see get-page for the anchoring rules. " +
 	             "Client-side validation, when enabled, also enforces VendorPrefix.Name format " +
 	             "(SCHEMA_CONVERTERS and SCHEMA_VALIDATORS keys; SCHEMA_HANDLERS entry `request` values). " +
@@ -79,17 +83,21 @@ public sealed class PageSyncTool(
 	public async Task<PageSyncResponse> SyncPages(
 		[Description("Parameters: environment-name (required unless an authorized HTTP credential-passthrough header supplies the target tenant); pages array (required); validate, verify (optional).")]
 		[Required] PageSyncArgs args,
-		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
+		// Opened at the TOP of the entry point so every gate below runs inside ONE scope: the value flows
+		// DOWN to awaited callees, never back UP to the caller, so a scope opened inside a nested helper
+		// would cover that helper and nothing else. One batch = one cache, keyed by the target being read,
+		// so the three gates that can ask for a page's persisted keys - the deterministic pre-pass, the
+		// per-page re-validation inside the lock, and the command-level gate - resolve that page's schema
+		// hierarchy ONCE between them.
+		using IDisposable persistedResourceKeyScope = persistedResourceKeyReader.BeginRequestScope();
 		// Materialise the input list once so every downstream stage can index
 		// into a stable snapshot. The MCP contract types `Pages` as
 		// IEnumerable; without this snapshot a non-list source would be
-		// enumerated multiple times and the pre-pass / sampling / sync stages
+		// enumerated multiple times and the pre-pass / sync stages
 		// could disagree on positions.
 		IReadOnlyList<PageSyncPageInput> pages = args.Pages as IReadOnlyList<PageSyncPageInput> ?? args.Pages.ToArray();
 		PageSyncPrePassResults prePass = BuildPrePassResults(pages);
-		IReadOnlyList<PageSamplingReview?> samplingResults = await RunSamplingPrePassAsync(
-			server, args, pages, prePass, cancellationToken);
 		// Registry-driven chart-widget validation needs the async, version-scoped catalog. Scope it to the
 		// target environment's platform version (probed the same way get-component-info resolves it) so the
 		// batch validates against the component set the environment actually ships, not the broader 'latest'.
@@ -103,7 +111,7 @@ public sealed class PageSyncTool(
 			chartTypeDefinitions = await ChartWidgetValidation
 				.ResolveTypeDefinitionsAsync(webComponentCatalog, platformVersion, cancellationToken).ConfigureAwait(false);
 		}
-		List<PageSyncPageResult> results = ExecuteSyncBatch(args, pages, prePass, samplingResults, chartTypeDefinitions);
+		List<PageSyncPageResult> results = ExecuteSyncBatch(args, pages, prePass, chartTypeDefinitions);
 		return new PageSyncResponse {
 			Success = results.Count > 0 && results.All(r => r.Success),
 			Pages = results
@@ -152,8 +160,7 @@ public sealed class PageSyncTool(
 	}
 
 	// Pre-pass: runs the deterministic syntax + AST-lint gates on every web
-	// body BEFORE invoking the LLM sampling service or resolving any
-	// environment-bound command. Both gates are pure functions of the input
+	// body BEFORE resolving any environment-bound command. Both gates are pure functions of the input
 	// body — they need no environment, no network, no lock — so running them
 	// here lets us:
 	//   1. Materialise per-page fail-fast results from `ExecuteSyncBatch`
@@ -162,8 +169,6 @@ public sealed class PageSyncTool(
 	//      `Page body lint failed`) regardless of environment validity —
 	//      a missing or unreachable environment must not mask the gate's
 	//      message (e2e fail-fast contract reported by reviewer 2026-06-11).
-	//   3. Skip sampling for already-doomed bodies — no LLM tokens spent on
-	//      bodies the deterministic gate will block anyway.
 	// Per-page entries are keyed by INDEX (not SchemaName) so duplicate
 	// schema-name submissions in a single batch do not cross-contaminate
 	// (last-write-wins on a Dictionary keyed by SchemaName would lint one
@@ -192,8 +197,7 @@ public sealed class PageSyncTool(
 		if (ast is null) {
 			return PageSyncPrePassEntry.Empty;
 		}
-		// Lint runs here so we can decide whether to skip sampling on doomed
-		// bodies (any Error-severity finding short-circuits sampling); the
+		// Lint runs here, ahead of the environment-bound work; the
 		// findings themselves are NOT materialised into a failure result yet
 		// — regex content validation runs first inside SyncSinglePage so its
 		// established error wording wins on overlapping detections, and lint
@@ -202,32 +206,10 @@ public sealed class PageSyncTool(
 		return new PageSyncPrePassEntry(null, findings);
 	}
 
-	private async Task<IReadOnlyList<PageSamplingReview?>> RunSamplingPrePassAsync(
-		McpServerLib.McpServer server,
-		PageSyncArgs args,
-		IReadOnlyList<PageSyncPageInput> pages,
-		PageSyncPrePassResults prePass,
-		CancellationToken cancellationToken) {
-		var samplingResults = new PageSamplingReview?[pages.Count];
-		if (args.SkipSampling == true) {
-			return samplingResults;
-		}
-		for (int i = 0; i < pages.Count; i++) {
-			if (prePass.Entries[i].IsBodyDoomed) {
-				continue;
-			}
-			PageSyncPageInput page = pages[i];
-			samplingResults[i] = await samplingService.TrySamplingReviewAsync(
-				server, page.SchemaName, page.Body, page.Resources, cancellationToken);
-		}
-		return samplingResults;
-	}
-
 	private List<PageSyncPageResult> ExecuteSyncBatch(
 		PageSyncArgs args,
 		IReadOnlyList<PageSyncPageInput> pages,
 		PageSyncPrePassResults prePass,
-		IReadOnlyList<PageSamplingReview?> samplingResults,
 		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? chartTypeDefinitions) {
 		var results = new List<PageSyncPageResult>(pages.Count);
 		var pendingIndices = new List<int>();
@@ -249,6 +231,10 @@ public sealed class PageSyncTool(
 		// lock-protected SyncSinglePage path; this stage only triages web
 		// pages and bodies whose regex/lint result can be computed offline.
 		bool validate = args.Validate ?? true;
+		// Which schema names this pre-pass has already walked past. A REPEAT means an earlier page in the
+		// same batch writes the same schema, so this page's content verdict is not final here — see
+		// TryMaterialiseDeterministicFailure. Ordinal: schema names are identifiers, not display text.
+		HashSet<string> schemasSeenEarlier = new(StringComparer.Ordinal);
 		for (int i = 0; i < pages.Count; i++) {
 			PageSyncPrePassEntry entry = prePass.Entries[i];
 			PageSyncPageInput page = pages[i];
@@ -256,7 +242,9 @@ public sealed class PageSyncTool(
 				results.Add(BuildPrePassFailureResult(page, ResolvePrePassSyntaxFailureMessage(page, syntaxMsg, validate)));
 				continue;
 			}
-			PageSyncPageResult deterministicFailure = TryMaterialiseDeterministicFailure(page, entry, validate);
+			PageSyncPageResult deterministicFailure = TryMaterialiseDeterministicFailure(
+				page, entry, validate, args.EnvironmentName,
+				deferContentVerdict: !schemasSeenEarlier.Add(page.SchemaName ?? string.Empty));
 			if (deterministicFailure != null) {
 				results.Add(deterministicFailure);
 				continue;
@@ -304,8 +292,7 @@ public sealed class PageSyncTool(
 					args.Validate ?? true,
 					verify,
 					args.OutputDirectory,
-					prePass,
-					samplingResults) {
+					prePass) {
 					EnvironmentName = args.EnvironmentName,
 					PreResolvedMobileBases = preResolvedMobileBases,
 					DegradedMobileBaseIndices = degradedMobileBaseIndices
@@ -450,20 +437,34 @@ public sealed class PageSyncTool(
 		};
 	}
 
-	private static PageSyncPageResult TryMaterialiseDeterministicFailure(
+	private PageSyncPageResult TryMaterialiseDeterministicFailure(
 		PageSyncPageInput page,
 		PageSyncPrePassEntry entry,
-		bool validate) {
+		bool validate,
+		string? environmentName,
+		bool deferContentVerdict) {
 		if (PageSchemaTypeExtensions.FromBody(page.Body) == PageSchemaType.Mobile) {
 			return null;
 		}
-		if (validate) {
-			PageSyncValidationResult validationResult = ValidateBody(page.Body, page.Resources);
+		// This whole pre-pass runs BEFORE any page in the batch is saved, so for a page whose schema an
+		// EARLIER page also targets, the content verdict here is computed against a schema state the batch
+		// is about to change: the earlier save can register exactly the label resource this page is about
+		// to be rejected for. Defer the content half to the in-lock gate, which runs after that save and
+		// re-runs the identical chain. The LINT half below still runs, because it is a pure function of
+		// the body and the in-lock path materialises lint warnings only (issue #1464 review).
+		if (validate && !deferContentVerdict) {
+			// THIS is the gate that used to reject the second save of a page whose label key is only
+			// persisted: it rejects a body before the command - whose own gate #1320 already fixed - is ever
+			// resolved, so the shared fix was unreachable from sync-pages (issue #1464). The provider is
+			// lazy: a clean body still pays no round trip.
+			PageSyncValidationResult validationResult = ValidateBody(
+				page.Body, page.Resources, BuildPersistedResourceKeyProvider(environmentName, page.SchemaName));
 			if (!validationResult.MarkersOk || !validationResult.JsSyntaxOk || !validationResult.ContentOk) {
 				return new PageSyncPageResult {
 					SchemaName = page.SchemaName,
 					Success = false,
-					Validation = validationResult,
+					Validation = AppendPersistedResourceKeyWarning(
+						validationResult, environmentName, page.SchemaName),
 					Error = "Client-side validation failed: " +
 						string.Join("; ", validationResult.Errors ?? Array.Empty<string>())
 				};
@@ -541,13 +542,11 @@ public sealed class PageSyncTool(
 
 	private PageSyncPageResult ProcessPendingPage(PageSyncPageInput page, int index, PageSyncBatchContext ctx) {
 		PageSyncPrePassEntry prePassEntry = ctx.PrePass.Entries[index];
-		PageSamplingReview samplingReview = ctx.SamplingResults[index];
 		PageSyncOperationOptions opOptions = new(
 			ctx.UpdateCommand,
 			ctx.GetCommand,
 			ctx.Validate,
 			ctx.Verify,
-			samplingReview,
 			ctx.OutputDirectory,
 			prePassEntry.LintFindings) {
 			EnvironmentName = ctx.EnvironmentName,
@@ -565,8 +564,7 @@ public sealed class PageSyncTool(
 		bool Validate,
 		bool Verify,
 		string? OutputDirectory,
-		PageSyncPrePassResults PrePass,
-		IReadOnlyList<PageSamplingReview?> SamplingResults) {
+		PageSyncPrePassResults PrePass) {
 		// Environment identity for the conflict-baseline guard. Init-only property (not a
 		// positional parameter) to keep the primary constructor under Sonar S107's limit.
 		public string? EnvironmentName { get; init; }
@@ -587,13 +585,6 @@ public sealed class PageSyncTool(
 		string? SyntaxFailureMessage,
 		IReadOnlyList<PageBodyLintFinding> LintFindings) {
 		public static readonly PageSyncPrePassEntry Empty = new(null, Array.Empty<PageBodyLintFinding>());
-
-		// "Doomed" = sampling has no value because the body will be rejected
-		// downstream regardless of the LLM verdict. Either a parse failure
-		// (no AST) or any Error-severity lint finding qualifies.
-		public bool IsBodyDoomed =>
-			SyntaxFailureMessage != null
-			|| LintFindings.Any(f => f.Severity == LintSeverity.Error);
 	}
 
 	// Per-page execution options for SyncSinglePage. Bundled into a record so
@@ -610,7 +601,6 @@ public sealed class PageSyncTool(
 		PageGetCommand GetCommand,
 		bool Validate,
 		bool Verify,
-		PageSamplingReview SamplingReview,
 		string? OutputDirectory,
 		IReadOnlyList<PageBodyLintFinding> LintFindings) {
 		// Environment identity for the conflict-baseline guard — see PageSyncBatchContext.
@@ -627,8 +617,8 @@ public sealed class PageSyncTool(
 
 	private PageSyncPageResult TryValidatePage(
 		PageSyncPageInput page,
-		PageSamplingReview samplingReview,
 		(string? Vmc, string? Mc)? preResolvedMobileBase,
+		string? environmentName,
 		out PageSyncValidationResult validationResult) {
 		validationResult = null;
 		if (PageSchemaTypeExtensions.FromBody(page.Body) == PageSchemaType.Mobile) {
@@ -652,17 +642,23 @@ public sealed class PageSyncTool(
 					SchemaName = page.SchemaName,
 					Success = false,
 					Validation = validationResult,
-					SamplingReview = samplingReview,
 					Error = "Mobile page validation failed: " + string.Join("; ", validationResult.Errors ?? [])
 				};
 		} else {
-			validationResult = ValidateBody(page.Body, page.Resources);
+			// Same provider as the pre-pass gate. A SUCCESSFUL read is cached for the scope, so this second
+			// run of the chain normally costs no additional Creatio round trip; a failed one is not cached,
+			// so a transient pre-pass failure still gets a fresh attempt here.
+			validationResult = ValidateBody(page.Body, page.Resources,
+				BuildPersistedResourceKeyProvider(environmentName, page.SchemaName));
 			if (!validationResult.MarkersOk || !validationResult.JsSyntaxOk || !validationResult.ContentOk)
 				return new PageSyncPageResult {
 					SchemaName = page.SchemaName,
 					Success = false,
-					Validation = validationResult,
-					SamplingReview = samplingReview,
+					// Consistent with the pre-pass and command-level rejections: a failed persisted-key read
+					// never changes this verdict, but leaving it unexplained is exactly the misleading
+					// "resource is neither auto-provided nor registered" issue #1320 opened with.
+					Validation = AppendPersistedResourceKeyWarning(
+						validationResult, environmentName, page.SchemaName),
 					Error = "Client-side validation failed: " +
 						string.Join("; ", validationResult.Errors ?? Array.Empty<string>())
 				};
@@ -690,30 +686,13 @@ public sealed class PageSyncTool(
 			// PageSyncOperationOptions and skip the second run.
 			PageSyncValidationResult validationResult = null;
 			if (opOptions.Validate) {
-				PageSyncPageResult validationFailure = TryValidatePage(page, opOptions.SamplingReview, opOptions.PreResolvedMobileBase, out validationResult);
+				PageSyncPageResult validationFailure = TryValidatePage(page,
+					opOptions.PreResolvedMobileBase, opOptions.EnvironmentName, out validationResult);
 				if (validationFailure != null)
 					return validationFailure;
 			}
-			validationResult = AppendCommandWarnings(validationResult, GetLintWarningMessages(opOptions.LintFindings));
-			// Both guards off is allowed but never silent - update-page emits the same advisory, and the
-			// `validate` contract promises it on this path too. sync-pages calls TryUpdatePage directly, so
-			// it never passes through PageUpdateTool where update-page emits it.
-			if (!opOptions.Validate && page.Force == true) {
-				validationResult = AppendCommandWarnings(validationResult, [PageUpdateTool.ForceValidateAdvisory]);
-			}
-			if (opOptions.MobileBaseResolutionDegraded) {
-				// The mobile base could not be pre-resolved, so the body was validated against the permissive seeded
-				// stub — surface that in the per-page result so a degraded validation is not read as a clean pass.
-				validationResult = AppendCommandWarnings(validationResult, [
-					$"Mobile validation base for '{page.SchemaName}' could not be resolved; the body was validated against "
-						+ "a permissive seeded base, so a template-owned-array error may not have been caught. Re-run when "
-						+ "the environment/credentials are available to validate against the real base."
-				]);
-			}
-			PageSyncPageResult samplingFailure = CreateSamplingFailure(page, opOptions.SamplingReview, validationResult);
-			if (samplingFailure != null)
-				return samplingFailure;
-			(string metaFilePath, bool baselineArmed, string baselineWarning, PageUpdateOptions updateOptions) =
+			validationResult = AppendPreSaveWarnings(validationResult, page, opOptions);
+			(string metaFilePath, bool refreshBaseline, string baselineWarning, PageUpdateOptions updateOptions) =
 				BuildUpdateRequest(page, opOptions);
 			if (baselineWarning != null) {
 				validationResult = AppendCommandWarnings(validationResult, [baselineWarning]);
@@ -723,16 +702,30 @@ public sealed class PageSyncTool(
 				return new PageSyncPageResult {
 					SchemaName = page.SchemaName,
 					Success = false,
-					Validation = validationResult,
+					// The command-level gate is the path where a failed persisted-key read is most
+					// misleading: its rejection reads "resource 'X' is neither auto-provided ... nor
+					// registered" with no hint that the rescue could not run.
+					Validation = AppendPersistedResourceKeyWarning(
+						validationResult, opOptions.EnvironmentName, page.SchemaName),
 					Error = updateResponse.Error,
 					Conflict = updateResponse.Conflict,
 					ConflictDetails = updateResponse.ConflictDetails
 				};
 			}
 			validationResult = AppendCommandWarnings(validationResult, updateResponse.Warnings);
+			// Appended AFTER the command has run, matching update-page (which appends it after
+			// ExecuteWithCleanLog): the COMMAND-level gate can be the first reader of a page's persisted
+			// keys - the before-save preprocessing pipeline can change the body between the tool gates and
+			// it - and reading the scope earlier would miss the reason that read recorded.
+			validationResult = AppendPersistedResourceKeyWarning(
+				validationResult, opOptions.EnvironmentName, page.SchemaName);
+			// The save REGISTERED keys, so any cached read of this schema is now stale. A second page on
+			// the same schema later in this batch would otherwise be validated against the pre-save key set
+			// and rejected for a key this save just created.
+			persistedResourceKeyReader.Invalidate(updateOptions);
 			if (opOptions.Verify && opOptions.GetCommand != null)
 				return VerifySavedPage(page, opOptions, updateResponse, validationResult);
-			if (baselineArmed) {
+			if (refreshBaseline || updateOptions.ConditionalBaselineApplied) {
 				// The save already landed on the server, so a failed refresh surfaces as a per-page warning
 				// rather than turning this page's result into a failure (ENG-95262 AC-02).
 				string refreshWarning = pageBaselineGuard.RefreshOrDrop(metaFilePath, updateOptions, updateResponse);
@@ -745,7 +738,6 @@ public sealed class PageSyncTool(
 				Success = true,
 				BodyLength = updateResponse.BodyLength,
 				Validation = validationResult,
-				SamplingReview = opOptions.SamplingReview,
 				ResourcesRegistered = updateResponse.ResourcesRegistered
 			};
 		} catch (Exception ex) {
@@ -757,24 +749,78 @@ public sealed class PageSyncTool(
 		}
 	}
 
-	private PageSyncPageResult CreateSamplingFailure(
-		PageSyncPageInput page,
-		PageSamplingReview samplingReview,
-		PageSyncValidationResult validationResult) {
-		if (samplingReview is not { Ok: false, Skipped: false } || samplingReview.Issues?.Count <= 0) {
-			return null;
+	/// <summary>
+	/// Appends the pre-save command-level warnings (lint findings, the force-without-validate advisory and
+	/// the degraded mobile-base notice) onto the per-page validation envelope.
+	/// </summary>
+	/// <param name="validationResult">The envelope built so far; may be <c>null</c>.</param>
+	/// <param name="page">The page being saved.</param>
+	/// <param name="opOptions">The batch options carrying the lint findings and the degraded-base flag.</param>
+	/// <returns>The envelope with every applicable warning appended.</returns>
+	private static PageSyncValidationResult AppendPreSaveWarnings(PageSyncValidationResult validationResult,
+		PageSyncPageInput page, PageSyncOperationOptions opOptions) {
+		validationResult = AppendCommandWarnings(validationResult, GetLintWarningMessages(opOptions.LintFindings));
+		// Both guards off is allowed but never silent - update-page emits the same advisory, and the
+		// `validate` contract promises it on this path too. sync-pages calls TryUpdatePage directly, so
+		// it never passes through PageUpdateTool where update-page emits it.
+		if (!opOptions.Validate && page.Force == true) {
+			validationResult = AppendCommandWarnings(validationResult, [PageUpdateTool.ForceValidateAdvisory]);
 		}
-		return new PageSyncPageResult {
-			SchemaName = page.SchemaName,
-			Success = false,
-			Validation = validationResult,
-			SamplingReview = samplingReview,
-			Error = "Sampling review found issues: " + string.Join("; ", samplingReview.Issues)
-				+ ". Fix the page body and resubmit. Do NOT retry the same body with skip-sampling=true to bypass this check."
-		};
+		if (opOptions.MobileBaseResolutionDegraded) {
+			// The mobile base could not be pre-resolved, so the body was validated against the permissive seeded
+			// stub — surface that in the per-page result so a degraded validation is not read as a clean pass.
+			validationResult = AppendCommandWarnings(validationResult, [
+				$"Mobile validation base for '{page.SchemaName}' could not be resolved; the body was validated against "
+					+ "a permissive seeded base, so a template-owned-array error may not have been caught. Re-run when "
+					+ "the environment/credentials are available to validate against the real base."
+			]);
+		}
+		return validationResult;
 	}
 
-	private (string MetaFilePath, bool BaselineArmed, string BaselineWarning, PageUpdateOptions UpdateOptions)
+	/// <summary>
+	/// Builds the lazy persisted-resource-key provider for one page. The delegate is handed to the
+	/// content-validation chain and invoked ONLY for an unresolved label-resource rejection.
+	/// </summary>
+	/// <param name="environmentName">The batch's target environment; may be blank under credential passthrough.</param>
+	/// <param name="schemaName">The page whose schema is read.</param>
+	/// <returns>A provider that yields the persisted keys, or an empty set when the read failed.</returns>
+	/// <remarks>
+	/// The read runs OFF the per-tenant lock on the pre-pass path, deliberately — the same reason
+	/// <c>PreResolveMobileBases</c> resolves there: a network read inside the lock serialises every other
+	/// same-tenant page write on this one's latency. Fail-soft in the same shape as
+	/// <c>ResolvePlatformVersionAsync</c>: the resolver's own rejection (an unresolvable environment, a
+	/// mixed credential-passthrough input) becomes a recorded warning, never an exception that fails a
+	/// page whose body may well be valid — and a failed read is not cached, so the in-lock gate that runs
+	/// moments later still gets its own attempt.
+	/// </remarks>
+	private Func<IReadOnlySet<string>> BuildPersistedResourceKeyProvider(string? environmentName, string schemaName) {
+		PageUpdateOptions target = BuildPersistedResourceKeyTarget(environmentName, schemaName);
+		return McpPersistedResourceKeyGate.BuildProvider(
+			persistedResourceKeyReader, logger, target,
+			() => commandResolver.Resolve<PageUpdateCommand>(target));
+	}
+
+	// The options object is a CACHE KEY as much as a request: it must carry the same environment and
+	// schema the per-page save will, or the two gates would address different entries.
+	private static PageUpdateOptions BuildPersistedResourceKeyTarget(string? environmentName, string schemaName) =>
+		new() { Environment = environmentName, SchemaName = schemaName };
+
+	/// <summary>
+	/// Puts a failed persisted-key read for this page on its own validation warning channel. A failed read
+	/// only leaves the stricter verdict standing, so it is never an error — but without it the caller sees
+	/// only "resource 'X' is neither auto-provided ... nor registered" and never why the rescue was skipped.
+	/// </summary>
+	private PageSyncValidationResult AppendPersistedResourceKeyWarning(
+		PageSyncValidationResult validation, string? environmentName, string schemaName) {
+		string warning = persistedResourceKeyReader.GetFailureWarning(
+			BuildPersistedResourceKeyTarget(environmentName, schemaName));
+		return string.IsNullOrWhiteSpace(warning)
+			? validation
+			: AppendCommandWarnings(validation, [warning]);
+	}
+
+	private (string MetaFilePath, bool RefreshBaseline, string BaselineWarning, PageUpdateOptions UpdateOptions)
 		BuildUpdateRequest(
 		PageSyncPageInput page,
 		PageSyncOperationOptions opOptions) {
@@ -790,11 +836,15 @@ public sealed class PageSyncTool(
 			Environment = opOptions.EnvironmentName,
 			Force = page.Force ?? false,
 			Validate = opOptions.Validate,
-			NotifyDesignerPresence = false
+			NotifyDesignerPresence = false,
+			// Passed VERBATIM. TryArm is the single normalization chokepoint for a pinned checksum (it
+			// trims, and collapses whitespace-only to "not supplied"), so trimming here too would be a
+			// second copy of a rule that must not be able to diverge from update-page's.
+			ExpectedChecksum = page.Checksum
 		};
-		(string metaFilePath, bool baselineArmed, string baselineWarning) =
+		(string metaFilePath, bool refreshBaseline, string baselineWarning) =
 			pageBaselineGuard.TryArm(updateOptions, opOptions.OutputDirectory);
-		return (metaFilePath, baselineArmed, baselineWarning, updateOptions);
+		return (metaFilePath, refreshBaseline, baselineWarning, updateOptions);
 	}
 
 	private PageSyncPageResult VerifySavedPage(
@@ -825,7 +875,6 @@ public sealed class PageSyncTool(
 			Success = true,
 			BodyLength = updateResponse.BodyLength,
 			Validation = validationResult,
-			SamplingReview = opOptions.SamplingReview,
 			ResourcesRegistered = updateResponse.ResourcesRegistered,
 			Page = getResponse.Page,
 			VerifiedBodyFile = verifiedBodyFile
@@ -957,7 +1006,21 @@ public sealed class PageSyncTool(
 			.Select(PageBodyAstLinter.FormatFinding)
 			.ToArray();
 
-	private static PageSyncValidationResult ValidateBody(string body, string? resources) {
+	/// <summary>
+	/// Runs the deterministic content-validation chain for one page body.
+	/// </summary>
+	/// <param name="body">The page body being saved.</param>
+	/// <param name="resources">The page's <c>resources</c> argument.</param>
+	/// <param name="persistedResourceKeysProvider">
+	/// Supplies the resource keys already persisted on the target schema. Invoked ONLY for an unresolved
+	/// label-resource rejection — the one verdict a persisted key can change — so a clean body never pays
+	/// the round-trip. Pass <see langword="null"/> from a caller that must stay offline; that only makes
+	/// the verdict stricter.
+	/// </param>
+	/// <returns>The per-page validation envelope.</returns>
+	private static PageSyncValidationResult ValidateBody(
+		string body, string? resources,
+		Func<IReadOnlySet<string>>? persistedResourceKeysProvider = null) {
 		SchemaValidationResult markerResult = SchemaValidationService.ValidateMarkerIntegrity(body);
 		// The legacy brace-counter ValidateJsSyntax is intentionally NOT
 		// called here. Every web body reaching this method already parsed
@@ -971,10 +1034,13 @@ public sealed class PageSyncTool(
 		// BuildValidationResult below.
 		SchemaValidationResult contentResult = GetContentValidationResult(body, markerResult);
 		Dictionary<string, string>? explicitResources = TryParseExplicitResources(resources, contentResult);
-		SchemaValidationResult fieldResult = RunContentValidation(
-			contentResult, () => SchemaValidationService.ValidateStandardFieldBindings(body, explicitResources));
-		SchemaValidationResult insertSelfConsistencyResult = RunContentValidation(
-			contentResult, () => SchemaValidationService.ValidateInsertedFieldSelfConsistency(body, explicitResources));
+		// ONE entry point for both label-resource validators, exactly as update-page and the command-level
+		// gate use: a key already stored in the schema's localizableStrings resolves at runtime whether or
+		// not this call repeats it in `resources`, and validating against `resources` alone rejected the
+		// second and every later save of the same page (issues #1320, #1464).
+		(SchemaValidationResult fieldResult, SchemaValidationResult insertSelfConsistencyResult) =
+			RunFieldLabelResourceValidation(
+				contentResult, body, explicitResources, persistedResourceKeysProvider);
 		SchemaValidationResult widgetCaptionResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateInsertedWidgetCaptionResources(body, explicitResources));
 		SchemaValidationResult localizableTextResult = RunContentValidation(
@@ -1071,6 +1137,21 @@ public sealed class PageSyncTool(
 		contentResult.Errors.Add("resources must be a valid JSON object string");
 		return null;
 	}
+
+	/// <summary>
+	/// Runs the two label-resource-aware field validators through their shared entry point, honouring the
+	/// same "only when the content chain is still clean" gate as every other check in this chain.
+	/// </summary>
+	private static (SchemaValidationResult StandardFields, SchemaValidationResult InsertedFields)
+		RunFieldLabelResourceValidation(
+			SchemaValidationResult contentResult,
+			string body,
+			IReadOnlyDictionary<string, string>? explicitResources,
+			Func<IReadOnlySet<string>>? persistedResourceKeysProvider) =>
+		contentResult.IsValid
+			? SchemaValidationService.ValidateFieldLabelResources(
+				body, explicitResources, persistedResourceKeysProvider)
+			: (new SchemaValidationResult { IsValid = true }, new SchemaValidationResult { IsValid = true });
 
 	private static SchemaValidationResult RunContentValidation(
 		SchemaValidationResult contentResult,
@@ -1180,10 +1261,6 @@ public sealed record PageSyncArgs(
 	[property: Description("Read back each page after saving to confirm the update. Default: false")]
 	bool? Verify = null,
 
-	[property: JsonPropertyName("skip-sampling")]
-	[property: Description("Reserved escape hatch. Omit by default. Pre-condition for setting true: the immediately preceding user message in this turn contains an explicit instruction to skip the AI semantic review for this batch, OR the MCP host has reported sampling as unavailable in this session. Absent that evidence, omit this field. Default: false")]
-	bool? SkipSampling = null,
-
 	[property: JsonPropertyName("output-directory")]
 	[property: Description("Optional. Directory to anchor verified-page .clio-pages output under — typically your project/workspace root. When omitted, the workspace root is auto-detected by walking up for .clio/workspaceSettings.json; if running from the home directory with no workspace found, output falls back to the clio home root rather than $HOME. Only relevant when verify=true.")]
 	string? OutputDirectory = null
@@ -1204,14 +1281,17 @@ public sealed record PageSyncPageInput(
 	string Body,
 
 	[property: JsonPropertyName("resources")]
-	[property: Description(McpToolDescriptions.PageResources)]
+	[property: Description(McpToolDescriptions.PageResources + McpToolDescriptions.PageResourcesAdditive)]
 	string? Resources = null,
 	[property: JsonPropertyName("optional-properties")]
 	[property: Description("JSON array of {key, value} objects to merge into schema optionalProperties")]
 	string? OptionalProperties = null,
 	[property: JsonPropertyName("force")]
 	[property: Description("Skip the external-modification (checksum) conflict check for THIS page and deliberately overwrite out-of-band changes. Set true ONLY after the user explicitly confirms overwriting changes made outside this session. Default: false")]
-	bool? Force = null
+	bool? Force = null,
+	[property: JsonPropertyName("checksum")]
+	[property: Description("Optional. The `editable.checksum` from the get-page this page's edit is based on. It becomes the authoritative conflict baseline for THIS page; pass it on every save that follows a get-page. Re-sending a conflict response's `actualChecksum` here is NOT a resolution - it is equivalent to force=true and needs the same explicit user confirmation.")]
+	string? Checksum = null
 );
 
 /// <summary>
@@ -1256,10 +1336,6 @@ public sealed class PageSyncPageResult {
 	[JsonPropertyName("page")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public PageMetadataInfo Page { get; init; }
-
-	[JsonPropertyName("sampling-review")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public PageSamplingReview SamplingReview { get; init; }
 
 	[JsonPropertyName("verified-body-file")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

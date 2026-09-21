@@ -3,6 +3,8 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
+using System.Collections.Generic;
+using System.Text.Json;
 
 namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 
@@ -16,21 +18,37 @@ public class CreateBusinessProcessTool(
 
 	internal const string CreateBusinessProcessToolName = "create-business-process";
 
+	/// <summary>The canonical field list echoed back when an unknown argument key is refused (ENG-98566).</summary>
+	internal const string ValidArgsHint = "Valid: environment-name, package-name, descriptor.";
+
+	/// <summary>
+	/// Refusal for a call whose whole argument object is absent (ENG-98566, Sonar S2259).
+	/// </summary>
+	/// <remarks>
+	/// Stays inline rather than moving into the shared helper: it has to run before any field can be read,
+	/// and that is what lets the analyser prove no field read is reached with null (csharpsquid:S2259). See
+	/// <see cref="McpToolArgumentSupport.BuildUnknownArgumentError"/>.
+	/// </remarks>
+	internal const string NullArgsError = "args is required: the call carried no argument object. " + ValidArgsHint;
+
 	/// <summary>
 	/// Builds a business process from an inline JSON descriptor on the specified environment.
 	/// </summary>
-	/// <param name="environmentName">Registered clio environment name.</param>
-	/// <param name="descriptor">Inline JSON process descriptor.</param>
-	/// <param name="packageName">Optional package name that overrides the descriptor's <c>packageName</c>.</param>
+	/// <param name="args">The tool arguments; see <see cref="CreateBusinessProcessArgs"/>.</param>
 	/// <returns>The command execution result with the created schema identity in the log output.</returns>
 	[McpServerTool(Name = CreateBusinessProcessToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		 OpenWorld = false),
-	 Description("BEFORE CALLING with an accessRights block: that block changes who can read, edit or delete LIVE records. Show the user the target object, the element record filter that decides WHICH records are affected, and every grantee with its operations and level - calling out level:delegate as onward re-sharing, level:restrict as the platform Deny level, which is DESTRUCTIVE rather than inert: it DOWNGRADES an existing Allow row for that grantee to Deny, and on a fresh insert denies the two operations you did not name, so it deserves the same confirmation as a remove, a remove entry as a revoke, and a supplied add/remove as a REPLACEMENT that drops every entry it does not restate - and get an explicit yes. The element has no output parameters, so nothing at run time will report what it did. "
-		 + "Build a business process on a Creatio environment from a declarative JSON descriptor. The "
-		 + "descriptor is an object with: name (schema code), caption, packageName, elements[] "
-		 + "({name (the element handle/local code), type:startEvent|signalStart|endEvent|userTask|sendEmail|approval|exclusiveGateway|parallelGateway|"
-		 + "openEditPage|preconfiguredPage (aliases readData/changeData/addData/deleteData/changeAccessRights/performTask), caption, userTaskName?, "
-		+ "addData? (addData elements only - the Add data element, which CREATES records: {source:<EntityName> (required - the object records are added to), mode?:one|selection (one = add ONE record, the default; selection = add one record PER RECORD of a filtered selection), selection?:<EntityName> (REQUIRED in selection mode, REFUSED in one mode - the object the selection reads from), values?:[{column, and exactly ONE of value (a plain constant - TEXT columns ONLY and non-empty, the same rule changeData carries) | processParameter | sourceElement + sourceElementParameter | selectionColumn (selection mode ONLY - the designer's \"Column from this selection\": maps a column of each new record to the corresponding column of the selection record that produced it) | expression}]} - unlike changeData, values may be OMITTED or empty: the runtime still inserts a row of the target object's defaults. A required column of the target object left unset is reported as a WARNING, not refused, because a business rule or the platform may fill it. WHICH selection records qualify is the element's separate filter block, over the SELECTION object (effectively mandatory in selection mode - an unfiltered selection iterates every record of that object). The element's ONLY output is the id of the new record, on its RecordId parameter: map it by name (sourceElement:<element>, sourceElementParameter:RecordId) to use the new record downstream. describe-business-process does NOT list RecordId - the platform declares it neither IsResult nor Out - so do not go looking for it there, and any OTHER column of the new record needs a following readData element), "
+	 // The FIRST sentence is what the get-tool-contract compact index shows as this tool's one-line
+	 // purpose, and that index is the only discovery surface a non-resident tool has. It must therefore
+	 // say what the tool DOES; the accessRights warning below is no less binding for standing second,
+	 // because an agent reads the full contract before calling. See
+	 // docs/knowledge/McpServer/first-sentence-of-a-description-becomes-the-compact-index-purpose.md
+	 Description("Build a business process on a Creatio environment from a declarative JSON descriptor. "
+		 + "BEFORE CALLING with an accessRights block: that block changes who can read, edit or delete LIVE records. Show the user the target object, the element record filter that decides WHICH records are affected, and every grantee with its operations and level - calling out level:delegate as onward re-sharing, level:restrict as the platform Deny level, which is DESTRUCTIVE rather than inert: it DOWNGRADES an existing Allow row for that grantee to Deny, and on a fresh insert denies the two operations you did not name, so it deserves the same confirmation as a remove, a remove entry as a revoke, and a supplied add/remove as a REPLACEMENT that drops every entry it does not restate - and get an explicit yes. An ABSENT filter is the WIDE state, not a safe one: the element then applies the change to EVERY record of its object, with record permissions disabled, and nothing warns you. The element has no output parameters, so nothing at run time will report what it did. "
+		 + "The descriptor is an object with: name (schema code), caption, packageName, elements[] "
+		 + "({name (the element handle/local code), type:startEvent|signalStart|endEvent|userTask|sendEmail|approval|exclusiveGateway|parallelGateway|formulaTask|"
+		 + "openEditPage|preconfiguredPage|subProcess (aliases readData/changeData/addData/deleteData/changeAccessRights/performTask), caption, userTaskName?, "
+		+ "addData? (addData elements only - the Add data element, which CREATES records: {source:<EntityName> (required), mode?:one|selection, selection?:<EntityName> (required in selection mode), values?:[{column, and exactly ONE of value|processParameter|sourceElement+sourceElementParameter|selectionColumn|expression}]} - values may be OMITTED or empty (the runtime inserts a row of the target object's defaults; a required column left unset WARNS rather than refuses). WHICH selection records qualify is the element's separate filter, over the SELECTION object. The element's ONLY output is the new record's id, on RecordId (NOT listed by describe-business-process - map it by name); get-guidance name=process-add-data owns the block in full, including selectionColumn and the follow-on readData for other columns), "
 		 + "approval? (approval elements only — the designer's Approval element, which requests a visa on a record: "
 		 + "{object:<EntityName> (required on a first configuration — the object whose record goes for approval, "
 		 + "resolved by NAME server-side), recordId:{exactly ONE of recordId (a fixed record: its GUID, or the "
@@ -61,12 +79,18 @@ public class CreateBusinessProcessTool(
 		 + "that AUTHOR is a misnomer from the designer's caption — the runtime does NOT resolve the process or "
 		 + "record author; it reads only the address this field writes, and sends nothing when it is empty. THREE parameters are DERIVED from 'object' server-side and never accepted as input — the visa "
 		 + "schema, its master column and the section — with the platform's SysApproval fallback when the object has "
-		 + "no approval settings. BRANCHING on the outcome takes a SECOND call, not a gateway: this build path "
-		 + "refuses flows[].kind, so build the outgoing flows plain and then give each its condition with "
-		 + "modify-business-process setFlowCondition, reading the verdict from the element's ResultParameter as "
-		 + "[#[Element:{elementUid}].[Parameter:{parameterUid}]#]. The outcome set is THREE values — a two-way "
-		 + "Approved/Rejected split drops the canceled case. Formula and system-setting value "
-		 + "sources are not offered. get-guidance name=process-approval owns this block's full contract), "
+		 + "no approval settings. BRANCHING on the outcome needs no gateway and is declared WHERE THE FLOW "
+		 + "IS: flows[].kind 'conditional' plus flows[].results with the verdict captions, which are exactly "
+		 + "'Positive', 'Negative' and 'Canceled' - the final VisaStatus values, NOT 'Approved'/'Rejected', "
+		 + "which the server does not accept. Do NOT use a formula here, and this is the instruction on this "
+		 + "element most likely to be got wrong because it was the advice given until CrtProcessBuilder "
+		 + "1.6.2.23: a connector leaving an Approval has no formula field in the designer at all, so a "
+		 + "condition set there would RUN while no human could read or edit it - which is why it is now "
+		 + "REFUSED, with the refusal listing the results to pass instead. Use all THREE outcomes: a two-way "
+		 + "split drops the canceled case. describe "
+		 + "reads the selection back as flows[].results with flows[].resultsActivity naming the deciding "
+		 + "element. Formula and system-setting value sources are not offered. get-guidance "
+		 + "name=process-approval owns this block's full contract), "
 		 + "openEditPage? (openEditPage elements only — the \"Open edit page\" element, which shows a record's edit "
 		 + "page to a user. It is the DEFAULT choice whenever a user fills in COLUMNS of a record; of the other two "
 		 + "page elements, Auto-generated page is NOT buildable here and Pre-configured page IS (see preconfiguredPage "
@@ -143,50 +167,29 @@ public class CreateBusinessProcessTool(
 		 + "(effectively mandatory — the runtime refuses to update with an empty filter; to target one record, filter "
 		 + "on Id against a process parameter or a trigger output such as a signalStart element's RecordId — NOT a "
 		 + "preceding readData element's column outputs, see the readData NOTE), "
-		 + "deleteData? (deleteData elements only: {source:<EntityName> (required)}) — configures WHICH OBJECT the "
-		 + "element deletes records from; WHICH records is the element's filter block, and here the filter is "
-		 + "MANDATORY in effect: the runtime throws an empty-filter error and deletes NOTHING without one. There is no "
-		 + "delete-everything mode, and no column values — the block has exactly one field. DESTRUCTIVE, AND THIS "
-		 + "IS A HARD REQUIREMENT: deletion is irreversible, cascades to dependent records, and repeats on EVERY "
-		 + "run of the process. Before calling this tool with a deleteData element you MUST (1) COUNT what the "
-		 + "filter matches — a count-only read on the same object; the exact shape is TOOL-SPECIFIC and the two "
-		 + "are not interchangeable (odata-read refuses top:0 and answers in total-count), so take it from "
-		 + "get-guidance name=process-delete-data rather than guessing — or name why no count is "
-		 + "possible (the filter references a process parameter or trigger output whose value exists only at run "
-		 + "time; no readable data connection; a condition the read cannot express), (2) tell the user in their "
-		 + "own language the OBJECT, the NUMBER, the filter in plain prose, and the three consequences, and "
-		 + "(3) get an explicit yes — a vague reply is not one, and consent lapses if the filter then changes. "
-		 + "NAME THE OBJECT AS THE DESIGNER NAMES IT and do not shorten it: the object picker offers the platform's "
-		 + "junction tables (folder membership, section folders, object tags) interleaved with the business objects "
-		 + "and looking identical, so '\"Lookup\" object in folder' is NOT 'Lookup' — an element on one of those "
-		 + "deletes membership rows rather than records, and runs green either way. When the target is one, say so "
-		 + "in the same breath. "
-		 + "get-guidance name=process-delete-data carries the message template. The server also WARNS in the "
-		 + "response when a deleteData element is built unable to run — no target object, or no record filter — "
-		 + "because such an element deletes nothing and fails on its first run; treat that warning as a build "
-		 + "that is not finished, not as noise), "
-		 + "accessRights? (changeAccessRights elements only — the Change access rights/ChangeAdminRightsUserTask element: grant/revoke record permissions: {object:<EntityName> (required; the object MUST use record permissions — one with AdministratedByRecords off is REFUSED, because the element's runtime silently does NOTHING there and has no output to say so), considerTimeInFilter?, add?/remove? (permission entries, each {operations:[read|edit|delete] (at least one), level?:permit|delegate|restrict (ADD entries only — permit is the default, delegate = the grantee may share the right onward, and restrict writes the platform Deny level and is DESTRUCTIVE, not inert: UseDenyRecordRights gates only record positioning, never whether a right row is written. Against a grantee who already holds Allow it DOWNGRADES that row to Deny, and a fresh insert writes one row per operation - the one you named at your level and the OTHER TWO at Deny - so operations:['read'] denies edit and delete as well. Prefer a remove entry to take access away; a level on a remove entry is refused), grantee:{type:role|employee|selectedEmployees, role? (a role name, record id or [#Lookup…#] macro — checked against the platform role view; an ambiguous name is refused, pass the id), contact? (a contact record id or an echoed [#Lookup…#] macro — both checked to exist — or any other formula stored verbatim, e.g. a process-parameter meta-path; contact NAMES are deliberately not resolved), filter? (selectedEmployees only: a filter block over Contact — 'object' must be Contact or omitted; NOTE the runtime evaluates it with record rights DISABLED)}})} — a fourth grantee type allRolesAndUsers takes no payload and is valid on a REMOVE entry ONLY, at most one per collection: it strips EVERY rights row for its operations, which is how the shipped approval processes lock a record for approval. It is NOT interchangeable with a role entry on a remove — that drops one role's row and leaves individual grants standing, so the record does not lock. Refused on add. WHICH records get the permissions is the element's separate record filter, MANDATORY in practice: with NO filter the runtime runs UNFILTERED and applies the change to EVERY record of the object (its query has record permissions disabled, so that is every row in the table) — target one record by filtering Id against a process parameter or a trigger output. The element has NO output parameters — nothing downstream can branch on whether rights were applied. TWO configurations build green and then silently do NOTHING at run time: a record filter that IS PRESENT but carries no conditions (the runtime takes its 'filters empty' exit; the current package also refuses this one at build), and add/remove both empty (not refused; an accessRights block carrying only 'object' is one). The total ABSENCE of a record filter is the OPPOSITE state - it acts on EVERY record, not none. The PLATFORM neither refuses nor warns that one, but clio's post-operation read-back DOES warn on it, so treat that warning as the signal. A revoke in either state removes no permission and still reports success, so a successful build is NOT evidence the element will do anything — check the filter and the entries yourself. clio also reads the saved process back and WARNS when the accessRights block did not land at all (a deployed CrtProcessBuilder that predates this element discards it and still answers success); if you see that warning, or one saying the read-back could not be obtained, do not report a grant or revoke as applied), "
+		 + "deleteData? (deleteData elements only: {source:<EntityName> (required)}) — WHICH OBJECT the element "
+		 + "deletes records from; WHICH records is the element's filter block, MANDATORY in effect: the runtime "
+		 + "throws an empty-filter error and deletes NOTHING without one. DESTRUCTIVE and irreversible, cascades "
+		 + "to dependent records, and repeats on EVERY run. Before calling this tool with a deleteData element "
+		 + "you MUST (1) COUNT what the filter matches (a count-only read on the same object), or name why no "
+		 + "count is possible, (2) tell the user the OBJECT, the NUMBER and the consequences in plain prose, and "
+		 + "(3) get an explicit yes; get-guidance name=process-delete-data owns the count-read shape, the "
+		 + "message template, and the object-picker naming trap (a junction table looking identical to the "
+		 + "business object it shadows) — read it BEFORE planning the step. The server also WARNS when a "
+		 + "deleteData element is built unable to run — no target object, or no record filter), "
+		 + "accessRights? (changeAccessRights elements only - get-guidance name=process-access-rights owns that block in full: the entry shapes, the three grantee kinds, the levels, the record filter and every refusal), "
 		 + "email? (sendEmail elements only — the Send email/EmailTemplateUserTask element, in either of the designer's "
 		 + "two message modes: {messageSource?:custom|template (the default custom is an HTML body you write; template "
 		 + "sends an EXISTING email template the platform renders — omit it and the mode follows the content: a "
 		 + "template selects template, a body selects custom; sent explicitly it must agree with the content, and a "
 		 + "template beside a body/bodyFormat is REFUSED — one element, one message), "
-		 + "template? (TEMPLATE mode: a template NAME or an EmailTemplate record id — the id is what describe echoes back as "
-		 + "email.template, so a described element re-applies as is; a [#Lookup…#] macro is accepted as input too; "
-		 + "resolved at BUILD against the templates of type 'Email template' — the set the designer's picker offers — and "
-		 + "REFUSED naming the template when unknown, of another type (a chat template), or AMBIGUOUS (several so named: pass "
-		 + "the id). Written together with the mode, never one without the other: an element whose mode is unset RUNS as "
-		 + "template mode with no template and fails at run with 'Localizable template not found for record 00000000-…'. "
-		 + "The template's macros are resolved by the PLATFORM at send time against templateEntity; process data is NOT "
-		 + "injected into the template text, and a template authored against no object cannot be personalized at all — on a "
-		 + "stock environment most templates have none, so read the template's object before promising personalization), "
-		 + "templateEntity? (TEMPLATE mode: the record the template's macros resolve against — exactly one of "
-		 + "{processParameter (a Lookup parameter) | sourceElement + sourceElementParameter (a Lookup/Guid output such as a "
-		 + "signalStart element's RecordId — NOT a readData element's whole-record ResultEntity, which is refused; reach its Id "
-		 + "column through expression) | expression}; REQUIRED when the template is authored against an object and the element does not "
-		 + "already carry a macro source for it — refused rather than defaulted, because every macro would render empty and "
-		 + "nothing says so; REFUSED for a template without an object, without a template, or for a source of another "
-		 + "object than the template's), "
+		 + "template? (TEMPLATE mode: a template NAME or an EmailTemplate record id, resolved at BUILD against the "
+		 + "templates of type 'Email template'; written together with the mode, never one without the other - an "
+		 + "element whose mode is unset RUNS as template mode with no template and fails at run), "
+		 + "templateEntity? (TEMPLATE mode: the record the template's macros resolve against - one of "
+		 + "processParameter | sourceElement+sourceElementParameter | expression; get-guidance "
+		 + "name=process-send-email-template owns this mode in full - the refusals, the no-object fact, and the "
+		 + "read-before-promising-personalization rule), "
 		 + "mode?:auto|manual (how the email is sent; the designer requires a sender for auto), "
 		 + "sender? (a MailboxSyncSettings record id, or a sender email address configured on the environment), "
 		 + "subject? (plain constant text ONLY — a [#...#] macro here is REFUSED, because this route stores a constant "
@@ -245,7 +248,7 @@ public class CreateBusinessProcessTool(
 		 + "do not declare them. "
 		 + "useBackgroundMode? (element-level: every element supports it; true runs it asynchronously via the "
 		 + "background scheduler — omit to keep the element kind's default, e.g. a signalStart defaults to true), signal?, "
-		 + "filter?}), flows[] ({source, target, kind?, condition?, label?} of "
+		 + "filter?}), flows[] ({source, target, kind?, condition?, results?, label?} of "
 		 + "element names; kind is sequence (default) | conditional | default, and a conditional flow REQUIRES a "
 		 + "condition — a boolean formula, validated by the platform at the pre-save gate. REFERENCE A PARAMETER BY "
 		 + "NAME here: [#Amount#] for a process parameter and [#ElementName.ParameterName#] for an element's "
@@ -304,7 +307,7 @@ public class CreateBusinessProcessTool(
 		 + "and still belongs to the modify step. The capability, not the wording of a refusal, is what this "
 		 + "floor buys. "
 		 + "(Shared with modify-business-process. A conditional branch IS built here, through flows[].kind and "
-		 + "flows[].condition above; what cannot be built here is a branch on an activity RESULT.) "
+		 + "flows[].condition above; a branch on an activity RESULT is built here too, from 1.6.2.23, with flows[].results.) "
 		 + "The formula itself: ONE line, "
 		 + "its result must fit the target's "
 		 + "DECLARED type (an Integer target refuses a fractional result), every [#…#] parameter reference must "
@@ -322,28 +325,29 @@ public class CreateBusinessProcessTool(
 		 + "unresolvable [#…#] parameter reference is not in this family at all: it names the reference "
 		 + "and the remedy instead ('which is not in this process. Add the parameter first, or correct the "
 		 + "reference.') - the sentence 1.4.0.42 introduced, and the reason this floor is what it is. See "
-		 + "modify-business-process for the full vocabulary; parameter-to-parameter mappings "
-		 + "require compatible types; a Lookup target's 'value' takes a bare non-empty record Guid, stored as the "
-		 + "ConstValue the runtime actually reads - and, from 1.4.0.40, the referenced record's NAME is resolved into the parameter's display value, which is what the designer renders, so 'Task category' shows Call rather than a Guid and describe reports it as valueDisplay beside the unchanged bare-Guid value. An already-composed [#Lookup.{objectUId}.{recordId}#] is ALSO accepted on a Lookup target and decoded to that bare id, so a value echoed back from describe re-submits unchanged; the same name resolution applies to a Lookup process parameter's DEFAULT set through addParameter / setParameter 'value', but the macro DECODE does NOT - that is the mapping route only, so a [#Lookup...#] written into a parameter default is stored as text and never resolved. (the route ships from CrtProcessBuilder 1.3.1.1; THIS clio "
-		 + "additionally refuses, up front, any environment below the version THIS clio needs (the "
-		 + "[RequiresPackage] floor, whose message names that one version); when the floor is below what clio "
-		 + "bundles, the package-convergence check refuses the gap between them instead, naming both — while "
-		 + "an older clio surfaces the old package's "
-		 + "[#Lookup…#]-macro rejection; either refusal means the environment is behind, not that the parameter "
-		 + "is unsettable), while a non-Guid lookup value is refused with a "
-		 + "bare-Guid-first message (the [#Lookup…#] expression form stays the named fallback) and Guid.Empty "
-		 + "as referencing no record. "
+		 + "modify-business-process for the full mapping vocabulary, including the Lookup 'value' bare-Guid "
+		 + "rule, its version floor, and its refusals (get-guidance name=process-parameters owns the contract). "
 		 + "To run the process when a record "
 		 + "is saved/added/changed, use a "
 		 + "signalStart element with signal:{entity:<EntityName>, on:added|modified|deleted (one event), "
 		 + "changedColumns?:[<ColumnName>,...]} instead of a page save handler. changedColumns restricts an "
 		 + "on:modified trigger to fire ONLY when one of those column values changes (column names on the "
 		 + "trigger entity; valid only for on:modified; omit for any-change). To fire that trigger only for "
-		 + "matching records, add filter:{object, logicalOperation:and|or, conditions:[{column (entity column name, may be a lookup dot-path like Account.Code), comparison:equal|notEqual|greater|less|contains|isNull|..., one of value|macro (+macroArgument), optional datePart}], groups?} to the signalStart element. A signalStart filter's right side must be a constant/macro/datePart — NOT a process/element parameter (the signal is evaluated before the process instance exists; the server rejects a parameter reference here). The server serializes the platform filter; never hand-write filter JSON. Read get-guidance name=process-modeling FIRST — the full descriptor contract (buildable slice, filter condition + datePart/macro vocabulary, date/time DEFAULT-value macro rules and the Lookup bare-Guid default rule, mapping type-compatibility groups, formula policy, FSD caveat). For the accessRights block read get-guidance name=process-access-rights - it owns the permission entries, the grantee kinds, and the two configurations that build green and change nothing. For an `expression` mapping source or a conditional-flow condition read get-guidance name=process-formulas — it owns the accepted vocabulary, the reference syntax, what each refusal names, and the length bound. Use list-user-tasks to discover valid userTaskName values. Requires the ProcessDesignService (CrtProcessBuilder) package on the target environment; install it with install-process-builder. After a successful create the process is INTERPRETED and runs as-is: do NOT run compile-creatio, and do NOT infer a compile from a raw process read (a `VwSysProcess` row's `NeedInstall`/`NeedUpdateSourceCode`/`NeedUpdateStructure` are dirty flags, not a compile trigger) — verify with describe-business-process. The response carries a compile-not-required note; a process needs a compile only if it has a Script Task (custom C#), which clio cannot author. " + "A SUCCESSFUL build can still report caveats, and they arrive as message-type \"Warning\" entries "
-		 + "in execution-log-messages — there is no separate warnings field on the response, so looking for "
-		 + "one and finding nothing is not evidence there were none. Read them: a Pre-configured page whose "
-		 + "referenced page could not be loaded is built and SAVED carrying none of that page's parameters, "
-		 + "so anything you meant to map onto them is simply not there.")]
+		 + "matching records, add a filter block to the signalStart element (its right side must be a "
+		 + "constant/macro/datePart — NOT a process/element parameter, since the signal is evaluated before "
+		 + "the process instance exists); get-guidance name=process-data-source-filters owns the condition "
+		 + "grammar. The server serializes the platform filter; never hand-write filter JSON. Read get-guidance "
+		 + "name=process-modeling FIRST — the full descriptor contract. The formula and subProcess blocks are "
+		 + "owned by get-guidance name=process-element-catalog; accessRights by name=process-access-rights; an "
+		 + "`expression` mapping source or a conditional-flow condition by name=process-formulas. Use "
+		 + "list-user-tasks to discover valid userTaskName values. Requires the ProcessDesignService "
+		 + "(CrtProcessBuilder) package; install with install-process-builder. After a successful create the "
+		 + "process is INTERPRETED and runs as-is: do NOT run compile-creatio, and do NOT infer a compile need "
+		 + "from a raw `VwSysProcess` read — verify with describe-business-process, whose response carries a "
+		 + "compile-not-required note; a compile is needed only for a Script Task (custom C#), which clio "
+		 + "cannot author. A SUCCESSFUL build can still report caveats as message-type \"Warning\" entries in "
+		 + "execution-log-messages (there is no separate warnings field) — a Pre-configured page whose "
+		 + "referenced page could not be loaded is built and SAVED carrying none of that page's parameters.")]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,
@@ -354,7 +358,18 @@ public class CreateBusinessProcessTool(
 	public CommandExecutionResult CreateBusinessProcess(
 		[Description("create-business-process parameters")] [Required] CreateBusinessProcessArgs args
 	) {
-		if (string.IsNullOrWhiteSpace(args?.EnvironmentName)) {
+		if (args is null) {
+			return CommandExecutionResult.FromValidationError(NullArgsError);
+		}
+
+		// The only unknown-key defence this tool has; the helper's docs say why. ENG-98566.
+		string argumentError = McpToolArgumentSupport.BuildUnknownArgumentError(
+			args.ExtensionData, ValidArgsHint);
+		if (!string.IsNullOrWhiteSpace(argumentError)) {
+			return CommandExecutionResult.FromValidationError(argumentError);
+		}
+
+		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
 			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
 		}
 
@@ -403,4 +418,13 @@ public sealed record CreateBusinessProcessArgs(
 
 	[property: JsonPropertyName("package-name")]
 	[property: Description("Optional package name that overrides the descriptor's packageName.")]
-	string? PackageName = null);
+	string? PackageName = null) {
+
+	/// <summary>
+	/// Overflow bag for top-level keys the SDK could not bind to a declared argument (ENG-98566).
+	/// Inspected by the tool so a mis-keyed argument is named back to the caller; a bag that is
+	/// never read is the failure mode, not the fix.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}

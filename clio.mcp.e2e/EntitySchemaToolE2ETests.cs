@@ -212,6 +212,38 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
+	[Description("Renames an existing entity schema's caption through set-entity-schema-properties and verifies get-entity-schema-properties reports the new title. Before issue #1320 no tool could change an existing schema's caption, which left a duplicate-caption process lookup macro unfixable from clio.")]
+	[AllureTag(CreateToolName)]
+	[AllureTag(SetSchemaToolName)]
+	[AllureTag(ReadSchemaToolName)]
+	[AllureName("Set entity schema properties renames the schema caption and reads it back")]
+	[AllureDescription("Creates a sandbox schema, changes its SCHEMA caption through set-entity-schema-properties title-localizations, and verifies get-entity-schema-properties reports the new title.")]
+	public async Task SetEntitySchemaProperties_Should_Rename_Schema_Caption_And_Read_It_Back() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		const string renamedCaption = "Mention language";
+
+		// Act
+		CommandExecutionEnvelope createResult = await ActCreateEntitySchemaAsync(arrangeContext);
+		CommandExecutionEnvelope renameResult = McpCommandExecutionParser.Extract(
+			await CallSetEntitySchemaPropertiesAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				arrangeContext.CancellationTokenSource.Token,
+				titleLocalizations: BuildLocalizations(renamedCaption)));
+		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
+
+		// Assert
+		AssertCommandSucceeded(createResult, "create-entity-schema should succeed before the caption is renamed");
+		AssertCommandSucceeded(renameResult, "set-entity-schema-properties should persist the new schema caption");
+		schemaProperties.Title.Should().Be(renamedCaption,
+			because: "get-entity-schema-properties must report the caption set via set-entity-schema-properties title-localizations");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
 	[Description("Adds a money column using the Creatio display name 'Money' — the alias of the command value Currency2 — and verifies it materializes, so a caller does not have to provoke a failed write to discover the vocabulary (issue #955).")]
 	[AllureTag(CreateToolName)]
 	[AllureTag(ModifyToolName)]
@@ -438,12 +470,12 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	public async Task UpdateEntitySchema_Should_Add_BinaryLike_Columns_And_Read_Back_Friendly_Types() {
 		// Arrange
 		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
-		const string binaryColumnName = "UsrPayload";
-		const string imageColumnName = "UsrPreview";
-		const string fileColumnName = "UsrDocument";
+		const string binaryColumnName = BinaryColumnName;
+		const string imageColumnName = ImageColumnName;
+		const string fileColumnName = FileColumnName;
 
 		// Act
-		CommandExecutionEnvelope updateResult = await ActBatchAddBinaryLikeColumnsAsync(arrangeContext, binaryColumnName, imageColumnName, fileColumnName);
+		CommandExecutionEnvelope updateResult = await ActSharedBatchAddColumnsAsync(arrangeContext);
 		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
 		EntitySchemaColumnPropertiesInfo binaryColumnProperties = await ActGetColumnPropertiesAsync(arrangeContext, binaryColumnName);
 		EntitySchemaColumnPropertiesInfo imageColumnProperties = await ActGetColumnPropertiesAsync(arrangeContext, imageColumnName);
@@ -472,10 +504,10 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	public async Task UpdateEntitySchema_Should_Add_ImageLookup_Column_Referencing_SysImage() {
 		// Arrange
 		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
-		const string imageLookupColumnName = "UsrPhoto";
+		const string imageLookupColumnName = ImageLookupColumnName;
 
 		// Act
-		CommandExecutionEnvelope updateResult = await ActBatchAddImageLookupColumnAsync(arrangeContext, imageLookupColumnName);
+		CommandExecutionEnvelope updateResult = await ActSharedBatchAddColumnsAsync(arrangeContext);
 		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
 		EntitySchemaColumnPropertiesInfo imageLookupColumnProperties = await ActGetColumnPropertiesAsync(arrangeContext, imageLookupColumnName);
 
@@ -503,9 +535,13 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	public async Task UpdateEntitySchema_Should_Keep_Localized_Column_Valid_For_Later_DefaultValueConfig_Modify() {
 		// Arrange
 		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
-		const string localizedColumnName = "UsrStatus";
+		const string localizedColumnName = LocalizedTextColumnName;
 
 		// Act
+		// Deliberately NOT the shared batch. This is the fixture's only witness that a SECOND
+		// update-entity-schema succeeds against a schema an earlier batch already changed and
+		// recompiled, and its "the add emitted progress" assertion only means something while the
+		// envelope belongs to one operation rather than six.
 		CommandExecutionEnvelope addResult = await ActBatchAddLocalizedTextColumnAsync(arrangeContext, localizedColumnName);
 		CommandExecutionEnvelope modifyResult =
 			await ActModifyLocalizedTextColumnWithStructuredSettingsDefaultAsync(arrangeContext, localizedColumnName);
@@ -729,10 +765,10 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	public async Task UpdateEntitySchema_Should_Apply_UsageType_Through_Mcp() {
 		// Arrange
 		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
-		const string batchUsageColumnName = "UsrBatchUsage";
+		const string batchUsageColumnName = BatchUsageColumnName;
 
 		// Act
-		CommandExecutionEnvelope batchResult = await ActBatchAddColumnWithUsageTypeAsync(arrangeContext, batchUsageColumnName, "Advanced");
+		CommandExecutionEnvelope batchResult = await ActSharedBatchAddColumnsAsync(arrangeContext);
 		EntitySchemaColumnPropertiesInfo columnProperties = await ActGetColumnPropertiesAsync(arrangeContext, batchUsageColumnName);
 
 		// Assert
@@ -1055,6 +1091,46 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 			because: "column readback should expose the business caption");
 		properties.Type.Should().NotBeNullOrWhiteSpace(
 			because: "column readback should expose the normalized friendly type name");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[TestCase("CreatedBy", "4f367ca9-549b-4a1a-b64e-a40123f52ac0", "CrtCoreBase")]
+	[TestCase("CreatedBy", "4f367ca9-549b-4a1a-b64e-a40123f52ac0", null)]
+	[TestCase("CreatedOn", CurrentDateTimeSystemValueUId, "CrtCoreBase")]
+	[TestCase("CreatedOn", CurrentDateTimeSystemValueUId, null)]
+	[Description("Resolves native SystemValue captions on lookup and DateTime columns through both real MCP read modes without mutating the sandbox.")]
+	[AllureTag(ReadColumnToolName)]
+	[AllureName("SystemValue readback identifies the native default source")]
+	[AllureDescription("Reads inherited Contact defaults through package-scoped and merged MCP routes and verifies localized source captions alongside unchanged canonical GUIDs.")]
+	public async Task GetEntitySchemaColumnProperties_ShouldResolveSystemValueCaption_WhenColumnHasSystemDefault(
+		string columnName, string sourceId, string? packageName) {
+		// Arrange
+		await using SandboxFindEntitySchemaArrangeContext arrangeContext = await ArrangeSandboxFindEntitySchemaAsync();
+
+		// Act
+		CallToolResult callResult = await CallGetColumnPropertiesAsync(
+			arrangeContext.Session, arrangeContext.EnvironmentName, packageName, "Contact", columnName,
+			arrangeContext.CancellationTokenSource.Token);
+		EntitySchemaColumnPropertiesInfo properties =
+			EntitySchemaStructuredResultParser.Extract<EntitySchemaColumnPropertiesInfo>(callResult);
+
+		// Assert
+		AllureApi.Step("Verify successful structured readback", () =>
+			callResult.IsError.Should().NotBeTrue(because: "native catalog enrichment must succeed for built-in defaults"));
+		AllureApi.Step("Verify configured source identity", () => {
+			properties.DefaultValue.Should().Be(sourceId, because: "the legacy value must remain the system-value identifier");
+			properties.DefaultValueConfig.Should().NotBeNull(because: "SystemValue metadata must remain structured");
+			properties.DefaultValueConfig!.Source.Should().Be("SystemValue", because: "the configured source is a system value");
+			properties.DefaultValueConfig.ValueSource.Should().Be(sourceId, because: "the persisted selector must not become an evaluated value");
+			properties.DefaultValueConfig.ResolvedValueSource.Should().Be(sourceId, because: "canonical IDs remain backward compatible");
+		});
+		AllureApi.Step("Verify native source caption", () => {
+			properties.DefaultValueConfig!.DisplayValue.Should().NotBeNullOrWhiteSpace(
+				because: "the connected user's native catalog must identify the configured source");
+			properties.DefaultValueConfig.DisplayValue.Should().NotBe(sourceId, because: "the caption must add human-readable identification");
+			properties.DefaultValueConfig.SourceResolution.Should().BeNull(because: "the built-in source resolves successfully");
+			properties.DefaultValueConfig.RecordResolution.Should().BeNull(because: "system-value resolution is not record resolution");
+		});
 	}
 
 	[Category("McpE2E.Sandbox")]
@@ -1553,103 +1629,6 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		});
 	}
 
-	private static async Task<CommandExecutionEnvelope> ActBatchAddColumnWithUsageTypeAsync(
-		EntitySchemaArrangeContext arrangeContext,
-		string columnName,
-		string usageType) {
-		return await AllureApi.Step("Act by invoking update-entity-schema through MCP to add a column with a usage-type", async () => {
-			CallToolResult callResult = await CallUpdateEntitySchemaAsync(
-				arrangeContext.Session,
-				arrangeContext.EnvironmentName,
-				arrangeContext.PackageName,
-				arrangeContext.SchemaName,
-				arrangeContext.CancellationTokenSource.Token,
-				[
-					new Dictionary<string, object?> {
-						["action"] = "add",
-						["column-name"] = columnName,
-						["type"] = "ShortText",
-						["title-localizations"] = BuildLocalizations("Batch usage column"),
-						["usage-type"] = usageType
-					}
-				]);
-			return McpCommandExecutionParser.Extract(callResult);
-		});
-	}
-
-	private static async Task<EntitySchemaColumnPropertiesInfo> ActGetColumnPropertiesAsync(
-		EntitySchemaArrangeContext arrangeContext,
-		string? columnName = null) {
-		return await AllureApi.Step("Act by invoking get-entity-schema-column-properties through MCP", async () => {
-			CallToolResult callResult = await CallGetColumnPropertiesAsync(
-				arrangeContext.Session,
-				arrangeContext.EnvironmentName,
-				arrangeContext.PackageName,
-				arrangeContext.SchemaName,
-				columnName ?? arrangeContext.AddedColumnName,
-				arrangeContext.CancellationTokenSource.Token);
-			return EntitySchemaStructuredResultParser.Extract<EntitySchemaColumnPropertiesInfo>(callResult);
-		});
-	}
-
-	private static async Task<CommandExecutionEnvelope> ActBatchAddBinaryLikeColumnsAsync(
-		EntitySchemaArrangeContext arrangeContext,
-		string binaryColumnName,
-		string imageColumnName,
-		string fileColumnName) {
-		return await AllureApi.Step("Act by invoking update-entity-schema through MCP for binary-like columns", async () => {
-			CallToolResult callResult = await CallUpdateEntitySchemaAsync(
-				arrangeContext.Session,
-				arrangeContext.EnvironmentName,
-				arrangeContext.PackageName,
-				arrangeContext.SchemaName,
-				arrangeContext.CancellationTokenSource.Token,
-				[
-					new Dictionary<string, object?> {
-						["action"] = "add",
-						["column-name"] = binaryColumnName,
-						["type"] = "Binary",
-						["title-localizations"] = BuildLocalizations("Payload")
-					},
-					new Dictionary<string, object?> {
-						["action"] = "add",
-						["column-name"] = imageColumnName,
-						["type"] = "Image",
-						["title-localizations"] = BuildLocalizations("Preview")
-					},
-					new Dictionary<string, object?> {
-						["action"] = "add",
-						["column-name"] = fileColumnName,
-						["type"] = "File",
-						["title-localizations"] = BuildLocalizations("Document")
-					}
-				]);
-			return McpCommandExecutionParser.Extract(callResult);
-		});
-	}
-
-	private static async Task<CommandExecutionEnvelope> ActBatchAddImageLookupColumnAsync(
-		EntitySchemaArrangeContext arrangeContext,
-		string imageLookupColumnName) {
-		return await AllureApi.Step("Act by invoking update-entity-schema through MCP for an ImageLookup column", async () => {
-			CallToolResult callResult = await CallUpdateEntitySchemaAsync(
-				arrangeContext.Session,
-				arrangeContext.EnvironmentName,
-				arrangeContext.PackageName,
-				arrangeContext.SchemaName,
-				arrangeContext.CancellationTokenSource.Token,
-				[
-					new Dictionary<string, object?> {
-						["action"] = "add",
-						["column-name"] = imageLookupColumnName,
-						["type"] = "ImageLookup",
-						["title-localizations"] = BuildLocalizations("Photo")
-					}
-				]);
-			return McpCommandExecutionParser.Extract(callResult);
-		});
-	}
-
 	private static async Task<CommandExecutionEnvelope> ActBatchAddLocalizedTextColumnAsync(
 		EntitySchemaArrangeContext arrangeContext,
 		string columnName) {
@@ -1672,6 +1651,99 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		});
 	}
 
+	/// <summary>
+	/// Adds every plain "add a column and read it back" fixture column in ONE update-entity-schema batch,
+	/// once per fixture, and hands the same envelope to each test that asserts on one of them.
+	/// </summary>
+	/// <remarks>
+	/// Four tests each ran their own batch against the one shared schema, so the stand compiled the same
+	/// schema four times — about 25s apiece — to add columns that never interact. The batch is the tool's
+	/// own supported shape, so nothing about the operation under test changes; each test still reads back
+	/// and asserts only its own column. The trade-off is deliberate: a column type that fails to add now
+	/// fails all three tests at once rather than one, which is the cost of paying for the compile once.
+	/// The localized-text column stays outside this batch on purpose — see its test.
+	/// </remarks>
+	private async Task<CommandExecutionEnvelope> ActSharedBatchAddColumnsAsync(
+		EntitySchemaArrangeContext arrangeContext) {
+		if (_sharedBatchAddResult is not null) {
+			return _sharedBatchAddResult;
+		}
+		CommandExecutionEnvelope batchResult = await AllureApi.Step(
+			"Act by invoking update-entity-schema through MCP for the fixture's shared column batch", async () => {
+			CallToolResult callResult = await CallUpdateEntitySchemaAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				arrangeContext.CancellationTokenSource.Token,
+				[
+					new Dictionary<string, object?> {
+						["action"] = "add",
+						["column-name"] = BinaryColumnName,
+						["type"] = "Binary",
+						["title-localizations"] = BuildLocalizations("Payload")
+					},
+					new Dictionary<string, object?> {
+						["action"] = "add",
+						["column-name"] = ImageColumnName,
+						["type"] = "Image",
+						["title-localizations"] = BuildLocalizations("Preview")
+					},
+					new Dictionary<string, object?> {
+						["action"] = "add",
+						["column-name"] = FileColumnName,
+						["type"] = "File",
+						["title-localizations"] = BuildLocalizations("Document")
+					},
+					new Dictionary<string, object?> {
+						["action"] = "add",
+						["column-name"] = ImageLookupColumnName,
+						["type"] = "ImageLookup",
+						["title-localizations"] = BuildLocalizations("Photo")
+					},
+					new Dictionary<string, object?> {
+						["action"] = "add",
+						["column-name"] = BatchUsageColumnName,
+						["type"] = "ShortText",
+						["title-localizations"] = BuildLocalizations("Batch usage column"),
+						["usage-type"] = "Advanced"
+					}
+				]);
+			return McpCommandExecutionParser.Extract(callResult);
+		});
+		if (batchResult.ExitCode != 0) {
+			// Not cached: replaying one bad round trip to the other callers reports it as several broken
+			// tests and hides that a rerun of the batch would have succeeded.
+			return batchResult;
+		}
+		_sharedBatchAddResult = batchResult;
+		return _sharedBatchAddResult;
+	}
+
+	private CommandExecutionEnvelope? _sharedBatchAddResult;
+
+	private const string BinaryColumnName = "UsrPayload";
+	private const string ImageColumnName = "UsrPreview";
+	private const string FileColumnName = "UsrDocument";
+	private const string ImageLookupColumnName = "UsrPhoto";
+	private const string LocalizedTextColumnName = "UsrStatus";
+	private const string BatchUsageColumnName = "UsrBatchUsage";
+
+	private static async Task<EntitySchemaColumnPropertiesInfo> ActGetColumnPropertiesAsync(
+		EntitySchemaArrangeContext arrangeContext,
+		string? columnName = null) {
+		return await AllureApi.Step("Act by invoking get-entity-schema-column-properties through MCP", async () => {
+			CallToolResult callResult = await CallGetColumnPropertiesAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				columnName ?? arrangeContext.AddedColumnName,
+				arrangeContext.CancellationTokenSource.Token);
+			return EntitySchemaStructuredResultParser.Extract<EntitySchemaColumnPropertiesInfo>(callResult);
+		});
+	}
+
 	private static async Task<CommandExecutionEnvelope> ActModifyLocalizedTextColumnWithStructuredSettingsDefaultAsync(
 		EntitySchemaArrangeContext arrangeContext,
 		string columnName) {
@@ -1689,6 +1761,45 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		});
 	}
 
+	[TestCase(true)]
+	[TestCase(false)]
+	[Category("McpE2E.Sandbox")]
+	// LocalOnly classifies the whole fixture; keep this probe explicit, manual, and CI-guarded.
+	[Category("McpE2E.Manual")]
+	[Explicit("Publishes schema changes on an exclusively owned disposable instance.")]
+	[Description("Persists the DB-view flag through create and set MCP tools and proves the database-table boundary.")]
+	[AllureTag(CreateToolName)]
+	[AllureTag(SetSchemaToolName)]
+	public async Task EntitySchema_ShouldPersistDbView_WhenCreatedAndUpdated(bool initialValue) {
+		// Arrange
+		TeamCityRunGuard.IgnoreIfRunningUnderTeamCityOrGitHubActions("Requires an exclusive disposable instance.");
+		McpE2ESettings settings = TestConfiguration.Load();
+		TestConfiguration.RequirePostgreSqlSandbox(settings);
+		await using EntitySchemaArrangeContext context = await ArrangeSandboxPackageAsync();
+		SandboxEnvironmentContext sandbox = SandboxEnvironmentResolver.Resolve(settings);
+		// Act
+		CallToolResult created = await CallCreateEntitySchemaAsync(context.Session, context.EnvironmentName,
+			context.PackageName, context.SchemaName, context.CancellationTokenSource.Token, isDBView: initialValue);
+		EntitySchemaPropertiesInfo before = await ActGetSchemaPropertiesAsync(context);
+		bool tableExists = PostgresTableProbe.Exists(sandbox.DatabaseConnectionString, context.SchemaName);
+		// Assert
+		AllureApi.Step("Verify creation and physical table boundary", () => {
+			AssertCommandSucceeded(McpCommandExecutionParser.Extract(created), "creation must persist the requested DB-view kind");
+			before.DbView.Should().Be(initialValue, because: "the designer must return the saved flag");
+			before.Virtual.Should().BeFalse(because: "a database view is independent of a virtual entity");
+			tableExists.Should().Be(!initialValue, because: "the platform creates tables only for ordinary entities");
+		});
+		// Act
+		CallToolResult updated = await CallSetEntitySchemaPropertiesAsync(context.Session, context.EnvironmentName,
+			context.PackageName, context.SchemaName, context.CancellationTokenSource.Token, isDBView: !initialValue);
+		EntitySchemaPropertiesInfo after = await ActGetSchemaPropertiesAsync(context);
+		// Assert
+		AllureApi.Step("Verify explicit true and false updates", () => {
+			AssertCommandSucceeded(McpCommandExecutionParser.Extract(updated), "the flag-only property update must succeed");
+			after.DbView.Should().Be(!initialValue, because: "both setting and clearing must survive reload");
+		});
+	}
+
 	private static async Task<CallToolResult> CallCreateEntitySchemaAsync(
 		McpServerSession session,
 		string environmentName,
@@ -1696,7 +1807,7 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		string schemaName,
 		CancellationToken cancellationToken,
 		IReadOnlyList<Dictionary<string, object?>>? columns = null,
-		bool isVirtual = false) {
+		bool isVirtual = false, bool? isDBView = null) {
 		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
 		reachableToolNames.Should().Contain(CreateToolName,
 			because: "the create-entity-schema MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
@@ -1710,7 +1821,8 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 					["schema-name"] = schemaName,
 					["title-localizations"] = BuildLocalizations("Vehicle"),
 					["columns"] = columns,
-					["is-virtual"] = isVirtual
+					["is-virtual"] = isVirtual,
+					["is-db-view"] = isDBView
 				}
 			},
 			cancellationToken);
@@ -1825,7 +1937,8 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		string packageName,
 		string schemaName,
 		CancellationToken cancellationToken,
-		string? primaryDisplayColumn = null) {
+		string? primaryDisplayColumn = null,
+		IReadOnlyDictionary<string, string>? titleLocalizations = null, bool? isDBView = null) {
 		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
 		reachableToolNames.Should().Contain(SetEntitySchemaPropertiesTool.SetEntitySchemaPropertiesToolName,
 			because: "the set-entity-schema-properties MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
@@ -1837,6 +1950,12 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		};
 		if (!string.IsNullOrWhiteSpace(primaryDisplayColumn)) {
 			args["primary-display-column"] = primaryDisplayColumn;
+		}
+		if (isDBView.HasValue) {
+			args["is-db-view"] = isDBView.Value;
+		}
+		if (titleLocalizations is { Count: > 0 }) {
+			args["title-localizations"] = titleLocalizations;
 		}
 
 		return await session.CallToolAsync(

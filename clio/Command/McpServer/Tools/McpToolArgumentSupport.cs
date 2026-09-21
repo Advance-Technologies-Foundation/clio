@@ -148,8 +148,21 @@ internal static class McpToolArgumentSupport {
 	/// binding to nothing. Shared by every environment-scoped tool so the pair is defined once; a tool with extra
 	/// fields seeds its own map from this and adds them.
 	/// </summary>
+	/// <remarks>
+	/// ENG-98566 review finding 11: the map is OrdinalIgnoreCase because the JSON binder matches property
+	/// names case-insensitively. A capitalised spelling such as <c>EnvironmentName</c> still fails to bind -
+	/// the HYPHEN is what it gets wrong - so it lands in the overflow bag, and under an Ordinal comparer it
+	/// missed the rename hint and came back as a bare unknown key.
+	/// <para>
+	/// SCOPE: a tool that copies this map into its own dictionary must carry the comparer over. Several
+	/// theming and package tools build <c>new(EnvironmentNameAliases, StringComparer.Ordinal)</c> to add
+	/// their own entries, which DISCARDS this comparer - so they still answer a capitalised spelling with a
+	/// bare unknown-key list. Not a regression (they were always Ordinal) and out of this ticket's scope,
+	/// but do not read this remark as saying the whole surface is covered.
+	/// </para>
+	/// </remarks>
 	public static readonly IReadOnlyDictionary<string, string> EnvironmentNameAliases =
-		new Dictionary<string, string>(StringComparer.Ordinal) {
+		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
 			["environmentName"] = "environment-name",
 			["environment_name"] = "environment-name",
 			// ENG-95885: the bare 'environment' spelling was the one missing member of this set — it is
@@ -158,6 +171,95 @@ internal static class McpToolArgumentSupport {
 			// accepted field set stays exactly the canonical kebab-case one.
 			["environment"] = "environment-name"
 		};
+
+	/// <summary>
+	/// The single unknown-argument check for an environment-scoped MCP tool: inspects the args record's
+	/// <c>[JsonExtensionData]</c> overflow bag and returns the refusal to hand back, or <see langword="null"/>
+	/// when the caller supplied nothing unexpected.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// ENG-98566. Why every tool needs this rather than relying on the filter: an args record binds through
+	/// <c>BindingsModule.CreateMcpSerializerOptions()</c>, a copy of <c>McpJsonUtilities.DefaultOptions</c>
+	/// WITHOUT <c>JsonUnmappedMemberHandling.Disallow</c>, so a key matching no <c>[JsonPropertyName]</c> is
+	/// discarded with no error. <c>McpToolErrorFilter</c>'s classifier does not cover it twice over: it runs
+	/// from <c>MatchedPrimitive</c>, null for anything outside <c>McpCoreToolProfile.CoreToolTypes</c>, so the
+	/// whole long tail is never classified in ANY shape; and even for a RESIDENT tool it inspects only the FLAT
+	/// payload, passing an already-wrapped <c>{"args":{...}}</c> call - the shape the published schema asks for
+	/// - straight through. The bag plus this check is the only defence, and a bag nobody reads is the failure
+	/// mode rather than the fix.
+	/// </para>
+	/// <para>
+	/// The global alternative was considered and REJECTED, and the reasoning is recorded in
+	/// <c>docs/knowledge/McpServer/mcp-arg-records-swallow-unbound-fields.md</c>: the loose binding is
+	/// deliberate for forward compatibility across MCP SDK versions, and turning <c>Disallow</c> on globally
+	/// would reject payloads that older or newer clients legitimately decorate. Do not "simplify" this away.
+	/// </para>
+	/// <para>
+	/// The NULL-<c>args</c> check deliberately does NOT live here. It has to run before the caller can read
+	/// the bag to pass in, and keeping it inline at each call site is what lets the analyser prove no field
+	/// read is reached with a null argument object - the condition that clears <c>csharpsquid:S2259</c>.
+	/// </para>
+	/// </remarks>
+	/// <param name="extensionData">The args record's overflow bag.</param>
+	/// <param name="validArgsHint">The calling tool's canonical field list, echoed on an unknown key.</param>
+	public static string? BuildUnknownArgumentError(
+			IReadOnlyDictionary<string, JsonElement>? extensionData, string validArgsHint) =>
+		BuildLegacyAliasError(extensionData, EnvironmentNameAliases, ".", validArgsHint);
+
+	/// <summary>Most caller-supplied key names echoed back in one message.</summary>
+	/// <remarks>
+	/// ENG-98566. The single definition of these bounds, shared with
+	/// <c>McpToolErrorFilter.DescribeCallerKeys</c>, which acquired them first (ENG-95885 review round 9)
+	/// while this path - the one a NON-RESIDENT tool's overflow bag reaches, and the only unknown-key
+	/// defence such a tool has - was left unbounded. The two sinks are the same: caller-controlled key
+	/// names inside server-authored framing, in a TextContentBlock that reaches the hosting agent's
+	/// transcript.
+	/// </remarks>
+	public const int MaxEchoedKeys = 10;
+
+	/// <summary>Longest single caller-supplied key name echoed back. See <see cref="MaxEchoedKeys"/>.</summary>
+	public const int MaxEchoedKeyLength = 120;
+
+	/// <summary>
+	/// Renders ONE caller-supplied key name for a message: length-capped and sanitized, so a key carrying
+	/// a newline or an ESC sequence cannot forge lines that read as clio's own text.
+	/// </summary>
+	/// <param name="key">The raw key as the caller spelled it.</param>
+	public static string DescribeCallerKey(string key) =>
+		// The quote characters are stripped, not escaped: callers render this inside '...' or "..." framing,
+		// and a key carrying the closing quote would otherwise terminate it and continue as prose in
+		// server-authored text that reaches the hosting agent's transcript. SanitizeForDisplay deliberately
+		// leaves prose alone - it stops an invented LINE, not an invented sentence - so the quoting has to be
+		// made non-terminable here instead.
+		Clio.Common.TextUtilities.SanitizeForDisplay(key ?? string.Empty, MaxEchoedKeyLength)
+			.Replace("'", string.Empty)
+			.Replace("\"", string.Empty);
+
+	/// <summary>
+	/// Joins already-rendered caller-key fragments, capped at <see cref="MaxEchoedKeys"/> with an
+	/// "and N more" tail. Without the cap a payload of many distinct keys costs a proportional
+	/// <c>string.Join</c> and an equally proportional response, for a call that never reaches a tool.
+	/// <para>
+	/// The cap applies PER LIST, so a message carrying both halves can name up to twice
+	/// <see cref="MaxEchoedKeys"/>. That is deliberate: the two lists answer different questions - which
+	/// keys to rename and which are unknown - and truncating them against one shared budget would let a
+	/// long rename list hide every unknown key, which is the half the caller cannot guess.
+	/// </para>
+	/// <para>
+	/// The redaction cost belongs to the CALLER, not to this method: since ENG-98566 both sinks share this
+	/// join, and only the filter's own path runs a redaction pass. The overflow-bag path lands in
+	/// <c>CommandExecutionResult.FromValidationError</c> or a typed response's error field, neither of which
+	/// is routed through <c>SensitiveErrorTextRedactor</c> - correctly, since its content is caller-authored
+	/// key names rather than server-derived text.
+	/// </para>
+	/// </summary>
+	/// <param name="renderedKeys">Fragments produced from <see cref="DescribeCallerKey"/>.</param>
+	public static string JoinCallerKeys(IReadOnlyList<string> renderedKeys) {
+		string shown = string.Join(", ", renderedKeys.Take(MaxEchoedKeys));
+		int hidden = renderedKeys.Count - Math.Min(renderedKeys.Count, MaxEchoedKeys);
+		return hidden > 0 ? $"{shown} and {hidden} more" : shown;
+	}
 
 	/// <summary>
 	/// Builds a single actionable rename hint from the fields an MCP arg record could not bind
@@ -182,19 +284,46 @@ internal static class McpToolArgumentSupport {
 		List<string> unknown = [];
 		foreach (string key in extensionData.Keys) {
 			if (aliases.TryGetValue(key, out string? canonical)) {
-				mapped.Add($"'{key}' -> '{canonical}'");
+				// The CANONICAL half is server-declared and therefore trusted and bounded; only the
+				// caller's own spelling is sanitized.
+				mapped.Add($"'{DescribeCallerKey(key)}' -> '{canonical}'");
 			} else {
-				unknown.Add($"'{key}'");
+				unknown.Add($"'{DescribeCallerKey(key)}'");
 			}
 		}
 		List<string> parts = [];
 		if (mapped.Count > 0) {
-			parts.Add("Rename: " + string.Join(", ", mapped) + renameSuffix);
+			parts.Add("Rename: " + JoinCallerKeys(mapped) + renameSuffix);
 		}
 		if (unknown.Count > 0) {
-			parts.Add("Unknown args: " + string.Join(", ", unknown) + ". " + unknownHint);
+			parts.Add("Unknown args: " + JoinCallerKeys(unknown) + ". " + unknownHint);
 		}
 		return parts.Count > 0 ? string.Join(" ", parts) : null;
+	}
+
+	/// <summary>
+	/// Ranks distinct alternative tool names, preferring an exact subject match for set/update synonyms.
+	/// </summary>
+	/// <param name="requestedName">The unresolved tool name.</param>
+	/// <param name="candidates">Tool names available to the calling surface.</param>
+	/// <returns>At most three alternatives, excluding the requested name regardless of casing.</returns>
+	public static IReadOnlyList<string> SuggestToolNames(string requestedName, IEnumerable<string> candidates) {
+		string rankingName = requestedName.Length > 64 ? requestedName[..64] : requestedName;
+		string? synonym = null;
+		if (rankingName.StartsWith("set-", StringComparison.OrdinalIgnoreCase)) {
+			synonym = "update-" + rankingName[4..];
+		} else if (rankingName.StartsWith("update-", StringComparison.OrdinalIgnoreCase)) {
+			synonym = "set-" + rankingName[7..];
+		}
+		return candidates
+			.Where(name => !string.IsNullOrWhiteSpace(name)
+				&& !string.Equals(name, requestedName, StringComparison.OrdinalIgnoreCase))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.OrderBy(name => string.Equals(name, synonym, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+			.ThenBy(name => LevenshteinDistance(rankingName, name))
+			.ThenBy(name => name, StringComparer.OrdinalIgnoreCase)
+			.Take(3)
+			.ToArray();
 	}
 
 	/// <summary>

@@ -121,6 +121,14 @@ generated schema (the schema's required-property set is a weak proxy for runtime
 
 Rules to keep:
 
+- **This layer is RESIDENT-only and FLAT-only, and it does NOT replace the per-tool guard.** It runs
+  from `MatchedPrimitive`, which is null for anything outside `McpCoreToolProfile.CoreToolTypes` - so
+  for the whole long tail `TryRefuseCallArgumentsCore` bails at `TryGetToolMethod` and nothing above is
+  ever classified, in any shape. For a tool that IS resident it still skips the already-wrapped
+  `{"args":{...}}` payload, which is the shape the published schema asks for. Every args record
+  therefore still needs its own `[JsonExtensionData]` bag PLUS a `BuildLegacyAliasError` check over it
+  (ENG-98566 was the third recorded instance of skipping it on the strength of this section). See
+  `docs/knowledge/McpServer/flat-argument-classifier-does-not-see-wrapped-payloads.md`.
 - **The published schema stays wrapped.** This is a tolerant RUNTIME layer, not a schema change:
   `tools/list` keeps `required: ["args"]`. Never claim the schema and the accepted input set are
   identical. The canonical agent-facing statement is

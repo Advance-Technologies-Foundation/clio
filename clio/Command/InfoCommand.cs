@@ -1,4 +1,7 @@
 using Clio.Common;
+using Clio.Common.Skills;
+using Clio.Command.McpServer.Knowledge;
+using System.Collections.Generic;
 using Clio.Project.NuGet;
 using CommandLine;
 using System;
@@ -6,33 +9,39 @@ using System.Reflection;
 
 namespace Clio.Command
 {
-	[Verb("info", Aliases = ["ver","get-version","i"], HelpText = "Check for Creatio packages updates in NuGet")]
+	/// <summary>Options for reporting locally installed component versions.</summary>
+	[Verb("info", Aliases = ["ver","get-version","i"], HelpText = "Display local component versions and settings path")]
 	public class InfoCommandOptions
 	{
+		/// <summary>Gets or sets whether all component versions are displayed.</summary>
 		[Option("all", Required = false, HelpText = "Get versions for all known components")]
 		public bool All
 		{
 			get; set;
 		}
 		
+		/// <summary>Gets or sets whether only the settings path is displayed.</summary>
 		[Option('s', "settings-file",  Required = false, HelpText = "Get path to settings file")]
 		public bool ShowSettingsFilePath
 		{
 			get; set;
 		}
 
+		/// <summary>Gets or sets whether only the Clio version is displayed.</summary>
 		[Option("clio", Required = false, HelpText = "Get clio version")]
 		public bool Clio
 		{
 			get; set;
 		}
 
+		/// <summary>Gets or sets whether only the bundled gate version is displayed.</summary>
 		[Option("gate", Required = false, HelpText = "Get clio-gate version")]
 		public bool Gate
 		{
 			get; set;
 		}
 
+		/// <summary>Gets or sets whether only the runtime version is displayed.</summary>
 		[Option("runtime", Required = false, HelpText = "Get dotnet version")]
 		public bool Runtime
 		{
@@ -40,11 +49,14 @@ namespace Clio.Command
 		}
 	}
 
+	/// <summary>Reports local component versions and the settings file path.</summary>
 	public class InfoCommand : Command<InfoCommandOptions>
 	{
-		private const string _gateVersion = "2.0.0.48";
+		private const string _gateVersion = "2.0.0.53";
 		private readonly ILogger _logger;
 		private readonly IBundledPackageCatalog _bundledPackageCatalog;
+		private readonly IInstalledKnowledgeVersions _knowledgeVersions;
+		private readonly IInstalledToolkitVersions _toolkitVersions;
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="InfoCommand"/> class.
@@ -53,12 +65,17 @@ namespace Clio.Command
 		/// <param name="bundledPackageCatalog">
 		/// Catalog answering what bundled-package version this clio distribution carries.
 		/// </param>
-		public InfoCommand(ILogger logger, IBundledPackageCatalog bundledPackageCatalog)
+		/// <param name="knowledgeVersions">Reader for locally installed knowledge bundle versions.</param>
+		/// <param name="toolkitVersions">Reader for locally installed toolkit versions per agent.</param>
+		public InfoCommand(ILogger logger, IBundledPackageCatalog bundledPackageCatalog,
+			IInstalledKnowledgeVersions knowledgeVersions, IInstalledToolkitVersions toolkitVersions)
         {
 			logger.CheckArgumentNull(nameof(logger));
 			bundledPackageCatalog.CheckArgumentNull(nameof(bundledPackageCatalog));
 			_logger = logger;
 			_bundledPackageCatalog = bundledPackageCatalog;
+			_knowledgeVersions = knowledgeVersions ?? throw new ArgumentNullException(nameof(knowledgeVersions));
+			_toolkitVersions = toolkitVersions ?? throw new ArgumentNullException(nameof(toolkitVersions));
 		}
 
 		// Reported from the archive rather than from a constant, so this line describes the bytes an install
@@ -70,14 +87,15 @@ namespace Clio.Command
 		// re-emits that suffix verbatim with newlines intact. Only clio's own artifact reaches here, so this is
 		// tidiness rather than a defence — but it is a line printed to a console, and a version that could
 		// forge extra lines in `clio info` output is worth not having.
-		private string GetBundledProcessBuilderVersion() =>
+		private string GetBundledVersion(string packageName) =>
 			_bundledPackageCatalog.TryGetVersion(
-				BundledPackages.ProcessBuilderPackageName,
+				packageName,
 				out PackageVersion version,
 				out string diagnosis)
 				? TextUtilities.SanitizeVersionForDisplay(version)
 				: $"unavailable — {diagnosis}";
 
+		/// <inheritdoc/>
         public override int Execute(InfoCommandOptions options)
 		{
 			if (options is object && options.Clio)
@@ -107,12 +125,30 @@ namespace Clio.Command
 				// unpacking the archive. Compare it against `clio list-packages -e <env>` to tell whether an
 				// environment is behind — and it is the same value the convergence rule compares, because
 				// both read it from the archive.
-				_logger.WriteInfo($"process-builder:   {GetBundledProcessBuilderVersion()}");
+				_logger.WriteInfo($"process-builder:     {GetBundledVersion(BundledPackages.ProcessBuilderPackageName)}");
+				_logger.WriteInfo($"dashboards-migrator: {GetBundledVersion(BundledPackages.DashboardsMigratorPackageName)}");
+				WriteKnowledgeVersions();
+				foreach (KeyValuePair<string, string> toolkit in _toolkitVersions.Read()) {
+					_logger.WriteInfo($"toolkit ({TextUtilities.SanitizeForDisplay(toolkit.Key, maxLength: 128)}):   "
+						+ TextUtilities.SanitizeForDisplay(toolkit.Value, maxLength: 128));
+				}
 				_logger.WriteInfo($"dotnet:   {Environment.Version.ToString()}");
 				_logger.WriteInfo($"settings file path: {SettingsRepository.AppSettingsFile}");
 				return 0;
 			}
 			return 1;
+		}
+
+		private void WriteKnowledgeVersions() {
+			IReadOnlyDictionary<string, string> versions = _knowledgeVersions.Read();
+			if (versions.Count == 0) {
+				_logger.WriteInfo("knowledge:   not installed or unavailable");
+				return;
+			}
+			foreach (KeyValuePair<string, string> source in versions) {
+				_logger.WriteInfo($"knowledge ({TextUtilities.SanitizeForDisplay(source.Key, maxLength: 128)}):   "
+					+ TextUtilities.SanitizeForDisplay(source.Value, maxLength: 128));
+			}
 		}
 	}
 }

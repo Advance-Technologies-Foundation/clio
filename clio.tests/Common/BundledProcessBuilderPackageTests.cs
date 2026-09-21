@@ -78,6 +78,8 @@ public class BundledProcessBuilderPackageTests {
 	/// branch therefore also carries the ENG-95986 Send-email template-mode work and everything
 	/// <c>nitro/sprint-3-release</c> had accumulated by then (including the earlier ENG-91853 flow-labels and
 	/// ENG-94374 process-versioning work that branch itself carries), at the commit recorded mechanically in
+	/// <c>feature/ENG-92707-sub-process-element</c>), at the commit
+	/// recorded mechanically in
 	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
 	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
 	/// by hand. Many numbers below the current one are burned rather than reused — some because two branches drew
@@ -158,6 +160,28 @@ public class BundledProcessBuilderPackageTests {
 	/// collided at write time the same way an exact duplicate does. Switched to <c>OrdinalIgnoreCase</c>,
 	/// matching the sibling existing-parameter conflict check right below it and <c>ResolveButtons</c>' own
 	/// duplicate check.</para>
+	/// <para>What THIS cut carries, over the 1.6.3.16 this file previously pinned: the Sub-process element
+	/// (ENG-92707) - the BPMN call activity,
+	/// selecting the called process and letting the platform copy that process's parameters onto the element,
+	/// with the guards the platform does not have (self-reference, a retarget with live dependents, a callee with
+	/// no Simple start event, an ambiguous caption, and any multi-instance element) and a drift report around the
+	/// synchronization.</para>
+	/// <para>The FOURTH digit moves here: the third already stood at 1.6.3 when this branch started, so this cut
+	/// continues that line rather than opening one. The paragraph below records why the third digit was moved by
+	/// the cut that opened it, which is the case that was the OPPOSITE of the rule stated above, and the reason is
+	/// the package repository's own
+	/// 2026-09-16 diary entry: the "first free number" rule produced three collisions in one day on the ENG-98559
+	/// line, because the number is computed at cut time and other branches move between the cut and its review.
+	/// Going above the maximum cannot collide. What it costs is the thing the rule above is protecting - a version
+	/// that looks newer than work it does not contain - so it is a trade, not a correction, and it is recorded
+	/// here rather than left to be rediscovered.</para>
+	/// <para>What the 1.4.0.x line carried, over the 1.3.1.1 performer/lookup delivery it replaced: server-side
+	/// VALIDATION of formula expressions — an <c>expression</c> mapping source and a conditional-flow condition
+	/// are now parsed, their parameter references resolved against the process, and their result type checked
+	/// against the declared target, instead of being stored unchecked. The MINOR digit moved at 1.4.0.0 because
+	/// that is a new capability; every PATCH digit over it fixes something a review or a manual case found, and
+	/// each is raised so a stand still carrying an earlier one is DETECTABLY behind — same-version re-cuts make
+	/// equal version numbers mean nothing, which the convergence check cannot see through.</para>
 	/// <para>
 	/// This cut DID run under <c>-SkipTests</c>. The package's suite is green on the producing commit
 	/// (1871 of 1872 with the CI filter) except for
@@ -237,11 +261,20 @@ public class BundledProcessBuilderPackageTests {
 	/// 156 byte-identical, the 157th being the restamped <c>descriptor.json</c>) was NOT re-run for the 1.6.2.3 cut.
 	/// Its reproducibility rests on the export flags above, which are what made the earlier audit come out clean;
 	/// a reviewer can repeat the audit from the producing commit alone.
+	/// The INVARIANT, which is what this paragraph is for and the only part that cannot go stale: every entry in
+	/// the archive is byte-IDENTICAL to the producing commit's blob EXCEPT <c>descriptor.json</c>, which by
+	/// contract cannot match a pre-restamp commit and is pinned separately by
+	/// <see cref="ExpectedArchiveVersion"/> and <see cref="ExpectedDescriptorModifiedOnUtc"/>.
+	/// <para>Verify it in two commands: extract with <c>clio extract-pkg-zip &lt;archive&gt; -d &lt;dir&gt;</c>, then compare every
+	/// extracted file against <c>git show &lt;ExpectedProducingCommit&gt;:packages/CrtProcessBuilder/&lt;path&gt;</c>.
+	/// The COUNT is not pinned here on purpose - it moves as the package gains sources, and an earlier revision
+	/// that carried one (157/156, wrong, attributed to a specific cut) made the staleness look checked. Re-run the
+	/// two commands instead; it takes under a minute.</para>
 	/// </para>
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"E89B9E9263763408E372C6A3429947C1D4E6FE3581ACDA6BA478975D6FA75293";
+		"F9E673FF328952BE3D0961DC88673FD23A745FF6EF022B33872B329172624860";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -269,7 +302,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.2.19";
+	private const string ExpectedArchiveVersion = "1.6.3.31";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -281,7 +314,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "b214d20cc7712020c70c2fbf3099fecb3080752d";
+	private const string ExpectedProducingCommit = "0b2c69adfb0a59c3ab4b37fb519a5d0df345dba7";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -307,7 +340,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789573695000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1789992340000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.

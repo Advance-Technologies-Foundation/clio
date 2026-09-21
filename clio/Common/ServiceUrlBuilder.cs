@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace Clio.Common;
@@ -265,7 +265,81 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>
 		///     Makes one member of a process version family the ACTUAL one via the ProcessDesignService package.
 		/// </summary>
-		SetActiveProcessVersion = 69
+		SetActiveProcessVersion = 69,
+
+		/// <summary>Saves a native administration role.</summary>
+		AdministrationSaveRole = 70,
+		/// <summary>Creates the manager child of an organizational role.</summary>
+		AdministrationSaveChiefsRole = 71,
+		/// <summary>Creates or updates an administration user.</summary>
+		AdministrationSaveUser = 72,
+		/// <summary>Deletes a user through native administration checks.</summary>
+		AdministrationDeleteUser = 73,
+		/// <summary>Reads password and two-factor lockout state.</summary>
+		AdministrationGetIsUserBlocked = 74,
+		/// <summary>Clears a user's native lockout.</summary>
+		AdministrationUnblockUser = 75,
+		/// <summary>Adds roles to one user with native second-factor checks.</summary>
+		AdministrationAddUserRoles = 76,
+		/// <summary>Removes direct role memberships.</summary>
+		AdministrationRemoveUsersInRoles = 77,
+		/// <summary>Associates functional roles with an organizational role.</summary>
+		AdministrationAddFunctionalRoles = 78,
+		/// <summary>Recalculates effective administration membership.</summary>
+		AdministrationActualize = 79,
+		/// <summary>Reads available licenses and their assignment state.</summary>
+		AdministrationGetLicenses = 80,
+		/// <summary>Updates selected native license assignments.</summary>
+		AdministrationUpdateLicenses = 81,
+		/// <summary>Deletes administration view records through the native UI service.</summary>
+		AdministrationDeleteRecords = 82,
+		/// <summary>Delegates one unit's rights to selected users.</summary>
+		AdministrationAddDelegation = 83,
+		/// <summary>Removes exact delegation records.</summary>
+		AdministrationRemoveDelegation = 84,
+		/// <summary>Sets native system-operation grantees.</summary>
+		RightsSetOperationGrantee = 85,
+		/// <summary>Changes native system-operation grant priority.</summary>
+		RightsSetOperationPosition = 86,
+		/// <summary>Removes native system-operation grants.</summary>
+		RightsDeleteOperationGrantee = 87,
+		/// <summary>Removes one functional association with explicit administration authorization.</summary>
+		AdministrationRemoveFunctionalRole = 88,
+		/// <summary>Schedules native license redistribution for one role.</summary>
+		AdministrationRedistributeRoleLicenses = 89,
+		/// <summary>Invalidates native rights caches after system-operation priority changes.</summary>
+		AdministrationInvalidateRightsCache = 90,
+		/// <summary>Reads stored or virtual package metadata without materializing the package.</summary>
+		GetPackageProperties = 91,
+
+		/// <summary>
+		///     Reads the configuration compilation result Creatio persisted for the last build.
+		/// </summary>
+		/// <remarks>
+		///     The verdict source for a configuration build whose HTTP response never arrives: the platform
+		///     closes the compile connection while it reloads the runtime, so this is what the build result is
+		///     read from afterwards. It carries no timestamp, which is why it is only trusted once the reload
+		///     that ends the build has been observed.
+		/// </remarks>
+		LastCompilationResult = 92,
+
+		/// <summary>
+		///     Answers whether the bundled dashboards-migrator package's own code is serving — the same
+		///     liveness-only, ungated probe as <see cref="ProcessBuilderPing"/>, for the other bundled package.
+		/// </summary>
+		DashboardsMigratorPing = 93,
+		/// <summary>Native filtered sequence participant enrollment.</summary>
+		SequenceParticipantBulkAdd = 94,
+		/// <summary>Native DataService batch writes.</summary>
+		BatchQuery = 95,
+		/// <summary>Read a package SQL script.</summary>
+		GetSqlScriptSchema = 96,
+		/// <summary>Create or update a package SQL script.</summary>
+		SaveSqlScriptSchema = 97,
+		/// <summary>Execute selected package SQL scripts.</summary>
+		InstallSqlScripts = 98,
+		/// <summary>Read the database engine and runtime without ClioGate.</summary>
+		GetSystemEnvironmentInfo = 99
 
 	}
 
@@ -280,6 +354,33 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 	#region Fields: Private
 
 	public static readonly IReadOnlyDictionary<KnownRoute, string> KnownRoutes = new Dictionary<KnownRoute, string> {
+		{KnownRoute.GetSqlScriptSchema, "/ServiceModel/SqlScriptSchemaDesignerService.svc/GetSchema"},
+		{KnownRoute.SaveSqlScriptSchema, "/ServiceModel/SqlScriptSchemaDesignerService.svc/SaveSchema"},
+		{KnownRoute.InstallSqlScripts, "/ServiceModel/WorkspaceExplorerService.svc/InstallSqlScripts"},
+		{KnownRoute.GetSystemEnvironmentInfo, CreatioServicePaths.GetSystemEnvironmentInfo},
+		{KnownRoute.GetPackageProperties, "ServiceModel/PackageService.svc/GetPackageProperties"},
+		{KnownRoute.AdministrationSaveRole, "/rest/AdministrationService/SaveRole"},
+		{KnownRoute.AdministrationSaveChiefsRole, "/rest/AdministrationService/SaveChiefsRole"},
+		{KnownRoute.AdministrationSaveUser, "/rest/AdministrationService/UpdateOrCreateUser"},
+		{KnownRoute.AdministrationDeleteUser, "/rest/AdministrationService/DeleteUser"},
+		{KnownRoute.AdministrationGetIsUserBlocked, "/rest/AdministrationService/GetIsUserBlocked"},
+		{KnownRoute.AdministrationUnblockUser, "/rest/AdministrationService/UnblockUser"},
+		{KnownRoute.AdministrationAddUserRoles, "/rest/AdministrationService/AddUserRoles"},
+		{KnownRoute.AdministrationRemoveUsersInRoles, "/rest/AdministrationService/RemoveUsersInRoles"},
+		{KnownRoute.AdministrationAddFunctionalRoles, "/rest/AdministrationService/AddFuncRolesInOrgRole"},
+		{KnownRoute.AdministrationActualize, "/rest/AdministrationService/ActualizeAdminUnitInRole"},
+		{KnownRoute.AdministrationGetLicenses, "/rest/AdministrationService/GetAvailableLicPackages"},
+		{KnownRoute.AdministrationUpdateLicenses, "/rest/AdministrationService/UpdateLicenseInfo"},
+		{KnownRoute.AdministrationDeleteRecords, "/rest/GridUtilitiesService/DeleteRecords"},
+		{KnownRoute.AdministrationAddDelegation, "/rest/AdministrationService/AddSysAdminUnitGrantedRights"},
+		{KnownRoute.AdministrationRemoveDelegation, "/rest/AdministrationService/RemoveSysAdminUnitGrantedRights"},
+		{KnownRoute.RightsSetOperationGrantee, "/rest/RightsService/SetAdminOperationGrantee"},
+		{KnownRoute.RightsSetOperationPosition, "/rest/RightsService/SetAdminOperationGranteePosition"},
+		{KnownRoute.RightsDeleteOperationGrantee, "/rest/RightsService/DeleteAdminOperationGrantee"},
+		{KnownRoute.AdministrationRemoveFunctionalRole, "/rest/CreatioApiGateway/RemoveFunctionalRoleAssociation"},
+		{KnownRoute.AdministrationRedistributeRoleLicenses, "/rest/CreatioApiGateway/ScheduleRoleLicenseRedistribution"},
+		{KnownRoute.AdministrationInvalidateRightsCache, "/rest/CreatioApiGateway/InvalidateAdministrationRightsCache"},
+		{KnownRoute.BatchQuery, "DataService/json/SyncReply/BatchQuery"},
 		{KnownRoute.Select, "DataService/json/SyncReply/SelectQuery"},
 		{KnownRoute.Insert, "DataService/json/SyncReply/InsertQuery"},
 		{KnownRoute.Update, "DataService/json/SyncReply/UpdateQuery"},
@@ -302,6 +403,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.ClearRedisDb, "ServiceModel/AppInstallerService.svc/ClearRedisDb"},
 		{KnownRoute.EntitySchemaManagerRequest, "DataService/json/SyncReply/EntitySchemaManagerRequest"},
 		{KnownRoute.RuntimeEntitySchemaRequest, "DataService/json/SyncReply/RuntimeEntitySchemaRequest"},
+		{KnownRoute.SequenceParticipantBulkAdd, "rest/SequenceParticipantBulkAddService/AddByFilter"},
 		{KnownRoute.GetWorkspaceItems, "ServiceModel/WorkspaceExplorerService.svc/GetWorkspaceItems"},
 		{KnownRoute.DeleteWorkspaceItem, "ServiceModel/WorkspaceExplorerService.svc/Delete"},
 		{KnownRoute.GetUserTaskSchema, "ServiceModel/ProcessUserTaskSchemaDesignerService.svc/GetSchema"},
@@ -330,6 +432,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.BuildProcess, "/rest/ProcessDesignService/BuildProcess"},
 		{KnownRoute.ListUserTasks, "/rest/ProcessDesignService/ListUserTasks"},
 		{KnownRoute.ProcessBuilderPing, "/rest/ProcessDesignService/Ping"},
+		{KnownRoute.DashboardsMigratorPing, "/rest/DashboardsMigratorPingService/Ping"},
 		{KnownRoute.FindSchemaLayers, "/rest/CreatioApiGateway/FindSchemaLayers"},
 		{KnownRoute.ExportSchema, "/rest/CreatioApiGateway/ExportSchema"},
 		{KnownRoute.ImportSchema, "/rest/CreatioApiGateway/ImportSchema"},
@@ -337,6 +440,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.ModifyProcess, "/rest/ProcessDesignService/ModifyProcess"},
 		{KnownRoute.ModifyProcessAsNewVersion, "/rest/ProcessDesignService/ModifyProcessAsNewVersion"},
 		{KnownRoute.SetActiveProcessVersion, "/rest/ProcessDesignService/SetActiveProcessVersion"},
+		{KnownRoute.LastCompilationResult, "api/ConfigurationStatus/GetLastCompilationResult"},
 		{KnownRoute.GetAvailableThemes, "ServiceModel/ThemeService.svc/GetAvailableThemes"},
 		{KnownRoute.ClearThemesCache, "ServiceModel/ThemeService.svc/ClearThemesCache"},
 		{KnownRoute.CreateTheme, "ServiceModel/ThemeService.svc/CreateTheme"},
