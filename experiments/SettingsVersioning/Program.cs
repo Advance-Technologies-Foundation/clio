@@ -35,6 +35,7 @@ T13_ImmutableDictionaryRejectsMutationThroughEveryAlias();
 T14_CleanupSurfacesSnapshotsHeldByUnresolvableOwners();
 T15_PairedActivationCommitsOnlyIfBothHalvesSucceed();
 T16_FailedSettingsCommitLeavesThePreviousSelectionActiveAndTheCandidatePending();
+T17_SelectedSnapshotsProtectsTheHandoffWindowBetweenStoreAndLedgerCommit();
 
 Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { cases = observations },
     new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
@@ -535,6 +536,55 @@ void T16_FailedSettingsCommitLeavesThePreviousSelectionActiveAndTheCandidatePend
     Check("T16: a retry against the same candidate, once the fault clears, commits it normally",
         store.CurrentSnapshotId("envT16") == candidate.Id,
         new { active = store.CurrentSnapshotId("envT16") });
+}
+
+/// <summary>An in-memory owner whose liveness can be flipped without a real process, for settings-lane cases that don't need one.</summary>
+void T17_SelectedSnapshotsProtectsTheHandoffWindowBetweenStoreAndLedgerCommit() {
+    // Alexandr-Kravchuk's X8/X9: committing a joint pair takes the settings store's lock and then the
+    // ledger's publication lock. In the window between them, the store is already pinned to the new
+    // snapshot while the ledger's committed selection still names the old one -- a cleanup landing there
+    // used to see the old snapshot as neither pinned, held, nor retained, and reclaim it. No threading is
+    // needed to reproduce this, unlike T10's mutual-exclusion property: Cleanup and TryPublishSelection
+    // run under entirely separate locks (this store's _gate vs. the ledger's own), so they were never
+    // mutually exclusive with each other in the first place -- the race is about ORDERING, not
+    // contention, and constructing the intermediate state directly is a faithful reproduction of it.
+    var ledger = new OperationLedger(Path.Combine(workDir, "operations-t17.jsonl"));
+    var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t17.jsonl"));
+    SettingsSnapshot cfgA = store.PrepareAndActivate("envT17", new Dictionary<string, string> { ["k"] = "a" }, 0);
+
+    // The joint boundary's first commit: publish cfgA as the selection at generation 0.
+    bool publishedA = ledger.TryPublishSelection("envT17", "V1", cfgA.Id, 0);
+
+    // The joint boundary's next commit is underway: the store's half has landed (superseded to cfgB) but
+    // the ledger's half has not been republished yet -- exactly the X8 window.
+    store.PrepareAndActivate("envT17", new Dictionary<string, string> { ["k"] = "b" }, cfgA.Version);
+
+    store.SkipSelectedSnapshotsProtectionForTests = true;
+    CleanupResult unprotected = store.Cleanup();
+    store.SkipSelectedSnapshotsProtectionForTests = false;
+    Check("T17 MUTATION (X8): without SelectedSnapshots, cleanup reclaims a snapshot the ledger's selection still names",
+        publishedA && unprotected.Reclaimed.Contains(cfgA.Id) && !store.Contains(cfgA.Id),
+        new { reclaimed = unprotected.Reclaimed });
+
+    // Same window, protection restored, on a fresh store/ledger so the previous mutation's reclaim
+    // doesn't contaminate this check.
+    var ledger2 = new OperationLedger(Path.Combine(workDir, "operations-t17b.jsonl"));
+    var store2 = new SettingsStore(ledger2, Path.Combine(workDir, "settings-t17b.jsonl"));
+    SettingsSnapshot cfgA2 = store2.PrepareAndActivate("envT17", new Dictionary<string, string> { ["k"] = "a" }, 0);
+    ledger2.TryPublishSelection("envT17", "V1", cfgA2.Id, 0);
+    SettingsSnapshot cfgB2 = store2.PrepareAndActivate("envT17", new Dictionary<string, string> { ["k"] = "b" }, cfgA2.Version);
+
+    CleanupResult protectedResult = store2.Cleanup();
+    Check("T17: with SelectedSnapshots consulted, cleanup leaves the still-selected snapshot alone during the handoff window",
+        !protectedResult.Reclaimed.Contains(cfgA2.Id) && store2.Contains(cfgA2.Id),
+        new { reclaimed = protectedResult.Reclaimed, selectedByLedger = ledger2.SelectedSnapshots });
+
+    // The handoff completes: the ledger republishes to cfgB2 at the next generation, closing the window.
+    bool republished = ledger2.TryPublishSelection("envT17", "V1", cfgB2.Id, ledger2.CurrentSelection("envT17").Generation);
+    CleanupResult afterHandoff = store2.Cleanup();
+    Check("T17: once the ledger republishes to the new pair, the old snapshot becomes reclaimable normally",
+        republished && afterHandoff.Reclaimed.Contains(cfgA2.Id) && !store2.Contains(cfgA2.Id),
+        new { reclaimed = afterHandoff.Reclaimed });
 }
 
 /// <summary>An in-memory owner whose liveness can be flipped without a real process, for settings-lane cases that don't need one.</summary>

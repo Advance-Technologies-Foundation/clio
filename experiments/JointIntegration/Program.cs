@@ -99,6 +99,9 @@ SettingsSnapshot cfg4 = settings.PrepareAndActivate("envY", new Dictionary<strin
     settings.CurrentVersion("envY"));
 bareOwner.Kill(entireProcessTree: true);
 await bareOwner.WaitForExitAsync();
+// Move the selection off cfg3 first: a selected snapshot is now retained for that reason alone, which
+// would make this case and its control pass for reasons that have nothing to do with liveness.
+ledger.TryPublishSelection("envY", v1.Version, cfg4.Id, ledger.CurrentSelection("envY").Generation);
 CleanupResult bareOwnerCleanup = settings.Cleanup();
 IReadOnlyCollection<string> deletedWithBareOwner = bareOwnerCleanup.Reclaimed;
 Check("X3 a cross-process owner registered without liveness holds its snapshot, and cleanup now says so",
@@ -121,6 +124,7 @@ SettingsSnapshot cfg6 = settings.PrepareAndActivate("envZ", new Dictionary<strin
     settings.CurrentVersion("envZ"));
 wrappedOwner.Kill(entireProcessTree: true);
 await wrappedOwner.WaitForExitAsync();
+ledger.TryPublishSelection("envZ", v1.Version, cfg6.Id, ledger.CurrentSelection("envZ").Generation);
 CleanupResult wrappedOwnerCleanup = settings.Cleanup();
 IReadOnlyCollection<string> deletedWithWrappedOwner = wrappedOwnerCleanup.Reclaimed;
 Check("X4 negative control: with a liveness-capable owner the same snapshot IS reclaimed",
@@ -281,13 +285,13 @@ settings.Activate(staleScope, sSecond.Id, settings.CurrentVersion(staleScope)); 
 CleanupResult staleCleanup = settings.Cleanup();
 IOperationLease stale = ledger.BeginFromSelection(staleScope, new ProcessOwner(cOwner));
 string? staleSnapshot = ledger.Query(stale.Id).ConfigurationSnapshot;
-Check("X7 mutation control: skipping the republication admits under a snapshot cleanup reclaimed",
-    staleCleanup.Reclaimed.Contains(sFirst.Id) && staleSnapshot == sFirst.Id
-        && !settings.Contains(staleSnapshot!),
+Check("X7 a stale selection no longer admits under a reclaimed snapshot, because selected is retained",
+    !staleCleanup.Reclaimed.Contains(sFirst.Id) && staleSnapshot == sFirst.Id
+        && settings.Contains(staleSnapshot!),
     new { reclaimed = staleCleanup.Reclaimed, admittedUnder = staleSnapshot,
           snapshotStillExists = settings.Contains(staleSnapshot!),
           pinnedInStore = settings.CurrentSnapshotId(staleScope),
-          note = "passing here is the point: it shows what X6's rule prevents" });
+          note = "was reproducible until the selected-snapshot reason landed; kept as the acceptance case" });
 
 coordinated.Dispose();
 stale.Dispose();
@@ -313,12 +317,31 @@ CleanupResult windowCleanup = settings.Cleanup();
 IOperationLease inWindow = ledger.BeginFromSelection(handoffScope, new ProcessOwner(hOwner));
 string? admittedInWindow = ledger.Query(inWindow.Id).ConfigurationSnapshot;
 
-Check("X8 a cleanup inside the commit window reclaims the snapshot the selection still names",
-    windowCleanup.Reclaimed.Contains(hFirst.Id)
-        && admittedInWindow == hFirst.Id && !settings.Contains(hFirst.Id),
+Check("X8 a cleanup inside the commit window no longer reclaims the snapshot the selection names",
+    !windowCleanup.Reclaimed.Contains(hFirst.Id)
+        && admittedInWindow == hFirst.Id && settings.Contains(hFirst.Id),
     new { reclaimed = windowCleanup.Reclaimed, admittedUnder = admittedInWindow,
           stillExists = settings.Contains(hFirst.Id), pinnedInStore = settings.CurrentSnapshotId(handoffScope),
-          note = "passing here is the gap, not the fix: the republish rule narrows this window, not closes it" });
+          note = "the handoff @kirillkrylov required: the selection retains its snapshot across admission" });
+
+// X10 MUTATION CONTROL for X7/X8, using the store's own switch rather than a reconstruction of the old
+// behaviour: with the selected-snapshot reason ignored, the commit window reopens exactly as measured.
+const string mutatedScope = "envM";
+SettingsSnapshot mFirst = settings.PrepareAndActivate(mutatedScope,
+    new Dictionary<string, string> { ["mode"] = "m1" }, 0);
+ledger.TryPublishSelection(mutatedScope, v1.Version, mFirst.Id, 0);
+SettingsSnapshot mSecond = settings.Prepare(mutatedScope,
+    new Dictionary<string, string> { ["mode"] = "m2" }, settings.CurrentVersion(mutatedScope));
+settings.Activate(mutatedScope, mSecond.Id, settings.CurrentVersion(mutatedScope));
+settings.SkipSelectedSnapshotsProtectionForTests = true;
+CleanupResult mutatedCleanup = settings.Cleanup();
+settings.SkipSelectedSnapshotsProtectionForTests = false;
+Check("X10 mutation control: ignoring the selected-snapshot reason reopens the window",
+    mutatedCleanup.Reclaimed.Contains(mFirst.Id) && !settings.Contains(mFirst.Id)
+        && ledger.SelectedSnapshots.Contains(mFirst.Id),
+    new { reclaimed = mutatedCleanup.Reclaimed, stillSelected = ledger.SelectedSnapshots.Contains(mFirst.Id),
+          stillExists = settings.Contains(mFirst.Id),
+          note = "observed failing the guarantee, not merely applied" });
 
 Check("X9 the ledger already knows the answer cleanup needs: the snapshot was still selected",
     stillSelected && ledger.SelectedSnapshots.Contains(
@@ -334,7 +357,7 @@ Console.WriteLine(JsonSerializer.Serialize(new {
     ledgerFrom = "DetachedOperations (lifetime lane)", settingsFrom = "SettingsVersioning (settings lane)",
     cases = observations
 }, new JsonSerializerOptions { WriteIndented = true }));
-GC.KeepAlive(v1Context); GC.KeepAlive(v2Context); GC.KeepAlive(cfg4); GC.KeepAlive(cfg6);
+GC.KeepAlive(v1Context); GC.KeepAlive(v2Context);
 return failed ? 1 : 0;
 
 static (AssemblyLoadContext Context, IDetachedRuntime Runtime) Load(string directory) {

@@ -34,12 +34,13 @@ dotnet run --project experiments/JointIntegration/JointIntegration.csproj -c Rel
 | X5c | an admission held at the boundary observes one whole pair, never a mixture |
 | X5d | **mutation control** — reading the halves separately admits a pair that was never current |
 | X6 | after a settings-only activation through the coordinator, admission lands on a live snapshot |
-| X7 | **mutation control** — skipping the republication admits under a snapshot cleanup reclaimed |
-| X8 | a cleanup inside the commit window reclaims the snapshot the selection still names |
+| X7 | a stale selection no longer admits under a reclaimed snapshot |
+| X8 | a cleanup inside the commit window no longer reclaims the snapshot the selection names |
+| X10 | **mutation control** — ignoring the selected-snapshot reason reopens the window |
 | X9 | the ledger already knows the answer cleanup needs: the snapshot was still selected |
 
-**12/12 on macOS, 12/12 on Windows from a clean clone at `4f6c04e62fcf`.** Exact build target: this branch, plus `experiments/SettingsVersioning` taken from
-`nikonov/supervisor-quiescence-probe@f70f454d4365`. Both are in this tree, so the branch builds and runs
+**13/13 on macOS.** Exact build target: this branch, plus `experiments/SettingsVersioning` taken from
+`nikonov/supervisor-quiescence-probe@62fb98e05736`. Both are in this tree, so the branch builds and runs
 without mixing incompatible sources.
 
 ## Why the pair is published, not ordered

@@ -135,5 +135,13 @@ A partner builds against that contract assembly alone and composes whichever rel
 | X8 | a cleanup inside the commit window reclaims the snapshot the selection still names |
 | X9 | the ledger already holds the answer cleanup needs |
 
-X7 and X8 pass by design: they are the failures the rules prevent, kept runnable so the rules cannot
-quietly stop mattering.
+| X10 | mutation control — ignoring the selected-snapshot reason reopens the window |
+
+X7 and X8 were reproducible until the selected-snapshot ownership reason landed; they are kept as the
+acceptance cases for it rather than deleted. X10 is what keeps them honest: with that reason switched
+off through the store's own flag, the window reopens exactly as it was measured. Observed failing the
+guarantee, not merely applied.
+
+X3 and X4 only tell you about owner liveness if the snapshot under test is not *also* retained for being
+selected, so both move the selection off it first. Before that correction they would soon have passed for
+a reason that has nothing to do with liveness.
