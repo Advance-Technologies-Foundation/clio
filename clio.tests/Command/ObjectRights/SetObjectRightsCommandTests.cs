@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Clio.Command;
-using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.ObjectRights;
 using Clio.Common;
 using Clio.Common.ObjectRights;
@@ -21,7 +19,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 
 	private SetObjectRightsCommand _command;
 	private IObjectRightsWriter _rightsWriter;
-	private IRemoteEntitySchemaColumnManager _columnManager;
+	private IConnectedObjectsResolver _connectedObjects;
 	private ILogger _logger;
 
 	public override void Setup() {
@@ -31,7 +29,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 
 	public override void TearDown() {
 		_rightsWriter.ClearReceivedCalls();
-		_columnManager.ClearReceivedCalls();
+		_connectedObjects.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 		base.TearDown();
 	}
@@ -39,12 +37,15 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		base.AdditionalRegistrations(containerBuilder);
 		_rightsWriter = Substitute.For<IObjectRightsWriter>();
-		_columnManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
+		_connectedObjects = Substitute.For<IConnectedObjectsResolver>();
 		_logger = Substitute.For<ILogger>();
 		_rightsWriter.SetObjectRights(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<IReadOnlyCollection<ObjectOperation>>(),
 			Arg.Any<bool>(), Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsChange(true, true));
+		// Default: no fan-out — the resolver returns just the root object.
+		_connectedObjects.Resolve(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string>())
+			.Returns(callInfo => new[] { (string)callInfo[0] });
 		containerBuilder.AddTransient(_ => _rightsWriter);
-		containerBuilder.AddTransient(_ => _columnManager);
+		containerBuilder.AddTransient(_ => _connectedObjects);
 		containerBuilder.AddTransient(_ => _logger);
 	}
 
@@ -88,11 +89,11 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	}
 
 	[Test]
-	[Description("Fans out to the root's own connected lookup objects when --include-connected is set.")]
+	[Description("Applies the change to every object the resolver returns when --include-connected is set.")]
 	public void Execute_ShouldFanOutToConnected_WhenIncludeConnectedSet() {
 		// Arrange
-		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
-			.Returns(SchemaWithLookups("UsrPortalSpike", "UsrPSCategory"));
+		_connectedObjects.Resolve("UsrPortalSpike", true, Arg.Any<string>())
+			.Returns(new[] { "UsrPortalSpike", "UsrPSCategory" });
 		SetObjectRightsOptions options = new() {
 			EntitySchemaName = "UsrPortalSpike", Grantee = Grantee, IncludeConnected = true, Confirm = true
 		};
@@ -183,21 +184,5 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(1, because: "a writer failure returns exit code 1");
 		_logger.Received().WriteError(Arg.Is<string>(m => m.Contains("boom")));
-	}
-
-	private static EntitySchemaPropertiesInfo SchemaWithLookups(string schemaName, params string[] referenceSchemaNames) {
-		List<EntitySchemaPropertyColumnInfo> columns = new();
-		foreach (string reference in referenceSchemaNames) {
-			columns.Add(new EntitySchemaPropertyColumnInfo(
-				Name: reference + "Col", UId: Guid.NewGuid(), Source: "own", Title: null, Description: null,
-				Type: "Lookup", Required: false, Indexed: false, ReferenceSchemaName: reference));
-		}
-		return new EntitySchemaPropertiesInfo(
-			Name: schemaName, Title: null, Description: null, PackageName: schemaName, ParentSchemaName: null,
-			ExtendParent: false, PrimaryColumnName: null, PrimaryDisplayColumnName: null, OwnColumnCount: 0,
-			InheritedColumnCount: 0, IndexesCount: null, TrackChangesInDb: false, DbView: false, SspAvailable: null,
-			Virtual: false, UseRecordDeactivation: null, ShowInAdvancedMode: false, AdministratedByOperations: false,
-			AdministratedByColumns: false, AdministratedByRecords: false, UseDenyRecordRights: null,
-			UseLiveEditing: null, Columns: columns);
 	}
 }

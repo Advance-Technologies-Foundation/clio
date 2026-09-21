@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Clio.Command;
-using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.Common.ObjectRights;
 using CommandLine;
@@ -42,13 +40,13 @@ public class SetObjectRightsOptions : RemoteCommandOptions {
 public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 
 	private readonly IObjectRightsWriter _rightsWriter;
-	private readonly IRemoteEntitySchemaColumnManager _columnManager;
+	private readonly IConnectedObjectsResolver _connectedObjects;
 	private readonly ILogger _logger;
 
 	public SetObjectRightsCommand(IObjectRightsWriter rightsWriter,
-		IRemoteEntitySchemaColumnManager columnManager, ILogger logger) {
+		IConnectedObjectsResolver connectedObjects, ILogger logger) {
 		_rightsWriter = rightsWriter;
-		_columnManager = columnManager;
+		_connectedObjects = connectedObjects;
 		_logger = logger;
 	}
 
@@ -84,7 +82,8 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		}
 
 		try {
-			IReadOnlyList<string> objects = ResolveObjectsToChange(options.EntitySchemaName, options.IncludeConnected);
+			IReadOnlyList<string> objects =
+				_connectedObjects.Resolve(options.EntitySchemaName, options.IncludeConnected, "Changing");
 			bool anyFailure = false;
 			foreach (string schemaName in objects) {
 				ObjectRightsChange result = _rightsWriter.SetObjectRights(
@@ -106,32 +105,6 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			_logger.WriteError($"Error: {ex.Message}");
 			return 1;
 		}
-	}
-
-	// The root object, plus (when requested) every distinct object referenced by one of its OWN lookup columns.
-	// Connected-object enumeration is best-effort: if the schema read fails, only the root is changed.
-	private IReadOnlyList<string> ResolveObjectsToChange(string rootSchemaName, bool includeConnected) {
-		List<string> objects = new() { rootSchemaName };
-		if (!includeConnected) {
-			return objects;
-		}
-		try {
-			EntitySchemaPropertiesInfo schema =
-				_columnManager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions { SchemaName = rootSchemaName });
-			IEnumerable<string> connected = (schema.Columns ?? Array.Empty<EntitySchemaPropertyColumnInfo>())
-				.Where(column => string.Equals(column.Source, "own", StringComparison.OrdinalIgnoreCase))
-				.Select(column => column.ReferenceSchemaName)
-				.Where(name => !string.IsNullOrWhiteSpace(name)
-					&& !string.Equals(name, rootSchemaName, StringComparison.OrdinalIgnoreCase))
-				.Distinct(StringComparer.OrdinalIgnoreCase)
-				.OrderBy(name => name, StringComparer.OrdinalIgnoreCase);
-			objects.AddRange(connected);
-		}
-		catch (Exception ex) {
-			_logger.WriteWarning(
-				$"Could not enumerate connected objects of '{rootSchemaName}': {ex.Message}. Changing the root object only.");
-		}
-		return objects;
 	}
 
 	private static bool TryParseOperations(string raw, out IReadOnlyCollection<ObjectOperation> operations,

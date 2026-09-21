@@ -1,7 +1,4 @@
 using System;
-using System.Collections.Generic;
-using Clio.Command;
-using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.ObjectRights;
 using Clio.Common;
 using Clio.Common.ObjectRights;
@@ -21,7 +18,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 
 	private GetObjectRightsCommand _command;
 	private IObjectRightsReader _rightsReader;
-	private IRemoteEntitySchemaColumnManager _columnManager;
+	private IConnectedObjectsResolver _connectedObjects;
 	private ILogger _logger;
 
 	public override void Setup() {
@@ -31,7 +28,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 
 	public override void TearDown() {
 		_rightsReader.ClearReceivedCalls();
-		_columnManager.ClearReceivedCalls();
+		_connectedObjects.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 		base.TearDown();
 	}
@@ -39,10 +36,13 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		base.AdditionalRegistrations(containerBuilder);
 		_rightsReader = Substitute.For<IObjectRightsReader>();
-		_columnManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
+		_connectedObjects = Substitute.For<IConnectedObjectsResolver>();
 		_logger = Substitute.For<ILogger>();
+		// Default: no fan-out — the resolver returns just the root object.
+		_connectedObjects.Resolve(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<string>())
+			.Returns(callInfo => new[] { (string)callInfo[0] });
 		containerBuilder.AddTransient(_ => _rightsReader);
-		containerBuilder.AddTransient(_ => _columnManager);
+		containerBuilder.AddTransient(_ => _connectedObjects);
 		containerBuilder.AddTransient(_ => _logger);
 	}
 
@@ -52,28 +52,12 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 	private static RoleOperationRights Ext(bool read, bool create, bool edit, bool del) =>
 		new(ExternalUsers, "All external users", read, create, edit, del);
 
-	private static EntitySchemaPropertiesInfo SchemaWithLookups(string schemaName, params string[] referenceSchemaNames) {
-		List<EntitySchemaPropertyColumnInfo> columns = new();
-		foreach (string reference in referenceSchemaNames) {
-			columns.Add(new EntitySchemaPropertyColumnInfo(
-				Name: reference + "Col", UId: Guid.NewGuid(), Source: "own", Title: null, Description: null,
-				Type: "Lookup", Required: false, Indexed: false, ReferenceSchemaName: reference));
-		}
-		return new EntitySchemaPropertiesInfo(
-			Name: schemaName, Title: null, Description: null, PackageName: schemaName, ParentSchemaName: null,
-			ExtendParent: false, PrimaryColumnName: null, PrimaryDisplayColumnName: null, OwnColumnCount: 0,
-			InheritedColumnCount: 0, IndexesCount: null, TrackChangesInDb: false, DbView: false, SspAvailable: null,
-			Virtual: false, UseRecordDeactivation: null, ShowInAdvancedMode: false, AdministratedByOperations: false,
-			AdministratedByColumns: false, AdministratedByRecords: false, UseDenyRecordRights: null,
-			UseLiveEditing: null, Columns: columns);
-	}
-
 	[Test]
 	[Description("With a grantee filter, reports no missing objects when the grantee has read/create/edit on the root and every connected object.")]
 	public void Execute_ShouldReportNoMissing_WhenGranteeGrantedEverywhere() {
 		// Arrange
-		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
-			.Returns(SchemaWithLookups("UsrPortalSpike2", "UsrPSCategory"));
+		_connectedObjects.Resolve("UsrPortalSpike2", true, Arg.Any<string>())
+			.Returns(new[] { "UsrPortalSpike2", "UsrPSCategory" });
 		_rightsReader.GetObjectRights("UsrPortalSpike2", Arg.Any<CreatioRequestOptions>())
 			.Returns(Administered("UsrPortalSpike2", Ext(true, true, true, false)));
 		_rightsReader.GetObjectRights("UsrPSCategory", Arg.Any<CreatioRequestOptions>())
@@ -95,8 +79,8 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 	[Description("With a grantee filter, lists a connected object where the grantee has no grant.")]
 	public void Execute_ShouldListMissing_WhenGranteeLacksOnConnected() {
 		// Arrange
-		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
-			.Returns(SchemaWithLookups("UsrPortalSpike2", "UsrPSCategory"));
+		_connectedObjects.Resolve("UsrPortalSpike2", true, Arg.Any<string>())
+			.Returns(new[] { "UsrPortalSpike2", "UsrPSCategory" });
 		_rightsReader.GetObjectRights("UsrPortalSpike2", Arg.Any<CreatioRequestOptions>())
 			.Returns(Administered("UsrPortalSpike2", Ext(true, true, true, false)));
 		_rightsReader.GetObjectRights("UsrPSCategory", Arg.Any<CreatioRequestOptions>())

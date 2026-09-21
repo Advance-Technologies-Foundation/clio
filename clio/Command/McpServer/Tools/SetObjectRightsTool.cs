@@ -51,7 +51,10 @@ public sealed class SetObjectRightsTool(
 			return new SetObjectRightsResponse {
 				Success = result.ExitCode == 0,
 				Output = result.ExitCode == 0 ? ResolveMessages(result) : null,
-				Error = result.ExitCode == 0 ? null : ResolveMessages(result)
+				// Redact the error path: command/service failures can carry request URIs, paths or session
+				// tokens (BPMCSRF/.ASPXAUTH) in the raw response text, and this is a structured success-return
+				// that the MCP pipeline does not scrub for us.
+				Error = result.ExitCode == 0 ? null : SensitiveErrorTextRedactor.Redact(ResolveMessages(result))
 			};
 		} catch (Exception ex) {
 			return new SetObjectRightsResponse {

@@ -45,7 +45,10 @@ public sealed class GetObjectRightsTool(
 			return new GetObjectRightsResponse {
 				Success = result.ExitCode == 0,
 				Output = result.ExitCode == 0 ? ResolveMessages(result) : null,
-				Error = result.ExitCode == 0 ? null : ResolveMessages(result)
+				// Redact the error path: command/service failures can carry request URIs, paths or session
+				// tokens in the raw response text, and this structured success-return is not scrubbed by the
+				// MCP pipeline.
+				Error = result.ExitCode == 0 ? null : SensitiveErrorTextRedactor.Redact(ResolveMessages(result))
 			};
 		} catch (Exception ex) {
 			return new GetObjectRightsResponse {

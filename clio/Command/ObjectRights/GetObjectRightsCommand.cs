@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Clio.Command;
-using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.Common.ObjectRights;
 using CommandLine;
@@ -30,13 +28,13 @@ public class GetObjectRightsOptions : RemoteCommandOptions {
 public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 
 	private readonly IObjectRightsReader _rightsReader;
-	private readonly IRemoteEntitySchemaColumnManager _columnManager;
+	private readonly IConnectedObjectsResolver _connectedObjects;
 	private readonly ILogger _logger;
 
 	public GetObjectRightsCommand(IObjectRightsReader rightsReader,
-		IRemoteEntitySchemaColumnManager columnManager, ILogger logger) {
+		IConnectedObjectsResolver connectedObjects, ILogger logger) {
 		_rightsReader = rightsReader;
-		_columnManager = columnManager;
+		_connectedObjects = connectedObjects;
 		_logger = logger;
 	}
 
@@ -59,7 +57,8 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 		};
 
 		try {
-			IReadOnlyList<string> objects = ResolveObjectsToCheck(options.EntitySchemaName, options.IncludeConnected);
+			IReadOnlyList<string> objects =
+				_connectedObjects.Resolve(options.EntitySchemaName, options.IncludeConnected, "Checking");
 			List<string> granteeMissing = new();
 
 			_logger.WriteInfo(
@@ -102,15 +101,15 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 	}
 
 	private void ReportObject(string schemaName, ObjectRightsInfo info, Guid? granteeFilter, List<string> granteeMissing) {
-		IEnumerable<RoleOperationRights> roles = info.Roles;
 		if (granteeFilter is not null) {
-			roles = roles.Where(role => role.GranteeId == granteeFilter.Value);
-			RoleOperationRights row = roles.FirstOrDefault();
+			RoleOperationRights row = info.Roles.FirstOrDefault(role => role.GranteeId == granteeFilter.Value);
 			if (row is null) {
 				granteeMissing.Add(schemaName);
 				_logger.WriteWarning($"  {schemaName}: grantee {granteeFilter} has NO object operations granted.");
 				return;
 			}
+			// "Has access" is read+create+edit; delete is excluded on purpose — it is not required for a role
+			// (notably the portal audience) to work with an object, and the coarse grant does not include it.
 			if (!(row.CanRead && row.CanCreate && row.CanEdit)) {
 				granteeMissing.Add(schemaName);
 			}
@@ -136,31 +135,5 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 		}.Where(op => op != null).ToArray();
 		string granted = ops.Length == 0 ? "no operations" : string.Join("/", ops);
 		return $"{role.GranteeName} ({role.GranteeId}): {granted}";
-	}
-
-	// The root object plus (when requested) every distinct object referenced by one of its OWN lookup columns.
-	// Connected-object enumeration is best-effort: if the schema read fails, only the root is checked.
-	private IReadOnlyList<string> ResolveObjectsToCheck(string rootSchemaName, bool includeConnected) {
-		List<string> objects = new() { rootSchemaName };
-		if (!includeConnected) {
-			return objects;
-		}
-		try {
-			EntitySchemaPropertiesInfo schema =
-				_columnManager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions { SchemaName = rootSchemaName });
-			IEnumerable<string> connected = (schema.Columns ?? Array.Empty<EntitySchemaPropertyColumnInfo>())
-				.Where(column => string.Equals(column.Source, "own", StringComparison.OrdinalIgnoreCase))
-				.Select(column => column.ReferenceSchemaName)
-				.Where(name => !string.IsNullOrWhiteSpace(name)
-					&& !string.Equals(name, rootSchemaName, StringComparison.OrdinalIgnoreCase))
-				.Distinct(StringComparer.OrdinalIgnoreCase)
-				.OrderBy(name => name, StringComparer.OrdinalIgnoreCase);
-			objects.AddRange(connected);
-		}
-		catch (Exception ex) {
-			_logger.WriteWarning(
-				$"Could not enumerate connected objects of '{rootSchemaName}': {ex.Message}. Checking the root object only.");
-		}
-		return objects;
 	}
 }

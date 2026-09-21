@@ -341,9 +341,9 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>Read the database engine and runtime without ClioGate.</summary>
 		GetSystemEnvironmentInfo = 99,
 		/// <summary>Read one administrated object's per-role operation/record/column rights by schema UId.</summary>
-		GetAdministratedObject = 101,
+		GetAdministratedObject = 100,
 		/// <summary>Persist an administrated object's per-role operation/record/column rights (read-modify-write).</summary>
-		SaveAdministratedObject = 102
+		SaveAdministratedObject = 101
 
 	}
 

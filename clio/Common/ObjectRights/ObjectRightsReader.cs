@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Clio.Package;
@@ -86,49 +85,45 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 	public ObjectRightsInfo GetObjectRights(string schemaName, CreatioRequestOptions requestOptions) {
 		JsonObject node;
 		string error;
-		bool anyCleanAnswer;
 		try {
-			(node, anyCleanAnswer, error) = TryGetAdministratedObject(schemaName, requestOptions);
+			(node, error) = TryGetAdministratedObject(schemaName, requestOptions);
 		}
 		catch (Exception ex) {
 			return new ObjectRightsInfo(true, schemaName, null, false, Array.Empty<RoleOperationRights>(),
 				ReadError: ex.Message);
 		}
 		if (node is null) {
-			// No candidate described an administered object: not found at all, a read failure, or simply not
-			// administered by operation permissions (available to all).
-			if (error is not null && !anyCleanAnswer) {
-				return new ObjectRightsInfo(true, schemaName, null, false, Array.Empty<RoleOperationRights>(),
-					ReadError: error);
-			}
-			return anyCleanAnswer
-				? new ObjectRightsInfo(true, schemaName, null, false, Array.Empty<RoleOperationRights>())
+			// error set = the object exists but could not be read (a service fault); error null = the schema
+			// name resolved to no candidate at all (not found). Never report a failed read as "available".
+			return error is not null
+				? new ObjectRightsInfo(true, schemaName, null, false, Array.Empty<RoleOperationRights>(), ReadError: error)
 				: new ObjectRightsInfo(false, schemaName, null, false, Array.Empty<RoleOperationRights>());
 		}
 
 		List<RoleOperationRights> roles = ReadOperationRows(node)
 			.Select(row => new RoleOperationRights(
-				GranteeId(row), (row["sysAdminUnit"]?["name"]?.GetValue<string>()) ?? "(unknown)",
+				GranteeId(row), Str(row["sysAdminUnit"]?["name"]) ?? "(unknown)",
 				Flag(row, "canRead"), Flag(row, "canAppend"), Flag(row, "canEdit"), Flag(row, "canDelete")))
 			.ToList();
-		return new ObjectRightsInfo(true, node["name"]?.GetValue<string>() ?? schemaName,
-			node["caption"]?.GetValue<string>(), Flag(node, "administratedByOperations"), roles);
+		return new ObjectRightsInfo(true, Str(node["name"]) ?? schemaName,
+			Str(node["caption"]), Flag(node, "administratedByOperations"), roles);
 	}
 
 	public ObjectRightsChange SetObjectRights(string schemaName, Guid grantee,
 		IReadOnlyCollection<ObjectOperation> operations, bool revoke, CreatioRequestOptions requestOptions) {
 		JsonObject node;
-		bool anyCleanAnswer;
 		string error;
 		try {
-			(node, anyCleanAnswer, error) = TryGetAdministratedObject(schemaName, requestOptions);
+			(node, error) = TryGetAdministratedObject(schemaName, requestOptions);
 		}
 		catch (Exception ex) {
 			return new ObjectRightsChange(true, false, ex.Message);
 		}
 		if (node is null) {
-			// No usable object: schema not found (0 candidates, error null) or every candidate faulted (error set).
-			return new ObjectRightsChange(anyCleanAnswer, false, error);
+			// error set = a real read failure (do not silently no-op); error null = schema not found.
+			return error is not null
+				? new ObjectRightsChange(true, false, error)
+				: new ObjectRightsChange(false, false);
 		}
 
 		bool changed = MutateOperationRow(node, grantee, operations, revoke);
@@ -170,7 +165,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 			JsonObject row = new() {
 				["sysAdminUnit"] = new JsonObject { ["id"] = grantee.ToString() },
 				["canRead"] = false, ["canAppend"] = false, ["canEdit"] = false, ["canDelete"] = false,
-				["position"] = rows.Count
+				["position"] = NextPosition(rows)
 			};
 			foreach (ObjectOperation op in operations) {
 				row[FieldOf(op)] = true;
@@ -184,6 +179,18 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		return true;
 	}
 
+	// One past the highest existing position, so a new row never collides with an existing one even when the
+	// existing positions are non-contiguous (a prior designer-side removal can leave gaps).
+	private static int NextPosition(JsonArray rows) {
+		int max = -1;
+		foreach (JsonObject row in rows.OfType<JsonObject>()) {
+			if (row["position"] is JsonValue value && value.TryGetValue(out int position) && position > max) {
+				max = position;
+			}
+		}
+		return max + 1;
+	}
+
 	private ObjectRightsChange Save(JsonObject node, CreatioRequestOptions requestOptions) {
 		JsonObject payload = node.DeepClone().AsObject();
 		// Mirror the platform client: only the collection we changed (operation rights) is sent; the record,
@@ -192,7 +199,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		payload["entitySchemaRecordDefRights"] = null;
 		payload["entitySchemaColumnsRights"] = null;
 		payload["entityOperationGrantees"] = null;
-		SaveAdministratedObjectResponse response = PostAndDeserialize<SaveAdministratedObjectResponse>(
+		GetAdministratedObjectNodeResponse response = PostAndDeserialize<GetAdministratedObjectNodeResponse>(
 			ServiceUrlBuilder.KnownRoute.SaveAdministratedObject,
 			new JsonObject { ["administratedObject"] = payload },
 			requestOptions);
@@ -201,34 +208,32 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 			: new ObjectRightsChange(true, false, response?.ErrorInfo?.Message ?? "SaveAdministratedObject reported failure.");
 	}
 
-	// Returns the first candidate UId that describes an administered object as a mutable JSON node, or (null,
-	// anyCleanAnswer, lastError): anyCleanAnswer true means a candidate answered but the object is not
-	// administered by operations; lastError set with anyCleanAnswer false means every candidate faulted.
-	private (JsonObject node, bool anyCleanAnswer, string error) TryGetAdministratedObject(
+	// Returns the first candidate UId that describes the object as a mutable JSON node, or (null, error):
+	// error null means the schema name resolved to no candidate (not found); error set means every candidate
+	// answered but with a fault (a wrong replacing-schema UId, or an in-band success:false).
+	private (JsonObject node, string error) TryGetAdministratedObject(
 		string schemaName, CreatioRequestOptions requestOptions) {
 		IReadOnlyList<Guid> candidates = ResolveEntitySchemaUIds(schemaName, requestOptions);
 		if (candidates.Count == 0) {
-			return (null, false, null);
+			return (null, null);
 		}
-		bool anyCleanAnswer = false;
 		string lastError = null;
 		foreach (Guid candidate in candidates) {
 			JsonObject node = TryFetchNode(candidate, requestOptions, out string error);
-			if (error is not null) {
-				lastError = error;
-				continue;
-			}
-			anyCleanAnswer = true;
 			if (node is not null) {
-				return (node, true, null);
+				return (node, null);
 			}
+			lastError = error;
 		}
-		return (null, anyCleanAnswer, lastError);
+		return (null, lastError);
 	}
 
-	// Fetches GetAdministratedObject for one UId. Returns the administratedObject node when the response
-	// describes an administered object; null with error set when the candidate faulted (wrong UId); null with
-	// error null when the response was clean but the object is not administered by operations.
+	// Fetches GetAdministratedObject for one UId. Returns the administratedObject node on a clean success
+	// (whether or not the object is administered by operations yet — a not-yet-administered object comes back
+	// with administratedByOperations=false and a grant enables it). Otherwise returns null with `error` set:
+	// an HTTP fault (a wrong replacing-schema UId returns a non-JSON error page), an in-band success:false
+	// (the .svc reports logical failures — permission, unknown schema, licensing — as HTTP 200 + errorInfo),
+	// or an unexpected empty body. A failure is NEVER reported as "not administered / available".
 	private JsonObject TryFetchNode(Guid schemaUId, CreatioRequestOptions requestOptions, out string error) {
 		error = null;
 		GetAdministratedObjectNodeResponse response;
@@ -242,13 +247,12 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 			error = ex.Message;
 			return null;
 		}
-		// A clean success with an object describes the right schema — whether or not it is administered by
-		// operations yet (a not-yet-administered object comes back with administratedByOperations=false, and a
-		// grant enables it). A wrong candidate UId faults above and is skipped via error.
-		JsonObject node = response?.AdministratedObject;
-		if (response is { Success: true } && node is not null) {
-			return node;
+		if (response is { Success: true } && response.AdministratedObject is not null) {
+			return response.AdministratedObject;
 		}
+		error = response is { Success: false }
+			? response.ErrorInfo?.Message ?? "GetAdministratedObject reported failure."
+			: "GetAdministratedObject returned no administrated object.";
 		return null;
 	}
 
@@ -256,10 +260,15 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		(node["entitySchemaOperationsRights"] as JsonArray)?.OfType<JsonObject>() ?? Enumerable.Empty<JsonObject>();
 
 	private static Guid GranteeId(JsonObject row) =>
-		Guid.TryParse(row["sysAdminUnit"]?["id"]?.GetValue<string>(), out Guid id) ? id : Guid.Empty;
+		Guid.TryParse(Str(row["sysAdminUnit"]?["id"]), out Guid id) ? id : Guid.Empty;
 
 	private static bool Flag(JsonObject node, string name) =>
 		node[name] is JsonValue value && value.TryGetValue(out bool flag) && flag;
+
+	// Reads a JSON node as a string, or null if it is absent or not a string value (never throws on a
+	// non-string value the platform might return).
+	private static string Str(JsonNode node) =>
+		node is JsonValue value && value.TryGetValue(out string text) ? text : null;
 
 	private static string FieldOf(ObjectOperation operation) => operation switch {
 		ObjectOperation.Read => "canRead",
@@ -271,7 +280,8 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 
 	// Resolves an entity schema name to its candidate UId(s) via a DataService SelectQuery over SysSchema,
 	// filtered to the EntitySchemaManager layer. A granted/extended schema has more than one row (base +
-	// replacing schema); all are returned as candidates.
+	// replacing schema); all are returned as candidates, in a deterministic order so which one is used does
+	// not vary run to run.
 	private IReadOnlyList<Guid> ResolveEntitySchemaUIds(string schemaName, CreatioRequestOptions requestOptions) {
 		object query = SelectQueryHelper.BuildSelectQuery(
 			"SysSchema",
@@ -288,7 +298,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 
 		return response.Rows is null
 			? Array.Empty<Guid>()
-			: response.Rows.Select(row => row.UId).Where(uId => uId != Guid.Empty).Distinct().ToList();
+			: response.Rows.Select(row => row.UId).Where(uId => uId != Guid.Empty).Distinct().OrderBy(uId => uId).ToList();
 	}
 
 	private sealed class GetAdministratedObjectNodeResponse
@@ -296,20 +306,14 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		[JsonPropertyName("success")]
 		public bool Success { get; set; }
 
+		[JsonPropertyName("errorInfo")]
+		public ObjectRightsErrorInfo ErrorInfo { get; set; }
+
 		[JsonPropertyName("administratedObject")]
 		public JsonObject AdministratedObject { get; set; }
 	}
 
-	private sealed class SaveAdministratedObjectResponse
-	{
-		[JsonPropertyName("success")]
-		public bool Success { get; set; }
-
-		[JsonPropertyName("errorInfo")]
-		public SaveErrorInfo ErrorInfo { get; set; }
-	}
-
-	private sealed class SaveErrorInfo
+	private sealed class ObjectRightsErrorInfo
 	{
 		[JsonPropertyName("message")]
 		public string Message { get; set; }
