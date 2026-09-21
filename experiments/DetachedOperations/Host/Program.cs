@@ -730,6 +730,87 @@ foreach (Process owner in new[] { aliveOwner, survivingOwner }) {
 survivingLease.Dispose();
 disposeOnlyLease.Dispose();
 
+
+// ── J: the settings seam — a configuration snapshot has a portable identity and nothing more ──────
+// Clause 6. The lifetime side needs exactly one thing from @vladimir-nikonov's lane: that a snapshot
+// can be NAMED by a string, so a record naming it outlives the release and the process. Preparation,
+// migration, rollback and retention are his and are deliberately absent here.
+string jEvidence = Path.Combine(work, "j-operations.jsonl");
+var jLedger = new OperationLedger(jEvidence) { CurrentSnapshotForTests = "cfg-2" };
+Process jOwnerOne = StartIdleOwner();
+Process jOwnerTwo = StartIdleOwner();
+
+// J1: admitted under cfg-1, then cfg-2 is activated underneath. The operation keeps cfg-1.
+IOperationLease underOne = jLedger.Begin("envJ", "10.0.0.0", new ProcessOwner(jOwnerOne), "cfg-1");
+IOperationLease underTwo = jLedger.Begin("envJ", "10.0.0.0", new ProcessOwner(jOwnerTwo), "cfg-2");
+var keptOne = jLedger.Query(underOne.Id);
+var tookTwo = jLedger.Query(underTwo.Id);
+Check("J1 an operation keeps the configuration snapshot it was admitted under",
+    keptOne.ConfigurationSnapshot == "cfg-1" && tookTwo.ConfigurationSnapshot == "cfg-2",
+    new { admittedBeforeActivation = keptOne.ConfigurationSnapshot,
+          admittedAfterActivation = tookTwo.ConfigurationSnapshot,
+          note = "captured at admission and never re-read; same rule as the runtime release" });
+
+// J2: the identity survives into evidence and back out of it, so a later reader knows which
+// configuration an operation it cannot establish the outcome of was running under.
+underOne.Complete(OperationState.Succeeded, "done");
+underOne.Dispose();
+var reread = new OperationLedger(jEvidence);           // a fresh ledger over the same evidence
+var recoveredOne = reread.Query(underOne.Id);
+var recoveredTwo = reread.Query(underTwo.Id);
+Check("J2 the snapshot identity survives into durable evidence and is recovered with the record",
+    recoveredOne.ConfigurationSnapshot == "cfg-1" && recoveredOne.State == OperationState.Succeeded
+        && recoveredTwo.ConfigurationSnapshot == "cfg-2" && recoveredTwo.State == OperationState.Unknown,
+    new { finished = new { recoveredOne.ConfigurationSnapshot, state = recoveredOne.State.ToString() },
+          unfinished = new { recoveredTwo.ConfigurationSnapshot, state = recoveredTwo.State.ToString() },
+          note = "an outcome this host cannot establish still says which configuration produced it" });
+
+// J3: adding the settings seam added nothing to the boundary.
+var snapshotProperty = typeof(OperationRecord).GetProperty(nameof(OperationRecord.ConfigurationSnapshot))!;
+string[] refsAfterSeam = typeof(IOperationLedger).Assembly.GetReferencedAssemblies()
+    .Select(a => a.Name!).OrderBy(n => n, StringComparer.Ordinal).ToArray();
+Check("J3 the settings seam crosses as a string and adds no dependency to the contract",
+    snapshotProperty.PropertyType == typeof(string)
+        && refsAfterSeam.SequenceEqual(new[] { "System.Collections", "System.Runtime" }),
+    new { seamType = snapshotProperty.PropertyType.Name, contractReferences = refsAfterSeam,
+          note = "no settings type crosses; the lifetime side never interprets the value" });
+
+// J4: an outcome that could not be persisted still leaves its configuration on the record, so the
+// degraded case does not also lose which configuration was in force.
+Process jOwnerThree = StartIdleOwner();
+IOperationLease degraded = jLedger.Begin("envJ4", "10.0.0.0", new ProcessOwner(jOwnerThree), "cfg-3");
+jLedger.FailEndPersistenceForTests = true;
+degraded.Complete(OperationState.Succeeded, "outcome-lost-to-storage");
+jLedger.FailEndPersistenceForTests = false;
+string[] jLines = File.ReadAllLines(jEvidence);
+bool beginCarriesSnapshot = jLines.Any(l => l.Contains(degraded.Id, StringComparison.Ordinal)
+    && l.Contains("\"configurationSnapshot\":\"cfg-3\"", StringComparison.Ordinal));
+Check("J4 a scope degraded by a storage failure still records which configuration was in force",
+    beginCarriesSnapshot && jLedger.DegradedScopes.Contains("envJ4")
+        && jLedger.UnpersistedOperations.Contains(degraded.Id),
+    new { snapshotOnDisk = beginCarriesSnapshot, degraded = jLedger.DegradedScopes.Contains("envJ4"),
+          unpersisted = jLedger.UnpersistedOperations.Contains(degraded.Id),
+          note = "the admission line carries it, so losing the outcome does not also lose the context" });
+
+// J5: the seam did not break anything already built. The two releases under artifacts/ were compiled
+// against the PREVIOUS contract and are not recompiled by this run; they call the three-argument
+// Begin. An optional parameter would have been source compatible and binary incompatible -- the first
+// attempt at this seam did exactly that, and every prebuilt release died with MissingMethodException.
+bool oldSignatureKept = typeof(IOperationLedger).GetMethod(nameof(IOperationLedger.Begin),
+    new[] { typeof(string), typeof(string), typeof(object) }) is not null;
+string[] prebuiltEffects = File.Exists(fEffect) ? File.ReadAllLines(fEffect) : [];
+bool prebuiltReleasesExecuted = prebuiltEffects.Any(l => l.Contains("v1-executed-by-10.0.0.0", StringComparison.Ordinal))
+    && prebuiltEffects.Any(l => l.Contains("v2-executed-by-10.1.0.0", StringComparison.Ordinal));
+Check("J5 a release built against the previous contract still admits operations",
+    oldSignatureKept && prebuiltReleasesExecuted,
+    new { threeArgumentOverloadKept = oldSignatureKept, prebuiltReleasesExecuted,
+          note = "these effect lines were written by binaries this run never recompiled" });
+
+degraded.Dispose();
+foreach (Process owner in new[] { jOwnerOne, jOwnerTwo, jOwnerThree }) {
+    try { owner.Kill(entireProcessTree: true); } catch (InvalidOperationException) { /* already gone */ }
+}
+
 fV1 = null!;
 fV1Ctx.Unload();
 

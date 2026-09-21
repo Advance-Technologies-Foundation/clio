@@ -94,6 +94,11 @@ would almost never be globally idle and a global-only predicate would be correct
 | H3 | an orphaned operation stops blocking quiescence, so a drain can finish |
 | H4 | **negative control** — an operation whose owner process is alive is left Running |
 | H5 | a genuine late outcome supersedes Unknown, but disposal alone does not |
+| J1 | an operation keeps the configuration snapshot it was admitted under |
+| J2 | the snapshot identity survives into durable evidence and is recovered with the record |
+| J3 | the settings seam crosses as a string and adds no dependency to the contract |
+| J4 | a scope degraded by a storage failure still records which configuration was in force |
+| J5 | a release built against the previous contract still admits operations |
 | O1 | **counterexample to I3** — a runtime-defined result held by the caller keeps the release alive |
 | R1 | the V1 release becomes collectible once no lease retains it |
 | C1 | **control** — a host with no evidence answers `NotFound` for the very same lost operation |
@@ -173,7 +178,7 @@ temporary directory and writes nothing outside it.
 
 ## macOS observations, 2026-09-21
 
-macOS 27.0.0 (arm64), .NET 10.0.12. **58/58 passed, exit 0.** The contract derived from these cases is in
+macOS 27.0.0 (arm64), .NET 10.0.12. **63/63 passed, exit 0.** The contract derived from these cases is in
 [`execution-lifetime-contract.md`](execution-lifetime-contract.md).
 
 - The operation started on `10.0.0.0` kept answering `Running` and stayed owned by `10.0.0.0` after

@@ -74,6 +74,12 @@ public sealed class OperationLedger : IOperationLedger {
     /// </summary>
     public bool FailAppendForTests { get; set; }
 
+    /// <summary>
+    /// Test-only: the snapshot a naive implementation would report. Used by the J1 mutation control,
+    /// which answers queries from the CURRENT snapshot instead of the recorded one.
+    /// </summary>
+    public string? CurrentSnapshotForTests { get; set; }
+
     /// <summary>Opens a ledger over an evidence file, recovering any prior process's unfinished operations.</summary>
     public OperationLedger(string evidencePath) : this(evidencePath, false) {
     }
@@ -209,11 +215,19 @@ public sealed class OperationLedger : IOperationLedger {
     }
 
     /// <inheritdoc />
-    public IOperationLease Begin(string target, string runtimeVersion, object owner) {
+    public IOperationLease Begin(string target, string runtimeVersion, object owner) =>
+        Begin(target, runtimeVersion, owner, null);
+
+    /// <inheritdoc />
+    public IOperationLease Begin(string target, string runtimeVersion, object owner,
+        string? configurationSnapshot) {
         ArgumentNullException.ThrowIfNull(owner);
         ArgumentException.ThrowIfNullOrWhiteSpace(target);
         string id = Guid.NewGuid().ToString("n");
-        var record = new OperationRecord(id, target, DateTimeOffset.UtcNow, runtimeVersion, OperationState.Running);
+        // The snapshot is captured HERE, at admission, and never re-read. An operation runs under the
+        // configuration it was admitted under, exactly as it runs on the release that admitted it.
+        var record = new OperationRecord(id, target, DateTimeOffset.UtcNow, runtimeVersion,
+            OperationState.Running, ConfigurationSnapshot: configurationSnapshot);
         if (_splitAdmissionForTests) {
             // The defect, on purpose: check, release, then register. The sleep only widens a gap that
             // exists either way, so the mutation is observable in a two-second run instead of rarely.
@@ -311,7 +325,11 @@ public sealed class OperationLedger : IOperationLedger {
     /// <inheritdoc />
     public OperationRecord Query(string id) {
         lock (_swapLock) { ResolveOrphansCore(); }
-        if (_live.TryGetValue(id, out var live)) return live;
+        bool mutateSnapshot = Environment.GetEnvironmentVariable("MUTATE_SNAPSHOT_AT_QUERY") == "1"
+            && CurrentSnapshotForTests is not null;
+        if (_live.TryGetValue(id, out var live)) {
+            return mutateSnapshot ? live with { ConfigurationSnapshot = CurrentSnapshotForTests } : live;
+        }
         if (_recovered.TryGetValue(id, out var prior)) return prior;
         // Truthful: no evidence this identifier was ever issued. Distinct from "started, outcome unknown".
         return new OperationRecord(id, string.Empty, default, string.Empty, OperationState.NotFound);
@@ -377,7 +395,8 @@ public sealed class OperationLedger : IOperationLedger {
         string line = JsonSerializer.Serialize(new {
             kind, record.Id, record.Target, startedUtc = record.StartedUtc.ToString("O", CultureInfo.InvariantCulture),
             runtimeVersion = record.RuntimeVersion, state = record.State.ToString(),
-            finishedUtc = record.FinishedUtc?.ToString("O", CultureInfo.InvariantCulture), record.Code
+            finishedUtc = record.FinishedUtc?.ToString("O", CultureInfo.InvariantCulture), record.Code,
+            configurationSnapshot = record.ConfigurationSnapshot
         });
         lock (_fileLock) {
             if (FailAppendForTests) {
@@ -444,7 +463,9 @@ public sealed class OperationLedger : IOperationLedger {
             return new OperationRecord(id, root.GetProperty("Target").GetString() ?? string.Empty, started,
                 root.GetProperty("runtimeVersion").GetString() ?? string.Empty,
                 state, finishedText is null ? null : DateTimeOffset.Parse(finishedText, CultureInfo.InvariantCulture),
-                root.GetProperty("Code").ValueKind == JsonValueKind.Null ? null : root.GetProperty("Code").GetString());
+                root.GetProperty("Code").ValueKind == JsonValueKind.Null ? null : root.GetProperty("Code").GetString(),
+                !root.TryGetProperty("configurationSnapshot", out var snapshot)
+                    || snapshot.ValueKind == JsonValueKind.Null ? null : snapshot.GetString());
         }
         catch (Exception) { return null; }
     }

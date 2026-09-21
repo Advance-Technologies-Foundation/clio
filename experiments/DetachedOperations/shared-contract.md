@@ -135,7 +135,7 @@ A degraded scope means one or more outcomes exist **only in memory**. Three fact
 `UnpersistedOperations` is the list that matters; `DegradedScopes` is derived from it. A scope's mark
 lifts when its list empties — by repair or by explicit loss, never by the fault merely going away.
 
-## 6. Configuration snapshot identity — hook only, policy is @vladimir-nikonov's
+## 6. Configuration snapshot identity — seam settled, policy is @vladimir-nikonov's
 
 The lifetime side needs exactly one thing: whatever identifies a configuration snapshot must be portable
 data under clause 3, so a record naming it survives the release and the process. It is a string as far as
@@ -143,6 +143,29 @@ this contract is concerned.
 
 Everything else — preparation, rejection, migration, rollback, retention, concurrent edits — is the
 settings lane's, and this contract deliberately takes no position on it.
+
+**The seam is now built and measured**, so the settings lane has something concrete to attach to rather
+than a promise. `OperationRecord.ConfigurationSnapshot` is a `string?`, captured at admission and never
+re-read:
+
+- An operation keeps the snapshot it was admitted under when another is activated beneath it (J1) — the
+  same rule as the runtime release, for the same reason.
+- The identity survives into evidence and back out, including on a record whose outcome this host cannot
+  establish (J2). An `Unknown` that cannot say which configuration produced it is much less useful.
+- A storage failure that loses the outcome does not also lose the configuration, because the admission
+  line already carries it (J4).
+- Nothing new crosses the boundary: the seam is a `string` and the contract assembly still references
+  `System.Runtime` and `System.Collections` only (J3).
+
+**One trap, found by breaking it rather than by thinking about it.** The seam was first added as an
+optional parameter on the existing `Begin`. That is source compatible and **binary incompatible**: every
+release already built against the previous contract died at its first operation with
+`MissingMethodException: Method not found: IOperationLedger.Begin(String, String, Object)`. Keeping
+already-shipped releases working is the entire point of this contract, so the old signature stays and the
+snapshot form is a separate overload (J5, measured against binaries this run never recompiles).
+
+Adding to this contract is therefore an **addition**, never a modification — including the kinds of
+change a compiler accepts silently.
 
 ## 7. What may cross the boundary — settled
 
@@ -183,6 +206,12 @@ So the rule, for both harnesses: **a case whose title names a temporal or conten
 concurrently, under load, never, while — carries a mutation control, and the mutation is reported
 alongside the result.** If no mutation can be constructed that fails the case, the case is not measuring
 its title. The cost is one extra run; the thing it buys is that a cited number means what its name says.
+
+**And the mutation must be observed to FAIL, not merely applied.** The first attempt at F1's successor
+mutation was `if (true) return`, which tripped CS0162, failed the build, and left `--no-build` running
+the previous binary — which reported a confident full pass. A mutation that silently did not run looks
+exactly like a mutation the code survived. Report the mutated run's failing case names, not the fact
+that a mutation was made.
 
 ## What this contract does not cover
 
