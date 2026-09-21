@@ -157,7 +157,15 @@ than `NotFound`, and the release still becomes collectible only after its operat
 
 An independent reproduction by @kirillkrylov is still welcome — this one is mine, on my own probe.
 
-## Smallest next question
+## Reconcilable versus uncertain-only
+
+Answered in [`reconcilability.md`](reconcilability.md), measured against a live stand: the split is three
+tiers, not two. Artefact-named operations (create-app-section, package installs) are attributable and do
+not need a swap to wait; `compile-creatio` is state-reconcilable but not attributable, and converts to
+recoverable purely by having a durable terminal marker; `restart` has no external answer at all, so
+`Unknown` is permanent rather than temporary.
+
+## Original smallest next question
 
 `IsQuiescent(target)` is answered from this process's own ledger. After a process loss it reports
 `Unknown` operations but cannot say whether their work is still running somewhere — for Creatio-side work
