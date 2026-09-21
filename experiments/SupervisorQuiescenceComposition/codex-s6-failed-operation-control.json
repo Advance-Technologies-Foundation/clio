@@ -1,0 +1,70 @@
+{
+  "os": "Microsoft Windows NT 10.0.26200.0",
+  "framework": "10.0.12",
+  "cases": [
+    {
+      "name": "S1 naive swap loses the detached operation\u0027s effect (control, reproduces the known failure)",
+      "passed": true,
+      "detail": {
+        "effects": [],
+        "swapMs": 59,
+        "waitedMs": 0
+      }
+    },
+    {
+      "name": "S2 a globally gated swap preserves the detached operation\u0027s effect",
+      "passed": true,
+      "detail": {
+        "effects": [
+          "envA"
+        ],
+        "swapMs": 1267,
+        "waitedMs": 1226
+      }
+    },
+    {
+      "name": "S3 a per-target gate on envA does not protect envB\u0027s in-flight work on the same host",
+      "passed": true,
+      "detail": {
+        "effects": [
+          "envA"
+        ],
+        "swapMs": 351,
+        "waitedMs": 311
+      }
+    },
+    {
+      "name": "S4 a global gate protects every target the host owns",
+      "passed": true,
+      "detail": {
+        "effects": [
+          "envA",
+          "envB"
+        ],
+        "swapMs": 1261,
+        "waitedMs": 1216
+      }
+    },
+    {
+      "name": "S5 a new operation for the gated scope is refused while the window is held, and admitted again once released",
+      "passed": true,
+      "detail": {
+        "refusedDuringWindow": true,
+        "admittedAfterRelease": true
+      }
+    },
+    {
+      "name": "S6 a real V1-\u003EV2 respawn preserves V1\u0027s operation, serves a new one on a different PID, and refuses every concurrent admission attempt during the handover",
+      "passed": true,
+      "detail": {
+        "v1Pid": 89808,
+        "v2Pid": 92020,
+        "v1EffectPresent": true,
+        "v2EffectPresent": true,
+        "pressureAttempts": 6,
+        "pressureRefused": 6,
+        "pressureAdmittedDuringWindow": 0
+      }
+    }
+  ]
+}
