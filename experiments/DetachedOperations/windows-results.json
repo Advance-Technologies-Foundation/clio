@@ -1,7 +1,7 @@
 {
   "os": "Microsoft Windows NT 10.0.26200.0",
   "framework": "10.0.11",
-  "workDirectory": "C:\\Temp\\detached-ops-bbibflko.3fp",
+  "workDirectory": "C:\\Temp\\detached-ops-gxyx00ir.y0d",
   "cases": [
     {
       "name": "A1a the original operation still answers after a newer runtime is activated",
@@ -156,8 +156,8 @@
       "passed": true,
       "detail": {
         "Violations": 0,
-        "Admitted": 70,
-        "Refused": 51,
+        "Admitted": 71,
+        "Refused": 52,
         "Windows": 8
       }
     },
@@ -165,10 +165,10 @@
       "name": "A5i mutation control: the same regression detects a deliberately split admission",
       "passed": true,
       "detail": {
-        "Violations": 23,
-        "Admitted": 24,
-        "Refused": 77,
-        "Windows": 15,
+        "Violations": 33,
+        "Admitted": 15,
+        "Refused": 94,
+        "Windows": 20,
         "note": "non-zero here is the point: it shows A5h can fail"
       }
     },
@@ -225,6 +225,16 @@
         "quiescent": false,
         "windowObtainable": false,
         "note": "the work finished; only its evidence write failed. Exactly-once has been consumed, so no later report can rescue it"
+      }
+    },
+    {
+      "name": "O1 a runtime-defined result held by the caller keeps the release alive after the operation ended",
+      "passed": true,
+      "detail": {
+        "aliveWhileResultHeld": true,
+        "collectedAfterResultDropped": true,
+        "escapedType": "Clio10.DetachedOperationsFixture.DetachedRuntime+ReleasePayload",
+        "note": "the ledger reported a terminal state and released its own retention; the escaped value did not"
       }
     }
   ]
