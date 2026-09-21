@@ -31,14 +31,18 @@ public sealed record SettingsSnapshot(string Id, string Scope, int Version, Immu
 /// </summary>
 /// <param name="Reclaimed">Snapshots actually deleted this pass.</param>
 /// <param name="HeldByOwnerWithoutLiveness">
-/// Snapshots this pass could NOT even consider reclaiming, because a currently retained operation holding
-/// them has an owner the ledger reports in <see cref="IOperationLedger.OwnersWithoutLiveness"/> -- an
-/// owner it structurally cannot ask whether it is still there, as opposed to one it asked and got a live
-/// answer from. Alexandr-Kravchuk's X3 finding: the ledger correctly reports what it cannot resolve, the
-/// settings store correctly consumed <see cref="IOperationLedger.OperationHeldSnapshots"/>, and the leak
-/// was in the gap between the two -- a snapshot pinned by an unresolvable owner looked identical to one
-/// legitimately still in use, and cleanup returned an empty reclaim list either way with no way to tell
-/// them apart. This field exists so it no longer does.
+/// Snapshots held by an operation whose owner the ledger reports in
+/// <see cref="IOperationLedger.OwnersWithoutLiveness"/>. A DIAGNOSTIC, not a verdict --
+/// <see cref="IOperationLedger.OwnersWithoutLiveness"/> lists every owner the ledger structurally cannot
+/// ask, which includes ordinary in-process owners whose lifetime legitimately ends at <c>Dispose</c> and
+/// were never going to need liveness resolution in the first place (kirillkrylov's narrowing of
+/// Alexandr-Kravchuk's X3: absence of liveness is not proof an owner is dead, and this field must not be
+/// read as one). What this field fixes is narrower and purely a visibility gap: before it existed,
+/// <see cref="Cleanup"/> returned an empty reclaim list identically whether a snapshot was legitimately
+/// still in use or pinned by an owner that will never report itself gone -- <see cref="Reclaimed"/> alone
+/// could not tell those apart. This field makes the second case visible for a human or an operator policy
+/// to look at; it changes nothing about what <see cref="Cleanup"/> reclaims, and this store applies no
+/// automatic remediation from it.
 /// </param>
 public sealed record CleanupResult(
     IReadOnlyCollection<string> Reclaimed,
@@ -175,7 +179,14 @@ public sealed class SettingsStore {
     /// <see cref="SettingsSnapshot.Version"/>. The caller orders a paired activation as: prepare the
     /// settings candidate, activate the runtime half, then call this only if that succeeded -- a refused
     /// runtime never reaches this call, and the candidate is reclaimed by <see cref="Cleanup"/> instead of
-    /// silently becoming current.
+    /// silently becoming current. The other direction matters just as much (kirillkrylov: "a settings
+    /// commit failure after runtime activation leaves the same split"): the checks run and evidence is
+    /// written BEFORE any of <see cref="_activeSnapshotId"/>, <see cref="_scopeRevision"/> or
+    /// <see cref="_pendingCandidates"/> changes, so a write fault here (<see cref="FailNextActivatePersistForTests"/>)
+    /// throws with the previous selection still active and the candidate still pending -- never a
+    /// half-published state. What this method cannot do alone is stop the CALLER from having already
+    /// activated the runtime half before calling this; composing the two into one coordination boundary is
+    /// the joint-proof side of this seam, not this store's.
     /// </summary>
     public void Activate(string scope, string candidateId, int expectedCurrentRevision) {
         lock (_gate) {
@@ -317,13 +328,15 @@ public sealed class SettingsStore {
     /// snapshot as unowned in a window where <see cref="Admit"/>, <see cref="RetainForRollback"/> or
     /// <see cref="Prepare"/> is mid-flight establishing ownership, retention or pending status over it.
     /// <para>
-    /// <b>X3 (Alexandr-Kravchuk).</b> A snapshot held by an operation whose owner has no liveness support
-    /// at all is held forever, silently indistinguishable from one legitimately still in use: the ledger
-    /// can never resolve that operation to a terminal state, so it never leaves
-    /// <c>OperationHeldSnapshots</c>, and cleanup correctly -- but silently -- keeps its snapshot every
-    /// time. Cross-referencing <see cref="IOperationLedger.OwnersWithoutLiveness"/> against each held
-    /// snapshot's holder surfaces this in <see cref="CleanupResult.HeldByOwnerWithoutLiveness"/> instead
-    /// of leaving it indistinguishable from ordinary retention.
+    /// <b>X3 (Alexandr-Kravchuk), narrowed by kirillkrylov.</b> A snapshot held by an operation whose
+    /// owner the ledger cannot ask about (<see cref="IOperationLedger.OwnersWithoutLiveness"/>) used to be
+    /// silently indistinguishable, in this method's return value, from one legitimately still in use --
+    /// not because such an owner IS defective, but because <see cref="Reclaimed"/> alone gave no way to
+    /// tell "still in use" apart from "this store cannot ever resolve it if it disappears without
+    /// disposing." Most owners in that set are ordinary and will complete normally.
+    /// <see cref="CleanupResult.HeldByOwnerWithoutLiveness"/> surfaces the distinction as a diagnostic for
+    /// a human or an operator policy to act on; this method itself draws no conclusion from it and reclaims
+    /// nothing differently because of it.
     /// </para>
     /// </summary>
     public CleanupResult Cleanup() {
@@ -349,7 +362,18 @@ public sealed class SettingsStore {
 
     public bool Contains(string snapshotId) => _snapshots.ContainsKey(snapshotId);
 
+    /// <summary>
+    /// Test-only: makes the next <see cref="Activate"/> fail after its checks pass but before it publishes
+    /// anything -- kirillkrylov's "a failed settings-commit path, not only rejected-runtime activation."
+    /// Models a real write fault, not a policy refusal.
+    /// </summary>
+    public bool FailNextActivatePersistForTests { get; set; }
+
     private void Persist(string kind, SettingsSnapshot snapshot) {
+        if (kind == "activate" && FailNextActivatePersistForTests) {
+            FailNextActivatePersistForTests = false;
+            throw new IOException("injected settings-commit failure");
+        }
         string line = JsonSerializer.Serialize(new {
             kind, snapshot.Id, snapshot.Scope, snapshot.Version, snapshot.Values
         });

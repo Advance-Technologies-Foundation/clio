@@ -8,7 +8,9 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../DetachedOperations/Contract/Contract.csproj" />
-    <!-- Reused, not duplicated: the same generic ledger E3 publishes and the Supervisor probe links. -->
+    <!-- Reused, not duplicated: the same generic ledger E3 publishes and the Supervisor probe links.
+         SYNC POINT: see experiments/SettingsVersioning/SettingsVersioning.csproj for the exact commit
+         this and Contract.cs are synced to, and why only these two files are vendored here. -->
     <Compile Include="../../DetachedOperations/Host/OperationLedger.cs" Link="OperationLedger.cs" />
     <PackageReference Include="ModelContextProtocol" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />

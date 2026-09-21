@@ -34,6 +34,7 @@ T12_MigrateDetectsAnEditThatLandsAfterItsReadNotJustBeforeItsCommit();
 T13_ImmutableDictionaryRejectsMutationThroughEveryAlias();
 T14_CleanupSurfacesSnapshotsHeldByUnresolvableOwners();
 T15_PairedActivationCommitsOnlyIfBothHalvesSucceed();
+T16_FailedSettingsCommitLeavesThePreviousSelectionActiveAndTheCandidatePending();
 
 Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { cases = observations },
     new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
@@ -429,13 +430,16 @@ void T13_ImmutableDictionaryRejectsMutationThroughEveryAlias() {
 }
 
 void T14_CleanupSurfacesSnapshotsHeldByUnresolvableOwners() {
-    // Alexandr-Kravchuk's X3: an owner with no liveness support is never resolved, so its operation stays
-    // Running forever, holds its snapshot forever, and Cleanup() used to report nothing unusual -- looked
-    // identical to ordinary retention. HeldByOwnerWithoutLiveness makes that visible.
+    // Alexandr-Kravchuk's X3, narrowed by kirillkrylov: being in OwnersWithoutLiveness is a diagnostic
+    // ("this store cannot ask whether the owner is still there"), not a verdict that the owner is dead or
+    // that retention is a leak -- an ordinary in-process owner that will legitimately complete via
+    // Complete()+Dispose() also has no liveness support and shows up here the whole time it's running.
+    // This case checks both halves: the signal appears while genuinely retained, then clears on normal
+    // completion, rather than sticking as if it had marked the operation defective.
     var ledger = new OperationLedger(Path.Combine(workDir, "operations-t14.jsonl"));
     var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t14.jsonl"));
     SettingsSnapshot cfgA = store.PrepareAndActivate("envT14", new Dictionary<string, string> { ["k"] = "a" }, 0);
-    IOperationLease bareLease = store.Admit("envT14-op", "V1", new object(), "envT14"); // deliberately unresolvable
+    IOperationLease bareLease = store.Admit("envT14-op", "V1", new object(), "envT14"); // an ordinary bare owner, not a defective one
     store.PrepareAndActivate("envT14", new Dictionary<string, string> { ["k"] = "b" }, cfgA.Version); // supersede
 
     CleanupResult result = store.Cleanup();
@@ -444,7 +448,7 @@ void T14_CleanupSurfacesSnapshotsHeldByUnresolvableOwners() {
         new { reclaimed = result.Reclaimed, heldByUnresolvable = result.HeldByOwnerWithoutLiveness });
 
     // Control: a live, liveness-capable owner is also retained (correctly), but must never appear in the
-    // warning set -- the signal is specifically about owners the ledger can never ask, not "still in use."
+    // diagnostic set -- the signal is specifically about owners the ledger can never ask, not "still in use."
     var aliveOwner = new FakeOwner();
     IOperationLease wrappedLease = store.Admit("envT14-op2", "V1", aliveOwner, "envT14");
     CleanupResult result2 = store.Cleanup();
@@ -452,8 +456,16 @@ void T14_CleanupSurfacesSnapshotsHeldByUnresolvableOwners() {
         !result2.HeldByOwnerWithoutLiveness.Contains(store.CurrentSnapshotId("envT14")),
         new { heldByUnresolvable = result2.HeldByOwnerWithoutLiveness });
 
+    // Close the loop kirillkrylov asked for: the bare owner from above completes normally through
+    // Complete()+Dispose(), exactly like the vast majority of bare owners do. Its earlier appearance in
+    // HeldByOwnerWithoutLiveness was never a claim that it was stuck -- confirm it clears on ordinary
+    // completion rather than leaving any lingering mark.
     wrappedLease.Complete(OperationState.Succeeded); wrappedLease.Dispose();
     bareLease.Complete(OperationState.Succeeded); bareLease.Dispose();
+    CleanupResult result3 = store.Cleanup();
+    Check("T14 (X3, normal completion): once the bare owner disposes normally, nothing about it remains flagged -- the diagnostic was never a verdict",
+        !result3.HeldByOwnerWithoutLiveness.Contains(cfgA.Id) && result3.Reclaimed.Contains(cfgA.Id),
+        new { reclaimed = result3.Reclaimed, heldByUnresolvable = result3.HeldByOwnerWithoutLiveness });
 }
 
 void T15_PairedActivationCommitsOnlyIfBothHalvesSucceed() {
@@ -491,6 +503,40 @@ void T15_PairedActivationCommitsOnlyIfBothHalvesSucceed() {
     Check("T15 (X5 positive): a succeeding runtime activation does commit its paired settings candidate",
         store.CurrentSnapshotId("envT15") == candidate2.Id,
         new { active = store.CurrentSnapshotId("envT15") });
+}
+
+void T16_FailedSettingsCommitLeavesThePreviousSelectionActiveAndTheCandidatePending() {
+    // kirillkrylov: "a settings commit failure after runtime activation leaves the same split" as a
+    // rejected runtime does -- this fixture's half of that claim is that Activate itself never
+    // half-publishes: a write fault during Activate must leave the previous selection active and the
+    // candidate still pending, not some third state.
+    var ledger = new OperationLedger(Path.Combine(workDir, "operations-t16.jsonl"));
+    var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t16.jsonl"));
+    SettingsSnapshot committed = store.PrepareAndActivate("envT16", new Dictionary<string, string> { ["runtime"] = "10.0.0.0" }, 0);
+    SettingsSnapshot candidate = store.Prepare("envT16", new Dictionary<string, string> { ["runtime"] = "10.1.0.0" }, store.CurrentVersion("envT16"));
+
+    // The runtime half succeeded (by hypothesis -- this fixture doesn't model it), but the settings
+    // commit itself fails, e.g. a storage fault writing the activation evidence.
+    store.FailNextActivatePersistForTests = true;
+    IOException? commitFailed = null;
+    try { store.Activate("envT16", candidate.Id, store.CurrentVersion("envT16")); }
+    catch (IOException ex) { commitFailed = ex; }
+
+    Check("T16: a failed settings commit throws and leaves the PREVIOUS selection active, not a half-published one",
+        commitFailed is not null && store.CurrentSnapshotId("envT16") == committed.Id,
+        new { commitFailed = commitFailed?.Message, stillActive = store.CurrentSnapshotId("envT16") });
+
+    CleanupResult resultWhilePending = store.Cleanup();
+    Check("T16: the candidate is still pending after the failed commit -- cleanup must not reclaim it out from under a retry",
+        !resultWhilePending.Reclaimed.Contains(candidate.Id) && store.Contains(candidate.Id),
+        new { reclaimed = resultWhilePending.Reclaimed });
+
+    // A retry (the storage fault having cleared) succeeds against the SAME candidate -- it was never
+    // consumed or corrupted by the failed attempt.
+    store.Activate("envT16", candidate.Id, store.CurrentVersion("envT16"));
+    Check("T16: a retry against the same candidate, once the fault clears, commits it normally",
+        store.CurrentSnapshotId("envT16") == candidate.Id,
+        new { active = store.CurrentSnapshotId("envT16") });
 }
 
 /// <summary>An in-memory owner whose liveness can be flipped without a real process, for settings-lane cases that don't need one.</summary>
