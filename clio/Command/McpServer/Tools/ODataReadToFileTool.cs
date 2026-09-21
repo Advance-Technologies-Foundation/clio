@@ -81,7 +81,10 @@ public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IO
 					out string[] selectColumns, out string[] expandColumns)
 				?? ODataReadTool.ValidateTarget(args);
 			if (argumentError is not null) {
-				return ODataReadResponse.Failure(argumentError, ODataReadErrorCodes.Argument);
+				// Same rule as the inline read: a rejected or missing entity name is not echoed back as
+				// the entity the failure is about, so the two paths answer with the same shape.
+				return ODataReadResponse.Failure(argumentError, ODataReadErrorCodes.Argument,
+					entity: ODataReadTool.IsEntityNameAccepted(args) ? args.Entity.Trim() : null);
 			}
 			if (string.IsNullOrWhiteSpace(args.OutputFile)) {
 				return ODataReadResponse.Failure(

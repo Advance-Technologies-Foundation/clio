@@ -108,8 +108,12 @@ public sealed class ODataReadTool(
 			}
 			string? targetError = ValidateTarget(args);
 			if (targetError is not null) {
+				//entity travels only once the NAME ITSELF has been accepted. The contract on the member
+				//says so - "an argument-level rejection (a bad or missing entity ...) is refused before
+				//that point and carries no entity" - so a rejected name must not be echoed back as the
+				//entity this failure is about. Only the top-range refusal reaches here with a usable one.
 				return ODataReadResponse.Failure(targetError, ODataReadErrorCodes.Argument,
-					entity: string.IsNullOrWhiteSpace(args.Entity) ? null : args.Entity.Trim());
+					entity: IsEntityNameAccepted(args) ? args.Entity.Trim() : null);
 			}
 
 			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
@@ -154,11 +158,10 @@ public sealed class ODataReadTool(
 	/// <param name="args">The bound tool arguments.</param>
 	/// <returns>The contract message when the target is not accepted; otherwise null.</returns>
 	internal static string? ValidateTarget(ODataReadArgs args) {
-		if (string.IsNullOrWhiteSpace(args.Entity)) {
-			return "entity is required.";
-		}
-		if (!ODataKeyFormatter.IsValidEntityName(args.Entity)) {
-			return "entity must be a valid OData entity set name (letters, digits, underscore).";
+		if (!IsEntityNameAccepted(args)) {
+			return string.IsNullOrWhiteSpace(args.Entity)
+				? "entity is required."
+				: "entity must be a valid OData entity set name (letters, digits, underscore).";
 		}
 		if (args.Top is { } requestedTop && (requestedTop < MinTop || requestedTop > MaxTop)) {
 			// An out-of-range top must NOT silently fall through to the default (which would
@@ -168,6 +171,14 @@ public sealed class ODataReadTool(
 		}
 		return null;
 	}
+
+	/// <summary>
+	/// Whether the requested entity set NAME was supplied and is well formed - which is what decides
+	/// whether a failure may name an entity at all.
+	/// </summary>
+	/// <param name="args">The bound tool arguments.</param>
+	internal static bool IsEntityNameAccepted(ODataReadArgs args) =>
+		!string.IsNullOrWhiteSpace(args.Entity) && ODataKeyFormatter.IsValidEntityName(args.Entity);
 
 	/// <summary>
 	/// Validates the supplied arguments and hands back the normalized column lists.
