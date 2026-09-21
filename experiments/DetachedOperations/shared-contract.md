@@ -134,6 +134,26 @@ The practical rule for anything added here later: if a type would be meaningless
 assembly is gone, it does not belong in this contract. Clause 3 is the same rule seen from the caller's
 side.
 
+## 8. How a case earns the right to be cited — settled by repetition
+
+A case title is a claim. The assertions are not the claim; they are evidence for it, and they can be
+satisfied by a run that does not exhibit the named behaviour at all. This has now happened three times,
+in two harnesses that share no code:
+
+| Case | Title claimed | What also satisfied every assertion |
+|---|---|---|
+| D1 | polling under continuous load starves | the poll ran before the load existed and won on an empty scope |
+| S10 (@vladimir-nikonov) | the old path never grants a window under admission pressure | a load pattern that left gaps in ownership |
+| F1 | two releases execute concurrently | a strictly sequential run |
+
+None of the three was found by reading the code. All three were found by constructing the run that
+should fail and discovering it passed.
+
+So the rule, for both harnesses: **a case whose title names a temporal or contention property — first,
+concurrently, under load, never, while — carries a mutation control, and the mutation is reported
+alongside the result.** If no mutation can be constructed that fails the case, the case is not measuring
+its title. The cost is one extra run; the thing it buys is that a cited number means what its name says.
+
 ## What this contract does not cover
 
 Package authenticity and trusted acquisition. It is an explicit open release gate; nothing here bears on
