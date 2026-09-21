@@ -84,16 +84,24 @@ a clean, quiescent shutdown.
 - The **reconcilable vs. uncertain-only** classification of operation classes, which
   determines whether quiescence can be skipped for a given operation type.
 - Call classification (read-only vs. side-effecting) for scenario (b) — undesigned.
-- **Composing transport continuity with a durable ledger.** The supervisor prototype
-  that solves transport continuity kills the process holding any in-memory ledger;
-  making that safe requires the ledger's evidence to survive the child's death, which
-  the E3 design (opaque, portable `OperationRecord`) makes plausible but which no one
-  has wired the two together to demonstrate yet.
-- **A small counterexample probe** demonstrating "idle transport ≠ idle process"
-  directly (an idle stdio connection, zero in-flight requests, one detached background
-  task still writing when the backend is replaced) — isolates the claim this whole
-  document leans on, without duplicating either of the two implementation branches.
-  Planned as a follow-up in this branch.
+- **Composing transport continuity with a durable ledger — this is the concrete next
+  artifact for this stream.** The record shape is no longer hypothetical: E3 publishes
+  `OperationRecord(Id, Target, StartedUtc, RuntimeVersion, State, FinishedUtc?, Code?)`
+  and `IsQuiescent(target?)` in
+  [`experiments/DetachedOperations/Contract/Contract.cs`](https://github.com/Advance-Technologies-Foundation/clio/blob/Alexandr-Kravchuk/detached-operation-probe/experiments/DetachedOperations/Contract/Contract.cs).
+  Nobody has run a supervisor that consults `IsQuiescent(target)` before swapping,
+  against the exact workload that broke (`create-app-section`, detached past its
+  response deadline). Two possible outcomes, both informative: the failure does not
+  recur (activation policy on top of the two existing mechanisms is sufficient), or it
+  does recur despite passing quiescence (the gap is a race between the check and the
+  swap, or in the two mechanisms' composition, not in either alone). This is a real
+  implementation task, not a documentation update — scoping it before building.
+
+~~A small counterexample probe demonstrating "idle transport ≠ idle process"~~ —
+**superseded.** [Alexandr-Kravchuk pointed out](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540612)
+this is already exactly the `create-app-section` A/B plus E3's control C2; a third
+demonstration of the same property adds no evidence. Retracted in favor of the
+composition probe above.
 
 ## Sources
 
