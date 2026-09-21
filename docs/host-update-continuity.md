@@ -2,6 +2,15 @@
 
 Discussion: [#1643](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643).
 
+**Round status:** this review round is closed as of
+[kirillkrylov's closing checkpoint](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18542373) —
+decisions handed to Kirill; this document's own recommendation (Flow A first, per
+above) aligns with that checkpoint's "keep... conservative defaults" framing. The
+[canonical round-conclusion record](https://github.com/Advance-Technologies-Foundation/clio/blob/089de2a75/docs/architecture-experiments.md#round-conclusion-for-kirill-1613)
+lists this document's supervisor-handover cases (S1-S7) under measured support. No
+further probe work is planned this round; this document stands as written unless new
+feedback arrives.
+
 ## Scope
 
 This document does not implement or re-derive either of the other two experiment
