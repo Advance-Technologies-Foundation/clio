@@ -213,7 +213,31 @@ Test naming: `Apply_ShouldWriteFiveResolvableUIds_WhenEnabledIsTrue`,
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
+- Implementation started: 2026-09-21
+- Implementation completed: 2026-09-21
+- Tests passing: yes — package suite **2334/2334** under `-c dev-nf`. `-c dev-n8` cannot be run in this
+  checkout (`.application/net-core/` absent); pre-existing environment gap.
 - Notes:
+  - **The conversion was lossy for one commit, and no test could have caught it.** Handing a freshly
+    converted element to the platform's rebuild does not MOVE its parameters, it replaces them:
+    `Parameters.Clear()` drops them with their `SourceValue`, and `FillNewSchemaParameters` re-creates
+    each from the callee under a fresh UId while adding a second mapping row beside the stranded
+    original. The designer's `_fillCollectionParameters` moves the same objects instead. Fixed by doing
+    the same — `PreserveExistingParameters` runs before the rebuild — and pinned by a test that maps a
+    value, converts, and asserts the value and the UId both survive. Every earlier test built its
+    element fresh and so had nothing to lose; adversarial review found it, not the suite.
+  - **The routing predicate was wrong in both directions.** `{resync:false, multiInstanceOptions:{…}}`
+    reached `SubProcessApplier`: on a multi-instance element it was REFUSED with a message about the
+    very shape it was configuring, and on a single-instance one it ran the re-synchronization the
+    caller had just declined. `SubProcessBlockShapeTests` now covers the routing layer, where both
+    defects lived while every applier fixture stayed green.
+  - `EnsureNotMultiInstance` is unchanged byte-for-byte, as the DoD requires.
+  - AC-07 (a two-root-parameter element is not refused) is asserted at the **applier's boundary** only.
+    The platform's counter synthesis cannot run in a unit fixture: `CreateIntegerParameter` opens with
+    `ProcessSchema.SystemUserConnection`. Committed as a named test so the limit is recorded rather than
+    rediscovered.
+  - The T-27 clause on `SubProcessApplier`'s class summary is retracted in the same commit that
+    falsifies it: all five multi-instance parameters carry the caller's schema stamp and are therefore
+    dynamic by construction.
+  - De-conversion and the two mode fields landed with this applier; stories 8 and 4 carry their test
+    matrices.

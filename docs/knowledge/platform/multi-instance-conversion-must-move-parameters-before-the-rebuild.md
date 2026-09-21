@@ -1,5 +1,5 @@
 ---
-description: The multi-instance rebuild does NOT discard a parameter stamped with the caller's schema - the prune arm skips dynamic parameters - and its counter self-heal opens with ProcessSchema.SystemUserConnection, so it cannot run in a unit fixture at all
+description: A FIRST multi-instance conversion that hands an element straight to the platform rebuild destroys every value mapped onto it and strands its mapping rows - the parameters must be moved into the collections first; once they are there the rebuild is non-destructive, and its counter self-heal opens with ProcessSchema.SystemUserConnection so it cannot run in a unit fixture at all
 applies-to:
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
   - spec/eng-99856-multi-instance/
@@ -10,8 +10,19 @@ date: 2026-09-21
 **What is true** — two properties of `ProcessSchemaActivity.SynchronizeParametersInternal`, both measured
 while writing ENG-99856's tests, and each of which broke a probe built on the opposite assumption.
 
-**1. The rebuild is not destructive over the callee's contract.** It is routinely described as "clears both
-`ItemProperties`", and that is a misreading of the lines. `:378-379` take **clones** of the two collections;
+**1. The rebuild is not destructive over the callee's contract — but ONLY once the collections already
+carry it.** On a FIRST conversion, with two freshly minted empty collections, it is destructive in a way
+that is easy to miss and reports success: `LoadCollectionParameters` loads nothing, `Parameters.Clear()`
+then drops every parameter the element had **with its `SourceValue`**, and `FillNewSchemaParameters`
+re-creates each from the callee under a **fresh** `UId`
+(`CreateElementParameterFromUserTaskSchemaParameter`, `:308-320`) while adding a second mapping row
+beside the stranded original — the bare `Parameters.Clear()` on that path is not the `ClearParameters()`
+variant that removes rows. **A tool converting an element must therefore MOVE its parameters into the two
+collections first**, which is what the designer's `_fillCollectionParameters` does and what makes
+`GetHasNotContainedTargetParameter` (`:227-236`) find each existing row's target and return false.
+
+With the collections populated, the round trip is non-destructive, and the usual description of it is a
+misreading of the lines: `:378-379` take **clones** of the two collections;
 `:387-388` clear the **clones'** item properties; `:390` `FillCollectionParameters` refills them from the
 synchronized `Parameters`; `:393-394` attach the clones. What mutates the cached graph in place is
 `Parameters.Clear()` at `:385` and `:391`.
@@ -38,8 +49,14 @@ for a dangling UId exactly as for `Guid.Empty`, so both shapes reach it identica
 genuinely destructive rebuild would have destroyed all 61 shipped multi-instance elements long ago. And
 `CreateIntegerParameter` needs a connection because it resolves `DataValueTypeManager` through one.
 
-**What breaks if you ignore it** — you write a test whose premise is wrong and then "fix" production to
-satisfy it. Both failures happened here:
+**What breaks if you ignore it** — for the first fact, a caller's configuration disappears on conversion
+with a success reported and no notice: the values are gone, the element looks correctly converted, and the
+duplicate mapping rows are invisible from any read API. That shipped in one commit of ENG-99856 and was
+caught by review rather than by a test, because every test built its element fresh and had no value to
+lose.
+
+For the rest, you write a test whose premise is wrong and then "fix" production to satisfy it. Both
+happened here:
 
 - A probe that added an item property and expected the rebuild to discard it failed, and the tempting
   conclusion was that the applier's ordering guarantee was not holding. It was; the probe was measuring a
