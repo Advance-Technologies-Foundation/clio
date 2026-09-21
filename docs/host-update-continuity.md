@@ -53,7 +53,7 @@ The three predicates, kept separate:
 | Predicate | Question | Mechanism with evidence | State |
 |---|---|---|---|
 | **Execution quiescence** | Is there outstanding work that would be silently lost? | [E3 ledger](https://github.com/Advance-Technologies-Foundation/clio/tree/Alexandr-Kravchuk/detached-operation-probe): `OperationRecord` is portable data (no delegates, no runtime objects), scoped **per target** (`IsQuiescent(target)`, measured in case A1b: envA busy, envB idle, global busy, same process, same moment) | Measured — but per-target scoping is the correct predicate for a **runtime** swap (which never needs it — already proven safe independent of quiescence), not license for a **host** swap to touch only the busy target's owner. For host-level swap, quiescence must be evaluated globally unless per-target isolation is separately built, which nothing here builds |
-| **Transport continuity** | Does the client's pipe survive the process being replaced at all? | Thin supervisor owning the client pipe, replaceable child process — [measured](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18539341): 8.1.0.129 → 8.1.0.131, 1.0s macOS / 1.3s Windows, zero client reconnects | Measured alone; composed with execution quiescence on the **happy path only** — the composition probe's gate has known races, not yet repaired — see below |
+| **Transport continuity** | Does the client's pipe survive the process being replaced at all? | Thin supervisor owning the client pipe, replaceable child process — [measured](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18539341): 8.1.0.129 → 8.1.0.131, 1.0s macOS / 1.3s Windows, zero client reconnects | Measured alone; **composed with execution quiescence, admission barrier repaired** — see below |
 | **Activation policy** | Given the other two are satisfied, *when* does a swap actually trigger? | — | **Open.** Not the same question as quiescence — a natural reconnect (scenario e) is an existing transport-reinitialization opportunity, not proof of detached-work or status continuity for the general case, and the held-call runtime proof (scenario b) should not be read as proof of every dead-socket case either |
 
 ### Why durable evidence changes the shape of the quiescence requirement
@@ -97,40 +97,30 @@ a clean, quiescent shutdown.
 - The **reconcilable vs. uncertain-only** classification of operation classes, which
   determines whether quiescence can be skipped for a given operation type.
 - Call classification (read-only vs. side-effecting) for scenario (b) — undesigned.
-- **Composing transport continuity with a durable ledger — measured on the happy path,
-  not yet safe to call closed.**
+- ~~Composing transport continuity with a durable ledger~~ — **done, including the
+  handover case, against the repaired barrier.**
   [`experiments/SupervisorQuiescenceComposition`](https://github.com/Advance-Technologies-Foundation/clio/tree/nikonov/supervisor-quiescence-probe/experiments/SupervisorQuiescenceComposition)
-  runs a real separate backend process, gated on E3's `TryEnterSwapWindow` (at
-  `e3138962c`), against the `create-app-section`-shaped workload. 4/4 cases pass, three
-  consecutive runs: a naive swap loses in-flight work (~18ms), a globally gated swap
-  waits for it and does not (~1220ms), and a per-target-only gate protects the checked
-  target while still losing a *different* target sharing the same host (~330ms swap,
-  that target's effect missing) — concrete evidence for the per-target-vs-global
-  correction, not just an argument for it.
+  runs a real separate backend process, gated on E3's `TryEnterSwapWindow`, against the
+  `create-app-section`-shaped workload. History, on the record rather than smoothed
+  over: the first pass (4/4) ran against `e3138962c`, which
+  [kirillkrylov's review](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540898)
+  then found had three reproduced defects (admission race, one-directional window
+  exclusion, completion-boundary race) that this probe's sequential scenarios hadn't
+  been shaped to trigger either way. Alexandr
+  [repaired all three at `551f25c92538`](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18541013).
+  Re-run against the repair: **S1–S4 unchanged within noise** (expected — those
+  scenarios don't contend for the window, so they couldn't have shown the difference
+  either way), plus a new **S5**: a second `Begin` for the gated target while the
+  window is held is refused (`SwapWindowHeldException`) every run, and the target
+  accepts work again the instant the window is released — the concrete "work arriving
+  during the handover" case. **5/5, three consecutive runs.**
 
-  **Correction, same day:**
-  [kirillkrylov's independent review](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540898)
-  found real defects in `TryEnterSwapWindow` at the exact commit this probe used —
-  an admission race (`Begin` releases its lock before registering the record, so a
-  window can be granted in that gap and admitted work isn't blocked by it), overlapping
-  windows (a target window granted while a global window is already held, or the
-  reverse), and a completion-boundary race (a window can be granted while a terminal
-  write is still in flight, so a swap could act before that operation's evidence has
-  actually landed). These are reproduced defects, not untested contention.
-
-  My probe's four scenarios are sequential and do not race a `Begin` call against a
-  window acquisition or hold overlapping windows, so its 4/4 pass **does not
-  contradict** kirillkrylov's findings — the two are compatible: the happy path this
-  probe exercises works, and a narrower adversarial timing this probe never attempted
-  does not. The composition claim stands only once the admission barrier is repaired.
-  Follow-up owned by this stream once that lands: add a scenario that starts a new
-  operation for the gated scope *during* window acquisition and asserts it is refused
-  (`SwapWindowHeldException`), not silently admitted — this is the "global admission
-  closure... including work arriving during the handover" kirillkrylov asked for.
-
-  Limits unchanged from the first measurement: assumes the ledger already has a record
-  for every live target; does not re-measure transport continuity itself; polls rather
-  than using an event/callback; no wait-budget/timeout policy.
+  Limits unchanged: assumes the ledger already has a record for every live target (a
+  target the supervisor never learned about wouldn't block the gate); does not
+  re-measure transport continuity itself; polls `TryEnterSwapWindow` rather than using
+  an event/callback; no wait-budget/timeout policy if quiescence never arrives — that's
+  activation policy, still open. Contention beyond one swapper and one new-work
+  attempt (S5) is untested, mirroring E3's own stated limit.
 
 ~~A small counterexample probe demonstrating "idle transport ≠ idle process"~~ —
 **superseded.** [Alexandr-Kravchuk pointed out](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540612)
