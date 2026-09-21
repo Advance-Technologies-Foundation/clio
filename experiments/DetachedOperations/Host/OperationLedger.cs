@@ -55,6 +55,18 @@ public sealed class OperationLedger : IOperationLedger {
     /// </summary>
     public int CompleteDelayMsForTests { get; set; }
 
+    /// <summary>
+    /// Test-only: restores the pre-repair lease, which set its "already reported" flag before calling
+    /// the ledger. Exists so L1 can be shown to FAIL against the defect it guards.
+    /// </summary>
+    public bool UseFlagFirstLeaseForTests { get; set; }
+
+    /// <summary>
+    /// Test-only: writes a truncated evidence line and then throws, modelling a failure part-way
+    /// THROUGH the write rather than before it. Applies to terminal records only.
+    /// </summary>
+    public bool FailMidWriteForTests { get; set; }
+
     /// <summary>Opens a ledger over an evidence file, recovering any prior process's unfinished operations.</summary>
     public OperationLedger(string evidencePath) : this(evidencePath, false) {
     }
@@ -174,7 +186,18 @@ public sealed class OperationLedger : IOperationLedger {
             _live[id] = record;
             _owners[id] = owner;                   // retention: the runtime cannot be retired under it
         }
-        return new Lease(this, id);
+        return UseFlagFirstLeaseForTests ? new FlagFirstLease(this, id) : new Lease(this, id);
+    }
+
+    /// <summary>
+    /// Clears a scope's degraded mark. Deliberately explicit and manual: the host cannot tell whether
+    /// the storage fault is actually gone, and clearing it automatically would hide a persistent fault
+    /// behind a self-healing flag. Recorded outcomes are never altered — this only lifts the refusal.
+    /// </summary>
+    /// <param name="target">The scope to clear.</param>
+    /// <returns><see langword="true"/> when a degraded mark was removed.</returns>
+    public bool ClearDegraded(string target) {
+        lock (_swapLock) { return _degradedScopes.Remove(target); }
     }
 
     /// <inheritdoc />
@@ -238,6 +261,14 @@ public sealed class OperationLedger : IOperationLedger {
         lock (_fileLock) {
             using var stream = new FileStream(_evidencePath, FileMode.Append, FileAccess.Write, FileShare.Read);
             using var writer = new StreamWriter(stream);
+            if (FailMidWriteForTests && kind == "end") {
+                // Part-way through: a truncated record reaches the disk and the write then fails. The
+                // torn line must never be readable as a terminal.
+                writer.Write(line[..(line.Length / 2)]);
+                writer.Flush();
+                stream.Flush(true);
+                throw new IOException("injected mid-write evidence failure");
+            }
             writer.WriteLine(line);
             writer.Flush();
             stream.Flush(true);                     // survive process loss, which is the case being measured
@@ -278,6 +309,24 @@ public sealed class OperationLedger : IOperationLedger {
                 root.GetProperty("Code").ValueKind == JsonValueKind.Null ? null : root.GetProperty("Code").GetString());
         }
         catch (Exception) { return null; }
+    }
+
+    // The defect, restored on demand: the flag moves before the work, so a concurrent Dispose observes
+    // it, skips completion and releases ownership while the outcome is still unrecorded.
+    private sealed class FlagFirstLease(OperationLedger ledger, string id) : IOperationLease {
+        private int _reported;
+        private int _released;
+
+        public string Id { get; } = id;
+
+        public void Complete(OperationState state, string? code = null) {
+            if (Interlocked.Exchange(ref _reported, 1) == 0) ledger.Complete(Id, state, code);
+        }
+
+        public void Dispose() {
+            Complete(OperationState.Failed, "lease-disposed-without-terminal");
+            if (Interlocked.Exchange(ref _released, 1) == 0) ledger.ReleaseOwnership(Id);
+        }
     }
 
     private sealed class SwapWindow(OperationLedger ledger, string scope) : IDisposable {

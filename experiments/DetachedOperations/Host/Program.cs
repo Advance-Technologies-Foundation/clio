@@ -306,6 +306,79 @@ Check("L2 a rejected completion does not burn the report; the operation can stil
     new { rejectedInvalidState = rejected, finalState = afterReject.State.ToString(),
           note = "validation happens before the single report is consumed" });
 
+// M1: the mutation arm L1 was missing. The same sequence against a lease that moves its flag first
+// must be DETECTED — a concurrency test never seen to fail proves nothing about what it guards.
+var flagFirst = new OperationLedger(Path.Combine(work, "flagfirst.jsonl")) {
+    CompleteDelayMsForTests = 300, UseFlagFirstLeaseForTests = true };
+IOperationLease mutatedLease = flagFirst.Begin("envM", "10.0.0.0", leaseOwner);
+Task mutatedCompleting = Task.Run(() => mutatedLease.Complete(OperationState.Succeeded, "m1"));
+await Task.Delay(60);
+mutatedLease.Dispose();
+var mutatedAtReturn = flagFirst.Query(mutatedLease.Id);
+await mutatedCompleting;
+Check("M1 mutation control: the same check detects a lease that reports its flag before the outcome",
+    mutatedAtReturn.State == OperationState.Running,
+    new { stateWhenDisposeReturned = mutatedAtReturn.State.ToString(),
+          note = "Running here is the defect: ownership was released while the outcome was still unrecorded" });
+
+// M2: failure part-way THROUGH the write, not before it. A torn line must not read as a terminal.
+var tornLedger = new OperationLedger(Path.Combine(work, "torn.jsonl")) { FailMidWriteForTests = true };
+string tornId = v2.StartDetached(tornLedger, "envT", Path.Combine(work, "torn-effect.log"), 100,
+    "succeed", CancellationToken.None);
+var tornTerminal = await WaitTerminal(tornLedger, tornId, TimeSpan.FromSeconds(20));
+var tornRecovered = new OperationLedger(Path.Combine(work, "torn.jsonl")).Query(tornId);
+Check("M2 a torn terminal write keeps the outcome in memory and is never recovered as terminal",
+    tornTerminal.State == OperationState.Succeeded
+        && tornLedger.DegradedScopes.Contains("envT")
+        && tornRecovered.State == OperationState.Unknown,
+    new { inMemory = tornTerminal.State.ToString(), degraded = tornLedger.DegradedScopes.Contains("envT"),
+          recoveredFromDisk = tornRecovered.State.ToString(),
+          note = "the half-written line is skipped, so recovery sees begin-without-end" });
+
+// M3: clearing is an explicit operator action, and normal operation resumes after it.
+var clearLedger = new OperationLedger(Path.Combine(work, "clear.jsonl")) { FailEndPersistenceForTests = true };
+string clearId = v2.StartDetached(clearLedger, "envK", Path.Combine(work, "clear-effect.log"), 100,
+    "succeed", CancellationToken.None);
+await WaitTerminal(clearLedger, clearId, TimeSpan.FromSeconds(20));
+bool refusedWhileDegraded = clearLedger.TryEnterSwapWindow("envK") is null;
+clearLedger.FailEndPersistenceForTests = false;                   // the storage fault is removed
+bool stillRefusedBeforeClearing = clearLedger.TryEnterSwapWindow("envK") is null;
+bool cleared = clearLedger.ClearDegraded("envK");
+bool windowAfterClearing;
+using (IDisposable? w = clearLedger.TryEnterSwapWindow("envK")) { windowAfterClearing = w is not null; }
+string afterClearId = v2.StartDetached(clearLedger, "envK", Path.Combine(work, "clear-effect.log"), 100,
+    "succeed", CancellationToken.None);
+var afterClearTerminal = await WaitTerminal(clearLedger, afterClearId, TimeSpan.FromSeconds(20));
+Check("M3 degradation clears only on an explicit action, and normal operation resumes after it",
+    refusedWhileDegraded && stillRefusedBeforeClearing && cleared && windowAfterClearing
+        && afterClearTerminal.State == OperationState.Succeeded
+        && clearLedger.Query(clearId).State == OperationState.Succeeded,
+    new { refusedWhileDegraded, stillRefusedAfterFaultRemoved = stillRefusedBeforeClearing, cleared,
+          windowGrantedAfterClearing = windowAfterClearing,
+          newWorkAfterClearing = afterClearTerminal.State.ToString(),
+          earlierOutcomeUnchanged = clearLedger.Query(clearId).State.ToString(),
+          note = "removing the fault is not enough; the mark is lifted deliberately and nothing is replayed" });
+
+// M4: an update that cannot get its window defers. It never kills the work and never claims success.
+string busyId = v2.StartDetached(ledger, "envU", Path.Combine(work, "defer-effect.log"), 2000,
+    "succeed", CancellationToken.None);
+DateTime deferDeadline = DateTime.UtcNow.AddMilliseconds(400);
+bool applied = false;
+while (DateTime.UtcNow < deferDeadline) {
+    using IDisposable? w = ledger.TryEnterSwapWindow("envU");
+    if (w is not null) { applied = true; break; }
+    await Task.Delay(25);
+}
+var busyDuring = ledger.Query(busyId);
+var busyTerminal = await WaitTerminal(ledger, busyId, TimeSpan.FromSeconds(20));
+string[] deferLines = File.ReadAllLines(Path.Combine(work, "defer-effect.log"));
+Check("M4 an update that cannot take its window defers, leaving the work untouched",
+    !applied && busyDuring.State == OperationState.Running
+        && busyTerminal.State == OperationState.Succeeded && deferLines.Length == 1,
+    new { updateApplied = applied, stateDuringWait = busyDuring.State.ToString(),
+          finalState = busyTerminal.State.ToString(), effectLines = deferLines.Length,
+          note = "deferred rather than applied; no implicit kill, and the work completed normally" });
+
 // ── O1: terminal status is NOT sufficient for reclamation ──────────────────────────────────────────
 // @kirillkrylov's returned-value-ownership finding, measured against my own invariant I3. A caller that
 // holds a runtime-defined result also holds the release that defined its type, however finished the

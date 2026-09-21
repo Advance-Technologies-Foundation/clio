@@ -1,7 +1,7 @@
 {
   "os": "Unix 27.0.0",
   "framework": "10.0.12",
-  "workDirectory": "/var/folders/xk/pl1m8g6d1w55jscyxzg0wjkc0000gn/T/detached-ops-Bioe7t",
+  "workDirectory": "/var/folders/xk/pl1m8g6d1w55jscyxzg0wjkc0000gn/T/detached-ops-0BQTUZ",
   "cases": [
     {
       "name": "A1a the original operation still answers after a newer runtime is activated",
@@ -165,10 +165,10 @@
       "name": "A5i mutation control: the same regression detects a deliberately split admission",
       "passed": true,
       "detail": {
-        "Violations": 5,
-        "Admitted": 47,
-        "Refused": 90,
-        "Windows": 91,
+        "Violations": 19,
+        "Admitted": 49,
+        "Refused": 85,
+        "Windows": 90,
         "note": "non-zero here is the point: it shows A5h can fail"
       }
     },
@@ -286,6 +286,48 @@
         "rejectedInvalidState": true,
         "finalState": "Succeeded",
         "note": "validation happens before the single report is consumed"
+      }
+    },
+    {
+      "name": "M1 mutation control: the same check detects a lease that reports its flag before the outcome",
+      "passed": true,
+      "detail": {
+        "stateWhenDisposeReturned": "Running",
+        "note": "Running here is the defect: ownership was released while the outcome was still unrecorded"
+      }
+    },
+    {
+      "name": "M2 a torn terminal write keeps the outcome in memory and is never recovered as terminal",
+      "passed": true,
+      "detail": {
+        "inMemory": "Succeeded",
+        "degraded": true,
+        "recoveredFromDisk": "Unknown",
+        "note": "the half-written line is skipped, so recovery sees begin-without-end"
+      }
+    },
+    {
+      "name": "M3 degradation clears only on an explicit action, and normal operation resumes after it",
+      "passed": true,
+      "detail": {
+        "refusedWhileDegraded": true,
+        "stillRefusedAfterFaultRemoved": true,
+        "cleared": true,
+        "windowGrantedAfterClearing": true,
+        "newWorkAfterClearing": "Succeeded",
+        "earlierOutcomeUnchanged": "Succeeded",
+        "note": "removing the fault is not enough; the mark is lifted deliberately and nothing is replayed"
+      }
+    },
+    {
+      "name": "M4 an update that cannot take its window defers, leaving the work untouched",
+      "passed": true,
+      "detail": {
+        "updateApplied": false,
+        "stateDuringWait": "Running",
+        "finalState": "Succeeded",
+        "effectLines": 1,
+        "note": "deferred rather than applied; no implicit kill, and the work completed normally"
       }
     },
     {

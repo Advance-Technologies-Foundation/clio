@@ -67,6 +67,10 @@ would almost never be globally idle and a global-only predicate would be correct
 | P5 | retirement is refused while owned cleanup is held, and allowed once ownership is released |
 | L1 | a concurrent disposal cannot release ownership before the outcome is recorded |
 | L2 | a rejected completion does not burn the report; the operation can still finish |
+| M1 | **mutation control for L1** — the check detects a lease that reports its flag before the outcome |
+| M2 | a torn terminal write keeps the outcome in memory and is never recovered as terminal |
+| M3 | degradation clears only on an explicit action, and normal operation resumes after it |
+| M4 | an update that cannot take its window defers, leaving the work untouched |
 | O1 | **counterexample to I3** — a runtime-defined result held by the caller keeps the release alive |
 | R1 | the V1 release becomes collectible once no lease retains it |
 | C1 | **control** — a host with no evidence answers `NotFound` for the very same lost operation |
@@ -146,7 +150,7 @@ temporary directory and writes nothing outside it.
 
 ## macOS observations, 2026-09-21
 
-macOS 27.0.0 (arm64), .NET 10.0.12. **33/33 passed, exit 0.** The contract derived from these cases is in
+macOS 27.0.0 (arm64), .NET 10.0.12. **37/37 passed, exit 0, three consecutive runs.** The contract derived from these cases is in
 [`execution-lifetime-contract.md`](execution-lifetime-contract.md).
 
 - The operation started on `10.0.0.0` kept answering `Running` and stayed owned by `10.0.0.0` after
@@ -167,9 +171,7 @@ Retention in C2 comes from both the ledger's owner reference and the detached wo
 probe shows the release outlives the update, not which of the two references achieves it.
 
 Not covered: contention beyond two threads (A5h/A5i run one starter against one swapper, not a storm),
-disk-write failure handling, post-`Complete` task cleanup, a mutation arm for L1 (it asserts the
-serialisation property directly — that `Dispose` cannot return before the outcome exists — rather than
-being proven against a deliberately broken lease the way A5i is),
+disk-write failure handling, post-`Complete` task cleanup, (M1 closed the missing mutation arm for L1),
 fairness or starvation under sustained pressure — A5h shows admissions can be starved when a swapper
 polls aggressively, and there is no wait-budget policy — native libraries or resources, real
 Creatio/DI dependencies, GC timing guarantees, multi-process coordination, server-side reconciliation
