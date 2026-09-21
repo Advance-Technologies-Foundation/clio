@@ -1,7 +1,7 @@
 {
   "os": "Microsoft Windows NT 10.0.26200.0",
   "framework": "10.0.11",
-  "workDirectory": "C:\\Temp\\detached-ops-gh3usavg.1m1",
+  "workDirectory": "C:\\Temp\\detached-ops-gxhdjmwd.luh",
   "cases": [
     {
       "name": "A1a the original operation still answers after a newer runtime is activated",
@@ -156,9 +156,9 @@
       "passed": true,
       "detail": {
         "Violations": 0,
-        "Admitted": 48,
-        "Refused": 70,
-        "Windows": 12
+        "Admitted": 68,
+        "Refused": 51,
+        "Windows": 8
       }
     },
     {
@@ -166,9 +166,9 @@
       "passed": true,
       "detail": {
         "Violations": 17,
-        "Admitted": 27,
-        "Refused": 71,
-        "Windows": 14,
+        "Admitted": 36,
+        "Refused": 50,
+        "Windows": 11,
         "note": "non-zero here is the point: it shows A5h can fail"
       }
     },
@@ -387,7 +387,7 @@
         "busyWhenReserved": true,
         "reservedImmediately": true,
         "drained": true,
-        "drainMs": 138,
+        "drainMs": 126,
         "note": "new admissions are refused under the reservation, so in-flight work is finite"
       }
     },
@@ -398,7 +398,7 @@
         "reserved": true,
         "drainedWithinBudget": false,
         "hungStillRunning": true,
-        "reservationHeldMs": 628,
+        "reservationHeldMs": 620,
         "note": "the hung operation was neither killed nor completed; the update defers again"
       }
     },
@@ -549,6 +549,61 @@
         "lateCode": "late-truth",
         "afterDisposalAlone": "Unknown",
         "note": "Unknown is an admission, so knowledge replaces it and a fabricated Failed does not"
+      }
+    },
+    {
+      "name": "J1 an operation keeps the configuration snapshot it was admitted under",
+      "passed": true,
+      "detail": {
+        "admittedBeforeActivation": "cfg-1",
+        "admittedAfterActivation": "cfg-2",
+        "note": "captured at admission and never re-read; same rule as the runtime release"
+      }
+    },
+    {
+      "name": "J2 the snapshot identity survives into durable evidence and is recovered with the record",
+      "passed": true,
+      "detail": {
+        "finished": {
+          "ConfigurationSnapshot": "cfg-1",
+          "state": "Succeeded"
+        },
+        "unfinished": {
+          "ConfigurationSnapshot": "cfg-2",
+          "state": "Unknown"
+        },
+        "note": "an outcome this host cannot establish still says which configuration produced it"
+      }
+    },
+    {
+      "name": "J3 the settings seam crosses as a string and adds no dependency to the contract",
+      "passed": true,
+      "detail": {
+        "seamType": "String",
+        "contractReferences": [
+          "System.Collections",
+          "System.Runtime"
+        ],
+        "note": "no settings type crosses; the lifetime side never interprets the value"
+      }
+    },
+    {
+      "name": "J4 a scope degraded by a storage failure still records which configuration was in force",
+      "passed": true,
+      "detail": {
+        "snapshotOnDisk": true,
+        "degraded": true,
+        "unpersisted": true,
+        "note": "the admission line carries it, so losing the outcome does not also lose the context"
+      }
+    },
+    {
+      "name": "J5 a release built against the previous contract still admits operations",
+      "passed": true,
+      "detail": {
+        "threeArgumentOverloadKept": true,
+        "prebuiltReleasesExecuted": true,
+        "note": "these effect lines were written by binaries this run never recompiled"
       }
     }
   ]
