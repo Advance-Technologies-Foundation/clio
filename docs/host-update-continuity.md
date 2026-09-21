@@ -52,7 +52,29 @@ The three predicates, kept separate:
 
 | Predicate | Question | Mechanism with evidence | State |
 |---|---|---|---|
-| **Execution quiescence** | Is there outstanding work that would be silently lost? | [E3 ledger](https://github.com/Advance-Technologies-Foundation/clio/tree/Alexandr-Kravchuk/detached-operation-probe): `OperationRecord` is portable data (no delegates, no runtime objects), scoped **per target** (`IsQuiescent(target)`, measured in case A1b: envA busy, envB idle, global busy, same process, same moment) | Measured — but per-target scoping is the correct predicate for a **runtime** swap (which never needs it — already proven safe independent of quiescence), not license for a **host** swap to touch only the busy target's owner. For host-level swap, quiescence must be evaluated globally unless per-target isolation is separately built, which nothing here builds |
+| **Execution quiescence** | Is there outstanding work that would be silently lost? | [E3 ledger](https://github.com/Advance-Technologies-Foundation/clio/tree/Alexandr-Kravchuk/detached-operation-probe): `OperationRecord` is portable data (no delegates, no runtime objects), scoped **per target** (`IsQuiescent(target)`, measured in case A1b: envA busy, envB idle, global busy, same process, same moment) | Measured — but per-target scoping is the correct predicate for a **runtime** swap (which never needs it — already proven safe independent of quiescence), not license for a **host** swap to touch only the busy target's owner. For host-level swap, quiescence must be evaluated globally unless per-target isolation is separately built, which nothing here builds. **`IsQuiescent` alone is also no longer sufficient** — see below |
+
+**Correction:** [Alexandr found](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18541953)
+quiescence and retirement-safety are not the same predicate — there are three
+independent reasons a release/host can't be safely replaced, and only one of them is
+something `IsQuiescent` can ever observe:
+
+| reason | visible to | ends when |
+|---|---|---|
+| live work | the ledger, via `IsQuiescent` | the operation terminates |
+| degraded evidence (a persistence write failed) | the ledger, via `DegradedScopes` | an operator resolves it |
+| an escaped runtime-defined return value (I9/O1) | nobody — not observable from inside the host | the caller drops its own reference |
+
+A scope can be fully quiescent — nothing running — and still unsafe to swap, because a
+prior operation's outcome exists only in memory after a failed disk write. **My probe's
+gate (`TryEnterSwapWindow`) checks quiescence only; it does not yet consult
+`DegradedScopes`, and should.**
+[Later correction](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18542055):
+degraded evidence blocks **host replacement** (the in-memory record would be lost)
+but not **runtime retirement** (`_live` is a host-owned collection; unloading the
+runtime doesn't touch it) — so this isn't one flag for "can't swap", it's two
+different blockers with different scopes, and conflating them would over-restrict the
+in-process runtime swap for a risk that's actually specific to host-level replacement.
 | **Transport continuity** | Does the client's pipe survive the process being replaced at all? | Thin supervisor owning the client pipe, replaceable child process — [measured](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18539341): 8.1.0.129 → 8.1.0.131, 1.0s macOS / 1.3s Windows, zero client reconnects | Measured alone; **composed with execution quiescence, admission barrier repaired** — see below |
 | **Activation policy** | Given the other two are satisfied, *when* does a swap actually trigger? | — | **Open.** Not the same question as quiescence — a natural reconnect (scenario e) is an existing transport-reinitialization opportunity, not proof of detached-work or status continuity for the general case, and the held-call runtime proof (scenario b) should not be read as proof of every dead-socket case either |
 
@@ -277,14 +299,47 @@ compared on concrete failure semantics rather than asserted:
 | ordering | outage window if V2 fails | precondition | risk |
 |---|---|---|---|
 | **A. Kill V1, then start V2** (my probe's current code) | Total, indefinite — no backend exists until manually fixed | none | This is the actual gap; not a missing test, a wrong default |
-| **B. Confirm V2, then retire V1** ("both generations coexist") | None, if the precondition holds | **V1 and V2 must not require the same exclusive resource** — a shared port, lock file, or any other single-owner handle. Where that's false (and it may be false for a real clio backend — a bound port, an exclusive settings-file lock, a single Creatio session), V1 and V2 categorically cannot both run, and this ordering isn't a "better default", it's unavailable | The readiness check itself must not run real work or mutate shared state before selection commits — my probe's `__readiness__` probe exercises the same code path as real work, which is fine in a sandbox with its own effect file but would not be fine against a real backend touching a real environment. A true readiness check needs to be a no-side-effect handshake, not a synthetic unit of real work |
-| **C. Kill V1, start V2; on V2 failure, restart V1 from its retained binary** | Bounded but nonzero — the restart/reinitialization time, not indefinite | None beyond keeping V1's binary on disk (already true — nothing here deletes it) | Works even when B's exclusivity precondition fails, at the cost of a real (if short) gap with no backend running |
+| **B. Confirm V2, then retire V1** ("both generations coexist") | None, if the precondition holds | **V1 and V2 must not require the same exclusive resource.** See the inventory below — this is now answered concretely rather than left open | The readiness check itself must not run real work or mutate shared state before selection commits — my probe's `__readiness__` probe exercises the same code path as real work, which is fine in a sandbox with its own effect file but would not be fine against a real backend touching a real environment. A true readiness check needs to be a no-side-effect handshake, not a synthetic unit of real work |
+| **C. Kill V1, start V2; on V2 failure, restart V1 from its retained binary** | **An attempt with a bound, not a guarantee** — corrected below | Bounding requires an explicit deadline and a terminal "unavailable" outcome, which don't exist yet | V1 can itself fail to restart, or share whatever broke V2 (same config, same dependency) — a fallback that can also fail is not the same claim as a bounded outage |
 
-So the comparison isn't "A is wrong, B is right" — it's: **A has no fallback and should
-not be the default; B is the zero-outage option but only where resources allow both
-generations to coexist; C is the fallback for exactly the cases B can't reach.** Which
-applies depends on what a real clio backend actually binds exclusively, which is not
-yet inventoried here and is the next concrete question rather than a probe extension.
+**Exclusivity, inventoried rather than left open**
+([Alexandr, read out of clio 8's source](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18541984)):
+- `iis-port-{port}.lock` (`IisDeploymentPortReservation`) — machine-wide, exclusive per
+  port. **Two generations deploying to the same IIS port genuinely cannot coexist** —
+  this is ordering B's precondition failing for real, not hypothetically.
+- The DbHub TOML settings-store lock — exclusive, but held only per-write (`using`),
+  not for the process lifetime. Two generations contend briefly; the loser fails rather
+  than corrupting. Too brief to block B in practice.
+- `McpToolExecutionLock.CwdLock` — in-process only (guards the shared current
+  directory within one process). Irrelevant to a supervisor model, since V1/V2 are
+  separate processes each with their own CWD.
+- **No named mutex, no single-instance guard anywhere in clio** — two
+  `clio mcp-server` processes can run concurrently today, which is exactly ordering B's
+  precondition holding, in general.
+- The client pipe is exclusive by construction (one process owns stdin/stdout toward
+  the client) — not an inventoriable lock, it's the shape of the transport, and it's
+  why the supervisor owns the pipe rather than V1 or V2 directly.
+
+So: **ordering B is available except where an operation binds an IIS deployment
+port.** Caveat from the same audit, carried forward rather than dropped: this is a
+source audit for exclusivity primitives *in clio*, not a proof of completeness — a
+resource held by a dependency (a Creatio session the platform treats as exclusive, a
+database connection with a server-side constraint) wouldn't show up in it. A floor,
+not a ceiling.
+
+**Ordering C, corrected**
+([kirillkrylov](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18542014)):
+"bounded but nonzero" overstated it — restarting V1 is an *attempt*, and the attempt
+itself can fail, including for the same reason V2 failed (shared broken config or
+dependency). A real design needs bounded retries with an explicit deadline and a
+defined terminal "unavailable" outcome, neither of which exist yet. That's the same
+activation-policy gap already open (A5h's wait-budget/starvation question), now with a
+second concrete instance.
+
+So the comparison isn't "A is wrong, B is right" — it's: **A has no fallback and
+should not be the default; B is the zero-outage option and is available except for
+IIS-port-bound operations; C is the fallback for exactly that exception, but needs a
+bounded-attempt policy before it can be called a guarantee rather than a best effort.**
 
 One more asymmetry worth naming: Alexandr's
 [P1 finding](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18541844)
