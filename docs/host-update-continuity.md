@@ -268,14 +268,23 @@ immediately. Two designs, not yet chosen between:
   same retention/reclamation question E2's runtime-retirement probe already answers
   for runtime bundles, applied one layer up, to the host binary itself.
 
-**Flow B.** Here the finding is structural, not just "untested": **my probe's current
-ordering — kill V1, then start V2 — has no rollback path by construction.** If V2
-fails to become ready, the client has no backend at all; V1 is already gone. This
-isn't a missing test case, it's the wrong sequencing for a design that wants rollback.
-The correct order is **confirm V2 first, then retire V1** — start V2 (or at minimum a
-dry-run/handshake proving it *can* start) before killing V1, keeping V1 as the fallback
-if V2's readiness check fails. That is a design correction to make before extending the
-probe further, not an additional scenario to bolt onto the existing ordering.
+**Flow B.** Corrected from an earlier version of this section
+([kirillkrylov](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18541905)):
+"confirm V2 first, then retire V1" is not one universal correct ordering — it is one
+of three, and it has a precondition that must be stated, not assumed. Three orderings,
+compared on concrete failure semantics rather than asserted:
+
+| ordering | outage window if V2 fails | precondition | risk |
+|---|---|---|---|
+| **A. Kill V1, then start V2** (my probe's current code) | Total, indefinite — no backend exists until manually fixed | none | This is the actual gap; not a missing test, a wrong default |
+| **B. Confirm V2, then retire V1** ("both generations coexist") | None, if the precondition holds | **V1 and V2 must not require the same exclusive resource** — a shared port, lock file, or any other single-owner handle. Where that's false (and it may be false for a real clio backend — a bound port, an exclusive settings-file lock, a single Creatio session), V1 and V2 categorically cannot both run, and this ordering isn't a "better default", it's unavailable | The readiness check itself must not run real work or mutate shared state before selection commits — my probe's `__readiness__` probe exercises the same code path as real work, which is fine in a sandbox with its own effect file but would not be fine against a real backend touching a real environment. A true readiness check needs to be a no-side-effect handshake, not a synthetic unit of real work |
+| **C. Kill V1, start V2; on V2 failure, restart V1 from its retained binary** | Bounded but nonzero — the restart/reinitialization time, not indefinite | None beyond keeping V1's binary on disk (already true — nothing here deletes it) | Works even when B's exclusivity precondition fails, at the cost of a real (if short) gap with no backend running |
+
+So the comparison isn't "A is wrong, B is right" — it's: **A has no fallback and should
+not be the default; B is the zero-outage option but only where resources allow both
+generations to coexist; C is the fallback for exactly the cases B can't reach.** Which
+applies depends on what a real clio backend actually binds exclusively, which is not
+yet inventoried here and is the next concrete question rather than a probe extension.
 
 One more asymmetry worth naming: Alexandr's
 [P1 finding](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18541844)
@@ -283,8 +292,8 @@ One more asymmetry worth naming: Alexandr's
 forever, its scope permanently unswappable, because invariant I4 (evidence durable
 *before* the terminal is observable) is what makes replacement safe against an
 unrecorded terminal, and the same ordering is what turns a disk failure into a stuck
-scope. That is orthogonal to V2-startup failure but compounds with it: a stuck scope
-from a persistence failure would make even the confirm-V2-first ordering wait forever
+scope. That is orthogonal to V2-startup failure but compounds with ordering B above: a
+stuck scope from a persistence failure would make even confirm-then-retire wait forever
 for a window that structurally cannot open, which is exactly the wait-budget/starvation
 gap already flagged as open (A5h) and now has a second, independent cause.
 
