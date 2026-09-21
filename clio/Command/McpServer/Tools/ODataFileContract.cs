@@ -153,6 +153,12 @@ public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAcces
 		}
 	}
 
+	/// <summary>
+	/// Starting size of the <see cref="ReadBounded"/> buffer. A rows file is typically a few hundred bytes to a
+	/// few kilobytes, so the read usually completes in one growth step without ever approaching the ceiling.
+	/// </summary>
+	private const int InitialReadBufferBytes = 64 * 1024;
+
 	/// <summary>Reads the whole stream, refusing at the first byte past <paramref name="maxBytes"/>.</summary>
 	/// <param name="stream">Stream opened under the confinement; read to its end or to the ceiling.</param>
 	/// <param name="maxBytes">Ceiling the result may not exceed.</param>
@@ -165,9 +171,16 @@ public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAcces
 	/// over it, so the buffer is sized to that one extra byte and never to whatever the file claims to be.
 	/// </remarks>
 	private static byte[] ReadBounded(Stream stream, long maxBytes) {
-		byte[] buffer = new byte[maxBytes + 1];
+		long ceiling = maxBytes + 1;
+		//Start small and grow: sizing to the ceiling up front would charge every read - most of them a few
+		//hundred bytes - a full MaxPayloadBytes zeroed allocation. Growth is still capped at the ceiling, so
+		//the refusal point is unchanged and stream.Length is still not trusted.
+		byte[] buffer = new byte[(int)Math.Min(ceiling, InitialReadBufferBytes)];
 		int total = 0;
-		while (total < buffer.Length) {
+		while (total < ceiling) {
+			if (total == buffer.Length) {
+				Array.Resize(ref buffer, (int)Math.Min(ceiling, (long)buffer.Length * 2));
+			}
 			int read = stream.Read(buffer, total, buffer.Length - total);
 			if (read == 0) {
 				break;
@@ -176,6 +189,9 @@ public sealed class ODataFileContract(IFileSystem fileSystem, IConfinedFileAcces
 		}
 		if (total > maxBytes) {
 			throw new InputFileTooLargeException(total, maxBytes);
+		}
+		if (total == buffer.Length) {
+			return buffer;
 		}
 		byte[] payload = new byte[total];
 		Array.Copy(buffer, payload, total);
