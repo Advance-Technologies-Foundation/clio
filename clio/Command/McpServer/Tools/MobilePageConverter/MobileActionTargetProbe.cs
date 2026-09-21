@@ -581,7 +581,7 @@ public static class MobileActionTargetProbe {
 		var pendingCandidates = new List<(string Name, Guid PageUId)>();
 		foreach (EntityProbeOutcome outcome in outcomes) {
 			if (outcome.CandidateFailure is not null) {
-				candidateFailures.Record(outcome.CandidateFailure);
+				candidateFailures.RecordFailure(outcome.CandidateFailure);
 			}
 			if (outcome.CandidatePageUId is not null) {
 				pendingCandidates.Add((outcome.Name, outcome.CandidatePageUId.Value));
@@ -610,7 +610,7 @@ public static class MobileActionTargetProbe {
 		private Exception _first;
 
 		/// <summary>Records one candidate-lookup failure.</summary>
-		internal void Record(Exception failure) {
+		internal void RecordFailure(Exception failure) {
 			_count++;
 			_first ??= failure;
 		}
@@ -637,7 +637,11 @@ public static class MobileActionTargetProbe {
 				? $"Only the first {MaxEntityAddonProbes} object targets were checked; the rest are reported as "
 					+ "unverified. Check them manually."
 				: null;
-			return budgetNote is null ? candidateNote : budgetNote + (candidateNote is null ? "" : " " + candidateNote);
+			if (budgetNote is null) {
+				return candidateNote;
+			}
+			string candidateSuffix = candidateNote is null ? "" : " " + candidateNote;
+			return budgetNote + candidateSuffix;
 		}
 	}
 
@@ -726,7 +730,7 @@ public static class MobileActionTargetProbe {
 		foreach ((string name, Guid pageUId) in pending) {
 			SchemaNameResolver.Result result = resolved[pageUId];
 			if (result.Status == SchemaNameResolver.Status.RowMissing) {
-				candidateFailures.Record(new InvalidOperationException(
+				candidateFailures.RecordFailure(new InvalidOperationException(
 					$"Page schema '{pageUId}' could not be resolved to a name."));
 				continue;
 			}

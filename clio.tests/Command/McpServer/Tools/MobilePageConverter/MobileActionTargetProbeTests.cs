@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading;
+using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.McpServer.Tools;
@@ -1111,16 +1112,21 @@ public sealed class MobileActionTargetProbeTests {
 	// ── Concurrency (bounded per-object reads run at the same time) ────────────────────────────
 
 	[Test]
-	[Description("Six objects probed at once complete their per-object reads OUT OF ORDER (deliberately reversed via a delay), yet every object's own verdict and candidate land under ITS OWN key — concurrent completion order must never scramble which result belongs to which object.")]
+	[Description("Six objects probed at once complete their per-object reads OUT OF ORDER (deliberately reversed via gated release, never a wall-clock delay), yet every object's own verdict and candidate land under ITS OWN key — concurrent completion order must never scramble which result belongs to which object.")]
 	public void Probe_ManyObjectTargets_CompleteOutOfOrder_EachResultLandsUnderItsOwnKey() {
 		// Arrange — six objects: even-indexed ones resolve cleanly, odd-indexed ones are Missing with their
-		// own distinct candidate page. The classify read for an EARLIER index sleeps LONGER and a LATER
-		// index returns immediately, so completion order is deliberately the reverse of probe order — if a
-		// result ever landed under the wrong slot, this reversal is what would surface it.
+		// own distinct candidate page. Every classify read blocks on its OWN gate until every one of the six
+		// has reached it (readyGate), then the test releases the gates in REVERSE probe order — a
+		// deterministic reordering with no reliance on wall-clock timing (Sonar S2925) — so if a result ever
+		// landed under the wrong slot, this reversal is what would surface it.
 		const int count = 6;
 		string[] names = [.. Enumerable.Range(0, count).Select(i => $"Object{i}")];
 		Guid[] entityUIds = [.. names.Select(_ => Guid.NewGuid())];
 		Guid[] candidatePageUIds = [.. names.Select(_ => Guid.NewGuid())];
+
+		using var readyGate = new CountdownEvent(count);
+		ManualResetEventSlim[] releaseGates =
+			[.. Enumerable.Range(0, count).Select(_ => new ManualResetEventSlim(false))];
 
 		EnvironmentStub environment = Environment(
 			Route(
@@ -1138,14 +1144,25 @@ public sealed class MobileActionTargetProbeTests {
 						: "{\"Pages\":[]}"
 				};
 			}
-			Thread.Sleep((count - index) * 20);
+			readyGate.Signal();
+			releaseGates[index].Wait();
 			return new AddonSchemaDto {
 				MetaData = isMissing ? "{\"Pages\":[]}" : "{\"Pages\":[{\"IsDefault\":true}]}"
 			};
 		});
 
-		// Act
-		MobileActionTargetProbeResult result = Probe(environment, CreateRecordViewConfig(names));
+		// Act — run the probe on its own thread so this thread can wait for every object to reach its gate,
+		// then release the gates in reverse index order before observing the result.
+		Task<MobileActionTargetProbeResult> probing = Task.Run(
+			() => Probe(environment, CreateRecordViewConfig(names)));
+		readyGate.Wait();
+		for (int i = count - 1; i >= 0; i--) {
+			releaseGates[i].Set();
+		}
+		MobileActionTargetProbeResult result = probing.GetAwaiter().GetResult();
+		foreach (ManualResetEventSlim gate in releaseGates) {
+			gate.Dispose();
+		}
 
 		// Assert
 		for (int i = 0; i < count; i++) {

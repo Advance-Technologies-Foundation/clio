@@ -55,13 +55,19 @@ internal static class SchemaNameResolver {
 			}
 		}
 		foreach (Guid uId in uIds.Distinct()) {
-			results[uId] = !nameByUId.TryGetValue(uId, out string name)
-				? new Result(Status.RowMissing, null)
-				: !string.IsNullOrEmpty(name) && PageSchemaMetadataHelper.IsValidSchemaName(name)
-					? new Result(Status.Resolved, name)
-					: new Result(Status.NameInvalid, null);
+			results[uId] = ResolveFromRow(nameByUId, uId);
 		}
 		return results;
+	}
+
+	/// <summary>Settles one UId's <see cref="Result"/> from the batched <c>SysSchema</c> read.</summary>
+	private static Result ResolveFromRow(IReadOnlyDictionary<Guid, string> nameByUId, Guid uId) {
+		if (!nameByUId.TryGetValue(uId, out string name)) {
+			return new Result(Status.RowMissing, null);
+		}
+		return !string.IsNullOrEmpty(name) && PageSchemaMetadataHelper.IsValidSchemaName(name)
+			? new Result(Status.Resolved, name)
+			: new Result(Status.NameInvalid, null);
 	}
 
 	/// <summary>
