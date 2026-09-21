@@ -200,8 +200,8 @@ public sealed class ConfinedFileAccessTests {
 				+ "lets both writers observe an absent target and both report success");
 		File.ReadAllText(path).Should().Be(winner,
 			because: "the winner's content must survive intact - the loser must not have overwritten it");
-		Directory.GetFiles(_sandbox, "*.tmp").Should().BeEmpty(
-			because: "the loser must clean up its own temporary sibling");
+		Directory.GetFileSystemEntries(_sandbox, "*.tmp").Should().BeEmpty(
+			because: "the loser must clean up its own staging directory - entries, not files, because staging is a directory");
 	}
 
 	[Test]
@@ -232,12 +232,56 @@ public sealed class ConfinedFileAccessTests {
 		observedMode.Should().NotBeNull(
 			because: "the writer must reach the point where the temporary sibling exists and its mode is settled");
 		observedMode.Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite,
-			because: "the sibling holds the same raw service response and lives under the shared OS temp root, so it must never be readable by other local users while the write is in progress");
+			because: "the staged file holds the same raw service response and lives under the shared OS temp root, so it must never be readable by other local users while the write is in progress");
 		observedLength.Should().Be(0,
 			because: "the ordering is the whole point - a mode narrowed after the write leaves the payload exposed for the length of the transfer, and the published inode is owner-only either way, so nothing else can tell the two apart");
 		File.GetUnixFileMode(path).Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite);
-		Directory.GetFiles(_sandbox, "*.tmp").Should().BeEmpty(
-			because: "the temporary entry is unlinked once the content is published under its final name");
+		Directory.GetFileSystemEntries(_sandbox, "*.tmp").Should().BeEmpty(
+			because: "the staged entry and the directory holding it are both removed once the content is published under its final name");
+	}
+
+	// PR #1229 review (kirillkrylov, [P2] "Restrict Unix temporary files at creation"): openat is variadic,
+	// so the P/Invoke cannot pass O_CREAT's mode and the staged file is CREATED with uncontrolled bits (0040
+	// was observed on Linux x64) before fchmod narrows it. fchmod cannot revoke a descriptor another account
+	// already opened in that window, so the boundary has to be something that IS set atomically at creation.
+	// mkdirat is not variadic: the staging directory is created 0700 in one call, and this test is what pins
+	// that - the mode is read while the payload stream is still open, so a create-then-chmod of the DIRECTORY
+	// could not satisfy it either.
+	[Test]
+	[Category("Integration")]
+	[Description("Creates the staging directory owner-only (0700) atomically, so the window in which openat's uncontrolled create mode applies is inside a directory no other account may traverse.")]
+	public void WriteNew_ShouldStageInsideAnOwnerOnlyDirectory_CreatedAtomically() {
+		// Arrange
+		if (OperatingSystem.IsWindows()) {
+			Assert.Ignore("Unix file modes have no meaning on Windows.");
+		}
+		string path = Path.Combine(_sandbox, "staging-directory-mode.json");
+		UnixFileMode? observedDirectoryMode = null;
+		string observedDirectoryName = null;
+		UnixConfinedFileAccess.NotifyTemporaryFileRestricted = stagedName => {
+			// The hook reports the staged file RELATIVE to the published file's parent, so its first
+			// component is the staging directory this test is about.
+			observedDirectoryName = stagedName.Split(Path.DirectorySeparatorChar)[0];
+			observedDirectoryMode = File.GetUnixFileMode(Path.Combine(_sandbox, observedDirectoryName));
+		};
+
+		try {
+			// Act
+			_access.WriteNew(path, Encoding.UTF8.GetBytes("{\"a\":1}"));
+		} finally {
+			UnixConfinedFileAccess.NotifyTemporaryFileRestricted = null;
+		}
+
+		// Assert
+		observedDirectoryName.Should().NotBeNullOrEmpty(
+			because: "the payload must be staged inside a directory, not beside the target, or there is no boundary to measure");
+		observedDirectoryMode.Should().Be(
+			UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute,
+			because: "no other account may traverse into the directory holding a file whose own create mode is out of clio's hands");
+		Directory.Exists(Path.Combine(_sandbox, observedDirectoryName)).Should().BeFalse(
+			because: "the staging directory is removed once the content is published, leaving only the target");
+		File.ReadAllText(path).Should().Be("{\"a\":1}",
+			because: "staging must still publish exactly the bytes it was given");
 	}
 
 	[Test]

@@ -39,9 +39,9 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 
 	/// <inheritdoc/>
 	/// <summary>
-	/// Called with the sibling temporary file's name once its mode has been narrowed to owner-only and
-	/// before any payload byte is written. Exists solely so that ordering can be pinned by a test; it is
-	/// never set in production.
+	/// Called with the staged file's name relative to the published file's own parent directory, once the
+	/// staging directory exists and before any payload byte is written. Exists solely so that ordering can
+	/// be pinned by a test; it is never set in production.
 	/// </summary>
 	internal static Action<string> NotifyTemporaryFileRestricted { get; set; }
 
@@ -52,14 +52,54 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 		// created outside the allowed roots. The later descent refused the response file, but the
 		// out-of-root directory was already there and could not be taken back.
 		using DirectoryDescriptor directory = OpenParent(canonicalPath, out string fileName, createMissing: true);
-		// The content is completed in a sibling temporary file and only then given its final name, both
-		// created and renamed RELATIVE TO THE SAME directory descriptor. Writing straight into the final
-		// path left a truncated file behind whenever the write failed part-way, with the call reported as
-		// failed and the no-overwrite guard then refusing every retry against the wreckage.
-		string temporaryName = $"{fileName}.{Guid.NewGuid():N}.tmp";
+		// The content is completed OUT OF SIGHT and only then given its final name, everything relative to
+		// directory descriptors that are already fixed. Writing straight into the final path left a truncated
+		// file behind whenever the write failed part-way, with the call reported as failed and the
+		// no-overwrite guard then refusing every retry against the wreckage.
+		//
+		// Staging happens inside a directory this call creates 0700, rather than beside the target. openat is
+		// VARIADIC - `int openat(int, const char *, int, ...)` - and the mode is the variadic part, so a
+		// P/Invoke cannot pass it: on Apple silicon a variadic argument travels on the stack while the
+		// declaration would put it in a register, which hands libc whatever happens to be there. The create
+		// therefore runs with an UNCONTROLLED mode (a Linux x64 probe of this exact P/Invoke observed 0040),
+		// and the fchmod that follows cannot revoke a descriptor another account already holds: under the
+		// shared OS temp root, anyone allowed by those initial bits could open the empty file, keep the
+		// descriptor, and read every byte written afterwards. mkdirat is NOT variadic, so 0700 IS passed at
+		// creation - and a directory nobody else may traverse is a boundary no accidental file mode can
+		// undo (PR #1229 review).
+		string stagingName = $"{fileName}.{Guid.NewGuid():N}.tmp";
+		if (Interop.MkdirAt(directory.Value, stagingName, OwnerAll) != 0) {
+			throw LastError(canonicalPath, "create the staging directory for");
+		}
+		try {
+			// Reopened NoFollow + Directory: the name was just created inside a fixed descriptor, and the
+			// reopen still has to prove what it got back is that directory and not something substituted.
+			int stagingFd = OpenComponent(directory.Value, stagingName);
+			if (stagingFd < 0) {
+				throw LastError(canonicalPath, "open the staging directory for");
+			}
+			using DirectoryDescriptor staging = new(stagingFd);
+			WriteThroughStaging(canonicalPath, content, directory, staging, fileName, stagingName);
+		}
+		finally {
+			Interop.RemoveDirectoryAt(directory.Value, stagingName);
+		}
+	}
+
+	/// <summary>
+	/// Writes the payload into the private staging directory and publishes it under its final name.
+	/// </summary>
+	/// <param name="canonicalPath">Absolute canonical path of the published file, used in diagnostics.</param>
+	/// <param name="content">Bytes to publish.</param>
+	/// <param name="directory">Descriptor of the published file's parent directory.</param>
+	/// <param name="staging">Descriptor of the owner-only staging directory.</param>
+	/// <param name="fileName">Final name of the published file, relative to <paramref name="directory"/>.</param>
+	/// <param name="stagingName">Name of the staging directory, relative to <paramref name="directory"/>.</param>
+	private static void WriteThroughStaging(string canonicalPath, byte[] content, DirectoryDescriptor directory,
+			DirectoryDescriptor staging, string fileName, string stagingName) {
 		int fd = Interop.OpenAt(
-			directory.Value,
-			temporaryName,
+			staging.Value,
+			StagedFileName,
 			Flags.WriteOnly | Flags.Create | Flags.Exclusive | Flags.NoFollow | Flags.CloseOnExec);
 		if (fd < 0) {
 			throw LastError(canonicalPath, "create");
@@ -68,24 +108,17 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 		// descriptor open for the lifetime of the process, since nothing owned it yet.
 		SafeFileHandle handle = new((IntPtr)fd, ownsHandle: true);
 		try {
-			// The permissions are narrowed to owner-only on the OPEN DESCRIPTOR, before a single byte of the
-			// payload is written. The mode cannot be passed to the create itself: openat is a VARIADIC
-			// function, and on Apple silicon a variadic argument is passed on the stack, so a P/Invoke that
-			// declares it as an ordinary fourth parameter hands libc whatever happens to be there - which
-			// produced files with unreadable, unpredictable permissions. What matters for confidentiality is
-			// that the file is empty until this call returns: an output file is legitimately allowed under
-			// the SHARED OS temp root and holds a raw service response, and no byte of it exists while the
-			// mode is still undetermined.
+			// Still narrowed on the OPEN DESCRIPTOR before a byte is written. It is no longer the
+			// confidentiality boundary - the 0700 staging directory is - but it is what the PUBLISHED inode
+			// inherits: linkat below gives the final name the same inode, mode included.
 			if (Interop.FChmod(fd, OwnerReadWrite) != 0) {
 				throw LastError(canonicalPath, "restrict permissions on");
 			}
 			// The ONLY point from which the creation-time guarantee can be observed. The published inode is
 			// owner-only whether the mode is narrowed before or after the write, so a regression that
-			// reordered these two statements - leaving the sibling world-readable for the whole transfer -
-			// would pass every assertion made on the finished file. There is no path-based handle on the
-			// temporary entry to look at from outside either: it is created and unlinked relative to a
-			// directory descriptor and never has a stable name a caller could stat in time.
-			NotifyTemporaryFileRestricted?.Invoke(temporaryName);
+			// reordered these two statements - leaving the staged file readable for the whole transfer -
+			// would pass every assertion made on the finished file.
+			NotifyTemporaryFileRestricted?.Invoke(Path.Combine(stagingName, StagedFileName));
 			using (FileStream stream = new(handle, FileAccess.Write)) {
 				stream.Write(content, 0, content.Length);
 				stream.Flush();
@@ -94,9 +127,9 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 			// window in which a second writer creates the target between the two steps and is then silently
 			// overwritten - two concurrent calls would both report success while one result was destroyed.
 			// linkat fails with EEXIST if the name is taken, and that test-and-create is ONE atomic operation,
-			// which is what the non-destructive contract actually requires. The temporary entry is then
+			// which is what the non-destructive contract actually requires. The staged entry is then
 			// unlinked, leaving exactly the published file.
-			if (Interop.LinkAt(directory.Value, temporaryName, directory.Value, fileName, 0) != 0) {
+			if (Interop.LinkAt(staging.Value, StagedFileName, directory.Value, fileName, 0) != 0) {
 				int error = Marshal.GetLastWin32Error();
 				if (error == FileAlreadyExists) {
 					throw new IOException(
@@ -105,16 +138,19 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 				}
 				throw LastError(canonicalPath, "publish");
 			}
-			Interop.UnlinkAt(directory.Value, temporaryName);
+			Interop.UnlinkAt(staging.Value, StagedFileName);
 		}
 		catch {
 			// The FileStream disposes the handle on the success path; on a failure before it is constructed
 			// this is the only owner there is.
 			handle.Dispose();
-			Interop.UnlinkAt(directory.Value, temporaryName);
+			Interop.UnlinkAt(staging.Value, StagedFileName);
 			throw;
 		}
 	}
+
+	/// <summary>Name the payload carries inside the staging directory, which is private to this call.</summary>
+	private const string StagedFileName = "response";
 
 	/// <summary>Opens the parent directory of <paramref name="canonicalPath"/> component by component.</summary>
 	/// <param name="canonicalPath">Absolute canonical path.</param>
@@ -319,12 +355,32 @@ internal sealed class UnixConfinedFileAccess : IConfinedFileAccess {
 		[DllImport("libc", EntryPoint = "unlinkat", SetLastError = true)]
 		private static extern int UnlinkAtNative(int dirFd, string path, int flags);
 
-		/// <summary>Removes a temporary sibling. Best-effort: a cleanup failure never replaces the real one.</summary>
+		/// <summary>Removes a staged entry. Best-effort: a cleanup failure never replaces the real one.</summary>
 		/// <param name="dirFd">Descriptor of the directory holding the entry.</param>
 		/// <param name="path">Entry name, relative to <paramref name="dirFd"/>.</param>
 		internal static void UnlinkAt(int dirFd, string path) {
 			try {
 				UnlinkAtNative(dirFd, path, 0);
+			}
+			catch (Exception) {
+				// Nothing to do: the caller is already reporting a failure, or has just succeeded.
+			}
+		}
+
+		// AT_REMOVEDIR is 0x80 on Darwin and 0x200 on Linux (asm-generic/fcntl.h). A wrong value here fails
+		// LOUDLY rather than silently - unlinkat returns EINVAL and the staging directory is left behind -
+		// which is why it is safe to keep as a constant while the O_* flags need behavioural coverage.
+		private static int RemoveDirectory =>
+			OperatingSystem.IsMacOS() || OperatingSystem.IsMacCatalyst() || OperatingSystem.IsFreeBSD()
+				? 0x80
+				: 0x200;
+
+		/// <summary>Removes the staging directory once it is empty. Best-effort, like <see cref="UnlinkAt"/>.</summary>
+		/// <param name="dirFd">Descriptor of the directory holding the staging directory.</param>
+		/// <param name="path">Staging directory name, relative to <paramref name="dirFd"/>.</param>
+		internal static void RemoveDirectoryAt(int dirFd, string path) {
+			try {
+				UnlinkAtNative(dirFd, path, RemoveDirectory);
 			}
 			catch (Exception) {
 				// Nothing to do: the caller is already reporting a failure, or has just succeeded.
