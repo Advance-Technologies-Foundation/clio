@@ -119,12 +119,6 @@ public sealed class SettingsStore {
     /// </summary>
     public Action? OnActivatePassedCheckForTests { get; set; }
 
-    /// <summary>
-    /// Test-only: invoked synchronously inside <see cref="Admit"/>, after the current snapshot id is read
-    /// and before <see cref="OperationLedger.Begin(string,string,object,string)"/> registers ownership,
-    /// still holding <see cref="_gate"/>. See <c>Program.T10</c>.
-    /// </summary>
-    public Action? OnAdmitReadSnapshotIdForTests { get; set; }
 
     public SettingsStore(OperationLedger ledger, string evidencePath) {
         _ledger = ledger;
@@ -280,20 +274,18 @@ public sealed class SettingsStore {
         }
     }
 
-    /// <summary>
-    /// Admits an operation under <paramref name="scope"/>'s currently active snapshot. Reading which
-    /// snapshot is current and registering the operation as its owner happen under the same lock
-    /// acquisition, so a concurrent <see cref="Cleanup"/> cannot observe the snapshot as unowned and
-    /// unpinned in the gap between those two steps -- the race kirillkrylov found: "activation and cleanup
-    /// between those steps can delete the ID being admitted."
-    /// </summary>
-    public IOperationLease Admit(string target, string runtimeVersion, object owner, string scope) {
-        lock (_gate) {
-            string snapshotId = CurrentSnapshotId(scope);
-            OnAdmitReadSnapshotIdForTests?.Invoke();
-            return _ledger.Begin(target, runtimeVersion, owner, snapshotId);
-        }
-    }
+    // Admit(target, runtimeVersion, owner, scope) removed (Alexandr-Kravchuk): it read this store's own
+    // current snapshot and admitted an operation with it -- a second admission path once a joint
+    // runtime+settings selection exists, and exactly the duplicate source of truth the whole boundary is
+    // meant to prevent. "The settings store owns snapshots; it does not own what an operation is admitted
+    // under." That is now BeginFromSelection's job, on the ledger, in the joint branch -- it reads one
+    // published (runtime, snapshot) selection and registers ownership from it atomically, which also
+    // means the settings-only version of that atomicity this method used to provide (kirillkrylov's
+    // original finding: reading the current snapshot id and registering ownership must not straddle a
+    // concurrent Cleanup) is no longer this store's responsibility either. Cleanup itself is unaffected --
+    // Prepare/Activate/RetainForRollback/Cleanup still fully serialize under _gate; what's gone is the
+    // guarantee for the specific sequence "read CurrentSnapshotId, then call Begin," which callers must
+    // now get from the selection boundary that owns admission, not from this store.
 
     /// <summary>
     /// Explicitly keeps <paramref name="snapshotId"/> alive across <see cref="Cleanup"/> even once it has
