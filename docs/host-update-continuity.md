@@ -391,6 +391,45 @@ untested above. Closing those — the drain-coverage gap, an activation-policy t
 and a failed-V2-startup scenario — is the concrete bar before Flow B is a
 recommendation rather than a promising direction.
 
+## Position on the six candidate boundaries
+
+Per [kirillkrylov's checkpoint](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18542190),
+from this document's lane only — measured evidence versus none, not a vote on the
+other two streams' claims:
+
+- **Complete runtime per workflow.** Not confirmed here — outside this document's
+  scope entirely; nothing in S1-S7 touches runtime-composition packaging.
+- **Separate response / outcome / ownership.** Not the origin of this claim (that's
+  E3's I1/I2), but S6/S7 are consistent, independent evidence for it at a different
+  layer: V1's operation completed and its outcome was correctly preserved across a
+  *real process kill*, which is the process-level analogue of the same separation.
+  Supporting evidence from a different axis, not proof of the claim.
+- **Portable dynamic values.** Not measured here — E3's O1/I9 lane.
+- **Host-owned evidence separate from runtime lifetime.** As stated, this is E3's
+  in-process retirement axis (P3), not this document's. A related but distinct data
+  point exists here: the ledger in S1-S7 lives in the supervisor process, not in
+  V1/V2, so evidence already survives backend replacement — but that's evidence
+  surviving *process* replacement, a different claim from evidence surviving
+  *runtime-unload*.
+- **Explicit versioned settings.** Not measured — open per this document's own
+  "settings compatibility" residual case under Flow A.
+- **Trusted extensions and explicit host activation guarantees.** This is the one in
+  this document's actual lane, and it's confirmed only partially. The three-way
+  ordering comparison and S1-S7 (7/7) characterize *what activation requires*, not that
+  any specific guarantee is settled — the activation-policy timeout, a bounded
+  failed-V2-startup retry, and the full exclusivity inventory are all still open, per
+  the sections above. "Trusted extensions" (package signing) is unmeasured by anyone
+  in this thread and has been an open gate since the opening post.
+
+**Explicit retraction, per kirillkrylov's request:** "zero-outage except IIS" was
+already retired in the exclusivity section above, before this checkpoint —
+[recorded here](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18542199).
+Restated for the record in this checkpoint's own terms: **startup coexistence is a
+conditional option** (available where no exclusive resource is contended, established
+as a working pattern via `McpHostPresence`), **not an established universal
+property** — which operations contend for which resources remains an open,
+incomplete inventory.
+
 ## Sources
 
 - [Alexandr-Kravchuk's `create-app-section` A/B and the "one process = one session" finding](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18539699)
