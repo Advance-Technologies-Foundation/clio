@@ -108,6 +108,12 @@ public sealed class ApplicationSectionDeleteToolPassthroughTests {
 		if (!isDeleteQuery && requestBody.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal)) {
 			return BuildSectionSelectResponse();
 		}
+		if (!isDeleteQuery && requestBody.Contains("\"rootSchemaName\":\"SysModuleEdit\"", StringComparison.Ordinal)) {
+            return """{"success":true,"rows":[]}""";
+		}
+		if (!isDeleteQuery && requestBody.Contains("\"rootSchemaName\":\"SysModule\"", StringComparison.Ordinal)) {
+			return BuildSectionSelectResponse();
+		}
 		return """{"success":true}""";
 	}
 
