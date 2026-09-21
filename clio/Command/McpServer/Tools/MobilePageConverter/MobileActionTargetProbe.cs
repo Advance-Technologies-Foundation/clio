@@ -60,14 +60,6 @@ public static class MobileActionTargetProbe {
 	/// <summary>Target kind: the value names an object that must have a default mobile edit page.</summary>
 	internal const string KindEntityDefaultMobilePage = "entity-default-mobile-page";
 
-	/// <summary>
-	/// <see cref="ExistingMobilePageInfo.Source"/> value for a match found via the source list/section
-	/// page's own <c>SysModule.MobileSectionSchemaUId</c> registration (see
-	/// <see cref="ProbeSectionMobilePage"/>) — distinct from <see cref="KindEntityDefaultMobilePage"/>, which
-	/// names the same source used to resolve an ACTION target on a different object.
-	/// </summary>
-	internal const string KindSection = "section";
-
 	private const string SysSchemaName = "SysSchema";
 	private const string RequestProperty = "request";
 	private const string ParamsProperty = "params";
@@ -192,16 +184,9 @@ public static class MobileActionTargetProbe {
 		}
 
 		try {
-			var options = new EnvironmentOptions {
-				Environment = environment, Uri = uri, Login = login, Password = password
-			};
-			var context = new ProbeContext(
-				commandResolver, options,
-				commandResolver.Resolve<IApplicationClient>(options),
-				commandResolver.Resolve<IServiceUrlBuilder>(options),
-				// Resolved ONCE rather than per object: the add-on read runs once per distinct object, and
-				// re-resolving inside that loop buys nothing but container work.
-				commandResolver.Resolve<IAddonSchemaDesignerClient>(options));
+			// Resolved ONCE rather than per object: the add-on read runs once per distinct object, and
+			// re-resolving inside that loop buys nothing but container work.
+			ProbeContext context = ProbeContext.Create(commandResolver, environment, uri, login, password);
 
 			EntityTierOutcome outcome =
 				ResolveEntityTargets(context, entityTargets, request.PagePackageUId, resolutions);
@@ -440,7 +425,26 @@ public static class MobileActionTargetProbe {
 	internal sealed record ProbeContext(
 		IToolCommandResolver Resolver, EnvironmentOptions Options,
 		IApplicationClient Client, IServiceUrlBuilder UrlBuilder,
-		IAddonSchemaDesignerClient AddonClient);
+		IAddonSchemaDesignerClient AddonClient) {
+
+		/// <summary>
+		/// Builds a <see cref="ProbeContext"/> for one call, resolving the environment client trio from
+		/// <paramref name="resolver"/> exactly once. The single seam every probe entry point in this file —
+		/// and <see cref="ExistingMobilePageProbe"/>, which reads the same per-call container — constructs its
+		/// context through, so a pass threading the result never re-resolves from somewhere else.
+		/// </summary>
+		internal static ProbeContext Create(
+			IToolCommandResolver resolver, string environment, string uri, string login, string password) {
+			var options = new EnvironmentOptions {
+				Environment = environment, Uri = uri, Login = login, Password = password
+			};
+			return new ProbeContext(
+				resolver, options,
+				resolver.Resolve<IApplicationClient>(options),
+				resolver.Resolve<IServiceUrlBuilder>(options),
+				resolver.Resolve<IAddonSchemaDesignerClient>(options));
+		}
+	}
 
 	/// <summary>
 	/// The per-object outcome of the CONCURRENT phase of <see cref="ResolveEntityTargets"/>: the mobile
@@ -586,7 +590,8 @@ public static class MobileActionTargetProbe {
 	/// Reads the objects' <c>SysSchema</c> rows and keeps the BASE row UId per name — the stable unit, exactly
 	/// as <c>ClassicEntitySchemaQuery.ResolveEntityUId</c> picks it; a replacing layer is not a
 	/// different object and must not be addressed instead. <paramref name="seenNames"/> separates "no rows at
-	/// all" from "rows but no base row", which resolve differently.
+	/// all" from "rows but no base row", which resolve differently. Internal, not private:
+	/// <see cref="ExistingMobilePageProbe"/> resolves an entity NAME to a UId the same way.
 	/// </summary>
 	/// <returns>
 	/// Whether a chunk came back EXACTLY full, i.e. rows may have been left behind. A <c>SelectQuery</c> is
@@ -594,7 +599,7 @@ public static class MobileActionTargetProbe {
 	/// INDISTINGUISHABLE from a name that does not exist — which is why a full read downgrades every absence
 	/// verdict from <see cref="ActionTargetState.Missing"/> to <see cref="ActionTargetState.Unknown"/>.
 	/// </returns>
-	private static bool ReadEntitySchemaRows(
+	internal static bool ReadEntitySchemaRows(
 		ProbeContext context, IReadOnlyList<string> names,
 		IDictionary<string, string> uIdByName, ISet<string> seenNames) {
 		bool truncated = false;
@@ -676,100 +681,6 @@ public static class MobileActionTargetProbe {
 			if (result.Status == SchemaNameResolver.Status.Resolved) {
 				RecordEntityResolution(into, name, ActionTargetState.Missing, result.Name);
 			}
-		}
-	}
-
-	/// <summary>
-	/// Resolves the SOURCE page's own bound entity's existing default MOBILE edit page, if any — the
-	/// "does this object already have a mobile page" fact behind the reuse-vs-convert check
-	/// (<see cref="ExistingMobilePageInfo"/> / playbook step 2a). Mirrors the missing-target candidate flow
-	/// (<see cref="DefaultPageAddonReader.ReadWebDefaultPageUId"/> plus a name lookup) almost exactly, but reads
-	/// the MOBILE add-on (<see cref="DefaultPageAddonReader.MobileRelatedPageAddonName"/>) instead of the web
-	/// one, and is keyed by an entity NAME resolved via <see cref="ReadEntitySchemaRows"/> rather than an
-	/// already-known UId (the missing-target tier already has one; this call-site starts from just a name —
-	/// see <see cref="CollectSourceEntityNames"/>). Fails open to <see langword="null"/> on any degradation
-	/// (unreachable environment, unresolvable entity name, no default page, an unparseable add-on body, or a
-	/// resolved name that fails <see cref="SchemaNameResolver.Status.NameInvalid"/> validation) — never throws,
-	/// and never guesses a page name.
-	/// </summary>
-	internal static ExistingMobilePageInfo ProbeSourceEntityDefaultMobilePage(
-		IToolCommandResolver commandResolver, string environment, string uri, string login, string password,
-		string entitySchemaName, string pagePackageUId) {
-		if (commandResolver is null || string.IsNullOrWhiteSpace(entitySchemaName)
-			|| !Guid.TryParse(pagePackageUId, out Guid packageUId)) {
-			return null;
-		}
-		try {
-			var options = new EnvironmentOptions {
-				Environment = environment, Uri = uri, Login = login, Password = password
-			};
-			var context = new ProbeContext(
-				commandResolver, options,
-				commandResolver.Resolve<IApplicationClient>(options),
-				commandResolver.Resolve<IServiceUrlBuilder>(options),
-				commandResolver.Resolve<IAddonSchemaDesignerClient>(options));
-
-			var uIdByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-			var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-			ReadEntitySchemaRows(context, [entitySchemaName], uIdByName, seenNames);
-			if (!uIdByName.TryGetValue(entitySchemaName, out string entitySchemaUId)
-				|| !Guid.TryParse(entitySchemaUId, out Guid entityUId)) {
-				return null;
-			}
-
-			AddonSchemaDto schema = context.AddonClient.GetSchema(new AddonGetRequestDto {
-				AddonName = DefaultPageAddonReader.MobileRelatedPageAddonName,
-				TargetSchemaUId = entityUId,
-				TargetParentSchemaUId = Guid.Empty,
-				TargetPackageUId = packageUId,
-				TargetSchemaManagerName = EntitySchemaManagerName,
-				UseFullHierarchy = true
-			});
-			string pageSchemaUId = ExtractDefaultPageSchemaUId(schema?.MetaData);
-			if (string.IsNullOrWhiteSpace(pageSchemaUId) || !Guid.TryParse(pageSchemaUId, out Guid pageUId)) {
-				return null;
-			}
-			SchemaNameResolver.Result result = SchemaNameResolver.ResolveName(context, pageUId);
-			return result.Status == SchemaNameResolver.Status.Resolved
-				? new ExistingMobilePageInfo {
-					SchemaName = result.Name, SchemaUId = pageSchemaUId, Source = KindEntityDefaultMobilePage
-				}
-				: null;
-		} catch (Exception) {
-			return null;
-		}
-	}
-
-	/// <summary>
-	/// Resolves an already-known mobile page UId (e.g.
-	/// <c>SectionRegistrationInfo.MobileSectionSchemaUId</c>) to its schema NAME — the section half of the
-	/// reuse-vs-convert check (<see cref="ExistingMobilePageInfo"/> / playbook step 2a). The same
-	/// UId→name reverse lookup the missing-target candidate flow batches in
-	/// <see cref="SchemaNameResolver.ResolveNames"/>, single-UId here via
-	/// <see cref="SchemaNameResolver.ResolveName"/> because this call-site has exactly one UId.
-	/// Fails open to <see langword="null"/>, never throws.
-	/// </summary>
-	internal static ExistingMobilePageInfo ProbeSectionMobilePage(
-		IToolCommandResolver commandResolver, string environment, string uri, string login, string password,
-		string sectionSchemaUId) {
-		if (commandResolver is null || !Guid.TryParse(sectionSchemaUId, out Guid sectionUId)) {
-			return null;
-		}
-		try {
-			var options = new EnvironmentOptions {
-				Environment = environment, Uri = uri, Login = login, Password = password
-			};
-			var context = new ProbeContext(
-				commandResolver, options,
-				commandResolver.Resolve<IApplicationClient>(options),
-				commandResolver.Resolve<IServiceUrlBuilder>(options),
-				commandResolver.Resolve<IAddonSchemaDesignerClient>(options));
-			SchemaNameResolver.Result result = SchemaNameResolver.ResolveName(context, sectionUId);
-			return result.Status == SchemaNameResolver.Status.Resolved
-				? new ExistingMobilePageInfo { SchemaName = result.Name, SchemaUId = sectionSchemaUId, Source = KindSection }
-				: null;
-		} catch (Exception) {
-			return null;
 		}
 	}
 

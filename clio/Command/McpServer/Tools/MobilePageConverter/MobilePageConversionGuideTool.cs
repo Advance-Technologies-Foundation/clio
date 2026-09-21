@@ -234,29 +234,11 @@ public class MobilePageConversionGuideTool {
 				pageResponse.Page?.PackageUId));
 
 		// Read-only probe: does the entity/page being converted already have an EXISTING mobile page — the
-		// reuse-vs-convert fact (playbook step 2a)? A section source checks the SysModule registration
-		// already probed above (no extra read); a form source checks the bound entity's MobileRelatedPage
-		// add-on, the same mechanism MobileActionTargetProbe uses to resolve THAT kind for OTHER objects.
-		// Either match is excluded when it names the schema THIS run is about to create/update — nothing to
-		// "reuse vs convert again" there. Best-effort; never blocks the guide.
-		List<ExistingMobilePageInfo> existingMobilePages = [];
-		if (sectionRegistration is { MobileSectionRegistered: true, MobileSectionSchemaUId: { Length: > 0 } sectionSchemaUId }) {
-			ExistingMobilePageInfo sectionMatch = MobileActionTargetProbe.ProbeSectionMobilePage(
-				_commandResolver, args.EnvironmentName, args.Uri, args.Login, args.Password, sectionSchemaUId);
-			if (sectionMatch is not null && !string.Equals(sectionMatch.SchemaName, targetName, StringComparison.OrdinalIgnoreCase)) {
-				existingMobilePages.Add(sectionMatch);
-			}
-		}
-		if (isFormPage) {
-			foreach (string entityName in MobileActionTargetProbe.CollectSourceEntityNames(pageResponse.Bundle?.ModelConfig)) {
-				ExistingMobilePageInfo entityMatch = MobileActionTargetProbe.ProbeSourceEntityDefaultMobilePage(
-					_commandResolver, args.EnvironmentName, args.Uri, args.Login, args.Password,
-					entityName, pageResponse.Page?.PackageUId);
-				if (entityMatch is not null && !string.Equals(entityMatch.SchemaName, targetName, StringComparison.OrdinalIgnoreCase)) {
-					existingMobilePages.Add(entityMatch);
-				}
-			}
-		}
+		// reuse-vs-convert fact (playbook step 2a)? Best-effort; never blocks the guide.
+		List<ExistingMobilePageInfo> existingMobilePages = ExistingMobilePageProbe.Probe(
+			_commandResolver, args.EnvironmentName, args.Uri, args.Login, args.Password,
+			sectionRegistration, isFormPage, pageResponse.Bundle?.ModelConfig, pageResponse.Page?.PackageUId,
+			targetName);
 
 		MobilePageConversionGuide guide;
 		try {

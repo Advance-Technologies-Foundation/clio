@@ -14,7 +14,7 @@ namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 internal static class DefaultPageAddonReader {
 
 	/// <summary>
-	/// Shared with <see cref="MobileActionTargetProbe.ProbeSourceEntityDefaultMobilePage"/>, which reads the
+	/// Shared with <see cref="ExistingMobilePageProbe.ProbeSourceEntityDefaultMobilePage"/>, which reads the
 	/// same add-on for a different object identity (a resolved entity name rather than an already-known UId)
 	/// and is not yet routed through this reader.
 	/// </summary>
