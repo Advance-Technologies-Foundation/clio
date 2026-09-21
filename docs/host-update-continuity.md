@@ -35,39 +35,60 @@ job is to say, scenario by scenario, whether that assumption currently holds.
 | **(d)** | External system (Creatio) accepted work that outlives clio itself (e.g. `compile-creatio`, which Creatio itself serializes/rejects retries for) | same unproven status as (c) | same unsafe status as (c), but the source of truth lives on the **remote** system, not just clio's memory | Not the operation state itself — a reconciliation contract ("ask Creatio about X, here's how") | `success:true, status:not-found` — actively false, worse than "unknown" | Narrower/cheaper fix than (c): status tools could fall back to the remote source instead of trusting only local memory. Not yet scoped as its own ticket |
 | **(e)** | Client naturally reconnects | irrelevant — already transparent | ✅ unambiguously safe **today**, via the existing close-stdin/wait-for-exit mechanism | Any pending operation must be resolvable *after* reconnect too | Version change; ideally a summary of what's mid-flight | Mechanically solved. Not a trigger the policy should be designed around (a month-long session may never produce one — see discussion [comment](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540385)), but a fallback path that exists independently of whatever predicate is built for (a). Only *complete* as a handoff once (c)/(d) are solved |
 
-## Implication for the proposed policy
+## Implication for the proposed policy — revised: three separate predicates
 
-"Stage the host, activate on the next natural disruption boundary" is safe **today
-only for (e)**. Treating (a) as an equally safe opportunistic trigger is premature —
-it is missing a concrete precondition (a real zero-outstanding-work check), not an
-optimization to defer.
+**Correction to an earlier version of this document.** The first draft treated "safe
+to swap" as one scoped quiescence check. Per-review
+([kirillkrylov](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540566)),
+that conflates three genuinely independent predicates, and the per-target scoping
+proposed below was overreach: it read as licensing *partial* host replacement
+(swap for environments {X,Y}, defer only Z), which nothing demonstrates. One host
+process serves every target; replacing it affects all of them regardless of which
+target was busy. Target A being idle does not protect target B's in-process work.
+[Alexandr-Kravchuk independently reached the same correction](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540587)
+while publishing the evidence below.
 
-The precondition is not simply "count of in-flight requests." The `create-app-section`
-A/B is direct evidence: the call had already returned to the client (`in-progress`,
-response deadline fired) when the backend was swapped 1029ms later. From the transport's
-point of view the session was completely idle; the work still died. A quiescence check
-built only on open requests would have said "safe to apply now" and been wrong.
+The three predicates, kept separate:
 
-### Scoping the quiescence predicate
+| Predicate | Question | Mechanism with evidence | State |
+|---|---|---|---|
+| **Execution quiescence** | Is there outstanding work that would be silently lost? | [E3 ledger](https://github.com/Advance-Technologies-Foundation/clio/tree/Alexandr-Kravchuk/detached-operation-probe): `OperationRecord` is portable data (no delegates, no runtime objects), scoped **per target** (`IsQuiescent(target)`, measured in case A1b: envA busy, envB idle, global busy, same process, same moment) | Measured — but per-target scoping is the correct predicate for a **runtime** swap (which never needs it — already proven safe independent of quiescence), not license for a **host** swap to touch only the busy target's owner. For host-level swap, quiescence must be evaluated globally unless per-target isolation is separately built, which nothing here builds |
+| **Transport continuity** | Does the client's pipe survive the process being replaced at all? | Thin supervisor owning the client pipe, replaceable child process — [measured](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18539341): 8.1.0.129 → 8.1.0.131, 1.0s macOS / 1.3s Windows, zero client reconnects | Measured, but it is exactly the mechanism that independently loses operation continuity (child process dies, in-memory registries with it) — solving this predicate alone does not solve execution quiescence |
+| **Activation policy** | Given the other two are satisfied, *when* does a swap actually trigger? | — | **Open.** Not the same question as quiescence — a natural reconnect (scenario e) is an existing transport-reinitialization opportunity, not proof of detached-work or status continuity for the general case, and the held-call runtime proof (scenario b) should not be read as proof of every dead-socket case either |
 
-A predicate that must answer "is *anything* still running, anywhere" before allowing a
-host update risks never firing in practice: a session juggling several environments —
-which is normal usage, not an edge case — would rarely if ever report *global*
-quiescence, even though most of those environments have no pending work at all.
+### Why durable evidence changes the shape of the quiescence requirement
 
-The predicate should be scoped **per target/environment**, not per process, once the
-operation record from the in-flight-operation experiment carries a target/environment
-key. That turns scenario (a) into: *quiescent for environments {X, Y}, deferred only
-for environment Z, which has a compile in flight* — allowing partial progress instead
-of an all-or-nothing gate.
+Quiescence is only a hard requirement for operation classes whose outcome **cannot**
+be reconstructed after the process is gone. The detached-operation probe's recovery
+cases narrow that set directly: case A4a reports a lost in-flight operation as
+`Unknown`/`history-unavailable` rather than falsely `NotFound`, and A4c shows a
+recovered host can surface it as `recovered-unknown`. That is not resumption — the
+work itself is still lost — but a truthful "uncertain" answer is a materially
+different failure than today's false `not-found` (scenario c/d above), and it means
+a swap doesn't strictly need to *wait* for that class of work to finish, only to
+guarantee it will be reported honestly afterward.
+
+This splits scenario (c)/(d)'s remaining gap in two, per
+[Alexandr's open question](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540587):
+**which operation classes can be reconciled against an authoritative source
+(Creatio, for scenario d) and therefore never need to block a swap at all, and which
+can only ever report uncertain and therefore genuinely require quiescence first.**
+That boundary — not a single global quiescence gate — is what should decide whether
+a staged host update can trigger automatically after an unclean loss, or only after
+a clean, quiescent shutdown.
 
 ## What's still open (not resolved by this document)
 
-- The zero-outstanding-work predicate itself — depends on the in-flight-operation
-  experiment landing a portable operation record with target/environment scope.
+- The **global** (not per-target) execution-quiescence signal for host-level swap —
+  depends on the in-flight-operation experiment's ledger, aggregated across targets.
+- The **reconcilable vs. uncertain-only** classification of operation classes, which
+  determines whether quiescence can be skipped for a given operation type.
 - Call classification (read-only vs. side-effecting) for scenario (b) — undesigned.
-- The remote-reconciliation fallback for scenario (d) — a smaller, likely separable
-  fix from (c); not yet scoped as its own piece of work.
+- **Composing transport continuity with a durable ledger.** The supervisor prototype
+  that solves transport continuity kills the process holding any in-memory ledger;
+  making that safe requires the ledger's evidence to survive the child's death, which
+  the E3 design (opaque, portable `OperationRecord`) makes plausible but which no one
+  has wired the two together to demonstrate yet.
 - **A small counterexample probe** demonstrating "idle transport ≠ idle process"
   directly (an idle stdio connection, zero in-flight requests, one detached background
   task still writing when the backend is replaced) — isolates the claim this whole
@@ -77,7 +98,9 @@ of an all-or-nothing gate.
 ## Sources
 
 - [Alexandr-Kravchuk's `create-app-section` A/B and the "one process = one session" finding](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18539699)
-- [Alexandr-Kravchuk's supervisor-swap drain-timeout measurement](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18539341)
+- [Alexandr-Kravchuk's supervisor-swap drain-timeout and transport-continuity measurement](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18539341)
 - [kirillkrylov's runtime-retirement probe](https://github.com/Advance-Technologies-Foundation/clio/tree/krylov/runtime-retirement-probe)
 - [Alexandr-Kravchuk's macOS reproduction and open-decision reply](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540212)
 - [Split-ownership agreement](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540013)
+- [kirillkrylov's three-predicate correction and shared architecture-experiment record](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540566) / [`docs/architecture-experiments.md`](https://github.com/Advance-Technologies-Foundation/clio/blob/krylov/clio-10-experiment/docs/architecture-experiments.md)
+- [Alexandr-Kravchuk's `detached-operation-probe` (E3), acceptance cases A1–A4, R1, controls C1/C2](https://github.com/Advance-Technologies-Foundation/clio/tree/Alexandr-Kravchuk/detached-operation-probe)
