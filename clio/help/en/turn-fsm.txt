@@ -34,6 +34,17 @@ DESCRIPTION
       recycles asynchronously on the configuration change, so the environment can
       still report file design mode as disabled for a short while; wait for the web
       application to restart and run 'clio pkg-to-file-system' to finish the export.
+      On a .NET Core / .NET8 environment the configuration change does not take effect
+      on its own: turn-fsm on restarts the application itself and retries login for up
+      to 90 seconds (printing "Waiting for application to start after restart...")
+      before running the export, so a manual restart is not needed.
+
+    If the environment's packages were previously linked from a repository with
+    'clio link-from-repository', unlink them (restore the real directories or remove
+    the symlinks) before running turn-fsm on. The export step writes generated files
+    into whatever the package folder currently is, including through a symlink, which
+    writes straight into the linked repository instead of the environment. Re-link
+    the packages after the export completes.
 
     Use either:
     - --physicalPath (path to the environment folder)
