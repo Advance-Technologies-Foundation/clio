@@ -421,13 +421,22 @@ design description. **Two remain, and neither is a probe-scale fix:**
   finite only if new admissions stop, and only `Begin` can refuse an admission. A
   caller-side gate that tried to close a scope from outside would have to re-implement
   admission authority one layer up, with two places that could disagree about whether
-  a scope is open. Migrating S2/S4/S6-S9 to `TryReserveAdmission` is this stream's
-  concrete next build step now that this is settled — not attempted this round.
-  Carried forward for that migration: the bound matters more than the mechanism — a
-  real `compile-creatio` runs minutes, not this probe's milliseconds, so an unbounded
-  drain would be worse than the deferral it replaces (it turns one stuck update into
-  every subsequent call on that scope failing). A reservation must release on expiry,
-  meaning the update is deferred again, not escalated.
+  a scope is open.
+
+  **Migration done.** S2/S4/S6-S9 now use `AcquireDrainedWindow` (reserve via
+  `TryReserveAdmission`, then wait only for already-admitted work to drain, bounded by
+  a caller-supplied `drainBudget` parameter — never a hardcoded constant, per
+  Alexandr's note that a real `compile-creatio` runs minutes, not this probe's
+  milliseconds; an unbounded drain would be worse than the deferral it replaces).
+  **S10** is this stream's own disproof, mirroring Alexandr's D1/D2 against the
+  host-swap case: under continuous admission pressure (8 rolling-window concurrent
+  workers), the old poll never grants a window and the new reserve-then-drain always
+  does. **10/10, five consecutive runs.** One design bug found and fixed while
+  building it: the first load-generation pattern (dispose then rebegin) had a real
+  gap between releasing one lease and acquiring the next, and independent workers hit
+  that gap simultaneously by chance on one of three early runs — fixed by overlapping
+  lease lifetimes so ownership never touches zero, making continuity a guarantee
+  rather than a probability.
 
 Flow B also carries a standing cost Flow A doesn't: a permanent second process that
 [becomes its own compatibility boundary and can never update itself mid-session](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18539699).
@@ -454,6 +463,19 @@ it replaces); mine is the empirical question above. Neither is answerable from i
 a fixture. Recorded together because a reader evaluating either recommendation in
 isolation would miss that they share one unmeasured premise, not two independent
 ones.
+
+**The shared premise just failed its own test, once.**
+[Alexandr measured a hung operation against the reservation mechanism itself](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18543530):
+a reservation was held for its full budget, the operation was still `Running` when
+the budget expired, the reservation released, and the hung operation was **neither
+killed nor completed** — it just kept not-terminating while new work resumed around
+it. This is not a new disproof; it is the *same* one (waiting must provably
+terminate) landing on concrete evidence rather than staying hypothetical. It sharpens
+what "activation policy" has to define: not just a drain-budget number, but an
+explicit answer for what happens to a scope holding a hung operation after the
+budget expires — leave it running and retry the deferral indefinitely, or something
+else. Migrating S2/S4/S6-S9 to `TryReserveAdmission` (below) does not answer this;
+it inherits the same open question.
 
 ## Position on the six candidate boundaries
 
