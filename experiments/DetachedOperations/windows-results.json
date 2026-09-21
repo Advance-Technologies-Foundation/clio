@@ -1,7 +1,7 @@
 {
   "os": "Microsoft Windows NT 10.0.26200.0",
   "framework": "10.0.11",
-  "workDirectory": "C:\\Temp\\detached-ops-ppivjz3g.k1a",
+  "workDirectory": "C:\\Temp\\detached-ops-0acvkfal.uhj",
   "cases": [
     {
       "name": "A1a the original operation still answers after a newer runtime is activated",
@@ -34,7 +34,7 @@
       }
     },
     {
-      "name": "A2b the target is quiescent once the operation terminates",
+      "name": "A2b the target is quiescent once the operation releases ownership",
       "passed": true,
       "detail": {
         "envA": true,
@@ -156,19 +156,19 @@
       "passed": true,
       "detail": {
         "Violations": 0,
-        "Admitted": 74,
-        "Refused": 46,
-        "Windows": 7
+        "Admitted": 85,
+        "Refused": 39,
+        "Windows": 6
       }
     },
     {
       "name": "A5i mutation control: the same regression detects a deliberately split admission",
       "passed": true,
       "detail": {
-        "Violations": 24,
-        "Admitted": 33,
-        "Refused": 62,
-        "Windows": 13,
+        "Violations": 28,
+        "Admitted": 13,
+        "Refused": 100,
+        "Windows": 20,
         "note": "non-zero here is the point: it shows A5h can fail"
       }
     },
@@ -246,6 +246,28 @@
         "stateAfterRetirement": "Succeeded",
         "stillDegraded": true,
         "note": "OperationRecord is a host-contract type held in a host collection, so it survives the release that produced it"
+      }
+    },
+    {
+      "name": "P4 a failed admission write starts no work and leaves no unfinishable owner",
+      "passed": true,
+      "detail": {
+        "threw": true,
+        "running": 0,
+        "quiescent": true,
+        "effectWritten": false,
+        "note": "evidence is written before registration, so nothing is registered when it fails"
+      }
+    },
+    {
+      "name": "P5 retirement is refused while owned cleanup is held, and allowed once ownership is released",
+      "passed": true,
+      "detail": {
+        "outcomePublished": "Succeeded",
+        "refusedDuringCleanup": true,
+        "idleAfterRelease": true,
+        "windowGrantedAfter": true,
+        "note": "the outcome was Succeeded throughout; only ownership changed"
       }
     },
     {
