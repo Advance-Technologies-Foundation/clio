@@ -266,6 +266,30 @@ public sealed class OperationLedger : IOperationLedger {
         return UseFlagFirstLeaseForTests ? new FlagFirstLease(this, id) : new Lease(this, id);
     }
 
+    // Caller holds _swapLock. The coherent admission path ONLY -- it deliberately does not carry the
+    // split-admission defect branch, because the first attempt at this refactor wrapped Begin in an
+    // outer lock and thereby held the lock across that branch's own gap, which silenced the A5i
+    // mutation control: the deliberate defect stopped producing violations. A regression that hides
+    // a defect detector is worse than the defect.
+    private IOperationLease AdmitUnderLock(string target, string runtimeVersion, object owner,
+        string? configurationSnapshot) {
+        ArgumentNullException.ThrowIfNull(owner);
+        ArgumentException.ThrowIfNullOrWhiteSpace(target);
+        if (_heldScopes.Contains(string.Empty) || _heldScopes.Contains(target)) {
+            throw new SwapWindowHeldException(target);
+        }
+        string id = Guid.NewGuid().ToString("n");
+        var record = new OperationRecord(id, target, DateTimeOffset.UtcNow, runtimeVersion,
+            OperationState.Running, ConfigurationSnapshot: configurationSnapshot);
+        if (FailBeginPersistenceForTests) {
+            throw new IOException("injected admission-evidence failure");
+        }
+        Append("begin", record);
+        _live[id] = record;
+        _owners[id] = owner;
+        return UseFlagFirstLeaseForTests ? new FlagFirstLease(this, id) : new Lease(this, id);
+    }
+
     /// <inheritdoc />
     public IReadOnlyCollection<string> OwnersWithoutLiveness {
         get {
@@ -342,6 +366,63 @@ public sealed class OperationLedger : IOperationLedger {
             }
             _degradedScopes.Remove(target);
             return mine.Length;
+        }
+    }
+
+    private readonly Dictionary<string, ActivationSelection> _selections = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Test-only: runs inside the publication critical section, so a concurrent admission can be held
+    /// exactly at the coordination boundary instead of raced for.
+    /// </summary>
+    public Action? OnPublishInsideBoundaryForTests { get; set; }
+
+    /// <inheritdoc />
+    public ActivationSelection CurrentSelection(string target) {
+        lock (_swapLock) { return CurrentSelectionCore(target); }
+    }
+
+    private ActivationSelection CurrentSelectionCore(string target) =>
+        _selections.TryGetValue(target, out var selection)
+            ? selection
+            : new ActivationSelection(string.Empty, null, 0);
+
+    /// <inheritdoc />
+    public bool TryPublishSelection(string target, string runtimeVersion, string? configurationSnapshot,
+        long expectedGeneration) {
+        ArgumentException.ThrowIfNullOrWhiteSpace(target);
+        lock (_swapLock) {
+            ActivationSelection current = CurrentSelectionCore(target);
+            if (current.Generation != expectedGeneration) return false;
+            OnPublishInsideBoundaryForTests?.Invoke();
+            _selections[target] = new ActivationSelection(runtimeVersion, configurationSnapshot,
+                current.Generation + 1);
+            return true;
+        }
+    }
+
+    /// <inheritdoc />
+    public IOperationLease BeginFromSelection(string target, object owner) {
+        ArgumentNullException.ThrowIfNull(owner);
+        ArgumentException.ThrowIfNullOrWhiteSpace(target);
+        lock (_swapLock) {
+            // One read of the pair, inside the same lock a publication takes. Reading the two halves
+            // separately is exactly the defect this overload exists to remove.
+            ActivationSelection selection = CurrentSelectionCore(target);
+            return AdmitUnderLock(target, selection.RuntimeVersion, owner, selection.ConfigurationSnapshot);
+        }
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyCollection<string> SelectedSnapshots {
+        get {
+            lock (_swapLock) {
+                return _selections.Values
+                    .Select(selection => selection.ConfigurationSnapshot)
+                    .Where(snapshot => snapshot is not null)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray()!;
+            }
         }
     }
 

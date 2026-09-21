@@ -104,6 +104,13 @@ public sealed class SettingsStore {
     public bool SkipConcurrencyCheckForTests { get; set; }
 
     /// <summary>
+    /// Test-only: makes <see cref="Cleanup"/> ignore <see cref="IOperationLedger.SelectedSnapshots"/>,
+    /// reproducing the state before that reason existed. Exists to observe the X8 handoff-window failure
+    /// fail, not just to assert the fix would -- see <c>Program.T17</c>.
+    /// </summary>
+    public bool SkipSelectedSnapshotsProtectionForTests { get; set; }
+
+    /// <summary>
     /// Test-only: invoked synchronously inside <see cref="Prepare"/>'s critical section, after the
     /// revision check passes and before anything is written, still holding <see cref="_gate"/>. Lets a
     /// regression test force a deterministic interleaving window instead of relying on timing.
@@ -309,16 +316,17 @@ public sealed class SettingsStore {
     }
 
     /// <summary>
-    /// Deletes every snapshot not covered by one of four explicit ownership reasons: a scope's currently
+    /// Deletes every snapshot not covered by one of five explicit ownership reasons: a scope's currently
     /// pinned snapshot, a snapshot a retained operation still references (the ledger's own
     /// <see cref="IOperationLedger.OperationHeldSnapshots"/>, consumed rather than recomputed -- a second
     /// reference count would eventually disagree with retention), a snapshot explicitly
-    /// <see cref="RetainForRollback"/>ed, or a candidate still pending <see cref="Activate"/>. A snapshot
-    /// with zero active operations is not, on its own, eligible -- kirillkrylov's point:
+    /// <see cref="RetainForRollback"/>ed, a candidate still pending <see cref="Activate"/>, or a snapshot
+    /// named by a committed selection (<see cref="IOperationLedger.SelectedSnapshots"/>). A snapshot with
+    /// zero active operations is not, on its own, eligible -- kirillkrylov's point:
     /// <c>OperationHeldSnapshots</c> is the operation-held set, not the entire set eligible for deletion.
     /// Runs under the same <see cref="_gate"/> as every other mutating method here, so it cannot observe a
-    /// snapshot as unowned in a window where <see cref="Admit"/>, <see cref="RetainForRollback"/> or
-    /// <see cref="Prepare"/> is mid-flight establishing ownership, retention or pending status over it.
+    /// snapshot as unowned in a window where <see cref="RetainForRollback"/> or <see cref="Prepare"/> is
+    /// mid-flight establishing retention or pending status over it.
     /// <para>
     /// <b>X3 (Alexandr-Kravchuk), narrowed by kirillkrylov.</b> A snapshot held by an operation whose
     /// owner the ledger cannot ask about (<see cref="IOperationLedger.OwnersWithoutLiveness"/>) used to be
@@ -330,13 +338,27 @@ public sealed class SettingsStore {
     /// a human or an operator policy to act on; this method itself draws no conclusion from it and reclaims
     /// nothing differently because of it.
     /// </para>
+    /// <para>
+    /// <b>X8/X9 (Alexandr-Kravchuk), the fifth reason.</b> Committing a joint runtime+settings pair takes
+    /// this store's lock and then the ledger's publication lock, and in the window between them this
+    /// store is already pinned to the new snapshot while the ledger's committed selection still names the
+    /// old one. A cleanup landing exactly there used to see the old snapshot as neither pinned, held, nor
+    /// retained, and reclaim it out from under an admission that reads the (not-yet-republished) selection
+    /// in the same window. <see cref="IOperationLedger.SelectedSnapshots"/> is not a second source of
+    /// truth about what is current -- it answers only "is this snapshot named by a committed selection",
+    /// which this store cannot know on its own. See <c>Program.T17</c>, reusing T10's deterministic
+    /// interleaving as Alexandr suggested rather than a new pattern.
+    /// </para>
     /// </summary>
     public CleanupResult Cleanup() {
         lock (_gate) {
             var referenced = new HashSet<string>(_ledger.OperationHeldSnapshots, StringComparer.Ordinal);
             var pinned = new HashSet<string>(_activeSnapshotId.Values, StringComparer.Ordinal);
+            var selected = SkipSelectedSnapshotsProtectionForTests
+                ? new HashSet<string>(StringComparer.Ordinal)
+                : new HashSet<string>(_ledger.SelectedSnapshots, StringComparer.Ordinal);
             string[] doomed = _snapshots.Keys
-                .Where(id => !referenced.Contains(id) && !pinned.Contains(id)
+                .Where(id => !referenced.Contains(id) && !pinned.Contains(id) && !selected.Contains(id)
                              && !_rollbackRetained.ContainsKey(id) && !_pendingCandidates.ContainsKey(id))
                 .ToArray();
             foreach (string id in doomed) _snapshots.TryRemove(id, out _);

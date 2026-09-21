@@ -8,16 +8,18 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../DetachedOperations/Contract/Contract.csproj" />
-    <!-- Same ledger E3 publishes and the supervisor/McpHost probes link: the ConfigurationSnapshot
-         seam this fixture consumes (Begin's fourth overload, OperationHeldSnapshots) lives here, not
+    <!-- Same ledger E3 publishes and the supervisor/McpHost probes link: the ConfigurationSnapshot,
+         OperationHeldSnapshots and SelectedSnapshots seams this fixture consumes live here, not
          duplicated.
          SYNC POINT (kirillkrylov: "document a coherent exact build target"): Contract.cs and
-         OperationLedger.cs are copied from Alexandr-Kravchuk/detached-operation-probe@12ab0b5a6227.
-         This branch intentionally vendors ONLY these two files from that experiment; see the removal
-         of the rest (DetachedRuntimeFixture.cs, Host/Program.cs, RuntimeV1/RuntimeV2) for why keeping a
-         partial, unsynced mirror of files this branch doesn't use broke reproducibility instead of
-         helping it. To re-sync, checkout Contract.cs and Host/OperationLedger.cs from that branch's
-         current commit, then update this comment's commit hash. -->
+         OperationLedger.cs are copied from Alexandr-Kravchuk/joint-integration-proof@4f6c04e62fcf
+         (previously Alexandr-Kravchuk/detached-operation-probe@12ab0b5a6227, moved once SelectedSnapshots,
+         needed for the X8/X9 fix, landed only on the joint branch). This branch intentionally
+         vendors ONLY these two files from that experiment; see the removal of the rest
+         (DetachedRuntimeFixture.cs, Host/Program.cs, RuntimeV1/RuntimeV2) for why keeping a partial,
+         unsynced mirror of files this branch doesn't use broke reproducibility instead of helping it.
+         To re-sync, checkout Contract.cs and Host/OperationLedger.cs from the current joint branch,
+         then update this comment's commit hash. -->
     <Compile Include="../DetachedOperations/Host/OperationLedger.cs" Link="OperationLedger.cs" />
   </ItemGroup>
 </Project>
