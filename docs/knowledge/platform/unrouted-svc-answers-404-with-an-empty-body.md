@@ -14,7 +14,7 @@ version. Measured on stand `stand1` (Creatio 10.1.725, .NET Framework, cliogate 
 authenticated request: every method of that route answers `HTTP 404` with `Content-Length: 0`, while
 `SourceCodeSchemaDesignerService.svc/CreateNewSchema` on the same instance answers `HTTP 200` with a
 schema payload. `SqlScriptSchemaDesignerService.svc` exists as a file on that instance but its WCF
-help page says `Endpoint not found.`, so it is not a drop-in replacement either. The issue reporter
+help page says `Endpoint not found.`; that GET probe does not establish whether its POST methods work. The issue reporter
 saw the same failure on Creatio 10.0.0.858.
 
 `IApplicationClient.ExecutePostRequest` does not expose the HTTP status: a 404 with an empty body
@@ -32,10 +32,11 @@ platform endpoint reads as a clio JSON bug: the reporter of issue #1322 retried 
 never succeed. Do not add a "the server accepted the request" claim to an empty-body message either
 — on this path that claim is simply false.
 
-**Extra measurement** — the distinct `ManagerName` values on that same stand are
-`AddonSchemaManager, ClientUnitSchemaManager, CopilotIntentSchemaManager, DcmSchemaManager,
-EntitySchemaManager, ImageListSchemaManager, PageSchemaManager, ProcessSchemaManager,
-ProcessUserTaskSchemaManager, ServiceSchemaManager, SourceCodeSchemaManager, ValueListSchemaManager`.
-No SQL-script manager appears under any name, so the SQL-script schema type is absent from that
-platform build entirely — the message fix makes the failure diagnosable, it does not make
-`create-sql-schema` work there.
+**Native SQL contract verified for issue #1610 (2026-09-17)** - the absence of a SQL
+manager in `SysSchema` does not mean package SQL is unsupported. On disposable Creatio
+10.1.585.0 (.NET 8, PostgreSQL), `SqlScriptSchemaDesignerService.svc/GetSchema` and
+`SaveSchema` work. Creation is a direct save of a client-assigned UId, package, body,
+dbEngineType, installType and dependOnSqlScripts; there is no CreateNewSchema operation.
+Resolve names from `VwSysSqlScriptInPackage`, and execute via
+`WorkspaceExplorerService.svc/InstallSqlScripts` with a bare UId array. An HTTP GET/help-page
+probe is not evidence that a POST route is absent.

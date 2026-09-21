@@ -17,6 +17,29 @@ public sealed class SchemaConvergenceServiceTests {
 	private const string TargetPackage = "UsrPkg";
 	private const string SchemaName = "UsrTodoStatus";
 
+	[TestCase(true, false, SchemaConvergenceOutcome.Collision)]
+	[TestCase(false, true, SchemaConvergenceOutcome.Collision)]
+	[TestCase(true, true, SchemaConvergenceOutcome.AlreadySatisfied)]
+	[TestCase(false, false, SchemaConvergenceOutcome.AlreadySatisfied)]
+	[Category("Unit")]
+	[Description("Checks the requested DB-view kind before allowing sync to reconcile an existing schema.")]
+	public void Classify_ShouldCheckDbViewKind_WhenExplicitlyRequested(bool requested, bool existing,
+		SchemaConvergenceOutcome expected) {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		FakeFind(resolver, [new EntitySchemaSearchResult(SchemaName, TargetPackage, "Customer", "BaseLookup")]);
+		FakeProperties(resolver, Properties() with { DbView = existing });
+		IServiceCollection services = new ServiceCollection();
+		services.AddSingleton(resolver);
+		services.AddTransient<ISchemaConvergenceService, SchemaConvergenceService>();
+		using ServiceProvider provider = services.BuildServiceProvider();
+		ISchemaConvergenceService service = provider.GetRequiredService<ISchemaConvergenceService>();
+		// Act
+		SchemaConvergencePlan plan = service.Classify(LookupTarget() with { IsDBView = requested });
+		// Assert
+		plan.Outcome.Should().Be(expected, because: "sync must not silently ignore or change an existing storage kind");
+	}
+
 	[TestCase(null)]
 	[TestCase("BaseEntity")]
 	[Category("Unit")]

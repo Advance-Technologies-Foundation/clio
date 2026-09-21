@@ -24,6 +24,27 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 	private const string BuildPackageUrl =
 		"https://localhost/0/ServiceModel/WorkspaceExplorerService.svc/BuildPackage";
 
+	[TestCase("Unlimited text", 29)]
+	[TestCase("MaxSizeText", 29)]
+	[TestCase("unlimited TEXT", 29)]
+	[TestCase("Text", 1)]
+	[TestCase("String", 1)]
+	[Description("Preserves plain text while accepting native unlimited text with an explicit output direction.")]
+	public void BuildParameters_Should_PreserveTextTypeAndOutputDirection(string type, int expectedType) {
+		// Arrange
+		string definition = $"code=ErrorMessage;title=Error message;type={type};direction=Out;resulting=true;serializable=true";
+
+		// Act
+		List<UserTaskParameterDto> parameters = UserTaskSchemaSupport.BuildParameters("en-US", [definition]);
+
+		// Assert
+		parameters.Should().ContainSingle(because: "one definition must create exactly one output");
+		parameters[0].Type.Should().Be(expectedType, because: "unlimited text must use the native type without changing Text");
+		parameters[0].Direction.Should().Be(1, because: "error messages are output-only parameters");
+		parameters[0].Resulting.Should().BeTrue(because: "the process must consume the returned error message");
+		parameters[0].Serializable.Should().BeTrue(because: "the requested serialization flag must survive parsing");
+	}
+
 	[Test]
 	[Description("Creates a user task schema, serializes requested parameters into the save payload, and builds the target package.")]
 	[Category("Unit")]

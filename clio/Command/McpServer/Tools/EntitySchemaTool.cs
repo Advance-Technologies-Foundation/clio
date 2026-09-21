@@ -70,6 +70,7 @@ public sealed class CreateEntitySchemaTool(
 
 				 Use this when the schema should be created directly on the target environment instead of generating
 				 local source files. The package must already exist on the target environment.
+				 Set `is-db-view` to true to map to a separately provisioned SQL view without generating a table.
 				 Set `is-virtual` to true only when the schema must not have a physical database table; it defaults to false.
 				 Before setting `is-virtual` to true, call get-guidance with name virtual-entities and follow its
 				 schema-before-executor, bounded-provider, authorization, and version-gated write rules.
@@ -92,7 +93,7 @@ public sealed class CreateEntitySchemaTool(
 			: null;
 		try {
 			CreateEntitySchemaOptions options = CreateOptions(
-				args, args.ParentSchemaName, args.ExtendParent, args.IsVirtual);
+				args, args.ParentSchemaName, args.ExtendParent, args.IsVirtual, args.IsDBView);
 			CommandExecutionResult result = InternalExecute<CreateEntitySchemaCommand>(options);
 			return result with { DataForge = dataForge };
 		} catch (Exception exception) {
@@ -115,7 +116,7 @@ public sealed class CreateEntitySchemaTool(
 		EntitySchemaCreateArgsBase args,
 		string? parentSchemaName,
 		bool extendParent,
-		bool isVirtual = false) {
+		bool isVirtual = false, bool? isDBView = null) {
 		string context = $"Schema '{args.SchemaName}'";
 		IReadOnlyDictionary<string, string> titleLocalizations = EntitySchemaLocalizationContract.RequireTitleLocalizations(
 			args.TitleLocalizations,
@@ -138,6 +139,7 @@ public sealed class CreateEntitySchemaTool(
 			ParentSchemaName = parentSchemaName,
 			ExtendParent = extendParent,
 			IsVirtual = isVirtual,
+			IsDBView = isDBView,
 			Columns = SerializeColumns(args.Columns, context),
 			Environment = args.EnvironmentName,
 			CaptionCulture = args.CaptionCulture
@@ -539,12 +541,12 @@ public sealed class SetEntitySchemaPropertiesTool(
 		+ "inherited column, resolved by name, shown as the record's display value in lookups and links) and "
 		+ "title-localizations (the SCHEMA caption, per culture). The ONLY way to rename an existing schema's caption "
 		+ "— update-entity-schema is per-COLUMN — which is what fixes a duplicate caption breaking a "
-		+ "[#Lookup.<Caption>.<Value>#] process macro. Saved and published; neither property appears in the OData "
+		+ "[#Lookup.<Caption>.<Value>#] process macro. Also accepts is-db-view to map to a separately provisioned SQL view; it does not convert tables or change is-virtual. Saved and published; these properties do not appear in the OData "
 		+ "contract, so setting them never triggers an OData entities rebuild. The write is verified by readback — a "
 		+ "target that does not persist the value is reported as an error rather than a silent no-op. "
 		+ "Read the values back with get-entity-schema-properties.")]
 	public CommandExecutionResult SetEntitySchemaProperties(
-		[Description("Parameters: environment-name, package-name, schema-name (all required); primary-display-column and title-localizations optional, one required")] [Required]
+		[Description("Parameters: environment-name, package-name, schema-name (all required); primary-display-column, title-localizations, and is-db-view optional, one required")] [Required]
 		SetEntitySchemaPropertiesArgs args) {
 		try {
 			SetEntitySchemaPropertiesOptions options = new() {
@@ -552,6 +554,7 @@ public sealed class SetEntitySchemaPropertiesTool(
 				Package = args.PackageName,
 				SchemaName = args.SchemaName,
 				PrimaryDisplayColumn = args.PrimaryDisplayColumn,
+				IsDBView = args.IsDBView,
 				ParsedTitleLocalizations = args.TitleLocalizations is { Count: > 0 }
 					? args.TitleLocalizations
 					: null
@@ -819,6 +822,11 @@ public sealed record CreateEntitySchemaArgs(
 	[property: JsonPropertyName("is-virtual")]
 	[property: Description("Create a virtual entity schema without a physical database table. Defaults to false.")]
 	public bool IsVirtual { get; init; }
+
+	/// <summary>Gets the optional database-view flag; omission preserves inherited metadata.</summary>
+	[JsonPropertyName("is-db-view")]
+	[Description("Map to a separately provisioned SQL view. No table or SQL view is generated. Omit to preserve inherited metadata; ordinary entities default to false. Independent of is-virtual.")]
+	public bool? IsDBView { get; init; }
 }
 
 /// <summary>
@@ -1335,7 +1343,11 @@ public sealed record SetEntitySchemaPropertiesArgs(
 
 	[property: JsonPropertyName("title-localizations")]
 	[property: Description("New SCHEMA caption per culture, e.g. {\"en-US\":\"Mention language\"}. Unlisted cultures keep their caption. At least one settable property is required.")]
-	IReadOnlyDictionary<string, string>? TitleLocalizations = null
+	IReadOnlyDictionary<string, string>? TitleLocalizations = null,
+
+	[property: JsonPropertyName("is-db-view")]
+	[property: Description("Set or clear the DB-view flag; omitted preserves it. Does not create a SQL view, convert an existing table, or change is-virtual.")]
+	bool? IsDBView = null
 ) : EntitySchemaTargetArgsBase(EnvironmentName, PackageName, SchemaName);
 
 /// <summary>

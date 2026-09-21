@@ -1,22 +1,22 @@
-using System.Reflection;
-using System.Text;
-using System.Text.Json;
-using System.Text.RegularExpressions;
-using Clio.Command.McpServer;
-using Clio.Common;
+﻿using System.Text.Json;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E.Support.Results;
 
 /// <summary>
-/// Unit tests for <see cref="McpResultDiagnostics"/> (GitHub issue #1384), the payload-describing helper
-/// shared by <see cref="EntitySchemaStructuredResultParser"/> and every sibling result parser in this
-/// folder. They construct <see cref="CallToolResult"/> instances in-memory (no MCP server, no stand, no
-/// network I/O), so they are categorized <c>Unit</c> rather than <c>McpE2E.Sandbox</c>.
+/// Unit tests for <see cref="McpResultDiagnostics"/> (GitHub issues #1384 and #1537), the parse-failure
+/// describer shared by <see cref="EntitySchemaStructuredResultParser"/> and every sibling result parser in
+/// this folder. They construct <see cref="CallToolResult"/> instances in-memory (no MCP server, no stand,
+/// no network I/O), so they are categorized <c>Unit</c> rather than <c>McpE2E.Sandbox</c>.
 /// </summary>
+/// <remarks>
+/// The payload assertions go through <see cref="McpResultDiagnostics.DescribeWithSink"/> with a recording
+/// sink, so nothing here writes to disk. <see cref="TestResultsPayloadDumpSinkTests"/> covers the real
+/// sink separately.
+/// </remarks>
 [TestFixture]
-[Category("Unit")]
+[Category("Integration")]
 [Category("McpE2E.NoEnvironment")]
 [Property("Module", "McpServer")]
 public sealed class McpResultDiagnosticsTests {
@@ -24,13 +24,14 @@ public sealed class McpResultDiagnosticsTests {
 	[Description("Describes a result with neither StructuredContent nor Content as IsError plus '(none)' for both payload fields.")]
 	public void Describe_ShouldReportNonePayloads_WhenResultIsEmpty() {
 		// Arrange
+		RecordingDumpSink sink = new();
 		CallToolResult callResult = new() {
 			IsError = false,
 			Content = []
 		};
 
 		// Act
-		string description = McpResultDiagnostics.Describe(callResult);
+		string description = McpResultDiagnostics.DescribeWithSink(callResult, null, "empty", sink);
 
 		// Assert
 		description.Should().Contain("IsError=False",
@@ -42,67 +43,212 @@ public sealed class McpResultDiagnosticsTests {
 	}
 
 	[Test]
-	[Description("Describes a text Content item by rendering its type and text verbatim.")]
-	public void Describe_ShouldRenderContentItem_WhenResultCarriesTextPayload() {
+	[Description("Reports how many content blocks arrived, which is what separates 'the tool answered nothing' from 'the tool answered something unreadable'.")]
+	public void Describe_ShouldReportContentBlockCount_WhenResultCarriesBlocks() {
 		// Arrange
-		const string payloadText = "plain diagnostic text";
+		RecordingDumpSink sink = new();
 		CallToolResult callResult = new() {
 			IsError = true,
-			Content = [new TextContentBlock { Text = payloadText }]
+			Content = [
+				new TextContentBlock { Text = "alpha-block-marker" },
+				new TextContentBlock { Text = "beta-block-marker" }
+			]
 		};
 
 		// Act
-		string description = McpResultDiagnostics.Describe(callResult);
+		string description = McpResultDiagnostics.DescribeWithSink(callResult, null, "two-blocks", sink);
 
 		// Assert
-		description.Should().Contain("IsError=True",
-			because: "the call reported an error");
-		description.Should().Contain($"{{type=text, text=\"{payloadText}\"}}",
-			because: "the single text content item's type and text must both be rendered");
+		description.Should().Contain("Content=2 block(s)",
+			because: "the block count is the part of the payload's shape that is safe in a build log by construction and still tells the reader the tool answered something");
+		description.Should().NotContain("alpha-block-marker",
+			because: "the blocks' text belongs in the dump file, not in a message that reaches the CI log");
 	}
 
 	[Test]
-	[Description("Describes StructuredContent by dumping its raw serialized JSON.")]
-	public void Describe_ShouldRenderStructuredContent_WhenResultCarriesStructuredPayload() {
-		// Arrange
+	[Description("Writes the payload to the dump unbounded and unreshaped, keeping the paths and key=value diagnostics the full redaction chain would have destroyed.")]
+	public void Describe_ShouldDumpThePayloadVerbatim_WhenResultCannotBeParsed() {
+		// Arrange: a value the previous design would have replaced with [redacted] on its way out. None of
+		// it is a JSON credential property, so the one surviving rule (see the test below) leaves it alone.
+		const string serverText = "Auth rejected for /Users/alex/.clio/appsettings.json password=hunter2";
+		RecordingDumpSink sink = new();
 		CallToolResult callResult = new() {
-			IsError = false,
-			Content = [],
-			StructuredContent = JsonSerializer.SerializeToElement(new { code = 7 })
+			IsError = true,
+			Content = [new TextContentBlock { Text = serverText }]
 		};
 
 		// Act
-		string description = McpResultDiagnostics.Describe(callResult);
+		McpResultDiagnostics.DescribeWithSink(callResult, null, "verbatim", sink);
 
 		// Assert
-		description.Should().Contain("StructuredContent={\"code\":7}",
-			because: "the structured payload's raw JSON must be embedded so the actual shape mismatch is visible");
+		sink.Writes.Should().ContainSingle(
+			because: "one parse failure produces exactly one dump");
+		sink.Writes[0].Payload.Should().Contain(serverText,
+			because: "the dump is the full-fidelity record of what arrived; bounding it, or running the whole redaction chain over it, is precisely what destroyed the diagnostic under CI load (#1537)");
+		sink.Writes[0].Payload.Should().NotContain("[redacted",
+			because: "only the JSON credential-property rule runs on the way to the file - the path, URI, host and key=value rules are the diagnostic and stay off");
 	}
 
 	[Test]
-	[Description("Redacts an absolute file path embedded in a Content item's text.")]
-	public void Describe_ShouldRedactSensitiveText_WhenContentCarriesAnAbsolutePath() {
-		// Arrange
-		const string sensitiveText = "Failed reading /Users/alex/secrets/credentials.json: invalid format";
+	[Description("Redacts a credential-keyed JSON property before the dump reaches the file, because that file is published as a build artifact.")]
+	public void Describe_ShouldRedactCredentialProperties_WhenThePayloadCarriesAnEnvironmentEnvelope() {
+		// Arrange: the show-webApp-list envelope shape - (Name, Uri, Login, Password, ClientSecret) per
+		// registered environment - which both of its parse-failure paths send through this describer.
+		const string environmentPassword = "hunter2-live-environment-password";
+		const string clientSecret = "d3adb33f-live-client-secret";
+		string serverText =
+			$$"""{"Name":"dev","Uri":"https://stand.local","Login":"Supervisor","Password":"{{environmentPassword}}","ClientSecret":"{{clientSecret}}"}""";
+		RecordingDumpSink sink = new();
 		CallToolResult callResult = new() {
 			IsError = true,
-			Content = [new TextContentBlock { Text = sensitiveText }]
+			Content = [new TextContentBlock { Text = serverText }]
 		};
 
 		// Act
-		string description = McpResultDiagnostics.Describe(callResult);
+		McpResultDiagnostics.DescribeWithSink(callResult, null, "envelope", sink);
 
 		// Assert
-		description.Should().NotContain("/Users/alex/secrets/credentials.json",
-			because: "an absolute path must be redacted before it reaches the diagnostic text");
-		description.Should().Contain("[redacted-path]",
-			because: "the redactor replaces an absolute path with its stable placeholder rather than dropping the whole message");
+		sink.Writes[0].Payload.Should().NotContain(environmentPassword,
+			because: "the dump directory is published as a build artifact, so a live environment password may not reach it in clear");
+		sink.Writes[0].Payload.Should().NotContain(clientSecret,
+			because: "the client secret is a credential on the same envelope and the same rule covers it");
+		sink.Writes[0].Payload.Should().Contain("Supervisor",
+			because: "only credential-keyed properties are replaced; the rest of the envelope is the diagnostic the dump exists for");
+	}
+
+	[Test]
+	[Description("Keeps the credential pass off the hot path's cost profile: one anchored scan over a multi-megabyte payload, not the full chain that issue #1537 removed.")]
+	public void Describe_ShouldStillDumpTheWholePayload_WhenTheCredentialPassRunsOverMegabytes() {
+		// Arrange
+		string hugePayload = new('x', 3_000_000);
+		RecordingDumpSink sink = new();
+		CallToolResult callResult = new() {
+			IsError = true,
+			Content = [new TextContentBlock { Text = hugePayload }]
+		};
+
+		// Act
+		McpResultDiagnostics.DescribeWithSink(callResult, null, "huge-with-credential-pass", sink);
+
+		// Assert
+		sink.Writes[0].Payload.Should().Contain(hugePayload,
+			because: "the credential pass must not bound, truncate or time out on a payload this size - a timeout would fail closed and replace the whole dump with a placeholder, which is the #1537 failure mode again");
+	}
+
+	[Test]
+	[Description("Names the dump's path in the message, so the reader can find the artifact without another CI run.")]
+	public void Describe_ShouldNameTheDumpPath_WhenTheWriteSucceeds() {
+		// Arrange
+		RecordingDumpSink sink = new() { PathToReturn = "/tmp/TestResults/mcp-payloads/dump.json" };
+		CallToolResult callResult = new() {
+			IsError = true,
+			Content = [new TextContentBlock { Text = "anything" }]
+		};
+
+		// Act
+		string description = McpResultDiagnostics.DescribeWithSink(callResult, null, "named", sink);
+
+		// Assert
+		description.Should().Contain("Payload=\"/tmp/TestResults/mcp-payloads/dump.json\"",
+			because: "naming the file is the whole mechanism by which the payload stays reachable while staying out of the log, and quoting it is what lets a caller append its own text after the description without making the path unrecoverable");
+	}
+
+	[Test]
+	[Description("Keeps a multi-megabyte payload out of the message entirely while the dump still holds every byte of it.")]
+	public void Describe_ShouldKeepTheMessageSmall_WhenPayloadIsMultiMegabyte() {
+		// Arrange: the payload that made the previous design collapse into a bare [redacted] placeholder
+		// once the redactor's one-second budget expired on a loaded agent.
+		const string leadingErrorText = "Access denied for user.";
+		string hugePayload = leadingErrorText + new string('x', 3_000_000);
+		RecordingDumpSink sink = new();
+		CallToolResult callResult = new() {
+			IsError = true,
+			Content = [new TextContentBlock { Text = hugePayload }]
+		};
+
+		// Act
+		string description = McpResultDiagnostics.DescribeWithSink(callResult, null, "huge", sink);
+
+		// Assert
+		description.Length.Should().BeLessThan(500,
+			because: "the message carries metadata and a path, so its length no longer scales with the payload's at all - which is also what proves no redaction rule ran over those three megabytes, since a rule that ran would have had to produce text");
+		sink.Writes[0].Payload.Should().Contain(hugePayload,
+			because: "the dump holds the payload WHOLE, beginning included; the 64 000-character bound that used to keep only its start is gone");
+	}
+
+	[Test]
+	[Description("Falls back to a bounded excerpt naming the reason when the dump cannot be written, rather than leaving the reader with no payload at all.")]
+	public void Describe_ShouldFallBackToAnExcerpt_WhenTheDumpCannotBeWritten() {
+		// Arrange
+		RecordingDumpSink sink = new() { FailureReasonToReturn = "UnauthorizedAccessException: Access to the path is denied." };
+		CallToolResult callResult = new() {
+			IsError = true,
+			Content = [new TextContentBlock { Text = "the server reported an authentication failure" }]
+		};
+
+		// Act
+		string description = McpResultDiagnostics.DescribeWithSink(callResult, null, "unwritable", sink);
+
+		// Assert
+		description.Should().Contain("dump failed: UnauthorizedAccessException",
+			because: "a dump that did not happen must say so; a path-shaped message for a file that does not exist sends the reader hunting a missing artifact");
+		description.Should().Contain("the server reported an authentication failure",
+			because: "a failed write must DEGRADE the diagnostic, not erase it - returning nothing would reinstate the blindness #1384 removed");
+	}
+
+	[Test]
+	[Description("Bounds the write-failure excerpt, so an unwritable dump cannot flood the log with the payload the file was meant to hold.")]
+	public void Describe_ShouldBoundTheExcerpt_WhenTheDumpFailsOnAHugePayload() {
+		// Arrange
+		RecordingDumpSink sink = new() { FailureReasonToReturn = "IOException: No space left on device." };
+		CallToolResult callResult = new() {
+			IsError = true,
+			Content = [new TextContentBlock { Text = new string('y', 3_000_000) }]
+		};
+
+		// Act
+		string description = McpResultDiagnostics.DescribeWithSink(callResult, null, "huge-unwritable", sink);
+
+		// Assert
+		description.Length.Should().BeLessThan(McpResultDiagnostics.LogFragmentLimit + 500,
+			because: "the fallback excerpt is the one payload-shaped text still allowed into the log, so it stays inside the fragment budget the redaction pass is fast at");
+		description.Should().Contain("characters total, truncated to fit",
+			because: "the cut must be explicit rather than a silent trim");
+	}
+
+	[Test]
+	[Description("Names the dump file after the caller's own prefix, so the artifact belonging to a failure is identifiable without opening it.")]
+	public void DescribePrefixed_ShouldNameTheDumpAfterTheCallerPrefix() {
+		// Arrange: the real DescribePrefixed, through the real sink, because the property under test is
+		// that the prefix reaches the FILE NAME - which a call passing the label explicitly would not
+		// prove, and which would survive DescribePrefixed quietly labelling every dump the same.
+		CallToolResult callResult = new() {
+			IsError = true,
+			Content = [new TextContentBlock { Text = "unparsable" }]
+		};
+
+		// Act
+		string message = McpResultDiagnostics.DescribePrefixed(
+			"Could not parse list-apps MCP result: ", callResult);
+
+		// Assert: cleanup in a finally, not after the assertions - FluentAssertions throws on the first
+		// failure, and a delete placed below them is skipped on exactly the runs whose artifact matters.
+		try {
+			string? path = PayloadDumpReader.ExtractPath(message);
+			path.Should().NotBeNull(because: "a successful write must name its file in the message");
+			Path.GetFileName(path!).Should().Contain("could-not-parse-list-apps-mcp-result",
+				because: "the caller's sentence is the only thing on this path that says which tool failed, so it is what makes one dump distinguishable from another in the published artifact");
+		}
+		finally {
+			PayloadDumpReader.DeleteIfPresent(message);
+		}
 	}
 
 	[Test]
 	[Description("Includes the last JsonException's redacted message and it is only appended when the caller supplies one.")]
 	public void Describe_ShouldIncludeLastJsonError_WhenCallerSuppliesOne() {
 		// Arrange
+		RecordingDumpSink sink = new();
 		CallToolResult callResult = new() { IsError = false, Content = [] };
 		JsonException lastJsonException;
 		try {
@@ -114,363 +260,174 @@ public sealed class McpResultDiagnosticsTests {
 		}
 
 		// Act
-		string descriptionWithException = McpResultDiagnostics.Describe(callResult, lastJsonException);
-		string descriptionWithoutException = McpResultDiagnostics.Describe(callResult);
+		string descriptionWithException =
+			McpResultDiagnostics.DescribeWithSink(callResult, lastJsonException, "with", sink);
+		string descriptionWithoutException =
+			McpResultDiagnostics.DescribeWithSink(callResult, null, "without", sink);
 
 		// Assert
-		descriptionWithException.Should().Contain("LastJsonError=",
-			because: "the caller supplied a JsonException, so its message must appear in the description");
+		descriptionWithException.Should().Contain("LastJsonError=\"",
+			because: "the exception discarded by the old catch block is the single most useful fact about a parse failure (#1384)");
 		descriptionWithoutException.Should().NotContain("LastJsonError=",
-			because: "no JsonException was supplied, so the description must not fabricate one");
+			because: "a caller that tracked no exception must not get an empty field suggesting one existed");
 	}
 
 	[Test]
-	[Description("Truncates text longer than the documented cap and reports the total original length, instead of flooding the CI log unbounded.")]
-	public void Truncate_ShouldCapAndReportTotalLength_WhenTextExceedsTheLimit() {
+	[Description("Redacts the JsonException message, which unlike the payload does reach the build log.")]
+	public void Describe_ShouldRedactTheLastJsonError_WhenItCarriesAnAbsolutePath() {
 		// Arrange
-		string hugeText = new string('a', McpResultDiagnostics.PayloadDiagnosticLimit + 5_000);
+		RecordingDumpSink sink = new();
+		CallToolResult callResult = new() { IsError = false, Content = [] };
+		JsonException lastJsonException = new("Failed reading /Users/alex/secrets/credentials.json");
 
 		// Act
-		string truncated = McpResultDiagnostics.Truncate(hugeText);
+		string description =
+			McpResultDiagnostics.DescribeWithSink(callResult, lastJsonException, "redacted-error", sink);
 
 		// Assert
-		truncated.Length.Should().BeLessThan(hugeText.Length,
-			because: "the truncated text must be capped rather than embedding the full original payload");
-		truncated.Should().EndWith(
-			$" … {hugeText.Length} characters total, truncated to fit {McpResultDiagnostics.PayloadDiagnosticLimit}",
-			because: "the note must state the EXACT original length; a regex on \\d+ accepted the number the double truncation used to produce, which described the already-cut text rather than the payload");
-		truncated.Length.Should().Be(McpResultDiagnostics.PayloadDiagnosticLimit,
-			because: "the note is paid for out of the budget, so the result lands ON the limit rather than overshooting it by the note's own length");
-	}
-
-	[Test]
-	[Description("Leaves text at or under the documented cap unchanged.")]
-	public void Truncate_ShouldReturnTextUnchanged_WhenTextIsAtOrUnderTheLimit() {
-		// Arrange
-		string shortText = new string('a', McpResultDiagnostics.PayloadDiagnosticLimit);
-
-		// Act
-		string result = McpResultDiagnostics.Truncate(shortText);
-
-		// Assert
-		result.Should().Be(shortText,
-			because: "text at exactly the cap must not be marked as truncated");
-	}
-
-	[Test]
-	[Description("Renders an HTML login page returned in a text block instead of collapsing it into a bare parse failure.")]
-	public void Describe_ShouldRenderHtmlLoginPage_WhenToolAnsweredWithASignInPage() {
-		// Arrange
-		const string loginPage =
-			"<!DOCTYPE html><html><head><title>Creatio</title></head>" +
-			"<body><form id=\"loginForm\"><h1>Sign in</h1></form></body></html>";
-		CallToolResult callResult = new() {
-			IsError = false,
-			Content = [new TextContentBlock { Text = loginPage }]
-		};
-
-		// Act
-		string description = McpResultDiagnostics.Describe(callResult);
-
-		// Assert
-		description.Should().Contain("<!DOCTYPE html>",
-			because: "an authentication redirect answers with an HTML page, and recognizing it is the whole point of dumping the payload");
-		description.Should().Contain("Sign in",
-			because: "the page's own text must survive into the diagnostic so the reader sees it is a login page, not a shape mismatch");
-	}
-
-	[Test]
-	[Description("Renders a stderr-like blob returned in a text block verbatim rather than skipping it as unparsable.")]
-	public void Describe_ShouldRenderStderrBlob_WhenTextIsNeitherJsonNorHtml() {
-		// Arrange
-		const string stderrBlob =
-			"Unhandled exception. System.Net.Http.HttpRequestException: Connection refused\n" +
-			"   at Clio.Common.ApplicationClient.ExecutePostRequest(String url)";
-		CallToolResult callResult = new() {
-			IsError = true,
-			Content = [new TextContentBlock { Text = stderrBlob }]
-		};
-
-		// Act
-		string description = McpResultDiagnostics.Describe(callResult);
-
-		// Assert
-		description.Should().Contain("HttpRequestException: Connection refused",
-			because: "a process's error output is a legitimate payload shape and must be shown, not discarded for not being JSON");
-		description.Should().Contain("IsError=True",
-			because: "the reader needs to know the call itself reported an error alongside the blob");
-	}
-
-	[Test]
-	[Description("Dumps a content block that carries no text string (an image block) as its own raw JSON instead of reporting only '(no text)'.")]
-	public void Describe_ShouldDumpRawBlock_WhenContentItemCarriesNoTextString() {
-		// Arrange
-		CallToolResult callResult = new() {
-			IsError = true,
-			Content = [ImageContentBlock.FromBytes(new byte[] { 0x89, 0x50, 0x4E, 0x47 }, "image/png")]
-		};
-
-		// Act
-		string description = McpResultDiagnostics.Describe(callResult);
-
-		// Assert
-		description.Should().Contain("{type=image",
-			because: "the block's declared type must still be named");
-		description.Should().Contain("image/png",
-			because: "a block with no text string must be dumped whole, since '(no text)' named the block's existence while discarding everything that said what came back");
-		description.Should().Contain("raw={",
-			because: "the block must be rendered as its own raw JSON object, which is the replacement for the placeholder that used to hide it");
-	}
-
-	[Test]
-	[Description("Redacts a JSON-quoted credential property in StructuredContent, which the production key=value redaction rule does not reach.")]
-	public void Describe_ShouldRedactJsonQuotedCredential_WhenStructuredContentCarriesAPassword() {
-		// Arrange
-		CallToolResult callResult = new() {
-			IsError = true,
-			Content = [],
-			StructuredContent = JsonSerializer.SerializeToElement(new { login = "Supervisor", password = "s3cr3t-value" })
-		};
-
-		// Act
-		string description = McpResultDiagnostics.Describe(callResult);
-
-		// Assert
-		description.Should().NotContain("s3cr3t-value",
-			because: "an e2e payload dump reaches a TeamCity log readable by everyone who can see the build, so a credential must never appear in it");
-		description.Should().Contain("\"password\":\"[redacted]\"",
-			because: "the pair must be rewritten in its JSON shape so the surrounding dump stays readable rather than losing a quote");
-		description.Should().Contain("Supervisor",
-			because: "redaction is surgical: the non-secret fields that explain the failure must survive");
-	}
-
-	[Test]
-	[Description("Redacts a credential property that is nested one JSON-escaping level deep, as a serialized response body inside StructuredContent is.")]
-	public void Describe_ShouldRedactEscapedJsonCredential_WhenStructuredContentNestsSerializedJson() {
-		// Arrange
-		CallToolResult callResult = new() {
-			IsError = true,
-			Content = [],
-			StructuredContent = JsonSerializer.SerializeToElement(
-				new { body = "{\"password\":\"s3cr3t-value\",\"code\":1}" })
-		};
-
-		// Act
-		string description = McpResultDiagnostics.Describe(callResult);
-
-		// Assert
-		description.Should().NotContain("s3cr3t-value",
-			because: "a response body carried as a string property is escaped, not plain, and the secret inside it leaks just as badly");
-	}
-
-	[Test]
-	[Description("Redacts a session cookie and a bearer token carried in a text block.")]
-	public void Describe_ShouldRedactCookieAndBearerToken_WhenTextBlockCarriesThem() {
-		// Arrange
-		const string secretText =
-			"Request rejected. Cookie: BPMCSRF=Zq19Lk; .ASPXAUTH=A1B2C3 Authorization: Bearer abc.def.ghi";
-		CallToolResult callResult = new() {
-			IsError = true,
-			Content = [new TextContentBlock { Text = secretText }]
-		};
-
-		// Act
-		string description = McpResultDiagnostics.Describe(callResult);
-
-		// Assert
-		description.Should().NotContain("Zq19Lk",
-			because: "a Creatio forms-auth cookie value IS the session, so it belongs in the same class as a password");
-		description.Should().NotContain("abc.def.ghi",
-			because: "a bearer token must not reach a build log");
-		description.Should().Contain("[redacted]",
-			because: "the secrets must be replaced with the stable placeholder rather than the whole message being dropped");
-	}
-
-	[Test]
-	[Description("Caps a multi-megabyte payload with an explicit marker and still shows the payload's beginning, rather than collapsing into a bare placeholder or flooding the log.")]
-	public void Describe_ShouldCapAndStillShowTheBeginning_WhenPayloadIsMultiMegabyte() {
-		// Arrange
-		const string leadingErrorText = "Access denied for user.";
-		string hugePayload = leadingErrorText + new string('x', 3_000_000);
-		CallToolResult callResult = new() {
-			IsError = true,
-			Content = [new TextContentBlock { Text = hugePayload }]
-		};
-
-		// Act
-		string description = McpResultDiagnostics.Describe(callResult);
-
-		// Assert
-		description.Length.Should().BeLessThan(McpResultDiagnostics.PayloadDiagnosticLimit + 200,
-			because: "a three-megabyte tool result must not reach a CI log, whether or not the caller remembered to truncate");
-		description.Should().Contain(
-			$"…({hugePayload.Length} characters, first {McpResultDiagnostics.RawPayloadInputLimit} shown)",
-			because: "the note must state the payload's EXACT size, not the size of the text left after cutting it");
-		description.Should().Contain(leadingErrorText,
-			because: "the beginning, where the error text lives, is exactly what must survive the cap");
-		description.Should().NotBe("[redacted]",
-			because: "bounding the raw text before the redaction rules run is what stops their one-second timeout from discarding the whole diagnostic");
-	}
-
-	[Test]
-	[Description("Redacts before capping, so a secret near the cap boundary cannot be cut out of a redaction rule's reach.")]
-	public void Describe_ShouldRedactBeforeCapping_WhenASecretSitsNearTheBoundary() {
-		// Arrange
-		string paddedSecret =
-			new string('p', McpResultDiagnostics.PayloadDiagnosticLimit - 40) + "{\"password\":\"s3cr3t-value\"}";
-		CallToolResult callResult = new() {
-			IsError = true,
-			Content = [new TextContentBlock { Text = paddedSecret }]
-		};
-
-		// Act
-		string description = McpResultDiagnostics.Describe(callResult);
-
-		// Assert
-		description.Should().NotContain("s3cr3t-value",
-			because: "capping a composed message that had not been redacted yet would let a secret straddle the boundary and survive");
-	}
-
-	[Test]
-	[Description("Redacts OAuth token keys in both snake_case and camelCase, which anchoring the rule to the whole quoted key missed entirely.")]
-	public void Describe_ShouldRedactOAuthTokenKeys_WhenStructuredContentCarriesATokenResponse() {
-		// Arrange
-		CallToolResult callResult = new() {
-			IsError = true,
-			Content = [],
-			StructuredContent = JsonSerializer.SerializeToElement(new Dictionary<string, object?> {
-				["access_token"] = "opaque123",
-				["refresh_token"] = "r456",
-				["accessToken"] = "camel789",
-				["refreshToken"] = "camel012",
-				["idToken"] = "camel345",
-				["clientId"] = "client678",
-				["dbPassword"] = "db901",
-				["expires_in"] = 3600
-			})
-		};
-
-		// Act
-		string description = McpResultDiagnostics.Describe(callResult);
-
-		// Assert
-		foreach (string secret in new[] { "opaque123", "r456", "camel789", "camel012", "camel345", "client678", "db901" }) {
-			description.Should().NotContain(secret,
-				because: "an OAuth envelope spells its keys with a prefix or a suffix, so a rule anchored to the whole quoted key redacted none of them");
-		}
-
-		description.Should().Contain("3600",
-			because: "redaction is surgical: a non-secret field that explains the failure must survive");
-	}
-
-	[Test]
-	[Description("Redacts a secret nested one level under a secret key, which no rule here can match as a balanced object value.")]
-	public void Describe_ShouldRedactNestedSecret_WhenSecretKeyHoldsAnObject() {
-		// Arrange
-		CallToolResult callResult = new() {
-			IsError = true,
-			Content = [],
-			StructuredContent = JsonSerializer.SerializeToElement(
-				new { token = new { value = "abc123" } })
-		};
-
-		// Act
-		string description = McpResultDiagnostics.Describe(callResult);
-
-		// Assert
-		description.Should().NotContain("abc123",
-			because: "the outer key's value is an object no regex here matches, so the inner key has to carry the redaction instead");
-	}
-
-	[Test]
-	[Description("Redacts a credential written with literal backslash-quote escaping, the spelling a double-encoded body carries.")]
-	public void Describe_ShouldRedactBackslashQuotedCredential_WhenTextBlockIsDoubleEncodedJson() {
-		// Arrange
-		const string doubleEncodedBody = "{\"body\":\"{\\\"password\\\":\\\"s3cr3t-value\\\"}\"}";
-		CallToolResult callResult = new() {
-			IsError = true,
-			Content = [new TextContentBlock { Text = doubleEncodedBody }]
-		};
-
-		// Act
-		string description = McpResultDiagnostics.Describe(callResult);
-
-		// Assert
-		description.Should().Contain("\\\"password\\\"",
-			because: "the arrange must actually carry the backslash-quote spelling, otherwise this test would prove nothing about that branch");
-		description.Should().NotContain("s3cr3t-value",
-			because: "a body that reaches the harness already double-encoded spells its quotes with a backslash rather than \\u0022");
-	}
-
-	[Test]
-	[Description("Redacts a credential whose closing quote was cut away by the raw input bound, instead of leaking the half that survived.")]
-	public void Describe_ShouldRedactUnterminatedSecret_WhenTheRawBoundCutsThroughIt() {
-		// Arrange
-		// The padding is URIs, not filler: redaction SHRINKS them (roughly 500 characters each collapse to
-		// "[redacted-uri]"), which is exactly why the raw-input boundary is reachable inside the display
-		// budget at all. Plain filler would push the cut point far past the display cap and the test would
-		// prove nothing.
-		string uriToken = "https://host.example.com/" + new string('a', 470) + " ";
-		StringBuilder padding = new();
-		while (padding.Length < McpResultDiagnostics.RawPayloadInputLimit - 20) {
-			padding.Append(uriToken);
-		}
-
-		string paddedSecret = padding.ToString()[..(McpResultDiagnostics.RawPayloadInputLimit - 20)]
-			+ "{\"password\":\"s3cr3t-value\"}";
-		CallToolResult callResult = new() {
-			IsError = true,
-			Content = [new TextContentBlock { Text = paddedSecret }]
-		};
-
-		// Act
-		string description = McpResultDiagnostics.Describe(callResult);
-
-		// Assert
-		description.Should().Contain("\"password\":\"[redacted]\"",
-			because: "the unterminated value must be rewritten, proving the rule fired at all rather than the secret simply falling outside the window");
-		description.Should().NotContain("s3cr3t",
-			because: "the raw bound cuts before the value's closing quote, and a rule that requires that quote would have let the surviving half of the secret through");
-	}
-
-	[Test]
-	[Description("Stops rendering content blocks once the budget is spent and counts the rest, rather than building a multi-megabyte diagnostic out of many small blocks.")]
-	public void Describe_ShouldCountRemainingBlocks_WhenContentCarriesFarMoreThanTheBudget() {
-		// Arrange
-		ContentBlock[] blocks = [.. Enumerable.Range(0, 500)
-			.Select(index => new TextContentBlock { Text = new string('b', 1_000) + index })];
-		CallToolResult callResult = new() {
-			IsError = true,
-			Content = blocks
-		};
-
-		// Act
-		string description = McpResultDiagnostics.Describe(callResult);
-
-		// Assert
-		description.Should().Contain("more blocks",
-			because: "the blocks past the budget must be counted, so the reader knows the dump is partial rather than complete");
-		description.Length.Should().BeLessThan(McpResultDiagnostics.PayloadDiagnosticLimit + 200,
-			because: "five hundred blocks of a kilobyte each must not each be redacted and appended on a failure-reporting path");
+		description.Should().NotContain("/Users/alex/secrets/credentials.json",
+			because: "the payload is exempt from redaction because it goes to a file; this string goes to the build log, so it is not");
+		description.Should().Contain("[redacted-path]",
+			because: "the log fragment is redacted with the production rules, at a size whose cost is about a millisecond against their one-second budget");
 	}
 
 	[Test]
 	[Description("Returns a diagnostics-unavailable note instead of throwing when describing the payload itself fails, so the original parse failure is never masked.")]
 	public void Describe_ShouldReportUnavailable_WhenSerializingThePayloadThrows() {
 		// Arrange
+		RecordingDumpSink sink = new();
 		CallToolResult callResult = new() {
 			IsError = true,
 			Content = new ThrowingContentList()
 		};
 
 		// Act
-		string description = McpResultDiagnostics.Describe(callResult);
+		string description = McpResultDiagnostics.DescribeWithSink(callResult, null, "throwing", sink);
 
 		// Assert
 		description.Should().StartWith("(diagnostics unavailable:",
 			because: "this method composes the explanation of another failure, so it must never replace that failure with one of its own");
 		description.Should().MatchRegex(@"\(diagnostics unavailable: \w+Exception: ",
 			because: "naming the type of the failure is what makes an unavailable diagnostic actionable rather than merely silent");
+	}
+
+	[Test]
+	[Description("Returns the no-result note without touching the sink when there was no result at all.")]
+	public void Describe_ShouldReportNoResult_WhenCallResultIsNull() {
+		// Arrange
+		RecordingDumpSink sink = new();
+
+		// Act
+		string description = McpResultDiagnostics.DescribeWithSink(null, null, "absent", sink);
+
+		// Assert
+		description.Should().Be("(no result)",
+			because: "there is nothing to dump when no result ever arrived");
+		sink.Writes.Should().BeEmpty(
+			because: "writing an empty file for a call that produced no result would leave a misleading artifact behind");
+	}
+
+	[Test]
+	[Description("Drops a quoted value the excerpt bound cut through, so half a secret cannot reach the build log where a whole one would have been redacted.")]
+	public void Describe_ShouldDropAValueTheExcerptBoundCutThrough_WhenTheDumpFails() {
+		// Arrange: a password positioned so the 1 000-character excerpt bound lands INSIDE its value.
+		// The production rule states as an accepted limit that a value sliced before its closing quote
+		// is not matched, so without the drop this reaches the log verbatim.
+		RecordingDumpSink sink = new() { FailureReasonToReturn = "IOException: No space left on device." };
+		string padding = new('p', McpResultDiagnostics.LogFragmentLimit);
+		CallToolResult callResult = new() {
+			IsError = true,
+			Content = [new TextContentBlock { Text = $"{padding}\"password\":\"s3cr3tValue" }]
+		};
+
+		// Act
+		string description = McpResultDiagnostics.DescribeWithSink(callResult, null, "cut-secret", sink);
+
+		// Assert
+		description.Should().NotContain("s3cr3t",
+			because: "a secret the bound cut in half matches no redaction rule, so the cut value must be discarded rather than shipped");
+	}
+
+	[Test]
+	[Description("Reports that StructuredContent was present, which separates a shape mismatch in the structured channel from a result that carried nothing.")]
+	public void Describe_ShouldReportStructuredContentPresent_WhenResultCarriesIt() {
+		// Arrange
+		RecordingDumpSink sink = new();
+		CallToolResult callResult = new() {
+			IsError = false,
+			Content = [],
+			StructuredContent = JsonSerializer.SerializeToElement(new { code = 7 })
+		};
+
+		// Act
+		string description = McpResultDiagnostics.DescribeWithSink(callResult, null, "structured", sink);
+
+		// Assert
+		description.Should().Contain("StructuredContent=present",
+			because: "a reader has to be able to tell which channel carried the unreadable answer before opening the dump");
+		sink.Writes[0].Payload.Should().Contain("\"code\":7",
+			because: "the structured channel must reach the dump too, not only the content blocks");
+	}
+
+	[Test]
+	[Description("Dumps a content block that carries no text string (an image block), which the old renderer named explicitly and which now rests on the SDK's own serialization.")]
+	public void Describe_ShouldDumpABlockWithNoTextString_WhenContentCarriesAnImage() {
+		// Arrange
+		RecordingDumpSink sink = new();
+		CallToolResult callResult = new() {
+			IsError = true,
+			Content = [
+				new ImageContentBlock {
+					Data = new ReadOnlyMemory<byte>("hello"u8.ToArray()),
+					MimeType = "image/png"
+				}
+			]
+		};
+
+		// Act
+		string description = McpResultDiagnostics.DescribeWithSink(callResult, null, "image", sink);
+
+		// Assert
+		description.Should().Contain("Content=1 block(s)",
+			because: "a block with no text is still a block the tool answered with, and must be counted rather than silently skipped");
+		sink.Writes[0].Payload.Should().Contain("image/png",
+			because: "an image or embedded-resource block is exactly the answer the old '(no text)' rendering made undiagnosable, so its own fields have to survive into the dump");
+	}
+
+	[Test]
+	[Description("Truncates text longer than the documented cap and reports the total original length, instead of flooding the CI log unbounded.")]
+	public void Truncate_ShouldCapAndReportTotalLength_WhenTextExceedsTheLimit() {
+		// Arrange
+		const int limit = 80;
+		string text = new('z', 500);
+
+		// Act
+		string truncated = McpResultDiagnostics.Truncate(text, limit);
+
+		// Assert
+		truncated.Length.Should().Be(limit,
+			because: "the note is paid for out of the budget rather than added on top of it");
+		truncated.Should().EndWith($" … {text.Length} characters total, truncated to fit {limit}",
+			because: "the note must report both the original length and the budget, so the reader knows how much was cut");
+	}
+
+	[Test]
+	[Description("Leaves text at or under the documented cap unchanged, the boundary case included.")]
+	public void Truncate_ShouldReturnTextUnchanged_WhenTextIsAtOrUnderTheLimit() {
+		// Arrange
+		const int limit = 80;
+		const string shorterThanLimit = "short enough";
+		string exactlyAtLimit = new('z', limit);
+
+		// Act
+		string shorterResult = McpResultDiagnostics.Truncate(shorterThanLimit, limit);
+		string exactResult = McpResultDiagnostics.Truncate(exactlyAtLimit, limit);
+
+		// Assert
+		shorterResult.Should().Be(shorterThanLimit,
+			because: "text inside the budget must not gain a truncation note it did not earn");
+		exactResult.Should().Be(exactlyAtLimit,
+			because: "the comparison is <=, so text landing exactly on the budget is untouched - an off-by-one here would append a note that makes the result LONGER than the cap it reports");
 	}
 
 	[Test]
@@ -494,150 +451,43 @@ public sealed class McpResultDiagnosticsTests {
 	}
 
 	[Test]
-	[Description("Covers every secret key the production redactor knows, so a key added there cannot silently go unredacted here.")]
-	public void CredentialKeyCore_ShouldCoverEveryProductionCredentialKey() {
-		// Arrange
-		string productionKeyAlternation = ProductionCredentialKeyAlternation();
-		string[] productionKeys = SplitTopLevelAlternatives(productionKeyAlternation);
+	[Description("Keeps the documented cap even when the sanitizer lengthens the kept text rather than only shortening it.")]
+	public void Truncate_ShouldStillCapTheResult_WhenTheSanitizerGrowsTheKeptText() {
+		// Arrange: a sanitizer that appends more than it removes, which is what the only real one does -
+		// DropValueCutByTheBound swaps an unterminated value for a 42-character marker.
+		const int limit = 120;
+		string text = new('z', 500);
 
 		// Act
-		string[] missingKeys = [.. productionKeys.Where(key =>
-			!McpResultDiagnostics.CredentialKeyCore.Contains(KeyCore(key), StringComparison.Ordinal))];
+		string truncated = McpResultDiagnostics.Truncate(text, limit, kept => kept + new string('!', 200));
 
 		// Assert
-		productionKeys.Should().NotBeEmpty(
-			because: "the oracle is worthless if it silently extracts nothing from the production pattern");
-		missingKeys.Should().BeEmpty(
-			because: "this harness duplicates the production key list, so a key added to SensitiveErrorTextRedactor and not here would leak through the e2e payload dump unnoticed");
-	}
-
-	[Test]
-	[Description("Names every key this harness carries that production does not, so the duplicate list cannot drift in the OTHER direction unnoticed either.")]
-	public void CredentialKeyCore_ShouldNotCarryKeysProductionHasDropped() {
-		// Arrange
-		// The reverse of the test above. That one only catches "production grew a key"; a key REMOVED
-		// from production, or one this harness invented, stayed invisible - and the harness copy then
-		// over-redacts against a rule nothing states any more. This test does not fail on a difference:
-		// it PINS the accepted set, so any change on either side has to be looked at once.
-		// The keys this harness deliberately carries ahead of production. "client[_-]?id" and
-		// "private[_-]?key" used to live here: both are OAuth/service-account key names that reach an
-		// MCP payload dump, and the redactor did not know them. They landed in production with the
-		// Clio.Common move (#1473), so the array is empty again - which is exactly what this test is
-		// for: the drift is stated here rather than going unnoticed.
-		string[] knownHarnessOnlyKeys = [];
-		string productionKeyAlternation = ProductionCredentialKeyAlternation();
-		string[] harnessKeys = SplitTopLevelAlternatives(McpResultDiagnostics.CredentialKeyCore);
-
-		// Act
-		string[] harnessOnlyKeys = [.. harnessKeys.Where(key =>
-			!productionKeyAlternation.Contains(key, StringComparison.Ordinal))];
-
-		// Assert
-		harnessKeys.Should().NotBeEmpty(
-			because: "the oracle is worthless if it silently extracts nothing from the harness pattern");
-		harnessOnlyKeys.Should().BeEquivalentTo(knownHarnessOnlyKeys,
-			because: "a key this harness carries alone means the duplicate redaction rule has drifted from the one it mirrors - either production dropped it, or it was invented here; both need a decision, not silence");
+		truncated.Length.Should().Be(limit,
+			because: "the limit is documented as the maximum length of the RESULT, so a sanitizer that grows the kept text must be re-cut rather than allowed to overflow the bound that keeps payload-shaped text inside the redaction pass's cheap range");
+		truncated.Should().EndWith($" … {text.Length} characters total, truncated to fit {limit}",
+			because: "the note must survive the second cut; trimming it away would leave a silent truncation");
 	}
 
 	/// <summary>
-	/// The key alternation of the production <c>CredentialPairRegex</c> - the text inside its first
-	/// <c>\b(...)\b</c> group - read off the compiled rule itself rather than copied.
+	/// A sink that records what would have been written instead of writing it, so the payload assertions
+	/// never touch the filesystem.
 	/// </summary>
-	/// <remarks>
-	/// The group is located by counting parentheses instead of by a <c>[^)]*</c> match: the alternation
-	/// carries nested groups of its own (the optional OAuth qualifier in front of "token"), so a
-	/// non-nesting match stops at the first inner <c>)</c> and silently extracts nothing.
-	/// </remarks>
-	private static string ProductionCredentialKeyAlternation() {
-		GeneratedRegexAttribute productionRule = typeof(SensitiveErrorTextRedactor)
-			.GetMethod("CredentialPairRegex", BindingFlags.NonPublic | BindingFlags.Static)!
-			.GetCustomAttribute<GeneratedRegexAttribute>()!;
-		string pattern = productionRule.Pattern;
-		int openIndex = pattern.IndexOf(@"\b(", StringComparison.Ordinal);
-		openIndex.Should().BeGreaterThanOrEqualTo(0,
-			because: @"the production rule is expected to open with a \b(...) key group");
-		openIndex += 2;
-		int depth = 0;
-		for (int i = openIndex + 1; i < pattern.Length; i++) {
-			if (pattern[i] == '\\') {
-				i++;
-				continue;
-			}
-			if (pattern[i] == '[') {
-				while (i < pattern.Length && pattern[i] != ']') {
-					i += pattern[i] == '\\' ? 2 : 1;
-				}
-				continue;
-			}
-			if (pattern[i] == '(') {
-				depth++;
-			} else if (pattern[i] == ')') {
-				if (depth == 0) {
-					return pattern[(openIndex + 1)..i];
-				}
-				depth--;
-			}
-		}
-		throw new InvalidOperationException("The production credential key group is not closed.");
-	}
+	private sealed class RecordingDumpSink : IMcpPayloadDumpSink {
+		/// <summary>The path reported back on a successful write.</summary>
+		public string PathToReturn { get; init; } = "/recorded/dump.json";
 
-	/// <summary>
-	/// Splits an alternation on the '|' separators that sit at the top level, leaving the ones inside a
-	/// nested group or character class alone.
-	/// </summary>
-	private static string[] SplitTopLevelAlternatives(string alternation) {
-		List<string> alternatives = [];
-		StringBuilder current = new();
-		int depth = 0;
-		for (int i = 0; i < alternation.Length; i++) {
-			char c = alternation[i];
-			if (c == '\\' && i + 1 < alternation.Length) {
-				current.Append(c).Append(alternation[++i]);
-				continue;
-			}
-			if (c == '[') {
-				while (i < alternation.Length) {
-					current.Append(alternation[i]);
-					if (alternation[i] == ']') {
-						break;
-					}
-					if (alternation[i] == '\\' && i + 1 < alternation.Length) {
-						current.Append(alternation[++i]);
-					}
-					i++;
-				}
-				continue;
-			}
-			if (c == '(') {
-				depth++;
-			} else if (c == ')') {
-				depth--;
-			} else if (c == '|' && depth == 0) {
-				alternatives.Add(current.ToString());
-				current.Clear();
-				continue;
-			}
-			current.Append(c);
-		}
-		alternatives.Add(current.ToString());
-		return [.. alternatives.Where(alternative => alternative.Length > 0)];
-	}
+		/// <summary>When set, the write reports this failure instead of succeeding.</summary>
+		public string? FailureReasonToReturn { get; init; }
 
-	/// <summary>
-	/// The part of a production key that the harness list has to carry: the optional qualifier group in
-	/// front of it ("(?:access|refresh|...)?[_-]?token") only widens the spellings of the SAME key, and
-	/// the harness already wraps every key in "[\w.-]*?...[\w.-]*", so it matches those spellings
-	/// through the core alone.
-	/// </summary>
-	private static string KeyCore(string productionKey) {
-		string core = productionKey;
-		if (core.StartsWith("(?:", StringComparison.Ordinal)) {
-			int closeIndex = core.IndexOf(")?", StringComparison.Ordinal);
-			if (closeIndex >= 0) {
-				core = core[(closeIndex + 2)..];
-			}
+		/// <summary>Every write this sink received, in order.</summary>
+		public List<(string Label, string Payload)> Writes { get; } = [];
+
+		public McpPayloadDumpResult Write(string label, string rawPayload) {
+			Writes.Add((label, rawPayload));
+			return FailureReasonToReturn is null
+				? new McpPayloadDumpResult(PathToReturn, null)
+				: new McpPayloadDumpResult(null, FailureReasonToReturn);
 		}
-		return core.StartsWith("[_-]?", StringComparison.Ordinal) ? core["[_-]?".Length..] : core;
 	}
 
 	/// <summary>

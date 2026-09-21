@@ -3661,8 +3661,8 @@ public static partial class WebToMobileAnalysisService {
 		// can carry an INHERITED caption key whose name does not match the element (e.g. web OverviewTab is
 		// bound to the base-template key GeneralInfoTab_caption). If carried verbatim, that key collides with
 		// one the mobile template already owns with a different value (GeneralInfoTab_caption = "Details"), and
-		// update-page — which never overwrites an existing page/template key — silently drops our override, so
-		// the template value wins at render. A per-element key avoids the collision. SourceValue keeps the
+		// updating it could change captions of other elements sharing that key. A per-element key avoids
+		// the collision and also works with older additions-only update-page versions. SourceValue keeps the
 		// web caption's own text, EMPTY TEXT INCLUDED: a caption the page declares as "" is its own deliberate
 		// "no visible label", and the invented key must carry it or the token has nothing behind it. When the
 		// source key already equals the element key, nothing changes and the caller keeps the token verbatim.
