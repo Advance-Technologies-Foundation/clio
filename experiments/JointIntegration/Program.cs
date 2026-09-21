@@ -33,7 +33,7 @@ var settings = new SettingsStore(ledger, Path.Combine(work, "settings.jsonl"));
 string effect = Path.Combine(work, "effect.log");
 
 // cfg-1 is prepared and becomes current; V1 is the activated release.
-SettingsSnapshot cfg1 = settings.Prepare("envX", new Dictionary<string, string> { ["mode"] = "one" }, 0);
+SettingsSnapshot cfg1 = settings.PrepareAndActivate("envX", new Dictionary<string, string> { ["mode"] = "one" }, 0);
 var (v1Context, v1) = Load(v1Dir);
 
 // X1: the assigned case. A partner composes the pinned release, an operation is admitted under cfg-1,
@@ -44,7 +44,7 @@ var composed = partner.Compose(v1);
 Process owner = StartIdleOwner();
 IOperationLease pinned = settings.Admit("envX", v1.Version, new ProcessOwner(owner), "envX");
 var (v2Context, v2) = Load(v2Dir);                      // the new release arrives
-SettingsSnapshot cfg2 = settings.Prepare("envX", new Dictionary<string, string> { ["mode"] = "two" },
+SettingsSnapshot cfg2 = settings.PrepareAndActivate("envX", new Dictionary<string, string> { ["mode"] = "two" },
     settings.CurrentVersion("envX"));                   // and the new settings
 
 var stillPinned = ledger.Query(pinned.Id);
@@ -84,32 +84,36 @@ pinned.Dispose();
 onNew.Dispose();
 settings.RetainForRollback(cfg1.Id);
 Process bareOwner = StartIdleOwner();
-SettingsSnapshot cfg3 = settings.Prepare("envY", new Dictionary<string, string> { ["mode"] = "three" }, 0);
+SettingsSnapshot cfg3 = settings.PrepareAndActivate("envY", new Dictionary<string, string> { ["mode"] = "three" }, 0);
 IOperationLease unresolvable = settings.Admit("envY", v1.Version, bareOwner, "envY");   // bare, on purpose
-SettingsSnapshot cfg4 = settings.Prepare("envY", new Dictionary<string, string> { ["mode"] = "four" },
+SettingsSnapshot cfg4 = settings.PrepareAndActivate("envY", new Dictionary<string, string> { ["mode"] = "four" },
     settings.CurrentVersion("envY"));
 bareOwner.Kill(entireProcessTree: true);
 await bareOwner.WaitForExitAsync();
-IReadOnlyCollection<string> deletedWithBareOwner = settings.Cleanup();
-Check("X3 a snapshot held by an owner with no liveness is never reclaimed, and cleanup gives no signal",
+CleanupResult bareOwnerCleanup = settings.Cleanup();
+IReadOnlyCollection<string> deletedWithBareOwner = bareOwnerCleanup.Reclaimed;
+Check("X3 a cross-process owner registered without liveness holds its snapshot, and cleanup now says so",
     !deletedWithBareOwner.Contains(cfg3.Id) && settings.Contains(cfg3.Id)
         && ledger.OwnersWithoutLiveness.Contains(unresolvable.Id)
+        && bareOwnerCleanup.HeldByOwnerWithoutLiveness.Count > 0
         && ledger.Query(unresolvable.Id).State == OperationState.Running,
     new { reclaimed = deletedWithBareOwner, cfg3SurvivedCleanup = settings.Contains(cfg3.Id),
           listedByLedger = ledger.OwnersWithoutLiveness.Contains(unresolvable.Id),
           stateOfDeadOwnersOperation = ledger.Query(unresolvable.Id).State.ToString(),
-          note = "Cleanup consults OperationHeldSnapshots only; the warning lives in OwnersWithoutLiveness" });
+          reportedByCleanup = bareOwnerCleanup.HeldByOwnerWithoutLiveness.Count,
+          note = "a diagnostic, not a verdict: an in-process owner ending at Dispose appears here legitimately" });
 
 // X4 negative control: the same sequence with a liveness-capable owner reclaims the snapshot, so X3 is
 // about the missing liveness and not about cleanup being broken.
 Process wrappedOwner = StartIdleOwner();
-SettingsSnapshot cfg5 = settings.Prepare("envZ", new Dictionary<string, string> { ["mode"] = "five" }, 0);
+SettingsSnapshot cfg5 = settings.PrepareAndActivate("envZ", new Dictionary<string, string> { ["mode"] = "five" }, 0);
 IOperationLease resolvable = settings.Admit("envZ", v1.Version, new ProcessOwner(wrappedOwner), "envZ");
-SettingsSnapshot cfg6 = settings.Prepare("envZ", new Dictionary<string, string> { ["mode"] = "six" },
+SettingsSnapshot cfg6 = settings.PrepareAndActivate("envZ", new Dictionary<string, string> { ["mode"] = "six" },
     settings.CurrentVersion("envZ"));
 wrappedOwner.Kill(entireProcessTree: true);
 await wrappedOwner.WaitForExitAsync();
-IReadOnlyCollection<string> deletedWithWrappedOwner = settings.Cleanup();
+CleanupResult wrappedOwnerCleanup = settings.Cleanup();
+IReadOnlyCollection<string> deletedWithWrappedOwner = wrappedOwnerCleanup.Reclaimed;
 Check("X4 negative control: with a liveness-capable owner the same snapshot IS reclaimed",
     deletedWithWrappedOwner.Contains(cfg5.Id) && !settings.Contains(cfg5.Id)
         && ledger.Query(resolvable.Id).State == OperationState.Unknown,
@@ -117,37 +121,115 @@ Check("X4 negative control: with a liveness-capable owner the same snapshot IS r
           stateOfDeadOwnersOperation = ledger.Query(resolvable.Id).State.ToString(),
           note = "same sequence, one difference: the owner could be asked" });
 
-// X5: @kirillkrylov's exact acceptance case -- settings prepared SUCCESSFULLY, then the runtime
-// activation FAILS. An admission afterwards must observe ONE COMMITTED PAIR, not one half of each.
-SettingsSnapshot committedPair = settings.Prepare("envW",
+// ── X5: one coordination boundary, not an ordering ───────────────────────────────────────────────
+// @kirillkrylov's correction to my first proposal: prepare -> activate runtime -> activate settings is
+// NOT sufficient, because an admission between the last two steps sees new-runtime/old-settings, and a
+// settings commit that fails after the runtime is activated leaves the same split. So the pair is
+// PUBLISHED as a unit through the ledger, and admission takes both halves from one read.
+// Publishing is the lifetime lane's (mine); preparing and committing settings is @vladimir-nikonov's.
+const string pairedScope = "envW";
+SettingsSnapshot first = settings.PrepareAndActivate(pairedScope,
     new Dictionary<string, string> { ["mode"] = "committed" }, 0);
+ledger.TryPublishSelection(pairedScope, v1.Version, first.Id, 0);
+ActivationSelection committed = ledger.CurrentSelection(pairedScope);
+
 Process wOwner = StartIdleOwner();
-IOperationLease beforeFailedActivation = settings.Admit("envW", v1.Version, new ProcessOwner(wOwner), "envW");
 
-// The settings half succeeds first, exactly as a real staged update would do it.
-SettingsSnapshot preparedForV3 = settings.Prepare("envW",
-    new Dictionary<string, string> { ["mode"] = "with-v3" }, settings.CurrentVersion("envW"));
-
-// The runtime half is then refused: this release declares a contract generation the host cannot serve.
-bool activationFailed = false;
+// X5a: the runtime half is refused. The candidate is prepared but never activated, and because the
+// pair is published only after BOTH halves succeed, nothing about the live selection moves.
+SettingsSnapshot candidateForRejected = settings.Prepare(pairedScope,
+    new Dictionary<string, string> { ["mode"] = "with-rejected" }, settings.CurrentVersion(pairedScope));
+bool runtimeRefused = false;
 try {
     var (rejectedContext, rejected) = Load(incompatibleDir);
-    if (rejected.ContractVersion != 1) { activationFailed = true; rejectedContext.Unload(); }
+    if (rejected.ContractVersion != 1) { runtimeRefused = true; rejectedContext.Unload(); }
 }
-catch (Exception) { activationFailed = true; }
+catch (Exception) { runtimeRefused = true; }
+if (runtimeRefused) settings.AbandonCandidate(candidateForRejected.Id);   // no publication attempted
 
-IOperationLease afterFailedActivation = settings.Admit("envW", v1.Version, new ProcessOwner(wOwner), "envW");
-var pairSeen = ledger.Query(afterFailedActivation.Id);
-Check("X5 a failed runtime activation leaves the committed runtime/configuration pair unchanged",
-    activationFailed
-        && pairSeen.RuntimeVersion == v1.Version
-        && pairSeen.ConfigurationSnapshot == committedPair.Id,
-    new { activationFailed, runtimeSeen = pairSeen.RuntimeVersion, snapshotSeen = pairSeen.ConfigurationSnapshot,
-          committedSnapshot = committedPair.Id, preparedButNeverActivated = preparedForV3.Id,
-          snapshotBeforeAttempt = ledger.Query(beforeFailedActivation.Id).ConfigurationSnapshot,
-          note = "Prepare activates on success, so a refused runtime leaves settings ahead of it" });
-beforeFailedActivation.Dispose();
-afterFailedActivation.Dispose();
+IOperationLease afterRefusal = ledger.BeginFromSelection(pairedScope, new ProcessOwner(wOwner));
+var pairAfterRefusal = ledger.Query(afterRefusal.Id);
+Check("X5a a refused runtime leaves the committed pair untouched, and admissions still see it",
+    runtimeRefused
+        && pairAfterRefusal.RuntimeVersion == v1.Version
+        && pairAfterRefusal.ConfigurationSnapshot == first.Id
+        && ledger.CurrentSelection(pairedScope).Generation == committed.Generation,
+    new { runtimeRefused, runtimeSeen = pairAfterRefusal.RuntimeVersion,
+          snapshotSeen = pairAfterRefusal.ConfigurationSnapshot,
+          generationUnchanged = ledger.CurrentSelection(pairedScope).Generation == committed.Generation,
+          note = "the pair is published only after both halves succeed, so a refusal is a non-event" });
+
+// X5b: the runtime half succeeds and the SETTINGS COMMIT then fails. This is the case my first
+// ordering proposal got wrong -- by then the runtime would already be activated.
+SettingsSnapshot candidateForFailedCommit = settings.Prepare(pairedScope,
+    new Dictionary<string, string> { ["mode"] = "commit-fails" }, settings.CurrentVersion(pairedScope));
+bool settingsCommitFailed = false;
+settings.FailNextActivatePersistForTests = true;
+try { settings.Activate(pairedScope, candidateForFailedCommit.Id, settings.CurrentVersion(pairedScope)); }
+catch (Exception) { settingsCommitFailed = true; }
+IOperationLease afterCommitFailure = ledger.BeginFromSelection(pairedScope, new ProcessOwner(wOwner));
+var pairAfterCommitFailure = ledger.Query(afterCommitFailure.Id);
+Check("X5b a settings commit failure after the runtime half leaves the previous pair usable",
+    settingsCommitFailed
+        && pairAfterCommitFailure.RuntimeVersion == v1.Version
+        && pairAfterCommitFailure.ConfigurationSnapshot == first.Id
+        && ledger.CurrentSelection(pairedScope).Generation == committed.Generation,
+    new { settingsCommitFailed, runtimeSeen = pairAfterCommitFailure.RuntimeVersion,
+          snapshotSeen = pairAfterCommitFailure.ConfigurationSnapshot,
+          note = "publication never happened, so there is no rollback step that could itself fail" });
+
+// X5c: an admission held EXACTLY at the boundary. It runs while the publication holds the lock, so it
+// is serialised against it and must observe one whole pair -- never the new runtime with the old
+// snapshot, which is the interleaving @kirillkrylov named.
+SettingsSnapshot second = settings.Prepare(pairedScope,
+    new Dictionary<string, string> { ["mode"] = "second" }, settings.CurrentVersion(pairedScope));
+settings.Activate(pairedScope, second.Id, settings.CurrentVersion(pairedScope));
+string? heldRuntime = null, heldSnapshot = null;
+var admissionEntered = new ManualResetEventSlim(false);
+ledger.OnPublishInsideBoundaryForTests = () => {
+    var admission = Task.Run(() => {
+        admissionEntered.Set();
+        using IOperationLease held = ledger.BeginFromSelection(pairedScope, new ProcessOwner(wOwner));
+        var record = ledger.Query(held.Id);
+        heldRuntime = record.RuntimeVersion;
+        heldSnapshot = record.ConfigurationSnapshot;
+    });
+    admissionEntered.Wait(TimeSpan.FromSeconds(5));
+    Thread.Sleep(150);                       // the admission is now blocked on the boundary, deliberately
+    _ = admission;                           // completes after the publication releases it
+};
+ledger.TryPublishSelection(pairedScope, v2.Version, second.Id, committed.Generation);
+ledger.OnPublishInsideBoundaryForTests = null;
+Thread.Sleep(400);
+bool coherent = (heldRuntime == v1.Version && heldSnapshot == first.Id)
+    || (heldRuntime == v2.Version && heldSnapshot == second.Id);
+Check("X5c an admission held at the boundary observes one whole pair, never a mixture",
+    heldRuntime is not null && coherent,
+    new { heldRuntime, heldSnapshot, oldPair = new { v1.Version, snapshot = first.Id },
+          newPair = new { v2.Version, snapshot = second.Id }, coherent,
+          note = "admission and publication share one critical section, so there is no halfway state" });
+
+// X5d MUTATION CONTROL: the naive caller that reads the two halves separately. Deterministic, not
+// raced for -- the publication happens between its two reads, through the same boundary hook.
+string naiveRuntime = ledger.CurrentSelection(pairedScope).RuntimeVersion;
+SettingsSnapshot third = settings.Prepare(pairedScope,
+    new Dictionary<string, string> { ["mode"] = "third" }, settings.CurrentVersion(pairedScope));
+settings.Activate(pairedScope, third.Id, settings.CurrentVersion(pairedScope));
+ledger.TryPublishSelection(pairedScope, v1.Version, third.Id,
+    ledger.CurrentSelection(pairedScope).Generation);
+string? naiveSnapshot = ledger.CurrentSelection(pairedScope).ConfigurationSnapshot;
+IOperationLease naive = ledger.Begin(pairedScope, naiveRuntime, new ProcessOwner(wOwner), naiveSnapshot);
+var naivePair = ledger.Query(naive.Id);
+bool naiveMixed = naivePair.RuntimeVersion == v2.Version && naivePair.ConfigurationSnapshot == third.Id;
+Check("X5d mutation control: reading the halves separately admits a pair that was never current",
+    naiveMixed,
+    new { admittedRuntime = naivePair.RuntimeVersion, admittedSnapshot = naivePair.ConfigurationSnapshot,
+          everCurrentTogether = false,
+          note = "this is what BeginFromSelection exists to prevent; it fails here on purpose" });
+
+afterRefusal.Dispose();
+afterCommitFailure.Dispose();
+naive.Dispose();
 try { wOwner.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
 
 Console.WriteLine(JsonSerializer.Serialize(new {

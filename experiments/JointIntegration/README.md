@@ -23,59 +23,41 @@ dotnet run --project experiments/JointIntegration/JointIntegration.csproj -c Rel
 |---|---|
 | X1 | a partner stays on its pinned release **and** its pinned snapshot while a new release and new settings arrive |
 | X2 | a failed evidence write degrades the scope without touching the outcome or losing the snapshot |
-| X3 | **the integration finding** — a snapshot held by an owner with no liveness is never reclaimed, and cleanup gives no signal |
+| X3 | a cross-process owner registered without liveness holds its snapshot, and cleanup now reports it |
 | X4 | **negative control** — with a liveness-capable owner the same snapshot IS reclaimed |
-| X5 | a failed runtime activation leaves the committed runtime/configuration pair unchanged — **currently RED, by design** |
+| X5a | a refused runtime leaves the committed pair untouched, and admissions still see it |
+| X5b | a settings commit failure after the runtime half leaves the previous pair usable |
+| X5c | an admission held at the boundary observes one whole pair, never a mixture |
+| X5d | **mutation control** — reading the halves separately admits a pair that was never current |
 
-## The finding
+**8/8 on macOS.** Exact build target: this branch, plus `experiments/SettingsVersioning` taken from
+`nikonov/supervisor-quiescence-probe@334d0dcf28b4`. Both are in this tree, so the branch builds and runs
+without mixing incompatible sources.
 
-`SettingsStore.Cleanup()` consults three ownership reasons, one of which is the ledger's
-`OperationHeldSnapshots`. That property resolves orphans, so a dead owner normally releases its snapshot
-and cleanup reclaims it — X4.
+## Why the pair is published, not ordered
 
-But an owner with **no liveness support** is never resolved. Its operation stays `Running` forever, so it
-holds its snapshot forever, and `Cleanup()` returns an empty list and reports nothing unusual:
+My first proposal was *prepare settings → activate runtime → activate settings*. @kirillkrylov's
+correction: that is not sufficient on its own. An admission landing between the last two steps sees the
+new runtime with the old settings, and a settings commit that fails after the runtime is already
+activated leaves the same split.
 
-```
-X3 {"reclaimed": [], "cfg3SurvivedCleanup": true, "listedByLedger": true,
-    "stateOfDeadOwnersOperation": "Running"}
-X4 {"reclaimed": ["cfg-5"], "cfg5Gone": true,
-    "stateOfDeadOwnersOperation": "Unknown"}
-```
+So both halves become current in **one publication** — `IOperationLedger.TryPublishSelection` — and an
+admission takes both from **one read** — `BeginFromSelection`. Publication and admission share one
+critical section, so there is no halfway state to observe. A failure on either half simply means the
+publication never happens, so the previous selection stays usable and there is no rollback step that
+could itself fail.
 
-The only signal is `OwnersWithoutLiveness`, which the settings owner does not consult. Neither lane's own
-tests can see this: the ledger correctly reports what it cannot resolve, the settings owner correctly
-consumes the held set, and the leak lives in the gap between the two.
+X5d is the mutation control that keeps this honest. A caller reading the two halves separately, with a
+publication between its reads, admits `(10.1.0.0, cfg-11)` — a pair that was never current together.
+Deterministic, through the boundary hook, not raced for.
 
-The fix belongs to the settings owner and is one line of policy, not a mechanism: a cleanup that finds
-`OwnersWithoutLiveness` non-empty for a scope should say so rather than silently keep everything.
+## X3, narrowed
 
-## X5 is red on purpose
+An earlier version of this file concluded that a cleanup finding `OwnersWithoutLiveness` non-empty should
+treat it as a leak. That was too broad, as @kirillkrylov pointed out: an ordinary in-process owner whose
+lifetime ends at `Dispose` appears in that list the whole time it runs and is perfectly correct. Absence
+of liveness is a **capability**, not evidence that anything is wrong.
 
-@kirillkrylov's acceptance criterion: *successful settings preparation followed by a failed runtime
-activation*, after which admissions must observe **one committed pair**. Reproduced rather than
-predicted:
-
-```
-X5 {"activationFailed": true, "committedSnapshot": "cfg-7",
-    "preparedButNeverActivated": "cfg-8",
-    "runtimeSeen": "10.0.0.0", "snapshotSeen": "cfg-8"}
-```
-
-The committed pair is (`10.0.0.0`, `cfg-7`). `cfg-8` was prepared for a release that was then refused
-for declaring an unsupported contract generation. The admission afterwards observes
-(`10.0.0.0`, `cfg-8`) — **a pair that was never committed**. Settings moved ahead of a runtime
-activation that never happened.
-
-This is not a defect in the settings store's own behaviour: `Prepare` activates on success, which is
-correct for a settings-only change and wrong for one half of a paired activation. The seam needed is the
-smallest possible separation, and it belongs to the settings lane:
-
-- `Prepare` returns a **candidate** and does not make it current.
-- `Activate` makes a candidate current.
-- A candidate is retained against cleanup for the activation window only — not a general staged-settings
-  framework, just the gap between the two calls.
-
-The caller then orders a paired activation as: prepare the candidate, activate the runtime, and activate
-the candidate only if the runtime activation succeeded. A refused runtime never reaches the second step,
-so the pair stays as it was. X5 flips to green when that lands, and is the acceptance test for it.
+What X3 does show is narrower and still worth having: a **cross-process** owner registered without its
+wrapper holds its snapshot indefinitely, and before this round nothing said so. `Cleanup()` now reports
+it as a diagnostic without changing what it reclaims, and X4 remains the positive process-loss case.

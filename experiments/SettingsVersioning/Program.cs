@@ -32,6 +32,9 @@ T10_AdmitIsSerializedAgainstCleanup();
 T11_MutatingCallersDictionaryAfterPrepareDoesNotReachTheSnapshot();
 T12_MigrateDetectsAnEditThatLandsAfterItsReadNotJustBeforeItsCommit();
 T13_ImmutableDictionaryRejectsMutationThroughEveryAlias();
+T14_CleanupSurfacesSnapshotsHeldByUnresolvableOwners();
+T15_PairedActivationCommitsOnlyIfBothHalvesSucceed();
+T16_FailedSettingsCommitLeavesThePreviousSelectionActiveAndTheCandidatePending();
 
 Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { cases = observations },
     new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
@@ -40,11 +43,11 @@ return failed ? 1 : 0;
 void T1_CoexistWithV2() {
     var ledger = new OperationLedger(ledgerEvidence);
     var store = new SettingsStore(ledger, settingsEvidence);
-    SettingsSnapshot cfgA = store.Prepare("envT1", new Dictionary<string, string> { ["schema"] = "v1" }, 0);
+    SettingsSnapshot cfgA = store.PrepareAndActivate("envT1", new Dictionary<string, string> { ["schema"] = "v1" }, 0);
     var ownerA = new FakeOwner();
     IOperationLease leaseA = store.Admit("envT1", "V1", ownerA, "envT1");
 
-    SettingsSnapshot cfgB = store.Prepare("envT1", new Dictionary<string, string> { ["schema"] = "v2" }, cfgA.Version);
+    SettingsSnapshot cfgB = store.PrepareAndActivate("envT1", new Dictionary<string, string> { ["schema"] = "v2" }, cfgA.Version);
     var ownerB = new FakeOwner();
     IOperationLease leaseB = store.Admit("envT1", "V2", ownerB, "envT1");
 
@@ -64,7 +67,7 @@ void T1_CoexistWithV2() {
 void T2_FailedMigrationLeavesV1Usable() {
     var ledger = new OperationLedger(Path.Combine(workDir, "operations-t2.jsonl"));
     var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t2.jsonl"));
-    SettingsSnapshot cfgA = store.Prepare("envT2", new Dictionary<string, string> { ["schema"] = "v1", ["k"] = "orig" }, 0);
+    SettingsSnapshot cfgA = store.PrepareAndActivate("envT2", new Dictionary<string, string> { ["schema"] = "v1", ["k"] = "orig" }, 0);
     IOperationLease lease = store.Admit("envT2", "V1", new FakeOwner(), "envT2");
 
     store.FailMigrationForTests = true;
@@ -89,12 +92,12 @@ void T2_FailedMigrationLeavesV1Usable() {
 void T3_ConcurrentEditIsRefusedNotOverwritten() {
     var ledger = new OperationLedger(Path.Combine(workDir, "operations-t3.jsonl"));
     var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t3.jsonl"));
-    SettingsSnapshot cfgA = store.Prepare("envT3", new Dictionary<string, string> { ["v"] = "0" }, 0);
+    SettingsSnapshot cfgA = store.PrepareAndActivate("envT3", new Dictionary<string, string> { ["v"] = "0" }, 0);
 
     // Two writers both read version 1 (cfgA). Writer 1 commits first.
-    SettingsSnapshot writer1 = store.Prepare("envT3", new Dictionary<string, string> { ["v"] = "1-from-writer1" }, cfgA.Version);
+    SettingsSnapshot writer1 = store.PrepareAndActivate("envT3", new Dictionary<string, string> { ["v"] = "1-from-writer1" }, cfgA.Version);
     ConcurrencyConflictException? refused = null;
-    try { store.Prepare("envT3", new Dictionary<string, string> { ["v"] = "1-from-writer2" }, cfgA.Version); }
+    try { store.PrepareAndActivate("envT3", new Dictionary<string, string> { ["v"] = "1-from-writer2" }, cfgA.Version); }
     catch (ConcurrencyConflictException ex) { refused = ex; }
     Check("T3: a second writer based on the same stale version is refused, not merged or overwritten",
         refused is not null && store.CurrentSnapshotId("envT3") == writer1.Id,
@@ -103,7 +106,7 @@ void T3_ConcurrentEditIsRefusedNotOverwritten() {
     // Mutation control, observed rather than asserted: the same race with the check disabled silently
     // loses writer 1's edit.
     store.SkipConcurrencyCheckForTests = true;
-    SettingsSnapshot writer2 = store.Prepare("envT3", new Dictionary<string, string> { ["v"] = "1-from-writer2" }, cfgA.Version);
+    SettingsSnapshot writer2 = store.PrepareAndActivate("envT3", new Dictionary<string, string> { ["v"] = "1-from-writer2" }, cfgA.Version);
     store.SkipConcurrencyCheckForTests = false;
     Check("T3 MUTATION: with the check disabled, writer 2 silently replaces writer 1 -- the failure the check exists to prevent",
         store.CurrentSnapshotId("envT3") == writer2.Id && store.Values(writer2.Id)["v"] == "1-from-writer2",
@@ -113,8 +116,8 @@ void T3_ConcurrentEditIsRefusedNotOverwritten() {
 void T4_RollbackRestoresExactlyAndRefusesAgainstNewerEdit() {
     var ledger = new OperationLedger(Path.Combine(workDir, "operations-t4.jsonl"));
     var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t4.jsonl"));
-    SettingsSnapshot cfgA = store.Prepare("envT4", new Dictionary<string, string> { ["schema"] = "v1" }, 0);
-    SettingsSnapshot cfgB = store.Prepare("envT4", new Dictionary<string, string> { ["schema"] = "v2-broken" }, cfgA.Version);
+    SettingsSnapshot cfgA = store.PrepareAndActivate("envT4", new Dictionary<string, string> { ["schema"] = "v1" }, 0);
+    SettingsSnapshot cfgB = store.PrepareAndActivate("envT4", new Dictionary<string, string> { ["schema"] = "v2-broken" }, cfgA.Version);
 
     store.Rollback("envT4", cfgA.Id, cfgB.Version);
     Check("T4: rollback restores V1's exact snapshot identity and values, not a copy",
@@ -123,7 +126,7 @@ void T4_RollbackRestoresExactlyAndRefusesAgainstNewerEdit() {
 
     // A legitimate edit lands after the rollback. A second rollback attempt still carrying the
     // pre-edit version must be refused, not silently discard the newer edit.
-    SettingsSnapshot legitimateEdit = store.Prepare("envT4", new Dictionary<string, string> { ["schema"] = "v1-patched" }, store.CurrentVersion("envT4"));
+    SettingsSnapshot legitimateEdit = store.PrepareAndActivate("envT4", new Dictionary<string, string> { ["schema"] = "v1-patched" }, store.CurrentVersion("envT4"));
     ConcurrencyConflictException? refused = null;
     try { store.Rollback("envT4", cfgA.Id, cfgA.Version); } // stale expectedCurrentVersion, pre-dates legitimateEdit
     catch (ConcurrencyConflictException ex) { refused = ex; }
@@ -138,9 +141,9 @@ void T4b_RollbackRetentionSurvivesCleanup() {
     // configuration" gap, reproduced rather than assumed.
     var ledgerBare = new OperationLedger(Path.Combine(workDir, "operations-t4b-bare.jsonl"));
     var storeBare = new SettingsStore(ledgerBare, Path.Combine(workDir, "settings-t4b-bare.jsonl"));
-    SettingsSnapshot cfgA = storeBare.Prepare("envT4b", new Dictionary<string, string> { ["schema"] = "v1" }, 0);
-    storeBare.Prepare("envT4b", new Dictionary<string, string> { ["schema"] = "v2" }, cfgA.Version);
-    IReadOnlyCollection<string> doomed = storeBare.Cleanup();
+    SettingsSnapshot cfgA = storeBare.PrepareAndActivate("envT4b", new Dictionary<string, string> { ["schema"] = "v1" }, 0);
+    storeBare.PrepareAndActivate("envT4b", new Dictionary<string, string> { ["schema"] = "v2" }, cfgA.Version);
+    IReadOnlyCollection<string> doomed = storeBare.Cleanup().Reclaimed;
     KeyNotFoundException? failedRollback = null;
     try { storeBare.Rollback("envT4b", cfgA.Id, storeBare.CurrentVersion("envT4b")); }
     catch (KeyNotFoundException ex) { failedRollback = ex; }
@@ -152,10 +155,10 @@ void T4b_RollbackRetentionSurvivesCleanup() {
     // before cleanup runs. It survives, and rollback to it succeeds.
     var ledgerRetained = new OperationLedger(Path.Combine(workDir, "operations-t4b-retained.jsonl"));
     var storeRetained = new SettingsStore(ledgerRetained, Path.Combine(workDir, "settings-t4b-retained.jsonl"));
-    SettingsSnapshot cfgA2 = storeRetained.Prepare("envT4b", new Dictionary<string, string> { ["schema"] = "v1" }, 0);
+    SettingsSnapshot cfgA2 = storeRetained.PrepareAndActivate("envT4b", new Dictionary<string, string> { ["schema"] = "v1" }, 0);
     storeRetained.RetainForRollback(cfgA2.Id);
-    storeRetained.Prepare("envT4b", new Dictionary<string, string> { ["schema"] = "v2" }, cfgA2.Version);
-    IReadOnlyCollection<string> doomed2 = storeRetained.Cleanup();
+    storeRetained.PrepareAndActivate("envT4b", new Dictionary<string, string> { ["schema"] = "v2" }, cfgA2.Version);
+    IReadOnlyCollection<string> doomed2 = storeRetained.Cleanup().Reclaimed;
     storeRetained.Rollback("envT4b", cfgA2.Id, storeRetained.CurrentVersion("envT4b"));
     Check("T4b: with RetainForRollback, cleanup leaves the prior snapshot alone and rollback to it succeeds",
         !doomed2.Contains(cfgA2.Id) && storeRetained.CurrentSnapshotId("envT4b") == cfgA2.Id,
@@ -164,8 +167,8 @@ void T4b_RollbackRetentionSurvivesCleanup() {
     // Explicit operator decision, mirrors AcceptLoss/RepairDegraded: release the retention, then
     // supersede cfg-A2 so it is no longer the pinned snapshot either -- now nothing protects it.
     storeRetained.ReleaseRollbackRetention(cfgA2.Id);
-    storeRetained.Prepare("envT4b", new Dictionary<string, string> { ["schema"] = "v3" }, storeRetained.CurrentVersion("envT4b"));
-    IReadOnlyCollection<string> doomed3 = storeRetained.Cleanup();
+    storeRetained.PrepareAndActivate("envT4b", new Dictionary<string, string> { ["schema"] = "v3" }, storeRetained.CurrentVersion("envT4b"));
+    IReadOnlyCollection<string> doomed3 = storeRetained.Cleanup().Reclaimed;
     Check("T4b: releasing retention makes the snapshot reclaimable again once nothing else protects it",
         doomed3.Contains(cfgA2.Id),
         new { doomed = doomed3 });
@@ -176,9 +179,9 @@ void T8_IdleCurrentSnapshotSurvivesCleanup() {
     // for the next admission" -- OperationHeldSnapshots alone would miss this; Cleanup() must not.
     var ledger = new OperationLedger(Path.Combine(workDir, "operations-t8.jsonl"));
     var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t8.jsonl"));
-    SettingsSnapshot cfgX = store.Prepare("envT8", new Dictionary<string, string> { ["k"] = "x" }, 0);
+    SettingsSnapshot cfgX = store.PrepareAndActivate("envT8", new Dictionary<string, string> { ["k"] = "x" }, 0);
     // Deliberately no Admit() call: this snapshot has never been referenced by any operation.
-    IReadOnlyCollection<string> doomed = store.Cleanup();
+    IReadOnlyCollection<string> doomed = store.Cleanup().Reclaimed;
     Check("T8: a current snapshot with zero admitted operations survives cleanup",
         !doomed.Contains(cfgX.Id) && store.Contains(cfgX.Id) && !ledger.OperationHeldSnapshots.Contains(cfgX.Id),
         new { doomed, referencedByLedger = ledger.OperationHeldSnapshots, note = "protected by 'pinned', not by OperationHeldSnapshots" });
@@ -189,28 +192,28 @@ void T5_CleanupRespectsRetentionNotJustPin() {
     var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t5.jsonl"));
 
     // cfg-C: no longer pinned (a later snapshot is active) but still referenced by a retained operation.
-    SettingsSnapshot cfgC = store.Prepare("envT5", new Dictionary<string, string> { ["k"] = "c" }, 0);
+    SettingsSnapshot cfgC = store.PrepareAndActivate("envT5", new Dictionary<string, string> { ["k"] = "c" }, 0);
     IOperationLease leaseUnderC = store.Admit("envT5-op", "V1", new FakeOwner(), "envT5");
-    SettingsSnapshot cfgD = store.Prepare("envT5", new Dictionary<string, string> { ["k"] = "d" }, cfgC.Version);
+    SettingsSnapshot cfgD = store.PrepareAndActivate("envT5", new Dictionary<string, string> { ["k"] = "d" }, cfgC.Version);
 
-    IReadOnlyCollection<string> doomed1 = store.Cleanup();
+    IReadOnlyCollection<string> doomed1 = store.Cleanup().Reclaimed;
     Check("T5: cleanup does not delete an unpinned snapshot that a retained operation still references",
         !doomed1.Contains(cfgC.Id) && store.Contains(cfgC.Id),
         new { doomed = doomed1, referencedByLedger = ledger.OperationHeldSnapshots });
 
     leaseUnderC.Complete(OperationState.Succeeded); leaseUnderC.Dispose();
-    IReadOnlyCollection<string> doomed2 = store.Cleanup();
+    IReadOnlyCollection<string> doomed2 = store.Cleanup().Reclaimed;
     Check("T5: once the operation completes and releases ownership, cleanup removes it",
         doomed2.Contains(cfgC.Id) && !store.Contains(cfgC.Id),
         new { doomed = doomed2 });
 
     // K3 shape: a resolved orphan releases its snapshot; an unresolvable (bare) owner pins one forever.
-    SettingsSnapshot cfgF = store.Prepare("envT5", new Dictionary<string, string> { ["k"] = "f" }, store.CurrentVersion("envT5"));
+    SettingsSnapshot cfgF = store.PrepareAndActivate("envT5", new Dictionary<string, string> { ["k"] = "f" }, store.CurrentVersion("envT5"));
     var wrappedOwner = new FakeOwner();
     IOperationLease leaseF = store.Admit("envT5-wrapped", "V1", wrappedOwner, "envT5");
-    SettingsSnapshot cfgG = store.Prepare("envT5", new Dictionary<string, string> { ["k"] = "g" }, cfgF.Version);
+    SettingsSnapshot cfgG = store.PrepareAndActivate("envT5", new Dictionary<string, string> { ["k"] = "g" }, cfgF.Version);
     IOperationLease leaseG = store.Admit("envT5-bare", "V1", new object(), "envT5"); // deliberately unresolvable
-    SettingsSnapshot cfgH = store.Prepare("envT5", new Dictionary<string, string> { ["k"] = "h" }, cfgG.Version); // moves the pin off F and G
+    SettingsSnapshot cfgH = store.PrepareAndActivate("envT5", new Dictionary<string, string> { ["k"] = "h" }, cfgG.Version); // moves the pin off F and G
 
     wrappedOwner.Kill();
     var referencedAfterKill = new HashSet<string>(ledger.OperationHeldSnapshots, StringComparer.Ordinal); // triggers orphan resolution
@@ -220,7 +223,7 @@ void T5_CleanupRespectsRetentionNotJustPin() {
               unresolvableState = ledger.Query(leaseG.Id).State.ToString(),
               unresolvableOwners = ledger.OwnersWithoutLiveness });
 
-    IReadOnlyCollection<string> doomed3 = store.Cleanup();
+    IReadOnlyCollection<string> doomed3 = store.Cleanup().Reclaimed;
     Check("T5 (K3): cleanup can now reclaim cfg-F but must not touch cfg-G while its owner is unresolvable",
         doomed3.Contains(cfgF.Id) && !doomed3.Contains(cfgG.Id) && store.Contains(cfgG.Id),
         new { doomed = doomed3 });
@@ -250,7 +253,7 @@ void T7_NoSentinelSecretInPersistedArtifacts() {
     string setEvidence = Path.Combine(workDir, "settings-t7.jsonl");
     var ledger = new OperationLedger(opEvidence);
     var store = new SettingsStore(ledger, setEvidence);
-    SettingsSnapshot cfgA = store.Prepare("envT7", new Dictionary<string, string> { ["endpoint"] = "https://example.invalid" }, 0);
+    SettingsSnapshot cfgA = store.PrepareAndActivate("envT7", new Dictionary<string, string> { ["endpoint"] = "https://example.invalid" }, 0);
     IOperationLease lease = store.Admit("envT7", "V1", new FakeOwner(), "envT7");
     store.Migrate("envT7", values => new Dictionary<string, string>(values) { ["endpoint"] = "https://example2.invalid" });
     store.Rollback("envT7", cfgA.Id, store.CurrentVersion("envT7"));
@@ -276,21 +279,23 @@ void T9_ConcurrentPrepareIsSerializedNotRaced() {
     // concurrent callers, forcing the interleaving instead of hoping timing produces it.
     var ledger = new OperationLedger(Path.Combine(workDir, "operations-t9.jsonl"));
     var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t9.jsonl"));
-    SettingsSnapshot cfgA = store.Prepare("envT9", new Dictionary<string, string> { ["v"] = "0" }, 0);
+    SettingsSnapshot cfgA = store.PrepareAndActivate("envT9", new Dictionary<string, string> { ["v"] = "0" }, 0);
 
+    // The hook goes on Activate, not Prepare: PrepareAndActivate's actual exclusivity lives in Activate
+    // now that Prepare alone reserves nothing (a candidate is not a claim on the revision counter).
     using var aInsideLock = new ManualResetEventSlim(false);
     using var releaseA = new ManualResetEventSlim(false);
-    store.OnPreparePassedCheckForTests = () => { aInsideLock.Set(); releaseA.Wait(); };
+    store.OnActivatePassedCheckForTests = () => { aInsideLock.Set(); releaseA.Wait(); };
 
     Task<SettingsSnapshot> taskA = Task.Run(() =>
-        store.Prepare("envT9", new Dictionary<string, string> { ["v"] = "from-A" }, cfgA.Version));
+        store.PrepareAndActivate("envT9", new Dictionary<string, string> { ["v"] = "from-A" }, cfgA.Version));
     if (!aInsideLock.Wait(TimeSpan.FromSeconds(5)))
         throw new TimeoutException("T9 setup: A never reached the critical section");
 
-    store.OnPreparePassedCheckForTests = null; // B must not also trip the hook
+    store.OnActivatePassedCheckForTests = null; // B must not also trip the hook
     Task<ConcurrencyConflictException?> taskB = Task.Run(() => {
         try {
-            store.Prepare("envT9", new Dictionary<string, string> { ["v"] = "from-B" }, cfgA.Version);
+            store.PrepareAndActivate("envT9", new Dictionary<string, string> { ["v"] = "from-B" }, cfgA.Version);
             return (ConcurrencyConflictException?)null;
         }
         catch (ConcurrencyConflictException ex) { return ex; }
@@ -301,7 +306,7 @@ void T9_ConcurrentPrepareIsSerializedNotRaced() {
     SettingsSnapshot resultA = taskA.Result;
     ConcurrencyConflictException? resultB = taskB.Result;
 
-    Check("T9: while A holds the lock mid-Prepare, a concurrent B cannot even begin its own check",
+    Check("T9: while A holds the lock mid-Activate, a concurrent B cannot even begin its own Activate check",
         !bFinishedWhileABlocked, new { bFinishedBeforeReleasingA = bFinishedWhileABlocked });
     Check("T9: after A completes, B's same-base call is correctly refused -- forced overlap, not a timing guess",
         resultB is not null && store.CurrentSnapshotId("envT9") == resultA.Id,
@@ -312,10 +317,10 @@ void T10_AdmitIsSerializedAgainstCleanup() {
     // kirillkrylov: "activation and cleanup between those steps can delete the ID being admitted."
     var ledger = new OperationLedger(Path.Combine(workDir, "operations-t10.jsonl"));
     var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t10.jsonl"));
-    SettingsSnapshot cfgA = store.Prepare("envT10", new Dictionary<string, string> { ["k"] = "a" }, 0);
+    SettingsSnapshot cfgA = store.PrepareAndActivate("envT10", new Dictionary<string, string> { ["k"] = "a" }, 0);
     // Supersede so cfg-A is unpinned and unreferenced -- eligible for cleanup the instant nothing else
     // protects it, exactly the window the race needs.
-    SettingsSnapshot cfgB = store.Prepare("envT10", new Dictionary<string, string> { ["k"] = "b" }, cfgA.Version);
+    SettingsSnapshot cfgB = store.PrepareAndActivate("envT10", new Dictionary<string, string> { ["k"] = "b" }, cfgA.Version);
 
     using var admitInsideLock = new ManualResetEventSlim(false);
     using var releaseAdmit = new ManualResetEventSlim(false);
@@ -326,7 +331,7 @@ void T10_AdmitIsSerializedAgainstCleanup() {
         throw new TimeoutException("T10 setup: Admit never reached the critical section");
 
     store.OnAdmitReadSnapshotIdForTests = null;
-    Task<IReadOnlyCollection<string>> cleanupTask = Task.Run(() => store.Cleanup());
+    Task<IReadOnlyCollection<string>> cleanupTask = Task.Run(() => store.Cleanup().Reclaimed);
     bool cleanupFinishedWhileAdmitBlocked = cleanupTask.Wait(TimeSpan.FromMilliseconds(300));
 
     releaseAdmit.Set();
@@ -347,7 +352,7 @@ void T11_MutatingCallersDictionaryAfterPrepareDoesNotReachTheSnapshot() {
     var ledger = new OperationLedger(Path.Combine(workDir, "operations-t11.jsonl"));
     var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t11.jsonl"));
     var callerOwned = new Dictionary<string, string> { ["k"] = "original" };
-    SettingsSnapshot cfgA = store.Prepare("envT11", callerOwned, 0);
+    SettingsSnapshot cfgA = store.PrepareAndActivate("envT11", callerOwned, 0);
 
     callerOwned["k"] = "mutated-after-admission"; // the caller still holds this exact reference
     callerOwned["new-key"] = "should-not-appear";
@@ -360,7 +365,7 @@ void T11_MutatingCallersDictionaryAfterPrepareDoesNotReachTheSnapshot() {
 void T12_MigrateDetectsAnEditThatLandsAfterItsReadNotJustBeforeItsCommit() {
     var ledger = new OperationLedger(Path.Combine(workDir, "operations-t12.jsonl"));
     var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t12.jsonl"));
-    SettingsSnapshot cfgA = store.Prepare("envT12", new Dictionary<string, string> { ["k"] = "orig" }, 0);
+    SettingsSnapshot cfgA = store.PrepareAndActivate("envT12", new Dictionary<string, string> { ["k"] = "orig" }, 0);
 
     using var migrateReadSource = new ManualResetEventSlim(false);
     using var releaseMigrate = new ManualResetEventSlim(false);
@@ -378,7 +383,7 @@ void T12_MigrateDetectsAnEditThatLandsAfterItsReadNotJustBeforeItsCommit() {
     if (!migrateReadSource.Wait(TimeSpan.FromSeconds(5)))
         throw new TimeoutException("T12 setup: Migrate's transform never started");
 
-    SettingsSnapshot interveningEdit = store.Prepare("envT12", new Dictionary<string, string> { ["k"] = "edited-concurrently" }, cfgA.Version);
+    SettingsSnapshot interveningEdit = store.PrepareAndActivate("envT12", new Dictionary<string, string> { ["k"] = "edited-concurrently" }, cfgA.Version);
     releaseMigrate.Set();
 
     ConcurrencyConflictException? refused = migrateTask.Result;
@@ -395,7 +400,7 @@ void T13_ImmutableDictionaryRejectsMutationThroughEveryAlias() {
     // call through any interface it satisfies rather than silently succeeding.
     var ledger = new OperationLedger(Path.Combine(workDir, "operations-t13.jsonl"));
     var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t13.jsonl"));
-    SettingsSnapshot cfgA = store.Prepare("envT13", new Dictionary<string, string> { ["k"] = "orig" }, 0);
+    SettingsSnapshot cfgA = store.PrepareAndActivate("envT13", new Dictionary<string, string> { ["k"] = "orig" }, 0);
 
     // Alias 1: the returned value from Values().
     NotSupportedException? returnedValueRejected = null;
@@ -422,6 +427,116 @@ void T13_ImmutableDictionaryRejectsMutationThroughEveryAlias() {
     Check("T13: after a mutating-then-throwing transform, V1's stored snapshot is exactly as it was",
         migrationThrew is not null && store.Values(cfgA.Id)["k"] == "orig",
         new { migrationThrew = migrationThrew?.Message, v1Now = store.Values(cfgA.Id) });
+}
+
+void T14_CleanupSurfacesSnapshotsHeldByUnresolvableOwners() {
+    // Alexandr-Kravchuk's X3, narrowed by kirillkrylov: being in OwnersWithoutLiveness is a diagnostic
+    // ("this store cannot ask whether the owner is still there"), not a verdict that the owner is dead or
+    // that retention is a leak -- an ordinary in-process owner that will legitimately complete via
+    // Complete()+Dispose() also has no liveness support and shows up here the whole time it's running.
+    // This case checks both halves: the signal appears while genuinely retained, then clears on normal
+    // completion, rather than sticking as if it had marked the operation defective.
+    var ledger = new OperationLedger(Path.Combine(workDir, "operations-t14.jsonl"));
+    var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t14.jsonl"));
+    SettingsSnapshot cfgA = store.PrepareAndActivate("envT14", new Dictionary<string, string> { ["k"] = "a" }, 0);
+    IOperationLease bareLease = store.Admit("envT14-op", "V1", new object(), "envT14"); // an ordinary bare owner, not a defective one
+    store.PrepareAndActivate("envT14", new Dictionary<string, string> { ["k"] = "b" }, cfgA.Version); // supersede
+
+    CleanupResult result = store.Cleanup();
+    Check("T14 (X3): cfg-A is not reclaimed (its holder is still retained) and is now distinguishable from ordinary retention",
+        !result.Reclaimed.Contains(cfgA.Id) && result.HeldByOwnerWithoutLiveness.Contains(cfgA.Id),
+        new { reclaimed = result.Reclaimed, heldByUnresolvable = result.HeldByOwnerWithoutLiveness });
+
+    // Control: a live, liveness-capable owner is also retained (correctly), but must never appear in the
+    // diagnostic set -- the signal is specifically about owners the ledger can never ask, not "still in use."
+    var aliveOwner = new FakeOwner();
+    IOperationLease wrappedLease = store.Admit("envT14-op2", "V1", aliveOwner, "envT14");
+    CleanupResult result2 = store.Cleanup();
+    Check("T14 (X3 control): a live, liveness-capable owner's snapshot is retained but never flagged as unresolvable",
+        !result2.HeldByOwnerWithoutLiveness.Contains(store.CurrentSnapshotId("envT14")),
+        new { heldByUnresolvable = result2.HeldByOwnerWithoutLiveness });
+
+    // Close the loop kirillkrylov asked for: the bare owner from above completes normally through
+    // Complete()+Dispose(), exactly like the vast majority of bare owners do. Its earlier appearance in
+    // HeldByOwnerWithoutLiveness was never a claim that it was stuck -- confirm it clears on ordinary
+    // completion rather than leaving any lingering mark.
+    wrappedLease.Complete(OperationState.Succeeded); wrappedLease.Dispose();
+    bareLease.Complete(OperationState.Succeeded); bareLease.Dispose();
+    CleanupResult result3 = store.Cleanup();
+    Check("T14 (X3, normal completion): once the bare owner disposes normally, nothing about it remains flagged -- the diagnostic was never a verdict",
+        !result3.HeldByOwnerWithoutLiveness.Contains(cfgA.Id) && result3.Reclaimed.Contains(cfgA.Id),
+        new { reclaimed = result3.Reclaimed, heldByUnresolvable = result3.HeldByOwnerWithoutLiveness });
+}
+
+void T15_PairedActivationCommitsOnlyIfBothHalvesSucceed() {
+    // Alexandr-Kravchuk's X5: "successful settings preparation followed by failed runtime activation"
+    // must not leave settings pointed at a pair that was never actually committed.
+    var ledger = new OperationLedger(Path.Combine(workDir, "operations-t15.jsonl"));
+    var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t15.jsonl"));
+    SettingsSnapshot committed = store.PrepareAndActivate("envT15", new Dictionary<string, string> { ["runtime"] = "10.0.0.0" }, 0);
+
+    // Prepare the settings half of a paired activation, ahead of attempting the runtime half.
+    SettingsSnapshot candidate = store.Prepare("envT15", new Dictionary<string, string> { ["runtime"] = "10.1.0.0" }, store.CurrentVersion("envT15"));
+
+    // The runtime half is refused (an unsupported contract generation, mirroring X5). The caller never
+    // calls Activate for a refused runtime -- that is the whole seam.
+    bool runtimeActivationSucceeded = false; // not const: a const here trips CS0162 (Alexandr-Kravchuk hit the same trap)
+    if (runtimeActivationSucceeded) store.Activate("envT15", candidate.Id, store.CurrentVersion("envT15"));
+    else store.AbandonCandidate(candidate.Id);
+
+    IOperationLease lease = store.Admit("envT15-op", "V1", new FakeOwner(), "envT15");
+    string observedSnapshot = ledger.Query(lease.Id).ConfigurationSnapshot!;
+    Check("T15 (X5): a refused runtime activation never commits its paired settings candidate",
+        store.CurrentSnapshotId("envT15") == committed.Id && observedSnapshot == committed.Id,
+        new { committedSnapshot = committed.Id, candidateNeverActivated = candidate.Id, observedByAdmission = observedSnapshot });
+
+    CleanupResult result = store.Cleanup();
+    Check("T15 (X5): the abandoned candidate is reclaimed by cleanup, not left pinned or leaked",
+        result.Reclaimed.Contains(candidate.Id) && !store.Contains(candidate.Id),
+        new { reclaimed = result.Reclaimed });
+
+    lease.Complete(OperationState.Succeeded); lease.Dispose();
+
+    // Positive path, same shape: a runtime activation that succeeds does commit its paired candidate.
+    SettingsSnapshot candidate2 = store.Prepare("envT15", new Dictionary<string, string> { ["runtime"] = "10.2.0.0" }, store.CurrentVersion("envT15"));
+    store.Activate("envT15", candidate2.Id, store.CurrentVersion("envT15"));
+    Check("T15 (X5 positive): a succeeding runtime activation does commit its paired settings candidate",
+        store.CurrentSnapshotId("envT15") == candidate2.Id,
+        new { active = store.CurrentSnapshotId("envT15") });
+}
+
+void T16_FailedSettingsCommitLeavesThePreviousSelectionActiveAndTheCandidatePending() {
+    // kirillkrylov: "a settings commit failure after runtime activation leaves the same split" as a
+    // rejected runtime does -- this fixture's half of that claim is that Activate itself never
+    // half-publishes: a write fault during Activate must leave the previous selection active and the
+    // candidate still pending, not some third state.
+    var ledger = new OperationLedger(Path.Combine(workDir, "operations-t16.jsonl"));
+    var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t16.jsonl"));
+    SettingsSnapshot committed = store.PrepareAndActivate("envT16", new Dictionary<string, string> { ["runtime"] = "10.0.0.0" }, 0);
+    SettingsSnapshot candidate = store.Prepare("envT16", new Dictionary<string, string> { ["runtime"] = "10.1.0.0" }, store.CurrentVersion("envT16"));
+
+    // The runtime half succeeded (by hypothesis -- this fixture doesn't model it), but the settings
+    // commit itself fails, e.g. a storage fault writing the activation evidence.
+    store.FailNextActivatePersistForTests = true;
+    IOException? commitFailed = null;
+    try { store.Activate("envT16", candidate.Id, store.CurrentVersion("envT16")); }
+    catch (IOException ex) { commitFailed = ex; }
+
+    Check("T16: a failed settings commit throws and leaves the PREVIOUS selection active, not a half-published one",
+        commitFailed is not null && store.CurrentSnapshotId("envT16") == committed.Id,
+        new { commitFailed = commitFailed?.Message, stillActive = store.CurrentSnapshotId("envT16") });
+
+    CleanupResult resultWhilePending = store.Cleanup();
+    Check("T16: the candidate is still pending after the failed commit -- cleanup must not reclaim it out from under a retry",
+        !resultWhilePending.Reclaimed.Contains(candidate.Id) && store.Contains(candidate.Id),
+        new { reclaimed = resultWhilePending.Reclaimed });
+
+    // A retry (the storage fault having cleared) succeeds against the SAME candidate -- it was never
+    // consumed or corrupted by the failed attempt.
+    store.Activate("envT16", candidate.Id, store.CurrentVersion("envT16"));
+    Check("T16: a retry against the same candidate, once the fault clears, commits it normally",
+        store.CurrentSnapshotId("envT16") == candidate.Id,
+        new { active = store.CurrentSnapshotId("envT16") });
 }
 
 /// <summary>An in-memory owner whose liveness can be flipped without a real process, for settings-lane cases that don't need one.</summary>

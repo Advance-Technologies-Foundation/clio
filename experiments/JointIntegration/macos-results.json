@@ -27,14 +27,15 @@
       }
     },
     {
-      "name": "X3 a snapshot held by an owner with no liveness is never reclaimed, and cleanup gives no signal",
+      "name": "X3 a cross-process owner registered without liveness holds its snapshot, and cleanup now says so",
       "passed": true,
       "detail": {
         "reclaimed": [],
         "cfg3SurvivedCleanup": true,
         "listedByLedger": true,
         "stateOfDeadOwnersOperation": "Running",
-        "note": "Cleanup consults OperationHeldSnapshots only; the warning lives in OwnersWithoutLiveness"
+        "reportedByCleanup": 1,
+        "note": "a diagnostic, not a verdict: an in-process owner ending at Dispose appears here legitimately"
       }
     },
     {
@@ -50,16 +51,52 @@
       }
     },
     {
-      "name": "X5 a failed runtime activation leaves the committed runtime/configuration pair unchanged",
-      "passed": false,
+      "name": "X5a a refused runtime leaves the committed pair untouched, and admissions still see it",
+      "passed": true,
       "detail": {
-        "activationFailed": true,
+        "runtimeRefused": true,
         "runtimeSeen": "10.0.0.0",
-        "snapshotSeen": "cfg-8",
-        "committedSnapshot": "cfg-7",
-        "preparedButNeverActivated": "cfg-8",
-        "snapshotBeforeAttempt": "cfg-7",
-        "note": "Prepare activates on success, so a refused runtime leaves settings ahead of it"
+        "snapshotSeen": "cfg-7",
+        "generationUnchanged": true,
+        "note": "the pair is published only after both halves succeed, so a refusal is a non-event"
+      }
+    },
+    {
+      "name": "X5b a settings commit failure after the runtime half leaves the previous pair usable",
+      "passed": true,
+      "detail": {
+        "settingsCommitFailed": true,
+        "runtimeSeen": "10.0.0.0",
+        "snapshotSeen": "cfg-7",
+        "note": "publication never happened, so there is no rollback step that could itself fail"
+      }
+    },
+    {
+      "name": "X5c an admission held at the boundary observes one whole pair, never a mixture",
+      "passed": true,
+      "detail": {
+        "heldRuntime": "10.1.0.0",
+        "heldSnapshot": "cfg-10",
+        "oldPair": {
+          "Version": "10.0.0.0",
+          "snapshot": "cfg-7"
+        },
+        "newPair": {
+          "Version": "10.1.0.0",
+          "snapshot": "cfg-10"
+        },
+        "coherent": true,
+        "note": "admission and publication share one critical section, so there is no halfway state"
+      }
+    },
+    {
+      "name": "X5d mutation control: reading the halves separately admits a pair that was never current",
+      "passed": true,
+      "detail": {
+        "admittedRuntime": "10.1.0.0",
+        "admittedSnapshot": "cfg-11",
+        "everCurrentTogether": false,
+        "note": "this is what BeginFromSelection exists to prevent; it fails here on purpose"
       }
     }
   ]
