@@ -45,11 +45,31 @@ outright: *"The payload carries no timestamp. It answers 'what was the last comp
 is asking about has actually ended."* `CompileConfigurationCommand` establishes it by observing the
 runtime reload that ends a build — an observation a fresh process after a crash never made.
 
-There is a mitigating fact worth stating, because it nearly rescues this class: the Creatio core
-serialises compilation per environment, so at most one compile can be in flight for a target. That makes
-"the last compilation result" attributable **once you know your build has ended**. So the missing piece
-is not identity, it is a terminal signal. A durable end-marker — which E3's ledger already writes — plus
-this endpoint is enough; the endpoint alone is not.
+**Correction — my first version of this claimed too much.** I wrote that a durable end-marker converts
+this class to recoverable "for free". That is wrong, and circularly so: an end-marker exists only if the
+process survived long enough to write it, and the case that matters is the process dying *during* the
+compile, where the marker is absent by construction.
+
+What is true, more narrowly:
+
+- The Creatio core serialises compilation per environment, so at most one compile is in flight per
+  target. That means "the last compilation result" *would* be attributable to a known build if you could
+  establish that the build had ended — which is the part nothing here supplies.
+- A **begin**-marker still improves the answer: instead of today's false `NotFound`, recovery can say
+  "a compile for this environment was started at T and this host cannot establish its outcome". That is
+  truthful uncertainty with provenance. It is not reconciliation.
+- An **end**-marker helps only in the narrower case where the process died *after* the compile finished.
+  That is a real case and worth having, but it is the ledger answering from its own evidence, not the
+  server being consulted.
+
+What would actually convert this class: a timestamp or build id on the result — a product change, not a
+clio one — or an indirect liveness probe exploiting the reject-on-concurrent behaviour, which is a
+mutating probe and not something I would recommend. Absent either, `compile-creatio` interrupted
+mid-flight is uncertain-only, the same as tier 3, and the tier-2 label describes what the server knows
+rather than what a recovering host can establish.
+
+Whether Creatio exposes a richer build-state endpoint than the one clio calls is **unknown** — clio has
+exactly one (`api/ConfigurationStatus/GetLastCompilationResult`), and I did not go looking for others.
 
 ### Tier 3 — not reconcilable: the only observable is identical before and after
 
@@ -71,12 +91,12 @@ not classifying it on that basis.
 | tier | must a swap wait? | after a process loss |
 |---|---|---|
 | 1 | no — reconcile afterwards by the artefact's key | recoverable: read the target |
-| 2 | only until a terminal signal exists; the state endpoint then attributes correctly | recoverable **only if** an end-marker survived |
+| 2 | yes, in practice — nothing available establishes that a given build ended | recoverable only if the process survived the work; otherwise uncertain, like tier 3 |
 | 3 | yes — waiting is the only honest option | permanently `Unknown` |
 
-So a single global quiescence gate is stronger than tier 1 needs and exactly as strong as tier 3
-requires. The interesting design point is tier 2: it converts from unrecoverable to recoverable purely by
-having a durable terminal marker, which is the thing E3's evidence file already provides.
+So a single global quiescence gate is stronger than tier 1 needs, and tier 2 and tier 3 both need it.
+The gate's cost is not uniform across classes, which is the useful part; but tier 2 does **not** convert
+for free, and my first version of this document said it did.
 
 ## What this does not claim
 
