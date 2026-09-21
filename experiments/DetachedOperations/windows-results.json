@@ -1,7 +1,7 @@
 {
   "os": "Microsoft Windows NT 10.0.26200.0",
   "framework": "10.0.11",
-  "workDirectory": "C:\\Temp\\detached-ops-qqxyadqa.mz3",
+  "workDirectory": "C:\\Temp\\detached-ops-smzwfvr3.cv2",
   "cases": [
     {
       "name": "A1a the original operation still answers after a newer runtime is activated",
@@ -155,10 +155,21 @@
       "name": "A5h under contention, no operation is ever admitted for a scope whose window is held",
       "passed": true,
       "detail": {
-        "violations": 0,
-        "admitted": 53,
-        "refused": 67,
-        "windows": 35
+        "Violations": 0,
+        "Admitted": 53,
+        "Refused": 69,
+        "Windows": 11
+      }
+    },
+    {
+      "name": "A5i mutation control: the same regression detects a deliberately split admission",
+      "passed": true,
+      "detail": {
+        "Violations": 22,
+        "Admitted": 25,
+        "Refused": 72,
+        "Windows": 14,
+        "note": "non-zero here is the point: it shows A5h can fail"
       }
     },
     {

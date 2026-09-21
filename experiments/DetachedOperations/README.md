@@ -166,7 +166,10 @@ conflict with the retirement branch.
 ## Windows observations, 2026-09-21
 
 Windows 10.0.26200, .NET 10.0.11 (a different patch from the macOS run, which used 10.0.12).
-**21/21 passed, exit 0**, from a clean clone of this branch at `f7baab2edc4c` — nothing modified.
+**22/22 passed, exit 0**, from a clean clone of this branch at `573175bc529c` — nothing modified.
+The mutation control discriminates here too (repaired 0 violations, split admission 22), but on fewer
+samples: Windows produced 11-14 windows against macOS's ~95, because of coarser timer granularity. The
+Windows arm is therefore weaker evidence for A5h/A5i than the macOS arm, not equal evidence.
 A5h's mix differs from macOS (53 admitted / 67 refused / 35 windows versus roughly 10 / 145 / 155),
 which is timer granularity rather than behaviour; the invariant — zero violations — holds on both.
 Raw output in `windows-results.json`.
