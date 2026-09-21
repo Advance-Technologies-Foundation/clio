@@ -5,8 +5,8 @@ one still being argued over. Limited to what the current cases require; nothing 
 storage framework or a general-purpose API.
 
 Each clause says whether it is **settled** (measured, and I do not expect it to move) or **open**
-(stated but not yet measured). Build against the settled ones. Task 3 has landed, so clause 5 is now
-settled in full and clause 5b is new.
+(stated but not yet measured). Build against the settled ones. All three tasks have landed; clause 1 is
+now measured rather than asserted, and clause 7 is new.
 
 ## 1. Runtime identity and compatibility — settled
 
@@ -16,7 +16,14 @@ produced it.
 
 Compatibility is the host's decision, made before activation and never mid-operation. An operation
 selects its runtime when it is admitted and keeps it until it terminates — measured by A1a, where an
-operation started on `10.0.0.0` kept answering as `10.0.0.0` after `10.1.0.0` was activated under it.
+operation started on `10.0.0.0` kept answering as `10.0.0.0` after `10.1.0.0` was activated under it, and
+by F1, where two operations ran at once against different releases and each release wrote its own
+signature.
+
+**Rejection happens before activation and touches nothing running** (F2). A release declaring a contract
+generation the host does not support is loaded, inspected, discarded and its load context unloaded. Work
+in flight across the rejection completed normally and work started afterwards succeeded — the rejected
+release is never consulted, so a bad package is an unremarkable non-event rather than an incident.
 
 ## 2. Operation identity — settled
 
@@ -106,6 +113,22 @@ this contract is concerned.
 
 Everything else — preparation, rejection, migration, rollback, retention, concurrent edits — is the
 settings lane's, and this contract deliberately takes no position on it.
+
+## 7. What may cross the boundary — settled
+
+The assembly that both sides compile against references `System.Runtime` and `System.Collections`, and
+nothing else (F4). It carries no CLI type, no MCP type and no vendor release type. That is the property
+that makes the rest of this document implementable: a record can outlive its producer only because
+nothing in it belongs to the producer.
+
+A third party builds against this assembly alone. F3 loads a partner workflow from its own assembly — it
+references the contract and no vendor release — hands it the pinned runtime, and gets back three strings.
+The partner composed vendor capability without linking to a vendor version, which is what lets the vendor
+ship a new release without rebuilding anyone.
+
+The practical rule for anything added here later: if a type would be meaningless after its defining
+assembly is gone, it does not belong in this contract. Clause 3 is the same rule seen from the caller's
+side.
 
 ## What this contract does not cover
 
