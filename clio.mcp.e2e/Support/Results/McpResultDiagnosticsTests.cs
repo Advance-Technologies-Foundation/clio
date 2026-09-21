@@ -16,7 +16,7 @@ namespace Clio.Mcp.E2E.Support.Results;
 /// sink separately.
 /// </remarks>
 [TestFixture]
-[Category("Unit")]
+[Category("Integration")]
 [Category("McpE2E.NoEnvironment")]
 [Property("Module", "McpServer")]
 public sealed class McpResultDiagnosticsTests {

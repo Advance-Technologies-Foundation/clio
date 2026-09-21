@@ -10,7 +10,7 @@ namespace Clio.Mcp.E2E.Support.Results;
 /// stand, no network I/O), so they are categorized <c>Unit</c> rather than <c>McpE2E.Sandbox</c>.
 /// </summary>
 [TestFixture]
-[Category("Unit")]
+[Category("Integration")]
 [Category("McpE2E.NoEnvironment")]
 [Property("Module", "McpServer")]
 public sealed class EntitySchemaStructuredResultParserTests {

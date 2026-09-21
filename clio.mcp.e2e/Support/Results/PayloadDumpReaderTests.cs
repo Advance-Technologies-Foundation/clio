@@ -14,7 +14,7 @@ namespace Clio.Mcp.E2E.Support.Results;
 /// confinement is one of the behaviours under test and a synthetic path would not exercise it.
 /// </remarks>
 [TestFixture]
-[Category("Unit")]
+[Category("Integration")]
 [Category("McpE2E.NoEnvironment")]
 [Property("Module", "McpServer")]
 public sealed class PayloadDumpReaderTests {
