@@ -22,13 +22,24 @@ process renames or drops a parameter, and the answers are opposite:
 * the MODIFY path always takes the design instance (`ProcessModifyHandler` then `GetDesignInstance`),
   which converges before the package sees the schema - which is why the re-synchronization's own drift
   report is empty.
-* **the parameter ROW carries no code column.** `ProcessSchemaParameterViewConfig.js:41-159` builds four
-  cells: a type icon, a direction icon, a label, and a `Terrasoft.MappingEdit` for the mapped value. The
-  code is not among them, so after a rename that BREAKS runtime delivery the row reads as it did before:
-  same label, mapping present, nothing marked. **Measured on a stand, 2026-09-17**, at CrtProcessBuilder
-  1.6.3.10, through a real Chrome. The code is not unreachable, though - the row's label is a click target
-  that opens `ProcessSchemaParameterEditPage`, which renders a populated (disabled) `Name` field, so a
-  person who opens the parameter CAN read the code. It is just never on the row a person scans.
+* **the parameter ROW carries no code column.** `ProcessSchemaParameterViewConfig.js`, row body `item-view`
+  at `:32-163`, builds five controls: a type icon, a direction icon, a label, a tools menu button, and a
+  `Terrasoft.MappingEdit` for the mapped value. No control binds to `Name`, `Id` or any other code-bearing
+  attribute, and there is no tooltip, hint or title binding either - checked exhaustively. So after a
+  rename that BREAKS runtime delivery the row reads as it did before: same label, mapping present, nothing
+  marked. **Measured on a stand, 2026-09-17**, at CrtProcessBuilder 1.6.3.10, through a real Chrome.
+  **One trap for anyone re-measuring through the DOM:** the code IS in the markup, as
+  `data-item-marker="esn-notification-item-<name>"` on every container in the row
+  (`markerValue: "$MarkerValue"` → `ProcessSchemaParameterViewModel._getMarkerValue`, over
+  `Id: name` at `ProcessFlowElementPropertiesPage.js:764`). A human sees nothing; a DOM read or an
+  automated test can read the stale code straight out of the attribute. "Not on screen" and "not in the
+  DOM" are different claims, and only the first one is true. The code is not unreachable in the UI either
+  - the row's label is a click target
+  that opens `ProcessSchemaParameterEditPage`, which renders a populated `Name` field - disabled, because
+  the row seeds `Enabled: false` (`ProcessFlowElementPropertiesPage.js:776`) and the field binds
+  `enabled` to it (`:761`). Read-only, but READ: a person who opens the parameter CAN see the code. It is
+  just never on the row a person scans. (The process-level parameter list seeds `IsEnabled: true` instead
+  - `ProcessSchemaPropertiesPage.js:1221` - which is where renaming is meant to happen.)
   **"Renders the caption and never the code" was the earlier claim here, and it is too strong** for a
   second reason as well: the label is `getDisplayValue()` (`ProcessFlowElementPropertiesPage.js:767`),
   which is `getCaption() || getName()` (`base-schema.js:122-124`) - a parameter with NO caption shows its
@@ -62,14 +73,23 @@ process renames or drops a parameter, and the answers are opposite:
   runs `SubProcessPropertiesPage.synchronizeActualSchemaParameters`: it snapshots the element's stored
   parameters, re-derives them from the callee, then re-attaches each stored value through
   `findParameterByNameOrByUId` (`process-activity-schema.js:519-521`), which is
-  `findParameterByName(name) || findParameterByUId(uId)`. The UId branch CANNOT match: every re-derived
-  copy is given a fresh GUID — `synchronizeParameter` → `createElementParameter` → `clone()` →
-  `_prepareClonedParameter` (`parametrized-process-schema-element.js:142-149`, `:172-176`). Name is the
-  only key. There is **no fallback**: `_synchronizeSchemaParameter`
-  (`RootUserTaskPropertiesPage.js:631-634`, which `SubProcessPropertiesPage` inherits) opens with
+  `findParameterByName(name) || findParameterByUId(uId)`. The UId branch CANNOT match for a RENAMED
+  parameter: every re-derived copy is given a fresh GUID — `synchronizeParameter` →
+  `createElementParameter` → `clone()` → `_prepareClonedParameter`
+  (`parametrized-process-schema-element.js:142-149`, `:172-176`), and for a sub-process specifically
+  `ProcessSubprocessSchema.createElementParameter` (`process-subprocess-schema.js:208-211`) then
+  additionally calls `clearSourceValue()`. The reasoning needs one more step than "all UIds are fresh",
+  because `_synchronizeSchemaParameter` writes old UIds BACK into the live collection as it iterates: but
+  it only does so for a parameter that already matched **by name** in its own pass, and collection keys are
+  unique, so a renamed parameter's old UId is still never present. Name is the only key that can reach it.
+  There is **no fallback**: `_synchronizeSchemaParameter` (`RootUserTaskPropertiesPage.js:631-655`, which
+  `SubProcessPropertiesPage` inherits) opens with
   `if (!newParameter || newParameter.dataValueType !== oldParameter.dataValueType) { return; }` — no
-  positional match, no second pass, no preservation of the unmatched original. Note the second clause:
-  a callee that changes a parameter's TYPE under an unchanged name drops the carry-over too.
+  positional match, no second pass, no preservation of the unmatched original. And a name match is
+  NECESSARY BUT NOT SUFFICIENT — three ways to lose the value, not one: no name match, a changed
+  `dataValueType` under an unchanged name, or `getCanAssignParameterSourceValue` returning false
+  (`:648-652`), since `setMappingValue(oldValue)` there is the ONLY thing that puts a value back after the
+  derivation stripped it.
   This **replaces the caption-pairing hypothesis** an earlier revision floated and marked unmeasured. It
   was not merely unmeasured — it was wrong, and the caption-only row had already falsified its prediction.
   The class DOES expose a `findParameterByCaption` (`:298-301`), which is probably what made the
@@ -90,7 +110,8 @@ process renames or drops a parameter, and the answers are opposite:
   from it persists the removal.** So "the card misleads in both directions and neither is data loss" holds
   only with the caveat: not in the stored schema, and not unless you save from that card. The one case
   that skips the whole rebuild is `getCanSynchronizeParameters` (`:96-99`) returning false, which needs
-  no schema or `schemaUId === parentSchema.uId` — a process calling ITSELF. Normal callers do not take it.
+  no schema or `schemaUId === parentSchema.uId` — a process calling ITSELF, which the picker already
+  excludes (`getSchemaListFilter` puts `parentSchema.uId` in `ExcludedSchemas`). No normal caller takes it.
 * `inSync` does not see a caption. The caller keeps its OWN copy of the caption and reports `true` while
   the callee's differs - measured. Only a CODE change flips it, which is the right half to be sensitive
   to, since the runtime binds by code; but do not read `inSync: true` as "the element matches the

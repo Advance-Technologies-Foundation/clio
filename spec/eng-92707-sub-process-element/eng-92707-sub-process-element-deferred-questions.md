@@ -550,9 +550,15 @@ there was rename code, open designer, read card, then rename the caption too. So
 `inSync` and runtime are the earlier pass's, and they stand as evidence of the BEHAVIOUR while saying
 nothing about this build.
 
-The parameter ROW has no code column — `ProcessSchemaParameterViewConfig.js:41-159` builds a type icon, a
-direction icon, a label and a `Terrasoft.MappingEdit`, and the code is not among them — so it cannot
-display code staleness under any convergence behaviour. F2 does not depend on the design-instance question
+The parameter ROW has no code column — `ProcessSchemaParameterViewConfig.js`, row body `item-view` at
+`:32-163`, builds a type icon, a direction icon, a label, a tools menu button and a
+`Terrasoft.MappingEdit`; no control binds `Name`, `Id` or any code-bearing attribute, and there is no
+tooltip/hint/title binding — so it cannot display code staleness under any convergence behaviour.
+**Caveat for anyone re-measuring through the DOM:** the code IS in the markup as
+`data-item-marker="esn-notification-item-<name>"` (`markerValue` → `_getMarkerValue`, over `Id: name` at
+`ProcessFlowElementPropertiesPage.js:764`). Invisible to a human, readable by a DOM query — so "not on
+screen" and "not in the DOM" are different claims and only the first holds.
+F2 does not depend on the design-instance question
 at all — the earlier write-up reached the right conclusion from the wrong premise. In the state where the
 mapping is intact the name is the OLD caption; in the state where the name is new the mapping is empty.
 There is no state in which the card shows both a new name and an intact mapping.
@@ -586,10 +592,14 @@ re-derives them from the callee, and re-attaches each stored value through `find
 branch cannot match, because every re-derived copy is given a fresh GUID
 (`parametrized-process-schema-element.js:142-149`, via `createElementParameter` → `clone()` at `:172-176`).
 **The carry-over is keyed on NAME**, and there is no fallback: `_synchronizeSchemaParameter`
-(`RootUserTaskPropertiesPage.js:631-634`, inherited) opens with
+(`RootUserTaskPropertiesPage.js:631-655`, inherited) opens with
 `if (!newParameter || newParameter.dataValueType !== oldParameter.dataValueType) { return; }` — no
-positional match and no preservation. That second clause is a drift case nobody has written down: a
-callee changing a parameter's TYPE under an unchanged name drops the carry-over the same way.
+positional match and no preservation. A name match is necessary but NOT sufficient — there are three ways
+to lose the value, and two of them are drift cases nobody had written down: a changed `dataValueType`
+under an unchanged name, and `getCanAssignParameterSourceValue` returning false (`:648-652`). The
+derivation strips the source value by design (`ProcessSubprocessSchema.createElementParameter` →
+`clearSourceValue()`, `process-subprocess-schema.js:208-211`), so that `setMappingValue(oldValue)` is the
+only thing that ever puts it back.
 (The class does have a `findParameterByCaption` at `:298-301` — likely why the caption guess felt right —
 but nothing on this path calls it.)
 
