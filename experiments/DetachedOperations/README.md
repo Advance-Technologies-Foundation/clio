@@ -118,7 +118,7 @@ conflict with the retirement branch.
 ## Windows observations, 2026-09-21
 
 Windows 10.0.26200, .NET 10.0.11 (a different patch from the macOS run, which used 10.0.12).
-**13/13 passed, exit 0**, from a clean clone of this branch at `b2f9c1f94f67` — nothing modified.
+**17/17 passed, exit 0**, from a clean clone of this branch at `e3138962cec2` — nothing modified.
 Raw output in `windows-results.json`.
 
 Every case behaves identically to macOS, including the two controls. This matters most for A4 and R1,
