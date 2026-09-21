@@ -47,7 +47,7 @@ Both instruments were run. Neither asserts AC-15 by itself; together they settle
 |---|---|
 | Environment | `Creatio` — `http://d_krestov_n.tscrm.com:40001`, `.NET Framework 4.8.9337.0`, MSSql, IIS site `Creatio`, app pool `Creatio` |
 | Package | `CrtProcessBuilder` **1.6.3.31** (`clio list-packages -e Creatio`) — the same version the reference measurement quoted |
-| clio | built from `feature/ENG-99856-multi-instance` **`635ca3ac9`**. That branch carries no clio production change; it is `origin/master` plus `spec/` documents, so it is the master describe path |
+| clio | built from `feature/ENG-99856-multi-instance` **`635ca3ac9`**. **Byte-identical describe path to the reference measurement's clio**, verified rather than assumed: `git diff --stat 01c8b677a 635ca3ac9 -- . ':(exclude)spec' ':(exclude)docs'` is **empty**, and `01c8b677a` is the exact master commit the reference measurement quoted |
 | Package repo | `crt-process-builder` `feature/ENG-99856-multi-instance` `cdeeaf9` (tests only) |
 | Worker process | PID **21896**, started **2026-09-21T19:35:51Z** — started by this session's own first request after an idle-timeout, so the pool was **cold** |
 | Read 1 | 2026-09-21T19:43:26Z → 19:43:38Z |
