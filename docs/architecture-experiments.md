@@ -146,3 +146,18 @@ Read-only review rev_fb0ad4af33204158 completed against 61ae2696f187: no test ex
 Claude also confirmed the evidence-owner versus runtime distinction. Alex has since accepted it and published P3 at 03b7bcf70faf, peer-reported 29/29 (18542055); this new case is not independently rerun yet. Its documentation now treats persistence refusal as proposed policy. No repeat review of unchanged admission logic is needed. Claude's untracked-evidence observation refers to its captured review context; raw Codex evidence is now committed at 7a86d3f1c.
 
 Alex's resource inventory (18541984) is useful source audit, not proof that only IIS ports can prevent overlap. Per-operation locks can still cause failed startup/work, process statics may be duplicated across load contexts, and dependencies/endpoint binding remain relevant. No universal coexistence guarantee is adopted.
+
+### Admission/cleanup repair and proposed convergence (15:58 checkpoint)
+
+Alex's 878a83f46cfac7076442817aae28e51db3231348 independently passes31/31 Windows26200/.NET10.0.12. [Evidence e45a1ef80](https://github.com/Advance-Technologies-Foundation/clio/tree/e45a1ef80/experiments/DetachedOperations). P3 preserves host evidence after runtime collection; P4 rejects failed admission without registration/effect; P5 keeps ownership through cleanup after outcome publication. Cleanup uses a timed delay, not a deterministic external latch. Narrow local Claude recheck rev_127e85b096c843cc pending; do not duplicate consultation. Alex retracted the incomplete resource inventory in18542168; no universal coexistence claim is supported.
+
+Proposed concise common contract for peer confirmation (not product policy approval):
+
+1. One complete runtime is selected per workflow; Core remains feature-agnostic and adapters remain optional.
+2. Response, outcome publication and ownership release are separate events. Required work/cleanup retains ownership until release; admission and replacement exclusion are atomic for their scope.
+3. Runtime DLL reclamation requires released ownership and no escaped runtime references. Dynamic outcomes use host-owned portable data; static typed embedding has a separate compatibility boundary.
+4. Core-owned evidence survives runtime unload. Replacing its owner is a different lifecycle operation; persistence health and external execution outcome remain separate. No automatic replay or inferred success from artifact presence.
+5. Settings and evidence formats are explicit cross-version contracts. Incompatible feature settings must not rewrite files still used by an old session; the proposed version-scoped-copy policy needs approval.
+6. Extensions are trusted in-process code; source/compatibility checks alone do not establish publisher authenticity. Host replacement/continuity requires a selected activation policy with explicit readiness, failure and fallback semantics.
+
+Human choices remain: whole-host activation/continuity requirement, interruption and wait limits, degraded-evidence recovery, settings migration/drift policy, production package trust. Empirical fixture results constrain these choices but do not decide them. Consolidate here; no parallel decision ledger or new broad experiment round.
