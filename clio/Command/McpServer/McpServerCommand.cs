@@ -50,7 +50,7 @@ public class McpServerCommandOptions : BaseCommandOptions
 /// </summary>
 [method: SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 	Justification = "Composition root for the MCP host: server, flush scheduler, session container cache, " +
-		"tenant execution lock provider, curated-knowledge bootstrap, worker supervisor, worker temp-residue " +
+		"tenant execution lock provider, curated-knowledge bootstrap and background refresh, worker supervisor, worker temp-residue " +
 		"sweeper, shared-resource reservation and logger are all constructor-injected collaborators with no " +
 		"natural grouping; a wrapper parameter object would be an artificial abstraction over the DI " +
 		"container the command already sits in front of.")]
@@ -59,6 +59,7 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 	ISessionContainerCache sessionContainerCache,
 	ITenantExecutionLockProvider tenantExecutionLockProvider,
 	ICuratedKnowledgeBootstrapService curatedKnowledgeBootstrapService,
+	ICuratedKnowledgeBackgroundRefresh curatedKnowledgeBackgroundRefresh,
 	Common.McpWorker.IWorkerProcessSupervisor workerProcessSupervisor,
 	Common.McpWorker.IWorkerTempResidueSweeper workerTempResidueSweeper,
 	Relay.ISharedResourceReservation sharedResourceReservation,
@@ -120,6 +121,7 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 		ScheduleStartupTelemetryFlush(options, flushScheduler);
 		try {
 			presenceMarkerPath = RegisterHostPresence(options, mcpHostPresenceRegistry);
+			StartCuratedKnowledgeRefreshForHost(options, curatedKnowledgeBackgroundRefresh, cts.Token);
 			server.RunAsync(cts.Token).GetAwaiter().GetResult();
 		} catch (OperationCanceledException) {
 			// Ctrl+C / ProcessExit path: the triggered token makes RunAsync throw here. A plain
@@ -134,6 +136,14 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 			// stuck drain stays interruptible.
 			Console.CancelKeyPress -= onCancelKeyPress;
 			AppDomain.CurrentDomain.ProcessExit -= onProcessExit;
+			// End the fire-and-forget work that was handed cts.Token BEFORE the using-scoped
+			// source is disposed. On the plain stdin EOF exit RunAsync returns normally and
+			// nothing else ever cancels the source, so the curated-knowledge refresh loop would
+			// still be parked on cts.Token.WaitHandle when Execute disposes it — an
+			// ObjectDisposedException on a discarded task, which is the same late-signal-on-a-
+			// disposed-source class the handler detach above prevents. Idempotent on the Ctrl+C
+			// and ProcessExit paths, where the token is already cancelled.
+			RequestShutdown(cts);
 			// Flush any in-flight background work (CDN refreshes, telemetry uploads) before the
 			// process exits. Without this, the fire-and-forget Task.Run tasks are killed by the
 			// runtime as soon as the main (foreground) thread exits, leaving the on-disk cache
@@ -181,6 +191,30 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
 			return;
 		}
 		BootstrapCuratedKnowledge(bootstrapService, logger);
+	}
+
+	/// <summary>
+	/// Starts the background curated-knowledge refresh loop unless this process is a worker.
+	/// </summary>
+	/// <remarks>
+	/// Started AFTER the bootstrap and next to the serving loop, never before it: a warm start
+	/// activates the cached generation offline, and this loop is what later notices a newer published
+	/// release without the operator running <c>update-knowledge</c> (ENG-99899). Fire-and-forget on
+	/// purpose — the host must serve immediately, and the loop ends when the shutdown token is
+	/// cancelled. HOST only, like every other <c>ForHost</c> step: a worker serves one call, so a
+	/// publisher check on every spawn would be pure spawn cost.
+	/// </remarks>
+	/// <param name="options">The parsed command options; <c>--worker</c> suppresses the loop.</param>
+	/// <param name="backgroundRefresh">The background refresh loop.</param>
+	/// <param name="cancellationToken">The host shutdown token that ends the loop.</param>
+	internal static void StartCuratedKnowledgeRefreshForHost(
+		McpServerCommandOptions options,
+		ICuratedKnowledgeBackgroundRefresh backgroundRefresh,
+		CancellationToken cancellationToken) {
+		if (options.Worker) {
+			return;
+		}
+		_ = backgroundRefresh.Start(cancellationToken);
 	}
 
 	/// <summary>

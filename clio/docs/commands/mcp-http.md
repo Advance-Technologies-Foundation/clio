@@ -31,8 +31,18 @@ budget before HTTP startup completes, so mandatory first-request guidance is ava
 bounded bootstrap succeeds. A cached activation marker whose installation or
 last clean successful publisher check is more than **3 days** old is logged as a warning naming that
 marker's `libraryVersion` and the `update-knowledge --source creatio-curated` call that checks for a
-newer release. A warm start never contacts the publisher, so this is the only staleness signal available;
-startup still proceeds.
+newer release. A warm start never contacts the publisher, so startup itself is never blocked by it.
+
+Once the endpoint is serving, the cached generation is kept current by the **same
+`autoupdate.knowledge` policy that runs at CLI startup** — the one the MCP verbs are excluded from
+(ENG-99899). Thirty seconds after startup, and every five minutes afterwards, the host asks that
+schedule whether a knowledge update is due and runs it when it is; `"knowledge": { "enabled": false }`
+stops it and `frequency-minutes` (60 by default) sets its cadence. A newly published release reaches a
+running host within the configured frequency plus at most five minutes. A failed check changes
+nothing: the cached generation keeps serving and the next wake-up retries. This host commonly runs for
+weeks as a service task, so the in-host schedule is what keeps its agents off a months-old guidance
+generation.
+
 The source cannot be removed;
 disable it with `clio disable-knowledge-source --alias creatio-curated`. A bootstrap retrieval
 failure or timeout is logged as a warning and does not prevent the HTTP host from starting.

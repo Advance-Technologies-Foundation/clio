@@ -62,7 +62,19 @@ DESCRIPTION
     more than 3 days old logs a warning naming that marker's library version and the update
     call that checks for a newer release, so a stale bundle stops being silent; startup
     still proceeds. A clean successful check renews freshness even when the published
-    generation has not changed; a rejected candidate does not. get-guidance
+    generation has not changed; a rejected candidate does not.
+
+    Once the transport is serving, the cache is kept current by the SAME
+    autoupdate.knowledge policy that runs at CLI startup - the one the MCP verbs are
+    excluded from. Thirty seconds after the transport starts serving, and every five
+    minutes afterwards, the host asks that schedule whether a knowledge update is due
+    and runs it for every enabled source when it is. Setting autoupdate.knowledge
+    enabled=false stops it; frequency-minutes (60 by default) sets its cadence; the
+    persisted next-run is shared with the CLI path. A newly published release therefore
+    reaches a running host within the configured frequency plus at most five minutes, and
+    activates on the next guidance lookup with no restart. The startup path is unchanged:
+    a warm start still performs no network request. A check that fails changes nothing -
+    the cached generation keeps serving and the next wake-up retries. get-guidance
     also reports the served libraryVersion on every article, so an agent session can
     read it without calling info-knowledge. An entry left by an earlier version under a different alias or
     the former Git transport is migrated in place, preserving an operator's

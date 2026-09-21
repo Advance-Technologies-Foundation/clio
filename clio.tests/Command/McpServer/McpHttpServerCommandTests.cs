@@ -1,6 +1,10 @@
+using System.Threading;
+using System.Threading.Tasks;
 using Clio.Command.McpServer;
+using Clio.Command.McpServer.Knowledge;
 using CommandLine;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -9,6 +13,21 @@ namespace Clio.Tests.Command.McpServer;
 [Category("Unit")]
 [Property("Module", "McpServer")]
 public class McpHttpServerCommandTests {
+
+	[Test]
+	[Description("The HTTP host starts the background knowledge refresh with its application-stopping token.")]
+	public void StartCuratedKnowledgeRefresh_ShouldStartTheLoop_WithTheApplicationStoppingToken() {
+		// Arrange
+		ICuratedKnowledgeBackgroundRefresh refresh = Substitute.For<ICuratedKnowledgeBackgroundRefresh>();
+		refresh.Start(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+		using CancellationTokenSource applicationStopping = new();
+
+		// Act
+		McpHttpServerCommand.StartCuratedKnowledgeRefresh(refresh, applicationStopping.Token);
+
+		// Assert
+		refresh.Received(1).Start(applicationStopping.Token);
+	}
 
 	[Test]
 	[Description("Default option values are applied when no arguments are provided")]

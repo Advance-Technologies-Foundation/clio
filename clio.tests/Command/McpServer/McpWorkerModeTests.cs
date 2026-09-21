@@ -75,6 +75,29 @@ public sealed class McpWorkerModeTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A worker never starts the background curated-knowledge refresh loop, while an ordinary host does.")]
+	public void StartCuratedKnowledgeRefreshForHost_ShouldRunOnlyForTheHost() {
+		// Arrange
+		ICuratedKnowledgeBackgroundRefresh refresh = Substitute.For<ICuratedKnowledgeBackgroundRefresh>();
+		refresh.Start(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+
+		// Act
+		McpServerCommand.StartCuratedKnowledgeRefreshForHost(
+			WorkerOptions(), refresh, CancellationToken.None);
+
+		// Assert
+		refresh.DidNotReceive().Start(Arg.Any<CancellationToken>());
+
+		// Act — the same seam for an ordinary host
+		McpServerCommand.StartCuratedKnowledgeRefreshForHost(
+			HostOptions(), refresh, CancellationToken.None);
+
+		// Assert
+		refresh.Received(1).Start(Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("TC-U-301: a worker never schedules the startup telemetry flush, while an ordinary host still does.")]
 	public void ScheduleStartupTelemetryFlush_ShouldRunOnlyForTheHost() {
 		// Arrange

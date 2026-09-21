@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.McpServer.Knowledge;
 using Clio.Command.McpServer.Tools;
@@ -364,12 +365,34 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 			app.Services.GetRequiredService<IMcpHostPresenceRegistry>();
 		string presenceMarkerPath = presenceRegistry.Register();
 		try {
+			StartCuratedKnowledgeRefresh(
+				app.Services.GetRequiredService<ICuratedKnowledgeBackgroundRefresh>(),
+				app.Lifetime.ApplicationStopping);
 			app.Run();
 		}
 		finally {
 			presenceRegistry.Unregister(presenceMarkerPath);
 		}
 		return 0;
+	}
+
+	/// <summary>
+	/// Starts the background knowledge refresh loop for this host.
+	/// </summary>
+	/// <remarks>
+	/// The same loop the stdio host runs, and it matters MORE here: this host runs as a scheduled
+	/// service task for weeks, so without it a release published after its start never reaches the
+	/// agents it serves (ENG-99899). Fire-and-forget — the endpoint must start serving immediately —
+	/// and it ends with the application-stopping token. Extracted as a seam so the wiring itself is
+	/// pinned by a test rather than living unobservable in the middle of <c>Execute</c>.
+	/// </remarks>
+	/// <param name="backgroundRefresh">The background refresh loop.</param>
+	/// <param name="applicationStopping">The host's application-stopping token.</param>
+	internal static void StartCuratedKnowledgeRefresh(
+		ICuratedKnowledgeBackgroundRefresh backgroundRefresh,
+		CancellationToken applicationStopping) {
+		ArgumentNullException.ThrowIfNull(backgroundRefresh);
+		_ = backgroundRefresh.Start(applicationStopping);
 	}
 
 	/// <summary>

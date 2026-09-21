@@ -63,6 +63,27 @@ internal static class CuratedKnowledgeSourceDefaults {
 	/// </remarks>
 	internal const int StaleCacheThresholdDays = 3;
 
+	/// <summary>
+	/// How long after the MCP transport starts serving the background knowledge refresh may first run.
+	/// </summary>
+	/// <remarks>
+	/// The point of the background loop is that it is NOT on the startup budget, so its first check
+	/// waits until the host is unambiguously serving. Thirty seconds is long enough for that and short
+	/// enough that restarting an MCP client is still the fast way to pick up a release.
+	/// </remarks>
+	internal const int BackgroundRefreshStartDelaySeconds = 30;
+
+	/// <summary>
+	/// How often the background refresh loop asks whether the knowledge autoupdate schedule is due.
+	/// </summary>
+	/// <remarks>
+	/// This is wake-up granularity, not an update cadence: whether anything happens is decided by the
+	/// operator's <c>autoupdate.knowledge</c> policy (enabled by default, every 60 minutes), which a
+	/// wake-up only reads. Five minutes keeps the delay added on top of that policy small even when an
+	/// operator shortens the frequency, and a wake-up that finds nothing due costs one settings read.
+	/// </remarks>
+	internal const int BackgroundRefreshPollIntervalMinutes = 5;
+
 	internal static KnowledgeSourceConfiguration CreateConfiguration() => new() {
 		LibraryId = LibraryId,
 		Type = KnowledgeSourceType.GitHubRelease,
