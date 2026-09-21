@@ -68,17 +68,6 @@ public static class MobileActionTargetProbe {
 	/// </summary>
 	internal const string KindSection = "section";
 
-	private const string MobileRelatedPageAddonName = "MobileRelatedPage";
-
-	/// <summary>
-	/// The WEB counterpart of <see cref="MobileRelatedPageAddonName"/> — the same add-on shape, attached to the
-	/// same object, but the one <c>create-related-page-addon --schema-type web</c> writes. Read ONLY for a
-	/// target already classified <see cref="ActionTargetState.Missing"/>: it turns the object name into a
-	/// candidate WEB edit page the caller can offer to convert next, so a missing mobile default is not just
-	/// reported but points at something actionable.
-	/// </summary>
-	private const string RelatedPageAddonName = "RelatedPage";
-
 	private const string SysSchemaName = "SysSchema";
 	private const string RequestProperty = "request";
 	private const string ParamsProperty = "params";
@@ -108,7 +97,7 @@ public static class MobileActionTargetProbe {
 	private const int RowsPerNameHeadroom = 4;
 
 	/// <summary>
-	/// Per-call ceiling on <see cref="ClassifyEntityDefaultMobilePage"/> probes: each one is a sequential
+	/// Per-call ceiling on <see cref="DefaultPageAddonReader.ReadMobileState"/> probes: each one is a sequential
 	/// round trip, and read-only MCP tools answer under a wall-clock deadline (<c>McpReadResponseDeadline</c>),
 	/// so an unbounded per-object fan-out on a page with many distinct targets can time out the whole call —
 	/// and a retry after a timeout repeats the identical unbounded work rather than resuming it. Capping
@@ -326,7 +315,7 @@ public static class MobileActionTargetProbe {
 	/// <see cref="KindEntityDefaultMobilePage"/> stays exempt for a SEPARATE reason: the <c>MobileRelatedPage</c>
 	/// add-on declaring no default page is a fact about the add-on, not proof the action is dead — a legacy
 	/// default page can exist without ever being registered there (see
-	/// <see cref="ClassifyEntityDefaultMobilePage"/>). Stripping on that uncertain a signal risks removing a
+	/// <see cref="DefaultPageAddonReader.ReadMobileState"/>). Stripping on that uncertain a signal risks removing a
 	/// working action, which is a trade this tool does not make.
 	/// </para>
 	/// </summary>
@@ -436,7 +425,7 @@ public static class MobileActionTargetProbe {
 	/// caller is told the object targets were verified when nothing was asked. <c>Note</c> is null only when
 	/// the tier ran in full; it is set both when the tier did not run and when it ran incompletely — including
 	/// when every <c>Missing</c> verdict was itself settled but a candidate lookup
-	/// (<see cref="ReadDefaultWebPageUId"/> / <see cref="ResolveCandidateNames"/>) failed for one or more of
+	/// (<see cref="DefaultPageAddonReader.ReadWebDefaultPageUId"/> / <see cref="ResolveCandidateNames"/>) failed for one or more of
 	/// them, which still leaves <c>Answered</c> <see langword="true"/>: the
 	/// verdicts stand, only the bonus candidate name is what a caller cannot trust as "confirmed absent".
 	/// </summary>
@@ -445,9 +434,10 @@ public static class MobileActionTargetProbe {
 	/// <summary>
 	/// The per-call environment seam, threaded through the resolution passes as one value. Carrying the
 	/// resolver alongside the two clients it produced keeps every read on the SAME per-call container: a pass
-	/// that re-resolved from somewhere else could silently answer for a different tenant.
+	/// that re-resolved from somewhere else could silently answer for a different tenant. Internal, not
+	/// private: <see cref="DefaultPageAddonReader"/> reads the same per-call container.
 	/// </summary>
-	private sealed record ProbeContext(
+	internal sealed record ProbeContext(
 		IToolCommandResolver Resolver, EnvironmentOptions Options,
 		IApplicationClient Client, IServiceUrlBuilder UrlBuilder,
 		IAddonSchemaDesignerClient AddonClient);
@@ -527,7 +517,7 @@ public static class MobileActionTargetProbe {
 
 		// Phase 2 (the reads, concurrent): each entry's classify-then-candidate sequence is independent of
 		// every other entry's, so it runs on its own task, bounded by MaxEntityProbeParallelism. Both
-		// ClassifyEntityDefaultMobilePage and ReadDefaultWebPageUId already fail open inside their own
+		// DefaultPageAddonReader.ReadMobileState and ReadWebDefaultPageUId already fail open inside their own
 		// try/catch; the outer try/catch here is a second, structural guarantee that no single object's
 		// failure can escape the parallel body and take any other object's result down with it. Writing into
 		// a PRE-SIZED, per-index array — never a shared mutable collection — keeps the result order
@@ -539,14 +529,14 @@ public static class MobileActionTargetProbe {
 			i => {
 				(string name, string entityUId) = budgeted[i];
 				try {
-					ActionTargetState state = ClassifyEntityDefaultMobilePage(context, entityUId, packageUId);
+					ActionTargetState state = DefaultPageAddonReader.ReadMobileState(context, entityUId, packageUId);
 					Guid? candidatePageUId = null;
 					Exception candidateFailure = null;
 					// Candidate resolution runs ONLY for a verified-missing verdict: Unknown/Resolved need no
 					// candidate.
 					if (state == ActionTargetState.Missing) {
-						candidatePageUId =
-							ReadDefaultWebPageUId(context, entityUId, packageUId, out candidateFailure);
+						candidatePageUId = DefaultPageAddonReader.ReadWebDefaultPageUId(
+							context, entityUId, packageUId, out candidateFailure);
 					}
 					outcomes[i] = new EntityProbeOutcome(name, state, candidatePageUId, candidateFailure);
 				} catch (Exception) {
@@ -643,92 +633,6 @@ public static class MobileActionTargetProbe {
 	}
 
 	/// <summary>
-	/// Reads the object's <c>MobileRelatedPage</c> add-on and reports whether it declares a default page.
-	/// Degrades per object rather than aborting the probe.
-	/// </summary>
-	/// <remarks>
-	/// The question is "does this object have AT LEAST ONE default mobile page, in ANY package", so the
-	/// request is addressed differently from <c>RelatedPageAddonService.BuildAddonGetRequest</c> — and
-	/// deliberately, not as a shortcut. That method resolves the object's own package and parent schema
-	/// because it backs a read-modify-WRITE against one package; this read only asks, and
-	/// <c>UseFullHierarchy</c> makes the server walk the hierarchy itself. Verified against a stand: the same
-	/// object read through four different packages returns an identical page set, so
-	/// <c>TargetPackageUId</c> does not select the answer — which is why the SOURCE page's package (the one
-	/// clio already has, with no extra round trip) is a legitimate value here.
-	/// </remarks>
-	private static ActionTargetState ClassifyEntityDefaultMobilePage(
-		ProbeContext context, string entitySchemaUId, Guid packageUId) {
-		if (!Guid.TryParse(entitySchemaUId, out Guid entityUId)) {
-			return ActionTargetState.Unknown;
-		}
-		try {
-			AddonSchemaDto schema = context.AddonClient.GetSchema(new AddonGetRequestDto {
-				AddonName = MobileRelatedPageAddonName,
-				TargetSchemaUId = entityUId,
-				TargetParentSchemaUId = Guid.Empty,
-				TargetPackageUId = packageUId,
-				TargetSchemaManagerName = EntitySchemaManagerName,
-				UseFullHierarchy = true
-			});
-			return ClassifyRelatedPageMetadata(schema?.MetaData);
-		} catch (Exception) {
-			return ActionTargetState.Unknown;
-		}
-	}
-
-	/// <summary>
-	/// The PER-OBJECT half of resolving the candidate WEB edit page for a verified-missing
-	/// <see cref="KindEntityDefaultMobilePage"/> target: reads the WEB <see cref="RelatedPageAddonName"/>
-	/// add-on (the mirror of <see cref="ClassifyEntityDefaultMobilePage"/>'s mobile read) and returns the
-	/// untyped default page's UId. The UId→NAME step is deliberately NOT here — it runs once for the whole
-	/// tier in <see cref="ResolveCandidateNames"/>, batched, instead of one by-UId round trip per object.
-	/// <para>
-	/// Fails open to <see langword="null"/> (never a guess): no add-on configured, no untyped default, or an
-	/// unparseable add-on body (<see cref="ExtractDefaultPageSchemaUId"/> already swallows that, and has its
-	/// own dedicated coverage) all read the same as "no candidate found".
-	/// </para>
-	/// <para>
-	/// A THROW from the add-on read is DIFFERENT: it is surfaced through <paramref name="failure"/> rather
-	/// than swallowed, because "the read never answered" and "the object genuinely has no default page" are
-	/// not the same fact. So is a declared <c>PageSchemaUId</c> that does not parse as a GUID — it is failed
-	/// HERE rather than sent into the batch, where one authored-garbage value would fail the whole chunk and
-	/// cost every SIBLING its candidate. The caller (<see cref="ResolveEntityTargets"/>) folds either into
-	/// the tier's degradation note; it never aborts THIS object's own <c>Missing</c> verdict, which was
-	/// already settled before this method runs, and never touches any other object's candidate.
-	/// </para>
-	/// </summary>
-	private static Guid? ReadDefaultWebPageUId(
-		ProbeContext context, string entitySchemaUId, Guid packageUId, out Exception failure) {
-		failure = null;
-		if (!Guid.TryParse(entitySchemaUId, out Guid entityUId)) {
-			return null;
-		}
-		try {
-			AddonSchemaDto schema = context.AddonClient.GetSchema(new AddonGetRequestDto {
-				AddonName = RelatedPageAddonName,
-				TargetSchemaUId = entityUId,
-				TargetParentSchemaUId = Guid.Empty,
-				TargetPackageUId = packageUId,
-				TargetSchemaManagerName = EntitySchemaManagerName,
-				UseFullHierarchy = true
-			});
-			string pageSchemaUId = ExtractDefaultPageSchemaUId(schema?.MetaData);
-			if (string.IsNullOrWhiteSpace(pageSchemaUId)) {
-				return null;
-			}
-			if (!Guid.TryParse(pageSchemaUId, out Guid pageUId)) {
-				failure = new InvalidOperationException(
-					$"Page schema '{pageSchemaUId}' could not be resolved to a name.");
-				return null;
-			}
-			return pageUId;
-		} catch (Exception ex) {
-			failure = ex;
-			return null;
-		}
-	}
-
-	/// <summary>
 	/// The BATCHED half: resolves every pending candidate page UId to its schema NAME in one chunked
 	/// <c>SysSchema</c> select (<see cref="ClassicEntitySchemaQuery.BuildSelectSchemaNamesByUId"/> — the
 	/// shared UId→Name query every by-UId reference resolver uses), then re-records each object's resolution
@@ -789,9 +693,9 @@ public static class MobileActionTargetProbe {
 	/// Resolves the SOURCE page's own bound entity's existing default MOBILE edit page, if any — the
 	/// "does this object already have a mobile page" fact behind the reuse-vs-convert check
 	/// (<see cref="ExistingMobilePageInfo"/> / playbook step 2a). Mirrors the missing-target candidate flow
-	/// (<see cref="ReadDefaultWebPageUId"/> plus a name lookup)
-	/// almost exactly, but reads the MOBILE add-on (<see cref="MobileRelatedPageAddonName"/>) instead of the
-	/// web one, and is keyed by an entity NAME resolved via <see cref="ReadEntitySchemaRows"/> rather than an
+	/// (<see cref="DefaultPageAddonReader.ReadWebDefaultPageUId"/> plus a name lookup) almost exactly, but reads
+	/// the MOBILE add-on (<see cref="DefaultPageAddonReader.MobileRelatedPageAddonName"/>) instead of the web
+	/// one, and is keyed by an entity NAME resolved via <see cref="ReadEntitySchemaRows"/> rather than an
 	/// already-known UId (the missing-target tier already has one; this call-site starts from just a name —
 	/// see <see cref="CollectSourceEntityNames"/>). Fails open to <see langword="null"/> on any degradation
 	/// (unreachable environment, unresolvable entity name, no default page, an unparseable add-on body, or a
@@ -824,7 +728,7 @@ public static class MobileActionTargetProbe {
 			}
 
 			AddonSchemaDto schema = context.AddonClient.GetSchema(new AddonGetRequestDto {
-				AddonName = MobileRelatedPageAddonName,
+				AddonName = DefaultPageAddonReader.MobileRelatedPageAddonName,
 				TargetSchemaUId = entityUId,
 				TargetParentSchemaUId = Guid.Empty,
 				TargetPackageUId = packageUId,
