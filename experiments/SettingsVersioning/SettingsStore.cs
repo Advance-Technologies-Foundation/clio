@@ -138,14 +138,14 @@ public sealed class SettingsStore {
     /// <summary>
     /// Deletes every snapshot not covered by one of three explicit ownership reasons: a scope's currently
     /// pinned snapshot, a snapshot a retained operation still references (the ledger's own
-    /// <see cref="IOperationLedger.ReferencedSnapshots"/>, consumed rather than recomputed -- a second
+    /// <see cref="IOperationLedger.OperationHeldSnapshots"/>, consumed rather than recomputed -- a second
     /// reference count would eventually disagree with retention), or a snapshot explicitly
     /// <see cref="RetainForRollback"/>ed. A snapshot with zero active operations is not, on its own,
-    /// eligible -- kirillkrylov's point: <c>ReferencedSnapshots</c> is the operation-held set, not the
+    /// eligible -- kirillkrylov's point: <c>OperationHeldSnapshots</c> is the operation-held set, not the
     /// entire set eligible for deletion.
     /// </summary>
     public IReadOnlyCollection<string> Cleanup() {
-        var referenced = new HashSet<string>(_ledger.ReferencedSnapshots, StringComparer.Ordinal);
+        var referenced = new HashSet<string>(_ledger.OperationHeldSnapshots, StringComparer.Ordinal);
         var pinned = new HashSet<string>(_activeSnapshotId.Values, StringComparer.Ordinal);
         string[] doomed = _snapshots.Keys
             .Where(id => !referenced.Contains(id) && !pinned.Contains(id) && !_rollbackRetained.ContainsKey(id))

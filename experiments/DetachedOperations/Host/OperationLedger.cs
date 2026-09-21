@@ -267,7 +267,7 @@ public sealed class OperationLedger : IOperationLedger {
     }
 
     /// <inheritdoc />
-    public IReadOnlyCollection<string> UnresolvableOwners {
+    public IReadOnlyCollection<string> OwnersWithoutLiveness {
         get {
             lock (_swapLock) {
                 return _owners.Where(p => p.Value is not IOwnerLiveness).Select(p => p.Key).ToArray();
@@ -276,7 +276,7 @@ public sealed class OperationLedger : IOperationLedger {
     }
 
     /// <inheritdoc />
-    public IReadOnlyCollection<string> ReferencedSnapshots {
+    public IReadOnlyCollection<string> OperationHeldSnapshots {
         get {
             lock (_swapLock) {
                 ResolveOrphansCore();

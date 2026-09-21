@@ -4,8 +4,8 @@ using Clio10.DetachedOperations.Host;
 using Clio10.SettingsVersioning;
 
 // Versioned settings, against Alexandr-Kravchuk's ConfigurationSnapshot seam
-// (experiments/DetachedOperations/Contract/Contract.cs) and consuming his ReferencedSnapshots /
-// UnresolvableOwners additions rather than rebuilding a parallel reference count. No MCP transport here
+// (experiments/DetachedOperations/Contract/Contract.cs) and consuming his OperationHeldSnapshots /
+// OwnersWithoutLiveness additions rather than rebuilding a parallel reference count. No MCP transport here
 // -- see the class doc on SettingsStore for why that is a narrowing of an earlier, over-broad claim.
 string workDir = Directory.CreateTempSubdirectory("settings-versioning-").FullName;
 string ledgerEvidence = Path.Combine(workDir, "operations.jsonl");
@@ -168,15 +168,15 @@ void T4b_RollbackRetentionSurvivesCleanup() {
 
 void T8_IdleCurrentSnapshotSurvivesCleanup() {
     // kirillkrylov: "a snapshot may have zero active operations and still be the current configuration
-    // for the next admission" -- ReferencedSnapshots alone would miss this; Cleanup() must not.
+    // for the next admission" -- OperationHeldSnapshots alone would miss this; Cleanup() must not.
     var ledger = new OperationLedger(Path.Combine(workDir, "operations-t8.jsonl"));
     var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t8.jsonl"));
     SettingsSnapshot cfgX = store.Prepare("envT8", new Dictionary<string, string> { ["k"] = "x" }, 0);
     // Deliberately no Admit() call: this snapshot has never been referenced by any operation.
     IReadOnlyCollection<string> doomed = store.Cleanup();
     Check("T8: a current snapshot with zero admitted operations survives cleanup",
-        !doomed.Contains(cfgX.Id) && store.Contains(cfgX.Id) && !ledger.ReferencedSnapshots.Contains(cfgX.Id),
-        new { doomed, referencedByLedger = ledger.ReferencedSnapshots, note = "protected by 'pinned', not by ReferencedSnapshots" });
+        !doomed.Contains(cfgX.Id) && store.Contains(cfgX.Id) && !ledger.OperationHeldSnapshots.Contains(cfgX.Id),
+        new { doomed, referencedByLedger = ledger.OperationHeldSnapshots, note = "protected by 'pinned', not by OperationHeldSnapshots" });
 }
 
 void T5_CleanupRespectsRetentionNotJustPin() {
@@ -191,7 +191,7 @@ void T5_CleanupRespectsRetentionNotJustPin() {
     IReadOnlyCollection<string> doomed1 = store.Cleanup();
     Check("T5: cleanup does not delete an unpinned snapshot that a retained operation still references",
         !doomed1.Contains(cfgC.Id) && store.Contains(cfgC.Id),
-        new { doomed = doomed1, referencedByLedger = ledger.ReferencedSnapshots });
+        new { doomed = doomed1, referencedByLedger = ledger.OperationHeldSnapshots });
 
     leaseUnderC.Complete(OperationState.Succeeded); leaseUnderC.Dispose();
     IReadOnlyCollection<string> doomed2 = store.Cleanup();
@@ -208,12 +208,12 @@ void T5_CleanupRespectsRetentionNotJustPin() {
     SettingsSnapshot cfgH = store.Prepare("envT5", new Dictionary<string, string> { ["k"] = "h" }, cfgG.Version); // moves the pin off F and G
 
     wrappedOwner.Kill();
-    var referencedAfterKill = new HashSet<string>(ledger.ReferencedSnapshots, StringComparer.Ordinal); // triggers orphan resolution
+    var referencedAfterKill = new HashSet<string>(ledger.OperationHeldSnapshots, StringComparer.Ordinal); // triggers orphan resolution
     Check("T5 (K3): the wrapped owner's death releases cfg-F; the bare owner still pins cfg-G",
         !referencedAfterKill.Contains(cfgF.Id) && referencedAfterKill.Contains(cfgG.Id),
         new { referenced = referencedAfterKill, resolvedState = ledger.Query(leaseF.Id).State.ToString(),
               unresolvableState = ledger.Query(leaseG.Id).State.ToString(),
-              unresolvableOwners = ledger.UnresolvableOwners });
+              unresolvableOwners = ledger.OwnersWithoutLiveness });
 
     IReadOnlyCollection<string> doomed3 = store.Cleanup();
     Check("T5 (K3): cleanup can now reclaim cfg-F but must not touch cfg-G while its owner is unresolvable",

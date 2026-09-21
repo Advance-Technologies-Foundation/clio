@@ -9,7 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="../DetachedOperations/Contract/Contract.csproj" />
     <!-- Same ledger E3 publishes and the supervisor/McpHost probes link: the ConfigurationSnapshot
-         seam this fixture consumes (Begin's fourth overload, ReferencedSnapshots) lives here, not
+         seam this fixture consumes (Begin's fourth overload, OperationHeldSnapshots) lives here, not
          duplicated. -->
     <Compile Include="../DetachedOperations/Host/OperationLedger.cs" Link="OperationLedger.cs" />
   </ItemGroup>
