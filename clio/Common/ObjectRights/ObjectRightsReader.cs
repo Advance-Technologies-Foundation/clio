@@ -185,9 +185,16 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 	}
 
 	private ObjectRightsChange Save(JsonObject node, CreatioRequestOptions requestOptions) {
+		JsonObject payload = node.DeepClone().AsObject();
+		// Mirror the platform client: only the collection we changed (operation rights) is sent; the record,
+		// column and entity-operation collections are sent as null ("leave untouched") so the save neither
+		// re-processes nor risks clobbering them. We only ever mutate entitySchemaOperationsRights.
+		payload["entitySchemaRecordDefRights"] = null;
+		payload["entitySchemaColumnsRights"] = null;
+		payload["entityOperationGrantees"] = null;
 		SaveAdministratedObjectResponse response = PostAndDeserialize<SaveAdministratedObjectResponse>(
 			ServiceUrlBuilder.KnownRoute.SaveAdministratedObject,
-			new JsonObject { ["administratedObject"] = node.DeepClone() },
+			new JsonObject { ["administratedObject"] = payload },
 			requestOptions);
 		return response is { Success: true }
 			? new ObjectRightsChange(true, true)
