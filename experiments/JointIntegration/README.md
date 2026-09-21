@@ -1,5 +1,9 @@
 # Joint integration proof
 
+> **Read [`reference-flow.md`](reference-flow.md) first.** It is the integrated narrative — the flow, who
+> owns which mutable state, the guarantees stated together, and the one failure story. This file is the
+> case index and the reproduction commands.
+
 The case @kirillkrylov assigned: **a partner workflow pinned to one release while another arrives with
 changed settings, with an outcome-storage failure injected.** It needs both lanes, so neither lane could
 have produced it alone.
@@ -34,7 +38,7 @@ dotnet run --project experiments/JointIntegration/JointIntegration.csproj -c Rel
 | X8 | a cleanup inside the commit window reclaims the snapshot the selection still names |
 | X9 | the ledger already knows the answer cleanup needs: the snapshot was still selected |
 
-**12/12 on macOS.** Exact build target: this branch, plus `experiments/SettingsVersioning` taken from
+**12/12 on macOS, 12/12 on Windows from a clean clone at `4f6c04e62fcf`.** Exact build target: this branch, plus `experiments/SettingsVersioning` taken from
 `nikonov/supervisor-quiescence-probe@f70f454d4365`. Both are in this tree, so the branch builds and runs
 without mixing incompatible sources.
 
@@ -116,3 +120,17 @@ This is not a second source of truth about what is *current*. It answers one que
 cannot answer for itself and the ledger cannot interpret: **is this snapshot named by a committed
 selection.** The change on the store side is one more reason in `Cleanup`, next to pinned, held and
 retained.
+
+## Running it on Windows
+
+Run the built executable directly. `dotnet run` inside a PowerShell pipeline does not return here — the
+process completes, the pipeline does not, which looks exactly like a hung test:
+
+```powershell
+$exe = "experiments\JointIntegration\bin\Release\net10.0\Clio10.JointIntegration.exe"
+$p = Start-Process -FilePath $exe -ArgumentList @(
+      "artifacts/detached/10.0.0.0","artifacts/detached/10.1.0.0",
+      "artifacts/detached/partner","artifacts/detached/10.2.0.0","C:\Temp\jointwork") `
+     -NoNewWindow -PassThru -RedirectStandardOutput joint.json
+$p.WaitForExit(180000)
+```

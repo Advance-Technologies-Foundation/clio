@@ -1,0 +1,157 @@
+{
+  "os": "Microsoft Windows NT 10.0.26200.0",
+  "framework": "10.0.11",
+  "ledgerFrom": "DetachedOperations (lifetime lane)",
+  "settingsFrom": "SettingsVersioning (settings lane)",
+  "cases": [
+    {
+      "name": "X1 a partner stays on its pinned release and snapshot while a new release and new settings arrive",
+      "passed": true,
+      "detail": {
+        "partnerRanAgainst": "10.0.0.0",
+        "pinnedSnapshot": "cfg-1",
+        "newRelease": "10.1.0.0",
+        "newSnapshot": "cfg-2",
+        "note": "release and configuration are pinned by the same rule, and neither moved under it"
+      }
+    },
+    {
+      "name": "X2 a failed evidence write degrades the scope without touching the outcome or losing the snapshot",
+      "passed": true,
+      "detail": {
+        "outcome": "Succeeded",
+        "code": "work-really-succeeded",
+        "degraded": true,
+        "snapshotStillKnown": "cfg-1",
+        "note": "successful work must not become failed work because a disk write failed"
+      }
+    },
+    {
+      "name": "X3 a cross-process owner registered without liveness holds its snapshot, and cleanup now says so",
+      "passed": true,
+      "detail": {
+        "reclaimed": [],
+        "cfg3SurvivedCleanup": true,
+        "listedByLedger": true,
+        "stateOfDeadOwnersOperation": "Running",
+        "reportedByCleanup": 1,
+        "note": "a diagnostic, not a verdict: an in-process owner ending at Dispose appears here legitimately"
+      }
+    },
+    {
+      "name": "X4 negative control: with a liveness-capable owner the same snapshot IS reclaimed",
+      "passed": true,
+      "detail": {
+        "reclaimed": [
+          "cfg-5"
+        ],
+        "cfg5Gone": true,
+        "stateOfDeadOwnersOperation": "Unknown",
+        "note": "same sequence, one difference: the owner could be asked"
+      }
+    },
+    {
+      "name": "X5a a refused runtime leaves the committed pair untouched, and admissions still see it",
+      "passed": true,
+      "detail": {
+        "runtimeRefused": true,
+        "runtimeSeen": "10.0.0.0",
+        "snapshotSeen": "cfg-7",
+        "generationUnchanged": true,
+        "note": "the pair is published only after both halves succeed, so a refusal is a non-event"
+      }
+    },
+    {
+      "name": "X5b a settings commit failure after the runtime half leaves the previous pair usable",
+      "passed": true,
+      "detail": {
+        "settingsCommitFailed": true,
+        "runtimeSeen": "10.0.0.0",
+        "snapshotSeen": "cfg-7",
+        "note": "publication never happened, so there is no rollback step that could itself fail"
+      }
+    },
+    {
+      "name": "X5c an admission held at the boundary observes one whole pair, never a mixture",
+      "passed": true,
+      "detail": {
+        "heldRuntime": "10.1.0.0",
+        "heldSnapshot": "cfg-10",
+        "oldPair": {
+          "Version": "10.0.0.0",
+          "snapshot": "cfg-7"
+        },
+        "newPair": {
+          "Version": "10.1.0.0",
+          "snapshot": "cfg-10"
+        },
+        "coherent": true,
+        "note": "admission and publication share one critical section, so there is no halfway state"
+      }
+    },
+    {
+      "name": "X5d mutation control: reading the halves separately admits a pair that was never current",
+      "passed": true,
+      "detail": {
+        "admittedRuntime": "10.1.0.0",
+        "admittedSnapshot": "cfg-11",
+        "everCurrentTogether": false,
+        "note": "this is what BeginFromSelection exists to prevent; it fails here on purpose"
+      }
+    },
+    {
+      "name": "X6 after a settings-only activation through the coordinator, admission lands on a live snapshot",
+      "passed": true,
+      "detail": {
+        "admittedUnder": "cfg-13",
+        "stillExists": true,
+        "selected": "cfg-13",
+        "pinned": "cfg-13",
+        "note": "the rule is that any activation republishes the pair, so selected and pinned are equal"
+      }
+    },
+    {
+      "name": "X7 mutation control: skipping the republication admits under a snapshot cleanup reclaimed",
+      "passed": true,
+      "detail": {
+        "reclaimed": [
+          "cfg-14"
+        ],
+        "admittedUnder": "cfg-14",
+        "snapshotStillExists": false,
+        "pinnedInStore": "cfg-15",
+        "note": "passing here is the point: it shows what X6's rule prevents"
+      }
+    },
+    {
+      "name": "X8 a cleanup inside the commit window reclaims the snapshot the selection still names",
+      "passed": true,
+      "detail": {
+        "reclaimed": [
+          "cfg-16"
+        ],
+        "admittedUnder": "cfg-16",
+        "stillExists": false,
+        "pinnedInStore": "cfg-17",
+        "note": "passing here is the gap, not the fix: the republish rule narrows this window, not closes it"
+      }
+    },
+    {
+      "name": "X9 the ledger already knows the answer cleanup needs: the snapshot was still selected",
+      "passed": true,
+      "detail": {
+        "selectedAtCleanupTime": true,
+        "selectedNow": [
+          "cfg-2",
+          "cfg-3",
+          "cfg-5",
+          "cfg-11",
+          "cfg-13",
+          "cfg-14",
+          "cfg-16"
+        ],
+        "note": "one ownership reason short: Cleanup consults held and pinned and retained, not selected"
+      }
+    }
+  ]
+}
