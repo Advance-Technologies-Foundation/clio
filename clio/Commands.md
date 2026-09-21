@@ -49,7 +49,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="update-app-section"></a>
 - [`update-app-section`](docs/commands/update-app-section.md) - Update metadata of a section inside an existing installed application
 <a id="delete-app-section"></a>
-- [`delete-app-section`](docs/commands/delete-app-section.md) - Delete a section and its artifacts from an existing installed application
+- [`delete-app-section`](docs/commands/delete-app-section.md) - Delete a section and its explicitly referenced pages from an existing installed application
 <a id="list-app-sections"></a>
 - [`list-app-sections`](docs/commands/list-app-sections.md) - List sections of an existing installed application
 <a id="idp-list"></a>
@@ -480,7 +480,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`update-client-unit-schema`](docs/commands/update-client-unit-schema.md) - Update the raw body of a client unit schema, `client-unit-schema-update`
 <a id="update-page"></a>
 <a id="page-update"></a>
-- [`update-page`](docs/commands/update-page.md) - Update Freedom UI page schema body with best-effort Designer Presence save push, `page-update`
+- [`update-page`](docs/commands/update-page.md) - Update Freedom UI page body and en-US resource values; warns to capture workspace resources before pushing, `page-update`
 <a id="create-page"></a>
 <a id="page-create"></a>
 - [`create-page`](docs/commands/create-page.md) - Create a new Freedom UI page from a supported template, `page-create`

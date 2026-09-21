@@ -101,7 +101,7 @@ Each entry in the `pages` array must have:
 |---|---|---|
 | `schema-name` | Yes | Freedom UI page schema name |
 | `body` | Yes | Full JavaScript page body |
-| `resources` | No | JSON object string with resource key-value pairs for `#ResourceString(key)#` macros. **Additions only** — a key already stored on the schema stays registered and does not have to be re-sent on a later save |
+| `resources` | No | JSON object string with resource key-value pairs. Adds missing keys and updates supplied `en-US` values, preserving identity, other cultures, and omitted keys. Capture and review workspace metadata/XML before pushing. |
 | `optional-properties` | No | JSON array of `{key, value}` objects merged into the schema's `optionalProperties` |
 | `checksum` | No | The `editable.checksum` from the `get-page` this page's edit is based on. Becomes the authoritative conflict baseline for **this page** |
 | `force` | No | Skip the external-modification (checksum) conflict check for this page and deliberately overwrite out-of-band changes. Default `false` |
@@ -195,14 +195,20 @@ optional `resources` JSON object string to `update-page`. The response returns
 `resources-registered` for each page so callers can see how many child-schema resources
 were added during save.
 
-`resources` is an **additions** payload, not the full registered set. A key registered by one save
+`resources` supplies additions and `en-US` value updates, not the full registered set. A key registered by one save
 is written into the page schema's `localizableStrings` and stays there, so it resolves at runtime
 whether or not a later save repeats it — and re-sending it answers `resources-registered: 0`,
-because an already-stored key is never rewritten. The validation gate honours this: a label bound to
+because the count covers new declarations, not value updates. Other cultures and resource identities
+are preserved. The validation gate honours this: a label bound to
 a key that is only persisted on the schema is accepted without being repeated. The lookup costs one
 extra schema read and is paid ONLY when a label-resource check has already rejected the body, so a
 clean page pays nothing. If that read fails (an unreachable environment, a refused schema read), the
 stricter verdict stands and the page result carries a warning naming the reason.
+
+Resource saves also return a workspace-capture warning. Preserve local edits, capture the affected
+package with `restore-workspace` (`pull-workspace`), and review metadata and culture XML before
+`push-workspace`, which can revert uncaptured changes. Follow linked FSM workspace instructions;
+the native designer may already have written the linked source files. See `update-page` for details.
 
 When `verify` is `true`, each successful page result also returns:
 
