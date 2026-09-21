@@ -31,9 +31,9 @@ against this environment without unlinking them first: the export writes generat
 files into whatever the package folder currently is, including through a symlink,
 so it writes straight into the linked repository instead of the environment. Unlink
 before exporting and re-link afterward. Compiling a linked package also regenerates
-its `.csproj` on every build, which shows up as repository churn — mark it with
-`git update-index --skip-worktree` and add the package's `Assemblies/` output folder
-to `.gitignore` before compiling a linked workspace.
+its .csproj on every build, which shows up as repository churn - mark it with
+'git update-index --skip-worktree' and add the package's Assemblies/ output folder
+to .gitignore before compiling a linked workspace.
 
 When packages are incomplete in the Pkg folder, the --packages flow automatically
 prepares them before linking:
