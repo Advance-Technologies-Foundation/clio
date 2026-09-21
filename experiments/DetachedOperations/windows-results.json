@@ -1,7 +1,7 @@
 {
   "os": "Microsoft Windows NT 10.0.26200.0",
   "framework": "10.0.11",
-  "workDirectory": "C:\\Temp\\detached-ops-t4ow2bvl.qmq",
+  "workDirectory": "C:\\Temp\\detached-ops-cshwjvyg.mya",
   "cases": [
     {
       "name": "A1a the original operation still answers after a newer runtime is activated",
@@ -156,19 +156,19 @@
       "passed": true,
       "detail": {
         "Violations": 0,
-        "Admitted": 44,
-        "Refused": 76,
-        "Windows": 12
+        "Admitted": 64,
+        "Refused": 58,
+        "Windows": 9
       }
     },
     {
       "name": "A5i mutation control: the same regression detects a deliberately split admission",
       "passed": true,
       "detail": {
-        "Violations": 21,
-        "Admitted": 40,
-        "Refused": 44,
-        "Windows": 10,
+        "Violations": 26,
+        "Admitted": 21,
+        "Refused": 81,
+        "Windows": 17,
         "note": "non-zero here is the point: it shows A5h can fail"
       }
     },
@@ -387,7 +387,7 @@
         "busyWhenReserved": true,
         "reservedImmediately": true,
         "drained": true,
-        "drainMs": 152,
+        "drainMs": 122,
         "note": "new admissions are refused under the reservation, so in-flight work is finite"
       }
     },
@@ -398,7 +398,7 @@
         "reserved": true,
         "drainedWithinBudget": false,
         "hungStillRunning": true,
-        "reservationHeldMs": 622,
+        "reservationHeldMs": 601,
         "note": "the hung operation was neither killed nor completed; the update defers again"
       }
     },
@@ -464,10 +464,11 @@
       "name": "F1 two operations run concurrently, each pinned to the release that admitted it",
       "passed": true,
       "detail": {
+        "observedRunningTogether": true,
         "firstOwnedBy": "10.0.0.0",
         "secondOwnedBy": "10.1.0.0",
         "effects": 2,
-        "note": "the effect lines carry the executing release, so pinning is observed not assumed"
+        "note": "both ids were seen in Running before either finished, so the overlap is measured"
       }
     },
     {
