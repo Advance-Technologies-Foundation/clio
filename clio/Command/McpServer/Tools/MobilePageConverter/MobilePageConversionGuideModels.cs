@@ -913,6 +913,23 @@ public sealed class ExistingMobilePageInfo {
 }
 
 /// <summary>
+/// The page-side inputs the reuse-vs-convert check reads. Grouped into a record rather than passed as loose
+/// parameters (mirrors <see cref="MobileActionTargetProbeRequest"/>): they all describe ONE source page, and
+/// they travel together to <see cref="ExistingMobilePageProbe.Probe"/>.
+/// </summary>
+/// <param name="SectionRegistration">The source page's SysModule registration, already probed by <c>MobileSectionRegistrationProbe</c>.</param>
+/// <param name="IsFormPage">Whether the source page is an edit/form page (vs a list/section page).</param>
+/// <param name="ModelConfig">The source page's merged <c>modelConfig</c>, used to find its bound entities.</param>
+/// <param name="PagePackageUId">The source page's package UId, used to address the entity add-on read.</param>
+/// <param name="TargetName">The schema name this conversion is about to create/update.</param>
+public sealed record ExistingMobilePageProbeRequest(
+	SectionRegistrationInfo SectionRegistration,
+	bool IsFormPage,
+	JsonObject ModelConfig,
+	string PagePackageUId,
+	string TargetName);
+
+/// <summary>
 /// Deterministic advisory "conversion guide" for turning a source page into a Freedom UI mobile
 /// page. The model executes the conversion using this guide; the tool builds nothing. The
 /// <see cref="SourceType"/> records which source page type was detected (today: <c>freedom-web</c>).

@@ -29,36 +29,31 @@ public static class ExistingMobilePageProbe {
 
 	/// <summary>
 	/// Orchestrates the whole reuse-vs-convert check for one conversion guide call: a section match from
-	/// <paramref name="sectionRegistration"/>'s SysModule registration, plus — for a form source — a match on
-	/// each of the page's bound entities' own default mobile edit page. Either match is excluded when it
-	/// names <paramref name="targetName"/> (the schema this run is about to create/update): there is nothing
-	/// to "reuse vs convert again" for the page the conversion is itself producing. Best-effort; never throws.
+	/// <paramref name="request"/>'s SysModule registration, plus — for a form source — a match on each of the
+	/// page's bound entities' own default mobile edit page. Either match is excluded when it names
+	/// <see cref="ExistingMobilePageProbeRequest.TargetName"/> (the schema this run is about to create/update):
+	/// there is nothing to "reuse vs convert again" for the page the conversion is itself producing.
+	/// Best-effort; never throws.
 	/// </summary>
-	/// <param name="sectionRegistration">The source page's SysModule registration, already probed by <see cref="MobileSectionRegistrationProbe"/>.</param>
-	/// <param name="isFormPage">Whether the source page is an edit/form page (vs a list/section page).</param>
-	/// <param name="modelConfig">The source page's merged <c>modelConfig</c>, used to find its bound entities.</param>
-	/// <param name="pagePackageUId">The source page's package UId, used to address the entity add-on read.</param>
-	/// <param name="targetName">The schema name this conversion is about to create/update.</param>
 	public static List<ExistingMobilePageInfo> Probe(
 		IToolCommandResolver commandResolver, string environment, string uri, string login, string password,
-		SectionRegistrationInfo sectionRegistration, bool isFormPage, JsonObject modelConfig,
-		string pagePackageUId, string targetName) {
+		ExistingMobilePageProbeRequest request) {
 		var matches = new List<ExistingMobilePageInfo>();
-		if (sectionRegistration is
+		if (request.SectionRegistration is
 			{ MobileSectionRegistered: true, MobileSectionSchemaUId: { Length: > 0 } sectionSchemaUId }) {
 			ExistingMobilePageInfo sectionMatch = ProbeSectionMobilePage(
 				commandResolver, environment, uri, login, password, sectionSchemaUId);
 			if (sectionMatch is not null
-				&& !string.Equals(sectionMatch.SchemaName, targetName, StringComparison.OrdinalIgnoreCase)) {
+				&& !string.Equals(sectionMatch.SchemaName, request.TargetName, StringComparison.OrdinalIgnoreCase)) {
 				matches.Add(sectionMatch);
 			}
 		}
-		if (isFormPage) {
-			foreach (string entityName in MobileActionTargetProbe.CollectSourceEntityNames(modelConfig)) {
+		if (request.IsFormPage) {
+			foreach (string entityName in MobileActionTargetProbe.CollectSourceEntityNames(request.ModelConfig)) {
 				ExistingMobilePageInfo entityMatch = ProbeSourceEntityDefaultMobilePage(
-					commandResolver, environment, uri, login, password, entityName, pagePackageUId);
+					commandResolver, environment, uri, login, password, entityName, request.PagePackageUId);
 				if (entityMatch is not null
-					&& !string.Equals(entityMatch.SchemaName, targetName, StringComparison.OrdinalIgnoreCase)) {
+					&& !string.Equals(entityMatch.SchemaName, request.TargetName, StringComparison.OrdinalIgnoreCase)) {
 					matches.Add(entityMatch);
 				}
 			}

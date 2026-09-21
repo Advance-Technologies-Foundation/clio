@@ -237,8 +237,9 @@ public class MobilePageConversionGuideTool {
 		// reuse-vs-convert fact (playbook step 2a)? Best-effort; never blocks the guide.
 		List<ExistingMobilePageInfo> existingMobilePages = ExistingMobilePageProbe.Probe(
 			_commandResolver, args.EnvironmentName, args.Uri, args.Login, args.Password,
-			sectionRegistration, isFormPage, pageResponse.Bundle?.ModelConfig, pageResponse.Page?.PackageUId,
-			targetName);
+			new ExistingMobilePageProbeRequest(
+				sectionRegistration, isFormPage, pageResponse.Bundle?.ModelConfig, pageResponse.Page?.PackageUId,
+				targetName));
 
 		MobilePageConversionGuide guide;
 		try {
