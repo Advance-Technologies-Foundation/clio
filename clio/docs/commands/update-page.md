@@ -12,6 +12,20 @@ update-page - Update the raw schema body of a Freedom UI page
 
 ## Description
 
+`--resources` adds missing keys and updates the `en-US` value of existing keys.
+Resource identities, other cultures, and omitted keys are preserved. The
+`resourcesRegistered` count includes only newly declared keys, not value updates.
+
+Resource saves return a warning about workspace capture: `update-page` saves
+through the server designer; it does not synchronize an independent local workspace.
+A later `push-workspace` using stale metadata or culture XML can revert the change.
+Preserve local edits, capture the affected package with `restore-workspace`
+(`pull-workspace`), then review the schema metadata and resource XML before pushing.
+Follow the workspace's capture instructions for linked FSM packages, where the
+native designer can already write into linked source files. Check the diff rather
+than assuming either server success or a JavaScript body file is a complete capture.
+
+
 The update-page command validates and saves the raw JavaScript body of a
 Freedom UI page schema. Pass the full body string directly, typically
 after reading raw.body from get-page.

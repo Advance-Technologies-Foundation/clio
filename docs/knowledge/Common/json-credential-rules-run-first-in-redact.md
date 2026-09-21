@@ -24,6 +24,13 @@ moving the JSON rule after either of them turns both cases of
 first - a secret-keyed value is replaced wholesale either way, so the URI/host/path rules have nothing
 left to find inside it.
 
+Since issue #1505 the credentials-only `RedactCredentials` runs the same rule in the same first
+position, for the same reason: the console renderer
+(`ExceptionReadableMessageExtension.GetReadableMessageException`) feeds it a whole raw DataService
+body whenever `errorInfo.message` is absent, so the JSON spelling is that path's ordinary input too.
+Keep the two orderings identical - a rule moved in one method only is the kind of drift that shows
+up as a leak on one channel and not the other.
+
 **Why the JSON key set is not the pair rule's key set** - the key words live in two constants.
 `CredentialSecretKeys` is a secret in any spelling. `ConnectionStringPartKeys` is only a secret when it
 is written as part of a connection string, and the JSON rule takes only `server`, `host`, `hostname` and

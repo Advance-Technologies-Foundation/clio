@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Clio.Common;
 using FluentAssertions;
@@ -153,6 +153,14 @@ internal class ServiceUrlBuilderCommandTests
 	public static IEnumerable<TestCaseDataWithEnvSettingAndKnownRoutes> TestCasesWithEnvSettingsAndKnownRoutes {
 		get {
 			yield return new TestCaseDataWithEnvSettingAndKnownRoutes(
+				ServiceUrlBuilder.KnownRoute.SequenceParticipantBulkAdd,
+				new EnvironmentSettings {IsNetCore = false, Uri = "http://localhost"},
+				"http://localhost/0/rest/SequenceParticipantBulkAddService/AddByFilter");
+			yield return new TestCaseDataWithEnvSettingAndKnownRoutes(
+				ServiceUrlBuilder.KnownRoute.SequenceParticipantBulkAdd,
+				new EnvironmentSettings {IsNetCore = true, Uri = "http://localhost"},
+				"http://localhost/rest/SequenceParticipantBulkAddService/AddByFilter");
+			yield return new TestCaseDataWithEnvSettingAndKnownRoutes(
 				ServiceUrlBuilder.KnownRoute.RestoreFromPackageBackup,
 				new EnvironmentSettings {IsNetCore = false, Uri = "http://localhost"},
 				"http://localhost/0/ServiceModel/PackageInstallerService.svc/RestoreFromPackageBackup");
@@ -173,6 +181,16 @@ internal class ServiceUrlBuilderCommandTests
 
 	public static IEnumerable<TestCaseDataWithKnownRoutes> TestCasesWithKnownRoute {
 		get {
+			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.GetSqlScriptSchema, "https://localhost/0/ServiceModel/SqlScriptSchemaDesignerService.svc/GetSchema");
+			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.GetSqlScriptSchema, "https://localhost/ServiceModel/SqlScriptSchemaDesignerService.svc/GetSchema");
+			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.SaveSqlScriptSchema, "https://localhost/0/ServiceModel/SqlScriptSchemaDesignerService.svc/SaveSchema");
+			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.SaveSqlScriptSchema, "https://localhost/ServiceModel/SqlScriptSchemaDesignerService.svc/SaveSchema");
+			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.InstallSqlScripts, "https://localhost/0/ServiceModel/WorkspaceExplorerService.svc/InstallSqlScripts");
+			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.InstallSqlScripts, "https://localhost/ServiceModel/WorkspaceExplorerService.svc/InstallSqlScripts");
+			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.GetSystemEnvironmentInfo, "https://localhost/0/ServiceModel/ApplicationInfoService.svc/GetSystemEnvironmentInfo");
+			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.GetSystemEnvironmentInfo, "https://localhost/ServiceModel/ApplicationInfoService.svc/GetSystemEnvironmentInfo");
+			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.BatchQuery, "https://localhost/0/DataService/json/SyncReply/BatchQuery");
+			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.BatchQuery, "https://localhost/DataService/json/SyncReply/BatchQuery");
 			// Registered WITHOUT a leading slash, unlike the /rest/... entries, so both prefix shapes are
 			// pinned here rather than left to CreateUrl's normalisation happening to be right.
 			yield return new TestCaseDataWithKnownRoutes(false, "http://localhost",

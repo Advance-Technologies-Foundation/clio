@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -162,6 +162,7 @@ internal class Program {
 		typeof(GetClassicListColumnsOptions),
 		typeof(ListEntityClientSchemasOptions),
 		typeof(SqlSchemaCreateOptions),
+		typeof(RegisterProcessElementOptions),
 		typeof(SqlSchemaGetOptions),
 		typeof(SqlSchemaUpdateOptions),
 		typeof(SqlSchemaInstallOptions),
@@ -228,10 +229,14 @@ internal class Program {
 		typeof(ModifyEntitySchemaColumnOptions),
 		typeof(GetEntitySchemaColumnPropertiesOptions),
 		typeof(GetEntitySchemaPropertiesOptions),
+		typeof(SequenceEnrollmentOptions),
+		typeof(SequenceContextOptions),
+		typeof(DataServiceBatchOptions),
 		typeof(SetEntitySchemaPropertiesOptions),
 		typeof(FindEntitySchemaOptions),
 		typeof(FindAppOptions),
 		typeof(CreateUserTaskOptions),
+		typeof(CreateUserTaskPageOptions),
 		typeof(ModifyUserTaskParametersOptions),
 		typeof(DeleteSchemaOptions),
 		typeof(ExportSchemaOptions),
@@ -704,10 +709,14 @@ internal class Program {
 			ModifyEntitySchemaColumnOptions opts => Resolve<ModifyEntitySchemaColumnCommand>(opts).Execute(opts),
 			GetEntitySchemaColumnPropertiesOptions opts => Resolve<GetEntitySchemaColumnPropertiesCommand>(opts).Execute(opts),
 			GetEntitySchemaPropertiesOptions opts => Resolve<GetEntitySchemaPropertiesCommand>(opts).Execute(opts),
+			SequenceEnrollmentOptions opts => Resolve<SequenceEnrollmentCommand>(opts).Execute(opts),
+			SequenceContextOptions opts => Resolve<SequenceContextCommand>(opts).Execute(opts),
+			DataServiceBatchOptions opts => Resolve<DataServiceBatchCommand>(opts).Execute(opts),
 			SetEntitySchemaPropertiesOptions opts => Resolve<SetEntitySchemaPropertiesCommand>(opts).Execute(opts),
 			FindEntitySchemaOptions opts => Resolve<FindEntitySchemaCommand>(opts).Execute(opts),
 			FindAppOptions opts => Resolve<FindAppCommand>(opts).Execute(opts),
 			CreateUserTaskOptions opts => Resolve<CreateUserTaskCommand>(opts).Execute(opts),
+			CreateUserTaskPageOptions opts => Resolve<CreateUserTaskPageCommand>(opts).Execute(opts),
 			ModifyUserTaskParametersOptions opts => Resolve<ModifyUserTaskParametersCommand>(opts).Execute(opts),
 			DeleteSchemaOptions opts => Resolve<DeleteSchemaCommand>(opts).Execute(opts),
 			ExportSchemaOptions opts => Resolve<ExportSchemaCommand>(opts).Execute(opts),
@@ -742,6 +751,7 @@ internal class Program {
 			GetClassicListColumnsOptions opts => Resolve<GetClassicListColumnsCommand>(opts).Execute(opts),
 			ListEntityClientSchemasOptions opts => Resolve<ListEntityClientSchemasCommand>(opts).Execute(opts),
 			SqlSchemaCreateOptions opts => Resolve<SqlSchemaCreateCommand>(opts).Execute(opts),
+			RegisterProcessElementOptions opts => Resolve<RegisterProcessElementCommand>(opts).Execute(opts),
 			SqlSchemaGetOptions opts => Resolve<SqlSchemaGetCommand>(opts).Execute(opts),
 			SqlSchemaUpdateOptions opts => Resolve<SqlSchemaUpdateCommand>(opts).Execute(opts),
 			SqlSchemaInstallOptions opts => Resolve<SqlSchemaInstallCommand>(opts).Execute(opts),
@@ -2098,4 +2108,3 @@ internal class Program {
 	#endregion
 
 }
-

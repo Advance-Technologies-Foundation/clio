@@ -13,6 +13,26 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class ODataDeleteToolTests {
 	private const string Guid = "8ecab4a1-0ca3-4515-9399-efe0a19390bd";
 
+	[Test, Category("Unit")]
+	[Description("A throwing delete transport retains attempted status without claiming rollback.")]
+	public void Delete_ShouldRetainUnknownOutcome_WhenTransportThrows() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urls = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns((client, urls));
+		urls.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact");
+		client.ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => throw new System.Net.Http.HttpRequestException("connection lost"));
+		ODataDeleteTool tool = new(resolver, new OperationCorrelationIdProvider());
+		// Act
+		ODataWriteResponse result = tool.Delete(new ODataDeleteArgs { EnvironmentName = "dev", Entity = "Contact", Id = Guid, Confirm = true });
+		// Assert
+		result.Diagnostic!.WriteAttempted.Should().BeTrue(because: "the request entered the write transport");
+		result.Diagnostic.TransportOutcome.Should().Be("unknown", because: "no response was received");
+		result.Diagnostic.SideEffect.Should().Be("unknown", because: "transport failure does not establish rollback");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises a stable, destructive, idempotent MCP tool name for odata-delete.")]

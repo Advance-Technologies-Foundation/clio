@@ -55,3 +55,5 @@ The optional CSDL read of `odata-create` uses a SHORT single-attempt budget
 (`ODataFieldValidation.OptionalMetadataTimeoutMs`), unlike the mandatory pre-write read of
 `odata-update` (30 s x 3 attempts): there the type map only sharpens a guard the write proceeds without,
 so a stalled `$metadata` must not hold the batch before its first POST.
+
+The local temporal guard can establish that no write was attempted. A temporal error returned after submitting a request cannot establish the same certainty, because platform listeners may fail after applying a write. DataService temporal values use their native typed contract; do not transfer OData literal rules to them.

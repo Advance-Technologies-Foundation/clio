@@ -1,4 +1,4 @@
-﻿# Clio Command Reference
+# Clio Command Reference
 
 Use `clio help` for the terminal overview and `clio <command> --help` for command details.
 
@@ -307,6 +307,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="push-workspace"></a>
 <a id="pushw"></a>
 - [`push-workspace`](docs/commands/push-workspace.md) - Push workspace to selected environment, `pushw`
+<a id="register-process-element"></a>
+- [`register-process-element`](docs/commands/register-process-element.md) - Generate package-owned process element registration scripts
 <a id="remove-data-binding-row"></a>
 - [`remove-data-binding-row`](docs/commands/remove-data-binding-row.md) - Remove a row from a package data binding
 <a id="remove-data-binding-row-db"></a>
@@ -335,6 +337,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`add-item`](docs/commands/add-item.md) - Generate package item models from Creatio metadata, `create`
 <a id="add-schema"></a>
 - [`add-schema`](docs/commands/add-schema.md) - Create a schema file in a workspace package
+<a id="create-user-task-page"></a>
+- [`create-user-task-page`](docs/commands/create-user-task-page.md) - Create and associate a Classic user-task parameter page in a workspace
 <a id="add-user-task"></a>
 - [`add-user-task`](docs/commands/add-user-task.md) - Create a user task schema in a workspace package
 <a id="alm-deploy"></a>
@@ -352,7 +356,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="client-unit-schema-create"></a>
 - [`create-client-unit-schema`](docs/commands/create-client-unit-schema.md) - Create a new JavaScript (ClientUnit) schema on a remote Creatio environment, `client-unit-schema-create`
 <a id="create-entity-schema"></a>
-- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create a persistent, virtual, or same-name replacing entity schema in a remote Creatio package; columns accept repeated flags or a JSON array
+- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create a persistent, virtual, DB-view, or same-name replacing entity schema in a remote Creatio package; columns accept repeated flags or a JSON array
 <a id="create-lookup"></a>
 - [`create-lookup`](docs/commands/create-lookup.md) - Create a lookup entity schema in a remote Creatio package
 <a id="create-schema"></a>
@@ -360,7 +364,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`create-schema`](docs/commands/create-schema.md) - Create a new C# source-code schema on a remote Creatio environment with aggregate name validation and optional `--body` or `--body-file`, `schema-create`
 <a id="create-sql-schema"></a>
 <a id="sql-schema-create"></a>
-- [`create-sql-schema`](docs/commands/create-sql-schema.md) - Create a new SQL script schema on a remote Creatio environment with aggregate name validation, `sql-schema-create`
+- [`create-sql-schema`](docs/commands/create-sql-schema.md) - Create an empty native package SQL script with target engine detection and installation phase selection, `sql-schema-create`
 <a id="dataservice"></a>
 <a id="ds"></a>
 - [`dataservice`](docs/commands/dataservice.md) - Send a Creatio DataService request, `ds`
@@ -404,7 +408,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="get-entity-schema-properties"></a>
 - [`get-entity-schema-properties`](docs/commands/get-entity-schema-properties.md) - Get properties from a remote Creatio entity schema (`--required-only` filters required columns; omit `--package` for the merged all-packages view, including custom columns from other packages)
 <a id="set-entity-schema-properties"></a>
-- [`set-entity-schema-properties`](docs/commands/set-entity-schema-properties.md) - Set schema-level properties (the primary-display column, and the schema caption per culture via `--title` / `--title-localizations`) on a remote Creatio entity schema
+- [`set-entity-schema-properties`](docs/commands/set-entity-schema-properties.md) - Set schema-level properties (the database-view flag, primary-display column, and schema caption per culture via `--title` / `--title-localizations`) on a remote Creatio entity schema
 <a id="get-process-signature"></a>
 <a id="gps"></a>
 - [`get-process-signature`](docs/commands/get-process-signature.md) - Read the parameter signature (codes, types, direction) of a Creatio business process, `gps`
@@ -476,7 +480,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`update-client-unit-schema`](docs/commands/update-client-unit-schema.md) - Update the raw body of a client unit schema, `client-unit-schema-update`
 <a id="update-page"></a>
 <a id="page-update"></a>
-- [`update-page`](docs/commands/update-page.md) - Update Freedom UI page schema body with best-effort Designer Presence save push, `page-update`
+- [`update-page`](docs/commands/update-page.md) - Update Freedom UI page body and en-US resource values; warns to capture workspace resources before pushing, `page-update`
 <a id="create-page"></a>
 <a id="page-create"></a>
 - [`create-page`](docs/commands/create-page.md) - Create a new Freedom UI page from a supported template, `page-create`
@@ -788,3 +792,13 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 `get-related-page-addon` and `create-related-page-addon` report `entitySchemaUId` as
 the base/root entity UId resolved by Creatio for the add-on, shared across replacing
 layers. A temporary designer schema or an individual replacing row is not that identity.
+
+<a id="enroll-sequence-participants"></a>
+
+Enroll explicit contacts through Creatio's native sequence service. See [enroll-sequence-participants](docs/commands/enroll-sequence-participants.md).
+<a id="get-sequence-context"></a>
+- [get-sequence-context](docs/commands/get-sequence-context.md) - Read effective sequence fields and live configuration choices.
+
+<a id="execute-dataservice-batch"></a>
+
+Write explicit records in a native DataService batch. See [execute-dataservice-batch](docs/commands/execute-dataservice-batch.md).

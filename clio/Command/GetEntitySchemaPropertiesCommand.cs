@@ -13,6 +13,9 @@ namespace Clio.Command;
 [Verb("get-entity-schema-properties", HelpText = "Get properties from a remote Creatio entity schema")]
 public class GetEntitySchemaPropertiesOptions : RemoteCommandOptions
 {
+	/// <summary>Optional timeout in milliseconds for an internal effective-schema read; not a CLI option.</summary>
+	internal int? RuntimeReadTimeoutMilliseconds { get; set; }
+
 	[Option("package", Required = false, HelpText =
 		"Target package name. When omitted, returns the merged/effective schema with columns from ALL packages " +
 		"(including customizations made in other packages). When provided, returns only that package layer's slice.")]

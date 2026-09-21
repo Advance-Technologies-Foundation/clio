@@ -55,7 +55,10 @@ public sealed class WebToMobilePageConversionRules {
 	/// elements it applies to plus the <c>viewConfigTemplates</c> that produce their mobile values, e.g. the
 	/// grid→list row). Both shapes live in one array because they answer the same question — "what does this
 	/// web component become on mobile" — and a template group also carries its own target type in
-	/// <c>viewConfigTemplates[].value.type</c>, so it needs no separate web/mobile pair.
+	/// <c>viewConfigTemplates[].value.type</c>, so it needs no separate web/mobile pair. ONE template serves both
+	/// paths: on an insert it shapes the new element's values; when the source element instead MERGES onto an
+	/// element the mobile template already provides, the same template is rendered and DIFFED against that element,
+	/// and only what the template lacks is merged — onto the twin, or by slot onto a sub-element it provides.
 	/// </summary>
 	[JsonPropertyName("components")]
 	public IReadOnlyList<ComponentEquivalenceRule> Components { get; init; } = [];
@@ -340,9 +343,10 @@ public sealed class ComponentMappingRule {
 	/// DELTA over the web-template baseline is carried automatically — a property the page left at the
 	/// template default is omitted so the mobile element keeps its own default (no <c>type</c> is emitted — a
 	/// merge targets an element the template already owns). A twin whose web type has no mobile equivalent (a structural conversion, e.g.
-	/// <c>DataTable → List</c>, crt.DataGrid → crt.List) carries nothing and stays an advisory merge, with
-	/// the grid→row how-to left to the caller per <c>componentSuggestions</c>. Without a twin the web node
-	/// (inherited template chrome) is pruned and its values are lost.
+	/// <c>DataTable → List</c>, crt.DataGrid → crt.List) carries no delta of its own; what it does carry is what
+	/// its TYPE's conversion template shapes and the mobile template does not already provide (the grid's row onto
+	/// the template's list item) — see <see cref="WebToMobilePageConversionRules.Components"/>. Without a twin the
+	/// web node (inherited template chrome) is pruned and its values are lost.
 	/// </summary>
 	[JsonPropertyName("carryProperties")]
 	public IReadOnlyList<string> CarryProperties { get; init; } = [];
@@ -722,9 +726,9 @@ public sealed class ComponentEquivalenceRule {
 
 	/// <summary>
 	/// Template-group entries only: the mobile values produced for a matching element, as data. Each template's
-	/// own <c>value.type</c> declares the target mobile type — which is also what gates it and, for an entry with
-	/// no <see cref="Mobile"/>, what the converter derives the element's mobile type from. Empty on a plain
-	/// type-equivalence entry.
+	/// own <c>value.type</c> declares the target mobile type — which is also what gates it (on both paths) and, for
+	/// an entry with no <see cref="Mobile"/>, what the converter derives the element's mobile type from. Empty on a
+	/// plain type-equivalence entry.
 	/// </summary>
 	[JsonPropertyName("viewConfigTemplates")]
 	public IReadOnlyList<ViewConfigTemplateRule> ViewConfigTemplates { get; init; } = [];
@@ -791,6 +795,18 @@ public sealed class ElementFilterRule {
 /// MainHeader button → <c>FloatingActionButton.menuItems</c>). A template that declares neither field, or only
 /// echoes, changes nothing. When a retarget names a parent the target mobile template does not provide, the
 /// converter drops the element with a diagnostic rather than emitting an unresolvable insert.
+/// </para>
+/// <para>
+/// The same template serves the MERGE path. When the source element is not inserted but merged onto an element the
+/// mobile template already provides (a <c>containers</c> pair, a name-mapped component twin, an automatic same-name
+/// twin), the template is rendered exactly as for an insert and then DIFFED against that element: a key the element
+/// already carries with the same value is left alone; a differing or missing key is merged onto the twin; a nested
+/// component the template shapes (the grid's row under <c>itemLayout</c>) is diffed against the element the mobile
+/// template provides in that SAME slot and merged onto it by name — the row lands on the template's
+/// <c>crt.ListItem</c>, not inside the List. A slot the mobile template does not provide gets nothing: the converter
+/// merges only onto elements that exist. Identity (<c>name</c>/<c>type</c>), the <c>items</c> binding and
+/// <c>layoutConfig</c> are never diffed — the template owns them. So a type never describes its mobile shape twice:
+/// there is no separate merge template to keep in step with this one.
 /// </para>
 /// </remarks>
 public sealed class ViewConfigTemplateRule {

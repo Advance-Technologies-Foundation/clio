@@ -214,6 +214,8 @@ internal static class PassthroughToolClassificationRegistry {
 			["configure-knowledge-feedback-policy"] = PassthroughClassification.NotEnvironmentSensitive,
 			["get-tool-contract"] = PassthroughClassification.NotEnvironmentSensitive,
 			[CreatioArtifactMergeTool.ToolName] = PassthroughClassification.NotEnvironmentSensitive,
+			[CreateUserTaskPageTool.ToolName] = PassthroughClassification.NotEnvironmentSensitive,
+			[RegisterProcessElementTool.ToolName] = PassthroughClassification.NotEnvironmentSensitive,
 			["assert-infrastructure"] = PassthroughClassification.NotEnvironmentSensitive,
 			["show-passing-infrastructure"] = PassthroughClassification.NotEnvironmentSensitive,
 			["list-environments"] = PassthroughClassification.NotEnvironmentSensitive, // PRD prose: "show-web-app-list" (ShowWebAppListTool); actual tool name is list-environments
@@ -313,6 +315,9 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-client-unit-schema"] = PassthroughClassification.NotApplicable,
 			["get-entity-schema-column-properties"] = PassthroughClassification.NotApplicable,
 			["get-entity-schema-properties"] = PassthroughClassification.NotApplicable,
+			["enroll-sequence-participants"] = PassthroughClassification.NotApplicable,
+			["get-sequence-context"] = PassthroughClassification.NotApplicable,
+			["execute-dataservice-batch"] = PassthroughClassification.NotApplicable,
 			["set-entity-schema-properties"] = PassthroughClassification.NotApplicable,
 			["get-fsm-mode"] = PassthroughClassification.NotApplicable,
 			["get-identity-assertion"] = PassthroughClassification.NotApplicable,

@@ -109,6 +109,7 @@ public static class WebToMobileAnalysisService {
 		JsonNode mobileTemplateModelConfig = null,
 		IReadOnlyDictionary<string, string> mobileTemplateTypesByName = null,
 		IReadOnlyDictionary<string, JsonObject> mobileTemplateLayoutConfigs = null,
+		IReadOnlyDictionary<string, JObject> mobileTemplateNodesByName = null,
 		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null,
 		JObject webTemplateResources = null,
 		MobileActionTargetProbeResult actionTargetsProbe = null) {
@@ -214,7 +215,7 @@ public static class WebToMobileAnalysisService {
 			tree, map, componentMap, mobileTypes, mobileByType, webByType, rules, attrToColumn, resources,
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns,
 			positionalParentByAnchor, positionalAnchorByWebAnchor,
-			mobileTypesByName, webBaselineNodes, webTemplateResources,
+			mobileTypesByName, mobileTemplateNodesByName, webBaselineNodes, webTemplateResources,
 			declaredElements,
 			actionTargets, unresolvedTargets);
 
@@ -873,8 +874,11 @@ public static class WebToMobileAnalysisService {
 	/// Collects a name → node map (Newtonsoft <see cref="JObject"/>) for every named component in a merged
 	/// viewConfig tree (System.Text.Json input). Built from the WEB template as the conversion BASELINE: a
 	/// same-component twin carries only the page's DELTA over this baseline, so a property the page left at the
-	/// web-template default is omitted and the mobile template's own default stands. First occurrence wins.
-	/// Case-insensitive.
+	/// web-template default is omitted and the mobile template's own default stands. Also built from the MOBILE
+	/// template, for the other direction: the twin path renders a source element's conversion template and diffs it
+	/// against the element the mobile template provides — and, for a nested component the template shapes, against
+	/// the element in the same slot — merging only what that element lacks (<see cref="ApplyTemplatesToTwin"/>).
+	/// First occurrence wins. Case-insensitive.
 	/// </summary>
 	public static Dictionary<string, JObject> CollectComponentNodesByName(JsonArray viewConfig) {
 		var map = new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase);
@@ -1110,8 +1114,8 @@ public static class WebToMobileAnalysisService {
 			}
 			ComponentEquivalenceRule rule = FindRule(rules, type);
 			// The diff is authoritative about what HAPPENED. A matching rule may only ADD mobile types the
-			// diff emits no operation for — a crt.List's crt.ListItem row lives inside that list's
-			// itemLayout, so no operation ever names it — and may never subtract from the emitted set.
+			// diff emits no operation for — on the INSERT path a crt.List's crt.ListItem row lives inside that
+			// list's itemLayout, so no operation names it there — and may never subtract from the emitted set.
 			var suggested = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
 			if (emitted is not null) {
 				suggested.UnionWith(emitted);
@@ -1276,7 +1280,7 @@ public static class WebToMobileAnalysisService {
 	/// The mobile type a template-group entry declares for a node it matches: the first
 	/// <c>viewConfigTemplates[].value.type</c> of the <c>components</c> entry whose <c>filters</c> match. This is
 	/// how a grid — whose entry carries no web/mobile pair — resolves to <c>crt.List</c>, the same
-	/// <c>value.type</c> that then gates the template in <see cref="ApplyConversionTemplates"/>. Null when no
+	/// <c>value.type</c> that then gates the template in <see cref="MatchingConversionTemplates"/>. Null when no
 	/// template-group entry matches.
 	/// </summary>
 	private static string ResolveTemplateTargetType(WebToMobilePageConversionRules rules, JObject node,
@@ -2022,6 +2026,7 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> PositionalParentByAnchor,
 		IReadOnlyDictionary<string, string> PositionalAnchorByWebAnchor,
 		IReadOnlyDictionary<string, string> MobileTypesByName,
+		IReadOnlyDictionary<string, JObject> MobileNodesByName,
 		IReadOnlyDictionary<string, JObject> WebBaselineNodes,
 		JObject WebBaselineResources,
 		IReadOnlySet<string> ScopeContainerNames,
@@ -2068,6 +2073,7 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> positionalParentByAnchor,
 		IReadOnlyDictionary<string, string> positionalAnchorByWebAnchor,
 		IReadOnlyDictionary<string, string> mobileTypesByName,
+		IReadOnlyDictionary<string, JObject> mobileNodesByName,
 		IReadOnlyDictionary<string, JObject> webBaselineNodes,
 		JObject webBaselineResources,
 		IReadOnlyList<DeclaredElementRule> declaredElements,
@@ -2086,6 +2092,7 @@ public static class WebToMobileAnalysisService {
 			positionalParentByAnchor ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
 			positionalAnchorByWebAnchor ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
 			mobileTypesByName ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+			mobileNodesByName ?? new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase),
 			webBaselineNodes ?? new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase),
 			webBaselineResources,
 			CollectScopeContainerNames(rules),
@@ -2626,6 +2633,7 @@ public static class WebToMobileAnalysisService {
 					MergeParentName = ResolveParent(ctx, mobileParentName)
 				};
 				ctx.Out.Add(twinEntry);
+				ApplyTemplatesToTwin(ctx, node, twinEntry, type, sourceAncestors);
 				// A rules file published to the CDN that LOSES a containers entry no longer reproduces ENG-94951:
 				// the walk carries the nearest ancestor that can hold arbitrary children beside the ordinary parent,
 				// so a child of a receiver that cannot is re-homed rather than made invisible. That default needs no
@@ -2649,32 +2657,52 @@ public static class WebToMobileAnalysisService {
 			// 1b. component twin — a content component the template maps web→mobile by NAME (e.g. the list
 			//     template's grid "DataTable" → mobile "List"). It is NOT template chrome: it is kept and
 			//     configured by merge-by-name. HOW to convert it (e.g. a grid's columns → the list row) is
-			//     type-driven — it lives in the general components rule and is surfaced in
-			//     componentSuggestions[<type>]; clio hardcodes no component-specific transform here.
+			//     type-driven — the general components rule's template, rendered and DIFFED against the element
+			//     the mobile template provides (ApplyTemplatesToTwin); clio hardcodes no component-specific transform.
 			if (ctx.ComponentMap.TryGetValue(name, out ComponentMappingRule compRule)) {
-				// The mobile type is normally the web type when it survives on mobile as-is; a rule that maps
-				// to a DIFFERENT mobile type (web crt.FolderTree → mobile crt.FolderTreeActions) declares it
-				// explicitly so carried values can be shape-coerced against the right registry contract.
+				// The type of the element this merge TARGETS, most authoritative source first: a rule that maps
+				// to a different mobile type declares it (web crt.FolderTree → mobile crt.FolderTreeActions);
+				// otherwise the MOBILE TEMPLATE'S OWN type for that name, read off the probe; otherwise the web
+				// type when it survives on mobile as-is. Consulting the probe mirrors what the container-twin
+				// branch above already does, and it is the only source that can name a STRUCTURAL twin's target:
+				// for DataTable → List neither the rule (no mobileType) nor the web type (crt.DataGrid is not a
+				// mobile type) answers, so this used to be null — and a null MobileType means the entry
+				// contributes nothing to `emittedByWebType`, which sends the page's PRIMARY component through
+				// ClassifyFromOutcome's "converted under a type nothing can name" fall-through and ships
+				// componentSuggestions["crt.DataGrid"] as `Unsupported` with an EMPTY suggestedMobileTypes —
+				// on a list that did convert, and that the mandated article tells the caller to configure from
+				// exactly that entry. Note this changes only what the twin is REPORTED as; the payload rule
+				// below is unchanged (a structural twin still carries no prebuilt values).
 				string twinMobileType = !string.IsNullOrWhiteSpace(compRule.MobileType)
 					? compRule.MobileType
-					: (ctx.MobileTypes.Contains(type ?? "") ? type : null);
+					: compRule.Mobile is { Length: > 0 } twinTargetName
+						&& ctx.MobileTypesByName.TryGetValue(twinTargetName, out string probedTwinType)
+						&& !string.IsNullOrEmpty(probedTwinType)
+						? probedTwinType
+						: (ctx.MobileTypes.Contains(type ?? "") ? type : null);
 				// Deterministic merge payload carried onto the template-provided element:
 				//  • an explicit carryProperties whitelist → just those keys (e.g. the folder tree binding);
 				//  • otherwise, when the twin is the SAME component on both sides (twinMobileType == web type,
 				//    e.g. crt.FileList → crt.FileList) → carry the page's DELTA over the web-template baseline
 				//    (only what the page changed; an unchanged property is left to the mobile template's default);
 				//  • a structural twin whose web type has no mobile equivalent (crt.DataGrid → crt.List), OR a
-				//    same-component twin with no baseline node → no payload; it stays an advisory merge and the
-				//    how-to is left to componentSuggestions.
+				//    same-component twin with no baseline node → no DELTA of its own; whatever its type's conversion
+				//    template shapes that the mobile template lacks is laid on afterwards (ApplyTemplatesToTwin).
 				// The payload never carries the component `type` (a merge targets an element the template already
 				// owns) nor placement (layoutConfig — owned by the template). The page's caption IS carried (it
 				// overrides the template label; CollectResourceStrings adds its resource to the schema).
 				JsonNode twinValues = BuildTwinMergeValues(ctx, node, compRule, twinMobileType, type);
-				ctx.Out.Add(new ElementMapEntry {
+				var componentTwin = new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = ElementMapOperations.Merge, Name = compRule.Mobile,
 					MobileType = twinMobileType,
 					Values = twinValues
-				});
+				};
+				ctx.Out.Add(componentTwin);
+				// What the twin carries BEYOND its own delta is whatever its type's conversion template shapes and
+				// the mobile template does not already provide — the grid's row onto the ListItem the list template
+				// provides. The SAME template that builds an insert is rendered here and diffed against the
+				// template's element, so a type describes its mobile shape once, and the two paths cannot drift.
+				ApplyTemplatesToTwin(ctx, node, componentTwin, type, sourceAncestors);
 				if (items is not null) {
 					WalkElements(ctx, items, compRule.Mobile, sourceAncestors: Append(sourceAncestors, name));
 				}
@@ -2700,10 +2728,12 @@ public static class WebToMobileAnalysisService {
 				// Always emit (advisory when the delta is null): the element exists on mobile, so it must appear in
 				// the survivors map — a page business rule targeting it converts instead of being dropped as
 				// "every referenced element is unsupported".
-				ctx.Out.Add(new ElementMapEntry {
+				var autoTwin = new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = ElementMapOperations.Merge, Name = name, MobileType = type,
 					Values = delta,
-				});
+				};
+				ctx.Out.Add(autoTwin);
+				ApplyTemplatesToTwin(ctx, node, autoTwin, type, sourceAncestors);
 				continue;
 			}
 
@@ -3219,6 +3249,138 @@ public static class WebToMobileAnalysisService {
 	private static bool ResolvesToMobileType(ElementMapContext ctx, JObject node, IReadOnlyList<string> sourceAncestors) =>
 		!string.IsNullOrEmpty(ResolveConvertedMobileType(ctx, node, sourceAncestors));
 
+	/// <summary>
+	/// Applies the conversion templates that govern a source node to the MERGE the walk just emitted for it: the
+	/// same template that shapes an insert is rendered, then DIFFED against the element the mobile template
+	/// provides, and only what that element lacks is merged — onto the twin itself, or by slot onto a nested element
+	/// the template provides (the grid's row onto the list template's <c>crt.ListItem</c>).
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// One template, both paths. Before this, <c>viewConfigTemplates</c> reached the caller on the INSERT path only:
+	/// a structural twin resolves through <see cref="BuildTwinMergeValues"/>, which returns null for it by design, and
+	/// its type's template was never evaluated — so a list page whose mobile template already provides
+	/// <c>List</c> shipped one payload-free merge and a list with no title and no body (ENG-95827). Deriving the
+	/// merge from the insert template — rather than declaring a second, merge-shaped template — means a type never
+	/// describes its mobile shape twice, so the two paths cannot drift apart.
+	/// </para>
+	/// <para>
+	/// Branch-agnostic: this runs on whatever merge the walk emits for the node — a containers pair, a name-mapped
+	/// component twin or an automatic same-name twin — gated exactly as an insert is, by the template's
+	/// <c>value.type</c> against the twin's mobile type. The diff is against the PROBED template node, never assumed:
+	/// with no node to diff against there is nothing to say, and nothing is emitted.
+	/// </para>
+	/// <para>
+	/// Addressed by NAME, never as a child slot: <c>crt.List</c> is not a container and <c>itemLayout</c> is an
+	/// input, so an insert with <c>propertyName: "itemLayout"</c> makes the client answer "is not a container for
+	/// other items" and the whole schema fails to build (ENG-95046). A nested component the template shapes is
+	/// therefore matched to the element the mobile template provides in the SAME slot, same type, and merged onto
+	/// that element's own name; a slot the template does not provide — or provides with another type — gets nothing,
+	/// on purpose. Identity (<c>name</c>/<c>type</c>), the <c>items</c> binding and <c>layoutConfig</c> are never
+	/// diffed: the template owns them (<see cref="TwinTemplateExcludedProps"/>). One merge per target name — a
+	/// payload for the twin is laid over its own entry, several templates onto one sub-element accumulate into one
+	/// entry — so a rules file can never manufacture the two-payload conflict <see cref="ProjectViewConfigDiff"/>
+	/// refuses to resolve. A diff that comes out empty emits nothing: the applier accepts an empty merge as a legal
+	/// no-op, so an entry with no payload would only LOOK like a decision.
+	/// </para>
+	/// </remarks>
+	private static void ApplyTemplatesToTwin(ElementMapContext ctx, JObject node, ElementMapEntry twin, string webType,
+		IReadOnlyList<string> sourceAncestors) {
+		if (twin?.Name is not { Length: > 0 } twinName || string.IsNullOrEmpty(twin.MobileType)
+			|| !ctx.MobileNodesByName.TryGetValue(twinName, out JObject provided) || provided is null) {
+			return;
+		}
+		IReadOnlyList<ViewConfigTemplateRule> templates =
+			MatchingConversionTemplates(ctx, node, twin.MobileType, sourceAncestors);
+		if (templates.Count == 0) {
+			return;
+		}
+		// `diff.name` is the twin's mobile element. The placement roots stay absent: they address where an INSERT
+		// would go, and a merge resolves by name — a path to them yields nothing, which is the existing contract.
+		var roots = new TemplateRoots(new JObject { ["name"] = twinName }, node);
+		var targetOrder = new List<string>();
+		var payloads = new Dictionary<string, (string Type, JObject Values)>(StringComparer.OrdinalIgnoreCase);
+		foreach (ViewConfigTemplateRule template in templates) {
+			if (RenderTemplateToken(JToken.Parse(template.Value.Value.GetRawText()), roots) is JObject rendered) {
+				DiffOntoProvided(ctx, rendered, provided, twinName, twin.MobileType, targetOrder, payloads);
+			}
+		}
+		foreach (string targetName in targetOrder) {
+			(string targetType, JObject values) = payloads[targetName];
+			DropValuesContradictingDeclaredScalars(ctx, targetType, values);
+			if (values.Count == 0) {
+				continue;
+			}
+			if (string.Equals(targetName, twinName, StringComparison.OrdinalIgnoreCase)) {
+				JObject merged = twin.Values is null ? new JObject() : JObject.Parse(twin.Values.ToJsonString());
+				foreach (JProperty prop in values.Properties()) {
+					merged[prop.Name] = prop.Value;
+				}
+				twin.Values = ToJsonNode(merged);
+				continue;
+			}
+			ctx.Out.Add(new ElementMapEntry {
+				// WebType only: the sub-element IS part of what this web type converted to, so componentSuggestions
+				// reports its type beside the twin's. WebName is deliberately absent — the nameMap maps one source
+				// element to one mobile element, and the twin's own entry already owns that mapping.
+				WebType = Nz(webType),
+				Operation = ElementMapOperations.Merge,
+				Name = targetName,
+				MobileType = targetType,
+				Values = ToJsonNode(values)
+			});
+		}
+	}
+
+	/// <summary>
+	/// Walks a RENDERED template value against the element the mobile template PROVIDES and collects, per target
+	/// element, the keys the template shapes that the element lacks or carries differently. A nested component the
+	/// template shapes recurses into the element provided in the same slot (same type, named), so its keys land on
+	/// that element by name; a slot with no such element is left alone.
+	/// </summary>
+	private static void DiffOntoProvided(ElementMapContext ctx, JObject rendered, JObject provided,
+		string targetName, string targetType, List<string> targetOrder,
+		Dictionary<string, (string Type, JObject Values)> payloads) {
+		foreach (JProperty prop in rendered.Properties()) {
+			if (TwinTemplateExcludedProps.Contains(prop.Name)) {
+				continue;
+			}
+			JToken have = provided[prop.Name];
+			if (prop.Value is JObject shapedChild && IsComponentObject(shapedChild)) {
+				string childType = shapedChild["type"]?.ToString();
+				if (have is JObject providedChild && IsComponentObject(providedChild)
+					&& string.Equals(providedChild["type"]?.ToString(), childType, StringComparison.OrdinalIgnoreCase)
+					&& providedChild["name"]?.ToString() is { Length: > 0 } childName) {
+					DiffOntoProvided(ctx, shapedChild, providedChild, childName, childType, targetOrder, payloads);
+				}
+				// No element of that type in that slot: nothing to merge onto, and nothing is invented.
+				continue;
+			}
+			if (have is not null && JToken.DeepEquals(have, prop.Value)) {
+				continue;
+			}
+			if (!payloads.TryGetValue(targetName, out (string Type, JObject Values) payload)) {
+				payload = (targetType, new JObject());
+				payloads[targetName] = payload;
+				targetOrder.Add(targetName);
+			}
+			payload.Values[prop.Name] = CoerceToDeclaredShape(ctx, targetType, prop.Name, prop.Value.DeepClone());
+		}
+	}
+
+	/// <summary>
+	/// Keys a conversion template may shape that are never diffed onto a template-provided element: the element's
+	/// identity (<c>name</c>/<c>type</c> — a merge names its target and the template owns its type; the template's
+	/// synthesized <c>{{ diff.name }}_ListItem</c> would otherwise RENAME the template's row element), its
+	/// <c>items</c> (the collection binding — the mobile template wires its own list to its own attribute, and the
+	/// converter merges the page's attributes into that one, so the web binding must not be pushed over it) and
+	/// <c>layoutConfig</c> (placement the mobile template owns, as <see cref="TwinMergeExcludedProps"/> already says
+	/// for the delta path).
+	/// </summary>
+	private static readonly HashSet<string> TwinTemplateExcludedProps = new(StringComparer.OrdinalIgnoreCase) {
+		"name", "type", "items", "layoutConfig"
+	};
+
 
 
 	/// <summary>
@@ -3229,7 +3391,9 @@ public static class WebToMobileAnalysisService {
 	/// crt.FileList → crt.FileList), the page's DELTA over the web-template baseline is carried
 	/// (<see cref="BuildDeltaTwinMergeValues"/>) — a name twin of one component is just the same element renamed
 	/// between the web and mobile templates. A twin whose web type has no mobile equivalent (a structural
-	/// conversion, e.g. crt.DataGrid → crt.List) gets no payload and stays advisory.
+	/// conversion, e.g. crt.DataGrid → crt.List) gets no DELTA here; its type's conversion template, diffed against
+	/// the template's element (<see cref="ApplyTemplatesToTwin"/>), may still lay onto it — or onto a
+	/// template-provided sub-element — whatever that element lacks.
 	/// </summary>
 	private static JsonNode BuildTwinMergeValues(ElementMapContext ctx, JObject node, ComponentMappingRule rule, string twinMobileType, string webType) {
 		if (rule.CarryProperties is { Count: > 0 }) {
@@ -3412,8 +3576,8 @@ public static class WebToMobileAnalysisService {
 		// can carry an INHERITED caption key whose name does not match the element (e.g. web OverviewTab is
 		// bound to the base-template key GeneralInfoTab_caption). If carried verbatim, that key collides with
 		// one the mobile template already owns with a different value (GeneralInfoTab_caption = "Details"), and
-		// update-page — which never overwrites an existing page/template key — silently drops our override, so
-		// the template value wins at render. A per-element key avoids the collision. SourceValue keeps the
+		// updating it could change captions of other elements sharing that key. A per-element key avoids
+		// the collision and also works with older additions-only update-page versions. SourceValue keeps the
 		// web caption's own text, EMPTY TEXT INCLUDED: a caption the page declares as "" is its own deliberate
 		// "no visible label", and the invented key must carry it or the token has nothing behind it. When the
 		// source key already equals the element key, nothing changes and the caller keeps the token verbatim.
@@ -3711,7 +3875,9 @@ public static class WebToMobileAnalysisService {
 	/// <summary>
 	/// The conversion templates that govern this element: from every <c>components</c> entry whose <c>filters</c>
 	/// (and <c>path</c> scope) match the node, the <see cref="ViewConfigTemplateRule"/>s whose declared
-	/// <c>value.type</c> equals the resolved mobile type.
+	/// <c>value.type</c> equals the resolved mobile type. The same gate serves both paths — an insert's values are
+	/// formed from these, and on the twin path <see cref="ApplyTemplatesToTwin"/> diffs the same templates against
+	/// the element the mobile template provides.
 	/// </summary>
 	/// <remarks>
 	/// Because templates have priority in leaf resolution (<see cref="ResolveTemplateTargetType"/> runs before
@@ -3807,7 +3973,8 @@ public static class WebToMobileAnalysisService {
 	/// The operation being produced — <c>name</c>, <c>parentName</c>, <c>propertyName</c>. <c>name</c> is read-only
 	/// (a template may echo it, never rename the element). <c>parentName</c>/<c>propertyName</c> may be ECHOED to
 	/// keep the walked placement or rendered to a DIFFERENT value to RETARGET the element (see
-	/// <see cref="ResolveTemplatePlacement"/>).
+	/// <see cref="ResolveTemplatePlacement"/>). On the TWIN path only <c>name</c> is set (the twin's mobile
+	/// element); the placement keys are absent, so a path to them yields nothing.
 	/// </param>
 	/// <param name="Source">The WEB node being converted; <c>source.*</c> paths read off it directly.</param>
 	private sealed record TemplateRoots(JObject Diff, JObject Source);

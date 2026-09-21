@@ -104,6 +104,7 @@ public sealed class SchemaSyncTool(
 		"create lookups, create entities, seed data, update entities. " +
 		"Date and Time column types are write-time aliases of DateTime; readback reports DateTime. " +
 		"For date-only Freedom UI fields, explicitly set crt.DateTimePicker pickerType to date. " +
+		"For create-entity, is-db-view maps to a separately provisioned SQL view without generating a table; it cannot include seed-rows. Existing mismatched kinds are collisions. " +
 		"For create-entity, set is-virtual to true only when the schema must not have a physical database table; it defaults to false. " +
 		"Before setting is-virtual to true, call get-guidance with name virtual-entities and follow its schema-before-executor, bounded-provider, authorization, and version-gated write rules. " +
 		"Reduces MCP round-trips and lock overhead compared to individual tool calls. " +
@@ -260,7 +261,7 @@ public sealed class SchemaSyncTool(
 		bool shapeRejected =
 			TryValidateOperationFields(op, index, out SchemaSyncOperationResult? fieldValidationFailure)
 			|| TryValidateSchemaName(op, index, out fieldValidationFailure)
-			|| TryValidateVirtualSeedRows(op, index, out fieldValidationFailure);
+			|| TryValidateStorageKind(op, index, out fieldValidationFailure);
 		if (shapeRejected || TryValidateSeedRows(op, index, out fieldValidationFailure)) {
 			ctx.State.Results.Add(Classify(fieldValidationFailure, index));
 			// A validation failure applied nothing on the server. A seed-row failure is still resubmittable
@@ -477,7 +478,9 @@ public sealed class SchemaSyncTool(
 			["updateOperations"] = "update-operations",
 			["update_operations"] = "update-operations",
 			["isVirtual"] = "is-virtual",
-			["is_virtual"] = "is-virtual"
+			["is_virtual"] = "is-virtual",
+			["isDBView"] = "is-db-view",
+			["is_db_view"] = "is-db-view"
 		};
 
 	/// <summary>
@@ -494,7 +497,7 @@ public sealed class SchemaSyncTool(
 	/// </summary>
 	private const string OperationFieldHint =
 		"Valid operation fields: type, schema-name, title-localizations, parent-schema-name, extend-parent, " +
-		"columns, update-operations, seed-rows, is-virtual (legacy: title).";
+		"columns, update-operations, seed-rows, is-virtual, is-db-view (legacy: title).";
 
 	/// <summary>
 	/// Rejects an operation whose JSON carried fields the tool cannot bind. This runs BEFORE any server call so
@@ -578,11 +581,25 @@ public sealed class SchemaSyncTool(
 	/// the caller must drop either <c>seed-rows</c> or <c>is-virtual</c> — so echoing it back under a "resubmit
 	/// these operations" instruction would advertise a recovery path that rejects forever.
 	/// </summary>
-	private static bool TryValidateVirtualSeedRows(
+	private static bool TryValidateStorageKind(
 		SchemaSyncOperation op,
 		int operationIndex,
 		[NotNullWhen(true)] out SchemaSyncOperationResult? validationFailure) {
 		validationFailure = null;
+		if (op.IsDBView.HasValue && !string.Equals(op.Type, CreateEntityOperationName, StringComparison.Ordinal)) {
+			validationFailure = new SchemaSyncOperationResult {
+				Type = op.Type, SchemaName = op.SchemaName, Success = false,
+				Error = "is-db-view is supported only for create-entity. Nothing was applied for this operation."
+			};
+			return true;
+		}
+		if (op.IsDBView == true && op.SeedRows?.Any() == true) {
+			validationFailure = new SchemaSyncOperationResult {
+				Type = op.Type, SchemaName = op.SchemaName, Success = false,
+				Error = "DB-view create-entity operations cannot include seed-rows. Provision the SQL view separately. Nothing was applied for this operation."
+			};
+			return true;
+		}
 		if (op.SeedRows?.Any() != true
 			|| !string.Equals(op.Type, CreateEntityOperationName, StringComparison.Ordinal)
 			|| !op.IsVirtual) {
@@ -664,7 +681,8 @@ public sealed class SchemaSyncTool(
 				op.Columns as IReadOnlyList<CreateEntitySchemaColumnArgs> ?? op.Columns?.ToList() ?? [];
 			SchemaConvergenceTarget target = new(
 				args.EnvironmentName, args.PackageName, op.SchemaName,
-				isLookup ? "BaseLookup" : parentSchemaName, isLookup, extendParent, requestedColumns);
+				isLookup ? "BaseLookup" : parentSchemaName, isLookup, extendParent, requestedColumns,
+				isLookup ? null : op.IsDBView);
 			SchemaConvergencePlan? currentPlan = null;
 			OperationExecution execution = RunAttempts(() => {
 				currentPlan = convergenceService.Classify(target);
@@ -767,7 +785,9 @@ public sealed class SchemaSyncTool(
 						op.Columns),
 					parentSchemaName, extendParent,
 					isVirtual: string.Equals(operationName, CreateEntityOperationName, StringComparison.Ordinal)
-						&& op.IsVirtual);
+						&& op.IsVirtual,
+					isDBView: string.Equals(operationName, CreateEntityOperationName, StringComparison.Ordinal)
+						? op.IsDBView : null);
 				CreateEntitySchemaCommand createCommand = commandResolver.Resolve<CreateEntitySchemaCommand>(createOptions);
 				return createCommand.Execute(createOptions);
 			case SchemaConvergenceOutcome.Reconcile:
@@ -1499,6 +1519,11 @@ public sealed record SchemaSyncOperation(
 	[property: JsonPropertyName("is-virtual")]
 	[property: Description("For create-entity only: create a virtual schema without a physical database table. Defaults to false. Virtual entities cannot include seed-rows.")]
 	public bool IsVirtual { get; init; }
+
+	/// <summary>Gets the optional DB-view kind for create-entity; an existing different kind is a collision.</summary>
+	[JsonPropertyName("is-db-view")]
+	[Description("For create-entity: map to a separately provisioned SQL view without generating a table. Omit to preserve metadata. Existing mismatched kinds are rejected; use set-entity-schema-properties to change them.")]
+	public bool? IsDBView { get; init; }
 
 	[property: JsonPropertyName("title")]
 	[property: Description("Legacy scalar title. Not accepted by MCP. Use title-localizations instead.")]
