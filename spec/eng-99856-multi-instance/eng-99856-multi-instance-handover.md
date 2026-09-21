@@ -40,12 +40,13 @@ deployed instance, so "the branch" is a meaningful question for three of them an
 | Path | What it is | Git |
 |---|---|---|
 | `C:\Projects\Creatio2` | **Creatio core sources** — the authority for server and core-client behaviour. Everything under `TSBpm/Src/Lib`. | `tscore-git.creatio.com/creatio/core.git`, branch `trunk` |
-| `C:\Projects\PackageStore` | **Product packages**, checked out. The process designer's own client schemas live here. Also the corpus every "N of M shipped elements" figure was scanned over. | not a repo |
+| `C:\Projects\PackageStore` | **Product configuration and the shipped process examples.** The designer's own client schemas live here, and this is the corpus every "N of M shipped elements" figure was scanned over — including the 61/416. | SVN working copy, `http://tscore-svn:8050/svn/ts5conf/PackageStore` |
 | `C:\Projects\workspace\ProcessBuilder` | **CrtProcessBuilder** — the package this work changes. | `creatio.ghe.com/engineering/crt-process-builder`, working tree on a chore branch — read `origin/main` |
 | `C:\Projects\clio` | **clio** — the CLI and MCP surface. | `github.com/Advance-Technologies-Foundation/clio`, working tree on an UNRELATED feature branch — read `origin/master` |
 | `C:\Projects\clio-knowledge` | The **shipped guidance library** an agent reads through `get-guidance`. Not internal notes. | `github.com/.../clio-knowledge` |
 | `C:\Projects\WorkPackageStore` | Working/custom packages (CreatioStateMachine, CrtGenAICopilot and others). Not product. | not a repo |
 | `C:\Projects\Creatio` | A **deployed instance** — `Terrasoft.WebApp`, `Web.config`, `bin`. Build output, not sources. | not a repo |
+| `C:\Projects\UnitTests` | **The platform's own C# unit tests** — the reference for how to mock Creatio types. See below. | SVN working copy, `http://tscore-svn:8050/svn/ts5conf/UnitTests/trunk` |
 | `C:\Projects\MyWorkspace` | A clio workspace (packages, projects, tasks). | not a repo |
 
 ## Where the DESIGNER is implemented
@@ -114,6 +115,24 @@ execution engine and the platform's own tests, which are usable as evidence.
 
 **Designer client** — conversion is a CLIENT behaviour; no server API converts an element.
 `SubProcessPropertiesPage.js`, `MappingEditMixin.js`, `ProcessFlowElementPropertiesPage.js`.
+
+## How to mock the platform in C# tests
+
+`C:\Projects\UnitTests` is the platform's own test suite and the reference to copy from when this work
+needs to stand a `ProcessSchemaSubProcess`, a `UserConnection` or a schema manager up in a test. It is
+organised as one folder per package, `<Package>.UnitTests`. The two that matter here are
+**`ProcessDesigner.UnitTests`** and **`ProcessLibrary.UnitTests`**.
+
+What they use, counted over `ProcessDesigner.UnitTests`: NUnit, **NSubstitute** for the doubles, and
+FluentAssertions — on top of `Terrasoft.UnitTest`, `Terrasoft.Configuration.Tests` and
+`Terrasoft.UnitTest.ProcessDesigner`. The base fixtures to look at first are
+`BaseProcessDesignerTestCase`, `BaseProcessUserTaskTestCase`, `BaseDataUserTaskTestCase` and
+`BaseConfigurationTestFixture`; between them they already solve standing up a connection, a schema
+manager and a process schema, which is the part that is tedious to get right from scratch.
+
+Read this before inventing a way to substitute an abstract platform type. CrtProcessBuilder's own tests
+solve the same problem a second time and are worth comparing, but the platform suite is the older and
+broader answer.
 
 ## Working rules, learned expensively on the parent
 
