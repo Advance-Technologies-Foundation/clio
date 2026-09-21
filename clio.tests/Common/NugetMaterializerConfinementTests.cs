@@ -75,8 +75,14 @@ public class NugetMaterializerConfinementTests
 	[TearDown]
 	public void TearDown(){
 		string testRoot = Directory.GetParent(_workspaceRoot)?.FullName;
+		//Deleting a link removes the link, not what it points at - but only while the link still has
+		//something to point at. A single recursive delete of the test root walks the tree in entry order,
+		//so "outside" can go before "workspace" and leave the links under "workspace" dangling, which
+		//throws DirectoryNotFoundException on some Windows hosts. Drop the workspace subtree first.
+		if (Directory.Exists(_workspaceRoot)) {
+			Directory.Delete(_workspaceRoot, true);
+		}
 		if (testRoot is not null && Directory.Exists(testRoot)) {
-			//Deleting a link removes the link, not what it points at.
 			Directory.Delete(testRoot, true);
 		}
 	}
