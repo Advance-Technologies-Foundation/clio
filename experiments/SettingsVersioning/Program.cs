@@ -31,6 +31,7 @@ T9_ConcurrentPrepareIsSerializedNotRaced();
 T10_AdmitIsSerializedAgainstCleanup();
 T11_MutatingCallersDictionaryAfterPrepareDoesNotReachTheSnapshot();
 T12_MigrateDetectsAnEditThatLandsAfterItsReadNotJustBeforeItsCommit();
+T13_ImmutableDictionaryRejectsMutationThroughEveryAlias();
 
 Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { cases = observations },
     new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
@@ -384,6 +385,43 @@ void T12_MigrateDetectsAnEditThatLandsAfterItsReadNotJustBeforeItsCommit() {
     Check("T12: an edit landing after Migrate reads its source, before it commits, is detected -- not silently superseded",
         refused is not null && store.CurrentSnapshotId("envT12") == interveningEdit.Id,
         new { refusedWith = refused?.Message, stillActive = store.CurrentSnapshotId("envT12") });
+}
+
+void T13_ImmutableDictionaryRejectsMutationThroughEveryAlias() {
+    // kirillkrylov: an interface-only "read-only" guarantee (IReadOnlyDictionary over a plain
+    // Dictionary) does not survive a cast back to IDictionary. T11 only covered the ORIGINAL caller
+    // input; this covers the other two aliases he named: the value Values() returns, and the value a
+    // Migrate transform receives -- both now backed by ImmutableDictionary, which rejects a mutating
+    // call through any interface it satisfies rather than silently succeeding.
+    var ledger = new OperationLedger(Path.Combine(workDir, "operations-t13.jsonl"));
+    var store = new SettingsStore(ledger, Path.Combine(workDir, "settings-t13.jsonl"));
+    SettingsSnapshot cfgA = store.Prepare("envT13", new Dictionary<string, string> { ["k"] = "orig" }, 0);
+
+    // Alias 1: the returned value from Values().
+    NotSupportedException? returnedValueRejected = null;
+    try { ((IDictionary<string, string>)store.Values(cfgA.Id))["k"] = "mutated-via-returned-value"; }
+    catch (NotSupportedException ex) { returnedValueRejected = ex; }
+    Check("T13: casting Values()'s returned collection to a mutable interface and writing through it is rejected",
+        returnedValueRejected is not null && store.Values(cfgA.Id)["k"] == "orig",
+        new { rejectedWith = returnedValueRejected?.Message, stillOrig = store.Values(cfgA.Id)["k"] });
+
+    // Alias 2: the value a Migrate transform receives, mutated in place before the transform throws.
+    NotSupportedException? transformInputRejected = null;
+    InvalidOperationException? migrationThrew = null;
+    try {
+        store.Migrate("envT13", values => {
+            try { ((IDictionary<string, string>)values)["k"] = "mutated-via-transform-input"; }
+            catch (NotSupportedException ex) { transformInputRejected = ex; }
+            throw new InvalidOperationException("transform aborts after attempting a mutation");
+        });
+    }
+    catch (InvalidOperationException ex) { migrationThrew = ex; }
+    Check("T13: casting the transform's input to a mutable interface and writing through it is rejected",
+        transformInputRejected is not null,
+        new { rejectedWith = transformInputRejected?.Message });
+    Check("T13: after a mutating-then-throwing transform, V1's stored snapshot is exactly as it was",
+        migrationThrew is not null && store.Values(cfgA.Id)["k"] == "orig",
+        new { migrationThrew = migrationThrew?.Message, v1Now = store.Values(cfgA.Id) });
 }
 
 /// <summary>An in-memory owner whose liveness can be flipped without a real process, for settings-lane cases that don't need one.</summary>

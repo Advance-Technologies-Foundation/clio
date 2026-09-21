@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Collections.Immutable;
 using System.Text.Json;
 using Clio10.DetachedOperations;
 using Clio10.DetachedOperations.Host;
@@ -6,14 +7,24 @@ using Clio10.DetachedOperations.Host;
 namespace Clio10.SettingsVersioning;
 
 /// <summary>
-/// Portable, credential-free settings for one scope at one version. Deliberately the only surface a
-/// runtime or an evidence file ever sees -- see <c>CredentialStore</c> for why a secret can never reach
-/// this type, and <c>Program.T6_CredentialFreeSurface</c> for the check that keeps it that way. The
-/// underlying <see cref="Values"/> dictionary is always a defensive copy taken at admission
-/// (<see cref="SettingsStore.Prepare"/>); a caller mutating the collection it originally passed in cannot
-/// reach a pinned snapshot's view -- kirillkrylov's finding, fixed here rather than merely documented.
+/// Portable settings for one scope at one version. Deliberately the only surface a runtime or an
+/// evidence file ever sees for non-secret configuration -- see <c>CredentialStore</c>, and its own
+/// remarks, for exactly what that separation does and does not guarantee: it establishes the intended
+/// path never carries a secret, not that <see cref="Values"/> structurally rejects an arbitrary string a
+/// caller chose to put there.
 /// </summary>
-public sealed record SettingsSnapshot(string Id, string Scope, int Version, IReadOnlyDictionary<string, string> Values);
+/// <remarks>
+/// <see cref="Values"/> is <see cref="ImmutableDictionary{TKey,TValue}"/>, not merely typed as
+/// <c>IReadOnlyDictionary</c>: kirillkrylov's finding was that an interface-only guarantee is not a
+/// guarantee -- <c>IReadOnlyDictionary&lt;K,V&gt;</c> is a view, and a caller who casts a
+/// <see cref="System.Collections.Generic.Dictionary{TKey,TValue}"/>-backed instance to
+/// <c>IDictionary&lt;K,V&gt;</c> can still mutate it, whether that cast happens on the value
+/// <see cref="SettingsStore.Prepare"/> was originally handed, on the value <see cref="SettingsStore.Values"/>
+/// later returns, or on the value a <see cref="SettingsStore.Migrate"/> transform receives. An
+/// <c>ImmutableDictionary</c> instance rejects every mutating call through any interface it satisfies --
+/// covered for all three aliases by <c>Program.T11</c> and <c>Program.T13</c>.
+/// </remarks>
+public sealed record SettingsSnapshot(string Id, string Scope, int Version, ImmutableDictionary<string, string> Values);
 
 /// <summary>Raised when an edit or rollback is based on a revision that is no longer current.</summary>
 /// <remarks>
@@ -97,7 +108,7 @@ public sealed class SettingsStore {
 
     public int CurrentVersion(string scope) => _scopeRevision.GetValueOrDefault(scope, 0);
 
-    public IReadOnlyDictionary<string, string> Values(string snapshotId) => _snapshots[snapshotId].Values;
+    public ImmutableDictionary<string, string> Values(string snapshotId) => _snapshots[snapshotId].Values;
 
     /// <summary>
     /// Prepares and activates a new snapshot for <paramref name="scope"/>. A concurrent edit based on a
@@ -105,8 +116,9 @@ public sealed class SettingsStore {
     /// -- and, unlike the first cut of this method, genuinely refused under real concurrent callers, not
     /// only under sequential stale-revision calls: the whole check-compute-persist-publish sequence runs
     /// under <see cref="_gate"/>, so a second caller cannot even read the revision until the first has
-    /// either committed or thrown. <paramref name="values"/> is defensively copied before being stored, so
-    /// a caller mutating the dictionary it passed in afterward cannot reach the pinned snapshot.
+    /// either committed or thrown. <paramref name="values"/> is frozen into an
+    /// <see cref="ImmutableDictionary{TKey,TValue}"/> before being stored -- not merely copied into another
+    /// mutable dictionary typed as read-only, which a cast back to <c>IDictionary</c> would still defeat.
     /// </summary>
     public SettingsSnapshot Prepare(string scope, IReadOnlyDictionary<string, string> values, int expectedBaseRevision) {
         lock (_gate) {
@@ -114,7 +126,7 @@ public sealed class SettingsStore {
             if (!SkipConcurrencyCheckForTests && current != expectedBaseRevision)
                 throw new ConcurrencyConflictException(scope, expectedBaseRevision, current);
             OnPreparePassedCheckForTests?.Invoke();
-            var frozen = new Dictionary<string, string>(values, StringComparer.Ordinal); // defensive copy
+            ImmutableDictionary<string, string> frozen = values.ToImmutableDictionary(StringComparer.Ordinal);
             int newRevision = current + 1;
             var snapshot = new SettingsSnapshot($"cfg-{Interlocked.Increment(ref _nextId)}", scope, newRevision, frozen);
             Persist("prepare", snapshot);
@@ -129,14 +141,18 @@ public sealed class SettingsStore {
     /// Migrates <paramref name="scope"/>'s current values through <paramref name="transform"/>. The
     /// transformed result is built entirely in memory before <see cref="Prepare"/> ever persists anything,
     /// so a transform that throws -- or <see cref="FailMigrationForTests"/> -- leaves the prior snapshot
-    /// exactly as it was. The source snapshot and the revision it was read at are captured together, under
-    /// the same lock acquisition, and that captured revision -- not a freshly re-read one -- is what
-    /// <see cref="Prepare"/> checks: an edit landing after the read but before the migration commits is
-    /// therefore detected as a conflict instead of being silently superseded by a migration that never
-    /// actually saw it.
+    /// exactly as it was, and <see cref="Prepare"/> freezes the result independently, so even a transform
+    /// that mutates its own return value afterward cannot reach the stored snapshot. The source snapshot
+    /// and the revision it was read at are captured together, under the same lock acquisition, and that
+    /// captured revision -- not a freshly re-read one -- is what <see cref="Prepare"/> checks: an edit
+    /// landing after the read but before the migration commits is therefore detected as a conflict instead
+    /// of being silently superseded by a migration that never actually saw it. <paramref name="transform"/>
+    /// receives the source as <see cref="ImmutableDictionary{TKey,TValue}"/>, so a transform that casts it
+    /// to a mutable interface to edit V1's live data in place -- rather than building a new result -- gets
+    /// an exception at the mutating call, not a silently corrupted V1.
     /// </summary>
-    public SettingsSnapshot Migrate(string scope, Func<IReadOnlyDictionary<string, string>, IReadOnlyDictionary<string, string>> transform) {
-        IReadOnlyDictionary<string, string> source;
+    public SettingsSnapshot Migrate(string scope, Func<ImmutableDictionary<string, string>, IReadOnlyDictionary<string, string>> transform) {
+        ImmutableDictionary<string, string> source;
         int baseRevision;
         lock (_gate) {
             source = Values(CurrentSnapshotId(scope));
@@ -247,9 +263,10 @@ public sealed class SettingsStore {
 /// <para>
 /// Narrowed per kirillkrylov: this establishes the INTENDED path never carries a secret (T7's sentinel
 /// never appears in either persisted evidence file), not that <see cref="SettingsSnapshot.Values"/> --
-/// an open <c>IReadOnlyDictionary&lt;string,string&gt;</c> -- structurally cannot hold an arbitrary
-/// string a caller chose to put there. Nothing here prevents that misuse; T7 tests the separate-store
-/// path this fixture actually offers, not a universal guarantee about what a caller could do instead.
+/// an open string-keyed, string-valued dictionary, immutable against mutation but not against what a
+/// caller chooses to put in it at admission -- structurally cannot hold an arbitrary secret string.
+/// Nothing here prevents that misuse; T7 tests the separate-store path this fixture actually offers, not
+/// a universal guarantee about what a caller could do instead.
 /// </para>
 /// </summary>
 public sealed class CredentialStore {
