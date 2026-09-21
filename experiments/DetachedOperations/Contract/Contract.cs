@@ -110,6 +110,19 @@ public interface IOperationLedger {
     /// </para>
     /// </remarks>
     IDisposable? TryEnterSwapWindow(string? target = null);
+
+    /// <summary>
+    /// Scopes whose evidence storage failed. Their operations' outcomes are still authoritative; what is
+    /// degraded is the host's ability to record them.
+    /// </summary>
+    /// <remarks>
+    /// <b>Execution outcome and evidence health are different axes</b> (raised by @kirillkrylov in
+    /// discussion #1643). Successful work must not be reported as failed or retryable because storage
+    /// failed. So a failed evidence write publishes the true terminal state, marks the scope degraded,
+    /// and refuses automatic retirement — it does not rewrite the outcome and it never replays anything.
+    /// Clearing a degraded scope is an operator decision, deliberately absent here.
+    /// </remarks>
+    IReadOnlyCollection<string> DegradedScopes { get; }
 }
 
 /// <summary>Raised when an operation is started for a scope whose swap window is held.</summary>

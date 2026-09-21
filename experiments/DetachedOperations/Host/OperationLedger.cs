@@ -33,6 +33,7 @@ public sealed class OperationLedger : IOperationLedger {
     private readonly IReadOnlyDictionary<string, OperationRecord> _recovered;
     private readonly object _swapLock = new();
     private readonly HashSet<string> _heldScopes = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _degradedScopes = new(StringComparer.Ordinal);
 
     private readonly bool _splitAdmissionForTests;
 
@@ -80,9 +81,20 @@ public sealed class OperationLedger : IOperationLedger {
         (target is null || string.Equals(r.Target, target, StringComparison.Ordinal)));
 
     /// <inheritdoc />
+    public IReadOnlyCollection<string> DegradedScopes {
+        get { lock (_swapLock) { return _degradedScopes.ToArray(); } }
+    }
+
+    /// <inheritdoc />
     public IDisposable? TryEnterSwapWindow(string? target = null) {
         string scope = target ?? string.Empty;
         lock (_swapLock) {
+            // Refused while evidence is degraded: retiring a release whose outcomes could not be
+            // recorded would destroy the only place the truth still exists.
+            if (_degradedScopes.Count > 0 &&
+                (target is null || _degradedScopes.Contains(scope))) {
+                return null;
+            }
             // Exclusion is checked in BOTH directions. A global window excludes every target window, and
             // any held scope excludes a global one; granting a target window under a held global window
             // would let work start on the very host the global window is protecting.
@@ -162,10 +174,19 @@ public sealed class OperationLedger : IOperationLedger {
             //    that window loses the evidence entirely.
             // The cost is that a completion serialises against window acquisition, including its fsync.
             // Acceptable here; a production ledger would likely want a two-phase commit instead.
-            if (FailEndPersistenceForTests) {
-                throw new IOException("injected evidence-write failure");
+            // The outcome is published either way. Storage health is a SEPARATE axis: successful work
+            // must not become a failed or retryable business operation because a disk write failed.
+            try {
+                if (FailEndPersistenceForTests) {
+                    throw new IOException("injected evidence-write failure");
+                }
+                Append("end", updated);
             }
-            Append("end", updated);
+            catch (Exception) {
+                // Visible degradation, no replay, and no automatic retirement for this scope: the
+                // in-memory record is now the only place this outcome exists.
+                _degradedScopes.Add(existing.Target);
+            }
             _live[id] = updated;
             _owners.TryRemove(id, out _);           // release retention so the runtime may be retired
         }

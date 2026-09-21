@@ -88,35 +88,43 @@ path or from bytes does not decide whether deleting a release is safe — establ
 retirement probe and reproduced on macOS, where path-mode early deletion succeeds and still breaks a
 later lazy dependency.
 
-## Persistence failure — **gap, not a rule**
+## Persistence failure — resolved, and it moved the gate predicate
 
-If the terminal record cannot be written, what may the host claim?
-
-The probe's current behaviour is a defect, and case **P1 measures it** rather than describing it —
-evidence-write failure is injected, the work finishes normally, and the result is:
+My first version listed three options and asked for a decision. @kirillkrylov supplied the one that
+separates the axes correctly: **execution outcome and evidence health are different things, and
+successful work must not become a failed or retryable business operation because storage failed.**
+Implemented and measured:
 
 ```
-P1  state=Running  quiescent=false  windowObtainable=false
+P1  state=Succeeded                      (outcome unchanged by the storage failure)
+P2  degradedScopes=[envP]  quiescent=true
+    targetWindow=refused   globalWindow=refused
 ```
-`Complete` writes evidence before publishing the state, inside the lock. If that write throws, the state
-is never published, the owner is never released, and **the operation stays `Running` for the life of the
-process** — retaining its release forever and blocking every future swap window for that scope. The
-lease's second `Complete` cannot rescue it because `_reported` is set before the ledger call, so
-exactly-once has already been consumed.
 
-Note the shape: this is the cost of invariant I4. Writing evidence before publishing is what stops a
-replacement acting on an unrecorded terminal — and it is also what turns a disk failure into a stuck
-scope. The two are the same ordering decision seen from opposite sides.
+A failed terminal write now publishes the true outcome, marks the scope degraded, and refuses automatic
+retirement. Nothing is replayed, nothing is rewritten, and clearing a degraded scope is deliberately not
+automatic — it is an operator decision this contract does not make.
 
-The options are a decision, not a derivation:
+What the earlier version did instead, and why it was wrong: the state was never published, so a
+*successful* operation stayed `Running` forever and its scope was silently stuck. That reported a
+storage fault as a business outcome, which is exactly the conflation the fix removes.
 
-- publish the terminal state anyway and accept that a later process may report `Unknown` for something
-  that actually finished — truthful uncertainty, at the cost of losing a known outcome;
-- keep the operation `Running` and surface the persistence failure as its own condition, so the scope is
-  visibly blocked rather than silently stuck;
-- treat a failed evidence write as fatal to the host.
+### The consequence I did not anticipate: quiescence is not the retirement predicate
 
-Each trades a different thing. **This needs a human decision.**
+Look at P2 again. The scope is **quiescent** — nothing is running — and still **unswappable**, because
+the only copy of that outcome is in memory and retiring the release would destroy it.
+
+So there are two independent reasons to refuse a swap, and they are not the same shape:
+
+| reason | visible to | ends when |
+|---|---|---|
+| live work | the ledger, via `IsQuiescent` | the operation terminates |
+| degraded evidence | the ledger, via `DegradedScopes` | an operator resolves it |
+| an escaped runtime-defined value (I9, O1) | **nobody** | the caller drops its reference |
+
+A gate built on quiescence alone admits a swap in the second and third cases. The retirement predicate
+is quiescence **and** evidence health — and, per O1, even that is not sufficient while a runtime-defined
+value can escape to a caller.
 
 ## What Core owns versus what a runtime decides
 
@@ -134,7 +142,8 @@ release that produced it.
 
 ## Gaps that need a decision rather than an implementation
 
-1. **Persistence failure** (above). The current behaviour is a stuck scope.
+1. ~~Persistence failure.~~ **Resolved** — degraded scope, outcome preserved, retirement refused, no
+   replay. What remains a decision is how a degraded scope is *cleared*, which is operator policy.
 2. **Wait budget and starvation.** A5h shows admissions can be starved by an aggressive swapper. There is
    no fairness policy and no bound on how long a swap may wait for quiescence.
 3. **Whether interruption is permitted at all.** Being able to report afterwards that an operation did

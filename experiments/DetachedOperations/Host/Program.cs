@@ -210,21 +210,28 @@ Check("N3 an intervening operation makes a last-result read answer about the wro
           ledger = n3Record.State.ToString(),
           note = "attributing the last result to the interrupted operation would report v2's outcome as v1's" });
 
-// ── P1: the persistence-failure gap, measured rather than described ────────────────────────────────
-// If the terminal evidence write fails, the state is never published and the owner never released, so
-// the operation stays Running for the life of the process and its scope is blocked forever. This is a
-// defect in the probe, named in the contract as a decision that has to be made rather than a design.
+// ── P1/P2: a failed evidence write degrades storage without rewriting the outcome ──────────────────
+// @kirillkrylov: execution outcome and evidence health are different axes. Successful work must not
+// become a failed or retryable business operation because storage failed. So the true terminal state is
+// published, the scope is marked degraded, and automatic retirement is refused — no replay.
 var faultLedger = new OperationLedger(Path.Combine(work, "fault.jsonl")) { FailEndPersistenceForTests = true };
 string faultId = v2.StartDetached(faultLedger, "envP", Path.Combine(work, "p1-effect.log"), 100,
     "succeed", CancellationToken.None);
-await Task.Delay(1500);
-var stuck = faultLedger.Query(faultId);
-bool scopeBlocked = !faultLedger.IsQuiescent("envP") && faultLedger.TryEnterSwapWindow("envP") is null;
-Check("P1 gap: a failed terminal write leaves the operation Running and its scope permanently blocked",
-    stuck.State == OperationState.Running && scopeBlocked,
-    new { state = stuck.State.ToString(), quiescent = faultLedger.IsQuiescent("envP"),
-          windowObtainable = false,
-          note = "the work finished; only its evidence write failed. Exactly-once has been consumed, so no later report can rescue it" });
+var faultTerminal = await WaitTerminal(faultLedger, faultId, TimeSpan.FromSeconds(20));
+
+Check("P1 a failed evidence write does NOT rewrite the execution outcome",
+    faultTerminal.State == OperationState.Succeeded,
+    new { state = faultTerminal.State.ToString(),
+          note = "the work succeeded; only its record failed to persist" });
+
+Check("P2 the scope is visibly degraded and automatic retirement is refused",
+    faultLedger.DegradedScopes.Contains("envP")
+        && faultLedger.IsQuiescent("envP")
+        && faultLedger.TryEnterSwapWindow("envP") is null
+        && faultLedger.TryEnterSwapWindow() is null,
+    new { degradedScopes = faultLedger.DegradedScopes, quiescent = faultLedger.IsQuiescent("envP"),
+          targetWindow = "refused", globalWindow = "refused",
+          note = "quiescent because nothing runs, yet unswappable because the outcome exists only in memory" });
 
 // ── O1: terminal status is NOT sufficient for reclamation ──────────────────────────────────────────
 // @kirillkrylov's returned-value-ownership finding, measured against my own invariant I3. A caller that

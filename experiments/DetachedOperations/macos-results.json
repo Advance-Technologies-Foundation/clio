@@ -1,7 +1,7 @@
 {
   "os": "Unix 27.0.0",
   "framework": "10.0.12",
-  "workDirectory": "/var/folders/xk/pl1m8g6d1w55jscyxzg0wjkc0000gn/T/detached-ops-h9cOht",
+  "workDirectory": "/var/folders/xk/pl1m8g6d1w55jscyxzg0wjkc0000gn/T/detached-ops-fHOalV",
   "cases": [
     {
       "name": "A1a the original operation still answers after a newer runtime is activated",
@@ -156,19 +156,19 @@
       "passed": true,
       "detail": {
         "Violations": 0,
-        "Admitted": 48,
-        "Refused": 90,
-        "Windows": 90
+        "Admitted": 49,
+        "Refused": 92,
+        "Windows": 92
       }
     },
     {
       "name": "A5i mutation control: the same regression detects a deliberately split admission",
       "passed": true,
       "detail": {
-        "Violations": 30,
-        "Admitted": 49,
-        "Refused": 82,
-        "Windows": 88,
+        "Violations": 15,
+        "Admitted": 48,
+        "Refused": 88,
+        "Windows": 91,
         "note": "non-zero here is the point: it shows A5h can fail"
       }
     },
@@ -218,13 +218,24 @@
       }
     },
     {
-      "name": "P1 gap: a failed terminal write leaves the operation Running and its scope permanently blocked",
+      "name": "P1 a failed evidence write does NOT rewrite the execution outcome",
       "passed": true,
       "detail": {
-        "state": "Running",
-        "quiescent": false,
-        "windowObtainable": false,
-        "note": "the work finished; only its evidence write failed. Exactly-once has been consumed, so no later report can rescue it"
+        "state": "Succeeded",
+        "note": "the work succeeded; only its record failed to persist"
+      }
+    },
+    {
+      "name": "P2 the scope is visibly degraded and automatic retirement is refused",
+      "passed": true,
+      "detail": {
+        "degradedScopes": [
+          "envP"
+        ],
+        "quiescent": true,
+        "targetWindow": "refused",
+        "globalWindow": "refused",
+        "note": "quiescent because nothing runs, yet unswappable because the outcome exists only in memory"
       }
     },
     {
