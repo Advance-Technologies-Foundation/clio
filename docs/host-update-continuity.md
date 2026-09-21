@@ -141,25 +141,117 @@ a clean, quiescent shutdown.
   (single sampled handover-admission attempt, refused). A
   [second independent review](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18541164)
   then found S1-S4 were drain-before-termination measurements only — no respawn ever
-  happened, despite the README's original "Kill + respawn" claim. **S6** closes that
+  happened, despite the README's original "Kill + respawn" claim. **S6** closed that
   gap: a real V1→V2 respawn, admission closure held through termination *and* V2's
   confirmed readiness (not just the kill), and continuous concurrent admission pressure
-  throughout the handover rather than one sampled attempt. **6/6, three consecutive
-  runs** — V1 and V2 are distinct real PIDs each run, V1's original operation and V2's
-  post-handover operation are both present in the effect log, and every pressure
-  attempt tagged as occurring during the window was refused.
+  throughout the handover rather than one sampled attempt. A
+  [third review](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18541476)
+  then showed S6's own oracle was unfalsifiable — changing the post-handover operation
+  to `fail` still passed, because the outcome was never actually checked and the effect
+  match was PID-suffix rather than exact. Fixed, and **S7** added as the negative
+  control (a failing operation, asserted `Failed` with the effect line correctly
+  absent), mutation-checked by reverting the fix and confirming S7 catches it before
+  restoring it. **7/7, three consecutive runs.**
 
   Limits: assumes the ledger already has a record for every live target; polls rather
   than using an event/callback; no wait-budget/timeout policy if quiescence never
-  arrives — activation policy, still open; no mutation control for the composed path
-  itself (E3's A5i covers the underlying ledger, not this probe's kill/respawn/pressure
-  logic); concurrency beyond one swapper and one pressure loop is untested.
+  arrives — activation policy, still open; no mutation control for the *rest* of the
+  composed path (kill/respawn/pressure sequencing — only the outcome oracle has one
+  now, via S7); concurrency beyond one swapper and one pressure loop is untested.
 
 ~~A small counterexample probe demonstrating "idle transport ≠ idle process"~~ —
 **superseded.** [Alexandr-Kravchuk pointed out](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18540612)
 this is already exactly the `create-app-section` A/B plus E3's control C2; a third
 demonstration of the same property adds no evidence. Retracted in favor of the
 composition probe above.
+
+## Two host-update mechanisms, compared
+
+Per [kirillkrylov's mid-term checkpoint](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18541706),
+this is the deliverable: state precisely what each mechanism preserves, what remains
+running, what cannot update transparently, how refused requests and failed startup
+behave, and recommend the smallest mechanism meeting the chosen requirement.
+
+### Flow A — stage the update, activate at a natural restart
+
+*What it preserves.* Everything already true today. Compatible runtime updates
+(Composition+Primitives) already apply in-process, with no restart at all — this flow
+changes nothing about that path. Nothing new is introduced that could fail, race, or
+need repair.
+
+*What remains running.* The **current host process, indefinitely**, until the client
+itself reconnects. For host/Core/transport-layer changes, this is exactly the original
+problem the discussion opened with:
+[a month-long session may never produce a natural reconnect](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18539699),
+so a fix can sit staged and undelivered indefinitely. This flow does not hide that
+cost — it is the cost.
+
+*What cannot update transparently.* All of it, for as long as the session runs without
+reconnecting. There is no partial credit.
+
+*Refused requests / failed startup.* N/A — nothing is ever killed while a client is
+attached without the client's own action, so there is no handover window to fail
+inside.
+
+*New failure modes introduced.* None. Zero new code paths, zero new races.
+
+### Flow B — supervisor-managed backend replacement
+
+*What it preserves.* Transport continuity is measured
+([1.0s macOS / 1.3s Windows, zero reconnects](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18539341)).
+Execution continuity for **ledger-tracked** operations is measured on the happy path
+(S1-S5) and under a real respawn with concurrent admission pressure (S6/S7, 7/7,
+[independently cross-reviewed](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18541706)
+after its own oracle bug was found and fixed).
+
+*What remains running.* A **second, permanent process** — the supervisor itself. It
+becomes [its own compatibility boundary that must stay stable and can never update
+itself mid-session](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18539699).
+Flow A has no equivalent standing liability; Flow B trades the reconnect gap for a
+component that now has an indefinite lifetime of its own.
+
+*What cannot update transparently.* Two categories, not one:
+- Any operation the ledger doesn't know about. [Alexandr's fresh finding](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18541695)
+  is concrete evidence this gap is real *today*, not hypothetical: clio already drains
+  two classes of detached work at shutdown
+  (`ComponentRegistryClient.DrainAsync`, a flush scheduler) with a 10-second budget —
+  and **explicitly does not drain the heartbeat-detached operations** that are the
+  entire subject of this thread (`compile-creatio`, `create-app-section`). The
+  drain-before-exit pattern this thread has been designing already exists in clio; it
+  just doesn't cover the class that matters yet.
+- Any swap where quiescence never arrives. No wait-budget or timeout policy exists
+  (see S6/S7 limits above) — this is activation policy, and it is still open.
+
+*Refused requests.* Measured and correct at the ledger level: a new operation for a
+gated scope during the window throws `SwapWindowHeldException` (S5, S7's admission
+pressure). Not yet designed: what an MCP-level caller sees when that happens, or a
+retry/backoff contract — today it's a raw exception in a probe, not a defined client
+experience.
+
+*Failed startup.* **Untested.** Every scenario assumes V2 starts successfully. What
+happens to the client if V2 fails to come up after V1 is already gone is not covered
+by S1-S7 and is a real gap in the evidence, not just an unstated one.
+
+### Recommendation
+
+**Flow A first**, not because Flow B is unsound, but because Flow A's cost is fully
+known and bounded (staged fixes wait) while Flow B's cost is *not yet* fully known
+(failed-V2-startup is untested, the activation-policy timeout is undesigned, and the
+ledger's drain coverage gap Alexandr found means even "ledger-tracked" isn't yet "every
+operation that matters"). Shipping Flow A costs nothing new and closes the majority of
+change volume (the in-process runtime swap already does this for Composition/Primitives
+— Flow A only extends the same "no new risk" property to the host layer, by not
+touching it live at all).
+
+This is explicitly **not** a recommendation against building Flow B — it is a
+recommendation about sequencing. Flow B is the mechanism that actually solves the
+problem the discussion opened with (a host fix reaching a month-long session with zero
+user action), and the evidence built in this thread (E3's ledger, S1-S7) is real
+progress toward it. But "the happy path is measured" and "this is safe to ship" are
+different claims, and the gap between them is exactly the three items listed as
+untested above. Closing those — the drain-coverage gap, an activation-policy timeout,
+and a failed-V2-startup scenario — is the concrete bar before Flow B is a
+recommendation rather than a promising direction.
 
 ## Sources
 
