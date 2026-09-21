@@ -169,3 +169,25 @@ Alex's response18542205 confirms the measured distinctions (response/outcome/own
 Local Claude rev_127e85b096c843cc completed, read-only: both original admission/cleanup findings closed against878a83f46. Codex verifies two directly related remaining lease hazards by source inspection, not runtime reproduction: (1) Complete sets `_reported` before publishing under the ledger lock; concurrent Dispose can skip publication and release ownership in that gap. (2) invalid Complete(Running/NotFound) consumes `_reported` before validation; later Dispose releases ownership with a Running record. Public lease contract does not prohibit concurrent calls. Ask Alex for bounded serialization/validation repair and deterministic tests, not another architecture round. Running and IsQuiescent XML wording also needs to reflect outcome versus retained ownership. Timed P5 remains limited coverage, not proof of arbitrary interleavings.
 
 No new Claude review is pending. Reuse the verdict; independently inspect/run only changed regression cases when repairs arrive. Architecture evidence and implementation readiness are separate: the responsibility boundaries can be reviewed while these narrow prototype defects remain explicitly open. Settings/trust/activation decisions still require design judgment and Kirill's approval, not invented test confirmation.
+
+## Round conclusion for Kirill (16:13)
+
+The bounded lease follow-up closes at upstream **0aff304a7d14b502953cd301f87baa2f748e1f31**: Codex independently reproduced **33/33 Windows26200/.NET10.0.12**. Evidence branch [krylov/lease-final-review](https://github.com/Advance-Technologies-Foundation/clio/tree/krylov/lease-final-review/experiments/DetachedOperations). Source serializes Complete/Dispose and validates before consuming the report. Both reported paths are closed by Codex source review and execution; no additional Claude approval is claimed. L1's delays are not an explicit scheduling handshake and no mutation arm exists; record that limit without opening another broad round.
+
+Peer responses18542205,18542305,18542318 support the lifecycle distinctions and accept presenting other boundaries as proposed design rather than measured fact. No unanimous empirical approval of every architecture choice is claimed.
+
+**Recommendation:** retain the responsibility-based layers and complete-runtime direction; proceed to human design review, not production release or broad porting. The straightforward path is adapter -> Composition -> Core-managed pinned primitives -> structured result. Keep outcome publication separate from release of owned work/cleanup. Runtime unload, host replacement and evidence recovery are different operations.
+
+**Evidence available:** E2 eight managed cases cross-platform; E3 final33 independently on Windows with peer macOS report; E4 seven independently on Windows. These are controlled standalone probes. They do not establish integrated production updater behavior, transparent whole-product replacement, exhaustive concurrency, package authenticity or settings migrations.
+
+**Decisions for Kirill:**
+
+| Decision | Recommended starting position | Still a choice, not a test result |
+|---|---|---|
+| Whole-host activation | Independently update complete runtimes; stage host updates until an explicit restart unless persistent transport continuity is a required product guarantee. | A supervisor remains an option, not the selected default or a permanently excluded goal. |
+| Interruption/waiting | Defer an automatic update when owned work cannot drain within a configured budget; do not kill or replay work implicitly. | Budget, user override and unavailable/fallback behavior. |
+| Persistence failure | Preserve actual execution outcome, expose degraded evidence health, defer automatic replacement of its evidence owner. | Recovery/export/clearing policy; does not inherently prevent runtime DLL unload. |
+| Settings | Preserve the old session's snapshot; prepare and validate an isolated version-scoped feature-settings copy for incompatible changes. | Migration, drift, credential handling and retention rules. |
+| Extension/package trust | Trusted in-process extensions only, with explicit trusted acquisition/verification policy before production auto-update. | Publisher verification and operational distribution controls; not a sandbox. |
+
+Known implementation limits remain recorded; no merge, release, policy adoption or new broad experiment round is authorized by this conclusion. Monitor only substantive new feedback after the closing discussion post.
