@@ -214,6 +214,133 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	}
 
 	[Test]
+	[Description("Non-vacuous dead-action TRANSPORT guard (ENG-96178): converts real seeded pages until one reports a removed crt.MenuItem, then asserts the removal actually reached the CANVAS — the menu item has no operation of its own AND no surviving element still carries it nested in its values, which is the shape that kept rendering the dead action on mobile. Also checks any button removed as having no action left. A conversion failure fails the test immediately (a runtime regression, never a seed gap); a seed set with no dead menu item IGNORES with an explicit reason instead of passing silently. The acceptance criterion itself is enforced hermetically on the pinned OOTB Leads_FormPage by WebToMobileRealPageRegressionTests; what this adds is the verdict AND the artifact travelling through the real clio mcp-server process, where the response is re-serialized and a values-level removal is the easiest thing to lose.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide removes menu items whose request the mobile app cannot fire")]
+	[AllureDescription("Iterates the seeded application's pages through the real clio MCP server and, on the first page reporting a dropped crt.MenuItem, asserts that neither the menu item nor any button removed with it reaches the viewConfigDiff, that no surviving element still carries the removed menu item inside its values, and that every such drop carries a request-naming reason code.")]
+	public async Task MobilePageConversionGuideTool_Should_Remove_MenuItems_Whose_Request_Is_Unsupported() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterToolAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+
+		// Act — convert candidates until one REPORTS a removed menu item. A conversion FAILURE fails the test
+		// right here: it is a runtime regression, never a seed gap, and deferring it would let a later
+		// dead-menu candidate mask it behind a green run.
+		bool deadMenuItemExercised = false;
+		string convertedSchemaName = string.Empty;
+		foreach (string schemaName in candidates) {
+			CallToolResult callResult = await context.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = schemaName,
+						["environment-name"] = environmentName
+					}
+				},
+				context.CancellationTokenSource.Token);
+			(callResult.IsError == true).Should().BeFalse(
+				because: $"get-mobile-page-conversion-guide must succeed on every seeded page, and '{schemaName}' "
+					+ "returned a transport-level error — a runtime regression, not missing seed data");
+			MobilePageConversionGuideResponse response =
+				EntitySchemaStructuredResultParser.Extract<MobilePageConversionGuideResponse>(callResult);
+			response.Success.Should().BeTrue(
+				because: $"get-mobile-page-conversion-guide must succeed on every seeded page, and '{schemaName}' "
+					+ $"failed with: {response.Error} — a runtime regression, not missing seed data");
+			MobilePageConversionGuide guide = response.Guide!;
+			if ((guide.DroppedElements ?? []).Any(IsRemovedMenuItem)) {
+				AssertDeadActionsLeftTheCanvas(guide);
+				deadMenuItemExercised = true;
+				convertedSchemaName = schemaName;
+				break;
+			}
+		}
+
+		// Assert
+		if (!deadMenuItemExercised) {
+			Assert.Ignore(
+				$"None of the {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
+				+ "carries a menu item whose request the mobile app cannot fire, so the TRANSPORT path could not be "
+				+ "exercised end to end. This skip is not a coverage gap for the rule itself: the acceptance criterion is "
+				+ "enforced hermetically on production-shaped metadata by WebToMobileRealPageRegressionTests (the pinned "
+				+ "OOTB Leads_FormPage), which runs on every build. What is NOT covered while this skips is the removal "
+				+ "reaching the same verdict — and the same CANVAS — through the real clio mcp-server process. To close "
+				+ "that, add a seeded page with a clickMode:menu crt.Button whose menuItems bind a request outside the "
+				+ "mobile-supported set (crt.ExportDataGridToExcelRequest is the OOTB example).");
+		}
+		TestContext.Out.WriteLine(
+			$"dead-action invariant asserted against seeded page '{convertedSchemaName}'.");
+	}
+
+	/// <summary>A <c>droppedElements</c> entry for a menu item removed because its request does not convert.</summary>
+	private static bool IsRemovedMenuItem(DroppedElement dropped) =>
+		string.Equals(dropped.WebType, "crt.MenuItem", StringComparison.OrdinalIgnoreCase)
+		&& (dropped.Reason ?? []).Any(reason =>
+			reason.Code == ReasonCodes.DropUnsupportedRequest || reason.Code == ReasonCodes.DropUnknownRequest);
+
+	/// <summary>
+	/// The ENG-96178 invariant, re-derived independently of the product code: everything the guide REPORTS as
+	/// a removed dead action must be absent from the mobile page in BOTH the ways it could reach it — as an
+	/// operation of its own, and as a node nested inside a surviving element's <c>values</c>.
+	/// </summary>
+	/// <remarks>
+	/// The values half is the whole reason this runs end to end. A menu item of a type the mobile registry
+	/// does not declare is CARRIED verbatim rather than emitted, so a drop entry beside a surviving carried
+	/// copy is a response that reports a removal it did not perform — and the copy renders on mobile exactly
+	/// as an emitted operation would. Checking only the verdict would pass on precisely that bug.
+	/// </remarks>
+	private static void AssertDeadActionsLeftTheCanvas(MobilePageConversionGuide guide) {
+		string[] removedNames = [.. (guide.DroppedElements ?? [])
+			.Where(dropped => IsRemovedMenuItem(dropped)
+				|| (dropped.Reason ?? []).Any(reason => reason.Code == ReasonCodes.DropActionNoRequest))
+			.Select(dropped => dropped.WebName!)
+			.Where(name => !string.IsNullOrEmpty(name))];
+		removedNames.Should().NotBeEmpty(
+			because: "the caller reached this helper because the guide reported a removed menu item, so the "
+				+ "assertions below must have subjects — an empty set here would be a vacuous pass");
+
+		foreach (string name in removedNames) {
+			guide.ViewConfigDiff.Should().NotContain(
+				operation => string.Equals(operation.Name, name, StringComparison.OrdinalIgnoreCase),
+				because: $"'{name}' is reported as removed, so an operation creating it would put the dead "
+					+ "control straight back onto the mobile page");
+		}
+
+		foreach (ViewConfigDiffOperation operation in guide.ViewConfigDiff.Where(o => o.Values is not null)) {
+			string[] carried = [.. removedNames.Where(name => CarriesNamedNode(operation.Values!, name))];
+			carried.Should().BeEmpty(
+				because: $"operation '{operation.Name}' still carries {string.Join(", ", carried)} nested in its "
+					+ "values — a verbatim copy renders exactly as an emitted operation, so reporting the "
+					+ "removal while shipping the node is the defect this ticket closed");
+		}
+
+		foreach (DroppedElement dropped in (guide.DroppedElements ?? []).Where(IsRemovedMenuItem)) {
+			dropped.Reason!.Should().Contain(
+				reason => reason.Params != null && reason.Params.ContainsKey("request"),
+				because: $"'{dropped.WebName}' is the only place the caller learns this action existed at all, "
+					+ "so the reason has to NAME the request rather than merely say one was unsupported");
+		}
+	}
+
+	/// <summary>True when a node with <paramref name="name"/> sits anywhere inside <paramref name="node"/>.</summary>
+	private static bool CarriesNamedNode(JsonNode node, string name) {
+		switch (node) {
+			case JsonArray array:
+				return array.Any(item => item is not null && CarriesNamedNode(item, name));
+			case JsonObject obj:
+				return (obj["name"] is not null
+						&& string.Equals(obj["name"]!.ToString(), name, StringComparison.OrdinalIgnoreCase))
+					|| obj.Any(pair => pair.Value is not null && CarriesNamedNode(pair.Value, name));
+			default:
+				return false;
+		}
+	}
+
+	[Test]
 	[Description("Non-vacuous excludedComponents TRANSPORT guard (ENG-95081): converts real seeded pages until one carries a component of a bundled-rule-banned type, then asserts NO surviving insert of a banned type reaches the banned host through the banned slot on the entry graph — the regression where crt.SearchFilter survived inside crt.ExpansionPanel's tools because the pass searched only verbatim-carried values. Any candidate that fails to convert fails the test immediately (a runtime regression, never a seed gap); when no seeded page carries any banned type it IGNORES with an explicit reason instead of passing silently. The rule's own acceptance criterion does not depend on this test — WebToMobileRealPageRegressionTests enforces it hermetically on the pinned OOTB Leads_FormPage — so what this one adds is the verdict travelling through the real clio mcp-server process.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-mobile-page-conversion-guide honors bundled excludedComponents rules on the entry graph")]

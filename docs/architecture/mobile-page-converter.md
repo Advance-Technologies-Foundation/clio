@@ -110,6 +110,7 @@ Thirty fields, three caller actions. A "report" field is never planned from; a "
  3. BuildElementMap                → working map (merge / insert / drop / relocate-children)
                                      request bindings remapped / stripped / flagged in place
     ├ RemoveExcludedComponents     rules-driven positional bans
+    ├ RemoveDeadActions            unsupported menu items (entry-graph + verbatim carry); buttons left holding none
     ├ RemoveEmptyContainers        bottom-up, cascades
     ├ CompactPositionalIndexes
     ├ AssignConvertedTabIndexes
@@ -136,6 +137,7 @@ Each one fails silently when broken.
 |---|---|
 | Step 4 after every map-mutating pass | Per-type answer says "what will happen to this type" while the caller reads "what happened to these elements"; `mobileContracts` follows the suggestions, so the contract set is wrong in both directions |
 | `RemoveExcludedComponents` before `RemoveEmptyContainers` | A branch the exclusion empties does not cascade away |
+| `RemoveDeadActions` after `RemoveExcludedComponents`, before `RemoveEmptyContainers` | An exclusion can take the last menu item off a button, so running earlier keeps a button the page no longer needs; running later leaves the container it emptied shipping as a shell |
 | `RemoveEmptyContainers` before `InitializeContainerChildSlots` | Emptiness is read as slot *absence*; a seeded slot makes every container look occupied and disables the pass |
 | `CompactPositionalIndexes` before `AssignConvertedTabIndexes` | Compaction rebases each parent's indexed group to 0; over tab indexes it moves the first web tab before the template's general tab |
 | `BuildRequestConversionInfo` after both removal passes | A binding on a removed element is reported as converted for an element the map says not to create |
@@ -199,6 +201,18 @@ Conflict kinds (closed): `changed-named-element` · `changed-scalar` · `nameles
 map is applied while each insert's values are built. Not in the map → `flag-request-unmapped`; unsupported → dropped;
 element removed by a later pass → reported as discarded. Summary: `requestConversions`.
 
+Whether a dead request removes the whole ELEMENT is decided by type, and the set is closed at two: `crt.Button` and
+`crt.MenuItem` (`IsActionOnlyType`). Both exist only to fire an action; anything else keeps its binding and is flagged,
+because dropping it would lose valid UI. `RemoveDeadActions` then covers the two things the walk cannot see — a menu item
+carried VERBATIM inside its button's `values` (the normal shape, since the registry does not declare `crt.MenuItem`, so it
+never reaches `ProcessEventBindings` at all), and a button left with no surviving menu item and no click request of its
+own (`drop-action-no-request`). "No click request" is read off the SOURCE node, never off the converted values: a button
+whose `clicked` was stripped for a missing target also has none left, and ENG-94839 decided that button stays.
+
+The two traversal shapes must report IDENTICALLY. Which one runs depends on whether the published registry declares
+`crt.MenuItem` — invisible on the caller's page, so it must not reach the caller's report. That is why the pass mints no
+`droppedRequests` record: the walk does not on the entry-graph path, so neither does it on the carried one.
+
 **Page business rules** (add-on metadata, read by `PageBusinessRuleProbe`): an action converts only for elements that
 survive (`merge`/`insert`), names remapped web → mobile. Condition operand paths are remapped from the source DS column
 path to the mobile viewModel attribute name via the source `viewModelConfig`. Dropped whole: mixed AND/OR, unsupported
@@ -217,6 +231,7 @@ two spellings; the `drop-` prefix is not asserted — `flag-` and `skip-` are fi
 ```
 NOT LOSS          drop-inherited-chrome  drop-excluded-by-rule  drop-parent-excluded
                   drop-empty-container   drop-container-no-mobile-equivalent
+                  drop-action-no-request
 GENUINE LOSS      drop-unsupported-request  drop-unknown-request  drop-type-not-in-mobile-registry
 RULES DEFECT      drop-target-missing
 IN SCOPE          drop-no-rule-in-scope  drop-not-an-action-in-scope  drop-non-converting-scope
@@ -231,6 +246,8 @@ Pairs to keep distinct:
 
 - `drop-unsupported-request` — the **element** is gone · `drop-request-unsupported` — the element survives, its binding was removed.
 - `drop-container-no-mobile-equivalent` — a **container**, flattened, children preserved · `drop-type-not-in-mobile-registry` — a **leaf**, genuine loss.
+- `drop-unsupported-request` — clio can ASSERT the request is unavailable (the rules file clears its target) · `drop-unknown-request` — clio has never seen it, so the developer may well re-add the action. Both paths make this distinction; the leaf one used to answer both with the stronger code.
+- `drop-action-no-request` — a **button or menu item** with nothing to do, not dropped for a request of its own · `drop-empty-container` — a **layout container** whose `items` received no child.
 
 ### 8.2 `params`
 
@@ -374,7 +391,7 @@ E2E: the `clio.mcp.e2e` converter fixtures against a seeded stand.
 | Gap | Status |
 |---|---|
 | Properties a mobile component cannot accept are copied verbatim | Blocked on `MobileComponentRegistry.json` publishing real per-component property lists |
-| `crt.MenuItem` has no inline contract | Rules emit it; the mobile registry does not describe it |
+| `crt.MenuItem` has no inline contract | Rules emit it; the mobile registry does not describe it. That absence also decides which traversal a button's menu takes — `RemoveDeadActions` covers both shapes and the regression suite pins that they report identically |
 | `adaptiveLayout`, `tabAreaLayers`, `modelConfig`, `viewModelConfig` re-serialize data the operations / diffs carry | Provenance the caller reads, not applies; removal is a contract decision |
 | A type whose every instance vanishes is reported per type, not per element | `componentSuggestions` only |
 | `BuildRootMergeDiff` fallback is indistinguishable by field | A root merge and a targeted diff share the `*Diff` field |
@@ -389,6 +406,7 @@ E2E: the `clio.mcp.e2e` converter fixtures against a seeded stand.
 | `MobilePageConversionGuideModels.cs` | Wire contract, `ReasonCodes`, `DataSectionConflict` |
 | `MobilePageConversionGuideTool.cs` | MCP tool: I/O, template resolution, refusals, `[Description]` trigger |
 | `ExcludedComponentsPass.cs` | Positional exclusion |
+| `WebToMobileAnalysisService.DeadActions.cs` | Dead actions: unsupported menu items in both traversal shapes, and the controls left holding none |
 | `PageBusinessRuleProbe.cs` · `MobileSectionRegistrationProbe.cs` | Best-effort environment probes |
 | `WebToMobilePageConversionRulesCatalog.cs` · `WebToMobilePageConversionRulesModels.cs` | Rules loading and model |
 | `clio/Command/McpServer/Data/WebToMobilePageConversionRules.json` | Bundled rules |

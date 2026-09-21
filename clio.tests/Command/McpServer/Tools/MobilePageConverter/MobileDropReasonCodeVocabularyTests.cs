@@ -56,6 +56,7 @@ public sealed class MobileDropReasonCodeVocabularyTests {
 	private static readonly string[] PublishedCodes = [
 		// an element that did not reach the mobile page
 		"drop-empty-container",
+		"drop-action-no-request",
 		"drop-container-no-mobile-equivalent",
 		"drop-excluded-by-rule",
 		"drop-parent-excluded",

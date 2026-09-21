@@ -651,6 +651,164 @@ public sealed class WebToMobileRealPageRegressionTests {
 	private static string Serialize(MobilePageConversionGuide guide) =>
 		JsonSerializer.Serialize(guide, new JsonSerializerOptions { WriteIndented = false });
 
+	// ── ENG-96178: dead actions on the real page ────────────────────────────────────────────────────────
+
+	/// <summary>
+	/// The six OOTB detail-header settings buttons on <c>Leads_FormPage</c>. Each is a
+	/// <c>clickMode: "menu"</c> <c>crt.Button</c> with NO click request of its own, whose entire menu is
+	/// export/import/next-step actions the Creatio Mobile app does not support.
+	/// </summary>
+	private static readonly string[] DeadMenuButtons = [
+		"SimilarLeadSettingsButton", "ProductsSettingsButton", "StageHistorySettingsButton",
+		"LeadsByCustomerSettingsButton", "OpportunitiesByCustomerSettingsButton", "AddNextStepsButton"
+	];
+
+	/// <summary>The ten menu items under those buttons, none of whose requests convert.</summary>
+	private static readonly string[] DeadMenuItems = [
+		"SimilarLeadExportDataButton", "ProductsExportDataButton", "ProductsImportDataButton",
+		"StageHistoryExportDataButton", "LeadsByCustomerExportDataButton", "LeadsByCustomerImportDataButton",
+		"OpportunitiesByCustomerExportDataButton", "OpportunitiesByCustomerImportDataButton",
+		"CreateTaskButton", "CreateEmailButton"
+	];
+
+	/// <summary>Every mobile type the pinned page mentions — the ENTRY-GRAPH shape, in which
+	/// <c>crt.MenuItem</c> resolves and each menu item becomes its own element-map entry.</summary>
+	private static IReadOnlySet<string> PageTypes(JsonNode viewConfig) {
+		var types = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		CollectTypes(viewConfig, types);
+		return types;
+	}
+
+	/// <summary>
+	/// The same set minus <c>crt.MenuItem</c> — the VERBATIM-CARRY shape, and the one production runs today:
+	/// the published mobile registry does not declare <c>crt.MenuItem</c> (architecture doc section 13), so
+	/// the walk cannot re-emit the members and copies the whole <c>menuItems</c> array into the button's
+	/// values instead.
+	/// </summary>
+	private static IReadOnlySet<string> PageTypesWithoutMenuItem(JsonNode viewConfig) {
+		var types = new HashSet<string>(PageTypes(viewConfig), StringComparer.OrdinalIgnoreCase);
+		types.Remove("crt.MenuItem").Should().BeTrue(
+			because: "the pinned page must still carry crt.MenuItem, or the verbatim-carry shape this set "
+				+ "exists to produce is not the one being exercised and the comparison below is vacuous");
+		return types;
+	}
+
+	/// <summary>The source names of everything that did not convert.</summary>
+	private static string[] DroppedNames(MobilePageConversionGuide guide) =>
+		[.. (guide.DroppedElements ?? []).Select(entry => entry.WebName)];
+
+	/// <summary>
+	/// Every element still carrying a NESTED <c>crt.MenuItem</c> inside its emitted values — the verbatim-carry
+	/// shape, which renders on mobile exactly as an emitted operation would.
+	/// </summary>
+	/// <remarks>
+	/// Structural rather than a substring search over the serialized values, and the difference is not
+	/// pedantry: the bundled header rule RETARGETS a <c>MainHeader</c> button into
+	/// <c>FloatingActionButton.menuItems</c> AS a <c>crt.MenuItem</c>, so several perfectly converted
+	/// operations carry that type in <c>values.type</c>. A text match reports those as carried copies and the
+	/// assertion below fails on the converter working correctly.
+	/// </remarks>
+	private static string[] VerbatimCarriersOfMenuItem(MobilePageConversionGuide guide) =>
+		[.. guide.ViewConfigDiff
+			.Where(operation => operation.Values is not null && CarriesNestedMenuItem(operation.Values))
+			.Select(operation => operation.Name)];
+
+	/// <summary>True when a <c>crt.MenuItem</c> sits inside an ARRAY anywhere in <paramref name="node"/> — a
+	/// nested component — rather than being the node's own declared type.</summary>
+	private static bool CarriesNestedMenuItem(JsonNode node) {
+		switch (node) {
+			case JsonArray array:
+				return array.Any(item =>
+					(item is JsonObject member
+						&& string.Equals(member["type"]?.ToString(), "crt.MenuItem", StringComparison.OrdinalIgnoreCase))
+					|| (item is not null && CarriesNestedMenuItem(item)));
+			case JsonObject obj:
+				return obj.Any(pair => pair.Value is not null && CarriesNestedMenuItem(pair.Value));
+			default:
+				return false;
+		}
+	}
+
+	[Test]
+	[Description("ENG-96178 on the real page. Every one of the six OOTB detail-header settings buttons on Leads_FormPage is a clickMode:menu button with no click of its own whose whole menu is export/import actions mobile cannot fire, so the converted page used to ship six controls opening menus of ten dead entries — and because crt.MenuItem is carried verbatim rather than walked, NO field of the response mentioned them. All sixteen are now removed and reported. The carried values are asserted as well as the verdict: a drop entry beside a surviving verbatim copy is exactly the shape that kept rendering the action on mobile.")]
+	public void Analyze_ShouldDropDeadMenuItemsAndTheirButtons_OnTheRealLeadsFormPageShape() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+		IReadOnlySet<string> mobileTypes = PageTypesWithoutMenuItem(fixture["viewConfig"]!);
+
+		// Act
+		MobilePageConversionGuide guide = Convert(fixture, mobileTypes, BundledRules());
+
+		// Assert
+		string[] dropped = DroppedNames(guide);
+		dropped.Should().Contain(DeadMenuItems,
+			because: "none of these ten requests is in the versioned map or the bundled supported set, so not "
+				+ "one of the menu items can fire on mobile");
+		dropped.Should().Contain(DeadMenuButtons,
+			because: "each button is left with no menu item and never had a click request of its own");
+		guide.ViewConfigDiff.Select(operation => operation.Name)
+			.Should().NotIntersectWith(DeadMenuItems.Concat(DeadMenuButtons),
+				because: "the acceptance criterion is about the CANVAS, not the report — an operation for any of "
+					+ "them would put a dead control back on the mobile page");
+		VerbatimCarriersOfMenuItem(guide).Should().BeEmpty(
+			because: "a carried copy inside a surviving element's values renders exactly as an emitted one, so "
+				+ "the artifact has to be checked and not only the verdict");
+		(guide.DroppedElements ?? []).Where(d => DeadMenuItems.Contains(d.WebName))
+			.Should().OnlyContain(d => d.Reason!.Any(r => r.Code == ReasonCodes.DropUnknownRequest),
+				because: "these are custom/unknown requests rather than ones the rules file clears, and clio may "
+					+ "only say it does not know them — the stronger code would tell the developer not to re-add "
+					+ "an action that may well work on mobile");
+		(guide.DroppedElements ?? []).Where(d => DeadMenuButtons.Contains(d.WebName))
+			.Should().OnlyContain(d => d.Reason!.Any(r => r.Code == ReasonCodes.DropActionNoRequest),
+				because: "the button is not dropped for a request of its own and is not an empty layout "
+					+ "container either, so it needs the code that says what actually happened to it");
+
+		// The assertions above are all SUPERSETS, and the failure they cannot see is the interesting one: a
+		// pass that swept every action-less button off the page would satisfy every one of them. These two
+		// close it by EQUALITY, so over-removal fails as loudly as under-removal.
+		(guide.DroppedElements ?? [])
+			.Where(d => d.Reason!.Any(r => r.Code == ReasonCodes.DropActionNoRequest))
+			.Select(d => d.WebName).Should().BeEquivalentTo(DeadMenuButtons,
+				because: "these six are the only controls on the page that offered a menu, lost all of it, and "
+					+ "never bound a click of their own — a seventh means the SourceChildComponentNames "
+					+ "scoping regressed and buttons this ticket never looked at are being dropped");
+		(guide.DroppedElements ?? [])
+			.Where(d => d.WebType == "crt.MenuItem")
+			.Select(d => d.WebName).Should().BeEquivalentTo(DeadMenuItems,
+				because: "and these ten are every menu item the page has whose request cannot fire — an "
+					+ "eleventh would mean a convertible action was removed with them");
+		guide.ViewConfigDiff.Should().Contain(operation => operation.Name == "BackButton",
+			because: "the survivor control: a real button on this page whose request DOES convert must still "
+				+ "be emitted, or the equalities above are being met by removing everything");
+	}
+
+	[Test]
+	[Description("The same real page converts identically whether or not crt.MenuItem resolves to a mobile type. That fact is a property of the published registry, invisible on the developer's page, and it decides which of two entirely different traversals runs — the entry graph or the verbatim carry. If the two ever disagree, the response changes under a caller for a reason nothing in their page explains, and the path that drifts is whichever the rest of the suite does not happen to exercise.")]
+	public void Analyze_ShouldReportDeadActionsIdentically_InBothTraversalShapes_OnTheRealLeadsFormPageShape() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+
+		// Act
+		MobilePageConversionGuide asEntries = Convert(fixture, PageTypes(fixture["viewConfig"]!), BundledRules());
+		MobilePageConversionGuide asCarried =
+			Convert(fixture, PageTypesWithoutMenuItem(fixture["viewConfig"]!), BundledRules());
+
+		// Assert
+		string[] deadNames = [.. DeadMenuItems.Concat(DeadMenuButtons)];
+		DroppedNames(asEntries).Should().Contain(deadNames,
+			because: "the comparison is only meaningful if the entry-graph run really does drop them all");
+		Dictionary<string, string[]> CodesByName(MobilePageConversionGuide guide) =>
+			(guide.DroppedElements ?? [])
+				.Where(d => deadNames.Contains(d.WebName))
+				.ToDictionary(d => d.WebName!, d => d.Reason!.Select(r => r.Code).ToArray());
+		CodesByName(asCarried).Should().BeEquivalentTo(CodesByName(asEntries),
+			because: "same element, same cause, same code — whichever traversal removed it");
+		(asCarried.RequestConversions?.DroppedRequests ?? []).Select(r => r.ElementName)
+			.Should().BeEquivalentTo((asEntries.RequestConversions?.DroppedRequests ?? []).Select(r => r.ElementName),
+				because: "the request summary is part of the report too, and minting a droppedRequests record on "
+					+ "the carried path alone is the specific drift this guards");
+	}
+
 	private static MobilePageConversionGuide Convert(
 		JsonObject fixture, IReadOnlySet<string> mobileTypes, WebToMobilePageConversionRules rules,
 		MobileActionTargetProbeResult actionTargets = null) {
