@@ -279,8 +279,10 @@ pressure). Not yet designed: what an MCP-level caller sees when that happens, or
 retry/backoff contract — today it's a raw exception in a probe, not a defined client
 experience.
 
-*Failed startup.* **Untested, and the current probe's ordering cannot support
-rollback even in principle** — see below.
+*Failed startup.* **Now measured** (S8/S9, ordering C: bounded V2 attempts, bounded
+fallback to a restarted V1, a definite `Unavailable` terminal if every attempt fails)
+— see below for the full history, including the ordering bug this document itself
+had to correct twice before the proof existed.
 
 ### Failed-startup / rollback behavior, both flows
 
@@ -308,8 +310,8 @@ compared on concrete failure semantics rather than asserted:
 | ordering | outage window if V2 fails | precondition | risk |
 |---|---|---|---|
 | **A. Kill V1, then start V2** (my probe's current code) | Total, indefinite — no backend exists until manually fixed | none | This is the actual gap; not a missing test, a wrong default |
-| **B. Confirm V2, then retire V1** ("both generations coexist") | None, if the precondition holds | **V1 and V2 must not require the same exclusive resource.** Process coexistence itself is an established clio pattern (see `McpHostPresence` below); which specific *operations* would still conflict is an incomplete inventory, not a closed one | The readiness check itself must not run real work or mutate shared state before selection commits — my probe's `__readiness__` probe exercises the same code path as real work, which is fine in a sandbox with its own effect file but would not be fine against a real backend touching a real environment. A true readiness check needs to be a no-side-effect handshake, not a synthetic unit of real work |
-| **C. Kill V1, start V2; on V2 failure, restart V1 from its retained binary** | **An attempt with a bound, not a guarantee** — corrected below | Bounding requires an explicit deadline and a terminal "unavailable" outcome, which don't exist yet | V1 can itself fail to restart, or share whatever broke V2 (same config, same dependency) — a fallback that can also fail is not the same claim as a bounded outage |
+| **B. Confirm V2, then retire V1** ("both generations coexist") | None, if the precondition holds | **V1 and V2 must not require the same exclusive resource.** Process coexistence itself is an established clio pattern (see `McpHostPresence` below); which specific *operations* would still conflict is an incomplete inventory, not a closed one | **Fixed, not just flagged.** The readiness check now uses `ping`/`pong` — no ledger interaction, no effect-file write — replacing the earlier synthetic `start`-shaped probe that ran the same code path as real work |
+| **C. Kill V1, start V2; on V2 failure, restart V1 from its retained binary** | **Measured, not just corrected**: [S8/S9](https://github.com/Advance-Technologies-Foundation/clio/tree/nikonov/supervisor-quiescence-probe/experiments/SupervisorQuiescenceComposition) — bounded attempts on both legs, a real recovery (S8) and a real `Unavailable` terminal when both legs exhaust (S9), 9/9 across three runs | Bounded via explicit attempt counts (2 + 2) and a definite terminal outcome — no open-ended deadline policy yet, just a bounded retry count | V1 can itself fail to restart, or share whatever broke V2 (same config, same dependency) — S9 measures exactly this case rather than describing it |
 
 **Exclusivity, inventoried — then explicitly walked back as incomplete, not settled.**
 [Alexandr's first pass](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18541984)
@@ -381,24 +383,46 @@ gap already flagged as open (A5h) and now has a second, independent cause.
 
 ### Recommendation
 
-**Flow A first**, not because Flow B is unsound, but because Flow A's cost is fully
-known and bounded (staged fixes wait) while Flow B's cost is *not yet* fully known
-(failed-V2-startup is untested, the activation-policy timeout is undesigned, and the
-ledger's drain coverage gap Alexandr found means even "ledger-tracked" isn't yet "every
-operation that matters"). Shipping Flow A costs nothing new and closes the majority of
-change volume (the in-process runtime swap already does this for Composition/Primitives
-— Flow A only extends the same "no new risk" property to the host layer, by not
-touching it live at all).
+**Flow A first, for host-layer changes specifically — runtime-layer changes
+(Composition/Primitives) are a separately solved case and this recommendation does
+not touch them.** Mirroring the format [Alexandr adopted for his own
+recommendations](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18542650) —
+a stated preference, the simplest credible alternative, and what would disprove it —
+rather than a bare preference.
 
-This is explicitly **not** a recommendation against building Flow B — it is a
-recommendation about sequencing. Flow B is the mechanism that actually solves the
-problem the discussion opened with (a host fix reaching a month-long session with zero
-user action), and the evidence built in this thread (E3's ledger, S1-S7) is real
-progress toward it. But "the happy path is measured" and "this is safe to ship" are
-different claims, and the gap between them is exactly the three items listed as
-untested above. Closing those — the drain-coverage gap, an activation-policy timeout,
-and a failed-V2-startup scenario — is the concrete bar before Flow B is a
-recommendation rather than a promising direction.
+**Simplest credible alternative:** ship Flow B (persistent supervisor) as the default
+for host-layer changes too, now that S8/S9 close the failed-V2-startup gap with
+measured recovery and a definite `Unavailable` terminal. It is genuinely more
+complete than when this recommendation was first written.
+
+**Why I still prefer Flow A first:** three items separated this document's "happy
+path measured" from "safe to ship". **One is now closed** — S8/S9 measure real
+fallback recovery and a truthful terminal outcome under bounded attempts, not just a
+design description. **Two remain, and neither is a probe-scale fix:**
+- The drain-coverage gap Alexandr found is a property of shipped clio, not of this
+  probe: `DrainHostBackgroundWork` already drains two classes of work with a budget,
+  and explicitly not the heartbeat-detached class this whole thread is about.
+- The activation-policy timeout is still undesigned — S8/S9 bound *startup* attempts,
+  not the separate case where quiescence itself never arrives because a target is
+  continuously busy (Alexandr's own disproof criterion for his "defer, never kill"
+  recommendation names exactly this risk on the execution side; it applies to Flow
+  B's activation trigger too).
+
+Flow B also carries a standing cost Flow A doesn't: a permanent second process that
+[becomes its own compatibility boundary and can never update itself mid-session](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18539699).
+That cost doesn't shrink as more of Flow B gets measured — it's structural, not a gap
+to close.
+
+**What would disprove this recommendation:** evidence that staging-and-waiting is not
+actually "eventually delivered" in practice — that real long-lived sessions
+essentially never hit a natural restart boundary, so a host fix staged under Flow A
+would sit undelivered indefinitely rather than just later. If that's the common case
+rather than a tail risk, "eventually" is functionally "never", and the calculus flips:
+Flow B's standing cost becomes worth paying regardless of the two remaining gaps,
+because Flow A would not actually be solving the problem this discussion opened with.
+This is an empirical question about session shapes in practice, not one this document
+or its probes can answer from the inside — closest available proxy is Alexandr's own
+framing of the identical risk on his side of the round.
 
 ## Position on the six candidate boundaries
 
