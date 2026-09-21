@@ -126,6 +126,10 @@ references the contract and no vendor release — hands it the pinned runtime, a
 The partner composed vendor capability without linking to a vendor version, which is what lets the vendor
 ship a new release without rebuilding anyone.
 
+This clause is **measured, not enforced**: F4 reads `GetReferencedAssemblies()` on the built contract
+assembly, which is a snapshot of today's build, not a gate that would stop tomorrow's addition from
+pulling a dependency in. Making it a gate is a build-side change and is not done.
+
 The practical rule for anything added here later: if a type would be meaningless after its defining
 assembly is gone, it does not belong in this contract. Clause 3 is the same rule seen from the caller's
 side.

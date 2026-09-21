@@ -595,17 +595,22 @@ string onV1 = fV1.StartDetached(ledger, "envF1", fEffect, 700, "succeed", Cancel
 string onV2 = v2.StartDetached(ledger, "envF2", fEffect, 700, "succeed", CancellationToken.None);
 var pinnedV1 = ledger.Query(onV1);
 var pinnedV2 = ledger.Query(onV2);
+// Overlap has to be OBSERVED, not inferred from the order of the two calls above. Without this the
+// case passes identically on a strictly sequential run, which is the D1 mistake in a new place.
+IReadOnlyCollection<string> runningTogether = ledger.Running;
+bool bothInFlight = runningTogether.Contains(onV1) && runningTogether.Contains(onV2);
 var doneV1 = await WaitTerminal(ledger, onV1, TimeSpan.FromSeconds(20));
 var doneV2 = await WaitTerminal(ledger, onV2, TimeSpan.FromSeconds(20));
 string[] fLines = File.ReadAllLines(fEffect);
 Check("F1 two operations run concurrently, each pinned to the release that admitted it",
-    pinnedV1.RuntimeVersion == "10.0.0.0" && pinnedV2.RuntimeVersion == "10.1.0.0"
+    bothInFlight
+        && pinnedV1.RuntimeVersion == "10.0.0.0" && pinnedV2.RuntimeVersion == "10.1.0.0"
         && doneV1.State == OperationState.Succeeded && doneV2.State == OperationState.Succeeded
         && fLines.Any(l => l.StartsWith("v1-", StringComparison.Ordinal))
         && fLines.Any(l => l.StartsWith("v2-", StringComparison.Ordinal)),
-    new { firstOwnedBy = pinnedV1.RuntimeVersion, secondOwnedBy = pinnedV2.RuntimeVersion,
-          effects = fLines.Length,
-          note = "the effect lines carry the executing release, so pinning is observed not assumed" });
+    new { observedRunningTogether = bothInFlight, firstOwnedBy = pinnedV1.RuntimeVersion,
+          secondOwnedBy = pinnedV2.RuntimeVersion, effects = fLines.Length,
+          note = "both ids were seen in Running before either finished, so the overlap is measured" });
 
 // F2: an incompatible release is refused, and work already running is untouched.
 string duringRejection = fV1.StartDetached(ledger, "envF3", fEffect, 600, "succeed", CancellationToken.None);
