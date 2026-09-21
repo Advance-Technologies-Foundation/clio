@@ -8,7 +8,7 @@
 **Contract**: [eng-99856-multi-instance-contract-answers.md](../eng-99856-multi-instance/eng-99856-multi-instance-contract-answers.md) — Q1
 **Platform facts**: [eng-99856-multi-instance-platform-facts.md](../eng-99856-multi-instance/eng-99856-multi-instance-platform-facts.md) — §2, §3, §4
 **Jira**: ENG-99856
-**Status**: ready-for-dev
+**Status**: review
 **Size**: L (full day — one contract class, one new service behind an interface with a DI registration, the
 forced construction order, two validations, and the pin suite)
 **Repo**: crt-process-builder — `packages/CrtProcessBuilder/Files/src/cs/`

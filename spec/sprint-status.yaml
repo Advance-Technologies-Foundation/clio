@@ -4253,7 +4253,7 @@ stories:
     feature: "eng-99856-multi-instance"
     repo: "crt-process-builder"
     size: M
-    status: ready-for-dev
+    status: review
     jira: ENG-99856
     file: spec/stories/story-eng-99856-multi-instance-4.md
     prd: spec/prd/prd-eng-99856-multi-instance.md
@@ -4364,7 +4364,7 @@ stories:
     feature: "eng-99856-multi-instance"
     repo: "crt-process-builder"
     size: M
-    status: ready-for-dev
+    status: review
     jira: ENG-99856
     file: spec/stories/story-eng-99856-multi-instance-8.md
     prd: spec/prd/prd-eng-99856-multi-instance.md
@@ -4389,7 +4389,7 @@ stories:
     feature: "eng-99856-multi-instance"
     repo: "crt-process-builder + clio"
     size: M
-    status: ready-for-dev
+    status: review
     jira: ENG-99856
     file: spec/stories/story-eng-99856-multi-instance-9.md
     prd: spec/prd/prd-eng-99856-multi-instance.md
@@ -4418,7 +4418,7 @@ stories:
     feature: "eng-99856-multi-instance"
     repo: "crt-process-builder (+ clio under Outcome 2)"
     size: S
-    status: ready-for-dev
+    status: review
     jira: ENG-99856
     file: spec/stories/story-eng-99856-multi-instance-10.md
     prd: spec/prd/prd-eng-99856-multi-instance.md

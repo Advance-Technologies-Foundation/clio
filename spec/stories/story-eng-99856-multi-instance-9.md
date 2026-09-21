@@ -7,7 +7,7 @@
 **ADR**: [adr-eng-99856-multi-instance.md](../adr/adr-eng-99856-multi-instance.md) — D0-a, *The clio mirror*
 **Contract**: [eng-99856-multi-instance-contract-answers.md](../eng-99856-multi-instance/eng-99856-multi-instance-contract-answers.md) — Q3
 **Jira**: ENG-99856
-**Status**: ready-for-dev
+**Status**: review
 **Size**: M (half day, two repositories — **two PRs, package first**; the clio half is a DTO and its tests)
 **Repo**: crt-process-builder + clio
 **Depends on**: stories 1 (the gate must be written before describe is touched), 3

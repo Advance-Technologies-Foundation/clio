@@ -8,7 +8,7 @@
 **ADR**: [adr-eng-99856-multi-instance.md](../adr/adr-eng-99856-multi-instance.md) — OQ-01
 **Platform facts**: [eng-99856-multi-instance-platform-facts.md](../eng-99856-multi-instance/eng-99856-multi-instance-platform-facts.md) — §1.7, §4
 **Jira**: ENG-99856
-**Status**: ready-for-dev
+**Status**: review
 **Size**: M (half day)
 **Repo**: crt-process-builder — `packages/CrtProcessBuilder/Files/src/cs/Elements/`
 **Depends on**: story 3 (the applier and its interface)

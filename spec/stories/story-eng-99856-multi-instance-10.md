@@ -7,7 +7,7 @@ renegotiated with the owner
 **PRD**: [prd-eng-99856-multi-instance.md](../prd/prd-eng-99856-multi-instance.md)
 **ADR**: [adr-eng-99856-multi-instance.md](../adr/adr-eng-99856-multi-instance.md) — Decision 0, D0-b, D0-c, D1
 **Jira**: ENG-99856
-**Status**: deferred — **un-defer when story 1's gate outcome is written**. Do not start it on a guess.
+**Status**: review — the gate answered **Outcome 1**, so this took its S shape.
 **Size**: L as recorded (Outcome 2). **S if the gate answers Outcome 1.**
 **Repo**: crt-process-builder (+ clio DTO mirror under Outcome 2)
 **Depends on**: stories 1 (the gate), 9 (the block this hangs under)

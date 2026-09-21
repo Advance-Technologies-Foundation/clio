@@ -8,7 +8,7 @@
 **Contract**: [eng-99856-multi-instance-contract-answers.md](../eng-99856-multi-instance/eng-99856-multi-instance-contract-answers.md) — Q5
 **Platform facts**: [eng-99856-multi-instance-platform-facts.md](../eng-99856-multi-instance/eng-99856-multi-instance-platform-facts.md) — §1.4, §1.5, §5, §6
 **Jira**: ENG-99856
-**Status**: ready-for-dev
+**Status**: review
 **Size**: M (half day)
 **Repo**: crt-process-builder — `packages/CrtProcessBuilder/Files/src/cs/`
 **Depends on**: stories 2, 3
