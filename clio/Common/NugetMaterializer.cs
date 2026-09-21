@@ -400,8 +400,12 @@ public class NugetMaterializer : INugetMaterializer
 		}
 		//Everything this method can write or delete is confined up front: refusing halfway through
 		//would leave the csproj importing a props file this run has already deleted, which is the
-		//MSB4019 failure the method exists to prevent.
-		if (!IsPackagePathConfined(_csprojPath) || propsFilePaths.Any(p => !IsPackagePathConfined(p))) {
+		//MSB4019 failure the method exists to prevent. The backup leaf belongs in this preflight too,
+		//because SaveCsProjFile re-checks it after the deletions below have already happened - an
+		//unconfined .bak would fail the save and strand the csproj importing a deleted props file.
+		if (!IsPackagePathConfined(_csprojPath)
+			|| !IsPackagePathConfined($"{_csprojPath}.bak")
+			|| propsFilePaths.Any(p => !IsPackagePathConfined(p))) {
 			return;
 		}
 		

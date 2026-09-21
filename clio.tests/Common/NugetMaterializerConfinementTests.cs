@@ -95,6 +95,16 @@ public class NugetMaterializerConfinementTests
 		}
 	}
 
+	private static void CreateFileLinkOrIgnore(string path, string target){
+		try {
+			File.CreateSymbolicLink(path, target);
+		}
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+			Assert.Ignore("This platform does not let the test process create a symbolic link: "
+				+ exception.Message);
+		}
+	}
+
 	private static string CreateSentinel(string directoryPath){
 		Directory.CreateDirectory(directoryPath);
 		string sentinelPath = Path.Combine(directoryPath, "sentinel.txt");
@@ -208,6 +218,37 @@ public class NugetMaterializerConfinementTests
 			because: "no props file may be written through a link out of the workspace");
 		File.Exists(sentinelPath).Should().BeTrue(
 			because: "the Libs reconciliation must not reach a directory outside the workspace");
+	}
+
+	[Test]
+	[Description("Deletes no props file when the csproj backup is a symbolic link, so the repair never "
+		+ "leaves the project importing a props file it has already removed (issue 1311)")]
+	public void Repair_DeletesNothing_WhenTheCsProjBackupIsASymbolicLink(){
+		// Arrange
+		string packageFolder = Path.Combine(_workspaceRoot, "packages", PackageName);
+		Directory.CreateDirectory(Path.Combine(packageFolder, "Files"));
+		string propsFilePath = Path.Combine(packageFolder, "Files", $"{PackageName}-net472.nuget.props");
+		File.WriteAllText(propsFilePath, string.Empty);
+		string csprojPath = Path.Combine(packageFolder, PackageName + ".csproj");
+		File.WriteAllText(csprojPath, $@"
+			<Project Sdk=""Microsoft.NET.Sdk"">
+				<Import Project=""{PackageName}-net472.nuget.props"" />
+			</Project>");
+		string victimFolder = Path.Combine(_outsideRoot, "victim");
+		string sentinelPath = CreateSentinel(victimFolder);
+		CreateFileLinkOrIgnore(csprojPath + ".bak", sentinelPath);
+
+		//Act
+		int actual = _sut.Materialize(PackageName);
+
+		//Assert
+		actual.Should().Be(1, because: "the csproj carries no package reference to materialize");
+		File.Exists(propsFilePath).Should().BeTrue(
+			because: "the repair must refuse before it deletes what it cannot then save the csproj over");
+		File.ReadAllText(csprojPath).Should().Contain($"{PackageName}-net472.nuget.props",
+			because: "the on-disk project must keep matching the props files that are still there");
+		File.ReadAllText(sentinelPath).Should().Be("must survive",
+			because: "the backup copy may not be written through a link out of the workspace");
 	}
 
 }
