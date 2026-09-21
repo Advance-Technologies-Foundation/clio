@@ -251,9 +251,25 @@ design surface, but none of them execute while a client is connected.
 *What it preserves.* Transport continuity is measured
 ([1.0s macOS / 1.3s Windows, zero reconnects](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18539341)).
 Execution continuity for **ledger-tracked** operations is measured on the happy path
-(S1-S5) and under a real respawn with concurrent admission pressure (S6/S7, 7/7,
+(S1-S5) and under a real respawn with concurrent admission pressure (S6-S10, 10/10,
 [independently cross-reviewed](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18541706)
 after its own oracle bug was found and fixed).
+
+**No longer a synthetic pipe.** A real `ModelContextProtocol` client
+([`McpClientProbe`](https://github.com/Advance-Technologies-Foundation/clio/tree/nikonov/supervisor-quiescence-probe/experiments/SupervisorQuiescenceComposition/McpClientProbe))
+now drives a real MCP server ([`McpHost`](https://github.com/Advance-Technologies-Foundation/clio/tree/nikonov/supervisor-quiescence-probe/experiments/SupervisorQuiescenceComposition/McpHost),
+same pattern as the shipping `Clio10.Mcp` adapter) through the same reserve-then-drain
+swap: start an operation over MCP, query it mid-flight (`Running`), trigger a real
+V1→V2 swap over MCP, query the **same opaque id on the same never-reconnected
+connection** afterward (`Succeeded`), confirm a real PID change. 4/4 on first run,
+3/3 consecutive runs. **Architectural finding, not yet closed:** the third of the
+three required outcomes (`Unknown`, alongside `Running`/`Succeeded`) needs the
+MCP *pipe-owning* process itself to be lost while the client stays connected —
+`McpHost` cannot produce that, because it owns both the pipe and the ledger in one
+process. Demonstrating `Unknown` honestly needs the genuine three-tier split Flow B
+describes elsewhere in this document (client → thin pipe-owning supervisor →
+separately replaceable backend/ledger owner) — a different architecture, not a
+missing test case on the current one.
 
 *What remains running.* A **second, permanent process** — the supervisor itself. It
 becomes [its own compatibility boundary that must stay stable and can never update
