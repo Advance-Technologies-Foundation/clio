@@ -584,6 +584,70 @@ Check("G4 negative control: a runtime-defined callback keeps the release alive u
           collectedAfterDropped = g4CollectedAfter,
           note = "delegates behave exactly as DTOs and exceptions do — the rule is one rule" });
 
+// ── F: embedding, concurrent version pinning, and incompatible-release rejection ───────────────────
+string partnerDir = Path.GetFullPath(Path.Combine(v1Dir, "..", "partner"));
+string v3Dir = Path.GetFullPath(Path.Combine(v1Dir, "..", "10.2.0.0"));
+string fEffect = Path.Combine(work, "f-effect.log");
+
+// F1: two operations pinned to different releases at the same time.
+var (fV1Ctx, fV1) = LoadCompatible(v1Dir, 1);
+string onV1 = fV1.StartDetached(ledger, "envF1", fEffect, 700, "succeed", CancellationToken.None);
+string onV2 = v2.StartDetached(ledger, "envF2", fEffect, 700, "succeed", CancellationToken.None);
+var pinnedV1 = ledger.Query(onV1);
+var pinnedV2 = ledger.Query(onV2);
+var doneV1 = await WaitTerminal(ledger, onV1, TimeSpan.FromSeconds(20));
+var doneV2 = await WaitTerminal(ledger, onV2, TimeSpan.FromSeconds(20));
+string[] fLines = File.ReadAllLines(fEffect);
+Check("F1 two operations run concurrently, each pinned to the release that admitted it",
+    pinnedV1.RuntimeVersion == "10.0.0.0" && pinnedV2.RuntimeVersion == "10.1.0.0"
+        && doneV1.State == OperationState.Succeeded && doneV2.State == OperationState.Succeeded
+        && fLines.Any(l => l.StartsWith("v1-", StringComparison.Ordinal))
+        && fLines.Any(l => l.StartsWith("v2-", StringComparison.Ordinal)),
+    new { firstOwnedBy = pinnedV1.RuntimeVersion, secondOwnedBy = pinnedV2.RuntimeVersion,
+          effects = fLines.Length,
+          note = "the effect lines carry the executing release, so pinning is observed not assumed" });
+
+// F2: an incompatible release is refused, and work already running is untouched.
+string duringRejection = fV1.StartDetached(ledger, "envF3", fEffect, 600, "succeed", CancellationToken.None);
+bool releaseRejected = false;
+int declaredGeneration = 0;
+try { LoadCompatible(v3Dir, 1); }
+catch (IncompatibleReleaseException error) { releaseRejected = true; declaredGeneration = error.Declared; }
+var survived = await WaitTerminal(ledger, duringRejection, TimeSpan.FromSeconds(20));
+string afterRejectionId = fV1.StartDetached(ledger, "envF3", fEffect, 80, "succeed", CancellationToken.None);
+var afterRejection = await WaitTerminal(ledger, afterRejectionId, TimeSpan.FromSeconds(20));
+Check("F2 an incompatible release is rejected before activation without disturbing V1",
+    releaseRejected && declaredGeneration == 2
+        && survived.State == OperationState.Succeeded
+        && afterRejection.State == OperationState.Succeeded,
+    new { rejected = releaseRejected, declaredGeneration, inFlightAcrossRejection = survived.State.ToString(),
+          startedAfterRejection = afterRejection.State.ToString(),
+          note = "the release is inspected then discarded; the running release is never consulted" });
+
+// F3: a partner workflow composes vendor capability it does not reference.
+IPartnerWorkflow partner = LoadPartner(partnerDir);
+var composed = partner.Compose(fV1);
+string[] partnerRefs = typeof(IPartnerWorkflow).Assembly.GetReferencedAssemblies()
+    .Select(a => a.Name ?? string.Empty).ToArray();
+Check("F3 a partner workflow composes the pinned release and returns portable data only",
+    composed.Partner == "partner.reporting" && composed.RuntimeVersion == "10.0.0.0"
+        && composed.Outcome.Contains("2 steps", StringComparison.Ordinal),
+    new { partner = composed.Partner, ranAgainst = composed.RuntimeVersion, outcome = composed.Outcome,
+          note = "the partner assembly references the contract and no vendor release" });
+
+// F4: the assembly that crosses the boundary must not drag CLI or MCP in with it.
+string[] forbidden = ["Cli", "Mcp", "Spectre", "CommandLine", "ModelContextProtocol"];
+string[] offending = partnerRefs
+    .Where(name => forbidden.Any(f => name.Contains(f, StringComparison.OrdinalIgnoreCase)))
+    .ToArray();
+Check("F4 the shared contract assembly references no CLI or MCP dependency",
+    offending.Length == 0,
+    new { referenced = partnerRefs, offending,
+          note = "checked on the assembly that actually crosses the boundary, not on the host" });
+
+fV1 = null!;
+fV1Ctx.Unload();
+
 GC.KeepAlive(v2Ctx);
 Console.WriteLine(JsonSerializer.Serialize(new {
     os = Environment.OSVersion.VersionString,
@@ -677,6 +741,32 @@ static async Task<(WeakReference Weak, object Callback)> PhaseEscapedCallback(st
     context.Unload();
     await Task.Yield();
     return (weak, callback);
+}
+
+// Compatibility is decided BEFORE activation: the release is loaded to be inspected, then discarded if
+// it is the wrong generation. Nothing already running is consulted or disturbed.
+[MethodImpl(MethodImplOptions.NoInlining)]
+static (AssemblyLoadContext Context, IDetachedRuntime Runtime) LoadCompatible(string releaseDirectory,
+    int supportedGeneration) {
+    var (context, runtime) = Load(releaseDirectory);
+    if (runtime.ContractVersion != supportedGeneration) {
+        int declared = runtime.ContractVersion;
+        string version = runtime.Version;
+        context.Unload();
+        throw new IncompatibleReleaseException(version, declared);
+    }
+    return (context, runtime);
+}
+
+// The partner assembly is loaded into its own context and given the vendor runtime to compose. It
+// references the contract and nothing else of ours.
+[MethodImpl(MethodImplOptions.NoInlining)]
+static IPartnerWorkflow LoadPartner(string partnerDirectory) {
+    var context = new ReleaseContext(partnerDirectory);
+    Assembly assembly = context.LoadFromAssemblyPath(Path.Combine(partnerDirectory, "Partner.Workflow.dll"));
+    Type type = assembly.GetType("Partner.Workflow.ReportingWorkflow")
+        ?? throw new InvalidOperationException("The partner assembly does not expose ReportingWorkflow.");
+    return (IPartnerWorkflow)Activator.CreateInstance(type)!;
 }
 
 // Shared contention harness: one starter against one swapper, so the repaired and the deliberately
@@ -839,4 +929,10 @@ file sealed class ReleaseContext(string directory) : AssemblyLoadContext(isColle
             ? null
             : LoadFromAssemblyPath(candidate);
     }
+}
+
+/// <summary>Raised when a release declares a contract generation this host does not support.</summary>
+sealed class IncompatibleReleaseException(string version, int declared)
+    : InvalidOperationException($"release {version} declares contract generation {declared}") {
+    public int Declared { get; } = declared;
 }

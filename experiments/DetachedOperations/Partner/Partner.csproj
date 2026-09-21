@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Partner.Workflow</AssemblyName>
+    <RootNamespace>Partner.Workflow</RootNamespace>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion><Version>1.0.0.0</Version>
+    <IsPackable>false</IsPackable>
+    <OutputPath>$(MSBuildThisFileDirectory)../../../artifacts/detached/partner/</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Contract/Contract.csproj" />
+  </ItemGroup>
+</Project>

@@ -170,10 +170,33 @@ public sealed class SwapWindowHeldException(string scope)
     public string Scope { get; } = scope;
 }
 
+/// <summary>
+/// A workflow supplied by a third party, composed from vendor capability it does not reference.
+/// </summary>
+/// <remarks>
+/// A partner assembly references this contract and nothing else of ours: not a vendor release, not the
+/// host. It receives the runtime it should compose and returns portable data.
+/// </remarks>
+public interface IPartnerWorkflow {
+    /// <summary>Partner identity, for provenance in the result.</summary>
+    string Name { get; }
+
+    /// <summary>Composes vendor capability and returns portable data only.</summary>
+    /// <param name="runtime">The vendor release this invocation is pinned to.</param>
+    /// <returns>An outcome describing what ran, as strings.</returns>
+    (string Partner, string RuntimeVersion, string Outcome) Compose(IDetachedRuntime runtime);
+}
+
 /// <summary>What a loaded runtime release must expose for this probe.</summary>
 public interface IDetachedRuntime {
     /// <summary>Release identity.</summary>
     string Version { get; }
+
+    /// <summary>
+    /// The contract generation this release was built against. The host refuses a release whose
+    /// generation it does not support, before activation and without disturbing what is running.
+    /// </summary>
+    int ContractVersion { get; }
 
     /// <summary>
     /// Starts work that outlives this call and returns immediately, exactly like a tool that hits its

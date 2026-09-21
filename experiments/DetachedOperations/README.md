@@ -23,8 +23,10 @@ and so that losing the process reports uncertainty rather than absence.
 
 Four tiny projects, no added packages. `Contract` is the only assembly crossing the load boundary and
 carries data only — `OperationRecord` has no delegates and no runtime objects, so it can be written to
-evidence and survive its runtime. `RuntimeV1`/`RuntimeV2` are one workflow source compiled as two
-releases into `artifacts/detached/<version>/`. `Host` holds the generic ledger and the measurement runner.
+evidence and survive its runtime. `RuntimeV1`/`RuntimeV2`/`RuntimeV3` are one workflow source compiled as three
+releases into `artifacts/detached/<version>/` — V3 declares an unsupported contract generation so
+rejection can be exercised. `Partner` is a third-party assembly that references the contract and no
+vendor release. `Host` holds the generic ledger and the measurement runner.
 
 The ledger is deliberately generic: it stores an opaque `Code` supplied by the runtime and never reads it.
 Interpreting what an operation *means* stays with the runtime that owns it, so Core does not become a
@@ -83,6 +85,10 @@ would almost never be globally idle and a global-only predicate would be correct
 | G2 | the portable error form lets the release go while the information survives |
 | G3 | a host progress delegate is not retained by the release after the call |
 | G4 | **negative control** — a runtime-defined callback keeps the release alive until dropped |
+| F1 | two operations run concurrently, each pinned to the release that admitted it |
+| F2 | an incompatible release is rejected before activation without disturbing V1 |
+| F3 | a partner workflow composes the pinned release and returns portable data only |
+| F4 | the shared contract assembly references no CLI or MCP dependency |
 | O1 | **counterexample to I3** — a runtime-defined result held by the caller keeps the release alive |
 | R1 | the V1 release becomes collectible once no lease retains it |
 | C1 | **control** — a host with no evidence answers `NotFound` for the very same lost operation |
@@ -162,7 +168,7 @@ temporary directory and writes nothing outside it.
 
 ## macOS observations, 2026-09-21
 
-macOS 27.0.0 (arm64), .NET 10.0.12. **49/49 passed, exit 0.** The contract derived from these cases is in
+macOS 27.0.0 (arm64), .NET 10.0.12. **53/53 passed, exit 0.** The contract derived from these cases is in
 [`execution-lifetime-contract.md`](execution-lifetime-contract.md).
 
 - The operation started on `10.0.0.0` kept answering `Running` and stayed owned by `10.0.0.0` after

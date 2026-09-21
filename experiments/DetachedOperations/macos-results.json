@@ -1,7 +1,7 @@
 {
   "os": "Unix 27.0.0",
   "framework": "10.0.12",
-  "workDirectory": "/var/folders/xk/pl1m8g6d1w55jscyxzg0wjkc0000gn/T/detached-ops-KQIxbU",
+  "workDirectory": "/var/folders/xk/pl1m8g6d1w55jscyxzg0wjkc0000gn/T/detached-ops-7zFAcd",
   "cases": [
     {
       "name": "A1a the original operation still answers after a newer runtime is activated",
@@ -156,19 +156,19 @@
       "passed": true,
       "detail": {
         "Violations": 0,
-        "Admitted": 49,
-        "Refused": 93,
-        "Windows": 93
+        "Admitted": 50,
+        "Refused": 94,
+        "Windows": 95
       }
     },
     {
       "name": "A5i mutation control: the same regression detects a deliberately split admission",
       "passed": true,
       "detail": {
-        "Violations": 5,
-        "Admitted": 46,
-        "Refused": 91,
-        "Windows": 92,
+        "Violations": 15,
+        "Admitted": 48,
+        "Refused": 93,
+        "Windows": 96,
         "note": "non-zero here is the point: it shows A5h can fail"
       }
     },
@@ -387,7 +387,7 @@
         "busyWhenReserved": true,
         "reservedImmediately": true,
         "drained": true,
-        "drainMs": 106,
+        "drainMs": 129,
         "note": "new admissions are refused under the reservation, so in-flight work is finite"
       }
     },
@@ -398,7 +398,7 @@
         "reserved": true,
         "drainedWithinBudget": false,
         "hungStillRunning": true,
-        "reservationHeldMs": 623,
+        "reservationHeldMs": 621,
         "note": "the hung operation was neither killed nor completed; the update defers again"
       }
     },
@@ -458,6 +458,49 @@
         "aliveWhileCallbackHeld": true,
         "collectedAfterDropped": true,
         "note": "delegates behave exactly as DTOs and exceptions do \u2014 the rule is one rule"
+      }
+    },
+    {
+      "name": "F1 two operations run concurrently, each pinned to the release that admitted it",
+      "passed": true,
+      "detail": {
+        "firstOwnedBy": "10.0.0.0",
+        "secondOwnedBy": "10.1.0.0",
+        "effects": 2,
+        "note": "the effect lines carry the executing release, so pinning is observed not assumed"
+      }
+    },
+    {
+      "name": "F2 an incompatible release is rejected before activation without disturbing V1",
+      "passed": true,
+      "detail": {
+        "rejected": true,
+        "declaredGeneration": 2,
+        "inFlightAcrossRejection": "Succeeded",
+        "startedAfterRejection": "Succeeded",
+        "note": "the release is inspected then discarded; the running release is never consulted"
+      }
+    },
+    {
+      "name": "F3 a partner workflow composes the pinned release and returns portable data only",
+      "passed": true,
+      "detail": {
+        "partner": "partner.reporting",
+        "ranAgainst": "10.0.0.0",
+        "outcome": "2 steps, probe=release-fault",
+        "note": "the partner assembly references the contract and no vendor release"
+      }
+    },
+    {
+      "name": "F4 the shared contract assembly references no CLI or MCP dependency",
+      "passed": true,
+      "detail": {
+        "referenced": [
+          "System.Runtime",
+          "System.Collections"
+        ],
+        "offending": [],
+        "note": "checked on the assembly that actually crosses the boundary, not on the host"
       }
     }
   ]

@@ -11,6 +11,14 @@ public sealed class DetachedRuntime : IDetachedRuntime {
     /// <inheritdoc />
     public string Version { get; } = typeof(DetachedRuntime).Assembly.GetName().Version!.ToString();
 
+    /// <inheritdoc />
+    public int ContractVersion =>
+#if RELEASE_V3
+        2;      // a generation this host does not support
+#else
+        1;
+#endif
+
     /// <summary>The line this release writes, so the effect proves which release executed it.</summary>
     private string Signature =>
 #if RELEASE_V2
