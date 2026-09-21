@@ -2525,7 +2525,11 @@ internal static class ToolContractCatalog {
 				Field("next-link", StringType, "OData next-link URL when more records are available."),
 				Field(OutputFileFieldName, StringType, "Absolute path to the raw OData response written to disk."),
 				Field("row-count", NumberType, "Number of object rows written to output-file."),
-				Field("column-sizes", ObjectType, "UTF-8 byte totals by column for rows written to output-file.")
+				Field("column-sizes", ObjectType, "UTF-8 byte totals by column for rows written to output-file."),
+				Field("error-code", StringType, "Machine-readable failure classification when success is false: argument, entity-not-found, invalid-query, server-reported-error, non-json-response, incomplete-response, or transport. The same body is classified the same way by odata-read, so branch on the code rather than on the wording of error. The one difference: on invalid-query this tool does not list the filter, select, expand and order-by names the request sent - that echo is inline-only. Null on success."),
+				Field("status-code", NumberType, "HTTP status behind a failure, present ONLY when the response was an HTML error page that states its status in its title (404 when the entity has no OData controller). Absent otherwise: Creatio serves the JSON routing 404 with HTTP 200, and that case carries the wait-and-retry hint in error instead. Branch on both, never on status-code alone."),
+				Field(EntityFieldName, StringType, "The OData entity set the failure refers to, echoed back so several concurrent reads can be told apart. Present on every failure raised once the requested entity name is known; an argument-level rejection (a missing or malformed entity, an unsupported argument) is refused before that point and carries no entity."),
+				Field("correlation-id", StringType, "Identifier for this call, present on success and on failure. Quote it to whoever can read the environment's logs.")
 			),
 			CommonErrorContract,
 			[

@@ -20,7 +20,10 @@ namespace Clio.Command.McpServer.Tools;
 /// <see cref="ODataReadTool"/>, whose validator, query builder and identity checks both paths share.
 /// </remarks>
 [McpServerToolType]
-public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IODataFileContract fileContract) {
+public sealed class ODataReadToFileTool(
+	IToolCommandResolver commandResolver,
+	IOperationCorrelationIdProvider correlationIds,
+	IODataFileContract fileContract) {
 
 	private readonly IODataFileContract _fileContract =
 		fileContract ?? throw new ArgumentNullException(nameof(fileContract));
@@ -75,15 +78,33 @@ public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IO
 		[Required]
 		ODataReadToFileArgs args,
 		CancellationToken cancellationToken = default) {
+		//One place mints the id and one place stamps it, so no failure path can return a response without
+		//the correlation-id core-rules promises on EVERY response - the same shape odata-read uses. The
+		//shared ODataReadResponse documents the member as present on success and on failure, and this tool
+		//was returning it null on both because it predates the correlation-id work on the inline read.
+		string correlationId = correlationIds.New();
+		return ReadToFileCore(args, cancellationToken) with { CorrelationId = correlationId };
+	}
+
+	/// <summary>Runs the read and the write; the single caller stamps the correlation-id on the result.</summary>
+	/// <param name="args">The bound tool arguments.</param>
+	/// <param name="cancellationToken">Caller token; the MCP host cancels it when it disconnects.</param>
+	private ODataReadResponse ReadToFileCore(ODataReadToFileArgs args, CancellationToken cancellationToken) {
 		try {
+			// Split exactly as the inline read splits it, rather than folded into one `??` chain: an
+			// UNSUPPORTED-ARGUMENT rejection carries no entity there, and only the target rejection may
+			// carry one. Folding the two handed every argument failure an entity the inline path withholds.
 			string argumentError = ODataReadTool.ValidateAndNormalizeArguments(
-					args, ArgumentAliases, ValidArgumentsHint,
-					out string[] selectColumns, out string[] expandColumns)
-				?? ODataReadTool.ValidateTarget(args);
+				args, ArgumentAliases, ValidArgumentsHint,
+				out string[] selectColumns, out string[] expandColumns);
 			if (argumentError is not null) {
-				// Same rule as the inline read: a rejected or missing entity name is not echoed back as
-				// the entity the failure is about, so the two paths answer with the same shape.
-				return ODataReadResponse.Failure(argumentError, ODataReadErrorCodes.Argument,
+				return ODataReadResponse.Failure(argumentError, ODataReadErrorCodes.Argument);
+			}
+			string targetError = ODataReadTool.ValidateTarget(args);
+			if (targetError is not null) {
+				// entity travels only once the NAME ITSELF has been accepted - so an out-of-range top names
+				// the set it refers to, while a malformed name is not echoed back as an addressed entity.
+				return ODataReadResponse.Failure(targetError, ODataReadErrorCodes.Argument,
 					entity: ODataReadTool.IsEntityNameAccepted(args) ? args.Entity.Trim() : null);
 			}
 			if (string.IsNullOrWhiteSpace(args.OutputFile)) {
@@ -120,8 +141,11 @@ public sealed class ODataReadToFileTool(IToolCommandResolver commandResolver, IO
 			// file is published only after that pass accepts the body.
 			if (!_fileContract.TryWriteReadResponse(
 				outputPath, responseUtf8, args.Entity, args.Count,
-				out ODataReadFileSummary summary, out string fileError, out string fileErrorCode)) {
-				return ODataReadResponse.Failure(fileError, fileErrorCode, entity: args.Entity.Trim());
+				out ODataReadFileSummary summary, out ODataFileReadFailure failure)) {
+				// status-code travels too: the documented async-gap retry after create-entity-schema keys
+				// off 404 programmatically, and a caller cannot do that against a message it does not own.
+				return ODataReadResponse.Failure(
+					failure.Error, failure.ErrorCode, failure.StatusCode, args.Entity.Trim());
 			}
 			return new ODataReadResponse(
 				true,

@@ -37,7 +37,7 @@ public sealed class ODataReadToFileToolTests {
 		client.ExecuteGetRequestBoundedAsync(
 				Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(Encoding.UTF8.GetBytes("{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"value\":[{\"Id\":\"1\",\"Name\":\"John\"},{\"Id\":\"2\",\"Name\":\"Jane\"}]}")));
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
 		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
@@ -74,7 +74,7 @@ public sealed class ODataReadToFileToolTests {
 			.Returns(Task.FromResult(Encoding.UTF8.GetBytes(
 				"<html><head><title>404 - File or directory not found.</title></head>"
 				+ "<body><h2>404 - File or directory not found.</h2></body></html>")));
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
 		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
@@ -112,7 +112,7 @@ public sealed class ODataReadToFileToolTests {
 				Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(Encoding.UTF8.GetBytes(
 				"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact/$entity\",\"Id\":\"1\",\"Name\":\"John\"}")));
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
 		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
@@ -146,7 +146,7 @@ public sealed class ODataReadToFileToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
 		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
@@ -173,7 +173,7 @@ public sealed class ODataReadToFileToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(new MockFileSystem(), new MockConfinedFileAccess(new MockFileSystem())));
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(new MockFileSystem(), new MockConfinedFileAccess(new MockFileSystem())));
 		string outsidePath = Path.Combine(
 			Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
 			$"clio-odata-output-probe-{Guid.NewGuid():N}.json");
@@ -228,7 +228,7 @@ public sealed class ODataReadToFileToolTests {
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(new MockFileSystem(), new MockConfinedFileAccess(new MockFileSystem())));
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(new MockFileSystem(), new MockConfinedFileAccess(new MockFileSystem())));
 
 		// Act
 		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
@@ -243,6 +243,113 @@ public sealed class ODataReadToFileToolTests {
 			because: "the argument is rejected before any Creatio request");
 	}
 
+	// The entity-member rule is shared with the inline read, and the file path is the half that was
+	// unprotected: an earlier revision folded the argument rejection and the target rejection into one
+	// `??` chain and stamped entity on both, which the inline path does not do. Nothing failed.
+	[TestCase("", null, TestName = "ReadToFile_Should_Not_Name_An_Entity_When_It_Is_Missing")]
+	[TestCase("Con tact", null, TestName = "ReadToFile_Should_Not_Name_An_Entity_When_The_Name_Is_Malformed")]
+	[Category("Unit")]
+	[Description("A rejected or missing entity name is not echoed back in the file tool's entity member, matching the inline read.")]
+	public void ReadToFile_Should_Not_Name_An_Unaccepted_Entity(string entity, string expected) {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		MockFileSystem fileSystem = new();
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(),
+			new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
+			EnvironmentName = "dev", Entity = entity, OutputFile = "out.json"
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a missing or malformed entity name cannot be queried");
+		response.ErrorCode.Should().Be(ODataReadErrorCodes.Argument,
+			because: "this is refused locally on the arguments, not by Creatio");
+		response.Entity.Should().Be(expected,
+			because: "echoing a name that was just rejected as invalid reports that such a set was addressed, when none was - and the two read paths must answer a bad target with the same SHAPE, not only the same words");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An unsupported argument is refused with no entity, exactly as the inline read refuses it, even though the entity name itself was well formed.")]
+	public void ReadToFile_Should_Not_Name_An_Entity_When_An_Argument_Is_Unsupported() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		MockFileSystem fileSystem = new();
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(),
+			new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataReadToFileArgs args = JsonSerializer.Deserialize<ODataReadToFileArgs>(
+			"""{"environment-name":"dev","entity":"Contact","output-file":"out.json","filter":"Name eq 'A'"}""")!;
+
+		// Act
+		ODataReadResponse response = tool.ReadToFile(args);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a raw filter string is not an accepted argument");
+		response.Entity.Should().BeNull(
+			because: "the member's contract says an unsupported argument is refused before the requested entity is known, and folding this rejection together with the target one made the file path echo an entity the inline path withholds");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An out-of-range top names the entity, because the name was accepted and the failure refers to a real requested set.")]
+	public void ReadToFile_Should_Name_The_Entity_When_Only_Top_Is_Out_Of_Range() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		MockFileSystem fileSystem = new();
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(),
+			new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
+			EnvironmentName = "dev", Entity = " Contact ", OutputFile = "out.json", Top = ODataReadTool.MaxTop + 1
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(because: "an out-of-range top is refused, never silently widened");
+		response.Entity.Should().Be("Contact",
+			because: "the name was accepted, so the failure refers to a known set - trimmed, like every other path reports it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every response carries a correlation-id, on the failure paths as well as on success, which core-rules requires and the shared response record documents.")]
+	public void ReadToFile_Should_Carry_A_CorrelationId_On_Success_And_On_Failure() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string outputFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-corr-{Guid.NewGuid():N}.json");
+		ICreatioApplicationClient client = Substitute.For<ICreatioApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact?$top=25");
+		client.ExecuteGetRequestBoundedAsync(
+				Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(Encoding.UTF8.GetBytes(
+				"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"value\":[{\"Id\":\"1\"}]}")));
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(),
+			new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataReadResponse success = tool.ReadToFile(new ODataReadToFileArgs {
+			EnvironmentName = "dev", Entity = "Contact", OutputFile = outputFile
+		});
+		ODataReadResponse failure = tool.ReadToFile(new ODataReadToFileArgs {
+			EnvironmentName = "dev", Entity = "", OutputFile = "out.json"
+		});
+
+		// Assert
+		success.Success.Should().BeTrue(because: "the stub answered a valid OData collection");
+		success.CorrelationId.Should().NotBeNullOrWhiteSpace(
+			because: "core-rules requires a correlation-id on every response, and the record documents it as present on success");
+		failure.CorrelationId.Should().NotBeNullOrWhiteSpace(
+			because: "a failure is exactly when the caller needs the id to match this call to clio's own log lines; the earliest rejection must carry it too");
+		failure.CorrelationId.Should().NotBe(success.CorrelationId,
+			because: "the id identifies one call, so two calls must not share one");
+	}
+
 	// PR #1229 review (kirillkrylov, [P2] "Validate OData identity before publishing file results"):
 	// file mode accepted any JSON object that was not a recognized error, while the inline reader demands
 	// the requested entity's own @odata.context. Both bodies below were measured against the built head:
@@ -254,6 +361,16 @@ public sealed class ODataReadToFileToolTests {
 	[TestCase(
 		"{\"@odata.context\":\"http://creatio/odata/$metadata#Account\",\"value\":[{\"Id\":\"1\"}]}",
 		TestName = "ReadToFile_Should_Reject_A_Collection_Of_Another_Entity")]
+	[TestCase(
+		"{\"@odata.context\":\"http://creatio/odata/$metadata#Account/$entity\",\"Id\":\"1\"}",
+		TestName = "ReadToFile_Should_Reject_A_Single_Entity_Of_Another_Entity")]
+	// The PRESENCE of `value` commits the body to the collection shape in the inline reader. The file
+	// path used to fall through to the single-entity test when `value` was not an array, so this body -
+	// whose /$entity context is genuinely Contact's - was ACCEPTED and the marker published, while the
+	// inline read refused it. Found by review of the identity fix, not by a stand.
+	[TestCase(
+		"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact/$entity\",\"value\":\"private response marker\"}",
+		TestName = "ReadToFile_Should_Reject_A_Non_Array_Value_Even_With_A_Matching_Context")]
 	[Category("Unit")]
 	[Description("Rejects a body that does not identify itself as the REQUESTED entity set - an absent @odata.context, or one naming a different entity - with the inline reader's own diagnostic, and writes nothing.")]
 	public void ReadToFile_Should_Reject_A_Body_Without_The_Requested_ODataIdentity(string body) {
@@ -269,7 +386,7 @@ public sealed class ODataReadToFileToolTests {
 		client.ExecuteGetRequestBoundedAsync(
 				Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(Encoding.UTF8.GetBytes(body)));
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
 		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
@@ -285,6 +402,40 @@ public sealed class ODataReadToFileToolTests {
 			because: "a caller branching on the code must get the same classification whichever read path it used");
 		fileSystem.File.Exists(outputFile).Should().BeFalse(
 			because: "nothing may be published for a body the read paths refuse");
+	}
+
+	// MatchesTopLevelContext compares OrdinalIgnoreCase. Nothing pinned that on either read path, and
+	// tightening it to Ordinal would turn every read whose requested spelling differs from the metadata
+	// spelling into "not an OData response" - a false refusal of a correct read, and one that only shows
+	// up against a real stand. The file path now depends on that comparison, so it is pinned here.
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts a collection whose @odata.context names the requested entity in a different case, because the shared identity matcher compares case-insensitively and a stricter comparison would refuse correct reads.")]
+	public void ReadToFile_Should_Accept_A_Context_Whose_Entity_Case_Differs() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string outputFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-case-{Guid.NewGuid():N}.json");
+		ICreatioApplicationClient client = Substitute.For<ICreatioApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/contact?$top=25");
+		client.ExecuteGetRequestBoundedAsync(
+				Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(Encoding.UTF8.GetBytes(
+				"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"value\":[{\"Id\":\"1\"}]}")));
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
+			EnvironmentName = "dev", Entity = "contact", OutputFile = outputFile
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the entity set is the same one whatever the caller capitalised; refusing it would reject a correct read as a non-OData body");
+		fileSystem.File.Exists(outputFile).Should().BeTrue(because: "an accepted body is published");
 	}
 
 	[Test]
@@ -304,7 +455,7 @@ public sealed class ODataReadToFileToolTests {
 				Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(Encoding.UTF8.GetBytes(
 				"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact(Id,Name)\",\"value\":[{\"Id\":\"1\",\"Name\":\"John\"}]}")));
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
 		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
@@ -337,7 +488,7 @@ public sealed class ODataReadToFileToolTests {
 		client.ExecuteGetRequestBoundedAsync(
 				Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(Encoding.UTF8.GetBytes(scalarBody)));
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
 		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
@@ -369,7 +520,7 @@ public sealed class ODataReadToFileToolTests {
 		client.ExecuteGetRequestBoundedAsync(
 				Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(Encoding.UTF8.GetBytes("{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"@odata.count\":7,\"@odata.nextLink\":\"http://creatio/next\",\"value\":[{\"Id\":\"1\"}]}")));
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
 		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
@@ -400,7 +551,7 @@ public sealed class ODataReadToFileToolTests {
 		client.ExecuteGetRequestBoundedAsync(
 				Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(Encoding.UTF8.GetBytes("{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"value\":[{\"Id\":\"1\"}]}")));
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
 		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
@@ -409,6 +560,8 @@ public sealed class ODataReadToFileToolTests {
 
 		// Assert
 		response.Success.Should().BeFalse(because: "an unverified total count must not be reported as verified");
+		response.ErrorCode.Should().Be(ODataReadErrorCodes.IncompleteResponse,
+			because: "the body IS the requested entity set and the server IS healthy - only the count annotation is missing, and success:false alone cannot tell that apart from a body that was refused as non-OData");
 		fileSystem.File.Exists(outputFile).Should().BeFalse(
 			because: "a call reported as failed must leave nothing on disk");
 	}
@@ -429,7 +582,7 @@ public sealed class ODataReadToFileToolTests {
 		client.ExecuteGetRequestBoundedAsync(
 				Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(Encoding.UTF8.GetBytes("{\"error\":{\"code\":\"500\",\"message\":\"boom\"}}")));
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
 		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
@@ -438,6 +591,14 @@ public sealed class ODataReadToFileToolTests {
 
 		// Assert
 		response.Success.Should().BeFalse(because: "an OData error body is a failed read");
+		// Without this the test passes on the generic non-OData rejection too, so the whole server-error
+		// classification could be deleted and it would stay green - the error body carries no
+		// @odata.context, so it fails the identity test as well.
+		response.ErrorCode.Should().Be(ODataReadErrorCodes.ServerReportedError,
+			because: "an error the SERVER reported must be classified as such, not lumped in with a body that simply is not OData - a caller branching on the code treats the two differently");
+		response.Error.Should().Be(
+			CreatioResponseError.DescribeServerReportedReadError(ODataErrorKind.ServerError),
+			because: "the file path must answer a server error with the same locally authored sentence the inline read uses");
 		fileSystem.File.Exists(outputFile).Should().BeFalse(
 			because: "an error payload must not be persisted under a name that suggests a successful read");
 	}
@@ -460,7 +621,7 @@ public sealed class ODataReadToFileToolTests {
 				Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(Encoding.UTF8.GetBytes(
 				$"{{\"error\":{{\"code\":\"500\",\"message\":\"{hugeMessage}\"}}}}")));
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
 		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
@@ -469,6 +630,8 @@ public sealed class ODataReadToFileToolTests {
 
 		// Assert
 		response.Success.Should().BeFalse(because: "an OData error body is a failed read");
+		response.ErrorCode.Should().Be(ODataReadErrorCodes.ServerReportedError,
+			because: "bounding the diagnostic must not cost the classification: without this the generic non-OData rejection satisfies every other assertion here");
 		response.Error.Should().NotContain("xxxxxxxxxx",
 			because: "the server's own message is classified, not quoted - copying it back is the context pressure file mode exists to avoid");
 		response.Error.Length.Should().BeLessThan(1024,
@@ -495,7 +658,7 @@ public sealed class ODataReadToFileToolTests {
 		client.ExecuteGetRequestBoundedAsync(Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
 			.Returns<Task<byte[]>>(_ => throw new ResponseTooLargeException(
 				ODataFileContract.MaxResponseBytes + 1, ODataFileContract.MaxResponseBytes));
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
 		ODataReadResponse result = tool.ReadToFile(new ODataReadToFileArgs {
@@ -529,7 +692,7 @@ public sealed class ODataReadToFileToolTests {
 		client.ExecuteGetRequestBoundedAsync(Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
 			.Returns<Task<byte[]>>(_ => throw new TimeoutException(
 				"The bounded GET of https://prod.creatio.com:8443/0/odata/Contact?$top=25 did not complete within 500 ms."));
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
 		ODataReadResponse result = tool.ReadToFile(new ODataReadToFileArgs {
@@ -566,7 +729,7 @@ public sealed class ODataReadToFileToolTests {
 		client.ExecuteGetRequestBoundedAsync(Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
 			.Returns<Task<byte[]>>(_ => throw new NotSupportedException(
 				"streaming https://prod.creatio.com:8443/0/odata/Contact?$filter=Secret eq 1 is not supported"));
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
 		ODataReadResponse result = tool.ReadToFile(new ODataReadToFileArgs {
@@ -604,7 +767,7 @@ public sealed class ODataReadToFileToolTests {
 				cancellation.Cancel();
 				return Task.FromResult(Encoding.UTF8.GetBytes("{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"value\":[]}"));
 			});
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 
 		// Act
 		ODataReadResponse result = tool.ReadToFile(new ODataReadToFileArgs {
@@ -635,7 +798,7 @@ public sealed class ODataReadToFileToolTests {
 		client.ExecuteGetRequestBoundedAsync(
 				Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(Encoding.UTF8.GetBytes("{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"value\":[]}")));
-		ODataReadToFileTool tool = new(resolver, new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
 		JsonElement nameValue = JsonDocument.Parse("\"John\"").RootElement.Clone();
 
 		// Act

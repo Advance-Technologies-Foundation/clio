@@ -768,8 +768,13 @@ public sealed class ODataReadTool(
 		root.ValueKind == JsonValueKind.Object
 		&& MatchesTopLevelContext(root, entityName, singleEntity: true);
 
-	/// <summary>Maps a classified server error onto this tool's machine-readable error-code.</summary>
-	private static string ErrorCodeFor(ODataErrorKind kind) => kind switch {
+	/// <summary>Maps a classified server error onto the shared machine-readable error-code.</summary>
+	/// <remarks>
+	/// <c>internal</c> so odata-read-to-file maps the same kind to the same code. A second copy of this
+	/// switch drifted immediately: the file path shipped without the InvalidQuery arm, so one body came
+	/// back <c>server-reported-error</c> from one read path and <c>invalid-query</c> from the other.
+	/// </remarks>
+	internal static string ErrorCodeFor(ODataErrorKind kind) => kind switch {
 		//A routing miss IS a missing entity set - the same condition the IIS 404 page reports - so the
 		//two paths must not hand the caller two different codes for one cause.
 		ODataErrorKind.UnregisteredEntity => ODataReadErrorCodes.EntityNotFound,

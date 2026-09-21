@@ -235,7 +235,8 @@ public sealed class ConfinedFileAccessTests {
 			because: "the staged file holds the same raw service response and lives under the shared OS temp root, so it must never be readable by other local users while the write is in progress");
 		observedLength.Should().Be(0,
 			because: "the ordering is the whole point - a mode narrowed after the write leaves the payload exposed for the length of the transfer, and the published inode is owner-only either way, so nothing else can tell the two apart");
-		File.GetUnixFileMode(path).Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite);
+		File.GetUnixFileMode(path).Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite,
+			because: "the published file inherits the staged inode through linkat, so narrowing the staged descriptor is what makes the final file owner-only");
 		Directory.GetFileSystemEntries(_sandbox, "*.tmp").Should().BeEmpty(
 			because: "the staged entry and the directory holding it are both removed once the content is published under its final name");
 	}
@@ -244,13 +245,16 @@ public sealed class ConfinedFileAccessTests {
 	// so the P/Invoke cannot pass O_CREAT's mode and the staged file is CREATED with uncontrolled bits (0040
 	// was observed on Linux x64) before fchmod narrows it. fchmod cannot revoke a descriptor another account
 	// already opened in that window, so the boundary has to be something that IS set atomically at creation.
-	// mkdirat is not variadic: the staging directory is created 0700 in one call, and this test is what pins
-	// that - the mode is read while the payload stream is still open, so a create-then-chmod of the DIRECTORY
-	// could not satisfy it either.
+	// mkdirat is not variadic, so its mode IS applied at creation, and this test pins the mode that is
+	// passed to it: the mutation that motivated the test is mkdirat(0755), which fails it.
+	// What it does NOT prove is the word "atomically" - the hook fires after mkdirat, the reopen and the
+	// FILE's fchmod, so a hypothetical chmod of the DIRECTORY inserted before the hook would still pass.
+	// There is no such call and nothing here adds one; the honest claim is the one in the name below,
+	// "owner-only before any payload byte", and that is what a reviewer should hold this test to.
 	[Test]
 	[Category("Integration")]
-	[Description("Creates the staging directory owner-only (0700) atomically, so the window in which openat's uncontrolled create mode applies is inside a directory no other account may traverse.")]
-	public void WriteNew_ShouldStageInsideAnOwnerOnlyDirectory_CreatedAtomically() {
+	[Description("Stages the payload inside an owner-only (0700) directory and proves the directory is already owner-only before any payload byte is written, so the window in which openat's uncontrolled create mode applies is inside a directory no other account may traverse.")]
+	public void WriteNew_ShouldStageInsideAnOwnerOnlyDirectory_BeforeWritingAnyByte() {
 		// Arrange
 		if (OperatingSystem.IsWindows()) {
 			Assert.Ignore("Unix file modes have no meaning on Windows.");
