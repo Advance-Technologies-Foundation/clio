@@ -1,7 +1,7 @@
 {
   "os": "Microsoft Windows NT 10.0.26200.0",
   "framework": "10.0.11",
-  "workDirectory": "C:\\Temp\\detached-ops-b3jri201.dqt",
+  "workDirectory": "C:\\Temp\\detached-ops-qqxyadqa.mz3",
   "cases": [
     {
       "name": "A1a the original operation still answers after a newer runtime is activated",
@@ -121,10 +121,44 @@
       }
     },
     {
-      "name": "A5d the scope accepts work again once the window is released",
+      "name": "A5d the scope accepts real work again once the window is released",
       "passed": true,
       "detail": {
-        "reacquired": true
+        "state": "Succeeded"
+      }
+    },
+    {
+      "name": "A5e a target window is refused while a global window is held",
+      "passed": true,
+      "detail": {
+        "globalTaken": true,
+        "targetGranted": false
+      }
+    },
+    {
+      "name": "A5f a global window is refused while a target window is held",
+      "passed": true,
+      "detail": {
+        "targetTaken": true,
+        "globalGranted": false
+      }
+    },
+    {
+      "name": "A5g the terminal record is already on disk when a window is granted",
+      "passed": true,
+      "detail": {
+        "windowTaken": true,
+        "endPersisted": true
+      }
+    },
+    {
+      "name": "A5h under contention, no operation is ever admitted for a scope whose window is held",
+      "passed": true,
+      "detail": {
+        "violations": 0,
+        "admitted": 53,
+        "refused": 67,
+        "windows": 35
       }
     },
     {
