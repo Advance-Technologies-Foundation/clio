@@ -31,6 +31,8 @@ public sealed class OperationLedger : IOperationLedger {
     private readonly ConcurrentDictionary<string, OperationRecord> _live = new();
     private readonly ConcurrentDictionary<string, object> _owners = new();
     private readonly IReadOnlyDictionary<string, OperationRecord> _recovered;
+    private readonly object _swapLock = new();
+    private readonly HashSet<string> _heldScopes = new(StringComparer.Ordinal);
 
     /// <summary>Opens a ledger over an evidence file, recovering any prior process's unfinished operations.</summary>
     public OperationLedger(string evidencePath) {
@@ -52,9 +54,35 @@ public sealed class OperationLedger : IOperationLedger {
         (target is null || string.Equals(r.Target, target, StringComparison.Ordinal)));
 
     /// <inheritdoc />
+    public IDisposable? TryEnterSwapWindow(string? target = null) {
+        string scope = target ?? string.Empty;
+        lock (_swapLock) {
+            // Taking the window and observing quiescence must be one step, or the caller is back to
+            // check-then-act with a smaller gap rather than no gap.
+            if (_heldScopes.Contains(scope)) return null;
+            if (target is null && _heldScopes.Count > 0) return null;
+            if (!IsQuiescent(target)) return null;
+            _heldScopes.Add(scope);
+            return new SwapWindow(this, scope);
+        }
+    }
+
+    private bool IsScopeHeld(string target) {
+        lock (_swapLock) {
+            return _heldScopes.Contains(target) || _heldScopes.Contains(string.Empty);
+        }
+    }
+
+    private void ReleaseScope(string scope) {
+        lock (_swapLock) { _heldScopes.Remove(scope); }
+    }
+
+    /// <inheritdoc />
     public IOperationLease Begin(string target, string runtimeVersion, object owner) {
         ArgumentNullException.ThrowIfNull(owner);
         ArgumentException.ThrowIfNullOrWhiteSpace(target);
+        // Refused, not queued: a swap is holding this scope precisely so nothing new starts under it.
+        if (IsScopeHeld(target)) throw new SwapWindowHeldException(target);
         string id = Guid.NewGuid().ToString("n");
         var record = new OperationRecord(id, target, DateTimeOffset.UtcNow, runtimeVersion, OperationState.Running);
         _live[id] = record;
@@ -133,6 +161,14 @@ public sealed class OperationLedger : IOperationLedger {
                 root.GetProperty("Code").ValueKind == JsonValueKind.Null ? null : root.GetProperty("Code").GetString());
         }
         catch (Exception) { return null; }
+    }
+
+    private sealed class SwapWindow(OperationLedger ledger, string scope) : IDisposable {
+        private int _released;
+
+        public void Dispose() {
+            if (Interlocked.Exchange(ref _released, 1) == 0) ledger.ReleaseScope(scope);
+        }
     }
 
     private sealed class Lease(OperationLedger ledger, string id) : IOperationLease {

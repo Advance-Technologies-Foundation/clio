@@ -81,8 +81,42 @@ public interface IOperationLedger {
     /// <remarks>
     /// This is the predicate a staged host update would trigger on. It is deliberately NOT derived from
     /// open requests: the measured failure this probe exists for had an idle transport and live work.
+    /// <para>
+    /// <b>Observing this is not enough to act on it</b> — see <see cref="TryEnterSwapWindow"/>.
+    /// </para>
     /// </remarks>
     bool IsQuiescent(string? target = null);
+
+    /// <summary>
+    /// Takes quiescence and holds it, so a swap can act on what it observed.
+    /// </summary>
+    /// <param name="target">Scope to hold, or <see langword="null"/> to hold the whole process.</param>
+    /// <returns>
+    /// A handle that keeps the scope quiescent until disposed, or <see langword="null"/> when work is
+    /// already running and the swap must not proceed.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Why a boolean is not sufficient.</b> Reading <see cref="IsQuiescent"/> and then swapping is
+    /// check-then-act: an operation can begin in the gap, and the swap then destroys work that started
+    /// after the check said it was safe. Raised by @vladimir-nikonov in discussion #1643 while scoping
+    /// the composition probe; case A5 measures both halves.
+    /// </para>
+    /// <para>
+    /// <b>The trade-off is explicit.</b> While a window is held, <see cref="Begin"/> for that scope is
+    /// refused rather than queued, so a caller sees a clear, retryable refusal instead of a hidden stall.
+    /// A production design may prefer to block or to queue; this probe refuses because a refusal is
+    /// observable and a stall is not.
+    /// </para>
+    /// </remarks>
+    IDisposable? TryEnterSwapWindow(string? target = null);
+}
+
+/// <summary>Raised when an operation is started for a scope whose swap window is held.</summary>
+public sealed class SwapWindowHeldException(string scope)
+    : InvalidOperationException($"A swap window is held for '{scope}'; retry once it is released.") {
+    /// <summary>The held scope — a target name, or an empty string for the whole process.</summary>
+    public string Scope { get; } = scope;
 }
 
 /// <summary>What a loaded runtime release must expose for this probe.</summary>

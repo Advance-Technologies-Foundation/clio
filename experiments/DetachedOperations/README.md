@@ -48,11 +48,22 @@ would almost never be globally idle and a global-only predicate would be correct
 | A4a | an operation lost with its process reports `Unknown`, with its target preserved |
 | A4b | an identifier that was never issued is still reported as `NotFound` |
 | A4c | the recovered host surfaces the lost operation rather than reporting a clean slate |
+| A5a | **control** — reading quiescence does not hold it: work starts in the check-then-act gap |
+| A5b | a swap window is refused while the target has work in flight |
+| A5c | holding a swap window closes the gap for its scope and leaves other targets alone |
+| A5d | the scope accepts work again once the window is released |
 | R1 | the V1 release becomes collectible once no lease retains it |
 | C1 | **control** — a host with no evidence answers `NotFound` for the very same lost operation |
 | C2 | **control** — the release is retained while its operation runs, and only then collectible |
 
-C1 and C2 exist because a suite that passes on its first run is worth nothing until it has been shown to
+A5 was added after @vladimir-nikonov pointed out, while scoping the composition probe, that
+`IsQuiescent(target)` is only an observation: reading it and then swapping is check-then-act, and an
+operation can begin in the gap. A5a measures that the gap is real; `TryEnterSwapWindow(target)` takes
+quiescence and holds it in one step, and A5c measures that it closes the gap for its scope without
+freezing unrelated targets. While a window is held, `Begin` for that scope is **refused rather than
+queued** — a refusal is observable, a stall is not.
+
+C1, C2 and A5a exist because a suite that passes on its first run is worth nothing until it has been shown to
 fail when the property is absent. C1 reproduces today's wrong answer inside the same harness: the same
 identifier, queried by a ledger with no evidence, comes back `NotFound`. C2 shows retention is real rather
 than incidental — the release is *not* collectible while its work is in flight.
@@ -78,7 +89,7 @@ temporary directory and writes nothing outside it.
 
 ## macOS observations, 2026-09-21
 
-macOS 27.0.0 (arm64), .NET 10.0.12. **13/13 passed, exit 0, three consecutive runs identical.**
+macOS 27.0.0 (arm64), .NET 10.0.12. **17/17 passed, exit 0.**
 
 - The operation started on `10.0.0.0` kept answering `Running` and stayed owned by `10.0.0.0` after
   `10.1.0.0` was activated mid-flight.
@@ -97,7 +108,8 @@ safe and this probe does not claim it does.
 Retention in C2 comes from both the ledger's owner reference and the detached work's own closure; the
 probe shows the release outlives the update, not which of the two references achieves it.
 
-Not covered: concurrency and races (one owner at a time), native libraries or resources, real
+Not covered: multi-threaded contention on the swap window itself (A5 exercises the sequence, not a
+concurrent storm of callers racing for the same scope), native libraries or resources, real
 Creatio/DI dependencies, GC timing guarantees, multi-process coordination, server-side reconciliation
 (asking Creatio what is actually running), and any integration with `UpdatingComposition` — this probe
 loads releases through its own collectible context rather than through Core, deliberately, so it cannot

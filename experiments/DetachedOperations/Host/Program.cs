@@ -70,6 +70,40 @@ Check("A4b an identifier that was never issued is still reported as NotFound",
 Check("A4c the recovered host surfaces the lost operation rather than reporting a clean slate",
     afterLoss.RecoveredUnknown.Count == 1, new { recoveredUnknown = afterLoss.RecoveredUnknown.Count });
 
+// ── A5: observing quiescence is not enough to act on it ────────────────────────────────────────────
+string raceEffect = Path.Combine(work, "race-effect.log");
+
+// Control first: show the check-then-act gap is real, not hypothetical.
+bool observedQuiescent = ledger.IsQuiescent("envD");
+string raceId = v2.StartDetached(ledger, "envD", raceEffect, 1200, "succeed", CancellationToken.None);
+Check("A5a control: reading quiescence does not hold it — work starts in the check-then-act gap",
+    observedQuiescent && !ledger.IsQuiescent("envD"),
+    new { observedQuiescent, quiescentAfterwards = ledger.IsQuiescent("envD"),
+          note = "a swap acting on the earlier read would destroy work that began after it" });
+
+Check("A5b a swap window is refused while the target has work in flight",
+    ledger.TryEnterSwapWindow("envD") is null, new { held = false });
+
+await WaitTerminal(ledger, raceId, TimeSpan.FromSeconds(20));
+
+// Now the same sequence with the window held.
+bool windowTaken, newWorkRefused = false, otherTargetUnaffected;
+using (IDisposable? window = ledger.TryEnterSwapWindow("envD")) {
+    windowTaken = window is not null;
+    try { v2.StartDetached(ledger, "envD", raceEffect, 200, "succeed", CancellationToken.None); }
+    catch (SwapWindowHeldException) { newWorkRefused = true; }
+    string otherId = v2.StartDetached(ledger, "envE", raceEffect, 200, "succeed", CancellationToken.None);
+    otherTargetUnaffected = otherId.Length > 0;
+    await WaitTerminal(ledger, otherId, TimeSpan.FromSeconds(20));
+}
+
+Check("A5c holding a swap window closes the gap for its scope and leaves other targets alone",
+    windowTaken && newWorkRefused && otherTargetUnaffected,
+    new { windowTaken, newWorkRefused, otherTargetUnaffected });
+
+Check("A5d the scope accepts work again once the window is released",
+    ledger.TryEnterSwapWindow("envD") is not null, new { reacquired = true });
+
 // ── C1: the negative control. Without durable evidence the same question gets today's wrong answer ──
 var withoutEvidence = new OperationLedger(Path.Combine(work, "no-evidence.jsonl"));
 var blindAnswer = withoutEvidence.Query(lostId);

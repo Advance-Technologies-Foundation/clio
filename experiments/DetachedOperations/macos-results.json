@@ -1,7 +1,7 @@
 {
   "os": "Unix 27.0.0",
   "framework": "10.0.12",
-  "workDirectory": "/var/folders/xk/pl1m8g6d1w55jscyxzg0wjkc0000gn/T/detached-ops-4tdryN",
+  "workDirectory": "/var/folders/xk/pl1m8g6d1w55jscyxzg0wjkc0000gn/T/detached-ops-oKq0mp",
   "cases": [
     {
       "name": "A1a the original operation still answers after a newer runtime is activated",
@@ -93,6 +93,38 @@
       "passed": true,
       "detail": {
         "recoveredUnknown": 1
+      }
+    },
+    {
+      "name": "A5a control: reading quiescence does not hold it \u2014 work starts in the check-then-act gap",
+      "passed": true,
+      "detail": {
+        "observedQuiescent": true,
+        "quiescentAfterwards": false,
+        "note": "a swap acting on the earlier read would destroy work that began after it"
+      }
+    },
+    {
+      "name": "A5b a swap window is refused while the target has work in flight",
+      "passed": true,
+      "detail": {
+        "held": false
+      }
+    },
+    {
+      "name": "A5c holding a swap window closes the gap for its scope and leaves other targets alone",
+      "passed": true,
+      "detail": {
+        "windowTaken": true,
+        "newWorkRefused": true,
+        "otherTargetUnaffected": true
+      }
+    },
+    {
+      "name": "A5d the scope accepts work again once the window is released",
+      "passed": true,
+      "detail": {
+        "reacquired": true
       }
     },
     {
