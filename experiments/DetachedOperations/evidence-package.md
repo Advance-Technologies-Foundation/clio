@@ -5,7 +5,7 @@ measured it says so. Claims that were published and later narrowed are listed wi
 because a reader who only sees the surviving version cannot tell which parts were tested by someone
 disagreeing.
 
-**Status at `79cb0026f85f`: 63/63 on macOS, 63/63 on Windows from a clean clone.** Raw output in
+**Status at `a3092fe2e426`: 66/66 on macOS, 66/66 on Windows from a clean clone.** Raw output in
 `macos-results.json` and `windows-results.json`. Reproduce with the commands in `README.md`; the run
 needs no environment, no network and no Creatio.
 
@@ -37,10 +37,10 @@ The eight clauses live in `shared-contract.md`; this is the index, not a replace
 | 1 | A release is identified by a string; compatibility is decided before activation, never mid-operation; an incompatible release is inspected, discarded and never consulted | A1a, F1, F2 |
 | 2 | An operation id is opaque, is the unit of truth for *state*, and never entitles anyone to resume or retry | — |
 | 3 | Only host-owned portable data crosses back. A runtime-defined value, exception **or** delegate retains its release; the string form does not | O1, G1–G4 |
-| 4 | Response completion, outcome publication and ownership release are three distinct events; quiescence follows ownership. **When the owner is a process, liveness replaces disposal** | P5, H1–H5 |
+| 4 | Response completion, outcome publication and ownership release are three distinct events; quiescence follows ownership. **When the owner is a process, liveness replaces disposal, and an owner that cannot be asked is declared rather than skipped** | P5, H1–H5, K1, K2 |
 | 5 | Use `TryReserveAdmission`, not `TryEnterSwapWindow`: polling for quiescence under load starves forever. The drain must be bounded and the reservation released when the budget expires | D1, D2, E1, E2 |
 | 5b | A degraded scope is repaired or explicitly abandoned, never cleared by the fault going away | E3–E6 |
-| 6 | A configuration snapshot needs one thing from this side: a portable identity. Everything else is the settings lane's | J1–J5 |
+| 6 | A configuration snapshot needs one thing from this side: a portable identity, plus a cleanup reference set derived from retention rather than counted | J1–J5, K3 |
 | 7 | The assembly crossing the boundary references `System.Runtime` and `System.Collections` and nothing else | F3, F4 |
 | 8 | A case title is a claim; a case naming a temporal or contention property carries a mutation control, and the mutation must be **observed to fail** | — |
 

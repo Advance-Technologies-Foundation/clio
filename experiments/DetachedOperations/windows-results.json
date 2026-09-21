@@ -1,7 +1,7 @@
 {
   "os": "Microsoft Windows NT 10.0.26200.0",
   "framework": "10.0.11",
-  "workDirectory": "C:\\Temp\\detached-ops-gxhdjmwd.luh",
+  "workDirectory": "C:\\Temp\\detached-ops-uj1hhg0g.32v",
   "cases": [
     {
       "name": "A1a the original operation still answers after a newer runtime is activated",
@@ -156,19 +156,19 @@
       "passed": true,
       "detail": {
         "Violations": 0,
-        "Admitted": 68,
-        "Refused": 51,
-        "Windows": 8
+        "Admitted": 41,
+        "Refused": 76,
+        "Windows": 12
       }
     },
     {
       "name": "A5i mutation control: the same regression detects a deliberately split admission",
       "passed": true,
       "detail": {
-        "Violations": 17,
-        "Admitted": 36,
-        "Refused": 50,
-        "Windows": 11,
+        "Violations": 20,
+        "Admitted": 23,
+        "Refused": 79,
+        "Windows": 15,
         "note": "non-zero here is the point: it shows A5h can fail"
       }
     },
@@ -387,7 +387,7 @@
         "busyWhenReserved": true,
         "reservedImmediately": true,
         "drained": true,
-        "drainMs": 126,
+        "drainMs": 154,
         "note": "new admissions are refused under the reservation, so in-flight work is finite"
       }
     },
@@ -398,7 +398,7 @@
         "reserved": true,
         "drainedWithinBudget": false,
         "hungStillRunning": true,
-        "reservationHeldMs": 620,
+        "reservationHeldMs": 623,
         "note": "the hung operation was neither killed nor completed; the update defers again"
       }
     },
@@ -604,6 +604,35 @@
         "threeArgumentOverloadKept": true,
         "prebuiltReleasesExecuted": true,
         "note": "these effect lines were written by binaries this run never recompiled"
+      }
+    },
+    {
+      "name": "K1 an owner that cannot be asked about liveness is reported, not silently skipped",
+      "passed": true,
+      "detail": {
+        "unresolvable": 1,
+        "bareListed": true,
+        "wrappedListed": false,
+        "note": "visible before the drain rather than as a drain that never ends"
+      }
+    },
+    {
+      "name": "K2 only the owner that can be asked is resolved; the bare one is the warned-about failure",
+      "passed": true,
+      "detail": {
+        "wrapped": "Unknown",
+        "bare": "Running",
+        "note": "the warning in K1 is not hypothetical; this is what ignoring it costs"
+      }
+    },
+    {
+      "name": "K3 a resolved orphan releases its snapshot; an unresolvable one pins it forever",
+      "passed": true,
+      "detail": {
+        "referencedSnapshots": [
+          "cfg-B"
+        ],
+        "note": "the cleanup reference set is derived from retention, so it cannot disagree with it"
       }
     }
   ]
