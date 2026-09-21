@@ -38,25 +38,27 @@ Two stories depend on none of the seven open owner decisions and can begin immed
 
 Everything else waits on an owner decision or on story 1.
 
-## The seven owner decisions, still open
+## The owner decisions — two settled, five open
 
-Written up in the ADR with an advisory recommendation each; the stories were written against those
-recommendations so the set is reviewable, **not** so the decisions are closed. Each dependent story names
+Written up in the ADR with an advisory recommendation each. The stories were written against those
+recommendations so the set is reviewable, **not** so the decisions are closed; each dependent story names
 its OQ and the one-line consequence of the opposite answer.
 
-| | decision | story affected |
-|---|---|---|
-| OQ-01 | de-conversion (`enabled: false`) in v1 | 8 (deleted if "no") |
-| OQ-02 | retarget on a multi-instance element | 7 |
-| OQ-03 | the `inSync` redefinition | 9, 12 |
-| OQ-04 | output-collection strictness | 6 |
-| OQ-05 | does `validate-process-graph` grow a rule | 6, 13 |
-| OQ-06 | in-place `executionMode` / `ignoreErrors` update | 4 |
-| OQ-07 | collection SHAPE check | 5 |
+| | decision | story affected | state |
+|---|---|---|---|
+| OQ-01 | de-conversion (`enabled: false`) in v1 | 8 | **DECIDED 2026-09-21 — ships**, classified destructive. FR-25 Could → Must |
+| OQ-02 | retarget on a multi-instance element | 7 | open |
+| OQ-03 | the `inSync` redefinition | 9, 12 | open |
+| OQ-04 | output-collection strictness | 6 | open |
+| OQ-05 | does `validate-process-graph` grow a rule | 6, 13 | open |
+| OQ-06 | in-place `executionMode` / `ignoreErrors` update | 4 | **DECIDED 2026-09-21 — in place.** Omitted on update = left as is |
+| OQ-07 | collection SHAPE check | 5 | open |
 
-OQ-01 and OQ-06 are coupled: answering **both** "no" makes `executionMode` unchangeable once set, because
-the only remaining route is `removeElement` + `addElement`, which changes the element UId and drops the
-element's flows and mappings.
+The OQ-01/OQ-06 coupling is now moot, but it is worth knowing why it existed and why the ADR's first
+statement of it was wrong. In-place update never needed de-conversion to exist. The real coupling was that
+answering **both** "no" would have left `executionMode` unchangeable once set, since the only remaining
+route is `removeElement` + `addElement` — which changes the element UId and drops the element's flows and
+mappings.
 
 ## Five traps that fail SILENTLY
 

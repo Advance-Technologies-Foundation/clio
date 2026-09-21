@@ -32,15 +32,21 @@ without being silently given the mode I did not ask for
 
 ---
 
-## Owner decision this story assumes
+## Owner decision — SETTLED
 
 **OQ-06 — in-place update of `executionMode` / `ignoreErrors` on an already-multi-instance element.**
-Working assumption: **supported in place** (the architect's recommendation). Omitted on update means
-"left as is, never reset".
-*If the owner decides the other way* (a de-convert/re-convert cycle is required), AC-04 and AC-05 below
-invert into refusals, this story shrinks to create-time-only handling, and it acquires a hard dependency
-on OQ-01 being YES — because without de-conversion (story 8) there would be no route to change a mode at
-all.
+**DECIDED by the owner 2026-09-21: supported IN PLACE.** `enabled: true` on an element that already
+carries `MultiInstanceOptions` updates the mode fields and does not re-convert. Omitted on update means
+"left as is, never reset"; omitted on create means Sequential / false, both suppressed at their defaults.
+A different collection source in the same call is still refused — that is a retarget of the iteration,
+not a mode change.
+
+Accepted cost: one field (`enabled`) carries two behaviours, create and update. AC-04 and AC-05 below
+stand as written and are no longer conditional.
+
+One correction to this story's earlier framing: it claimed a hard dependency on OQ-01 being YES. That was
+wrong — in-place update needs no de-conversion to exist. The real coupling, now moot, was that answering
+**both** OQ-01 and OQ-06 "no" would have left `executionMode` unchangeable once set.
 
 ## Acceptance Criteria
 

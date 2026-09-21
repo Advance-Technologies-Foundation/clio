@@ -2,8 +2,8 @@
 
 **Feature**: eng-99856-multi-instance
 **FR coverage**: FR-25
-**AC coverage**: none of the numbered ACs — this story is entirely OQ-01-contingent and must be dropped
-whole if the owner says no
+**AC coverage**: none of the numbered ACs — this story exists because OQ-01 was decided YES
+(owner, 2026-09-21); it is no longer contingent
 **PRD**: [prd-eng-99856-multi-instance.md](../prd/prd-eng-99856-multi-instance.md)
 **ADR**: [adr-eng-99856-multi-instance.md](../adr/adr-eng-99856-multi-instance.md) — OQ-01
 **Platform facts**: [eng-99856-multi-instance-platform-facts.md](../eng-99856-multi-instance/eng-99856-multi-instance-platform-facts.md) — §1.7, §4
@@ -16,14 +16,18 @@ whole if the owner says no
 
 ---
 
-## Owner decision this story assumes
+## Owner decision — SETTLED
 
-**OQ-01 — does de-conversion ship in v1?** Working assumption: **yes, it ships** (the architect's
-recommendation: the alternative route back is strictly more destructive).
-*If the owner says no*, **this whole story is deleted**, `enabled: false` becomes an explicit refusal
-naming `removeElement` + `addElement` as the only route (one small AC folded into story 4), story 7's
-retarget message loses its "de-convert first" branch, and the guidance in story 14 says de-conversion is
-not offered. Nothing else in the feature moves.
+**OQ-01 — does de-conversion ship in v1?** **DECIDED by the owner 2026-09-21: YES, it ships**, classified
+as a destructive write behind the same explicit-intent rule as every other one. This story is therefore
+live, and FR-25 moves from Could to Must.
+
+Two reasons carried the decision. The alternative route back — `removeElement` + `addElement` — is
+strictly more destructive: it changes the element UId and drops the element's flows and mappings, while
+de-conversion preserves all of them. And the "it is lossy like the designer's own operation" objection is
+weak on inspection: the XOR'd `Variable` twin that is discarded is DERIVED
+(`UId = originalUId XOR outputCollectionUId`) and `FillCollectionParameters` re-mints it on the next
+conversion, so nothing is lost that a re-conversion does not restore.
 
 ## As a
 

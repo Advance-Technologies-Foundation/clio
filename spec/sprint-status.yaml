@@ -4265,9 +4265,10 @@ stories:
       - story-eng-99856-multi-instance-12
       - story-eng-99856-multi-instance-13
     note: >-
-      FR-04, FR-05 / AC-05, AC-06. OQ-06 ASSUMED: in-place update supported, omitted means "left as is".
-      If the owner requires a de-convert/re-convert cycle instead, AC-04/AC-05 invert into refusals, the
-      story shrinks to create-time only, and it acquires a hard dependency on OQ-01 being YES. The
+      FR-04, FR-05 / AC-05, AC-06. OQ-06 DECIDED by the owner 2026-09-21: in-place update IS supported;
+      omitted on update means "left as is, never reset", omitted on create means Sequential/false. A
+      different collection source in the same call is still refused as a retarget. The earlier claim of a
+      hard dependency on OQ-01 was wrong - in-place needs no de-conversion. The
       mode-without-enabled refusal is load-bearing: accepting it mints an empty
       ProcessSchemaMultiInstanceOptions, which turns the mode ON with five empty UIds
       (IsMultiInstanceModeEnabled is a bare null check) and puts the element permanently on the throwing
@@ -4374,10 +4375,11 @@ stories:
       - story-eng-99856-multi-instance-12
       - story-eng-99856-multi-instance-14
     note: >-
-      FR-25. ENTIRELY OQ-01-CONTINGENT. Working assumption: de-conversion SHIPS in v1 (the alternative
-      route back, removeElement + addElement, changes the element UId and drops its flows and mappings, so
-      it is strictly more destructive). IF THE OWNER SAYS NO, THIS WHOLE STORY IS DELETED: enabled:false
-      becomes an explicit refusal naming that route, folded as one AC into story 4, and story 7's retarget
+      FR-25, now Must rather than Could. OQ-01 DECIDED by the owner 2026-09-21: de-conversion SHIPS,
+      classified destructive. Carried by two reasons: the alternative route back, removeElement +
+      addElement, changes the element UId and drops its flows and mappings, so it is strictly more
+      destructive; and the lossiness objection is weak, because the XOR'd Variable twin that is discarded
+      is DERIVED and FillCollectionParameters re-mints it on the next conversion. Story 7's retarget
       message loses its "de-convert first" branch. The platform has the operation —
       convertToSingleInstance, client-side, pinned by the platform's own Jasmine spec — and it is lossy in
       one defined way: the XOR'd Variable twin is discarded and the original returns from the input side.
