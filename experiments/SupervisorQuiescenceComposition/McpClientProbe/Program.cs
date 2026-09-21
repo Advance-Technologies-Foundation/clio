@@ -32,6 +32,21 @@ try {
     await using McpClient client = await McpClient.CreateAsync(
         new StreamClientTransport(hostProcess.StandardInput.BaseStream, hostProcess.StandardOutput.BaseStream));
 
+    // BASELINE: the claim this probe originally made, kept honest by an accurate name. Work finishes
+    // well inside the drain budget, so the swap waits for natural completion before ever killing the
+    // backend -- this proves correlation survives a drain-then-swap, not a swap of genuinely in-flight
+    // work. That stronger claim is MUTATION A/B below, not this case.
+    CallToolResult startBase = await client.CallToolAsync("start-operation",
+        new Dictionary<string, object?> { ["target"] = "envBase", ["workMs"] = 300, ["outcome"] = "succeed" });
+    string idBase = ReadText(startBase).GetProperty("id").GetString()!;
+    CallToolResult swapBase = await client.CallToolAsync("trigger-swap",
+        new Dictionary<string, object?> { ["target"] = "envBase", ["drainBudgetSeconds"] = 5 });
+    string outcomeBase = ReadText(swapBase).GetProperty("result").GetString() ?? "";
+    string stateBase = (await QueryAsync(client, idBase)).GetProperty("state").GetString()!;
+    Check("BASELINE: an id issued before a drain-then-swap resolves correctly after it, same connection",
+        outcomeBase.StartsWith("swapped ", StringComparison.Ordinal) && stateBase == "Succeeded",
+        new { swapOutcome = outcomeBase, finalState = stateBase, note = "work completed before the kill" });
+
     // MUTATION A: work longer than the drain budget. The original case used 800ms work against a
     // 20s budget, so the operation always finished BEFORE the kill. Here it cannot.
     CallToolResult startA = await client.CallToolAsync("start-operation",

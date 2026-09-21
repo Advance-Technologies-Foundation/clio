@@ -32,7 +32,10 @@ public sealed class SupervisorState {
 
     /// <summary>Starts detached work and returns its host-issued id -- opaque to the caller by design.</summary>
     public async Task<string> StartOperationAsync(string target, int workMs, string outcome) {
-        IOperationLease lease = _ledger.Begin(target, "V1", _backend);
+        // Wrapped, not passed bare: a bare Process satisfies `object owner` but not IOwnerLiveness, so
+        // ResolveOrphansCore silently skips it and a killed backend leaves the record Running forever.
+        // Measured on this exact host in discussion #1643 before this wrapper existed.
+        IOperationLease lease = _ledger.Begin(target, "V1", new ProcessOwner(_backend));
         _leases[lease.Id] = lease;
         await _backend.StandardInput.WriteLineAsync($"start {target} {lease.Id} {workMs} {outcome}");
         await _backend.StandardInput.FlushAsync();
@@ -123,4 +126,10 @@ public sealed class SupervisorState {
         }
         return false;
     }
+}
+
+/// <summary>A real operating-system process as an operation owner; liveness is the process itself.</summary>
+/// <remarks>Same pattern as Alexandr-Kravchuk's ProcessOwner in DetachedOperations/Host/Program.cs.</remarks>
+file sealed class ProcessOwner(Process process) : IOwnerLiveness {
+    public bool IsAlive => !process.HasExited;
 }

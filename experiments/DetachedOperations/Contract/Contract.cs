@@ -146,7 +146,22 @@ public interface IOperationLedger {
     /// Clearing a degraded scope is an operator decision, deliberately absent here.
     /// </remarks>
     IReadOnlyCollection<string> DegradedScopes { get; }
+
+    /// <summary>
+    /// Operations whose outcome is known in memory but is NOT on disk.
+    /// </summary>
+    /// <remarks>
+    /// These are the only records that would be lost if the evidence owner were replaced. Clearing a
+    /// degraded mark does not shorten this list — repairing or explicitly abandoning them does.
+    /// </remarks>
+    IReadOnlyCollection<string> UnpersistedOperations { get; }
 }
+
+/// <summary>Outcome of an attempt to make un-persisted records durable.</summary>
+/// <param name="Repaired">How many records were written to durable evidence.</param>
+/// <param name="Remaining">How many are still memory-only.</param>
+/// <param name="ScopeCleared">Whether the scope's degraded mark was lifted as a result.</param>
+public sealed record RepairResult(int Repaired, int Remaining, bool ScopeCleared);
 
 /// <summary>Raised when an operation is started for a scope whose swap window is held.</summary>
 public sealed class SwapWindowHeldException(string scope)
@@ -155,10 +170,55 @@ public sealed class SwapWindowHeldException(string scope)
     public string Scope { get; } = scope;
 }
 
+/// <summary>
+/// An owner whose continued existence can be checked, rather than one that promises to release itself.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Ownership normally ends when the lease is disposed. That silently assumes the owner is an in-process
+/// object which something will eventually dispose. When the owner is a separate process, a killed process
+/// disposes nothing: the lease stays open and the ledger keeps answering <see cref="OperationState.Running"/>
+/// for work that has no process. Measured on @vladimir-nikonov's MCP host in discussion #1643 — eight
+/// seconds of polling for five seconds of work, `Running` every time, forever.
+/// </para>
+/// <para>
+/// So a cross-process owner is asked whether it is still there. An owner that is gone cannot report an
+/// outcome and cannot perform cleanup, so its operations resolve to <see cref="OperationState.Unknown"/>
+/// and stop retaining anything.
+/// </para>
+/// </remarks>
+public interface IOwnerLiveness {
+    /// <summary>Whether this owner can still report an outcome.</summary>
+    bool IsAlive { get; }
+}
+
+/// <summary>
+/// A workflow supplied by a third party, composed from vendor capability it does not reference.
+/// </summary>
+/// <remarks>
+/// A partner assembly references this contract and nothing else of ours: not a vendor release, not the
+/// host. It receives the runtime it should compose and returns portable data.
+/// </remarks>
+public interface IPartnerWorkflow {
+    /// <summary>Partner identity, for provenance in the result.</summary>
+    string Name { get; }
+
+    /// <summary>Composes vendor capability and returns portable data only.</summary>
+    /// <param name="runtime">The vendor release this invocation is pinned to.</param>
+    /// <returns>An outcome describing what ran, as strings.</returns>
+    (string Partner, string RuntimeVersion, string Outcome) Compose(IDetachedRuntime runtime);
+}
+
 /// <summary>What a loaded runtime release must expose for this probe.</summary>
 public interface IDetachedRuntime {
     /// <summary>Release identity.</summary>
     string Version { get; }
+
+    /// <summary>
+    /// The contract generation this release was built against. The host refuses a release whose
+    /// generation it does not support, before activation and without disturbing what is running.
+    /// </summary>
+    int ContractVersion { get; }
 
     /// <summary>
     /// Starts work that outlives this call and returns immediately, exactly like a tool that hits its
@@ -183,4 +243,25 @@ public interface IDetachedRuntime {
     /// for reclamation. Case O1 measures it.
     /// </remarks>
     object CreateRuntimeDefinedResult();
+
+    /// <summary>Throws an exception whose TYPE is declared by this release.</summary>
+    /// <remarks>An escaping exception is a returned value with extra steps: catching it retains the release.</remarks>
+    void ThrowRuntimeDefinedError();
+
+    /// <summary>Does the same work and reports failure as portable data instead of a runtime type.</summary>
+    /// <returns>An error code and message, both <see cref="string"/>.</returns>
+    (string Code, string Message) TryRuntimeDefinedError();
+
+    /// <summary>Returns a delegate whose target lives in this release.</summary>
+    object CreateRuntimeDefinedCallback();
+
+    /// <summary>
+    /// Accepts a HOST delegate, invokes it, and must not retain it once the call returns.
+    /// </summary>
+    /// <param name="report">Host-owned progress sink.</param>
+    /// <param name="steps">How many times to report.</param>
+    void ReportProgressTo(Action<string> report, int steps);
+
+    /// <summary>Whether this release is still holding a host delegate from a previous call.</summary>
+    bool HoldsHostCallback { get; }
 }
