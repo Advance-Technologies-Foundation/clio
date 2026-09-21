@@ -32,45 +32,39 @@ try {
     await using McpClient client = await McpClient.CreateAsync(
         new StreamClientTransport(hostProcess.StandardInput.BaseStream, hostProcess.StandardOutput.BaseStream));
 
-    // Start work that outlives this call's response, exactly the create-app-section shape.
-    CallToolResult startResult = await client.CallToolAsync("start-operation",
-        new Dictionary<string, object?> { ["target"] = "envA", ["workMs"] = 800, ["outcome"] = "succeed" });
-    string id = ReadText(startResult).GetProperty("id").GetString()!; // opaque: read once, never parsed further
-
-    // Query while still running -- state 1 of the three-outcome requirement.
+    // MUTATION A: work longer than the drain budget. The original case used 800ms work against a
+    // 20s budget, so the operation always finished BEFORE the kill. Here it cannot.
+    CallToolResult startA = await client.CallToolAsync("start-operation",
+        new Dictionary<string, object?> { ["target"] = "envA", ["workMs"] = 5000, ["outcome"] = "succeed" });
+    string idA = ReadText(startA).GetProperty("id").GetString()!;
     await Task.Delay(150);
-    JsonElement earlyQuery = await QueryAsync(client, id);
-    Check("early query, before the swap, reports Running",
-        earlyQuery.GetProperty("state").GetString() == "Running",
-        new { state = earlyQuery.GetProperty("state").GetString() });
+    string beforeA = (await QueryAsync(client, idA)).GetProperty("state").GetString()!;
+    CallToolResult swapA = await client.CallToolAsync("trigger-swap",
+        new Dictionary<string, object?> { ["target"] = "envA", ["drainBudgetSeconds"] = 1 });
+    string outcomeA = ReadText(swapA).GetProperty("result").GetString() ?? "";
+    Check("MUTATION A: with work genuinely in flight, the swap does not happen at all",
+        beforeA == "Running" && outcomeA == "deferred",
+        new { stateAtSwapTime = beforeA, swapOutcome = outcomeA,
+              note = "the original case only ever swapped an idle backend" });
 
-    // Trigger a real backend swap -- gated on the same reserve-then-drain primitive S2/S4/S6-S9 use,
-    // now reached through a real MCP tool call rather than this probe's own function calls.
-    CallToolResult swapResult = await client.CallToolAsync("trigger-swap",
-        new Dictionary<string, object?> { ["target"] = "envA", ["drainBudgetSeconds"] = 20 });
-    JsonElement swapPayload = ReadText(swapResult);
-    string swapOutcome = swapPayload.GetProperty("result").GetString() ?? "";
-    int newPid = swapPayload.GetProperty("currentBackendPid").GetInt32();
-    Check("trigger-swap over MCP reports a real V1->V2 PID change, not a deferral",
-        swapOutcome.StartsWith("swapped ", StringComparison.Ordinal),
-        new { swapOutcome, newPid });
-
-    // Query again, SAME connection, SAME opaque id, after a real process was killed and replaced
-    // underneath the operation this id refers to.
-    JsonElement postSwapQuery = await QueryAsync(client, id);
-    Check("post-swap query, same connection, same id, reports Succeeded -- correlation survived a real swap",
-        postSwapQuery.GetProperty("state").GetString() == "Succeeded",
-        new { state = postSwapQuery.GetProperty("state").GetString() });
-
-    // A second operation on the new backend, through the same connection, to show the new backend
-    // is genuinely serving -- not just that the old id's record survived in the ledger.
-    CallToolResult secondStart = await client.CallToolAsync("start-operation",
-        new Dictionary<string, object?> { ["target"] = "envA", ["workMs"] = 50, ["outcome"] = "succeed" });
-    string secondId = ReadText(secondStart).GetProperty("id").GetString()!;
-    JsonElement secondTerminal = await WaitTerminalAsync(client, secondId, TimeSpan.FromSeconds(10));
-    Check("a new operation on the swapped-to backend succeeds, same connection throughout",
-        secondTerminal.GetProperty("state").GetString() == "Succeeded",
-        new { state = secondTerminal.GetProperty("state").GetString() });
+    // MUTATION B: force the swap anyway, with the lease still outstanding. What does the client get?
+    CallToolResult startB = await client.CallToolAsync("start-operation",
+        new Dictionary<string, object?> { ["target"] = "envB", ["workMs"] = 5000, ["outcome"] = "succeed" });
+    string idB = ReadText(startB).GetProperty("id").GetString()!;
+    await Task.Delay(150);
+    CallToolResult swapB = await client.CallToolAsync("trigger-swap",
+        new Dictionary<string, object?> { ["target"] = "envB", ["drainBudgetSeconds"] = 1, ["force"] = true });
+    string outcomeB = ReadText(swapB).GetProperty("result").GetString() ?? "";
+    var seen = new List<string>();
+    for (int i = 0; i < 8; i++) {
+        await Task.Delay(1000);
+        seen.Add((await QueryAsync(client, idB)).GetProperty("state").GetString()!);
+    }
+    string finalB = seen[^1];
+    Check("MUTATION B: after a forced swap the orphaned operation is reported truthfully (not an eternal Running)",
+        finalB is "Unknown" or "Failed",
+        new { swapOutcome = outcomeB, statesOverEightSeconds = seen, finalState = finalB,
+              note = "the work was killed with the lease outstanding; Running here means the client waits forever" });
 
     Console.WriteLine(JsonSerializer.Serialize(new {
         transport = "real MCP client, StreamClientTransport, one connection, never reconnected",
@@ -85,17 +79,6 @@ return failed ? 1 : 0;
 static async Task<JsonElement> QueryAsync(McpClient client, string id) {
     CallToolResult result = await client.CallToolAsync("query-operation", new Dictionary<string, object?> { ["id"] = id });
     return ReadText(result);
-}
-
-static async Task<JsonElement> WaitTerminalAsync(McpClient client, string id, TimeSpan budget) {
-    DateTime deadline = DateTime.UtcNow + budget;
-    while (DateTime.UtcNow < deadline) {
-        JsonElement result = await QueryAsync(client, id);
-        string state = result.GetProperty("state").GetString()!;
-        if (state is not "Running") return result;
-        await Task.Delay(25);
-    }
-    throw new TimeoutException($"operation {id} did not reach a terminal state in time");
 }
 
 static JsonElement ReadText(CallToolResult result) {

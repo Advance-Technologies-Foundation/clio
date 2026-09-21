@@ -49,13 +49,13 @@ public sealed class SupervisorState {
     /// Gates a real backend replacement on the ledger (reserve-then-drain, same primitive S2/S4/S6-S9
     /// migrated to after Alexandr's starvation proof), then swaps to a fresh backend process.
     /// </summary>
-    public async Task<string> TriggerSwapAsync(string? target, TimeSpan drainBudget) {
+    public async Task<string> TriggerSwapAsync(string? target, TimeSpan drainBudget, bool force = false) {
         await _swapGate.WaitAsync();
         try {
             IDisposable? reservation = _ledger.TryReserveAdmission(target);
             if (reservation is null) return "already-swapping";
             DateTime deadline = DateTime.UtcNow + drainBudget;
-            while (!_ledger.IsQuiescent(target)) {
+            while (!force && !_ledger.IsQuiescent(target)) {
                 if (DateTime.UtcNow >= deadline) { reservation.Dispose(); return "deferred"; }
                 await Task.Delay(25);
             }
