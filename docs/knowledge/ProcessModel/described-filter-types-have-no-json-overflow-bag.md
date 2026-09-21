@@ -3,20 +3,21 @@ description: this record OWNS which Described* types in IProcessDescriber.cs car
 applies-to:
   - clio/Command/ProcessModel/IProcessDescriber.cs
 ticket: ENG-91842
-date: 2026-08-19
+date: 2026-09-17
 ---
 
 **What is true** — `describe-business-process` deserializes the server payload into the
 `Described*` types and re-serializes them for the caller. The types that model an ELEMENT and its
 per-kind configuration blocks each hold a `[JsonExtensionData]` overflow bag, so an unknown field
 survives the round trip. **Counted against the file, not remembered** — this membership has now gone
-stale TWICE, and both times in a record whose whole point is that the list goes stale. Counted at the
-merge of ENG-91853 and ENG-94374: 14 types carry a bag, 8 do not.
+stale TWICE, and both times in a record whose whole point is that the list goes stale. **Recounted at
+ENG-92707: 15 types carry a bag, 8 do not** (the 8 excludes `ServerProcessDescriber`, which is the
+reader rather than a DTO).
 
 - **bag, an undeclared field survives:** `DescribeProcessResult` (the graph root),
   `DescribedElement`, `DescribedFlow`, `DescribedEmail`, `DescribedPerformer`, `DescribedApproval`,
-  `DescribedOpenEditPage` (+ `ResultsByColumn`, `LogActivity`, `ActivityInterval`),
-  `DescribedPreconfiguredPage` (+ `Performer`, `DataSource`, `Button`)
+  `DescribedSubProcess`, `DescribedOpenEditPage` (+ `ResultsByColumn`, `LogActivity`,
+  `ActivityInterval`), `DescribedPreconfiguredPage` (+ `Performer`, `DataSource`, `Button`)
 - **no bag, still dropped in silence:** `DescribedFilter`, `DescribedFilterGroup`,
   `DescribedFilterCondition`, `DescribedFilterElementRef`, `DescribedConnection`,
   `DescribedSignal`, `DescribedParameter`
