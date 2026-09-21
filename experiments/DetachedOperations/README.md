@@ -103,7 +103,17 @@ Creatio/DI dependencies, GC timing guarantees, multi-process coordination, serve
 loads releases through its own collectible context rather than through Core, deliberately, so it cannot
 conflict with the retirement branch.
 
-Windows results remain for @kirillkrylov to reproduce independently.
+## Windows observations, 2026-09-21
+
+Windows 10.0.26200, .NET 10.0.11 (a different patch from the macOS run, which used 10.0.12).
+**13/13 passed, exit 0**, from a clean clone of this branch at `b2f9c1f94f67` — nothing modified.
+Raw output in `windows-results.json`.
+
+Every case behaves identically to macOS, including the two controls. This matters most for A4 and R1,
+which are the ones with platform-sensitive mechanics: the external kill still leaves `Unknown` rather
+than `NotFound`, and the release still becomes collectible only after its operation ends.
+
+An independent reproduction by @kirillkrylov is still welcome — this one is mine, on my own probe.
 
 ## Smallest next question
 
