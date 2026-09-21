@@ -4,8 +4,9 @@ Discussion #1643. Published early so @vladimir-nikonov can build against a settl
 one still being argued over. Limited to what the current cases require; nothing here is a scheduler, a
 storage framework or a general-purpose API.
 
-Each clause says whether it is **settled** (measured, and I do not expect it to move) or **provisional**
-(may still move as my remaining admission/evidence work lands). Build against the settled ones.
+Each clause says whether it is **settled** (measured, and I do not expect it to move) or **open**
+(stated but not yet measured). Build against the settled ones. Task 3 has landed, so clause 5 is now
+settled in full and clause 5b is new.
 
 ## 1. Runtime identity and compatibility — settled
 
@@ -52,7 +53,7 @@ Quiescence follows **ownership**, not the outcome — measured by P5, where an o
 
 A release may be retired only when no lease retains it **and** nothing it defined has escaped (clause 3).
 
-## 5. Admission reservation — settled as a mechanism, provisional as a policy
+## 5. Admission reservation — settled, mechanism and policy
 
 ```csharp
 IDisposable? TryEnterSwapWindow(string? target = null);   // requires quiescence, can starve
