@@ -82,6 +82,25 @@ Check("S7 negative control: a failing post-handover operation is reported Failed
         v2EffectCorrectlyAbsent = s7.V2EffectMatchesOutcome
     });
 
+// ── S8: failed V2 startup, bounded fallback to a restarted V1, recovery. Ordering C from the ──────────
+// three-way comparison, the "smallest missing proof" kirillkrylov asked for: replacement readiness
+// (ping/pong, no customer-side effect), failed V2 startup (bounded attempts), and a working fallback.
+var s8 = await RunFallbackScenario(backendPath, "envA", fallbackSucceeds: true);
+Check("S8 V2 fails to start twice; falling back to a restarted V1 recovers and serves new work",
+    s8.Outcome == "Recovered" && s8.V2Attempts == 2 && s8.RecoveredPid is not null && s8.NewWorkSucceeded,
+    new {
+        outcome = s8.Outcome, v2Attempts = s8.V2Attempts, fallbackAttempts = s8.FallbackAttempts,
+        recoveredPid = s8.RecoveredPid, newWorkSucceeded = s8.NewWorkSucceeded
+    });
+
+// ── S9: V2 fails AND the V1 fallback also fails (shared broken config/dependency) — the case ───────────
+// kirillkrylov named explicitly: a fallback attempt is not a guarantee. Must report a definite
+// "Unavailable" terminal after bounded attempts, never hang waiting for a window that cannot open.
+var s9 = await RunFallbackScenario(backendPath, "envA", fallbackSucceeds: false);
+Check("S9 V2 and the V1 fallback both fail; reports a definite Unavailable terminal after bounded attempts",
+    s9.Outcome == "Unavailable" && s9.V2Attempts == 2 && s9.FallbackAttempts == 2 && s9.RecoveredPid is null,
+    new { outcome = s9.Outcome, v2Attempts = s9.V2Attempts, fallbackAttempts = s9.FallbackAttempts });
+
 Console.WriteLine(JsonSerializer.Serialize(new {
     os = Environment.OSVersion.VersionString,
     framework = Environment.Version.ToString(),
@@ -203,6 +222,7 @@ static async Task<HandoverResult> RunHandoverScenario(string backendPath, string
         try {
             IOperationLease postLease = ledger.Begin(target, "V2", backend);
             postLease.Complete(OperationState.Succeeded);
+            postLease.Dispose(); // Complete publishes the outcome; Dispose releases ownership -- separate since the ledger's P5 change
             admittedAfterRelease = true;
         }
         catch (SwapWindowHeldException) { admittedAfterRelease = false; }
@@ -256,12 +276,14 @@ static async Task<SwapResult> RunSwapScenario(string backendPath, string target,
             while (!pressureCts.IsCancellationRequested) {
                 bool duringWindow = Volatile.Read(ref windowHeldFlag) == 1;
                 try {
-                    // Completed immediately: a legitimately admitted attempt (before/after the window)
-                    // must not linger as Running, or it would itself block quiescence and this task would
-                    // deadlock the very window it exists to pressure-test.
+                    // Completed AND disposed immediately: a legitimately admitted attempt (before/after
+                    // the window) must not linger as owned, or it would itself block quiescence (via
+                    // retention, per the ledger's P5 change) and this task would deadlock the very window
+                    // it exists to pressure-test.
                     IOperationLease pressureLease = ledger.Begin(target, "handover-pressure", v1);
                     pressureAttempts.Enqueue((duringWindow, false));
                     pressureLease.Complete(OperationState.Succeeded);
+                    pressureLease.Dispose();
                 }
                 catch (SwapWindowHeldException) { pressureAttempts.Enqueue((duringWindow, true)); }
                 await Task.Delay(5);
@@ -286,20 +308,18 @@ static async Task<SwapResult> RunSwapScenario(string backendPath, string target,
         try { await v1ReaderTask; }
         catch (OperationCanceledException) { }
 
-        // Replacement readiness, not just the kill: start V2 and confirm it accepts a command before the
-        // window is released, so admission closure is held through termination AND readiness.
+        // Replacement readiness, not just the kill: start V2 and confirm it via a no-side-effect ping
+        // before the window is released, so admission closure is held through termination AND readiness.
+        // Uses "ping"/"pong" rather than a real "start" — a readiness check must not run customer work
+        // or mutate shared state before selection commits (kirillkrylov's point).
         v2 = StartBackend(backendPath, effectPath);
         var v2Accepted = new ConcurrentDictionary<string, byte>();
         var v2Leases = new ConcurrentDictionary<string, IOperationLease>();
         using var v2ReaderCts = new CancellationTokenSource();
         Task v2ReaderTask = PumpBackendOutput(v2, v2Leases, v2Accepted, v2ReaderCts.Token);
 
-        string readinessId = Guid.NewGuid().ToString("n");
-        await v2.StandardInput.WriteLineAsync($"start __readiness__ {readinessId} 1 succeed");
-        await v2.StandardInput.FlushAsync();
-        var readyDeadline = DateTime.UtcNow.AddSeconds(5);
-        while (!v2Accepted.ContainsKey(readinessId) && DateTime.UtcNow < readyDeadline) await Task.Delay(10);
-        if (!v2Accepted.ContainsKey(readinessId)) throw new TimeoutException("V2 never became ready");
+        if (!await TryHandshake(v2, v2Accepted, TimeSpan.FromSeconds(5)))
+            throw new TimeoutException("V2 never became ready");
 
         Volatile.Write(ref windowHeldFlag, 0);
         pressureCts.Cancel();
@@ -351,6 +371,106 @@ static async Task<SwapResult> RunSwapScenario(string backendPath, string target,
     }
 }
 
+// Ordering C from the discussion's three-way comparison: kill V1, try V2, and on V2's failure fall
+// back to restarting V1 from its retained binary -- with bounded attempts on both legs and a definite
+// terminal "Unavailable" outcome if every attempt is exhausted, never a hang.
+static async Task<FallbackResult> RunFallbackScenario(string backendPath, string target, bool fallbackSucceeds) {
+    string work = Directory.CreateTempSubdirectory("supervisor-fallback-").FullName;
+    string effectPath = Path.Combine(work, "effect.log");
+    var ledger = new OperationLedger(Path.Combine(work, "operations.jsonl"));
+
+    Process v1 = StartBackend(backendPath, effectPath);
+    var v1Accepted = new ConcurrentDictionary<string, byte>();
+    Process? failedV2 = null;
+    Process? recovered = null;
+    var recoveredAccepted = new ConcurrentDictionary<string, byte>();
+    try {
+        var v1Leases = new ConcurrentDictionary<string, IOperationLease>();
+        using var v1ReaderCts = new CancellationTokenSource();
+        Task v1ReaderTask = PumpBackendOutput(v1, v1Leases, v1Accepted, v1ReaderCts.Token);
+        if (!await TryHandshake(v1, v1Accepted, TimeSpan.FromSeconds(5)))
+            throw new InvalidOperationException("V1 never became ready");
+
+        IDisposable? window = null;
+        var waitClock = Stopwatch.StartNew();
+        while ((window = ledger.TryEnterSwapWindow(null)) is null) {
+            await Task.Delay(25);
+            if (waitClock.ElapsedMilliseconds > 20_000) throw new TimeoutException("swap window never opened");
+        }
+
+        v1.Kill(entireProcessTree: true);
+        try { await v1.WaitForExitAsync(); }
+        catch (InvalidOperationException) { /* already exited */ }
+        v1ReaderCts.Cancel();
+        try { await v1ReaderTask; }
+        catch (OperationCanceledException) { }
+
+        // Bounded attempts to bring up V2. Each is configured to fail, standing in for a genuinely
+        // broken build rather than a transient hiccup.
+        const int maxV2Attempts = 2;
+        int v2Attempts;
+        for (v2Attempts = 1; v2Attempts <= maxV2Attempts; v2Attempts++) {
+            failedV2 = StartFailingBackend(backendPath);
+            try { await failedV2.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)); }
+            catch (TimeoutException) { /* still counts as not ready within budget */ }
+        }
+
+        // Bounded fallback: attempt to restart V1 from its retained binary. `fallbackSucceeds` selects
+        // which branch of the comparison this run measures -- kirillkrylov's point that the fallback
+        // attempt can itself fail, including for the same reason V2 did. A reader must be pumping each
+        // attempt's stdout *before* the handshake, or "pong" has nowhere to land and every attempt looks
+        // like a failure regardless of whether the process actually started (the bug the first version
+        // of this scenario had).
+        const int maxFallbackAttempts = 2;
+        int fallbackAttempts;
+        bool fallbackReady = false;
+        var recoveredLeases = new ConcurrentDictionary<string, IOperationLease>();
+        CancellationTokenSource? recoveredReaderCts = null;
+        Task? recoveredReaderTask = null;
+        for (fallbackAttempts = 1; fallbackAttempts <= maxFallbackAttempts && !fallbackReady; fallbackAttempts++) {
+            recovered = fallbackSucceeds ? StartBackend(backendPath, effectPath) : StartFailingBackend(backendPath);
+            recoveredReaderCts = new CancellationTokenSource();
+            recoveredReaderTask = PumpBackendOutput(recovered, recoveredLeases, recoveredAccepted, recoveredReaderCts.Token);
+            fallbackReady = await TryHandshake(recovered, recoveredAccepted, TimeSpan.FromSeconds(5));
+            if (!fallbackReady) {
+                recoveredReaderCts.Cancel();
+                try { await recoveredReaderTask; }
+                catch (OperationCanceledException) { }
+                try { recovered.Kill(entireProcessTree: true); }
+                catch { /* best effort */ }
+            }
+        }
+
+        // Released regardless of outcome: attempts are exhausted either way, and a window left held
+        // forever after giving up would be a second bug layered on top of the first.
+        window.Dispose();
+
+        if (!fallbackReady) {
+            return new FallbackResult("Unavailable", v2Attempts - 1, fallbackAttempts - 1, null, false);
+        }
+
+        // Confirm the recovered backend actually serves new work, not just answers a ping. Reuses the
+        // reader already pumping its stdout from the successful attempt above.
+        Process recoveredBackend = recovered!; // non-null: fallbackReady only becomes true after this assignment
+        IOperationLease lease = ledger.Begin(target, "V1-recovered", recoveredBackend);
+        recoveredLeases[lease.Id] = lease;
+        await recoveredBackend.StandardInput.WriteLineAsync($"start {target} {lease.Id} 50 succeed");
+        await recoveredBackend.StandardInput.FlushAsync();
+        OperationRecord terminal = await WaitTerminal(ledger, lease.Id, TimeSpan.FromSeconds(10));
+        recoveredReaderCts!.Cancel();
+        try { await recoveredReaderTask!; }
+        catch (OperationCanceledException) { }
+
+        return new FallbackResult("Recovered", v2Attempts - 1, fallbackAttempts - 1, recoveredBackend.Id,
+            terminal.State == OperationState.Succeeded);
+    }
+    finally {
+        if (!v1.HasExited) { try { v1.Kill(entireProcessTree: true); } catch { /* best effort */ } }
+        if (failedV2 is { HasExited: false }) { try { failedV2.Kill(entireProcessTree: true); } catch { /* best effort */ } }
+        if (recovered is { HasExited: false }) { try { recovered.Kill(entireProcessTree: true); } catch { /* best effort */ } }
+    }
+}
+
 static async Task<OperationRecord> WaitTerminal(IOperationLedger ledger, string id, TimeSpan budget) {
     DateTime deadline = DateTime.UtcNow + budget;
     while (DateTime.UtcNow < deadline) {
@@ -373,12 +493,27 @@ static Process StartBackend(string backendDllPath, string effectPath) {
     return Process.Start(start) ?? throw new InvalidOperationException("backend did not start");
 }
 
+// Simulates a backend that cannot start at all (bad config, missing dependency) -- exits immediately
+// with a nonzero code before reading anything. Used for the failed-startup/bounded-fallback scenario.
+static Process StartFailingBackend(string backendDllPath) {
+    var start = new ProcessStartInfo("dotnet") {
+        RedirectStandardInput = true,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+        UseShellExecute = false,
+    };
+    start.ArgumentList.Add(backendDllPath);
+    start.ArgumentList.Add("--fail-startup");
+    return Process.Start(start) ?? throw new InvalidOperationException("backend did not start");
+}
+
 static async Task PumpBackendOutput(Process backend, ConcurrentDictionary<string, IOperationLease> leases,
     ConcurrentDictionary<string, byte> accepted, CancellationToken cancellationToken) {
     try {
         while (!cancellationToken.IsCancellationRequested) {
             string? line = await backend.StandardOutput.ReadLineAsync(cancellationToken);
             if (line is null) break; // backend exited, its stdout pipe closed
+            if (line == "pong") { accepted["pong"] = 0; continue; }
             string[] parts = line.Split(' ');
             if (parts.Length == 2 && parts[0] == "accepted") {
                 accepted[parts[1]] = 0;
@@ -388,11 +523,31 @@ static async Task PumpBackendOutput(Process backend, ConcurrentDictionary<string
                 // completed as Succeeded regardless of what happened is exactly the false positive
                 // kirillkrylov's negative control (S7) exists to catch.
                 lease.Complete(parts[2] == "succeed" ? OperationState.Succeeded : OperationState.Failed);
+                // Disposed immediately after: this probe's backend has no separate owned-cleanup phase,
+                // so completion and ownership release happen together (unlike P5's case, where a runtime
+                // legitimately holds the lease for cleanup after publishing its outcome).
+                lease.Dispose();
             }
         }
     }
     catch (OperationCanceledException) { }
     catch (IOException) { } // pipe torn down by the kill this task is racing against
+}
+
+// Sends "ping" and waits for PumpBackendOutput (already reading this backend's stdout) to observe
+// "pong", rather than reading the stream directly -- a second concurrent reader would race the pump.
+static async Task<bool> TryHandshake(Process backend, ConcurrentDictionary<string, byte> accepted, TimeSpan budget) {
+    try {
+        await backend.StandardInput.WriteLineAsync("ping");
+        await backend.StandardInput.FlushAsync();
+    }
+    catch (IOException) { return false; }
+    DateTime deadline = DateTime.UtcNow + budget;
+    while (DateTime.UtcNow < deadline) {
+        if (accepted.ContainsKey("pong")) return true;
+        await Task.Delay(10);
+    }
+    return false;
 }
 
 enum GateMode { None, Global, PerTarget }
@@ -403,3 +558,6 @@ sealed record HandoverResult(bool RefusedDuringWindow, bool AdmittedAfterRelease
 
 sealed record SwapResult(int V1Pid, int V2Pid, bool V1EffectPresent, bool V2EffectMatchesOutcome,
     int PressureAttempts, int PressureRefused, int PressureAdmittedDuringWindow);
+
+sealed record FallbackResult(string Outcome, int V2Attempts, int FallbackAttempts, int? RecoveredPid,
+    bool NewWorkSucceeded);

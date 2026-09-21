@@ -1,7 +1,7 @@
 # Supervisor + quiescence composition: does gating a real process swap on the ledger actually work?
 
 Discussion [#1643](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643); base
-`551f25c92538` (`Alexandr-Kravchuk/detached-operation-probe`). This isolated probe changes no
+`0f76b1de2` (`Alexandr-Kravchuk/detached-operation-probe`). This isolated probe changes no
 product/Core contracts and adds no new files to that branch — it references `Contract.csproj` and
 links `OperationLedger.cs` from it, so the two probes cannot drift apart or collide.
 
@@ -36,6 +36,32 @@ failing outcome, asserting `Failed` and a correctly *absent* effect line. Before
 broken version was re-run against S7 and it failed with an explicit mismatch
 (`post-handover operation reached Succeeded, expected Failed`) rather than a silent pass — the fix is
 demonstrated to matter, not just applied.
+
+**Fourth round: the missing proof kirillkrylov's next assignment asked for.**
+[The checkpoint](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18542626)
+named four gaps explicitly: replacement readiness that avoids customer-side effects, failed V2 startup,
+bounded fallback attempts, and a definite unavailable outcome if fallback fails. All four:
+
+- **Readiness is now side-effect-free.** `Backend` gained `ping`/`pong` — no ledger interaction, no
+  effect-file write — replacing the earlier `__readiness__ start` command, which exercised the same code
+  path as real customer work and was flagged as a design constraint violation even though it was harmless
+  in this sandbox.
+- **S8/S9** exercise ordering C from the discussion's three-way comparison end to end: V2 fails to start
+  (bounded attempts, each a real process that exits nonzero immediately), then a bounded fallback to
+  restarting V1 from its retained binary — either recovering (S8) or, when the fallback also fails for
+  the same reason V2 did (S9), reporting a definite `Unavailable` terminal rather than hanging.
+- **Rebasing onto the ledger's P5 change surfaced a real bug in this probe, not just in the rebase.**
+  Quiescence now follows lease *ownership* (`Dispose`), not the published *outcome* (`Complete`) — a
+  runtime may legitimately hold a lease for owned cleanup after publishing its result. This probe's
+  leases were never disposed, so after the rebase every scenario hung waiting for a window that could
+  never open. Fixed by disposing immediately after completing, which is the correct behavior for this
+  probe specifically: it has no owned-cleanup phase, so completion and ownership release happen together.
+
+**What this round does not attempt:** an actual MCP client connection checking a post-handover request,
+which the same checkpoint explicitly asked for ("do not equate an open pipe with surviving execution").
+This probe's transport is a synthetic line protocol over stdio, not the MCP wire protocol — building a
+real MCP SDK client against a real MCP-speaking supervisor is a materially larger task than extending
+the existing harness, and is the next concrete step rather than something folded into this round.
 
 ## Why
 
@@ -85,6 +111,8 @@ Two tiny projects, no added packages beyond the referenced `Contract`.
 | S5 | work arriving during the handover, single sampled attempt | global | envA (300ms), then a second `Begin` while the window is held |
 | S6 | **the swap proof** — real V1→V2 respawn under concurrent handover pressure | global | envA (400ms), a post-handover op on V2 (`succeed`), continuous `Begin` pressure throughout |
 | S7 | **negative control for S6's oracle** | global | identical to S6, but the post-handover op is told to `fail` |
+| S8 | **failed-startup fallback, recovery** | global | V1 killed; V2 fails twice (`--fail-startup`); fallback restarts V1, which succeeds and serves new work |
+| S9 | **failed-startup fallback, exhausted** | global | V1 killed; V2 fails twice; fallback to V1 *also* fails twice; must report `Unavailable`, not hang |
 
 S1 is the control: without it, S2 passing would not be evidence the gate does anything — a suite that
 cannot fail is worth nothing. S3 is the one that operationalizes the per-target correction: a supervisor
@@ -96,7 +124,10 @@ readiness check (not released the instant the kill returns), admission is pressu
 background task rather than sampled once, and the probe verifies a genuinely different process — distinct
 PID, confirmed by an exact `target:opId:done-by-pid-<pid>` match — actually serves the post-handover
 operation. S7 is what makes S6's checks falsifiable rather than assumed: same path, an operation told to
-fail, and an assertion that both the ledger's terminal state and the effect file agree it failed.
+fail, and an assertion that both the ledger's terminal state and the effect file agree it failed. S8/S9
+are ordering C end to end: S8 shows the fallback path actually recovers and serves work, not just that it
+was designed to; S9 shows exhausting every attempt produces a truthful terminal outcome instead of an
+infinite wait, which was previously only a design description, not a measured behavior.
 
 ## Reproduce
 
@@ -112,20 +143,22 @@ dotnet run --project experiments/SupervisorQuiescenceComposition/Supervisor/Supe
 Exit code 1 means a case failed; JSON on stdout carries the raw observations, including swap and wait
 latency per scenario. The probe uses a unique temporary directory per scenario and writes nothing outside it.
 
-## Observations, 2026-09-21 — against the repaired barrier (`551f25c92538`), with S6/S7 added
+## Observations, 2026-09-21 — with S8/S9 added, rebased onto the ledger's P5 change
 
-macOS 27.0.0 (arm64) / Unix 26.6.2, .NET 10.0.4 runtime (SDK 10.0.103). **7/7 passed, exit 0, three
+macOS 27.0.0 (arm64) / Unix 26.6.2, .NET 10.0.4 runtime (SDK 10.0.103). **9/9 passed, exit 0, three
 consecutive runs, numbers stable within noise:**
 
 | case | effects present | swap latency | wait latency |
 |---|---|---|---|
-| S1 (naive) | `[]` | ~16-20ms | 0ms |
-| S2 (global, one target) | `[envA]` | ~1240-1256ms | ~1217-1226ms |
-| S3 (per-target, wrong scope) | `[envA]` only — **envB lost** | ~328-336ms | ~309-312ms |
-| S4 (global, two targets) | `[envA, envB]` | ~1216-1237ms | ~1196-1220ms |
+| S1 (naive) | `[]` | ~16-22ms | 0ms |
+| S2 (global, one target) | `[envA]` | ~1239-1274ms | ~1218-1256ms |
+| S3 (per-target, wrong scope) | `[envA]` only — **envB lost** | ~328-349ms | ~309-330ms |
+| S4 (global, two targets) | `[envA, envB]` | ~1216-1252ms | ~1196-1228ms |
 | S5 (handover admission, sampled) | refused during window: **true**; admitted after release: **true** | — | — |
 | S6 (real swap, continuous pressure, `succeed`) | V1's op **and** V2's post-handover op both present (exact match), distinct PIDs | — | — |
 | S7 (negative control, `fail`) | V1's op present; V2's post-handover effect **correctly absent**, ledger reports `Failed` | — | — |
+| S8 (V2 fails, fallback recovers) | `outcome=Recovered`, 2 V2 attempts, 1 fallback attempt, recovered backend served new work | — | — |
+| S9 (V2 and fallback both fail) | `outcome=Unavailable`, 2 V2 attempts, 2 fallback attempts, no hang | — | — |
 
 S1's ~19ms swap against S2's ~1220ms wait is the whole claim in two numbers: the naive supervisor acts
 before the work is done and loses it; the gated one waits exactly as long as the work takes and does not.
@@ -156,12 +189,35 @@ three defects kirillkrylov found are contention bugs, and none of S1–S4's sequ
 scenarios contend for the window. S5's single sampled attempt and S6's continuous pressure are the
 scenarios that could have shown a difference, and both pass against the repair.
 
+**S8/S9, three consecutive runs:**
+
+| run | S8 outcome | S8 attempts (V2/fallback) | S8 recovered PID | S9 outcome | S9 attempts (V2/fallback) |
+|---|---|---|---|---|---|
+| 1 | Recovered | 2 / 1 | 69877 | Unavailable | 2 / 2 |
+| 2 | Recovered | 2 / 1 | 70369 | Unavailable | 2 / 2 |
+| 3 | Recovered | 2 / 1 | 70694 | Unavailable | 2 / 2 |
+
+S8's fallback always succeeds on its first attempt in these runs (the retained V1 binary has no reason
+to fail once V2's simulated failure is over), so the second fallback attempt is exercised only by S9,
+where both legs are configured to fail throughout. Both outcomes are read from the ledger and the
+process's own PID, not inferred from control flow reaching a particular line.
+
+One real bug found and fixed while building this round, on the record: the first version of S8/S9 called
+`TryHandshake` on the fallback candidate before starting a reader on its stdout, so "pong" had nowhere to
+land and every attempt looked like a failure regardless of whether the process actually started — S8
+reported `Unavailable` even when `fallbackSucceeds: true`. Fixed by starting `PumpBackendOutput` before
+each handshake attempt, not after.
+
 ## Interpretation and limits
 
-This demonstrates the composition works for the shape it tests: one backend process (then two, for S6),
-operations reported faithfully over stdout, a supervisor that already knows every target in play. It
-does **not** demonstrate:
+This demonstrates the composition works for the shape it tests: one backend process (two for S6/S7,
+up to three for S8/S9), operations reported faithfully over stdout, a supervisor that already knows
+every target in play. It does **not** demonstrate:
 
+- **An actual MCP client connection.** [Explicitly requested](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18542626)
+  ("do not equate an open pipe with surviving execution") and not yet built — this probe's transport is
+  a synthetic line protocol, not the MCP wire protocol. The next concrete step for this stream, not
+  folded into this round given the size of the gap between the two.
 - **Real transport continuity end-to-end.** This probe reuses the *measured* result from the earlier
   supervisor prototype rather than re-proving it; it does not itself keep an external client pipe open —
   adding that is straightforward (the earlier prototype already does it) but wasn't the open question.

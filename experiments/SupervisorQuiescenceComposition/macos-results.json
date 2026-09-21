@@ -7,7 +7,7 @@
       "passed": true,
       "detail": {
         "effects": [],
-        "swapMs": 16,
+        "swapMs": 18,
         "waitedMs": 0
       }
     },
@@ -18,8 +18,8 @@
         "effects": [
           "envA"
         ],
-        "swapMs": 1241,
-        "waitedMs": 1217
+        "swapMs": 1236,
+        "waitedMs": 1221
       }
     },
     {
@@ -29,8 +29,8 @@
         "effects": [
           "envA"
         ],
-        "swapMs": 329,
-        "waitedMs": 311
+        "swapMs": 367,
+        "waitedMs": 351
       }
     },
     {
@@ -41,8 +41,8 @@
           "envA",
           "envB"
         ],
-        "swapMs": 1231,
-        "waitedMs": 1216
+        "swapMs": 1225,
+        "waitedMs": 1213
       }
     },
     {
@@ -57,12 +57,12 @@
       "name": "S6 a real V1-\u003EV2 respawn preserves V1\u0027s operation, serves a new one on a different PID, and refuses every concurrent admission attempt during the handover",
       "passed": true,
       "detail": {
-        "v1Pid": 33436,
-        "v2Pid": 33453,
+        "v1Pid": 71175,
+        "v2Pid": 71176,
         "v1EffectPresent": true,
         "v2EffectPresent": true,
-        "pressureAttempts": 11,
-        "pressureRefused": 11,
+        "pressureAttempts": 12,
+        "pressureRefused": 12,
         "pressureAdmittedDuringWindow": 0
       }
     },
@@ -70,10 +70,30 @@
       "name": "S7 negative control: a failing post-handover operation is reported Failed, and no effect line is falsely recorded for it",
       "passed": true,
       "detail": {
-        "v1Pid": 33454,
-        "v2Pid": 33455,
+        "v1Pid": 71177,
+        "v2Pid": 71178,
         "v1EffectPresent": true,
         "v2EffectCorrectlyAbsent": true
+      }
+    },
+    {
+      "name": "S8 V2 fails to start twice; falling back to a restarted V1 recovers and serves new work",
+      "passed": true,
+      "detail": {
+        "outcome": "Recovered",
+        "v2Attempts": 2,
+        "fallbackAttempts": 1,
+        "recoveredPid": 71182,
+        "newWorkSucceeded": true
+      }
+    },
+    {
+      "name": "S9 V2 and the V1 fallback both fail; reports a definite Unavailable terminal after bounded attempts",
+      "passed": true,
+      "detail": {
+        "outcome": "Unavailable",
+        "v2Attempts": 2,
+        "fallbackAttempts": 2
       }
     }
   ]
