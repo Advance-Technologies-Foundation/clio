@@ -1,7 +1,7 @@
 {
   "os": "Unix 27.0.0",
   "framework": "10.0.12",
-  "workDirectory": "/var/folders/xk/pl1m8g6d1w55jscyxzg0wjkc0000gn/T/detached-ops-xqShja",
+  "workDirectory": "/var/folders/xk/pl1m8g6d1w55jscyxzg0wjkc0000gn/T/detached-ops-9eyA3J",
   "cases": [
     {
       "name": "A1a the original operation still answers after a newer runtime is activated",
@@ -156,19 +156,19 @@
       "passed": true,
       "detail": {
         "Violations": 0,
-        "Admitted": 47,
-        "Refused": 92,
-        "Windows": 92
+        "Admitted": 48,
+        "Refused": 96,
+        "Windows": 96
       }
     },
     {
       "name": "A5i mutation control: the same regression detects a deliberately split admission",
       "passed": true,
       "detail": {
-        "Violations": 34,
-        "Admitted": 51,
-        "Refused": 83,
-        "Windows": 90,
+        "Violations": 30,
+        "Admitted": 48,
+        "Refused": 91,
+        "Windows": 97,
         "note": "non-zero here is the point: it shows A5h can fail"
       }
     },
@@ -307,16 +307,56 @@
       }
     },
     {
-      "name": "M3 degradation clears only on an explicit action, and normal operation resumes after it",
+      "name": "M3 a degraded outcome is tracked as un-persisted, not merely as a degraded scope",
       "passed": true,
       "detail": {
-        "refusedWhileDegraded": true,
-        "stillRefusedAfterFaultRemoved": true,
-        "cleared": true,
-        "windowGrantedAfterClearing": true,
-        "newWorkAfterClearing": "Succeeded",
-        "earlierOutcomeUnchanged": "Succeeded",
-        "note": "removing the fault is not enough; the mark is lifted deliberately and nothing is replayed"
+        "degraded": true,
+        "unpersisted": 1,
+        "windowRefused": true
+      }
+    },
+    {
+      "name": "E3 an un-persisted outcome does NOT survive replacement of the evidence owner",
+      "passed": true,
+      "detail": {
+        "inMemory": "Succeeded",
+        "afterOwnerReplacement": "Unknown",
+        "note": "clearing a flag would not have changed this \u2014 the record was never on disk"
+      }
+    },
+    {
+      "name": "E4 repair is what makes an outcome durable; removing the fault alone changes nothing",
+      "passed": true,
+      "detail": {
+        "afterFaultRemovedOnly": "Unknown",
+        "repaired": 1,
+        "remaining": 0,
+        "scopeCleared": true,
+        "afterRepair": "Succeeded",
+        "windowGranted": true,
+        "note": "the record written is the original outcome, once; nothing is re-executed"
+      }
+    },
+    {
+      "name": "E5 repair after a torn write survives restart readback",
+      "passed": true,
+      "detail": {
+        "beforeRepair": "Unknown",
+        "repaired": 1,
+        "afterRepairReadback": "Succeeded",
+        "note": "the half-line stays on disk and is skipped; the repaired line is the one that reads back"
+      }
+    },
+    {
+      "name": "E6 with the fault still present, repair fails and explicit loss is the only way forward",
+      "passed": true,
+      "detail": {
+        "repairedWhileFaulty": 0,
+        "scopeClearedByFailedRepair": false,
+        "abandoned": 1,
+        "afterLossReadback": "Unknown",
+        "windowGranted": true,
+        "note": "the outcome is gone and later readers are told Unknown rather than a guess"
       }
     },
     {
@@ -349,6 +389,26 @@
         "drained": true,
         "drainMs": 132,
         "note": "new admissions are refused under the reservation, so in-flight work is finite"
+      }
+    },
+    {
+      "name": "E1 a bounded drain over hung work expires instead of holding the scope shut",
+      "passed": true,
+      "detail": {
+        "reserved": true,
+        "drainedWithinBudget": false,
+        "hungStillRunning": true,
+        "reservationHeldMs": 622,
+        "note": "the hung operation was neither killed nor completed; the update defers again"
+      }
+    },
+    {
+      "name": "E2 admissions reopen once the reservation expires, with the hung work still untouched",
+      "passed": true,
+      "detail": {
+        "newWorkAdmitted": "Succeeded",
+        "hungOperation": "Running",
+        "note": "no implicit kill and no replay; the scope is usable again"
       }
     },
     {

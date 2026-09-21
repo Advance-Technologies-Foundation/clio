@@ -68,13 +68,30 @@ While a scope is held, `Begin` for it throws `SwapWindowHeldException` — **ref
 caller sees a retryable refusal rather than a hidden stall. Exclusion is bidirectional: a global hold
 excludes every target hold and vice versa.
 
-**Provisional — the policy, not the mechanism.** A reservation refuses legitimate work for the whole
-drain, so an unbounded drain is worse than a deferred update: one stuck update becomes every subsequent
-call failing. The caller owns the budget and **must release the reservation when it expires**, deferring
-the update again rather than escalating. Reservation timeout and reopening behaviour are my task 3 and
-may add clauses here.
+**Now settled, including the policy.** A reservation refuses legitimate work for the whole drain, so an
+unbounded drain is worse than a deferred update. The caller owns the budget and **must release the
+reservation when it expires**, deferring the update again rather than escalating.
 
-## 6. Configuration snapshot identity — hook only, policy is @vladimir-nikonov's
+E1/E2 measure the case that forced this: a **hung** operation never terminates, so even a closed scope
+never drains. The reservation expired after its budget, the scope reopened, new work was admitted, and
+the hung operation was neither killed nor completed. A finite in-flight set does not imply a terminating
+one, and the budget is the only thing standing between "the update defers" and "the scope is shut
+forever".
+
+## 5b. Evidence repair versus explicit loss — settled
+
+A degraded scope means one or more outcomes exist **only in memory**. Three facts, measured:
+
+- **Replacing the evidence owner loses them** (E3). Clearing a flag never changed that — the record was
+  never on disk.
+- **Repair is the only thing that makes them durable** (E4): re-persisting the original record, once,
+  with its original values. It is not a replay; nothing is re-executed. Removing the storage fault alone
+  changes nothing until the repair runs.
+- **When repair cannot succeed, explicit loss is the honest alternative** (E6). The outcomes are
+  abandoned deliberately and later readers are told `Unknown` rather than given a guess.
+
+`UnpersistedOperations` is the list that matters; `DegradedScopes` is derived from it. A scope's mark
+lifts when its list empties — by repair or by explicit loss, never by the fault merely going away. — hook only, policy is @vladimir-nikonov's
 
 The lifetime side needs exactly one thing: whatever identifies a configuration snapshot must be portable
 data under clause 3, so a record naming it survives the release and the process. It is a string as far as

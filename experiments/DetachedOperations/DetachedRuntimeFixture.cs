@@ -41,6 +41,10 @@ public sealed class DetachedRuntime : IDetachedRuntime {
                     lease.Complete(OperationState.Failed, Signature + "-failed");
                     return;
                 }
+                if (outcome == "hang") {
+                    // Never terminates on its own: models work that a bounded drain cannot outwait.
+                    await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+                }
                 if (outcome == "partial") {
                     // Models a multi-step operation that writes its first artefact and then fails: the
                     // artefact a naive presence check looks for exists, and the operation did not finish.

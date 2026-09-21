@@ -34,6 +34,7 @@ public sealed class OperationLedger : IOperationLedger {
     private readonly object _swapLock = new();
     private readonly HashSet<string> _heldScopes = new(StringComparer.Ordinal);
     private readonly HashSet<string> _degradedScopes = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, OperationRecord> _unpersisted = new(StringComparer.Ordinal);
 
     private readonly bool _splitAdmissionForTests;
 
@@ -66,6 +67,12 @@ public sealed class OperationLedger : IOperationLedger {
     /// THROUGH the write rather than before it. Applies to terminal records only.
     /// </summary>
     public bool FailMidWriteForTests { get; set; }
+
+    /// <summary>
+    /// Test-only: makes any evidence append fail cleanly, without writing anything. Models a storage
+    /// fault that is still present when a repair is attempted.
+    /// </summary>
+    public bool FailAppendForTests { get; set; }
 
     /// <summary>Opens a ledger over an evidence file, recovering any prior process's unfinished operations.</summary>
     public OperationLedger(string evidencePath) : this(evidencePath, false) {
@@ -202,15 +209,60 @@ public sealed class OperationLedger : IOperationLedger {
         return UseFlagFirstLeaseForTests ? new FlagFirstLease(this, id) : new Lease(this, id);
     }
 
+    /// <inheritdoc />
+    public IReadOnlyCollection<string> UnpersistedOperations {
+        get { lock (_swapLock) { return _unpersisted.Keys.ToArray(); } }
+    }
+
     /// <summary>
-    /// Clears a scope's degraded mark. Deliberately explicit and manual: the host cannot tell whether
-    /// the storage fault is actually gone, and clearing it automatically would hide a persistent fault
-    /// behind a self-healing flag. Recorded outcomes are never altered — this only lifts the refusal.
+    /// Attempts to make a scope's memory-only outcomes durable. This is the only operation that
+    /// actually repairs anything.
     /// </summary>
-    /// <param name="target">The scope to clear.</param>
-    /// <returns><see langword="true"/> when a degraded mark was removed.</returns>
-    public bool ClearDegraded(string target) {
-        lock (_swapLock) { return _degradedScopes.Remove(target); }
+    /// <param name="target">Scope to repair.</param>
+    /// <returns>How many were persisted, how many remain, and whether the scope mark was lifted.</returns>
+    /// <remarks>
+    /// Re-persisting an outcome is not a replay: it writes the record of something that already
+    /// happened, exactly once, with its original values. Nothing is re-executed.
+    /// </remarks>
+    public RepairResult RepairDegraded(string target) {
+        lock (_swapLock) {
+            var mine = _unpersisted.Where(p => string.Equals(p.Value.Target, target, StringComparison.Ordinal))
+                .ToArray();
+            int repaired = 0;
+            foreach (var entry in mine) {
+                try {
+                    Append("end", entry.Value);
+                    _unpersisted.Remove(entry.Key);
+                    repaired++;
+                }
+                catch (Exception) {
+                    break;                          // the fault is still present; stop rather than thrash
+                }
+            }
+            bool remainingHere = _unpersisted.Values.Any(r =>
+                string.Equals(r.Target, target, StringComparison.Ordinal));
+            bool cleared = !remainingHere && _degradedScopes.Remove(target);
+            return new RepairResult(repaired, mine.Length - repaired, cleared);
+        }
+    }
+
+    /// <summary>
+    /// Abandons a scope's memory-only outcomes and lifts its degraded mark. This is **explicit loss**,
+    /// not repair: the abandoned outcomes are gone and anything that asks about them later will be told
+    /// the truth — that this host cannot establish them.
+    /// </summary>
+    /// <param name="target">Scope to abandon.</param>
+    /// <returns>How many outcomes were abandoned.</returns>
+    public int AcceptLoss(string target) {
+        lock (_swapLock) {
+            var mine = _unpersisted.Where(p => string.Equals(p.Value.Target, target, StringComparison.Ordinal))
+                .Select(p => p.Key).ToArray();
+            foreach (string id in mine) {
+                _unpersisted.Remove(id);
+            }
+            _degradedScopes.Remove(target);
+            return mine.Length;
+        }
     }
 
     /// <inheritdoc />
@@ -252,8 +304,10 @@ public sealed class OperationLedger : IOperationLedger {
             }
             catch (Exception) {
                 // Visible degradation, no replay, and no automatic retirement for this scope: the
-                // in-memory record is now the only place this outcome exists.
+                // in-memory record is now the only place this outcome exists. Tracked separately from
+                // the scope mark, because clearing the mark does not make the record durable.
                 _degradedScopes.Add(existing.Target);
+                _unpersisted[id] = updated;
             }
             _live[id] = updated;
             // Retention is NOT released here. Publishing an outcome and relinquishing ownership are
@@ -272,8 +326,25 @@ public sealed class OperationLedger : IOperationLedger {
             finishedUtc = record.FinishedUtc?.ToString("O", CultureInfo.InvariantCulture), record.Code
         });
         lock (_fileLock) {
+            if (FailAppendForTests) {
+                throw new IOException("injected evidence-append failure");
+            }
+            // A previous write may have torn mid-line, leaving the file without a trailing newline.
+            // Appending straight onto it would concatenate two records into one unparseable line and
+            // silently destroy the record being written as well as the one already damaged.
+            bool needsSeparator = false;
+            if (File.Exists(_evidencePath)) {
+                using var probe = new FileStream(_evidencePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                if (probe.Length > 0) {
+                    probe.Seek(-1, SeekOrigin.End);
+                    needsSeparator = probe.ReadByte() != '\n';
+                }
+            }
             using var stream = new FileStream(_evidencePath, FileMode.Append, FileAccess.Write, FileShare.Read);
             using var writer = new StreamWriter(stream);
+            if (needsSeparator) {
+                writer.WriteLine();
+            }
             if (FailMidWriteForTests && kind == "end") {
                 // Part-way through: a truncated record reaches the disk and the write then fails. The
                 // torn line must never be readable as a terminal.

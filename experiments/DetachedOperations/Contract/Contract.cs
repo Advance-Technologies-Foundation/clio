@@ -146,7 +146,22 @@ public interface IOperationLedger {
     /// Clearing a degraded scope is an operator decision, deliberately absent here.
     /// </remarks>
     IReadOnlyCollection<string> DegradedScopes { get; }
+
+    /// <summary>
+    /// Operations whose outcome is known in memory but is NOT on disk.
+    /// </summary>
+    /// <remarks>
+    /// These are the only records that would be lost if the evidence owner were replaced. Clearing a
+    /// degraded mark does not shorten this list — repairing or explicitly abandoning them does.
+    /// </remarks>
+    IReadOnlyCollection<string> UnpersistedOperations { get; }
 }
+
+/// <summary>Outcome of an attempt to make un-persisted records durable.</summary>
+/// <param name="Repaired">How many records were written to durable evidence.</param>
+/// <param name="Remaining">How many are still memory-only.</param>
+/// <param name="ScopeCleared">Whether the scope's degraded mark was lifted as a result.</param>
+public sealed record RepairResult(int Repaired, int Remaining, bool ScopeCleared);
 
 /// <summary>Raised when an operation is started for a scope whose swap window is held.</summary>
 public sealed class SwapWindowHeldException(string scope)

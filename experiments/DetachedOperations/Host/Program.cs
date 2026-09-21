@@ -335,29 +335,80 @@ Check("M2 a torn terminal write keeps the outcome in memory and is never recover
           recoveredFromDisk = tornRecovered.State.ToString(),
           note = "the half-written line is skipped, so recovery sees begin-without-end" });
 
-// M3: clearing is an explicit operator action, and normal operation resumes after it.
-var clearLedger = new OperationLedger(Path.Combine(work, "clear.jsonl")) { FailEndPersistenceForTests = true };
+// M3/E3/E4/E5: what "clearing" actually was, and what durable repair actually is.
+// @kirillkrylov: removing the storage fault or clearing a flag is not itself repair. He is right — the
+// outcome still exists only in memory, so replacing the evidence owner loses it either way.
+string clearPath = Path.Combine(work, "clear.jsonl");
+var clearLedger = new OperationLedger(clearPath) { FailEndPersistenceForTests = true };
 string clearId = v2.StartDetached(clearLedger, "envK", Path.Combine(work, "clear-effect.log"), 100,
     "succeed", CancellationToken.None);
 await WaitTerminal(clearLedger, clearId, TimeSpan.FromSeconds(20));
-bool refusedWhileDegraded = clearLedger.TryEnterSwapWindow("envK") is null;
+
+Check("M3 a degraded outcome is tracked as un-persisted, not merely as a degraded scope",
+    clearLedger.DegradedScopes.Contains("envK") && clearLedger.UnpersistedOperations.Contains(clearId)
+        && clearLedger.TryEnterSwapWindow("envK") is null,
+    new { degraded = true, unpersisted = clearLedger.UnpersistedOperations.Count, windowRefused = true });
+
+// E3: the owner is replaced while the outcome is still memory-only. Nothing survives.
+var beforeRepairOwner = new OperationLedger(clearPath).Query(clearId);
+Check("E3 an un-persisted outcome does NOT survive replacement of the evidence owner",
+    beforeRepairOwner.State == OperationState.Unknown,
+    new { inMemory = "Succeeded", afterOwnerReplacement = beforeRepairOwner.State.ToString(),
+          note = "clearing a flag would not have changed this — the record was never on disk" });
+
+// E4: repair is the only thing that makes it durable, and it re-persists rather than re-executes.
 clearLedger.FailEndPersistenceForTests = false;                   // the storage fault is removed
-bool stillRefusedBeforeClearing = clearLedger.TryEnterSwapWindow("envK") is null;
-bool cleared = clearLedger.ClearDegraded("envK");
-bool windowAfterClearing;
-using (IDisposable? w = clearLedger.TryEnterSwapWindow("envK")) { windowAfterClearing = w is not null; }
-string afterClearId = v2.StartDetached(clearLedger, "envK", Path.Combine(work, "clear-effect.log"), 100,
+var faultRemovedOnly = new OperationLedger(clearPath).Query(clearId);
+var repair = clearLedger.RepairDegraded("envK");
+var afterRepairOwner = new OperationLedger(clearPath).Query(clearId);
+bool windowAfterRepair;
+using (IDisposable? w = clearLedger.TryEnterSwapWindow("envK")) { windowAfterRepair = w is not null; }
+Check("E4 repair is what makes an outcome durable; removing the fault alone changes nothing",
+    faultRemovedOnly.State == OperationState.Unknown
+        && repair is { Repaired: 1, Remaining: 0, ScopeCleared: true }
+        && afterRepairOwner.State == OperationState.Succeeded
+        && windowAfterRepair,
+    new { afterFaultRemovedOnly = faultRemovedOnly.State.ToString(),
+          repaired = repair.Repaired, remaining = repair.Remaining, scopeCleared = repair.ScopeCleared,
+          afterRepair = afterRepairOwner.State.ToString(), windowGranted = windowAfterRepair,
+          note = "the record written is the original outcome, once; nothing is re-executed" });
+
+// E5: the same, but the fault was a TORN write — repair must survive restart readback.
+string tornPath = Path.Combine(work, "torn-repair.jsonl");
+var tornRepair = new OperationLedger(tornPath) { FailMidWriteForTests = true };
+string tornRepairId = v2.StartDetached(tornRepair, "envTR", Path.Combine(work, "tr-effect.log"), 100,
     "succeed", CancellationToken.None);
-var afterClearTerminal = await WaitTerminal(clearLedger, afterClearId, TimeSpan.FromSeconds(20));
-Check("M3 degradation clears only on an explicit action, and normal operation resumes after it",
-    refusedWhileDegraded && stillRefusedBeforeClearing && cleared && windowAfterClearing
-        && afterClearTerminal.State == OperationState.Succeeded
-        && clearLedger.Query(clearId).State == OperationState.Succeeded,
-    new { refusedWhileDegraded, stillRefusedAfterFaultRemoved = stillRefusedBeforeClearing, cleared,
-          windowGrantedAfterClearing = windowAfterClearing,
-          newWorkAfterClearing = afterClearTerminal.State.ToString(),
-          earlierOutcomeUnchanged = clearLedger.Query(clearId).State.ToString(),
-          note = "removing the fault is not enough; the mark is lifted deliberately and nothing is replayed" });
+await WaitTerminal(tornRepair, tornRepairId, TimeSpan.FromSeconds(20));
+var tornBefore = new OperationLedger(tornPath).Query(tornRepairId);
+tornRepair.FailMidWriteForTests = false;
+var tornRepairResult = tornRepair.RepairDegraded("envTR");
+var tornAfter = new OperationLedger(tornPath).Query(tornRepairId);
+Check("E5 repair after a torn write survives restart readback",
+    tornBefore.State == OperationState.Unknown && tornRepairResult.Repaired == 1
+        && tornAfter.State == OperationState.Succeeded,
+    new { beforeRepair = tornBefore.State.ToString(), repaired = tornRepairResult.Repaired,
+          afterRepairReadback = tornAfter.State.ToString(),
+          note = "the half-line stays on disk and is skipped; the repaired line is the one that reads back" });
+
+// E6: when repair is impossible, explicit loss is the honest alternative — and it is named as loss.
+string lossPath = Path.Combine(work, "loss.jsonl");
+var lossLedger = new OperationLedger(lossPath);
+string lossId = v2.StartDetached(lossLedger, "envX", Path.Combine(work, "loss-effect.log"), 400,
+    "succeed", CancellationToken.None);
+lossLedger.FailAppendForTests = true;             // admission persisted; the terminal write will not
+await WaitTerminal(lossLedger, lossId, TimeSpan.FromSeconds(20));
+var stillFaulty = lossLedger.RepairDegraded("envX");              // fault still present
+int abandoned = lossLedger.AcceptLoss("envX");
+var afterLoss2 = new OperationLedger(lossPath).Query(lossId);
+bool windowAfterLoss;
+using (IDisposable? w = lossLedger.TryEnterSwapWindow("envX")) { windowAfterLoss = w is not null; }
+// The fault here fails the APPEND itself, so a repair attempt genuinely cannot succeed.
+Check("E6 with the fault still present, repair fails and explicit loss is the only way forward",
+    stillFaulty is { Repaired: 0, ScopeCleared: false } && abandoned == 1
+        && afterLoss2.State == OperationState.Unknown && windowAfterLoss,
+    new { repairedWhileFaulty = stillFaulty.Repaired, scopeClearedByFailedRepair = stillFaulty.ScopeCleared,
+          abandoned, afterLossReadback = afterLoss2.State.ToString(), windowGranted = windowAfterLoss,
+          note = "the outcome is gone and later readers are told Unknown rather than a guess" });
 
 // M4: an update that cannot get its window defers. It never kills the work and never claims success.
 string busyId = v2.StartDetached(ledger, "envU", Path.Combine(work, "defer-effect.log"), 2000,
@@ -426,6 +477,50 @@ using (var load = new CancellationTokenSource(TimeSpan.FromSeconds(4))) {
     }
     await pressure;
 }
+
+// ── E1/E2: a finite set of in-flight operations need not terminate ─────────────────────────────────
+// D2 showed reserve-then-drain ends the wait. It assumed the in-flight work finishes. Hung work is the
+// case where it does not, and the reservation must then expire rather than hold the scope shut forever.
+using var hungSource = new CancellationTokenSource();
+string hungId = v2.StartDetached(ledger, "envH", Path.Combine(work, "hung-effect.log"), 0, "hang",
+    hungSource.Token);
+await Task.Delay(150);
+
+bool reservedOverHung, drainedWithinBudget, hungStillRunning, reopened;
+var reserveClock = System.Diagnostics.Stopwatch.StartNew();
+using (IDisposable? reservation = ledger.TryReserveAdmission("envH")) {
+    reservedOverHung = reservation is not null;
+    // A bounded drain. The reservation is released by leaving this block when it expires — deferring
+    // the update again rather than escalating to a kill.
+    drainedWithinBudget = await WaitQuiescent(ledger, "envH", TimeSpan.FromMilliseconds(600));
+    bool refusedDuringReservation = false;
+    try { v2.StartDetached(ledger, "envH", Path.Combine(work, "hung-effect.log"), 10, "succeed",
+              CancellationToken.None); }
+    catch (SwapWindowHeldException) { refusedDuringReservation = true; }
+    hungStillRunning = ledger.Query(hungId).State == OperationState.Running && refusedDuringReservation;
+}
+reserveClock.Stop();
+
+string afterReopenId = v2.StartDetached(ledger, "envH", Path.Combine(work, "hung-effect.log"), 50,
+    "succeed", CancellationToken.None);
+var afterReopen = await WaitTerminal(ledger, afterReopenId, TimeSpan.FromSeconds(20));
+reopened = afterReopen.State == OperationState.Succeeded;
+
+Check("E1 a bounded drain over hung work expires instead of holding the scope shut",
+    reservedOverHung && !drainedWithinBudget && hungStillRunning
+        && reserveClock.ElapsedMilliseconds < 3000,
+    new { reserved = reservedOverHung, drainedWithinBudget, hungStillRunning,
+          reservationHeldMs = reserveClock.ElapsedMilliseconds,
+          note = "the hung operation was neither killed nor completed; the update defers again" });
+
+Check("E2 admissions reopen once the reservation expires, with the hung work still untouched",
+    reopened && ledger.Query(hungId).State == OperationState.Running,
+    new { newWorkAdmitted = afterReopen.State.ToString(),
+          hungOperation = ledger.Query(hungId).State.ToString(),
+          note = "no implicit kill and no replay; the scope is usable again" });
+
+await hungSource.CancelAsync();
+await WaitTerminal(ledger, hungId, TimeSpan.FromSeconds(10));
 
 // ── O1: terminal status is NOT sufficient for reclamation ──────────────────────────────────────────
 // @kirillkrylov's returned-value-ownership finding, measured against my own invariant I3. A caller that
