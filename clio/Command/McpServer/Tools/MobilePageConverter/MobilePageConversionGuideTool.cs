@@ -39,6 +39,7 @@ public class MobilePageConversionGuideTool {
 	private readonly ILogger _logger;
 	private readonly IMobileComponentInfoCatalog _mobileCatalog;
 	private readonly IComponentInfoCatalog _webCatalog;
+	private readonly IMobileRequestInfoCatalog _mobileRequestCatalog;
 	private readonly IWebToMobilePageConversionRulesCatalog _rulesCatalog;
 	private readonly IPlatformVersionResolverFactory _versionResolverFactory;
 	private readonly ISettingsRepository _settingsRepository;
@@ -48,6 +49,7 @@ public class MobilePageConversionGuideTool {
 		ILogger logger,
 		IMobileComponentInfoCatalog mobileCatalog,
 		IComponentInfoCatalog webCatalog,
+		IMobileRequestInfoCatalog mobileRequestCatalog,
 		IWebToMobilePageConversionRulesCatalog rulesCatalog,
 		IPlatformVersionResolverFactory versionResolverFactory,
 		ISettingsRepository settingsRepository) {
@@ -55,6 +57,7 @@ public class MobilePageConversionGuideTool {
 		_logger = logger;
 		_mobileCatalog = mobileCatalog;
 		_webCatalog = webCatalog;
+		_mobileRequestCatalog = mobileRequestCatalog;
 		_rulesCatalog = rulesCatalog;
 		_versionResolverFactory = versionResolverFactory;
 		_settingsRepository = settingsRepository;
@@ -145,15 +148,24 @@ public class MobilePageConversionGuideTool {
 			await _mobileCatalog.LoadAsync(version, cancellationToken).ConfigureAwait(false);
 		ComponentCatalogState webState =
 			await _webCatalog.LoadAsync(version, cancellationToken).ConfigureAwait(false);
+		// Request support is derived from the mobile request registry, so it is part of the answer and its
+		// served version is folded into resolvedFrom alongside the two component catalogs. Leaving it out
+		// would let a request-registry fallback report as an exact-version result.
+		RequestCatalogState mobileRequestState =
+			await _mobileRequestCatalog.LoadAsync(version, cancellationToken).ConfigureAwait(false);
 		string resolvedFrom = WorseResolvedFrom(
-			ComponentInfoResolution.MapResolvedFrom(versionResolution.Source, versionResolution.ResolvedVersion, mobileState.ResolvedVersion),
-			ComponentInfoResolution.MapResolvedFrom(versionResolution.Source, versionResolution.ResolvedVersion, webState.ResolvedVersion));
+			WorseResolvedFrom(
+				ComponentInfoResolution.MapResolvedFrom(versionResolution.Source, versionResolution.ResolvedVersion, mobileState.ResolvedVersion),
+				ComponentInfoResolution.MapResolvedFrom(versionResolution.Source, versionResolution.ResolvedVersion, webState.ResolvedVersion)),
+			ComponentInfoResolution.MapResolvedFrom(versionResolution.Source, versionResolution.ResolvedVersion, mobileRequestState.ResolvedVersion));
 		IReadOnlyList<ComponentRegistryEntry> mobileEntries = mobileState.Entries;
 		IReadOnlyList<ComponentRegistryEntry> webEntries = webState.Entries;
 		HashSet<string> mobileTypes = new(mobileEntries.Select(e => e.ComponentType), StringComparer.OrdinalIgnoreCase);
 		HashSet<string> webTypes = new(webEntries.Select(e => e.ComponentType), StringComparer.OrdinalIgnoreCase);
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType = IndexByComponentType(mobileEntries);
 		IReadOnlyDictionary<string, ComponentRegistryEntry> webByType = IndexByComponentType(webEntries);
+		HashSet<string> mobileRequestTypes =
+			new(mobileRequestState.Entries.Select(e => e.RequestType), StringComparer.OrdinalIgnoreCase);
 
 		WebToMobilePageConversionRules rules = await _rulesCatalog.GetRulesAsync(version, cancellationToken).ConfigureAwait(false);
 		// Resolve the effective web template, climbing past same-named replacing layers when the page is a
@@ -250,7 +262,8 @@ public class MobilePageConversionGuideTool {
 				mobileTemplateNodesByName: mobileTemplateProbe.NodesByName,
 				webTemplateBaselineNodes: webTemplateBaseline.Nodes,
 				webTemplateResources: webTemplateBaseline.Resources,
-				actionTargetsProbe: actionTargets);
+				actionTargetsProbe: actionTargets,
+				mobileRequestTypes: mobileRequestTypes);
 		} catch (Exception ex) {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}

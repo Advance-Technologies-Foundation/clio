@@ -30,6 +30,29 @@ public sealed class WebToMobileConversionServiceTests {
 			"crt.ColorButton", "crt.FolderTree", "crt.FolderTreeActions", "crt.QuickFilter"
 		};
 
+	/// <summary>
+	/// Stands in for the mobile request registry the tool loads from the catalog in production — it is NOT a
+	/// list to extend by hand when a test needs another request. A test that needs a different registry passes
+	/// its own <c>mobileRequestTypes</c>.
+	/// </summary>
+	private static readonly IReadOnlySet<string> MobileRequestTypes =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.AddCommunicationOptionsRequest",
+			"crt.CancelRecordChangesRequest",
+			"crt.ClosePageRequest",
+			"crt.CreateRecordRequest",
+			"crt.DeleteRecordRequest",
+			"crt.LoadDataRequest",
+			"crt.OpenPageRequest",
+			"crt.RunBusinessProcessRequest",
+			"crt.SaveRecordRequest",
+			"crt.SetAttributeFromBarcodeRequest",
+			"crt.SetAttributeFromNfcRequest",
+			"crt.UpdateQuickFilterGroupRequest",
+			"crt.UpdateRecordRequest",
+			"crt.UploadFileRequest"
+		};
+
 	/// <summary>The shipped grid → list view-config template, so the fixture exercises the real skeleton.</summary>
 	private static readonly ViewConfigTemplateRule ListTemplate = new() {
 		PreserveSourceProperties = true,
@@ -289,7 +312,8 @@ public sealed class WebToMobileConversionServiceTests {
 		IReadOnlyDictionary<string, JObject> webTemplateBaselineNodes = null,
 		JObject webTemplateResources = null,
 		IReadOnlySet<string> mobileTypes = null,
-		WebToMobilePageConversionRules rules = null) =>
+		WebToMobilePageConversionRules rules = null,
+		IReadOnlySet<string> mobileRequestTypes = null) =>
 		WebToMobileAnalysisService.Analyze(
 			bundle, mobileTypes ?? MobileTypes, WebTypes,
 			webByType ?? new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
@@ -305,7 +329,8 @@ public sealed class WebToMobileConversionServiceTests {
 			mobileContainerParents: mobileContainerParents,
 			mobileTemplateNodesByName: mobileTemplateNodesByName,
 			webTemplateBaselineNodes: webTemplateBaselineNodes,
-			webTemplateResources: webTemplateResources);
+			webTemplateResources: webTemplateResources,
+			mobileRequestTypes: mobileRequestTypes ?? MobileRequestTypes);
 
 	/// <summary>The web template's own resource strings (key → { culture: text }) — the delta baseline a
 	/// twin's caption VALUE is compared against.</summary>
@@ -2645,7 +2670,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A header button whose clicked request is UNKNOWN/custom (not in the versioned map, not in the bundled supported set — e.g. a usr.* request) is DROPPED, not moved into the FAB: the scope/FAB gate uses the same support criterion as the leaf path, so a dead menu item is never shipped. The lost action is recorded in requestConversions.droppedRequests.")]
+	[Description("A header button whose clicked request is UNKNOWN/custom (not in the versioned map, not in the mobile request registry — e.g. a usr.* request) is DROPPED, not moved into the FAB: the scope/FAB gate uses the same support criterion as the leaf path, so a dead menu item is never shipped. The lost action is recorded in requestConversions.droppedRequests.")]
 	public void Analyze_Fab_HeaderButton_CustomRequest_Dropped_AndRecorded() {
 		// Arrange
 		PageBundleInfo bundle = Bundle("""
@@ -2674,9 +2699,9 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("Regression (ActionButtonsContainer bug): a header button whose clicked request is an unknown crt.* request absent from BOTH the versioned map and the bundled supported set (e.g. crt.PrintablesRequest) is DROPPED, not moved into the FAB. The scope/FAB gate now consults the bundled supported set the leaf path already used, so the two paths agree instead of one dropping the button and the other retargeting it. The lost action is recorded.")]
+	[Description("Regression (ActionButtonsContainer bug): a header button whose clicked request is an unknown crt.* request absent from BOTH the versioned map and the mobile request registry (e.g. crt.PrintablesRequest) is DROPPED, not moved into the FAB. The scope/FAB gate now consults the mobile request registry the leaf path already used, so the two paths agree instead of one dropping the button and the other retargeting it. The lost action is recorded.")]
 	public void Analyze_Fab_HeaderButton_UnsupportedPlatformRequest_Dropped_AndRecorded() {
-		// Arrange — crt.PrintablesRequest is NOT in the versioned map and NOT in the bundled supported set.
+		// Arrange — crt.PrintablesRequest is NOT in the versioned map and NOT in the mobile request registry.
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
 				{ "name": "PrintBtn", "type": "crt.Button", "caption": "#ResourceString(PrintBtn_caption)#",
@@ -2692,7 +2717,7 @@ public sealed class WebToMobileConversionServiceTests {
 		DroppedNames(guide).Should().Contain("PrintBtn",
 			because: "an unsupported clicked request must not be retargeted into the FAB, matching how the leaf path drops the same button");
 		ReasonParam(print, ReasonCodes.DropUnknownRequest, "request").Should().Be("crt.PrintablesRequest",
-			because: "this request is in NEITHER the versioned map nor the bundled set, so clio can only say it does not know it — the separate known-unsupported code would be a claim it cannot make");
+			because: "this request is in NEITHER the versioned map nor the registry, so clio can only say it does not know it — the separate known-unsupported code would be a claim it cannot make");
 		DroppedRequest printBinding = guide.RequestConversions!.DroppedRequests.Should().ContainSingle(r =>
 				r.ElementName == "PrintBtn" && r.WebRequest == "crt.PrintablesRequest",
 				because: "the lost header action must surface in requestConversions, not be moved into the FAB")
@@ -2730,24 +2755,91 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A header crt.Button whose clicked request is supported ONLY via the bundled MobileSupportedRequests set (absent from the versioned map) still converts into the FAB — pinning the bundled-set positive branch of IsRequestSupported so a future map-only simplification cannot silently start dropping these buttons.")]
-	public void Analyze_Fab_HeaderButton_BundledSetSupportedRequest_ConvertsIntoFab() {
-		// Arrange — crt.SetAttributeFromNfcRequest is in the bundled supported set but NOT in the versioned map (FabRule carries no requests).
+	[Description("A header crt.Button whose clicked request the versioned rules map does not cover but the SUPPLIED mobile request registry does still converts into the FAB. This is the catalog positive branch of IsRequestSupported: if it regressed, every header action whose support comes from the registry alone — the two below are the only such requests the shipped rules file leaves uncovered — would silently drop off the converted page instead of becoming FAB menu items.")]
+	public void Analyze_ShouldConvertHeaderButtonIntoFab_WhenOnlyTheMobileRequestRegistryListsItsRequest() {
+		// Arrange — both requests are in the registry set but NOT in the versioned map (FabRule carries no requests).
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
 				{ "name": "NfcBtn", "type": "crt.Button", "caption": "#ResourceString(NfcBtn_caption)#",
-				  "clicked": { "request": "crt.SetAttributeFromNfcRequest", "params": {} } } ] } ]
+				  "clicked": { "request": "crt.SetAttributeFromNfcRequest", "params": {} } },
+				{ "name": "QuickFilterBtn", "type": "crt.Button", "caption": "#ResourceString(QuickFilterBtn_caption)#",
+				  "clicked": { "request": "crt.UpdateQuickFilterGroupRequest", "params": {} } } ] } ]
 			""");
+		var registry = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.SetAttributeFromNfcRequest", "crt.UpdateQuickFilterGroupRequest"
+		};
 
 		// Act
 		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
-			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"));
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"), mobileRequestTypes: registry);
 
 		// Assert
-		ViewConfigDiffOperation nfc = Element(guide, "NfcBtn");
-		nfc.Operation.Should().Be("insert",
-			because: "a request supported via the bundled set (not the versioned map) must still convert into the FAB");
-		nfc.ParentName.Should().Be("FloatingActionButton", because: "the supported header action retargets into the FAB");
+		foreach (string buttonName in new[] { "NfcBtn", "QuickFilterBtn" }) {
+			ViewConfigDiffOperation action = Element(guide, buttonName);
+			action.Operation.Should().Be("insert",
+				because: $"{buttonName}'s request is supported through the registry alone, so it must still convert");
+			action.ParentName.Should().Be("FloatingActionButton",
+				because: "a supported header action retargets into the FAB");
+		}
+		DroppedNames(guide).Should().NotContain("NfcBtn").And.NotContain("QuickFilterBtn",
+			because: "neither action is lost — a drop here is exactly the silent regression this test exists to catch");
+	}
+
+	[Test]
+	[Description("A header button whose clicked request is in NEITHER the versioned rules map NOR the supplied registry is dropped, for an unknown crt.* and for a custom usr.* alike. Support is a closed question answered by those two sources only; if this regressed, an action the mobile runtime cannot dispatch would ship as a live FAB menu item that does nothing when tapped.")]
+	public void Analyze_ShouldDropHeaderButton_WhenNeitherTheRulesMapNorTheRegistryListsItsRequest() {
+		// Arrange — the registry lists an unrelated request, so the negative answer comes from absence, not emptiness.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "MysteryBtn", "type": "crt.Button", "caption": "#ResourceString(MysteryBtn_caption)#",
+				  "clicked": { "request": "crt.NotOnMobileRequest", "params": {} } },
+				{ "name": "CustomBtn", "type": "crt.Button", "caption": "#ResourceString(CustomBtn_caption)#",
+				  "clicked": { "request": "usr.MyOwnRequest", "params": {} } } ] } ]
+			""");
+		var registry = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.SaveRecordRequest" };
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes,
+			rules: FabRule(["MainHeader"], ["MainHeader"], "crt.Button"), mobileRequestTypes: registry);
+
+		// Assert
+		DroppedNames(guide).Should().Contain(["MysteryBtn", "CustomBtn"],
+			because: "a request absent from both sources is unsupported whichever prefix it carries");
+		ReasonParam(Dropped(guide, "MysteryBtn"), ReasonCodes.DropUnknownRequest, "request")
+			.Should().Be("crt.NotOnMobileRequest",
+				because: "clio can only say it does not know the request — the known-unsupported code would be a claim it cannot make");
+		ReasonParam(Dropped(guide, "CustomBtn"), ReasonCodes.DropUnknownRequest, "request")
+			.Should().Be("usr.MyOwnRequest",
+				because: "the reason names the offending request so the caller knows which action was lost");
+		guide.RequestConversions!.DroppedRequests.Should().Contain(r => r.ElementName == "MysteryBtn")
+			.And.Contain(r => r.ElementName == "CustomBtn",
+				because: "both lost actions must surface in requestConversions rather than disappearing silently");
+	}
+
+	[Test]
+	[Description("A rules entry that CLEARS its mobile target vetoes the request even when the registry lists it: the versioned file is the override, so a CDN rules update can disable a request the runtime still publishes without a clio release. If the precedence flipped, that kill switch would stop working.")]
+	public void Analyze_ShouldDropHeaderButton_WhenTheRulesMapClearsATargetTheRegistryLists() {
+		// Arrange — crt.SaveRecordRequest is in the registry set AND explicitly cleared by the rules map.
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "SaveBtn", "type": "crt.Button", "caption": "#ResourceString(SaveBtn_caption)#",
+				  "clicked": { "request": "crt.SaveRecordRequest", "params": {} } } ] } ]
+			""");
+		WebToMobilePageConversionRules rules = FabRuleWithRequests(["MainHeader"], ["MainHeader"],
+			[new RequestMappingRule { Web = "crt.SaveRecordRequest", Mobile = null, Category = "Unsupported", Note = "Withdrawn on mobile." }],
+			"crt.Button");
+		var registry = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.SaveRecordRequest" };
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: HeaderMobileTypes, rules: rules,
+			mobileRequestTypes: registry);
+
+		// Assert
+		DroppedNames(guide).Should().Contain("SaveBtn",
+			because: "the rules entry is consulted first, so clearing the target wins over the registry listing it");
+		ReasonParam(Dropped(guide, "SaveBtn"), ReasonCodes.DropUnsupportedRequest, "request")
+			.Should().Be("crt.SaveRecordRequest",
+				because: "an explicitly cleared target is KNOWN-unsupported, which is a different thing to tell the caller than an unknown request");
 	}
 
 	[Test]
@@ -6321,6 +6413,82 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuide guide = AnalyzeRequests(bundle);
 
 		guide.RequestConversions.Should().BeNull();
+	}
+
+	#endregion
+
+	#region UnknownMobileRequestTargets (rules targets the mobile request registry does not publish)
+
+	/// <summary>
+	/// The mobile targets the shipped <c>WebToMobilePageConversionRules.json</c> names, enumerated HERE rather
+	/// than read back off the rules so the guard is not tautological: a rules entry gaining a target the mobile
+	/// runtime does not publish fails the test until someone confirms the runtime publishes it and adds it here.
+	/// </summary>
+	private static readonly IReadOnlySet<string> ShippedRulesMobileTargets =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.AddCommunicationOptionsRequest",
+			"crt.CancelRecordChangesRequest",
+			"crt.ClosePageRequest",
+			"crt.CopyRecordRequest",
+			"crt.CreateCommunicationOptionRequest",
+			"crt.CreateListItemRequest",
+			"crt.CreateRecordRequest",
+			"crt.DeleteFileRequest",
+			"crt.DeleteListItemRequest",
+			"crt.DeleteRecordRequest",
+			"crt.ExecuteExpressionRequest",
+			"crt.LoadDataRequest",
+			"crt.OpenAddressOnMapRequest",
+			"crt.OpenCustomWebViewPageRequest",
+			"crt.OpenLookupPageRequest",
+			"crt.OpenPageRequest",
+			"crt.QuickFilterRequest",
+			"crt.RemoveCommunicationOptionRequest",
+			"crt.RunBusinessProcessRequest",
+			"crt.SaveRecordRequest",
+			"crt.SetAttributeFromBarcodeRequest",
+			"crt.ShowDialogRequest",
+			"crt.UpdateListItemRequest",
+			"crt.UpdateRecordRequest",
+			"crt.UploadFileRequest"
+		};
+
+	[Test]
+	[Description("A rules entry whose mobile target the registry does not list is reported as a \"web -> mobile\" pair. Such an entry rewrites a binding into a request the runtime cannot dispatch and the failure is silent on the page, so losing this report would let a rules-file edit ship a dead action with nothing to notice it.")]
+	public void UnknownMobileRequestTargets_ShouldReportTheEntry_WhenTheRegistryDoesNotListItsMobileTarget() {
+		// Arrange — one entry maps to a request the registry publishes, one to a request it does not.
+		var rules = new WebToMobilePageConversionRules {
+			Requests = [
+				new RequestMappingRule { Web = "crt.SaveRecordRequest", Mobile = "crt.SaveRecordRequest", Category = "DirectMapping" },
+				new RequestMappingRule { Web = "crt.LegacyOpenRequest", Mobile = "crt.GhostRequest", Category = "WithAdaptation" },
+				new RequestMappingRule { Web = "crt.PrintablesRequest", Mobile = null, Category = "Unsupported" }
+			]
+		};
+		var registry = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.SaveRecordRequest" };
+
+		// Act
+		IReadOnlyList<string> unknown = WebToMobileAnalysisService.UnknownMobileRequestTargets(rules, registry);
+
+		// Assert
+		unknown.Should().Equal(["crt.LegacyOpenRequest -> crt.GhostRequest"],
+			because: "only the entry naming an unpublished target is a finding — a mapped one is fine and a "
+				+ "cleared one names no target at all, so flagging either would bury the real report in noise");
+	}
+
+	[Test]
+	[Description("Every mobile target in the SHIPPED rules file is one the registry publishes. This is the regression guard on the data, not the code: all 25 entries pass today, and an edit that points an entry at a request the mobile runtime does not publish would otherwise ship silently.")]
+	public void UnknownMobileRequestTargets_ShouldReturnEmpty_WhenEveryShippedRulesTargetIsInTheRegistry() {
+		// Arrange
+		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
+
+		// Act
+		IReadOnlyList<string> unknown = WebToMobileAnalysisService.UnknownMobileRequestTargets(
+			rules, ShippedRulesMobileTargets);
+
+		// Assert
+		unknown.Should().BeEmpty(
+			because: "a shipped rules entry pointing at a request the mobile runtime never publishes converts a "
+				+ "binding into a dead action, and the page gives no sign of it");
 	}
 
 	#endregion

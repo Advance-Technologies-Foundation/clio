@@ -130,7 +130,7 @@ public sealed class MobilePageConversionGuideToolRefusalWiringTests {
 
 		internal StubbedTool(string unreadable, bool templateWithoutViewConfig = false)
 			: base(Substitute.For<IToolCommandResolver>(), Substitute.For<ILogger>(),
-				MobileCatalog(), WebCatalog(), RulesCatalog(),
+				MobileCatalog(), WebCatalog(), MobileRequestCatalog(), RulesCatalog(),
 				Substitute.For<IPlatformVersionResolverFactory>(), Substitute.For<ISettingsRepository>()) {
 			_unreadable = unreadable;
 			_templateWithoutViewConfig = templateWithoutViewConfig;
@@ -204,6 +204,18 @@ public sealed class MobilePageConversionGuideToolRefusalWiringTests {
 		return catalog;
 	}
 
+	/// <summary>
+	/// A real <see cref="RequestCatalogState"/>, not a bare substitute: the tool awaits
+	/// <c>LoadAsync</c> and reads <c>ResolvedVersion</c> and <c>Entries</c> off the result, so a null
+	/// would NRE before any refusal could be reached.
+	/// </summary>
+	private static IMobileRequestInfoCatalog MobileRequestCatalog() {
+		IMobileRequestInfoCatalog catalog = Substitute.For<IMobileRequestInfoCatalog>();
+		catalog.LoadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(RequestState("crt.SaveRecordRequest", "crt.ClosePageRequest")));
+		return catalog;
+	}
+
 	private static IWebToMobilePageConversionRulesCatalog RulesCatalog() {
 		IWebToMobilePageConversionRulesCatalog catalog = Substitute.For<IWebToMobilePageConversionRulesCatalog>();
 		catalog.GetRulesAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -211,6 +223,17 @@ public sealed class MobilePageConversionGuideToolRefusalWiringTests {
 				Templates = [new TemplateMappingRule { Web = WebTemplate, Mobile = MobileTemplate }]
 			}));
 		return catalog;
+	}
+
+	private static RequestCatalogState RequestState(params string[] requestTypes) {
+		var entries = new List<RequestRegistryEntry>();
+		var lookup = new Dictionary<string, RequestRegistryEntry>(StringComparer.OrdinalIgnoreCase);
+		foreach (string requestType in requestTypes) {
+			var entry = new RequestRegistryEntry { RequestType = requestType };
+			entries.Add(entry);
+			lookup[requestType] = entry;
+		}
+		return new RequestCatalogState(entries, lookup, "latest", ComponentRegistrySource.FileCache);
 	}
 
 	private static ComponentCatalogState State(IReadOnlyList<ComponentRegistryEntry> entries) {

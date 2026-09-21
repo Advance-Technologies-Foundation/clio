@@ -416,7 +416,8 @@ public static class ReasonCodes {
 
 	// ── Why a request was KEPT but needs review ──────
 	/// <summary>
-	/// The request is in neither the conversion map nor the bundled set, so the binding was kept VERBATIM
+	/// The request is in neither the conversion map nor the mobile request registry, so the binding was kept
+	/// VERBATIM
 	/// for manual verification — the component works, the action may or may not. Params: NONE — the record's
 	/// own <c>request</c> field names it.
 	/// </summary>
