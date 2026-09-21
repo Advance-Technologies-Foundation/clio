@@ -25,8 +25,8 @@ public sealed class SupervisorTools(SupervisorState state) {
     [McpServerTool(Name = "trigger-swap", Destructive = true, ReadOnly = false)]
     [Description("Test-only: gate a real backend replacement on the ledger (reserve-then-drain), then swap. "
         + "For deterministic test timing; not a claim about how a real host decides when to swap.")]
-    public async Task<CallToolResult> TriggerSwapAsync(string? target, int drainBudgetSeconds) {
-        string result = await state.TriggerSwapAsync(target, TimeSpan.FromSeconds(drainBudgetSeconds));
+    public async Task<CallToolResult> TriggerSwapAsync(string? target, int drainBudgetSeconds, bool force = false) {
+        string result = await state.TriggerSwapAsync(target, TimeSpan.FromSeconds(drainBudgetSeconds), force);
         return Json(new { result, currentBackendPid = state.CurrentBackendPid });
     }
 

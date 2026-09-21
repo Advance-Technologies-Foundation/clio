@@ -1,0 +1,33 @@
+{
+  "transport": "real MCP client, StreamClientTransport, one connection, never reconnected",
+  "cases": [
+    {
+      "name": "MUTATION A: with work genuinely in flight, the swap does not happen at all",
+      "passed": true,
+      "detail": {
+        "stateAtSwapTime": "Running",
+        "swapOutcome": "deferred",
+        "note": "the original case only ever swapped an idle backend"
+      }
+    },
+    {
+      "name": "MUTATION B: after a forced swap the orphaned operation is reported truthfully (not an eternal Running)",
+      "passed": false,
+      "detail": {
+        "swapOutcome": "swapped 93021 -\u003E 93022",
+        "statesOverEightSeconds": [
+          "Running",
+          "Running",
+          "Running",
+          "Running",
+          "Running",
+          "Running",
+          "Running",
+          "Running"
+        ],
+        "finalState": "Running",
+        "note": "the work was killed with the lease outstanding; Running here means the client waits forever"
+      }
+    }
+  ]
+}
