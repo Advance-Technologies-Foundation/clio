@@ -402,11 +402,22 @@ design description. **Two remain, and neither is a probe-scale fix:**
 - The drain-coverage gap Alexandr found is a property of shipped clio, not of this
   probe: `DrainHostBackgroundWork` already drains two classes of work with a budget,
   and explicitly not the heartbeat-detached class this whole thread is about.
-- The activation-policy timeout is still undesigned — S8/S9 bound *startup* attempts,
-  not the separate case where quiescence itself never arrives because a target is
-  continuously busy (Alexandr's own disproof criterion for his "defer, never kill"
-  recommendation names exactly this risk on the execution side; it applies to Flow
-  B's activation trigger too).
+- The activation-policy timeout is still undesigned, and this is no longer a
+  predicted risk — Alexandr
+  [tested his own disproof criterion and it held](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18542770):
+  `TryEnterSwapWindow`, polled against continuous overlapping work, **never granted a
+  window for the entire 2-second observation window, on both platforms**
+  (`windowEverGranted=false`). Poll-for-idle degenerates into "the update never
+  happens" — not a slower version of the fix, the original problem under a different
+  name. This is the exact mechanism **my own S2/S4/S6-S9 wait loops use**
+  (`while ((window = ledger.TryEnterSwapWindow(...)) is null) ...`); none of my
+  scenarios triggered it only because none run continuous admission pressure during
+  the wait, not because the mechanism is safe. The fix Alexandr measured,
+  `TryReserveAdmission` (reserve-then-drain instead of poll-for-idle, ~130ms drain
+  under the same load that starved the poll), is not yet adopted here — whether it
+  belongs on the shared ledger or the caller is Alexandr's own open question to
+  kirillkrylov, and migrating S2/S4/S6-S9 to it is this stream's concrete next step
+  once that's settled, not attempted this round.
 
 Flow B also carries a standing cost Flow A doesn't: a permanent second process that
 [becomes its own compatibility boundary and can never update itself mid-session](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18539699).
