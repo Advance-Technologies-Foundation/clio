@@ -174,14 +174,32 @@ behave, and recommend the smallest mechanism meeting the chosen requirement.
 
 ### Flow A — stage the update, activate at a natural restart
 
-*What it preserves.* Everything already true today. Compatible runtime updates
-(Composition+Primitives) already apply in-process, with no restart at all — this flow
-changes nothing about that path. Nothing new is introduced that could fail, race, or
-need repair.
+**Correction to an earlier version of this section**
+([kirillkrylov](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18541834)):
+"zero new mechanism, zero new failure modes" was an overclaim. Removing the *live
+handover* doesn't remove the design surface — it only removes urgency from it, because
+nothing is live when it happens. Four residual cases exist and are real work, not
+free:
 
-*What remains running.* The **current host process, indefinitely**, until the client
-itself reconnects. For host/Core/transport-layer changes, this is exactly the original
-problem the discussion opened with:
+- **Staging.** The new host build must be acquired and verified before it's safe to
+  activate — the trust/signing gate Alexandr flagged and explicitly deferred in the
+  very first measurement post of this thread. Flow A does not avoid this question; it
+  just isn't blocked by it the way a live-handover flow would be.
+- **Version selection.** At restart, which staged version does the launcher pick? This
+  is literally [Option A from the thread's opening measurement](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18539341) —
+  "side-by-side install + newest-wins launcher" — restated, not superseded.
+- **Settings compatibility.** Config/settings must remain readable across versions or
+  be migrated. Not addressed anywhere in this thread yet.
+- **Failed startup / rollback.** See the dedicated section below — this is the one
+  kirillkrylov specifically asked to have described before any further probe work.
+
+*What it preserves.* Everything already true today for the **live session**.
+Compatible runtime updates (Composition+Primitives) already apply in-process, with no
+restart at all — this flow changes nothing about that path.
+
+*What remains running.* The **current host process**, for the live session, until the
+client itself reconnects. For host/Core/transport-layer changes, this is exactly the
+original problem the discussion opened with:
 [a month-long session may never produce a natural reconnect](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18539699),
 so a fix can sit staged and undelivered indefinitely. This flow does not hide that
 cost — it is the cost.
@@ -189,11 +207,13 @@ cost — it is the cost.
 *What cannot update transparently.* All of it, for as long as the session runs without
 reconnecting. There is no partial credit.
 
-*Refused requests / failed startup.* N/A — nothing is ever killed while a client is
-attached without the client's own action, so there is no handover window to fail
-inside.
+*Refused requests / failed startup, live session.* N/A — nothing is ever killed while
+a client is attached without the client's own action, so there is no *live* handover
+window to fail inside. This does not mean startup can't fail — see below, where it can,
+just not in front of an attached client.
 
-*New failure modes introduced.* None. Zero new code paths, zero new races.
+*New failure modes introduced, live session.* None. The residual cases above are new
+design surface, but none of them execute while a client is connected.
 
 ### Flow B — supervisor-managed backend replacement
 
@@ -228,9 +248,45 @@ pressure). Not yet designed: what an MCP-level caller sees when that happens, or
 retry/backoff contract — today it's a raw exception in a probe, not a defined client
 experience.
 
-*Failed startup.* **Untested.** Every scenario assumes V2 starts successfully. What
-happens to the client if V2 fails to come up after V1 is already gone is not covered
-by S1-S7 and is a real gap in the evidence, not just an unstated one.
+*Failed startup.* **Untested, and the current probe's ordering cannot support
+rollback even in principle** — see below.
+
+### Failed-startup / rollback behavior, both flows
+
+Per kirillkrylov's request, described before any further probe work rather than
+after.
+
+**Flow A.** The failure surface is entirely between sessions — a launcher picking a
+broken staged version at the *next* reconnect, with no client attached to notice
+immediately. Two designs, not yet chosen between:
+- **Newest-wins, no fallback.** A broken staged build blocks every future launch until
+  fixed. Simplest, but a bad build is an outage for every session that reconnects
+  until someone intervenes.
+- **Newest-wins with fallback to last-known-good on startup failure.** Requires the
+  launcher to verify success (a health check) before treating the new version as
+  committed, and to retain the previous version until that check passes — which is the
+  same retention/reclamation question E2's runtime-retirement probe already answers
+  for runtime bundles, applied one layer up, to the host binary itself.
+
+**Flow B.** Here the finding is structural, not just "untested": **my probe's current
+ordering — kill V1, then start V2 — has no rollback path by construction.** If V2
+fails to become ready, the client has no backend at all; V1 is already gone. This
+isn't a missing test case, it's the wrong sequencing for a design that wants rollback.
+The correct order is **confirm V2 first, then retire V1** — start V2 (or at minimum a
+dry-run/handshake proving it *can* start) before killing V1, keeping V1 as the fallback
+if V2's readiness check fails. That is a design correction to make before extending the
+probe further, not an additional scenario to bolt onto the existing ordering.
+
+One more asymmetry worth naming: Alexandr's
+[P1 finding](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18541844)
+— a disk-write failure during evidence persistence leaves an operation `Running`
+forever, its scope permanently unswappable, because invariant I4 (evidence durable
+*before* the terminal is observable) is what makes replacement safe against an
+unrecorded terminal, and the same ordering is what turns a disk failure into a stuck
+scope. That is orthogonal to V2-startup failure but compounds with it: a stuck scope
+from a persistence failure would make even the confirm-V2-first ordering wait forever
+for a window that structurally cannot open, which is exactly the wait-budget/starvation
+gap already flagged as open (A5h) and now has a second, independent cause.
 
 ### Recommendation
 
