@@ -23,6 +23,20 @@ correctly. **S6 is the actual swap proof**, added in response: a real V1→V2 re
 held through termination *and* replacement readiness (not just the kill), and concurrent pressure against
 the outgoing backend during the handover rather than a single sampled attempt.
 
+**Third review, an unfalsifiable oracle.**
+[kirillkrylov reproduced S6's 6/6](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18541476),
+then showed it was a false positive: changing only the post-handover operation's outcome to `fail` still
+passed 6/6. Two independent bugs made this possible — `PumpBackendOutput` completed every lease as
+`Succeeded` regardless of what the backend actually reported, and the effect check matched any line
+ending in the expected PID, which the unrelated `__readiness__` probe's own line also satisfied. Both
+fixed: the reported outcome is now parsed and completed correctly, effect matching requires the exact
+`target:opId:done-by-pid-<pid>` line, and the terminal state is asserted against the ledger before the
+effect file is even read. **S7** is the negative control this bug argued for: the identical path with a
+failing outcome, asserting `Failed` and a correctly *absent* effect line. Before restoring the fix, the
+broken version was re-run against S7 and it failed with an explicit mismatch
+(`post-handover operation reached Succeeded, expected Failed`) rather than a silent pass — the fix is
+demonstrated to matter, not just applied.
+
 ## Why
 
 Two mechanisms each have measured evidence on their own, but nobody had run them together:
@@ -69,7 +83,8 @@ Two tiny projects, no added packages beyond the referenced `Contract`.
 | S3 | gated swap, wrong scope (drain-before-termination) | per-target on envA only | envA (300ms), envB (1200ms) |
 | S4 | gated swap, correct scope for a host (drain-before-termination) | global | envA (300ms), envB (1200ms) |
 | S5 | work arriving during the handover, single sampled attempt | global | envA (300ms), then a second `Begin` while the window is held |
-| S6 | **the swap proof** — real V1→V2 respawn under concurrent handover pressure | global | envA (400ms), a post-handover op on V2, continuous `Begin` pressure throughout |
+| S6 | **the swap proof** — real V1→V2 respawn under concurrent handover pressure | global | envA (400ms), a post-handover op on V2 (`succeed`), continuous `Begin` pressure throughout |
+| S7 | **negative control for S6's oracle** | global | identical to S6, but the post-handover op is told to `fail` |
 
 S1 is the control: without it, S2 passing would not be evidence the gate does anything — a suite that
 cannot fail is worth nothing. S3 is the one that operationalizes the per-target correction: a supervisor
@@ -79,7 +94,9 @@ S5 checks the ledger's own admission guarantee through this probe's composed pat
 attempt. S6 goes further on every axis S5 left open: the window is held through V2 startup and a real
 readiness check (not released the instant the kill returns), admission is pressured *continuously* by a
 background task rather than sampled once, and the probe verifies a genuinely different process — distinct
-PID, confirmed by grepping the effect file for `pid-<id>` — actually serves the post-handover operation.
+PID, confirmed by an exact `target:opId:done-by-pid-<pid>` match — actually serves the post-handover
+operation. S7 is what makes S6's checks falsifiable rather than assumed: same path, an operation told to
+fail, and an assertion that both the ledger's terminal state and the effect file agree it failed.
 
 ## Reproduce
 
@@ -95,19 +112,20 @@ dotnet run --project experiments/SupervisorQuiescenceComposition/Supervisor/Supe
 Exit code 1 means a case failed; JSON on stdout carries the raw observations, including swap and wait
 latency per scenario. The probe uses a unique temporary directory per scenario and writes nothing outside it.
 
-## Observations, 2026-09-21 — against the repaired barrier (`551f25c92538`), with S6 added
+## Observations, 2026-09-21 — against the repaired barrier (`551f25c92538`), with S6/S7 added
 
-macOS 27.0.0 (arm64) / Unix 26.6.2, .NET 10.0.4 runtime (SDK 10.0.103). **6/6 passed, exit 0, three
+macOS 27.0.0 (arm64) / Unix 26.6.2, .NET 10.0.4 runtime (SDK 10.0.103). **7/7 passed, exit 0, three
 consecutive runs, numbers stable within noise:**
 
 | case | effects present | swap latency | wait latency |
 |---|---|---|---|
-| S1 (naive) | `[]` | ~17-20ms | 0ms |
-| S2 (global, one target) | `[envA]` | ~1243-1256ms | ~1215-1226ms |
-| S3 (per-target, wrong scope) | `[envA]` only — **envB lost** | ~330-336ms | ~309-311ms |
-| S4 (global, two targets) | `[envA, envB]` | ~1236-1241ms | ~1217-1221ms |
+| S1 (naive) | `[]` | ~16-20ms | 0ms |
+| S2 (global, one target) | `[envA]` | ~1240-1256ms | ~1217-1226ms |
+| S3 (per-target, wrong scope) | `[envA]` only — **envB lost** | ~328-336ms | ~309-312ms |
+| S4 (global, two targets) | `[envA, envB]` | ~1216-1237ms | ~1196-1220ms |
 | S5 (handover admission, sampled) | refused during window: **true**; admitted after release: **true** | — | — |
-| S6 (real swap, continuous pressure) | V1's op **and** V2's post-handover op both present, distinct PIDs | — | — |
+| S6 (real swap, continuous pressure, `succeed`) | V1's op **and** V2's post-handover op both present (exact match), distinct PIDs | — | — |
+| S7 (negative control, `fail`) | V1's op present; V2's post-handover effect **correctly absent**, ledger reports `Failed` | — | — |
 
 S1's ~19ms swap against S2's ~1220ms wait is the whole claim in two numbers: the naive supervisor acts
 before the work is done and loses it; the gated one waits exactly as long as the work takes and does not.
@@ -115,20 +133,23 @@ S3 swaps at ~330ms — right after envA's 300ms operation finishes — and takes
 mid-flight on its 1200ms operation. S4, gated globally against the same two operations, waits for the
 slower one and loses neither.
 
-**S6, three consecutive runs:**
+**S6/S7, three consecutive runs:**
 
-| run | V1 PID | V2 PID | V1 effect | V2 effect | pressure attempts during window | refused | admitted during window |
-|---|---|---|---|---|---|---|---|
-| 1 | 29109 | 29110 | present | present | 12 | 12 | **0** |
-| 2 | 29165 | 29166 | present | present | 10 | 10 | **0** |
-| 3 | 29179 | 29180 | present | present | 9 | 9 | **0** |
+| run | S6 V1 PID | S6 V2 PID | S6 result | S6 pressure (attempts/refused/admitted) | S7 V2 PID | S7 result |
+|---|---|---|---|---|---|---|
+| 1 | 33315 | 33316 | both effects present | 13 / 13 / **0** | 33318 | Failed, effect absent |
+| 2 | 33346 | 33347 | both effects present | 8 / 8 / **0** | 33349 | Failed, effect absent |
+| 3 | 33359 | 33376 | both effects present | 10 / 10 / **0** | 33380 | Failed, effect absent |
 
-V1 and V2 are distinct real processes every run (consecutive PIDs, since nothing else was forking). V1's
-original operation survived the swap; V2 — the new process — actually executed and recorded the
-post-handover operation, not just accepted it. Every pressure attempt tagged as occurring while the
-window was held was refused; zero were silently admitted into the outgoing backend during the handover.
-The pressure count (9-12 per run at one attempt per 5ms) reflects how long the window stayed open, which
-is itself a proxy for handover latency — narrower than S2/S4's explicit timers but consistent with them.
+V1 and V2 are distinct real processes every run. V1's original operation survived the swap; V2 — the new
+process — actually executed and recorded the post-handover operation, verified by an exact
+`target:opId:done-by-pid-<pid>` line rather than a PID-suffix match (which is what let the earlier version
+false-positive against the readiness probe's own effect line). Every pressure attempt tagged as occurring
+while the window was held was refused; zero were silently admitted into the outgoing backend during the
+handover. S7 confirms the fix is real, not cosmetic: told to fail, the operation's ledger state is
+`Failed` and no effect line exists for it — and re-running the *pre-fix* code against S7 threw
+`post-handover operation reached Succeeded, expected Failed` rather than passing, which is the mutation
+check for this fix.
 
 All S1–S4 numbers are unchanged within noise from the pre-repair measurement, which is expected: the
 three defects kirillkrylov found are contention bugs, and none of S1–S4's sequential single-caller
@@ -154,11 +175,12 @@ does **not** demonstrate:
 - **A busy-wait cost bound.** `TryEnterSwapWindow` is polled every 25ms (S1-S5) or admission is attempted
   every 5ms (S6's pressure loop); a production design would want an event/callback instead of polling,
   and a policy for what happens if the wait exceeds a budget — that's activation policy, still open.
-- **A mutation control for S6 itself.** E3's A5i proves its admission barrier discriminates by re-running
-  the identical harness against a deliberately broken ledger. This probe doesn't have an equivalent for
-  its own composed path (killing V1, starting V2, routing pressure) — it establishes that the composed
-  path currently passes, not that the assertions would catch a regression in the composition logic itself,
-  as opposed to a regression in the ledger A5i already guards.
+- **A mutation control for the *effect/outcome oracle*** — now present, as S7, after kirillkrylov found
+  the original oracle unfalsifiable (a fixed `Succeeded` and a PID-suffix match both hid a `fail`
+  outcome). What S7 does **not** cover: a mutation control for the *rest* of the composed path — killing
+  V1, starting V2, routing pressure. E3's A5i proves its admission barrier discriminates; this probe has
+  that guarantee only for the outcome-reporting half, not for whether the kill/respawn/pressure sequencing
+  itself would be caught if broken.
 - **Concurrency beyond one swapper and one pressure loop**, native resources, real Creatio/DI dependencies,
   or any integration with `UpdatingComposition` — same boundary E3 draws, for the same reason: this probe
   loads nothing through Core and cannot conflict with either other branch.

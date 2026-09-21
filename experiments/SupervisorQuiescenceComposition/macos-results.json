@@ -18,8 +18,8 @@
         "effects": [
           "envA"
         ],
-        "swapMs": 1249,
-        "waitedMs": 1221
+        "swapMs": 1241,
+        "waitedMs": 1217
       }
     },
     {
@@ -29,8 +29,8 @@
         "effects": [
           "envA"
         ],
-        "swapMs": 331,
-        "waitedMs": 310
+        "swapMs": 329,
+        "waitedMs": 311
       }
     },
     {
@@ -41,8 +41,8 @@
           "envA",
           "envB"
         ],
-        "swapMs": 1235,
-        "waitedMs": 1217
+        "swapMs": 1231,
+        "waitedMs": 1216
       }
     },
     {
@@ -57,13 +57,23 @@
       "name": "S6 a real V1-\u003EV2 respawn preserves V1\u0027s operation, serves a new one on a different PID, and refuses every concurrent admission attempt during the handover",
       "passed": true,
       "detail": {
-        "v1Pid": 29271,
-        "v2Pid": 29272,
+        "v1Pid": 33436,
+        "v2Pid": 33453,
         "v1EffectPresent": true,
         "v2EffectPresent": true,
-        "pressureAttempts": 9,
-        "pressureRefused": 9,
+        "pressureAttempts": 11,
+        "pressureRefused": 11,
         "pressureAdmittedDuringWindow": 0
+      }
+    },
+    {
+      "name": "S7 negative control: a failing post-handover operation is reported Failed, and no effect line is falsely recorded for it",
+      "passed": true,
+      "detail": {
+        "v1Pid": 33454,
+        "v2Pid": 33455,
+        "v1EffectPresent": true,
+        "v2EffectCorrectlyAbsent": true
       }
     }
   ]

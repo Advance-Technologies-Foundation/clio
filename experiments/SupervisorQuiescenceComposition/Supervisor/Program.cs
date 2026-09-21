@@ -58,15 +58,28 @@ Check("S5 a new operation for the gated scope is refused while the window is hel
 
 // ── S6: the actual swap proof — real V1->V2 respawn, admission closure held through readiness, ─────────
 // concurrent handover pressure against the outgoing backend, not just a single sampled attempt.
-var s6 = await RunSwapScenario(backendPath, "envA", 400);
+var s6 = await RunSwapScenario(backendPath, "envA", 400, postHandoverOutcome: "succeed");
 Check("S6 a real V1->V2 respawn preserves V1's operation, serves a new one on a different PID, "
     + "and refuses every concurrent admission attempt during the handover",
-    s6.V1Pid != s6.V2Pid && s6.V1EffectPresent && s6.V2EffectPresent
+    s6.V1Pid != s6.V2Pid && s6.V1EffectPresent && s6.V2EffectMatchesOutcome
         && s6.PressureAttempts > 0 && s6.PressureAdmittedDuringWindow == 0,
     new {
         v1Pid = s6.V1Pid, v2Pid = s6.V2Pid, v1EffectPresent = s6.V1EffectPresent,
-        v2EffectPresent = s6.V2EffectPresent, pressureAttempts = s6.PressureAttempts,
+        v2EffectPresent = s6.V2EffectMatchesOutcome, pressureAttempts = s6.PressureAttempts,
         pressureRefused = s6.PressureRefused, pressureAdmittedDuringWindow = s6.PressureAdmittedDuringWindow
+    });
+
+// ── S7: negative control for S6's oracle — kirillkrylov demonstrated that changing the post-handover ────
+// outcome to "fail" still passed 6/6, because PumpBackendOutput ignored the reported outcome and the
+// effect check matched any line ending in the right PID (which the readiness probe's own line also did).
+// Both are fixed; this proves the fix by requiring the suite to now correctly fail-and-report a failure.
+var s7 = await RunSwapScenario(backendPath, "envA", 400, postHandoverOutcome: "fail");
+Check("S7 negative control: a failing post-handover operation is reported Failed, "
+    + "and no effect line is falsely recorded for it",
+    s7.V1EffectPresent && s7.V2EffectMatchesOutcome,
+    new {
+        v1Pid = s7.V1Pid, v2Pid = s7.V2Pid, v1EffectPresent = s7.V1EffectPresent,
+        v2EffectCorrectlyAbsent = s7.V2EffectMatchesOutcome
     });
 
 Console.WriteLine(JsonSerializer.Serialize(new {
@@ -208,7 +221,8 @@ static async Task<HandoverResult> RunHandoverScenario(string backendPath, string
     }
 }
 
-static async Task<SwapResult> RunSwapScenario(string backendPath, string target, int workMs) {
+static async Task<SwapResult> RunSwapScenario(string backendPath, string target, int workMs,
+    string postHandoverOutcome = "succeed") {
     string work = Directory.CreateTempSubdirectory("supervisor-swap-").FullName;
     string effectPath = Path.Combine(work, "effect.log");
     var ledger = new OperationLedger(Path.Combine(work, "operations.jsonl"));
@@ -293,12 +307,19 @@ static async Task<SwapResult> RunSwapScenario(string backendPath, string target,
         catch (OperationCanceledException) { }
         window.Dispose();
 
-        // Post-handover: the same target accepts new work again, served by the new process.
+        // Post-handover: the same target accepts new work again, served by the new process. The outcome
+        // is parameterized so S7 can run the identical path with a failing operation as a negative
+        // control -- kirillkrylov's finding was that a fixed "succeed" here made the oracle unfalsifiable.
         IOperationLease postLease = ledger.Begin(target, "V2", v2);
         v2Leases[postLease.Id] = postLease;
-        await v2.StandardInput.WriteLineAsync($"start {target} {postLease.Id} 50 succeed");
+        await v2.StandardInput.WriteLineAsync($"start {target} {postLease.Id} 50 {postHandoverOutcome}");
         await v2.StandardInput.FlushAsync();
-        await WaitTerminal(ledger, postLease.Id, TimeSpan.FromSeconds(10));
+        OperationRecord postTerminal = await WaitTerminal(ledger, postLease.Id, TimeSpan.FromSeconds(10));
+        OperationState expectedState = postHandoverOutcome == "succeed"
+            ? OperationState.Succeeded : OperationState.Failed;
+        if (postTerminal.State != expectedState)
+            throw new InvalidOperationException(
+                $"post-handover operation reached {postTerminal.State}, expected {expectedState}");
 
         int v2Pid = v2.Id;
         v2.Kill(entireProcessTree: true);
@@ -308,14 +329,20 @@ static async Task<SwapResult> RunSwapScenario(string backendPath, string target,
         try { await v2ReaderTask; }
         catch (OperationCanceledException) { }
 
+        // Exact match on target:opId:done-by-pid-<pid>, not a PID suffix -- a suffix match is a false
+        // positive here, since V2 also writes the unrelated __readiness__ probe's own effect line under
+        // the same PID. This is the fix for the false positive kirillkrylov demonstrated.
         await Task.Delay(200);
         string[] effectLines = File.Exists(effectPath) ? await File.ReadAllLinesAsync(effectPath) : [];
-        bool v1EffectPresent = effectLines.Any(l => l.EndsWith($"pid-{v1Pid}", StringComparison.Ordinal));
-        bool v2EffectPresent = effectLines.Any(l => l.EndsWith($"pid-{v2Pid}", StringComparison.Ordinal));
+        bool v1EffectPresent = effectLines.Contains($"{target}:{lease.Id}:done-by-pid-{v1Pid}");
+        bool v2EffectExpected = postHandoverOutcome == "succeed";
+        bool v2EffectMatchesOutcome = v2EffectExpected
+            ? effectLines.Contains($"{target}:{postLease.Id}:done-by-pid-{v2Pid}")
+            : !effectLines.Contains($"{target}:{postLease.Id}:done-by-pid-{v2Pid}");
 
         var attempts = pressureAttempts.ToArray();
         var duringWindow = attempts.Where(a => a.DuringWindow).ToArray();
-        return new SwapResult(v1Pid, v2Pid, v1EffectPresent, v2EffectPresent,
+        return new SwapResult(v1Pid, v2Pid, v1EffectPresent, v2EffectMatchesOutcome,
             duringWindow.Length, duringWindow.Count(a => a.Refused), duringWindow.Count(a => !a.Refused));
     }
     finally {
@@ -357,7 +384,10 @@ static async Task PumpBackendOutput(Process backend, ConcurrentDictionary<string
                 accepted[parts[1]] = 0;
             }
             else if (parts.Length == 3 && parts[0] == "done" && leases.TryRemove(parts[1], out var lease)) {
-                lease.Complete(OperationState.Succeeded);
+                // The outcome word the backend actually reported, not an assumed success -- a lease
+                // completed as Succeeded regardless of what happened is exactly the false positive
+                // kirillkrylov's negative control (S7) exists to catch.
+                lease.Complete(parts[2] == "succeed" ? OperationState.Succeeded : OperationState.Failed);
             }
         }
     }
@@ -371,5 +401,5 @@ sealed record ScenarioResult(HashSet<string> Effects, long SwapMs, long WaitMs);
 
 sealed record HandoverResult(bool RefusedDuringWindow, bool AdmittedAfterRelease);
 
-sealed record SwapResult(int V1Pid, int V2Pid, bool V1EffectPresent, bool V2EffectPresent,
+sealed record SwapResult(int V1Pid, int V2Pid, bool V1EffectPresent, bool V2EffectMatchesOutcome,
     int PressureAttempts, int PressureRefused, int PressureAdmittedDuringWindow);
