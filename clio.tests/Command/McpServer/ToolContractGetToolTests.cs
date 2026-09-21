@@ -23,6 +23,23 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class ToolContractGetToolTests {
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
+	[Test, Category("Unit")]
+	[Description("Batch discovery explains nested typed values and prefers the canonical executor for writes.")]
+	public void BatchContract_ShouldDescribeOperations_AndPreferCanonicalExecutor() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		// Act
+		ToolContractDefinition contract = tool.GetToolContracts(new ToolContractGetArgs([DataServiceBatchTool.ToolName])).Tools!.Single();
+		// Assert
+		contract.PreferredFlow.Tools.Should().Equal([ClioRunTool.ToolName, DataServiceBatchTool.ToolName],
+			because: "write callers should not be directed to a deprecated alias");
+		string description = contract.InputSchema.Properties.Single(field => field.Name == "operations").Description;
+		foreach (string field in new[] { "operation:", "schema-name:", "record-id:", "values:", "data-value-type:", "value:" }) {
+			description.Should().Contain(field, because: "a caller must be able to construct nested operations from discovery alone");
+		}
+	}
+
+
 	[Test]
 	[Category("Unit")]
 	[TestCase(CreateDataBindingTool.CreateDataBindingToolName)]

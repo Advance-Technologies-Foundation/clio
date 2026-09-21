@@ -39,6 +39,48 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 	private const string ReadColumnToolName = GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName;
 	private const string CurrentDateTimeSystemValueUId = "d7c295d3-3146-4ee1-ac49-3a7bd0edc45d";
 
+	[Test]
+	// LocalOnly classifies the whole fixture; keep this probe explicit, manual, and CI-guarded.
+	[Category("McpE2E.Manual")]
+	[Explicit("Publishes on an exclusively owned disposable Creatio instance.")]
+	[Description("Creates a DB-view entity through sync, replays it without mutation, and rejects a conflicting storage kind.")]
+	[AllureTag(ToolName)]
+	public async Task SchemaSync_ShouldPersistDbView_WhenCreatedAndReplayed() {
+		// Arrange
+		TeamCityRunGuard.IgnoreIfRunningUnderTeamCityOrGitHubActions("Requires an exclusive disposable instance.");
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: true);
+		CancellationToken token = context.CancellationTokenSource.Token;
+		Dictionary<string, object?> operation = new() {
+			["type"] = "create-entity", ["schema-name"] = context.EntitySchemaName,
+			["title-localizations"] = BuildLocalizations("View"), ["is-db-view"] = true
+		};
+		Dictionary<string, object?> args = new() { ["args"] = new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName, ["package-name"] = context.PackageName,
+			["operations"] = new[] { operation }
+		} };
+		// Act
+		JsonElement created = ExtractSchemaSyncResponse(await context.Session.CallToolAsync(ToolName, args, token));
+		EntitySchemaPropertiesInfo schema = await GetSchemaPropertiesAsync(context.Session,
+			context.EnvironmentName!, context.PackageName!, context.EntitySchemaName!, token);
+		JsonElement replayed = ExtractSchemaSyncResponse(await context.Session.CallToolAsync(ToolName, args, token));
+		operation["is-db-view"] = false;
+		JsonElement collision = ExtractSchemaSyncResponse(await context.Session.CallToolAsync(ToolName, args, token));
+		// Assert
+		AllureApi.Step("Verify native DB-view creation", () => {
+			created.GetProperty("success").GetBoolean().Should().BeTrue(because: FormatPayload(created));
+			GetMessageTypes(created.GetProperty("results")[0]).Should().Contain(LogDecoratorType.Info,
+				because: "successful creation reports publication evidence");
+			schema.DbView.Should().BeTrue(because: "sync must forward the DB-view flag into the native designer");
+		});
+		AllureApi.Step("Verify replay and conflict", () => {
+			replayed.GetProperty("results")[0].GetProperty("outcome").GetString().Should().Be("already-satisfied",
+				because: "a repeated DB-view request must not recreate the entity");
+			collision.GetProperty("success").GetBoolean().Should().BeFalse(because: "sync cannot implicitly change the storage kind");
+			collision.GetProperty("results")[0].GetProperty("outcome").GetString().Should().Be("collision",
+				because: "an explicit mismatch must be actionable rather than silently ignored");
+		});
+	}
+
 	[TestCase("Contact", false, false)]
 	[TestCase("Account", true, true)]
 	[Description("Creates and replays a replacing entity schema with inferred or explicit parent, preserving the base package.")]

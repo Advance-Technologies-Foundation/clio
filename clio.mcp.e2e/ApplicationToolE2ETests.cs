@@ -999,9 +999,12 @@ public sealed class ApplicationToolE2ETests {
 					return candidate;
 				}
 			}
-			catch (InvalidOperationException) {
+			catch (InvalidOperationException exception) {
 				// get-app-info can transiently fail to read the just-recompiled schema while the
-				// server is still settling after sync-schemas; keep polling within the window.
+				// server is still settling after sync-schemas; keep polling within the window. Each
+				// attempt writes a payload dump, so discard it here - otherwise one settling window
+				// leaves a dump per poll in the published TestResults artifact.
+				PayloadDumpReader.DeleteIfPresent(exception.Message);
 			}
 
 			await Task.Delay(CanonicalMainEntityReadbackPollInterval, cancellationToken);

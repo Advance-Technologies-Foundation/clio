@@ -16,6 +16,9 @@ public interface IRuntimeEntitySchemaReader {
 	/// <param name="schemaName">Creatio entity schema name.</param>
 	/// <returns>A rich runtime schema result with schema-level and column-level metadata.</returns>
 	RuntimeEntitySchemaResult GetByName(string schemaName);
+
+	/// <summary>Loads the effective schema with an explicit HTTP timeout in milliseconds and no retries.</summary>
+	RuntimeEntitySchemaResult GetByName(string schemaName, int requestTimeoutMilliseconds);
 }
 
 /// <summary>
@@ -124,7 +127,9 @@ internal sealed class RuntimeEntitySchemaReader(
 
 	// This reader intentionally supports only Name-based RuntimeEntitySchemaRequest reads.
 	// It does not replace the by-UId designer path used by RemoteEntitySchemaDesignerClient.
-	public RuntimeEntitySchemaResult GetByName(string schemaName) {
+	public RuntimeEntitySchemaResult GetByName(string schemaName) => GetByName(schemaName, System.Threading.Timeout.Infinite);
+
+	public RuntimeEntitySchemaResult GetByName(string schemaName, int requestTimeoutMilliseconds) {
 		if (string.IsNullOrWhiteSpace(schemaName)) {
 			throw new InvalidOperationException("Schema name is required.");
 		}
@@ -133,7 +138,7 @@ internal sealed class RuntimeEntitySchemaReader(
 		string requestBody = JsonSerializer.Serialize(
 			new RuntimeEntitySchemaRequestDto(schemaName),
 			RuntimeEntitySchemaJson.RequestOptions);
-		string responseJson = applicationClient.ExecutePostRequest(url, requestBody);
+		string responseJson = applicationClient.ExecutePostRequest(url, requestBody, requestTimeoutMilliseconds, 1, 1);
 		RuntimeEntitySchemaResponseDto? response = JsonSerializer.Deserialize<RuntimeEntitySchemaResponseDto>(
 			responseJson,
 			RuntimeEntitySchemaJson.Options);

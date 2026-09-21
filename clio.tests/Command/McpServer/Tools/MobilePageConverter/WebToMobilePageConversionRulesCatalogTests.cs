@@ -400,15 +400,17 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		extra.CaptionResource.Should().NotBeNull(because: "a tab needs a caption");
 		extra.CaptionResource.Key.Should().Be("RightPanelTab_caption", because: "the caption is a page resource keyed by the tab name");
 		extra.CaptionResource.Value.Should().Be("Details", because: "the declared caption text is the standard right-panel tab caption");
-		rightArea.Containers.Should().Contain(c => c.Web == "RightAreaProfileContainer" && c.Mobile == "RightPanelTab",
-			because: "the right profile area walks its content into the declared tab");
+		rightArea.Containers.Should().Contain(c => c.Web == "RightModulesContainer" && c.Mobile == "RightPanelTab",
+			because: "the right profile area's wrapper (its direct child of CardContentWrapper on the live template) "
+				+ "walks its content into the declared tab; the nested RightAreaProfileContainer card has no pair of "
+				+ "its own and is pruned as chrome instead");
 		rightArea.Containers.Should().NotContain(c => c.Web.Contains(':'),
 			because: "no mobile anchor with a layoutConfig row exists on BaseMobilePageTemplate, so positional entries would be dead");
 	}
 
 	[Test]
-	[Description("Bundled top-area template (PageWithTopAreaAndTabsFreedomTemplate -> BaseMobilePageTemplate): the mobile template has no tab strip, so the rule DECLARES the strip (Tabs in MainContainer, scrollable / transparent) and its general tab (GeneralInfoTab at index 0 with the General information caption), and the web Tabs / GeneralInfoTab pairs merge onto them — the same shape as the right-area rule. It declares NO right-panel tab and pairs NOTHING onto the template's AreaProfileContainer: the web TopAreaProfileContainer is chrome, and its content falls back to MainContainer.")]
-	public void LoadBundled_TopAreaTemplateDeclaresTabStripAndGeneralTab_WithoutAProfileAreaPair() {
+	[Description("Bundled top-area template (PageWithTopAreaAndTabsFreedomTemplate -> BaseMobilePageTemplate): the mobile template has no tab strip, so the rule DECLARES the strip (Tabs in MainContainer, scrollable / transparent) and its general tab (GeneralInfoTab at index 0 with the General information caption), and the web Tabs / GeneralInfoTab pairs merge onto them — the same shape as the right-area rule. It declares NO right-panel tab, but the web TopAreaProfileContainer pairs onto the template's own AreaProfileContainer card so the top profile area's content lands inside it instead of falling back to MainContainer.")]
+	public void LoadBundled_TopAreaTemplateDeclaresTabStripAndGeneralTab_WithAProfileAreaPair() {
 		// Arrange
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
@@ -438,9 +440,12 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 		generalTab.CaptionResource.Value.Should().Be("General information", because: "the declared caption text is the standard general tab caption");
 
 		topArea.Containers.Select(c => (c.Web, c.Mobile)).Should().BeEquivalentTo(
-			new[] { ("MainContainer", "MainContainer"), ("Tabs", "Tabs"), ("GeneralInfoTab", "GeneralInfoTab") },
+			new[] {
+				("MainContainer", "MainContainer"), ("Tabs", "Tabs"), ("GeneralInfoTab", "GeneralInfoTab"),
+				("TopAreaProfileContainer", "AreaProfileContainer")
+			},
 			because: "the web strip and general tab merge onto the declared ones; the top-area template has no CardContentWrapper, and "
-				+ "TopAreaProfileContainer is deliberately unpaired so it is pruned as chrome rather than merged onto the template's profile card");
+				+ "TopAreaProfileContainer merges onto the template's own profile card instead of being pruned as chrome");
 		topArea.Containers.Should().NotContain(c => c.Web.Contains(':'),
 			because: "no mobile anchor with a layoutConfig row exists on BaseMobilePageTemplate, so positional entries would be dead");
 	}

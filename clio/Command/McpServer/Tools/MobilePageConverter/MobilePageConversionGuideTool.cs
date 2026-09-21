@@ -259,6 +259,7 @@ public class MobilePageConversionGuideTool {
 				mobileTemplateModelConfig: mobileTemplateProbe.ModelConfig,
 				mobileTemplateTypesByName: mobileTemplateProbe.TypesByName,
 				mobileTemplateLayoutConfigs: mobileTemplateProbe.LayoutConfigsByName,
+				mobileTemplateNodesByName: mobileTemplateProbe.NodesByName,
 				webTemplateBaselineNodes: webTemplateBaseline.Nodes,
 				webTemplateResources: webTemplateBaseline.Resources,
 				actionTargetsProbe: actionTargets,
@@ -601,7 +602,8 @@ public class MobilePageConversionGuideTool {
 		JsonNode ViewModelConfig,
 		JsonNode ModelConfig,
 		bool Unavailable,
-		IReadOnlyDictionary<string, string> TypesByName);
+		IReadOnlyDictionary<string, string> TypesByName,
+		IReadOnlyDictionary<string, JObject> NodesByName);
 
 	/// <summary>
 	/// Best-effort read of the mobile template (<paramref name="mobileSchemaName"/>) bundle: maps each mobile
@@ -617,6 +619,7 @@ public class MobilePageConversionGuideTool {
 		var emptyParents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		var emptyTypes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		var emptyPlacements = new Dictionary<string, JsonObject>(StringComparer.OrdinalIgnoreCase);
+		var emptyNodes = new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase);
 		if (string.IsNullOrWhiteSpace(mobileSchemaName)) {
 			// Unavailable, not "fine": there is no template to read, so there is no base to diff the data
 			// sections against and both diffs degrade to a root merge. Reporting this as available made that
@@ -625,7 +628,7 @@ public class MobilePageConversionGuideTool {
 			// base that owns nothing loses nothing (ENG-95827). Reachable only when the rules declare no
 			// defaultMobileTemplate either.
 			return new MobileTemplateProbe(emptyParents, emptyPlacements, ViewModelConfig: null, ModelConfig: null,
-				Unavailable: true, TypesByName: emptyTypes);
+				Unavailable: true, TypesByName: emptyTypes, NodesByName: emptyNodes);
 		}
 		try {
 			PageGetOptions options = new() {
@@ -649,13 +652,14 @@ public class MobilePageConversionGuideTool {
 					WebToMobileAnalysisService.CollectLayoutConfigByName(viewConfig),
 					bundle.ViewModelConfig, bundle.ModelConfig,
 					Unavailable: false,
-					TypesByName: WebToMobileAnalysisService.CollectComponentTypesByName(viewConfig));
+					TypesByName: WebToMobileAnalysisService.CollectComponentTypesByName(viewConfig),
+					NodesByName: WebToMobileAnalysisService.CollectComponentNodesByName(viewConfig));
 			}
 		} catch (Exception) {
 			// Best-effort: a failed mobile-template read falls back to defaults; Unavailable flags it below.
 		}
 		return new MobileTemplateProbe(emptyParents, emptyPlacements, ViewModelConfig: null, ModelConfig: null,
-			Unavailable: true, TypesByName: emptyTypes);
+			Unavailable: true, TypesByName: emptyTypes, NodesByName: emptyNodes);
 	}
 
 	/// <summary>

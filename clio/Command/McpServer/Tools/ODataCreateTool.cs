@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
@@ -62,7 +62,15 @@ public sealed class ODataCreateTool(
 		//Minted once and stamped on the single exit, so every response carries the correlation-id
 		//core-rules promises - request-level refusals included.
 		string correlationId = correlationIds.New();
-		return CreateCore(args) with { CorrelationId = correlationId };
+		ODataCreateBatchResponse result = CreateCore(args);
+		return result with {
+			CorrelationId = correlationId,
+			Diagnostic = result.Error is null ? null : DataWriteDiagnostic.Create("insert", args.Entity, null, false, false, false, result.Error),
+			Results = result.Results.Select(row => row with {
+				Diagnostic = DataWriteDiagnostic.Create("insert", args.Entity, row.Index, row.RecordCreated != false,
+					row.ResponseReceived, row.Success, row.Error)
+			}).ToArray()
+		};
 	}
 
 	private ODataCreateBatchResponse CreateCore(ODataCreateArgs args) {
@@ -116,6 +124,7 @@ public sealed class ODataCreateTool(
 
 	private static ODataRowResult CreateRow(IApplicationClient client, string url, JsonElement row, int index,
 		IReadOnlyDictionary<string, string> propertyTypes) {
+		bool received = false;
 		try {
 			if (row.ValueKind != JsonValueKind.Object || !row.EnumerateObject().MoveNext()) {
 				return new ODataRowResult {
@@ -140,13 +149,15 @@ public sealed class ODataCreateTool(
 			// false-positive expired-session classification of the OData echo creates the record
 			// twice (GitHub #1313).
 			string responseJson = client.ExecuteNonReplayablePostRequest(url, row.GetRawText(), 30_000);
-			return ParseCreated(responseJson, index);
+			received = true;
+			return ParseCreated(responseJson, index) with { ResponseReceived = true };
 		} catch (Exception ex) {
 			// The request may have reached Creatio and been applied before the failure surfaced here, so the
 			// side effect is unknown - never report not-inserted from a transport-level failure.
 			return new ODataRowResult {
 				Index = index,
 				Success = false,
+				ResponseReceived = received,
 				RecordCreated = null,
 				RetryGuidance = UnknownSideEffectGuidance,
 				Error = SensitiveErrorTextRedactor.Redact(ex.Message)
@@ -184,15 +195,13 @@ public sealed class ODataCreateTool(
 			if (string.IsNullOrEmpty(id)) {
 				// A successful OData create always echoes the new record with its Id; its absence
 				// means the body is not a created record (an unrecognized error or empty payload).
-				// Redact: an unrecognized error shape reaching this fallback embeds up to 500 raw
-				// response characters, which can carry the absolute request URI or other host detail —
-				// keep redaction parity with the TryDetect and exception paths in this method.
+				// Do not echo an unrecognized response payload into the tool result.
 				return new ODataRowResult {
 					Index = index,
 					Success = false,
 					RecordCreated = null,
 					RetryGuidance = UnknownSideEffectGuidance,
-					Error = $"OData create did not return a record Id. Response: {CreatioResponseError.Truncate(SensitiveErrorTextRedactor.Redact(json))}"
+					Error = "OData create did not return a record Id. The response was not a recognized creation acknowledgement; verify the target before retrying."
 				};
 			}
 			return new ODataRowResult { Index = index, Success = true, RecordCreated = true, Id = id };

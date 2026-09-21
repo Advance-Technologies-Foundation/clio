@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
 
 internal static class ResourceStringHelper {
+	private const string ValuesPropertyName = "values";
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 	private static readonly Regex MacroResourceStringPattern = new(
 		@"#ResourceString\(([^)]+)\)#",
@@ -98,7 +99,7 @@ internal static class ResourceStringHelper {
 		return new JObject {
 			["uId"] = Guid.NewGuid().ToString(),
 			["name"] = key,
-			["values"] = new JArray {
+			[ValuesPropertyName] = new JArray {
 				new JObject {
 					["cultureName"] = "en-US",
 					["value"] = value
@@ -115,7 +116,7 @@ internal static class ResourceStringHelper {
 		var result = new JArray();
 		var existingKeys = new HashSet<string>();
 		var registered = new List<string>();
-		CopyExistingEntries(localizableStrings, result, existingKeys);
+		CopyExistingEntries(localizableStrings, resources, result, existingKeys);
 		RegisterMissingBodyKeys(bodyKeys, resources, dsBoundKeys, existingKeys, result, registered);
 		if (resources != null) {
 			foreach (KeyValuePair<string, string> kvp in resources.Where(kvp =>
@@ -130,6 +131,7 @@ internal static class ResourceStringHelper {
 
 	private static void CopyExistingEntries(
 		JArray localizableStrings,
+		IReadOnlyDictionary<string, string> resources,
 		JArray result,
 		ISet<string> existingKeys) {
 		if (localizableStrings == null) {
@@ -140,7 +142,21 @@ internal static class ResourceStringHelper {
 			if (string.IsNullOrEmpty(name)) {
 				continue;
 			}
-			result.Add(entry);
+			var copy = (JObject)entry.DeepClone();
+			if (resources != null && resources.TryGetValue(name, out string value)) {
+				if (copy[ValuesPropertyName] is not JArray) {
+					copy[ValuesPropertyName] = new JArray();
+				}
+				var values = (JArray)copy[ValuesPropertyName];
+				JObject cultureValue = values.Children<JObject>().FirstOrDefault(item =>
+					string.Equals(item["cultureName"]?.ToString(), "en-US", StringComparison.OrdinalIgnoreCase));
+				if (cultureValue == null) {
+					cultureValue = new JObject { ["cultureName"] = "en-US" };
+					values.Add(cultureValue);
+				}
+				cultureValue["value"] = value;
+			}
+			result.Add(copy);
 			existingKeys.Add(name);
 		}
 	}

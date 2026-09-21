@@ -120,6 +120,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		AssertSplitShape(guide!.ModelConfigDiff, "modelConfigDiff");
 		AssertSplitShape(guide!.ViewModelConfigDiff, "viewModelConfigDiff");
 		AssertConvertedListsCarryTheirRow(guide!);
+		AssertEveryConvertedGridCarriesItsRow(guide!);
 		AssertHeaderActionsConvertToFab(guide!);
 		AssertReasonCodesAreFromTheClosedVocabulary(guide!);
 		AssertAdvisorySectionsAgreeWithTheDiff(guide!);
@@ -407,6 +408,46 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	/// grid's own properties do not ride along, since mobile <c>crt.List</c> has no equivalent for them.
 	/// A page with no converted list passes vacuously — the seeded page set is not guaranteed to carry one.
 	/// </summary>
+	/// <summary>
+	/// Every grid that CONVERTED carries a row somewhere in the diff — whichever path it took.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// <see cref="AssertConvertedListsCarryTheirRow"/> keys on <c>operation == "insert"</c>, so it is
+	/// vacuous for the shipped section-list case: <c>BaseMobileListTemplate</c> already provides
+	/// <c>List</c>, the grid is therefore a name-mapped MERGE, and the loop there iterates nothing. That
+	/// blind spot is exactly how a converted section list shipped with no title and no body while this
+	/// suite stayed green — the conversion template that builds the row was only ever evaluated on the
+	/// insert path. This asserts the OUTCOME instead of the path: a grid the page carried and the guide
+	/// did not drop must leave a row behind, as <c>itemLayout</c> inside an inserted list or as its own
+	/// merge onto the template's row element.
+	/// </para>
+	/// <para>
+	/// Vacuous when the seeded page has no grid, and skipped for a grid the guide reports as dropped —
+	/// an excluded or unconvertible grid legitimately leaves no row.
+	/// </para>
+	/// </remarks>
+	private static void AssertEveryConvertedGridCarriesItsRow(MobilePageConversionGuide guide) {
+		string[] droppedNames = [.. (guide.DroppedElements ?? []).Select(e => e.WebName)];
+		string[] convertedGrids = [.. (guide.SourceStructure ?? [])
+			.Where(e => e.Type is "crt.DataGrid" or "crt.DataTable")
+			.Select(e => e.Name)
+			.Where(name => !droppedNames.Contains(name, StringComparer.OrdinalIgnoreCase))];
+		if (convertedGrids.Length == 0) {
+			return;
+		}
+		bool rowOnAnInsert = guide.ViewConfigDiff.Any(
+			e => e.Operation == "insert" && TypeOf(e) == "crt.List" && e.Values?["itemLayout"] is not null);
+		bool rowOnAMerge = guide.ViewConfigDiff.Any(
+			e => e.Operation == "merge" && e.Values?["title"] is not null && e.Values?["body"] is not null);
+		(rowOnAnInsert || rowOnAMerge).Should().BeTrue(
+			because: $"the page converts {convertedGrids.Length} grid(s) ({string.Join(", ", convertedGrids)}) "
+				+ "and the row is what makes a mobile list render, so it has to arrive on whichever path the "
+				+ "grid took — inside an inserted crt.List's itemLayout, or as its own merge onto the row "
+				+ "element the mobile template provides. Neither present means the list ships blank, and "
+				+ "nothing downstream reports it: an empty merge is a legal no-op the applier accepts");
+	}
+
 	private static void AssertConvertedListsCarryTheirRow(MobilePageConversionGuide guide) {
 		foreach (ViewConfigDiffOperation list in guide.ViewConfigDiff.Where(e =>
 			e.Operation == "insert" && TypeOf(e) == "crt.List" && e.Values is not null)) {

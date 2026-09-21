@@ -634,6 +634,9 @@ public sealed class ODataUpdateToolTests {
 
 		// Assert
 		response.Success.Should().BeFalse(because: "a transport failure on the PATCH is not a successful write");
+		response.Diagnostic!.WriteAttempted.Should().BeTrue(because: "the transport threw after entering the write call");
+		response.Diagnostic.TransportOutcome.Should().Be("unknown", because: "no response was received");
+		response.Diagnostic.SideEffect.Should().Be("unknown", because: "transport failure does not prove rollback");
 		response.Error!.Should()
 			.Contain("[redacted-path]")
 			.And.NotContain("/home/depot",

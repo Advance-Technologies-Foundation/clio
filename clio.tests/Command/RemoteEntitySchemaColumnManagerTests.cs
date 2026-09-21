@@ -1706,18 +1706,22 @@ internal class RemoteEntitySchemaColumnManagerTests
 					MergedCreatedOnColumnUId, "CreatedOn", "Created on", null, 7, false, true, null, IsIndexed: false)
 			]);
 
-	[Test]
+	[TestCase(false)]
+	[TestCase(true)]
 	[Description("Returns the merged effective column set, including custom columns from other packages, when no package is supplied.")]
-	public void GetSchemaProperties_ReturnsMergedColumnsAcrossPackages_WhenPackageIsOmitted() {
+	public void GetSchemaProperties_ReturnsMergedColumnsAcrossPackages_WhenPackageIsOmitted(bool bounded) {
 		// Arrange
 		_runtimeEntitySchemaReader.GetByName("Account").Returns(CreateMergedRuntimeSchema());
+		_runtimeEntitySchemaReader.GetByName("Account", 10000).Returns(CreateMergedRuntimeSchema());
 
 		// Act
 		EntitySchemaPropertiesInfo result = _manager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
-			SchemaName = "Account"
+			SchemaName = "Account", RuntimeReadTimeoutMilliseconds = bounded ? 10000 : null
 		});
 
 		// Assert
+		_runtimeEntitySchemaReader.ReceivedCalls().Single().GetArguments().Length.Should().Be(bounded ? 2 : 1,
+			because: "only callers requesting a bounded read should select the timeout overload");
 		result.Name.Should().Be("Account",
 			because: "the merged read should preserve the runtime schema name");
 		result.PackageName.Should().Be(RemoteEntitySchemaColumnManager.MergedSchemaPackageName,
@@ -3343,6 +3347,47 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_savedSchema.Should().NotBeNull(because: "the primary-display change is still saved");
 		_captionCultureResolver.DidNotReceive().ResolveEffectiveCulture(
 			Arg.Any<EnvironmentOptions>(), Arg.Any<string?>());
+	}
+
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("Persists an explicit DB-view update without changing virtual metadata.")]
+	public void SetSchemaProperties_ShouldPersistDbView_WhenSupplied(bool requested) {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)],
+			inheritedColumns: [], primaryDisplayColumn: null);
+		_loadedSchema.IsDBView = !requested;
+		SetupLoadedSchema();
+		SetEntitySchemaPropertiesOptions options = new() {
+			Package = "UsrPkg", SchemaName = "UsrVehicle", IsDBView = requested
+		};
+		// Act
+		_manager.SetSchemaProperties(options);
+		// Assert
+		_savedSchema.IsDBView.Should().Be(requested, because: "the designer save must carry either explicit boolean value");
+		_savedSchema.IsVirtual.Should().BeFalse(because: "the independent virtual flag must remain unchanged");
+	}
+
+	[Test]
+	[Description("Reports a failure when the server silently drops the requested DB-view flag.")]
+	public void SetSchemaProperties_ShouldFail_WhenDbViewDoesNotPersist() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)],
+			inheritedColumns: [], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		_designerClient.SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>())
+			.Returns(call => {
+				_savedSchema = call.ArgAt<EntityDesignSchemaDto>(0);
+				_savedSchema.IsDBView = false;
+				return new Clio.Command.EntitySchemaDesigner.SaveDesignItemDesignerResponse { Success = true, SchemaUId = _savedSchema.UId };
+			});
+		// Act
+		Action act = () => _manager.SetSchemaProperties(new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg", SchemaName = "UsrVehicle", IsDBView = true
+		});
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(because: "a silently ignored flag is not a successful update")
+			.WithMessage("*Database-view flag was not persisted*", because: "the failure must identify the property that failed readback");
 	}
 
 	private void SetupLoadedSchema() {

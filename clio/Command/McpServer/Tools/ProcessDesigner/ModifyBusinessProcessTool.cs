@@ -3,6 +3,8 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
+using System.Collections.Generic;
+using System.Text.Json;
 
 namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 
@@ -16,12 +18,23 @@ public class ModifyBusinessProcessTool(
 
 	internal const string ModifyBusinessProcessToolName = "modify-business-process";
 
+	/// <summary>The canonical field list echoed back when an unknown argument key is refused (ENG-98566).</summary>
+	internal const string ValidArgsHint = "Valid: environment-name, process-name, process-uid, operations.";
+
+	/// <summary>
+	/// Refusal for a call whose whole argument object is absent (ENG-98566, Sonar S2259).
+	/// </summary>
+	/// <remarks>
+	/// Stays inline rather than moving into the shared helper: it has to run before any field can be read,
+	/// and that is what lets the analyser prove no field read is reached with null (csharpsquid:S2259). See
+	/// <see cref="McpToolArgumentSupport.BuildUnknownArgumentError"/>.
+	/// </remarks>
+	internal const string NullArgsError = "args is required: the call carried no argument object. " + ValidArgsHint;
+
 	/// <summary>
 	/// Applies an inline JSON operations array to an existing process (identified by name or uid).
 	/// </summary>
-	/// <param name="environmentName">Registered clio environment name.</param>
-	/// <param name="processName">Process code (schema Name) to edit. Provide this or <paramref name="processUid"/>.</param>
-	/// <param name="processUid">Process schema UId to edit. Provide this or <paramref name="processName"/>.</param>
+	/// <param name="args">The tool arguments; see <see cref="ModifyBusinessProcessArgs"/>.</param>
 	/// <param name="operations">Inline JSON operations array.</param>
 	/// <returns>The command execution result with the edited schema identity in the log output.</returns>
 	[McpToolExecution(
@@ -47,7 +60,8 @@ public class ModifyBusinessProcessTool(
 		 + "email? (sendEmail elements — same block as create-business-process), "
 		 + "approval? (approval elements — same block as create-business-process), "
 		 + "performer? (performTask elements — same block as create-business-process: who performs the task), "
-		 + "signal? {entity, on:added|modified|deleted, changedColumns?:[<ColumnName>,...]}), "
+		 + "signal? {entity, on:added|modified|deleted, changedColumns?:[<ColumnName>,...]}, "
+		 + "formula?), "
 		 + "removeElement (with 'elementName' = the element's local name or UId), addFlow "
 		 + "(with 'source' and 'target' element names, plus an optional 'kind' — sequence (default) | "
 		 + "conditional | default — for a conditional one its 'condition', and an optional 'label') / "
@@ -84,7 +98,21 @@ public class ModifyBusinessProcessTool(
 		 + "reading exactly like a cleared condition. To make a branch unconditional set its condition to "
 		 + "'true'. Refused on a default branch, and refused on a flow whose branch the platform decides from "
 		 + "the preceding activity's RESULT - describe marks those branchesOnActivityResult:true, and a "
-		 + "condition written onto one is stored and never evaluated). "
+		 + "condition written onto one is stored and never evaluated. ALSO refused whenever the SOURCE "
+		 + "enumerates results at all: the designer offers no formula field there, so a condition would run "
+		 + "while the card opened empty. The refusal names the deciding activity and what to pass instead), "
+		 + "setFlowResults (from 1.6.2.23; with 'source' and 'target' naming an EXISTING flow, plus a "
+		 + "non-empty 'results' - the RESULT CAPTIONS selecting this branch, or their record ids, e.g. "
+		 + "['Positive'] on an Approval. This is a conditional flow's OTHER predicate slot, not a spelling of "
+		 + "setFlowCondition: which slot a connector takes is decided by its SOURCE, not by you. The two are "
+		 + "MUTUALLY EXCLUSIVE, asymmetrically: results CLEARS a stored condition; a condition onto a flow "
+		 + "already carrying a selection is REFUSED. Refused on a default branch, on a "
+		 + "source that enumerates nothing (use 'condition' there), and on an empty 'results' - a selection "
+		 + "cannot be CLEARED, because a conditional flow carrying neither is stored as 'true' and always "
+		 + "taken; call it again to change which results select the branch. An unknown caption is refused "
+		 + "WITH the set the element offers, which is the only way to discover them. Prefer declaring it on "
+		 + "the build path with flows[].results. get-guidance name=process-branch-conditions routes to the rule's owner "
+		 + "and says what to tell the user first), "
 		 + "A FLOW 'label' is the text the designer draws ON the connector, and on setFlow its three states "
 		 + "are different: OMIT it and the flow keeps the label it has - which is what you want, because a "
 		 + "modify normally lands on a designer-authored process where 84.9% of conditional flows already "
@@ -166,7 +194,7 @@ public class ModifyBusinessProcessTool(
 		 + "element and its flows; partial update: omit on to keep the current change type, omit entity to keep the "
 		 + "current one (retargeting it clears any old-entity filter), omit changedColumns to clear column tracking; "
 		 + "changedColumns is valid only for on:modified), setElement (elementName + an 'elementUpdate':"
-		 + "{useBackgroundMode?, readData?, changeData?, accessRights?, email?, approval?, performer?, openEditPage?, preconfiguredPage?} — changes element-level fields IN PLACE, preserving the element and its "
+		 + "{useBackgroundMode?, readData?, changeData?, accessRights?, email?, approval?, formula?, performer?, openEditPage?, preconfiguredPage?, subProcess? (get-guidance name=process-element-catalog owns both blocks)} — changes element-level fields IN PLACE, preserving the element and its "
 		 + "flows; only the fields you pass change. useBackgroundMode applies to ANY element kind. readData "
 		 + "{source?, mode?:first, columns?, sort?:{column, direction?:asc|desc}} reconfigures a readData element's "
 		 + "data configuration: omit source to keep the current source object, omit columns/sort to keep the current "
@@ -201,7 +229,7 @@ public class ModifyBusinessProcessTool(
 		 + "refused while another parameter still maps from the element (the refusal names each dependent). On ANY "
 		 + "target change (first configuration included) the stored record filter clears unless it already "
 		 + "targets the incoming object — re-issue setFilter when it cleared), "
-		 + "accessRights {object?, considerTimeInFilter?, add?, remove?} reconfigures a Change access rights element in place (entry shape as in create-business-process: omitted fields keep their values; a supplied add/remove REPLACES that whole collection — its previous grantee parameters are removed, replace is the only way to remove an entry — and [] clears it — clearing ONE is safe only while the other still holds an entry, since an element with both empty runs and changes nothing while reporting success. Because a supplied collection replaces rather than appends, a collection you build from a read-back can only be as complete as that read-back was: describe reports a stored-but-undecodable collection as an EMPTY array, but its addUnreadable/removeUnreadable counts say how many entries it could NOT report (-1 when the collection itself did not decode) - so a non-zero count means the stored entries are UNKNOWN rather than absent, and an empty collection with a ZERO count is genuinely empty. Supplying a collection for an element whose count is non-zero DROPS whatever it did not restate, including a remove entry, which BROADENS access: omit the field to keep what is there, or confirm the stored entries in the process designer first. NOTE clio also reads the process back after an array whose ONLY operation is clearFilter, and warns on the resulting filter state of any Change access rights element among the cleared - clearing a record filter makes the element act on EVERY record of its object, so that batch is checked rather than silent. A setFilter is not re-read: it always carried an object and its conditions, so it can only leave the element narrowing. It cannot verify what it cannot read: if the read-back fails, or the environment's CrtProcessBuilder does not report the block, you are told that instead; omit object to keep the current target (required when none is stored yet, and a present-but-blank object is refused). On ANY object change (first configuration included) the stored record filter clears unless it already targets the incoming object — re-issue setFilter in the same batch), "
+		 + "accessRights {object?, considerTimeInFilter?, add?, remove?} reconfigures a Change access rights element in place - get-guidance name=process-access-rights owns that block in full, including what a supplied collection REPLACES and what a read-back cannot see), "
 		 + "email "
 		 + "(sendEmail elements only, same block as create-business-process) rewrites the fields you pass — mode, "
 		 + "sender, subject, body, importance, ignoreErrors, performer replace the current value IN PLACE, but "
@@ -311,16 +339,14 @@ public class ModifyBusinessProcessTool(
 	public CommandExecutionResult ModifyBusinessProcess(
 		[Description("modify-business-process parameters")] [Required] ModifyBusinessProcessArgs args
 	) {
-		if (string.IsNullOrWhiteSpace(args?.EnvironmentName)) {
-			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
+		if (args is null) {
+			return CommandExecutionResult.FromValidationError(NullArgsError);
 		}
 
-		bool hasName = !string.IsNullOrWhiteSpace(args.ProcessName);
-		bool hasUid = !string.IsNullOrWhiteSpace(args.ProcessUid);
-		if (hasName == hasUid) {
-			return CommandExecutionResult.FromError(hasName
-				? "Provide only one of process-name or process-uid, not both."
-				: "one of process-name or process-uid is required.");
+		CommandExecutionResult targetError = ProcessTargetArguments.Validate(
+			args.ExtensionData, ValidArgsHint, args.EnvironmentName, args.ProcessName, args.ProcessUid);
+		if (targetError is not null) {
+			return targetError;
 		}
 
 		if (string.IsNullOrWhiteSpace(args.Operations)) {
@@ -372,4 +398,13 @@ public sealed record ModifyBusinessProcessArgs(
 
 	[property: JsonPropertyName("process-uid")]
 	[property: Description("Process schema UId to edit; provide exactly one of process-name or process-uid.")]
-	string? ProcessUid = null);
+	string? ProcessUid = null) {
+
+	/// <summary>
+	/// Overflow bag for top-level keys the SDK could not bind to a declared argument (ENG-98566).
+	/// Inspected by the tool so a mis-keyed argument is named back to the caller; a bag that is
+	/// never read is the failure mode, not the fix.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}

@@ -27,6 +27,47 @@ Read it before touching any of:
 The asymmetry matters for review: a changed `cliogate.gz` can be checked by rebuilding it from in-repo
 sources, a changed `CrtProcessBuilder.gz` cannot. That is why the latter carries pins (below).
 
+## The third package — `CrtDashboardsMigratorApp`
+
+Added after the two above and deliberately closer to `cliogate` than to the process builder: it ships
+**prebuilt**, and the archive IS the package's SDLC (Jenkins) build — the package `.gz` inside the build zip,
+carrying `Files/Bin/CrtDashboardsMigratorApp.dll` (net472) and `Files/Bin/netstandard/CrtDashboardsMigratorApp.dll`
+(.NET). The target loads the assembly for its runtime instead of compiling the package; its configuration build
+for the package's schemas and the restart still happen. It goes through the same install command as the
+process builder (`install-dashboards-migrator`, `InstallBundledPackageCommand`), so the downgrade refusals,
+the restart wait and the ungated `Ping` outcome check (`/rest/DashboardsMigratorPingService/Ping`) apply unchanged.
+
+**Its version comes from the app, not from clio.** This package is a composable app, so it declares its
+version in `Files/app-descriptor.json` — the number Marketplace and the App Hub show (1.1.3, 1.1.4). clio
+reports that number and pins it, the same way it reports the version a knowledge bundle or a toolkit plugin
+declares for itself. Nothing stamps `PackageVersion` into the package descriptor; the process builder, which
+is a plain package and not an app, still carries one and is read from there.
+
+**Prebuilt is a requirement here, not a preference.** The package carries an `InstallScripts.AfterInstall`
+entry that seeds the `DashboardMigrationLog` column rights, and the platform resolves an install script's class
+from the package's OWN assembly: `PackageInstallUtilities.ResolveInstallScriptAssemblyPath` looks for
+`<package>.dll` and throws `AssemblyPathNotFound` ("Please compile package") when it is absent. Install scripts
+run before the configuration build, so a source-only archive has no assembly to run them from — observed on a
+stand as a failed install. An archive of this package without `Files/Bin` therefore installs without ever
+applying the rights, which is why the guard fixture requires both the assemblies and the install script.
+
+Nothing is built on the bundling machine, so the procedure below — build, tests, `git archive`, stripping
+`Files/Bin` — does NOT apply to it. Its whole procedure is one script:
+
+```powershell
+pwsh ./rebundle-dashboards-migrator.ps1 -BuildZip '\\tscrm.com\dfs-ts\ComposableApps\CrtDashboardsMigratorApp\<X.Y.Z>\CrtDashboardsMigratorApp_<X.Y.Z>.zip'
+```
+
+It unpacks the build, reads the app version from `Files/app-descriptor.json` and refuses a build whose app
+version is lower than the one clio ships, packs with `--skip-pdb`, verifies the inventory (exactly the two
+package assemblies, `Data/` allowed because its bound rows only register the migration page and its permission,
+no `SqlScripts/`, the `DashboardsMigratorPingService` schema present),
+rewrites the pins in `clio.tests/Common/BundledDashboardsMigratorPackageTests.cs` and rebuilds clio. The
+provenance pin is the SHA-256 of the build zip (`ExpectedSourceBuildSha256`); the commit is on the build's page
+in the SDLC app. Facts 1–3 below (UId, `ModifiedOnUtc`, installed-vs-serving) hold for it exactly as for the
+process builder; the package-side contract (Ping route and answer, both assemblies) is
+listed in that repository's `RELEASE.md`, step 8.
+
 ## Platform facts you must know first
 
 Three separate decisions, often confused. Getting them mixed up is what makes a rebundle fail silently.
@@ -315,7 +356,12 @@ one and an install run from them ships it. It names them all at the end.
 What it does beyond running the steps below:
 
 - refreshes all four pins in the same run, so "the pins are stale" stops being a
-  reachable state;
+  reachable state — **with one deliberate exception: under `-SkipTests` the SHA pin is left alone**
+  (`rebundle-process-builder.ps1:623-634`, and the run says so in yellow). Refreshing it is what makes a
+  rebundle reviewable by diff, and refreshing it after a run that skipped the package's own gate tests
+  would leave nothing red anywhere — so the stale pin IS the signal. Set it by hand from
+  `shasum -a 256 clio/CrtProcessBuilder/CrtProcessBuilder.gz` (uppercase) once you have run those tests
+  yourself, and say in the commit message what you ran;
 - reads the archive back and checks the inventory — exactly two DLLs and both from `Files/Libs`, the compile
   marker present, the package's own assembly absent, and nothing outside the allowed top-level set (in
   particular no `SqlScripts/` or `Data/`, which the target EXECUTES at install time). The guard fixture now
@@ -328,11 +374,28 @@ What it does beyond running the steps below:
 It deliberately does NOT commit. Step 8 — committing both repositories and naming the producing commit
 in the clio message — is a judgement call and stays with you.
 
+### On macOS
+
+Three things the script needs that a Mac does not have by default. None is a reason to fall back to the
+manual steps — all three were settled on 2026-09-16 and the script then ran end to end.
+
+- **`pwsh` installs as a .NET global tool**: `dotnet tool install --global --version 7.4.6 PowerShell`
+  (the unpinned install fails with *"Settings file 'DotnetToolSettings.xml' was not found"*). So "a host
+  without PowerShell" is rarely the real situation on a Mac.
+- **Point PATH at an SDK that reads `.slnx`** (9.0.200+) before invoking it, or step 1 dies on
+  `MSBuild4068: The element <Solution> is unrecognized` while building the package solution.
+- **Step 1 builds and tests the PACKAGE**, and on a Mac that step needs the package repo's
+  `.application/<tfm>/core-bin` populated — see that repository's `CLAUDE.md`, which also records that the
+  suite runs under `-c dev-n8` (net8.0) and not under `-c dev-nf` (net472 → Mono → 1577 of 1729 fixtures
+  die in SetUp). If you run the suite yourself in that configuration, `-SkipTests` here is honest; say so
+  in the commit message along with what you ran instead.
+
 ### Without the script
 
-The script requires `pwsh`. The steps below are what it runs, and they are the fallback on a host without
-PowerShell — the same arrangement `AGENTS.md` uses for `cliogate`'s `build.ps1`. Read them anyway: they
-carry the REASONS, and a script that fails is only useful to someone who knows what each step protects.
+The script requires `pwsh` (see above — on macOS it is one `dotnet tool install`). The steps below are
+what it runs, and they are the fallback on a host without PowerShell — the same arrangement `AGENTS.md`
+uses for `cliogate`'s `build.ps1`. Read them anyway: they carry the REASONS, and a script that fails is
+only useful to someone who knows what each step protects.
 
 > **`X.Y.Z.W` means four plain numbers — no `-rc`, no `-dev`, no suffix of any kind.** The script cannot emit
 > one (`[version]::TryParse` rejects it); by hand you can, so the rule is enforced twice more downstream:

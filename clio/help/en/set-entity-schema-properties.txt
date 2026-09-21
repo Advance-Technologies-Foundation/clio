@@ -19,6 +19,8 @@ DESCRIPTION
                                it is resolved by name to its column UId before saving
                                (the modern designer contract matches the primary-display
                                column by its column object, not a raw GUID field).
+    --is-db-view <true|false>  Set the database-view flag; omit to preserve metadata.
+                              SQL views are provisioned separately; tables are not converted.
     --title /                  The SCHEMA caption. This is the only command that can rename
     --title-localizations      an existing entity schema's caption; update-entity-schema
                                applies COLUMN operations and its title-localizations is a
@@ -44,7 +46,7 @@ OPTIONS
     --caption-culture          Culture used for a scalar --title (e.g. en-US). Precedence:
                                this override > the connected user's profile culture > en-US
 
-    At least one settable property (--primary-display-column, --title or
+    At least one settable property (--primary-display-column, --is-db-view, --title or
     --title-localizations) is required. --title and --title-localizations are
     mutually exclusive: supplying both is rejected, because the write applies the
     map only and the scalar would be dropped silently.
