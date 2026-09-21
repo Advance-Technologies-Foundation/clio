@@ -102,7 +102,7 @@ Two mechanisms each have measured evidence on their own, but nobody had run them
 - **Transport continuity** — [a thin supervisor keeping the client pipe open across a full backend
   replacement](https://github.com/Advance-Technologies-Foundation/clio/discussions/1643#discussioncomment-18539341):
   8.1.0.129 → 8.1.0.131, 1.0s macOS / 1.3s Windows, zero client reconnects.
-- **Execution quiescence** — [E3's `OperationLedger`](../DetachedOperations/README.md), `IsQuiescent(target)`
+- **Execution quiescence** — [E3's `OperationLedger`](https://github.com/Advance-Technologies-Foundation/clio/blob/Alexandr-Kravchuk/detached-operation-probe/experiments/DetachedOperations/README.md), `IsQuiescent(target)`
   and `TryEnterSwapWindow(target)`, exercised entirely in-process against an `AssemblyLoadContext` swap.
 
 The supervisor prototype that proves transport continuity swaps **immediately**, with no ledger
