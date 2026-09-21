@@ -7,7 +7,7 @@
       "passed": true,
       "detail": {
         "effects": [],
-        "swapMs": 18,
+        "swapMs": 16,
         "waitedMs": 0
       }
     },
@@ -18,8 +18,8 @@
         "effects": [
           "envA"
         ],
-        "swapMs": 1251,
-        "waitedMs": 1223
+        "swapMs": 1249,
+        "waitedMs": 1221
       }
     },
     {
@@ -29,8 +29,8 @@
         "effects": [
           "envA"
         ],
-        "swapMs": 328,
-        "waitedMs": 308
+        "swapMs": 331,
+        "waitedMs": 310
       }
     },
     {
@@ -41,8 +41,8 @@
           "envA",
           "envB"
         ],
-        "swapMs": 1225,
-        "waitedMs": 1198
+        "swapMs": 1235,
+        "waitedMs": 1217
       }
     },
     {
@@ -51,6 +51,19 @@
       "detail": {
         "refusedDuringWindow": true,
         "admittedAfterRelease": true
+      }
+    },
+    {
+      "name": "S6 a real V1-\u003EV2 respawn preserves V1\u0027s operation, serves a new one on a different PID, and refuses every concurrent admission attempt during the handover",
+      "passed": true,
+      "detail": {
+        "v1Pid": 29271,
+        "v2Pid": 29272,
+        "v1EffectPresent": true,
+        "v2EffectPresent": true,
+        "pressureAttempts": 9,
+        "pressureRefused": 9,
+        "pressureAdmittedDuringWindow": 0
       }
     }
   ]
